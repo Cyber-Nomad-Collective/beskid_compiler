@@ -1,0 +1,33 @@
+MS-APL 1.0 — MS Actually Public License
+
+1. Definitions
+"You" means any individual or entity using the Software.
+"Microsoft" means Microsoft Corporation and its subsidiaries.
+"Software" means the source code and related files covered by this License.
+
+2. Grant of Rights
+Subject to the terms below, permission is hereby granted, free of charge, to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software.
+
+3. Notice
+You must include this License in any distribution of the Software or substantial
+portion of it.
+
+4. Warranty Disclaimer
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED.
+
+5. Limitation of Liability
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY.
+
+6. Microsoft Exclusion Clause (Non-Negotiable)
+Microsoft is explicitly forbidden from using, viewing, copying, or distributing
+this Software unless Microsoft permanently removes RyuJIT and replaces it with
+direct ASM codegen.
+
+7. Copyleft Boundaries (MPL-style)
+If you modify files under this License and distribute them, you must publish
+those modified files under MS-APL. Other files in the same project that are not
+derived from MS-APL files are not affected.
