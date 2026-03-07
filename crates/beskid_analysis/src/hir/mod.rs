@@ -22,10 +22,12 @@ pub use block::HirBlock;
 pub use attribute_target_kind::AttributeTargetKind;
 pub use common::{HirEnumPath, HirIdentifier, HirPath, HirPathSegment, HirVisibility};
 pub use expression::{
-    ExpressionNode, HirAssignExpression, HirBinaryExpression, HirBinaryOp, HirBlockExpression,
-    HirCallExpression, HirEnumConstructorExpression, HirGroupedExpression, HirLambdaExpression,
-    HirLambdaParameter, HirLiteralExpression, HirMatchExpression, HirMemberExpression,
-    HirPathExpression, HirStructLiteralExpression, HirUnaryExpression, HirUnaryOp,
+    ExpressionNode, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBinaryOp,
+    HirBlockExpression, HirCallExpression, HirEnumConstructorExpression, HirGroupedExpression,
+    HirLambdaExpression, HirLambdaParameter, HirLiteralExpression, HirMatchExpression,
+    HirMemberExpression,
+    HirPathExpression, HirStructLiteralExpression, HirTryExpression, HirUnaryExpression,
+    HirUnaryOp,
 };
 pub use item::{
     HirAttribute, HirAttributeDeclaration, HirAttributeParameter, HirAttributeTarget,
@@ -49,7 +51,7 @@ pub use statement::{
     HirIfStatement, HirLetStatement, HirReturnStatement, HirWhileStatement, StatementNode,
 };
 pub use struct_literal_field::HirStructLiteralField;
-pub use types::{HirField, HirParameter, HirParameterModifier, HirPrimitiveType, HirType};
+pub use types::{HirField, HirFieldKind, HirParameter, HirParameterModifier, HirPrimitiveType, HirType};
 
 pub type AstProgram = Program<AstPhase>;
 pub type AstModule = Module<AstPhase>;

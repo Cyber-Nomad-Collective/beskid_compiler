@@ -105,6 +105,9 @@ impl Normalizer {
             HirExpressionNode::GroupedExpression(grouped_expr) => {
                 self.visit_expression(&mut grouped_expr.node.expr);
             }
+            HirExpressionNode::TryExpression(try_expr) => {
+                self.visit_expression(&mut try_expr.node.expr);
+            }
             HirExpressionNode::LiteralExpression(_) | HirExpressionNode::PathExpression(_) => {}
         }
     }

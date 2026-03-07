@@ -186,7 +186,7 @@ fn analysis_emits_duplicate_enum_variant_errors() {
 
 #[test]
 fn analysis_emits_duplicate_contract_method_errors() {
-    let source = "contract Storage { unit put(key: string); unit put(value: string); }";
+    let source = "contract Storage { unit put(string key); unit put(string value); }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -346,7 +346,7 @@ fn analysis_emits_duplicate_non_type_item_name_errors() {
 
 #[test]
 fn analysis_emits_conflicting_embedded_contract_errors() {
-    let source = "contract A { unit put(key: string); } contract B { unit put(key: i64); } contract C { A; B; }";
+    let source = "contract A { unit put(string key); } contract B { unit put(i64 key); } contract C { A; B; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,

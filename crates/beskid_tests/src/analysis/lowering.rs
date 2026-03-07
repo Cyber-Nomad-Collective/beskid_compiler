@@ -1,6 +1,6 @@
 use beskid_analysis::hir::{
-    AstItem, AstProgram, HirExpressionNode, HirItem, HirPattern, HirProgram, HirStatementNode,
-    lower_program, normalize_program,
+    AstItem, AstProgram, HirAssignOp, HirBinaryOp, HirExpressionNode, HirFieldKind, HirItem,
+    HirPattern, HirProgram, HirStatementNode, lower_program, normalize_program,
 };
 use beskid_analysis::syntax::Spanned;
 
@@ -126,7 +126,7 @@ fn lowering_preserves_match_patterns() {
 
 #[test]
 fn lowering_collects_extern_interface_metadata() {
-    let source = "[Extern(Abi: \"C\", Library: \"libc\")] contract Reader { i32 read(p: u8[]); } [Extern(Abi: \"C\", Library: \"libc\")] mod sys.io;";
+    let source = "[Extern(Abi: \"C\", Library: \"libc\")] contract Reader { i32 read(u8[] p); } [Extern(Abi: \"C\", Library: \"libc\")] mod sys.io;";
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let hir: Spanned<HirProgram> = lower_program(&ast);
@@ -191,4 +191,126 @@ fn lowering_preserves_attribute_declaration_items() {
     assert_eq!(declaration.node.parameters.len(), 2);
     assert_eq!(declaration.node.parameters[0].node.name.node.name, "Abi");
     assert_eq!(declaration.node.parameters[1].node.name.node.name, "Library");
+}
+
+#[test]
+fn lowering_maps_try_expression_node() {
+    let source = "i64 foo() { return 1; } i64 main() { i64 value = foo()?; return value; }";
+    let program = parse_program_ast(source);
+    let ast: Spanned<AstProgram> = program.into();
+    let mut hir: Spanned<HirProgram> = lower_program(&ast);
+    normalize_program(&mut hir).expect("normalization failed");
+
+    let main_fn = hir
+        .node
+        .items
+        .iter()
+        .find_map(|item| match &item.node {
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            _ => None,
+        })
+        .expect("expected main function");
+
+    let HirStatementNode::LetStatement(let_stmt) = &main_fn.node.body.node.statements[0].node
+    else {
+        panic!("expected let statement");
+    };
+
+    match &let_stmt.node.value.node {
+        HirExpressionNode::TryExpression(try_expr) => {
+            assert!(
+                matches!(try_expr.node.expr.node, HirExpressionNode::CallExpression(_)),
+                "expected try expression to wrap call expression"
+            );
+        }
+        _ => panic!("expected try expression"),
+    }
+}
+
+#[test]
+fn lowering_preserves_iterable_for_statement_shape() {
+    let source = "unit main() { for item in items { continue; } }";
+    let program = parse_program_ast(source);
+    let ast: Spanned<AstProgram> = program.into();
+    let mut hir: Spanned<HirProgram> = lower_program(&ast);
+    normalize_program(&mut hir).expect("normalization failed");
+
+    let main_fn = hir
+        .node
+        .items
+        .iter()
+        .find_map(|item| match &item.node {
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            _ => None,
+        })
+        .expect("expected main function");
+
+    match &main_fn.node.body.node.statements[0].node {
+        HirStatementNode::ForStatement(for_stmt) => {
+            assert!(matches!(for_stmt.node.iterable.node, HirExpressionNode::PathExpression(_)));
+        }
+        _ => panic!("expected for statement"),
+    }
+}
+
+#[test]
+fn lowering_preserves_type_conformances_and_field_kinds() {
+    let source = "type User when Display, Clone { event string created, string name }";
+    let program = parse_program_ast(source);
+    let ast: Spanned<AstProgram> = program.into();
+    let hir: Spanned<HirProgram> = lower_program(&ast);
+
+    let type_def = hir
+        .node
+        .items
+        .iter()
+        .find_map(|item| match &item.node {
+            HirItem::TypeDefinition(def) => Some(def),
+            _ => None,
+        })
+        .expect("expected type definition");
+
+    assert_eq!(type_def.node.conformances.len(), 2);
+    assert_eq!(type_def.node.fields.len(), 2);
+    assert_eq!(type_def.node.fields[0].node.kind, HirFieldKind::Event);
+    assert_eq!(type_def.node.fields[1].node.kind, HirFieldKind::Value);
+}
+
+#[test]
+fn lowering_maps_identity_binary_and_assign_ops() {
+    let source = "unit main() { i64 x = 1; bool same = x === 1; x += 2; }";
+    let program = parse_program_ast(source);
+    let ast: Spanned<AstProgram> = program.into();
+    let mut hir: Spanned<HirProgram> = lower_program(&ast);
+    normalize_program(&mut hir).expect("normalization failed");
+
+    let main_fn = hir
+        .node
+        .items
+        .iter()
+        .find_map(|item| match &item.node {
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            _ => None,
+        })
+        .expect("expected main function");
+
+    let HirStatementNode::LetStatement(let_same) = &main_fn.node.body.node.statements[1].node else {
+        panic!("expected let statement");
+    };
+    match &let_same.node.value.node {
+        HirExpressionNode::BinaryExpression(binary) => {
+            assert_eq!(binary.node.op.node, HirBinaryOp::IdentityEq);
+        }
+        _ => panic!("expected binary expression"),
+    }
+
+    let HirStatementNode::ExpressionStatement(expr_stmt) = &main_fn.node.body.node.statements[2].node else {
+        panic!("expected expression statement");
+    };
+    match &expr_stmt.node.expression.node {
+        HirExpressionNode::AssignExpression(assign) => {
+            assert_eq!(assign.node.op.node, HirAssignOp::AddAssign);
+        }
+        _ => panic!("expected assign expression"),
+    }
 }

@@ -33,6 +33,24 @@ fn parses_binary_expression_ast() {
 }
 
 #[test]
+fn parses_try_expression_ast() {
+    let expr = parse_expression_ast("foo()?");
+    match &expr.node {
+        Expression::Try(try_expr) => match &try_expr.node.expr.node {
+            Expression::Call(call) => {
+                match &call.node.callee.node {
+                    Expression::Path(path) => assert_path_segments(&path.node.path, &["foo"]),
+                    _ => panic!("expected path expression"),
+                }
+                assert!(call.node.args.is_empty());
+            }
+            _ => panic!("expected call expression"),
+        },
+        _ => panic!("expected try expression"),
+    }
+}
+
+#[test]
 fn parses_identifier_and_literal_patterns_ast() {
     let expr = parse_expression_ast("match x { value => value, 1 => 2, }");
     match &expr.node {

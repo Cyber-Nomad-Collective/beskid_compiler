@@ -2,9 +2,11 @@ use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
-use beskid_analysis::hir::{HirAssignExpression, HirExpressionNode};
+use beskid_analysis::hir::{HirAssignExpression, HirAssignOp, HirExpressionNode};
 use beskid_analysis::resolve::ResolvedValue;
+use beskid_analysis::types::TypeInfo;
 use beskid_analysis::syntax::Spanned;
+use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::Value;
 
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
@@ -77,7 +79,31 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
             value,
         )?;
 
-        ctx.builder.def_var(var, value);
-        Ok(Some(value))
+        let assigned = match node.node.op.node {
+            HirAssignOp::Assign => value,
+            HirAssignOp::AddAssign | HirAssignOp::SubAssign => {
+                let current = ctx.builder.use_var(var);
+                let is_float = matches!(
+                    ctx.type_result.types.get(expected_type),
+                    Some(TypeInfo::Primitive(beskid_analysis::hir::HirPrimitiveType::F64))
+                );
+                if is_float {
+                    match node.node.op.node {
+                        HirAssignOp::AddAssign => ctx.builder.ins().fadd(current, value),
+                        HirAssignOp::SubAssign => ctx.builder.ins().fsub(current, value),
+                        HirAssignOp::Assign => unreachable!("handled above"),
+                    }
+                } else {
+                    match node.node.op.node {
+                        HirAssignOp::AddAssign => ctx.builder.ins().iadd(current, value),
+                        HirAssignOp::SubAssign => ctx.builder.ins().isub(current, value),
+                        HirAssignOp::Assign => unreachable!("handled above"),
+                    }
+                }
+            }
+        };
+
+        ctx.builder.def_var(var, assigned);
+        Ok(Some(assigned))
     }
 }

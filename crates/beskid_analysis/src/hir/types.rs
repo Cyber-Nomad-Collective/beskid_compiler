@@ -58,10 +58,18 @@ pub enum HirType {
 #[derive(Debug, Clone, PartialEq, Eq, beskid_ast_derive::HirNode)]
 #[ast(kind = "Field")]
 pub struct HirField {
+    #[ast(skip)]
+    pub kind: HirFieldKind,
     #[ast(child)]
     pub name: Spanned<HirIdentifier>,
     #[ast(child)]
     pub ty: Spanned<HirType>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HirFieldKind {
+    Value,
+    Event,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, beskid_ast_derive::HirNode)]

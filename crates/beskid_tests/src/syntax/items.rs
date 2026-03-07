@@ -1,4 +1,4 @@
-use beskid_analysis::syntax::{ContractNode, EnumVariant, Node, Type, Visibility};
+use beskid_analysis::syntax::{ContractNode, EnumVariant, FieldKind, Node, Type, Visibility};
 
 use crate::syntax::util::{
     assert_expression_path_segments, assert_path_segments, assert_type_complex_path,
@@ -25,7 +25,7 @@ fn assert_string_literal_expression(
 
 #[test]
 fn parses_function_definition_ast() {
-    let program = parse_program_ast("i32 add(a: i32, b: i32) { return a + b; }");
+    let program = parse_program_ast("i32 add(i32 a, i32 b) { return a + b; }");
     assert_eq!(program.node.items.len(), 1);
     let node = &program.node.items[0];
 
@@ -69,7 +69,7 @@ fn parses_function_definition_ast() {
 
 #[test]
 fn parses_function_with_out_parameter_modifier_ast() {
-    let node = parse_node_ast("i32 write(out value: i32) { return value; }");
+    let node = parse_node_ast("i32 write(out i32 value) { return value; }");
     match &node.node {
         Node::Function(function) => {
             assert_eq!(function.node.parameters.len(), 1);
@@ -87,7 +87,7 @@ fn parses_function_with_out_parameter_modifier_ast() {
 
 #[test]
 fn parses_function_with_parameter_modifier_ast() {
-    let node = parse_node_ast("i32 update(ref value: i32) { return value; }");
+    let node = parse_node_ast("i32 update(ref i32 value) { return value; }");
     match &node.node {
         Node::Function(function) => {
             assert_eq!(function.node.parameters.len(), 1);
@@ -172,6 +172,55 @@ fn parses_type_definition_ast() {
 }
 
 #[test]
+fn parses_type_definition_with_conformances_ast() {
+    let node = parse_node_ast("type User when Display, Clone { string name }");
+
+    match &node.node {
+        Node::TypeDefinition(ty) => {
+            assert_eq!(ty.node.conformances.len(), 2);
+            assert_path_segments(&ty.node.conformances[0], &["Display"]);
+            assert_path_segments(&ty.node.conformances[1], &["Clone"]);
+        }
+        _ => panic!("expected type definition"),
+    }
+}
+
+#[test]
+fn parses_type_definition_event_field_kind_ast() {
+    let node = parse_node_ast("type User { event string created, string name }");
+
+    match &node.node {
+        Node::TypeDefinition(ty) => {
+            assert_eq!(ty.node.fields.len(), 2);
+            assert_eq!(ty.node.fields[0].node.kind, FieldKind::Event);
+            assert_eq!(ty.node.fields[1].node.kind, FieldKind::Value);
+        }
+        _ => panic!("expected type definition"),
+    }
+}
+
+#[test]
+fn parses_arrow_function_type_annotation_ast() {
+    let node = parse_node_ast("type FnHolder { (i64, i64) => i64 callback }");
+
+    match &node.node {
+        Node::TypeDefinition(ty) => match &ty.node.fields[0].node.ty.node {
+            Type::Function {
+                return_type,
+                parameters,
+            } => {
+                assert_eq!(parameters.len(), 2);
+                assert_type_primitive(&parameters[0], beskid_analysis::syntax::PrimitiveType::I64);
+                assert_type_primitive(&parameters[1], beskid_analysis::syntax::PrimitiveType::I64);
+                assert_type_primitive(return_type, beskid_analysis::syntax::PrimitiveType::I64);
+            }
+            _ => panic!("expected function type"),
+        },
+        _ => panic!("expected type definition"),
+    }
+}
+
+#[test]
 fn parses_enum_definition_ast() {
     let node = parse_node_ast("enum Option<T> { Some(T value), None }");
 
@@ -190,7 +239,7 @@ fn parses_enum_definition_ast() {
 
 #[test]
 fn parses_contract_definition_ast() {
-    let node = parse_node_ast("contract Reader { i32 read(p: u8[]); Writer; }");
+    let node = parse_node_ast("contract Reader { i32 read(u8[] p); Writer; }");
 
     match &node.node {
         Node::ContractDefinition(contract) => {
@@ -248,7 +297,7 @@ fn parses_module_and_use_declarations() {
 #[test]
 fn parses_contract_definition_extern_attribute_ast() {
     let node = parse_node_ast(
-        "[Extern(Abi: \"C\", Library: \"libc\")] contract Reader { i32 read(p: u8[]); }",
+        "[Extern(Abi: \"C\", Library: \"libc\")] contract Reader { i32 read(u8[] p); }",
     );
 
     match &node.node {

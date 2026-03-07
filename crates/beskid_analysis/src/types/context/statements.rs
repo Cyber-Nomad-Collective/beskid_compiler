@@ -1,4 +1,4 @@
-use crate::hir::{HirBlock, HirExpressionNode, HirPrimitiveType, HirRangeExpression, HirStatementNode};
+use crate::hir::{HirBlock, HirExpressionNode, HirPrimitiveType, HirStatementNode};
 use crate::syntax::Spanned;
 
 use super::context::{TypeContext, TypeError};
@@ -62,8 +62,7 @@ impl<'a> TypeContext<'a> {
                 self.type_block(&while_stmt.node.body);
             }
             HirStatementNode::ForStatement(for_stmt) => {
-                let range_type = self.type_range_expression(&for_stmt.node.range);
-                if let Some(type_id) = range_type {
+                if let Some(type_id) = self.type_expression(&for_stmt.node.iterable) {
                     self.insert_local_type(for_stmt.node.iterator.span, type_id);
                 }
                 self.type_block(&for_stmt.node.body);
@@ -79,28 +78,6 @@ impl<'a> TypeContext<'a> {
                 self.type_expression(&expr_stmt.node.expression);
             }
             HirStatementNode::BreakStatement(_) | HirStatementNode::ContinueStatement(_) => {}
-        }
-    }
-
-    pub(super) fn type_range_expression(
-        &mut self,
-        range: &Spanned<HirRangeExpression>,
-    ) -> Option<crate::types::TypeId> {
-        let start = self.type_expression(&range.node.start);
-        let end = self.type_expression(&range.node.end);
-        match (start, end) {
-            (Some(start), Some(end)) => {
-                if start != end || !self.is_numeric(start) {
-                    self.errors.push(TypeError::TypeMismatch {
-                        span: range.span,
-                        expected: start,
-                        actual: end,
-                    });
-                    return None;
-                }
-                Some(start)
-            }
-            _ => None,
         }
     }
 }

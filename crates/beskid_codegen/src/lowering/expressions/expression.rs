@@ -29,6 +29,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionNode {
             HirExpressionNode::EnumConstructorExpression(inner) => lower_node(inner, ctx),
             HirExpressionNode::BlockExpression(inner) => lower_node(inner, ctx),
             HirExpressionNode::GroupedExpression(inner) => lower_node(inner, ctx),
+            HirExpressionNode::TryExpression(_) => Err(CodegenError::UnsupportedNode {
+                span: node.span,
+                node: "try expression",
+            }),
         }
     }
 }

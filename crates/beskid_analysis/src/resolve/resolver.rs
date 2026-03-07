@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::hir::{
     HirBlock, HirContractNode, HirEnumPath, HirExpressionNode, HirItem, HirPath, HirPattern,
-    HirProgram, HirRangeExpression, HirStatementNode, HirStructLiteralField, HirType,
+    HirProgram, HirStatementNode, HirStructLiteralField, HirType,
     HirVisibility,
 };
 use crate::syntax::{self, Spanned};
@@ -277,6 +277,9 @@ impl Resolver {
                 for generic in &def.node.generics {
                     self.insert_generic(&generic.node.name);
                 }
+                for conformance in &def.node.conformances {
+                    self.resolve_type_path(conformance);
+                }
                 for field in &def.node.fields {
                     self.resolve_type(&field.node.ty);
                 }
@@ -342,7 +345,7 @@ impl Resolver {
                 self.resolve_block(&while_stmt.node.body);
             }
             HirStatementNode::ForStatement(for_stmt) => {
-                self.resolve_range_expression(&for_stmt.node.range);
+                self.resolve_expression(&for_stmt.node.iterable);
                 self.push_scope();
                 self.insert_local(
                     &for_stmt.node.iterator.node.name,
@@ -364,11 +367,6 @@ impl Resolver {
                 self.resolve_expression(&expr_stmt.node.expression);
             }
         }
-    }
-
-    fn resolve_range_expression(&mut self, range: &Spanned<HirRangeExpression>) {
-        self.resolve_expression(&range.node.start);
-        self.resolve_expression(&range.node.end);
     }
 
     fn resolve_expression(&mut self, expression: &Spanned<HirExpressionNode>) {
@@ -431,6 +429,9 @@ impl Resolver {
             }
             HirExpressionNode::GroupedExpression(grouped_expr) => {
                 self.resolve_expression(&grouped_expr.node.expr);
+            }
+            HirExpressionNode::TryExpression(try_expr) => {
+                self.resolve_expression(&try_expr.node.expr);
             }
         }
     }

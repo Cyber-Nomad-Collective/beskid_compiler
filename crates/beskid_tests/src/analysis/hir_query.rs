@@ -22,7 +22,7 @@ fn hir_query_descendants_counts_nodes() {
 
 #[test]
 fn hir_query_of_type_finds_contract_signatures() {
-    let hir = parse_hir("contract Storage { unit put(key: string); unit get(); }");
+    let hir = parse_hir("contract Storage { unit put(string key); unit get(); }");
     let signatures: Vec<&HirContractMethodSignature> = HirQuery::from(&hir.node)
         .of::<HirContractMethodSignature>()
         .collect();

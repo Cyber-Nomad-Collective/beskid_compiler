@@ -28,34 +28,25 @@ impl crate::parsing::parsable::Parsable for Parameter {
         let first = inner
             .next()
             .ok_or(crate::parsing::error::ParseError::missing(
-                crate::parser::Rule::Identifier,
+                crate::parser::Rule::BeskidType,
             ))?;
 
-        let (modifier, name_pair) = if first.as_rule() == crate::parser::Rule::ParameterModifier {
+        let (modifier, ty_pair) = if first.as_rule() == crate::parser::Rule::ParameterModifier {
             let modifier = crate::syntax::ParameterModifier::parse(first)?;
-            let name_pair = inner
+            let ty_pair = inner
                 .next()
                 .ok_or(crate::parsing::error::ParseError::missing(
-                    crate::parser::Rule::Identifier,
+                    crate::parser::Rule::BeskidType,
                 ))?;
-            (Some(modifier), name_pair)
+            (Some(modifier), ty_pair)
         } else {
             (None, first)
         };
 
-        let (name, ty) = if name_pair.as_rule() == crate::parser::Rule::Identifier {
-            let name = crate::syntax::Identifier::parse(name_pair)?;
-            let ty = crate::syntax::Type::parse(inner.next().ok_or(
-                crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType),
-            )?)?;
-            (name, ty)
-        } else {
-            let ty = crate::syntax::Type::parse(name_pair)?;
-            let name = crate::syntax::Identifier::parse(inner.next().ok_or(
-                crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier),
-            )?)?;
-            (name, ty)
-        };
+        let ty = crate::syntax::Type::parse(ty_pair)?;
+        let name = crate::syntax::Identifier::parse(inner.next().ok_or(
+            crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier),
+        )?)?;
 
         Ok(crate::syntax::Spanned::new(
             Self { modifier, name, ty },

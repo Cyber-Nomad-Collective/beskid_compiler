@@ -16,9 +16,10 @@ pub mod pattern;
 pub mod span;
 pub mod struct_literal_expression;
 pub mod struct_literal_field;
+pub mod try_expression;
 pub mod unary_expression;
 
-pub use assign_expression::AssignExpression;
+pub use assign_expression::{AssignExpression, AssignOp};
 pub use binary_expression::{BinaryExpression, BinaryOp};
 pub use block_expression::BlockExpression;
 pub use call_expression::CallExpression;
@@ -35,4 +36,5 @@ pub use path_expression::PathExpression;
 pub use pattern::{EnumPattern, Pattern};
 pub use struct_literal_expression::StructLiteralExpression;
 pub use struct_literal_field::StructLiteralField;
+pub use try_expression::TryExpression;
 pub use unary_expression::{UnaryExpression, UnaryOp};

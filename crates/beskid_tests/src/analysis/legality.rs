@@ -123,7 +123,7 @@ fn legality_reports_attribute_target_not_allowed() {
 
 #[test]
 fn legality_reports_attribute_target_not_allowed_on_contract() {
-    let source = "attribute Native(ModuleDeclaration) { Abi: string = \"C\" } [Native(Abi: \"C\")] contract Reader { i32 read(p: u8[]); }";
+    let source = "attribute Native(ModuleDeclaration) { Abi: string = \"C\" } [Native(Abi: \"C\")] contract Reader { i32 read(u8[] p); }";
     let (hir, resolution) = lower_and_resolve(source);
 
     let errors = validate_hir_program(&hir, &resolution);
@@ -151,7 +151,7 @@ fn legality_reports_attribute_target_not_allowed_on_inline_module() {
 
 #[test]
 fn legality_allows_attribute_when_target_matches_module_and_contract() {
-    let source = "attribute Native(ModuleDeclaration, ContractDeclaration) { Abi: string = \"C\" } [Native(Abi: \"C\")] mod sys.io; [Native(Abi: \"C\")] contract Reader { i32 read(p: u8[]); }";
+    let source = "attribute Native(ModuleDeclaration, ContractDeclaration) { Abi: string = \"C\" } [Native(Abi: \"C\")] mod sys.io; [Native(Abi: \"C\")] contract Reader { i32 read(u8[] p); }";
     let (hir, resolution) = lower_and_resolve(source);
 
     let errors = validate_hir_program(&hir, &resolution);
@@ -165,7 +165,7 @@ fn legality_allows_attribute_when_target_matches_module_and_contract() {
 
 #[test]
 fn legality_allows_attribute_without_target_list() {
-    let source = "attribute Marker { enabled: bool = true } [Marker(enabled: true)] mod sys.io; [Marker(enabled: true)] contract Reader { i32 read(p: u8[]); }";
+    let source = "attribute Marker { enabled: bool = true } [Marker(enabled: true)] mod sys.io; [Marker(enabled: true)] contract Reader { i32 read(u8[] p); }";
     let (hir, resolution) = lower_and_resolve(source);
 
     let errors = validate_hir_program(&hir, &resolution);

@@ -1,9 +1,9 @@
 use crate::hir::{
-    HirAssignExpression, HirBinaryExpression, HirBlockExpression, HirCallExpression,
+    HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBlockExpression, HirCallExpression,
     HirEnumConstructorExpression, HirEnumPattern, HirExpressionNode, HirGroupedExpression,
     HirLambdaExpression, HirLambdaParameter, HirLiteral, HirLiteralExpression, HirMatchArm,
     HirMatchExpression, HirMemberExpression, HirPathExpression, HirPattern,
-    HirStructLiteralExpression, HirStructLiteralField, HirUnaryExpression,
+    HirStructLiteralExpression, HirStructLiteralField, HirTryExpression, HirUnaryExpression,
 };
 use crate::syntax::{self, Spanned};
 
@@ -52,6 +52,9 @@ impl Lowerable for Spanned<syntax::Expression> {
             }
             syntax::Expression::Grouped(grouped_expr) => {
                 HirExpressionNode::GroupedExpression(grouped_expr.lower())
+            }
+            syntax::Expression::Try(try_expr) => {
+                HirExpressionNode::TryExpression(try_expr.lower())
             }
         };
         Spanned::new(node, self.span)
@@ -136,6 +139,14 @@ impl Lowerable for Spanned<syntax::AssignExpression> {
         Spanned::new(
             HirAssignExpression {
                 target: Box::new(self.node.target.lower()),
+                op: Spanned::new(
+                    match self.node.op.node {
+                        syntax::AssignOp::Assign => HirAssignOp::Assign,
+                        syntax::AssignOp::AddAssign => HirAssignOp::AddAssign,
+                        syntax::AssignOp::SubAssign => HirAssignOp::SubAssign,
+                    },
+                    self.node.op.span,
+                ),
                 value: Box::new(self.node.value.lower()),
             },
             self.span,
@@ -273,6 +284,19 @@ impl Lowerable for Spanned<syntax::GroupedExpression> {
     fn lower(&self) -> Self::Output {
         Spanned::new(
             HirGroupedExpression {
+                expr: Box::new(self.node.expr.lower()),
+            },
+            self.span,
+        )
+    }
+}
+
+impl Lowerable for Spanned<syntax::TryExpression> {
+    type Output = Spanned<HirTryExpression>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirTryExpression {
                 expr: Box::new(self.node.expr.lower()),
             },
             self.span,

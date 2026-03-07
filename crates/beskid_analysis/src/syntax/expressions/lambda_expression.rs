@@ -90,23 +90,19 @@ fn parse_lambda_parameter(pair: Pair<Rule>) -> Result<Spanned<LambdaParameter>, 
     let span = SpanInfo::from_span(&pair.as_span());
     let mut inner = pair.into_inner();
 
-    let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
-    let ty = inner.next().map(parse_type_annotation).transpose()?;
+    let first = inner.next().ok_or(ParseError::missing(Rule::Identifier))?;
+    let (name, ty) = match first.as_rule() {
+        Rule::Identifier => (Identifier::parse(first)?, None),
+        Rule::BeskidType => {
+            let ty = Type::parse(first)?;
+            let name =
+                Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
+            (name, Some(ty))
+        }
+        _ => return Err(ParseError::unexpected_rule(first, Some(Rule::LambdaParameter))),
+    };
 
     Ok(Spanned::new(LambdaParameter { name, ty }, span))
-}
-
-fn parse_type_annotation(pair: Pair<Rule>) -> Result<Spanned<Type>, ParseError> {
-    if pair.as_rule() != Rule::TypeAnnotation {
-        return Err(ParseError::unexpected_rule(
-            pair,
-            Some(Rule::TypeAnnotation),
-        ));
-    }
-
-    let mut inner = pair.into_inner();
-    let ty_pair = inner.next().ok_or(ParseError::missing(Rule::BeskidType))?;
-    Type::parse(ty_pair)
 }
 
 fn parse_lambda_body(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {

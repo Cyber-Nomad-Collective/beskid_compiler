@@ -97,7 +97,7 @@ impl Lowerable for Spanned<syntax::ForStatement> {
         Spanned::new(
             HirForStatement {
                 iterator: self.node.iterator.lower(),
-                range: self.node.range.lower(),
+                iterable: self.node.iterable.lower(),
                 body: self.node.body.lower(),
             },
             self.span,

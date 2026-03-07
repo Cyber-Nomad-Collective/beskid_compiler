@@ -5,7 +5,6 @@ use super::block::HirBlock;
 use super::common::HirIdentifier;
 use super::expression::ExpressionNode;
 use super::phase::{HirPhase, Phase};
-use super::range_expression::HirRangeExpression;
 use super::types::HirType;
 
 #[derive(beskid_ast_derive::PhaseFromAst)]
@@ -95,7 +94,7 @@ pub struct HirForStatement {
     #[ast(child)]
     pub iterator: Spanned<HirIdentifier>,
     #[ast(child)]
-    pub range: Spanned<HirRangeExpression>,
+    pub iterable: Spanned<ExpressionNode<HirPhase>>,
     #[ast(child)]
     pub body: Spanned<HirBlock>,
 }

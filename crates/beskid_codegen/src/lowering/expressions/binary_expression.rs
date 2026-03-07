@@ -129,6 +129,31 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     _ => unreachable!("checked operator"),
                 }
             }
+            HirBinaryOp::IdentityEq | HirBinaryOp::IdentityNotEq => {
+                if !(operand_clif_ty.is_int() || operand_clif_ty.is_float()) {
+                    return Err(CodegenError::UnsupportedNode {
+                        span: node.span,
+                        node: "binary identity comparison type",
+                    });
+                }
+
+                let cmp = if operand_clif_ty.is_float() {
+                    let cond = match node.node.op.node {
+                        HirBinaryOp::IdentityEq => FloatCC::Equal,
+                        HirBinaryOp::IdentityNotEq => FloatCC::NotEqual,
+                        _ => unreachable!("checked operator"),
+                    };
+                    ctx.builder.ins().fcmp(cond, left, right)
+                } else {
+                    let cond = match node.node.op.node {
+                        HirBinaryOp::IdentityEq => IntCC::Equal,
+                        HirBinaryOp::IdentityNotEq => IntCC::NotEqual,
+                        _ => unreachable!("checked operator"),
+                    };
+                    ctx.builder.ins().icmp(cond, left, right)
+                };
+                cmp
+            }
             HirBinaryOp::Eq
             | HirBinaryOp::NotEq
             | HirBinaryOp::Lt

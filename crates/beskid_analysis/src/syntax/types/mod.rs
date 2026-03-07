@@ -7,7 +7,7 @@ pub mod primitive_type;
 pub mod r#type;
 
 pub use enum_path::EnumPath;
-pub use field::Field;
+pub use field::{Field, FieldKind};
 pub use parameter::Parameter;
 pub use parameter_modifier::ParameterModifier;
 pub use path::{Path, PathSegment};

@@ -58,6 +58,32 @@ impl crate::parsing::parsable::Parsable for Type {
                     parameters,
                 }
             }
+            crate::parser::Rule::ArrowFunctionType => {
+                let mut inner = pair.into_inner();
+                let first = inner
+                    .next()
+                    .ok_or(crate::parsing::error::ParseError::missing(
+                        crate::parser::Rule::BeskidType,
+                    ))?;
+
+                let (parameters, return_type_pair) = if first.as_rule() == crate::parser::Rule::BeskidTypeList {
+                    let parameters = first.into_inner().map(Self::parse).collect::<Result<Vec<_>, _>>()?;
+                    let return_type_pair = inner
+                        .next()
+                        .ok_or(crate::parsing::error::ParseError::missing(
+                            crate::parser::Rule::BeskidType,
+                        ))?;
+                    (parameters, return_type_pair)
+                } else {
+                    (Vec::new(), first)
+                };
+
+                let return_type = Self::parse(return_type_pair)?;
+                Self::Function {
+                    return_type: Box::new(return_type),
+                    parameters,
+                }
+            }
             crate::parser::Rule::TypeName => {
                 let mut inner = pair.into_inner();
                 let first = inner

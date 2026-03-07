@@ -8,6 +8,12 @@ fn parses_type_definition() {
 }
 
 #[test]
+fn parses_type_definition_with_conformances() {
+    let input = "type User when Display, Clone { string name }";
+    assert_parse(Rule::TypeDefinition, input);
+}
+
+#[test]
 fn parses_field_list() {
     assert_parse(Rule::FieldList, "string name, i32 age");
 }
@@ -71,6 +77,17 @@ fn parses_ref_type() {
 fn parses_function_type() {
     assert_parse(Rule::FunctionType, "i64(i64, i64)");
     assert_parse(Rule::BeskidType, "i64(i64, i64)");
+}
+
+#[test]
+fn parses_arrow_function_type() {
+    assert_parse(Rule::ArrowFunctionType, "(i64, i64) => i64");
+    assert_parse(Rule::BeskidType, "(i64, i64) => i64");
+}
+
+#[test]
+fn parses_event_field() {
+    assert_parse(Rule::Field, "event string created");
 }
 
 #[test]

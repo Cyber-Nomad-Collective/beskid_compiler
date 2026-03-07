@@ -6,10 +6,11 @@ pub mod types;
 
 pub use common::{HasSpan, Identifier, SpanInfo, Spanned, Visibility};
 pub use expressions::{
-    AssignExpression, BinaryExpression, BinaryOp, BlockExpression, CallExpression,
+    AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression, CallExpression,
     EnumConstructorExpression, EnumPattern, Expression, GroupedExpression, LambdaExpression,
     LambdaParameter, Literal, LiteralExpression, MatchArm, MatchExpression, MemberExpression,
-    PathExpression, Pattern, StructLiteralExpression, StructLiteralField, UnaryExpression, UnaryOp,
+    PathExpression, Pattern, StructLiteralExpression, StructLiteralField, TryExpression,
+    UnaryExpression, UnaryOp,
 };
 pub use items::{
     Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
@@ -22,5 +23,6 @@ pub use statements::{
     LetStatement, RangeExpression, ReturnStatement, Statement, WhileStatement,
 };
 pub use types::{
-    EnumPath, Field, Parameter, ParameterModifier, Path, PathSegment, PrimitiveType, Type,
+    EnumPath, Field, FieldKind, Parameter, ParameterModifier, Path, PathSegment, PrimitiveType,
+    Type,
 };

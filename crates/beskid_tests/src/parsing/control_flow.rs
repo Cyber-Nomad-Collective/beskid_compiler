@@ -16,12 +16,12 @@ fn parses_while_statement() {
 
 #[test]
 fn parses_for_statement() {
-    assert_parse(Rule::ForStatement, "for i in range(0, 10) { continue; }");
+    assert_parse(Rule::ForStatement, "for i in items { continue; }");
 }
 
 #[test]
-fn rejects_for_without_range() {
-    assert_parse_fail(Rule::ForStatement, "for i in items { };");
+fn parses_for_statement_with_range_call_expression() {
+    assert_parse(Rule::ForStatement, "for i in range(0, 10) { continue; }");
 }
 
 #[test]

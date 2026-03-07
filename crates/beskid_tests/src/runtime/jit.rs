@@ -126,7 +126,7 @@ fn jit_compiles_println_builtin_call() {
 
 #[test]
 fn jit_executes_local_lambda_call() {
-    let source = "i64 main() { let add = (x: i64, y: i64) => x + y; return add(20, 22); }";
+    let source = "i64 main() { let add = (i64 x, i64 y) => x + y; return add(20, 22); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };
@@ -135,7 +135,7 @@ fn jit_executes_local_lambda_call() {
 
 #[test]
 fn jit_executes_closure_capture_call() {
-    let source = "i64 main() { i64 base = 41; let inc = (x: i64) => x + base; return inc(1); }";
+    let source = "i64 main() { i64 base = 41; let inc = (i64 x) => x + base; return inc(1); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };
@@ -144,7 +144,7 @@ fn jit_executes_closure_capture_call() {
 
 #[test]
 fn jit_passes_lambda_as_argument_to_lambda() {
-    let source = "i64 main() { let apply = (f: i64(i64), x: i64) => f(x); let id = (n: i64) => n; return apply(id, 42); }";
+    let source = "i64 main() { let apply = (i64(i64) f, i64 x) => f(x); let id = (i64 n) => n; return apply(id, 42); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };
@@ -153,7 +153,7 @@ fn jit_passes_lambda_as_argument_to_lambda() {
 
 #[test]
 fn jit_executes_grouped_immediate_lambda_call() {
-    let source = "i64 main() { return ((x: i64) => x)(42); }";
+    let source = "i64 main() { return ((i64 x) => x)(42); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };
@@ -162,7 +162,7 @@ fn jit_executes_grouped_immediate_lambda_call() {
 
 #[test]
 fn jit_passes_inline_lambda_argument() {
-    let source = "i64 main() { let apply = (f: i64(i64), x: i64) => f(x); return apply((n: i64) => n, 42); }";
+    let source = "i64 main() { let apply = (i64(i64) f, i64 x) => f(x); return apply((i64 n) => n, 42); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };
@@ -171,7 +171,7 @@ fn jit_passes_inline_lambda_argument() {
 
 #[test]
 fn jit_passes_inline_lambda_to_named_function() {
-    let source = "i64 apply(f: i64(i64), x: i64) { return f(x); } i64 main() { return apply((n: i64) => n, 42); }";
+    let source = "i64 apply(i64(i64) f, i64 x) { return f(x); } i64 main() { return apply((i64 n) => n, 42); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };
@@ -183,7 +183,7 @@ fn jit_passes_inline_lambda_to_named_function() {
 
 #[test]
 fn jit_passes_local_lambda_to_named_function() {
-    let source = "i64 apply(f: i64(i64), x: i64) { return f(x); } i64 main() { let inc = (n: i64) => n; return apply(inc, 42); }";
+    let source = "i64 apply(i64(i64) f, i64 x) { return f(x); } i64 main() { let inc = (i64 n) => n; return apply(inc, 42); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };
@@ -195,7 +195,7 @@ fn jit_passes_local_lambda_to_named_function() {
 
 #[test]
 fn jit_calls_function_typed_member_value() {
-    let source = "type Holder { i64(i64) f } i64 main() { Holder h = Holder { f: (n: i64) => n }; return h.f(42); }";
+    let source = "type Holder { i64(i64) f } i64 main() { Holder h = Holder { f: (i64 n) => n }; return h.f(42); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };

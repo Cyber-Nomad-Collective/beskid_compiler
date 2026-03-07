@@ -10,7 +10,7 @@ fn parses_method_definition() {
 
 #[test]
 fn rejects_legacy_receiver_qualified_method_syntax() {
-    assert_parse_fail(Rule::Program, "i32 Point.len(self: Point) { return 0; }");
+    assert_parse_fail(Rule::Program, "i32 Point.len(Point self) { return 0; }");
 }
 
 #[test]
@@ -22,7 +22,7 @@ fn parses_impl_method_member_signature_shape() {
 fn rejects_explicit_self_parameter_in_impl_method() {
     let pair = crate::parsing::util::parse_pair(
         Rule::Program,
-        "impl Point { i32 len(self: Point) { return 0; } }",
+        "impl Point { i32 len(Point self) { return 0; } }",
     );
     let parsed = beskid_analysis::syntax::Program::parse(pair);
     assert!(

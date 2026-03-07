@@ -3,13 +3,13 @@ use beskid_analysis::Rule;
 
 #[test]
 fn parses_contract_definition() {
-    let input = "contract Reader { i32 read(p: u8[]); }";
+    let input = "contract Reader { i32 read(u8[] p); }";
     assert_parse(Rule::ContractDefinition, input);
 }
 
 #[test]
 fn parses_contract_definition_with_extern_attribute() {
-    let input = "[Extern(Abi: \"C\", Library: \"libc\")] contract Reader { i32 read(p: u8[]); }";
+    let input = "[Extern(Abi: \"C\", Library: \"libc\")] contract Reader { i32 read(u8[] p); }";
     assert_parse(Rule::ContractDefinition, input);
 }
 
@@ -26,18 +26,18 @@ fn rejects_contract_without_body() {
 
 #[test]
 fn rejects_contract_method_without_semicolon() {
-    let input = "contract Reader { i32 read(p: u8[]) }";
+    let input = "contract Reader { i32 read(u8[] p) }";
     assert_parse_fail(Rule::ContractDefinition, input);
 }
 
 #[test]
 fn parses_contract_item_method() {
-    assert_parse(Rule::ContractItem, "i32 read(p: u8[]);");
+    assert_parse(Rule::ContractItem, "i32 read(u8[] p);");
 }
 
 #[test]
 fn rejects_contract_item_without_name() {
-    assert_parse_fail(Rule::ContractItem, "(p: u8[]);");
+    assert_parse_fail(Rule::ContractItem, "(u8[] p);");
 }
 
 #[test]
@@ -52,10 +52,10 @@ fn rejects_contract_embedding_without_name() {
 
 #[test]
 fn parses_contract_method_signature() {
-    assert_parse(Rule::ContractMethodSignature, "i32 read(p: u8[]);");
+    assert_parse(Rule::ContractMethodSignature, "i32 read(u8[] p);");
 }
 
 #[test]
 fn rejects_contract_method_signature_without_semicolon() {
-    assert_parse_fail(Rule::ContractMethodSignature, "i32 read(p: u8[])");
+    assert_parse_fail(Rule::ContractMethodSignature, "i32 read(u8[] p)");
 }

@@ -3,7 +3,7 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::{Block, Identifier, RangeExpression, SpanInfo, Spanned};
+use crate::syntax::{Block, Expression, Identifier, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
@@ -12,7 +12,7 @@ pub struct ForStatement {
     #[ast(child)]
     pub iterator: Spanned<Identifier>,
     #[ast(child)]
-    pub range: Spanned<RangeExpression>,
+    pub iterable: Spanned<Expression>,
     #[ast(child)]
     pub body: Spanned<Block>,
 }
@@ -23,17 +23,17 @@ impl Parsable for ForStatement {
         let mut inner = pair.into_inner();
         let iterator =
             Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
-        let range = RangeExpression::parse(
+        let iterable = Expression::parse(
             inner
                 .next()
-                .ok_or(ParseError::missing(Rule::RangeExpression))?,
+                .ok_or(ParseError::missing(Rule::Expression))?,
         )?;
         let body = Block::parse(inner.next().ok_or(ParseError::missing(Rule::Block))?)?;
 
         Ok(Spanned::new(
             Self {
                 iterator,
-                range,
+                iterable,
                 body,
             },
             span,

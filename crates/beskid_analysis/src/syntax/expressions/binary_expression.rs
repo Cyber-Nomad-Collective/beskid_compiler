@@ -21,6 +21,8 @@ pub struct BinaryExpression {
 pub enum BinaryOp {
     Or,
     And,
+    IdentityEq,
+    IdentityNotEq,
     Eq,
     NotEq,
     Lt,
@@ -37,7 +39,7 @@ pub(crate) fn parse_binary_expression(pair: Pair<Rule>) -> Result<Spanned<Expres
     match pair.as_rule() {
         Rule::LogicalOrExpression => parse_chain(pair, &["||"]),
         Rule::LogicalAndExpression => parse_chain(pair, &["&&"]),
-        Rule::EqualityExpression => parse_chain(pair, &["==", "!="]),
+        Rule::EqualityExpression => parse_chain(pair, &["===", "!==", "==", "!="]),
         Rule::ComparisonExpression => parse_chain(pair, &["<", "<=", ">", ">="]),
         Rule::AdditionExpression => parse_chain(pair, &["+", "-"]),
         Rule::MultiplicationExpression => parse_chain(pair, &["*", "/"]),
@@ -84,6 +86,8 @@ fn map_binary_op(op_text: &str) -> Result<BinaryOp, ParseError> {
     match op_text {
         "||" => Ok(BinaryOp::Or),
         "&&" => Ok(BinaryOp::And),
+        "===" => Ok(BinaryOp::IdentityEq),
+        "!==" => Ok(BinaryOp::IdentityNotEq),
         "==" => Ok(BinaryOp::Eq),
         "!=" => Ok(BinaryOp::NotEq),
         "<" => Ok(BinaryOp::Lt),
@@ -105,5 +109,5 @@ fn extract_operator<'a>(
     operators: &[&'a str],
 ) -> Option<&'a str> {
     let between = input.get(left.end..right.start)?.trim();
-    operators.iter().find(|op| between.contains(**op)).copied()
+    operators.iter().find(|op| between == **op).copied()
 }

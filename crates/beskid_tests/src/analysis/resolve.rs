@@ -46,7 +46,7 @@ fn unknown_value_is_error() {
 
 #[test]
 fn unknown_type_is_error() {
-    let result = resolve_program("unit foo(x: Missing) { }");
+    let result = resolve_program("unit foo(Missing x) { }");
     let errors = result.expect_err("expected unknown type error");
     assert!(matches!(
         errors.first(),
@@ -102,7 +102,7 @@ fn qualified_value_path_with_known_module_and_missing_symbol_is_error() {
 
 #[test]
 fn qualified_type_path_with_known_module_and_missing_symbol_is_error() {
-    let result = resolve_program("mod dep; unit foo(x: dep.Missing) { }");
+    let result = resolve_program("mod dep; unit foo(dep.Missing x) { }");
     let errors = result.expect_err("expected unknown type in module error");
     assert!(
         errors

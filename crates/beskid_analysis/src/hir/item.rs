@@ -103,6 +103,8 @@ pub struct HirTypeDefinition {
     #[ast(children)]
     pub generics: Vec<Spanned<HirIdentifier>>,
     #[ast(children)]
+    pub conformances: Vec<Spanned<HirPath>>,
+    #[ast(children)]
     pub fields: Vec<Spanned<HirField>>,
 }
 

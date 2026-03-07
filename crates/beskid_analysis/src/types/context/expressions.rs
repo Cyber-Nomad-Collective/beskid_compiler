@@ -56,6 +56,9 @@ impl<'a> TypeContext<'a> {
             HirExpressionNode::MatchExpression(match_expr) => {
                 self.type_match_expression(match_expr)
             }
+            HirExpressionNode::TryExpression(try_expr) => {
+                self.type_expression(&try_expr.node.expr)
+            }
         };
 
         if let Some(type_id) = type_id {
@@ -767,7 +770,9 @@ impl<'a> TypeContext<'a> {
                     None
                 }
             }
-            HirBinaryOp::Eq
+            HirBinaryOp::IdentityEq
+            | HirBinaryOp::IdentityNotEq
+            | HirBinaryOp::Eq
             | HirBinaryOp::NotEq
             | HirBinaryOp::Lt
             | HirBinaryOp::Lte

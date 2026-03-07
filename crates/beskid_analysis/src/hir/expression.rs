@@ -38,6 +38,8 @@ pub enum ExpressionNode<P: Phase> {
     BlockExpression(Spanned<P::BlockExpression>),
     #[phase(from = "Grouped")]
     GroupedExpression(Spanned<P::GroupedExpression>),
+    #[phase(from = "Try")]
+    TryExpression(Spanned<P::TryExpression>),
 }
 
 #[derive(beskid_ast_derive::HirNode)]
@@ -78,6 +80,7 @@ impl HirNode for ExpressionNode<HirPhase> {
             ExpressionNode::EnumConstructorExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::BlockExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::GroupedExpression(expr) => push(HirNodeRef(&expr.node)),
+            ExpressionNode::TryExpression(expr) => push(HirNodeRef(&expr.node)),
         }
     }
 
@@ -100,8 +103,17 @@ pub struct HirMatchExpression {
 pub struct HirAssignExpression {
     #[ast(child)]
     pub target: Box<Spanned<ExpressionNode<HirPhase>>>,
+    #[ast(skip)]
+    pub op: Spanned<HirAssignOp>,
     #[ast(child)]
     pub value: Box<Spanned<ExpressionNode<HirPhase>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HirAssignOp {
+    Assign,
+    AddAssign,
+    SubAssign,
 }
 
 #[derive(beskid_ast_derive::HirNode)]
@@ -120,6 +132,8 @@ pub struct HirBinaryExpression {
 pub enum HirBinaryOp {
     Or,
     And,
+    IdentityEq,
+    IdentityNotEq,
     Eq,
     NotEq,
     Lt,
@@ -208,6 +222,13 @@ pub struct HirBlockExpression {
 #[derive(beskid_ast_derive::HirNode)]
 #[ast(kind = "GroupedExpression")]
 pub struct HirGroupedExpression {
+    #[ast(child)]
+    pub expr: Box<Spanned<ExpressionNode<HirPhase>>>,
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "TryExpression")]
+pub struct HirTryExpression {
     #[ast(child)]
     pub expr: Box<Spanned<ExpressionNode<HirPhase>>>,
 }

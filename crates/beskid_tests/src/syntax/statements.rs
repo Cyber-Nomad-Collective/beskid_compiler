@@ -84,17 +84,11 @@ fn parses_while_statement_ast() {
 
 #[test]
 fn parses_for_statement_ast() {
-    let statement = parse_statement_ast(Rule::ForStatement, "for i in range(0, 10) { continue; }");
+    let statement = parse_statement_ast(Rule::ForStatement, "for i in items { continue; }");
     match &statement.node {
         Statement::For(for_stmt) => {
             assert_eq!(for_stmt.node.iterator.node.name, "i");
-            match &for_stmt.node.range.node.start.node {
-                beskid_analysis::syntax::Expression::Literal(_) => {
-                    assert_expression_integer(&for_stmt.node.range.node.start, "0");
-                }
-                _ => panic!("expected range start literal"),
-            }
-            assert_expression_integer(&for_stmt.node.range.node.end, "10");
+            assert_expression_path_segments(&for_stmt.node.iterable, &["items"]);
             assert_eq!(for_stmt.node.body.node.statements.len(), 1);
         }
         _ => panic!("expected for statement"),

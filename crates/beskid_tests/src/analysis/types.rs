@@ -39,7 +39,7 @@ fn typing_records_method_dispatch_call_kind() {
 
 #[test]
 fn typing_records_item_call_kind() {
-    let result = resolve_and_type("i64 add(a: i64, b: i64) { return a + b; } i64 main() { return add(1, 2); }")
+    let result = resolve_and_type("i64 add(i64 a, i64 b) { return a + b; } i64 main() { return add(1, 2); }")
         .expect("expected typing to succeed");
 
     assert!(
@@ -54,7 +54,7 @@ fn typing_records_item_call_kind() {
 
 #[test]
 fn typing_records_callable_value_call_kind() {
-    let result = resolve_and_type("i64 main() { let add = (x: i64, y: i64) => x + y; return add(20, 22); }")
+    let result = resolve_and_type("i64 main() { let add = (i64 x, i64 y) => x + y; return add(20, 22); }")
         .expect("expected typing to succeed");
 
     assert!(
@@ -148,7 +148,7 @@ fn typing_reports_return_mismatch() {
 #[test]
 fn typing_function_calls_succeeds() {
     let result = resolve_and_type(
-        "i64 add(a: i64, b: i64) { return a + b; } unit main() { i64 x = add(1, 2); }",
+        "i64 add(i64 a, i64 b) { return a + b; } unit main() { i64 x = add(1, 2); }",
     );
     assert!(result.is_ok());
 }
@@ -156,7 +156,7 @@ fn typing_function_calls_succeeds() {
 #[test]
 fn typing_generic_function_call_succeeds() {
     let result =
-        resolve_and_type("T id<T>(x: T) { return x; } unit main() { i64 x = id<i64>(1); }");
+        resolve_and_type("T id<T>(T x) { return x; } unit main() { i64 x = id<i64>(1); }");
     if let Err(errors) = &result {
         panic!("expected generic call typing to succeed, got errors: {errors:?}");
     }
@@ -165,7 +165,7 @@ fn typing_generic_function_call_succeeds() {
 
 #[test]
 fn typing_reports_missing_generic_args_for_call() {
-    let result = resolve_and_type("T id<T>(x: T) { return x; } unit main() { i64 x = id(1); }");
+    let result = resolve_and_type("T id<T>(T x) { return x; } unit main() { i64 x = id(1); }");
     let errors = result.expect_err("expected missing generic args error");
     assert!(
         errors
@@ -177,7 +177,7 @@ fn typing_reports_missing_generic_args_for_call() {
 #[test]
 fn typing_reports_generic_arg_mismatch_for_call() {
     let result =
-        resolve_and_type("T id<T>(x: T) { return x; } unit main() { i64 x = id<i64, string>(1); }");
+        resolve_and_type("T id<T>(T x) { return x; } unit main() { i64 x = id<i64, string>(1); }");
     let errors = result.expect_err("expected generic arg mismatch error");
     assert!(
         errors
@@ -214,7 +214,7 @@ fn typing_reports_generic_arg_mismatch_for_type() {
 #[test]
 fn typing_reports_call_arity_mismatch() {
     let result = resolve_and_type(
-        "i64 add(a: i64, b: i64) { return a + b; } unit main() { i64 x = add(1); }",
+        "i64 add(i64 a, i64 b) { return a + b; } unit main() { i64 x = add(1); }",
     );
     let errors = result.expect_err("expected call arity mismatch");
     assert!(
@@ -344,7 +344,7 @@ fn typing_cast_intents_preserve_source_line_spans() {
 #[test]
 fn typing_records_cast_intent_for_numeric_call_argument_mismatch() {
     let result = resolve_and_type(
-        "i64 take(v: i64) { return v; } unit main() { i32 x = 1; i64 y = take(x); }",
+        "i64 take(i64 v) { return v; } unit main() { i32 x = 1; i64 y = take(x); }",
     )
     .expect("expected typing to succeed with cast intent in call argument");
 

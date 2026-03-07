@@ -145,6 +145,19 @@ impl<'a> HirLegalityValidator<'a> {
             }
             HirItem::TypeDefinition(def) => {
                 self.check_span(def.span, "type_definition");
+                for conformance in &def.node.conformances {
+                    self.check_span(conformance.span, "type_conformance_path");
+                    if !self
+                        .resolution
+                        .tables
+                        .resolved_types
+                        .contains_key(&conformance.span)
+                    {
+                        self.errors.push(HirLegalityError::UnresolvedTypePath {
+                            span: conformance.span,
+                        });
+                    }
+                }
                 for field in &def.node.fields {
                     self.check_span(field.span, "field");
                     self.validate_type(&field.node.ty);
@@ -261,9 +274,7 @@ impl<'a> HirLegalityValidator<'a> {
             }
             HirStatementNode::ForStatement(for_stmt) => {
                 self.check_span(for_stmt.span, "for_statement");
-                self.check_span(for_stmt.node.range.span, "range_expression");
-                self.validate_expression(&for_stmt.node.range.node.start);
-                self.validate_expression(&for_stmt.node.range.node.end);
+                self.validate_expression(&for_stmt.node.iterable);
                 self.validate_block(&for_stmt.node.body);
             }
             HirStatementNode::IfStatement(if_stmt) => {
@@ -400,6 +411,10 @@ impl<'a> HirLegalityValidator<'a> {
             HirExpressionNode::GroupedExpression(grouped_expr) => {
                 self.check_span(grouped_expr.span, "grouped_expression");
                 self.validate_expression(&grouped_expr.node.expr);
+            }
+            HirExpressionNode::TryExpression(try_expr) => {
+                self.check_span(try_expr.span, "try_expression");
+                self.validate_expression(&try_expr.node.expr);
             }
         }
     }

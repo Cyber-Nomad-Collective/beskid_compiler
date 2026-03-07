@@ -17,6 +17,7 @@ use super::match_expression::parse_match_expression;
 use super::member_expression::parse_member_expression;
 use super::path_expression::parse_path_expression;
 use super::struct_literal_expression::parse_struct_literal_expression;
+use super::try_expression::TryExpression;
 use super::unary_expression::{UnaryExpression, parse_unary_expression};
 
 use beskid_ast_derive::AstNode;
@@ -49,6 +50,8 @@ pub enum Expression {
     Block(Spanned<super::block_expression::BlockExpression>),
     #[ast(child)]
     Grouped(Spanned<super::grouped_expression::GroupedExpression>),
+    #[ast(child)]
+    Try(Spanned<TryExpression>),
 }
 
 impl Parsable for Expression {
@@ -117,6 +120,13 @@ pub(crate) fn parse_postfix_expression(
         expr = match operator.as_rule() {
             Rule::CallOperator => parse_call_expression(expr, operator)?,
             Rule::MemberAccess => parse_member_expression(expr, operator)?,
+            Rule::TryOperator => {
+                let expr_span = expr.span;
+                let try_node = TryExpression {
+                    expr: Box::new(expr),
+                };
+                Spanned::new(Expression::Try(Spanned::new(try_node, expr_span)), expr_span)
+            }
             _ => return Err(ParseError::unexpected_rule(operator, None)),
         };
 

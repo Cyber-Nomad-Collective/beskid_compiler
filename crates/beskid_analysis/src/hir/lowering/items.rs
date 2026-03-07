@@ -129,6 +129,7 @@ impl Lowerable for Spanned<syntax::TypeDefinition> {
                 visibility: self.node.visibility.lower(),
                 name: self.node.name.lower(),
                 generics: self.node.generics.iter().map(Lowerable::lower).collect(),
+                conformances: self.node.conformances.iter().map(Lowerable::lower).collect(),
                 fields: self.node.fields.iter().map(Lowerable::lower).collect(),
             },
             self.span,

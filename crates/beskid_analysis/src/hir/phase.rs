@@ -5,6 +5,7 @@ use crate::syntax::{
     IfStatement, InlineModule, LambdaExpression, LetStatement, LiteralExpression, MatchExpression,
     MemberExpression, MethodDefinition, ModuleDeclaration, PathExpression, ReturnStatement,
     StructLiteralExpression, TypeDefinition, UnaryExpression, UseDeclaration, WhileStatement,
+    TryExpression,
 };
 
 use super::{
@@ -14,7 +15,7 @@ use super::{
     HirGroupedExpression, HirIfStatement, HirInlineModule, HirLambdaExpression, HirLetStatement,
     HirLiteralExpression, HirMatchExpression, HirMemberExpression, HirMethodDefinition,
     HirModuleDeclaration, HirPathExpression, HirReturnStatement, HirStructLiteralExpression,
-    HirTypeDefinition, HirUnaryExpression, HirUseDeclaration, HirWhileStatement,
+    HirTryExpression, HirTypeDefinition, HirUnaryExpression, HirUseDeclaration, HirWhileStatement,
     item::HirAttributeDeclaration,
 };
 
@@ -50,6 +51,7 @@ pub trait Phase {
     type EnumConstructorExpression;
     type BlockExpression;
     type GroupedExpression;
+    type TryExpression;
     type LambdaExpression;
 }
 
@@ -91,6 +93,7 @@ impl Phase for AstPhase {
     type EnumConstructorExpression = EnumConstructorExpression;
     type BlockExpression = BlockExpression;
     type GroupedExpression = GroupedExpression;
+    type TryExpression = TryExpression;
     type LambdaExpression = LambdaExpression;
 }
 
@@ -126,5 +129,6 @@ impl Phase for HirPhase {
     type EnumConstructorExpression = HirEnumConstructorExpression;
     type BlockExpression = HirBlockExpression;
     type GroupedExpression = HirGroupedExpression;
+    type TryExpression = HirTryExpression;
     type LambdaExpression = HirLambdaExpression;
 }

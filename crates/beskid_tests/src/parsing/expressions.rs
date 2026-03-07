@@ -1,6 +1,6 @@
 use crate::parsing::util::{assert_parse, assert_parse_fail, parse_expression_ast};
 use beskid_analysis::Rule;
-use beskid_analysis::syntax::{BinaryOp, Expression, Literal, Spanned};
+use beskid_analysis::syntax::{AssignOp, BinaryOp, Expression, Literal, Spanned};
 
 #[test]
 fn parses_arithmetic_precedence() {
@@ -26,7 +26,7 @@ fn parses_lambda_single_param_without_parens() {
 
 #[test]
 fn parses_lambda_typed_params_with_parens() {
-    let expr = parse_expression_ast("(x: i64, y: i64) => x + y");
+    let expr = parse_expression_ast("(i64 x, i64 y) => x + y");
     let (params, _body) = expect_lambda(&expr.node, 2);
     assert_eq!(params[0].node.name.node.name, "x");
     assert_eq!(params[1].node.name.node.name, "y");
@@ -37,11 +37,21 @@ fn parses_lambda_typed_params_with_parens() {
 #[test]
 fn parses_assignment_expression() {
     let expr = parse_expression_ast("x = y + 1");
-    let (target, value) = expect_assign(&expr.node);
+    let (target, op, value) = expect_assign(&expr.node);
+    assert_eq!(op.node, AssignOp::Assign);
     expect_identifier_path(&target.node, "x");
     let (_, op, right) = expect_binary(&value.node, BinaryOp::Add);
     expect_binary_op(op, BinaryOp::Add);
     expect_integer_literal(&right.node, "1");
+}
+
+#[test]
+fn parses_compound_assignment_expression() {
+    let expr = parse_expression_ast("x += 2");
+    let (target, op, value) = expect_assign(&expr.node);
+    assert_eq!(op.node, AssignOp::AddAssign);
+    expect_identifier_path(&target.node, "x");
+    expect_integer_literal(&value.node, "2");
 }
 
 #[test]
@@ -51,6 +61,15 @@ fn parses_calls_and_member_access() {
     expect_path_segments(&callee.node, &["foo", "bar"]);
     expect_integer_literal(&args[0].node, "1");
     expect_integer_literal(&args[1].node, "2");
+}
+
+#[test]
+fn parses_postfix_try_expression() {
+    let expr = parse_expression_ast("foo()?");
+    let inner = expect_try(&expr.node);
+    let (callee, args) = expect_call(&inner.node, 0);
+    expect_identifier_path(&callee.node, "foo");
+    assert!(args.is_empty());
 }
 
 #[test]
@@ -67,6 +86,24 @@ fn parses_equality_binary_expression() {
     let expr = parse_expression_ast("1 == 2");
     let (left, op, right) = expect_binary(&expr.node, BinaryOp::Eq);
     expect_binary_op(op, BinaryOp::Eq);
+    expect_integer_literal(&left.node, "1");
+    expect_integer_literal(&right.node, "2");
+}
+
+#[test]
+fn parses_identity_equality_binary_expression() {
+    let expr = parse_expression_ast("1 === 2");
+    let (left, op, right) = expect_binary(&expr.node, BinaryOp::IdentityEq);
+    expect_binary_op(op, BinaryOp::IdentityEq);
+    expect_integer_literal(&left.node, "1");
+    expect_integer_literal(&right.node, "2");
+}
+
+#[test]
+fn parses_identity_inequality_binary_expression() {
+    let expr = parse_expression_ast("1 !== 2");
+    let (left, op, right) = expect_binary(&expr.node, BinaryOp::IdentityNotEq);
+    expect_binary_op(op, BinaryOp::IdentityNotEq);
     expect_integer_literal(&left.node, "1");
     expect_integer_literal(&right.node, "2");
 }
@@ -154,9 +191,11 @@ fn expect_binary_op(op: &Spanned<BinaryOp>, expected: BinaryOp) {
     assert_eq!(op.node, expected);
 }
 
-fn expect_assign(expr: &Expression) -> (&Spanned<Expression>, &Spanned<Expression>) {
+fn expect_assign(
+    expr: &Expression,
+) -> (&Spanned<Expression>, &Spanned<AssignOp>, &Spanned<Expression>) {
     if let Expression::Assign(assign) = expr {
-        return (&assign.node.target, &assign.node.value);
+        return (&assign.node.target, &assign.node.op, &assign.node.value);
     }
 
     panic!("expected assign expression");
@@ -172,6 +211,14 @@ fn expect_call<'a>(
     }
 
     panic!("expected call expression");
+}
+
+fn expect_try(expr: &Expression) -> &Spanned<Expression> {
+    if let Expression::Try(try_expr) = expr {
+        return &try_expr.node.expr;
+    }
+
+    panic!("expected try expression");
 }
 
 fn expect_lambda<'a>(

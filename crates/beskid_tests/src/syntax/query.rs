@@ -106,7 +106,7 @@ fn test_node_kind() {
 fn test_complex_traversal() {
     let input = "
         contract MyContract {
-            i32 method(x: i32);
+            i32 method(i32 x);
         }
         unit main() {
             i32 x = 1;

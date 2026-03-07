@@ -1,6 +1,7 @@
 use crate::hir::{
-    HirBinaryOp, HirEnumPath, HirField, HirIdentifier, HirParameter, HirParameterModifier, HirPath,
-    HirPathSegment, HirPrimitiveType, HirRangeExpression, HirType, HirUnaryOp, HirVisibility,
+    HirBinaryOp, HirEnumPath, HirField, HirFieldKind, HirIdentifier, HirParameter,
+    HirParameterModifier, HirPath, HirPathSegment, HirPrimitiveType, HirRangeExpression, HirType,
+    HirUnaryOp, HirVisibility,
 };
 use crate::syntax::{self, Spanned};
 
@@ -33,6 +34,10 @@ impl Lowerable for Spanned<syntax::Field> {
     fn lower(&self) -> Self::Output {
         Spanned::new(
             HirField {
+                kind: match self.node.kind {
+                    syntax::FieldKind::Value => HirFieldKind::Value,
+                    syntax::FieldKind::Event => HirFieldKind::Event,
+                },
                 name: self.node.name.lower(),
                 ty: self.node.ty.lower(),
             },
@@ -180,6 +185,8 @@ impl Lowerable for Spanned<syntax::BinaryOp> {
             match self.node {
                 syntax::BinaryOp::Or => HirBinaryOp::Or,
                 syntax::BinaryOp::And => HirBinaryOp::And,
+                syntax::BinaryOp::IdentityEq => HirBinaryOp::IdentityEq,
+                syntax::BinaryOp::IdentityNotEq => HirBinaryOp::IdentityNotEq,
                 syntax::BinaryOp::Eq => HirBinaryOp::Eq,
                 syntax::BinaryOp::NotEq => HirBinaryOp::NotEq,
                 syntax::BinaryOp::Lt => HirBinaryOp::Lt,

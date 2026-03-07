@@ -40,19 +40,16 @@ fn codegen_lowers_numeric_cast_intent_via_sextend_or_ireduce() {
 }
 
 #[test]
-fn codegen_lowers_for_loop_with_assignment() {
-    let source = "i32 main() { i32 mut sum = 0; i32 start = 0; i32 end = 4; for i in range(start, end) { sum = sum + i; } return sum; }";
+fn codegen_rejects_for_loop_with_explicit_unsupported_node() {
+    let source = "i32 main() { i32 mut sum = 0; i32 end = 4; for i in end { sum = sum + i; } return sum; }";
     let (hir, resolution, typed) = lower_resolve_type(source);
-    let artifact =
-        lower_program(&hir, &resolution, &typed).expect("expected for loop lowering to succeed");
-    let clif = artifact.functions[0].function.to_string();
+    let errors =
+        lower_program(&hir, &resolution, &typed).expect_err("expected for loop lowering to fail");
     assert!(
-        clif.contains("brif"),
-        "expected loop branching in CLIF: {clif}"
-    );
-    assert!(
-        clif.contains("iadd"),
-        "expected loop increment in CLIF: {clif}"
+        errors
+            .iter()
+            .any(|error| matches!(error, CodegenError::UnsupportedNode { node: "for statement", .. })),
+        "expected unsupported for statement error, got: {errors:?}"
     );
 }
 

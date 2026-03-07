@@ -19,6 +19,7 @@ ContractDeclarationKeyword = { "contract" }
 AttributeDeclarationKeyword = { "attribute" }
 ImplKeyword = { "impl" }
 MatchKeyword = { "match" }
+EventKeyword = { "event" }
 WhenKeyword = { "when" }
 IfKeyword = { "if" }
 ElseKeyword = { "else" }
@@ -44,6 +45,7 @@ Keyword = {
       | AttributeDeclarationKeyword
       | ImplKeyword
       | MatchKeyword
+      | EventKeyword
       | WhenKeyword
       | IfKeyword
       | ElseKeyword
@@ -98,6 +100,7 @@ InlineModule = { AttributeList? ~ Visibility? ~ "mod" ~ Identifier ~ "{" ~ Item*
 UseDeclaration = { Visibility? ~ "use" ~ Path ~ ";" }
 PathSegment = { Identifier ~ GenericArguments? }
 Path = { PathSegment ~ ("." ~ PathSegment)* }
+PathList = { Path ~ ("," ~ Path)* }
 EnumPath = { Identifier ~ "::" ~ Identifier }
 
 ////////////////////////////////////////////////////////////
@@ -112,8 +115,9 @@ TypeName = { PrimitiveType | Path }
 ArrayType = { TypeName ~ "[" ~ "]" }
 TypeReference = { "ref" ~ TypeName }
 FunctionType = { TypeName ~ "(" ~ BeskidTypeList? ~ ")" }
+ArrowFunctionType = { "(" ~ BeskidTypeList? ~ ")" ~ "=>" ~ BeskidType }
 BeskidTypeList = { BeskidType ~ ("," ~ BeskidType)* }
-BeskidType = { FunctionType | TypeReference | ArrayType | TypeName }
+BeskidType = { ArrowFunctionType | FunctionType | TypeReference | ArrayType | TypeName }
 
 ////////////////////////////////////////////////////////////
 // 4) DEFINITIONS
@@ -123,13 +127,16 @@ ReceiverType = { PrimitiveType | Path }
 ImplBlock = { "impl" ~ ReceiverType ~ "{" ~ ImplMethodDefinition* ~ "}" }
 ImplMethodDefinition = { Visibility? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ Block }
 ParameterList = { Parameter ~ ("," ~ Parameter)* }
-Parameter = { ParameterModifier? ~ ((Identifier ~ ":" ~ BeskidType) | (BeskidType ~ Identifier)) }
+Parameter = { ParameterModifier? ~ BeskidType ~ Identifier }
 ParameterModifier = { "ref" | "out" }
 
 FieldList = { Field ~ ("," ~ Field)* ~ ","? }
-Field = { BeskidType ~ Identifier }
+ValueField = { BeskidType ~ Identifier }
+EventField = { "event" ~ BeskidType ~ Identifier }
+Field = { EventField | ValueField }
 
-TypeDefinition = { Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ "{" ~ FieldList? ~ "}" }
+TypeConformanceList = { "when" ~ PathList }
+TypeDefinition = { Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ FieldList? ~ "}" }
 
 EnumDefinition = { Visibility? ~ "enum" ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }
 EnumVariantList = { EnumVariant ~ ("," ~ EnumVariant)* ~ ","? }
@@ -158,7 +165,7 @@ ContinueStatement = { "continue" ~ ";" }
 
 IfStatement = { "if" ~ Expression ~ Block ~ ("else" ~ Block)? }
 WhileStatement = { "while" ~ Expression ~ Block }
-ForStatement = { "for" ~ Identifier ~ "in" ~ RangeExpression ~ Block }
+ForStatement = { "for" ~ Identifier ~ "in" ~ Expression ~ Block }
 RangeExpression = { "range" ~ "(" ~ Expression ~ "," ~ Expression ~ ")" }
 
 ExpressionStatement = { Expression ~ ";" }
@@ -171,24 +178,26 @@ Expression = { LambdaExpression | MatchExpression | AssignmentExpression }
 LambdaExpression = { LambdaParameters ~ "=>" ~ LambdaBody }
 LambdaParameters = { Identifier | "(" ~ LambdaParameterList? ~ ")" }
 LambdaParameterList = { LambdaParameter ~ ("," ~ LambdaParameter)* }
-LambdaParameter = { Identifier ~ TypeAnnotation? }
+LambdaParameter = { BeskidType ~ Identifier | Identifier }
 LambdaBody = { BlockExpression | Expression }
 
-AssignmentExpression = { LogicalOrExpression ~ ("=" ~ AssignmentExpression)? }
+AssignmentOperator = { "=" | "+=" | "-=" }
+AssignmentExpression = { LogicalOrExpression ~ (AssignmentOperator ~ AssignmentExpression)? }
 LogicalOrExpression = { LogicalAndExpression ~ ("||" ~ LogicalAndExpression)* }
 LogicalAndExpression = { EqualityExpression ~ ("&&" ~ EqualityExpression)* }
 
-EqualityExpression = { ComparisonExpression ~ (("==" | "!=") ~ ComparisonExpression)* }
+EqualityExpression = { ComparisonExpression ~ (("===" | "!==" | "==" | "!=") ~ ComparisonExpression)* }
 ComparisonExpression = { AdditionExpression ~ (("<" | "<=" | ">" | ">=") ~ AdditionExpression)* }
 AdditionExpression = { MultiplicationExpression ~ (("+" | "-") ~ MultiplicationExpression)* }
 MultiplicationExpression = { UnaryExpression ~ (("*" | "/") ~ UnaryExpression)* }
 
 UnaryExpression = { ("-" | "!")* ~ PostfixExpression }
 PostfixExpression = { PrimaryExpression ~ PostfixOperator* }
-PostfixOperator = { CallOperator | MemberAccess }
+PostfixOperator = { CallOperator | MemberAccess | TryOperator }
 
 CallOperator = { "(" ~ ArgumentList? ~ ")" }
 MemberAccess = { "." ~ Identifier }
+TryOperator = { "?" }
 
 PrimaryExpression = { Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | Path }
 
