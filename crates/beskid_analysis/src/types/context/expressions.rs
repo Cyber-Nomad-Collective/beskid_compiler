@@ -2,7 +2,8 @@ use crate::builtins::{BuiltinType, builtin_specs};
 use crate::hir::{
     HirBinaryExpression, HirBinaryOp, HirCallExpression, HirEnumConstructorExpression,
     HirExpressionNode, HirLambdaExpression, HirLiteral, HirMatchArm, HirMatchExpression,
-    HirMemberExpression, HirPath, HirPattern, HirPrimitiveType, HirStructLiteralExpression,
+    HirMemberExpression, HirPath, HirPathExpression, HirPattern, HirPrimitiveType,
+    HirStructLiteralExpression,
     HirUnaryExpression, HirUnaryOp,
 };
 use crate::resolve::{ItemKind, ResolvedValue};
@@ -36,7 +37,53 @@ impl<'a> TypeContext<'a> {
                 let target = self.type_expression(&assign.node.target);
                 let value = self.type_expression(&assign.node.value);
                 if let (Some(target), Some(value)) = (target, value) {
+                    let target_is_event_member = match &assign.node.target.node {
+                        HirExpressionNode::MemberExpression(member) => {
+                            self.is_event_member_expression(member)
+                        }
+                        HirExpressionNode::PathExpression(path_expr) => {
+                            self.is_event_path_expression(path_expr)
+                        }
+                        _ => false,
+                    };
                     self.require_same_type(assign.span, target, value);
+                    match assign.node.op.node {
+                        crate::hir::HirAssignOp::Assign => {}
+                        crate::hir::HirAssignOp::AddAssign => {
+                            if target_is_event_member {
+                                return Some(target);
+                            }
+                            if matches!(self.type_table.get(value), Some(TypeInfo::Function { .. })) {
+                                self.errors.push(TypeError::InvalidEventSubscriptionTarget {
+                                    span: assign.span,
+                                });
+                                return Some(target);
+                            }
+                            let is_string = matches!(
+                                self.type_table.get(target),
+                                Some(TypeInfo::Primitive(HirPrimitiveType::String))
+                            );
+                            if !self.is_numeric(target) && !is_string {
+                                self.errors
+                                    .push(TypeError::UnsupportedExpression { span: assign.span });
+                            }
+                        }
+                        crate::hir::HirAssignOp::SubAssign => {
+                            if target_is_event_member {
+                                return Some(target);
+                            }
+                            if matches!(self.type_table.get(value), Some(TypeInfo::Function { .. })) {
+                                self.errors.push(TypeError::InvalidEventSubscriptionTarget {
+                                    span: assign.span,
+                                });
+                                return Some(target);
+                            }
+                            if !self.is_numeric(target) {
+                                self.errors
+                                    .push(TypeError::UnsupportedExpression { span: assign.span });
+                            }
+                        }
+                    }
                     Some(target)
                 } else {
                     None
@@ -56,15 +103,62 @@ impl<'a> TypeContext<'a> {
             HirExpressionNode::MatchExpression(match_expr) => {
                 self.type_match_expression(match_expr)
             }
-            HirExpressionNode::TryExpression(try_expr) => {
-                self.type_expression(&try_expr.node.expr)
-            }
+            HirExpressionNode::TryExpression(try_expr) => self.type_try_expression(try_expr),
         };
 
         if let Some(type_id) = type_id {
             self.expr_types.insert(expression.span, type_id);
         }
         type_id
+    }
+
+    fn type_try_expression(&mut self, try_expr: &Spanned<crate::hir::HirTryExpression>) -> Option<TypeId> {
+        let target_type = self.type_expression(&try_expr.node.expr)?;
+        let Some(result_item_id) = self.item_id_for_name("Result", ItemKind::Enum) else {
+            self.errors
+                .push(TypeError::InvalidTryTarget { span: try_expr.span });
+            return None;
+        };
+
+        match self.type_table.get(target_type).cloned() {
+            Some(TypeInfo::Applied { base, args }) if base == result_item_id => {
+                if let Some(payload_type) = args.first().copied() {
+                    Some(payload_type)
+                } else {
+                    self.errors
+                        .push(TypeError::InvalidTryTarget { span: try_expr.span });
+                    None
+                }
+            }
+            Some(TypeInfo::Named(item_id)) if item_id == result_item_id => {
+                let ok_fields = self
+                    .enum_variants_ordered
+                    .get(&result_item_id)
+                    .and_then(|variants| {
+                        variants
+                            .iter()
+                            .find(|(name, _)| name == "Ok")
+                            .map(|(_, fields)| fields.clone())
+                    });
+                let Some(fields) = ok_fields else {
+                    self.errors
+                        .push(TypeError::InvalidTryTarget { span: try_expr.span });
+                    return None;
+                };
+                if fields.len() == 1 {
+                    Some(fields[0])
+                } else {
+                    self.errors
+                        .push(TypeError::InvalidTryTarget { span: try_expr.span });
+                    None
+                }
+            }
+            _ => {
+                self.errors
+                    .push(TypeError::InvalidTryTarget { span: try_expr.span });
+                None
+            }
+        }
     }
 
     pub(super) fn type_lambda_expression_with_expected(
@@ -159,6 +253,53 @@ impl<'a> TypeContext<'a> {
     }
 
     fn type_call_expression(&mut self, call: &Spanned<HirCallExpression>) -> Option<TypeId> {
+        if let Some((receiver_source, receiver_type, receiver_item_id, field_type)) =
+            self.resolve_event_call_target(&call.node.callee)
+        {
+            let TypeInfo::Function {
+                params,
+                return_type,
+            } = self
+                .type_table
+                .get(field_type)
+                .cloned()
+                .unwrap_or(TypeInfo::Primitive(HirPrimitiveType::Unit))
+            else {
+                self.errors
+                    .push(TypeError::UnknownCallTarget { span: call.span });
+                return None;
+            };
+
+            if call.node.args.len() != params.len() {
+                self.errors.push(TypeError::CallArityMismatch {
+                    span: call.span,
+                    expected: params.len(),
+                    actual: call.node.args.len(),
+                });
+                return Some(return_type);
+            }
+
+            for (arg, expected) in call.node.args.iter().zip(params.iter()) {
+                if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                    self.require_same_type(arg.span, *expected, actual);
+                }
+            }
+
+            if self.current_receiver_item_id != Some(receiver_item_id) {
+                self.errors
+                    .push(TypeError::InvalidEventInvocationScope { span: call.span });
+            }
+
+            self.call_kinds.insert(
+                call.span,
+                CallLoweringKind::EventInvoke {
+                    receiver_source,
+                    receiver_type,
+                },
+            );
+            return Some(return_type);
+        }
+
         if let HirExpressionNode::PathExpression(path_expr) = &call.node.callee.node {
             let segments = &path_expr.node.path.node.segments;
             let resolved = self
@@ -203,6 +344,36 @@ impl<'a> TypeContext<'a> {
                     );
                     return Some(signature.return_type);
                 }
+                if let Some(contract_item_id) = self.named_item_id(receiver_type)
+                    && let Some(signature) = self
+                        .contract_signatures
+                        .get(&(contract_item_id, method_name.to_string()))
+                        .cloned()
+                {
+                    if call.node.args.len() != signature.params.len() {
+                        self.errors.push(TypeError::CallArityMismatch {
+                            span: call.span,
+                            expected: signature.params.len(),
+                            actual: call.node.args.len(),
+                        });
+                        return Some(signature.return_type);
+                    }
+
+                    for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+                        if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                            self.require_same_type(arg.span, *expected, actual);
+                        }
+                    }
+                    self.call_kinds.insert(
+                        call.span,
+                        CallLoweringKind::ContractDispatch {
+                            contract_item_id,
+                            receiver_source: MethodReceiverSource::Local(*local_id),
+                            receiver_type,
+                        },
+                    );
+                    return Some(signature.return_type);
+                }
             }
         }
 
@@ -234,6 +405,36 @@ impl<'a> TypeContext<'a> {
                     call.span,
                     CallLoweringKind::MethodDispatch {
                         method_item_id,
+                        receiver_source: MethodReceiverSource::Expression(member.node.target.span),
+                        receiver_type: target_type,
+                    },
+                );
+                return Some(signature.return_type);
+            }
+            if let Some(contract_item_id) = self.named_item_id(target_type)
+                && let Some(signature) = self
+                    .contract_signatures
+                    .get(&(contract_item_id, method_name.to_string()))
+                    .cloned()
+            {
+                if call.node.args.len() != signature.params.len() {
+                    self.errors.push(TypeError::CallArityMismatch {
+                        span: call.span,
+                        expected: signature.params.len(),
+                        actual: call.node.args.len(),
+                    });
+                    return Some(signature.return_type);
+                }
+
+                for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+                    if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                        self.require_same_type(arg.span, *expected, actual);
+                    }
+                }
+                self.call_kinds.insert(
+                    call.span,
+                    CallLoweringKind::ContractDispatch {
+                        contract_item_id,
                         receiver_source: MethodReceiverSource::Expression(member.node.target.span),
                         receiver_type: target_type,
                     },
@@ -496,6 +697,14 @@ impl<'a> TypeContext<'a> {
             if seen.contains(name) {
                 continue;
             }
+            if self
+                .struct_event_fields
+                .get(&item_id)
+                .and_then(|event_fields| event_fields.get(name))
+                .is_some()
+            {
+                continue;
+            }
             self.errors.push(TypeError::MissingStructField {
                 span: literal.span,
                 name: name.clone(),
@@ -623,6 +832,119 @@ impl<'a> TypeContext<'a> {
         Some(field_type)
     }
 
+    fn is_event_member_expression(&self, member: &Spanned<HirMemberExpression>) -> bool {
+        let Some(target_type) = self.expr_types.get(&member.node.target.span).copied() else {
+            return false;
+        };
+        let Some(item_id) = self.named_item_id(target_type) else {
+            return false;
+        };
+        self.struct_event_fields
+            .get(&item_id)
+            .and_then(|fields| fields.get(&member.node.member.node.name))
+            .is_some()
+    }
+
+    fn is_event_path_expression(&self, path_expr: &Spanned<HirPathExpression>) -> bool {
+        let segments = &path_expr.node.path.node.segments;
+        if segments.len() < 2 {
+            return false;
+        }
+        let field_name = segments[1].node.name.node.name.as_str();
+        let Some(local_id) = self
+            .resolution
+            .tables
+            .resolved_values
+            .get(&path_expr.node.path.span)
+            .and_then(|resolved| match resolved {
+                ResolvedValue::Local(local_id) => Some(*local_id),
+                _ => None,
+            })
+        else {
+            return false;
+        };
+        let Some(base_type) = self.local_types.get(&local_id).copied() else {
+            return false;
+        };
+        let Some(item_id) = self.named_item_id(base_type) else {
+            return false;
+        };
+        self.struct_event_fields
+            .get(&item_id)
+            .and_then(|fields| fields.get(field_name))
+            .is_some()
+    }
+
+    fn resolve_event_call_target(
+        &mut self,
+        callee: &Spanned<HirExpressionNode>,
+    ) -> Option<(MethodReceiverSource, TypeId, crate::resolve::ItemId, TypeId)> {
+        match &callee.node {
+            HirExpressionNode::MemberExpression(member) => {
+                let receiver_type = self.type_expression(&member.node.target)?;
+                let receiver_item_id = self.named_item_id(receiver_type)?;
+                let field_name = member.node.member.node.name.as_str();
+                let is_event = self
+                    .struct_event_fields
+                    .get(&receiver_item_id)
+                    .and_then(|fields| fields.get(field_name))
+                    .is_some();
+                if !is_event {
+                    return None;
+                }
+                let field_type = self
+                    .struct_fields
+                    .get(&receiver_item_id)
+                    .and_then(|fields| fields.get(field_name))
+                    .copied()?;
+                Some((
+                    MethodReceiverSource::Expression(member.node.target.span),
+                    receiver_type,
+                    receiver_item_id,
+                    field_type,
+                ))
+            }
+            HirExpressionNode::PathExpression(path_expr) => {
+                let segments = &path_expr.node.path.node.segments;
+                if segments.len() < 2 {
+                    return None;
+                }
+                let field_name = segments[1].node.name.node.name.as_str();
+                let local_id = self
+                    .resolution
+                    .tables
+                    .resolved_values
+                    .get(&path_expr.node.path.span)
+                    .and_then(|resolved| match resolved {
+                        ResolvedValue::Local(local_id) => Some(*local_id),
+                        _ => None,
+                    })?;
+                let receiver_type = *self.local_types.get(&local_id)?;
+                let receiver_item_id = self.named_item_id(receiver_type)?;
+                let is_event = self
+                    .struct_event_fields
+                    .get(&receiver_item_id)
+                    .and_then(|fields| fields.get(field_name))
+                    .is_some();
+                if !is_event {
+                    return None;
+                }
+                let field_type = self
+                    .struct_fields
+                    .get(&receiver_item_id)
+                    .and_then(|fields| fields.get(field_name))
+                    .copied()?;
+                Some((
+                    MethodReceiverSource::Local(local_id),
+                    receiver_type,
+                    receiver_item_id,
+                    field_type,
+                ))
+            }
+            _ => None,
+        }
+    }
+
     fn type_match_expression(
         &mut self,
         match_expr: &Spanned<HirMatchExpression>,
@@ -648,7 +970,10 @@ impl<'a> TypeContext<'a> {
         let arm_type = self.type_expression(&arm.node.value);
         if let Some(actual) = arm_type {
             if let Some(expected_type) = *expected {
-                if expected_type != actual {
+                if expected_type != actual
+                    && !self.is_never(expected_type)
+                    && !self.is_never(actual)
+                {
                     self.errors.push(TypeError::MatchArmTypeMismatch {
                         span: arm.span,
                         expected: expected_type,
@@ -670,7 +995,11 @@ impl<'a> TypeContext<'a> {
                 let enum_type = self
                     .type_id_for_enum_path(enum_pattern.node.path.span, &enum_pattern.node.path);
                 if let Some(enum_type) = enum_type {
-                    if enum_type != scrutinee_type {
+                    let compatible_enum = enum_type == scrutinee_type
+                        || (self.named_item_id(enum_type).is_some()
+                            && self.named_item_id(enum_type)
+                                == self.named_item_id(scrutinee_type));
+                    if !compatible_enum {
                         self.errors.push(TypeError::TypeMismatch {
                             span: pattern.span,
                             expected: scrutinee_type,
@@ -733,7 +1062,13 @@ impl<'a> TypeContext<'a> {
                 let enum_type = self
                     .type_id_for_enum_path(enum_pattern.node.path.span, &enum_pattern.node.path);
                 if let Some(enum_type) = enum_type {
-                    self.require_same_type(pattern.span, expected_type, enum_type);
+                    let compatible_enum = enum_type == expected_type
+                        || (self.named_item_id(enum_type).is_some()
+                            && self.named_item_id(enum_type)
+                                == self.named_item_id(expected_type));
+                    if !compatible_enum {
+                        self.require_same_type(pattern.span, expected_type, enum_type);
+                    }
                 }
                 for item in &enum_pattern.node.items {
                     self.type_pattern(None, item);
@@ -770,9 +1105,16 @@ impl<'a> TypeContext<'a> {
                     None
                 }
             }
-            HirBinaryOp::IdentityEq
-            | HirBinaryOp::IdentityNotEq
-            | HirBinaryOp::Eq
+            HirBinaryOp::IdentityEq | HirBinaryOp::IdentityNotEq => {
+                if self.is_identity_comparable(left) {
+                    self.primitive_type_id(HirPrimitiveType::Bool)
+                } else {
+                    self.errors
+                        .push(TypeError::InvalidBinaryOp { span: binary.span });
+                    None
+                }
+            }
+            HirBinaryOp::Eq
             | HirBinaryOp::NotEq
             | HirBinaryOp::Lt
             | HirBinaryOp::Lte

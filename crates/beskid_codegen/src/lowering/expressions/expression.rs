@@ -29,10 +29,17 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionNode {
             HirExpressionNode::EnumConstructorExpression(inner) => lower_node(inner, ctx),
             HirExpressionNode::BlockExpression(inner) => lower_node(inner, ctx),
             HirExpressionNode::GroupedExpression(inner) => lower_node(inner, ctx),
-            HirExpressionNode::TryExpression(_) => Err(CodegenError::UnsupportedNode {
-                span: node.span,
-                node: "try expression",
-            }),
+            HirExpressionNode::TryExpression(inner) => {
+                // Invariant: normalization should always desugar try to match before codegen.
+                debug_assert!(
+                    ctx.type_result.expr_types.contains_key(&inner.node.expr.span),
+                    "unexpected raw TryExpression reached codegen; expected upstream desugaring"
+                );
+                Err(CodegenError::UnsupportedNode {
+                    span: node.span,
+                    node: "unexpected raw try expression",
+                })
+            }
         }
     }
 }

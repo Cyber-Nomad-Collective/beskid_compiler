@@ -42,7 +42,7 @@ impl Rule for SemanticPipelineRule {
 
         self.stage2_type_check(ctx, &hir, &resolution);
         self.stage5_modules_and_visibility(ctx, &hir);
-        self.stage6_contracts_and_methods(ctx, &hir);
+        self.stage6_contracts_and_methods(ctx, &hir, &resolution);
         self.stage7_error_handling(ctx, &hir);
         self.stage8_metaprogramming(ctx, &hir);
     }

@@ -214,6 +214,7 @@ impl SemanticPipelineRule {
                 HirPrimitiveType::Char => "char".to_string(),
                 HirPrimitiveType::String => "string".to_string(),
                 HirPrimitiveType::Unit => "unit".to_string(),
+                HirPrimitiveType::Never => "never".to_string(),
             },
             HirType::Complex(path) => path
                 .node

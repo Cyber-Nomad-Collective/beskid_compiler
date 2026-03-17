@@ -132,10 +132,11 @@ ParameterModifier = { "ref" | "out" }
 
 FieldList = { Field ~ ("," ~ Field)* ~ ","? }
 ValueField = { BeskidType ~ Identifier }
-EventField = { "event" ~ BeskidType ~ Identifier }
+EventCapacity = { "{" ~ IntegerLiteral ~ "}" }
+EventField = { "event" ~ EventCapacity? ~ Identifier ~ "(" ~ ParameterList? ~ ")" }
 Field = { EventField | ValueField }
 
-TypeConformanceList = { "when" ~ PathList }
+TypeConformanceList = { ":" ~ PathList }
 TypeDefinition = { Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ FieldList? ~ "}" }
 
 EnumDefinition = { Visibility? ~ "enum" ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }

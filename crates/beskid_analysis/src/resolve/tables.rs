@@ -28,6 +28,7 @@ pub struct ResolutionTables {
     pub resolved_values: HashMap<SpanInfo, ResolvedValue>,
     pub resolved_types: HashMap<SpanInfo, ResolvedType>,
     pub locals: Vec<LocalInfo>,
+    pub type_conformances: HashMap<ItemId, Vec<(ItemId, SpanInfo)>>,
 }
 
 impl ResolutionTables {
@@ -51,5 +52,21 @@ impl ResolutionTables {
 
     pub fn local_info(&self, id: LocalId) -> Option<&LocalInfo> {
         self.locals.get(id.0)
+    }
+
+    pub fn insert_type_conformance(
+        &mut self,
+        type_item_id: ItemId,
+        contract_item_id: ItemId,
+        span: SpanInfo,
+    ) {
+        let entries = self.type_conformances.entry(type_item_id).or_default();
+        if entries
+            .iter()
+            .any(|(item_id, item_span)| *item_id == contract_item_id && *item_span == span)
+        {
+            return;
+        }
+        entries.push((contract_item_id, span));
     }
 }

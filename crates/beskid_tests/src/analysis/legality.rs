@@ -176,3 +176,32 @@ fn legality_allows_attribute_without_target_list() {
         "expected unconstrained attribute declaration to allow all targets, got: {errors:?}"
     );
 }
+
+#[test]
+fn legality_resolution_registers_declared_type_conformances() {
+    let source = "contract Service { unit run(); } type Worker : Service { i64 id }";
+    let (_hir, resolution) = lower_and_resolve(source);
+
+    let worker_id = resolution
+        .items
+        .iter()
+        .find(|item| item.name == "Worker")
+        .map(|item| item.id)
+        .expect("expected Worker item");
+    let service_id = resolution
+        .items
+        .iter()
+        .find(|item| item.name == "Service")
+        .map(|item| item.id)
+        .expect("expected Service item");
+
+    let conformances = resolution
+        .tables
+        .type_conformances
+        .get(&worker_id)
+        .expect("expected worker conformance entry");
+    assert!(
+        conformances.iter().any(|(contract_id, _)| *contract_id == service_id),
+        "expected Worker to conform to Service, got: {conformances:?}"
+    );
+}

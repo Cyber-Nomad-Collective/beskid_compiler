@@ -250,3 +250,44 @@ fn jit_dispatches_same_method_name_by_receiver_type() {
         "expected receiver-specific method dispatch to call matching method body"
     );
 }
+
+#[test]
+fn jit_event_invoke_executes_subscribed_handler() {
+    let source = "
+        type User { event{4} Created(string payload) }
+        impl User {
+            unit Emit(string payload) { this.Created(payload); }
+        }
+        i64 main() {
+            User mut u = User { };
+            unit(string) handler = (string payload) => { __sys_println(payload); };
+            u.Created += handler;
+            u.Emit(\"x\");
+            return 42;
+        }
+    ";
+    let mut engine = compile_jit(source);
+    let value = unsafe { run_main_i64(&mut engine) };
+    assert_eq!(value, 42, "expected JIT event invoke path to execute successfully");
+}
+
+#[test]
+fn jit_event_unsubscribe_removes_first_match() {
+    let source = "
+        type User { event{4} Created(string payload) }
+        impl User {
+            unit Emit(string payload) { this.Created(payload); }
+        }
+        i64 main() {
+            User mut u = User { };
+            unit(string) boom = (string payload) => { __panic_str(\"boom\"); };
+            u.Created += boom;
+            u.Created -= boom;
+            u.Emit(\"x\");
+            return 42;
+        }
+    ";
+    let mut engine = compile_jit(source);
+    let value = unsafe { run_main_i64(&mut engine) };
+    assert_eq!(value, 42, "expected first-match unsubscribe to remove handler");
+}

@@ -1,4 +1,4 @@
-use crate::syntax::{Identifier, Spanned, Type};
+use crate::syntax::{Identifier, Parameter, PrimitiveType, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
@@ -12,6 +12,8 @@ pub enum FieldKind {
 pub struct Field {
     #[ast(skip)]
     pub kind: FieldKind,
+    #[ast(skip)]
+    pub event_capacity: Option<usize>,
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(child)]
@@ -46,13 +48,71 @@ impl crate::parsing::parsable::Parsable for Field {
                 ));
             }
         };
-        let ty = crate::syntax::Type::parse(inner.next().ok_or(
-            crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType),
-        )?)?;
-        let name = crate::syntax::Identifier::parse(inner.next().ok_or(
-            crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier),
-        )?)?;
+        let (event_capacity, name, ty) = match kind {
+            FieldKind::Value => {
+                let ty = crate::syntax::Type::parse(inner.next().ok_or(
+                    crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType),
+                )?)?;
+                let name = crate::syntax::Identifier::parse(inner.next().ok_or(
+                    crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier),
+                )?)?;
+                (None, name, ty)
+            }
+            FieldKind::Event => {
+                let first = inner.next().ok_or(crate::parsing::error::ParseError::missing(
+                    crate::parser::Rule::Identifier,
+                ))?;
+                let (event_capacity, name_pair) = if first.as_rule() == crate::parser::Rule::EventCapacity {
+                    let mut cap_inner = first.into_inner();
+                    let value = cap_inner.next().ok_or(crate::parsing::error::ParseError::missing(
+                        crate::parser::Rule::IntegerLiteral,
+                    ))?;
+                    let parsed = value
+                        .as_str()
+                        .parse::<usize>()
+                        .map_err(|_| crate::parsing::error::ParseError::missing(crate::parser::Rule::IntegerLiteral))?;
+                    let name_pair = inner.next().ok_or(crate::parsing::error::ParseError::missing(
+                        crate::parser::Rule::Identifier,
+                    ))?;
+                    (Some(parsed), name_pair)
+                } else {
+                    (None, first)
+                };
 
-        Ok(crate::syntax::Spanned::new(Self { kind, name, ty }, span))
+                let name = crate::syntax::Identifier::parse(name_pair)?;
+                let params_pair = inner.next();
+                let params = if let Some(pair) = params_pair {
+                    pair.into_inner()
+                        .map(Parameter::parse)
+                        .collect::<Result<Vec<_>, _>>()?
+                } else {
+                    Vec::new()
+                };
+
+                let return_type = Spanned::new(Type::Primitive(Spanned::new(PrimitiveType::Unit, span)), span);
+                let parameter_types = params
+                    .into_iter()
+                    .map(|param| param.node.ty)
+                    .collect::<Vec<_>>();
+                let ty = Spanned::new(
+                    Type::Function {
+                        return_type: Box::new(return_type),
+                        parameters: parameter_types,
+                    },
+                    span,
+                );
+                (event_capacity, name, ty)
+            }
+        };
+
+        Ok(crate::syntax::Spanned::new(
+            Self {
+                kind,
+                event_capacity,
+                name,
+                ty,
+            },
+            span,
+        ))
     }
 }

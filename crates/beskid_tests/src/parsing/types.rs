@@ -9,8 +9,14 @@ fn parses_type_definition() {
 
 #[test]
 fn parses_type_definition_with_conformances() {
-    let input = "type User when Display, Clone { string name }";
+    let input = "type User : Display, Clone { string name }";
     assert_parse(Rule::TypeDefinition, input);
+}
+
+#[test]
+fn rejects_type_definition_with_legacy_when_conformances() {
+    let input = "type User when Display, Clone { string name }";
+    assert_parse_fail(Rule::TypeDefinition, input);
 }
 
 #[test]
@@ -87,7 +93,12 @@ fn parses_arrow_function_type() {
 
 #[test]
 fn parses_event_field() {
-    assert_parse(Rule::Field, "event string created");
+    assert_parse(Rule::Field, "event Created(string message)");
+}
+
+#[test]
+fn parses_event_field_with_capacity() {
+    assert_parse(Rule::Field, "event{8} Created(string message)");
 }
 
 #[test]

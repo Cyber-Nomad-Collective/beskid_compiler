@@ -295,6 +295,8 @@ impl Lowerable for Spanned<syntax::TryExpression> {
     type Output = Spanned<HirTryExpression>;
 
     fn lower(&self) -> Self::Output {
+        // Pipeline contract: lowering preserves explicit `TryExpression` shape so typing can
+        // perform centralized validity checks before normalization desugars it to match control-flow.
         Spanned::new(
             HirTryExpression {
                 expr: Box::new(self.node.expr.lower()),

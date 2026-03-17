@@ -34,6 +34,10 @@ pub enum ResolveError {
         name: String,
         span: SpanInfo,
     },
+    InvalidConformanceTarget {
+        name: String,
+        span: SpanInfo,
+    },
     PrivateItemInModule {
         module_path: String,
         name: String,

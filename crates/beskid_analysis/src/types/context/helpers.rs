@@ -17,6 +17,7 @@ impl<'a> TypeContext<'a> {
             HirPrimitiveType::Char,
             HirPrimitiveType::String,
             HirPrimitiveType::Unit,
+            HirPrimitiveType::Never,
         ] {
             let id = self.type_table.intern(TypeInfo::Primitive(primitive));
             self.primitive_types.insert(primitive, id);
@@ -135,6 +136,17 @@ impl<'a> TypeContext<'a> {
         if expected == actual {
             return;
         }
+        if self.is_never(expected) || self.is_never(actual) {
+            return;
+        }
+        if self.named_item_id(expected).is_some()
+            && self.named_item_id(expected) == self.named_item_id(actual)
+        {
+            return;
+        }
+        if self.is_contract_compatible(expected, actual) {
+            return;
+        }
         if self.is_numeric(expected) && self.is_numeric(actual) {
             if self
                 .cast_intents
@@ -167,6 +179,31 @@ impl<'a> TypeContext<'a> {
             expected,
             actual,
         });
+    }
+
+    fn is_contract_compatible(&self, expected: TypeId, actual: TypeId) -> bool {
+        let Some(expected_item) = self.named_item_id(expected) else {
+            return false;
+        };
+        let Some(actual_item) = self.named_item_id(actual) else {
+            return false;
+        };
+        let Some(expected_info) = self
+            .resolution
+            .items
+            .iter()
+            .find(|info| info.id == expected_item)
+        else {
+            return false;
+        };
+        if expected_info.kind != ItemKind::Contract {
+            return false;
+        }
+        self.resolution
+            .tables
+            .type_conformances
+            .get(&actual_item)
+            .is_some_and(|entries| entries.iter().any(|(contract_item, _)| *contract_item == expected_item))
     }
 
     pub(super) fn require_bool(
@@ -206,8 +243,26 @@ impl<'a> TypeContext<'a> {
         )
     }
 
+    pub(super) fn is_never(&self, type_id: TypeId) -> bool {
+        matches!(
+            self.type_table.get(type_id),
+            Some(TypeInfo::Primitive(HirPrimitiveType::Never))
+        )
+    }
+
     pub(super) fn is_comparable(&self, type_id: TypeId) -> bool {
         self.is_numeric(type_id) || self.is_bool(type_id)
+    }
+
+    pub(super) fn is_identity_comparable(&self, type_id: TypeId) -> bool {
+        matches!(
+            self.type_table.get(type_id),
+            Some(TypeInfo::Named(_))
+                | Some(TypeInfo::Applied { .. })
+                | Some(TypeInfo::GenericParam(_))
+                | Some(TypeInfo::Function { .. })
+                | Some(TypeInfo::Primitive(HirPrimitiveType::String))
+        )
     }
 
     pub(super) fn map_primitive(&self, primitive: HirPrimitiveType) -> HirPrimitiveType {

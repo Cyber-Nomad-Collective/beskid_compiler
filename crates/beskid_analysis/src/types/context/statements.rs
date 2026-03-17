@@ -62,7 +62,7 @@ impl<'a> TypeContext<'a> {
                 self.type_block(&while_stmt.node.body);
             }
             HirStatementNode::ForStatement(for_stmt) => {
-                if let Some(type_id) = self.type_expression(&for_stmt.node.iterable) {
+                if let Some(type_id) = self.resolve_iterable_item_type(&for_stmt.node.iterable) {
                     self.insert_local_type(for_stmt.node.iterator.span, type_id);
                 }
                 self.type_block(&for_stmt.node.body);

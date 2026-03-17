@@ -67,6 +67,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
                 type_id,
                 actual_type,
                 ctx.type_result,
+                ctx.resolution,
                 ctx.builder,
                 value,
             )?;
@@ -95,6 +96,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
             type_id,
             actual_type,
             ctx.type_result,
+            ctx.resolution,
             ctx.builder,
             value,
         )?;

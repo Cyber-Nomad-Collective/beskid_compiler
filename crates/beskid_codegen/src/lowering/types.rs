@@ -98,6 +98,7 @@ pub(crate) fn map_primitive_to_clif(
         HirPrimitiveType::U8 => Some(types::I8),
         HirPrimitiveType::F64 => Some(types::F64),
         HirPrimitiveType::Unit => None,
+        HirPrimitiveType::Never => None,
         HirPrimitiveType::Char => Some(types::I32),
         HirPrimitiveType::String => Some(pointer_type()),
     }

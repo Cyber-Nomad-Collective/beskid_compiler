@@ -2,6 +2,9 @@
 mod alloc;
 
 #[cfg(test)]
+mod events;
+
+#[cfg(test)]
 mod guard;
 
 #[cfg(test)]

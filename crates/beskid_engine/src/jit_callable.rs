@@ -20,6 +20,11 @@ impl JitCallable {
                 // SAFETY: `ptr` is expected to point to a JIT function with signature `extern "C" fn()`.
                 call_entrypoint!(ptr, (), _ignored => "ok".to_owned())
             }
+            TypeInfo::Primitive(HirPrimitiveType::Never) => {
+                // SAFETY: non-returning entrypoints are represented as `extern "C" fn() -> !`.
+                let callable: extern "C" fn() -> ! = unsafe { std::mem::transmute(ptr) };
+                callable()
+            }
             TypeInfo::Primitive(HirPrimitiveType::String)
             | TypeInfo::Named(_)
             | TypeInfo::GenericParam(_)

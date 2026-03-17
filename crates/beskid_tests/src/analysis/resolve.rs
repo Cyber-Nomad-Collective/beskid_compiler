@@ -123,6 +123,18 @@ fn qualified_module_path_to_private_item_is_error() {
 }
 
 #[test]
+fn non_contract_conformance_target_is_error() {
+    let result = resolve_program("type NotContract { i64 id } type User : NotContract { i64 x }");
+    let errors = result.expect_err("expected invalid conformance target error");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, ResolveError::InvalidConformanceTarget { .. })),
+        "expected InvalidConformanceTarget error, got: {errors:?}"
+    );
+}
+
+#[test]
 fn qualified_module_path_to_public_item_is_allowed() {
     let result = resolve_program("pub mod dep.secret; unit foo() { let x = dep.secret; }");
     assert!(

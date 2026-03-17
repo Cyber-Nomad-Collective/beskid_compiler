@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::builtins::{BuiltinType, builtin_specs};
-use crate::hir::{HirItem, HirPrimitiveType, HirProgram};
-use crate::resolve::{ItemId, LocalId, Resolution, ResolvedType};
+use crate::hir::{HirContractNode, HirItem, HirPrimitiveType, HirProgram};
+use crate::resolve::{ItemId, ItemKind, LocalId, Resolution, ResolvedType};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::{TypeId, TypeTable};
 
@@ -79,6 +79,18 @@ pub enum TypeError {
     UnsupportedExpression {
         span: SpanInfo,
     },
+    InvalidTryTarget {
+        span: SpanInfo,
+    },
+    InvalidEventInvocationScope {
+        span: SpanInfo,
+    },
+    InvalidEventCapacity {
+        span: SpanInfo,
+    },
+    InvalidEventSubscriptionTarget {
+        span: SpanInfo,
+    },
     ReturnTypeMismatch {
         span: SpanInfo,
         expected: TypeId,
@@ -88,6 +100,22 @@ pub enum TypeError {
         span: SpanInfo,
     },
     GenericArgumentMismatch {
+        span: SpanInfo,
+        expected: usize,
+        actual: usize,
+    },
+    NonIterableForTarget {
+        span: SpanInfo,
+    },
+    IterableNextArityMismatch {
+        span: SpanInfo,
+        expected: usize,
+        actual: usize,
+    },
+    IterableNextReturnNotOption {
+        span: SpanInfo,
+    },
+    IterableOptionSomeArityMismatch {
         span: SpanInfo,
         expected: usize,
         actual: usize,
@@ -107,8 +135,17 @@ pub enum CallLoweringKind {
         receiver_source: MethodReceiverSource,
         receiver_type: TypeId,
     },
+    ContractDispatch {
+        contract_item_id: ItemId,
+        receiver_source: MethodReceiverSource,
+        receiver_type: TypeId,
+    },
     ItemCall {
         item_id: ItemId,
+    },
+    EventInvoke {
+        receiver_source: MethodReceiverSource,
+        receiver_type: TypeId,
     },
     CallableValueCall,
 }
@@ -121,9 +158,12 @@ pub struct TypeResult {
     pub local_types: HashMap<LocalId, TypeId>,
     pub function_signatures: HashMap<ItemId, FunctionSignature>,
     pub struct_fields_ordered: HashMap<ItemId, Vec<(String, TypeId)>>,
+    pub struct_event_fields: HashMap<ItemId, HashMap<String, Option<usize>>>,
     pub enum_variants_ordered: HashMap<ItemId, Vec<(String, Vec<TypeId>)>>,
     pub generic_items: HashMap<ItemId, Vec<String>>,
     pub call_kinds: HashMap<SpanInfo, CallLoweringKind>,
+    pub contract_method_order: HashMap<ItemId, Vec<String>>,
+    pub contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
     // Canonical output contract for safe implicit numeric conversions.
     // Invariants (normalized in `TypeContext::type_program`):
     // - sorted by (span.start, span.end, from, to)
@@ -164,6 +204,7 @@ pub struct TypeContext<'a> {
     pub(super) named_types: HashMap<ItemId, TypeId>,
     pub(super) struct_fields: HashMap<ItemId, HashMap<String, TypeId>>,
     pub(super) struct_fields_ordered: HashMap<ItemId, Vec<(String, TypeId)>>,
+    pub(super) struct_event_fields: HashMap<ItemId, HashMap<String, Option<usize>>>,
     pub(super) enum_variants: HashMap<ItemId, HashMap<String, Vec<TypeId>>>,
     pub(super) enum_variants_ordered: HashMap<ItemId, Vec<(String, Vec<TypeId>)>>,
     pub(super) expr_types: HashMap<SpanInfo, TypeId>,
@@ -176,6 +217,9 @@ pub struct TypeContext<'a> {
     pub(super) generic_items: HashMap<ItemId, Vec<String>>,
     pub(super) call_kinds: HashMap<SpanInfo, CallLoweringKind>,
     pub(super) methods_by_receiver: HashMap<(ItemId, String), ItemId>,
+    pub(super) contract_method_order: HashMap<ItemId, Vec<String>>,
+    pub(super) contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
+    pub(super) current_receiver_item_id: Option<ItemId>,
 }
 
 impl<'a> TypeContext<'a> {
@@ -187,6 +231,7 @@ impl<'a> TypeContext<'a> {
             named_types: HashMap::new(),
             struct_fields: HashMap::new(),
             struct_fields_ordered: HashMap::new(),
+            struct_event_fields: HashMap::new(),
             enum_variants: HashMap::new(),
             enum_variants_ordered: HashMap::new(),
             expr_types: HashMap::new(),
@@ -199,6 +244,9 @@ impl<'a> TypeContext<'a> {
             generic_items: HashMap::new(),
             call_kinds: HashMap::new(),
             methods_by_receiver: HashMap::new(),
+            contract_method_order: HashMap::new(),
+            contract_signatures: HashMap::new(),
+            current_receiver_item_id: None,
         };
         context.seed_types();
         context.seed_builtin_signatures();
@@ -234,7 +282,7 @@ impl<'a> TypeContext<'a> {
         match builtin {
             BuiltinType::String => self.primitive_type_id(HirPrimitiveType::String),
             BuiltinType::Unit => self.primitive_type_id(HirPrimitiveType::Unit),
-            BuiltinType::Never => self.primitive_type_id(HirPrimitiveType::Unit),
+            BuiltinType::Never => self.primitive_type_id(HirPrimitiveType::Never),
             BuiltinType::Usize | BuiltinType::U64 => self.primitive_type_id(HirPrimitiveType::I64),
             BuiltinType::Ptr => None,
         }
@@ -268,6 +316,7 @@ impl<'a> TypeContext<'a> {
                 self.generic_items.insert(item_id, names);
             }
         }
+        self.seed_contract_signatures(program);
         for item in &program.node.items {
             let HirItem::MethodDefinition(def) = &item.node else {
                 continue;
@@ -314,13 +363,131 @@ impl<'a> TypeContext<'a> {
             local_types: self.local_types,
             function_signatures: self.function_signatures,
             struct_fields_ordered: self.struct_fields_ordered,
+            struct_event_fields: self.struct_event_fields,
             enum_variants_ordered: self.enum_variants_ordered,
             generic_items: self.generic_items,
             call_kinds: self.call_kinds,
+            contract_method_order: self.contract_method_order,
+            contract_signatures: self.contract_signatures,
             cast_intents: self.cast_intents,
         };
         let errors = std::mem::take(&mut self.errors);
         (result, errors)
+    }
+
+    fn seed_contract_signatures(&mut self, program: &Spanned<HirProgram>) {
+        let definitions: HashMap<String, &Spanned<crate::hir::HirContractDefinition>> = program
+            .node
+            .items
+            .iter()
+            .filter_map(|item| match &item.node {
+                HirItem::ContractDefinition(def) => Some((def.node.name.node.name.clone(), def)),
+                _ => None,
+            })
+            .collect();
+        let mut cache: HashMap<String, Vec<(String, FunctionSignature)>> = HashMap::new();
+        let contract_names = definitions.keys().cloned().collect::<Vec<_>>();
+
+        for contract_name in contract_names {
+            let signatures = self.collect_contract_signatures_recursive(
+                contract_name.as_str(),
+                &definitions,
+                &mut cache,
+                &mut HashSet::new(),
+            );
+            let Some(contract_item_id) = self.item_id_for_name(&contract_name, ItemKind::Contract)
+            else {
+                continue;
+            };
+            self.contract_method_order.insert(
+                contract_item_id,
+                signatures.iter().map(|(name, _)| name.clone()).collect(),
+            );
+            for (method_name, signature) in signatures {
+                self.contract_signatures
+                    .insert((contract_item_id, method_name), signature);
+            }
+        }
+    }
+
+    fn collect_contract_signatures_recursive(
+        &mut self,
+        contract_name: &str,
+        definitions: &HashMap<String, &Spanned<crate::hir::HirContractDefinition>>,
+        cache: &mut HashMap<String, Vec<(String, FunctionSignature)>>,
+        active: &mut HashSet<String>,
+    ) -> Vec<(String, FunctionSignature)> {
+        if let Some(cached) = cache.get(contract_name) {
+            return cached.clone();
+        }
+        if !active.insert(contract_name.to_string()) {
+            return Vec::new();
+        }
+
+        let mut methods = Vec::new();
+        let Some(definition) = definitions.get(contract_name) else {
+            active.remove(contract_name);
+            return methods;
+        };
+
+        for node in &definition.node.items {
+            match &node.node {
+                HirContractNode::MethodSignature(signature) => {
+                    if methods
+                        .iter()
+                        .any(|(name, _)| name == &signature.node.name.node.name)
+                    {
+                        continue;
+                    }
+                    let mut params = Vec::new();
+                    let mut valid = true;
+                    for param in &signature.node.parameters {
+                        let Some(type_id) = self.type_id_for_type(&param.node.ty) else {
+                            valid = false;
+                            break;
+                        };
+                        params.push(type_id);
+                    }
+                    if !valid {
+                        continue;
+                    }
+                    let return_type = signature
+                        .node
+                        .return_type
+                        .as_ref()
+                        .and_then(|ty| self.type_id_for_type(ty))
+                        .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
+                    let Some(return_type) = return_type else {
+                        continue;
+                    };
+                    methods.push((
+                        signature.node.name.node.name.clone(),
+                        FunctionSignature {
+                            params,
+                            return_type,
+                        },
+                    ));
+                }
+                HirContractNode::Embedding(embedding) => {
+                    let embedded = self.collect_contract_signatures_recursive(
+                        embedding.node.name.node.name.as_str(),
+                        definitions,
+                        cache,
+                        active,
+                    );
+                    for (method_name, signature) in embedded {
+                        if methods.iter().any(|(name, _)| name == &method_name) {
+                            continue;
+                        }
+                        methods.push((method_name, signature));
+                    }
+                }
+            }
+        }
+
+        active.remove(contract_name);
+        cache.insert(contract_name.to_string(), methods.clone());
+        methods
     }
 }
 

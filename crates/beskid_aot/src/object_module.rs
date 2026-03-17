@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use beskid_abi::{AbiParamKind, AbiReturnKind, BUILTIN_SPECS};
+use beskid_abi::{
+    AbiParamKind, AbiReturnKind, BUILTIN_SPECS, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN,
+    SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST,
+};
 use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
 use cranelift_codegen::ir::{AbiParam, ExternalName, Signature, UserExternalName, types};
 use cranelift_codegen::isa::CallConv;
@@ -174,6 +177,29 @@ fn declare_builtins(
         let id = module.declare_function(spec.symbol, Linkage::Import, &sig)?;
         func_ids.insert(spec.symbol.to_owned(), id);
     }
+
+    let mut declare = |symbol: &str, params: &[AbiParamKind], returns: AbiReturnKind| {
+        let sig = builtin_signature(pointer, call_conv, params, returns);
+        let id = module.declare_function(symbol, Linkage::Import, &sig)?;
+        func_ids.insert(symbol.to_owned(), id);
+        Ok::<(), cranelift_module::ModuleError>(())
+    };
+    declare(
+        SYM_EVENT_SUBSCRIBE,
+        &[AbiParamKind::Ptr, AbiParamKind::Ptr, AbiParamKind::Ptr],
+        AbiReturnKind::I64,
+    )?;
+    declare(
+        SYM_EVENT_UNSUBSCRIBE_FIRST,
+        &[AbiParamKind::Ptr, AbiParamKind::Ptr],
+        AbiReturnKind::I64,
+    )?;
+    declare(SYM_EVENT_LEN, &[AbiParamKind::Ptr], AbiReturnKind::I64)?;
+    declare(
+        SYM_EVENT_GET_HANDLER,
+        &[AbiParamKind::Ptr, AbiParamKind::Ptr],
+        AbiReturnKind::Ptr,
+    )?;
 
     Ok(())
 }

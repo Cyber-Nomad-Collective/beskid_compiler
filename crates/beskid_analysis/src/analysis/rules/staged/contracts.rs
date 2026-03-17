@@ -1,81 +1,61 @@
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
+use crate::resolve::Resolution;
 use crate::hir::{HirContractNode, HirItem, HirProgram, HirType};
 use crate::syntax::Spanned;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
     pub(super) fn stage6_contracts_and_methods(
         &self,
         ctx: &mut RuleContext,
         hir: &Spanned<HirProgram>,
+        resolution: &Resolution,
     ) {
         let contracts = self.collect_contract_signatures(hir);
 
-        for item in &hir.node.items {
-            let HirItem::MethodDefinition(method) = &item.node else {
-                continue;
-            };
-            let HirType::Complex(receiver_path) = &method.node.receiver_type.node else {
-                continue;
-            };
-            let Some(receiver_name) = receiver_path
-                .node
-                .segments
-                .last()
-                .map(|segment| segment.node.name.node.name.clone())
+        for (type_item_id, conformances) in &resolution.tables.type_conformances {
+            let Some(type_name) = resolution.items.get(type_item_id.0).map(|item| item.name.clone())
             else {
                 continue;
             };
-            let Some(expected_methods) = contracts.get(&receiver_name) else {
-                continue;
-            };
-
-            let method_name = method.node.name.node.name.clone();
-            let Some(expected) = expected_methods.get(&method_name) else {
-                ctx.emit_issue(
-                    method.node.name.span,
-                    SemanticIssueKind::ContractMethodNotFound {
-                        method_name,
-                        receiver_name,
-                    },
-                );
-                continue;
-            };
-
-            let actual = self.method_signature_string(
-                method.node.parameters.len(),
-                method.node.return_type.is_some(),
-            );
-            if &actual != expected {
-                ctx.emit_issue(
-                    method.node.name.span,
-                    SemanticIssueKind::ContractImplementationSignatureMismatch {
-                        method_name,
-                        expected: expected.clone(),
-                        actual,
-                    },
-                );
-            }
-        }
-
-        for (contract_name, methods) in &contracts {
-            for (method_name, expected) in methods {
-                if self.has_contract_method_impl(hir, contract_name, method_name) {
+            for (contract_item_id, conformance_span) in conformances {
+                let Some(contract_name) = resolution
+                    .items
+                    .get(contract_item_id.0)
+                    .map(|item| item.name.clone())
+                else {
                     continue;
+                };
+                let Some(expected_methods) = contracts.get(&contract_name) else {
+                    continue;
+                };
+                for (method_name, expected) in expected_methods {
+                    let actual =
+                        self.impl_method_signature_for_type(hir, &type_name, method_name.as_str());
+                    let Some(actual) = actual else {
+                        ctx.emit_issue(
+                            *conformance_span,
+                            SemanticIssueKind::ContractMethodMissingImplementation {
+                                contract_name: contract_name.clone(),
+                                method_name: method_name.clone(),
+                                expected: expected.clone(),
+                            },
+                        );
+                        continue;
+                    };
+                    if &actual != expected {
+                        ctx.emit_issue(
+                            *conformance_span,
+                            SemanticIssueKind::ContractImplementationSignatureMismatch {
+                                method_name: method_name.clone(),
+                                expected: expected.clone(),
+                                actual,
+                            },
+                        );
+                    }
                 }
-                let span = self
-                    .contract_method_span(hir, contract_name, method_name)
-                    .unwrap_or(hir.span);
-                ctx.emit_issue(
-                    span,
-                    SemanticIssueKind::ContractMethodMissingImplementation {
-                        contract_name: contract_name.clone(),
-                        method_name: method_name.clone(),
-                        expected: expected.clone(),
-                    },
-                );
             }
         }
     }
@@ -84,39 +64,87 @@ impl SemanticPipelineRule {
         &self,
         hir: &Spanned<HirProgram>,
     ) -> HashMap<String, HashMap<String, String>> {
-        let mut contracts = HashMap::new();
-        for item in &hir.node.items {
-            let HirItem::ContractDefinition(definition) = &item.node else {
-                continue;
-            };
-            if definition.node.extern_interface.is_some() {
-                continue;
-            }
+        let definitions: HashMap<String, &Spanned<crate::hir::HirContractDefinition>> = hir
+            .node
+            .items
+            .iter()
+            .filter_map(|item| match &item.node {
+                HirItem::ContractDefinition(definition) if definition.node.extern_interface.is_none() => {
+                    Some((definition.node.name.node.name.clone(), definition))
+                }
+                _ => None,
+            })
+            .collect();
 
-            let mut methods = HashMap::new();
-            for node in &definition.node.items {
-                let HirContractNode::MethodSignature(signature) = &node.node else {
-                    continue;
-                };
-                methods.insert(
-                    signature.node.name.node.name.clone(),
-                    self.method_signature_string(
-                        signature.node.parameters.len(),
-                        signature.node.return_type.is_some(),
-                    ),
-                );
-            }
-            contracts.insert(definition.node.name.node.name.clone(), methods);
+        let mut cache = HashMap::new();
+        for contract_name in definitions.keys() {
+            let _ = self.collect_contract_methods_recursive(
+                contract_name,
+                &definitions,
+                &mut cache,
+                &mut HashSet::new(),
+            );
         }
-        contracts
+        cache
     }
 
-    fn has_contract_method_impl(
+    fn collect_contract_methods_recursive(
+        &self,
+        contract_name: &str,
+        definitions: &HashMap<String, &Spanned<crate::hir::HirContractDefinition>>,
+        cache: &mut HashMap<String, HashMap<String, String>>,
+        active: &mut HashSet<String>,
+    ) -> HashMap<String, String> {
+        if let Some(cached) = cache.get(contract_name) {
+            return cached.clone();
+        }
+        if !active.insert(contract_name.to_string()) {
+            return HashMap::new();
+        }
+
+        let mut methods = HashMap::new();
+        let Some(definition) = definitions.get(contract_name) else {
+            active.remove(contract_name);
+            return methods;
+        };
+
+        for node in &definition.node.items {
+            match &node.node {
+                HirContractNode::MethodSignature(signature) => {
+                    methods.insert(
+                        signature.node.name.node.name.clone(),
+                        self.method_signature_string(
+                            signature.node.parameters.len(),
+                            signature.node.return_type.is_some(),
+                        ),
+                    );
+                }
+                HirContractNode::Embedding(embedding) => {
+                    let embedded_name = embedding.node.name.node.name.clone();
+                    let embedded = self.collect_contract_methods_recursive(
+                        embedded_name.as_str(),
+                        definitions,
+                        cache,
+                        active,
+                    );
+                    for (method_name, signature) in embedded {
+                        methods.entry(method_name).or_insert(signature);
+                    }
+                }
+            }
+        }
+
+        active.remove(contract_name);
+        cache.insert(contract_name.to_string(), methods.clone());
+        methods
+    }
+
+    fn impl_method_signature_for_type(
         &self,
         hir: &Spanned<HirProgram>,
+        type_name: &str,
         contract_name: &str,
-        method_name: &str,
-    ) -> bool {
+    ) -> Option<String> {
         for item in &hir.node.items {
             let HirItem::MethodDefinition(method) = &item.node else {
                 continue;
@@ -132,33 +160,11 @@ impl SemanticPipelineRule {
             else {
                 continue;
             };
-            if receiver_name == contract_name && method.node.name.node.name == method_name {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn contract_method_span(
-        &self,
-        hir: &Spanned<HirProgram>,
-        contract_name: &str,
-        method_name: &str,
-    ) -> Option<crate::syntax::SpanInfo> {
-        for item in &hir.node.items {
-            let HirItem::ContractDefinition(definition) = &item.node else {
-                continue;
-            };
-            if definition.node.name.node.name != contract_name {
-                continue;
-            }
-            for node in &definition.node.items {
-                let HirContractNode::MethodSignature(signature) = &node.node else {
-                    continue;
-                };
-                if signature.node.name.node.name == method_name {
-                    return Some(signature.node.name.span);
-                }
+            if receiver_name == type_name && method.node.name.node.name == contract_name {
+                return Some(self.method_signature_string(
+                    method.node.parameters.len(),
+                    method.node.return_type.is_some(),
+                ));
             }
         }
         None

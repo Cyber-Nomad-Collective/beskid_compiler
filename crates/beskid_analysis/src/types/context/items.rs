@@ -39,6 +39,8 @@ impl<'a> TypeContext<'a> {
             }
             HirItem::MethodDefinition(def) => {
                 let receiver_type = self.type_id_for_type(&def.node.receiver_type);
+                let previous_receiver = self.current_receiver_item_id;
+                self.current_receiver_item_id = receiver_type.and_then(|type_id| self.named_item_id(type_id));
                 let return_type = def
                     .node
                     .return_type
@@ -58,6 +60,7 @@ impl<'a> TypeContext<'a> {
                 }
                 self.record_signature(item.span, params, return_type);
                 self.type_block(&def.node.body);
+                self.current_receiver_item_id = previous_receiver;
             }
             HirItem::TypeDefinition(def) => {
                 let mut inserted = Vec::new();
@@ -71,7 +74,18 @@ impl<'a> TypeContext<'a> {
                 }
                 let mut fields = std::collections::HashMap::new();
                 let mut ordered = Vec::new();
+                let mut event_fields = std::collections::HashMap::new();
                 for field in &def.node.fields {
+                    if field.node.kind == crate::hir::HirFieldKind::Event {
+                        if matches!(field.node.event_capacity, Some(0)) {
+                            self.errors
+                                .push(super::context::TypeError::InvalidEventCapacity {
+                                    span: field.span,
+                                });
+                        }
+                        event_fields
+                            .insert(field.node.name.node.name.clone(), field.node.event_capacity);
+                    }
                     if let Some(type_id) = self.type_id_for_type(&field.node.ty) {
                         fields.insert(field.node.name.node.name.clone(), type_id);
                         ordered.push((field.node.name.node.name.clone(), type_id));
@@ -84,6 +98,7 @@ impl<'a> TypeContext<'a> {
                 if let Some(item_id) = item_id {
                     self.struct_fields.insert(item_id, fields);
                     self.struct_fields_ordered.insert(item_id, ordered);
+                    self.struct_event_fields.insert(item_id, event_fields);
                 }
                 for name in inserted {
                     self.generic_params.remove(&name);

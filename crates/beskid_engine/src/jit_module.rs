@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use beskid_abi::{
     AbiParamKind, AbiReturnKind, BUILTIN_SPECS, SYM_ALLOC, SYM_ARRAY_NEW, SYM_GC_REGISTER_ROOT,
+    SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST,
     SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER,
     SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC,
     SYM_PANIC_STR, SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYS_PRINT, SYM_SYS_PRINTLN,
@@ -9,6 +10,7 @@ use beskid_abi::{
 use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
 use beskid_runtime::{
     alloc, array_new, gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle,
+    event_get_handler, event_len, event_subscribe, event_unsubscribe_first,
     gc_write_barrier, interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize, panic,
     panic_str, str_concat, str_len, str_new, sys_print, sys_println,
 };
@@ -68,6 +70,10 @@ impl BeskidJitModule {
         builder.symbol(SYM_GC_UNROOT_HANDLE, gc_unroot_handle as *const u8);
         builder.symbol(SYM_GC_REGISTER_ROOT, gc_register_root as *const u8);
         builder.symbol(SYM_GC_UNREGISTER_ROOT, gc_unregister_root as *const u8);
+        builder.symbol(SYM_EVENT_SUBSCRIBE, event_subscribe as *const u8);
+        builder.symbol(SYM_EVENT_UNSUBSCRIBE_FIRST, event_unsubscribe_first as *const u8);
+        builder.symbol(SYM_EVENT_LEN, event_len as *const u8);
+        builder.symbol(SYM_EVENT_GET_HANDLER, event_get_handler as *const u8);
 
         let module = JITModule::new(builder);
         Ok(Self {
@@ -135,6 +141,31 @@ impl BeskidJitModule {
                 .declare_function(spec.symbol, Linkage::Import, &signature)?;
             self.func_ids.insert(spec.symbol.to_owned(), id);
         }
+
+        let mut declare = |symbol: &str, params: &[AbiParamKind], returns: AbiReturnKind| {
+            let signature = builtin_signature(pointer, call_conv, params, returns);
+            let id = self
+                .module
+                .declare_function(symbol, Linkage::Import, &signature)?;
+            self.func_ids.insert(symbol.to_owned(), id);
+            Ok::<(), ModuleError>(())
+        };
+        declare(
+            SYM_EVENT_SUBSCRIBE,
+            &[AbiParamKind::Ptr, AbiParamKind::Ptr, AbiParamKind::Ptr],
+            AbiReturnKind::I64,
+        )?;
+        declare(
+            SYM_EVENT_UNSUBSCRIBE_FIRST,
+            &[AbiParamKind::Ptr, AbiParamKind::Ptr],
+            AbiReturnKind::I64,
+        )?;
+        declare(SYM_EVENT_LEN, &[AbiParamKind::Ptr], AbiReturnKind::I64)?;
+        declare(
+            SYM_EVENT_GET_HANDLER,
+            &[AbiParamKind::Ptr, AbiParamKind::Ptr],
+            AbiReturnKind::Ptr,
+        )?;
 
         Ok(())
     }

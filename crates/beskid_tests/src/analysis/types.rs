@@ -38,6 +38,32 @@ fn typing_records_method_dispatch_call_kind() {
 }
 
 #[test]
+fn typing_allows_declared_conformance_argument_coercion() {
+    let result = resolve_and_type(
+        "contract Service { i64 run(i64 x); } type Worker : Service { i64 base } impl Worker { i64 run(i64 x) { return this.base + x; } } i64 apply(Service s) { return s.run(1); } i64 main() { Worker w = Worker { base: 41 }; return apply(w); }",
+    );
+    if let Err(errors) = &result {
+        panic!("expected conformance-based argument coercion typing to succeed, got errors: {errors:?}");
+    }
+    assert!(result.is_ok(), "unexpected contract coercion typing failure");
+}
+
+#[test]
+fn typing_records_contract_dispatch_call_kind() {
+    let result = resolve_and_type("contract Service { i64 run(i64 x); } i64 apply(Service s) { return s.run(1); }")
+        .expect("expected typing to succeed");
+
+    assert!(
+        result
+            .call_kinds
+            .values()
+            .any(|kind| matches!(kind, CallLoweringKind::ContractDispatch { .. })),
+        "expected at least one ContractDispatch call kind, got: {:?}",
+        result.call_kinds
+    );
+}
+
+#[test]
 fn typing_records_item_call_kind() {
     let result = resolve_and_type("i64 add(i64 a, i64 b) { return a + b; } i64 main() { return add(1, 2); }")
         .expect("expected typing to succeed");
@@ -89,6 +115,126 @@ fn typing_method_dispatch_is_receiver_aware() {
     assert!(
         result.is_ok(),
         "unexpected receiver-aware dispatch typing failure"
+    );
+}
+
+#[test]
+fn typing_rejects_identity_equality_on_numeric_values() {
+    let result = resolve_and_type("bool main() { return 1 === 1; }");
+    let errors = result.expect_err("expected numeric identity equality to be rejected");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::InvalidBinaryOp { .. })),
+        "expected InvalidBinaryOp for numeric identity equality, got: {errors:?}"
+    );
+}
+
+#[test]
+fn typing_allows_identity_equality_on_named_values() {
+    let result = resolve_and_type(
+        "type User { i64 id } bool main() { User a = User { id: 1 }; User b = a; return a === b; }",
+    );
+    if let Err(errors) = &result {
+        panic!("expected named identity equality typing to succeed, got errors: {errors:?}");
+    }
+    assert!(result.is_ok(), "unexpected named identity equality typing failure");
+}
+
+#[test]
+fn typing_rejects_compound_assign_on_non_numeric_non_string() {
+    let result = resolve_and_type("unit main() { bool mut flag = true; flag += false; }");
+    let errors = result.expect_err("expected invalid compound assignment on bool");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::UnsupportedExpression { .. })),
+        "expected UnsupportedExpression for bool += bool, got: {errors:?}"
+    );
+}
+
+#[test]
+fn typing_allows_string_compound_add_assign() {
+    let result = resolve_and_type("unit main() { string mut s = \"a\"; s += \"b\"; }");
+    if let Err(errors) = &result {
+        panic!("expected string += typing to succeed, got errors: {errors:?}");
+    }
+    assert!(result.is_ok(), "unexpected string += typing failure");
+}
+
+#[test]
+fn typing_allows_event_member_subscribe_and_unsubscribe() {
+    let result = resolve_and_type(
+        "type User { event{4} Created(string payload) } unit main() { User mut u = User { }; unit(string) handler = (string payload) => { return; }; u.Created += handler; u.Created -= handler; }",
+    );
+    if let Err(errors) = &result {
+        panic!("expected event +=/-= typing to succeed, got errors: {errors:?}");
+    }
+    assert!(result.is_ok(), "unexpected event +=/-= typing failure");
+}
+
+#[test]
+fn typing_rejects_add_assign_handler_on_non_event_target() {
+    let result = resolve_and_type(
+        "type User { i64 count } unit main() { User mut u = User { count: 0 }; unit(string) handler = (string payload) => { return; }; u.count += handler; }",
+    );
+    let errors = result.expect_err("expected non-event += handler rejection");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::InvalidEventSubscriptionTarget { .. })),
+        "expected InvalidEventSubscriptionTarget for non-event += handler, got: {errors:?}"
+    );
+}
+
+#[test]
+fn typing_rejects_sub_assign_handler_on_non_event_target() {
+    let result = resolve_and_type(
+        "type User { i64 count } unit main() { User mut u = User { count: 0 }; unit(string) handler = (string payload) => { return; }; u.count -= handler; }",
+    );
+    let errors = result.expect_err("expected non-event -= handler rejection");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::InvalidEventSubscriptionTarget { .. })),
+        "expected InvalidEventSubscriptionTarget for non-event -= handler, got: {errors:?}"
+    );
+}
+
+#[test]
+fn typing_rejects_zero_event_capacity() {
+    let result = resolve_and_type("type User { event{0} Created(string payload) } unit main() { return; }");
+    let errors = result.expect_err("expected zero event capacity rejection");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::InvalidEventCapacity { .. })),
+        "expected InvalidEventCapacity for event{{0}}, got: {errors:?}"
+    );
+}
+
+#[test]
+fn typing_allows_owner_event_invoke() {
+    let result = resolve_and_type(
+        "type User { event{4} Created(string payload) } impl User { unit Emit(string payload) { this.Created(payload); } } unit main() { User mut u = User { }; u.Emit(\"ok\"); }",
+    );
+    if let Err(errors) = &result {
+        panic!("expected owner event invoke typing to succeed, got errors: {errors:?}");
+    }
+    assert!(result.is_ok(), "unexpected owner event invoke typing failure");
+}
+
+#[test]
+fn typing_rejects_non_owner_event_invoke() {
+    let result = resolve_and_type(
+        "type User { event{4} Created(string payload) } unit main() { User mut u = User { }; u.Created(\"x\"); }",
+    );
+    let errors = result.expect_err("expected non-owner event invoke rejection");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::InvalidEventInvocationScope { .. })),
+        "expected InvalidEventInvocationScope for non-owner event invoke, got: {errors:?}"
     );
 }
 
@@ -472,4 +618,129 @@ fn typing_reports_unknown_struct_field() {
             .any(|error| matches!(error, TypeError::UnknownStructField { .. })),
         "expected UnknownStructField error, got: {errors:?}"
     );
+}
+
+#[test]
+fn typing_for_loop_infers_iterator_type_from_iterable_contract() {
+    let result = resolve_and_type(
+        "
+        enum Option { Some(i64 value), None }
+        type Iter { i64 seed }
+        impl Iter {
+            Option Next() { return Option::Some(1); }
+        }
+        unit main() {
+            Iter iter = Iter { seed: 0 };
+            i64 mut sum = 0;
+            for i in iter { sum += i; }
+        }
+        ",
+    );
+    assert!(result.is_ok(), "expected iterable for-loop typing to succeed");
+}
+
+#[test]
+fn typing_for_loop_rejects_non_iterable_target() {
+    let result = resolve_and_type("unit main() { i64 v = 1; for i in v { continue; } }");
+    let errors = result.expect_err("expected non-iterable for target error");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::NonIterableForTarget { .. })),
+        "expected NonIterableForTarget error, got: {errors:?}"
+    );
+}
+
+#[test]
+fn typing_for_loop_rejects_next_returning_non_option() {
+    let result = resolve_and_type(
+        "
+        type Iter { i64 seed }
+        impl Iter {
+            i64 Next() { return this.seed; }
+        }
+        unit main() {
+            Iter iter = Iter { seed: 0 };
+            for i in iter { continue; }
+        }
+        ",
+    );
+    let errors = result.expect_err("expected iterable Next non-option error");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::IterableNextReturnNotOption { .. })),
+        "expected IterableNextReturnNotOption error, got: {errors:?}"
+    );
+}
+
+#[test]
+fn typing_for_loop_rejects_next_with_non_zero_arity() {
+    let result = resolve_and_type(
+        "
+        enum Option { Some(i64 value), None }
+        type Iter { i64 seed }
+        impl Iter {
+            Option Next(i64 step) { return Option::None(); }
+        }
+        unit main() {
+            Iter iter = Iter { seed: 0 };
+            for i in iter { continue; }
+        }
+        ",
+    );
+    let errors = result.expect_err("expected iterable Next arity mismatch error");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::IterableNextArityMismatch { .. })),
+        "expected IterableNextArityMismatch error, got: {errors:?}"
+    );
+}
+
+#[test]
+fn typing_for_loop_rejects_option_some_payload_arity_mismatch() {
+    let result = resolve_and_type(
+        "
+        enum Option { Some(i64 a, i64 b), None }
+        type Iter { i64 seed }
+        impl Iter {
+            Option Next() { return Option::None(); }
+        }
+        unit main() {
+            Iter iter = Iter { seed: 0 };
+            for i in iter { continue; }
+        }
+        ",
+    );
+    let errors = result.expect_err("expected iterable Option::Some payload arity mismatch error");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::IterableOptionSomeArityMismatch { .. })),
+        "expected IterableOptionSomeArityMismatch error, got: {errors:?}"
+    );
+}
+
+#[test]
+fn typing_rejects_invalid_try_target() {
+    let result = resolve_and_type("i64 main() { i64 x = 1; i64 y = x?; return y; }");
+    let errors = result.expect_err("expected invalid try target typing error");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::InvalidTryTarget { .. })),
+        "expected InvalidTryTarget error, got: {errors:?}"
+    );
+}
+
+#[test]
+fn typing_allows_try_on_result_and_unwraps_ok_payload_type() {
+    let result = resolve_and_type(
+        "enum Result { Ok(i64 value), Error(string message) } i64 main() { Result r = Result::Ok(42); i64 value = r?; return value; }",
+    );
+    if let Err(errors) = &result {
+        panic!("expected try on Result to type-check, got errors: {errors:?}");
+    }
+    assert!(result.is_ok(), "unexpected try-on-result typing failure");
 }

@@ -3,12 +3,13 @@
 pub mod builtins;
 pub mod gc;
 pub mod interop;
-pub mod interop_generated;
+mod interop_layout;
 
 pub use builtins::{
     alloc, array_new, beskid_runtime_abi_version, gc_register_root, gc_root_handle,
-    gc_unregister_root, gc_unroot_handle, gc_write_barrier, panic, panic_str, str_concat, str_len,
-    str_new, sys_print, sys_println,
+    gc_unregister_root, gc_unroot_handle, gc_write_barrier, panic, panic_str, str_concat,
+    str_len, str_new, sys_print, sys_println,
+    event_get_handler, event_len, event_subscribe, event_unsubscribe_first,
 };
 pub use gc::{
     RawAllocation, RuntimeRoot, RuntimeState, clear_current_mutation, clear_current_root,

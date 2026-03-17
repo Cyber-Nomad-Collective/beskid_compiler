@@ -53,6 +53,9 @@ pub(crate) fn emit_resolve_error(ctx: &mut RuleContext, error: ResolveError) {
                 SemanticIssueKind::ResolveUnknownTypeInModule { module_path, name },
             );
         }
+        ResolveError::InvalidConformanceTarget { name, span } => {
+            ctx.emit_issue(span, SemanticIssueKind::ResolveInvalidConformanceTarget { name });
+        }
         ResolveError::PrivateItemInModule {
             module_path,
             name,

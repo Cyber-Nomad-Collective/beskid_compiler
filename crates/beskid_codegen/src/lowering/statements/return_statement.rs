@@ -34,6 +34,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirReturnStatement {
                         expected,
                         actual,
                         ctx.type_result,
+                        ctx.resolution,
                         ctx.builder,
                         value,
                     )?;

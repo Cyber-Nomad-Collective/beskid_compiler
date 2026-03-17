@@ -5,9 +5,10 @@ use crate::commands::fetch::FetchArgs;
 use crate::commands::lock::LockArgs;
 use crate::commands::parse::ParseArgs;
 use crate::commands::run::RunArgs;
+use crate::commands::stdlib::StdlibArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
-use crate::commands::{analyze, build, clif, fetch, lock, parse, run, tree, update};
+use crate::commands::{analyze, build, clif, fetch, lock, parse, run, stdlib, tree, update};
 use clap::{Parser, Subcommand};
 use std::env;
 
@@ -47,6 +48,9 @@ pub enum Commands {
 
     /// Update dependency resolution and materialized workspace
     Update(UpdateArgs),
+
+    /// Materialize the checked-in Beskid standard library project template
+    Stdlib(StdlibArgs),
 }
 
 pub fn run() -> anyhow::Result<()> {
@@ -65,5 +69,6 @@ pub fn run() -> anyhow::Result<()> {
         Commands::Fetch(args) => fetch::execute(args),
         Commands::Lock(args) => lock::execute(args),
         Commands::Update(args) => update::execute(args),
+        Commands::Stdlib(args) => stdlib::execute(args),
     }
 }

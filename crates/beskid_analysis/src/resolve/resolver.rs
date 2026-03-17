@@ -277,8 +277,34 @@ impl Resolver {
                 for generic in &def.node.generics {
                     self.insert_generic(&generic.node.name);
                 }
+                let type_item_id = self.resolve_item_in_scope(&def.node.name.node.name);
                 for conformance in &def.node.conformances {
                     self.resolve_type_path(conformance);
+                    let Some(type_item_id) = type_item_id else {
+                        continue;
+                    };
+                    let Some(ResolvedType::Item(conformance_item_id)) =
+                        self.tables.resolved_types.get(&conformance.span)
+                    else {
+                        continue;
+                    };
+                    if self
+                        .items
+                        .get(conformance_item_id.0)
+                        .is_some_and(|item| item.kind == ItemKind::Contract)
+                    {
+                        self.tables.insert_type_conformance(
+                            type_item_id,
+                            *conformance_item_id,
+                            conformance.span,
+                        );
+                    } else if let Some(item) = self.items.get(conformance_item_id.0) {
+                        self.errors
+                            .push(ResolveError::InvalidConformanceTarget {
+                                name: item.name.clone(),
+                                span: conformance.span,
+                            });
+                    }
                 }
                 for field in &def.node.fields {
                     self.resolve_type(&field.node.ty);

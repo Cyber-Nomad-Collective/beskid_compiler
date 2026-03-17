@@ -194,7 +194,7 @@ fn lowering_preserves_attribute_declaration_items() {
 }
 
 #[test]
-fn lowering_maps_try_expression_node() {
+fn analysis_desugars_try_to_match() {
     let source = "i64 foo() { return 1; } i64 main() { i64 value = foo()?; return value; }";
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
@@ -216,19 +216,26 @@ fn lowering_maps_try_expression_node() {
         panic!("expected let statement");
     };
 
-    match &let_stmt.node.value.node {
-        HirExpressionNode::TryExpression(try_expr) => {
-            assert!(
-                matches!(try_expr.node.expr.node, HirExpressionNode::CallExpression(_)),
-                "expected try expression to wrap call expression"
-            );
-        }
-        _ => panic!("expected try expression"),
-    }
+    let HirExpressionNode::MatchExpression(match_expr) = &let_stmt.node.value.node else {
+        panic!("expected desugared match expression");
+    };
+    assert!(
+        matches!(match_expr.node.scrutinee.node, HirExpressionNode::CallExpression(_)),
+        "expected try scrutinee call to become match scrutinee"
+    );
+    assert_eq!(match_expr.node.arms.len(), 2, "expected Ok and wildcard arms");
+    assert!(
+        matches!(match_expr.node.arms[0].node.pattern.node, HirPattern::Enum(_)),
+        "expected first arm to pattern-match Result::Ok"
+    );
+    assert!(
+        matches!(match_expr.node.arms[1].node.pattern.node, HirPattern::Wildcard),
+        "expected second arm to be wildcard error arm"
+    );
 }
 
 #[test]
-fn lowering_preserves_iterable_for_statement_shape() {
+fn lowering_normalizes_iterable_for_statement_to_state_machine() {
     let source = "unit main() { for item in items { continue; } }";
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
@@ -245,17 +252,44 @@ fn lowering_preserves_iterable_for_statement_shape() {
         })
         .expect("expected main function");
 
-    match &main_fn.node.body.node.statements[0].node {
-        HirStatementNode::ForStatement(for_stmt) => {
-            assert!(matches!(for_stmt.node.iterable.node, HirExpressionNode::PathExpression(_)));
-        }
-        _ => panic!("expected for statement"),
-    }
+    assert!(matches!(main_fn.node.body.node.statements[0].node, HirStatementNode::LetStatement(_)));
+    let HirStatementNode::WhileStatement(while_stmt) = &main_fn.node.body.node.statements[1].node else {
+        panic!("expected while statement");
+    };
+    assert_eq!(while_stmt.node.body.node.statements.len(), 2);
+    assert!(matches!(while_stmt.node.body.node.statements[0].node, HirStatementNode::LetStatement(_)));
+    assert!(matches!(while_stmt.node.body.node.statements[1].node, HirStatementNode::ExpressionStatement(_)));
+}
+
+#[test]
+fn lowering_normalizes_range_for_statement_to_fast_path() {
+    let source = "unit main() { for i in range(0, 3) { continue; } }";
+    let program = parse_program_ast(source);
+    let ast: Spanned<AstProgram> = program.into();
+    let mut hir: Spanned<HirProgram> = lower_program(&ast);
+    normalize_program(&mut hir).expect("normalization failed");
+
+    let main_fn = hir
+        .node
+        .items
+        .iter()
+        .find_map(|item| match &item.node {
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            _ => None,
+        })
+        .expect("expected main function");
+
+    assert!(matches!(main_fn.node.body.node.statements[0].node, HirStatementNode::LetStatement(_)));
+    assert!(matches!(main_fn.node.body.node.statements[1].node, HirStatementNode::LetStatement(_)));
+    let HirStatementNode::WhileStatement(while_stmt) = &main_fn.node.body.node.statements[2].node else {
+        panic!("expected while statement");
+    };
+    assert!(matches!(while_stmt.node.condition.node, HirExpressionNode::BinaryExpression(_)));
 }
 
 #[test]
 fn lowering_preserves_type_conformances_and_field_kinds() {
-    let source = "type User when Display, Clone { event string created, string name }";
+    let source = "type User : Display, Clone { event{4} Created(string payload), string name }";
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let hir: Spanned<HirProgram> = lower_program(&ast);
@@ -273,6 +307,7 @@ fn lowering_preserves_type_conformances_and_field_kinds() {
     assert_eq!(type_def.node.conformances.len(), 2);
     assert_eq!(type_def.node.fields.len(), 2);
     assert_eq!(type_def.node.fields[0].node.kind, HirFieldKind::Event);
+    assert_eq!(type_def.node.fields[0].node.event_capacity, Some(4));
     assert_eq!(type_def.node.fields[1].node.kind, HirFieldKind::Value);
 }
 

@@ -128,6 +128,18 @@ pub(crate) fn emit_type_error(
         TypeError::UnsupportedExpression { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeUnsupportedExpression);
         }
+        TypeError::InvalidTryTarget { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeInvalidTryTarget);
+        }
+        TypeError::InvalidEventInvocationScope { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeInvalidEventInvocationScope);
+        }
+        TypeError::InvalidEventCapacity { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeInvalidEventCapacity);
+        }
+        TypeError::InvalidEventSubscriptionTarget { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeInvalidEventSubscriptionTarget);
+        }
         TypeError::ReturnTypeMismatch {
             span,
             expected,
@@ -143,6 +155,32 @@ pub(crate) fn emit_type_error(
                     expected_name,
                     actual_name,
                 },
+            );
+        }
+        TypeError::NonIterableForTarget { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeNonIterableForTarget);
+        }
+        TypeError::IterableNextArityMismatch {
+            span,
+            expected,
+            actual,
+        } => {
+            ctx.emit_issue(
+                span,
+                SemanticIssueKind::TypeIterableNextArityMismatch { expected, actual },
+            );
+        }
+        TypeError::IterableNextReturnNotOption { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeIterableNextReturnNotOption);
+        }
+        TypeError::IterableOptionSomeArityMismatch {
+            span,
+            expected,
+            actual,
+        } => {
+            ctx.emit_issue(
+                span,
+                SemanticIssueKind::TypeIterableOptionSomeArityMismatch { expected, actual },
             );
         }
     }
@@ -176,6 +214,7 @@ fn primitive_type_name(primitive: crate::hir::HirPrimitiveType) -> &'static str 
         crate::hir::HirPrimitiveType::Char => "char",
         crate::hir::HirPrimitiveType::String => "string",
         crate::hir::HirPrimitiveType::Unit => "unit",
+        crate::hir::HirPrimitiveType::Never => "never",
     }
 }
 

@@ -13,6 +13,7 @@ pub enum HirPrimitiveType {
     Char,
     String,
     Unit,
+    Never,
 }
 
 impl HirPrimitiveType {
@@ -26,6 +27,7 @@ impl HirPrimitiveType {
             HirPrimitiveType::Char => 32,
             HirPrimitiveType::String => 64,
             HirPrimitiveType::Unit => 0,
+            HirPrimitiveType::Never => 0,
         }
     }
 
@@ -60,6 +62,8 @@ pub enum HirType {
 pub struct HirField {
     #[ast(skip)]
     pub kind: HirFieldKind,
+    #[ast(skip)]
+    pub event_capacity: Option<usize>,
     #[ast(child)]
     pub name: Spanned<HirIdentifier>,
     #[ast(child)]

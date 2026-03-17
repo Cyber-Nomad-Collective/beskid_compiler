@@ -3,7 +3,7 @@ use beskid_abi::{
     RUNTIME_EXPORT_SYMBOLS, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
     SYM_INTEROP_DISPATCH_USIZE,
 };
-use beskid_runtime::interop_generated::{
+use beskid_runtime::interop::dispatch_table::{
     TAG_STRING_LEN, dispatch_ptr, dispatch_unit, dispatch_usize,
 };
 

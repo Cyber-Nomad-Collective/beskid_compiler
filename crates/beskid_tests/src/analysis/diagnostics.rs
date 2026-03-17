@@ -24,6 +24,50 @@ fn resolve_private_item_issue_contract_is_stable() {
 }
 
 #[test]
+fn invalid_event_subscription_target_issue_contract_is_stable() {
+    let issue = SemanticIssueKind::TypeInvalidEventSubscriptionTarget;
+    assert_eq!(issue.code(), "E1221");
+    assert_eq!(issue.severity(), Severity::Error);
+    assert_eq!(issue.label(), "invalid event subscription target");
+    assert!(
+        issue
+            .message()
+            .contains("event subscription target must be an event field")
+    );
+    assert!(issue.help().is_some());
+}
+
+#[test]
+fn invalid_try_target_issue_contract_is_stable() {
+    let issue = SemanticIssueKind::TypeInvalidTryTarget;
+    assert_eq!(issue.code(), "E1222");
+    assert_eq!(issue.severity(), Severity::Error);
+    assert_eq!(issue.label(), "invalid try target");
+    assert!(
+        issue
+            .message()
+            .contains("try operator requires a Result value with an Ok payload")
+    );
+    assert!(issue.help().is_some());
+}
+
+#[test]
+fn invalid_conformance_target_issue_contract_is_stable() {
+    let issue = SemanticIssueKind::ResolveInvalidConformanceTarget {
+        name: "NotContract".to_string(),
+    };
+    assert_eq!(issue.code(), "E1607");
+    assert_eq!(issue.severity(), Severity::Error);
+    assert_eq!(issue.label(), "invalid conformance target");
+    assert!(
+        issue
+            .message()
+            .contains("`NotContract` is not a contract")
+    );
+    assert!(issue.help().is_some());
+}
+
+#[test]
 fn attribute_target_mismatch_issue_contract_is_stable() {
     let issue = SemanticIssueKind::AttributeTargetNotAllowed {
         attribute: "Extern".to_string(),

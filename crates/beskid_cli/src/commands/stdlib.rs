@@ -36,12 +36,12 @@ fn generate_stdlib_project(output: &Path) -> Result<()> {
 }
 
 fn stdlib_template_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../standard_library")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../standard_library")
 }
 
 fn validate_template_layout(template_root: &Path) -> Result<()> {
     let manifest = template_root.join("Project.proj");
-    let prelude = template_root.join("Src/Prelude.bd");
+    let prelude = template_root.join("src/Prelude.bd");
 
     if !manifest.is_file() {
         anyhow::bail!("missing stdlib manifest template at `{}`", manifest.display());

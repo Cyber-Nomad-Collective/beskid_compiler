@@ -2,6 +2,7 @@ use crate::hir::{HirBlock, HirExpressionNode, HirProgram};
 use crate::syntax::Spanned;
 
 use super::normalizable::Normalize;
+use super::{builders, builders::desugar_try_expression};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HirNormalizeError {
@@ -56,6 +57,22 @@ impl Normalizer {
     }
 
     pub fn visit_expression(&mut self, expr: &mut Spanned<HirExpressionNode>) {
+        // Pipeline contract: syntax/HIR lowering may contain `TryExpression`; normalization
+        // must desugar it so type/codegen backends only observe explicit control-flow.
+        if matches!(expr.node, HirExpressionNode::TryExpression(_)) {
+            let original = std::mem::replace(
+                expr,
+                builders::hir_path_expr("__try_operand_placeholder_desugar", expr.span),
+            );
+            let HirExpressionNode::TryExpression(mut try_expr) = original.node else {
+                unreachable!("guarded by TryExpression match");
+            };
+            self.visit_expression(&mut try_expr.node.expr);
+            *expr = desugar_try_expression(try_expr, original.span);
+            self.visit_expression(expr);
+            return;
+        }
+
         match &mut expr.node {
             HirExpressionNode::MatchExpression(match_expr) => {
                 self.visit_expression(&mut match_expr.node.scrutinee);
@@ -105,10 +122,8 @@ impl Normalizer {
             HirExpressionNode::GroupedExpression(grouped_expr) => {
                 self.visit_expression(&mut grouped_expr.node.expr);
             }
-            HirExpressionNode::TryExpression(try_expr) => {
-                self.visit_expression(&mut try_expr.node.expr);
-            }
             HirExpressionNode::LiteralExpression(_) | HirExpressionNode::PathExpression(_) => {}
+            HirExpressionNode::TryExpression(_) => unreachable!("try desugared before traversal"),
         }
     }
 }

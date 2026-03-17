@@ -6,3 +6,5 @@ mod discovery;
 mod graph;
 #[cfg(test)]
 mod manifest;
+#[cfg(test)]
+mod stdlib;

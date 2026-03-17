@@ -79,6 +79,7 @@ fn primitive_layout(primitive: beskid_analysis::hir::HirPrimitiveType) -> TypeLa
         beskid_analysis::hir::HirPrimitiveType::U8 => (1, 1),
         beskid_analysis::hir::HirPrimitiveType::F64 => (8, 8),
         beskid_analysis::hir::HirPrimitiveType::Unit => (0, 1),
+        beskid_analysis::hir::HirPrimitiveType::Never => (0, 1),
         beskid_analysis::hir::HirPrimitiveType::Char => (4, 4),
         beskid_analysis::hir::HirPrimitiveType::String => (8, 8),
     };

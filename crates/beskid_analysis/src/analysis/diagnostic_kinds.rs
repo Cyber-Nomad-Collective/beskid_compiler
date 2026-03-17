@@ -150,6 +150,9 @@ pub enum SemanticIssueKind {
         module_path: String,
         name: String,
     },
+    ResolveInvalidConformanceTarget {
+        name: String,
+    },
     ResolvePrivateItemInModule {
         module_path: String,
         name: String,
@@ -206,9 +209,23 @@ pub enum SemanticIssueKind {
     TypeInvalidUnaryOp,
     TypeNonBoolCondition,
     TypeUnsupportedExpression,
+    TypeInvalidTryTarget,
+    TypeInvalidEventInvocationScope,
+    TypeInvalidEventCapacity,
+    TypeInvalidEventSubscriptionTarget,
     TypeReturnMismatch {
         expected_name: String,
         actual_name: String,
+    },
+    TypeNonIterableForTarget,
+    TypeIterableNextArityMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    TypeIterableNextReturnNotOption,
+    TypeIterableOptionSomeArityMismatch {
+        expected: usize,
+        actual: usize,
     },
     TypeImplicitNumericCast {
         from: String,
@@ -267,6 +284,7 @@ impl SemanticIssueKind {
             Self::ResolveUnknownModulePath { .. } => "E1105",
             Self::ResolveUnknownValueInModule { .. } => "E1101",
             Self::ResolveUnknownTypeInModule { .. } => "E1201",
+            Self::ResolveInvalidConformanceTarget { .. } => "E1607",
             Self::ResolvePrivateItemInModule { .. } => "E1107",
             Self::ResolveShadowedLocal { .. } => "W1103",
 
@@ -291,7 +309,15 @@ impl SemanticIssueKind {
             Self::TypeInvalidUnaryOp => "E1210",
             Self::TypeNonBoolCondition => "E1208",
             Self::TypeUnsupportedExpression => "E1202",
+            Self::TypeInvalidTryTarget => "E1222",
+            Self::TypeInvalidEventInvocationScope => "E1219",
+            Self::TypeInvalidEventCapacity => "E1220",
+            Self::TypeInvalidEventSubscriptionTarget => "E1221",
             Self::TypeReturnMismatch { .. } => "E1207",
+            Self::TypeNonIterableForTarget => "E1215",
+            Self::TypeIterableNextArityMismatch { .. } => "E1216",
+            Self::TypeIterableNextReturnNotOption => "E1217",
+            Self::TypeIterableOptionSomeArityMismatch { .. } => "E1218",
             Self::TypeImplicitNumericCast { .. } => "W1203",
         }
     }
@@ -367,6 +393,9 @@ impl SemanticIssueKind {
             Self::ResolveUnknownModulePath { .. } => "unknown module path".to_string(),
             Self::ResolveUnknownValueInModule { .. } => "unknown value in module".to_string(),
             Self::ResolveUnknownTypeInModule { .. } => "unknown type in module".to_string(),
+            Self::ResolveInvalidConformanceTarget { .. } => {
+                "invalid conformance target".to_string()
+            }
             Self::ResolvePrivateItemInModule { .. } => "private item access".to_string(),
             Self::ResolveShadowedLocal { .. } => "shadowed local".to_string(),
             Self::TypeUnknownType => "unknown type".to_string(),
@@ -392,7 +421,25 @@ impl SemanticIssueKind {
             Self::TypeInvalidUnaryOp => "invalid unary operation".to_string(),
             Self::TypeNonBoolCondition => "condition must be boolean".to_string(),
             Self::TypeUnsupportedExpression => "unsupported expression".to_string(),
+            Self::TypeInvalidTryTarget => "invalid try target".to_string(),
+            Self::TypeInvalidEventInvocationScope => {
+                "invalid event invocation scope".to_string()
+            }
+            Self::TypeInvalidEventCapacity => "invalid event capacity".to_string(),
+            Self::TypeInvalidEventSubscriptionTarget => {
+                "invalid event subscription target".to_string()
+            }
             Self::TypeReturnMismatch { .. } => "return type mismatch".to_string(),
+            Self::TypeNonIterableForTarget => "non-iterable for target".to_string(),
+            Self::TypeIterableNextArityMismatch { .. } => {
+                "iterable Next arity mismatch".to_string()
+            }
+            Self::TypeIterableNextReturnNotOption => {
+                "iterable Next return must be Option<T>".to_string()
+            }
+            Self::TypeIterableOptionSomeArityMismatch { .. } => {
+                "iterable Option::Some arity mismatch".to_string()
+            }
             Self::TypeImplicitNumericCast { .. } => "implicit numeric cast".to_string(),
         }
     }
@@ -513,6 +560,9 @@ impl SemanticIssueKind {
             Self::ResolveUnknownTypeInModule { module_path, name } => {
                 format!("unknown type `{name}` in module `{module_path}`")
             }
+            Self::ResolveInvalidConformanceTarget { name } => {
+                format!("type conformances must target contracts, but `{name}` is not a contract")
+            }
             Self::ResolvePrivateItemInModule { module_path, name } => {
                 format!("private item `{name}` cannot be accessed from module `{module_path}`")
             }
@@ -563,10 +613,34 @@ impl SemanticIssueKind {
             Self::TypeInvalidUnaryOp => "invalid unary operation".to_string(),
             Self::TypeNonBoolCondition => "non-boolean condition".to_string(),
             Self::TypeUnsupportedExpression => "unsupported expression".to_string(),
+            Self::TypeInvalidTryTarget => {
+                "try operator requires a Result value with an Ok payload".to_string()
+            }
+            Self::TypeInvalidEventInvocationScope => {
+                "events can only be invoked from methods on their declaring type".to_string()
+            }
+            Self::TypeInvalidEventCapacity => {
+                "event capacity must be a positive integer".to_string()
+            }
+            Self::TypeInvalidEventSubscriptionTarget => {
+                "event subscription target must be an event field".to_string()
+            }
             Self::TypeReturnMismatch {
                 expected_name,
                 actual_name,
             } => format!("return type mismatch: expected {expected_name}, got {actual_name}"),
+            Self::TypeNonIterableForTarget => {
+                "for-in target does not satisfy iterable contract (missing Next())".to_string()
+            }
+            Self::TypeIterableNextArityMismatch { expected, actual } => {
+                format!("iterable Next() arity mismatch: expected {expected}, got {actual}")
+            }
+            Self::TypeIterableNextReturnNotOption => {
+                "iterable Next() must return Option<T>".to_string()
+            }
+            Self::TypeIterableOptionSomeArityMismatch { expected, actual } => {
+                format!("iterable Option::Some payload mismatch: expected {expected}, got {actual}")
+            }
             Self::TypeImplicitNumericCast { from, to } => {
                 format!("implicit numeric cast from {from} to {to}")
             }
@@ -618,9 +692,19 @@ impl SemanticIssueKind {
             Self::ResolvePrivateItemInModule { .. } => {
                 Some("mark the item `pub` or avoid cross-module access".to_string())
             }
+            Self::ResolveInvalidConformanceTarget { .. } => {
+                Some("declare conformance against a `contract`, not a type/enum/function".to_string())
+            }
             Self::TypeMissingTypeArguments => {
                 Some("provide explicit type arguments, e.g. `Type<i32>`".to_string())
             }
+            Self::TypeInvalidTryTarget => {
+                Some("apply `?` only to a `Result<Ok, Error>` expression".to_string())
+            }
+            Self::TypeInvalidEventSubscriptionTarget => Some(
+                "use `+=`/`-=` with an event field declared as `event Name(...)` or `event{N} Name(...)`"
+                    .to_string(),
+            ),
             Self::TypeImplicitNumericCast { .. } => {
                 Some("add an explicit cast to make conversion intent clear".to_string())
             }

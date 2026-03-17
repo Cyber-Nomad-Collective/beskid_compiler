@@ -38,6 +38,7 @@ impl Lowerable for Spanned<syntax::Field> {
                     syntax::FieldKind::Value => HirFieldKind::Value,
                     syntax::FieldKind::Event => HirFieldKind::Event,
                 },
+                event_capacity: self.node.event_capacity,
                 name: self.node.name.lower(),
                 ty: self.node.ty.lower(),
             },

@@ -365,6 +365,47 @@ fn analysis_emits_conflicting_embedded_contract_errors() {
 }
 
 #[test]
+fn analysis_emits_invalid_conformance_target_errors() {
+    let source = "type NotContract { i64 id } type User : NotContract { i64 x }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1607"))
+    );
+}
+
+#[test]
+fn analysis_emits_invalid_identity_equality_domain_errors() {
+    let source = "bool main() { return 1 === 1; }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1209")),
+        "expected invalid identity equality diagnostic E1209"
+    );
+}
+
+#[test]
 fn analysis_emits_unknown_enum_path_errors() {
     let source = "unit main() { i64 x = Missing::None(); }";
     let program = parse_program_ast(source);
@@ -545,6 +586,135 @@ fn analysis_emits_invalid_member_target_errors() {
 }
 
 #[test]
+fn analysis_emits_non_iterable_for_target_errors() {
+    let source = "unit main() { i64 value = 1; for i in value { continue; } }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1215"))
+    );
+}
+
+#[test]
+fn analysis_emits_iterable_next_return_not_option_errors() {
+    let source = "
+        type Iter { i64 seed }
+        impl Iter {
+            i64 Next() { return this.seed; }
+        }
+        unit main() {
+            Iter iter = Iter { seed: 0 };
+            for i in iter { continue; }
+        }
+    ";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1217"))
+    );
+}
+
+#[test]
+fn analysis_emits_iterable_next_arity_mismatch_errors() {
+    let source = "
+        enum Option { Some(i64 value), None }
+        type Iter { i64 seed }
+        impl Iter {
+            Option Next(i64 step) { return Option::None(); }
+        }
+        unit main() {
+            Iter iter = Iter { seed: 0 };
+            for i in iter { continue; }
+        }
+    ";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1216"))
+    );
+}
+
+#[test]
+fn analysis_emits_iterable_option_some_payload_mismatch_errors() {
+    let source = "
+        enum Option { Some(i64 a, i64 b), None }
+        type Iter { i64 seed }
+        impl Iter {
+            Option Next() { return Option::None(); }
+        }
+        unit main() {
+            Iter iter = Iter { seed: 0 };
+            for i in iter { continue; }
+        }
+    ";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1218"))
+    );
+}
+
+#[test]
+fn analysis_emits_invalid_try_target_errors() {
+    let source = "i64 foo() { return 1; } i64 main() { i64 value = foo()?; return value; }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1222"))
+    );
+}
+
+#[test]
 fn analysis_emits_unqualified_enum_constructor_errors() {
     let source = "enum Option { Some(i64 value) } unit main() { Option x = Some(1); }";
     let program = parse_program_ast(source);
@@ -686,7 +856,7 @@ fn analysis_emits_unused_private_item_warnings() {
 
 #[test]
 fn analysis_emits_contract_method_missing_impl_errors() {
-    let source = "contract Service { unit run(); }";
+    let source = "contract Service { unit run(); } type Worker : Service { i64 id }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -707,7 +877,7 @@ fn analysis_emits_contract_method_missing_impl_errors() {
 #[test]
 fn analysis_skips_contract_method_missing_impl_for_extern_contracts() {
     let source =
-        "[Extern(Abi: \"C\", Library: \"libc\")] contract Service { unit run(); }";
+        "[Extern(Abi: \"C\", Library: \"libc\")] contract Service { unit run(); } type Worker : Service { i64 id }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -722,6 +892,48 @@ fn analysis_skips_contract_method_missing_impl_for_extern_contracts() {
             .diagnostics
             .iter()
             .any(|diag| diag.code.as_deref() == Some("E1601"))
+    );
+}
+
+#[test]
+fn analysis_emits_contract_signature_mismatch_errors_for_declared_conformance() {
+    let source = "contract Service { unit run(i64 x); } type Worker : Service { i64 id } impl Worker { unit run() { return; } }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1602"))
+    );
+}
+
+#[test]
+fn analysis_does_not_enforce_contract_without_declared_conformance() {
+    let source = "contract Service { unit run(); } type Worker { i64 id } impl Worker { unit run() { return; } }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diag| matches!(diag.code.as_deref(), Some("E1601") | Some("E1602"))),
+        "expected no contract conformance diagnostics without declared conformance, got: {:?}",
+        result.diagnostics
     );
 }
 
