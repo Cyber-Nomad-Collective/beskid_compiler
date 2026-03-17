@@ -36,25 +36,53 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-bump
-        run: cargo install cargo-bump
-
       - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          cd crates/beskid_cli
-          cargo bump "$VERSION"
-          cd ../..
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          path = Path("crates/beskid_cli/Cargo.toml")
+          content = path.read_text(encoding="utf-8")
+          content, count = re.subn(
+              r'(?m)^version\s*=\s*"[^"]+"\s*$',
+              f'version = "{version}"',
+              content,
+              count=1,
+          )
+          if count != 1:
+              raise RuntimeError("failed to update version in crates/beskid_cli/Cargo.toml")
+          path.write_text(content, encoding="utf-8")
+          PY
 
       - name: Bump patch version
         if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          cd crates/beskid_cli
-          cargo bump patch
-          cd ../..
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          path = Path("crates/beskid_cli/Cargo.toml")
+          content = path.read_text(encoding="utf-8")
+          match = re.search(r'(?m)^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"\s*$', content)
+          if not match:
+              raise RuntimeError("unable to parse semver in crates/beskid_cli/Cargo.toml")
+
+          major, minor, patch = map(int, match.groups())
+          next_version = f"{major}.{minor}.{patch + 1}"
+          content = (
+              content[: match.start()]
+              + f'version = "{next_version}"'
+              + content[match.end() :]
+          )
+          path.write_text(content, encoding="utf-8")
+          PY
 
       - name: Read version
         id: version
@@ -97,15 +125,28 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-bump
-        run: cargo install cargo-bump
-
       - name: Apply version
         shell: bash
         run: |
-          cd crates/beskid_cli
-          cargo bump "${{ needs.version.outputs.version }}"
-          cd ../..
+          VERSION="${{ needs.version.outputs.version }}"
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          path = Path("crates/beskid_cli/Cargo.toml")
+          content = path.read_text(encoding="utf-8")
+          content, count = re.subn(
+              r'(?m)^version\s*=\s*"[^"]+"\s*$',
+              f'version = "{version}"',
+              content,
+              count=1,
+          )
+          if count != 1:
+              raise RuntimeError("failed to apply version in crates/beskid_cli/Cargo.toml")
+          path.write_text(content, encoding="utf-8")
+          PY
 
       - name: Build CLI
         run: cargo build -p beskid_cli --release --target ${{ matrix.target }}
