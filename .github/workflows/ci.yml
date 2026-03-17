@@ -120,7 +120,7 @@ jobs:
           fi
 
       - name: Upload to SeaweedFS (versioned)
-        uses: Noelware/s3-action@2
+        uses: Noelware/s3-action@v2
         with:
           access-key-id: ${{ secrets.SEAWEEDFS_ACCESS_KEY }}
           secret-key: ${{ secrets.SEAWEEDFS_SECRET_KEY }}
@@ -132,7 +132,7 @@ jobs:
             ${{ matrix.asset_name }}
 
       - name: Upload to SeaweedFS (latest)
-        uses: Noelware/s3-action@2
+        uses: Noelware/s3-action@v2
         with:
           access-key-id: ${{ secrets.SEAWEEDFS_ACCESS_KEY }}
           secret-key: ${{ secrets.SEAWEEDFS_SECRET_KEY }}

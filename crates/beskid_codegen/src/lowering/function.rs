@@ -167,7 +167,7 @@ pub(crate) fn lower_method(
         }
     }
 
-    if !node_ctx.state.return_emitted {
+    if !node_ctx.state.return_emitted && !node_ctx.state.block_terminated {
         if expects_return {
             return Err(CodegenError::UnsupportedNode {
                 span: def.span,
@@ -367,7 +367,7 @@ pub(crate) fn lower_function_with_name(
         }
     }
 
-    if !node_ctx.state.return_emitted {
+    if !node_ctx.state.return_emitted && !node_ctx.state.block_terminated {
         if expects_return {
             return Err(CodegenError::UnsupportedNode {
                 span: def.span,
