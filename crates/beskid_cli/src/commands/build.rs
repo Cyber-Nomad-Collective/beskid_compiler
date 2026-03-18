@@ -31,6 +31,10 @@ pub struct BuildArgs {
     #[arg(long)]
     pub target: Option<String>,
 
+    /// Workspace member name when resolving from Workspace.proj
+    #[arg(long = "workspace-member")]
+    pub workspace_member: Option<String>,
+
     /// Require lockfile to be up to date and forbid lockfile updates
     #[arg(long)]
     pub frozen: bool,
@@ -97,6 +101,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         args.input.as_ref(),
         args.project.as_ref(),
         args.target.as_deref(),
+        args.workspace_member.as_deref(),
         args.frozen,
         args.locked,
     )?;

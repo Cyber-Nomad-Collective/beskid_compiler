@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::{Component, Path};
 
 use crate::projects::error::ProjectError;
-use crate::projects::model::{DependencySource, ProjectManifest};
+use crate::projects::model::{DependencySource, ProjectManifest, WorkspaceManifest};
 
 pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError> {
     if manifest.project.name.trim().is_empty() {
@@ -101,6 +101,94 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                     )));
                 }
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_relative_workspace_path(path_value: &str, field_name: &str) -> Result<(), ProjectError> {
+    let path = Path::new(path_value);
+    if path.is_absolute() {
+        return Err(ProjectError::Validation(format!(
+            "{field_name} must be relative: `{path_value}`"
+        )));
+    }
+
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(ProjectError::Validation(format!(
+            "{field_name} cannot escape workspace root: `{path_value}`"
+        )));
+    }
+
+    Ok(())
+}
+
+pub fn validate_workspace_manifest(manifest: &WorkspaceManifest) -> Result<(), ProjectError> {
+    if manifest.workspace.name.trim().is_empty() {
+        return Err(ProjectError::Validation(
+            "`workspace.name` is required".to_string(),
+        ));
+    }
+    if manifest.workspace.resolver.trim().is_empty() {
+        return Err(ProjectError::Validation(
+            "`workspace.resolver` cannot be empty".to_string(),
+        ));
+    }
+
+    let mut member_names = HashSet::new();
+    for member in &manifest.members {
+        if !member_names.insert(member.name.clone()) {
+            return Err(ProjectError::Validation(format!(
+                "duplicate member label `{}`",
+                member.name
+            )));
+        }
+
+        if member.path.trim().is_empty() {
+            return Err(ProjectError::Validation(format!(
+                "member `{}` requires non-empty `path`",
+                member.name
+            )));
+        }
+
+        validate_relative_workspace_path(&member.path, "member path")?;
+    }
+
+    let mut override_names = HashSet::new();
+    for dependency_override in &manifest.overrides {
+        if !override_names.insert(dependency_override.dependency.clone()) {
+            return Err(ProjectError::Validation(format!(
+                "duplicate override label `{}`",
+                dependency_override.dependency
+            )));
+        }
+
+        if dependency_override.version.trim().is_empty() {
+            return Err(ProjectError::Validation(format!(
+                "override `{}` requires non-empty `version`",
+                dependency_override.dependency
+            )));
+        }
+    }
+
+    let mut registry_names = HashSet::new();
+    for registry in &manifest.registries {
+        if !registry_names.insert(registry.name.clone()) {
+            return Err(ProjectError::Validation(format!(
+                "duplicate registry label `{}`",
+                registry.name
+            )));
+        }
+
+        if registry.url.trim().is_empty() {
+            return Err(ProjectError::Validation(format!(
+                "registry `{}` requires non-empty `url`",
+                registry.name
+            )));
         }
     }
 

@@ -27,3 +27,6 @@ pub mod lsp;
 
 #[cfg(test)]
 pub mod interop;
+
+#[cfg(test)]
+pub mod pckg;

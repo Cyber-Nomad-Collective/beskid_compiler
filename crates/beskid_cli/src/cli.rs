@@ -9,6 +9,7 @@ use crate::commands::stdlib::StdlibArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::{analyze, build, clif, fetch, lock, parse, run, stdlib, tree, update};
+use beskid_pckg::PckgArgs;
 use clap::{Parser, Subcommand};
 use std::env;
 
@@ -51,6 +52,9 @@ pub enum Commands {
 
     /// Materialize the checked-in Beskid standard library project template
     Stdlib(StdlibArgs),
+
+    /// Package-manager operations backed by the pckg service
+    Pckg(PckgArgs),
 }
 
 pub fn run() -> anyhow::Result<()> {
@@ -70,5 +74,6 @@ pub fn run() -> anyhow::Result<()> {
         Commands::Lock(args) => lock::execute(args),
         Commands::Update(args) => update::execute(args),
         Commands::Stdlib(args) => stdlib::execute(args),
+        Commands::Pckg(args) => beskid_pckg::cli::execute(args).map_err(Into::into),
     }
 }

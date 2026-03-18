@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_analysis::projects::{
-    PROJECT_FILE_NAME, PROJECT_LOCK_FILE_NAME, ProjectError, TargetKind,
+    PROJECT_FILE_NAME, PROJECT_LOCK_FILE_NAME, WORKSPACE_FILE_NAME, ProjectError, TargetKind,
+    WorkspacePrepareOptions,
     UnresolvedDependencyPolicy, build_compile_plan, build_compile_plan_with_policy,
-    prepare_project_workspace,
+    prepare_project_workspace, prepare_project_workspace_with_options,
 };
 
 fn temp_case_dir(name: &str) -> PathBuf {
@@ -26,6 +27,11 @@ fn write_manifest(dir: &PathBuf, source: &str) -> PathBuf {
     let manifest_path = dir.join(PROJECT_FILE_NAME);
     fs::write(&manifest_path, source).expect("write manifest");
     manifest_path
+}
+
+fn write_workspace_manifest(dir: &PathBuf, source: &str) {
+    let manifest_path = dir.join(WORKSPACE_FILE_NAME);
+    fs::write(&manifest_path, source).expect("write workspace manifest");
 }
 
 #[test]
@@ -54,6 +60,103 @@ target "App" {
     assert_eq!(plan.target.name, "App");
     assert_eq!(plan.target.kind, TargetKind::App);
     assert_eq!(plan.source_root, dir.join("Src"));
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn compile_plan_applies_workspace_registry_override_version() {
+    let dir = temp_case_dir("workspace_override_registry");
+    let source = r#"
+project {
+  name = "MyApp"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+
+dependency "PkgCore" {
+  source = "registry"
+  version = "1.2.3"
+  registry = "default"
+}
+"#;
+    let manifest_path = write_manifest(&dir, source);
+    write_workspace_manifest(
+        &dir,
+        r#"
+workspace {
+  name = "Root"
+}
+
+member "app" {
+  path = "."
+}
+
+override "PkgCore" {
+  version = "2.0.0"
+}
+
+registry "default" {
+  url = "https://pckg.beskid-lang.org"
+}
+"#,
+    );
+
+    let plan = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
+        .expect("warn policy should collect unresolved deps");
+    assert_eq!(plan.unresolved_dependencies.len(), 1);
+    assert_eq!(plan.unresolved_dependencies[0].dependency_name, "PkgCore");
+    assert_eq!(plan.unresolved_dependencies[0].descriptor, "default@2.0.0");
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn compile_plan_rejects_unknown_workspace_registry_alias() {
+    let dir = temp_case_dir("workspace_unknown_registry_alias");
+    let source = r#"
+project {
+  name = "MyApp"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+
+dependency "PkgCore" {
+  source = "registry"
+  version = "1.2.3"
+  registry = "private"
+}
+"#;
+    let manifest_path = write_manifest(&dir, source);
+    write_workspace_manifest(
+        &dir,
+        r#"
+workspace {
+  name = "Root"
+}
+
+member "app" {
+  path = "."
+}
+
+registry "default" {
+  url = "https://pckg.beskid-lang.org"
+}
+"#,
+    );
+
+    let error = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
+        .expect_err("unknown alias should fail validation");
+    let message = error.to_string();
+    assert!(message.contains("unknown workspace registry alias"));
 
     let _ = fs::remove_dir_all(dir);
 }
@@ -172,6 +275,114 @@ dependency "Core" {
     assert_eq!(plan.dependency_projects[1].dependency_name, "Core");
     assert_eq!(plan.dependency_projects[0].project_name, "Util");
     assert_eq!(plan.dependency_projects[1].project_name, "Core");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn prepare_workspace_locked_mode_accepts_semantically_equivalent_lockfile() {
+    let root = temp_case_dir("workspace_prepare_locked_semantic_lock_match");
+    let app_dir = root.join("App");
+    let core_dir = root.join("Core");
+    let util_dir = root.join("Util");
+    fs::create_dir_all(&app_dir).expect("create app dir");
+    fs::create_dir_all(&core_dir).expect("create core dir");
+    fs::create_dir_all(&util_dir).expect("create util dir");
+
+    write_manifest(
+        &core_dir,
+        r#"
+project {
+  name = "Core"
+  version = "0.1.0"
+}
+
+target "CoreLib" {
+  kind = "Lib"
+  entry = "Core.bd"
+}
+"#,
+    );
+    write_manifest(
+        &util_dir,
+        r#"
+project {
+  name = "Util"
+  version = "0.1.0"
+}
+
+target "UtilLib" {
+  kind = "Lib"
+  entry = "Util.bd"
+}
+"#,
+    );
+    fs::create_dir_all(core_dir.join("Src")).expect("create core src");
+    fs::create_dir_all(util_dir.join("Src")).expect("create util src");
+    fs::write(core_dir.join("Src/Core.bd"), "Fn Main() { }").expect("write core source");
+    fs::write(util_dir.join("Src/Util.bd"), "Fn Main() { }").expect("write util source");
+
+    let app_manifest_path = write_manifest(
+        &app_dir,
+        r#"
+project {
+  name = "App"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+
+dependency "Core" {
+  source = "path"
+  path = "../Core"
+}
+
+dependency "Util" {
+  source = "path"
+  path = "../Util"
+}
+"#,
+    );
+    fs::create_dir_all(app_dir.join("Src")).expect("create app src");
+    fs::write(app_dir.join("Src/Main.bd"), "Fn Main() { }").expect("write app source");
+
+    let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
+    let workspace = prepare_project_workspace(&plan).expect("workspace should prepare");
+
+    let lockfile_path = workspace.lockfile_path;
+    let original = fs::read_to_string(&lockfile_path).expect("read lockfile");
+    let mut header_lines = Vec::new();
+    let mut dependency_lines = Vec::new();
+    for line in original.lines() {
+        if line.starts_with("- ") {
+            dependency_lines.push(line.to_string());
+        } else {
+            header_lines.push(line.to_string());
+        }
+    }
+    dependency_lines.reverse();
+    let mut reordered = String::new();
+    for line in header_lines {
+        reordered.push_str(&line);
+        reordered.push('\n');
+    }
+    for line in dependency_lines {
+        reordered.push_str(&line);
+        reordered.push('\n');
+    }
+    fs::write(&lockfile_path, reordered).expect("write reordered lockfile");
+
+    let locked_result = prepare_project_workspace_with_options(
+        &plan,
+        WorkspacePrepareOptions {
+            frozen: false,
+            locked: true,
+        },
+    );
+    assert!(locked_result.is_ok());
 
     let _ = fs::remove_dir_all(root);
 }
@@ -410,13 +621,14 @@ dependency "RemoteStd" {
 "#;
     let manifest_path = write_manifest(&dir, source);
 
-    let error =
-        build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
-            .expect_err("provider-disabled dependency should fail in v1");
-    assert!(matches!(
-        error,
-        ProjectError::UnsupportedDependencySourceV1 { .. }
-    ));
+    let plan = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
+        .expect("warn policy should collect unresolved deps");
+    assert_eq!(plan.unresolved_dependencies.len(), 1);
+    assert_eq!(plan.unresolved_dependencies[0].dependency_name, "RemoteStd");
+    assert_eq!(
+        plan.unresolved_dependencies[0].descriptor,
+        "git@example.com/std.git@abc123"
+    );
 
     let _ = fs::remove_dir_all(dir);
 }
@@ -445,10 +657,11 @@ dependency "PkgCore" {
     let error =
         build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Error)
             .expect_err("strict mode must fail");
-    assert!(matches!(
-        error,
-        ProjectError::UnsupportedDependencySourceV1 { .. }
-    ));
+    assert!(matches!(error, ProjectError::UnresolvedExternalDependencies(_)));
+    let message = error.to_string();
+    assert!(message.contains("PkgCore"));
+    assert!(message.contains("Registry"));
+    assert!(message.contains("1.2.3"));
 
     let _ = fs::remove_dir_all(dir);
 }

@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_analysis::projects::{
-    PROJECT_FILE_NAME, ProjectError, build_project_graph, collect_dependency_projects,
+    PROJECT_FILE_NAME, UnresolvedDependencyKind, build_project_graph,
+    collect_dependency_projects, collect_unresolved_dependencies,
 };
 
 fn temp_case_dir(name: &str) -> PathBuf {
@@ -53,11 +54,23 @@ dependency "PkgCore" {
 "#;
     let manifest_path = write_manifest(&dir, source);
 
-    let error = build_project_graph(&manifest_path).expect_err("graph should fail in v1");
-    assert!(matches!(
-        error,
-        ProjectError::UnsupportedDependencySourceV1 { .. }
-    ));
+    let graph = build_project_graph(&manifest_path).expect("graph should build");
+    let unresolved = collect_unresolved_dependencies(&graph);
+    assert_eq!(unresolved.len(), 2);
+
+    let git = unresolved
+        .iter()
+        .find(|note| note.kind == UnresolvedDependencyKind::Git)
+        .expect("git unresolved dep");
+    assert_eq!(git.dependency_name, "RemoteStd");
+    assert_eq!(git.descriptor, "git@example.com/std.git@abc123");
+
+    let registry = unresolved
+        .iter()
+        .find(|note| note.kind == UnresolvedDependencyKind::Registry)
+        .expect("registry unresolved dep");
+    assert_eq!(registry.dependency_name, "PkgCore");
+    assert_eq!(registry.descriptor, "1.2.3");
 
     let _ = fs::remove_dir_all(dir);
 }

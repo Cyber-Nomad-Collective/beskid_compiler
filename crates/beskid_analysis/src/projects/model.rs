@@ -8,6 +8,38 @@ pub struct ProjectManifest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceManifest {
+    pub workspace: WorkspaceSection,
+    pub members: Vec<WorkspaceMember>,
+    pub overrides: Vec<WorkspaceOverride>,
+    pub registries: Vec<WorkspaceRegistry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceSection {
+    pub name: String,
+    pub resolver: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceMember {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceOverride {
+    pub dependency: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceRegistry {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectSection {
     pub name: String,
     pub version: String,
@@ -36,6 +68,7 @@ pub struct Dependency {
     pub url: Option<String>,
     pub rev: Option<String>,
     pub version: Option<String>,
+    pub registry: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
