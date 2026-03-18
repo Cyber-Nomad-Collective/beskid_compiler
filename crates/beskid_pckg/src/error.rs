@@ -10,6 +10,9 @@ pub enum PckgError {
     #[error("HTTP transport error: {0}")]
     Transport(#[from] reqwest::Error),
 
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
     #[error("authentication token is required for this endpoint")]
     MissingAuthToken,
 

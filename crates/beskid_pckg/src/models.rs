@@ -66,6 +66,14 @@ pub struct ApiKeyView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevokeApiKeyResponse {
+    pub success: bool,
+    pub message: String,
+    #[serde(rename = "revokedAtUtc")]
+    pub revoked_at_utc: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateApiKeyResponse {
     pub success: bool,
     #[serde(rename = "plainTextKey")]
