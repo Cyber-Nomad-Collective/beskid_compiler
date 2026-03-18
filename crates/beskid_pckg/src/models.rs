@@ -105,6 +105,8 @@ pub struct PackageSummaryResponse {
     pub website_url: Option<String>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
+    #[serde(rename = "totalDownloads")]
+    pub total_downloads: i64,
     #[serde(rename = "updatedAtUtc")]
     pub updated_at_utc: String,
     #[serde(rename = "pendingReviewsCount")]
