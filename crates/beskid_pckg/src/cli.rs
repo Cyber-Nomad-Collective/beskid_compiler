@@ -9,16 +9,32 @@ use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use indicatif::{ProgressBar, ProgressStyle};
+use serde::{Deserialize, Serialize};
+use semver::Version;
 use sha2::{Digest, Sha256};
+use url::Url;
 use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
-use crate::models::{
-    CreateApiKeyRequest, CreateInitialAdminRequest, LoginUserRequest, PackageSummaryResponse,
-    PackageVersionSummaryResponse, RegisterUserRequest, ReviewActionRequest, UpsertPackageRequest,
-};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+use crate::models::PackageVersionSummaryResponse;
 use crate::{PckgClient, PckgClientConfig, PckgError};
+
+const DEFAULT_PCKG_CONFIG_PATH: &str = ".beskid/pckg/repositories.json";
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct PckgRepositoriesConfig {
+    #[serde(default)]
+    repositories: BTreeMap<String, RepositoryAuthConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RepositoryAuthConfig {
+    api_key: String,
+}
 
 #[derive(Args, Debug, Clone)]
 pub struct PckgArgs {
@@ -38,8 +54,152 @@ pub struct PckgArgs {
     #[arg(long, default_value_t = 30)]
     pub timeout_secs: u64,
 
+    /// Repository-local pckg config file path.
+    #[arg(long, default_value = DEFAULT_PCKG_CONFIG_PATH)]
+    pub config_file: PathBuf,
+
     #[command(subcommand)]
     pub command: PckgCommand,
+}
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct PackVersionState {
+    versions: BTreeMap<String, String>,
+}
+
+fn resolve_pack_version(source: &Path, args: &PackArgs) -> Result<String, PckgError> {
+    let source_manifest_version = read_source_manifest_version(source)?;
+    let stored_version = read_stored_pack_version(source, args)?;
+
+    let baseline = max_version(source_manifest_version.as_ref(), stored_version.as_ref());
+    let auto_version = bump_patch(baseline)?;
+
+    match args.version.as_deref() {
+        Some(explicit) => {
+            let explicit_version = parse_version(explicit)?;
+            if explicit_version <= auto_version {
+                return Err(PckgError::Api {
+                    status: reqwest::StatusCode::BAD_REQUEST,
+                    message: format!(
+                        "explicit version '{}' must be higher than auto-resolved '{}'",
+                        explicit_version, auto_version
+                    ),
+                    body: None,
+                });
+            }
+
+            Ok(explicit_version.to_string())
+        }
+        None => Ok(auto_version.to_string()),
+    }
+}
+
+fn bump_patch(base: Option<Version>) -> Result<Version, PckgError> {
+    let mut version = base.unwrap_or_else(|| Version::new(0, 1, 0));
+    version.patch = version.patch.checked_add(1).ok_or_else(|| PckgError::Api {
+        status: reqwest::StatusCode::BAD_REQUEST,
+        message: "cannot bump patch version beyond supported range".to_string(),
+        body: None,
+    })?;
+    version.pre = semver::Prerelease::EMPTY;
+    version.build = semver::BuildMetadata::EMPTY;
+    Ok(version)
+}
+
+fn max_version(a: Option<&Version>, b: Option<&Version>) -> Option<Version> {
+    match (a, b) {
+        (Some(left), Some(right)) => Some(if left >= right { left.clone() } else { right.clone() }),
+        (Some(left), None) => Some(left.clone()),
+        (None, Some(right)) => Some(right.clone()),
+        (None, None) => None,
+    }
+}
+
+fn parse_version(raw: &str) -> Result<Version, PckgError> {
+    Version::parse(raw.trim()).map_err(|source| PckgError::Api {
+        status: reqwest::StatusCode::BAD_REQUEST,
+        message: format!("invalid semantic version '{}': {source}", raw.trim()),
+        body: None,
+    })
+}
+
+fn read_source_manifest_version(source: &Path) -> Result<Option<Version>, PckgError> {
+    let manifest_path = source.join("package.json");
+    if !manifest_path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&manifest_path)?;
+    let value: serde_json::Value = serde_json::from_str(&content).map_err(|source| PckgError::Api {
+        status: reqwest::StatusCode::BAD_REQUEST,
+        message: format!("failed to parse package.json: {source}"),
+        body: None,
+    })?;
+
+    let Some(version_str) = value.get("version").and_then(serde_json::Value::as_str) else {
+        return Ok(None);
+    };
+
+    Ok(Some(parse_version(version_str)?))
+}
+
+fn version_state_path(source: &Path, args: &PackArgs) -> PathBuf {
+    if args.version_state_file.is_absolute() {
+        args.version_state_file.clone()
+    } else {
+        source.join(&args.version_state_file)
+    }
+}
+
+fn read_stored_pack_version(source: &Path, args: &PackArgs) -> Result<Option<Version>, PckgError> {
+    let path = version_state_path(source, args);
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(path)?;
+    let state: PackVersionState = serde_json::from_str(&content).map_err(|source| PckgError::Api {
+        status: reqwest::StatusCode::BAD_REQUEST,
+        message: format!("failed to parse version state file: {source}"),
+        body: None,
+    })?;
+
+    let Some(version) = state.versions.get(&args.package) else {
+        return Ok(None);
+    };
+
+    Ok(Some(parse_version(version)?))
+}
+
+fn persist_pack_version_state(source: &Path, args: &PackArgs, version: &str) -> Result<(), PckgError> {
+    let path = version_state_path(source, args);
+    let mut state = if path.exists() {
+        let content = fs::read_to_string(&path)?;
+        serde_json::from_str::<PackVersionState>(&content).map_err(|source| PckgError::Api {
+            status: reqwest::StatusCode::BAD_REQUEST,
+            message: format!("failed to parse version state file: {source}"),
+            body: None,
+        })?
+    } else {
+        PackVersionState::default()
+    };
+
+    state
+        .versions
+        .insert(args.package.clone(), version.to_string());
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let output = serde_json::to_string_pretty(&state).map_err(|source| PckgError::Api {
+        status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        message: format!("failed to serialize version state: {source}"),
+        body: None,
+    })?;
+
+    fs::write(path, output + "\n")?;
+    Ok(())
 }
 
 fn print_package_versions_table(versions: &[PackageVersionSummaryResponse]) {
@@ -73,90 +233,27 @@ fn print_package_versions_table(versions: &[PackageVersionSummaryResponse]) {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum PckgCommand {
-    /// Print bootstrap status (whether users exist yet).
-    BootstrapStatus,
-
-    /// Create the initial admin account when bootstrap is empty.
-    CreateInitialAdmin(CreateInitialAdminArgs),
-
-    /// Print authenticated identity information.
-    Whoami,
-
-    /// Authenticate with user credentials.
-    Login(LoginArgs),
-
-    /// Register a new user account.
-    Register(RegisterArgs),
-
-    /// Become publisher (currently no-op on server but kept for compatibility).
-    BecomePublisher,
-
-    /// List all packages visible to current principal.
-    List,
-
-    /// Search packages by name/description (case-insensitive).
-    Search(SearchArgs),
-
-    /// List versions for a package.
-    Versions(VersionsArgs),
-
-    /// Publish a package artifact version.
-    Publish(PublishArgs),
-
-    /// Create or update package metadata and optionally submit for review.
-    Upsert(UpsertArgs),
-
     /// Build a publishable .bpk artifact from a package directory.
     Pack(PackArgs),
 
-    /// Download a package artifact version.
-    Download(DownloadArgs),
+    /// Upload and publish a package artifact version.
+    Upload(PublishArgs),
 
-    /// Review queue management for owned packages.
-    Review(ReviewArgs),
-
-    /// API key management.
-    Keys(KeysArgs),
+    /// Save repository-local API key config used by upload commands.
+    Configure(ConfigureArgs),
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct CreateInitialAdminArgs {
+pub struct ConfigureArgs {
+    /// Repository URL to associate with API key.
+    ///
+    /// Defaults to --base-url when omitted.
     #[arg(long)]
-    pub email: String,
-    #[arg(long)]
-    pub password: String,
-    #[arg(long)]
-    pub confirm_password: String,
-}
+    pub repository_url: Option<String>,
 
-#[derive(Args, Debug, Clone)]
-pub struct LoginArgs {
+    /// API key to persist in repository config.
     #[arg(long)]
-    pub email: String,
-    #[arg(long)]
-    pub password: String,
-    #[arg(long, default_value_t = true)]
-    pub remember_me: bool,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct RegisterArgs {
-    #[arg(long)]
-    pub email: String,
-    #[arg(long)]
-    pub password: String,
-    #[arg(long)]
-    pub confirm_password: String,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct SearchArgs {
-    pub query: String,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct VersionsArgs {
-    pub package: String,
+    pub api_key: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -173,96 +270,17 @@ pub struct PublishArgs {
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct UpsertArgs {
-    pub package: String,
-    #[arg(long)]
-    pub description: Option<String>,
-    #[arg(long)]
-    pub repository_url: Option<String>,
-    #[arg(long)]
-    pub website_url: Option<String>,
-    #[arg(long, default_value_t = true)]
-    pub is_public: bool,
-    #[arg(long, default_value_t = false)]
-    pub submit_for_review: bool,
-    #[arg(long)]
-    pub review_reason: Option<String>,
-}
-
-#[derive(Args, Debug, Clone)]
 pub struct PackArgs {
     #[arg(long)]
     pub package: String,
     #[arg(long)]
-    pub version: String,
+    pub version: Option<String>,
     #[arg(long, default_value = ".")]
     pub source: PathBuf,
     #[arg(long)]
     pub output: PathBuf,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct DownloadArgs {
-    pub package: String,
-    #[arg(long)]
-    pub version: String,
-    #[arg(long)]
-    pub output: PathBuf,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct KeysArgs {
-    #[command(subcommand)]
-    pub command: KeysCommand,
-}
-
-#[derive(Subcommand, Debug, Clone)]
-pub enum KeysCommand {
-    /// List API keys available for current user.
-    List,
-
-    /// Create a new API key.
-    Create(CreateKeyArgs),
-
-    /// Revoke an API key by id.
-    Revoke(RevokeKeyArgs),
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct CreateKeyArgs {
-    #[arg(long)]
-    pub name: String,
-    #[arg(long = "scope")]
-    pub scopes: Vec<String>,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct RevokeKeyArgs {
-    pub key_id: String,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct ReviewArgs {
-    #[command(subcommand)]
-    pub command: ReviewCommand,
-}
-
-#[derive(Subcommand, Debug, Clone)]
-pub enum ReviewCommand {
-    /// List review queue for packages you own.
-    List,
-
-    /// Apply moderation action to a review item.
-    Action(ReviewActionArgs),
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct ReviewActionArgs {
-    pub review_id: String,
-    #[arg(long)]
-    pub action: String,
-    #[arg(long)]
-    pub notes: Option<String>,
+    #[arg(long, default_value = ".beskid/pckg-version-state.json")]
+    pub version_state_file: PathBuf,
 }
 
 pub fn execute(args: PckgArgs) -> Result<(), PckgError> {
@@ -275,101 +293,49 @@ pub fn execute(args: PckgArgs) -> Result<(), PckgError> {
 }
 
 async fn execute_async(args: PckgArgs) -> Result<(), PckgError> {
-    let client = build_client(&args)?;
+    let args_for_client = args.clone();
 
     match args.command {
-        PckgCommand::BootstrapStatus => execute_bootstrap_status(&client).await,
-        PckgCommand::CreateInitialAdmin(create_args) => {
-            execute_create_initial_admin(&client, create_args).await
-        }
-        PckgCommand::Whoami => execute_whoami(&client).await,
-        PckgCommand::Login(login_args) => execute_login(&client, login_args).await,
-        PckgCommand::Register(register_args) => execute_register(&client, register_args).await,
-        PckgCommand::BecomePublisher => execute_become_publisher(&client).await,
-        PckgCommand::List => execute_list(&client).await,
-        PckgCommand::Search(search_args) => execute_search(&client, search_args).await,
-        PckgCommand::Versions(versions_args) => execute_versions(&client, versions_args).await,
-        PckgCommand::Publish(publish_args) => execute_publish(&client, publish_args).await,
-        PckgCommand::Upsert(upsert_args) => execute_upsert(&client, upsert_args).await,
         PckgCommand::Pack(pack_args) => execute_pack(pack_args),
-        PckgCommand::Download(download_args) => execute_download(&client, download_args).await,
-        PckgCommand::Review(review_args) => execute_review(&client, review_args).await,
-        PckgCommand::Keys(keys_args) => execute_keys(&client, keys_args).await,
-    }
-}
-
-async fn execute_register(client: &PckgClient, args: RegisterArgs) -> Result<(), PckgError> {
-    let spinner = spinner("Registering user...");
-    let response = client
-        .register_user(&RegisterUserRequest {
-            email: args.email,
-            password: args.password,
-            confirm_password: args.confirm_password,
-        })
-        .await;
-
-    match response {
-        Ok(response) => {
-            spinner.finish_with_message("Registration request completed.");
-            println!("{}", response.message);
-            Ok(())
+        PckgCommand::Upload(upload_args) => {
+            let client = build_client(&args_for_client)?;
+            execute_publish(&client, upload_args).await
         }
-        Err(err) => {
-            spinner.abandon_with_message("Registration failed.");
-            Err(err)
+        PckgCommand::Configure(configure_args) => {
+            execute_configure(&args.config_file, &args.base_url, configure_args)
         }
     }
 }
 
-async fn execute_become_publisher(client: &PckgClient) -> Result<(), PckgError> {
-    let spinner = spinner("Enabling publisher mode...");
-    let response = client.become_publisher().await;
-    match response {
-        Ok(response) => {
-            spinner.finish_with_message("Publisher status request completed.");
-            println!("{}", response.message);
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Publisher status request failed.");
-            Err(err)
-        }
-    }
-}
+fn execute_configure(config_path: &Path, base_url: &str, args: ConfigureArgs) -> Result<(), PckgError> {
+    let repository_url = args
+        .repository_url
+        .as_deref()
+        .unwrap_or(base_url)
+        .trim();
 
-async fn execute_upsert(client: &PckgClient, args: UpsertArgs) -> Result<(), PckgError> {
-    let spinner = spinner("Saving package metadata...");
-    let response = client
-        .upsert_package(&UpsertPackageRequest {
-            name: args.package,
-            description: args.description,
-            repository_url: args.repository_url,
-            website_url: args.website_url,
-            is_public: args.is_public,
-            submit_for_review: args.submit_for_review,
-            review_reason: args.review_reason,
-        })
-        .await;
-
-    match response {
-        Ok(response) => {
-            spinner.finish_with_message("Package metadata saved.");
-            println!("{}", response.message);
-            if let Some(package) = response.package {
-                print_packages_table(&[package]);
-            }
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Package metadata update failed.");
-            Err(err)
-        }
+    if args.api_key.trim().is_empty() {
+        return Err(PckgError::Api {
+            status: reqwest::StatusCode::BAD_REQUEST,
+            message: "api key cannot be empty".to_string(),
+            body: None,
+        });
     }
+
+    save_repository_api_key(config_path, repository_url, args.api_key.trim())?;
+
+    println!(
+        "Saved API key for repository {} in {}. This config is loaded automatically by `pckg upload`.",
+        repository_url,
+        config_path.display(),
+    );
+    Ok(())
 }
 
 fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
-    let source = args.source;
-    let output = args.output;
+    let source = args.source.clone();
+    let output = args.output.clone();
+    let resolved_version = resolve_pack_version(&source, &args)?;
 
     let entries = collect_pack_entries(&source)?;
     if entries.is_empty() {
@@ -383,7 +349,7 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
     let package_json = serde_json::to_string_pretty(&serde_json::json!({
         "schema": "beskid.package.v1",
         "id": args.package,
-        "version": args.version,
+        "version": resolved_version,
     }))
     .map_err(|source| PckgError::Api {
         status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
@@ -424,51 +390,11 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
     writer.write_all(checksums_sha.as_bytes())?;
 
     writer.finish().map_err(zip_to_pckg_error)?;
+    persist_pack_version_state(&source, &args, &resolved_version)?;
+    println!("Resolved package version: {resolved_version}");
     println!("Packed artifact at {}", output.display());
 
     Ok(())
-}
-
-async fn execute_bootstrap_status(client: &PckgClient) -> Result<(), PckgError> {
-    let spinner = spinner("Checking bootstrap status...");
-    let response = client.get_bootstrap_status().await;
-    match response {
-        Ok(status) => {
-            spinner.finish_with_message("Bootstrap status fetched.");
-            println!("Has users: {}", status.has_users);
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Bootstrap status check failed.");
-            Err(err)
-        }
-    }
-}
-
-async fn execute_create_initial_admin(
-    client: &PckgClient,
-    args: CreateInitialAdminArgs,
-) -> Result<(), PckgError> {
-    let spinner = spinner("Creating initial admin...");
-    let response = client
-        .create_initial_admin(&CreateInitialAdminRequest {
-            email: args.email,
-            password: args.password,
-            confirm_password: args.confirm_password,
-        })
-        .await;
-
-    match response {
-        Ok(response) => {
-            spinner.finish_with_message("Bootstrap admin request completed.");
-            println!("{}", response.message);
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Bootstrap admin creation failed.");
-            Err(err)
-        }
-    }
 }
 
 fn build_client(args: &PckgArgs) -> Result<PckgClient, PckgError> {
@@ -477,112 +403,105 @@ fn build_client(args: &PckgArgs) -> Result<PckgClient, PckgError> {
 
     if let Some(token) = args.bearer_token.as_ref() {
         config = config.with_bearer_token(token.clone());
-    }
-
-    if let Some(api_key) = args.api_key.as_ref() {
+    } else if let Some(api_key) = args
+        .api_key
+        .clone()
+        .or_else(|| read_saved_api_key(&args.config_file, &args.base_url).ok().flatten())
+    {
         config = config.with_publisher_api_key(api_key.clone());
     }
 
     PckgClient::new(config)
 }
 
-async fn execute_whoami(client: &PckgClient) -> Result<(), PckgError> {
-    let spinner = spinner("Resolving current identity...");
-    let current = client.current_user().await;
-    match current {
-        Ok(current) => {
-            spinner.finish_with_message("Identity resolved.");
-            println!("Authenticated: {}", current.is_authenticated);
-            println!("User ID: {}", current.user_id.as_deref().unwrap_or("<none>"));
-            println!("Email: {}", current.email.as_deref().unwrap_or("<none>"));
-            println!("Publisher: {}", current.is_publisher);
-            Ok(())
+fn save_repository_api_key(
+    config_path: &Path,
+    repository_url: &str,
+    api_key: &str,
+) -> Result<(), PckgError> {
+    let canonical_url = canonical_repository_url(repository_url)?;
+    let mut config = load_repositories_config(config_path)?;
+    config.repositories.insert(
+        canonical_url,
+        RepositoryAuthConfig {
+            api_key: api_key.to_string(),
+        },
+    );
+
+    if let Some(parent) = config_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
         }
-        Err(err) => {
-            spinner.abandon_with_message("Identity lookup failed.");
-            Err(err)
+    }
+
+    let mut output = serde_json::to_string_pretty(&config).map_err(|source| PckgError::Api {
+        status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        message: format!("failed to serialize pckg repositories config: {source}"),
+        body: None,
+    })?;
+    output.push('\n');
+    fs::write(config_path, output)?;
+
+    #[cfg(unix)]
+    {
+        let permissions = fs::Permissions::from_mode(0o600);
+        fs::set_permissions(config_path, permissions)?;
+    }
+
+    Ok(())
+}
+
+fn read_saved_api_key(config_path: &Path, base_url: &str) -> Result<Option<String>, PckgError> {
+    let canonical_url = canonical_repository_url(base_url)?;
+    let config = load_repositories_config(config_path)?;
+    Ok(config
+        .repositories
+        .get(&canonical_url)
+        .map(|entry| entry.api_key.clone())
+        .filter(|value| !value.trim().is_empty()))
+}
+
+fn load_repositories_config(config_path: &Path) -> Result<PckgRepositoriesConfig, PckgError> {
+    if !config_path.exists() {
+        return Ok(PckgRepositoriesConfig::default());
+    }
+
+    let content = fs::read_to_string(config_path)?;
+    match serde_json::from_str::<PckgRepositoriesConfig>(&content) {
+        Ok(config) => Ok(config),
+        Err(_) => {
+            let legacy_key = content
+                .lines()
+                .map(str::trim)
+                .find_map(|line| line.strip_prefix("BESKID_PCKG_API_KEY="))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+
+            if let Some(legacy_key) = legacy_key {
+                let mut repositories = BTreeMap::new();
+                let default_repository = canonical_repository_url("http://127.0.0.1:5195")?;
+                repositories.insert(default_repository, RepositoryAuthConfig { api_key: legacy_key });
+                Ok(PckgRepositoriesConfig { repositories })
+            } else {
+                Ok(PckgRepositoriesConfig::default())
+            }
         }
     }
 }
 
-async fn execute_login(client: &PckgClient, args: LoginArgs) -> Result<(), PckgError> {
-    let spinner = spinner("Submitting credentials...");
-    let response = client
-        .login_user(&LoginUserRequest {
-            email: args.email,
-            password: args.password,
-            remember_me: args.remember_me,
-        })
-        .await;
-
-    match response {
-        Ok(response) => {
-            spinner.finish_with_message("Login request completed.");
-            println!("{}", response.message);
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Login request failed.");
-            Err(err)
-        }
+fn canonical_repository_url(raw_url: &str) -> Result<String, PckgError> {
+    let mut url = Url::parse(raw_url).map_err(|source| PckgError::Api {
+        status: reqwest::StatusCode::BAD_REQUEST,
+        message: format!("invalid repository url '{raw_url}': {source}"),
+        body: None,
+    })?;
+    if !url.path().ends_with('/') {
+        let path = format!("{}/", url.path().trim_end_matches('/'));
+        url.set_path(&path);
     }
-}
 
-async fn execute_list(client: &PckgClient) -> Result<(), PckgError> {
-    let spinner = spinner("Fetching packages...");
-    let packages = client.list_packages().await;
-    match packages {
-        Ok(packages) => {
-            spinner.finish_with_message("Packages fetched.");
-            print_packages_table(&packages);
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Package fetch failed.");
-            Err(err)
-        }
-    }
-}
-
-async fn execute_search(client: &PckgClient, args: SearchArgs) -> Result<(), PckgError> {
-    let spinner = spinner("Searching packages...");
-    let packages = client.list_packages().await;
-    match packages {
-        Ok(packages) => {
-            let query = args.query.to_ascii_lowercase();
-            let filtered: Vec<_> = packages
-                .into_iter()
-                .filter(|package| {
-                    package.name.to_ascii_lowercase().contains(&query)
-                        || package.description.to_ascii_lowercase().contains(&query)
-                })
-                .collect();
-
-            spinner.finish_with_message(format!("Found {} matching packages.", filtered.len()));
-            print_packages_table(&filtered);
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Package search failed.");
-            Err(err)
-        }
-    }
-}
-
-async fn execute_versions(client: &PckgClient, args: VersionsArgs) -> Result<(), PckgError> {
-    let spinner = spinner("Fetching package versions...");
-    let versions = client.list_package_versions(&args.package).await;
-    match versions {
-        Ok(versions) => {
-            spinner.finish_with_message("Versions fetched.");
-            print_package_versions_table(&versions);
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Version listing failed.");
-            Err(err)
-        }
-    }
+    Ok(url.to_string())
 }
 
 async fn execute_publish(client: &PckgClient, args: PublishArgs) -> Result<(), PckgError> {
@@ -622,127 +541,6 @@ async fn execute_publish(client: &PckgClient, args: PublishArgs) -> Result<(), P
         }
         Err(err) => {
             spinner.abandon_with_message("Package publish failed.");
-            Err(err)
-        }
-    }
-}
-
-async fn execute_download(client: &PckgClient, args: DownloadArgs) -> Result<(), PckgError> {
-    let spinner = spinner("Downloading package artifact...");
-    let artifact = client
-        .download_package_version(&args.package, &args.version)
-        .await;
-
-    match artifact {
-        Ok(artifact) => {
-            fs::write(&args.output, artifact).map_err(|source| PckgError::Api {
-                status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-                message: format!("failed to write downloaded artifact: {source}"),
-                body: None,
-            })?;
-            spinner.finish_with_message("Artifact downloaded.");
-            println!("Saved artifact to {}", args.output.display());
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Artifact download failed.");
-            Err(err)
-        }
-    }
-}
-
-async fn execute_keys(client: &PckgClient, args: KeysArgs) -> Result<(), PckgError> {
-    match args.command {
-        KeysCommand::List => execute_keys_list(client).await,
-        KeysCommand::Create(create_args) => execute_keys_create(client, create_args).await,
-        KeysCommand::Revoke(revoke_args) => execute_keys_revoke(client, revoke_args).await,
-    }
-}
-
-async fn execute_keys_revoke(client: &PckgClient, args: RevokeKeyArgs) -> Result<(), PckgError> {
-    let spinner = spinner("Revoking API key...");
-    let response = client.revoke_api_key(&args.key_id).await;
-    match response {
-        Ok(response) => {
-            spinner.finish_with_message("API key revoked.");
-            println!("{}", response.message);
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("API key revocation failed.");
-            Err(err)
-        }
-    }
-}
-
-async fn execute_review(client: &PckgClient, args: ReviewArgs) -> Result<(), PckgError> {
-    match args.command {
-        ReviewCommand::List => execute_review_list(client).await,
-        ReviewCommand::Action(action_args) => execute_review_action(client, action_args).await,
-    }
-}
-
-async fn execute_review_list(client: &PckgClient) -> Result<(), PckgError> {
-    let spinner = spinner("Fetching review queue...");
-    let reviews = client.list_review_queue().await;
-    match reviews {
-        Ok(reviews) => {
-            spinner.finish_with_message("Review queue fetched.");
-
-            let mut table = Table::new();
-            table
-                .load_preset(UTF8_FULL)
-                .apply_modifier(UTF8_ROUND_CORNERS)
-                .set_content_arrangement(ContentArrangement::Dynamic)
-                .set_header(vec![
-                    Cell::new("Review ID").add_attribute(Attribute::Bold),
-                    Cell::new("Package").add_attribute(Attribute::Bold),
-                    Cell::new("Status").add_attribute(Attribute::Bold),
-                    Cell::new("Reason").add_attribute(Attribute::Bold),
-                    Cell::new("Submitted").add_attribute(Attribute::Bold),
-                ]);
-
-            for review in reviews {
-                table.add_row(vec![
-                    Cell::new(review.id).fg(Color::Cyan),
-                    Cell::new(review.package_name),
-                    Cell::new(review.status),
-                    Cell::new(review.reason),
-                    Cell::new(review.submitted_at_utc),
-                ]);
-            }
-
-            println!("{table}");
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Review queue fetch failed.");
-            Err(err)
-        }
-    }
-}
-
-async fn execute_review_action(
-    client: &PckgClient,
-    args: ReviewActionArgs,
-) -> Result<(), PckgError> {
-    let spinner = spinner("Applying review action...");
-    let response = client
-        .review_action(&ReviewActionRequest {
-            review_id: args.review_id,
-            action: args.action,
-            notes: args.notes,
-        })
-        .await;
-
-    match response {
-        Ok(response) => {
-            spinner.finish_with_message("Review action applied.");
-            println!("{}", response.message);
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("Review action failed.");
             Err(err)
         }
     }
@@ -791,100 +589,6 @@ fn zip_to_pckg_error(source: zip::result::ZipError) -> PckgError {
         message: format!("zip packaging error: {source}"),
         body: None,
     }
-}
-
-async fn execute_keys_list(client: &PckgClient) -> Result<(), PckgError> {
-    let spinner = spinner("Fetching API keys...");
-    let keys = client.list_api_keys().await;
-    match keys {
-        Ok(keys) => {
-            spinner.finish_with_message("API keys fetched.");
-
-            let mut table = Table::new();
-            table
-                .load_preset(UTF8_FULL)
-                .apply_modifier(UTF8_ROUND_CORNERS)
-                .set_content_arrangement(ContentArrangement::Dynamic)
-                .set_header(vec![
-                    Cell::new("Name").add_attribute(Attribute::Bold),
-                    Cell::new("Prefix").add_attribute(Attribute::Bold),
-                    Cell::new("Scopes").add_attribute(Attribute::Bold),
-                    Cell::new("Revoked").add_attribute(Attribute::Bold),
-                ]);
-
-            for key in keys {
-                table.add_row(vec![
-                    Cell::new(key.name),
-                    Cell::new(key.prefix).fg(Color::Cyan),
-                    Cell::new(key.scopes.join(", ")),
-                    Cell::new(if key.revoked_at_utc.is_some() {
-                        "yes"
-                    } else {
-                        "no"
-                    }),
-                ]);
-            }
-
-            println!("{table}");
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("API key fetch failed.");
-            Err(err)
-        }
-    }
-}
-
-async fn execute_keys_create(client: &PckgClient, args: CreateKeyArgs) -> Result<(), PckgError> {
-    let spinner = spinner("Creating API key...");
-    let response = client
-        .create_api_key(&CreateApiKeyRequest {
-            name: args.name,
-            scopes: (!args.scopes.is_empty()).then_some(args.scopes),
-        })
-        .await;
-
-    match response {
-        Ok(response) => {
-            spinner.finish_with_message("API key created.");
-            println!("{}", response.message);
-            if let Some(plain) = response.plain_text_key {
-                println!("New API key (store it now, it won't be shown again): {plain}");
-            }
-            Ok(())
-        }
-        Err(err) => {
-            spinner.abandon_with_message("API key creation failed.");
-            Err(err)
-        }
-    }
-}
-
-fn print_packages_table(packages: &[PackageSummaryResponse]) {
-    let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .apply_modifier(UTF8_ROUND_CORNERS)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec![
-            Cell::new("Name").add_attribute(Attribute::Bold),
-            Cell::new("Description").add_attribute(Attribute::Bold),
-            Cell::new("Public").add_attribute(Attribute::Bold),
-            Cell::new("Reviews").add_attribute(Attribute::Bold),
-            Cell::new("Rating").add_attribute(Attribute::Bold),
-        ]);
-
-    for package in packages {
-        table.add_row(vec![
-            Cell::new(&package.name).fg(Color::Green),
-            Cell::new(&package.description),
-            Cell::new(if package.is_public { "yes" } else { "no" }),
-            Cell::new(package.pending_reviews_count.to_string()),
-            Cell::new(format!("{:.2}", package.average_rating)),
-        ]);
-    }
-
-    println!("{table}");
 }
 
 fn spinner(message: &str) -> ProgressBar {
