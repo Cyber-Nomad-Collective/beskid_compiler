@@ -34,10 +34,14 @@ pub fn collect_unresolved_dependencies(graph: &ProjectGraph) -> Vec<UnresolvedDe
             ProjectGraphNode::UnresolvedRegistryDependency {
                 dependency_name,
                 version,
+                registry,
             } => Some(UnresolvedDependency {
                 dependency_name: dependency_name.clone(),
                 kind: UnresolvedDependencyKind::Registry,
-                descriptor: version.clone(),
+                descriptor: registry
+                    .as_ref()
+                    .map(|registry| format!("{registry}@{version}"))
+                    .unwrap_or_else(|| version.clone()),
             }),
             _ => None,
         })

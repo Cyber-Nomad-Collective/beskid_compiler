@@ -28,6 +28,7 @@ pub enum ProjectGraphNode {
     UnresolvedRegistryDependency {
         dependency_name: String,
         version: String,
+        registry: Option<String>,
     },
 }
 

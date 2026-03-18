@@ -270,3 +270,16 @@ workspace {
     let error = parse_manifest(source).expect_err("must fail");
     assert!(matches!(error, ProjectError::Parse(_)));
 }
+
+#[test]
+fn parses_registry_dependency_with_registry_alias() {
+    let source = format!(
+        "{}\ndependency \"Std\" {{\n  source = \"registry\"\n  version = \"1.2.3\"\n  registry = \"default\"\n}}\n",
+        base_manifest()
+    );
+
+    let manifest = parse_manifest(&source).expect("valid manifest");
+    assert_eq!(manifest.dependencies.len(), 1);
+    assert_eq!(manifest.dependencies[0].name, "Std");
+    assert_eq!(manifest.dependencies[0].registry.as_deref(), Some("default"));
+}

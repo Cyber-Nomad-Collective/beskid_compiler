@@ -435,7 +435,7 @@ fn lower_lambda_to_symbol(
     };
 
     let lowered = lower_node(&lambda.node.body, &mut lambda_ctx)?;
-    if !lambda_ctx.state.return_emitted {
+    if !lambda_ctx.state.return_emitted && !lambda_ctx.state.block_terminated {
         if returns_value {
             let value = lowered.ok_or(CodegenError::UnsupportedNode {
                 span: lambda.node.body.span,

@@ -1,7 +1,18 @@
 use std::path::{Path, PathBuf};
 
 pub(super) fn stdlib_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../standard_library")
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let candidates = [
+        manifest_dir.join("../../../standard_library"),
+        manifest_dir.join("../../../corelib/standard_library"),
+        manifest_dir.join("../../../../standard_library"),
+        manifest_dir.join("../../../../corelib/standard_library"),
+    ];
+
+    candidates
+        .into_iter()
+        .find(|root| root.join("Project.proj").is_file())
+        .unwrap_or_else(|| manifest_dir.join("../../../standard_library"))
 }
 
 pub(super) fn expected_stdlib_files() -> [&'static str; 18] {

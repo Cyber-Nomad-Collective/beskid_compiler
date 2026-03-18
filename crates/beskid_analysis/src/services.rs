@@ -13,7 +13,9 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::projects::{
     CompilePlan, PROJECT_FILE_NAME, PreparedProjectWorkspace, ProjectError,
-    WorkspacePrepareOptions, build_compile_plan, discover_project_file,
+    UnresolvedDependencyPolicy,
+    WORKSPACE_FILE_NAME, WorkspacePrepareOptions, discover_project_file,
+    build_compile_plan_with_policy, discover_workspace_file, parse_workspace_manifest,
     prepare_project_workspace_with_options,
 };
 use crate::query::NodeRef;
@@ -113,22 +115,46 @@ pub fn resolve_project(
     input: Option<&PathBuf>,
     project: Option<&PathBuf>,
     target: Option<&str>,
+    workspace_member: Option<&str>,
     frozen: bool,
     locked: bool,
+) -> Result<ResolvedProject> {
+    resolve_project_with_policy(
+        input,
+        project,
+        target,
+        workspace_member,
+        frozen,
+        locked,
+        UnresolvedDependencyPolicy::Error,
+    )
+}
+
+pub fn resolve_project_with_policy(
+    input: Option<&PathBuf>,
+    project: Option<&PathBuf>,
+    target: Option<&str>,
+    workspace_member: Option<&str>,
+    frozen: bool,
+    locked: bool,
+    unresolved_dependency_policy: UnresolvedDependencyPolicy,
 ) -> Result<ResolvedProject> {
     let explicit_manifest = project
         .map(|path| resolve_project_manifest_path(path))
         .or_else(|| input.and_then(|path| infer_manifest_from_input(path)));
     let discovered_manifest = if explicit_manifest.is_none() {
-        discover_from_input_or_cwd(input)
+        discover_from_input_or_cwd(input, workspace_member)?
     } else {
         None
     };
 
-    let manifest_path = explicit_manifest.or(discovered_manifest);
+    let manifest_path = explicit_manifest
+        .or(discovered_manifest)
+        .map(|candidate| resolve_workspace_candidate(&candidate, input, workspace_member))
+        .transpose()?;
     let (compile_plan, prepared_workspace) = match manifest_path {
         Some(ref manifest) => {
-            let plan = build_compile_plan(manifest, target)
+            let plan = build_compile_plan_with_policy(manifest, target, unresolved_dependency_policy)
                 .map_err(|err| anyhow::anyhow!("{}: {err}", err.code()))?;
             let workspace = prepare_project_workspace_with_options(
                 &plan,
@@ -150,10 +176,39 @@ pub fn resolve_input(
     input: Option<&PathBuf>,
     project: Option<&PathBuf>,
     target: Option<&str>,
+    workspace_member: Option<&str>,
     frozen: bool,
     locked: bool,
 ) -> Result<ResolvedInput> {
-    let resolved_project = resolve_project(input, project, target, frozen, locked)?;
+    resolve_input_with_policy(
+        input,
+        project,
+        target,
+        workspace_member,
+        frozen,
+        locked,
+        UnresolvedDependencyPolicy::Error,
+    )
+}
+
+pub fn resolve_input_with_policy(
+    input: Option<&PathBuf>,
+    project: Option<&PathBuf>,
+    target: Option<&str>,
+    workspace_member: Option<&str>,
+    frozen: bool,
+    locked: bool,
+    unresolved_dependency_policy: UnresolvedDependencyPolicy,
+) -> Result<ResolvedInput> {
+    let resolved_project = resolve_project_with_policy(
+        input,
+        project,
+        target,
+        workspace_member,
+        frozen,
+        locked,
+        unresolved_dependency_policy,
+    )?;
     let compile_plan = resolved_project.compile_plan;
     let prepared_workspace = resolved_project.prepared_workspace;
     let input_is_manifest = input
@@ -613,21 +668,157 @@ fn render_tree_node(node: NodeRef, indent: usize, out: &mut String) {
     });
 }
 
-fn discover_from_input_or_cwd(input: Option<&PathBuf>) -> Option<PathBuf> {
+fn discover_from_input_or_cwd(
+    input: Option<&PathBuf>,
+    workspace_member: Option<&str>,
+) -> Result<Option<PathBuf>> {
     if let Some(input) = input {
-        return discover_project_file(input);
+        if let Some(project_manifest) = discover_project_file(input) {
+            return Ok(Some(project_manifest));
+        }
+
+        if let Some(workspace_manifest) = discover_workspace_file(input) {
+            let member_manifest = resolve_project_manifest_from_workspace(
+                &workspace_manifest,
+                Some(input),
+                workspace_member,
+            )?;
+            return Ok(Some(member_manifest));
+        }
+
+        return Ok(None);
     }
 
-    let cwd = env::current_dir().ok()?;
-    discover_project_file(&cwd)
+    let cwd = env::current_dir().ok();
+    let Some(cwd) = cwd else {
+        return Ok(None);
+    };
+
+    if let Some(project_manifest) = discover_project_file(&cwd) {
+        return Ok(Some(project_manifest));
+    }
+
+    if let Some(workspace_manifest) = discover_workspace_file(&cwd) {
+        let member_manifest =
+            resolve_project_manifest_from_workspace(&workspace_manifest, None, workspace_member)?;
+        return Ok(Some(member_manifest));
+    }
+
+    Ok(None)
 }
 
 fn resolve_project_manifest_path(project: &Path) -> PathBuf {
     if project.is_dir() {
-        project.join(PROJECT_FILE_NAME)
+        let project_manifest = project.join(PROJECT_FILE_NAME);
+        if project_manifest.is_file() {
+            return project_manifest;
+        }
+
+        let workspace_manifest = project.join(WORKSPACE_FILE_NAME);
+        if workspace_manifest.is_file() {
+            return workspace_manifest;
+        }
+
+        project_manifest
     } else {
         project.to_path_buf()
     }
+}
+
+fn resolve_workspace_candidate(
+    candidate: &Path,
+    input: Option<&PathBuf>,
+    workspace_member: Option<&str>,
+) -> Result<PathBuf> {
+    let is_workspace_manifest = candidate
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == WORKSPACE_FILE_NAME);
+
+    if is_workspace_manifest {
+        resolve_project_manifest_from_workspace(candidate, input, workspace_member)
+    } else {
+        Ok(candidate.to_path_buf())
+    }
+}
+
+fn resolve_project_manifest_from_workspace(
+    workspace_manifest_path: &Path,
+    input: Option<&PathBuf>,
+    workspace_member: Option<&str>,
+) -> Result<PathBuf> {
+    let source = fs::read_to_string(workspace_manifest_path).map_err(|io_error| {
+        let message = io_error.to_string();
+        anyhow::anyhow!(
+            "{}: failed to read workspace manifest at {}: {}",
+            ProjectError::ReadManifest {
+                path: workspace_manifest_path.to_path_buf(),
+                source: io_error,
+            }
+            .code(),
+            workspace_manifest_path.display(),
+            message,
+        )
+    })?;
+
+    let workspace_manifest = parse_workspace_manifest(&source)
+        .map_err(|err| anyhow::anyhow!("{}: {err}", err.code()))?;
+
+    let workspace_root = workspace_manifest_path.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "{}: invalid workspace manifest path {}",
+            ProjectError::Validation("invalid workspace manifest path".to_string()).code(),
+            workspace_manifest_path.display()
+        )
+    })?;
+
+    let selected_member = if let Some(member_name) = workspace_member {
+        workspace_manifest
+            .members
+            .iter()
+            .find(|member| member.name == member_name)
+    } else if let Some(input_path) = input {
+        workspace_manifest
+            .members
+            .iter()
+            .filter_map(|member| {
+                let candidate_root = workspace_root.join(&member.path);
+                if input_path.starts_with(&candidate_root) {
+                    let depth = candidate_root.components().count();
+                    Some((depth, member))
+                } else {
+                    None
+                }
+            })
+            .max_by_key(|(depth, _)| *depth)
+            .map(|(_, member)| member)
+            .or_else(|| workspace_manifest.members.first())
+    } else {
+        workspace_manifest.members.first()
+    }
+    .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{}: workspace manifest `{}` could not resolve member (requested={})",
+                ProjectError::Validation("workspace has no members".to_string()).code(),
+                workspace_manifest_path.display(),
+                workspace_member.unwrap_or("<auto>")
+            )
+        })?;
+
+    let member_manifest = workspace_root
+        .join(&selected_member.path)
+        .join(PROJECT_FILE_NAME);
+
+    if !member_manifest.is_file() {
+        return Err(anyhow::anyhow!(
+            "{}: workspace member `{}` project file not found at {}",
+            ProjectError::ProjectFileNotFound(member_manifest.clone()).code(),
+            selected_member.name,
+            member_manifest.display()
+        ));
+    }
+
+    Ok(member_manifest)
 }
 
 fn infer_manifest_from_input(input: &Path) -> Option<PathBuf> {
