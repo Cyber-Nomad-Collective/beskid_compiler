@@ -707,6 +707,150 @@ fn lower_contract_dispatch_call(
         });
     }
 
+    // Special-case: language-level extern contract call such as `C.getpid(...)`.
+    // If the callee target resolves to an Item (contract type) rather than an instance wrapper,
+    // emit a direct external call with no implicit receiver argument.
+    if let HirExpressionNode::MemberExpression(member_expr) = &node.node.callee.node {
+        if let HirExpressionNode::PathExpression(path) = &member_expr.node.target.node {
+            if let Some(resolved) = ctx
+                .resolution
+                .tables
+                .resolved_values
+                .get(&path.node.path.span)
+            {
+                if matches!(resolved, ResolvedValue::Item(item_id) if *item_id == contract_item_id) {
+                    // Direct extern call: build args from call site only, no receiver wrapper.
+                    if signature.params.len() != node.node.args.len() {
+                        return Err(CodegenError::UnsupportedNode { span: node.span, node: "call arity mismatch" });
+                    }
+
+                    let mut args = Vec::with_capacity(node.node.args.len());
+                    for (arg, expected) in node.node.args.iter().zip(signature.params.iter()) {
+                        let value = if let Some(fn_value) = lower_function_typed_argument(arg, *expected, ctx)? {
+                            fn_value
+                        } else {
+                            let lowered = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                                span: arg.span,
+                                node: "unit-valued call argument",
+                            })?;
+                            let actual = ctx
+                                .type_result
+                                .expr_types
+                                .get(&arg.span)
+                                .copied()
+                                .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+                            ensure_type_compatibility(
+                                arg.span,
+                                *expected,
+                                actual,
+                                ctx.type_result,
+                                ctx.resolution,
+                                ctx.builder,
+                                lowered,
+                            )?
+                        };
+                        args.push(value);
+                    }
+
+                    let mut signature_ir = Signature::new(CallConv::SystemV);
+                    for param in &signature.params {
+                        let clif_ty = map_type_id_to_clif(ctx.type_result, *param).ok_or(
+                            CodegenError::UnsupportedNode { span: node.span, node: "call parameter type" },
+                        )?;
+                        signature_ir.params.push(AbiParam::new(clif_ty));
+                    }
+
+                    let returns_value = type_returns_runtime_value(ctx.type_result, signature.return_type);
+                    if returns_value {
+                        let clif_ty = map_type_id_to_clif(ctx.type_result, signature.return_type).ok_or(
+                            CodegenError::UnsupportedNode { span: node.span, node: "call return type" },
+                        )?;
+                        signature_ir.returns.push(AbiParam::new(clif_ty));
+                    }
+
+                    let sig_ref = ctx.builder.func.import_signature(signature_ir);
+                    let func_ref = ctx.builder.func.import_function(ExtFuncData {
+                        name: ExternalName::testcase(method_name.clone()),
+                        signature: sig_ref,
+                        colocated: true,
+                        patchable: false,
+                    });
+                    let call = ctx.builder.ins().call(func_ref, &args);
+                    return lower_call_return(call, node.span, signature.return_type, returns_value, ctx);
+                }
+            }
+        }
+    }
+    // Also support the dotted PathExpression form emitted by the frontend for `C.getpid(...)`.
+    if let HirExpressionNode::PathExpression(path_expr) = &node.node.callee.node {
+        // Expect at least two segments: C.getpid
+        if path_expr.node.path.node.segments.len() >= 2 {
+            if let Some(ResolvedValue::Item(item_id)) = ctx
+                .resolution
+                .tables
+                .resolved_values
+                .get(&path_expr.node.path.span)
+            {
+                if *item_id == contract_item_id {
+                    // Build direct extern call with method_name
+                    let mut args = Vec::with_capacity(node.node.args.len());
+                    for (arg, expected) in node.node.args.iter().zip(signature.params.iter()) {
+                        let value = if let Some(fn_value) = lower_function_typed_argument(arg, *expected, ctx)? {
+                            fn_value
+                        } else {
+                            let lowered = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                                span: arg.span,
+                                node: "unit-valued call argument",
+                            })?;
+                            let actual = ctx
+                                .type_result
+                                .expr_types
+                                .get(&arg.span)
+                                .copied()
+                                .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+                            ensure_type_compatibility(
+                                arg.span,
+                                *expected,
+                                actual,
+                                ctx.type_result,
+                                ctx.resolution,
+                                ctx.builder,
+                                lowered,
+                            )?
+                        };
+                        args.push(value);
+                    }
+
+                    let mut signature_ir = Signature::new(CallConv::SystemV);
+                    for param in &signature.params {
+                        let clif_ty = map_type_id_to_clif(ctx.type_result, *param).ok_or(
+                            CodegenError::UnsupportedNode { span: node.span, node: "call parameter type" },
+                        )?;
+                        signature_ir.params.push(AbiParam::new(clif_ty));
+                    }
+
+                    let returns_value = type_returns_runtime_value(ctx.type_result, signature.return_type);
+                    if returns_value {
+                        let clif_ty = map_type_id_to_clif(ctx.type_result, signature.return_type).ok_or(
+                            CodegenError::UnsupportedNode { span: node.span, node: "call return type" },
+                        )?;
+                        signature_ir.returns.push(AbiParam::new(clif_ty));
+                    }
+
+                    let sig_ref = ctx.builder.func.import_signature(signature_ir);
+                    let func_ref = ctx.builder.func.import_function(ExtFuncData {
+                        name: ExternalName::testcase(method_name.clone()),
+                        signature: sig_ref,
+                        colocated: true,
+                        patchable: false,
+                    });
+                    let call = ctx.builder.ins().call(func_ref, &args);
+                    return lower_call_return(call, node.span, signature.return_type, returns_value, ctx);
+                }
+            }
+        }
+    }
+
     let receiver_wrapper = match receiver_source {
         MethodReceiverSource::Local(local_id) => {
             let receiver_var = ctx.state.locals.get(&local_id).copied().ok_or(

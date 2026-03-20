@@ -14,4 +14,13 @@ mod jit;
 mod jit_callable;
 
 #[cfg(test)]
+mod metrics;
+
+#[cfg(test)]
 mod parity;
+
+#[cfg(test)]
+mod sched;
+
+#[cfg(test)]
+mod strings;

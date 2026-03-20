@@ -375,9 +375,94 @@ impl<'a> TypeContext<'a> {
                     return Some(signature.return_type);
                 }
             }
+
+            // Contract-as-namespace call using a dotted PathExpression: `C.getpid(...)`
+            if segments.len() >= 2
+                && let Some(ResolvedValue::Item(contract_item_id)) = resolved
+            {
+                let method_name = segments[1].node.name.node.name.as_str();
+                if let Some(signature) = self
+                    .contract_signatures
+                    .get(&(*contract_item_id, method_name.to_string()))
+                    .cloned()
+                {
+                    if call.node.args.len() != signature.params.len() {
+                        self.errors.push(TypeError::CallArityMismatch {
+                            span: call.span,
+                            expected: signature.params.len(),
+                            actual: call.node.args.len(),
+                        });
+                        return Some(signature.return_type);
+                    }
+                    for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+                        if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                            self.require_same_type(arg.span, *expected, actual);
+                        }
+                    }
+                    let receiver_type = self
+                        .named_types
+                        .get(contract_item_id)
+                        .copied()
+                        .unwrap_or_else(|| self.type_table.intern(TypeInfo::Named(*contract_item_id)));
+                    self.call_kinds.insert(
+                        call.span,
+                        CallLoweringKind::ContractDispatch {
+                            contract_item_id: *contract_item_id,
+                            receiver_source: MethodReceiverSource::Expression(path_expr.node.path.span),
+                            receiver_type,
+                        },
+                    );
+                    return Some(signature.return_type);
+                }
+            }
         }
 
         if let HirExpressionNode::MemberExpression(member) = &call.node.callee.node {
+            // Special-case: contract-as-namespace calls like `C.getpid()` where `C` is a contract item.
+            if let HirExpressionNode::PathExpression(path_expr) = &member.node.target.node {
+                if let Some(super::super::super::resolve::ResolvedValue::Item(item_id)) = self
+                    .resolution
+                    .tables
+                    .resolved_values
+                    .get(&path_expr.node.path.span)
+                {
+                    let method_name = member.node.member.node.name.as_str().to_string();
+                    if let Some(signature) = self
+                        .contract_signatures
+                        .get(&(*item_id, method_name.clone()))
+                        .cloned()
+                    {
+                        if call.node.args.len() != signature.params.len() {
+                            self.errors.push(TypeError::CallArityMismatch {
+                                span: call.span,
+                                expected: signature.params.len(),
+                                actual: call.node.args.len(),
+                            });
+                            return Some(signature.return_type);
+                        }
+                        for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+                            if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                                self.require_same_type(arg.span, *expected, actual);
+                            }
+                        }
+                        let receiver_type = self
+                            .named_types
+                            .get(item_id)
+                            .copied()
+                            .unwrap_or_else(|| self.type_table.intern(TypeInfo::Named(*item_id)));
+                        self.call_kinds.insert(
+                            call.span,
+                            CallLoweringKind::ContractDispatch {
+                                contract_item_id: *item_id,
+                                receiver_source: MethodReceiverSource::Expression(member.node.target.span),
+                                receiver_type,
+                            },
+                        );
+                        return Some(signature.return_type);
+                    }
+                }
+            }
+
             let target_type = self.type_expression(&member.node.target)?;
             let method_name = member.node.member.node.name.as_str();
             if let Some(method_item_id) = self.method_item_for_receiver(target_type, method_name) {

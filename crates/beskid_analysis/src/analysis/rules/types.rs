@@ -1,4 +1,5 @@
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
+use crate::analysis::diagnostics::Severity;
 use crate::analysis::rules::RuleContext;
 use crate::types::{TypeError, TypeInfo, TypeResult};
 
@@ -181,6 +182,46 @@ pub(crate) fn emit_type_error(
             ctx.emit_issue(
                 span,
                 SemanticIssueKind::TypeIterableOptionSomeArityMismatch { expected, actual },
+            );
+        }
+        TypeError::ExternInvalidAbi { span, .. } => {
+            ctx.emit_simple(
+                span,
+                "T0901",
+                "invalid extern ABI; only Abi:\"C\" is supported",
+                "extern attribute",
+                Some("Use [Extern(Abi:\"C\", Library:\"...\")] on the contract".to_string()),
+                Severity::Error,
+            );
+        }
+        TypeError::ExternMissingLibrary { span } => {
+            ctx.emit_simple(
+                span,
+                "T0902",
+                "extern contract missing Library",
+                "extern attribute",
+                Some("Provide Library:\"<soname>\"; e.g., libc.so.6 on Linux".to_string()),
+                Severity::Error,
+            );
+        }
+        TypeError::ExternDisallowedParamType { span, method } => {
+            ctx.emit_simple(
+                span,
+                "T0903",
+                format!("extern param type not allowed in `{}`", method),
+                "parameter type",
+                Some("Allowed: bool, u8, i32, i64, f64; for raw pointers, pass as i64 (pointer-sized) for now".to_string()),
+                Severity::Error,
+            );
+        }
+        TypeError::ExternDisallowedReturnType { span, method } => {
+            ctx.emit_simple(
+                span,
+                "T0904",
+                format!("extern return type not allowed in `{}`", method),
+                "return type",
+                Some("Allowed: bool, u8, i32, i64, f64, or unit (no value)".to_string()),
+                Severity::Error,
             );
         }
     }

@@ -1,6 +1,7 @@
 use beskid_engine::Engine;
 use beskid_runtime::{
-    alloc, gc_register_root, gc_root_handle, gc_unregister_root, gc_write_barrier,
+    alloc, enter_runtime_scope, gc_register_root, gc_root_handle, gc_unregister_root,
+    gc_write_barrier, leave_runtime_scope,
 };
 
 #[test]
@@ -44,4 +45,17 @@ fn runtime_root_handle_panics_without_arena_scope() {
         result.is_err(),
         "expected gc_root_handle to panic without arena scope"
     );
+}
+
+#[test]
+fn runtime_with_arena_rejects_nested_scope() {
+    let nested = std::panic::catch_unwind(|| {
+        enter_runtime_scope();
+        enter_runtime_scope();
+    });
+    assert!(nested.is_err(), "expected nested arena scopes to panic");
+
+    let _ = std::panic::catch_unwind(|| {
+        leave_runtime_scope();
+    });
 }

@@ -13,11 +13,26 @@ pub struct LoweredFunction {
     pub function: Function,
 }
 
+/// External (FFI) import discovered from Extern-annotated contracts/modules.
+///
+/// Semantics:
+/// - `symbol`: function symbol to link (e.g., "getpid")
+/// - `abi`: optional ABI name (v0.1 supports only "C")
+/// - `library`: required shared object name on Linux (e.g., "libc.so.6")
+#[derive(Debug, Clone)]
+pub struct ExternImport {
+    pub symbol: String,
+    pub abi: Option<String>,
+    pub library: Option<String>,
+}
+
+/// Output of codegen: lowered functions, descriptors, literals, and extern imports.
 #[derive(Debug, Clone, Default)]
 pub struct CodegenArtifact {
     pub functions: Vec<LoweredFunction>,
     pub type_descriptors: HashMap<TypeId, TypeDescriptorData>,
     pub string_literals: HashMap<String, Vec<u8>>,
+    pub extern_imports: Vec<ExternImport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

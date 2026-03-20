@@ -43,6 +43,9 @@ fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
         SYM_INTEROP_DISPATCH_UNIT,
         SYM_INTEROP_DISPATCH_PTR,
         SYM_INTEROP_DISPATCH_USIZE,
+        // Test helpers for demos (safe to export)
+        beskid_abi::SYM_TEST_BYTES_PTR,
+        beskid_abi::SYM_TEST_BYTES_LEN,
     ];
     assert_eq!(RUNTIME_EXPORT_SYMBOLS, expected);
 }
