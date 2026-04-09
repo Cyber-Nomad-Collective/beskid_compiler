@@ -21,8 +21,7 @@ impl Parsable for Program {
 
         for item in pair.into_inner().filter(|item| item.as_rule() != Rule::EOI) {
             let item_candidate = if item.as_rule() == Rule::Item {
-                item
-                    .clone()
+                item.clone()
                     .into_inner()
                     .next()
                     .ok_or(ParseError::missing(Rule::Item))?
@@ -32,16 +31,10 @@ impl Parsable for Program {
 
             if item_candidate.as_rule() == Rule::ImplBlock {
                 let impl_block = ImplBlock::parse(item_candidate)?;
-                items.extend(
-                    impl_block
-                        .node
-                        .methods
-                        .into_iter()
-                        .map(|method| {
-                            let span = method.span;
-                            Spanned::new(Node::Method(method), span)
-                        }),
-                );
+                items.extend(impl_block.node.methods.into_iter().map(|method| {
+                    let span = method.span;
+                    Spanned::new(Node::Method(method), span)
+                }));
                 continue;
             }
 

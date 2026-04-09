@@ -63,7 +63,10 @@ fn runtime_event_helpers_reject_capacity_overflow() {
             let _ = event_subscribe(&mut slot, handler_b, 1);
         }));
 
-        assert!(overflow.is_err(), "expected overflowing event subscription to panic");
+        assert!(
+            overflow.is_err(),
+            "expected overflowing event subscription to panic"
+        );
 
         unsafe {
             drop(Box::from_raw(slot));

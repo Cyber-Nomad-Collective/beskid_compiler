@@ -44,11 +44,12 @@ pub(crate) fn lower_method(
             span: def.node.receiver_type.span,
             node: "method receiver type",
         })?;
-    let receiver_clif_ty =
-        map_type_id_to_clif(type_result, receiver_type_id).ok_or(CodegenError::UnsupportedNode {
+    let receiver_clif_ty = map_type_id_to_clif(type_result, receiver_type_id).ok_or(
+        CodegenError::UnsupportedNode {
             span: def.node.receiver_type.span,
             node: "method receiver type",
-        })?;
+        },
+    )?;
 
     let mut signature = Signature::new(CallConv::SystemV);
     signature.params.push(AbiParam::new(receiver_clif_ty));
@@ -74,14 +75,12 @@ pub(crate) fn lower_method(
         signature.params.push(AbiParam::new(clif_ty));
     }
 
-    let return_type_id = signature_types
-        .map(|sig| sig.return_type)
-        .or_else(|| {
-            def.node
-                .return_type
-                .as_ref()
-                .and_then(|ty| type_id_for_type(resolution, type_result, ty))
-        });
+    let return_type_id = signature_types.map(|sig| sig.return_type).or_else(|| {
+        def.node
+            .return_type
+            .as_ref()
+            .and_then(|ty| type_id_for_type(resolution, type_result, ty))
+    });
     if let Some(type_id) = return_type_id
         && let Some(clif_ty) = map_type_id_to_clif(type_result, type_id)
     {

@@ -32,17 +32,25 @@ fn extern_signature_validation_rejects_disallowed_types() -> Result<()> {
 
     // Artifact carries extern import for the same symbol so the engine resolves it.
     let artifact = CodegenArtifact {
-        functions: vec![LoweredFunction { name: "main".into(), function: func }],
+        functions: vec![LoweredFunction {
+            name: "main".into(),
+            function: func,
+        }],
         type_descriptors: Default::default(),
         string_literals: Default::default(),
-        extern_imports: vec![ExternImport { symbol: "getpid".into(), abi: Some("C".into()), library: Some("libc.so.6".into()) }],
+        extern_imports: vec![ExternImport {
+            symbol: "getpid".into(),
+            abi: Some("C".into()),
+            library: Some("libc.so.6".into()),
+        }],
     };
 
     let mut engine = Engine::new();
-    let err = engine.compile_artifact(&artifact).expect_err("should fail FFI signature validation");
+    let err = engine
+        .compile_artifact(&artifact)
+        .expect_err("should fail FFI signature validation");
     let msg = format!("{:?}", err);
     assert!(msg.contains("extern signature not allowed for getpid"));
     assert!(msg.contains("param type"));
     Ok(())
 }
-

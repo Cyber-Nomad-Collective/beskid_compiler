@@ -12,14 +12,17 @@ impl<'a> TypeContext<'a> {
     ) -> Option<TypeId> {
         let iterable_type = self.type_expression(iterable)?;
         let Some(next_method_item_id) = self.method_item_for_receiver(iterable_type, "Next") else {
-            self.errors
-                .push(TypeError::NonIterableForTarget { span: iterable.span });
+            self.errors.push(TypeError::NonIterableForTarget {
+                span: iterable.span,
+            });
             return None;
         };
 
-        let Some(next_signature) = self.function_signatures.get(&next_method_item_id).cloned() else {
-            self.errors
-                .push(TypeError::NonIterableForTarget { span: iterable.span });
+        let Some(next_signature) = self.function_signatures.get(&next_method_item_id).cloned()
+        else {
+            self.errors.push(TypeError::NonIterableForTarget {
+                span: iterable.span,
+            });
             return None;
         };
 
@@ -51,24 +54,25 @@ impl<'a> TypeContext<'a> {
                 if args.len() == 1 {
                     Some(args[0])
                 } else {
-                    self.errors.push(TypeError::IterableOptionSomeArityMismatch {
-                        span,
-                        expected: 1,
-                        actual: args.len(),
-                    });
+                    self.errors
+                        .push(TypeError::IterableOptionSomeArityMismatch {
+                            span,
+                            expected: 1,
+                            actual: args.len(),
+                        });
                     None
                 }
             }
             Some(TypeInfo::Named(item_id)) if item_id == option_item_id => {
-                let some_fields = self
-                    .enum_variants_ordered
-                    .get(&option_item_id)
-                    .and_then(|variants| {
-                        variants
-                            .iter()
-                            .find(|(name, _)| name == "Some")
-                            .map(|(_, fields)| fields.clone())
-                    });
+                let some_fields =
+                    self.enum_variants_ordered
+                        .get(&option_item_id)
+                        .and_then(|variants| {
+                            variants
+                                .iter()
+                                .find(|(name, _)| name == "Some")
+                                .map(|(_, fields)| fields.clone())
+                        });
                 let Some(fields) = some_fields else {
                     self.errors
                         .push(TypeError::IterableNextReturnNotOption { span });
@@ -77,11 +81,12 @@ impl<'a> TypeContext<'a> {
                 if fields.len() == 1 {
                     Some(fields[0])
                 } else {
-                    self.errors.push(TypeError::IterableOptionSomeArityMismatch {
-                        span,
-                        expected: 1,
-                        actual: fields.len(),
-                    });
+                    self.errors
+                        .push(TypeError::IterableOptionSomeArityMismatch {
+                            span,
+                            expected: 1,
+                            actual: fields.len(),
+                        });
                     None
                 }
             }

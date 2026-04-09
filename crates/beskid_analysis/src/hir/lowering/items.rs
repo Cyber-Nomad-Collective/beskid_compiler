@@ -1,17 +1,15 @@
 use crate::hir::{
     AstItem, AstProgram, HirAttribute, HirAttributeDeclaration, HirAttributeParameter,
     HirAttributeTarget, HirContractDefinition, HirContractEmbedding, HirContractMethodSignature,
-    HirContractNode, HirEnumDefinition, HirEnumVariant, HirExternInterface,
-    HirFunctionDefinition, HirInlineModule, HirItem, HirMethodDefinition, HirModuleDeclaration,
-    HirProgram, HirTypeDefinition, HirUseDeclaration,
+    HirContractNode, HirEnumDefinition, HirEnumVariant, HirExternInterface, HirFunctionDefinition,
+    HirInlineModule, HirItem, HirMethodDefinition, HirModuleDeclaration, HirProgram,
+    HirTypeDefinition, HirUseDeclaration,
 };
 use crate::syntax::{self, Spanned};
 
 use super::Lowerable;
 
-fn lower_extern_interface(
-    attributes: &[Spanned<syntax::Attribute>],
-) -> Option<HirExternInterface> {
+fn lower_extern_interface(attributes: &[Spanned<syntax::Attribute>]) -> Option<HirExternInterface> {
     let extern_attr = attributes
         .iter()
         .find(|attr| attr.node.name.node.name == "Extern")?;
@@ -129,7 +127,12 @@ impl Lowerable for Spanned<syntax::TypeDefinition> {
                 visibility: self.node.visibility.lower(),
                 name: self.node.name.lower(),
                 generics: self.node.generics.iter().map(Lowerable::lower).collect(),
-                conformances: self.node.conformances.iter().map(Lowerable::lower).collect(),
+                conformances: self
+                    .node
+                    .conformances
+                    .iter()
+                    .map(Lowerable::lower)
+                    .collect(),
                 fields: self.node.fields.iter().map(Lowerable::lower).collect(),
             },
             self.span,

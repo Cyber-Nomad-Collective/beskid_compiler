@@ -186,11 +186,20 @@ fn lowering_preserves_attribute_declaration_items() {
 
     assert_eq!(declaration.node.name.node.name, "Extern");
     assert_eq!(declaration.node.targets.len(), 2);
-    assert_eq!(declaration.node.targets[0].node.name.node.name, "ModuleDeclaration");
-    assert_eq!(declaration.node.targets[1].node.name.node.name, "ContractDeclaration");
+    assert_eq!(
+        declaration.node.targets[0].node.name.node.name,
+        "ModuleDeclaration"
+    );
+    assert_eq!(
+        declaration.node.targets[1].node.name.node.name,
+        "ContractDeclaration"
+    );
     assert_eq!(declaration.node.parameters.len(), 2);
     assert_eq!(declaration.node.parameters[0].node.name.node.name, "Abi");
-    assert_eq!(declaration.node.parameters[1].node.name.node.name, "Library");
+    assert_eq!(
+        declaration.node.parameters[1].node.name.node.name,
+        "Library"
+    );
 }
 
 #[test]
@@ -220,16 +229,29 @@ fn analysis_desugars_try_to_match() {
         panic!("expected desugared match expression");
     };
     assert!(
-        matches!(match_expr.node.scrutinee.node, HirExpressionNode::CallExpression(_)),
+        matches!(
+            match_expr.node.scrutinee.node,
+            HirExpressionNode::CallExpression(_)
+        ),
         "expected try scrutinee call to become match scrutinee"
     );
-    assert_eq!(match_expr.node.arms.len(), 2, "expected Ok and wildcard arms");
+    assert_eq!(
+        match_expr.node.arms.len(),
+        2,
+        "expected Ok and wildcard arms"
+    );
     assert!(
-        matches!(match_expr.node.arms[0].node.pattern.node, HirPattern::Enum(_)),
+        matches!(
+            match_expr.node.arms[0].node.pattern.node,
+            HirPattern::Enum(_)
+        ),
         "expected first arm to pattern-match Result::Ok"
     );
     assert!(
-        matches!(match_expr.node.arms[1].node.pattern.node, HirPattern::Wildcard),
+        matches!(
+            match_expr.node.arms[1].node.pattern.node,
+            HirPattern::Wildcard
+        ),
         "expected second arm to be wildcard error arm"
     );
 }
@@ -252,13 +274,23 @@ fn lowering_normalizes_iterable_for_statement_to_state_machine() {
         })
         .expect("expected main function");
 
-    assert!(matches!(main_fn.node.body.node.statements[0].node, HirStatementNode::LetStatement(_)));
-    let HirStatementNode::WhileStatement(while_stmt) = &main_fn.node.body.node.statements[1].node else {
+    assert!(matches!(
+        main_fn.node.body.node.statements[0].node,
+        HirStatementNode::LetStatement(_)
+    ));
+    let HirStatementNode::WhileStatement(while_stmt) = &main_fn.node.body.node.statements[1].node
+    else {
         panic!("expected while statement");
     };
     assert_eq!(while_stmt.node.body.node.statements.len(), 2);
-    assert!(matches!(while_stmt.node.body.node.statements[0].node, HirStatementNode::LetStatement(_)));
-    assert!(matches!(while_stmt.node.body.node.statements[1].node, HirStatementNode::ExpressionStatement(_)));
+    assert!(matches!(
+        while_stmt.node.body.node.statements[0].node,
+        HirStatementNode::LetStatement(_)
+    ));
+    assert!(matches!(
+        while_stmt.node.body.node.statements[1].node,
+        HirStatementNode::ExpressionStatement(_)
+    ));
 }
 
 #[test]
@@ -279,12 +311,22 @@ fn lowering_normalizes_range_for_statement_to_fast_path() {
         })
         .expect("expected main function");
 
-    assert!(matches!(main_fn.node.body.node.statements[0].node, HirStatementNode::LetStatement(_)));
-    assert!(matches!(main_fn.node.body.node.statements[1].node, HirStatementNode::LetStatement(_)));
-    let HirStatementNode::WhileStatement(while_stmt) = &main_fn.node.body.node.statements[2].node else {
+    assert!(matches!(
+        main_fn.node.body.node.statements[0].node,
+        HirStatementNode::LetStatement(_)
+    ));
+    assert!(matches!(
+        main_fn.node.body.node.statements[1].node,
+        HirStatementNode::LetStatement(_)
+    ));
+    let HirStatementNode::WhileStatement(while_stmt) = &main_fn.node.body.node.statements[2].node
+    else {
         panic!("expected while statement");
     };
-    assert!(matches!(while_stmt.node.condition.node, HirExpressionNode::BinaryExpression(_)));
+    assert!(matches!(
+        while_stmt.node.condition.node,
+        HirExpressionNode::BinaryExpression(_)
+    ));
 }
 
 #[test]
@@ -329,7 +371,8 @@ fn lowering_maps_identity_binary_and_assign_ops() {
         })
         .expect("expected main function");
 
-    let HirStatementNode::LetStatement(let_same) = &main_fn.node.body.node.statements[1].node else {
+    let HirStatementNode::LetStatement(let_same) = &main_fn.node.body.node.statements[1].node
+    else {
         panic!("expected let statement");
     };
     match &let_same.node.value.node {
@@ -339,7 +382,9 @@ fn lowering_maps_identity_binary_and_assign_ops() {
         _ => panic!("expected binary expression"),
     }
 
-    let HirStatementNode::ExpressionStatement(expr_stmt) = &main_fn.node.body.node.statements[2].node else {
+    let HirStatementNode::ExpressionStatement(expr_stmt) =
+        &main_fn.node.body.node.statements[2].node
+    else {
         panic!("expected expression statement");
     };
     match &expr_stmt.node.expression.node {

@@ -1,0 +1,21 @@
+type A { i32 value }
+type B { i32 value }
+
+impl A {
+    i32 Get() {
+        return this.value;
+    }
+}
+
+impl B {
+    i32 Get() {
+        i32 delta = 1;
+        return this.value + delta;
+    }
+}
+
+i32 main() {
+    A a = A { value: 20 };
+    B b = B { value: 21 };
+    return a.Get() + b.Get();
+}

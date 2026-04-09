@@ -1,0 +1,10 @@
+use Std.System.IO;
+use Std.Core.String;
+
+i32 main() {
+    IO.Println("ok");
+    if String.IsEmpty("ok") {
+        return 31;
+    }
+    return 0;
+}

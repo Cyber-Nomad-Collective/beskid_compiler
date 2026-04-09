@@ -51,7 +51,10 @@ fn jit_compile_only(source: &str) {
 
 fn assert_try_parity_ok_case(name: &str, source: &str, expected: i64) {
     let jit_value = jit_run_main_i64(source);
-    assert_eq!(jit_value, expected, "expected JIT try-expression outcome for {name}");
+    assert_eq!(
+        jit_value, expected,
+        "expected JIT try-expression outcome for {name}"
+    );
 
     let dir = temp_case_dir(name);
     let object_path = build_aot_object(source, dir.join("parity.o"));
@@ -235,7 +238,10 @@ fn parity_contract_dispatch_outcome_is_consistent() {
 
     let dir = temp_case_dir("contract_dispatch");
     let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(object_path.exists(), "expected AOT object output for contract dispatch parity");
+    assert!(
+        object_path.exists(),
+        "expected AOT object output for contract dispatch parity"
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -256,7 +262,10 @@ fn parity_event_lifecycle_is_consistent_for_explicit_capacity_form() {
         }
     ";
     let jit_value = jit_run_main_i64(source);
-    assert_eq!(jit_value, 42, "expected JIT explicit-capacity event lifecycle outcome");
+    assert_eq!(
+        jit_value, 42,
+        "expected JIT explicit-capacity event lifecycle outcome"
+    );
 
     let dir = temp_case_dir("event_explicit_capacity");
     let object_path = build_aot_object(source, dir.join("parity.o"));
@@ -285,7 +294,10 @@ fn parity_event_lifecycle_is_consistent_for_default_capacity_form() {
         }
     ";
     let jit_value = jit_run_main_i64(source);
-    assert_eq!(jit_value, 42, "expected JIT default-capacity event lifecycle outcome");
+    assert_eq!(
+        jit_value, 42,
+        "expected JIT default-capacity event lifecycle outcome"
+    );
 
     let dir = temp_case_dir("event_default_capacity");
     let object_path = build_aot_object(source, dir.join("parity.o"));
@@ -311,23 +323,33 @@ fn parity_identity_equality_behavior_is_consistent() {
         }
     ";
     let jit_value = jit_run_main_i64(source);
-    assert_eq!(jit_value, 1, "expected JIT identity equality to evaluate true");
+    assert_eq!(
+        jit_value, 1,
+        "expected JIT identity equality to evaluate true"
+    );
 
     let dir = temp_case_dir("identity_equality");
     let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(object_path.exists(), "expected AOT object output for identity equality parity");
+    assert!(
+        object_path.exists(),
+        "expected AOT object output for identity equality parity"
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn parity_range_loop_behavior_is_consistent() {
-    let source = "i32 main() { i32 mut sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
+    let source =
+        "i32 main() { i32 mut sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
     let jit_value = jit_run_main_i32(source);
     assert_eq!(jit_value, 6, "expected JIT range-loop accumulation result");
 
     let dir = temp_case_dir("range_loop");
     let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(object_path.exists(), "expected AOT object output for range-loop parity");
+    assert!(
+        object_path.exists(),
+        "expected AOT object output for range-loop parity"
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 

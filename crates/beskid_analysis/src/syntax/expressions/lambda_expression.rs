@@ -99,7 +99,12 @@ fn parse_lambda_parameter(pair: Pair<Rule>) -> Result<Spanned<LambdaParameter>, 
                 Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
             (name, Some(ty))
         }
-        _ => return Err(ParseError::unexpected_rule(first, Some(Rule::LambdaParameter))),
+        _ => {
+            return Err(ParseError::unexpected_rule(
+                first,
+                Some(Rule::LambdaParameter),
+            ));
+        }
     };
 
     Ok(Spanned::new(LambdaParameter { name, ty }, span))

@@ -9,4 +9,3 @@ pub extern "C-unwind" fn test_bytes_ptr() -> u64 {
 pub extern "C-unwind" fn test_bytes_len() -> u64 {
     BYTES.len() as u64
 }
-

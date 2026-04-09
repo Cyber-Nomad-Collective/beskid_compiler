@@ -32,12 +32,12 @@ impl crate::parsing::parsable::Parsable for Field {
         }
 
         let span = crate::syntax::SpanInfo::from_span(&pair.as_span());
-        let field_node = pair
-            .into_inner()
-            .next()
-            .ok_or(crate::parsing::error::ParseError::missing(
-                crate::parser::Rule::ValueField,
-            ))?;
+        let field_node =
+            pair.into_inner()
+                .next()
+                .ok_or(crate::parsing::error::ParseError::missing(
+                    crate::parser::Rule::ValueField,
+                ))?;
         let (kind, mut inner) = match field_node.as_rule() {
             crate::parser::Rule::ValueField => (FieldKind::Value, field_node.into_inner()),
             crate::parser::Rule::EventField => (FieldKind::Event, field_node.into_inner()),
@@ -59,25 +59,35 @@ impl crate::parsing::parsable::Parsable for Field {
                 (None, name, ty)
             }
             FieldKind::Event => {
-                let first = inner.next().ok_or(crate::parsing::error::ParseError::missing(
-                    crate::parser::Rule::Identifier,
-                ))?;
-                let (event_capacity, name_pair) = if first.as_rule() == crate::parser::Rule::EventCapacity {
-                    let mut cap_inner = first.into_inner();
-                    let value = cap_inner.next().ok_or(crate::parsing::error::ParseError::missing(
-                        crate::parser::Rule::IntegerLiteral,
-                    ))?;
-                    let parsed = value
-                        .as_str()
-                        .parse::<usize>()
-                        .map_err(|_| crate::parsing::error::ParseError::missing(crate::parser::Rule::IntegerLiteral))?;
-                    let name_pair = inner.next().ok_or(crate::parsing::error::ParseError::missing(
+                let first = inner
+                    .next()
+                    .ok_or(crate::parsing::error::ParseError::missing(
                         crate::parser::Rule::Identifier,
                     ))?;
-                    (Some(parsed), name_pair)
-                } else {
-                    (None, first)
-                };
+                let (event_capacity, name_pair) =
+                    if first.as_rule() == crate::parser::Rule::EventCapacity {
+                        let mut cap_inner = first.into_inner();
+                        let value =
+                            cap_inner
+                                .next()
+                                .ok_or(crate::parsing::error::ParseError::missing(
+                                    crate::parser::Rule::IntegerLiteral,
+                                ))?;
+                        let parsed = value.as_str().parse::<usize>().map_err(|_| {
+                            crate::parsing::error::ParseError::missing(
+                                crate::parser::Rule::IntegerLiteral,
+                            )
+                        })?;
+                        let name_pair =
+                            inner
+                                .next()
+                                .ok_or(crate::parsing::error::ParseError::missing(
+                                    crate::parser::Rule::Identifier,
+                                ))?;
+                        (Some(parsed), name_pair)
+                    } else {
+                        (None, first)
+                    };
 
                 let name = crate::syntax::Identifier::parse(name_pair)?;
                 let params_pair = inner.next();
@@ -89,7 +99,10 @@ impl crate::parsing::parsable::Parsable for Field {
                     Vec::new()
                 };
 
-                let return_type = Spanned::new(Type::Primitive(Spanned::new(PrimitiveType::Unit, span)), span);
+                let return_type = Spanned::new(
+                    Type::Primitive(Spanned::new(PrimitiveType::Unit, span)),
+                    span,
+                );
                 let parameter_types = params
                     .into_iter()
                     .map(|param| param.node.ty)

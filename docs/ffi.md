@@ -9,6 +9,13 @@ Current supported extern mapping for analysis and runtime wiring:
 - Linux: `extern_dlopen` path is primary.
 - Other platforms: compile-time or runtime stubs should fail with explicit diagnostics.
 
+## MVP stdlib/runtime ABI touchpoints
+For compile/run MVP with checked-in stdlib (`corelib/standard_library`), runtime exports must keep these symbols stable:
+- `str_len` (used by `Core.String`)
+- `sys_print` and `sys_println` (used by `System.IO`)
+
+These are validated in `crates/beskid_tests/src/abi/contracts.rs`.
+
 ## Security controls
 - `BESKID_EXTERN_ALLOW`
 - `BESKID_EXTERN_DENY`
@@ -19,7 +26,10 @@ Pattern forms:
 - `*:symbol`
 - `symbol`
 
-Allowlist is applied before denylist checks.
+Evaluation rules:
+- If allowlist is non-empty, symbol must match at least one allow pattern.
+- Denylist is then applied and takes precedence when both match.
+- Wildcard prefix/suffix patterns are supported (`*`), e.g. `libc.so.*:getpid`.
 
 ## Demos
 See `compiler/examples/extern` and runtime/interop tests for `getpid`/`write`-style usage.

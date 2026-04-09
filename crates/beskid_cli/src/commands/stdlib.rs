@@ -3,10 +3,12 @@ use clap::Args;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::stdlib_runtime;
+
 #[derive(Args, Debug)]
 pub struct StdlibArgs {
     /// Destination directory for the Beskid stdlib project
-    #[arg(long, default_value = "standard_library")]
+    #[arg(long, default_value = "corelib/standard_library")]
     pub output: PathBuf,
 }
 
@@ -15,7 +17,8 @@ pub fn execute(args: StdlibArgs) -> Result<()> {
 }
 
 fn generate_stdlib_project(output: &Path) -> Result<()> {
-    let template_root = stdlib_template_root();
+    let provisioned = stdlib_runtime::ensure_bundled_stdlib()?;
+    let template_root = provisioned.root;
     validate_template_layout(&template_root)?;
 
     if is_same_location(&template_root, output) {
@@ -30,13 +33,12 @@ fn generate_stdlib_project(output: &Path) -> Result<()> {
 
     println!(
         "Generated Beskid stdlib project at {}",
-        output.canonicalize().unwrap_or_else(|_| output.to_path_buf()).display()
+        output
+            .canonicalize()
+            .unwrap_or_else(|_| output.to_path_buf())
+            .display()
     );
     Ok(())
-}
-
-fn stdlib_template_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../standard_library")
 }
 
 fn validate_template_layout(template_root: &Path) -> Result<()> {
@@ -44,7 +46,10 @@ fn validate_template_layout(template_root: &Path) -> Result<()> {
     let prelude = template_root.join("src/Prelude.bd");
 
     if !manifest.is_file() {
-        anyhow::bail!("missing stdlib manifest template at `{}`", manifest.display());
+        anyhow::bail!(
+            "missing stdlib manifest template at `{}`",
+            manifest.display()
+        );
     }
     if !prelude.is_file() {
         anyhow::bail!("missing stdlib prelude template at `{}`", prelude.display());
@@ -66,8 +71,7 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
     for entry in fs::read_dir(source)
         .with_context(|| format!("read template directory `{}`", source.display()))?
     {
-        let entry = entry
-            .with_context(|| format!("read entry under `{}`", source.display()))?;
+        let entry = entry.with_context(|| format!("read entry under `{}`", source.display()))?;
         let source_path = entry.path();
         let destination_path = destination.join(entry.file_name());
 

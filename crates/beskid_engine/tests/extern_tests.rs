@@ -19,14 +19,18 @@ pub i64 main() { return 0; }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     // Assert extern_imports recorded
-    assert!(lowered
-        .artifact
-        .extern_imports
-        .iter()
-        .any(|e| e.symbol == "write" && e.library.as_deref() == Some(LIBC)));
+    assert!(
+        lowered
+            .artifact
+            .extern_imports
+            .iter()
+            .any(|e| e.symbol == "write" && e.library.as_deref() == Some(LIBC))
+    );
 
     let mut engine = Engine::new();
-    engine.compile_artifact(&lowered.artifact).expect("compile with extern_dlopen");
+    engine
+        .compile_artifact(&lowered.artifact)
+        .expect("compile with extern_dlopen");
     Ok(())
 }
 
@@ -43,7 +47,9 @@ pub i64 main() { return 0; }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
-    let err = engine.compile_artifact(&lowered.artifact).expect_err("should fail without feature");
+    let err = engine
+        .compile_artifact(&lowered.artifact)
+        .expect_err("should fail without feature");
     let msg = format!("{:?}", err);
     assert!(msg.contains("extern_dlopen feature disabled"));
     Ok(())
@@ -62,7 +68,9 @@ pub i64 main() { return C.getpid(); }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
-    engine.compile_artifact(&lowered.artifact).expect("compile extern call");
+    engine
+        .compile_artifact(&lowered.artifact)
+        .expect("compile extern call");
     let main_ptr = unsafe { engine.entrypoint_ptr("main").unwrap() };
     let fun: extern "C" fn() -> i64 = unsafe { std::mem::transmute(main_ptr) };
     let pid = fun();
@@ -83,7 +91,9 @@ pub i64 main() { return 0; }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
-    let err = engine.compile_artifact(&lowered.artifact).expect_err("missing symbol should error");
+    let err = engine
+        .compile_artifact(&lowered.artifact)
+        .expect_err("missing symbol should error");
     let msg = format!("{:?}", err);
     assert!(msg.contains("dlsym("));
     Ok(())
@@ -102,9 +112,10 @@ pub i64 main() { return 0; }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
-    let err = engine.compile_artifact(&lowered.artifact).expect_err("missing library should error");
+    let err = engine
+        .compile_artifact(&lowered.artifact)
+        .expect_err("missing library should error");
     let msg = format!("{:?}", err);
     assert!(msg.contains("dlopen("));
     Ok(())
 }
-

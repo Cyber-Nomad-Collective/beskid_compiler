@@ -16,11 +16,12 @@ pub i64 main() {
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = beskid_engine::Engine::new();
-    engine.compile_artifact(&lowered.artifact).expect("compile extern write");
+    engine
+        .compile_artifact(&lowered.artifact)
+        .expect("compile extern write");
     let main_ptr = unsafe { engine.entrypoint_ptr("main").unwrap() };
     let fun: extern "C" fn() -> i64 = unsafe { transmute(main_ptr) };
     let written = fun();
-    assert_eq!(written,  "Hello from libc.write\n".len() as i64);
+    assert_eq!(written, "Hello from libc.write\n".len() as i64);
     Ok(())
 }
-

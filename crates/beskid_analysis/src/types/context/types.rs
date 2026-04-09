@@ -23,10 +23,10 @@ impl<'a> TypeContext<'a> {
                 for parameter in parameters {
                     params.push(self.type_id_for_type(parameter)?);
                 }
-                Some(
-                    self.type_table
-                        .intern(TypeInfo::Function { params, return_type }),
-                )
+                Some(self.type_table.intern(TypeInfo::Function {
+                    params,
+                    return_type,
+                }))
             }
         }
     }

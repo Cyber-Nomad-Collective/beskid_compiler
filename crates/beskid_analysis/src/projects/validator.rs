@@ -48,6 +48,9 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
 
         match dependency.source {
             DependencySource::Path => {
+                if dependency.name.eq_ignore_ascii_case("Std") {
+                    continue;
+                }
                 if dependency
                     .path
                     .as_deref()
@@ -107,7 +110,10 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
     Ok(())
 }
 
-fn validate_relative_workspace_path(path_value: &str, field_name: &str) -> Result<(), ProjectError> {
+fn validate_relative_workspace_path(
+    path_value: &str,
+    field_name: &str,
+) -> Result<(), ProjectError> {
     let path = Path::new(path_value);
     if path.is_absolute() {
         return Err(ProjectError::Validation(format!(

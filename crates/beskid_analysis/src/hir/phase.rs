@@ -4,8 +4,8 @@ use crate::syntax::{
     EnumDefinition, ExpressionStatement, ForStatement, FunctionDefinition, GroupedExpression,
     IfStatement, InlineModule, LambdaExpression, LetStatement, LiteralExpression, MatchExpression,
     MemberExpression, MethodDefinition, ModuleDeclaration, PathExpression, ReturnStatement,
-    StructLiteralExpression, TypeDefinition, UnaryExpression, UseDeclaration, WhileStatement,
-    TryExpression,
+    StructLiteralExpression, TryExpression, TypeDefinition, UnaryExpression, UseDeclaration,
+    WhileStatement,
 };
 
 use super::{

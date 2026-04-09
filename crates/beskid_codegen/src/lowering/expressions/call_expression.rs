@@ -67,7 +67,9 @@ fn type_returns_runtime_value(
 ) -> bool {
     !matches!(
         type_result.types.get(type_id),
-        Some(TypeInfo::Primitive(HirPrimitiveType::Unit | HirPrimitiveType::Never))
+        Some(TypeInfo::Primitive(
+            HirPrimitiveType::Unit | HirPrimitiveType::Never
+        ))
     )
 }
 
@@ -109,11 +111,13 @@ fn lambda_signature_type_ids(
 
 fn event_field_name(callee: &Spanned<HirExpressionNode>) -> Option<String> {
     match &callee.node {
-        HirExpressionNode::PathExpression(path_expr) => {
-            path_expr.node.path.node.segments.get(1).map(|segment| {
-                segment.node.name.node.name.clone()
-            })
-        }
+        HirExpressionNode::PathExpression(path_expr) => path_expr
+            .node
+            .path
+            .node
+            .segments
+            .get(1)
+            .map(|segment| segment.node.name.node.name.clone()),
         HirExpressionNode::MemberExpression(member_expr) => {
             Some(member_expr.node.member.node.name.clone())
         }
@@ -213,19 +217,19 @@ fn lower_event_invoke_call(
         }
     };
 
-    let offsets = crate::lowering::descriptor::struct_field_offsets(ctx.type_result, item_id).ok_or(
-        CodegenError::UnsupportedNode {
-            span: node.span,
-            node: "event invoke offsets",
-        },
-    )?;
-    let offset = offsets
-        .get(field_name.as_str())
-        .copied()
+    let offsets = crate::lowering::descriptor::struct_field_offsets(ctx.type_result, item_id)
         .ok_or(CodegenError::UnsupportedNode {
             span: node.span,
-            node: "event invoke field offset",
+            node: "event invoke offsets",
         })?;
+    let offset =
+        offsets
+            .get(field_name.as_str())
+            .copied()
+            .ok_or(CodegenError::UnsupportedNode {
+                span: node.span,
+                node: "event invoke field offset",
+            })?;
     let offset_val = ctx.builder.ins().iconst(pointer_type(), offset as i64);
     let field_addr = ctx.builder.ins().iadd(receiver_value, offset_val);
     let event_state = ctx
@@ -297,37 +301,39 @@ fn lower_event_invoke_call(
 
     ctx.builder.switch_to_block(loop_header);
     let len_call = ctx.builder.ins().call(len_ref, &[event_state]);
-    let count = *ctx
-        .builder
-        .inst_results(len_call)
-        .first()
-        .ok_or(CodegenError::UnsupportedNode {
-            span: node.span,
-            node: "event len result",
-        })?;
+    let count =
+        *ctx.builder
+            .inst_results(len_call)
+            .first()
+            .ok_or(CodegenError::UnsupportedNode {
+                span: node.span,
+                node: "event len result",
+            })?;
     let idx = ctx.builder.use_var(idx_var);
-    let done = ctx.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, idx, count);
+    let done = ctx
+        .builder
+        .ins()
+        .icmp(IntCC::UnsignedGreaterThanOrEqual, idx, count);
     ctx.builder.ins().brif(done, loop_exit, &[], loop_body, &[]);
 
     ctx.builder.switch_to_block(loop_body);
     let get_call = ctx.builder.ins().call(get_ref, &[event_state, idx]);
-    let handler_ptr = *ctx
-        .builder
-        .inst_results(get_call)
-        .first()
-        .ok_or(CodegenError::UnsupportedNode {
-            span: node.span,
-            node: "event handler result",
-        })?;
+    let handler_ptr =
+        *ctx.builder
+            .inst_results(get_call)
+            .first()
+            .ok_or(CodegenError::UnsupportedNode {
+                span: node.span,
+                node: "event handler result",
+            })?;
 
     let mut handler_sig = Signature::new(CallConv::SystemV);
     for param in &params {
-        let clif_ty = map_type_id_to_clif(ctx.type_result, *param).ok_or(
-            CodegenError::UnsupportedNode {
+        let clif_ty =
+            map_type_id_to_clif(ctx.type_result, *param).ok_or(CodegenError::UnsupportedNode {
                 span: node.span,
                 node: "event handler parameter type",
-            },
-        )?;
+            })?;
         handler_sig.params.push(AbiParam::new(clif_ty));
     }
     let handler_sig_ref = ctx.builder.func.import_signature(handler_sig);
@@ -355,18 +361,21 @@ fn lambda_signature_from_types(
 ) -> Result<(Signature, bool), CodegenError> {
     let mut signature = Signature::new(CallConv::SystemV);
     for param in params {
-        let clif_ty = map_type_id_to_clif(ctx.type_result, *param).ok_or(CodegenError::UnsupportedNode {
-            span,
-            node: "lambda parameter type",
-        })?;
+        let clif_ty =
+            map_type_id_to_clif(ctx.type_result, *param).ok_or(CodegenError::UnsupportedNode {
+                span,
+                node: "lambda parameter type",
+            })?;
         signature.params.push(AbiParam::new(clif_ty));
     }
     let returns_value = type_returns_runtime_value(ctx.type_result, return_type);
     if returns_value {
-        let clif_ty = map_type_id_to_clif(ctx.type_result, return_type).ok_or(CodegenError::UnsupportedNode {
-            span,
-            node: "lambda return type",
-        })?;
+        let clif_ty = map_type_id_to_clif(ctx.type_result, return_type).ok_or(
+            CodegenError::UnsupportedNode {
+                span,
+                node: "lambda return type",
+            },
+        )?;
         signature.returns.push(AbiParam::new(clif_ty));
     }
     Ok((signature, returns_value))
@@ -385,7 +394,10 @@ fn lower_lambda_to_symbol(
     let (signature, returns_value) =
         lambda_signature_from_types(&param_types, return_type, lambda.span, ctx)?;
 
-    let name = format!("__beskid_lambda_{}", ctx.codegen.functions_emitted + ctx.codegen.lowered_functions.len());
+    let name = format!(
+        "__beskid_lambda_{}",
+        ctx.codegen.functions_emitted + ctx.codegen.lowered_functions.len()
+    );
 
     let mut function = Function::new();
     function.signature = signature.clone();
@@ -415,10 +427,11 @@ fn lower_lambda_to_symbol(
                 span: parameter.node.name.span,
             },
         )?;
-        let clif_ty = map_type_id_to_clif(ctx.type_result, type_id).ok_or(CodegenError::UnsupportedNode {
-            span: parameter.node.name.span,
-            node: "lambda parameter type",
-        })?;
+        let clif_ty =
+            map_type_id_to_clif(ctx.type_result, type_id).ok_or(CodegenError::UnsupportedNode {
+                span: parameter.node.name.span,
+                node: "lambda parameter type",
+            })?;
         let var = builder.declare_var(clif_ty);
         builder.def_var(var, value);
         state.locals.insert(local_id, var);
@@ -459,10 +472,12 @@ fn lower_lambda_to_symbol(
     }
 
     ctx.codegen.functions_emitted += 1;
-    ctx.codegen.lowered_functions.push(crate::lowering::context::LoweredFunction {
-        name: name.clone(),
-        function,
-    });
+    ctx.codegen
+        .lowered_functions
+        .push(crate::lowering::context::LoweredFunction {
+            name: name.clone(),
+            function,
+        });
     ctx.state
         .emitted_lambda_symbols
         .insert(lambda_key, name.clone());
@@ -497,11 +512,9 @@ fn lower_lambda_function_value_checked(
 ) -> Result<Value, CodegenError> {
     match lower_lambda_function_value(lambda, span, ctx) {
         Ok(value) => Ok(value),
-        Err(CodegenError::InvalidLocalBinding { .. }) => {
-            Err(CodegenError::UnsupportedFeature(
-                "capturing lambda escape requires closure environment fat pointer",
-            ))
-        }
+        Err(CodegenError::InvalidLocalBinding { .. }) => Err(CodegenError::UnsupportedFeature(
+            "capturing lambda escape requires closure environment fat pointer",
+        )),
         Err(err) => Err(err),
     }
 }
@@ -519,13 +532,9 @@ fn lower_function_typed_argument(
     }
 
     match &arg_expr.node {
-        HirExpressionNode::LambdaExpression(lambda) => {
-            Ok(Some(lower_lambda_function_value_checked(
-                lambda,
-                arg_expr.span,
-                ctx,
-            )?))
-        }
+        HirExpressionNode::LambdaExpression(lambda) => Ok(Some(
+            lower_lambda_function_value_checked(lambda, arg_expr.span, ctx)?,
+        )),
         HirExpressionNode::GroupedExpression(grouped) => {
             lower_function_typed_argument(&grouped.node.expr, expected_type, ctx)
         }
@@ -539,10 +548,12 @@ fn lower_function_typed_argument(
                 Some(ResolvedValue::Local(local_id)) => {
                     if let Some(lambda_ptr) = ctx.state.local_lambdas.get(local_id).copied() {
                         // SAFETY: pointer originates from immutable HIR nodes owned by lowering context.
-                        let lambda = unsafe { lambda_ptr.as_ref() }.ok_or(CodegenError::UnsupportedNode {
-                            span: arg_expr.span,
-                            node: "dangling lambda binding",
-                        })?;
+                        let lambda = unsafe { lambda_ptr.as_ref() }.ok_or(
+                            CodegenError::UnsupportedNode {
+                                span: arg_expr.span,
+                                node: "dangling lambda binding",
+                            },
+                        )?;
                         Ok(Some(lower_lambda_function_value_checked(
                             lambda,
                             arg_expr.span,
@@ -564,14 +575,11 @@ fn lower_indirect_function_call(
     local_id: beskid_analysis::resolve::LocalId,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<Value>, CodegenError> {
-    let callee_type = ctx
-        .type_result
-        .local_types
-        .get(&local_id)
-        .copied()
-        .ok_or(CodegenError::MissingLocalType {
+    let callee_type = ctx.type_result.local_types.get(&local_id).copied().ok_or(
+        CodegenError::MissingLocalType {
             span: node.node.callee.span,
-        })?;
+        },
+    )?;
 
     let TypeInfo::Function {
         params,
@@ -598,14 +606,14 @@ fn lower_indirect_function_call(
         });
     }
 
-    let callee_var = ctx
-        .state
-        .locals
-        .get(&local_id)
-        .copied()
-        .ok_or(CodegenError::InvalidLocalBinding {
-            span: node.node.callee.span,
-        })?;
+    let callee_var =
+        ctx.state
+            .locals
+            .get(&local_id)
+            .copied()
+            .ok_or(CodegenError::InvalidLocalBinding {
+                span: node.node.callee.span,
+            })?;
     let callee_ptr = ctx.builder.use_var(callee_var);
 
     lower_indirect_function_call_with_signature(node, callee_ptr, &params, return_type, ctx)
@@ -663,11 +671,13 @@ fn lower_indirect_function_call_with_signature(
 
 fn contract_method_name(callee: &Spanned<HirExpressionNode>) -> Option<String> {
     match &callee.node {
-        HirExpressionNode::PathExpression(path_expr) => {
-            path_expr.node.path.node.segments.get(1).map(|segment| {
-                segment.node.name.node.name.clone()
-            })
-        }
+        HirExpressionNode::PathExpression(path_expr) => path_expr
+            .node
+            .path
+            .node
+            .segments
+            .get(1)
+            .map(|segment| segment.node.name.node.name.clone()),
         HirExpressionNode::MemberExpression(member_expr) => {
             Some(member_expr.node.member.node.name.clone())
         }
@@ -681,10 +691,11 @@ fn lower_contract_dispatch_call(
     receiver_source: MethodReceiverSource,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<Value>, CodegenError> {
-    let method_name = contract_method_name(&node.node.callee).ok_or(CodegenError::UnsupportedNode {
-        span: node.node.callee.span,
-        node: "contract dispatch callee",
-    })?;
+    let method_name =
+        contract_method_name(&node.node.callee).ok_or(CodegenError::UnsupportedNode {
+            span: node.node.callee.span,
+            node: "contract dispatch callee",
+        })?;
     let method_order = ctx
         .type_result
         .contract_method_order
@@ -718,27 +729,32 @@ fn lower_contract_dispatch_call(
                 .resolved_values
                 .get(&path.node.path.span)
             {
-                if matches!(resolved, ResolvedValue::Item(item_id) if *item_id == contract_item_id) {
+                if matches!(resolved, ResolvedValue::Item(item_id) if *item_id == contract_item_id)
+                {
                     // Direct extern call: build args from call site only, no receiver wrapper.
                     if signature.params.len() != node.node.args.len() {
-                        return Err(CodegenError::UnsupportedNode { span: node.span, node: "call arity mismatch" });
+                        return Err(CodegenError::UnsupportedNode {
+                            span: node.span,
+                            node: "call arity mismatch",
+                        });
                     }
 
                     let mut args = Vec::with_capacity(node.node.args.len());
                     for (arg, expected) in node.node.args.iter().zip(signature.params.iter()) {
-                        let value = if let Some(fn_value) = lower_function_typed_argument(arg, *expected, ctx)? {
+                        let value = if let Some(fn_value) =
+                            lower_function_typed_argument(arg, *expected, ctx)?
+                        {
                             fn_value
                         } else {
-                            let lowered = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
-                                span: arg.span,
-                                node: "unit-valued call argument",
-                            })?;
-                            let actual = ctx
-                                .type_result
-                                .expr_types
-                                .get(&arg.span)
-                                .copied()
-                                .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+                            let lowered =
+                                lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                                    span: arg.span,
+                                    node: "unit-valued call argument",
+                                })?;
+                            let actual =
+                                ctx.type_result.expr_types.get(&arg.span).copied().ok_or(
+                                    CodegenError::MissingExpressionType { span: arg.span },
+                                )?;
                             ensure_type_compatibility(
                                 arg.span,
                                 *expected,
@@ -755,16 +771,22 @@ fn lower_contract_dispatch_call(
                     let mut signature_ir = Signature::new(CallConv::SystemV);
                     for param in &signature.params {
                         let clif_ty = map_type_id_to_clif(ctx.type_result, *param).ok_or(
-                            CodegenError::UnsupportedNode { span: node.span, node: "call parameter type" },
+                            CodegenError::UnsupportedNode {
+                                span: node.span,
+                                node: "call parameter type",
+                            },
                         )?;
                         signature_ir.params.push(AbiParam::new(clif_ty));
                     }
 
-                    let returns_value = type_returns_runtime_value(ctx.type_result, signature.return_type);
+                    let returns_value =
+                        type_returns_runtime_value(ctx.type_result, signature.return_type);
                     if returns_value {
-                        let clif_ty = map_type_id_to_clif(ctx.type_result, signature.return_type).ok_or(
-                            CodegenError::UnsupportedNode { span: node.span, node: "call return type" },
-                        )?;
+                        let clif_ty = map_type_id_to_clif(ctx.type_result, signature.return_type)
+                            .ok_or(CodegenError::UnsupportedNode {
+                            span: node.span,
+                            node: "call return type",
+                        })?;
                         signature_ir.returns.push(AbiParam::new(clif_ty));
                     }
 
@@ -776,7 +798,13 @@ fn lower_contract_dispatch_call(
                         patchable: false,
                     });
                     let call = ctx.builder.ins().call(func_ref, &args);
-                    return lower_call_return(call, node.span, signature.return_type, returns_value, ctx);
+                    return lower_call_return(
+                        call,
+                        node.span,
+                        signature.return_type,
+                        returns_value,
+                        ctx,
+                    );
                 }
             }
         }
@@ -795,19 +823,20 @@ fn lower_contract_dispatch_call(
                     // Build direct extern call with method_name
                     let mut args = Vec::with_capacity(node.node.args.len());
                     for (arg, expected) in node.node.args.iter().zip(signature.params.iter()) {
-                        let value = if let Some(fn_value) = lower_function_typed_argument(arg, *expected, ctx)? {
+                        let value = if let Some(fn_value) =
+                            lower_function_typed_argument(arg, *expected, ctx)?
+                        {
                             fn_value
                         } else {
-                            let lowered = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
-                                span: arg.span,
-                                node: "unit-valued call argument",
-                            })?;
-                            let actual = ctx
-                                .type_result
-                                .expr_types
-                                .get(&arg.span)
-                                .copied()
-                                .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+                            let lowered =
+                                lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                                    span: arg.span,
+                                    node: "unit-valued call argument",
+                                })?;
+                            let actual =
+                                ctx.type_result.expr_types.get(&arg.span).copied().ok_or(
+                                    CodegenError::MissingExpressionType { span: arg.span },
+                                )?;
                             ensure_type_compatibility(
                                 arg.span,
                                 *expected,
@@ -824,16 +853,22 @@ fn lower_contract_dispatch_call(
                     let mut signature_ir = Signature::new(CallConv::SystemV);
                     for param in &signature.params {
                         let clif_ty = map_type_id_to_clif(ctx.type_result, *param).ok_or(
-                            CodegenError::UnsupportedNode { span: node.span, node: "call parameter type" },
+                            CodegenError::UnsupportedNode {
+                                span: node.span,
+                                node: "call parameter type",
+                            },
                         )?;
                         signature_ir.params.push(AbiParam::new(clif_ty));
                     }
 
-                    let returns_value = type_returns_runtime_value(ctx.type_result, signature.return_type);
+                    let returns_value =
+                        type_returns_runtime_value(ctx.type_result, signature.return_type);
                     if returns_value {
-                        let clif_ty = map_type_id_to_clif(ctx.type_result, signature.return_type).ok_or(
-                            CodegenError::UnsupportedNode { span: node.span, node: "call return type" },
-                        )?;
+                        let clif_ty = map_type_id_to_clif(ctx.type_result, signature.return_type)
+                            .ok_or(CodegenError::UnsupportedNode {
+                            span: node.span,
+                            node: "call return type",
+                        })?;
                         signature_ir.returns.push(AbiParam::new(clif_ty));
                     }
 
@@ -845,7 +880,13 @@ fn lower_contract_dispatch_call(
                         patchable: false,
                     });
                     let call = ctx.builder.ins().call(func_ref, &args);
-                    return lower_call_return(call, node.span, signature.return_type, returns_value, ctx);
+                    return lower_call_return(
+                        call,
+                        node.span,
+                        signature.return_type,
+                        returns_value,
+                        ctx,
+                    );
                 }
             }
         }
@@ -880,15 +921,17 @@ fn lower_contract_dispatch_call(
         }
     };
 
-    let data_ptr =
-        ctx.builder
-            .ins()
-            .load(pointer_type(), MemFlags::new(), receiver_wrapper, 0);
+    let data_ptr = ctx
+        .builder
+        .ins()
+        .load(pointer_type(), MemFlags::new(), receiver_wrapper, 0);
     let method_offset = ((method_index + 1) * std::mem::size_of::<u64>()) as i32;
-    let method_ptr =
-        ctx.builder
-            .ins()
-            .load(pointer_type(), MemFlags::new(), receiver_wrapper, method_offset);
+    let method_ptr = ctx.builder.ins().load(
+        pointer_type(),
+        MemFlags::new(),
+        receiver_wrapper,
+        method_offset,
+    );
 
     let mut args = Vec::with_capacity(node.node.args.len() + 1);
     args.push(data_ptr);
@@ -922,12 +965,11 @@ fn lower_contract_dispatch_call(
     let mut signature_ir = Signature::new(CallConv::SystemV);
     signature_ir.params.push(AbiParam::new(pointer_type()));
     for param in &signature.params {
-        let clif_ty = map_type_id_to_clif(ctx.type_result, *param).ok_or(
-            CodegenError::UnsupportedNode {
+        let clif_ty =
+            map_type_id_to_clif(ctx.type_result, *param).ok_or(CodegenError::UnsupportedNode {
                 span: node.span,
                 node: "call parameter type",
-            },
-        )?;
+            })?;
         signature_ir.params.push(AbiParam::new(clif_ty));
     }
 
@@ -1195,12 +1237,11 @@ fn lower_method_dispatch_call(
     )?;
     signature_ir.params.push(AbiParam::new(receiver_clif_ty));
     for param in &signature.params {
-        let clif_ty = map_type_id_to_clif(ctx.type_result, *param).ok_or(
-            CodegenError::UnsupportedNode {
+        let clif_ty =
+            map_type_id_to_clif(ctx.type_result, *param).ok_or(CodegenError::UnsupportedNode {
                 span: node.span,
                 node: "call parameter type",
-            },
-        )?;
+            })?;
         signature_ir.params.push(AbiParam::new(clif_ty));
     }
 
@@ -1264,12 +1305,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             ..
         }) = call_kind
         {
-            return lower_contract_dispatch_call(
-                node,
-                contract_item_id,
-                receiver_source,
-                ctx,
-            );
+            return lower_contract_dispatch_call(node, contract_item_id, receiver_source, ctx);
         }
 
         fn lambda_from_callee<'a>(
@@ -1297,10 +1333,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                         return Ok(None);
                     };
                     // SAFETY: pointer originates from an immutable borrow of HIR owned by the lowering context.
-                    let lambda = unsafe { lambda_ptr.as_ref() }.ok_or(CodegenError::UnsupportedNode {
-                        span: path_expr.node.path.span,
-                        node: "dangling lambda binding",
-                    })?;
+                    let lambda =
+                        unsafe { lambda_ptr.as_ref() }.ok_or(CodegenError::UnsupportedNode {
+                            span: path_expr.node.path.span,
+                            node: "dangling lambda binding",
+                        })?;
                     Ok(Some(lambda))
                 }
                 _ => Ok(None),
@@ -1311,7 +1348,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             return lower_local_lambda_call(node, lambda, ctx);
         }
 
-        if let Some(callee_type_id) = ctx.type_result.expr_types.get(&node.node.callee.span).copied()
+        if let Some(callee_type_id) = ctx
+            .type_result
+            .expr_types
+            .get(&node.node.callee.span)
+            .copied()
             && let Some(TypeInfo::Function {
                 params,
                 return_type,
@@ -1319,24 +1360,23 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
         {
             let callee_is_item_path = matches!(call_kind, Some(CallLoweringKind::ItemCall { .. }))
                 || if let HirExpressionNode::PathExpression(path_expr) = &node.node.callee.node {
-                matches!(
-                    ctx.resolution
-                        .tables
-                        .resolved_values
-                        .get(&path_expr.node.path.span),
-                    Some(ResolvedValue::Item(_))
-                )
-            } else {
-                false
-            };
+                    matches!(
+                        ctx.resolution
+                            .tables
+                            .resolved_values
+                            .get(&path_expr.node.path.span),
+                        Some(ResolvedValue::Item(_))
+                    )
+                } else {
+                    false
+                };
 
             if !callee_is_item_path {
-                let callee_value = lower_node(&node.node.callee, ctx)?.ok_or(
-                    CodegenError::UnsupportedNode {
+                let callee_value =
+                    lower_node(&node.node.callee, ctx)?.ok_or(CodegenError::UnsupportedNode {
                         span: node.node.callee.span,
                         node: "unit-valued function callee",
-                    },
-                )?;
+                    })?;
                 return lower_indirect_function_call_with_signature(
                     node,
                     callee_value,
@@ -1495,30 +1535,31 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             }
         } else {
             for (arg, expected) in node.node.args.iter().zip(substituted_params.iter()) {
-                let value = if let Some(fn_value) = lower_function_typed_argument(arg, *expected, ctx)? {
-                    fn_value
-                } else {
-                    let value = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
-                        span: arg.span,
-                        node: "unit-valued call argument",
-                    })?;
-                    let actual = ctx
-                        .type_result
-                        .expr_types
-                        .get(&arg.span)
-                        .copied()
-                        .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
-                    let lowered = ensure_type_compatibility(
-                        arg.span,
-                        *expected,
-                        actual,
-                        ctx.type_result,
-                        ctx.resolution,
-                        ctx.builder,
-                        value,
-                    )?;
-                    lowered
-                };
+                let value =
+                    if let Some(fn_value) = lower_function_typed_argument(arg, *expected, ctx)? {
+                        fn_value
+                    } else {
+                        let value = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                            span: arg.span,
+                            node: "unit-valued call argument",
+                        })?;
+                        let actual = ctx
+                            .type_result
+                            .expr_types
+                            .get(&arg.span)
+                            .copied()
+                            .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+                        let lowered = ensure_type_compatibility(
+                            arg.span,
+                            *expected,
+                            actual,
+                            ctx.type_result,
+                            ctx.resolution,
+                            ctx.builder,
+                            value,
+                        )?;
+                        lowered
+                    };
                 args.push(value);
             }
         }

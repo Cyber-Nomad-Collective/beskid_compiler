@@ -1,9 +1,10 @@
 use anyhow::Result;
 use beskid_engine::Engine;
 use beskid_runtime::{
-    event_get_handler, event_subscribe, event_unsubscribe_first, rt_metrics_event_get_handler_calls,
-    rt_metrics_event_subscribe_calls, rt_metrics_event_unsubscribe_calls, rt_metrics_str_concat_bytes,
-    rt_metrics_str_concat_calls, str_concat, str_len, str_new,
+    event_get_handler, event_subscribe, event_unsubscribe_first,
+    rt_metrics_event_get_handler_calls, rt_metrics_event_subscribe_calls,
+    rt_metrics_event_unsubscribe_calls, rt_metrics_str_concat_bytes, rt_metrics_str_concat_calls,
+    str_concat, str_len, str_new,
 };
 
 #[test]
@@ -39,4 +40,3 @@ fn engine_runtime_metrics_strings_and_events() -> Result<()> {
     });
     Ok(())
 }
-

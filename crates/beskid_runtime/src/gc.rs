@@ -65,7 +65,9 @@ pub fn leave_runtime_scope() {
     RUNTIME_SCOPE_DEPTH.with(|depth| {
         let current = depth.get();
         if current == 0 {
-            panic!("runtime scope underflow: leave_runtime_scope called without enter_runtime_scope");
+            panic!(
+                "runtime scope underflow: leave_runtime_scope called without enter_runtime_scope"
+            );
         }
         depth.set(current - 1);
     });

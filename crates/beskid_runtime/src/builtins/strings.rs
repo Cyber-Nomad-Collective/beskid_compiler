@@ -1,6 +1,6 @@
-use beskid_abi::BeskidStr;
 #[cfg(feature = "metrics")]
 use crate::gc::with_current_root;
+use beskid_abi::BeskidStr;
 
 use super::alloc::alloc;
 
@@ -74,7 +74,10 @@ pub extern "C-unwind" fn str_concat(
     #[cfg(feature = "metrics")]
     with_current_root(|root| {
         root.runtime_state.str_concat_calls = root.runtime_state.str_concat_calls.saturating_add(1);
-        root.runtime_state.str_concat_bytes = root.runtime_state.str_concat_bytes.saturating_add(total_len);
+        root.runtime_state.str_concat_bytes = root
+            .runtime_state
+            .str_concat_bytes
+            .saturating_add(total_len);
     });
 
     str_new(buffer.cast::<u8>(), total_len)

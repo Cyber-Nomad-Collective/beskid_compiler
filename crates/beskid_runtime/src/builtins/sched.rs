@@ -13,4 +13,3 @@ pub extern "C-unwind" fn rt_now_millis() -> i64 {
     let elapsed = START.get_or_init(Instant::now).elapsed().as_millis();
     elapsed.min(i64::MAX as u128) as i64
 }
-

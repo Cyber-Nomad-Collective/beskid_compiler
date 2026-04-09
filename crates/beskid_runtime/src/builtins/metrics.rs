@@ -102,4 +102,3 @@ pub extern "C-unwind" fn rt_metrics_heap_fragmentation_bytes() -> usize {
     });
     out
 }
-

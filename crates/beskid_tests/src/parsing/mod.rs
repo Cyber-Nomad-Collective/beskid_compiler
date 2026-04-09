@@ -2,9 +2,9 @@
 pub mod util;
 
 #[cfg(test)]
-mod contracts;
-#[cfg(test)]
 mod attributes;
+#[cfg(test)]
+mod contracts;
 #[cfg(test)]
 mod control_flow;
 #[cfg(test)]

@@ -64,4 +64,3 @@ pub i64 main() { return 0; }
     assert!(msg.contains("ExternDisallowedParamType"));
     Ok(())
 }
-

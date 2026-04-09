@@ -108,12 +108,13 @@ impl<'a> HirLegalityValidator<'a> {
                 continue;
             }
 
-            self.errors.push(HirLegalityError::AttributeTargetNotAllowed {
-                span: attribute.span,
-                name: name.clone(),
-                target: target_kind,
-                allowed: allowed_targets.clone(),
-            });
+            self.errors
+                .push(HirLegalityError::AttributeTargetNotAllowed {
+                    span: attribute.span,
+                    name: name.clone(),
+                    target: target_kind,
+                    allowed: allowed_targets.clone(),
+                });
         }
     }
 
@@ -209,11 +210,12 @@ impl<'a> HirLegalityValidator<'a> {
                         continue;
                     };
                     if let Some(previous) = seen_targets.insert(target_kind, target.span) {
-                        self.errors.push(HirLegalityError::DuplicateAttributeTarget {
-                            span: target.span,
-                            kind: target_kind,
-                            previous,
-                        });
+                        self.errors
+                            .push(HirLegalityError::DuplicateAttributeTarget {
+                                span: target.span,
+                                kind: target_kind,
+                                previous,
+                            });
                     }
                 }
                 for parameter in &def.node.parameters {

@@ -55,4 +55,3 @@ fn runtime_string_new_rejects_null_ptr() {
         assert!(result.is_err(), "expected null string pointer to panic");
     });
 }
-

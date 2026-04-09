@@ -20,6 +20,9 @@ mod metrics;
 mod parity;
 
 #[cfg(test)]
+mod panic_messages;
+
+#[cfg(test)]
 mod sched;
 
 #[cfg(test)]

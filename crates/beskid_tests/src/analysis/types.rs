@@ -43,15 +43,22 @@ fn typing_allows_declared_conformance_argument_coercion() {
         "contract Service { i64 run(i64 x); } type Worker : Service { i64 base } impl Worker { i64 run(i64 x) { return this.base + x; } } i64 apply(Service s) { return s.run(1); } i64 main() { Worker w = Worker { base: 41 }; return apply(w); }",
     );
     if let Err(errors) = &result {
-        panic!("expected conformance-based argument coercion typing to succeed, got errors: {errors:?}");
+        panic!(
+            "expected conformance-based argument coercion typing to succeed, got errors: {errors:?}"
+        );
     }
-    assert!(result.is_ok(), "unexpected contract coercion typing failure");
+    assert!(
+        result.is_ok(),
+        "unexpected contract coercion typing failure"
+    );
 }
 
 #[test]
 fn typing_records_contract_dispatch_call_kind() {
-    let result = resolve_and_type("contract Service { i64 run(i64 x); } i64 apply(Service s) { return s.run(1); }")
-        .expect("expected typing to succeed");
+    let result = resolve_and_type(
+        "contract Service { i64 run(i64 x); } i64 apply(Service s) { return s.run(1); }",
+    )
+    .expect("expected typing to succeed");
 
     assert!(
         result
@@ -65,8 +72,10 @@ fn typing_records_contract_dispatch_call_kind() {
 
 #[test]
 fn typing_records_item_call_kind() {
-    let result = resolve_and_type("i64 add(i64 a, i64 b) { return a + b; } i64 main() { return add(1, 2); }")
-        .expect("expected typing to succeed");
+    let result = resolve_and_type(
+        "i64 add(i64 a, i64 b) { return a + b; } i64 main() { return add(1, 2); }",
+    )
+    .expect("expected typing to succeed");
 
     assert!(
         result
@@ -80,8 +89,9 @@ fn typing_records_item_call_kind() {
 
 #[test]
 fn typing_records_callable_value_call_kind() {
-    let result = resolve_and_type("i64 main() { let add = (i64 x, i64 y) => x + y; return add(20, 22); }")
-        .expect("expected typing to succeed");
+    let result =
+        resolve_and_type("i64 main() { let add = (i64 x, i64 y) => x + y; return add(20, 22); }")
+            .expect("expected typing to succeed");
 
     assert!(
         result
@@ -138,7 +148,10 @@ fn typing_allows_identity_equality_on_named_values() {
     if let Err(errors) = &result {
         panic!("expected named identity equality typing to succeed, got errors: {errors:?}");
     }
-    assert!(result.is_ok(), "unexpected named identity equality typing failure");
+    assert!(
+        result.is_ok(),
+        "unexpected named identity equality typing failure"
+    );
 }
 
 #[test]
@@ -203,7 +216,8 @@ fn typing_rejects_sub_assign_handler_on_non_event_target() {
 
 #[test]
 fn typing_rejects_zero_event_capacity() {
-    let result = resolve_and_type("type User { event{0} Created(string payload) } unit main() { return; }");
+    let result =
+        resolve_and_type("type User { event{0} Created(string payload) } unit main() { return; }");
     let errors = result.expect_err("expected zero event capacity rejection");
     assert!(
         errors
@@ -221,7 +235,10 @@ fn typing_allows_owner_event_invoke() {
     if let Err(errors) = &result {
         panic!("expected owner event invoke typing to succeed, got errors: {errors:?}");
     }
-    assert!(result.is_ok(), "unexpected owner event invoke typing failure");
+    assert!(
+        result.is_ok(),
+        "unexpected owner event invoke typing failure"
+    );
 }
 
 #[test]
@@ -301,8 +318,7 @@ fn typing_function_calls_succeeds() {
 
 #[test]
 fn typing_generic_function_call_succeeds() {
-    let result =
-        resolve_and_type("T id<T>(T x) { return x; } unit main() { i64 x = id<i64>(1); }");
+    let result = resolve_and_type("T id<T>(T x) { return x; } unit main() { i64 x = id<i64>(1); }");
     if let Err(errors) = &result {
         panic!("expected generic call typing to succeed, got errors: {errors:?}");
     }
@@ -359,9 +375,8 @@ fn typing_reports_generic_arg_mismatch_for_type() {
 
 #[test]
 fn typing_reports_call_arity_mismatch() {
-    let result = resolve_and_type(
-        "i64 add(i64 a, i64 b) { return a + b; } unit main() { i64 x = add(1); }",
-    );
+    let result =
+        resolve_and_type("i64 add(i64 a, i64 b) { return a + b; } unit main() { i64 x = add(1); }");
     let errors = result.expect_err("expected call arity mismatch");
     assert!(
         errors
@@ -636,7 +651,10 @@ fn typing_for_loop_infers_iterator_type_from_iterable_contract() {
         }
         ",
     );
-    assert!(result.is_ok(), "expected iterable for-loop typing to succeed");
+    assert!(
+        result.is_ok(),
+        "expected iterable for-loop typing to succeed"
+    );
 }
 
 #[test]

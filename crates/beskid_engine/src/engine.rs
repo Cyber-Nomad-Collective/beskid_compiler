@@ -118,9 +118,7 @@ fn caches() -> &'static ExternCaches {
 }
 
 #[cfg(feature = "extern_dlopen")]
-fn resolve_extern_symbols(
-    imports: &[ExternImport],
-) -> Result<Vec<(String, *const u8)>, String> {
+fn resolve_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *const u8)>, String> {
     // no local imports
     use std::ffi::{CStr, CString};
     use std::os::raw::{c_char, c_int, c_void};
@@ -141,7 +139,9 @@ fn resolve_extern_symbols(
     // BESKID_EXTERN_DENY:  comma-separated patterns; matches are denied
     // Pattern forms: "lib:symbol", "lib:*", "*:symbol", or just "symbol". '*' is a wildcard.
     let (allow_pats, deny_pats): (Vec<String>, Vec<String>) = if let Some(m) = SECURITY_TEST.get() {
-        let guard = m.lock().map_err(|_| "extern security cache poisoned".to_string())?;
+        let guard = m
+            .lock()
+            .map_err(|_| "extern security cache poisoned".to_string())?;
         (
             guard.0.clone().unwrap_or_default(),
             guard.1.clone().unwrap_or_default(),
@@ -151,14 +151,21 @@ fn resolve_extern_symbols(
         let deny = std::env::var("BESKID_EXTERN_DENY").ok();
         let parse = |s: Option<String>| -> Vec<String> {
             s.as_deref()
-                .map(|s| s.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+                .map(|s| {
+                    s.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
                 .unwrap_or_default()
         };
         (parse(allow), parse(deny))
     };
 
     fn pat_match(pat: &str, text: &str) -> bool {
-        if pat == "*" { return true; }
+        if pat == "*" {
+            return true;
+        }
         if let Some(idx) = pat.find('*') {
             let (pre, post) = pat.split_at(idx);
             let post = &post[1..]; // drop '*'
@@ -166,7 +173,12 @@ fn resolve_extern_symbols(
         }
         pat == text
     }
-    fn allow_deny_check(allow: &[String], deny: &[String], lib: &str, sym: &str) -> Result<(), String> {
+    fn allow_deny_check(
+        allow: &[String],
+        deny: &[String],
+        lib: &str,
+        sym: &str,
+    ) -> Result<(), String> {
         let matches_pat = |p: &str| -> bool {
             if let Some(colon) = p.find(':') {
                 let (lp, sp) = p.split_at(colon);
@@ -218,8 +230,8 @@ fn resolve_extern_symbols(
             h
         };
 
-        let c_sym = CString::new(imp.symbol.as_str())
-            .map_err(|_| format!("bad symbol: {}", imp.symbol))?;
+        let c_sym =
+            CString::new(imp.symbol.as_str()).map_err(|_| format!("bad symbol: {}", imp.symbol))?;
         let addr = unsafe { dlsym(handle, c_sym.as_ptr()) };
         if addr.is_null() {
             let err = unsafe { CStr::from_ptr(dlerror()) };
@@ -238,7 +250,12 @@ pub fn set_security_policies_for_tests(allow: Option<&str>, deny: Option<&str>) 
     let m = SECURITY_TEST.get_or_init(|| Mutex::new((None, None)));
     let mut guard = m.lock().unwrap();
     let parse = |s: Option<&str>| -> Option<Vec<String>> {
-        s.map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+        s.map(|v| {
+            v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
     };
     guard.0 = parse(allow);
     guard.1 = parse(deny);

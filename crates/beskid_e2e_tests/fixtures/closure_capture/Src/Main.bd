@@ -1,0 +1,5 @@
+i32 main() {
+    i32 base = 41;
+    let inc = (i32 x) => x + base;
+    return inc(1);
+}

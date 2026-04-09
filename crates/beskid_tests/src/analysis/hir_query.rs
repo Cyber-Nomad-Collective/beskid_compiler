@@ -70,7 +70,9 @@ fn lowering_flattens_impl_methods_into_hir_method_definitions() {
         "type Counter { i64 value } impl Counter { i64 Get() { return this.value; } unit Set(i64 x) { this.value = x; } }",
     );
 
-    let methods: Vec<&HirMethodDefinition> = HirQuery::from(&hir.node).of::<HirMethodDefinition>().collect();
+    let methods: Vec<&HirMethodDefinition> = HirQuery::from(&hir.node)
+        .of::<HirMethodDefinition>()
+        .collect();
     assert_eq!(methods.len(), 2);
     assert_eq!(methods[0].name.node.name, "Get");
     assert_eq!(methods[1].name.node.name, "Set");

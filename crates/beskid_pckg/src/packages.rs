@@ -4,9 +4,9 @@ use reqwest::multipart;
 use crate::client::PckgClient;
 use crate::error::PckgError;
 use crate::models::{
-    PackageReviewResponse, PackageSummaryResponse, PackageVersionSummaryResponse,
-    PublishPackageVersionResponse, ReviewActionRequest, ReviewActionResponse, UpsertPackageRequest,
-    UpsertPackageResponse,
+    PackageDetailsResponse, PackageReviewResponse, PackageSearchResponse, PackageSummaryResponse,
+    PackageVersionLifecycleResponse, PackageVersionSummaryResponse, PublishPackageVersionResponse,
+    ReviewActionRequest, ReviewActionResponse, UpsertPackageRequest, UpsertPackageResponse,
 };
 
 impl PckgClient {
@@ -32,7 +32,8 @@ impl PckgClient {
         request: &ReviewActionRequest,
     ) -> Result<ReviewActionResponse, PckgError> {
         let path = format!("/api/packages/reviews/{}/actions", request.review_id);
-        self.send_with_body(Method::POST, &path, request, true).await
+        self.send_with_body(Method::POST, &path, request, true)
+            .await
     }
 
     pub async fn list_package_versions(
@@ -79,7 +80,45 @@ impl PckgClient {
         package_name: &str,
         version: &str,
     ) -> Result<Vec<u8>, PckgError> {
-        let path = format!("/api/packages/{}/versions/{}/download", package_name, version);
+        let path = format!(
+            "/api/packages/{}/versions/{}/download",
+            package_name, version
+        );
         self.send_no_body_bytes(Method::GET, &path, false).await
+    }
+
+    pub async fn get_package_details(
+        &self,
+        id_or_name: &str,
+    ) -> Result<PackageDetailsResponse, PckgError> {
+        let path = format!("/api/packages/{id_or_name}");
+        self.send_no_body(Method::GET, &path, false).await
+    }
+
+    pub async fn search_packages(
+        &self,
+        query: &str,
+    ) -> Result<Vec<PackageSearchResponse>, PckgError> {
+        let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
+        let path = format!("/api/search?q={encoded}");
+        self.send_no_body(Method::GET, &path, false).await
+    }
+
+    pub async fn yank_package_version(
+        &self,
+        package_name: &str,
+        version: &str,
+    ) -> Result<PackageVersionLifecycleResponse, PckgError> {
+        let path = format!("/api/packages/{}/versions/{}/yank", package_name, version);
+        self.send_no_body(Method::POST, &path, true).await
+    }
+
+    pub async fn unyank_package_version(
+        &self,
+        package_name: &str,
+        version: &str,
+    ) -> Result<PackageVersionLifecycleResponse, PckgError> {
+        let path = format!("/api/packages/{}/versions/{}/unyank", package_name, version);
+        self.send_no_body(Method::POST, &path, true).await
     }
 }

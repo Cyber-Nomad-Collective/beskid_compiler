@@ -1,8 +1,8 @@
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
-use crate::resolve::Resolution;
 use crate::hir::{HirContractNode, HirItem, HirProgram, HirType};
+use crate::resolve::Resolution;
 use crate::syntax::Spanned;
 use std::collections::{HashMap, HashSet};
 
@@ -16,7 +16,10 @@ impl SemanticPipelineRule {
         let contracts = self.collect_contract_signatures(hir);
 
         for (type_item_id, conformances) in &resolution.tables.type_conformances {
-            let Some(type_name) = resolution.items.get(type_item_id.0).map(|item| item.name.clone())
+            let Some(type_name) = resolution
+                .items
+                .get(type_item_id.0)
+                .map(|item| item.name.clone())
             else {
                 continue;
             };
@@ -69,7 +72,9 @@ impl SemanticPipelineRule {
             .items
             .iter()
             .filter_map(|item| match &item.node {
-                HirItem::ContractDefinition(definition) if definition.node.extern_interface.is_none() => {
+                HirItem::ContractDefinition(definition)
+                    if definition.node.extern_interface.is_none() =>
+                {
                     Some((definition.node.name.node.name.clone(), definition))
                 }
                 _ => None,

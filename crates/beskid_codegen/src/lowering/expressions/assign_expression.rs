@@ -6,11 +6,11 @@ use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::pointer_type;
 use beskid_analysis::hir::{HirAssignExpression, HirAssignOp, HirExpressionNode};
 use beskid_analysis::resolve::ResolvedValue;
-use beskid_analysis::types::{TypeId, TypeInfo};
 use beskid_analysis::syntax::Spanned;
+use beskid_analysis::types::{TypeId, TypeInfo};
+use cranelift_codegen::ir::Value;
 use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, MemFlags, Signature};
 use cranelift_codegen::isa::CallConv;
-use cranelift_codegen::ir::Value;
 
 const DEFAULT_EVENT_CAPACITY: i64 = 8;
 
@@ -48,17 +48,15 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
         )?;
 
         let assigned = match node.node.op.node {
-            HirAssignOp::Assign => {
-                match target.kind {
-                    AssignTargetKind::Local { .. } => value,
-                    AssignTargetKind::EventMember { field_addr, .. } => {
-                        ctx.builder
-                            .ins()
-                            .store(MemFlags::new(), value, field_addr, 0);
-                        value
-                    }
+            HirAssignOp::Assign => match target.kind {
+                AssignTargetKind::Local { .. } => value,
+                AssignTargetKind::EventMember { field_addr, .. } => {
+                    ctx.builder
+                        .ins()
+                        .store(MemFlags::new(), value, field_addr, 0);
+                    value
                 }
-            }
+            },
             HirAssignOp::AddAssign | HirAssignOp::SubAssign => {
                 if let AssignTargetKind::EventMember {
                     field_addr,
@@ -67,10 +65,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
                 {
                     match node.node.op.node {
                         HirAssignOp::AddAssign => {
-                            let cap_value = ctx.builder.ins().iconst(
-                                pointer_type(),
-                                capacity.unwrap_or(DEFAULT_EVENT_CAPACITY),
-                            );
+                            let cap_value = ctx
+                                .builder
+                                .ins()
+                                .iconst(pointer_type(), capacity.unwrap_or(DEFAULT_EVENT_CAPACITY));
                             call_event_subscribe(ctx, field_addr, value, cap_value);
                             return Ok(Some(value));
                         }
@@ -89,11 +87,15 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
                 let current = ctx.builder.use_var(var);
                 let is_string = matches!(
                     ctx.type_result.types.get(expected_type),
-                    Some(TypeInfo::Primitive(beskid_analysis::hir::HirPrimitiveType::String))
+                    Some(TypeInfo::Primitive(
+                        beskid_analysis::hir::HirPrimitiveType::String
+                    ))
                 );
                 let is_float = matches!(
                     ctx.type_result.types.get(expected_type),
-                    Some(TypeInfo::Primitive(beskid_analysis::hir::HirPrimitiveType::F64))
+                    Some(TypeInfo::Primitive(
+                        beskid_analysis::hir::HirPrimitiveType::F64
+                    ))
                 );
                 let is_numeric = matches!(
                     ctx.type_result.types.get(expected_type),
@@ -270,12 +272,11 @@ fn resolve_event_member_target(
             });
         }
     };
-    let offsets = struct_field_offsets(ctx.type_result, item_id).ok_or(
-        CodegenError::UnsupportedNode {
+    let offsets =
+        struct_field_offsets(ctx.type_result, item_id).ok_or(CodegenError::UnsupportedNode {
             span,
             node: "event assignment offsets",
-        },
-    )?;
+        })?;
     let offset = offsets
         .get(field_name)
         .copied()
@@ -337,7 +338,10 @@ fn call_event_subscribe(
             colocated: false,
             patchable: false,
         });
-    let _ = ctx.builder.ins().call(func_ref, &[field_addr, handler, capacity]);
+    let _ = ctx
+        .builder
+        .ins()
+        .call(func_ref, &[field_addr, handler, capacity]);
 }
 
 fn call_event_unsubscribe(

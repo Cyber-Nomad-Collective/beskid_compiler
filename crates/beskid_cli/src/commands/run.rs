@@ -1,11 +1,5 @@
+use crate::frontend;
 use anyhow::Result;
-use beskid_analysis::services;
-use beskid_analysis::parser::{BeskidParser, Rule};
-use beskid_analysis::parsing::parsable::Parsable;
-use beskid_analysis::syntax::Program;
-use crate::errors as cli_errors;
-use pest::Parser;
-use pest::iterators::Pairs;
 use beskid_engine::services::run_entrypoint;
 use clap::Args;
 use std::path::PathBuf;
@@ -41,7 +35,7 @@ pub struct RunArgs {
 }
 
 pub fn execute(args: RunArgs) -> Result<()> {
-    let resolved = services::resolve_input(
+    let resolved = frontend::resolve_input(
         args.input.as_ref(),
         args.project.as_ref(),
         args.target.as_deref(),
@@ -49,29 +43,7 @@ pub fn execute(args: RunArgs) -> Result<()> {
         args.frozen,
         args.locked,
     )?;
-    // Pre-parse and pretty-print any pest/parse errors via miette before lowering/executing
-    match BeskidParser::parse(Rule::Program, &resolved.source) {
-        Ok(mut pairs) => {
-            if let Some(pair) = pairs.next() {
-                if let Err(err) = Program::parse(pair) {
-                    cli_errors::print_pretty_parse_error(
-                        &resolved.source_path.display().to_string(),
-                        &resolved.source,
-                        &err,
-                    );
-                    return Ok(());
-                }
-            }
-        }
-        Err(err) => {
-            cli_errors::print_pretty_pest_error(
-                &resolved.source_path.display().to_string(),
-                &resolved.source,
-                &err,
-            );
-            return Ok(());
-        }
-    }
+    frontend::validate_source(&resolved.source_path, &resolved.source)?;
 
     let output = run_entrypoint(&resolved.source_path, &resolved.source, &args.entrypoint)?;
     println!("{output}");

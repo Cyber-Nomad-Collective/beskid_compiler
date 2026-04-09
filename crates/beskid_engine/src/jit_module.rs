@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use beskid_abi::{
-    AbiParamKind, AbiReturnKind, BUILTIN_SPECS, SYM_ALLOC, SYM_ARRAY_NEW, SYM_GC_REGISTER_ROOT,
-    SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST,
+    AbiParamKind, AbiReturnKind, BUILTIN_SPECS, SYM_ALLOC, SYM_ARRAY_NEW, SYM_EVENT_GET_HANDLER,
+    SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_GC_REGISTER_ROOT,
     SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER,
     SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC,
     SYM_PANIC_STR, SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYS_PRINT, SYM_SYS_PRINTLN,
@@ -10,10 +10,10 @@ use beskid_abi::{
 };
 use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
 use beskid_runtime::{
-    alloc, array_new, gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle,
-    event_get_handler, event_len, event_subscribe, event_unsubscribe_first,
-    gc_write_barrier, interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize, panic,
-    panic_str, str_concat, str_len, str_new, sys_print, sys_println, test_bytes_len, test_bytes_ptr,
+    alloc, array_new, event_get_handler, event_len, event_subscribe, event_unsubscribe_first,
+    gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier,
+    interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize, panic, panic_str,
+    str_concat, str_len, str_new, sys_print, sys_println, test_bytes_len, test_bytes_ptr,
 };
 use cranelift_codegen::ir::{AbiParam, ExternalName, Signature, UserExternalName, types};
 use cranelift_codegen::isa::CallConv;
@@ -72,7 +72,10 @@ impl BeskidJitModule {
         builder.symbol(SYM_GC_REGISTER_ROOT, gc_register_root as *const u8);
         builder.symbol(SYM_GC_UNREGISTER_ROOT, gc_unregister_root as *const u8);
         builder.symbol(SYM_EVENT_SUBSCRIBE, event_subscribe as *const u8);
-        builder.symbol(SYM_EVENT_UNSUBSCRIBE_FIRST, event_unsubscribe_first as *const u8);
+        builder.symbol(
+            SYM_EVENT_UNSUBSCRIBE_FIRST,
+            event_unsubscribe_first as *const u8,
+        );
         builder.symbol(SYM_EVENT_LEN, event_len as *const u8);
         builder.symbol(SYM_EVENT_GET_HANDLER, event_get_handler as *const u8);
         builder.symbol(SYM_TEST_BYTES_PTR, test_bytes_ptr as *const u8);
@@ -87,7 +90,8 @@ impl BeskidJitModule {
     }
 
     pub fn new_with_symbols(extras: &[(String, *const u8)]) -> Result<Self, JitError> {
-        let isa_builder = cranelift_native::builder().map_err(|err| JitError::Isa(err.to_string()))?;
+        let isa_builder =
+            cranelift_native::builder().map_err(|err| JitError::Isa(err.to_string()))?;
         let isa = isa_builder
             .finish(settings::Flags::new(settings::builder()))
             .map_err(|err| JitError::Isa(err.to_string()))?;
@@ -102,16 +106,25 @@ impl BeskidJitModule {
         builder.symbol(SYM_SYS_PRINT, sys_print as *const u8);
         builder.symbol(SYM_SYS_PRINTLN, sys_println as *const u8);
         builder.symbol(SYM_STR_LEN, str_len as *const u8);
-        builder.symbol(SYM_INTEROP_DISPATCH_UNIT, interop_dispatch_unit as *const u8);
+        builder.symbol(
+            SYM_INTEROP_DISPATCH_UNIT,
+            interop_dispatch_unit as *const u8,
+        );
         builder.symbol(SYM_INTEROP_DISPATCH_PTR, interop_dispatch_ptr as *const u8);
-        builder.symbol(SYM_INTEROP_DISPATCH_USIZE, interop_dispatch_usize as *const u8);
+        builder.symbol(
+            SYM_INTEROP_DISPATCH_USIZE,
+            interop_dispatch_usize as *const u8,
+        );
         builder.symbol(SYM_GC_WRITE_BARRIER, gc_write_barrier as *const u8);
         builder.symbol(SYM_GC_ROOT_HANDLE, gc_root_handle as *const u8);
         builder.symbol(SYM_GC_UNROOT_HANDLE, gc_unroot_handle as *const u8);
         builder.symbol(SYM_GC_REGISTER_ROOT, gc_register_root as *const u8);
         builder.symbol(SYM_GC_UNREGISTER_ROOT, gc_unregister_root as *const u8);
         builder.symbol(SYM_EVENT_SUBSCRIBE, event_subscribe as *const u8);
-        builder.symbol(SYM_EVENT_UNSUBSCRIBE_FIRST, event_unsubscribe_first as *const u8);
+        builder.symbol(
+            SYM_EVENT_UNSUBSCRIBE_FIRST,
+            event_unsubscribe_first as *const u8,
+        );
         builder.symbol(SYM_EVENT_LEN, event_len as *const u8);
         builder.symbol(SYM_EVENT_GET_HANDLER, event_get_handler as *const u8);
         builder.symbol(SYM_TEST_BYTES_PTR, test_bytes_ptr as *const u8);
@@ -122,7 +135,11 @@ impl BeskidJitModule {
         }
 
         let module = JITModule::new(builder);
-        Ok(Self { module, func_ids: HashMap::new(), builtins_declared: false })
+        Ok(Self {
+            module,
+            func_ids: HashMap::new(),
+            builtins_declared: false,
+        })
     }
 
     pub fn compile(&mut self, artifact: &CodegenArtifact) -> Result<(), JitError> {
@@ -152,11 +169,7 @@ impl BeskidJitModule {
                     if let ExternalName::TestCase(name) = &ext_func.name {
                         let symbol = String::from_utf8_lossy(name.raw()).to_string();
                         // Only consider externs surfaced in artifact.extern_imports (avoid builtins remap here)
-                        if artifact
-                            .extern_imports
-                            .iter()
-                            .any(|e| e.symbol == symbol)
-                        {
+                        if artifact.extern_imports.iter().any(|e| e.symbol == symbol) {
                             let sig = ctx_probe.func.dfg.signatures[ext_func.signature].clone();
                             // Validate FFI signature is allowed
                             validate_ffi_signature(&sig, pointer).map_err(|msg| {
@@ -183,9 +196,7 @@ impl BeskidJitModule {
         }
 
         for (symbol, sig) in extern_sigs.iter() {
-            let id = self
-                .module
-                .declare_function(symbol, Linkage::Import, sig)?;
+            let id = self.module.declare_function(symbol, Linkage::Import, sig)?;
             self.func_ids.insert(symbol.clone(), id);
         }
 
@@ -262,7 +273,10 @@ impl BeskidJitModule {
     }
 }
 
-fn validate_ffi_signature(sig: &Signature, pointer: cranelift_codegen::ir::Type) -> Result<(), String> {
+fn validate_ffi_signature(
+    sig: &Signature,
+    pointer: cranelift_codegen::ir::Type,
+) -> Result<(), String> {
     use cranelift_codegen::ir::types;
     let check_ty = |ty: cranelift_codegen::ir::Type| -> bool {
         ty == pointer || ty == types::I64 || ty == types::I32 || ty == types::I8 || ty == types::F64

@@ -16,7 +16,10 @@ fn config_supports_publisher_api_key_auth_mode() {
         .expect("valid URL")
         .with_publisher_api_key("bpk_abc");
 
-    assert_eq!(config.auth, Some(PckgAuth::PublisherApiKey("bpk_abc".to_string())));
+    assert_eq!(
+        config.auth,
+        Some(PckgAuth::PublisherApiKey("bpk_abc".to_string()))
+    );
 }
 
 #[tokio::test]

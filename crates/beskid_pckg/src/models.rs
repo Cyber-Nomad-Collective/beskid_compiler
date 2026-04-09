@@ -99,10 +99,12 @@ pub struct PackageSummaryResponse {
     pub id: String,
     pub name: String,
     pub description: String,
+    pub category: String,
     #[serde(rename = "repositoryUrl")]
     pub repository_url: Option<String>,
     #[serde(rename = "websiteUrl")]
     pub website_url: Option<String>,
+    pub tags: Vec<String>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
     #[serde(rename = "totalDownloads")]
@@ -146,10 +148,12 @@ pub struct PublishPackageVersionResponse {
 pub struct UpsertPackageRequest {
     pub name: String,
     pub description: Option<String>,
+    pub category: Option<String>,
     #[serde(rename = "repositoryUrl")]
     pub repository_url: Option<String>,
     #[serde(rename = "websiteUrl")]
     pub website_url: Option<String>,
+    pub tags: Option<Vec<String>>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
     #[serde(rename = "submitForReview")]
@@ -201,4 +205,70 @@ pub struct ReviewActionResponse {
     pub success: bool,
     pub message: String,
     pub review: Option<PackageReviewResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageDependencyResponse {
+    pub name: String,
+    pub version: Option<String>,
+    pub source: String,
+    pub registry: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageHealthSnapshotResponse {
+    pub state: String,
+    #[serde(rename = "subState")]
+    pub sub_state: String,
+    pub score: f64,
+    #[serde(rename = "updateRateState")]
+    pub update_rate_state: String,
+    #[serde(rename = "updateRateSubState")]
+    pub update_rate_sub_state: String,
+    #[serde(rename = "updateRateNormalized")]
+    pub update_rate_normalized: f64,
+    #[serde(rename = "updateRateWeight")]
+    pub update_rate_weight: f64,
+    #[serde(rename = "downloadsState")]
+    pub downloads_state: String,
+    #[serde(rename = "downloadsSubState")]
+    pub downloads_sub_state: String,
+    #[serde(rename = "downloadsNormalized")]
+    pub downloads_normalized: f64,
+    #[serde(rename = "downloadsWeight")]
+    pub downloads_weight: f64,
+    #[serde(rename = "reviewsState")]
+    pub reviews_state: String,
+    #[serde(rename = "reviewsSubState")]
+    pub reviews_sub_state: String,
+    #[serde(rename = "reviewsNormalized")]
+    pub reviews_normalized: f64,
+    #[serde(rename = "reviewsWeight")]
+    pub reviews_weight: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageSearchResponse {
+    pub package: PackageSummaryResponse,
+    #[serde(rename = "reviewCount")]
+    pub review_count: i32,
+    pub health: PackageHealthSnapshotResponse,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageDetailsResponse {
+    pub package: PackageSummaryResponse,
+    pub versions: Vec<PackageVersionSummaryResponse>,
+    pub dependencies: Vec<PackageDependencyResponse>,
+    #[serde(rename = "dependentsCount")]
+    pub dependents_count: i32,
+    pub readme: Option<String>,
+    pub health: PackageHealthSnapshotResponse,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageVersionLifecycleResponse {
+    pub success: bool,
+    pub message: String,
+    pub version: Option<PackageVersionSummaryResponse>,
 }

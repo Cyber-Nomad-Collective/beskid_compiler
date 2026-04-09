@@ -40,7 +40,8 @@ impl<'a> TypeContext<'a> {
             HirItem::MethodDefinition(def) => {
                 let receiver_type = self.type_id_for_type(&def.node.receiver_type);
                 let previous_receiver = self.current_receiver_item_id;
-                self.current_receiver_item_id = receiver_type.and_then(|type_id| self.named_item_id(type_id));
+                self.current_receiver_item_id =
+                    receiver_type.and_then(|type_id| self.named_item_id(type_id));
                 let return_type = def
                     .node
                     .return_type

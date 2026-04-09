@@ -19,7 +19,9 @@ pub i64 main() { return 0; }
     let symbol = format!("__beskid_type_desc_{}", type_id.0);
 
     let mut engine = Engine::new();
-    engine.compile_artifact(&lowered.artifact).expect("compile artifact");
+    engine
+        .compile_artifact(&lowered.artifact)
+        .expect("compile artifact");
     let module = engine.jit_module_mut();
 
     // The data symbol must be present in the JIT module namespace.
@@ -30,4 +32,3 @@ pub i64 main() { return 0; }
     }
     Ok(())
 }
-

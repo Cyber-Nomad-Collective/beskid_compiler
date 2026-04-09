@@ -57,6 +57,17 @@ fn runtime_export_symbols_are_unique() {
 }
 
 #[test]
+fn runtime_exports_cover_mvp_stdlib_symbols() {
+    let required = [SYM_STR_LEN, SYM_SYS_PRINT, SYM_SYS_PRINTLN];
+    for symbol in required {
+        assert!(
+            RUNTIME_EXPORT_SYMBOLS.contains(&symbol),
+            "runtime exports should include MVP stdlib symbol `{symbol}`"
+        );
+    }
+}
+
+#[test]
 fn prebuilt_runtime_requires_abi_version() {
     let path = PathBuf::from("/tmp/nonexistent-runtime-archive.a");
     let request = RuntimeBuildRequest {

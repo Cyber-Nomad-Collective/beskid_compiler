@@ -50,9 +50,7 @@ impl PckgClient {
         B: Serialize,
         R: DeserializeOwned,
     {
-        let request = self
-            .build_request(method, path, require_auth)?
-            .json(body);
+        let request = self.build_request(method, path, require_auth)?.json(body);
         self.execute_json(request).await
     }
 
@@ -88,18 +86,15 @@ impl PckgClient {
         path: &str,
         require_auth: bool,
     ) -> Result<reqwest::RequestBuilder, PckgError> {
-        let url = self
-            .config
-            .base_url
-            .join(path.trim_start_matches('/'))?;
+        let url = self.config.base_url.join(path.trim_start_matches('/'))?;
 
         let request = self.http.request(method, url);
 
         match (require_auth, self.config.auth.as_ref()) {
             (_, Some(PckgAuth::BearerToken(token))) => Ok(request.bearer_auth(token)),
-            (_, Some(PckgAuth::PublisherApiKey(api_key))) => Ok(request
-                .header(self.config.api_key_header_name.as_str(), api_key)
-                .bearer_auth(api_key)),
+            (_, Some(PckgAuth::PublisherApiKey(api_key))) => {
+                Ok(request.header(self.config.api_key_header_name.as_str(), api_key))
+            }
             (true, None) => Err(PckgError::MissingAuthToken),
             (false, None) => Ok(request),
         }
@@ -137,4 +132,3 @@ impl PckgClient {
         Ok(bytes.to_vec())
     }
 }
-

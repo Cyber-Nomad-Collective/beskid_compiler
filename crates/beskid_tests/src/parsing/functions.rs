@@ -70,5 +70,8 @@ fn rejects_legacy_parameter_syntax() {
 
 #[test]
 fn rejects_legacy_function_parameter_syntax() {
-    assert_parse_fail(Rule::FunctionDefinition, "i32 add(a: i32, b: i32) { return a + b; }");
+    assert_parse_fail(
+        Rule::FunctionDefinition,
+        "i32 add(a: i32, b: i32) { return a + b; }",
+    );
 }

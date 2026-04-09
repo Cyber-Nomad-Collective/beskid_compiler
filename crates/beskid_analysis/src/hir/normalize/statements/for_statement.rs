@@ -26,11 +26,13 @@ impl Normalize for Spanned<HirForStatement> {
     }
 }
 
-fn normalize_range_fast_path(
-    for_stmt: Spanned<HirForStatement>,
-) -> Vec<Spanned<HirStatementNode>> {
+fn normalize_range_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<HirStatementNode>> {
     let span = for_stmt.span;
-    let (iterator, iterable, body) = (for_stmt.node.iterator, for_stmt.node.iterable, for_stmt.node.body);
+    let (iterator, iterable, body) = (
+        for_stmt.node.iterator,
+        for_stmt.node.iterable,
+        for_stmt.node.body,
+    );
     let (start, end, range_span) = into_range_bounds(iterable);
     let iterator_name = iterator.clone();
     let end_span = shifted_span(span, 1);
@@ -126,9 +128,15 @@ fn normalize_range_fast_path(
     vec![init_iterator, init_end, while_stmt]
 }
 
-fn normalize_generic_iterable(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<HirStatementNode>> {
+fn normalize_generic_iterable(
+    for_stmt: Spanned<HirForStatement>,
+) -> Vec<Spanned<HirStatementNode>> {
     let span = for_stmt.span;
-    let (iterator, iterable, body) = (for_stmt.node.iterator, for_stmt.node.iterable, for_stmt.node.body);
+    let (iterator, iterable, body) = (
+        for_stmt.node.iterator,
+        for_stmt.node.iterable,
+        for_stmt.node.body,
+    );
     let iter_span = shifted_span(span, 1);
     let next_span = shifted_span(span, 2);
     let next_member_span = shifted_span(span, 3);
@@ -320,9 +328,7 @@ fn normalize_generic_iterable(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned
     vec![init_iter, while_stmt]
 }
 
-fn extract_range_iterable(
-    iterable: &Spanned<ExpressionNode<crate::hir::HirPhase>>,
-) -> bool {
+fn extract_range_iterable(iterable: &Spanned<ExpressionNode<crate::hir::HirPhase>>) -> bool {
     let ExpressionNode::CallExpression(call) = &iterable.node else {
         return false;
     };
@@ -379,7 +385,10 @@ fn path_expr(name: &Spanned<HirIdentifier>) -> Spanned<ExpressionNode<crate::hir
     )
 }
 
-fn int_literal(value: &str, span: crate::syntax::SpanInfo) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
+fn int_literal(
+    value: &str,
+    span: crate::syntax::SpanInfo,
+) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
     Spanned::new(
         ExpressionNode::LiteralExpression(Spanned::new(
             HirLiteralExpression {
@@ -394,12 +403,21 @@ fn int_literal(value: &str, span: crate::syntax::SpanInfo) -> Spanned<Expression
 fn shifted_span(mut span: crate::syntax::SpanInfo, delta: usize) -> crate::syntax::SpanInfo {
     span.start = span.start.saturating_add(delta);
     span.end = span.end.saturating_add(delta);
-    span.line_col_start = (span.line_col_start.0, span.line_col_start.1.saturating_add(delta));
-    span.line_col_end = (span.line_col_end.0, span.line_col_end.1.saturating_add(delta));
+    span.line_col_start = (
+        span.line_col_start.0,
+        span.line_col_start.1.saturating_add(delta),
+    );
+    span.line_col_end = (
+        span.line_col_end.0,
+        span.line_col_end.1.saturating_add(delta),
+    );
     span
 }
 
-fn bool_literal(value: bool, span: crate::syntax::SpanInfo) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
+fn bool_literal(
+    value: bool,
+    span: crate::syntax::SpanInfo,
+) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
     Spanned::new(
         ExpressionNode::LiteralExpression(Spanned::new(
             HirLiteralExpression {
@@ -419,7 +437,10 @@ fn block_expr(
         ExpressionNode::GroupedExpression(Spanned::new(
             HirGroupedExpression {
                 expr: Box::new(Spanned::new(
-                    ExpressionNode::BlockExpression(Spanned::new(HirBlockExpression { block }, span)),
+                    ExpressionNode::BlockExpression(Spanned::new(
+                        HirBlockExpression { block },
+                        span,
+                    )),
                     span,
                 )),
             },

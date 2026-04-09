@@ -45,7 +45,8 @@ pub extern "C-unwind" fn event_subscribe(
         {
             use crate::gc::with_current_root;
             with_current_root(|root| {
-                root.runtime_state.event_subscribe_calls = root.runtime_state.event_subscribe_calls.saturating_add(1);
+                root.runtime_state.event_subscribe_calls =
+                    root.runtime_state.event_subscribe_calls.saturating_add(1);
             });
         }
         state.handlers.len()
@@ -71,13 +72,18 @@ pub extern "C-unwind" fn event_unsubscribe_first(
             return 0;
         }
         let state = &mut *state_ptr;
-        if let Some(idx) = state.handlers.iter().position(|candidate| *candidate == handler) {
+        if let Some(idx) = state
+            .handlers
+            .iter()
+            .position(|candidate| *candidate == handler)
+        {
             state.handlers.remove(idx);
             #[cfg(feature = "metrics")]
             {
                 use crate::gc::with_current_root;
                 with_current_root(|root| {
-                    root.runtime_state.event_unsubscribe_calls = root.runtime_state.event_unsubscribe_calls.saturating_add(1);
+                    root.runtime_state.event_unsubscribe_calls =
+                        root.runtime_state.event_unsubscribe_calls.saturating_add(1);
                 });
             }
             return 1;
@@ -102,12 +108,18 @@ pub extern "C-unwind" fn event_get_handler(state: *mut EventState, idx: usize) -
     if state.is_null() {
         return std::ptr::null_mut();
     }
-    let result = unsafe { (&(*state).handlers).get(idx).copied().unwrap_or(std::ptr::null_mut()) };
+    let result = unsafe {
+        (&(*state).handlers)
+            .get(idx)
+            .copied()
+            .unwrap_or(std::ptr::null_mut())
+    };
     #[cfg(feature = "metrics")]
     if !result.is_null() {
         use crate::gc::with_current_root;
         with_current_root(|root| {
-            root.runtime_state.event_get_handler_calls = root.runtime_state.event_get_handler_calls.saturating_add(1);
+            root.runtime_state.event_get_handler_calls =
+                root.runtime_state.event_get_handler_calls.saturating_add(1);
         });
     }
     result

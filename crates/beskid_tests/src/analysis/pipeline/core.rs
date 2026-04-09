@@ -876,8 +876,7 @@ fn analysis_emits_contract_method_missing_impl_errors() {
 
 #[test]
 fn analysis_skips_contract_method_missing_impl_for_extern_contracts() {
-    let source =
-        "[Extern(Abi: \"C\", Library: \"libc\")] contract Service { unit run(); } type Worker : Service { i64 id }";
+    let source = "[Extern(Abi: \"C\", Library: \"libc\")] contract Service { unit run(); } type Worker : Service { i64 id }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -979,8 +978,7 @@ fn analysis_emits_unknown_attribute_declaration_target_errors() {
 
 #[test]
 fn analysis_emits_attribute_target_not_allowed_errors() {
-    let source =
-        "attribute Extern(ContractDeclaration) { Abi: string = \"C\" } [Extern(Abi: \"C\")] mod sys.io;";
+    let source = "attribute Extern(ContractDeclaration) { Abi: string = \"C\" } [Extern(Abi: \"C\")] mod sys.io;";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,

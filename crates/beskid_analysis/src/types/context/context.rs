@@ -120,22 +120,22 @@ pub enum TypeError {
         expected: usize,
         actual: usize,
     },
-        // Extern interface validation errors
-        ExternInvalidAbi {
-            span: SpanInfo,
-            abi: Option<String>,
-        },
-        ExternMissingLibrary {
-            span: SpanInfo,
-        },
-        ExternDisallowedParamType {
-            span: SpanInfo,
-            method: String,
-        },
-        ExternDisallowedReturnType {
-            span: SpanInfo,
-            method: String,
-        },
+    // Extern interface validation errors
+    ExternInvalidAbi {
+        span: SpanInfo,
+        abi: Option<String>,
+    },
+    ExternMissingLibrary {
+        span: SpanInfo,
+    },
+    ExternDisallowedParamType {
+        span: SpanInfo,
+        method: String,
+    },
+    ExternDisallowedReturnType {
+        span: SpanInfo,
+        method: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -446,7 +446,9 @@ impl<'a> TypeContext<'a> {
                         .map(|s| !s.trim().is_empty())
                         .unwrap_or(false);
                     if !lib_ok {
-                        self.errors.push(TypeError::ExternMissingLibrary { span: def.node.name.span });
+                        self.errors.push(TypeError::ExternMissingLibrary {
+                            span: def.node.name.span,
+                        });
                     }
 
                     // Validate method signatures declared directly in this contract
@@ -584,7 +586,9 @@ impl<'a> TypeContext<'a> {
         // Allow: primitives (Bool, U8, I32, I64, F64), or Unit if unspecified upstream
         use crate::hir::{HirPrimitiveType, HirType};
         match &ret.node {
-            HirType::Primitive(p) => Self::is_allowed_ffi_primitive(p.node) || matches!(p.node, HirPrimitiveType::Unit),
+            HirType::Primitive(p) => {
+                Self::is_allowed_ffi_primitive(p.node) || matches!(p.node, HirPrimitiveType::Unit)
+            }
             _ => false,
         }
     }

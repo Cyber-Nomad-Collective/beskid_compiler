@@ -1,0 +1,8 @@
+i32 main() {
+    let add = (i32 x, i32 y) => x + y;
+    i32 value = add(6, 7);
+    if value != 13 {
+        return 13;
+    }
+    return 0;
+}

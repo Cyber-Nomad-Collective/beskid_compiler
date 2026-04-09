@@ -24,7 +24,81 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Tests
-        run: cargo test -p beskid_tests 
+        run: cargo test -p beskid_tests
+
+  abi-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: ABI contract tests
+        run: cargo test -p beskid_tests abi::contracts::
+
+  bench-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Runtime benches compile
+        run: cargo bench -p beskid_runtime --no-run
+
+  e2e-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build Beskid CLI
+        run: cargo build -p beskid_cli
+      - name: AOT E2E tests (Linux)
+        run: cargo test -p beskid_e2e_tests
+
+  runtime-asan-linux:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Zsanitizer=address"
+      RUSTDOCFLAGS: "-Zsanitizer=address"
+      RUSTC_BOOTSTRAP: "1"
+      ASAN_OPTIONS: "detect_leaks=0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Runtime tests under ASan
+        run: cargo test -p beskid_tests runtime::
+
+  extern-engine-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Extern dlopen security sequences
+        run: cargo test -p beskid_engine --features extern_dlopen security_allow_deny_sequences
+
+  e2e-macos-smoke:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build Beskid CLI
+        run: cargo build -p beskid_cli
+      - name: Cross-platform CLI E2E
+        run: cargo test -p beskid_e2e_tests cli_cross_platform
+
+  e2e-windows-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build Beskid CLI
+        run: cargo build -p beskid_cli
+      - name: Cross-platform CLI E2E
+        run: cargo test -p beskid_e2e_tests cli_cross_platform
 
   version:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
@@ -99,7 +173,17 @@ jobs:
 
   release-cli:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: version
+    needs:
+      - version
+      - workspace-check
+      - test
+      - abi-contracts
+      - bench-compile
+      - e2e-linux
+      - runtime-asan-linux
+      - extern-engine-security
+      - e2e-macos-smoke
+      - e2e-windows-smoke
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

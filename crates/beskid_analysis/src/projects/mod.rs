@@ -10,7 +10,9 @@ pub mod workflow;
 pub use compile_plan::{
     build_compile_plan, build_compile_plan_with_policy, load_manifest_from_path,
 };
-pub use discovery::{PROJECT_FILE_NAME, WORKSPACE_FILE_NAME, discover_project_file, discover_workspace_file};
+pub use discovery::{
+    PROJECT_FILE_NAME, WORKSPACE_FILE_NAME, discover_project_file, discover_workspace_file,
+};
 pub use error::ProjectError;
 pub use graph::{
     DependencyEdge, ProjectGraph, ProjectGraphNode, UnresolvedDependency, UnresolvedDependencyKind,
@@ -26,6 +28,5 @@ pub use parser::{parse_manifest, parse_workspace_manifest};
 pub use validator::{validate_manifest, validate_workspace_manifest};
 pub use workflow::{
     PROJECT_LOCK_FILE_NAME, ProjectLockDependencyEntry, WorkspacePrepareOptions,
-    prepare_project_workspace,
-    prepare_project_workspace_with_options,
+    prepare_project_workspace, prepare_project_workspace_with_options,
 };

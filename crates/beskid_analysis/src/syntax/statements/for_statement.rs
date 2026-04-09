@@ -23,11 +23,8 @@ impl Parsable for ForStatement {
         let mut inner = pair.into_inner();
         let iterator =
             Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
-        let iterable = Expression::parse(
-            inner
-                .next()
-                .ok_or(ParseError::missing(Rule::Expression))?,
-        )?;
+        let iterable =
+            Expression::parse(inner.next().ok_or(ParseError::missing(Rule::Expression))?)?;
         let body = Block::parse(inner.next().ok_or(ParseError::missing(Rule::Block))?)?;
 
         Ok(Spanned::new(

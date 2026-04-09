@@ -1,0 +1,113 @@
+i32 call0() { return 1; }
+i32 call1() { return call0() + 1; }
+i32 call2() { return call1() + 1; }
+i32 call3() { return call2() + 1; }
+i32 call4() { return call3() + 1; }
+i32 call5() { return call4() + 1; }
+i32 call6() { return call5() + 1; }
+i32 call7() { return call6() + 1; }
+i32 call8() { return call7() + 1; }
+i32 call9() { return call8() + 1; }
+i32 call10() { return call9() + 1; }
+i32 call11() { return call10() + 1; }
+i32 call12() { return call11() + 1; }
+i32 call13() { return call12() + 1; }
+i32 call14() { return call13() + 1; }
+i32 call15() { return call14() + 1; }
+i32 call16() { return call15() + 1; }
+i32 call17() { return call16() + 1; }
+i32 call18() { return call17() + 1; }
+i32 call19() { return call18() + 1; }
+i32 call20() { return call19() + 1; }
+i32 call21() { return call20() + 1; }
+i32 call22() { return call21() + 1; }
+i32 call23() { return call22() + 1; }
+i32 call24() { return call23() + 1; }
+i32 call25() { return call24() + 1; }
+i32 call26() { return call25() + 1; }
+i32 call27() { return call26() + 1; }
+i32 call28() { return call27() + 1; }
+i32 call29() { return call28() + 1; }
+i32 call30() { return call29() + 1; }
+i32 call31() { return call30() + 1; }
+i32 call32() { return call31() + 1; }
+i32 call33() { return call32() + 1; }
+i32 call34() { return call33() + 1; }
+i32 call35() { return call34() + 1; }
+i32 call36() { return call35() + 1; }
+i32 call37() { return call36() + 1; }
+i32 call38() { return call37() + 1; }
+i32 call39() { return call38() + 1; }
+i32 call40() { return call39() + 1; }
+i32 call41() { return call40() + 1; }
+i32 call42() { return call41() + 1; }
+i32 call43() { return call42() + 1; }
+i32 call44() { return call43() + 1; }
+i32 call45() { return call44() + 1; }
+i32 call46() { return call45() + 1; }
+i32 call47() { return call46() + 1; }
+i32 call48() { return call47() + 1; }
+i32 call49() { return call48() + 1; }
+i32 call50() { return call49() + 1; }
+i32 call51() { return call50() + 1; }
+i32 call52() { return call51() + 1; }
+i32 call53() { return call52() + 1; }
+i32 call54() { return call53() + 1; }
+i32 call55() { return call54() + 1; }
+i32 call56() { return call55() + 1; }
+i32 call57() { return call56() + 1; }
+i32 call58() { return call57() + 1; }
+i32 call59() { return call58() + 1; }
+i32 call60() { return call59() + 1; }
+i32 call61() { return call60() + 1; }
+i32 call62() { return call61() + 1; }
+i32 call63() { return call62() + 1; }
+i32 call64() { return call63() + 1; }
+i32 call65() { return call64() + 1; }
+i32 call66() { return call65() + 1; }
+i32 call67() { return call66() + 1; }
+i32 call68() { return call67() + 1; }
+i32 call69() { return call68() + 1; }
+i32 call70() { return call69() + 1; }
+i32 call71() { return call70() + 1; }
+i32 call72() { return call71() + 1; }
+i32 call73() { return call72() + 1; }
+i32 call74() { return call73() + 1; }
+i32 call75() { return call74() + 1; }
+i32 call76() { return call75() + 1; }
+i32 call77() { return call76() + 1; }
+i32 call78() { return call77() + 1; }
+i32 call79() { return call78() + 1; }
+i32 call80() { return call79() + 1; }
+i32 call81() { return call80() + 1; }
+i32 call82() { return call81() + 1; }
+i32 call83() { return call82() + 1; }
+i32 call84() { return call83() + 1; }
+i32 call85() { return call84() + 1; }
+i32 call86() { return call85() + 1; }
+i32 call87() { return call86() + 1; }
+i32 call88() { return call87() + 1; }
+i32 call89() { return call88() + 1; }
+i32 call90() { return call89() + 1; }
+i32 call91() { return call90() + 1; }
+i32 call92() { return call91() + 1; }
+i32 call93() { return call92() + 1; }
+i32 call94() { return call93() + 1; }
+i32 call95() { return call94() + 1; }
+i32 call96() { return call95() + 1; }
+i32 call97() { return call96() + 1; }
+i32 call98() { return call97() + 1; }
+i32 call99() { return call98() + 1; }
+i32 call100() { return call99() + 1; }
+
+i32 total_chain() {
+    return call100();
+}
+
+i32 main() {
+    i32 total = total_chain();
+    if total < 1 {
+        return 31;
+    }
+    return 0;
+}

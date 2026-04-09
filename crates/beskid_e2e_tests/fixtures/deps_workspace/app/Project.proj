@@ -1,0 +1,14 @@
+project {
+  name = "App"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+
+dependency "Core" {
+  source = "path"
+  path = "../core"
+}

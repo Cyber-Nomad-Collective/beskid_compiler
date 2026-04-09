@@ -203,7 +203,11 @@ impl<'a> TypeContext<'a> {
             .tables
             .type_conformances
             .get(&actual_item)
-            .is_some_and(|entries| entries.iter().any(|(contract_item, _)| *contract_item == expected_item))
+            .is_some_and(|entries| {
+                entries
+                    .iter()
+                    .any(|(contract_item, _)| *contract_item == expected_item)
+            })
     }
 
     pub(super) fn require_bool(

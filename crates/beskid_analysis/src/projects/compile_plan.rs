@@ -50,10 +50,16 @@ pub fn build_compile_plan_with_policy(
         })
         .collect::<Vec<_>>();
 
+    let unresolved_that_must_error = unresolved_dependencies
+        .iter()
+        .filter(|dependency| dependency.source != DependencySource::Registry)
+        .cloned()
+        .collect::<Vec<_>>();
+
     if unresolved_dependency_policy == UnresolvedDependencyPolicy::Error
-        && !unresolved_dependencies.is_empty()
+        && !unresolved_that_must_error.is_empty()
     {
-        let details = unresolved_dependencies
+        let details = unresolved_that_must_error
             .iter()
             .map(|dependency| {
                 format!(

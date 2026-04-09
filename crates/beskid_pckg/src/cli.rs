@@ -9,8 +9,8 @@ use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use indicatif::{ProgressBar, ProgressStyle};
-use serde::{Deserialize, Serialize};
 use semver::Version;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use url::Url;
 use walkdir::WalkDir;
@@ -39,7 +39,7 @@ struct RepositoryAuthConfig {
 #[derive(Args, Debug, Clone)]
 pub struct PckgArgs {
     /// pckg server base URL.
-    #[arg(long, env = "BESKID_PCKG_URL", default_value = "http://127.0.0.1:5195")]
+    #[arg(long, env = "BESKID_PCKG_URL", default_value = "http://127.0.0.1:8082")]
     pub base_url: String,
 
     /// Bearer token for authenticated endpoints.
@@ -108,7 +108,11 @@ fn bump_patch(base: Option<Version>) -> Result<Version, PckgError> {
 
 fn max_version(a: Option<&Version>, b: Option<&Version>) -> Option<Version> {
     match (a, b) {
-        (Some(left), Some(right)) => Some(if left >= right { left.clone() } else { right.clone() }),
+        (Some(left), Some(right)) => Some(if left >= right {
+            left.clone()
+        } else {
+            right.clone()
+        }),
         (Some(left), None) => Some(left.clone()),
         (None, Some(right)) => Some(right.clone()),
         (None, None) => None,
@@ -130,11 +134,12 @@ fn read_source_manifest_version(source: &Path) -> Result<Option<Version>, PckgEr
     }
 
     let content = fs::read_to_string(&manifest_path)?;
-    let value: serde_json::Value = serde_json::from_str(&content).map_err(|source| PckgError::Api {
-        status: reqwest::StatusCode::BAD_REQUEST,
-        message: format!("failed to parse package.json: {source}"),
-        body: None,
-    })?;
+    let value: serde_json::Value =
+        serde_json::from_str(&content).map_err(|source| PckgError::Api {
+            status: reqwest::StatusCode::BAD_REQUEST,
+            message: format!("failed to parse package.json: {source}"),
+            body: None,
+        })?;
 
     let Some(version_str) = value.get("version").and_then(serde_json::Value::as_str) else {
         return Ok(None);
@@ -158,11 +163,12 @@ fn read_stored_pack_version(source: &Path, args: &PackArgs) -> Result<Option<Ver
     }
 
     let content = fs::read_to_string(path)?;
-    let state: PackVersionState = serde_json::from_str(&content).map_err(|source| PckgError::Api {
-        status: reqwest::StatusCode::BAD_REQUEST,
-        message: format!("failed to parse version state file: {source}"),
-        body: None,
-    })?;
+    let state: PackVersionState =
+        serde_json::from_str(&content).map_err(|source| PckgError::Api {
+            status: reqwest::StatusCode::BAD_REQUEST,
+            message: format!("failed to parse version state file: {source}"),
+            body: None,
+        })?;
 
     let Some(version) = state.versions.get(&args.package) else {
         return Ok(None);
@@ -171,7 +177,11 @@ fn read_stored_pack_version(source: &Path, args: &PackArgs) -> Result<Option<Ver
     Ok(Some(parse_version(version)?))
 }
 
-fn persist_pack_version_state(source: &Path, args: &PackArgs, version: &str) -> Result<(), PckgError> {
+fn persist_pack_version_state(
+    source: &Path,
+    args: &PackArgs,
+    version: &str,
+) -> Result<(), PckgError> {
     let path = version_state_path(source, args);
     let mut state = if path.exists() {
         let content = fs::read_to_string(&path)?;
@@ -241,6 +251,30 @@ pub enum PckgCommand {
 
     /// Save repository-local API key config used by upload commands.
     Configure(ConfigureArgs),
+
+    /// List visible packages.
+    List,
+
+    /// Search packages by free-text query.
+    Search(SearchArgs),
+
+    /// Show package details by id or name.
+    Details(DetailsArgs),
+
+    /// List package versions by package name.
+    Versions(VersionsArgs),
+
+    /// Download an artifact version to file.
+    Download(DownloadArgs),
+
+    /// Yank a package version.
+    Yank(VersionActionArgs),
+
+    /// Restore a previously yanked package version.
+    Unyank(VersionActionArgs),
+
+    /// Print current authenticated user profile.
+    Whoami,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -267,6 +301,37 @@ pub struct PublishArgs {
     pub checksum_sha256: Option<String>,
     #[arg(long)]
     pub manifest_json: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct SearchArgs {
+    pub query: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct DetailsArgs {
+    pub id_or_name: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct VersionsArgs {
+    pub package: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct DownloadArgs {
+    pub package: String,
+    #[arg(long)]
+    pub version: String,
+    #[arg(long)]
+    pub output: PathBuf,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct VersionActionArgs {
+    pub package: String,
+    #[arg(long)]
+    pub version: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -304,15 +369,47 @@ async fn execute_async(args: PckgArgs) -> Result<(), PckgError> {
         PckgCommand::Configure(configure_args) => {
             execute_configure(&args.config_file, &args.base_url, configure_args)
         }
+        PckgCommand::List => {
+            let client = build_client(&args_for_client)?;
+            execute_list(&client).await
+        }
+        PckgCommand::Search(search_args) => {
+            let client = build_client(&args_for_client)?;
+            execute_search(&client, search_args).await
+        }
+        PckgCommand::Details(details_args) => {
+            let client = build_client(&args_for_client)?;
+            execute_details(&client, details_args).await
+        }
+        PckgCommand::Versions(versions_args) => {
+            let client = build_client(&args_for_client)?;
+            execute_versions(&client, versions_args).await
+        }
+        PckgCommand::Download(download_args) => {
+            let client = build_client(&args_for_client)?;
+            execute_download(&client, download_args).await
+        }
+        PckgCommand::Yank(action_args) => {
+            let client = build_client(&args_for_client)?;
+            execute_yank(&client, action_args).await
+        }
+        PckgCommand::Unyank(action_args) => {
+            let client = build_client(&args_for_client)?;
+            execute_unyank(&client, action_args).await
+        }
+        PckgCommand::Whoami => {
+            let client = build_client(&args_for_client)?;
+            execute_whoami(&client).await
+        }
     }
 }
 
-fn execute_configure(config_path: &Path, base_url: &str, args: ConfigureArgs) -> Result<(), PckgError> {
-    let repository_url = args
-        .repository_url
-        .as_deref()
-        .unwrap_or(base_url)
-        .trim();
+fn execute_configure(
+    config_path: &Path,
+    base_url: &str,
+    args: ConfigureArgs,
+) -> Result<(), PckgError> {
+    let repository_url = args.repository_url.as_deref().unwrap_or(base_url).trim();
 
     if args.api_key.trim().is_empty() {
         return Err(PckgError::Api {
@@ -361,7 +458,10 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
     for (name, content) in &entries {
         checksums.insert(name.clone(), sha256_hex(content));
     }
-    checksums.insert("package.json".to_string(), sha256_hex(package_json.as_bytes()));
+    checksums.insert(
+        "package.json".to_string(),
+        sha256_hex(package_json.as_bytes()),
+    );
 
     let checksums_sha = checksums
         .iter()
@@ -375,7 +475,9 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     for (name, content) in entries {
-        writer.start_file(name, options).map_err(zip_to_pckg_error)?;
+        writer
+            .start_file(name, options)
+            .map_err(zip_to_pckg_error)?;
         writer.write_all(&content)?;
     }
 
@@ -398,16 +500,16 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
 }
 
 fn build_client(args: &PckgArgs) -> Result<PckgClient, PckgError> {
-    let mut config = PckgClientConfig::new(&args.base_url)?
-        .with_timeout(Duration::from_secs(args.timeout_secs));
+    let mut config =
+        PckgClientConfig::new(&args.base_url)?.with_timeout(Duration::from_secs(args.timeout_secs));
 
     if let Some(token) = args.bearer_token.as_ref() {
         config = config.with_bearer_token(token.clone());
-    } else if let Some(api_key) = args
-        .api_key
-        .clone()
-        .or_else(|| read_saved_api_key(&args.config_file, &args.base_url).ok().flatten())
-    {
+    } else if let Some(api_key) = args.api_key.clone().or_else(|| {
+        read_saved_api_key(&args.config_file, &args.base_url)
+            .ok()
+            .flatten()
+    }) {
         config = config.with_publisher_api_key(api_key.clone());
     }
 
@@ -480,8 +582,13 @@ fn load_repositories_config(config_path: &Path) -> Result<PckgRepositoriesConfig
 
             if let Some(legacy_key) = legacy_key {
                 let mut repositories = BTreeMap::new();
-                let default_repository = canonical_repository_url("http://127.0.0.1:5195")?;
-                repositories.insert(default_repository, RepositoryAuthConfig { api_key: legacy_key });
+                let default_repository = canonical_repository_url("http://127.0.0.1:8082")?;
+                repositories.insert(
+                    default_repository,
+                    RepositoryAuthConfig {
+                        api_key: legacy_key,
+                    },
+                );
                 Ok(PckgRepositoriesConfig { repositories })
             } else {
                 Ok(PckgRepositoriesConfig::default())
@@ -546,6 +653,125 @@ async fn execute_publish(client: &PckgClient, args: PublishArgs) -> Result<(), P
     }
 }
 
+async fn execute_list(client: &PckgClient) -> Result<(), PckgError> {
+    let items = client.list_packages().await?;
+    if items.is_empty() {
+        println!("No packages found.");
+        return Ok(());
+    }
+
+    for item in items {
+        println!(
+            "{} [{}] downloads={} rating={:.2}",
+            item.name, item.category, item.total_downloads, item.average_rating
+        );
+    }
+    Ok(())
+}
+
+async fn execute_search(client: &PckgClient, args: SearchArgs) -> Result<(), PckgError> {
+    let items = client.search_packages(&args.query).await?;
+    if items.is_empty() {
+        println!("No packages matched '{}'.", args.query);
+        return Ok(());
+    }
+
+    for item in items {
+        println!(
+            "{} [{}/{}] score={:.2} reviews={}",
+            item.package.name,
+            item.health.state,
+            item.health.sub_state,
+            item.health.score,
+            item.review_count
+        );
+    }
+    Ok(())
+}
+
+async fn execute_details(client: &PckgClient, args: DetailsArgs) -> Result<(), PckgError> {
+    let details = client.get_package_details(&args.id_or_name).await?;
+    println!(
+        "{} ({}) downloads={} dependents={}",
+        details.package.name,
+        details.package.category,
+        details.package.total_downloads,
+        details.dependents_count
+    );
+    println!(
+        "health={}/{} score={:.2}",
+        details.health.state, details.health.sub_state, details.health.score
+    );
+    if !details.dependencies.is_empty() {
+        println!("dependencies:");
+        for dep in details.dependencies {
+            println!(
+                "- {} {} source={} registry={}",
+                dep.name,
+                dep.version.unwrap_or_else(|| "*".to_string()),
+                dep.source,
+                dep.registry.unwrap_or_else(|| "-".to_string())
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn execute_versions(client: &PckgClient, args: VersionsArgs) -> Result<(), PckgError> {
+    let versions = client.list_package_versions(&args.package).await?;
+    if versions.is_empty() {
+        println!("No versions found for {}.", args.package);
+        return Ok(());
+    }
+    print_package_versions_table(&versions);
+    Ok(())
+}
+
+async fn execute_download(client: &PckgClient, args: DownloadArgs) -> Result<(), PckgError> {
+    let bytes = client
+        .download_package_version(&args.package, &args.version)
+        .await?;
+    if let Some(parent) = args.output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&args.output, bytes)?;
+    println!(
+        "Downloaded {} {} to {}",
+        args.package,
+        args.version,
+        args.output.display()
+    );
+    Ok(())
+}
+
+async fn execute_yank(client: &PckgClient, args: VersionActionArgs) -> Result<(), PckgError> {
+    let response = client
+        .yank_package_version(&args.package, &args.version)
+        .await?;
+    println!("{}", response.message);
+    Ok(())
+}
+
+async fn execute_unyank(client: &PckgClient, args: VersionActionArgs) -> Result<(), PckgError> {
+    let response = client
+        .unyank_package_version(&args.package, &args.version)
+        .await?;
+    println!("{}", response.message);
+    Ok(())
+}
+
+async fn execute_whoami(client: &PckgClient) -> Result<(), PckgError> {
+    let me = client.current_user().await?;
+    println!(
+        "authenticated={} user_id={} email={} publisher={}",
+        me.is_authenticated,
+        me.user_id.unwrap_or_else(|| "-".to_string()),
+        me.email.unwrap_or_else(|| "-".to_string()),
+        me.is_publisher
+    );
+    Ok(())
+}
+
 fn collect_pack_entries(source_root: &Path) -> Result<Vec<(String, Vec<u8>)>, PckgError> {
     let mut entries = Vec::new();
 
@@ -555,9 +781,7 @@ fn collect_pack_entries(source_root: &Path) -> Result<Vec<(String, Vec<u8>)>, Pc
             continue;
         }
 
-        let rel_path = path
-            .strip_prefix(source_root)
-            .map_err(io::Error::other)?;
+        let rel_path = path.strip_prefix(source_root).map_err(io::Error::other)?;
         let rel = normalize_rel_path(rel_path);
 
         if rel == "checksums.sha256" || rel == "package.json" {
