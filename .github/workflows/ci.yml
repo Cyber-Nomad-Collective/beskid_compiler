@@ -33,7 +33,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: ABI contract tests
-        run: cargo test -p beskid_tests abi::contracts::
+        run: "cargo test -p beskid_tests abi::contracts::"
 
   bench-compile:
     runs-on: ubuntu-latest
@@ -67,7 +67,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - name: Runtime tests under ASan
-        run: cargo test -p beskid_tests runtime::
+        run: "cargo test -p beskid_tests runtime::"
 
   extern-engine-security:
     runs-on: ubuntu-latest
