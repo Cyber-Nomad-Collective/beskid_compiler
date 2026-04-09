@@ -170,10 +170,11 @@ dependency "Feature" {
     let graph = build_project_graph(&app_manifest_path).expect("graph should build");
     let deps = collect_dependency_projects(&graph);
 
-    assert_eq!(deps.len(), 3);
-    assert_eq!(deps[0].dependency_name, "Util");
-    assert_eq!(deps[1].dependency_name, "Core");
-    assert_eq!(deps[2].dependency_name, "Feature");
+    assert_eq!(deps.len(), 4);
+    assert_eq!(deps[0].dependency_name, "Std");
+    assert_eq!(deps[1].dependency_name, "Util");
+    assert_eq!(deps[2].dependency_name, "Core");
+    assert_eq!(deps[3].dependency_name, "Feature");
 
     let _ = fs::remove_dir_all(root);
 }
