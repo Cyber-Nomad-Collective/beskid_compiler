@@ -125,7 +125,10 @@ pub(crate) fn parse_postfix_expression(
                 let try_node = TryExpression {
                     expr: Box::new(expr),
                 };
-                Spanned::new(Expression::Try(Spanned::new(try_node, expr_span)), expr_span)
+                Spanned::new(
+                    Expression::Try(Spanned::new(try_node, expr_span)),
+                    expr_span,
+                )
             }
             _ => return Err(ParseError::unexpected_rule(operator, None)),
         };

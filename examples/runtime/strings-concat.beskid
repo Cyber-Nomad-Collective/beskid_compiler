@@ -1,0 +1,7 @@
+i64 main() {
+    string base = "hello";
+    string world = " world";
+    string output = base + world;
+    __sys_println(output);
+    return __str_len(output);
+}

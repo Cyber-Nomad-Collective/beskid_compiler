@@ -1,18 +1,19 @@
 use std::collections::HashMap;
 
 use beskid_abi::{
-    AbiParamKind, AbiReturnKind, BUILTIN_SPECS, SYM_ALLOC, SYM_ARRAY_NEW, SYM_GC_REGISTER_ROOT,
-    SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST,
+    AbiParamKind, AbiReturnKind, BUILTIN_SPECS, SYM_ALLOC, SYM_ARRAY_NEW, SYM_EVENT_GET_HANDLER,
+    SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_GC_REGISTER_ROOT,
     SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER,
     SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC,
     SYM_PANIC_STR, SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYS_PRINT, SYM_SYS_PRINTLN,
+    SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR,
 };
 use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
 use beskid_runtime::{
-    alloc, array_new, gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle,
-    event_get_handler, event_len, event_subscribe, event_unsubscribe_first,
-    gc_write_barrier, interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize, panic,
-    panic_str, str_concat, str_len, str_new, sys_print, sys_println,
+    alloc, array_new, event_get_handler, event_len, event_subscribe, event_unsubscribe_first,
+    gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier,
+    interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize, panic, panic_str,
+    str_concat, str_len, str_new, sys_print, sys_println, test_bytes_len, test_bytes_ptr,
 };
 use cranelift_codegen::ir::{AbiParam, ExternalName, Signature, UserExternalName, types};
 use cranelift_codegen::isa::CallConv;
@@ -71,9 +72,67 @@ impl BeskidJitModule {
         builder.symbol(SYM_GC_REGISTER_ROOT, gc_register_root as *const u8);
         builder.symbol(SYM_GC_UNREGISTER_ROOT, gc_unregister_root as *const u8);
         builder.symbol(SYM_EVENT_SUBSCRIBE, event_subscribe as *const u8);
-        builder.symbol(SYM_EVENT_UNSUBSCRIBE_FIRST, event_unsubscribe_first as *const u8);
+        builder.symbol(
+            SYM_EVENT_UNSUBSCRIBE_FIRST,
+            event_unsubscribe_first as *const u8,
+        );
         builder.symbol(SYM_EVENT_LEN, event_len as *const u8);
         builder.symbol(SYM_EVENT_GET_HANDLER, event_get_handler as *const u8);
+        builder.symbol(SYM_TEST_BYTES_PTR, test_bytes_ptr as *const u8);
+        builder.symbol(SYM_TEST_BYTES_LEN, test_bytes_len as *const u8);
+
+        let module = JITModule::new(builder);
+        Ok(Self {
+            module,
+            func_ids: HashMap::new(),
+            builtins_declared: false,
+        })
+    }
+
+    pub fn new_with_symbols(extras: &[(String, *const u8)]) -> Result<Self, JitError> {
+        let isa_builder =
+            cranelift_native::builder().map_err(|err| JitError::Isa(err.to_string()))?;
+        let isa = isa_builder
+            .finish(settings::Flags::new(settings::builder()))
+            .map_err(|err| JitError::Isa(err.to_string()))?;
+        let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
+        // Register runtime builtins
+        builder.symbol(SYM_ALLOC, alloc as *const u8);
+        builder.symbol(SYM_STR_NEW, str_new as *const u8);
+        builder.symbol(SYM_STR_CONCAT, str_concat as *const u8);
+        builder.symbol(SYM_ARRAY_NEW, array_new as *const u8);
+        builder.symbol(SYM_PANIC, panic as *const u8);
+        builder.symbol(SYM_PANIC_STR, panic_str as *const u8);
+        builder.symbol(SYM_SYS_PRINT, sys_print as *const u8);
+        builder.symbol(SYM_SYS_PRINTLN, sys_println as *const u8);
+        builder.symbol(SYM_STR_LEN, str_len as *const u8);
+        builder.symbol(
+            SYM_INTEROP_DISPATCH_UNIT,
+            interop_dispatch_unit as *const u8,
+        );
+        builder.symbol(SYM_INTEROP_DISPATCH_PTR, interop_dispatch_ptr as *const u8);
+        builder.symbol(
+            SYM_INTEROP_DISPATCH_USIZE,
+            interop_dispatch_usize as *const u8,
+        );
+        builder.symbol(SYM_GC_WRITE_BARRIER, gc_write_barrier as *const u8);
+        builder.symbol(SYM_GC_ROOT_HANDLE, gc_root_handle as *const u8);
+        builder.symbol(SYM_GC_UNROOT_HANDLE, gc_unroot_handle as *const u8);
+        builder.symbol(SYM_GC_REGISTER_ROOT, gc_register_root as *const u8);
+        builder.symbol(SYM_GC_UNREGISTER_ROOT, gc_unregister_root as *const u8);
+        builder.symbol(SYM_EVENT_SUBSCRIBE, event_subscribe as *const u8);
+        builder.symbol(
+            SYM_EVENT_UNSUBSCRIBE_FIRST,
+            event_unsubscribe_first as *const u8,
+        );
+        builder.symbol(SYM_EVENT_LEN, event_len as *const u8);
+        builder.symbol(SYM_EVENT_GET_HANDLER, event_get_handler as *const u8);
+        builder.symbol(SYM_TEST_BYTES_PTR, test_bytes_ptr as *const u8);
+        builder.symbol(SYM_TEST_BYTES_LEN, test_bytes_len as *const u8);
+
+        for (sym, addr) in extras {
+            builder.symbol(sym, *addr);
+        }
 
         let module = JITModule::new(builder);
         Ok(Self {
@@ -89,6 +148,7 @@ impl BeskidJitModule {
             self.builtins_declared = true;
         }
 
+        // First pass: declare user functions
         for function in &artifact.functions {
             let func_id = self.module.declare_function(
                 &function.name,
@@ -96,6 +156,48 @@ impl BeskidJitModule {
                 &function.function.signature,
             )?;
             self.func_ids.insert(function.name.clone(), func_id);
+        }
+
+        // Second pass: collect extern references and declare them with their IR signatures
+        let pointer = self.module.isa().pointer_type();
+        let mut extern_sigs: std::collections::HashMap<String, Signature> = Default::default();
+        {
+            let mut ctx_probe = self.module.make_context();
+            for function in &artifact.functions {
+                ctx_probe.func = function.function.clone();
+                for (_func_ref, ext_func) in ctx_probe.func.dfg.ext_funcs.iter() {
+                    if let ExternalName::TestCase(name) = &ext_func.name {
+                        let symbol = String::from_utf8_lossy(name.raw()).to_string();
+                        // Only consider externs surfaced in artifact.extern_imports (avoid builtins remap here)
+                        if artifact.extern_imports.iter().any(|e| e.symbol == symbol) {
+                            let sig = ctx_probe.func.dfg.signatures[ext_func.signature].clone();
+                            // Validate FFI signature is allowed
+                            validate_ffi_signature(&sig, pointer).map_err(|msg| {
+                                JitError::Isa(format!(
+                                    "extern signature not allowed for {}: {}",
+                                    symbol, msg
+                                ))
+                            })?;
+                            if let Some(prev) = extern_sigs.get(&symbol) {
+                                if prev != &sig {
+                                    return Err(JitError::Isa(format!(
+                                        "extern signature mismatch for {} across callsites",
+                                        symbol
+                                    )));
+                                }
+                            } else {
+                                extern_sigs.insert(symbol, sig);
+                            }
+                        }
+                    }
+                }
+                self.module.clear_context(&mut ctx_probe);
+            }
+        }
+
+        for (symbol, sig) in extern_sigs.iter() {
+            let id = self.module.declare_function(symbol, Linkage::Import, sig)?;
+            self.func_ids.insert(symbol.clone(), id);
         }
 
         emit_string_literals(&mut self.module, artifact)?;
@@ -169,6 +271,27 @@ impl BeskidJitModule {
 
         Ok(())
     }
+}
+
+fn validate_ffi_signature(
+    sig: &Signature,
+    pointer: cranelift_codegen::ir::Type,
+) -> Result<(), String> {
+    use cranelift_codegen::ir::types;
+    let check_ty = |ty: cranelift_codegen::ir::Type| -> bool {
+        ty == pointer || ty == types::I64 || ty == types::I32 || ty == types::I8 || ty == types::F64
+    };
+    for p in &sig.params {
+        if !check_ty(p.value_type) {
+            return Err(format!("param type {} not allowed", p.value_type));
+        }
+    }
+    for r in &sig.returns {
+        if !check_ty(r.value_type) {
+            return Err(format!("return type {} not allowed", r.value_type));
+        }
+    }
+    Ok(())
 }
 
 fn builtin_signature(

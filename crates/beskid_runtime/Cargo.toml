@@ -7,3 +7,15 @@ edition = "2024"
 beskid_abi = { path = "../beskid_abi" }
 gc-arena = { path = "../gc-arena" }
 gc-arena-derive = { path = "../gc-arena/derive" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[features]
+metrics = []
+arrays_backing = []
+sched = []
+
+[[bench]]
+name = "runtime_micro"
+harness = false

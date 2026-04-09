@@ -1,0 +1,15 @@
+workspace {
+  name = "DepsWorkspace"
+}
+
+member "app" {
+  path = "app"
+}
+
+member "core" {
+  path = "core"
+}
+
+member "util" {
+  path = "util"
+}

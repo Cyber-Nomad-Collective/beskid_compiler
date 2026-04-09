@@ -20,6 +20,8 @@ pub const SYM_EVENT_GET_HANDLER: &str = "event_get_handler";
 pub const SYM_INTEROP_DISPATCH_UNIT: &str = "interop_dispatch_unit";
 pub const SYM_INTEROP_DISPATCH_PTR: &str = "interop_dispatch_ptr";
 pub const SYM_INTEROP_DISPATCH_USIZE: &str = "interop_dispatch_usize";
+pub const SYM_TEST_BYTES_PTR: &str = "test_bytes_ptr";
+pub const SYM_TEST_BYTES_LEN: &str = "test_bytes_len";
 
 pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_ABI_VERSION,
@@ -44,4 +46,6 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_INTEROP_DISPATCH_UNIT,
     SYM_INTEROP_DISPATCH_PTR,
     SYM_INTEROP_DISPATCH_USIZE,
+    SYM_TEST_BYTES_PTR,
+    SYM_TEST_BYTES_LEN,
 ];

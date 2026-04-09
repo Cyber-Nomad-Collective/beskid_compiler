@@ -94,8 +94,7 @@ fn legality_reports_unknown_attribute_target_kind() {
 
 #[test]
 fn legality_reports_duplicate_attribute_targets() {
-    let source =
-        "attribute Builder(TypeDeclaration, TypeDeclaration) { enabled: bool = true }";
+    let source = "attribute Builder(TypeDeclaration, TypeDeclaration) { enabled: bool = true }";
     let (hir, resolution) = lower_and_resolve(source);
 
     let errors = validate_hir_program(&hir, &resolution);
@@ -201,7 +200,9 @@ fn legality_resolution_registers_declared_type_conformances() {
         .get(&worker_id)
         .expect("expected worker conformance entry");
     assert!(
-        conformances.iter().any(|(contract_id, _)| *contract_id == service_id),
+        conformances
+            .iter()
+            .any(|(contract_id, _)| *contract_id == service_id),
         "expected Worker to conform to Service, got: {conformances:?}"
     );
 }

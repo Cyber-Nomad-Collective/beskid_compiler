@@ -1,0 +1,14 @@
+project {
+  name = "UnresolvedRegistry"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+
+dependency "PkgCore" {
+  source = "registry"
+  version = "1.2.3"
+}

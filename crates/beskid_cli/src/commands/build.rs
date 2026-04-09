@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
+use crate::build_ui::BuildUx;
+use crate::frontend;
 use anyhow::Result;
 use beskid_analysis::projects::TargetKind;
-use beskid_analysis::services;
 use beskid_aot::{
     AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, ProjectTargetKind,
     RuntimeStrategy, build, default_output_kind, resolve_entrypoint,
@@ -94,10 +95,14 @@ pub struct BuildArgs {
     /// Print linker invocations
     #[arg(long)]
     pub verbose_link: bool,
+
+    /// Disable animated progress and graph output
+    #[arg(long)]
+    pub plain: bool,
 }
 
 pub fn execute(args: BuildArgs) -> Result<()> {
-    let resolved = services::resolve_input(
+    let resolved = frontend::resolve_input(
         args.input.as_ref(),
         args.project.as_ref(),
         args.target.as_deref(),
@@ -105,14 +110,19 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         args.frozen,
         args.locked,
     )?;
-    let source = resolved.source;
-    let input_path = resolved.source_path;
+    let source = resolved.source.clone();
+    let input_path = resolved.source_path.clone();
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
     let default_output_stem = resolved
         .compile_plan
         .as_ref()
         .map(|plan| plan.target.name.clone());
 
+    let ux = BuildUx::start(!args.plain, &resolved);
+    ux.stage("Parsing source and validating syntax");
+    frontend::validate_source(&input_path, &source)?;
+
+    ux.stage("Lowering source to IR");
     let artifact = lower_source(&input_path, &source, true)?.artifact;
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
@@ -169,6 +179,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         ExportPolicy::Explicit(args.export_symbols)
     };
 
+    ux.stage("Building object file, bundling runtime, linking output");
     let result = build(AotBuildRequest {
         artifact,
         output_kind,
@@ -186,6 +197,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         runtime,
         verbose_link: args.verbose_link,
     })?;
+    ux.finish("Build complete");
 
     println!("object: {}", result.object_path.display());
     if let Some(final_path) = result.final_path {
@@ -193,6 +205,23 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     }
     if let Some(cmd) = result.linker_invocation {
         println!("link: {cmd}");
+    }
+    if let Some(plan) = resolved.compile_plan.as_ref() {
+        println!(
+            "deps: {} materialized dependency project(s)",
+            plan.dependency_projects.len()
+        );
+        println!(
+            "stdlib: {}",
+            if plan.has_std_dependency {
+                "available (implicit or declared)"
+            } else {
+                "not available"
+            }
+        );
+    }
+    if ux.is_enabled() {
+        println!("tip: use --plain for non-animated output");
     }
 
     Ok(())

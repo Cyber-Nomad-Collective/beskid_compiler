@@ -11,7 +11,7 @@ beskid_codegen = { path = "../beskid_codegen" }
 beskid_engine = { path = "../beskid_engine" }
 beskid_lsp = { path = "../beskid_lsp" }
 beskid_pckg = { path = "../beskid_pckg" }
-beskid_runtime = { path = "../beskid_runtime" }
+beskid_runtime = { path = "../beskid_runtime", features = ["metrics", "sched"] }
 cranelift-codegen = "0.128.3"
 cranelift-jit = "0.128.3"
 cranelift-module = "0.128.3"

@@ -89,7 +89,11 @@ fn lower_contract_compatibility(
         .tables
         .type_conformances
         .get(&actual_item_id)
-        .is_some_and(|entries| entries.iter().any(|(contract_item, _)| *contract_item == expected_item_id));
+        .is_some_and(|entries| {
+            entries
+                .iter()
+                .any(|(contract_item, _)| *contract_item == expected_item_id)
+        });
     if !conforms {
         return Ok(None);
     }
@@ -114,20 +118,18 @@ fn lower_contract_compatibility(
             .ok_or(CodegenError::MissingSymbol("contract method signature"))?;
 
         let mut signature_ir = Signature::new(CallConv::SystemV);
-        let receiver_clif_ty = map_type_id_to_clif(type_result, actual).ok_or(
-            CodegenError::UnsupportedNode {
+        let receiver_clif_ty =
+            map_type_id_to_clif(type_result, actual).ok_or(CodegenError::UnsupportedNode {
                 span,
                 node: "contract receiver type",
-            },
-        )?;
+            })?;
         signature_ir.params.push(AbiParam::new(receiver_clif_ty));
         for param in &signature.params {
-            let clif_ty = map_type_id_to_clif(type_result, *param).ok_or(
-                CodegenError::UnsupportedNode {
+            let clif_ty =
+                map_type_id_to_clif(type_result, *param).ok_or(CodegenError::UnsupportedNode {
                     span,
                     node: "contract parameter type",
-                },
-            )?;
+                })?;
             signature_ir.params.push(AbiParam::new(clif_ty));
         }
         if !matches!(
@@ -145,12 +147,14 @@ fn lower_contract_compatibility(
 
         let symbol = mangle_method_name(&receiver_name, method_name);
         let sig_ref = builder.func.import_signature(signature_ir);
-        let func_ref = builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase(symbol),
-            signature: sig_ref,
-            colocated: true,
-            patchable: false,
-        });
+        let func_ref = builder
+            .func
+            .import_function(cranelift_codegen::ir::ExtFuncData {
+                name: ExternalName::testcase(symbol),
+                signature: sig_ref,
+                colocated: true,
+                patchable: false,
+            });
         let func_addr = builder.ins().func_addr(pointer_type(), func_ref);
         let offset = ((index + 1) * std::mem::size_of::<u64>()) as i32;
         builder
@@ -186,7 +190,10 @@ fn emit_contract_wrapper_alloc(builder: &mut FunctionBuilder, method_count: usiz
         .expect("alloc must return pointer")
 }
 
-fn named_item_id(type_result: &TypeResult, type_id: TypeId) -> Option<beskid_analysis::resolve::ItemId> {
+fn named_item_id(
+    type_result: &TypeResult,
+    type_id: TypeId,
+) -> Option<beskid_analysis::resolve::ItemId> {
     match type_result.types.get(type_id) {
         Some(TypeInfo::Named(item_id)) => Some(*item_id),
         Some(TypeInfo::Applied { base, .. }) => Some(*base),

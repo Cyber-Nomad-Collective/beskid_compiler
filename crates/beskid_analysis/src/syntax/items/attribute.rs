@@ -101,7 +101,10 @@ impl Parsable for AttributeDeclaration {
 impl Parsable for AttributeTarget {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         if pair.as_rule() != Rule::AttributeTarget {
-            return Err(ParseError::unexpected_rule(pair, Some(Rule::AttributeTarget)));
+            return Err(ParseError::unexpected_rule(
+                pair,
+                Some(Rule::AttributeTarget),
+            ));
         }
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
@@ -162,7 +165,10 @@ impl Parsable for Attribute {
 impl Parsable for AttributeArgument {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         if pair.as_rule() != Rule::AttributeArgument {
-            return Err(ParseError::unexpected_rule(pair, Some(Rule::AttributeArgument)));
+            return Err(ParseError::unexpected_rule(
+                pair,
+                Some(Rule::AttributeArgument),
+            ));
         }
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();

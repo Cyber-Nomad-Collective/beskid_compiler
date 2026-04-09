@@ -1,12 +1,13 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_analysis::projects::{
-    PROJECT_FILE_NAME, PROJECT_LOCK_FILE_NAME, WORKSPACE_FILE_NAME, ProjectError, TargetKind,
-    WorkspacePrepareOptions,
-    UnresolvedDependencyPolicy, build_compile_plan, build_compile_plan_with_policy,
-    prepare_project_workspace, prepare_project_workspace_with_options,
+    DependencySource, PROJECT_FILE_NAME, PROJECT_LOCK_FILE_NAME, ProjectError, TargetKind,
+    UnresolvedDependencyPolicy, WORKSPACE_FILE_NAME, WorkspacePrepareOptions, build_compile_plan,
+    build_compile_plan_with_policy, prepare_project_workspace,
+    prepare_project_workspace_with_options,
 };
 
 fn temp_case_dir(name: &str) -> PathBuf {
@@ -32,6 +33,11 @@ fn write_manifest(dir: &PathBuf, source: &str) -> PathBuf {
 fn write_workspace_manifest(dir: &PathBuf, source: &str) {
     let manifest_path = dir.join(WORKSPACE_FILE_NAME);
     fs::write(&manifest_path, source).expect("write workspace manifest");
+}
+
+fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
 }
 
 #[test]
@@ -106,8 +112,9 @@ registry "default" {
 "#,
     );
 
-    let plan = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
-        .expect("warn policy should collect unresolved deps");
+    let plan =
+        build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
+            .expect("warn policy should collect unresolved deps");
     assert_eq!(plan.unresolved_dependencies.len(), 1);
     assert_eq!(plan.unresolved_dependencies[0].dependency_name, "PkgCore");
     assert_eq!(plan.unresolved_dependencies[0].descriptor, "default@2.0.0");
@@ -153,8 +160,9 @@ registry "default" {
 "#,
     );
 
-    let error = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
-        .expect_err("unknown alias should fail validation");
+    let error =
+        build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
+            .expect_err("unknown alias should fail validation");
     let message = error.to_string();
     assert!(message.contains("unknown workspace registry alias"));
 
@@ -270,11 +278,17 @@ dependency "Core" {
     let app_manifest_path = write_manifest(&app_dir, app_manifest);
 
     let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
-    assert_eq!(plan.dependency_projects.len(), 2);
-    assert_eq!(plan.dependency_projects[0].dependency_name, "Util");
-    assert_eq!(plan.dependency_projects[1].dependency_name, "Core");
-    assert_eq!(plan.dependency_projects[0].project_name, "Util");
-    assert_eq!(plan.dependency_projects[1].project_name, "Core");
+    assert!(plan.dependency_projects.len() >= 2);
+    assert!(
+        plan.dependency_projects
+            .iter()
+            .any(|dependency| dependency.dependency_name == "Util")
+    );
+    assert!(
+        plan.dependency_projects
+            .iter()
+            .any(|dependency| dependency.dependency_name == "Core")
+    );
 
     let _ = fs::remove_dir_all(root);
 }
@@ -440,10 +454,12 @@ dependency "Core" {
     let lockfile_path = app_dir.join(PROJECT_LOCK_FILE_NAME);
     assert!(lockfile_path.is_file());
     assert_eq!(workspace.lockfile_path, lockfile_path);
-    assert_eq!(workspace.materialized_dependencies.len(), 1);
-    assert_eq!(
-        workspace.materialized_dependencies[0].dependency_name,
-        "Core"
+    assert!(workspace.materialized_dependencies.len() >= 1);
+    assert!(
+        workspace
+            .materialized_dependencies
+            .iter()
+            .any(|dependency| dependency.dependency_name == "Core")
     );
     assert!(
         workspace.materialized_dependencies[0]
@@ -600,6 +616,59 @@ dependency "Std" {
 }
 
 #[test]
+fn compile_plan_injects_std_dependency_when_not_declared() {
+    let _guard = env_lock().lock().expect("lock env");
+    let root = temp_case_dir("implicit_std_dependency");
+    let app_dir = root.join("App");
+    let std_dir = root.join("StdBundled");
+    fs::create_dir_all(&app_dir).expect("create app dir");
+    fs::create_dir_all(std_dir.join("Src")).expect("create std src dir");
+
+    write_manifest(
+        &std_dir,
+        r#"
+project {
+  name = "Std"
+  version = "1.0.0"
+}
+
+target "StdLib" {
+  kind = "Lib"
+  entry = "Prelude.bd"
+}
+"#,
+    );
+    fs::write(std_dir.join("Src/Prelude.bd"), "unit prelude() { }\n").expect("write std prelude");
+
+    unsafe { std::env::set_var("BESKID_STDLIB_ROOT", &std_dir) };
+    let app_manifest_path = write_manifest(
+        &app_dir,
+        r#"
+project {
+  name = "App"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+"#,
+    );
+
+    let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
+    assert!(plan.has_std_dependency);
+    assert!(
+        plan.dependency_projects
+            .iter()
+            .any(|dependency| dependency.dependency_name == "Std")
+    );
+
+    unsafe { std::env::remove_var("BESKID_STDLIB_ROOT") };
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn compile_plan_collects_unresolved_dependencies_in_warn_mode() {
     let dir = temp_case_dir("unresolved_warn_mode");
     let source = r#"
@@ -621,8 +690,9 @@ dependency "RemoteStd" {
 "#;
     let manifest_path = write_manifest(&dir, source);
 
-    let plan = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
-        .expect("warn policy should collect unresolved deps");
+    let plan =
+        build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
+            .expect("warn policy should collect unresolved deps");
     assert_eq!(plan.unresolved_dependencies.len(), 1);
     assert_eq!(plan.unresolved_dependencies[0].dependency_name, "RemoteStd");
     assert_eq!(
@@ -648,8 +718,9 @@ target "App" {
 }
 
 dependency "PkgCore" {
-  source = "registry"
-  version = "1.2.3"
+  source = "git"
+  url = "https://example.com/pkg.git"
+  rev = "abc123"
 }
 "#;
     let manifest_path = write_manifest(&dir, source);
@@ -657,11 +728,48 @@ dependency "PkgCore" {
     let error =
         build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Error)
             .expect_err("strict mode must fail");
-    assert!(matches!(error, ProjectError::UnresolvedExternalDependencies(_)));
+    assert!(matches!(
+        error,
+        ProjectError::UnresolvedExternalDependencies(_)
+    ));
     let message = error.to_string();
     assert!(message.contains("PkgCore"));
-    assert!(message.contains("Registry"));
-    assert!(message.contains("1.2.3"));
+    assert!(message.contains("Git"));
+    assert!(message.contains("abc123"));
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn compile_plan_keeps_registry_dependencies_in_strict_mode_for_materialization() {
+    let dir = temp_case_dir("registry_allowed_strict_mode");
+    let source = r#"
+project {
+  name = "MyApp"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+
+dependency "PkgCore" {
+  source = "registry"
+  version = "1.2.3"
+}
+"#;
+    let manifest_path = write_manifest(&dir, source);
+
+    let plan =
+        build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Error)
+            .expect("registry dependencies should be kept for workspace materialization");
+    assert_eq!(plan.unresolved_dependencies.len(), 1);
+    assert_eq!(plan.unresolved_dependencies[0].dependency_name, "PkgCore");
+    assert_eq!(
+        plan.unresolved_dependencies[0].source,
+        DependencySource::Registry
+    );
 
     let _ = fs::remove_dir_all(dir);
 }

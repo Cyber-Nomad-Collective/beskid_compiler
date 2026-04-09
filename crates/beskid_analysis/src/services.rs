@@ -13,10 +13,9 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::projects::{
     CompilePlan, PROJECT_FILE_NAME, PreparedProjectWorkspace, ProjectError,
-    UnresolvedDependencyPolicy,
-    WORKSPACE_FILE_NAME, WorkspacePrepareOptions, discover_project_file,
-    build_compile_plan_with_policy, discover_workspace_file, parse_workspace_manifest,
-    prepare_project_workspace_with_options,
+    UnresolvedDependencyPolicy, WORKSPACE_FILE_NAME, WorkspacePrepareOptions,
+    build_compile_plan_with_policy, discover_project_file, discover_workspace_file,
+    parse_workspace_manifest, prepare_project_workspace_with_options,
 };
 use crate::query::NodeRef;
 use crate::resolve::{ItemKind, Resolution, ResolvedValue, Resolver};
@@ -154,8 +153,9 @@ pub fn resolve_project_with_policy(
         .transpose()?;
     let (compile_plan, prepared_workspace) = match manifest_path {
         Some(ref manifest) => {
-            let plan = build_compile_plan_with_policy(manifest, target, unresolved_dependency_policy)
-                .map_err(|err| anyhow::anyhow!("{}: {err}", err.code()))?;
+            let plan =
+                build_compile_plan_with_policy(manifest, target, unresolved_dependency_policy)
+                    .map_err(|err| anyhow::anyhow!("{}: {err}", err.code()))?;
             let workspace = prepare_project_workspace_with_options(
                 &plan,
                 WorkspacePrepareOptions { frozen, locked },
@@ -246,15 +246,25 @@ pub fn resolve_input_with_policy(
 }
 
 pub fn parse_program(source: &str) -> Result<Spanned<Program>> {
-    let mut pairs = BeskidParser::parse(Rule::Program, source)?;
+    parse_program_with_source_name("<memory>", source)
+}
+
+pub fn parse_program_with_source_name(source_name: &str, source: &str) -> Result<Spanned<Program>> {
+    let mut pairs = BeskidParser::parse(Rule::Program, source).map_err(|err| {
+        let diagnostic = pest_error_diagnostic(source_name, source, &err);
+        anyhow::anyhow!("{:?}", miette::Report::new(diagnostic))
+    })?;
     let pair = pairs
         .next()
         .ok_or_else(|| anyhow::anyhow!("No program found"))?;
-    Program::parse(pair).map_err(|err| anyhow::anyhow!("{err:?}"))
+    Program::parse(pair).map_err(|err| {
+        let diagnostic = parse_error_diagnostic(source_name, source, &err);
+        anyhow::anyhow!("{:?}", miette::Report::new(diagnostic))
+    })
 }
 
 pub fn analyze_program(path: &Path, source: &str) -> Result<Vec<SemanticDiagnostic>> {
-    let program = parse_program(source)?;
+    let program = parse_program_with_source_name(&path.display().to_string(), source)?;
     Ok(run_rules(
         &program.node,
         path.display().to_string(),
@@ -797,13 +807,13 @@ fn resolve_project_manifest_from_workspace(
         workspace_manifest.members.first()
     }
     .ok_or_else(|| {
-            anyhow::anyhow!(
-                "{}: workspace manifest `{}` could not resolve member (requested={})",
-                ProjectError::Validation("workspace has no members".to_string()).code(),
-                workspace_manifest_path.display(),
-                workspace_member.unwrap_or("<auto>")
-            )
-        })?;
+        anyhow::anyhow!(
+            "{}: workspace manifest `{}` could not resolve member (requested={})",
+            ProjectError::Validation("workspace has no members".to_string()).code(),
+            workspace_manifest_path.display(),
+            workspace_member.unwrap_or("<auto>")
+        )
+    })?;
 
     let member_manifest = workspace_root
         .join(&selected_member.path)

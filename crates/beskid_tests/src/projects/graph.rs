@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_analysis::projects::{
-    PROJECT_FILE_NAME, UnresolvedDependencyKind, build_project_graph,
-    collect_dependency_projects, collect_unresolved_dependencies,
+    PROJECT_FILE_NAME, UnresolvedDependencyKind, build_project_graph, collect_dependency_projects,
+    collect_unresolved_dependencies,
 };
 
 fn temp_case_dir(name: &str) -> PathBuf {

@@ -193,7 +193,11 @@ fn expect_binary_op(op: &Spanned<BinaryOp>, expected: BinaryOp) {
 
 fn expect_assign(
     expr: &Expression,
-) -> (&Spanned<Expression>, &Spanned<AssignOp>, &Spanned<Expression>) {
+) -> (
+    &Spanned<Expression>,
+    &Spanned<AssignOp>,
+    &Spanned<Expression>,
+) {
     if let Expression::Assign(assign) = expr {
         return (&assign.node.target, &assign.node.op, &assign.node.value);
     }

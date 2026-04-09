@@ -1,0 +1,7 @@
+enum Result { Ok(i32 value), Error(string message) }
+
+i32 main() {
+    Result r = Result::Ok(1);
+    i32 value = r?;
+    return value;
+}

@@ -1,11 +1,14 @@
 use std::collections::{HashMap, HashSet};
+use std::env;
 use std::path::{Path, PathBuf};
 
 use daggy::{Dag, NodeIndex};
 
 use crate::projects::error::ProjectError;
 use crate::projects::graph::loader::load_manifest_from_path;
-use crate::projects::graph::pathing::{dependency_manifest_path, project_root_from_manifest_path};
+use crate::projects::graph::pathing::{
+    dependency_manifest_path, normalize_existing_path, project_root_from_manifest_path,
+};
 use crate::projects::graph::project_graph::{DependencyEdge, ProjectGraphNode};
 use crate::projects::model::{DependencySource, ProjectManifest};
 
@@ -49,97 +52,45 @@ pub fn resolve_dependencies(
     has_std_dependency: &mut bool,
 ) -> Result<(), ProjectError> {
     let consumer_project_root = project_root_from_manifest_path(consumer_manifest_path)?;
+    let has_explicit_std_dependency = consumer_manifest
+        .dependencies
+        .iter()
+        .any(|dependency| dependency.name.eq_ignore_ascii_case("Std"));
+    let is_std_project = consumer_manifest.project.name.eq_ignore_ascii_case("Std")
+        || is_std_manifest_path(consumer_manifest_path);
 
     for dependency in &consumer_manifest.dependencies {
         match dependency.source {
             DependencySource::Path => {
-                let relative_path = dependency.path.as_deref().ok_or_else(|| {
-                    ProjectError::Validation(format!(
-                        "dependency `{}` with source=\"path\" requires `path`",
-                        dependency.name
-                    ))
-                })?;
-
-                let dependency_manifest_path =
-                    dependency_manifest_path(&consumer_project_root, relative_path);
-
-                if !dependency_manifest_path.is_file() {
-                    return Err(ProjectError::DependencyManifestNotFound {
-                        dependency: dependency.name.clone(),
-                        path: dependency_manifest_path,
-                    });
-                }
-
-                if let Some(cycle_start) = visiting
-                    .iter()
-                    .position(|path| path == &dependency_manifest_path)
-                {
-                    return Err(ProjectError::DependencyCycle(format_cycle_from_visiting(
-                        visiting,
-                        cycle_start,
-                        &dependency_manifest_path,
-                    )));
-                }
-
-                let dependency_index = if let Some(existing_index) =
-                    node_by_manifest.get(&dependency_manifest_path)
-                {
-                    *existing_index
+                let fallback_std_path = if dependency.name.eq_ignore_ascii_case("Std") {
+                    default_stdlib_dependency_path()
                 } else {
-                    let dependency_manifest = load_manifest_from_path(&dependency_manifest_path)?;
-                    let dependency_project_root =
-                        project_root_from_manifest_path(&dependency_manifest_path)?;
-                    let dependency_source_root =
-                        dependency_project_root.join(&dependency_manifest.project.root);
-
-                    let dependency_index = dag.add_node(ProjectGraphNode::ResolvedPathDependency {
-                        dependency_name: dependency.name.clone(),
-                        manifest_path: dependency_manifest_path.clone(),
-                        project_root: dependency_project_root,
-                        project_name: dependency_manifest.project.name.clone(),
-                        source_root: dependency_source_root,
-                    });
-
-                    node_by_manifest.insert(dependency_manifest_path.clone(), dependency_index);
-
-                    visiting.push(dependency_manifest_path.clone());
-                    resolve_dependencies(
-                        dag,
-                        dependency_index,
-                        &dependency_manifest_path,
-                        &dependency_manifest,
-                        workspace_rules,
-                        node_by_manifest,
-                        visiting,
-                        has_std_dependency,
-                    )?;
-                    visiting.pop();
-
-                    dependency_index
+                    None
                 };
 
-                if dag
-                    .add_edge(
-                        consumer_index,
-                        dependency_index,
-                        DependencyEdge {
-                            dependency_name: dependency.name.clone(),
-                            source: dependency.source,
-                        },
-                    )
-                    .is_err()
-                {
-                    return Err(ProjectError::DependencyCycle(format!(
-                        "{} -> {} -> {}",
-                        consumer_manifest_path.display(),
-                        dependency_manifest_path.display(),
-                        consumer_manifest_path.display()
-                    )));
-                }
+                let relative_path = dependency
+                    .path
+                    .as_deref()
+                    .or(fallback_std_path.as_deref())
+                    .ok_or_else(|| {
+                        ProjectError::Validation(format!(
+                            "dependency `{}` with source=\"path\" requires `path`",
+                            dependency.name
+                        ))
+                    })?;
 
-                if dependency.name.eq_ignore_ascii_case("Std") {
-                    *has_std_dependency = true;
-                }
+                attach_path_dependency(
+                    dag,
+                    consumer_index,
+                    consumer_manifest_path,
+                    &consumer_project_root,
+                    &dependency.name,
+                    relative_path,
+                    workspace_rules,
+                    node_by_manifest,
+                    visiting,
+                    has_std_dependency,
+                )?;
             }
             DependencySource::Git => {
                 let url = dependency.url.clone().ok_or_else(|| {
@@ -203,11 +154,12 @@ pub fn resolve_dependencies(
                     }
                 }
 
-                let unresolved_index = dag.add_node(ProjectGraphNode::UnresolvedRegistryDependency {
-                    dependency_name: dependency.name.clone(),
-                    version,
-                    registry: dependency.registry.clone(),
-                });
+                let unresolved_index =
+                    dag.add_node(ProjectGraphNode::UnresolvedRegistryDependency {
+                        dependency_name: dependency.name.clone(),
+                        version,
+                        registry: dependency.registry.clone(),
+                    });
 
                 if dag
                     .add_edge(
@@ -231,7 +183,148 @@ pub fn resolve_dependencies(
         }
     }
 
+    if !has_explicit_std_dependency
+        && !is_std_project
+        && let Some(std_path) = default_stdlib_dependency_path()
+    {
+        attach_path_dependency(
+            dag,
+            consumer_index,
+            consumer_manifest_path,
+            &consumer_project_root,
+            "Std",
+            &std_path,
+            workspace_rules,
+            node_by_manifest,
+            visiting,
+            has_std_dependency,
+        )?;
+    }
+
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn attach_path_dependency(
+    dag: &mut Dag<ProjectGraphNode, DependencyEdge>,
+    consumer_index: NodeIndex,
+    consumer_manifest_path: &Path,
+    consumer_project_root: &Path,
+    dependency_name: &str,
+    relative_path: &str,
+    workspace_rules: Option<&WorkspaceResolutionRules>,
+    node_by_manifest: &mut HashMap<PathBuf, NodeIndex>,
+    visiting: &mut Vec<PathBuf>,
+    has_std_dependency: &mut bool,
+) -> Result<(), ProjectError> {
+    let dependency_manifest_path = dependency_manifest_path(consumer_project_root, relative_path);
+
+    if !dependency_manifest_path.is_file() {
+        return Err(ProjectError::DependencyManifestNotFound {
+            dependency: dependency_name.to_string(),
+            path: dependency_manifest_path,
+        });
+    }
+
+    if let Some(cycle_start) = visiting
+        .iter()
+        .position(|path| path == &dependency_manifest_path)
+    {
+        return Err(ProjectError::DependencyCycle(format_cycle_from_visiting(
+            visiting,
+            cycle_start,
+            &dependency_manifest_path,
+        )));
+    }
+
+    let dependency_index = if let Some(existing_index) =
+        node_by_manifest.get(&dependency_manifest_path)
+    {
+        *existing_index
+    } else {
+        let dependency_manifest = load_manifest_from_path(&dependency_manifest_path)?;
+        let dependency_project_root = project_root_from_manifest_path(&dependency_manifest_path)?;
+        let dependency_source_root =
+            dependency_project_root.join(&dependency_manifest.project.root);
+
+        let dependency_index = dag.add_node(ProjectGraphNode::ResolvedPathDependency {
+            dependency_name: dependency_name.to_string(),
+            manifest_path: dependency_manifest_path.clone(),
+            project_root: dependency_project_root,
+            project_name: dependency_manifest.project.name.clone(),
+            source_root: dependency_source_root,
+        });
+
+        node_by_manifest.insert(dependency_manifest_path.clone(), dependency_index);
+
+        visiting.push(dependency_manifest_path.clone());
+        resolve_dependencies(
+            dag,
+            dependency_index,
+            &dependency_manifest_path,
+            &dependency_manifest,
+            workspace_rules,
+            node_by_manifest,
+            visiting,
+            has_std_dependency,
+        )?;
+        visiting.pop();
+
+        dependency_index
+    };
+
+    if dag
+        .add_edge(
+            consumer_index,
+            dependency_index,
+            DependencyEdge {
+                dependency_name: dependency_name.to_string(),
+                source: DependencySource::Path,
+            },
+        )
+        .is_err()
+    {
+        return Err(ProjectError::DependencyCycle(format!(
+            "{} -> {} -> {}",
+            consumer_manifest_path.display(),
+            dependency_manifest_path.display(),
+            consumer_manifest_path.display()
+        )));
+    }
+
+    if dependency_name.eq_ignore_ascii_case("Std") {
+        *has_std_dependency = true;
+    }
+
+    Ok(())
+}
+
+fn default_stdlib_dependency_path() -> Option<String> {
+    if let Ok(explicit_root) = env::var("BESKID_STDLIB_ROOT") {
+        return Some(PathBuf::from(explicit_root).display().to_string());
+    }
+
+    discover_repo_stdlib_root().map(|path| path.display().to_string())
+}
+
+fn discover_repo_stdlib_root() -> Option<PathBuf> {
+    let cwd = env::current_dir().ok()?;
+    for ancestor in cwd.ancestors() {
+        let candidate = ancestor.join("corelib").join("standard_library");
+        if candidate.join("Project.proj").is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn is_std_manifest_path(manifest_path: &Path) -> bool {
+    let normalized_manifest = normalize_existing_path(manifest_path);
+    let Some(std_root) = default_stdlib_dependency_path() else {
+        return false;
+    };
+    let std_manifest = normalize_existing_path(&PathBuf::from(std_root).join("Project.proj"));
+    normalized_manifest == std_manifest
 }
 
 fn format_cycle_from_visiting(

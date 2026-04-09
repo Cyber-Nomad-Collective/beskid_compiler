@@ -54,7 +54,10 @@ pub(crate) fn emit_resolve_error(ctx: &mut RuleContext, error: ResolveError) {
             );
         }
         ResolveError::InvalidConformanceTarget { name, span } => {
-            ctx.emit_issue(span, SemanticIssueKind::ResolveInvalidConformanceTarget { name });
+            ctx.emit_issue(
+                span,
+                SemanticIssueKind::ResolveInvalidConformanceTarget { name },
+            );
         }
         ResolveError::PrivateItemInModule {
             module_path,

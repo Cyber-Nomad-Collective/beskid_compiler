@@ -62,9 +62,19 @@ fn parse_assign_op(pair: Pair<Rule>) -> Result<Spanned<AssignOp>, ParseError> {
             "=" => AssignOp::Assign,
             "+=" => AssignOp::AddAssign,
             "-=" => AssignOp::SubAssign,
-            _ => return Err(ParseError::unexpected_rule(pair, Some(Rule::AssignmentOperator))),
+            _ => {
+                return Err(ParseError::unexpected_rule(
+                    pair,
+                    Some(Rule::AssignmentOperator),
+                ));
+            }
         },
-        _ => return Err(ParseError::unexpected_rule(pair, Some(Rule::AssignmentOperator))),
+        _ => {
+            return Err(ParseError::unexpected_rule(
+                pair,
+                Some(Rule::AssignmentOperator),
+            ));
+        }
     };
     Ok(Spanned::new(node, span))
 }

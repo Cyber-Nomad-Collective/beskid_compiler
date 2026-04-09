@@ -29,8 +29,12 @@ pub enum PckgError {
 
 impl PckgError {
     pub(crate) fn from_api_error(status: StatusCode, body: String) -> Self {
-        let message = extract_api_message(&body)
-            .unwrap_or_else(|| status.canonical_reason().unwrap_or("request failed").to_string());
+        let message = extract_api_message(&body).unwrap_or_else(|| {
+            status
+                .canonical_reason()
+                .unwrap_or("request failed")
+                .to_string()
+        });
 
         Self::Api {
             status,
@@ -47,4 +51,3 @@ fn extract_api_message(body: &str) -> Option<String> {
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
 }
-

@@ -59,7 +59,8 @@ fn codegen_lowers_numeric_cast_intent_via_sextend_or_ireduce() {
 
 #[test]
 fn codegen_lowers_range_for_loop_with_assignment() {
-    let source = "i32 main() { i32 mut sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
+    let source =
+        "i32 main() { i32 mut sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected for loop lowering to succeed");
@@ -101,8 +102,14 @@ fn codegen_lowers_generic_iterable_for_loop() {
         .find(|f| f.name == "main")
         .expect("expected main function");
     let clif = main.function.to_string();
-    assert!(clif.contains("brif"), "expected loop branching in CLIF: {clif}");
-    assert!(clif.contains("jump"), "expected control-flow jumps in CLIF: {clif}");
+    assert!(
+        clif.contains("brif"),
+        "expected loop branching in CLIF: {clif}"
+    );
+    assert!(
+        clif.contains("jump"),
+        "expected control-flow jumps in CLIF: {clif}"
+    );
 }
 
 #[test]
@@ -216,7 +223,9 @@ fn codegen_lowers_event_subscribe_unsubscribe_and_invoke() {
         .expect("expected Emit method function");
     let emit_clif = emit_fn.function.to_string();
     assert!(
-        emit_clif.contains("event_len") && emit_clif.contains("event_get_handler") && emit_clif.contains("call_indirect"),
+        emit_clif.contains("event_len")
+            && emit_clif.contains("event_get_handler")
+            && emit_clif.contains("call_indirect"),
         "expected event invoke lowering via helper iteration and indirect calls: {emit_clif}"
     );
 }

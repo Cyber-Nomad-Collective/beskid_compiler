@@ -46,12 +46,15 @@ fn resolve_project_uses_workspace_member_for_input_path() {
     fs::write(compiler_src.join("Main.bd"), "fn Main() {}\n").expect("write entry source");
 
     let input = compiler_src.join("Main.bd");
-    let resolved = resolve_project(Some(&input), None, None, None, false, false)
-        .expect("resolve project");
+    let resolved =
+        resolve_project(Some(&input), None, None, None, false, false).expect("resolve project");
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Compiler");
-    assert_eq!(compile_plan.manifest_path, compiler_dir.join("Project.proj"));
+    assert_eq!(
+        compile_plan.manifest_path,
+        compiler_dir.join("Project.proj")
+    );
 
     let _ = fs::remove_dir_all(root);
 }
@@ -90,7 +93,10 @@ fn resolve_project_with_warn_policy_allows_unresolved_registry_dependencies() {
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "App");
     assert_eq!(compile_plan.unresolved_dependencies.len(), 1);
-    assert_eq!(compile_plan.unresolved_dependencies[0].dependency_name, "PkgCore");
+    assert_eq!(
+        compile_plan.unresolved_dependencies[0].dependency_name,
+        "PkgCore"
+    );
 
     let _ = fs::remove_dir_all(root);
 }
@@ -142,8 +148,8 @@ fn resolve_project_prefers_deepest_matching_workspace_member() {
     fs::write(cli_src.join("Main.bd"), "fn Main() {}\n").expect("write entry source");
 
     let input = cli_src.join("Main.bd");
-    let resolved = resolve_project(Some(&input), None, None, None, false, false)
-        .expect("resolve project");
+    let resolved =
+        resolve_project(Some(&input), None, None, None, false, false).expect("resolve project");
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Cli");

@@ -1,0 +1,5 @@
+i64 main() {
+    __rt_yield();
+    i64 now = __rt_now_millis();
+    return now;
+}

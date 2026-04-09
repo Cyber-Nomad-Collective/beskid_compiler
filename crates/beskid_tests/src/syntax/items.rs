@@ -1,10 +1,10 @@
 use beskid_analysis::syntax::{ContractNode, EnumVariant, FieldKind, Node, Type, Visibility};
 
+use crate::parsing::util::assert_parse_fail;
 use crate::syntax::util::{
     assert_expression_path_segments, assert_path_segments, assert_type_complex_path,
     assert_type_primitive, parse_node_ast, parse_program_ast,
 };
-use crate::parsing::util::assert_parse_fail;
 
 fn assert_string_literal_expression(
     expr: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
@@ -347,14 +347,23 @@ fn parses_attribute_declaration_ast() {
             assert_eq!(declaration.node.visibility.node, Visibility::Public);
             assert_eq!(declaration.node.name.node.name, "Builder");
             assert_eq!(declaration.node.targets.len(), 2);
-            assert_eq!(declaration.node.targets[0].node.name.node.name, "TypeDeclaration");
-            assert_eq!(declaration.node.targets[1].node.name.node.name, "MethodDeclaration");
+            assert_eq!(
+                declaration.node.targets[0].node.name.node.name,
+                "TypeDeclaration"
+            );
+            assert_eq!(
+                declaration.node.targets[1].node.name.node.name,
+                "MethodDeclaration"
+            );
             assert_eq!(declaration.node.parameters.len(), 2);
 
             let first = &declaration.node.parameters[0].node;
             assert_eq!(first.name.node.name, "suffix");
             assert!(first.default_value.is_some());
-            assert_string_literal_expression(first.default_value.as_ref().expect("default"), "Factory");
+            assert_string_literal_expression(
+                first.default_value.as_ref().expect("default"),
+                "Factory",
+            );
 
             let second = &declaration.node.parameters[1].node;
             assert_eq!(second.name.node.name, "enabled");
@@ -364,7 +373,10 @@ fn parses_attribute_declaration_ast() {
             else {
                 panic!("expected literal expression");
             };
-            assert!(matches!(literal.node.literal.node, beskid_analysis::syntax::Literal::Bool(true)));
+            assert!(matches!(
+                literal.node.literal.node,
+                beskid_analysis::syntax::Literal::Bool(true)
+            ));
         }
         _ => panic!("expected attribute declaration"),
     }

@@ -162,7 +162,8 @@ fn jit_executes_grouped_immediate_lambda_call() {
 
 #[test]
 fn jit_passes_inline_lambda_argument() {
-    let source = "i64 main() { let apply = (i64(i64) f, i64 x) => f(x); return apply((i64 n) => n, 42); }";
+    let source =
+        "i64 main() { let apply = (i64(i64) f, i64 x) => f(x); return apply((i64 n) => n, 42); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };
@@ -216,7 +217,8 @@ fn jit_infers_lambda_parameter_type_from_typed_let() {
 
 #[test]
 fn jit_infers_lambda_parameter_type_from_named_function_argument() {
-    let source = "i64 apply(i64(i64) f, i64 x) { return f(x); } i64 main() { return apply((n) => n, 42); }";
+    let source =
+        "i64 apply(i64(i64) f, i64 x) { return f(x); } i64 main() { return apply((n) => n, 42); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };
@@ -228,8 +230,7 @@ fn jit_infers_lambda_parameter_type_from_named_function_argument() {
 
 #[test]
 fn jit_executes_method_call_with_this_field_access() {
-    let source =
-        "type Counter { i64 value } impl Counter { i64 Get() { return this.value; } } i64 main() { Counter c = Counter { value: 42 }; return c.Get(); }";
+    let source = "type Counter { i64 value } impl Counter { i64 Get() { return this.value; } } i64 main() { Counter c = Counter { value: 42 }; return c.Get(); }";
     let mut engine = compile_jit(source);
 
     let value = unsafe { run_main_i64(&mut engine) };
@@ -268,7 +269,10 @@ fn jit_event_invoke_executes_subscribed_handler() {
     ";
     let mut engine = compile_jit(source);
     let value = unsafe { run_main_i64(&mut engine) };
-    assert_eq!(value, 42, "expected JIT event invoke path to execute successfully");
+    assert_eq!(
+        value, 42,
+        "expected JIT event invoke path to execute successfully"
+    );
 }
 
 #[test]
@@ -289,5 +293,8 @@ fn jit_event_unsubscribe_removes_first_match() {
     ";
     let mut engine = compile_jit(source);
     let value = unsafe { run_main_i64(&mut engine) };
-    assert_eq!(value, 42, "expected first-match unsubscribe to remove handler");
+    assert_eq!(
+        value, 42,
+        "expected first-match unsubscribe to remove handler"
+    );
 }

@@ -1,0 +1,18 @@
+contract Service { i32 run(i32 x); }
+
+type Worker : Service { i32 base }
+
+impl Worker {
+    i32 run(i32 x) {
+        return this.base + x;
+    }
+}
+
+i32 apply(Service s) {
+    return s.run(1);
+}
+
+i32 main() {
+    Worker w = Worker { base: 41 };
+    return apply(w);
+}

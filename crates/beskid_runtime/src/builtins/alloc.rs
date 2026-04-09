@@ -13,6 +13,15 @@ pub extern "C-unwind" fn alloc(size: usize, type_desc_ptr: *const u8) -> *mut u8
             }
         }
         root.runtime_state.allocation_counter += 1;
+        root.runtime_state.heap_total_bytes =
+            root.runtime_state.heap_total_bytes.saturating_add(size);
+        root.runtime_state.heap_live_bytes =
+            root.runtime_state.heap_live_bytes.saturating_add(size);
+        #[cfg(feature = "metrics")]
+        {
+            root.runtime_state.alloc_calls = root.runtime_state.alloc_calls.saturating_add(1);
+            root.runtime_state.alloc_bytes = root.runtime_state.alloc_bytes.saturating_add(size);
+        }
         root.globals.push(gc_alloc);
         ptr
     })

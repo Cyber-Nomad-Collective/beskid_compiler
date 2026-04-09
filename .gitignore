@@ -34,3 +34,7 @@ pnpm-debug.log*
 
 # macOS-specific files
 .DS_Store
+
+# e2e generated artifacts
+crates/beskid_e2e_tests/fixtures/**/obj/
+crates/beskid_e2e_tests/fixtures/smoke_project/Project.lock

@@ -166,4 +166,16 @@ define_builtins! {
         returns: Usize,
         injected: true,
     },
+        &["__test_bytes_ptr"] => {
+            symbol: "test_bytes_ptr",
+            params: [],
+            returns: U64,
+            injected: true,
+        },
+        &["__test_bytes_len"] => {
+            symbol: "test_bytes_len",
+            params: [],
+            returns: U64,
+            injected: true,
+        },
 }

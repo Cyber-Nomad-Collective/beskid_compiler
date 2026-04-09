@@ -1,0 +1,10 @@
+enum Choice { Some(i32 value), None }
+
+i32 main() {
+    Choice c = Choice::Some(7);
+    i32 result = match c {
+        Choice::Some(v) => v,
+        Choice::None => 0,
+    };
+    return result;
+}

@@ -9,8 +9,8 @@ pub mod services;
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
 pub use errors::CodegenError;
 pub use lowering::{
-    CodegenArtifact, CodegenContext, CodegenResult, Lowerable, LoweredFunction, lower_node,
-    lower_program,
+    CodegenArtifact, CodegenContext, CodegenResult, ExternImport, Lowerable, LoweredFunction,
+    lower_node, lower_program,
 };
 pub use module_emission::{DescriptorHandles, emit_string_literals, emit_type_descriptors};
 pub use services::{LoweredProgram, lower_source, render_clif};

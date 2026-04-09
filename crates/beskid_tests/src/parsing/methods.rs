@@ -1,6 +1,6 @@
 use crate::parsing::util::{assert_parse, assert_parse_fail};
-use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::Rule;
+use beskid_analysis::parsing::parsable::Parsable;
 
 #[test]
 fn parses_method_definition() {
@@ -15,7 +15,10 @@ fn rejects_legacy_receiver_qualified_method_syntax() {
 
 #[test]
 fn parses_impl_method_member_signature_shape() {
-    assert_parse(Rule::ImplMethodDefinition, "i32 len(i64 value) { return value; }");
+    assert_parse(
+        Rule::ImplMethodDefinition,
+        "i32 len(i64 value) { return value; }",
+    );
 }
 
 #[test]

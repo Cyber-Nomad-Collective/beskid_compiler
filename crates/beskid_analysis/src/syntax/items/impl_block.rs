@@ -25,7 +25,10 @@ impl Parsable for ImplBlock {
         let mut methods = Vec::new();
         for method_pair in inner {
             if method_pair.as_rule() != Rule::ImplMethodDefinition {
-                return Err(ParseError::unexpected_rule(method_pair, Some(Rule::ImplMethodDefinition)));
+                return Err(ParseError::unexpected_rule(
+                    method_pair,
+                    Some(Rule::ImplMethodDefinition),
+                ));
             }
             methods.push(MethodDefinition::parse_with_receiver(
                 method_pair,

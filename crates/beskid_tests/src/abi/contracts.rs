@@ -43,6 +43,9 @@ fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
         SYM_INTEROP_DISPATCH_UNIT,
         SYM_INTEROP_DISPATCH_PTR,
         SYM_INTEROP_DISPATCH_USIZE,
+        // Test helpers for demos (safe to export)
+        beskid_abi::SYM_TEST_BYTES_PTR,
+        beskid_abi::SYM_TEST_BYTES_LEN,
     ];
     assert_eq!(RUNTIME_EXPORT_SYMBOLS, expected);
 }
@@ -51,6 +54,17 @@ fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
 fn runtime_export_symbols_are_unique() {
     let set: HashSet<&'static str> = RUNTIME_EXPORT_SYMBOLS.iter().copied().collect();
     assert_eq!(set.len(), RUNTIME_EXPORT_SYMBOLS.len());
+}
+
+#[test]
+fn runtime_exports_cover_mvp_stdlib_symbols() {
+    let required = [SYM_STR_LEN, SYM_SYS_PRINT, SYM_SYS_PRINTLN];
+    for symbol in required {
+        assert!(
+            RUNTIME_EXPORT_SYMBOLS.contains(&symbol),
+            "runtime exports should include MVP stdlib symbol `{symbol}`"
+        );
+    }
 }
 
 #[test]

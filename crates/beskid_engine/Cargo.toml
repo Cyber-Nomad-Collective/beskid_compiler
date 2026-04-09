@@ -15,3 +15,9 @@ beskid_abi = { path = "../beskid_abi" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_runtime = { path = "../beskid_runtime" }
 anyhow = "1"
+
+[features]
+extern_dlopen = []
+
+[dev-dependencies]
+beskid_runtime = { path = "../beskid_runtime", features = ["metrics"] }

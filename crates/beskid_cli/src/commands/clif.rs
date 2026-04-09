@@ -1,5 +1,5 @@
+use crate::frontend;
 use anyhow::Result;
-use beskid_analysis::services;
 use beskid_codegen::{lower_source, render_clif};
 use clap::Args;
 use std::path::PathBuf;
@@ -31,7 +31,7 @@ pub struct ClifArgs {
 }
 
 pub fn execute(args: ClifArgs) -> Result<()> {
-    let resolved = services::resolve_input(
+    let resolved = frontend::resolve_input(
         args.input.as_ref(),
         args.project.as_ref(),
         args.target.as_deref(),
@@ -39,6 +39,8 @@ pub fn execute(args: ClifArgs) -> Result<()> {
         args.frozen,
         args.locked,
     )?;
+    frontend::validate_source(&resolved.source_path, &resolved.source)?;
+
     let lowered = lower_source(&resolved.source_path, &resolved.source, false)?;
     print!("{}", render_clif(&lowered.artifact));
 

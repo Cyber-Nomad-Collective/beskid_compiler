@@ -7,6 +7,22 @@ pub struct RuntimeState {
     pub allocation_counter: usize,
     pub handles: Vec<*mut u8>,
     pub registered_roots: Vec<*mut *mut u8>,
+    pub heap_total_bytes: usize,
+    pub heap_live_bytes: usize,
+    #[cfg(feature = "metrics")]
+    pub alloc_calls: usize,
+    #[cfg(feature = "metrics")]
+    pub alloc_bytes: usize,
+    #[cfg(feature = "metrics")]
+    pub str_concat_calls: usize,
+    #[cfg(feature = "metrics")]
+    pub str_concat_bytes: usize,
+    #[cfg(feature = "metrics")]
+    pub event_subscribe_calls: usize,
+    #[cfg(feature = "metrics")]
+    pub event_unsubscribe_calls: usize,
+    #[cfg(feature = "metrics")]
+    pub event_get_handler_calls: usize,
 }
 
 unsafe impl<'gc> Collect<'gc> for RuntimeState {
@@ -32,6 +48,29 @@ pub struct RuntimeRoot<'gc> {
 thread_local! {
     static CURRENT_MUTATION: Cell<*mut Mutation<'static>> = Cell::new(std::ptr::null_mut());
     static CURRENT_ROOT: Cell<*mut RuntimeRoot<'static>> = Cell::new(std::ptr::null_mut());
+    static RUNTIME_SCOPE_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+pub fn enter_runtime_scope() {
+    RUNTIME_SCOPE_DEPTH.with(|depth| {
+        let current = depth.get();
+        if current > 0 {
+            panic!("runtime reentrancy violation: nested arena scope is not supported");
+        }
+        depth.set(current + 1);
+    });
+}
+
+pub fn leave_runtime_scope() {
+    RUNTIME_SCOPE_DEPTH.with(|depth| {
+        let current = depth.get();
+        if current == 0 {
+            panic!(
+                "runtime scope underflow: leave_runtime_scope called without enter_runtime_scope"
+            );
+        }
+        depth.set(current - 1);
+    });
 }
 
 pub fn set_current_mutation(mc: *mut Mutation<'_>) {

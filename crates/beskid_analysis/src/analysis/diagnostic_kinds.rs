@@ -358,9 +358,7 @@ impl SemanticIssueKind {
             Self::UnknownAttributeDeclarationTarget { .. } => {
                 "unknown attribute declaration target".to_string()
             }
-            Self::AttributeTargetNotAllowed { .. } => {
-                "attribute target not allowed".to_string()
-            }
+            Self::AttributeTargetNotAllowed { .. } => "attribute target not allowed".to_string(),
             Self::VisibilityModuleNotFound { .. } => "module not found".to_string(),
             Self::VisibilityViolationImportPrivate { .. } => "visibility violation".to_string(),
             Self::UnusedImport { .. } => "unused import".to_string(),
@@ -422,9 +420,7 @@ impl SemanticIssueKind {
             Self::TypeNonBoolCondition => "condition must be boolean".to_string(),
             Self::TypeUnsupportedExpression => "unsupported expression".to_string(),
             Self::TypeInvalidTryTarget => "invalid try target".to_string(),
-            Self::TypeInvalidEventInvocationScope => {
-                "invalid event invocation scope".to_string()
-            }
+            Self::TypeInvalidEventInvocationScope => "invalid event invocation scope".to_string(),
             Self::TypeInvalidEventCapacity => "invalid event capacity".to_string(),
             Self::TypeInvalidEventSubscriptionTarget => {
                 "invalid event subscription target".to_string()
@@ -487,9 +483,7 @@ impl SemanticIssueKind {
                 format!("unknown attribute declaration target kind `{target}`")
             }
             Self::AttributeTargetNotAllowed {
-                attribute,
-                target,
-                ..
+                attribute, target, ..
             } => {
                 format!("attribute `{attribute}` cannot be applied to `{target}`")
             }

@@ -18,7 +18,8 @@ fn lock_entry_roundtrips_without_optional_fields() {
 
 #[test]
 fn lock_entry_parse_rejects_missing_required_fields() {
-    let error = ProjectLockDependencyEntry::parse_v1_line("name=Core;manifest=/tmp/Core/Project.proj")
-        .expect_err("missing required fields should fail");
+    let error =
+        ProjectLockDependencyEntry::parse_v1_line("name=Core;manifest=/tmp/Core/Project.proj")
+            .expect_err("missing required fields should fail");
     assert!(matches!(error, ProjectError::Validation(_)));
 }

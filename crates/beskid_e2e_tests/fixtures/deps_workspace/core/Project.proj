@@ -1,0 +1,14 @@
+project {
+  name = "Core"
+  version = "0.1.0"
+}
+
+target "CoreLib" {
+  kind = "Lib"
+  entry = "Core.bd"
+}
+
+dependency "Util" {
+  source = "path"
+  path = "../util"
+}

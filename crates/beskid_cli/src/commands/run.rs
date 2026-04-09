@@ -1,5 +1,5 @@
+use crate::frontend;
 use anyhow::Result;
-use beskid_analysis::services;
 use beskid_engine::services::run_entrypoint;
 use clap::Args;
 use std::path::PathBuf;
@@ -35,7 +35,7 @@ pub struct RunArgs {
 }
 
 pub fn execute(args: RunArgs) -> Result<()> {
-    let resolved = services::resolve_input(
+    let resolved = frontend::resolve_input(
         args.input.as_ref(),
         args.project.as_ref(),
         args.target.as_deref(),
@@ -43,6 +43,8 @@ pub fn execute(args: RunArgs) -> Result<()> {
         args.frozen,
         args.locked,
     )?;
+    frontend::validate_source(&resolved.source_path, &resolved.source)?;
+
     let output = run_entrypoint(&resolved.source_path, &resolved.source, &args.entrypoint)?;
     println!("{output}");
 

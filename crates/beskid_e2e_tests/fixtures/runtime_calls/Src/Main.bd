@@ -1,0 +1,20 @@
+i32 main() {
+    __sys_println("ok");
+    i32 len = __str_len("hello");
+    if len != 5 {
+        return 21;
+    }
+
+    i32 ptr = __array_new(8, 3);
+    if ptr == 0 {
+        return 22;
+    }
+
+    let add = (i32 x, i32 y) => x + y;
+    i32 sum = add(20, 22);
+    if sum != 42 {
+        return 23;
+    }
+
+    return 0;
+}

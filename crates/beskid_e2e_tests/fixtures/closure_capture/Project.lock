@@ -1,0 +1,4 @@
+# Project.lock v1
+root_manifest=/home/fp-pmikstacki/Private/pecan/compiler/crates/beskid_e2e_tests/fixtures/closure_capture/Project.proj
+project_name=ClosureCapture
+dependencies:

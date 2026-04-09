@@ -53,9 +53,7 @@ impl Lowerable for Spanned<syntax::Expression> {
             syntax::Expression::Grouped(grouped_expr) => {
                 HirExpressionNode::GroupedExpression(grouped_expr.lower())
             }
-            syntax::Expression::Try(try_expr) => {
-                HirExpressionNode::TryExpression(try_expr.lower())
-            }
+            syntax::Expression::Try(try_expr) => HirExpressionNode::TryExpression(try_expr.lower()),
         };
         Spanned::new(node, self.span)
     }

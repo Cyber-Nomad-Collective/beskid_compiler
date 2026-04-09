@@ -59,11 +59,7 @@ fn invalid_conformance_target_issue_contract_is_stable() {
     assert_eq!(issue.code(), "E1607");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "invalid conformance target");
-    assert!(
-        issue
-            .message()
-            .contains("`NotContract` is not a contract")
-    );
+    assert!(issue.message().contains("`NotContract` is not a contract"));
     assert!(issue.help().is_some());
 }
 
@@ -98,7 +94,11 @@ fn duplicate_attribute_target_issue_contract_is_stable() {
 
     assert_eq!(issue.code(), "E1806");
     assert_eq!(issue.severity(), Severity::Error);
-    assert!(issue.message().contains("duplicate target `TypeDeclaration`"));
+    assert!(
+        issue
+            .message()
+            .contains("duplicate target `TypeDeclaration`")
+    );
     assert_eq!(
         issue.help().as_deref(),
         Some("target already listed at line 3, column 4")

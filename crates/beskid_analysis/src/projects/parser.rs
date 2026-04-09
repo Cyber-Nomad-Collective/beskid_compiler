@@ -236,7 +236,9 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
     })
 }
 
-fn build_workspace_manifest(parsed: ParsedWorkspaceBlocks) -> Result<WorkspaceManifest, ProjectError> {
+fn build_workspace_manifest(
+    parsed: ParsedWorkspaceBlocks,
+) -> Result<WorkspaceManifest, ProjectError> {
     let workspace = parsed.workspace.ok_or_else(|| {
         ProjectError::Validation("missing required `workspace` block".to_string())
     })?;

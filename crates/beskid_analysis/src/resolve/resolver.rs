@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use crate::hir::{
     HirBlock, HirContractNode, HirEnumPath, HirExpressionNode, HirItem, HirPath, HirPattern,
-    HirProgram, HirStatementNode, HirStructLiteralField, HirType,
-    HirVisibility,
+    HirProgram, HirStatementNode, HirStructLiteralField, HirType, HirVisibility,
 };
 use crate::syntax::{self, Spanned};
 
@@ -299,11 +298,10 @@ impl Resolver {
                             conformance.span,
                         );
                     } else if let Some(item) = self.items.get(conformance_item_id.0) {
-                        self.errors
-                            .push(ResolveError::InvalidConformanceTarget {
-                                name: item.name.clone(),
-                                span: conformance.span,
-                            });
+                        self.errors.push(ResolveError::InvalidConformanceTarget {
+                            name: item.name.clone(),
+                            span: conformance.span,
+                        });
                     }
                 }
                 for field in &def.node.fields {
@@ -547,10 +545,18 @@ impl Resolver {
                     .insert_value(path.span, ResolvedValue::Item(item));
             }
             ModulePathLookup::ModuleMissing => {
-                self.errors.push(ResolveError::UnknownModulePath {
-                    path: segments[..segments.len() - 1].join("::"),
-                    span: path.span,
-                });
+                // Fallback: if the first segment names an item in the current scope (e.g., a Contract),
+                // treat the whole path as a value referring to that item. This enables `C.getpid()`
+                // forms to be handled later by the type checker and codegen as contract-as-namespace calls.
+                if let Some(item) = self.resolve_item_in_scope(&segments[0]) {
+                    self.tables
+                        .insert_value(path.span, ResolvedValue::Item(item));
+                } else {
+                    self.errors.push(ResolveError::UnknownModulePath {
+                        path: segments[..segments.len() - 1].join("::"),
+                        span: path.span,
+                    });
+                }
             }
             ModulePathLookup::NameMissing { module_path, name } => {
                 self.errors.push(ResolveError::UnknownValueInModule {

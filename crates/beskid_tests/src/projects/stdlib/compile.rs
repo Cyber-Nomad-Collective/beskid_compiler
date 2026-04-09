@@ -9,7 +9,8 @@ use super::{expected_stdlib_files, stdlib_root};
 #[test]
 fn checked_in_stdlib_template_builds_compile_plan() {
     let manifest_path = stdlib_root().join("Project.proj");
-    let plan = build_compile_plan(&manifest_path, Some("StdLib")).expect("stdlib plan should build");
+    let plan =
+        build_compile_plan(&manifest_path, Some("StdLib")).expect("stdlib plan should build");
     let expected_root = stdlib_root()
         .join("src")
         .canonicalize()
@@ -56,54 +57,53 @@ fn checked_in_stdlib_prelude_lowers_to_codegen_artifact() {
 }
 
 #[test]
-fn checked_in_stdlib_query_contracts_match_parser_supported_baseline() {
+fn checked_in_stdlib_prelude_exports_mvp_modules() {
     let root = stdlib_root().join("src");
-    let contracts = fs::read_to_string(root.join("Query/Contracts.bd")).expect("read query contracts");
-    let operators = fs::read_to_string(root.join("Query/Operators.bd")).expect("read query operators");
+    let prelude = fs::read_to_string(root.join("Prelude.bd")).expect("read prelude");
 
     assert!(
-        contracts.contains("pub enum Option"),
-        "Query.Contracts should define Option"
+        prelude.contains("pub mod Core.Results;"),
+        "Prelude should export Core.Results"
     );
     assert!(
-        contracts.contains("pub contract Iterator"),
-        "Query.Contracts should define Iterator"
+        prelude.contains("pub mod Core.ErrorHandling;"),
+        "Prelude should export Core.ErrorHandling"
     );
     assert!(
-        operators.contains("Query.Contracts.Option first"),
-        "QueryState should track first-value option"
+        prelude.contains("pub mod Core.String;"),
+        "Prelude should export Core.String"
     );
     assert!(
-        operators.contains("Query.Contracts.HasValue(state.first)"),
-        "First() should consult tracked first-value option"
+        prelude.contains("pub mod System.IO;"),
+        "Prelude should export System.IO"
     );
 }
 
 #[test]
-fn checked_in_stdlib_system_baseline_exports_environment_and_process_contracts() {
+fn checked_in_stdlib_mvp_modules_reference_runtime_backed_symbols() {
     let root = stdlib_root().join("src");
-    let environment =
-        fs::read_to_string(root.join("System/Environment.bd")).expect("read system environment");
-    let process = fs::read_to_string(root.join("System/Process.bd")).expect("read system process");
+    let results_mod = fs::read_to_string(root.join("Core/Results.bd")).expect("read Core.Results");
+    let string_mod = fs::read_to_string(root.join("Core/String.bd")).expect("read Core.String");
+    let io_mod = fs::read_to_string(root.join("System/IO.bd")).expect("read System.IO");
 
     assert!(
-        environment.contains("pub enum EnvironmentError"),
-        "Environment should expose typed error enum"
+        results_mod.contains("pub enum Result"),
+        "Core.Results should define Result enum"
     );
     assert!(
-        environment.contains("pub Core.Results.Result<string, EnvironmentError> Get("),
-        "Environment.Get should return typed Result"
+        results_mod.contains("Ok(") && results_mod.contains("Error("),
+        "Core.Results should expose Ok/Error variants"
     );
     assert!(
-        environment.contains("pub Query.Contracts.Option TryGet("),
-        "Environment.TryGet should return Option<string>"
+        string_mod.contains("__str_len"),
+        "Core.String should use __str_len runtime builtin"
     );
     assert!(
-        process.contains("pub i32 Id()"),
-        "Process should expose Id baseline"
+        io_mod.contains("__sys_print("),
+        "System.IO.Print should use __sys_print runtime builtin"
     );
     assert!(
-        process.contains("pub unit Exit(i32 code)"),
-        "Process should expose Exit baseline"
+        io_mod.contains("__sys_println("),
+        "System.IO.Println should use __sys_println runtime builtin"
     );
 }

@@ -3,8 +3,7 @@ use crate::hir::{
     HirBinaryExpression, HirBinaryOp, HirCallExpression, HirEnumConstructorExpression,
     HirExpressionNode, HirLambdaExpression, HirLiteral, HirMatchArm, HirMatchExpression,
     HirMemberExpression, HirPath, HirPathExpression, HirPattern, HirPrimitiveType,
-    HirStructLiteralExpression,
-    HirUnaryExpression, HirUnaryOp,
+    HirStructLiteralExpression, HirUnaryExpression, HirUnaryOp,
 };
 use crate::resolve::{ItemKind, ResolvedValue};
 use crate::syntax::Spanned;
@@ -53,7 +52,8 @@ impl<'a> TypeContext<'a> {
                             if target_is_event_member {
                                 return Some(target);
                             }
-                            if matches!(self.type_table.get(value), Some(TypeInfo::Function { .. })) {
+                            if matches!(self.type_table.get(value), Some(TypeInfo::Function { .. }))
+                            {
                                 self.errors.push(TypeError::InvalidEventSubscriptionTarget {
                                     span: assign.span,
                                 });
@@ -72,7 +72,8 @@ impl<'a> TypeContext<'a> {
                             if target_is_event_member {
                                 return Some(target);
                             }
-                            if matches!(self.type_table.get(value), Some(TypeInfo::Function { .. })) {
+                            if matches!(self.type_table.get(value), Some(TypeInfo::Function { .. }))
+                            {
                                 self.errors.push(TypeError::InvalidEventSubscriptionTarget {
                                     span: assign.span,
                                 });
@@ -112,11 +113,15 @@ impl<'a> TypeContext<'a> {
         type_id
     }
 
-    fn type_try_expression(&mut self, try_expr: &Spanned<crate::hir::HirTryExpression>) -> Option<TypeId> {
+    fn type_try_expression(
+        &mut self,
+        try_expr: &Spanned<crate::hir::HirTryExpression>,
+    ) -> Option<TypeId> {
         let target_type = self.type_expression(&try_expr.node.expr)?;
         let Some(result_item_id) = self.item_id_for_name("Result", ItemKind::Enum) else {
-            self.errors
-                .push(TypeError::InvalidTryTarget { span: try_expr.span });
+            self.errors.push(TypeError::InvalidTryTarget {
+                span: try_expr.span,
+            });
             return None;
         };
 
@@ -125,37 +130,41 @@ impl<'a> TypeContext<'a> {
                 if let Some(payload_type) = args.first().copied() {
                     Some(payload_type)
                 } else {
-                    self.errors
-                        .push(TypeError::InvalidTryTarget { span: try_expr.span });
+                    self.errors.push(TypeError::InvalidTryTarget {
+                        span: try_expr.span,
+                    });
                     None
                 }
             }
             Some(TypeInfo::Named(item_id)) if item_id == result_item_id => {
-                let ok_fields = self
-                    .enum_variants_ordered
-                    .get(&result_item_id)
-                    .and_then(|variants| {
-                        variants
-                            .iter()
-                            .find(|(name, _)| name == "Ok")
-                            .map(|(_, fields)| fields.clone())
-                    });
+                let ok_fields =
+                    self.enum_variants_ordered
+                        .get(&result_item_id)
+                        .and_then(|variants| {
+                            variants
+                                .iter()
+                                .find(|(name, _)| name == "Ok")
+                                .map(|(_, fields)| fields.clone())
+                        });
                 let Some(fields) = ok_fields else {
-                    self.errors
-                        .push(TypeError::InvalidTryTarget { span: try_expr.span });
+                    self.errors.push(TypeError::InvalidTryTarget {
+                        span: try_expr.span,
+                    });
                     return None;
                 };
                 if fields.len() == 1 {
                     Some(fields[0])
                 } else {
-                    self.errors
-                        .push(TypeError::InvalidTryTarget { span: try_expr.span });
+                    self.errors.push(TypeError::InvalidTryTarget {
+                        span: try_expr.span,
+                    });
                     None
                 }
             }
             _ => {
-                self.errors
-                    .push(TypeError::InvalidTryTarget { span: try_expr.span });
+                self.errors.push(TypeError::InvalidTryTarget {
+                    span: try_expr.span,
+                });
                 None
             }
         }
@@ -166,14 +175,14 @@ impl<'a> TypeContext<'a> {
         lambda: &Spanned<HirLambdaExpression>,
         expected_function: Option<TypeId>,
     ) -> Option<TypeId> {
-        let expected_signature = expected_function.and_then(|type_id| match self.type_table.get(type_id)
-        {
-            Some(TypeInfo::Function {
-                params,
-                return_type,
-            }) => Some((params.clone(), *return_type, type_id)),
-            _ => None,
-        });
+        let expected_signature =
+            expected_function.and_then(|type_id| match self.type_table.get(type_id) {
+                Some(TypeInfo::Function {
+                    params,
+                    return_type,
+                }) => Some((params.clone(), *return_type, type_id)),
+                _ => None,
+            });
 
         let mut params = Vec::with_capacity(lambda.node.parameters.len());
         let mut missing = false;
@@ -312,11 +321,14 @@ impl<'a> TypeContext<'a> {
                 && let Some(receiver_type) = self.local_types.get(local_id).copied()
             {
                 let method_name = segments[1].node.name.node.name.as_str();
-                if let Some(method_item_id) = self.method_item_for_receiver(receiver_type, method_name)
+                if let Some(method_item_id) =
+                    self.method_item_for_receiver(receiver_type, method_name)
                 {
-                    let Some(signature) = self.function_signatures.get(&method_item_id).cloned() else {
-                        self.errors
-                            .push(TypeError::UnknownCallTarget { span: call.node.callee.span });
+                    let Some(signature) = self.function_signatures.get(&method_item_id).cloned()
+                    else {
+                        self.errors.push(TypeError::UnknownCallTarget {
+                            span: call.node.callee.span,
+                        });
                         return None;
                     };
 
@@ -375,15 +387,106 @@ impl<'a> TypeContext<'a> {
                     return Some(signature.return_type);
                 }
             }
+
+            // Contract-as-namespace call using a dotted PathExpression: `C.getpid(...)`
+            if segments.len() >= 2
+                && let Some(ResolvedValue::Item(contract_item_id)) = resolved
+            {
+                let method_name = segments[1].node.name.node.name.as_str();
+                if let Some(signature) = self
+                    .contract_signatures
+                    .get(&(*contract_item_id, method_name.to_string()))
+                    .cloned()
+                {
+                    if call.node.args.len() != signature.params.len() {
+                        self.errors.push(TypeError::CallArityMismatch {
+                            span: call.span,
+                            expected: signature.params.len(),
+                            actual: call.node.args.len(),
+                        });
+                        return Some(signature.return_type);
+                    }
+                    for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+                        if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                            self.require_same_type(arg.span, *expected, actual);
+                        }
+                    }
+                    let receiver_type = self
+                        .named_types
+                        .get(contract_item_id)
+                        .copied()
+                        .unwrap_or_else(|| {
+                            self.type_table.intern(TypeInfo::Named(*contract_item_id))
+                        });
+                    self.call_kinds.insert(
+                        call.span,
+                        CallLoweringKind::ContractDispatch {
+                            contract_item_id: *contract_item_id,
+                            receiver_source: MethodReceiverSource::Expression(
+                                path_expr.node.path.span,
+                            ),
+                            receiver_type,
+                        },
+                    );
+                    return Some(signature.return_type);
+                }
+            }
         }
 
         if let HirExpressionNode::MemberExpression(member) = &call.node.callee.node {
+            // Special-case: contract-as-namespace calls like `C.getpid()` where `C` is a contract item.
+            if let HirExpressionNode::PathExpression(path_expr) = &member.node.target.node {
+                if let Some(super::super::super::resolve::ResolvedValue::Item(item_id)) = self
+                    .resolution
+                    .tables
+                    .resolved_values
+                    .get(&path_expr.node.path.span)
+                {
+                    let method_name = member.node.member.node.name.as_str().to_string();
+                    if let Some(signature) = self
+                        .contract_signatures
+                        .get(&(*item_id, method_name.clone()))
+                        .cloned()
+                    {
+                        if call.node.args.len() != signature.params.len() {
+                            self.errors.push(TypeError::CallArityMismatch {
+                                span: call.span,
+                                expected: signature.params.len(),
+                                actual: call.node.args.len(),
+                            });
+                            return Some(signature.return_type);
+                        }
+                        for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+                            if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                                self.require_same_type(arg.span, *expected, actual);
+                            }
+                        }
+                        let receiver_type =
+                            self.named_types.get(item_id).copied().unwrap_or_else(|| {
+                                self.type_table.intern(TypeInfo::Named(*item_id))
+                            });
+                        self.call_kinds.insert(
+                            call.span,
+                            CallLoweringKind::ContractDispatch {
+                                contract_item_id: *item_id,
+                                receiver_source: MethodReceiverSource::Expression(
+                                    member.node.target.span,
+                                ),
+                                receiver_type,
+                            },
+                        );
+                        return Some(signature.return_type);
+                    }
+                }
+            }
+
             let target_type = self.type_expression(&member.node.target)?;
             let method_name = member.node.member.node.name.as_str();
             if let Some(method_item_id) = self.method_item_for_receiver(target_type, method_name) {
                 let Some(signature) = self.function_signatures.get(&method_item_id).cloned() else {
-                    self.errors
-                        .push(TypeError::UnknownCallTarget { span: call.node.callee.span });
+                    self.errors.push(TypeError::UnknownCallTarget {
+                        span: call.node.callee.span,
+                    });
                     return None;
                 };
 
@@ -997,8 +1100,7 @@ impl<'a> TypeContext<'a> {
                 if let Some(enum_type) = enum_type {
                     let compatible_enum = enum_type == scrutinee_type
                         || (self.named_item_id(enum_type).is_some()
-                            && self.named_item_id(enum_type)
-                                == self.named_item_id(scrutinee_type));
+                            && self.named_item_id(enum_type) == self.named_item_id(scrutinee_type));
                     if !compatible_enum {
                         self.errors.push(TypeError::TypeMismatch {
                             span: pattern.span,
@@ -1064,8 +1166,7 @@ impl<'a> TypeContext<'a> {
                 if let Some(enum_type) = enum_type {
                     let compatible_enum = enum_type == expected_type
                         || (self.named_item_id(enum_type).is_some()
-                            && self.named_item_id(enum_type)
-                                == self.named_item_id(expected_type));
+                            && self.named_item_id(enum_type) == self.named_item_id(expected_type));
                     if !compatible_enum {
                         self.require_same_type(pattern.span, expected_type, enum_type);
                     }

@@ -1,3 +1,4 @@
+mod analyze_program;
 mod diagnostics;
 mod hir_query;
 mod legality;
