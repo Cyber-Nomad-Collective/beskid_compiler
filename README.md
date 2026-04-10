@@ -39,12 +39,12 @@ Opinionated compiler project. Not finished. Not apologizing.
 
 The **standard library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/standard_library/`. The CLI embeds that tree at build time (`crates/beskid_cli/build.rs`).
 
-Clone with submodules:
+Clone with submodules (required for the embedded standard library):
 
 ```bash
 git clone --recurse-submodules https://github.com/Cyber-Nomad-Collective/beskid_compiler.git
-# or, after a shallow clone:
+# or, after a clone without submodules:
 git submodule update --init --recursive
 ```
 
-If you use the compiler inside a monorepo that already has `corelib` next to `compiler/` (e.g. [pecan](https://github.com/Cyber-Nomad-Collective/beskid)), the build also picks up `../../../corelib/standard_library` when the nested submodule is missing. Override anytime with `BESKID_STDLIB_SOURCE` (absolute path to `standard_library`).
+In an aggregate repo that vendors this tree as a submodule (e.g. [pecan](https://github.com/Cyber-Nomad-Collective/beskid)), initialize **recursively** so `compiler/corelib` is populated: `git submodule update --init --recursive` (or clone with `--recurse-submodules`). Override the stdlib path with `BESKID_STDLIB_SOURCE` if needed.

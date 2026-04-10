@@ -9,17 +9,13 @@ fn main() {
     if let Ok(override_path) = std::env::var("BESKID_STDLIB_SOURCE") {
         candidates.push(PathBuf::from(override_path));
     }
-    candidates.extend([
-        manifest_dir.join("../../corelib/standard_library"),
-        manifest_dir.join("../../../corelib/standard_library"),
-        manifest_dir.join("../../../../corelib/standard_library"),
-    ]);
+    candidates.push(manifest_dir.join("../../corelib/standard_library"));
 
     let stdlib_dir = candidates.into_iter().find(|p| p.is_dir()).unwrap_or_else(|| {
         panic!(
             "beskid_cli: standard library sources not found. Expected `../../corelib/standard_library` \
-             (compiler repo with `corelib` submodule) or `../../../corelib/standard_library` \
-             (monorepo). Set BESKID_STDLIB_SOURCE to an absolute path to override. \
+             (the `corelib` Git submodule at the compiler repository root). \
+             Set BESKID_STDLIB_SOURCE to an absolute path to override. \
              Hint: `git submodule update --init --recursive` from the compiler repo root."
         )
     });

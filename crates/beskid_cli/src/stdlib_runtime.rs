@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use include_dir::{Dir, include_dir};
 use semver::Version;
 
-// Populated by build.rs from ../../corelib or ../../../corelib (see build.rs).
+// Populated by build.rs from ../../corelib/standard_library (see build.rs).
 static EMBEDDED_STDLIB: Dir<'_> = include_dir!("$OUT_DIR/embedded_stdlib");
 
 pub struct StdlibProvisioning {
