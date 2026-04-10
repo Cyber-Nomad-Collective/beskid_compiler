@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 pub(super) fn stdlib_root() -> PathBuf {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let candidates = [
+        manifest_dir.join("../../corelib/standard_library"),
         manifest_dir.join("../../../corelib/standard_library"),
         manifest_dir.join("../../../../corelib/standard_library"),
     ];

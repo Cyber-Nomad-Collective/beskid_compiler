@@ -5,9 +5,8 @@ use anyhow::{Context, Result};
 use include_dir::{Dir, include_dir};
 use semver::Version;
 
-// Canonical checked-in stdlib source lives in corelib submodule.
-static EMBEDDED_STDLIB: Dir<'_> =
-    include_dir!("$CARGO_MANIFEST_DIR/../../../corelib/standard_library");
+// Populated by build.rs from ../../corelib or ../../../corelib (see build.rs).
+static EMBEDDED_STDLIB: Dir<'_> = include_dir!("$OUT_DIR/embedded_stdlib");
 
 pub struct StdlibProvisioning {
     pub root: PathBuf,
