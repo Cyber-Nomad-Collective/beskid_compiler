@@ -34,3 +34,17 @@ IoC is a good direction, but it belongs in the **compiler**, not in a forest of 
 ### Status
 
 Opinionated compiler project. Not finished. Not apologizing.
+
+### Building
+
+The **standard library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/standard_library/`. The CLI embeds that tree at build time (`crates/beskid_cli/build.rs`).
+
+Clone with submodules:
+
+```bash
+git clone --recurse-submodules https://github.com/Cyber-Nomad-Collective/beskid_compiler.git
+# or, after a shallow clone:
+git submodule update --init --recursive
+```
+
+If you use the compiler inside a monorepo that already has `corelib` next to `compiler/` (e.g. [pecan](https://github.com/Cyber-Nomad-Collective/beskid)), the build also picks up `../../../corelib/standard_library` when the nested submodule is missing. Override anytime with `BESKID_STDLIB_SOURCE` (absolute path to `standard_library`).
