@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     tags:
-      - 'v*'
+      - "v*"
   pull_request:
 
 jobs:
@@ -16,8 +16,11 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Cargo check workspace
-        run: cargo check --workspace
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s workspace_check
 
   test:
     runs-on: ubuntu-latest
@@ -27,8 +30,11 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Tests
-        run: cargo test -p beskid_tests
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s test
 
   abi-contracts:
     runs-on: ubuntu-latest
@@ -38,8 +44,11 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: ABI contract tests
-        run: "cargo test -p beskid_tests abi::contracts::"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s abi_contracts
 
   bench-compile:
     runs-on: ubuntu-latest
@@ -49,8 +58,11 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Runtime benches compile
-        run: cargo bench -p beskid_runtime --no-run
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s bench_compile
 
   e2e-linux:
     runs-on: ubuntu-latest
@@ -60,26 +72,25 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Build Beskid CLI
-        run: cargo build -p beskid_cli
-      - name: AOT E2E tests (Linux)
-        run: cargo test -p beskid_e2e_tests
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s e2e_linux
 
   runtime-asan-linux:
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: "-Zsanitizer=address"
-      RUSTDOCFLAGS: "-Zsanitizer=address"
-      RUSTC_BOOTSTRAP: "1"
-      ASAN_OPTIONS: "detect_leaks=0"
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      - name: Runtime tests under ASan
-        run: "cargo test -p beskid_tests runtime::"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s runtime_asan_linux
 
   extern-engine-security:
     runs-on: ubuntu-latest
@@ -89,8 +100,11 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Extern dlopen security sequences
-        run: cargo test -p beskid_engine --features extern_dlopen security_allow_deny_sequences
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s extern_engine_security
 
   e2e-macos-smoke:
     runs-on: macos-latest
@@ -100,10 +114,11 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Build Beskid CLI
-        run: cargo build -p beskid_cli
-      - name: Cross-platform CLI E2E
-        run: cargo test -p beskid_e2e_tests cli_cross_platform
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s e2e_macos_smoke
 
   e2e-windows-smoke:
     runs-on: windows-latest
@@ -113,10 +128,11 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Build Beskid CLI
-        run: cargo build -p beskid_cli
-      - name: Cross-platform CLI E2E
-        run: cargo test -p beskid_e2e_tests cli_cross_platform
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s e2e_windows_smoke
 
   version:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
@@ -127,69 +143,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Set version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          version = os.environ["VERSION"]
-          path = Path("crates/beskid_cli/Cargo.toml")
-          content = path.read_text(encoding="utf-8")
-          content, count = re.subn(
-              r'(?m)^version\s*=\s*"[^"]+"\s*$',
-              f'version = "{version}"',
-              content,
-              count=1,
-          )
-          if count != 1:
-              raise RuntimeError("failed to update version in crates/beskid_cli/Cargo.toml")
-          path.write_text(content, encoding="utf-8")
-          PY
-
-      - name: Bump patch version
-        if: github.ref == 'refs/heads/main'
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-
-          path = Path("crates/beskid_cli/Cargo.toml")
-          content = path.read_text(encoding="utf-8")
-          match = re.search(r'(?m)^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"\s*$', content)
-          if not match:
-              raise RuntimeError("unable to parse semver in crates/beskid_cli/Cargo.toml")
-
-          major, minor, patch = map(int, match.groups())
-          next_version = f"{major}.{minor}.{patch + 1}"
-          content = (
-              content[: match.start()]
-              + f'version = "{next_version}"'
-              + content[match.end() :]
-          )
-          path.write_text(content, encoding="utf-8")
-          PY
-
-      - name: Read version
-        id: version
-        shell: bash
-        run: |
-          VERSION=$(python3 - <<'PY'
-          import tomllib
-          with open('crates/beskid_cli/Cargo.toml', 'rb') as f:
-              data = tomllib.load(f)
-          print(data['package']['version'])
-          PY
-          )
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - id: version
+        run: python -m nox --non-interactive -s compute_version
 
   release-cli:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
@@ -224,68 +183,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
       - uses: Swatinem/rust-cache@v2
-
-      - name: Apply version
-        shell: bash
-        run: |
-          VERSION="${{ needs.version.outputs.version }}"
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          version = os.environ["VERSION"]
-          path = Path("crates/beskid_cli/Cargo.toml")
-          content = path.read_text(encoding="utf-8")
-          content, count = re.subn(
-              r'(?m)^version\s*=\s*"[^"]+"\s*$',
-              f'version = "{version}"',
-              content,
-              count=1,
-          )
-          if count != 1:
-              raise RuntimeError("failed to apply version in crates/beskid_cli/Cargo.toml")
-          path.write_text(content, encoding="utf-8")
-          PY
-
-      - name: Build CLI
-        run: cargo build -p beskid_cli --release --target ${{ matrix.target }}
-
-      - name: Rename binary
-        shell: bash
-        run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            mv target/${{ matrix.target }}/release/beskid_cli.exe ${{ matrix.asset_name }}
-          else
-            mv target/${{ matrix.target }}/release/beskid_cli ${{ matrix.asset_name }}
-          fi
-
-      - name: Upload to SeaweedFS (versioned)
-        uses: Noelware/s3-action@v2
+      - uses: actions/setup-python@v5
         with:
-          access-key-id: ${{ secrets.SEAWEEDFS_ACCESS_KEY }}
-          secret-key: ${{ secrets.SEAWEEDFS_SECRET_KEY }}
-          endpoint: ${{ env.SEAWEEDFS_ENDPOINT }}
-          region: us-east-1
-          bucket: releases
-          prefix: /releases/${{ needs.version.outputs.version }}
-          files: |
-            ${{ matrix.asset_name }}
-
-      - name: Upload to SeaweedFS (latest)
-        uses: Noelware/s3-action@v2
-        with:
-          access-key-id: ${{ secrets.SEAWEEDFS_ACCESS_KEY }}
-          secret-key: ${{ secrets.SEAWEEDFS_SECRET_KEY }}
-          endpoint: ${{ env.SEAWEEDFS_ENDPOINT }}
-          region: us-east-1
-          bucket: releases
-          prefix: /releases/latest
-          files: |
-            ${{ matrix.asset_name }}
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - name: Build and upload CLI
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          MATRIX_TARGET: ${{ matrix.target }}
+          MATRIX_ASSET_NAME: ${{ matrix.asset_name }}
+          SEAWEEDFS_ACCESS_KEY: ${{ secrets.SEAWEEDFS_ACCESS_KEY }}
+          SEAWEEDFS_SECRET_KEY: ${{ secrets.SEAWEEDFS_SECRET_KEY }}
+        run: python -m nox --non-interactive -s release_cli
