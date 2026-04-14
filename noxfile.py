@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 _ASAN = {
-    "RUSTFLAGS": "-Zsanitizer=address",
-    "RUSTDOCFLAGS": "-Zsanitizer=address",
+    # Keep sanitizer flags target-scoped so host proc-macro deps remain loadable.
+    "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS": "-Zsanitizer=address",
     "RUSTC_BOOTSTRAP": "1",
     "ASAN_OPTIONS": "detect_leaks=0",
 }
@@ -21,7 +21,8 @@ _ASAN = {
 
 def _cargo(session: nox.Session, *args: str, env: dict[str, str] | None = None) -> None:
     merged = {**os.environ, **(env or {})}
-    session.run("cargo", *args, external=True, cwd=str(ROOT), env=merged)
+    with session.chdir(str(ROOT)):
+        session.run("cargo", *args, external=True, env=merged)
 
 
 @nox.session(python=False, name="workspace_check")
@@ -52,7 +53,16 @@ def e2e_linux(session: nox.Session) -> None:
 
 @nox.session(python=False, name="runtime_asan_linux")
 def runtime_asan_linux(session: nox.Session) -> None:
-    _cargo(session, "test", "-p", "beskid_tests", "runtime::", env=_ASAN)
+    _cargo(
+        session,
+        "test",
+        "-p",
+        "beskid_tests",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "runtime::",
+        env=_ASAN,
+    )
 
 
 @nox.session(python=False, name="extern_engine_security")
@@ -82,10 +92,12 @@ def e2e_windows_smoke(session: nox.Session) -> None:
 
 @nox.session(python="3.12", name="compute_version")
 def compute_version(session: nox.Session) -> None:
-    session.run("python", "-m", "ci.version_job", cwd=str(ROOT))
+    with session.chdir(str(ROOT)):
+        session.run("python", "-m", "ci.version_job")
 
 
 @nox.session(python="3.12", name="release_cli")
 def release_cli(session: nox.Session) -> None:
     session.install("-r", str(ROOT / "ci" / "requirements.txt"))
-    session.run("python", "-m", "ci.release_cli", cwd=str(ROOT))
+    with session.chdir(str(ROOT)):
+        session.run("python", "-m", "ci.release_cli")
