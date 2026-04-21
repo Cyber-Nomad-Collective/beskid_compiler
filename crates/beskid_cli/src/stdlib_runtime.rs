@@ -1,5 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use include_dir::{Dir, include_dir};
@@ -26,7 +28,7 @@ pub fn ensure_bundled_stdlib() -> Result<StdlibProvisioning> {
 
     if should_install {
         if target_root.exists() {
-            fs::remove_dir_all(&target_root)
+            remove_dir_all_retry(&target_root)
                 .with_context(|| format!("remove old stdlib at {}", target_root.display()))?;
         }
         fs::create_dir_all(&target_root)
@@ -42,6 +44,26 @@ pub fn ensure_bundled_stdlib() -> Result<StdlibProvisioning> {
         version: bundled_version.to_string(),
         updated: should_install,
     })
+}
+
+fn remove_dir_all_retry(path: &Path) -> Result<()> {
+    let mut last_err: Option<std::io::Error> = None;
+    for _ in 0..5 {
+        match fs::remove_dir_all(path) {
+            Ok(()) => return Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+                last_err = Some(err);
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    if let Some(err) = last_err {
+        return Err(err.into());
+    }
+    Ok(())
 }
 
 fn stdlib_install_root() -> Result<PathBuf> {
