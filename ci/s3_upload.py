@@ -37,8 +37,15 @@ def upload_release_artifacts(
 def _put_object(*, client: "boto3.client", local_file: Path, bucket: str, key: str) -> None:
     """Upload as a single-part object to avoid multipart permission issues."""
     try:
-        with local_file.open("rb") as artifact:
-            client.put_object(Bucket=bucket, Key=key, Body=artifact)
+        # SeaweedFS gateways can terminate TLS on streamed/chunked payload uploads.
+        # Sending explicit bytes with ContentLength avoids chunked transfer mode.
+        payload = local_file.read_bytes()
+        client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=payload,
+            ContentLength=len(payload),
+        )
     except ClientError as exc:
         code = exc.response.get("Error", {}).get("Code", "Unknown")
         msg = exc.response.get("Error", {}).get("Message", str(exc))
