@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import boto3
+from botocore.exceptions import ClientError
 from botocore.client import Config
 
 
@@ -27,7 +28,24 @@ def upload_release_artifacts(
         region_name=region,
         config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
-    version_key = f"releases/{version}/{remote_filename}"
-    latest_key = f"releases/latest/{remote_filename}"
-    client.upload_file(str(local_file), bucket, version_key)
-    client.upload_file(str(local_file), bucket, latest_key)
+    version_key = f"{version}/{remote_filename}"
+    latest_key = f"latest/{remote_filename}"
+    _put_object(client=client, local_file=local_file, bucket=bucket, key=version_key)
+    _put_object(client=client, local_file=local_file, bucket=bucket, key=latest_key)
+
+
+def _put_object(*, client: "boto3.client", local_file: Path, bucket: str, key: str) -> None:
+    """Upload as a single-part object to avoid multipart permission issues."""
+    try:
+        with local_file.open("rb") as artifact:
+            client.put_object(Bucket=bucket, Key=key, Body=artifact)
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "Unknown")
+        msg = exc.response.get("Error", {}).get("Message", str(exc))
+        raise RuntimeError(
+            "S3 upload failed for "
+            f"s3://{bucket}/{key} "
+            f"(error={code}: {msg}). "
+            "Check SeaweedFS credentials and bucket policy for PutObject on "
+            f"the '{key}' prefix."
+        ) from exc
