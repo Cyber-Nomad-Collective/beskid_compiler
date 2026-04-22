@@ -20,10 +20,6 @@ impl SemanticPipelineRule {
     }
 
     fn check_module_not_found(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
-        if self.file_scoped_module_index(hir).is_some() {
-            return;
-        }
-
         let source = PathBuf::from(ctx.source_name());
         let Some(parent) = source.parent() else {
             return;
@@ -277,10 +273,4 @@ impl SemanticPipelineRule {
             .unwrap_or_else(|| self.path_tail_stage5(&use_decl.path))
     }
 
-    fn file_scoped_module_index(&self, hir: &Spanned<HirProgram>) -> Option<usize> {
-        hir.node
-            .items
-            .iter()
-            .position(|item| matches!(item.node, HirItem::ModuleDeclaration(_)))
-    }
 }

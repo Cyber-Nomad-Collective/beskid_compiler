@@ -197,21 +197,3 @@ fn aliased_import_name_resolves_in_value_path() {
     assert!(result.is_ok(), "expected aliased import to resolve as value");
 }
 
-#[test]
-fn file_scoped_module_sets_resolution_module_context() {
-    let result = resolve_program("mod app.core; unit main() { return; }")
-        .expect("expected file-scoped module program to resolve");
-    let path = vec!["app".to_string(), "core".to_string()];
-    let module_id = result
-        .module_graph
-        .module_id(&path)
-        .expect("expected file-scoped module path in graph");
-    let module = result
-        .module_graph
-        .module(module_id)
-        .expect("expected module metadata for file-scoped module path");
-    assert!(
-        module.scope.contains_key("main"),
-        "expected top-level function to be collected in file-scoped module scope"
-    );
-}

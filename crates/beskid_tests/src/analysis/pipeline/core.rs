@@ -878,46 +878,6 @@ fn analysis_emits_file_scoped_module_must_be_first_errors() {
 }
 
 #[test]
-fn analysis_emits_duplicate_file_scoped_module_errors() {
-    let source = "mod app.core; mod app.other; unit main() { return; }";
-    let program = parse_program_ast(source);
-    let result = run_rules(
-        &program.node,
-        "test.bd",
-        source,
-        &builtin_rules(),
-        AnalysisOptions::default(),
-    );
-
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1506"))
-    );
-}
-
-#[test]
-fn analysis_emits_forbidden_mod_declaration_errors_in_file_scoped_module() {
-    let source = "mod app.core; mod nested { unit helper() { return; } } unit main() { return; }";
-    let program = parse_program_ast(source);
-    let result = run_rules(
-        &program.node,
-        "test.bd",
-        source,
-        &builtin_rules(),
-        AnalysisOptions::default(),
-    );
-
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1507"))
-    );
-}
-
-#[test]
 fn analysis_emits_unused_import_warnings() {
     let source = "mod dep.core; use dep.foo; unit main() { return; }";
     let program = parse_program_ast(source);

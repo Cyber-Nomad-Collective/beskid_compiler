@@ -48,28 +48,16 @@ impl Resolver {
     }
 
     pub fn resolve_program(&mut self, program: &Spanned<HirProgram>) -> ResolveResult<Resolution> {
-        let file_scoped_module_index = file_scoped_module_index(program);
-        self.current_module = file_scoped_module_path(program)
-            .map(|path| self.module_graph.ensure_module_path(&path))
-            .unwrap_or(self.module_graph.root());
+        self.current_module = self.module_graph.root();
         self.tables = ResolutionTables::new();
         self.local_scopes.clear();
         self.generic_scopes.clear();
         self.builtin_items.clear();
         self.collect_builtins();
-        for (index, item) in program.node.items.iter().enumerate() {
-            if Some(index) == file_scoped_module_index {
-                continue;
-            }
+        for item in &program.node.items {
             self.collect_item(item);
         }
-        self.current_module = file_scoped_module_path(program)
-            .map(|path| self.module_graph.ensure_module_path(&path))
-            .unwrap_or(self.module_graph.root());
-        for (index, item) in program.node.items.iter().enumerate() {
-            if Some(index) == file_scoped_module_index {
-                continue;
-            }
+        for item in &program.node.items {
             self.resolve_item(item);
         }
 
@@ -814,22 +802,6 @@ fn path_tail(path: &Spanned<HirPath>) -> String {
         .last()
         .map(|segment| segment.node.name.node.name.clone())
         .unwrap_or_else(|| "<unnamed>".to_string())
-}
-
-fn file_scoped_module_index(program: &Spanned<HirProgram>) -> Option<usize> {
-    program
-        .node
-        .items
-        .iter()
-        .position(|item| matches!(item.node, HirItem::ModuleDeclaration(_)))
-}
-
-fn file_scoped_module_path(program: &Spanned<HirProgram>) -> Option<Vec<String>> {
-    let index = file_scoped_module_index(program)?;
-    let HirItem::ModuleDeclaration(def) = &program.node.items.get(index)?.node else {
-        return None;
-    };
-    Some(path_segments(&def.node.path))
 }
 
 fn use_imported_name(use_decl: &crate::hir::HirUseDeclaration) -> String {
