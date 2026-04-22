@@ -149,3 +149,25 @@ fn file_scoped_module_not_first_issue_contract_is_stable() {
     assert!(issue.help().is_some());
 }
 
+#[test]
+fn duplicate_file_scoped_module_issue_contract_is_stable() {
+    let issue = SemanticIssueKind::DuplicateFileScopedModule {
+        module_path: "app.other".to_string(),
+    };
+    assert_eq!(issue.code(), "E1506");
+    assert_eq!(issue.severity(), Severity::Error);
+    assert_eq!(issue.label(), "duplicate file-scoped module");
+    assert!(issue.message().contains("duplicate file-scoped module declaration"));
+    assert!(issue.help().is_some());
+}
+
+#[test]
+fn forbidden_module_declaration_in_file_scoped_issue_contract_is_stable() {
+    let issue = SemanticIssueKind::ModuleDeclarationForbiddenInFileScopedModule;
+    assert_eq!(issue.code(), "E1507");
+    assert_eq!(issue.severity(), Severity::Error);
+    assert_eq!(issue.label(), "module declaration not allowed");
+    assert!(issue.message().contains("not allowed in a file-scoped module file"));
+    assert!(issue.help().is_some());
+}
+

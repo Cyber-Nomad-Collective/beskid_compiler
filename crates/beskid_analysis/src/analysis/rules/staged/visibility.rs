@@ -1,7 +1,9 @@
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
-use crate::hir::{HirExpressionNode, HirItem, HirPath, HirProgram, HirUseDeclaration, HirVisibility};
+use crate::hir::{
+    HirExpressionNode, HirItem, HirPath, HirProgram, HirUseDeclaration, HirVisibility,
+};
 use crate::query::HirQuery;
 use crate::syntax::Spanned;
 use std::collections::{HashMap, HashSet};
@@ -20,6 +22,10 @@ impl SemanticPipelineRule {
     }
 
     fn check_module_not_found(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
+        if self.file_scoped_module_index(hir).is_some() {
+            return;
+        }
+
         let source = PathBuf::from(ctx.source_name());
         let Some(parent) = source.parent() else {
             return;
@@ -271,6 +277,19 @@ impl SemanticPipelineRule {
             .as_ref()
             .map(|alias| alias.node.name.clone())
             .unwrap_or_else(|| self.path_tail_stage5(&use_decl.path))
+    }
+
+    fn file_scoped_module_index(&self, hir: &Spanned<HirProgram>) -> Option<usize> {
+        hir.node
+            .items
+            .iter()
+            .position(|item| match &item.node {
+                HirItem::ModuleDeclaration(def) => {
+                    def.node.visibility.node == HirVisibility::Private
+                        && def.node.attributes.is_empty()
+                }
+                _ => false,
+            })
     }
 
 }

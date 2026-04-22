@@ -2,8 +2,8 @@ use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
 use crate::hir::{
-    HirContractDefinition, HirItem, HirModuleDeclaration, HirPath, HirPrimitiveType, HirProgram,
-    HirType,
+    HirContractDefinition, HirInlineModule, HirItem, HirModuleDeclaration, HirPath,
+    HirPrimitiveType, HirProgram, HirType, HirVisibility,
 };
 use crate::query::{HirNode, HirQuery};
 use crate::syntax::{SpanInfo, Spanned};
@@ -16,7 +16,7 @@ impl SemanticPipelineRule {
         hir: &Spanned<HirProgram>,
     ) {
         self.check_duplicate_definition_names(ctx, hir);
-        self.check_file_scoped_module_not_first(ctx, hir);
+        self.check_file_scoped_module_structure(ctx, hir);
         self.check_duplicate_non_type_item_names(ctx, hir);
         self.check_unknown_types_in_definitions(ctx, hir);
         self.check_conflicting_embedded_contracts(ctx, hir);
@@ -49,7 +49,13 @@ impl SemanticPipelineRule {
             hir,
             &mut seen,
             DuplicateKind::ItemName,
-            |definition| (self.path_tail(&definition.path), definition.path.span),
+            |definition| {
+                if self.is_file_scoped_module_declaration(hir, definition) {
+                    ("<file-scope>".to_string(), definition.path.span)
+                } else {
+                    (self.path_tail(&definition.path), definition.path.span)
+                }
+            },
         );
         self.check_duplicate_query_entries::<crate::hir::HirUseDeclaration>(
             ctx,
@@ -72,7 +78,7 @@ impl SemanticPipelineRule {
         );
     }
 
-    fn check_file_scoped_module_not_first(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
+    fn check_file_scoped_module_structure(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
         let Some((file_scope_index, file_scope_def)) = self.file_scoped_module_declaration(hir) else {
             return;
         };
@@ -84,6 +90,55 @@ impl SemanticPipelineRule {
                     module_path: file_scope_path.clone(),
                 },
             );
+        }
+
+        for (index, item) in hir.node.items.iter().enumerate() {
+            if index == file_scope_index {
+                continue;
+            }
+            match &item.node {
+                HirItem::ModuleDeclaration(module_decl) => {
+                    ctx.emit_issue(
+                        module_decl.node.path.span,
+                        SemanticIssueKind::DuplicateFileScopedModule {
+                            module_path: self.path_to_string(&module_decl.node.path),
+                        },
+                    );
+                }
+                HirItem::InlineModule(inline_module) => {
+                    ctx.emit_issue(
+                        inline_module.node.name.span,
+                        SemanticIssueKind::ModuleDeclarationForbiddenInFileScopedModule,
+                    );
+                    self.emit_nested_module_errors(ctx, inline_module);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn emit_nested_module_errors(
+        &self,
+        ctx: &mut RuleContext,
+        inline_module: &Spanned<HirInlineModule>,
+    ) {
+        for nested in &inline_module.node.items {
+            match &nested.node {
+                HirItem::ModuleDeclaration(module_decl) => {
+                    ctx.emit_issue(
+                        module_decl.node.path.span,
+                        SemanticIssueKind::ModuleDeclarationForbiddenInFileScopedModule,
+                    );
+                }
+                HirItem::InlineModule(nested_inline) => {
+                    ctx.emit_issue(
+                        nested_inline.node.name.span,
+                        SemanticIssueKind::ModuleDeclarationForbiddenInFileScopedModule,
+                    );
+                    self.emit_nested_module_errors(ctx, nested_inline);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -243,9 +298,24 @@ impl SemanticPipelineRule {
             .iter()
             .enumerate()
             .find_map(|(index, item)| match &item.node {
-                HirItem::ModuleDeclaration(def) => Some((index, def)),
+                HirItem::ModuleDeclaration(def)
+                    if def.node.visibility.node == HirVisibility::Private
+                        && def.node.attributes.is_empty() =>
+                {
+                    Some((index, def))
+                }
                 _ => None,
             })
+    }
+
+    fn is_file_scoped_module_declaration(
+        &self,
+        hir: &Spanned<HirProgram>,
+        definition: &HirModuleDeclaration,
+    ) -> bool {
+        self.file_scoped_module_declaration(hir)
+            .map(|(_, file_scope)| file_scope.span == definition.path.span)
+            .unwrap_or(false)
     }
 
     fn path_to_string(&self, path: &Spanned<HirPath>) -> String {

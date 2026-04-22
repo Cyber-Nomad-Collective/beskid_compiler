@@ -48,16 +48,28 @@ impl Resolver {
     }
 
     pub fn resolve_program(&mut self, program: &Spanned<HirProgram>) -> ResolveResult<Resolution> {
-        self.current_module = self.module_graph.root();
+        let file_scoped_module_index = file_scoped_module_index(program);
+        self.current_module = file_scoped_module_path(program)
+            .map(|path| self.module_graph.ensure_module_path(&path))
+            .unwrap_or(self.module_graph.root());
         self.tables = ResolutionTables::new();
         self.local_scopes.clear();
         self.generic_scopes.clear();
         self.builtin_items.clear();
         self.collect_builtins();
-        for item in &program.node.items {
+        for (index, item) in program.node.items.iter().enumerate() {
+            if Some(index) == file_scoped_module_index {
+                continue;
+            }
             self.collect_item(item);
         }
-        for item in &program.node.items {
+        self.current_module = file_scoped_module_path(program)
+            .map(|path| self.module_graph.ensure_module_path(&path))
+            .unwrap_or(self.module_graph.root());
+        for (index, item) in program.node.items.iter().enumerate() {
+            if Some(index) == file_scoped_module_index {
+                continue;
+            }
             self.resolve_item(item);
         }
 
@@ -802,6 +814,28 @@ fn path_tail(path: &Spanned<HirPath>) -> String {
         .last()
         .map(|segment| segment.node.name.node.name.clone())
         .unwrap_or_else(|| "<unnamed>".to_string())
+}
+
+fn file_scoped_module_index(program: &Spanned<HirProgram>) -> Option<usize> {
+    program
+        .node
+        .items
+        .iter()
+        .position(|item| match &item.node {
+            HirItem::ModuleDeclaration(def) => {
+                def.node.visibility.node == HirVisibility::Private
+                    && def.node.attributes.is_empty()
+            }
+            _ => false,
+        })
+}
+
+fn file_scoped_module_path(program: &Spanned<HirProgram>) -> Option<Vec<String>> {
+    let index = file_scoped_module_index(program)?;
+    let HirItem::ModuleDeclaration(def) = &program.node.items.get(index)?.node else {
+        return None;
+    };
+    Some(path_segments(&def.node.path))
 }
 
 fn use_imported_name(use_decl: &crate::hir::HirUseDeclaration) -> String {

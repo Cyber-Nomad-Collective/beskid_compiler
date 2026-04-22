@@ -570,7 +570,7 @@ fn analysis_visibility_private_import_still_uses_resolved_symbol_name() {
 
 #[test]
 fn analysis_emits_private_item_in_module_access_errors() {
-    let source = "mod dep.secret; unit main() { let x = dep.secret; }";
+    let source = "mod dep; type secret { i32 value } unit main() { let x = dep.secret; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -874,6 +874,46 @@ fn analysis_emits_file_scoped_module_must_be_first_errors() {
             .diagnostics
             .iter()
             .any(|diag| diag.code.as_deref() == Some("E1505"))
+    );
+}
+
+#[test]
+fn analysis_emits_duplicate_file_scoped_module_errors() {
+    let source = "mod app.core; mod app.other; unit main() { return; }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1506"))
+    );
+}
+
+#[test]
+fn analysis_emits_forbidden_mod_declaration_errors_in_file_scoped_module() {
+    let source = "mod app.core; mod nested { unit helper() { return; } } unit main() { return; }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1507"))
     );
 }
 

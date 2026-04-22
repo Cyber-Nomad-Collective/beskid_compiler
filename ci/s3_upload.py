@@ -21,9 +21,10 @@ def upload_release_artifacts(
     local_file: Path,
     remote_filename: str,
 ) -> None:
+    endpoint = endpoint_url.rstrip("/")
     client = boto3.client(
         "s3",
-        endpoint_url=endpoint_url,
+        endpoint_url=endpoint,
         aws_access_key_id=access_key_id,
         aws_secret_access_key=secret_access_key,
         region_name=region,
@@ -31,11 +32,18 @@ def upload_release_artifacts(
     )
     version_key = f"{version}/{remote_filename}"
     latest_key = f"latest/{remote_filename}"
-    _put_object(client=client, local_file=local_file, bucket=bucket, key=version_key)
-    _put_object(client=client, local_file=local_file, bucket=bucket, key=latest_key)
+    _put_object(client=client, local_file=local_file, bucket=bucket, key=version_key, endpoint_url=endpoint)
+    _put_object(client=client, local_file=local_file, bucket=bucket, key=latest_key, endpoint_url=endpoint)
 
 
-def _put_object(*, client: "boto3.client", local_file: Path, bucket: str, key: str) -> None:
+def _put_object(
+    *,
+    client: "boto3.client",
+    local_file: Path,
+    bucket: str,
+    key: str,
+    endpoint_url: str,
+) -> None:
     """Upload as a single-part object to avoid multipart/chunked edge cases."""
     # SeaweedFS gateways can terminate TLS on streamed/chunked payload uploads.
     # Sending explicit bytes with ContentLength avoids chunked transfer mode.
@@ -56,7 +64,8 @@ def _put_object(*, client: "boto3.client", local_file: Path, bucket: str, key: s
             if attempt >= max_attempts:
                 raise RuntimeError(
                     "S3 upload failed after retries for "
-                    f"s3://{bucket}/{key} due to transport/TLS error: {exc}"
+                    f"{endpoint_url}/{bucket}/{key} "
+                    f"(bucket={bucket}, key={key}) due to transport/TLS error: {exc}"
                 ) from exc
             time.sleep(2 ** (attempt - 1))
         except ClientError as exc:
@@ -64,7 +73,8 @@ def _put_object(*, client: "boto3.client", local_file: Path, bucket: str, key: s
             msg = exc.response.get("Error", {}).get("Message", str(exc))
             raise RuntimeError(
                 "S3 upload failed for "
-                f"s3://{bucket}/{key} "
+                f"{endpoint_url}/{bucket}/{key} "
+                f"(bucket={bucket}, key={key}) "
                 f"(error={code}: {msg}). "
                 "Check SeaweedFS credentials and bucket policy for PutObject on "
                 f"the '{key}' prefix."

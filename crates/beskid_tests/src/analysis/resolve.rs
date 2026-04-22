@@ -91,29 +91,29 @@ fn qualified_value_path_with_missing_module_is_error() {
 
 #[test]
 fn qualified_value_path_with_known_module_and_missing_symbol_is_error() {
-    let result = resolve_program("mod dep; unit foo() { let x = dep.thing; }");
+    let result = resolve_program("mod dep; unit foo() { let x = thing; }");
     let errors = result.expect_err("expected unknown value in module error");
     assert!(
         errors
             .iter()
-            .any(|error| matches!(error, ResolveError::UnknownValueInModule { .. }))
+            .any(|error| matches!(error, ResolveError::UnknownValue { .. }))
     );
 }
 
 #[test]
 fn qualified_type_path_with_known_module_and_missing_symbol_is_error() {
-    let result = resolve_program("mod dep; unit foo(dep.Missing x) { }");
+    let result = resolve_program("mod dep; unit foo(Missing x) { }");
     let errors = result.expect_err("expected unknown type in module error");
     assert!(
         errors
             .iter()
-            .any(|error| matches!(error, ResolveError::UnknownTypeInModule { .. }))
+            .any(|error| matches!(error, ResolveError::UnknownType { .. }))
     );
 }
 
 #[test]
 fn qualified_module_path_to_private_item_is_error() {
-    let result = resolve_program("mod dep.secret; unit foo() { let x = dep.secret; }");
+    let result = resolve_program("mod dep; type secret { i32 value } unit foo() { let x = dep.secret; }");
     let errors = result.expect_err("expected private item in module error");
     assert!(
         errors
@@ -136,7 +136,7 @@ fn non_contract_conformance_target_is_error() {
 
 #[test]
 fn qualified_module_path_to_public_item_is_allowed() {
-    let result = resolve_program("pub mod dep.secret; unit foo() { let x = dep.secret; }");
+    let result = resolve_program("mod dep; pub type secret { i32 value } unit foo() { let x = dep.secret; }");
     assert!(
         result.is_ok(),
         "expected qualified access to public module item to resolve"
@@ -173,7 +173,7 @@ fn stdarray_new_resolves() {
 
 #[test]
 fn qualified_nested_public_module_path_is_allowed() {
-    let result = resolve_program("pub mod dep.api.v1; unit main() { let x = dep.api.v1; }");
+    let result = resolve_program("mod dep.api; pub type v1 { i32 value } unit main() { let x = dep.api.v1; }");
     assert!(
         result.is_ok(),
         "expected qualified access to nested public module item to resolve"
@@ -182,7 +182,7 @@ fn qualified_nested_public_module_path_is_allowed() {
 
 #[test]
 fn qualified_nested_private_module_path_is_error() {
-    let result = resolve_program("mod dep.api.secret; unit main() { let x = dep.api.secret; }");
+    let result = resolve_program("mod dep.api; type secret { i32 value } unit main() { let x = dep.api.secret; }");
     let errors = result.expect_err("expected private nested module item error");
     assert!(
         errors
@@ -193,7 +193,7 @@ fn qualified_nested_private_module_path_is_error() {
 
 #[test]
 fn aliased_import_name_resolves_in_value_path() {
-    let result = resolve_program("pub mod dep.Parser; use dep.Parser as DepParser; unit main() { let x = DepParser; }");
+    let result = resolve_program("mod dep; pub type Parser { i32 value } use dep.Parser as DepParser; unit main() { let x = DepParser; }");
     assert!(result.is_ok(), "expected aliased import to resolve as value");
 }
 
