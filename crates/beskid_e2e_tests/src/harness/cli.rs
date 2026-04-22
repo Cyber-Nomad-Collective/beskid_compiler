@@ -1,14 +1,27 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static STDLIB_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub struct BeskidCliInvoker {
     binary: PathBuf,
+    stdlib_root: PathBuf,
 }
 
 impl BeskidCliInvoker {
     pub fn new() -> Self {
+        let stdlib_root = unique_stdlib_root();
+        fs::create_dir_all(&stdlib_root).unwrap_or_else(|error| {
+            panic!(
+                "create e2e stdlib root {}: {error}",
+                stdlib_root.display()
+            )
+        });
         Self {
             binary: resolve_cli_binary(),
+            stdlib_root,
         }
     }
 
@@ -18,6 +31,7 @@ impl BeskidCliInvoker {
         S: AsRef<str>,
     {
         let mut command = Command::new(&self.binary);
+        command.env("BESKID_STDLIB_ROOT", &self.stdlib_root);
         for argument in args {
             command.arg(argument.as_ref());
         }
@@ -76,4 +90,11 @@ fn binary_name() -> &'static str {
     } else {
         "beskid_cli"
     }
+}
+
+fn unique_stdlib_root() -> PathBuf {
+    let nonce = STDLIB_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir()
+        .join("beskid_e2e_stdlib")
+        .join(format!("{}_{}", std::process::id(), nonce))
 }
