@@ -97,7 +97,7 @@ Visibility = { "pub" }
 
 ModuleDeclaration = { AttributeList? ~ Visibility? ~ "mod" ~ Path ~ ";" }
 InlineModule = { AttributeList? ~ Visibility? ~ "mod" ~ Identifier ~ "{" ~ Item* ~ "}" }
-UseDeclaration = { Visibility? ~ "use" ~ Path ~ ";" }
+UseDeclaration = { Visibility? ~ "use" ~ Path ~ ("as" ~ Identifier)? ~ ";" }
 PathSegment = { Identifier ~ GenericArguments? }
 Path = { PathSegment ~ ("." ~ PathSegment)* }
 PathList = { Path ~ ("," ~ Path)* }

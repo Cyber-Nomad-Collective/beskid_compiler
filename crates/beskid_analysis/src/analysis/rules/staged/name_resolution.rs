@@ -3,7 +3,7 @@ use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::{RuleContext, resolve};
 use crate::hir::{
     HirBlock, HirExpressionNode, HirForStatement, HirItem, HirLegalityError, HirLetStatement,
-    HirPath, HirProgram, HirStatementNode, validate_hir_program,
+    HirPath, HirProgram, HirStatementNode, HirUseDeclaration, validate_hir_program,
 };
 use crate::query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
 use crate::resolve::{Resolution, Resolver};
@@ -131,14 +131,19 @@ impl SemanticPipelineRule {
             let HirItem::UseDeclaration(use_decl) = &item.node else {
                 continue;
             };
-            let imported_name = self.path_tail_local(&use_decl.node.path);
-            let Some(previous_span) = seen.insert(imported_name.clone(), use_decl.node.path.span)
-            else {
+            let imported_name = self.imported_name_local(&use_decl.node);
+            let imported_span = use_decl
+                .node
+                .alias
+                .as_ref()
+                .map(|alias| alias.span)
+                .unwrap_or(use_decl.node.path.span);
+            let Some(previous_span) = seen.insert(imported_name.clone(), imported_span) else {
                 continue;
             };
 
             ctx.emit_issue(
-                use_decl.node.path.span,
+                imported_span,
                 SemanticIssueKind::AmbiguousImport {
                     name: imported_name,
                     previous: previous_span,
@@ -224,6 +229,14 @@ impl SemanticPipelineRule {
             .map(|segment| segment.node.name.node.name.clone())
             .collect::<Vec<_>>()
             .join(".")
+    }
+
+    fn imported_name_local(&self, use_decl: &HirUseDeclaration) -> String {
+        use_decl
+            .alias
+            .as_ref()
+            .map(|alias| alias.node.name.clone())
+            .unwrap_or_else(|| self.path_tail_local(&use_decl.path))
     }
 }
 

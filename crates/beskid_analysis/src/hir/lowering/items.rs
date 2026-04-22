@@ -339,6 +339,7 @@ impl Lowerable for Spanned<syntax::UseDeclaration> {
             HirUseDeclaration {
                 visibility: self.node.visibility.lower(),
                 path: self.node.path.lower(),
+                alias: self.node.alias.as_ref().map(|alias| alias.lower()),
             },
             self.span,
         )

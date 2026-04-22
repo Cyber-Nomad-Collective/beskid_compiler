@@ -7,6 +7,11 @@ fn parses_module_declaration() {
 }
 
 #[test]
+fn parses_file_scoped_module_declaration() {
+    assert_parse(Rule::Program, "mod net.http; unit main() { return; }");
+}
+
+#[test]
 fn parses_module_declaration_with_extern_attribute() {
     assert_parse(
         Rule::ModuleDeclaration,
@@ -22,6 +27,16 @@ fn parses_use_declaration() {
 #[test]
 fn parses_pub_use_declaration() {
     assert_parse(Rule::UseDeclaration, "pub use net.http.Client;");
+}
+
+#[test]
+fn parses_use_declaration_with_alias() {
+    assert_parse(Rule::UseDeclaration, "use net.http.Client as HttpClient;");
+}
+
+#[test]
+fn rejects_use_alias_without_name() {
+    assert_parse_fail(Rule::UseDeclaration, "use net.http.Client as;");
 }
 
 #[test]

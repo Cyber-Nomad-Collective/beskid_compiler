@@ -486,6 +486,27 @@ fn analysis_emits_ambiguous_import_errors() {
 }
 
 #[test]
+fn analysis_accepts_aliased_imports_without_ambiguity() {
+    let source = "mod dep.Parser; mod other.Parser; use dep.Parser as DepParser; use other.Parser as OtherParser; unit main() { let x = DepParser; let y = OtherParser; }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1104")),
+        "expected no ambiguous import diagnostic when aliases are distinct"
+    );
+}
+
+#[test]
 fn analysis_emits_unknown_import_path_errors() {
     let source = "use missing.path;";
     let program = parse_program_ast(source);
@@ -502,6 +523,48 @@ fn analysis_emits_unknown_import_path_errors() {
             .diagnostics
             .iter()
             .any(|diag| diag.code.as_deref() == Some("E1105"))
+    );
+}
+
+#[test]
+fn analysis_emits_unused_import_warnings_for_aliases() {
+    let source = "mod dep.Parser; use dep.Parser as DepParser;";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("W1503")),
+        "expected unused import warning for unused alias"
+    );
+}
+
+#[test]
+fn analysis_visibility_private_import_still_uses_resolved_symbol_name() {
+    let source = "type Secret { i32 value } use private.Secret as AliasSecret;";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1501")),
+        "expected private import visibility diagnostic for aliased import"
     );
 }
 
@@ -795,8 +858,8 @@ fn analysis_emits_guard_type_mismatch_errors() {
 }
 
 #[test]
-fn analysis_emits_module_not_found_errors() {
-    let source = "mod missing.module;";
+fn analysis_emits_file_scoped_module_must_be_first_errors() {
+    let source = "unit main() { return; } mod app.core;";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -810,7 +873,47 @@ fn analysis_emits_module_not_found_errors() {
         result
             .diagnostics
             .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1502"))
+            .any(|diag| diag.code.as_deref() == Some("E1505"))
+    );
+}
+
+#[test]
+fn analysis_emits_duplicate_file_scoped_module_errors() {
+    let source = "mod app.core; mod app.other; unit main() { return; }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1506"))
+    );
+}
+
+#[test]
+fn analysis_emits_forbidden_mod_declaration_errors_in_file_scoped_module() {
+    let source = "mod app.core; mod nested { unit helper() { return; } } unit main() { return; }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1507"))
     );
 }
 

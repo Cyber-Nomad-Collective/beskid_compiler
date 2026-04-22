@@ -236,4 +236,6 @@ pub struct HirUseDeclaration {
     pub visibility: Spanned<HirVisibility>,
     #[ast(child)]
     pub path: Spanned<HirPath>,
+    #[ast(child)]
+    pub alias: Option<Spanned<HirIdentifier>>,
 }

@@ -177,6 +177,7 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
             .get("root")
             .cloned()
             .unwrap_or_else(|| "Src".to_string()),
+        root_namespace: project.fields.get("root_namespace").cloned(),
     };
 
     let mut targets = Vec::with_capacity(parsed.targets.len());

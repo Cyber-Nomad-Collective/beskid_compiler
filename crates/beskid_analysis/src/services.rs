@@ -504,6 +504,14 @@ pub fn collect_document_symbols(snapshot: &DocumentAnalysisSnapshot) -> Vec<Docu
                 selection_end: definition.node.name.span.end,
             }),
             Node::UseDeclaration(definition) => {
+                if let Some(alias) = &definition.node.alias {
+                    return Some(DocumentSymbolInfo {
+                        name: alias.node.name.clone(),
+                        kind: AnalysisSymbolKind::Use,
+                        selection_start: alias.span.start,
+                        selection_end: alias.span.end,
+                    });
+                }
                 let segment = definition.node.path.node.segments.last()?;
                 Some(DocumentSymbolInfo {
                     name: segment.node.name.node.name.clone(),

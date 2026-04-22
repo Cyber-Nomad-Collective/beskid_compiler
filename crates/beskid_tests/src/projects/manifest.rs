@@ -45,6 +45,29 @@ target "App" {
 }
 
 #[test]
+fn parses_optional_root_namespace() {
+    let source = r#"
+project {
+  name = "MyApp"
+  version = "0.1.0"
+  root = "Src"
+  root_namespace = "Company.Product"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+"#;
+
+    let manifest = parse_manifest(source).expect("valid manifest");
+    assert_eq!(
+        manifest.project.root_namespace.as_deref(),
+        Some("Company.Product")
+    );
+}
+
+#[test]
 fn rejects_missing_project_block() {
     let source = r#"
 target "App" {

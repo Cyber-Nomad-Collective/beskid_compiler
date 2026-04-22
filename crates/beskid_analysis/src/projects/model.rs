@@ -44,6 +44,7 @@ pub struct ProjectSection {
     pub name: String,
     pub version: String,
     pub root: String,
+    pub root_namespace: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

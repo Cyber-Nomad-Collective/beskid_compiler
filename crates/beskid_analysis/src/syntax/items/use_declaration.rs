@@ -4,7 +4,7 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::parse_visibility_or_default;
-use crate::syntax::{Path, SpanInfo, Spanned, Visibility};
+use crate::syntax::{Identifier, Path, SpanInfo, Spanned, Visibility};
 
 use beskid_ast_derive::AstNode;
 
@@ -14,6 +14,8 @@ pub struct UseDeclaration {
     pub visibility: Spanned<Visibility>,
     #[ast(child)]
     pub path: Spanned<Path>,
+    #[ast(child)]
+    pub alias: Option<Spanned<Identifier>>,
 }
 
 impl Parsable for UseDeclaration {
@@ -22,7 +24,15 @@ impl Parsable for UseDeclaration {
         let mut inner = pair.clone().into_inner().peekable();
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
         let path = Path::parse(inner.next().ok_or(ParseError::missing(Rule::Path))?)?;
+        let alias = inner.next().map(Identifier::parse).transpose()?;
 
-        Ok(Spanned::new(Self { visibility, path }, span))
+        Ok(Spanned::new(
+            Self {
+                visibility,
+                path,
+                alias,
+            },
+            span,
+        ))
     }
 }

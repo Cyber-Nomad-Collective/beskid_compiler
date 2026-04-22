@@ -64,6 +64,13 @@ pub enum SemanticIssueKind {
         file_candidate: String,
         mod_candidate: String,
     },
+    FileScopedModuleNotFirstItem {
+        module_path: String,
+    },
+    DuplicateFileScopedModule {
+        module_path: String,
+    },
+    ModuleDeclarationForbiddenInFileScopedModule,
     VisibilityViolationImportPrivate {
         name: String,
         private_span: SpanInfo,
@@ -256,6 +263,9 @@ impl SemanticIssueKind {
 
             Self::VisibilityViolationImportPrivate { .. } => "E1501",
             Self::VisibilityModuleNotFound { .. } => "E1502",
+            Self::FileScopedModuleNotFirstItem { .. } => "E1505",
+            Self::DuplicateFileScopedModule { .. } => "E1506",
+            Self::ModuleDeclarationForbiddenInFileScopedModule => "E1507",
             Self::UnusedImport { .. } => "W1503",
             Self::UnusedPrivateItem { .. } => "W1504",
 
@@ -360,6 +370,13 @@ impl SemanticIssueKind {
             }
             Self::AttributeTargetNotAllowed { .. } => "attribute target not allowed".to_string(),
             Self::VisibilityModuleNotFound { .. } => "module not found".to_string(),
+            Self::FileScopedModuleNotFirstItem { .. } => {
+                "file-scoped module must be first item".to_string()
+            }
+            Self::DuplicateFileScopedModule { .. } => "duplicate file-scoped module".to_string(),
+            Self::ModuleDeclarationForbiddenInFileScopedModule => {
+                "module declaration not allowed".to_string()
+            }
             Self::VisibilityViolationImportPrivate { .. } => "visibility violation".to_string(),
             Self::UnusedImport { .. } => "unused import".to_string(),
             Self::UnusedPrivateItem { .. } => "unused private item".to_string(),
@@ -489,6 +506,16 @@ impl SemanticIssueKind {
             }
             Self::VisibilityModuleNotFound { module_path, .. } => {
                 format!("module `{module_path}` not found")
+            }
+            Self::FileScopedModuleNotFirstItem { module_path } => {
+                format!("file-scoped module `{module_path}` must be the first top-level item")
+            }
+            Self::DuplicateFileScopedModule { module_path } => {
+                format!("duplicate file-scoped module declaration `{module_path}`")
+            }
+            Self::ModuleDeclarationForbiddenInFileScopedModule => {
+                "additional `mod` declarations are not allowed in a file-scoped module file"
+                    .to_string()
             }
             Self::VisibilityViolationImportPrivate { name, .. } => {
                 format!("visibility violation while importing private item `{name}`")
@@ -667,6 +694,13 @@ impl SemanticIssueKind {
                 mod_candidate,
                 ..
             } => Some(format!("expected `{file_candidate}` or `{mod_candidate}`")),
+            Self::FileScopedModuleNotFirstItem { .. } => {
+                Some("move `mod ...;` to the top of the file".to_string())
+            }
+            Self::DuplicateFileScopedModule { .. }
+            | Self::ModuleDeclarationForbiddenInFileScopedModule => {
+                Some("keep a single top-level `mod ...;` and remove other module declarations".to_string())
+            }
             Self::VisibilityViolationImportPrivate { private_span, .. } => Some(format!(
                 "item is private (declared at line {}, column {})",
                 private_span.line_col_start.0, private_span.line_col_start.1
