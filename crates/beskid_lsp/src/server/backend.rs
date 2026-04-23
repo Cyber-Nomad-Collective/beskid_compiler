@@ -4,7 +4,7 @@ use tower_lsp_server::ls_types::*;
 use tower_lsp_server::{Client, LanguageServer};
 
 use crate::features::{
-    completion, definition, document_symbols, hover, references, semantic_tokens,
+    completion, definition, document_symbols, formatting, hover, references, semantic_tokens,
 };
 use crate::protocol::request::{snapshot_document, snapshot_lsp_request};
 use crate::server::init::initialize_result;
@@ -143,5 +143,27 @@ impl LanguageServer for Backend {
         Ok(Some(semantic_tokens::handler::handle_semantic_tokens(
             &document,
         )))
+    }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let uri = params.text_document.uri;
+        let Some(document) = snapshot_document(&self.state, &uri).await else {
+            return Ok(None);
+        };
+        Ok(formatting::handler::handle_document_formatting(&document))
+    }
+
+    async fn range_formatting(
+        &self,
+        params: DocumentRangeFormattingParams,
+    ) -> Result<Option<Vec<TextEdit>>> {
+        let uri = params.text_document.uri;
+        let Some(document) = snapshot_document(&self.state, &uri).await else {
+            return Ok(None);
+        };
+        Ok(formatting::handler::handle_range_formatting(
+            &document,
+            params.range,
+        ))
     }
 }

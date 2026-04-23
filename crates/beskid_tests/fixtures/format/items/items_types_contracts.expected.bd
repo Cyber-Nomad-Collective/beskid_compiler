@@ -1,0 +1,23 @@
+pub type Number
+{
+    i32 v,
+}
+
+pub contract Widget
+{
+    Loggable;
+
+    i32 paint();
+}
+
+pub enum Flag
+{
+    On,
+
+    Off,
+}
+
+pub i32 dbl(i32 x)
+{
+    return x * 2;
+}

@@ -1,4 +1,10 @@
 #[cfg(test)]
+mod std_env_lock;
+
+#[cfg(test)]
+pub(crate) use std_env_lock::std_dependency_env_lock;
+
+#[cfg(test)]
 mod compile_plan;
 #[cfg(test)]
 mod corelib;

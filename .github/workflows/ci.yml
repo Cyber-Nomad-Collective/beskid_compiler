@@ -36,6 +36,37 @@ jobs:
       - run: pip install -r ci/requirements.txt
       - run: python -m nox --non-interactive -s test
 
+  format-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s format_regression
+      - run: cargo build -p beskid_cli -q
+      - name: Format check golden fixtures (*.expected.bd)
+        run: find crates/beskid_tests/fixtures/format -name '*.expected.bd' -print0 | xargs -0 -I{} cargo run -p beskid_cli --quiet -- format {} --check
+
+  doc-comments:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s doc_comments
+
   abi-contracts:
     runs-on: ubuntu-latest
     steps:
@@ -170,6 +201,8 @@ jobs:
       - version
       - workspace-check
       - test
+      - format-regression
+      - doc-comments
       - abi-contracts
       - bench-compile
       - e2e-linux

@@ -30,7 +30,7 @@ fn build_document_symbol(
 
 pub fn handle_document_symbols(uri: &Uri, doc: &Document) -> DocumentSymbolResponse {
     if project_manifest::is_manifest_uri(uri) {
-        return DocumentSymbolResponse::Nested(project_manifest::document_symbols(&doc.text));
+        return DocumentSymbolResponse::Nested(project_manifest::document_symbols(uri, &doc.text));
     }
 
     let symbols = doc

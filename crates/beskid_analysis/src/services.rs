@@ -17,9 +17,10 @@ use crate::projects::{
     build_compile_plan_with_policy, discover_project_file, discover_workspace_file,
     parse_workspace_manifest, prepare_project_workspace_with_options,
 };
+use crate::doc::ResolvedDoc;
 use crate::query::NodeRef;
 use crate::resolve::{ItemKind, Resolution, ResolvedValue, Resolver};
-use crate::syntax::{Node, Program, Spanned};
+use crate::syntax::{Expression, Literal, Node, Program, Spanned, TestDefinition};
 use crate::{AnalysisOptions, builtin_rules, run_rules};
 
 pub struct ResolvedInput {
@@ -52,6 +53,7 @@ fn resolved_value_at_offset<'a>(
 fn completion_kind_from_item_kind(kind: ItemKind) -> CompletionKind {
     match kind {
         ItemKind::Function => CompletionKind::Function,
+        ItemKind::Test => CompletionKind::Function,
         ItemKind::Method => CompletionKind::Method,
         ItemKind::Type => CompletionKind::Struct,
         ItemKind::Enum => CompletionKind::Enum,
@@ -68,6 +70,7 @@ fn completion_kind_from_item_kind(kind: ItemKind) -> CompletionKind {
 fn completion_kind_from_symbol_kind(kind: AnalysisSymbolKind) -> CompletionKind {
     match kind {
         AnalysisSymbolKind::Function => CompletionKind::Function,
+        AnalysisSymbolKind::Test => CompletionKind::Function,
         AnalysisSymbolKind::Method => CompletionKind::Method,
         AnalysisSymbolKind::Type => CompletionKind::Struct,
         AnalysisSymbolKind::Enum => CompletionKind::Enum,
@@ -80,6 +83,7 @@ fn completion_kind_from_symbol_kind(kind: AnalysisSymbolKind) -> CompletionKind 
 fn item_kind_name(kind: ItemKind) -> &'static str {
     match kind {
         ItemKind::Function => "function",
+        ItemKind::Test => "test",
         ItemKind::Method => "method",
         ItemKind::Type => "type",
         ItemKind::Enum => "enum",
@@ -96,6 +100,7 @@ fn item_kind_name(kind: ItemKind) -> &'static str {
 pub fn symbol_kind_name(kind: AnalysisSymbolKind) -> &'static str {
     match kind {
         AnalysisSymbolKind::Function => "function",
+        AnalysisSymbolKind::Test => "test",
         AnalysisSymbolKind::Method => "method",
         AnalysisSymbolKind::Type => "type",
         AnalysisSymbolKind::Enum => "enum",
@@ -362,16 +367,47 @@ pub fn project_error_diagnostic(
     source: &str,
     error: &ProjectError,
 ) -> SemanticDiagnostic {
+    let (span, message): (crate::syntax::SpanInfo, String) = match error {
+        ProjectError::ParseAt {
+            line,
+            message,
+            start,
+            end,
+        } => {
+            let span = if let (Some(s), Some(e)) = (start, end) {
+                if *e > *s {
+                    crate::syntax::SpanInfo::from_byte_range_in_source(source, *s, *e)
+                } else {
+                    crate::syntax::SpanInfo::whole_line_in_source(source, *line)
+                }
+            } else {
+                crate::syntax::SpanInfo::whole_line_in_source(source, *line)
+            };
+            (span, message.clone())
+        }
+        _ => {
+            let end = if source.is_empty() {
+                0
+            } else {
+                1.min(source.len())
+            };
+            (
+                crate::syntax::SpanInfo {
+                    start: 0,
+                    end,
+                    line_col_start: (1, 1),
+                    line_col_end: (1, 1),
+                },
+                error.to_string(),
+            )
+        }
+    };
+
     crate::analysis::diagnostics::make_diagnostic(
         source_name,
         source,
-        crate::syntax::SpanInfo {
-            start: 0,
-            end: 1,
-            line_col_start: (1, 1),
-            line_col_end: (1, 1),
-        },
-        error.to_string(),
+        span,
+        message,
         "project",
         None,
         Some("project".to_string()),
@@ -383,11 +419,14 @@ pub fn project_error_diagnostic(
 pub struct DocumentAnalysisSnapshot {
     pub program: Spanned<Program>,
     pub resolution: Option<Resolution>,
+    /// Same indexing as `resolution.items` when resolution is present; otherwise empty.
+    pub item_docs: Vec<Option<ResolvedDoc>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnalysisSymbolKind {
     Function,
+    Test,
     Method,
     Type,
     Enum,
@@ -443,11 +482,136 @@ pub struct ReferenceInfo {
     pub end: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct TestCaseInfo {
+    pub name: String,
+    pub qualified_name: String,
+    pub tags: Vec<String>,
+    pub group: Option<String>,
+    pub skip_condition: Option<bool>,
+    pub skip_reason: Option<String>,
+    pub selection_start: usize,
+    pub selection_end: usize,
+}
+
 pub fn build_document_analysis(program: &Spanned<Program>) -> DocumentAnalysisSnapshot {
+    let resolution = resolve_program(program);
+    let item_docs = resolution
+        .as_ref()
+        .map(|r| crate::doc::build_item_docs_markdown(&program.node, r))
+        .unwrap_or_default();
     DocumentAnalysisSnapshot {
         program: program.clone(),
-        resolution: resolve_program(program),
+        resolution,
+        item_docs,
     }
+}
+
+pub fn collect_test_cases(program: &Spanned<Program>) -> Vec<TestCaseInfo> {
+    let mut out = Vec::new();
+    for item in &program.node.items {
+        collect_test_cases_from_node(item, &mut Vec::new(), &mut out);
+    }
+    out
+}
+
+fn collect_test_cases_from_node(
+    item: &Spanned<Node>,
+    module_path: &mut Vec<String>,
+    out: &mut Vec<TestCaseInfo>,
+) {
+    match &item.node {
+        Node::TestDefinition(definition) => out.push(test_case_info(definition, module_path)),
+        Node::InlineModule(module) => {
+            module_path.push(module.node.name.node.name.clone());
+            for nested in &module.node.items {
+                collect_test_cases_from_node(nested, module_path, out);
+            }
+            module_path.pop();
+        }
+        _ => {}
+    }
+}
+
+fn test_case_info(definition: &Spanned<TestDefinition>, module_path: &[String]) -> TestCaseInfo {
+    let name = definition.node.name.node.name.clone();
+    let qualified_name = if module_path.is_empty() {
+        name.clone()
+    } else {
+        format!("{}::{}", module_path.join("::"), name)
+    };
+    let mut tags = Vec::new();
+    let mut group = None;
+    if let Some(meta) = &definition.node.meta {
+        for entry in &meta.node.entries {
+            let key = entry.node.name.node.name.as_str();
+            if key == "group" {
+                group = literal_string(&entry.node.value);
+            } else if key == "tags" {
+                tags = literal_tags(&entry.node.value);
+            }
+        }
+    }
+    let mut skip_condition = None;
+    let mut skip_reason = None;
+    if let Some(skip) = &definition.node.skip {
+        for entry in &skip.node.entries {
+            let key = entry.node.name.node.name.as_str();
+            if key == "condition" {
+                skip_condition = literal_bool(&entry.node.value);
+            } else if key == "reason" {
+                skip_reason = literal_string(&entry.node.value);
+            }
+        }
+    }
+    TestCaseInfo {
+        name,
+        qualified_name,
+        tags,
+        group,
+        skip_condition,
+        skip_reason,
+        selection_start: definition.node.name.span.start,
+        selection_end: definition.node.name.span.end,
+    }
+}
+
+fn literal_string(expression: &Spanned<Expression>) -> Option<String> {
+    let Expression::Literal(literal) = &expression.node else {
+        return None;
+    };
+    let Literal::String(raw) = &literal.node.literal.node else {
+        return None;
+    };
+    Some(
+        raw.strip_prefix('"')
+            .and_then(|trimmed| trimmed.strip_suffix('"'))
+            .unwrap_or(raw)
+            .to_string(),
+    )
+}
+
+fn literal_tags(expression: &Spanned<Expression>) -> Vec<String> {
+    literal_string(expression)
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|token| !token.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn literal_bool(expression: &Spanned<Expression>) -> Option<bool> {
+    let Expression::Literal(literal) = &expression.node else {
+        return None;
+    };
+    let Literal::Bool(value) = &literal.node.literal.node else {
+        return None;
+    };
+    Some(*value)
 }
 
 pub fn collect_document_symbols(snapshot: &DocumentAnalysisSnapshot) -> Vec<DocumentSymbolInfo> {
@@ -466,6 +630,12 @@ pub fn collect_document_symbols(snapshot: &DocumentAnalysisSnapshot) -> Vec<Docu
             Node::Method(definition) => Some(DocumentSymbolInfo {
                 name: definition.node.name.node.name.clone(),
                 kind: AnalysisSymbolKind::Method,
+                selection_start: definition.node.name.span.start,
+                selection_end: definition.node.name.span.end,
+            }),
+            Node::TestDefinition(definition) => Some(DocumentSymbolInfo {
+                name: definition.node.name.node.name.clone(),
+                kind: AnalysisSymbolKind::Test,
                 selection_start: definition.node.name.span.start,
                 selection_end: definition.node.name.span.end,
             }),
@@ -525,25 +695,42 @@ pub fn collect_document_symbols(snapshot: &DocumentAnalysisSnapshot) -> Vec<Docu
 }
 
 pub fn hover_at_offset(snapshot: &DocumentAnalysisSnapshot, offset: usize) -> Option<HoverInfo> {
-    let resolved = resolved_value_at_offset(snapshot.resolution.as_ref()?, offset)?;
-    match resolved {
-        ResolvedValue::Item(item_id) => {
-            let item = snapshot.resolution.as_ref()?.items.get(item_id.0)?;
-            Some(HoverInfo {
-                markdown: format!("**{}** `{}`", item_kind_name(item.kind), item.name),
-                start: item.span.start,
-                end: item.span.end,
-            })
-        }
-        ResolvedValue::Local(local_id) => {
-            let local = snapshot.resolution.as_ref()?.tables.local_info(*local_id)?;
-            Some(HoverInfo {
-                markdown: format!("**local** `{}`", local.name),
-                start: local.span.start,
-                end: local.span.end,
-            })
+    let resolution = snapshot.resolution.as_ref()?;
+    if let Some(resolved) = resolved_value_at_offset(resolution, offset) {
+        return match resolved {
+            ResolvedValue::Item(item_id) => hover_for_item(snapshot, item_id.0),
+            ResolvedValue::Local(local_id) => {
+                let local = resolution.tables.local_info(*local_id)?;
+                Some(HoverInfo {
+                    markdown: format!("**local** `{}`", local.name),
+                    start: local.span.start,
+                    end: local.span.end,
+                })
+            }
+        };
+    }
+    resolution
+        .items
+        .iter()
+        .filter(|item| item.span.start <= offset && offset <= item.span.end)
+        .min_by_key(|item| item.span.end.saturating_sub(item.span.start))
+        .and_then(|item| hover_for_item(snapshot, item.id.0))
+}
+
+fn hover_for_item(snapshot: &DocumentAnalysisSnapshot, item_idx: usize) -> Option<HoverInfo> {
+    let item = snapshot.resolution.as_ref()?.items.get(item_idx)?;
+    let mut markdown = format!("**{}** `{}`", item_kind_name(item.kind), item.name);
+    if let Some(doc) = snapshot.item_docs.get(item_idx).and_then(|slot| slot.as_ref()) {
+        if !doc.markdown.trim().is_empty() {
+            markdown.push_str("\n\n---\n\n");
+            markdown.push_str(&doc.markdown);
         }
     }
+    Some(HoverInfo {
+        markdown,
+        start: item.span.start,
+        end: item.span.end,
+    })
 }
 
 pub fn definition_at_offset(

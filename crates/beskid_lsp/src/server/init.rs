@@ -21,6 +21,8 @@ pub fn initialize_result() -> InitializeResult {
                 }),
             ),
             document_symbol_provider: Some(OneOf::Left(true)),
+            document_formatting_provider: Some(OneOf::Left(true)),
+            document_range_formatting_provider: Some(OneOf::Left(true)),
             ..ServerCapabilities::default()
         },
         ..InitializeResult::default()

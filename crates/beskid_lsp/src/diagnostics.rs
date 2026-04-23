@@ -1,7 +1,7 @@
 use beskid_analysis::parser::{BeskidParser, Rule};
 use beskid_analysis::parsing::error::ParseError;
 use beskid_analysis::parsing::parsable::Parsable;
-use beskid_analysis::projects::parse_manifest;
+use beskid_analysis::projects::{parse_manifest, parse_workspace_manifest};
 use beskid_analysis::services;
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{AnalysisOptions, SemanticDiagnostic, Severity, builtin_rules, run_rules};
@@ -9,11 +9,12 @@ use pest::Parser;
 use pest::error::Error as PestError;
 use tower_lsp_server::ls_types::*;
 
+use crate::features::project_manifest::api as project_manifest;
 use crate::position::offset_range_to_lsp;
 
 pub fn analyze_document(uri: &Uri, source: &str) -> Vec<Diagnostic> {
     if is_project_manifest_uri(uri) {
-        return analyze_project_manifest(source);
+        return analyze_project_manifest(uri, source);
     }
 
     let mut pairs = match BeskidParser::parse(Rule::Program, source) {
@@ -65,12 +66,22 @@ fn semantic_to_lsp_diagnostic(source: &str, diag: SemanticDiagnostic) -> Diagnos
     }
 }
 
-fn analyze_project_manifest(source: &str) -> Vec<Diagnostic> {
-    match parse_manifest(source) {
-        Ok(_) => Vec::new(),
-        Err(error) => vec![semantic_to_lsp_diagnostic(
+fn analyze_project_manifest(uri: &Uri, source: &str) -> Vec<Diagnostic> {
+    let source_label = if project_manifest::is_workspace_manifest_uri(uri) {
+        "Workspace.proj"
+    } else {
+        "Project.proj"
+    };
+    let err = if project_manifest::is_workspace_manifest_uri(uri) {
+        parse_workspace_manifest(source).err()
+    } else {
+        parse_manifest(source).err()
+    };
+    match err {
+        None => Vec::new(),
+        Some(error) => vec![semantic_to_lsp_diagnostic(
             source,
-            services::project_error_diagnostic("Project.proj", source, &error),
+            services::project_error_diagnostic(source_label, source, &error),
         )],
     }
 }

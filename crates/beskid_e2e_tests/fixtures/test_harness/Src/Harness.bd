@@ -1,0 +1,27 @@
+test Passes {
+    return;
+}
+
+test Skipped {
+    skip {
+        condition = true;
+        reason = "disabled in CI";
+    }
+    return;
+}
+
+test TaggedFast {
+    meta {
+        tags = "fast,unit";
+        group = "parser.core";
+    }
+    return;
+}
+
+test TaggedSlow {
+    meta {
+        tags = "slow";
+        group = "integration";
+    }
+    return;
+}

@@ -1,6 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_analysis::projects::{
@@ -35,9 +34,12 @@ fn write_workspace_manifest(dir: &PathBuf, source: &str) {
     fs::write(&manifest_path, source).expect("write workspace manifest");
 }
 
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+#[track_caller]
+fn assert_same_canonical_path(left: &Path, right: &Path) {
+    assert_eq!(
+        left.canonicalize().expect("left path canonicalize"),
+        right.canonicalize().expect("right path canonicalize"),
+    );
 }
 
 #[test]
@@ -60,12 +62,13 @@ target "App" {
 }
 "#;
     let manifest_path = write_manifest(&dir, source);
+    fs::create_dir_all(dir.join("Src")).expect("default source root exists for path resolution");
 
     let plan = build_compile_plan(&manifest_path, None).expect("plan should build");
     assert_eq!(plan.project_name, "MyApp");
     assert_eq!(plan.target.name, "App");
     assert_eq!(plan.target.kind, TargetKind::App);
-    assert_eq!(plan.source_root, dir.join("Src"));
+    assert_same_canonical_path(&plan.source_root, &dir.join("Src"));
 
     let _ = fs::remove_dir_all(dir);
 }
@@ -453,7 +456,7 @@ dependency "Core" {
 
     let lockfile_path = app_dir.join(PROJECT_LOCK_FILE_NAME);
     assert!(lockfile_path.is_file());
-    assert_eq!(workspace.lockfile_path, lockfile_path);
+    assert_same_canonical_path(&workspace.lockfile_path, &lockfile_path);
     assert!(workspace.materialized_dependencies.len() >= 1);
     assert!(
         workspace
@@ -617,7 +620,7 @@ dependency "Std" {
 
 #[test]
 fn compile_plan_injects_std_dependency_when_not_declared() {
-    let _guard = env_lock().lock().expect("lock env");
+    let _guard = super::std_dependency_env_lock();
     let root = temp_case_dir("implicit_std_dependency");
     let app_dir = root.join("App");
     let std_dir = root.join("StdBundled");

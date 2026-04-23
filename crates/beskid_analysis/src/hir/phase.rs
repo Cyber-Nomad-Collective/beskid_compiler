@@ -4,8 +4,8 @@ use crate::syntax::{
     EnumDefinition, ExpressionStatement, ForStatement, FunctionDefinition, GroupedExpression,
     IfStatement, InlineModule, LambdaExpression, LetStatement, LiteralExpression, MatchExpression,
     MemberExpression, MethodDefinition, ModuleDeclaration, PathExpression, ReturnStatement,
-    StructLiteralExpression, TryExpression, TypeDefinition, UnaryExpression, UseDeclaration,
-    WhileStatement,
+    StructLiteralExpression, TestDefinition, TryExpression, TypeDefinition, UnaryExpression,
+    UseDeclaration, WhileStatement,
 };
 
 use super::{
@@ -15,8 +15,8 @@ use super::{
     HirGroupedExpression, HirIfStatement, HirInlineModule, HirLambdaExpression, HirLetStatement,
     HirLiteralExpression, HirMatchExpression, HirMemberExpression, HirMethodDefinition,
     HirModuleDeclaration, HirPathExpression, HirReturnStatement, HirStructLiteralExpression,
-    HirTryExpression, HirTypeDefinition, HirUnaryExpression, HirUseDeclaration, HirWhileStatement,
-    item::HirAttributeDeclaration,
+    HirTestDefinition, HirTryExpression, HirTypeDefinition, HirUnaryExpression, HirUseDeclaration,
+    HirWhileStatement, item::HirAttributeDeclaration,
 };
 
 pub trait Phase {
@@ -25,6 +25,7 @@ pub trait Phase {
     type TypeDefinition;
     type EnumDefinition;
     type ContractDefinition;
+    type TestDefinition;
     type AttributeDeclaration;
     type ModuleDeclaration;
     type InlineModule;
@@ -67,6 +68,7 @@ impl Phase for AstPhase {
     type TypeDefinition = TypeDefinition;
     type EnumDefinition = EnumDefinition;
     type ContractDefinition = ContractDefinition;
+    type TestDefinition = TestDefinition;
     type AttributeDeclaration = AttributeDeclaration;
     type ModuleDeclaration = ModuleDeclaration;
     type InlineModule = InlineModule;
@@ -103,6 +105,7 @@ impl Phase for HirPhase {
     type TypeDefinition = HirTypeDefinition;
     type EnumDefinition = HirEnumDefinition;
     type ContractDefinition = HirContractDefinition;
+    type TestDefinition = HirTestDefinition;
     type AttributeDeclaration = HirAttributeDeclaration;
     type ModuleDeclaration = HirModuleDeclaration;
     type InlineModule = HirInlineModule;

@@ -1,9 +1,26 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
-    BreakStatement, ContinueStatement, ExpressionStatement, ForStatement, IfStatement,
-    LetStatement, ReturnStatement, Spanned, Statement, WhileStatement,
+    BreakStatement, ContinueStatement, Expression, ExpressionStatement, ForStatement, IfStatement,
+    LetStatement, RangeExpression, ReturnStatement, Spanned, Statement, WhileStatement,
 };
 use std::fmt::Write;
+
+fn emit_parenthesized_condition<W: Write>(
+    condition: &Spanned<Expression>,
+    w: &mut W,
+    cx: &mut EmitCtx,
+) -> Result<(), EmitError> {
+    match &condition.node {
+        // Keep idempotence: avoid wrapping already-grouped conditions again.
+        Expression::Grouped(_) => condition.emit(w, cx),
+        _ => {
+            w.write_char('(')?;
+            condition.emit(w, cx)?;
+            w.write_char(')')?;
+            Ok(())
+        }
+    }
+}
 
 impl Emit for LetStatement {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
@@ -79,13 +96,29 @@ impl Emit for Spanned<ContinueStatement> {
     }
 }
 
+impl Emit for RangeExpression {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        cx.token(w, "range")?;
+        w.write_char('(')?;
+        self.start.emit(w, cx)?;
+        cx.token(w, ", ")?;
+        self.end.emit(w, cx)?;
+        w.write_char(')')?;
+        Ok(())
+    }
+}
+
+impl Emit for Spanned<RangeExpression> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.node.emit(w, cx)
+    }
+}
+
 impl Emit for WhileStatement {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         cx.token(w, "while")?;
         cx.space(w)?;
-        w.write_char('(')?;
-        self.condition.emit(w, cx)?;
-        w.write_char(')')?;
+        emit_parenthesized_condition(&self.condition, w, cx)?;
         cx.nl(w)?;
         cx.write_indent(w)?;
         self.body.emit(w, cx)
@@ -123,9 +156,7 @@ impl Emit for IfStatement {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         cx.token(w, "if")?;
         cx.space(w)?;
-        w.write_char('(')?;
-        self.condition.emit(w, cx)?;
-        w.write_char(')')?;
+        emit_parenthesized_condition(&self.condition, w, cx)?;
         cx.nl(w)?;
         cx.write_indent(w)?;
         self.then_block.emit(w, cx)?;

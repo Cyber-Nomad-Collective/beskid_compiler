@@ -1,5 +1,7 @@
 pub mod analysis;
 pub mod builtins;
+pub mod doc_comment_parser;
+pub mod doc;
 pub mod format;
 pub mod hir;
 pub mod parser;

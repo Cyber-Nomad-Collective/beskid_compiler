@@ -6,7 +6,7 @@ use crate::parsing::parsable::Parsable;
 use crate::syntax::items::InlineModule;
 use crate::syntax::{
     AttributeDeclaration, ContractDefinition, EnumDefinition, FunctionDefinition, MethodDefinition,
-    ModuleDeclaration, SpanInfo, Spanned, TypeDefinition, UseDeclaration,
+    ModuleDeclaration, SpanInfo, Spanned, TestDefinition, TypeDefinition, UseDeclaration,
 };
 
 use beskid_ast_derive::AstNode;
@@ -23,6 +23,8 @@ pub enum Node {
     EnumDefinition(Spanned<EnumDefinition>),
     #[ast(child)]
     ContractDefinition(Spanned<ContractDefinition>),
+    #[ast(child)]
+    TestDefinition(Spanned<TestDefinition>),
     #[ast(child)]
     AttributeDeclaration(Spanned<AttributeDeclaration>),
     #[ast(child)]
@@ -65,6 +67,10 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
         Rule::ContractDefinition => {
             let node = ContractDefinition::parse(pair)?;
             Ok(Spanned::new(Node::ContractDefinition(node), span))
+        }
+        Rule::TestDefinition => {
+            let node = TestDefinition::parse(pair)?;
+            Ok(Spanned::new(Node::TestDefinition(node), span))
         }
         Rule::AttributeDeclaration => {
             let node = AttributeDeclaration::parse(pair)?;

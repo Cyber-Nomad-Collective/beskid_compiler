@@ -8,15 +8,21 @@ pub fn handle_completion(uri: &Uri, doc: &Document, offset: usize) -> Completion
     let prefix = project_manifest::completion_prefix_at_offset(&doc.text, offset).to_lowercase();
 
     if project_manifest::is_manifest_uri(uri) {
-        let mut items: Vec<CompletionItem> = project_manifest::completion_candidates()
-            .into_iter()
+        if let Some(mut items) = project_manifest::manifest_enum_completion_items(&doc.text, offset)
+        {
+            items.sort_by(|left, right| left.label.cmp(&right.label));
+            return CompletionResponse::Array(items);
+        }
+
+        let mut items: Vec<CompletionItem> = project_manifest::manifest_keyword_completions(uri)
+            .iter()
             .filter(|(label, _, _)| {
                 prefix.is_empty() || label.to_lowercase().starts_with(prefix.as_str())
             })
             .map(|(label, kind, detail)| CompletionItem {
-                label: label.to_string(),
-                kind: Some(kind),
-                detail: Some(detail.to_string()),
+                label: (*label).to_string(),
+                kind: Some(*kind),
+                detail: Some((*detail).to_string()),
                 ..CompletionItem::default()
             })
             .collect();

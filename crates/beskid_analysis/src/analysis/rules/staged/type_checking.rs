@@ -38,6 +38,9 @@ impl SemanticPipelineRule {
                 crate::hir::HirItem::MethodDefinition(definition) => {
                     walker.walk(HirNodeRef::from(&definition.node.body.node));
                 }
+                crate::hir::HirItem::TestDefinition(definition) => {
+                    walker.walk(HirNodeRef::from(&definition.node.body.node));
+                }
                 _ => {}
             }
         }

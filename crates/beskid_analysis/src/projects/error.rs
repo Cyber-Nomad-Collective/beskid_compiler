@@ -12,6 +12,14 @@ pub enum ProjectError {
     },
     #[error("manifest parse error: {0}")]
     Parse(String),
+    /// Parse error with optional UTF-8 byte span into the manifest source.
+    #[error("manifest parse error at line {line}: {message}")]
+    ParseAt {
+        line: usize,
+        message: String,
+        start: Option<usize>,
+        end: Option<usize>,
+    },
     #[error("manifest validation error: {0}")]
     Validation(String),
     #[error("project file not found from {0}")]
@@ -72,10 +80,28 @@ pub enum ProjectError {
 }
 
 impl ProjectError {
+    /// Byte span in the manifest source when this error was produced with location info.
+    pub fn manifest_source_span(&self) -> Option<(usize, usize)> {
+        match self {
+            Self::ParseAt { start, end, .. } => match (start, end) {
+                (Some(s), Some(e)) if *e > *s => Some((*s, *e)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub fn manifest_source_line(&self) -> Option<usize> {
+        match self {
+            Self::ParseAt { line, .. } => Some(*line),
+            _ => None,
+        }
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             Self::ReadManifest { .. } => "E3002",
-            Self::Parse(_) => "E3003",
+            Self::Parse(_) | Self::ParseAt { .. } => "E3003",
             Self::Validation(_) => "E3004",
             Self::ProjectFileNotFound(_) => "E3001",
             Self::TargetNotFound(_) => "E3005",

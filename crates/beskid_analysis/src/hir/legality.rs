@@ -144,6 +144,24 @@ impl<'a> HirLegalityValidator<'a> {
                     self.validate_type(return_type);
                 }
             }
+            HirItem::TestDefinition(def) => {
+                self.check_span(def.span, "test_definition");
+                if let Some(meta) = &def.node.meta {
+                    self.check_span(meta.span, "test_meta_section");
+                    for entry in &meta.node.entries {
+                        self.check_span(entry.span, "test_metadata_entry");
+                        self.validate_expression(&entry.node.value);
+                    }
+                }
+                if let Some(skip) = &def.node.skip {
+                    self.check_span(skip.span, "test_skip_section");
+                    for entry in &skip.node.entries {
+                        self.check_span(entry.span, "test_skip_entry");
+                        self.validate_expression(&entry.node.value);
+                    }
+                }
+                self.validate_block(&def.node.body);
+            }
             HirItem::TypeDefinition(def) => {
                 self.check_span(def.span, "type_definition");
                 for conformance in &def.node.conformances {

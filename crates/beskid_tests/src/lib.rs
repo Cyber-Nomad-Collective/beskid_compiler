@@ -2,6 +2,9 @@
 pub mod format;
 
 #[cfg(test)]
+mod doc_tests;
+
+#[cfg(test)]
 pub mod parsing;
 
 #[cfg(test)]

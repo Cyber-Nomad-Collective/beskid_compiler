@@ -1,9 +1,17 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_analysis::projects::UnresolvedDependencyPolicy;
 use beskid_analysis::services::{resolve_project, resolve_project_with_policy};
+
+#[track_caller]
+fn assert_same_canonical_path(left: &Path, right: &Path) {
+    assert_eq!(
+        left.canonicalize().expect("left path canonicalize"),
+        right.canonicalize().expect("right path canonicalize"),
+    );
+}
 
 fn temp_case_dir(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -51,9 +59,9 @@ fn resolve_project_uses_workspace_member_for_input_path() {
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Compiler");
-    assert_eq!(
-        compile_plan.manifest_path,
-        compiler_dir.join("Project.proj")
+    assert_same_canonical_path(
+        &compile_plan.manifest_path,
+        &compiler_dir.join("Project.proj"),
     );
 
     let _ = fs::remove_dir_all(root);
@@ -122,7 +130,7 @@ fn resolve_project_with_workspace_manifest_uses_first_member_when_no_input() {
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Alpha");
-    assert_eq!(compile_plan.manifest_path, alpha_dir.join("Project.proj"));
+    assert_same_canonical_path(&compile_plan.manifest_path, &alpha_dir.join("Project.proj"));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -153,7 +161,7 @@ fn resolve_project_prefers_deepest_matching_workspace_member() {
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Cli");
-    assert_eq!(compile_plan.manifest_path, cli_dir.join("Project.proj"));
+    assert_same_canonical_path(&compile_plan.manifest_path, &cli_dir.join("Project.proj"));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -190,7 +198,7 @@ fn resolve_project_uses_explicit_workspace_member() {
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Beta");
-    assert_eq!(compile_plan.manifest_path, beta_dir.join("Project.proj"));
+    assert_same_canonical_path(&compile_plan.manifest_path, &beta_dir.join("Project.proj"));
 
     let _ = fs::remove_dir_all(root);
 }

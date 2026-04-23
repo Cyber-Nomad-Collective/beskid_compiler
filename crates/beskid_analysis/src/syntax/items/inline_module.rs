@@ -1,11 +1,11 @@
 use pest::iterators::Pair;
 
+use crate::doc::LeadingDocComment;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::items::impl_block::ImplBlock;
+use crate::syntax::items::doc_attached_items::parse_doc_attached_items;
 use crate::syntax::items::parse_helpers::{parse_attributes, parse_visibility_or_default};
-use crate::doc::{leading_doc_from_doc_run, LeadingDocComment};
 use crate::syntax::{Attribute, Identifier, Node, SpanInfo, Spanned, Visibility};
 
 use beskid_ast_derive::AstNode;
@@ -32,45 +32,12 @@ impl Parsable for InlineModule {
         let attributes = parse_attributes(&mut inner)?;
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
-
-        let mut items = Vec::new();
-        let mut leading_docs: Vec<Option<LeadingDocComment>> = Vec::new();
-
-        for item_with_docs in inner {
-            if item_with_docs.as_rule() != Rule::ItemWithDocs {
-                return Err(ParseError::unexpected_rule(
-                    item_with_docs,
-                    Some(Rule::ItemWithDocs),
-                ));
-            }
-            let mut id_inner = item_with_docs.into_inner();
-            let first = id_inner
-                .next()
-                .ok_or_else(|| ParseError::missing(Rule::ItemWithDocs))?;
-            let (doc_opt, item_pair) = if first.as_rule() == Rule::DocRun {
-                let d = leading_doc_from_doc_run(&first);
-                let itemp = id_inner
-                    .next()
-                    .ok_or_else(|| ParseError::missing(Rule::InnerItem))?;
-                (Some(d), itemp)
+        let (items, leading_docs) =
+            if let Some(body) = inner.find(|p| p.as_rule() == Rule::InlineModuleBody) {
+                parse_doc_attached_items(body.into_inner().filter(|p| p.as_rule() == Rule::ItemWithDocs))?
             } else {
-                (None, first)
+                (Vec::new(), Vec::new())
             };
-
-            if item_pair.as_rule() == Rule::ImplBlock {
-                let impl_block = ImplBlock::parse(item_pair)?;
-                let mut first_doc = doc_opt;
-                for method in impl_block.node.methods {
-                    let mspan = method.span;
-                    items.push(Spanned::new(Node::Method(method), mspan));
-                    leading_docs.push(first_doc.take());
-                }
-                continue;
-            }
-
-            items.push(Node::parse(item_pair)?);
-            leading_docs.push(doc_opt);
-        }
 
         Ok(Spanned::new(
             Self {

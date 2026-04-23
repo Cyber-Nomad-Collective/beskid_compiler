@@ -63,6 +63,22 @@ impl<'a> TypeContext<'a> {
                 self.type_block(&def.node.body);
                 self.current_receiver_item_id = previous_receiver;
             }
+            HirItem::TestDefinition(def) => {
+                if let Some(meta) = &def.node.meta {
+                    for entry in &meta.node.entries {
+                        self.type_expression(&entry.node.value);
+                    }
+                }
+                if let Some(skip) = &def.node.skip {
+                    for entry in &skip.node.entries {
+                        self.type_expression(&entry.node.value);
+                    }
+                }
+                let return_type = self.primitive_type_id(HirPrimitiveType::Unit);
+                self.current_return_type = return_type;
+                self.record_signature(item.span, Vec::new(), return_type);
+                self.type_block(&def.node.body);
+            }
             HirItem::TypeDefinition(def) => {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {

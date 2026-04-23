@@ -58,3 +58,41 @@ fn parse_succeeds_on_valid_source() {
         "parse debug output should mention main or Function; got:\n{stdout}"
     );
 }
+
+#[test]
+fn test_command_runs_and_filters_test_items() {
+    let workspace = E2eWorkspace::from_fixture("test_harness");
+    let source = workspace.join("Src/Harness.bd");
+    let cli = BeskidCliInvoker::new();
+
+    let output = cli.run(["test", source.to_str().expect("source path str")]);
+    assert_success(&output, "run test harness fixture");
+    assert_output_contains(&output, "PASS Passes", "run test harness fixture");
+    assert_output_contains(
+        &output,
+        "SKIP Skipped: disabled in CI",
+        "run test harness fixture",
+    );
+    assert_output_contains(&output, "PASS TaggedFast", "run test harness fixture");
+    assert_output_contains(&output, "PASS TaggedSlow", "run test harness fixture");
+    assert_output_contains(
+        &output,
+        "Result: passed=3, failed=0, skipped=1, filtered_out=0",
+        "run test harness fixture",
+    );
+
+    let filtered = cli.run([
+        "test",
+        source.to_str().expect("source path str"),
+        "--include-tag",
+        "fast",
+        "--group",
+        "parser",
+    ]);
+    assert_success(&filtered, "run filtered test harness fixture");
+    assert_output_contains(
+        &filtered,
+        "Result: passed=1, failed=0, skipped=0, filtered_out=3",
+        "run filtered test harness fixture",
+    );
+}

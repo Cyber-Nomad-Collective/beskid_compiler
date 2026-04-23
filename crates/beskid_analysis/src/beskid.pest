@@ -5,10 +5,11 @@
 ////////////////////////////////////////////////////////////
 // 1) LEXICAL
 ////////////////////////////////////////////////////////////
-WHITESPACE = _{ " " | "\t" | "\n" | "\r" | DocLineSkip | OrdinaryLineComment | BlockComment }
-// Silent skip for /// lines that appear as trivia between items (leading docs use DocRun on ItemWithDocs).
-DocLineSkip = _{ "///" ~ !("/") ~ (!"\n" ~ ANY)* }
-OrdinaryLineComment = _{ "//" ~ (!"\n" ~ ANY)* }
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" | FourSlashLineComment | OrdinaryLineComment | BlockComment }
+// `////`+ lines are ordinary comments (not documentation); `///` is reserved for DocRun on ItemWithDocs.
+FourSlashLineComment = _{ "////" ~ (!"\n" ~ ANY)* }
+// `//` but not `///` (third slash would make documentation, parsed as DocLineContent on items).
+OrdinaryLineComment = _{ "//" ~ !("/") ~ (!"\n" ~ ANY)* }
 BlockComment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 ASCII_ALPHA_UNDERSCORE = _{ ASCII_ALPHA | "_" }
@@ -37,6 +38,9 @@ UseKeyword = { "use" }
 PubKeyword = { "pub" }
 RefKeyword = { "ref" }
 OutKeyword = { "out" }
+TestKeyword = { "test" }
+MetaKeyword = { "meta" }
+SkipKeyword = { "skip" }
 
 Keyword = {
     (
@@ -63,6 +67,9 @@ Keyword = {
       | PubKeyword
       | RefKeyword
       | OutKeyword
+      | TestKeyword
+      | MetaKeyword
+      | SkipKeyword
     ) ~ !ASCII_ALPHANUMERIC
 }
 
@@ -81,11 +88,16 @@ Literal = { FloatLiteral | IntegerLiteral | StringLiteral | CharLiteral | "true"
 ////////////////////////////////////////////////////////////
 // 2) PROGRAM
 ////////////////////////////////////////////////////////////
-Program = { SOI ~ ItemWithDocs* ~ EOI }
-ItemWithDocs = { DocRun? ~ InnerItem }
-DocLineContent = { "///" ~ !("/") ~ (!"\n" ~ ANY)* }
-DocRun = { DocLineContent+ }
-InnerItem = _{ FunctionDefinition | ImplBlock | TypeDefinition | EnumDefinition | ContractDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
+NEWLINE = _{ "\r\n" | "\n" | "\r" }
+DocGap = _{ " " | "\t" | NEWLINE | FourSlashLineComment | OrdinaryLineComment | BlockComment }
+
+ItemWithDocs = { ((DocRun ~ InnerItem) | InnerItem) ~ DocGap* }
+ItemList = { ItemWithDocs* }
+Program = { SOI ~ ItemList ~ EOI }
+
+DocLineContent = { "///" ~ !("/") ~ (!(NEWLINE) ~ ANY)* ~ NEWLINE? }
+DocRun = @{ DocLineContent+ }
+InnerItem = _{ FunctionDefinition | ImplBlock | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
 
 AttributeList = { Attribute+ }
 Attribute = { "[" ~ Identifier ~ ("(" ~ AttributeArgumentList? ~ ")")? ~ "]" }
@@ -100,7 +112,8 @@ AttributeParameter = { Identifier ~ ":" ~ BeskidType ~ ("=" ~ Expression)? }
 Visibility = { "pub" }
 
 ModuleDeclaration = { AttributeList? ~ Visibility? ~ "mod" ~ Path ~ ";" }
-InlineModule = { AttributeList? ~ Visibility? ~ "mod" ~ Identifier ~ "{" ~ ItemWithDocs* ~ "}" }
+InlineModuleBody = { ItemWithDocs* }
+InlineModule = { AttributeList? ~ Visibility? ~ "mod" ~ Identifier ~ "{" ~ InlineModuleBody ~ "}" }
 UseDeclaration = { Visibility? ~ "use" ~ Path ~ ("as" ~ Identifier)? ~ ";" }
 PathSegment = { Identifier ~ GenericArguments? }
 Path = { PathSegment ~ ("." ~ PathSegment)* }
@@ -151,6 +164,13 @@ ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ 
 ContractItem = _{ ContractMethodSignature | ContractEmbedding }
 ContractMethodSignature = { BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
 ContractEmbedding = { Identifier ~ ";"? }
+TestDefinition = { AttributeList? ~ Visibility? ~ "test" ~ Identifier ~ TestBody }
+TestBody = { "{" ~ TestBodyItem* ~ "}" }
+TestBodyItem = _{ TestMetaSection | TestSkipSection | Statement }
+TestMetaSection = { "meta" ~ "{" ~ TestMetadataEntry* ~ "}" }
+TestMetadataEntry = { Identifier ~ "=" ~ Expression ~ ";" }
+TestSkipSection = { "skip" ~ "{" ~ TestSkipEntry* ~ "}" }
+TestSkipEntry = { Identifier ~ "=" ~ Expression ~ ";" }
 
 ////////////////////////////////////////////////////////////
 // 5) STATEMENTS AND BLOCKS

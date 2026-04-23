@@ -20,7 +20,9 @@ pub fn run_entrypoint(
         .resolution
         .items
         .iter()
-        .find(|item| item.name == entrypoint && item.kind == ItemKind::Function)
+        .find(|item| {
+            item.name == entrypoint && (item.kind == ItemKind::Function || item.kind == ItemKind::Test)
+        })
         .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
 
     let signature = lowered

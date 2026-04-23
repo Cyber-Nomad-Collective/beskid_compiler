@@ -3,6 +3,7 @@ use crate::syntax::Spanned;
 
 use super::block::HirBlock;
 use super::common::{HirIdentifier, HirPath, HirVisibility};
+use super::expression::ExpressionNode;
 use super::phase::Phase;
 use super::types::{HirField, HirParameter, HirType};
 
@@ -29,6 +30,8 @@ pub enum Item<P: Phase> {
     TypeDefinition(Spanned<P::TypeDefinition>),
     EnumDefinition(Spanned<P::EnumDefinition>),
     ContractDefinition(Spanned<P::ContractDefinition>),
+    #[phase(from = "TestDefinition")]
+    TestDefinition(Spanned<P::TestDefinition>),
     AttributeDeclaration(Spanned<P::AttributeDeclaration>),
     ModuleDeclaration(Spanned<P::ModuleDeclaration>),
     InlineModule(Spanned<P::InlineModule>),
@@ -47,6 +50,7 @@ impl HirNode for Item<crate::hir::HirPhase> {
             Item::TypeDefinition(def) => push(HirNodeRef(&def.node)),
             Item::EnumDefinition(def) => push(HirNodeRef(&def.node)),
             Item::ContractDefinition(def) => push(HirNodeRef(&def.node)),
+            Item::TestDefinition(def) => push(HirNodeRef(&def.node)),
             Item::AttributeDeclaration(def) => push(HirNodeRef(&def.node)),
             Item::ModuleDeclaration(def) => push(HirNodeRef(&def.node)),
             Item::InlineModule(def) => push(HirNodeRef(&def.node)),
@@ -91,6 +95,55 @@ pub struct HirMethodDefinition {
     pub return_type: Option<Spanned<HirType>>,
     #[ast(child)]
     pub body: Spanned<HirBlock>,
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "TestDefinition")]
+pub struct HirTestDefinition {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<HirAttribute>>,
+    #[ast(child)]
+    pub visibility: Spanned<HirVisibility>,
+    #[ast(child)]
+    pub name: Spanned<HirIdentifier>,
+    #[ast(child)]
+    pub meta: Option<Spanned<HirTestMetaSection>>,
+    #[ast(child)]
+    pub skip: Option<Spanned<HirTestSkipSection>>,
+    #[ast(child)]
+    pub body: Spanned<HirBlock>,
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "TestMetaSection")]
+pub struct HirTestMetaSection {
+    #[ast(children)]
+    pub entries: Vec<Spanned<HirTestMetadataEntry>>,
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "TestMetadataEntry")]
+pub struct HirTestMetadataEntry {
+    #[ast(child)]
+    pub name: Spanned<HirIdentifier>,
+    #[ast(child)]
+    pub value: Spanned<ExpressionNode<crate::hir::HirPhase>>,
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "TestSkipSection")]
+pub struct HirTestSkipSection {
+    #[ast(children)]
+    pub entries: Vec<Spanned<HirTestSkipEntry>>,
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "TestSkipEntry")]
+pub struct HirTestSkipEntry {
+    #[ast(child)]
+    pub name: Spanned<HirIdentifier>,
+    #[ast(child)]
+    pub value: Spanned<ExpressionNode<crate::hir::HirPhase>>,
 }
 
 #[derive(beskid_ast_derive::HirNode)]
@@ -227,7 +280,6 @@ pub struct HirInlineModule {
     pub name: Spanned<HirIdentifier>,
     #[ast(children)]
     pub items: Vec<Spanned<Item<crate::hir::HirPhase>>>,
-    #[ast(skip)]
     pub leading_docs: Vec<Option<crate::doc::LeadingDocComment>>,
 }
 

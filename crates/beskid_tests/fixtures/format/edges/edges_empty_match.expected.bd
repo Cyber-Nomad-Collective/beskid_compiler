@@ -1,0 +1,5 @@
+pub unit m()
+{
+    let u = match 0 { };
+    return;
+}

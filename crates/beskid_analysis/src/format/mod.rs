@@ -2,7 +2,7 @@
 
 mod emit;
 mod expressions_emit;
-mod items_emit;
+mod items;
 mod policy;
 mod statements_emit;
 mod types_emit;

@@ -6,6 +6,7 @@ use super::ids::ItemId;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemKind {
     Function,
+    Test,
     Method,
     Type,
     Enum,

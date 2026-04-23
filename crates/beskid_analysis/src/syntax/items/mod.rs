@@ -3,6 +3,7 @@ pub mod contract_definition;
 pub mod contract_embedding;
 pub mod contract_method_signature;
 pub mod contract_node;
+mod doc_attached_items;
 pub mod enum_definition;
 pub mod enum_variant;
 pub mod function_definition;
@@ -13,6 +14,7 @@ pub mod module_declaration;
 pub mod node;
 mod parse_helpers;
 pub mod program;
+pub mod test_definition;
 pub mod type_definition;
 pub mod use_declaration;
 
@@ -31,5 +33,8 @@ pub use method_definition::MethodDefinition;
 pub use module_declaration::ModuleDeclaration;
 pub use node::Node;
 pub use program::Program;
+pub use test_definition::{
+    TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection,
+};
 pub use type_definition::TypeDefinition;
 pub use use_declaration::UseDeclaration;

@@ -137,6 +137,11 @@ impl Resolver {
                 ItemKind::Method,
                 def.node.visibility.node,
             ),
+            HirItem::TestDefinition(def) => (
+                def.node.name.node.name.clone(),
+                ItemKind::Test,
+                def.node.visibility.node,
+            ),
             HirItem::TypeDefinition(def) => (
                 def.node.name.node.name.clone(),
                 ItemKind::Type,
@@ -262,6 +267,21 @@ impl Resolver {
                 }
                 if let Some(return_type) = &def.node.return_type {
                     self.resolve_type(return_type);
+                }
+                self.resolve_block(&def.node.body);
+                self.pop_scope();
+            }
+            HirItem::TestDefinition(def) => {
+                self.push_scope();
+                if let Some(meta) = &def.node.meta {
+                    for entry in &meta.node.entries {
+                        self.resolve_expression(&entry.node.value);
+                    }
+                }
+                if let Some(skip) = &def.node.skip {
+                    for entry in &skip.node.entries {
+                        self.resolve_expression(&entry.node.value);
+                    }
                 }
                 self.resolve_block(&def.node.body);
                 self.pop_scope();

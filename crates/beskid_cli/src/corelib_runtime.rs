@@ -142,24 +142,11 @@ fn parse_package_json_version(content: &str, source: &str) -> Result<Version> {
 }
 
 fn parse_project_manifest_version(content: &str, source: &str) -> Result<Version> {
-    let raw = parse_project_field(content, "version")
-        .ok_or_else(|| anyhow::anyhow!("missing version in {source}"))?;
-
-    Version::parse(&raw).with_context(|| format!("invalid semver `{raw}` in {source}"))
-}
-
-fn parse_project_field(content: &str, key: &str) -> Option<String> {
-    content
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .find_map(|line| {
-            let (line_key, value) = line.split_once('=')?;
-            if line_key.trim() != key {
-                return None;
-            }
-            Some(value.trim().trim_matches('"').to_string())
-        })
+    let manifest = beskid_analysis::projects::parse_manifest(content).with_context(|| {
+        format!("parse project manifest for {source}")
+    })?;
+    let raw = manifest.project.version.as_str();
+    Version::parse(raw).with_context(|| format!("invalid semver `{raw}` in {source}"))
 }
 
 fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {

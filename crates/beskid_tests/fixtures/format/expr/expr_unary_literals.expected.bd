@@ -1,0 +1,8 @@
+pub unit lit()
+{
+    let a = -1;
+    let b = !false;
+    let c = 42;
+    let d = "hi";
+    return;
+}

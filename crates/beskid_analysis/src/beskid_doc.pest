@@ -8,4 +8,4 @@ piece = { RefInline | Run }
 RefInline = { "@ref(" ~ inner ~ ")" }
 inner = { (!(")") ~ ANY)* }
 
-Run = { (!( "@ref(" )) ~ ANY)+ }
+Run = { (!"@ref(" ~ ANY)+ }

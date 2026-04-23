@@ -15,8 +15,9 @@ pub use expressions::{
 pub use items::{
     Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
     ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition,
-    EnumVariant, FunctionDefinition, InlineModule, MethodDefinition, ModuleDeclaration, Node,
-    Program, TypeDefinition, UseDeclaration,
+    EnumVariant, FunctionDefinition, InlineModule, MethodDefinition, ModuleDeclaration, Node, Program,
+    TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection,
+    TypeDefinition, UseDeclaration,
 };
 pub use statements::{
     Block, BreakStatement, ContinueStatement, ExpressionStatement, ForStatement, IfStatement,

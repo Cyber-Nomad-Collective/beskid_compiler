@@ -1,0 +1,10 @@
+/// Utility module docs
+pub mod util {
+/// Checks if value is positive
+pub bool is_positive(i32 value) { if value > 0 { return true; } else { return false; } }
+}
+
+pub unit run() {
+while cond { break; }
+let x = range(0, 10);
+}

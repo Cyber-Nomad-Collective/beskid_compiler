@@ -4,6 +4,8 @@ use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::{parse_program, resolve_input};
 use beskid_codegen::lower_source;
 
+use crate::projects::std_dependency_env_lock;
+
 use super::{corelib_root, expected_corelib_files};
 
 #[test]
@@ -48,6 +50,7 @@ fn checked_in_corelib_sources_parse_as_beskid_programs() {
 
 #[test]
 fn checked_in_corelib_prelude_lowers_to_codegen_artifact() {
+    let _env_guard = std_dependency_env_lock();
     let project = corelib_root();
     let resolved = resolve_input(None, Some(&project), Some("CoreLib"), None, false, false)
         .expect("resolve corelib project input");
@@ -72,6 +75,14 @@ fn checked_in_corelib_prelude_exports_mvp_modules() {
     assert!(
         prelude.contains("pub mod Core.String;"),
         "Prelude should export Core.String"
+    );
+    assert!(
+        prelude.contains("pub mod Testing.Contracts;"),
+        "Prelude should export Testing.Contracts"
+    );
+    assert!(
+        prelude.contains("pub mod Testing.Assertions;"),
+        "Prelude should export Testing.Assertions"
     );
     assert!(
         prelude.contains("pub mod System.IO;"),

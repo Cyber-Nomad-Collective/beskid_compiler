@@ -3,7 +3,9 @@ use crate::lowering::context::{CodegenContext, CodegenResult, LoweredFunction};
 use crate::lowering::lowerable::lower_node;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, type_id_for_type};
-use beskid_analysis::hir::{HirFunctionDefinition, HirLambdaExpression, HirMethodDefinition};
+use beskid_analysis::hir::{
+    HirFunctionDefinition, HirLambdaExpression, HirMethodDefinition, HirTestDefinition,
+};
 use beskid_analysis::resolve::{ItemId, LocalId, Resolution};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeInfo, TypeResult};
@@ -197,6 +199,88 @@ pub(crate) fn lower_method(
         .ok_or(CodegenError::MissingSymbol("method receiver item"))?;
     let function_name = mangle_method_name(&receiver_name, &def.node.name.node.name);
 
+    let flags = settings::Flags::new(settings::builder());
+    if let Err(err) = verify_function(&function, &flags) {
+        return Err(CodegenError::VerificationFailed {
+            function: function_name.clone(),
+            message: err.to_string(),
+        });
+    }
+
+    ctx.functions_emitted += 1;
+    ctx.lowered_functions.push(LoweredFunction {
+        name: function_name,
+        function,
+    });
+    Ok(())
+}
+
+pub(crate) fn lower_test(
+    def: &Spanned<HirTestDefinition>,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    function_defs: &HashMap<ItemId, &Spanned<HirFunctionDefinition>>,
+    ctx: &mut CodegenContext,
+) -> CodegenResult<()> {
+    let item_id = resolution
+        .items
+        .iter()
+        .find(|info| info.span == def.span)
+        .map(|info| info.id);
+    let signature_types = item_id.and_then(|id| type_result.function_signatures.get(&id));
+
+    let mut signature = Signature::new(CallConv::SystemV);
+    let return_type_id = signature_types.map(|sig| sig.return_type);
+    if let Some(type_id) = return_type_id
+        && let Some(clif_ty) = map_type_id_to_clif(type_result, type_id)
+    {
+        signature.returns.push(AbiParam::new(clif_ty));
+    }
+    let expects_return = signature_has_return(&signature);
+    let expected_return_type = return_type_id;
+
+    let mut function = Function::new();
+    function.signature = signature;
+
+    let mut fb_ctx = FunctionBuilderContext::new();
+    let mut builder = FunctionBuilder::new(&mut function, &mut fb_ctx);
+    let entry = builder.create_block();
+    builder.append_block_params_for_function_params(entry);
+    builder.switch_to_block(entry);
+    builder.seal_block(entry);
+
+    let mut state = FunctionLoweringState::default();
+    let mut node_ctx = NodeLoweringContext {
+        resolution,
+        type_result,
+        codegen: ctx,
+        function_defs,
+        builder: &mut builder,
+        state: &mut state,
+        expected_return_type,
+    };
+
+    for statement in &def.node.body.node.statements {
+        lower_node(statement, &mut node_ctx)?;
+        if node_ctx.state.block_terminated {
+            break;
+        }
+    }
+
+    if !node_ctx.state.return_emitted && !node_ctx.state.block_terminated {
+        if expects_return {
+            return Err(CodegenError::UnsupportedNode {
+                span: def.span,
+                node: "implicit non-unit return",
+            });
+        }
+        node_ctx.builder.ins().return_(&[]);
+    }
+
+    drop(node_ctx);
+    builder.finalize();
+
+    let function_name = def.node.name.node.name.clone();
     let flags = settings::Flags::new(settings::builder());
     if let Err(err) = verify_function(&function, &flags) {
         return Err(CodegenError::VerificationFailed {

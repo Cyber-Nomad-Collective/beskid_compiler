@@ -1,0 +1,20 @@
+pub type P
+{
+    i32 x,
+}
+
+pub i32 f(i32 a, i32 b)
+{
+    return a;
+}
+
+pub unit calls()
+{
+    let p = P
+    {
+        x: 1,
+    };
+    let y = f(1, 2);
+    let z = p.x;
+    return;
+}

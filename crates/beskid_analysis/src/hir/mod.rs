@@ -32,7 +32,9 @@ pub use item::{
     HirAttribute, HirAttributeDeclaration, HirAttributeParameter, HirAttributeTarget,
     HirContractDefinition, HirContractEmbedding, HirContractMethodSignature, HirContractNode,
     HirEnumDefinition, HirEnumVariant, HirExternInterface, HirFunctionDefinition, HirInlineModule,
-    HirMethodDefinition, HirModuleDeclaration, HirTypeDefinition, HirUseDeclaration, Item,
+    HirMethodDefinition, HirModuleDeclaration, HirTestDefinition, HirTestMetaSection,
+    HirTestMetadataEntry, HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition,
+    HirUseDeclaration, Item,
 };
 pub use legality::{HirLegalityError, validate_hir_program};
 pub use literal::HirLiteral;

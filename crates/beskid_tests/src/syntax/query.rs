@@ -77,7 +77,7 @@ fn test_query_find_first() {
 #[test]
 fn test_query_binary_expressions() {
     let input = "
-        unit test() {
+        unit sample() {
             let x = 1 + 2 * 3;
         }
     ";

@@ -1,0 +1,7 @@
+/// Root A
+/// Root B
+pub type DocT { i32 x, }
+
+/// Between items
+/// Second line
+pub unit doc_fn() { return; }

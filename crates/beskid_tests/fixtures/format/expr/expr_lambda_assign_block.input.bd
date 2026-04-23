@@ -1,0 +1,8 @@
+pub unit lam() {
+let id = x => x;
+let id2 = (i32 a, i32 b) => a + b;
+i32 k = 0;
+k = 1;
+let b = { 1; };
+return id(1);
+}

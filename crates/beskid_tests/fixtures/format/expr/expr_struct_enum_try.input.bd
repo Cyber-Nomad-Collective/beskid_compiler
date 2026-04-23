@@ -1,0 +1,10 @@
+pub type User { string name, }
+pub enum Opt { Some(i32 v), None }
+pub i32 g() { return 0; }
+pub unit combos() {
+let o = Opt::Some(1);
+let n = Opt::None();
+let u = User { name: "a" };
+let t = g()?;
+return t;
+}

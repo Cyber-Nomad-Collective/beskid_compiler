@@ -1,4 +1,4 @@
-use beskid_analysis::projects::parse_manifest;
+use beskid_analysis::projects::{parse_manifest, parse_workspace_manifest};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -8,6 +8,12 @@ use crate::position::offset_range_to_lsp;
 
 pub fn is_manifest_uri(uri: &Uri) -> bool {
     uri.to_string().to_lowercase().ends_with(".proj")
+}
+
+pub fn is_workspace_manifest_uri(uri: &Uri) -> bool {
+    let path = uri.path().as_str();
+    path.rsplit_once('/')
+        .is_some_and(|(_, tail)| tail.eq_ignore_ascii_case("workspace.proj"))
 }
 
 fn is_ident_char(ch: char) -> bool {
@@ -99,6 +105,12 @@ fn first_match_range(text: &str, needle: &str) -> Option<Range> {
     Some(offset_range_to_lsp(text, start, end))
 }
 
+fn block_header_range(text: &str, block: &str, label: &str) -> Option<Range> {
+    let quoted = format!("{block} \"{label}\"");
+    first_match_range(text, &quoted)
+        .or_else(|| first_match_range(text, &format!("{block} {label}")))
+}
+
 fn build_document_symbol(
     name: String,
     detail: Option<String>,
@@ -119,7 +131,11 @@ fn build_document_symbol(
     .expect("valid DocumentSymbol payload")
 }
 
-pub fn document_symbols(text: &str) -> Vec<DocumentSymbol> {
+pub fn document_symbols(uri: &Uri, text: &str) -> Vec<DocumentSymbol> {
+    if is_workspace_manifest_uri(uri) {
+        return workspace_document_symbols(text);
+    }
+
     let Ok(manifest) = parse_manifest(text) else {
         return Vec::new();
     };
@@ -137,8 +153,7 @@ pub fn document_symbols(text: &str) -> Vec<DocumentSymbol> {
     }
 
     for target in manifest.targets {
-        let needle = format!("target \"{}\"", target.name);
-        let range = first_match_range(text, &needle)
+        let range = block_header_range(text, "target", &target.name)
             .unwrap_or_else(|| Range::new(Position::new(0, 0), Position::new(0, 0)));
         symbols.push(build_document_symbol(
             target.name,
@@ -151,8 +166,7 @@ pub fn document_symbols(text: &str) -> Vec<DocumentSymbol> {
     }
 
     for dependency in manifest.dependencies {
-        let needle = format!("dependency \"{}\"", dependency.name);
-        let range = first_match_range(text, &needle)
+        let range = block_header_range(text, "dependency", &dependency.name)
             .unwrap_or_else(|| Range::new(Position::new(0, 0), Position::new(0, 0)));
         symbols.push(build_document_symbol(
             dependency.name,
@@ -167,55 +181,240 @@ pub fn document_symbols(text: &str) -> Vec<DocumentSymbol> {
     symbols
 }
 
-pub fn completion_candidates() -> [(&'static str, CompletionItemKind, &'static str); 14] {
-    [
-        (
-            "project",
-            CompletionItemKind::MODULE,
-            "Top-level project block",
-        ),
-        (
-            "target",
-            CompletionItemKind::MODULE,
-            "Top-level target block",
-        ),
-        (
-            "dependency",
-            CompletionItemKind::MODULE,
-            "Top-level dependency block",
-        ),
-        (
-            "name",
-            CompletionItemKind::FIELD,
-            "Project or dependency name",
-        ),
-        ("version", CompletionItemKind::FIELD, "Version string"),
-        ("root", CompletionItemKind::FIELD, "Source root folder"),
-        (
-            "kind",
-            CompletionItemKind::FIELD,
-            "Target kind: App | Lib | Test",
-        ),
-        ("entry", CompletionItemKind::FIELD, "Target entry file path"),
-        (
-            "source",
-            CompletionItemKind::FIELD,
-            "Dependency source kind",
-        ),
-        ("path", CompletionItemKind::FIELD, "Local dependency path"),
-        ("url", CompletionItemKind::FIELD, "Git dependency URL"),
-        ("rev", CompletionItemKind::FIELD, "Git dependency revision"),
-        (
-            "App",
-            CompletionItemKind::ENUM_MEMBER,
-            "Application target kind",
-        ),
-        (
-            "Lib",
-            CompletionItemKind::ENUM_MEMBER,
-            "Library target kind",
-        ),
-    ]
+fn workspace_document_symbols(text: &str) -> Vec<DocumentSymbol> {
+    let Ok(manifest) = parse_workspace_manifest(text) else {
+        return Vec::new();
+    };
+
+    let mut symbols = Vec::new();
+    if let Some(range) = first_match_range(text, "workspace") {
+        symbols.push(build_document_symbol(
+            manifest.workspace.name.clone(),
+            Some("workspace".to_string()),
+            SymbolKind::MODULE,
+            None,
+            range,
+            range,
+        ));
+    }
+
+    for member in manifest.members {
+        let range = block_header_range(text, "member", &member.name)
+            .unwrap_or_else(|| Range::new(Position::new(0, 0), Position::new(0, 0)));
+        symbols.push(build_document_symbol(
+            member.name,
+            Some("member".to_string()),
+            SymbolKind::MODULE,
+            None,
+            range,
+            range,
+        ));
+    }
+
+    for dependency_override in manifest.overrides {
+        let range = block_header_range(text, "override", &dependency_override.dependency)
+            .unwrap_or_else(|| Range::new(Position::new(0, 0), Position::new(0, 0)));
+        symbols.push(build_document_symbol(
+            dependency_override.dependency,
+            Some("override".to_string()),
+            SymbolKind::CONSTANT,
+            None,
+            range,
+            range,
+        ));
+    }
+
+    for registry in manifest.registries {
+        let range = block_header_range(text, "registry", &registry.name)
+            .unwrap_or_else(|| Range::new(Position::new(0, 0), Position::new(0, 0)));
+        symbols.push(build_document_symbol(
+            registry.name,
+            Some("registry".to_string()),
+            SymbolKind::INTERFACE,
+            None,
+            range,
+            range,
+        ));
+    }
+
+    symbols
+}
+
+type CompletionTriple = (&'static str, CompletionItemKind, &'static str);
+
+const PROJECT_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
+    (
+        "project",
+        CompletionItemKind::MODULE,
+        "Top-level project block",
+    ),
+    (
+        "target",
+        CompletionItemKind::MODULE,
+        "Top-level target block",
+    ),
+    (
+        "dependency",
+        CompletionItemKind::MODULE,
+        "Top-level dependency block",
+    ),
+    (
+        "name",
+        CompletionItemKind::FIELD,
+        "Project or dependency name",
+    ),
+    ("version", CompletionItemKind::FIELD, "Version string"),
+    ("root", CompletionItemKind::FIELD, "Source root folder"),
+    (
+        "kind",
+        CompletionItemKind::FIELD,
+        "Target kind: App, Lib, or Test (unquoted or quoted)",
+    ),
+    ("entry", CompletionItemKind::FIELD, "Target entry file path"),
+    (
+        "source",
+        CompletionItemKind::FIELD,
+        "Dependency source: path, git, or registry",
+    ),
+    ("path", CompletionItemKind::FIELD, "Local dependency path"),
+    ("url", CompletionItemKind::FIELD, "Git dependency URL"),
+    ("rev", CompletionItemKind::FIELD, "Git dependency revision"),
+    (
+        "App",
+        CompletionItemKind::ENUM_MEMBER,
+        "Application target kind",
+    ),
+    (
+        "Lib",
+        CompletionItemKind::ENUM_MEMBER,
+        "Library target kind",
+    ),
+    ("Test", CompletionItemKind::ENUM_MEMBER, "Test target kind"),
+];
+
+const WORKSPACE_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
+    (
+        "workspace",
+        CompletionItemKind::MODULE,
+        "Top-level workspace block",
+    ),
+    ("member", CompletionItemKind::MODULE, "Workspace member"),
+    (
+        "override",
+        CompletionItemKind::MODULE,
+        "Dependency version override",
+    ),
+    (
+        "registry",
+        CompletionItemKind::MODULE,
+        "Named package registry",
+    ),
+    (
+        "name",
+        CompletionItemKind::FIELD,
+        "Workspace or member name",
+    ),
+    ("path", CompletionItemKind::FIELD, "Member project path"),
+    ("url", CompletionItemKind::FIELD, "Registry URL"),
+    ("version", CompletionItemKind::FIELD, "Override version"),
+    (
+        "resolver",
+        CompletionItemKind::FIELD,
+        "Workspace resolver (e.g. v1)",
+    ),
+];
+
+pub fn manifest_keyword_completions(uri: &Uri) -> &'static [CompletionTriple] {
+    if is_workspace_manifest_uri(uri) {
+        WORKSPACE_MANIFEST_KEYWORDS
+    } else {
+        PROJECT_MANIFEST_KEYWORDS
+    }
+}
+
+#[derive(Clone, Copy)]
+enum EnumFieldAtCursor {
+    TargetKind,
+    DependencySource,
+    WorkspaceResolver,
+}
+
+fn line_key_value_suffix<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let spaced = format!("{key} = ");
+    let tight = format!("{key}=");
+    if let Some(pos) = line.rfind(&spaced) {
+        return line.get(pos + spaced.len()..);
+    }
+    if let Some(pos) = line.rfind(&tight) {
+        return line.get(pos + tight.len()..);
+    }
+    None
+}
+
+fn manifest_enum_field_at_cursor(text: &str, offset: usize) -> Option<EnumFieldAtCursor> {
+    let before = text.get(..offset)?;
+    let line_start = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let line = before.get(line_start..)?;
+
+    if let Some(rest) = line_key_value_suffix(line, "kind") {
+        let t = rest.trim_start();
+        if !t.starts_with('"') && (t.is_empty() || token_prefix_chars(t)) {
+            return Some(EnumFieldAtCursor::TargetKind);
+        }
+    }
+    if let Some(rest) = line_key_value_suffix(line, "source") {
+        let t = rest.trim_start();
+        if !t.starts_with('"') && (t.is_empty() || token_prefix_chars(t)) {
+            return Some(EnumFieldAtCursor::DependencySource);
+        }
+    }
+    if let Some(rest) = line_key_value_suffix(line, "resolver") {
+        let t = rest.trim_start();
+        if !t.starts_with('"') && (t.is_empty() || token_prefix_chars(t)) {
+            return Some(EnumFieldAtCursor::WorkspaceResolver);
+        }
+    }
+    None
+}
+
+fn token_prefix_chars(s: &str) -> bool {
+    s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+pub fn manifest_enum_completion_items(text: &str, offset: usize) -> Option<Vec<CompletionItem>> {
+    let field = manifest_enum_field_at_cursor(text, offset)?;
+    let variants: &[(&str, &str)] = match field {
+        EnumFieldAtCursor::TargetKind => &[
+            ("App", "Application target"),
+            ("Lib", "Library target"),
+            ("Test", "Test target"),
+        ],
+        EnumFieldAtCursor::DependencySource => &[
+            ("path", "Local path dependency"),
+            ("git", "Git dependency (schema only in v1)"),
+            ("registry", "Registry dependency (schema only in v1)"),
+        ],
+        EnumFieldAtCursor::WorkspaceResolver => &[("v1", "Default workspace resolver")],
+    };
+
+    let prefix = completion_prefix_at_offset(text, offset).to_lowercase();
+    let mut items: Vec<CompletionItem> = variants
+        .iter()
+        .filter(|(label, _)| prefix.is_empty() || label.to_lowercase().starts_with(&prefix))
+        .map(|&(label, detail)| CompletionItem {
+            label: label.to_string(),
+            kind: Some(CompletionItemKind::ENUM_MEMBER),
+            detail: Some(detail.to_string()),
+            ..CompletionItem::default()
+        })
+        .collect();
+
+    if items.is_empty() {
+        return None;
+    }
+
+    items.sort_by(|left, right| left.label.cmp(&right.label));
+    Some(items)
 }
 
 pub fn hover_markdown(token: &str) -> Option<&'static str> {
@@ -226,12 +425,16 @@ pub fn hover_markdown(token: &str) -> Option<&'static str> {
         "name" => Some("`name` is required in the `project` block."),
         "version" => Some("`version` is required in the `project` block."),
         "root" => Some("`root` is optional and defaults to `Src`."),
-        "kind" => Some("`kind` must be one of `App`, `Lib`, or `Test`."),
+        "kind" => Some(
+            "`kind` must be `App`, `Lib`, or `Test` (recommended: unquoted, e.g. `kind = Lib`).",
+        ),
         "entry" => Some("`entry` is required and relative to `project.root`."),
-        "source" => Some("`source` must be `path`, `git`, or `registry`."),
-        "path" => Some("`path` is required when `source = \"path\"`."),
-        "url" => Some("`url` is required when `source = \"git\"`."),
-        "rev" => Some("`rev` is required when `source = \"git\"`."),
+        "source" => Some(
+            "`source` must be `path`, `git`, or `registry` (recommended: unquoted, e.g. `source = path`).",
+        ),
+        "path" => Some("`path` is required when `source = path`."),
+        "url" => Some("`url` is required when `source = git`."),
+        "rev" => Some("`rev` is required when `source = git`."),
         _ => None,
     }
 }

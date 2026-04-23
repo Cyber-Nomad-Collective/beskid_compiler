@@ -35,6 +35,31 @@ def test(session: nox.Session) -> None:
     _cargo(session, "test", "-p", "beskid_tests")
 
 
+@nox.session(python=False, name="format_regression")
+def format_regression(session: nox.Session) -> None:
+    _cargo(session, "test", "-p", "beskid_tests", "format::")
+
+
+@nox.session(python=False, name="format_corpus_corelib")
+def format_corpus_corelib(session: nox.Session) -> None:
+    """Parse + format --check on corelib .bd files (opt-in: set BESKID_FORMAT_CORPUS=1)."""
+    if os.environ.get("BESKID_FORMAT_CORPUS") != "1":
+        session.log("Skipping format_corpus_corelib (set BESKID_FORMAT_CORPUS=1 to enable).")
+        return
+    _cargo(session, "build", "-p", "beskid_cli", "-q")
+    with session.chdir(str(ROOT)):
+        session.run(
+            sys.executable,
+            str(ROOT / "scripts" / "format_corpus_check.py"),
+            external=True,
+        )
+
+
+@nox.session(python=False, name="doc_comments")
+def doc_comments(session: nox.Session) -> None:
+    _cargo(session, "test", "-p", "beskid_tests", "doc_tests")
+
+
 @nox.session(python=False, name="abi_contracts")
 def abi_contracts(session: nox.Session) -> None:
     _cargo(session, "test", "-p", "beskid_tests", "abi::contracts::")

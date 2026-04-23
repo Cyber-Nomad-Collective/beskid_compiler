@@ -1,4 +1,42 @@
+use std::fs;
+use std::path::Path;
+
+use object::read::archive::ArchiveFile;
+use object::{Object, ObjectSymbol};
+
 use super::*;
+
+/// Collect symbol names from every object file embedded in a static `ar` archive.
+///
+/// System `nm` from Xcode cannot parse LLVM bitcode / metadata produced by newer Rust
+/// toolchains, so we use the `object` crate (same stack as codegen) for inspection.
+fn static_archive_symbol_text(path: &Path) -> String {
+    let data = fs::read(path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+    let archive = ArchiveFile::parse(data.as_slice())
+        .unwrap_or_else(|err| panic!("parse archive {}: {err:?}", path.display()));
+    let mut text = String::new();
+    for member in archive.members() {
+        let Ok(member) = member else {
+            continue;
+        };
+        let Ok(member_data) = member.data(data.as_slice()) else {
+            continue;
+        };
+        if member_data.is_empty() {
+            continue;
+        }
+        let Ok(obj) = object::read::File::parse(member_data) else {
+            continue;
+        };
+        for symbol in obj.symbols() {
+            if let Ok(name) = symbol.name() {
+                text.push_str(name);
+                text.push('\n');
+            }
+        }
+    }
+    text
+}
 
 #[test]
 fn static_build_contains_required_runtime_symbols() {
@@ -29,13 +67,7 @@ fn static_build_contains_required_runtime_symbols() {
         "expected final static archive to exist"
     );
 
-    let output = Command::new("nm")
-        .arg("-g")
-        .arg(&final_path)
-        .output()
-        .expect("nm should inspect linked archive");
-    assert!(output.status.success(), "expected nm to succeed");
-    let symbols = String::from_utf8_lossy(&output.stdout);
+    let symbols = static_archive_symbol_text(&final_path);
     assert!(
         symbols.contains(SYM_ABI_VERSION),
         "expected final static artifact to expose ABI version symbol"

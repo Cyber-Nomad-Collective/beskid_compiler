@@ -135,14 +135,26 @@ pub fn leading_doc_from_doc_run(
     debug_assert_eq!(pair.as_rule(), crate::parser::Rule::DocRun);
     let span = SpanInfo::from_span(&pair.as_span());
     let mut lines = Vec::new();
+    let mut saw_explicit_lines = false;
     for line in pair.clone().into_inner() {
         if line.as_rule() != crate::parser::Rule::DocLineContent {
             continue;
         }
+        saw_explicit_lines = true;
         let s = line.as_str();
         let rest = s.strip_prefix("///").unwrap_or(s);
         let rest = rest.strip_prefix(' ').unwrap_or(rest);
-        lines.push(rest.to_string());
+        lines.push(rest.trim_end_matches(['\n', '\r']).to_string());
+    }
+    if !saw_explicit_lines {
+        for raw in pair.as_str().lines() {
+            if !raw.starts_with("///") {
+                continue;
+            }
+            let rest = raw.strip_prefix("///").unwrap_or(raw);
+            let rest = rest.strip_prefix(' ').unwrap_or(rest);
+            lines.push(rest.to_string());
+        }
     }
     LeadingDocComment {
         span,

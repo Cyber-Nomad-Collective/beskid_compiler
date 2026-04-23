@@ -18,6 +18,7 @@ impl SemanticPipelineRule {
         self.check_duplicate_definition_names(ctx, hir);
         self.check_file_scoped_module_structure(ctx, hir);
         self.check_duplicate_non_type_item_names(ctx, hir);
+        self.check_test_metadata_schema(ctx, hir);
         self.check_unknown_types_in_definitions(ctx, hir);
         self.check_conflicting_embedded_contracts(ctx, hir);
 
@@ -38,6 +39,13 @@ impl SemanticPipelineRule {
         let mut seen: HashMap<String, SpanInfo> = HashMap::new();
 
         self.check_duplicate_query_entries::<crate::hir::HirFunctionDefinition>(
+            ctx,
+            hir,
+            &mut seen,
+            DuplicateKind::ItemName,
+            |definition| (definition.name.node.name.clone(), definition.name.span),
+        );
+        self.check_duplicate_query_entries::<crate::hir::HirTestDefinition>(
             ctx,
             hir,
             &mut seen,
@@ -114,6 +122,62 @@ impl SemanticPipelineRule {
                     self.emit_nested_module_errors(ctx, inline_module);
                 }
                 _ => {}
+            }
+        }
+    }
+
+    fn check_test_metadata_schema(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
+        for test in HirQuery::from(&hir.node).of::<crate::hir::HirTestDefinition>() {
+            if let Some(meta) = &test.meta {
+                for entry in &meta.node.entries {
+                    let key = entry.node.name.node.name.as_str();
+                    if key != "tags" && key != "group" {
+                        ctx.emit_issue(
+                            entry.node.name.span,
+                            SemanticIssueKind::InvalidHirSpan {
+                                context: format!(
+                                    "test `{}` meta key `{}` is invalid (allowed: tags, group)",
+                                    test.name.node.name, key
+                                ),
+                            },
+                        );
+                    }
+                }
+            }
+
+            if let Some(skip) = &test.skip {
+                for entry in &skip.node.entries {
+                    let key = entry.node.name.node.name.as_str();
+                    if key != "condition" && key != "reason" {
+                        ctx.emit_issue(
+                            entry.node.name.span,
+                            SemanticIssueKind::InvalidHirSpan {
+                                context: format!(
+                                    "test `{}` skip key `{}` is invalid (allowed: condition, reason)",
+                                    test.name.node.name, key
+                                ),
+                            },
+                        );
+                    }
+                    if key == "condition" {
+                        let is_const_bool = matches!(
+                            entry.node.value.node,
+                            crate::hir::HirExpressionNode::LiteralExpression(ref literal)
+                                if matches!(literal.node.literal.node, crate::hir::HirLiteral::Bool(_))
+                        );
+                        if !is_const_bool {
+                            ctx.emit_issue(
+                                entry.node.value.span,
+                                SemanticIssueKind::InvalidHirSpan {
+                                    context: format!(
+                                        "test `{}` skip.condition must be a boolean literal",
+                                        test.name.node.name
+                                    ),
+                                },
+                            );
+                        }
+                    }
+                }
             }
         }
     }

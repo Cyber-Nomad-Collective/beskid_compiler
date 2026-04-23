@@ -59,7 +59,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                     .is_empty()
                 {
                     return Err(ProjectError::Validation(format!(
-                        "dependency `{}` with source=\"path\" requires `path`",
+                        "dependency `{}` with source = path requires `path`",
                         dependency.name
                     )));
                 }
@@ -73,7 +73,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                     .is_empty()
                 {
                     return Err(ProjectError::Validation(format!(
-                        "dependency `{}` with source=\"git\" requires `url`",
+                        "dependency `{}` with source = git requires `url`",
                         dependency.name
                     )));
                 }
@@ -85,7 +85,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                     .is_empty()
                 {
                     return Err(ProjectError::Validation(format!(
-                        "dependency `{}` with source=\"git\" requires `rev`",
+                        "dependency `{}` with source = git requires `rev`",
                         dependency.name
                     )));
                 }
@@ -99,7 +99,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                     .is_empty()
                 {
                     return Err(ProjectError::Validation(format!(
-                        "dependency `{}` with source=\"registry\" requires `version`",
+                        "dependency `{}` with source = registry requires `version`",
                         dependency.name
                     )));
                 }

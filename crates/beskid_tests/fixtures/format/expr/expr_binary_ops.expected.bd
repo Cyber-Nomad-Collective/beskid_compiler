@@ -1,0 +1,22 @@
+pub i32 add(i32 a, i32 b)
+{
+    return a;
+}
+
+pub unit ops()
+{
+    let a = true || false;
+    let b = true && false;
+    let c = 1 === 1;
+    let d = 1 !== 2;
+    let e = 1 == 1;
+    let f = 1 != 2;
+    let g = 1 < 2;
+    let i = 1 > 0;
+    let k = 1 + 2;
+    let l = 3 - 2;
+    let m = 2 * 3;
+    let n = 4 / 2;
+    let p = add(1, 2);
+    return;
+}

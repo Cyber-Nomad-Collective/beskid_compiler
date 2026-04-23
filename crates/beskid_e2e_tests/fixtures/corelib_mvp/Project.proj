@@ -4,6 +4,6 @@ project {
 }
 
 target "App" {
-  kind = "App"
+  kind = App
   entry = "Main.bd"
 }

@@ -71,6 +71,7 @@ fn push_semantic_symbol_tokens(
     for symbol in beskid_analysis::services::collect_document_symbols(analysis) {
         let token_type = match symbol.kind {
             AnalysisSymbolKind::Function => TOKEN_TYPE_FUNCTION,
+            AnalysisSymbolKind::Test => TOKEN_TYPE_FUNCTION,
             AnalysisSymbolKind::Method => TOKEN_TYPE_METHOD,
             AnalysisSymbolKind::Type => TOKEN_TYPE_STRUCT,
             AnalysisSymbolKind::Enum => TOKEN_TYPE_ENUM,

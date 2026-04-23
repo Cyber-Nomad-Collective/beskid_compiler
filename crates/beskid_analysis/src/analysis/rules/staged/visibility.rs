@@ -119,6 +119,11 @@ impl SemanticPipelineRule {
                     definition.node.visibility.node,
                     definition.node.name.span,
                 ),
+                HirItem::TestDefinition(definition) => (
+                    definition.node.name.node.name.clone(),
+                    definition.node.visibility.node,
+                    definition.node.name.span,
+                ),
                 HirItem::EnumDefinition(definition) => (
                     definition.node.name.node.name.clone(),
                     definition.node.visibility.node,
@@ -184,6 +189,14 @@ impl SemanticPipelineRule {
                         definition.node.name.span,
                     );
                 }
+                HirItem::TestDefinition(definition)
+                    if definition.node.visibility.node == HirVisibility::Private =>
+                {
+                    items.insert(
+                        definition.node.name.node.name.clone(),
+                        definition.node.name.span,
+                    );
+                }
                 _ => {}
             }
         }
@@ -206,6 +219,23 @@ impl SemanticPipelineRule {
                         HirQuery::from(&definition.node.body.node).of::<HirExpressionNode>()
                     {
                         self.collect_used_from_expression(expression, &mut used);
+                    }
+                }
+                HirItem::TestDefinition(definition) => {
+                    for expression in
+                        HirQuery::from(&definition.node.body.node).of::<HirExpressionNode>()
+                    {
+                        self.collect_used_from_expression(expression, &mut used);
+                    }
+                    if let Some(meta) = &definition.node.meta {
+                        for expression in HirQuery::from(&meta.node).of::<HirExpressionNode>() {
+                            self.collect_used_from_expression(expression, &mut used);
+                        }
+                    }
+                    if let Some(skip) = &definition.node.skip {
+                        for expression in HirQuery::from(&skip.node).of::<HirExpressionNode>() {
+                            self.collect_used_from_expression(expression, &mut used);
+                        }
                     }
                 }
                 _ => {}

@@ -153,6 +153,15 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
         });
     }
 
+    // macOS ships BSD `ar`, which does not implement GNU binutils MRI scripts (`ar -M`).
+    // Xcode's `libtool -static` is the supported way to merge a static archive with objects.
+    let is_apple_host_style = target.contains("darwin")
+        || target.contains("apple")
+        || target.contains("macos");
+    if is_apple_host_style {
+        return archive_static_libtool(req);
+    }
+
     let script_path = req.output_path.with_extension("mri");
     let runtime_lib = req
         .runtime_staticlib
@@ -207,6 +216,62 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
         command_line: format!(
             "ar -M < {} && ranlib {}",
             script_path.display(),
+            req.output_path.display()
+        ),
+        exported_symbols: req.exported_symbols.clone(),
+    })
+}
+
+fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
+    let runtime_lib = req
+        .runtime_staticlib
+        .as_ref()
+        .ok_or_else(|| AotError::InvalidRequest {
+            message: "static archive output requires runtime archive unless standalone object-only mode is used"
+                .to_owned(),
+        })?;
+
+    let mut cmd = Command::new("libtool");
+    cmd.arg("-static");
+    cmd.arg("-o").arg(&req.output_path);
+    cmd.arg(runtime_lib);
+    cmd.arg(&req.object_path);
+
+    if req.verbose {
+        eprintln!("[aot] archive command: {:?}", cmd);
+    }
+
+    let output = cmd.output().map_err(|_| AotError::LinkerUnavailable)?;
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: format!(
+                "libtool -static -o {} {} {}",
+                req.output_path.display(),
+                runtime_lib.display(),
+                req.object_path.display()
+            ),
+        });
+    }
+
+    let ranlib_out = Command::new("ranlib")
+        .arg(&req.output_path)
+        .output()
+        .map_err(|_| AotError::LinkerUnavailable)?;
+    if !ranlib_out.status.success() {
+        return Err(AotError::LinkFailed {
+            status: ranlib_out.status.code().unwrap_or(-1),
+            command: format!("ranlib {}", req.output_path.display()),
+        });
+    }
+
+    Ok(LinkResult {
+        output_path: req.output_path.clone(),
+        command_line: format!(
+            "libtool -static -o {} {} {} && ranlib {}",
+            req.output_path.display(),
+            runtime_lib.display(),
+            req.object_path.display(),
             req.output_path.display()
         ),
         exported_symbols: req.exported_symbols.clone(),

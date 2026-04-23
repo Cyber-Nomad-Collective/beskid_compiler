@@ -17,5 +17,6 @@ cranelift-jit = "0.128.3"
 cranelift-module = "0.128.3"
 cranelift-native = "0.128.3"
 pest = { workspace = true }
+object = "0.37.3"
 tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "sync"] }
 tower-lsp-server = "0.23.0"

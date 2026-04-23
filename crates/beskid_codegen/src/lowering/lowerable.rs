@@ -1,6 +1,6 @@
 use crate::lowering::cast_intent::validate_cast_intents;
 use crate::lowering::context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport};
-use crate::lowering::function::{lower_function, lower_method};
+use crate::lowering::function::{lower_function, lower_method, lower_test};
 use beskid_analysis::hir::{
     HirContractDefinition, HirContractNode, HirFunctionDefinition, HirInlineModule, HirItem,
     HirProgram,
@@ -51,6 +51,11 @@ fn lower_function_items(
                     && let Err(error) =
                         lower_function(def, resolution, type_result, function_defs, ctx)
                 {
+                    errors.push(error);
+                }
+            }
+            HirItem::TestDefinition(def) => {
+                if let Err(error) = lower_test(def, resolution, type_result, function_defs, ctx) {
                     errors.push(error);
                 }
             }

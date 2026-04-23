@@ -1,0 +1,20 @@
+use std.io;
+
+pub type Pair
+{
+    i32 left,
+
+    i32 right,
+}
+
+pub enum Result<T>
+{
+    Ok(T value),
+
+    Err(string message),
+}
+
+pub i32 sum(i32 a, i32 b)
+{
+    return a + b;
+}

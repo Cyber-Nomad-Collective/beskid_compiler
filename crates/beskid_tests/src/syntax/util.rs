@@ -12,7 +12,7 @@ pub fn parse_program_ast(input: &str) -> Spanned<Program> {
 }
 
 pub fn parse_node_ast(input: &str) -> Spanned<Node> {
-    let pair = parse_pair(Rule::Item, input);
+    let pair = parse_pair(Rule::InnerItem, input);
     Node::parse(pair).expect("expected node AST")
 }
 

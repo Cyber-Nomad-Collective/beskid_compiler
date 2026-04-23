@@ -3,7 +3,8 @@ use crate::hir::{
     HirAttributeTarget, HirContractDefinition, HirContractEmbedding, HirContractMethodSignature,
     HirContractNode, HirEnumDefinition, HirEnumVariant, HirExternInterface, HirFunctionDefinition,
     HirInlineModule, HirItem, HirMethodDefinition, HirModuleDeclaration, HirProgram,
-    HirTypeDefinition, HirUseDeclaration,
+    HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry, HirTestSkipEntry,
+    HirTestSkipSection, HirTypeDefinition, HirUseDeclaration,
 };
 use crate::syntax::{self, Spanned};
 
@@ -79,6 +80,7 @@ impl Lowerable for Spanned<AstItem> {
             AstItem::TypeDefinition(def) => HirItem::TypeDefinition(def.lower()),
             AstItem::EnumDefinition(def) => HirItem::EnumDefinition(def.lower()),
             AstItem::ContractDefinition(def) => HirItem::ContractDefinition(def.lower()),
+            AstItem::TestDefinition(def) => HirItem::TestDefinition(def.lower()),
             AstItem::AttributeDeclaration(def) => HirItem::AttributeDeclaration(def.lower()),
             AstItem::ModuleDeclaration(def) => HirItem::ModuleDeclaration(def.lower()),
             AstItem::InlineModule(def) => HirItem::InlineModule(def.lower()),
@@ -118,6 +120,83 @@ impl Lowerable for Spanned<syntax::MethodDefinition> {
                 parameters: self.node.parameters.iter().map(Lowerable::lower).collect(),
                 return_type: self.node.return_type.as_ref().map(Lowerable::lower),
                 body: self.node.body.lower(),
+            },
+            self.span,
+        )
+    }
+}
+
+impl Lowerable for Spanned<syntax::TestDefinition> {
+    type Output = Spanned<HirTestDefinition>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirTestDefinition {
+                attributes: lower_attributes(&self.node.attributes),
+                visibility: self.node.visibility.lower(),
+                name: self.node.name.lower(),
+                meta: self.node.meta.as_ref().map(Lowerable::lower),
+                skip: self.node.skip.as_ref().map(Lowerable::lower),
+                body: Spanned::new(
+                    crate::hir::HirBlock {
+                        statements: self.node.statements.iter().map(Lowerable::lower).collect(),
+                    },
+                    self.span,
+                ),
+            },
+            self.span,
+        )
+    }
+}
+
+impl Lowerable for Spanned<syntax::TestMetaSection> {
+    type Output = Spanned<HirTestMetaSection>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirTestMetaSection {
+                entries: self.node.entries.iter().map(Lowerable::lower).collect(),
+            },
+            self.span,
+        )
+    }
+}
+
+impl Lowerable for Spanned<syntax::TestMetadataEntry> {
+    type Output = Spanned<HirTestMetadataEntry>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirTestMetadataEntry {
+                name: self.node.name.lower(),
+                value: self.node.value.lower(),
+            },
+            self.span,
+        )
+    }
+}
+
+impl Lowerable for Spanned<syntax::TestSkipSection> {
+    type Output = Spanned<HirTestSkipSection>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirTestSkipSection {
+                entries: self.node.entries.iter().map(Lowerable::lower).collect(),
+            },
+            self.span,
+        )
+    }
+}
+
+impl Lowerable for Spanned<syntax::TestSkipEntry> {
+    type Output = Spanned<HirTestSkipEntry>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirTestSkipEntry {
+                name: self.node.name.lower(),
+                value: self.node.value.lower(),
             },
             self.span,
         )
@@ -313,6 +392,7 @@ impl Lowerable for Spanned<syntax::InlineModule> {
                     syntax::Node::ContractDefinition(def) => {
                         HirItem::ContractDefinition(def.lower())
                     }
+                    syntax::Node::TestDefinition(def) => HirItem::TestDefinition(def.lower()),
                     syntax::Node::AttributeDeclaration(def) => {
                         HirItem::AttributeDeclaration(def.lower())
                     }

@@ -304,7 +304,10 @@ workspace {
 "#;
 
     let error = parse_manifest(source).expect_err("must fail");
-    assert!(matches!(error, ProjectError::Parse(_)));
+    assert!(matches!(
+        error,
+        ProjectError::Parse(_) | ProjectError::ParseAt { .. }
+    ));
 }
 
 #[test]

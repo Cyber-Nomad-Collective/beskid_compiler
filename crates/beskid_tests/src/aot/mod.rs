@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(super) use std::process::Command;
-
 pub(super) use beskid_abi::{SYM_ABI_VERSION, SYM_INTEROP_DISPATCH_UNIT};
 use beskid_analysis::analysis::diagnostics::Severity;
 use beskid_analysis::hir::{
