@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{fs, io};
 
 use clap::{Args, Subcommand};
@@ -57,6 +57,10 @@ pub struct PckgArgs {
     /// Repository-local pckg config file path.
     #[arg(long, default_value = DEFAULT_PCKG_CONFIG_PATH)]
     pub config_file: PathBuf,
+
+    /// Extra diagnostics (base URL, auth presence, timings).
+    #[arg(short, long, default_value_t = false)]
+    pub verbose: bool,
 
     #[command(subcommand)]
     pub command: PckgCommand,
@@ -359,12 +363,23 @@ pub fn execute(args: PckgArgs) -> Result<(), PckgError> {
 
 async fn execute_async(args: PckgArgs) -> Result<(), PckgError> {
     let args_for_client = args.clone();
+    if args.verbose {
+        let auth = if args.api_key.is_some() || args.bearer_token.is_some() {
+            "cli-args"
+        } else {
+            "repositories.json-or-env"
+        };
+        eprintln!(
+            "[pckg] verbose: base_url={} auth_hint={auth}",
+            args.base_url.trim()
+        );
+    }
 
     match args.command {
         PckgCommand::Pack(pack_args) => execute_pack(pack_args),
         PckgCommand::Upload(upload_args) => {
             let client = build_client(&args_for_client)?;
-            execute_publish(&client, upload_args).await
+            execute_publish(&client, upload_args, args_for_client.verbose).await
         }
         PckgCommand::Configure(configure_args) => {
             execute_configure(&args.config_file, &args.base_url, configure_args)
@@ -530,10 +545,10 @@ fn save_repository_api_key(
         },
     );
 
-    if let Some(parent) = config_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = config_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)?;
     }
 
     let mut output = serde_json::to_string_pretty(&config).map_err(|source| PckgError::Api {
@@ -611,7 +626,11 @@ fn canonical_repository_url(raw_url: &str) -> Result<String, PckgError> {
     Ok(url.to_string())
 }
 
-async fn execute_publish(client: &PckgClient, args: PublishArgs) -> Result<(), PckgError> {
+async fn execute_publish(
+    client: &PckgClient,
+    args: PublishArgs,
+    verbose: bool,
+) -> Result<(), PckgError> {
     let artifact_name = args
         .artifact
         .file_name()
@@ -619,37 +638,96 @@ async fn execute_publish(client: &PckgClient, args: PublishArgs) -> Result<(), P
         .unwrap_or("artifact.bpk")
         .to_string();
 
-    let artifact_bytes = fs::read(&args.artifact).map_err(|source| PckgError::Api {
-        status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-        message: format!("failed to read artifact: {source}"),
-        body: None,
-    })?;
+    let artifact_path = &args.artifact;
+    let len = tokio::fs::metadata(artifact_path)
+        .await
+        .map_err(PckgError::Io)?
+        .len();
 
-    let spinner = spinner("Publishing package version...");
+    let upload_pb = if io::stdout().is_terminal() && len > 0 {
+        let pb = ProgressBar::new(len);
+        pb.set_style(
+            ProgressStyle::with_template(
+                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
+            )
+            .expect("template")
+            .progress_chars("#>-"),
+        );
+        pb.set_message("uploading artifact");
+        Some(pb)
+    } else {
+        None
+    };
+
+    let spinner = if upload_pb.is_none() {
+        Some(spinner("Publishing package version..."))
+    } else {
+        None
+    };
+
+    let started = Instant::now();
     let response = client
         .publish_package_version(
             &args.package,
             &args.version,
+            artifact_path,
             &artifact_name,
-            artifact_bytes,
             args.manifest_json.as_deref(),
             args.checksum_sha256.as_deref(),
+            upload_pb.as_ref(),
         )
         .await;
 
+    if let Some(s) = spinner.as_ref() {
+        match &response {
+            Ok(_) => s.finish_with_message("Package publish request completed."),
+            Err(_) => s.abandon_with_message("Package publish failed."),
+        }
+    }
+
     match response {
         Ok(response) => {
-            spinner.finish_with_message("Package publish request completed.");
-            println!("{}", response.message);
-            if let Some(version) = response.version {
-                print_package_versions_table(&[version]);
+            if verbose {
+                eprintln!("[pckg] verbose: upload elapsed {:?}", started.elapsed());
             }
+            let base = client.config().base_url.as_str().trim_end_matches('/');
+            println!("{}", response.message);
+            println!("--- publish summary ---");
+            println!("registry: {base}");
+            println!(
+                "request:  POST /api/packages/{}/publish",
+                args.package.trim()
+            );
+            println!("package:  {}", args.package);
+            println!("version:  {}", args.version);
+            if let Some(version) = &response.version {
+                println!("checksum: {}", version.checksum_sha256);
+                println!("size:     {} bytes", version.size_bytes);
+                println!("published_at_utc: {}", version.published_at_utc);
+                print_package_versions_table(std::slice::from_ref(version));
+            } else {
+                println!("(no version details in response)");
+            }
+            println!("------------------------");
             Ok(())
         }
         Err(err) => {
-            spinner.abandon_with_message("Package publish failed.");
+            print_pckg_error_human(&err);
             Err(err)
         }
+    }
+}
+
+fn print_pckg_error_human(err: &PckgError) {
+    eprintln!("pckg error: {err}");
+    match err {
+        PckgError::Api { body: Some(b), .. } | PckgError::LogicalFailure { body: Some(b), .. } => {
+            let snippet: String = b.chars().take(2000).collect();
+            if !snippet.is_empty() {
+                eprintln!("response body (truncated): {snippet}");
+            }
+        }
+        _ => {}
     }
 }
 

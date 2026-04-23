@@ -25,9 +25,23 @@ pub enum PckgError {
         message: String,
         body: Option<String>,
     },
+
+    /// HTTP 2xx with a JSON body indicating `success: false` (server or proxy contract).
+    #[error("API reported failure: {message}")]
+    LogicalFailure {
+        message: String,
+        body: Option<String>,
+    },
 }
 
 impl PckgError {
+    pub(crate) fn logical_failure(message: impl Into<String>, body: Option<String>) -> Self {
+        Self::LogicalFailure {
+            message: message.into(),
+            body,
+        }
+    }
+
     pub(crate) fn from_api_error(status: StatusCode, body: String) -> Self {
         let message = extract_api_message(&body).unwrap_or_else(|| {
             status
