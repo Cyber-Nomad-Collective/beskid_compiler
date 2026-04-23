@@ -1,5 +1,5 @@
 project {
-  name = "StdlibMvp"
+  name = "CorelibMvp"
   version = "0.1.0"
 }
 

@@ -110,7 +110,7 @@ impl<'gc> DynamicRootSet<'gc> {
     #[inline]
     pub fn contains<R: for<'r> Rootable<'r>>(&self, root: &DynamicRoot<R>) -> bool {
         // NOTE: We are making an assumption about how `Weak` works that is currently true and
-        // surely MUST continue to be true, but is possibly under-specified in the stdlib. We are
+        // surely MUST continue to be true, but is possibly under-specified in the Rust standard library. We are
         // assuming that if the `Weak` pointer held in the given `DynamicRoot` points to a *dropped*
         // root set, that `Weak::as_ptr` will return a pointer that cannot possibly belong to a
         // live `Rc`.

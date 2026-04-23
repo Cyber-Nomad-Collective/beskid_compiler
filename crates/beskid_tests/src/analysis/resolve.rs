@@ -113,7 +113,8 @@ fn qualified_type_path_with_known_module_and_missing_symbol_is_error() {
 
 #[test]
 fn qualified_module_path_to_private_item_is_error() {
-    let result = resolve_program("mod dep; type secret { i32 value } unit foo() { let x = dep.secret; }");
+    let result =
+        resolve_program("mod dep; type secret { i32 value } unit foo() { let x = dep.secret; }");
     let errors = result.expect_err("expected private item in module error");
     assert!(
         errors
@@ -136,7 +137,9 @@ fn non_contract_conformance_target_is_error() {
 
 #[test]
 fn qualified_module_path_to_public_item_is_allowed() {
-    let result = resolve_program("mod dep; pub type secret { i32 value } unit foo() { let x = dep.secret; }");
+    let result = resolve_program(
+        "mod dep; pub type secret { i32 value } unit foo() { let x = dep.secret; }",
+    );
     assert!(
         result.is_ok(),
         "expected qualified access to public module item to resolve"
@@ -173,7 +176,9 @@ fn stdarray_new_resolves() {
 
 #[test]
 fn qualified_nested_public_module_path_is_allowed() {
-    let result = resolve_program("mod dep.api; pub type v1 { i32 value } unit main() { let x = dep.api.v1; }");
+    let result = resolve_program(
+        "mod dep.api; pub type v1 { i32 value } unit main() { let x = dep.api.v1; }",
+    );
     assert!(
         result.is_ok(),
         "expected qualified access to nested public module item to resolve"
@@ -182,7 +187,9 @@ fn qualified_nested_public_module_path_is_allowed() {
 
 #[test]
 fn qualified_nested_private_module_path_is_error() {
-    let result = resolve_program("mod dep.api; type secret { i32 value } unit main() { let x = dep.api.secret; }");
+    let result = resolve_program(
+        "mod dep.api; type secret { i32 value } unit main() { let x = dep.api.secret; }",
+    );
     let errors = result.expect_err("expected private nested module item error");
     assert!(
         errors
@@ -193,7 +200,11 @@ fn qualified_nested_private_module_path_is_error() {
 
 #[test]
 fn aliased_import_name_resolves_in_value_path() {
-    let result = resolve_program("mod dep; pub type Parser { i32 value } use dep.Parser as DepParser; unit main() { let x = DepParser; }");
-    assert!(result.is_ok(), "expected aliased import to resolve as value");
+    let result = resolve_program(
+        "mod dep; pub type Parser { i32 value } use dep.Parser as DepParser; unit main() { let x = DepParser; }",
+    );
+    assert!(
+        result.is_ok(),
+        "expected aliased import to resolve as value"
+    );
 }
-

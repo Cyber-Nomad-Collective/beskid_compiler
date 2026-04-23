@@ -9,8 +9,8 @@ Current supported extern mapping for analysis and runtime wiring:
 - Linux: `extern_dlopen` path is primary.
 - Other platforms: compile-time or runtime stubs should fail with explicit diagnostics.
 
-## MVP stdlib/runtime ABI touchpoints
-For compile/run MVP with checked-in stdlib (`corelib/standard_library`), runtime exports must keep these symbols stable:
+## MVP corelib/runtime ABI touchpoints
+For compile/run MVP with checked-in corelib (`corelib/beskid_corelib`), runtime exports must keep these symbols stable:
 - `str_len` (used by `Core.String`)
 - `sys_print` and `sys_println` (used by `System.IO`)
 

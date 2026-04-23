@@ -1,33 +1,45 @@
 use std::path::{Path, PathBuf};
 
+const ENV_CORELIB_SOURCE: &str = "BESKID_CORELIB_SOURCE";
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR set by Cargo"));
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(override_path) = std::env::var("BESKID_STDLIB_SOURCE") {
-        candidates.push(PathBuf::from(override_path));
-    }
-    candidates.push(manifest_dir.join("../../corelib/standard_library"));
+    let candidates: Vec<PathBuf> = corelib_source_candidates(manifest_dir);
 
-    let stdlib_dir = candidates.into_iter().find(|p| p.is_dir()).unwrap_or_else(|| {
-        panic!(
-            "beskid_cli: standard library sources not found. Expected `../../corelib/standard_library` \
+    let corelib_dir = candidates
+        .into_iter()
+        .find(|p| p.is_dir())
+        .unwrap_or_else(|| {
+            panic!(
+                "beskid_cli: corelib sources not found. Expected `../../corelib/beskid_corelib` \
              (the `corelib` Git submodule at the compiler repository root). \
-             Set BESKID_STDLIB_SOURCE to an absolute path to override. \
+             Set BESKID_CORELIB_SOURCE to an absolute path to override. \
              Hint: `git submodule update --init --recursive` from the compiler repo root."
-        )
-    });
+            )
+        });
 
-    let dest = out_dir.join("embedded_stdlib");
+    let dest = out_dir.join("embedded_corelib");
     if dest.exists() {
-        std::fs::remove_dir_all(&dest).expect("remove stale embedded_stdlib");
+        std::fs::remove_dir_all(&dest).expect("remove stale embedded_corelib");
     }
-    copy_dir_all(&stdlib_dir, &dest).expect("copy standard library into OUT_DIR");
+    copy_dir_all(&corelib_dir, &dest).expect("copy corelib into OUT_DIR");
 
-    register_rerun_if_changed(&stdlib_dir);
-    println!("cargo:rerun-if-env-changed=BESKID_STDLIB_SOURCE");
+    register_rerun_if_changed(&corelib_dir);
+    println!("cargo:rerun-if-env-changed={ENV_CORELIB_SOURCE}");
+}
+
+fn corelib_source_candidates(manifest_dir: &Path) -> Vec<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(override_path) = std::env::var(ENV_CORELIB_SOURCE) {
+        if !override_path.trim().is_empty() {
+            candidates.push(PathBuf::from(override_path));
+        }
+    }
+    candidates.push(manifest_dir.join("../../corelib/beskid_corelib"));
+    candidates
 }
 
 fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {

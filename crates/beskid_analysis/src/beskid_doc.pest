@@ -1,0 +1,11 @@
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+NEWLINE = _{ "\n" | "\r\n" | "\r" }
+
+DocBody = { SOI ~ piece* ~ EOI }
+
+piece = { RefInline | Run }
+
+RefInline = { "@ref(" ~ inner ~ ")" }
+inner = { (!(")") ~ ANY)* }
+
+Run = { (!( "@ref(" )) ~ ANY)+ }

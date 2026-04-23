@@ -817,17 +817,12 @@ fn path_tail(path: &Spanned<HirPath>) -> String {
 }
 
 fn file_scoped_module_index(program: &Spanned<HirProgram>) -> Option<usize> {
-    program
-        .node
-        .items
-        .iter()
-        .position(|item| match &item.node {
-            HirItem::ModuleDeclaration(def) => {
-                def.node.visibility.node == HirVisibility::Private
-                    && def.node.attributes.is_empty()
-            }
-            _ => false,
-        })
+    program.node.items.iter().position(|item| match &item.node {
+        HirItem::ModuleDeclaration(def) => {
+            def.node.visibility.node == HirVisibility::Private && def.node.attributes.is_empty()
+        }
+        _ => false,
+    })
 }
 
 fn file_scoped_module_path(program: &Spanned<HirProgram>) -> Option<Vec<String>> {

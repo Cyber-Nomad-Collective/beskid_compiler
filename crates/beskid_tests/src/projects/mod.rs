@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod compile_plan;
 #[cfg(test)]
+mod corelib;
+#[cfg(test)]
 mod discovery;
 #[cfg(test)]
 mod graph;
@@ -10,7 +12,5 @@ mod lockfile;
 mod manifest;
 #[cfg(test)]
 mod resolution;
-#[cfg(test)]
-mod stdlib;
 #[cfg(test)]
 mod workspace_manifest;

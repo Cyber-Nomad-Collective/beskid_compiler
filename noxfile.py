@@ -101,3 +101,8 @@ def release_cli(session: nox.Session) -> None:
     session.install("-r", str(ROOT / "ci" / "requirements.txt"))
     with session.chdir(str(ROOT)):
         session.run("python", "-m", "ci.release_cli")
+
+
+@nox.session(python=False, name="corelib_quality")
+def corelib_quality(session: nox.Session) -> None:
+    _cargo(session, "test", "-p", "beskid_tests", "projects::corelib::")

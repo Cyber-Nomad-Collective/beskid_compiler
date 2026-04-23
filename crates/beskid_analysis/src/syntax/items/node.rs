@@ -43,11 +43,11 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
 
     match pair.as_rule() {
-        Rule::Item => {
+        Rule::InnerItem => {
             let inner = pair
                 .into_inner()
                 .next()
-                .ok_or(ParseError::missing(Rule::Item))?;
+                .ok_or(ParseError::missing(Rule::InnerItem))?;
             parse_node(inner)
         }
         Rule::FunctionDefinition => {
@@ -82,6 +82,6 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
             let node = UseDeclaration::parse(pair)?;
             Ok(Spanned::new(Node::UseDeclaration(node), span))
         }
-        _ => Err(ParseError::unexpected_rule(pair, Some(Rule::Item))),
+        _ => Err(ParseError::unexpected_rule(pair, Some(Rule::InnerItem))),
     }
 }

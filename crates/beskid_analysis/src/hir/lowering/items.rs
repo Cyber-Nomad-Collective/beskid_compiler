@@ -59,7 +59,13 @@ impl Lowerable for Spanned<AstProgram> {
 
     fn lower(&self) -> Self::Output {
         let items = self.node.items.iter().map(Lowerable::lower).collect();
-        Spanned::new(HirProgram { items }, self.span)
+        Spanned::new(
+            HirProgram {
+                items,
+                leading_docs: self.node.leading_docs.clone(),
+            },
+            self.span,
+        )
     }
 }
 
@@ -325,6 +331,7 @@ impl Lowerable for Spanned<syntax::InlineModule> {
                 visibility: self.node.visibility.lower(),
                 name: self.node.name.lower(),
                 items,
+                leading_docs: self.node.leading_docs.clone(),
             },
             self.span,
         )

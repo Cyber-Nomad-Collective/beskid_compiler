@@ -79,7 +79,8 @@ impl SemanticPipelineRule {
     }
 
     fn check_file_scoped_module_structure(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
-        let Some((file_scope_index, file_scope_def)) = self.file_scoped_module_declaration(hir) else {
+        let Some((file_scope_index, file_scope_def)) = self.file_scoped_module_declaration(hir)
+        else {
             return;
         };
         let file_scope_path = self.path_to_string(&file_scope_def.node.path);

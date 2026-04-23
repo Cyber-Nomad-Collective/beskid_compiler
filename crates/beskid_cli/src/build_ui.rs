@@ -69,8 +69,8 @@ fn print_graph(resolved: &ResolvedInput) {
     }
 
     if plan.has_std_dependency {
-        println!("  stdlib: project dependency detected");
+        println!("  corelib: project dependency detected");
     } else {
-        println!("  stdlib: none declared in project graph");
+        println!("  corelib: none declared in project graph");
     }
 }

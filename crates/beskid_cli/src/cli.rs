@@ -1,15 +1,15 @@
 use crate::commands::analyze::AnalyzeArgs;
 use crate::commands::build::BuildArgs;
 use crate::commands::clif::ClifArgs;
+use crate::commands::corelib::CorelibArgs;
 use crate::commands::fetch::FetchArgs;
 use crate::commands::lock::LockArgs;
 use crate::commands::parse::ParseArgs;
 use crate::commands::run::RunArgs;
-use crate::commands::stdlib::StdlibArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
-use crate::commands::{analyze, build, clif, fetch, lock, parse, run, stdlib, tree, update};
-use crate::stdlib_runtime;
+use crate::commands::{analyze, build, clif, corelib, fetch, lock, parse, run, tree, update};
+use crate::corelib_runtime;
 use beskid_pckg::PckgArgs;
 use clap::{Parser, Subcommand};
 use miette::Report;
@@ -52,8 +52,8 @@ pub enum Commands {
     /// Update dependency resolution and materialized workspace
     Update(UpdateArgs),
 
-    /// Materialize the checked-in Beskid standard library project template
-    Stdlib(StdlibArgs),
+    /// Materialize the checked-in Beskid corelib project template
+    Corelib(CorelibArgs),
 
     /// Package-manager operations backed by the pckg service
     Pckg(PckgArgs),
@@ -64,7 +64,7 @@ pub fn run() -> miette::Result<()> {
     let all_args =
         argfile::expand_args_from(os_args, argfile::parse_fromfile, argfile::PREFIX).unwrap();
     let cli = Cli::parse_from(all_args);
-    ensure_stdlib_ready().map_err(anyhow_to_miette)?;
+    ensure_corelib_ready().map_err(anyhow_to_miette)?;
 
     let result = match cli.command {
         Commands::Parse(args) => parse::execute(args),
@@ -76,18 +76,18 @@ pub fn run() -> miette::Result<()> {
         Commands::Fetch(args) => fetch::execute(args),
         Commands::Lock(args) => lock::execute(args),
         Commands::Update(args) => update::execute(args),
-        Commands::Stdlib(args) => stdlib::execute(args),
+        Commands::Corelib(args) => corelib::execute(args),
         Commands::Pckg(args) => beskid_pckg::cli::execute(args).map_err(Into::into),
     };
 
     result.map_err(anyhow_to_miette)
 }
 
-fn ensure_stdlib_ready() -> anyhow::Result<()> {
-    let provisioned = stdlib_runtime::ensure_bundled_stdlib()?;
+fn ensure_corelib_ready() -> anyhow::Result<()> {
+    let provisioned = corelib_runtime::ensure_bundled_corelib()?;
     if provisioned.updated {
         println!(
-            "stdlib: updated to {} at {}",
+            "corelib: updated to {} at {}",
             provisioned.version,
             provisioned.root.display()
         );

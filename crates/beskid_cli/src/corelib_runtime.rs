@@ -7,17 +7,17 @@ use anyhow::{Context, Result};
 use include_dir::{Dir, include_dir};
 use semver::Version;
 
-// Populated by build.rs from ../../corelib/standard_library (see build.rs).
-static EMBEDDED_STDLIB: Dir<'_> = include_dir!("$OUT_DIR/embedded_stdlib");
+// Populated by build.rs from ../../corelib/beskid_corelib.
+static EMBEDDED_CORELIB: Dir<'_> = include_dir!("$OUT_DIR/embedded_corelib");
 
-pub struct StdlibProvisioning {
+pub struct CorelibProvisioning {
     pub root: PathBuf,
     pub version: String,
     pub updated: bool,
 }
 
-pub fn ensure_bundled_stdlib() -> Result<StdlibProvisioning> {
-    let target_root = stdlib_install_root()?;
+pub fn ensure_bundled_corelib() -> Result<CorelibProvisioning> {
+    let target_root = corelib_install_root()?;
     let bundled_version = embedded_version()?;
     let installed_version = installed_version(&target_root)?;
 
@@ -29,17 +29,17 @@ pub fn ensure_bundled_stdlib() -> Result<StdlibProvisioning> {
     if should_install {
         if target_root.exists() {
             remove_dir_all_retry(&target_root)
-                .with_context(|| format!("remove old stdlib at {}", target_root.display()))?;
+                .with_context(|| format!("remove old corelib at {}", target_root.display()))?;
         }
         fs::create_dir_all(&target_root)
-            .with_context(|| format!("create stdlib root {}", target_root.display()))?;
-        write_embedded_dir(&EMBEDDED_STDLIB, &target_root)?;
+            .with_context(|| format!("create corelib root {}", target_root.display()))?;
+        write_embedded_dir(&EMBEDDED_CORELIB, &target_root)?;
     } else {
         fs::create_dir_all(&target_root)
-            .with_context(|| format!("create stdlib root {}", target_root.display()))?;
+            .with_context(|| format!("create corelib root {}", target_root.display()))?;
     }
 
-    Ok(StdlibProvisioning {
+    Ok(CorelibProvisioning {
         root: target_root,
         version: bundled_version.to_string(),
         updated: should_install,
@@ -66,31 +66,33 @@ fn remove_dir_all_retry(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn stdlib_install_root() -> Result<PathBuf> {
-    if let Ok(explicit) = std::env::var("BESKID_STDLIB_ROOT") {
-        let path = PathBuf::from(explicit);
-        return Ok(path);
+fn corelib_install_root() -> Result<PathBuf> {
+    if let Ok(explicit) = std::env::var("BESKID_CORELIB_ROOT") {
+        let trimmed = explicit.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
     }
 
     if let Ok(home) = std::env::var("HOME") {
-        return Ok(PathBuf::from(home).join(".beskid").join("standard_library"));
+        return Ok(PathBuf::from(home).join(".beskid").join("beskid_corelib"));
     }
 
     let cwd = std::env::current_dir().context("resolve current working directory")?;
-    Ok(cwd.join(".beskid").join("standard_library"))
+    Ok(cwd.join(".beskid").join("beskid_corelib"))
 }
 
 fn embedded_version() -> Result<Version> {
-    if let Some(file) = EMBEDDED_STDLIB.get_file("package.json") {
+    if let Some(file) = EMBEDDED_CORELIB.get_file("package.json") {
         return parse_package_json_version(
             file.contents_utf8().unwrap_or_default(),
             "embedded package.json",
         );
     }
 
-    let project = EMBEDDED_STDLIB
+    let project = EMBEDDED_CORELIB
         .get_file("Project.proj")
-        .ok_or_else(|| anyhow::anyhow!("embedded stdlib is missing Project.proj"))?;
+        .ok_or_else(|| anyhow::anyhow!("embedded corelib is missing Project.proj"))?;
     parse_project_manifest_version(
         project.contents_utf8().unwrap_or_default(),
         "embedded Project.proj",
@@ -102,7 +104,7 @@ fn installed_version(root: &Path) -> Result<Option<Version>> {
     if package_path.is_file() {
         let content = fs::read_to_string(&package_path).with_context(|| {
             format!(
-                "read installed stdlib package file {}",
+                "read installed corelib package file {}",
                 package_path.display()
             )
         })?;
@@ -116,7 +118,7 @@ fn installed_version(root: &Path) -> Result<Option<Version>> {
     if project_path.is_file() {
         let content = fs::read_to_string(&project_path).with_context(|| {
             format!(
-                "read installed stdlib project manifest {}",
+                "read installed corelib project manifest {}",
                 project_path.display()
             )
         })?;
@@ -140,20 +142,24 @@ fn parse_package_json_version(content: &str, source: &str) -> Result<Version> {
 }
 
 fn parse_project_manifest_version(content: &str, source: &str) -> Result<Version> {
-    let raw = content
+    let raw = parse_project_field(content, "version")
+        .ok_or_else(|| anyhow::anyhow!("missing version in {source}"))?;
+
+    Version::parse(&raw).with_context(|| format!("invalid semver `{raw}` in {source}"))
+}
+
+fn parse_project_field(content: &str, key: &str) -> Option<String> {
+    content
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .find_map(|line| {
-            let (key, value) = line.split_once('=')?;
-            if key.trim() != "version" {
+            let (line_key, value) = line.split_once('=')?;
+            if line_key.trim() != key {
                 return None;
             }
             Some(value.trim().trim_matches('"').to_string())
         })
-        .ok_or_else(|| anyhow::anyhow!("missing version in {source}"))?;
-
-    Version::parse(&raw).with_context(|| format!("invalid semver `{raw}` in {source}"))
 }
 
 fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
@@ -162,16 +168,16 @@ fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
         let target = destination.join(rel);
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)
-                .with_context(|| format!("create stdlib directory {}", parent.display()))?;
+                .with_context(|| format!("create corelib directory {}", parent.display()))?;
         }
         fs::write(&target, file.contents())
-            .with_context(|| format!("write embedded stdlib file {}", target.display()))?;
+            .with_context(|| format!("write embedded corelib file {}", target.display()))?;
     }
 
     for dir in source.dirs() {
         let target = destination.join(dir.path());
         fs::create_dir_all(&target)
-            .with_context(|| format!("create stdlib directory {}", target.display()))?;
+            .with_context(|| format!("create corelib directory {}", target.display()))?;
         write_embedded_dir(dir, destination)?;
     }
 

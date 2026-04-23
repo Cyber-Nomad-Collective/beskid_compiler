@@ -89,11 +89,11 @@ fn event_unsubscribe_fixture_jit_runs_and_aot_contains_event_symbols() {
 }
 
 #[test]
-fn smoke_fixture_build_graph_includes_stdlib_dependency() {
+fn smoke_fixture_build_graph_includes_corelib_dependency() {
     let workspace = E2eWorkspace::from_fixture("smoke_project");
     let manifest = workspace.join("Project.proj");
-    let output_binary = workspace.join("out/stdlib_graph");
-    let object_output = workspace.join("out/stdlib_graph.o");
+    let output_binary = workspace.join("out/corelib_graph");
+    let object_output = workspace.join("out/corelib_graph.o");
     let cli = BeskidCliInvoker::new();
 
     let jit_run = cli.run([
@@ -116,20 +116,20 @@ fn smoke_fixture_build_graph_includes_stdlib_dependency() {
         "--object-output",
         object_output.to_str().expect("object path str"),
     ]);
-    assert_success(&build, "build smoke fixture with stdlib graph");
+    assert_success(&build, "build smoke fixture with corelib graph");
     assert_output_contains(
         &build,
-        "stdlib: project dependency detected",
-        "build smoke fixture with stdlib graph",
+        "corelib: project dependency detected",
+        "build smoke fixture with corelib graph",
     );
-    assert_file_exists(&output_binary, "stdlib graph output binary");
-    assert_file_exists(&object_output, "stdlib graph object file");
+    assert_file_exists(&output_binary, "corelib graph output binary");
+    assert_file_exists(&object_output, "corelib graph object file");
     assert!(
         nm_contains_symbol(&object_output, "str_len"),
-        "expected stdlib graph object to reference str_len"
+        "expected corelib graph object to reference str_len"
     );
     assert!(
         nm_contains_symbol(&object_output, "array_new"),
-        "expected stdlib graph object to reference array_new"
+        "expected corelib graph object to reference array_new"
     );
 }

@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 
+const ENV_CORELIB_ROOT: &str = "BESKID_CORELIB_ROOT";
+
 use daggy::{Dag, NodeIndex};
 
 use crate::projects::error::ProjectError;
@@ -63,7 +65,7 @@ pub fn resolve_dependencies(
         match dependency.source {
             DependencySource::Path => {
                 let fallback_std_path = if dependency.name.eq_ignore_ascii_case("Std") {
-                    default_stdlib_dependency_path()
+                    default_corelib_dependency_path()
                 } else {
                     None
                 };
@@ -185,7 +187,7 @@ pub fn resolve_dependencies(
 
     if !has_explicit_std_dependency
         && !is_std_project
-        && let Some(std_path) = default_stdlib_dependency_path()
+        && let Some(corelib_path) = default_corelib_dependency_path()
     {
         attach_path_dependency(
             dag,
@@ -193,7 +195,7 @@ pub fn resolve_dependencies(
             consumer_manifest_path,
             &consumer_project_root,
             "Std",
-            &std_path,
+            &corelib_path,
             workspace_rules,
             node_by_manifest,
             visiting,
@@ -299,18 +301,18 @@ fn attach_path_dependency(
     Ok(())
 }
 
-fn default_stdlib_dependency_path() -> Option<String> {
-    if let Ok(explicit_root) = env::var("BESKID_STDLIB_ROOT") {
+fn default_corelib_dependency_path() -> Option<String> {
+    if let Ok(explicit_root) = env::var(ENV_CORELIB_ROOT) {
         return Some(PathBuf::from(explicit_root).display().to_string());
     }
 
-    discover_repo_stdlib_root().map(|path| path.display().to_string())
+    discover_repo_corelib_root().map(|path| path.display().to_string())
 }
 
-fn discover_repo_stdlib_root() -> Option<PathBuf> {
+fn discover_repo_corelib_root() -> Option<PathBuf> {
     let cwd = env::current_dir().ok()?;
     for ancestor in cwd.ancestors() {
-        let candidate = ancestor.join("corelib").join("standard_library");
+        let candidate = ancestor.join("corelib").join("beskid_corelib");
         if candidate.join("Project.proj").is_file() {
             return Some(candidate);
         }
@@ -320,11 +322,12 @@ fn discover_repo_stdlib_root() -> Option<PathBuf> {
 
 fn is_std_manifest_path(manifest_path: &Path) -> bool {
     let normalized_manifest = normalize_existing_path(manifest_path);
-    let Some(std_root) = default_stdlib_dependency_path() else {
+    let Some(corelib_root) = default_corelib_dependency_path() else {
         return false;
     };
-    let std_manifest = normalize_existing_path(&PathBuf::from(std_root).join("Project.proj"));
-    normalized_manifest == std_manifest
+    let corelib_manifest =
+        normalize_existing_path(&PathBuf::from(corelib_root).join("Project.proj"));
+    normalized_manifest == corelib_manifest
 }
 
 fn format_cycle_from_visiting(

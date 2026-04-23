@@ -10,6 +10,8 @@ use super::{
 #[phase(source = "crate::syntax::Program", phase = "crate::hir::AstPhase")]
 pub struct Program<P: Phase> {
     pub items: Vec<Spanned<Item<P>>>,
+    #[ast(skip)]
+    pub leading_docs: Vec<Option<crate::doc::LeadingDocComment>>,
 }
 
 impl HirNode for Program<HirPhase> {

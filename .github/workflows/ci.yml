@@ -134,6 +134,20 @@ jobs:
       - run: pip install -r ci/requirements.txt
       - run: python -m nox --non-interactive -s e2e_windows_smoke
 
+  corelib-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ci/requirements.txt
+      - run: python -m nox --non-interactive -s corelib_quality
+
   version:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
@@ -163,6 +177,7 @@ jobs:
       - extern-engine-security
       - e2e-macos-smoke
       - e2e-windows-smoke
+      - corelib-quality
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -239,3 +254,4 @@ jobs:
             release-assets/beskid-linux-amd64
             release-assets/beskid-darwin-arm64
             release-assets/beskid-windows-amd64.exe
+

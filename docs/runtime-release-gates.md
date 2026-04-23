@@ -7,8 +7,8 @@ Use this checklist for PRs that modify `beskid_runtime`, runtime ABI, or runtime
   - `cargo test -p beskid_tests runtime::`
 - ABI contract checks:
   - `cargo test -p beskid_tests abi::contracts::`
-- Stdlib MVP checks:
-  - `cargo test -p beskid_tests projects::stdlib::`
+- Corelib MVP checks:
+  - `cargo test -p beskid_tests projects::corelib::`
   - `cargo test -p beskid_e2e_tests runtime_cases::`
   - `cargo build -p beskid_cli && cargo test -p beskid_e2e_tests cli_cross_platform::analyze_reports_no_diagnostics_for_minimal_file`
 - Runtime benchmark compile gate:

@@ -5,6 +5,7 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::impl_block::ImplBlock;
 use crate::syntax::items::parse_helpers::{parse_attributes, parse_visibility_or_default};
+use crate::doc::{leading_doc_from_doc_run, LeadingDocComment};
 use crate::syntax::{Attribute, Identifier, Node, SpanInfo, Spanned, Visibility};
 
 use beskid_ast_derive::AstNode;
@@ -19,6 +20,8 @@ pub struct InlineModule {
     pub name: Spanned<Identifier>,
     #[ast(children)]
     pub items: Vec<Spanned<Node>>,
+    #[ast(skip)]
+    pub leading_docs: Vec<Option<LeadingDocComment>>,
 }
 
 impl Parsable for InlineModule {
@@ -31,25 +34,42 @@ impl Parsable for InlineModule {
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
 
         let mut items = Vec::new();
-        for item in inner {
-            if item.as_rule() == Rule::Item {
-                let inner_item = item
-                    .clone()
-                    .into_inner()
-                    .next()
-                    .ok_or(ParseError::missing(Rule::Item))?;
+        let mut leading_docs: Vec<Option<LeadingDocComment>> = Vec::new();
 
-                if inner_item.as_rule() == Rule::ImplBlock {
-                    let impl_block = ImplBlock::parse(inner_item)?;
-                    items.extend(impl_block.node.methods.into_iter().map(|method| {
-                        let span = method.span;
-                        Spanned::new(Node::Method(method), span)
-                    }));
-                    continue;
+        for item_with_docs in inner {
+            if item_with_docs.as_rule() != Rule::ItemWithDocs {
+                return Err(ParseError::unexpected_rule(
+                    item_with_docs,
+                    Some(Rule::ItemWithDocs),
+                ));
+            }
+            let mut id_inner = item_with_docs.into_inner();
+            let first = id_inner
+                .next()
+                .ok_or_else(|| ParseError::missing(Rule::ItemWithDocs))?;
+            let (doc_opt, item_pair) = if first.as_rule() == Rule::DocRun {
+                let d = leading_doc_from_doc_run(&first);
+                let itemp = id_inner
+                    .next()
+                    .ok_or_else(|| ParseError::missing(Rule::InnerItem))?;
+                (Some(d), itemp)
+            } else {
+                (None, first)
+            };
+
+            if item_pair.as_rule() == Rule::ImplBlock {
+                let impl_block = ImplBlock::parse(item_pair)?;
+                let mut first_doc = doc_opt;
+                for method in impl_block.node.methods {
+                    let mspan = method.span;
+                    items.push(Spanned::new(Node::Method(method), mspan));
+                    leading_docs.push(first_doc.take());
                 }
+                continue;
             }
 
-            items.push(Node::parse(item)?);
+            items.push(Node::parse(item_pair)?);
+            leading_docs.push(doc_opt);
         }
 
         Ok(Spanned::new(
@@ -58,6 +78,7 @@ impl Parsable for InlineModule {
                 visibility,
                 name,
                 items,
+                leading_docs,
             },
             span,
         ))

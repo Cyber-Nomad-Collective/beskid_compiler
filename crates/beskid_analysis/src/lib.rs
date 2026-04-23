@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod builtins;
+pub mod format;
 pub mod hir;
 pub mod parser;
 pub mod parsing;

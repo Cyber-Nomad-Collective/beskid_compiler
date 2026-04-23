@@ -3,27 +3,27 @@ use clap::Args;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::stdlib_runtime;
+use crate::corelib_runtime;
 
 #[derive(Args, Debug)]
-pub struct StdlibArgs {
-    /// Destination directory for the Beskid stdlib project
-    #[arg(long, default_value = "corelib/standard_library")]
+pub struct CorelibArgs {
+    /// Destination directory for the Beskid corelib project
+    #[arg(long, default_value = "corelib/beskid_corelib")]
     pub output: PathBuf,
 }
 
-pub fn execute(args: StdlibArgs) -> Result<()> {
-    generate_stdlib_project(&args.output)
+pub fn execute(args: CorelibArgs) -> Result<()> {
+    generate_corelib_project(&args.output)
 }
 
-fn generate_stdlib_project(output: &Path) -> Result<()> {
-    let provisioned = stdlib_runtime::ensure_bundled_stdlib()?;
+fn generate_corelib_project(output: &Path) -> Result<()> {
+    let provisioned = corelib_runtime::ensure_bundled_corelib()?;
     let template_root = provisioned.root;
     validate_template_layout(&template_root)?;
 
     if is_same_location(&template_root, output) {
         println!(
-            "Using checked-in Beskid stdlib project at {}",
+            "Using checked-in Beskid corelib project at {}",
             template_root.display()
         );
         return Ok(());
@@ -32,7 +32,7 @@ fn generate_stdlib_project(output: &Path) -> Result<()> {
     copy_dir_recursive(&template_root, output)?;
 
     println!(
-        "Generated Beskid stdlib project at {}",
+        "Generated Beskid corelib project at {}",
         output
             .canonicalize()
             .unwrap_or_else(|_| output.to_path_buf())
@@ -47,12 +47,15 @@ fn validate_template_layout(template_root: &Path) -> Result<()> {
 
     if !manifest.is_file() {
         anyhow::bail!(
-            "missing stdlib manifest template at `{}`",
+            "missing corelib manifest template at `{}`",
             manifest.display()
         );
     }
     if !prelude.is_file() {
-        anyhow::bail!("missing stdlib prelude template at `{}`", prelude.display());
+        anyhow::bail!(
+            "missing corelib prelude template at `{}`",
+            prelude.display()
+        );
     }
     Ok(())
 }

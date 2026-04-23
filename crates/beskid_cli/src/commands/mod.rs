@@ -1,10 +1,10 @@
 pub mod analyze;
 pub mod build;
 pub mod clif;
+pub mod corelib;
 pub mod fetch;
 pub mod lock;
 pub mod parse;
 pub mod run;
-pub mod stdlib;
 pub mod tree;
 pub mod update;

@@ -227,6 +227,8 @@ pub struct HirInlineModule {
     pub name: Spanned<HirIdentifier>,
     #[ast(children)]
     pub items: Vec<Spanned<Item<crate::hir::HirPhase>>>,
+    #[ast(skip)]
+    pub leading_docs: Vec<Option<crate::doc::LeadingDocComment>>,
 }
 
 #[derive(beskid_ast_derive::HirNode)]

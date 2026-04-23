@@ -35,11 +35,17 @@ IoC is a good direction, but it belongs in the **compiler**, not in a forest of 
 
 Opinionated compiler project. Not finished. Not apologizing.
 
+### Formatter / pretty-print
+
+The analysis crate includes an opinionated source formatter based on an `Emit` trait (see [docs/formatter.md](docs/formatter.md)). Use `beskid_analysis::format::format_program` on a successfully parsed `Program`.
+
 ### Building
 
-The **standard library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/standard_library/`. The CLI embeds that tree at build time (`crates/beskid_cli/build.rs`).
+The **core library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/beskid_corelib/`. The CLI embeds that tree at build time (`crates/beskid_cli/build.rs`).
 
-Clone with submodules (required for the embedded standard library):
+Corelib package publishing authority lives in `beskid_standard` CI; compiler CI validates and consumes corelib but does not publish it.
+
+Clone with submodules (required for the embedded corelib):
 
 ```bash
 git clone --recurse-submodules https://github.com/Cyber-Nomad-Collective/beskid_compiler.git
@@ -47,4 +53,4 @@ git clone --recurse-submodules https://github.com/Cyber-Nomad-Collective/beskid_
 git submodule update --init --recursive
 ```
 
-In an aggregate repo that vendors this tree as a submodule (e.g. [pecan](https://github.com/Cyber-Nomad-Collective/beskid)), initialize **recursively** so `compiler/corelib` is populated: `git submodule update --init --recursive` (or clone with `--recurse-submodules`). Override the stdlib path with `BESKID_STDLIB_SOURCE` if needed.
+In an aggregate repo that vendors this tree as a submodule (e.g. [pecan](https://github.com/Cyber-Nomad-Collective/beskid)), initialize **recursively** so `compiler/corelib` is populated: `git submodule update --init --recursive` (or clone with `--recurse-submodules`). Override source root with `BESKID_CORELIB_SOURCE` if needed.

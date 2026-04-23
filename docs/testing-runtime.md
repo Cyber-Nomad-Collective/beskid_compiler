@@ -31,10 +31,11 @@ Aggregate repos that only **submodule** this tree do not need a second copy of t
 ## Release gating
 - See `docs/runtime-release-gates.md` for required runtime merge/release checks and PR evidence policy.
 
-## Canonical stdlib source (MVP)
-- Checked-in stdlib source of truth is `../corelib/standard_library` (corelib submodule), not ad-hoc copies.
-- Compiler tests resolve only this canonical root from `crates/beskid_tests/src/projects/stdlib` and fail if missing.
-- CLI provisioning embeds the same source tree and installs it to `BESKID_STDLIB_ROOT` (or `$HOME/.beskid/standard_library`).
+## Canonical corelib source (MVP)
+- Checked-in corelib source of truth is in the `../corelib` submodule.
+- Compiler tooling uses `../corelib/beskid_corelib`.
+- Compiler tests resolve from `crates/beskid_tests/src/projects/corelib` and fail if the canonical root is missing.
+- CLI provisioning embeds the same source tree and installs it to `BESKID_CORELIB_ROOT`, defaulting to `$HOME/.beskid/beskid_corelib`.
 
 ## AOT limitations (linker)
 
@@ -48,7 +49,7 @@ Some AOT link modes return a structured error when **shared export policy flags*
   - `smoke_project`: minimal compile/link/run baseline.
   - `cross_platform_cli`: minimal source for parse/tree/analyze smoke on all OSes.
   - `analyze_diagnostics`: semantic error coverage for `beskid analyze`.
-  - `smoke_project` build graph assertions: stdlib dependency auto-injection stays active.
+  - `smoke_project` build graph assertions: corelib dependency auto-injection stays active.
   - `runtime_calls`: runtime builtins (`__str_len`, `__sys_println`) and lambda behavior.
   - `event_unsubscribe`: event subscribe/unsubscribe execution path.
   - `deps_workspace`: multi-project path-dependency materialization flow.

@@ -584,7 +584,7 @@ project {
   version = "0.1.0"
 }
 
-target "StdLib" {
+target "CoreLib" {
   kind = "Lib"
   entry = "Prelude.bd"
 }
@@ -632,7 +632,7 @@ project {
   version = "1.0.0"
 }
 
-target "StdLib" {
+target "CoreLib" {
   kind = "Lib"
   entry = "Prelude.bd"
 }
@@ -640,7 +640,7 @@ target "StdLib" {
     );
     fs::write(std_dir.join("Src/Prelude.bd"), "unit prelude() { }\n").expect("write std prelude");
 
-    unsafe { std::env::set_var("BESKID_STDLIB_ROOT", &std_dir) };
+    unsafe { std::env::set_var("BESKID_CORELIB_ROOT", &std_dir) };
     let app_manifest_path = write_manifest(
         &app_dir,
         r#"
@@ -664,7 +664,7 @@ target "App" {
             .any(|dependency| dependency.dependency_name == "Std")
     );
 
-    unsafe { std::env::remove_var("BESKID_STDLIB_ROOT") };
+    unsafe { std::env::remove_var("BESKID_CORELIB_ROOT") };
     let _ = fs::remove_dir_all(root);
 }
 

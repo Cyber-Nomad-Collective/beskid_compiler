@@ -8,10 +8,7 @@ fn analyze_reports_no_diagnostics_for_minimal_file() {
     let source = workspace.join("Src/Minimal.bd");
     let cli = BeskidCliInvoker::new();
 
-    let output = cli.run([
-        "analyze",
-        source.to_str().expect("source path str"),
-    ]);
+    let output = cli.run(["analyze", source.to_str().expect("source path str")]);
     assert_success(&output, "analyze minimal file");
     assert_output_contains(&output, "No diagnostics.", "analyze minimal file");
 }
@@ -22,10 +19,7 @@ fn analyze_prints_diagnostics_to_stderr_for_semantic_errors() {
     let source = workspace.join("Src/Bad.bd");
     let cli = BeskidCliInvoker::new();
 
-    let output = cli.run([
-        "analyze",
-        source.to_str().expect("source path str"),
-    ]);
+    let output = cli.run(["analyze", source.to_str().expect("source path str")]);
     assert_success(&output, "analyze with diagnostics still exits 0");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -41,10 +35,7 @@ fn tree_succeeds_on_valid_source() {
     let source = workspace.join("Src/Minimal.bd");
     let cli = BeskidCliInvoker::new();
 
-    let output = cli.run([
-        "tree",
-        source.to_str().expect("source path str"),
-    ]);
+    let output = cli.run(["tree", source.to_str().expect("source path str")]);
     assert_success(&output, "tree smoke file");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -59,10 +50,7 @@ fn parse_succeeds_on_valid_source() {
     let source = workspace.join("Src/Minimal.bd");
     let cli = BeskidCliInvoker::new();
 
-    let output = cli.run([
-        "parse",
-        source.to_str().expect("source path str"),
-    ]);
+    let output = cli.run(["parse", source.to_str().expect("source path str")]);
     assert_success(&output, "parse smoke file");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(

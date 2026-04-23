@@ -5,10 +5,11 @@
 ////////////////////////////////////////////////////////////
 // 1) LEXICAL
 ////////////////////////////////////////////////////////////
-WHITESPACE = _{ " " | "\t" | "\n" | "\r" | COMMENT }
-COMMENT    = _{ LineComment | BlockComment }
-LineComment = { "//" ~ (!"\n" ~ ANY)* }
-BlockComment = { "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" | DocLineSkip | OrdinaryLineComment | BlockComment }
+// Silent skip for /// lines that appear as trivia between items (leading docs use DocRun on ItemWithDocs).
+DocLineSkip = _{ "///" ~ !("/") ~ (!"\n" ~ ANY)* }
+OrdinaryLineComment = _{ "//" ~ (!"\n" ~ ANY)* }
+BlockComment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 ASCII_ALPHA_UNDERSCORE = _{ ASCII_ALPHA | "_" }
 Identifier = @{ !Keyword ~ ASCII_ALPHA_UNDERSCORE ~ (ASCII_ALPHANUMERIC | "_")* }
@@ -80,8 +81,11 @@ Literal = { FloatLiteral | IntegerLiteral | StringLiteral | CharLiteral | "true"
 ////////////////////////////////////////////////////////////
 // 2) PROGRAM
 ////////////////////////////////////////////////////////////
-Program = { SOI ~ Item* ~ EOI }
-Item = _{ FunctionDefinition | ImplBlock | TypeDefinition | EnumDefinition | ContractDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
+Program = { SOI ~ ItemWithDocs* ~ EOI }
+ItemWithDocs = { DocRun? ~ InnerItem }
+DocLineContent = { "///" ~ !("/") ~ (!"\n" ~ ANY)* }
+DocRun = { DocLineContent+ }
+InnerItem = _{ FunctionDefinition | ImplBlock | TypeDefinition | EnumDefinition | ContractDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
 
 AttributeList = { Attribute+ }
 Attribute = { "[" ~ Identifier ~ ("(" ~ AttributeArgumentList? ~ ")")? ~ "]" }
@@ -96,7 +100,7 @@ AttributeParameter = { Identifier ~ ":" ~ BeskidType ~ ("=" ~ Expression)? }
 Visibility = { "pub" }
 
 ModuleDeclaration = { AttributeList? ~ Visibility? ~ "mod" ~ Path ~ ";" }
-InlineModule = { AttributeList? ~ Visibility? ~ "mod" ~ Identifier ~ "{" ~ Item* ~ "}" }
+InlineModule = { AttributeList? ~ Visibility? ~ "mod" ~ Identifier ~ "{" ~ ItemWithDocs* ~ "}" }
 UseDeclaration = { Visibility? ~ "use" ~ Path ~ ("as" ~ Identifier)? ~ ";" }
 PathSegment = { Identifier ~ GenericArguments? }
 Path = { PathSegment ~ ("." ~ PathSegment)* }

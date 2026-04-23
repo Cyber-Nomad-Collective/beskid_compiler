@@ -212,7 +212,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
             plan.dependency_projects.len()
         );
         println!(
-            "stdlib: {}",
+            "corelib: {}",
             if plan.has_std_dependency {
                 "available (implicit or declared)"
             } else {
