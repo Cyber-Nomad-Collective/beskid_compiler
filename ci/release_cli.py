@@ -1,4 +1,4 @@
-"""Build and upload CLI binaries (release-cli matrix job)."""
+"""Build CLI binaries for release (artifacts uploaded in a separate CI publish job)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ci import s3_upload
 from ci import version as ver
 
 
@@ -50,21 +49,7 @@ def main() -> None:
 
     dest = root / asset_name
     shutil.move(str(built), str(dest))
-
-    access_key = _require("SEAWEEDFS_ACCESS_KEY")
-    secret_key = _require("SEAWEEDFS_SECRET_KEY")
-    endpoint = os.environ.get("SEAWEEDFS_ENDPOINT", "https://cdn.beskid-lang.org")
-
-    s3_upload.upload_release_artifacts(
-        endpoint_url=endpoint,
-        access_key_id=access_key,
-        secret_access_key=secret_key,
-        bucket="releases",
-        region="us-east-1",
-        version=release_version,
-        local_file=dest,
-        remote_filename=asset_name,
-    )
+    print(f"Built release artifact: {dest}")
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ CI for the toolchain lives in **this repository’s** `.github/workflows/ci.yml`
 
 - **Linux (`ubuntu-latest`):** `cargo check --workspace`, full `cargo test -p beskid_tests`, explicit `abi::contracts::`, `cargo bench -p beskid_runtime --no-run`, full `cargo test -p beskid_e2e_tests` (after `cargo build -p beskid_cli`), `runtime::` tests under AddressSanitizer (nightly), `cargo test -p beskid_engine --features extern_dlopen security_allow_deny_sequences`.
 - **macOS / Windows:** `cargo build -p beskid_cli` then `cargo test -p beskid_e2e_tests cli_cross_platform` (parse / tree / analyze smoke — no AOT link).
-- **Release (`push` to `main` or tag `v*`):** `release-cli` uploads multi-target CLI artifacts after the jobs above succeed; requires `SEAWEEDFS_*` secrets.
+- **Release (`push` to `main` or tag `v*`):** `release-cli-build` (matrix) produces per-platform artifacts; `release-cli-publish` uses [`softprops/action-gh-release`](https://github.com/softprops/action-gh-release) to create/update the GitHub release for rolling tag `cli-latest` (`permissions: contents: write`).
 
 Aggregate repos that only **submodule** this tree do not need a second copy of these jobs; run them on the compiler remote.
 
