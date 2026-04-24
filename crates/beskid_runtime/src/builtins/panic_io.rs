@@ -1,23 +1,21 @@
 use beskid_abi::BeskidStr;
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn write_stdout(bytes: &[u8]) {
+fn linux_write_fd(fd: i32, mut ptr: *const u8, mut len: usize) -> i64 {
     use std::arch::asm;
 
-    if bytes.is_empty() {
-        return;
+    if len == 0 {
+        return 0;
     }
 
-    let mut written = 0usize;
-    while written < bytes.len() {
-        let ptr = unsafe { bytes.as_ptr().add(written) };
-        let len = bytes.len() - written;
+    let mut written_total = 0i64;
+    while len > 0 {
         let mut result: isize;
         unsafe {
             asm!(
                 "syscall",
                 in("rax") 1usize,
-                in("rdi") 1usize,
+                in("rdi") fd as usize,
                 in("rsi") ptr,
                 in("rdx") len,
                 lateout("rax") result,
@@ -26,16 +24,47 @@ fn write_stdout(bytes: &[u8]) {
             );
         }
         if result <= 0 {
-            break;
+            if written_total > 0 {
+                return written_total;
+            }
+            return -1;
         }
-        written += result as usize;
+        let chunk = result as usize;
+        written_total += chunk as i64;
+        ptr = unsafe { ptr.add(chunk) };
+        len -= chunk;
     }
+    written_total
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn write_fd_bytes(fd: i64, bytes: &[u8]) -> i64 {
+    if bytes.is_empty() {
+        return 0;
+    }
+    if fd < 0 || fd > i32::MAX as i64 {
+        return -1;
+    }
+    linux_write_fd(fd as i32, bytes.as_ptr(), bytes.len())
 }
 
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-fn write_stdout(bytes: &[u8]) {
+fn write_fd_bytes(fd: i64, bytes: &[u8]) -> i64 {
     use std::io::Write;
-    let _ = std::io::stdout().write_all(bytes);
+    if bytes.is_empty() {
+        return 0;
+    }
+    match fd {
+        1 => std::io::stdout()
+            .write(bytes)
+            .map(|n| n as i64)
+            .unwrap_or(-1),
+        2 => std::io::stderr()
+            .write(bytes)
+            .map(|n| n as i64)
+            .unwrap_or(-1),
+        _ => -1,
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -43,8 +72,10 @@ pub extern "C-unwind" fn panic(_msg_ptr: *const u8, _msg_len: usize) -> ! {
     panic!("beskid panic");
 }
 
+/// Cross-platform write of UTF-8 string payload to `fd`.
+/// Returns bytes written, or `-1` on error / unsupported `fd` (non-Linux: only `1` and `2`).
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn sys_print(value: *const BeskidStr) {
+pub extern "C-unwind" fn syscall_write(fd: i64, value: *const BeskidStr) -> i64 {
     if value.is_null() {
         panic!("null string handle");
     }
@@ -53,21 +84,7 @@ pub extern "C-unwind" fn sys_print(value: *const BeskidStr) {
         panic!("null string data");
     }
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    write_stdout(bytes);
-}
-
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn sys_println(value: *const BeskidStr) {
-    if value.is_null() {
-        panic!("null string handle");
-    }
-    let (ptr, len) = unsafe { ((*value).ptr, (*value).len) };
-    if ptr.is_null() {
-        panic!("null string data");
-    }
-    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    write_stdout(bytes);
-    write_stdout(b"\n");
+    write_fd_bytes(fd, bytes)
 }
 
 #[unsafe(no_mangle)]

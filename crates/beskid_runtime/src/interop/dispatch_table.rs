@@ -2,22 +2,10 @@
 
 use beskid_abi::BeskidStr;
 
-pub const TAG_IO_PRINT: i32 = 0;
-pub const TAG_IO_PRINTLN: i32 = 1;
-pub const TAG_STRING_LEN: i32 = 2;
+pub const TAG_STRING_LEN: i32 = 0;
 
-pub unsafe fn dispatch_unit(tag: i32, enum_ptr: *const u8) -> bool {
+pub unsafe fn dispatch_unit(tag: i32, _enum_ptr: *const u8) -> bool {
     match tag {
-        TAG_IO_PRINT => {
-            let _text = unsafe { *(enum_ptr.add(16) as *const *const BeskidStr) };
-            crate::builtins::sys_print(_text);
-            true
-        }
-        TAG_IO_PRINTLN => {
-            let _text = unsafe { *(enum_ptr.add(16) as *const *const BeskidStr) };
-            crate::builtins::sys_println(_text);
-            true
-        }
         _ => false,
     }
 }

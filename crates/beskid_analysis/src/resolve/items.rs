@@ -19,6 +19,26 @@ pub enum ItemKind {
     Use,
 }
 
+impl ItemKind {
+    /// Stable snake-case identifier for machine-readable API docs (`api.json`).
+    pub const fn as_stable_doc_kind(self) -> &'static str {
+        match self {
+            ItemKind::Function => "function",
+            ItemKind::Test => "test",
+            ItemKind::Method => "method",
+            ItemKind::Type => "type",
+            ItemKind::Enum => "enum",
+            ItemKind::EnumVariant => "enum_variant",
+            ItemKind::Contract => "contract",
+            ItemKind::ContractNode => "contract_node",
+            ItemKind::ContractMethodSignature => "contract_method",
+            ItemKind::ContractEmbedding => "contract_embedding",
+            ItemKind::Module => "module",
+            ItemKind::Use => "use",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemInfo {
     pub id: ItemId,

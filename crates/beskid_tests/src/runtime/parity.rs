@@ -254,7 +254,7 @@ fn parity_event_lifecycle_is_consistent_for_explicit_capacity_form() {
         }
         i64 main() {
             User mut u = User { };
-            unit(string) handler = (string payload) => { __sys_println(payload); };
+            unit(string) handler = (string payload) => { __syscall_write(1, payload); };
             u.Created += handler;
             u.Emit(\"x\");
             u.Created -= handler;
@@ -286,7 +286,7 @@ fn parity_event_lifecycle_is_consistent_for_default_capacity_form() {
         }
         i64 main() {
             User mut u = User { };
-            unit(string) handler = (string payload) => { __sys_println(payload); };
+            unit(string) handler = (string payload) => { __syscall_write(1, payload); };
             u.Created += handler;
             u.Emit(\"x\");
             u.Created -= handler;

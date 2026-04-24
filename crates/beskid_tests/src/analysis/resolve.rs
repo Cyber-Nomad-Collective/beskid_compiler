@@ -147,9 +147,9 @@ fn qualified_module_path_to_public_item_is_allowed() {
 }
 
 #[test]
-fn stdio_println_resolves() {
-    let result = resolve_program("unit main() { __sys_println(\"hi\"); }")
-        .expect("expected direct sys_println path to resolve");
+fn syscall_write_builtin_resolves() {
+    let result = resolve_program("i64 main() { return __syscall_write(1, \"hi\"); }")
+        .expect("expected __syscall_write to resolve");
     assert!(result.warnings.is_empty());
 }
 

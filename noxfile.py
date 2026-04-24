@@ -131,3 +131,17 @@ def release_cli(session: nox.Session) -> None:
 @nox.session(python=False, name="corelib_quality")
 def corelib_quality(session: nox.Session) -> None:
     _cargo(session, "test", "-p", "beskid_tests", "projects::corelib::")
+    corelib = ROOT / "corelib" / "beskid_corelib"
+    _cargo(
+        session,
+        "run",
+        "-p",
+        "beskid_cli",
+        "--quiet",
+        "--",
+        "test",
+        "--project",
+        str(corelib),
+        "--target",
+        "CoreLib",
+    )

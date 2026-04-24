@@ -8,7 +8,7 @@ impl User {
 
 i64 main() {
     User mut u = User { };
-    unit(string) handler = (string payload) => { __sys_println(payload); };
+    unit(string) handler = (string payload) => { __syscall_write(1, payload); };
     u.Created += handler;
     u.Emit("created");
     u.Created -= handler;

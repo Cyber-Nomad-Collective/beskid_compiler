@@ -21,7 +21,7 @@ pub use gc_roots::{
 };
 #[cfg(feature = "metrics")]
 pub use metrics::*;
-pub use panic_io::{panic, panic_str, sys_print, sys_println};
+pub use panic_io::{panic, panic_str, syscall_write};
 #[cfg(feature = "sched")]
 pub use sched::{rt_now_millis, rt_yield};
 pub use strings::{str_concat, str_len, str_new};

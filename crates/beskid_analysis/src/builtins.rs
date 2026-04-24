@@ -130,16 +130,10 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
-    &["__sys_print"] => {
-        symbol: "sys_print",
-        params: [String],
-        returns: Unit,
-        injected: true,
-    },
-    &["__sys_println"] => {
-        symbol: "sys_println",
-        params: [String],
-        returns: Unit,
+    &["__syscall_write"] => {
+        symbol: "syscall_write",
+        params: [U64, String],
+        returns: Usize,
         injected: true,
     },
     &["__str_len"] => {

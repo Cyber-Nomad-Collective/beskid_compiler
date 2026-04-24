@@ -50,7 +50,7 @@ Some AOT link modes return a structured error when **shared export policy flags*
   - `cross_platform_cli`: minimal source for parse/tree/analyze smoke on all OSes.
   - `analyze_diagnostics`: semantic error coverage for `beskid analyze`.
   - `smoke_project` build graph assertions: corelib dependency auto-injection stays active.
-  - `runtime_calls`: runtime builtins (`__str_len`, `__sys_println`) and lambda behavior.
+  - `runtime_calls`: runtime builtins (`__str_len`, `__syscall_write`) and lambda behavior.
   - `event_unsubscribe`: event subscribe/unsubscribe execution path.
   - `deps_workspace`: multi-project path-dependency materialization flow.
   - `contracts_dispatch`, `enums_match`, `method_dispatch`, `closure_capture`, `try_expression`: semantic E2E matrix projects.

@@ -41,8 +41,8 @@ fn runtime_calls_fixture_jit_runs_and_aot_contains_runtime_symbols() {
         "expected runtime-calls object to reference str_len"
     );
     assert!(
-        nm_contains_symbol(&object_output, "sys_println"),
-        "expected runtime-calls object to reference sys_println"
+        nm_contains_symbol(&object_output, "syscall_write"),
+        "expected runtime-calls object to reference syscall_write"
     );
 }
 

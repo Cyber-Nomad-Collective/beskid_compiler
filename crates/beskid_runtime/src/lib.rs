@@ -8,8 +8,8 @@ mod interop_layout;
 pub use builtins::{
     alloc, array_new, beskid_runtime_abi_version, event_get_handler, event_len, event_subscribe,
     event_unsubscribe_first, gc_register_root, gc_root_handle, gc_unregister_root,
-    gc_unroot_handle, gc_write_barrier, panic, panic_str, str_concat, str_len, str_new, sys_print,
-    sys_println, test_bytes_len, test_bytes_ptr,
+    gc_unroot_handle, gc_write_barrier, panic, panic_str, str_concat, str_len, str_new,
+    syscall_write, test_bytes_len, test_bytes_ptr,
 };
 
 #[cfg(feature = "sched")]

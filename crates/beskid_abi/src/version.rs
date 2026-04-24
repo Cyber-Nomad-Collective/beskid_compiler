@@ -1,1 +1,1 @@
-pub const BESKID_RUNTIME_ABI_VERSION: u32 = 1;
+pub const BESKID_RUNTIME_ABI_VERSION: u32 = 2;

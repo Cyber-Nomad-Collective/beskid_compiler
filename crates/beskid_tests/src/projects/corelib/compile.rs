@@ -31,10 +31,6 @@ fn checked_in_corelib_template_builds_compile_plan() {
 fn checked_in_corelib_sources_parse_as_beskid_programs() {
     let root = corelib_root().join("src");
 
-    let prelude_path = root.join("Prelude.bd");
-    let prelude = fs::read_to_string(&prelude_path).expect("read prelude");
-    parse_program(&prelude).expect("prelude should parse");
-
     for relative in expected_corelib_files() {
         let path = root.join(relative);
         let source = fs::read_to_string(&path)
@@ -88,6 +84,10 @@ fn checked_in_corelib_prelude_exports_mvp_modules() {
         prelude.contains("pub mod System.IO;"),
         "Prelude should export System.IO"
     );
+    assert!(
+        prelude.contains("pub mod System.Syscall;"),
+        "Prelude should export System.Syscall"
+    );
 }
 
 #[test]
@@ -110,11 +110,17 @@ fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
         "Core.String should use __str_len runtime builtin"
     );
     assert!(
-        io_mod.contains("__sys_print("),
-        "System.IO.Print should use __sys_print runtime builtin"
+        !io_mod.contains("__sys_print"),
+        "System.IO must not reference purged __sys_print builtins"
     );
     assert!(
-        io_mod.contains("__sys_println("),
-        "System.IO.Println should use __sys_println runtime builtin"
+        io_mod.contains("Syscall.Write") && io_mod.contains("PrintLine"),
+        "System.IO should route output through Syscall.Write and expose PrintLine"
+    );
+    let syscall_mod =
+        fs::read_to_string(root.join("System/Syscall.bd")).expect("read System.Syscall");
+    assert!(
+        syscall_mod.contains("__syscall_write"),
+        "System.Syscall should call __syscall_write builtin"
     );
 }

@@ -17,15 +17,30 @@ fn corelib_source_candidates(manifest_dir: &Path) -> [PathBuf; 1] {
     [manifest_dir.join("../../corelib/beskid_corelib")]
 }
 
-pub(super) fn expected_corelib_files() -> [&'static str; 7] {
-    [
-        "Core/Results.bd",
+pub(super) fn expected_corelib_files() -> &'static [&'static str] {
+    &[
+        "Collections/Array.bd",
+        "Collections/List.bd",
+        "Collections/Map.bd",
+        "Collections/Queue.bd",
+        "Collections/Set.bd",
+        "Collections/Stack.bd",
         "Core/ErrorHandling.bd",
+        "Core/Results.bd",
         "Core/String.bd",
-        "Testing/Contracts.bd",
-        "Testing/Assertions.bd",
-        "System/IO.bd",
         "Prelude.bd",
+        "Query/Contracts.bd",
+        "Query/Execution.bd",
+        "Query/Operators.bd",
+        "System/Environment.bd",
+        "System/FS.bd",
+        "System/IO.bd",
+        "System/Path.bd",
+        "System/Process.bd",
+        "System/Syscall.bd",
+        "System/Time.bd",
+        "Testing/Assertions.bd",
+        "Testing/Contracts.bd",
     ]
 }
 

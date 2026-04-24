@@ -1,5 +1,5 @@
 i32 main() {
-    __sys_println("ok");
+    __syscall_write(1, "ok");
     i32 len = __str_len("hello");
     if len != 5 {
         return 21;

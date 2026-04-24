@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
+use beskid_analysis::hir::HirVisibility;
 use beskid_analysis::services;
+use beskid_analysis::syntax::SpanInfo;
 use clap::Args;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -34,18 +36,50 @@ pub struct DocArgs {
 #[derive(Clone, Debug)]
 struct DocEntry {
     id: Option<usize>,
-    name: String,
+    qualified_name: String,
     kind: String,
     visibility: Option<String>,
-    span_start: Option<usize>,
-    span_end: Option<usize>,
+    location: LocationJson,
     doc_markdown: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct LocationJson {
+    file: String,
+    start_line: usize,
+    start_column: usize,
+    end_line: usize,
+    end_column: usize,
 }
 
 #[derive(Default, Debug)]
 struct TreeNode {
     children: BTreeMap<String, TreeNode>,
     entries: Vec<usize>,
+}
+
+fn visibility_stable(vis: HirVisibility) -> &'static str {
+    match vis {
+        HirVisibility::Public => "public",
+        HirVisibility::Private => "private",
+    }
+}
+
+fn location_for_span(_source: &str, file: &str, span: &SpanInfo) -> LocationJson {
+    let (sl, sc) = span.line_col_start;
+    let (el, ec) = span.line_col_end;
+    LocationJson {
+        file: file.to_string(),
+        start_line: sl,
+        start_column: sc,
+        end_line: el,
+        end_column: ec,
+    }
+}
+
+fn location_for_byte_range(source: &str, file: &str, start: usize, end: usize) -> LocationJson {
+    let span = SpanInfo::from_byte_range_in_source(source, start, end);
+    location_for_span(source, file, &span)
 }
 
 pub fn execute(args: DocArgs) -> Result<()> {
@@ -64,6 +98,8 @@ pub fn execute(args: DocArgs) -> Result<()> {
     .with_context(|| format!("parse {}", resolved.source_path.display()))?;
     let snap = services::build_document_analysis(&program);
 
+    let source_path_str = resolved.source_path.to_string_lossy().into_owned();
+
     fs::create_dir_all(&args.out).with_context(|| format!("create {}", args.out.display()))?;
 
     let mut entries: Vec<DocEntry> = Vec::new();
@@ -76,11 +112,10 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 .map(|d| d.markdown.clone());
             entries.push(DocEntry {
                 id: Some(item.id.0),
-                name: item.name.clone(),
-                kind: format!("{:?}", item.kind),
-                visibility: Some(format!("{:?}", item.visibility)),
-                span_start: Some(item.span.start),
-                span_end: Some(item.span.end),
+                qualified_name: item.name.clone(),
+                kind: item.kind.as_stable_doc_kind().to_string(),
+                visibility: Some(visibility_stable(item.visibility).to_string()),
+                location: location_for_span(&resolved.source, &source_path_str, &item.span),
                 doc_markdown,
             });
         }
@@ -88,29 +123,51 @@ pub fn execute(args: DocArgs) -> Result<()> {
         for symbol in services::collect_document_symbols(&snap) {
             entries.push(DocEntry {
                 id: None,
-                name: symbol.name,
-                kind: format!("{:?}", symbol.kind),
+                qualified_name: symbol.name,
+                kind: services::symbol_kind_name(symbol.kind).to_string(),
                 visibility: None,
-                span_start: Some(symbol.selection_start),
-                span_end: Some(symbol.selection_end),
+                location: location_for_byte_range(
+                    &resolved.source,
+                    &source_path_str,
+                    symbol.selection_start,
+                    symbol.selection_end,
+                ),
                 doc_markdown: None,
             });
         }
     }
-    entries.sort_by(|a, b| a.name.cmp(&b.name).then(a.kind.cmp(&b.kind)));
+    entries.sort_by(|a, b| {
+        a.qualified_name
+            .cmp(&b.qualified_name)
+            .then(a.kind.cmp(&b.kind))
+    });
 
     let mut items_json = Vec::new();
     for entry in &entries {
+        let loc = &entry.location;
         items_json.push(json!({
             "id": entry.id,
-            "name": entry.name,
+            "qualifiedName": entry.qualified_name,
+            "name": entry.qualified_name,
             "kind": entry.kind,
             "visibility": entry.visibility,
-            "span": { "start": entry.span_start, "end": entry.span_end },
+            "location": {
+                "file": loc.file,
+                "startLine": loc.start_line,
+                "startColumn": loc.start_column,
+                "endLine": loc.end_line,
+                "endColumn": loc.end_column,
+            },
             "doc_markdown": entry.doc_markdown,
+            "controls": [],
         }));
     }
-    let api = json!({ "source": resolved.source_path.to_string_lossy(), "items": items_json });
+    let api = json!({
+        "schemaVersion": 1,
+        "generator": concat!("beskid-cli ", env!("CARGO_PKG_VERSION")),
+        "source": source_path_str,
+        "items": items_json,
+    });
     fs::write(
         args.out.join("api.json"),
         serde_json::to_string_pretty(&api).context("serialize api.json")?,
@@ -126,7 +183,10 @@ pub fn execute(args: DocArgs) -> Result<()> {
         md.push('\n');
         md.push_str("## Items\n\n");
         for entry in &entries {
-            md.push_str(&format!("### `{}` (`{}`)\n\n", entry.name, entry.kind));
+            md.push_str(&format!(
+                "### `{}` (`{}`)\n\n",
+                entry.qualified_name, entry.kind
+            ));
             let body = entry
                 .doc_markdown
                 .as_deref()
@@ -151,7 +211,11 @@ pub fn execute(args: DocArgs) -> Result<()> {
 fn render_structure_tree(entries: &[DocEntry]) -> String {
     let mut root = TreeNode::default();
     for (idx, entry) in entries.iter().enumerate() {
-        let segments: Vec<&str> = entry.name.split("::").filter(|s| !s.is_empty()).collect();
+        let segments: Vec<&str> = entry
+            .qualified_name
+            .split("::")
+            .filter(|s| !s.is_empty())
+            .collect();
         if segments.is_empty() {
             root.entries.push(idx);
             continue;
@@ -177,34 +241,40 @@ fn render_tree_node(node: &TreeNode, entries: &[DocEntry], depth: usize, out: &m
         let entry = &entries[*entry_idx];
         out.push_str(&format!(
             "{indent}- `{}` (`{}`)\n",
-            entry.name, entry.kind
+            entry.qualified_name, entry.kind
         ));
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DocEntry, render_structure_tree};
+    use super::{DocEntry, LocationJson, render_structure_tree};
+    use beskid_analysis::syntax::SpanInfo;
 
     #[test]
     fn structure_tree_renders_nested_paths() {
+        let loc = LocationJson {
+            file: "main.bd".into(),
+            start_line: 1,
+            start_column: 1,
+            end_line: 1,
+            end_column: 1,
+        };
         let entries = vec![
             DocEntry {
                 id: Some(0),
-                name: "util::math::sum".to_string(),
-                kind: "Function".to_string(),
+                qualified_name: "util::math::sum".to_string(),
+                kind: "function".to_string(),
                 visibility: None,
-                span_start: None,
-                span_end: None,
+                location: loc.clone(),
                 doc_markdown: None,
             },
             DocEntry {
                 id: Some(1),
-                name: "util::math::Vec2".to_string(),
-                kind: "Type".to_string(),
+                qualified_name: "util::math::Vec2".to_string(),
+                kind: "type".to_string(),
                 visibility: None,
-                span_start: None,
-                span_end: None,
+                location: loc,
                 doc_markdown: None,
             },
         ];
@@ -212,7 +282,16 @@ mod tests {
         let tree = render_structure_tree(&entries);
         assert!(tree.contains("- `util`"));
         assert!(tree.contains("- `math`"));
-        assert!(tree.contains("`util::math::sum` (`Function`)"));
-        assert!(tree.contains("`util::math::Vec2` (`Type`)"));
+        assert!(tree.contains("`util::math::sum` (`function`)"));
+        assert!(tree.contains("`util::math::Vec2` (`type`)"));
+    }
+
+    #[test]
+    fn location_from_byte_range_matches_line_col() {
+        let src = "a\nbc\ndef";
+        // "d" is third line
+        let span = SpanInfo::from_byte_range_in_source(src, 5, 6);
+        assert_eq!(span.line_col_start, (3, 1));
+        assert_eq!(span.line_col_end, (3, 2));
     }
 }

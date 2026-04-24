@@ -33,8 +33,8 @@ fn checked_in_corelib_template_declares_corelib_project_name() {
     let root = corelib_root();
     let manifest = std::fs::read_to_string(root.join("Project.proj")).expect("read manifest");
     assert!(
-        manifest.contains("name = \"beskid_corelib\""),
-        "expected beskid_corelib project identity in Project.proj"
+        manifest.contains("name = \"corelib\""),
+        "expected corelib package identity in Project.proj"
     );
 }
 

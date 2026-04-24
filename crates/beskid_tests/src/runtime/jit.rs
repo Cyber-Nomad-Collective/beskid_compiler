@@ -119,8 +119,8 @@ fn jit_entrypoint_pointer_is_available() {
 }
 
 #[test]
-fn jit_compiles_println_builtin_call() {
-    let source = "unit main() { __sys_println(\"hello\"); }";
+fn jit_compiles_syscall_write_builtin_call() {
+    let source = "i64 main() { return __syscall_write(1, \"hello\"); }";
     compile_jit(source);
 }
 
@@ -261,7 +261,7 @@ fn jit_event_invoke_executes_subscribed_handler() {
         }
         i64 main() {
             User mut u = User { };
-            unit(string) handler = (string payload) => { __sys_println(payload); };
+            unit(string) handler = (string payload) => { __syscall_write(1, payload); };
             u.Created += handler;
             u.Emit(\"x\");
             return 42;

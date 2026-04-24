@@ -11,8 +11,7 @@ Source of truth: `crates/beskid_abi/src/symbols.rs`.
 - `array_new`
 - `panic`
 - `panic_str`
-- `sys_print`
-- `sys_println`
+- `syscall_write`
 - `gc_write_barrier`
 - `gc_root_handle`
 - `gc_unroot_handle`

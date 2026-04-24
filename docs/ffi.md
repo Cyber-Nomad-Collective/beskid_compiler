@@ -12,7 +12,7 @@ Current supported extern mapping for analysis and runtime wiring:
 ## MVP corelib/runtime ABI touchpoints
 For compile/run MVP with checked-in corelib (`corelib/beskid_corelib`), runtime exports must keep these symbols stable:
 - `str_len` (used by `Core.String`)
-- `sys_print` and `sys_println` (used by `System.IO`)
+- `syscall_write` (used by `System.Syscall` / `System.IO`)
 
 These are validated in `crates/beskid_tests/src/abi/contracts.rs`.
 
