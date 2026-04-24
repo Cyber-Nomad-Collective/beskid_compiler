@@ -14,7 +14,7 @@ pub struct DocumentRequestSnapshot {
 
 pub async fn snapshot_document(state: &RwLock<State>, uri: &Uri) -> Option<Document> {
     let state = state.read().await;
-    state.docs.get(uri).cloned()
+    state.document_union(uri)
 }
 
 pub async fn snapshot_request(

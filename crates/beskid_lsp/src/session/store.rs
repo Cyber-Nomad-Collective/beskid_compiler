@@ -15,4 +15,12 @@ pub struct Document {
 #[derive(Default)]
 pub struct State {
     pub docs: HashMap<Uri, Document>,
+    /// Closed files on disk that still receive diagnostics (not managed by the editor buffer).
+    pub workspace_index: HashMap<Uri, Document>,
+}
+
+impl State {
+    pub fn document_union(&self, uri: &Uri) -> Option<Document> {
+        self.docs.get(uri).cloned().or_else(|| self.workspace_index.get(uri).cloned())
+    }
 }

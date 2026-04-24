@@ -287,10 +287,13 @@ version = "0.1.0"
 dependencies = [
  "beskid_analysis",
  "pest",
+ "serde",
  "serde_json",
  "tokio",
  "tower-lsp-server",
  "tracing",
+ "url",
+ "walkdir",
 ]
 
 [[package]]

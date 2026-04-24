@@ -2,7 +2,7 @@ use beskid_analysis::parser::{BeskidParser, Rule};
 use beskid_analysis::parsing::error::ParseError;
 use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::projects::{parse_manifest, parse_workspace_manifest};
-use beskid_analysis::services;
+use beskid_analysis::services::{self, DocumentAnalysisSnapshot};
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{AnalysisOptions, SemanticDiagnostic, Severity, builtin_rules, run_rules};
 use pest::Parser;
@@ -12,9 +12,17 @@ use tower_lsp_server::ls_types::*;
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::offset_range_to_lsp;
 
-pub fn analyze_document(uri: &Uri, source: &str) -> Vec<Diagnostic> {
+pub fn analyze_document(
+    uri: &Uri,
+    source: &str,
+    cached: Option<&DocumentAnalysisSnapshot>,
+) -> Vec<Diagnostic> {
     if is_project_manifest_uri(uri) {
         return analyze_project_manifest(uri, source);
+    }
+
+    if let Some(snap) = cached {
+        return semantic_diagnostics(uri, source, &snap.program.node);
     }
 
     let mut pairs = match BeskidParser::parse(Rule::Program, source) {
@@ -35,8 +43,12 @@ pub fn analyze_document(uri: &Uri, source: &str) -> Vec<Diagnostic> {
         Err(err) => return vec![parse_error_to_lsp_diagnostic(source, &err)],
     };
 
+    semantic_diagnostics(uri, source, &program.node)
+}
+
+fn semantic_diagnostics(uri: &Uri, source: &str, program: &Program) -> Vec<Diagnostic> {
     run_rules(
-        &program.node,
+        program,
         uri.to_string(),
         source,
         &builtin_rules(),

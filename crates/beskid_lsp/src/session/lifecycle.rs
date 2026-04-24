@@ -33,9 +33,30 @@ fn build_document_analysis(
         .map(|program| beskid_analysis::services::build_document_analysis(&program))
 }
 
+pub fn build_document(uri: &Uri, version: i32, text: String) -> Document {
+    let text_hash = hash_text(&text);
+    let analysis = build_document_analysis(uri, &text);
+    Document {
+        version,
+        text,
+        text_hash,
+        analysis_cache_version: ANALYSIS_CACHE_VERSION,
+        analysis,
+    }
+}
+
+pub async fn set_disk_snapshot(state: &RwLock<State>, uri: Uri, doc: Document) {
+    let mut write_state = state.write().await;
+    if write_state.docs.contains_key(&uri) {
+        return;
+    }
+    write_state.workspace_index.insert(uri, doc);
+}
+
 pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: String) {
     let text_hash = hash_text(&text);
     let mut write_state = state.write().await;
+    write_state.workspace_index.remove(&uri);
 
     if let Some(existing) = write_state.docs.get_mut(&uri) {
         if version < existing.version {
@@ -73,14 +94,14 @@ pub async fn remove_document(state: &RwLock<State>, uri: &Uri) {
 pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>, uri: &Uri) {
     let snapshot = {
         let state = state.read().await;
-        state.docs.get(uri).cloned()
+        state.document_union(uri)
     };
 
     let Some(doc) = snapshot else {
         return;
     };
 
-    let diagnostics = analyze_document(uri, &doc.text);
+    let diagnostics = analyze_document(uri, &doc.text, doc.analysis.as_ref());
     client
         .publish_diagnostics(uri.clone(), diagnostics, Some(doc.version))
         .await;

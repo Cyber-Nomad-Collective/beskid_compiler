@@ -1,8 +1,12 @@
+pub(crate) mod code_actions;
 pub(crate) mod completion;
 pub(crate) mod definition;
 pub(crate) mod document_symbols;
 pub(crate) mod formatting;
 pub(crate) mod hover;
+pub(crate) mod inlay_hints;
 pub(crate) mod project_manifest;
 pub(crate) mod references;
 pub(crate) mod semantic_tokens;
+pub(crate) mod signature_help;
+pub(crate) mod workspace_symbols;

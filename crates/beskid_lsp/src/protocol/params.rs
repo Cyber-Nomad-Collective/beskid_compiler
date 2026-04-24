@@ -1,5 +1,5 @@
 use tower_lsp_server::ls_types::{
-    CompletionParams, GotoDefinitionParams, HoverParams, ReferenceParams,
+    CompletionParams, GotoDefinitionParams, HoverParams, ReferenceParams, SignatureHelpParams,
     TextDocumentPositionParams,
 };
 
@@ -28,5 +28,11 @@ impl IntoTextDocumentPosition for ReferenceParams {
 impl IntoTextDocumentPosition for CompletionParams {
     fn into_text_document_position(self) -> TextDocumentPositionParams {
         self.text_document_position
+    }
+}
+
+impl IntoTextDocumentPosition for SignatureHelpParams {
+    fn into_text_document_position(self) -> TextDocumentPositionParams {
+        self.text_document_position_params
     }
 }
