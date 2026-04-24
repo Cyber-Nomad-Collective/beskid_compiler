@@ -298,8 +298,6 @@ pub struct ConfigureArgs {
 pub struct PublishArgs {
     pub package: String,
     #[arg(long)]
-    pub version: String,
-    #[arg(long)]
     pub artifact: PathBuf,
     #[arg(long)]
     pub checksum_sha256: Option<String>,
@@ -669,7 +667,7 @@ async fn execute_publish(
     let response = client
         .publish_package_version(
             &args.package,
-            &args.version,
+            None,
             artifact_path,
             &artifact_name,
             args.manifest_json.as_deref(),
@@ -699,14 +697,15 @@ async fn execute_publish(
                 args.package.trim()
             );
             println!("package:  {}", args.package);
-            println!("version:  {}", args.version);
             if let Some(version) = &response.version {
+                println!("PCKG_PUBLISHED_VERSION={}", version.version);
+                println!("version:  {} (registry-assigned)", version.version);
                 println!("checksum: {}", version.checksum_sha256);
                 println!("size:     {} bytes", version.size_bytes);
                 println!("published_at_utc: {}", version.published_at_utc);
                 print_package_versions_table(std::slice::from_ref(version));
             } else {
-                println!("(no version details in response)");
+                println!("version:  (not returned by registry — check `beskid pckg versions {}`)", args.package.trim());
             }
             println!("------------------------");
             Ok(())

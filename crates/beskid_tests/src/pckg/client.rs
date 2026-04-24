@@ -32,7 +32,7 @@ async fn publish_endpoint_without_auth_returns_missing_auth_token() {
     let err = client
         .publish_package_version(
             "Demo",
-            "1.0.0",
+            None,
             &path,
             "demo.bpk",
             Some("{}"),

@@ -110,12 +110,16 @@ impl PckgClient {
     }
 
     /// Publish a `.bpk` from a local file. Streams the artifact (no full-file buffer).
+    ///
+    /// Omits multipart `version` so the registry assigns the next semver. Optional
+    /// `version_bump` is sent as `versionBump` (`patch`, `minor`, or `major`; server
+    /// defaults to patch when omitted).
     /// `upload_progress`: when set, updates an indicatif bar during the HTTP upload.
     #[allow(clippy::too_many_arguments)]
     pub async fn publish_package_version(
         &self,
         package_name: &str,
-        version: &str,
+        version_bump: Option<&str>,
         artifact_path: &Path,
         artifact_name: &str,
         manifest_json: Option<&str>,
@@ -154,9 +158,11 @@ impl PckgClient {
             .mime_str("application/zip")
             .map_err(PckgError::Transport)?;
 
-        let mut form = multipart::Form::new()
-            .text("version", version.to_string())
-            .part("artifact", part);
+        let mut form = multipart::Form::new().part("artifact", part);
+
+        if let Some(bump) = version_bump.map(str::trim).filter(|s| !s.is_empty()) {
+            form = form.text("versionBump", bump.to_string());
+        }
 
         if let Some(manifest_json) = manifest_json {
             form = form.text("manifestJson", manifest_json.to_string());
