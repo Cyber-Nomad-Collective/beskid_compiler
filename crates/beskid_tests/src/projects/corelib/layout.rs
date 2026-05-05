@@ -51,3 +51,26 @@ fn checked_in_corelib_template_has_mvp_module_files() {
         );
     }
 }
+
+#[test]
+fn checked_in_corelib_template_has_beskid_tests_project() {
+    let root = corelib_root();
+    let tests_project = root.join("tests/corelib_tests/Project.proj");
+    let write_tests = root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd");
+    let api_tests = root.join("tests/corelib_tests/src/system/SyscallApiTests.bd");
+    assert!(
+        tests_project.is_file(),
+        "missing corelib tests project manifest: {}",
+        tests_project.display()
+    );
+    assert!(
+        write_tests.is_file(),
+        "missing syscall write tests: {}",
+        write_tests.display()
+    );
+    assert!(
+        api_tests.is_file(),
+        "missing syscall api tests: {}",
+        api_tests.display()
+    );
+}

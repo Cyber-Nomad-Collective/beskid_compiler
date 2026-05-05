@@ -93,7 +93,32 @@ impl crate::parsing::parsable::Parsable for Field {
                 let params_pair = inner.next();
                 let params = if let Some(pair) = params_pair {
                     pair.into_inner()
-                        .map(Parameter::parse)
+                        .filter_map(|entry| {
+                            if entry.as_rule() == crate::parser::Rule::ParameterWithDocs {
+                                Some(entry)
+                            } else {
+                                None
+                            }
+                        })
+                        .map(|entry| {
+                            let mut inner = entry.into_inner();
+                            let first = inner.next().ok_or(
+                                crate::parsing::error::ParseError::missing(
+                                    crate::parser::Rule::Parameter,
+                                ),
+                            )?;
+                            let parameter_pair = if first.as_rule() == crate::parser::Rule::DocRun
+                            {
+                                inner.next().ok_or(
+                                    crate::parsing::error::ParseError::missing(
+                                        crate::parser::Rule::Parameter,
+                                    ),
+                                )?
+                            } else {
+                                first
+                            };
+                            Parameter::parse(parameter_pair)
+                        })
                         .collect::<Result<Vec<_>, _>>()?
                 } else {
                     Vec::new()

@@ -474,6 +474,9 @@ impl SemanticPipelineRule {
         match &ty.node {
             HirType::Primitive(_) => {}
             HirType::Complex(path) => {
+                if path.node.segments.len() > 1 {
+                    return;
+                }
                 let Some(last_segment) = path.node.segments.last() else {
                     return;
                 };

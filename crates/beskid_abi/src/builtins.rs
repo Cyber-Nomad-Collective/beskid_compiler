@@ -2,7 +2,7 @@ use crate::symbols::{
     SYM_ALLOC, SYM_ARRAY_NEW, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT,
     SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_PTR,
     SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR,
-    SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_WRITE, SYM_TEST_BYTES_LEN,
+    SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, SYM_TEST_BYTES_LEN,
     SYM_TEST_BYTES_PTR,
 };
 
@@ -32,6 +32,7 @@ const PTR_PTR: [AbiParamKind; 2] = [AbiParamKind::Ptr, AbiParamKind::Ptr];
 const PTR_ONLY: [AbiParamKind; 1] = [AbiParamKind::Ptr];
 const I64_ONLY: [AbiParamKind; 1] = [AbiParamKind::I64];
 const I64_PTR: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::Ptr];
+const I64_I64: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::I64];
 
 pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
     BuiltinFnSpec {
@@ -68,6 +69,11 @@ pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
         symbol: SYM_SYSCALL_WRITE,
         params: &I64_PTR,
         returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_SYSCALL_READ,
+        params: &I64_I64,
+        returns: AbiReturnKind::Ptr,
     },
     BuiltinFnSpec {
         symbol: SYM_STR_LEN,

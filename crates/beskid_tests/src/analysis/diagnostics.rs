@@ -121,6 +121,17 @@ fn duplicate_definition_uses_previous_span_help() {
 }
 
 #[test]
+fn resolve_unknown_module_path_issue_uses_distinct_code() {
+    let issue = SemanticIssueKind::ResolveUnknownModulePath {
+        path: "Core::Results".to_string(),
+    };
+    assert_eq!(issue.code(), "E1108");
+    assert_eq!(issue.severity(), Severity::Error);
+    assert_eq!(issue.label(), "unknown module path");
+    assert!(issue.message().contains("unknown module path `Core::Results`"));
+}
+
+#[test]
 fn warning_issue_contract_is_stable() {
     let issue = SemanticIssueKind::TypeImplicitNumericCast {
         from: "i64".to_string(),

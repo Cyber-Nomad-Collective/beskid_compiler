@@ -21,6 +21,10 @@ pub fn analyze_document(
         return analyze_project_manifest(uri, source);
     }
 
+    if let Some(project_diags) = analyze_project_file(uri, source) {
+        return project_diags;
+    }
+
     if let Some(snap) = cached {
         return semantic_diagnostics(uri, source, &snap.program.node);
     }
@@ -44,6 +48,17 @@ pub fn analyze_document(
     };
 
     semantic_diagnostics(uri, source, &program.node)
+}
+
+fn analyze_project_file(uri: &Uri, source: &str) -> Option<Vec<Diagnostic>> {
+    let path = uri.to_file_path()?;
+    let diagnostics = services::analyze_source_in_project(path.as_ref(), source).ok()?;
+    Some(
+        diagnostics
+            .into_iter()
+            .map(|diag| semantic_to_lsp_diagnostic(source, diag))
+            .collect(),
+    )
 }
 
 fn semantic_diagnostics(uri: &Uri, source: &str, program: &Program) -> Vec<Diagnostic> {

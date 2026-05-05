@@ -40,11 +40,18 @@ where
 
         if item_pair.as_rule() == Rule::ImplBlock {
             let impl_block = ImplBlock::parse(item_pair)?;
-            let mut first_doc: Option<LeadingDocComment> = doc_opt;
-            for method in impl_block.node.methods {
+            let methods = impl_block.node.methods;
+            let method_docs = impl_block.node.method_docs;
+            let mut impl_doc: Option<LeadingDocComment> = doc_opt;
+            for (idx, method) in methods.into_iter().enumerate() {
                 let mspan = method.span;
                 items.push(Spanned::new(Node::Method(method), mspan));
-                leading_docs.push(first_doc.take());
+                let method_doc = method_docs.get(idx).cloned().flatten();
+                if idx == 0 {
+                    leading_docs.push(method_doc.or_else(|| impl_doc.take()));
+                } else {
+                    leading_docs.push(method_doc);
+                }
             }
             continue;
         }

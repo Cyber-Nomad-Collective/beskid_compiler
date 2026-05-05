@@ -125,6 +125,12 @@ fn jit_compiles_syscall_write_builtin_call() {
 }
 
 #[test]
+fn jit_compiles_syscall_read_builtin_call() {
+    let source = "string main() { return __syscall_read(99, 8); }";
+    compile_jit(source);
+}
+
+#[test]
 fn jit_executes_local_lambda_call() {
     let source = "i64 main() { let add = (i64 x, i64 y) => x + y; return add(20, 22); }";
     let mut engine = compile_jit(source);

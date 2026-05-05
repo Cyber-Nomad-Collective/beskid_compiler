@@ -7,7 +7,7 @@ use beskid_abi::{
     SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
     SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_PTR,
     SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR,
-    SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_WRITE,
+    SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE,
 };
 use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
 use beskid_aot::{AotError, BuildProfile, RuntimeStrategy};
@@ -30,6 +30,7 @@ fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
         SYM_PANIC,
         SYM_PANIC_STR,
         SYM_SYSCALL_WRITE,
+        SYM_SYSCALL_READ,
         SYM_GC_WRITE_BARRIER,
         SYM_GC_ROOT_HANDLE,
         SYM_GC_UNROOT_HANDLE,
@@ -57,7 +58,7 @@ fn runtime_export_symbols_are_unique() {
 
 #[test]
 fn runtime_exports_cover_mvp_corelib_symbols() {
-    let required = [SYM_STR_LEN, SYM_SYSCALL_WRITE];
+    let required = [SYM_STR_LEN, SYM_SYSCALL_WRITE, SYM_SYSCALL_READ];
     for symbol in required {
         assert!(
             RUNTIME_EXPORT_SYMBOLS.contains(&symbol),

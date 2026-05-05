@@ -58,10 +58,13 @@ fn completion_kind_from_item_kind(kind: ItemKind) -> CompletionKind {
         ItemKind::Type => CompletionKind::Struct,
         ItemKind::Enum => CompletionKind::Enum,
         ItemKind::EnumVariant => CompletionKind::EnumMember,
+        ItemKind::Field => CompletionKind::Variable,
         ItemKind::Contract => CompletionKind::Interface,
         ItemKind::ContractNode => CompletionKind::Method,
         ItemKind::ContractMethodSignature => CompletionKind::Method,
         ItemKind::ContractEmbedding => CompletionKind::Module,
+        ItemKind::Parameter => CompletionKind::Variable,
+        ItemKind::Statement => CompletionKind::Text,
         ItemKind::Module => CompletionKind::Module,
         ItemKind::Use => CompletionKind::Module,
     }
@@ -88,10 +91,13 @@ fn item_kind_name(kind: ItemKind) -> &'static str {
         ItemKind::Type => "type",
         ItemKind::Enum => "enum",
         ItemKind::EnumVariant => "enum variant",
+        ItemKind::Field => "field",
         ItemKind::Contract => "contract",
         ItemKind::ContractNode => "contract node",
         ItemKind::ContractMethodSignature => "contract method",
         ItemKind::ContractEmbedding => "contract embedding",
+        ItemKind::Parameter => "parameter",
+        ItemKind::Statement => "statement",
         ItemKind::Module => "module",
         ItemKind::Use => "use",
     }
@@ -278,6 +284,171 @@ pub fn analyze_program(path: &Path, source: &str) -> Result<Vec<SemanticDiagnost
         AnalysisOptions::default(),
     )
     .diagnostics)
+}
+
+pub fn analyze_file_in_project(path: &Path) -> Result<Vec<SemanticDiagnostic>> {
+    let source = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read file: {}", path.display()))?;
+    analyze_source_in_project(path, &source)
+}
+
+pub fn analyze_source_in_project(path: &Path, source: &str) -> Result<Vec<SemanticDiagnostic>> {
+    let mut diagnostics = analyze_program(path, &source)?;
+    let compile_plan = compile_plan_for_input_path(path);
+
+    if is_non_entry_project_file(path, compile_plan.as_ref()) {
+        diagnostics.retain(|diagnostic| diagnostic.code.as_deref() == Some("parse"));
+        return Ok(diagnostics);
+    }
+
+    let mut module_roots = Vec::new();
+    if let Some(plan) = compile_plan.as_ref() {
+        module_roots.push(plan.source_root.clone());
+        module_roots.extend(plan.dependency_projects.iter().map(|dep| dep.source_root.clone()));
+    }
+
+    let symbol_hints = collect_symbol_hints_from_source(&source, &module_roots);
+
+    diagnostics.retain(|diagnostic| match diagnostic.code.as_deref() {
+        Some("E1105") => {
+            if let Some(module_path) = extract_unknown_module_path(&diagnostic.message) {
+                return !module_path_exists_on_disk(&module_path, &module_roots);
+            }
+            if let Some(import_path) = extract_unknown_import_path(&diagnostic.message) {
+                return !module_path_exists_on_disk(&import_path, &module_roots);
+            }
+            true
+        }
+        Some("E1201") => {
+            let Some(type_name) = extract_unknown_type_name(&diagnostic.message) else {
+                return true;
+            };
+            !symbol_hints.iter().any(|hint| hint == &type_name)
+        }
+        Some("E1301") => {
+            let Some(enum_root) = extract_unknown_enum_root(&diagnostic.message) else {
+                return true;
+            };
+            !symbol_hints.iter().any(|hint| hint == &enum_root)
+        }
+        _ => true,
+    });
+
+    Ok(diagnostics)
+}
+
+fn compile_plan_for_input_path(path: &Path) -> Option<CompilePlan> {
+    let manifest_path = discover_project_file(&path.to_path_buf())?;
+    build_compile_plan_with_policy(
+        &manifest_path,
+        None,
+        UnresolvedDependencyPolicy::Error,
+    )
+    .ok()
+}
+
+fn is_non_entry_project_file(path: &Path, plan: Option<&CompilePlan>) -> bool {
+    let Some(plan) = plan else {
+        return false;
+    };
+    let entry_path = plan.source_root.join(&plan.target.entry);
+    path != entry_path
+}
+
+fn collect_symbol_hints_from_source(source: &str, module_roots: &[PathBuf]) -> Vec<String> {
+    let mut hints = Vec::new();
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("use ") {
+            let without_semicolon = rest.trim_end_matches(';').trim();
+            let import_path = without_semicolon
+                .split_once(" as ")
+                .map(|(path, _)| path.trim())
+                .unwrap_or(without_semicolon);
+            if module_path_exists_on_disk(import_path, module_roots) {
+                if let Some(name) = import_path
+                    .split('.')
+                    .next_back()
+                    .map(str::trim)
+                    .filter(|part| !part.is_empty())
+                {
+                    hints.push(name.to_string());
+                }
+            }
+        }
+
+        for token in trimmed.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_' || ch == '.'))
+        {
+            if token.matches('.').count() < 1 {
+                continue;
+            }
+            let Some((module_path, symbol_name)) = token.rsplit_once('.') else {
+                continue;
+            };
+            if module_path_exists_on_disk(module_path, module_roots) && !symbol_name.is_empty() {
+                hints.push(symbol_name.to_string());
+            }
+        }
+    }
+
+    hints.sort();
+    hints.dedup();
+    hints
+}
+
+fn extract_unknown_module_path(message: &str) -> Option<String> {
+    message
+        .strip_prefix("unknown module path `")
+        .and_then(|tail| tail.strip_suffix('`'))
+        .map(ToOwned::to_owned)
+}
+
+fn extract_unknown_import_path(message: &str) -> Option<String> {
+    message
+        .strip_prefix("unknown import path `")
+        .and_then(|tail| tail.strip_suffix('`'))
+        .map(ToOwned::to_owned)
+}
+
+fn extract_unknown_type_name(message: &str) -> Option<String> {
+    message
+        .strip_prefix("unknown type `")
+        .and_then(|tail| tail.strip_suffix('`'))
+        .map(ToOwned::to_owned)
+}
+
+fn extract_unknown_enum_root(message: &str) -> Option<String> {
+    let enum_path = message
+        .strip_prefix("unknown enum path `")
+        .and_then(|tail| tail.strip_suffix('`'))?;
+    enum_path.split_once("::").map(|(root, _)| root.to_string())
+}
+
+fn module_path_exists_on_disk(module_path: &str, module_roots: &[PathBuf]) -> bool {
+    if module_roots.is_empty() {
+        return false;
+    }
+
+    let normalized = module_path.replace("::", ".");
+    let segments: Vec<&str> = normalized
+        .split('.')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    if segments.is_empty() {
+        return false;
+    }
+
+    let mut relative = PathBuf::new();
+    for segment in segments {
+        relative.push(segment);
+    }
+
+    module_roots.iter().any(|root| {
+        let file_candidate = root.join(relative.with_extension("bd"));
+        let mod_candidate = root.join(&relative).join("mod.bd");
+        file_candidate.is_file() || mod_candidate.is_file()
+    })
 }
 
 pub fn pest_error_diagnostic(

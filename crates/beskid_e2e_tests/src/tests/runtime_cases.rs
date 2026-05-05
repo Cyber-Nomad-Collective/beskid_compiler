@@ -44,6 +44,10 @@ fn runtime_calls_fixture_jit_runs_and_aot_contains_runtime_symbols() {
         nm_contains_symbol(&object_output, "syscall_write"),
         "expected runtime-calls object to reference syscall_write"
     );
+    assert!(
+        nm_contains_symbol(&object_output, "syscall_read"),
+        "expected runtime-calls object to reference syscall_read"
+    );
 }
 
 #[test]

@@ -62,3 +62,65 @@ fn inner_item_rule_accepts_function_with_trailing_newline() {
     let src = "unit main() { return 42; }\n";
     BeskidParser::parse(MainRule::InnerItem, src).expect("inner item parser");
 }
+
+#[test]
+fn parser_accepts_docs_on_nested_members_and_statements() {
+    let src = r#"
+type User {
+    /// field doc
+    string name,
+}
+
+enum Value {
+    /// variant doc
+    Item(
+        /// variant field doc
+        i64 count,
+    ),
+}
+
+contract Service {
+    /// method doc
+    i64 Get(
+        /// param doc
+        i64 id
+    );
+}
+
+impl User {
+    /// method doc
+    i64 Size(
+        /// param doc
+        i64 scale
+    ) { return scale; }
+}
+
+i64 Sum(
+    /// param doc
+    i64 left,
+    /// param doc
+    i64 right
+) { return left + right; }
+
+test docs_inside_test_body {
+    /// statement doc
+    i64 value = 1;
+}
+"#;
+    BeskidParser::parse(MainRule::Program, src).expect("program parser");
+}
+
+#[test]
+fn hover_includes_member_doc_markdown() {
+    let src = r#"
+type User {
+    /// Display name of the user.
+    string name,
+}
+"#;
+    let program = parse_program(src).expect("program parse");
+    let snap = build_document_analysis(&program);
+    let offset = src.rfind("name,").expect("field name");
+    let hover = hover_at_offset(&snap, offset).expect("hover");
+    assert!(hover.markdown.contains("Display name of the user."));
+}

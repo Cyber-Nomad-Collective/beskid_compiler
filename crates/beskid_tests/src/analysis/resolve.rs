@@ -154,6 +154,13 @@ fn syscall_write_builtin_resolves() {
 }
 
 #[test]
+fn syscall_read_builtin_resolves() {
+    let result = resolve_program("string main() { return __syscall_read(0, 16); }")
+        .expect("expected __syscall_read to resolve");
+    assert!(result.warnings.is_empty());
+}
+
+#[test]
 fn stdstring_len_resolves() {
     let result = resolve_program("i64 main() { return __str_len(\"hello\"); }")
         .expect("expected direct str_len path to resolve");

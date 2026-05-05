@@ -1,7 +1,8 @@
 use std::fs;
 
 use beskid_analysis::projects::build_compile_plan;
-use beskid_analysis::services::{parse_program, resolve_input};
+use beskid_analysis::services::{analyze_file_in_project, parse_program, resolve_input};
+use beskid_analysis::Severity;
 use beskid_codegen::lower_source;
 
 use crate::projects::std_dependency_env_lock;
@@ -42,6 +43,53 @@ fn checked_in_corelib_sources_parse_as_beskid_programs() {
             )
         });
     }
+}
+
+#[test]
+fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_positives() {
+    let diagnostics = analyze_file_in_project(&corelib_root().join("src/System/Syscall.bd"))
+        .expect("analyze corelib syscall source");
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diag| !matches!(diag.code.as_deref(), Some("E1005") | Some("E1105"))),
+        "corelib syscall file should not emit E1005/E1105 false positives: {diagnostics:#?}"
+    );
+}
+
+#[test]
+fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context() {
+    let root = corelib_root().join("src");
+
+    for relative in expected_corelib_files() {
+        let path = root.join(relative);
+        let diagnostics =
+            analyze_file_in_project(&path).unwrap_or_else(|_| panic!("analyze {}", path.display()));
+        let errors: Vec<_> = diagnostics
+            .into_iter()
+            .filter(|diag| matches!(diag.severity, Severity::Error))
+            .collect();
+        assert!(
+            errors.is_empty(),
+            "expected no error diagnostics for {} but got: {errors:#?}",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn corelib_mvp_fixture_entry_does_not_emit_module_resolution_false_positives() {
+    let fixture_main = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
+    let diagnostics = analyze_file_in_project(&fixture_main).expect("analyze corelib_mvp fixture");
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))),
+        "corelib_mvp fixture should not emit module-path false positives: {diagnostics:#?}"
+    );
 }
 
 #[test]
@@ -123,4 +171,27 @@ fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
         syscall_mod.contains("__syscall_write"),
         "System.Syscall should call __syscall_write builtin"
     );
+    assert!(
+        syscall_mod.contains("__syscall_read"),
+        "System.Syscall should call __syscall_read builtin"
+    );
+}
+
+#[test]
+fn checked_in_corelib_beskid_test_sources_parse() {
+    let root = corelib_root();
+    let test_files = [
+        root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd"),
+        root.join("tests/corelib_tests/src/system/SyscallApiTests.bd"),
+    ];
+    for path in test_files {
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("read corelib test source {}", path.display()));
+        parse_program(&source).unwrap_or_else(|err| {
+            panic!(
+                "corelib test source should parse {}\nparse error: {err:?}",
+                path.display()
+            )
+        });
+    }
 }

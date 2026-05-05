@@ -3,8 +3,9 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
+use crate::doc::LeadingDocComment;
 use crate::syntax::items::parse_helpers::{
-    parse_field_list, parse_identifier_list, parse_visibility_or_default,
+    parse_doc_attached_list, parse_identifier_list, parse_visibility_or_default,
 };
 use crate::syntax::{Field, Identifier, Path, SpanInfo, Spanned, Visibility};
 
@@ -22,6 +23,8 @@ pub struct TypeDefinition {
     pub conformances: Vec<Spanned<Path>>,
     #[ast(children)]
     pub fields: Vec<Spanned<Field>>,
+    #[ast(skip)]
+    pub field_docs: Vec<Option<LeadingDocComment>>,
 }
 
 impl Parsable for TypeDefinition {
@@ -34,6 +37,7 @@ impl Parsable for TypeDefinition {
         let mut generics = Vec::new();
         let mut conformances = Vec::new();
         let mut fields = Vec::new();
+        let mut field_docs = Vec::new();
 
         for item in inner {
             match item.as_rule() {
@@ -48,10 +52,16 @@ impl Parsable for TypeDefinition {
                         .map(Path::parse)
                         .collect::<Result<Vec<_>, _>>()?
                 }
-                Rule::FieldList => fields = parse_field_list(item)?,
+                Rule::FieldList => {
+                    let (parsed_fields, parsed_docs) =
+                        parse_doc_attached_list(item, Rule::FieldWithDocs, Rule::Field)?;
+                    fields = parsed_fields;
+                    field_docs = parsed_docs;
+                }
                 _ => return Err(ParseError::unexpected_rule(item, None)),
             }
         }
+        debug_assert_eq!(fields.len(), field_docs.len());
 
         Ok(Spanned::new(
             Self {
@@ -60,6 +70,7 @@ impl Parsable for TypeDefinition {
                 generics,
                 conformances,
                 fields,
+                field_docs,
             },
             span,
         ))

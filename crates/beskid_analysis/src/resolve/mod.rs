@@ -1,6 +1,7 @@
 pub mod errors;
 pub mod ids;
 pub mod items;
+pub mod member_items;
 pub mod module_graph;
 pub mod resolver;
 pub mod tables;

@@ -136,6 +136,12 @@ define_builtins! {
         returns: Usize,
         injected: true,
     },
+    &["__syscall_read"] => {
+        symbol: "syscall_read",
+        params: [U64, U64],
+        returns: String,
+        injected: true,
+    },
     &["__str_len"] => {
         symbol: "str_len",
         params: [String],

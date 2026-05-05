@@ -141,13 +141,16 @@ BeskidType = { ArrowFunctionType | FunctionType | TypeReference | ArrayType | Ty
 ////////////////////////////////////////////////////////////
 FunctionDefinition = { Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ Block }
 ReceiverType = { PrimitiveType | Path }
-ImplBlock = { "impl" ~ ReceiverType ~ "{" ~ ImplMethodDefinition* ~ "}" }
+ImplBlock = { "impl" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
+ImplMethodWithDocs = { ((DocRun ~ ImplMethodDefinition) | ImplMethodDefinition) ~ DocGap* }
 ImplMethodDefinition = { Visibility? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ Block }
-ParameterList = { Parameter ~ ("," ~ Parameter)* }
+ParameterList = { ParameterWithDocs ~ ("," ~ DocGap* ~ ParameterWithDocs)* }
+ParameterWithDocs = { (DocRun ~ Parameter) | Parameter }
 Parameter = { ParameterModifier? ~ BeskidType ~ Identifier }
 ParameterModifier = { "ref" | "out" }
 
-FieldList = { Field ~ ("," ~ Field)* ~ ","? }
+FieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
+FieldWithDocs = { (DocRun ~ Field) | Field }
 ValueField = { BeskidType ~ Identifier }
 EventCapacity = { "{" ~ IntegerLiteral ~ "}" }
 EventField = { "event" ~ EventCapacity? ~ Identifier ~ "(" ~ ParameterList? ~ ")" }
@@ -157,15 +160,18 @@ TypeConformanceList = { ":" ~ PathList }
 TypeDefinition = { Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ FieldList? ~ "}" }
 
 EnumDefinition = { Visibility? ~ "enum" ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }
-EnumVariantList = { EnumVariant ~ ("," ~ EnumVariant)* ~ ","? }
+EnumVariantList = { EnumVariantWithDocs ~ ("," ~ DocGap* ~ EnumVariantWithDocs)* ~ ","? }
+EnumVariantWithDocs = { (DocRun ~ EnumVariant) | EnumVariant }
 EnumVariant = { Identifier ~ ("(" ~ FieldList? ~ ")")? }
 
-ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ "{" ~ ContractItem* ~ "}" }
+ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ "{" ~ ContractItemWithDocs* ~ "}" }
+ContractItemWithDocs = { ((DocRun ~ ContractItem) | ContractItem) ~ DocGap* }
 ContractItem = _{ ContractMethodSignature | ContractEmbedding }
 ContractMethodSignature = { BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
 ContractEmbedding = { Identifier ~ ";"? }
 TestDefinition = { AttributeList? ~ Visibility? ~ "test" ~ Identifier ~ TestBody }
-TestBody = { "{" ~ TestBodyItem* ~ "}" }
+TestBody = { "{" ~ TestBodyItemWithDocs* ~ "}" }
+TestBodyItemWithDocs = { ((DocRun ~ Statement) | TestMetaSection | TestSkipSection | Statement) ~ DocGap* }
 TestBodyItem = _{ TestMetaSection | TestSkipSection | Statement }
 TestMetaSection = { "meta" ~ "{" ~ TestMetadataEntry* ~ "}" }
 TestMetadataEntry = { Identifier ~ "=" ~ Expression ~ ";" }

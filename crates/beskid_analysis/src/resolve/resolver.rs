@@ -9,6 +9,7 @@ use crate::syntax::{self, Spanned};
 use super::errors::{ResolveError, ResolveResult, ResolveWarning};
 use super::ids::{ItemId, LocalId, ModuleId};
 use super::items::{ItemInfo, ItemKind};
+use super::member_items;
 use super::module_graph::ModuleGraph;
 use super::tables::{ResolutionTables, ResolvedType, ResolvedValue};
 use crate::builtins::builtin_specs;
@@ -210,6 +211,8 @@ impl Resolver {
             span: item.span,
         });
 
+        self.collect_member_items(item, id);
+
         if let HirItem::ModuleDeclaration(def) = &item.node {
             let module_path = def
                 .node
@@ -235,6 +238,34 @@ impl Resolver {
                 self.collect_item(nested);
             }
             self.current_module = previous_module;
+        }
+    }
+
+    fn push_member_item(
+        &mut self,
+        name: String,
+        kind: ItemKind,
+        visibility: HirVisibility,
+        span: syntax::SpanInfo,
+    ) {
+        let id = ItemId(self.items.len());
+        self.items.push(ItemInfo {
+            id,
+            name,
+            kind,
+            visibility,
+            span,
+        });
+    }
+
+    fn collect_member_items(&mut self, item: &Spanned<HirItem>, parent_id: ItemId) {
+        let Some(parent) = self.items.get(parent_id.0) else {
+            return;
+        };
+        let parent_name = parent.name.clone();
+        let visibility = parent.visibility;
+        for spec in member_items::collect_member_items(item, &parent_name) {
+            self.push_member_item(spec.name, spec.kind, visibility, spec.span);
         }
     }
 

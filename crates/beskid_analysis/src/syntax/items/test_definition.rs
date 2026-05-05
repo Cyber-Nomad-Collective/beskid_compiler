@@ -1,9 +1,12 @@
+use crate::doc::LeadingDocComment;
 use pest::iterators::Pair;
 
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::items::parse_helpers::{parse_attributes, parse_visibility_or_default};
+use crate::syntax::items::parse_helpers::{
+    parse_attributes, parse_doc_attached_pair_raw, parse_visibility_or_default,
+};
 use crate::syntax::{
     Attribute, Expression, Identifier, SpanInfo, Spanned, Statement, Visibility,
 };
@@ -96,6 +99,8 @@ pub struct TestDefinition {
     pub skip: Option<Spanned<TestSkipSection>>,
     #[ast(children)]
     pub statements: Vec<Spanned<Statement>>,
+    #[ast(skip)]
+    pub statement_docs: Vec<Option<LeadingDocComment>>,
 }
 
 impl Parsable for TestDefinition {
@@ -110,19 +115,24 @@ impl Parsable for TestDefinition {
         let mut meta = None;
         let mut skip = None;
         let mut statements = Vec::new();
+        let mut statement_docs = Vec::new();
         for body_item in body.into_inner() {
-            match body_item.as_rule() {
+            let (doc_opt, item_pair) =
+                parse_doc_attached_pair_raw(body_item, Rule::TestBodyItemWithDocs)?;
+            match item_pair.as_rule() {
                 Rule::TestMetaSection => {
-                    meta = Some(TestMetaSection::parse(body_item)?);
+                    meta = Some(TestMetaSection::parse(item_pair)?);
                 }
                 Rule::TestSkipSection => {
-                    skip = Some(TestSkipSection::parse(body_item)?);
+                    skip = Some(TestSkipSection::parse(item_pair)?);
                 }
                 _ => {
-                    statements.push(Statement::parse(body_item)?);
+                    statements.push(Statement::parse(item_pair)?);
+                    statement_docs.push(doc_opt);
                 }
             }
         }
+        debug_assert_eq!(statements.len(), statement_docs.len());
 
         Ok(Spanned::new(
             Self {
@@ -132,6 +142,7 @@ impl Parsable for TestDefinition {
                 meta,
                 skip,
                 statements,
+                statement_docs,
             },
             span,
         ))

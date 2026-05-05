@@ -325,6 +325,27 @@ fn analysis_emits_unknown_type_in_definition_errors() {
 }
 
 #[test]
+fn analysis_does_not_emit_unknown_type_for_qualified_type_paths() {
+    let source = "unit main(Core.Results.Result<i64, string> value) { return; }";
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1005")),
+        "qualified type paths should not be flagged as unknown local definition types"
+    );
+}
+
+#[test]
 fn analysis_emits_duplicate_non_type_item_name_errors() {
     let source = "unit foo() { return; } mod foo;";
     let program = parse_program_ast(source);

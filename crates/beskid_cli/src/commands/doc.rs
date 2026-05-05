@@ -208,6 +208,55 @@ pub fn execute(args: DocArgs) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+mod member_doc_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn api_json_contains_member_doc_markdown() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("beskid-doc-{nonce}"));
+        std::fs::create_dir_all(&root).expect("create root");
+        let source_path = root.join("Sample.bd");
+        let out_path = root.join("out");
+
+        let source = r#"
+type User {
+    /// Display name of user.
+    string name,
+}
+"#;
+        std::fs::write(&source_path, source).expect("write source");
+
+        execute(DocArgs {
+            input: Some(source_path.clone()),
+            project: None,
+            target: None,
+            workspace_member: None,
+            frozen: false,
+            locked: false,
+            out: out_path.clone(),
+        })
+        .expect("execute doc");
+
+        let api = std::fs::read_to_string(out_path.join("api.json")).expect("read api.json");
+        assert!(
+            api.contains("Display name of user."),
+            "api.json should include member doc markdown: {api}"
+        );
+
+        let _ = std::fs::remove_file(source_path);
+        let _ = std::fs::remove_file(out_path.join("api.json"));
+        let _ = std::fs::remove_file(out_path.join("index.md"));
+        let _ = std::fs::remove_dir(&out_path);
+        let _ = std::fs::remove_dir(&root);
+    }
+}
+
 fn render_structure_tree(entries: &[DocEntry]) -> String {
     let mut root = TreeNode::default();
     for (idx, entry) in entries.iter().enumerate() {

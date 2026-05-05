@@ -1,5 +1,10 @@
 i32 main() {
     __syscall_write(1, "ok");
+    string read = __syscall_read(99, 8);
+    i32 read_len = __str_len(read);
+    if read_len < 0 {
+        return 24;
+    }
     i32 len = __str_len("hello");
     if len != 5 {
         return 21;

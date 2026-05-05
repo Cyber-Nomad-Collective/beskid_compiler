@@ -291,7 +291,7 @@ impl SemanticIssueKind {
             Self::ResolveDuplicateLocal { .. } => "E1102",
             Self::ResolveUnknownValue { .. } => "E1101",
             Self::ResolveUnknownType { .. } => "E1201",
-            Self::ResolveUnknownModulePath { .. } => "E1105",
+            Self::ResolveUnknownModulePath { .. } => "E1108",
             Self::ResolveUnknownValueInModule { .. } => "E1101",
             Self::ResolveUnknownTypeInModule { .. } => "E1201",
             Self::ResolveInvalidConformanceTarget { .. } => "E1607",
