@@ -136,13 +136,16 @@ fn build_runtime_on_the_fly(req: &RuntimeBuildRequest) -> AotResult<RuntimeArtif
     let lib_rs = "
 #[allow(unused_imports)]
 use beskid_runtime::{
-    alloc, array_new, gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle,
-    gc_write_barrier, interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize,
-    panic, panic_str, str_concat, str_len, str_new,
+    alloc, array_new, beskid_runtime_abi_version, event_get_handler, event_len, event_subscribe,
+    event_unsubscribe_first, gc_register_root, gc_root_handle, gc_unregister_root,
+    gc_unroot_handle, gc_write_barrier, interop_dispatch_ptr, interop_dispatch_unit,
+    interop_dispatch_usize, panic, panic_str, str_concat, str_len, str_new, syscall_read,
+    syscall_write, test_bytes_len, test_bytes_ptr,
 };
 
 #[unsafe(no_mangle)]
 pub extern \"C\" fn beskid_runtime_link_anchor() {
+    let _ = beskid_runtime_abi_version as usize;
     let _ = alloc as usize;
     let _ = str_new as usize;
     let _ = str_concat as usize;
@@ -154,9 +157,17 @@ pub extern \"C\" fn beskid_runtime_link_anchor() {
     let _ = gc_unroot_handle as usize;
     let _ = gc_register_root as usize;
     let _ = gc_unregister_root as usize;
+    let _ = event_subscribe as usize;
+    let _ = event_unsubscribe_first as usize;
+    let _ = event_len as usize;
+    let _ = event_get_handler as usize;
     let _ = interop_dispatch_unit as usize;
     let _ = interop_dispatch_ptr as usize;
     let _ = interop_dispatch_usize as usize;
+    let _ = syscall_write as usize;
+    let _ = syscall_read as usize;
+    let _ = test_bytes_ptr as usize;
+    let _ = test_bytes_len as usize;
     let _ = str_len as usize;
 }
 ";
@@ -178,26 +189,13 @@ pub extern \"C\" fn beskid_runtime_link_anchor() {
         "debug"
     };
 
-    let artifact_path = if let Some(triple) = &req.target_triple {
-        package_root
-            .join("target")
-            .join(triple)
-            .join(profile_dir)
-            .join(if target.static_lib_ext == "lib" {
-                "beskid_runtime_bridge.lib".to_string()
-            } else {
-                "libbeskid_runtime_bridge.a".to_string()
-            })
-    } else {
-        package_root
-            .join("target")
-            .join(profile_dir)
-            .join(if target.static_lib_ext == "lib" {
-                "beskid_runtime_bridge.lib".to_string()
-            } else {
-                "libbeskid_runtime_bridge.a".to_string()
-            })
-    };
+    let mut artifact_path = package_root.join("target");
+    if let Some(triple) = &req.target_triple {
+        artifact_path = artifact_path.join(triple);
+    }
+    artifact_path = artifact_path
+        .join(profile_dir)
+        .join(runtime_bridge_library_name(target.static_lib_ext));
 
     if !artifact_path.exists() {
         let mut command = Command::new("cargo");
@@ -230,6 +228,7 @@ pub extern \"C\" fn beskid_runtime_link_anchor() {
             path: artifact_path,
         });
     }
+    ensure_runtime_symbols_present(&artifact_path, RUNTIME_EXPORT_SYMBOLS)?;
 
     Ok(RuntimeArtifact {
         staticlib_path: Some(artifact_path),
@@ -242,6 +241,14 @@ fn runtime_symbols() -> Vec<String> {
         .iter()
         .map(|symbol| (*symbol).to_owned())
         .collect()
+}
+
+fn runtime_bridge_library_name(static_lib_ext: &str) -> &'static str {
+    if static_lib_ext == "lib" {
+        "beskid_runtime_bridge.lib"
+    } else {
+        "libbeskid_runtime_bridge.a"
+    }
 }
 
 #[cfg(test)]
