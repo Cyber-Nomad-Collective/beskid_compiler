@@ -10,10 +10,10 @@ use tower_lsp_server::{Client, LanguageServer};
 
 use crate::features::{
     code_actions, completion, definition, document_symbols, formatting, hover, inlay_hints,
-    references, semantic_tokens, signature_help, workspace_symbols,
+    references, rename, semantic_tokens, signature_help, workspace_symbols,
 };
 use crate::logging::{ClientLogFilter, client_log};
-use crate::protocol::request::{snapshot_document, snapshot_lsp_request};
+use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot_request};
 use crate::server::init::initialize_result;
 use crate::session::lifecycle::{publish_diagnostics_for_uri, remove_document, set_document};
 use crate::session::store::State;
@@ -198,6 +198,20 @@ impl LanguageServer for Backend {
         ))
     }
 
+    async fn goto_declaration(
+        &self,
+        params: request::GotoDeclarationParams,
+    ) -> Result<Option<request::GotoDeclarationResponse>> {
+        let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
+            return Ok(None);
+        };
+        Ok(definition::handler::handle_definition(
+            &snapshot.uri,
+            &snapshot.document,
+            snapshot.offset,
+        ))
+    }
+
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
         let include_declaration = params.context.include_declaration;
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
@@ -284,6 +298,34 @@ impl LanguageServer for Backend {
         Ok(Some(workspace_symbols::handler::handle_workspace_symbols(
             &state, params,
         )))
+    }
+
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> Result<Option<PrepareRenameResponse>> {
+        let Some(snapshot) = snapshot_request(&self.state, params).await else {
+            return Ok(None);
+        };
+        Ok(rename::handler::handle_prepare_rename(
+            &snapshot.uri,
+            &snapshot.document,
+            snapshot.offset,
+        ))
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let new_name = params.new_name.clone();
+        let request = params.text_document_position;
+        let Some(snapshot) = snapshot_lsp_request(&self.state, request.clone()).await else {
+            return Ok(None);
+        };
+        Ok(rename::handler::handle_rename(
+            &snapshot.uri,
+            &snapshot.document,
+            request.position,
+            &new_name,
+        ))
     }
 
     async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<LSPAny>> {

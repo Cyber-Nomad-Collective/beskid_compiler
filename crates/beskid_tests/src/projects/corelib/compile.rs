@@ -136,6 +136,14 @@ fn checked_in_corelib_prelude_exports_mvp_modules() {
         prelude.contains("pub mod System.Syscall;"),
         "Prelude should export System.Syscall"
     );
+    assert!(
+        prelude.contains("pub mod System.Syscall.Descriptor;"),
+        "Prelude should export System.Syscall.Descriptor"
+    );
+    assert!(
+        prelude.contains("pub mod System.Syscall.ReadLimit;"),
+        "Prelude should export System.Syscall.ReadLimit"
+    );
 }
 
 #[test]
@@ -152,6 +160,10 @@ fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
     assert!(
         results_mod.contains("Ok(") && results_mod.contains("Error("),
         "Core.Results should expose Ok/Error variants"
+    );
+    assert!(
+        results_mod.contains("pub bool IsOk") && results_mod.contains("pub bool IsError"),
+        "Core.Results should expose Ok/Error predicates"
     );
     assert!(
         string_mod.contains("__str_len"),
@@ -183,6 +195,8 @@ fn checked_in_corelib_beskid_test_sources_parse() {
     let test_files = [
         root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd"),
         root.join("tests/corelib_tests/src/system/SyscallApiTests.bd"),
+        root.join("tests/corelib_tests/src/system/SyscallErgonomicsTests.bd"),
+        root.join("tests/corelib_tests/src/core/ResultsTests.bd"),
     ];
     for path in test_files {
         let source = fs::read_to_string(&path)

@@ -9,6 +9,7 @@ pub fn initialize_result() -> InitializeResult {
             )),
             hover_provider: Some(HoverProviderCapability::Simple(true)),
             definition_provider: Some(OneOf::Left(true)),
+            declaration_provider: Some(DeclarationCapability::Simple(true)),
             references_provider: Some(OneOf::Left(true)),
             completion_provider: Some(CompletionOptions {
                 trigger_characters: Some(vec![".".to_string(), ":".to_string(), "_".to_string()]),
@@ -32,6 +33,7 @@ pub fn initialize_result() -> InitializeResult {
                 retrigger_characters: Some(vec![",".to_string()]),
                 ..SignatureHelpOptions::default()
             }),
+            rename_provider: Some(OneOf::Left(true)),
             inlay_hint_provider: Some(OneOf::Left(true)),
             execute_command_provider: Some(ExecuteCommandOptions {
                 commands: vec!["beskid.refreshWorkspace".to_string()],

@@ -6,6 +6,7 @@ pub(crate) mod formatting;
 pub(crate) mod hover;
 pub(crate) mod inlay_hints;
 pub(crate) mod project_manifest;
+pub(crate) mod rename;
 pub(crate) mod references;
 pub(crate) mod semantic_tokens;
 pub(crate) mod signature_help;
