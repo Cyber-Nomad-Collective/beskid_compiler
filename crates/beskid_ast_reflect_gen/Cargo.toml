@@ -1,0 +1,17 @@
+[package]
+name = "beskid_ast_reflect_gen"
+version = "0.1.0"
+edition = "2024"
+description = "Semi-automatic Beskid stub generation from selected Rust syntax/HIR shapes in beskid_analysis (for future compiler reflection)."
+readme = "README.md"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "beskid_ast_reflect_gen"
+path = "src/main.rs"
+
+[dependencies]
+syn = { workspace = true, features = ["full", "extra-traits"] }
