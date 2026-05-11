@@ -1,4 +1,7 @@
+//! Type checking against [`Resolution`](crate::resolve::Resolution): expression types, signatures, casts, and errors.
+
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 
 use crate::builtins::{BuiltinType, builtin_specs};
 use crate::hir::{HirContractNode, HirItem, HirPrimitiveType, HirProgram};
@@ -6,6 +9,7 @@ use crate::resolve::{ItemId, ItemKind, LocalId, Resolution, ResolvedType};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::{TypeId, TypeTable};
 
+/// Type mismatch, missing annotation, invalid operation, or extern-surface violation at a span.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeError {
     UnknownType {
@@ -138,12 +142,208 @@ pub enum TypeError {
     },
 }
 
+fn type_error_span_loc(span: SpanInfo) -> String {
+    format!(
+        "{}:{}-{}:{}",
+        span.line_col_start.0, span.line_col_start.1, span.line_col_end.0, span.line_col_end.1
+    )
+}
+
+fn type_id_label(id: TypeId) -> String {
+    format!("#{}", id.0)
+}
+
+impl fmt::Display for TypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let at = |span: SpanInfo| type_error_span_loc(span);
+        match self {
+            TypeError::UnknownType { span } => write!(f, "unknown type at {}", at(*span)),
+            TypeError::UnknownValueType { span } => {
+                write!(f, "unknown value type at {}", at(*span))
+            }
+            TypeError::UnknownStructType { span } => {
+                write!(f, "unknown struct type at {}", at(*span))
+            }
+            TypeError::InvalidMemberTarget { span } => {
+                write!(f, "invalid member access target at {}", at(*span))
+            }
+            TypeError::UnknownEnumType { span } => write!(f, "unknown enum type at {}", at(*span)),
+            TypeError::UnknownStructField { span, name } => {
+                write!(f, "unknown struct field `{name}` at {}", at(*span))
+            }
+            TypeError::UnknownEnumVariant { span, name } => {
+                write!(f, "unknown enum variant `{name}` at {}", at(*span))
+            }
+            TypeError::MissingStructField { span, name } => {
+                write!(f, "missing struct field `{name}` at {}", at(*span))
+            }
+            TypeError::MissingTypeAnnotation { span, name } => {
+                write!(f, "missing type annotation for `{name}` at {}", at(*span))
+            }
+            TypeError::TypeMismatch {
+                span,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "type mismatch at {}: expected type {}, found type {}",
+                at(*span),
+                type_id_label(*expected),
+                type_id_label(*actual)
+            ),
+            TypeError::MatchArmTypeMismatch {
+                span,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "match arm type mismatch at {}: expected type {}, found type {}",
+                at(*span),
+                type_id_label(*expected),
+                type_id_label(*actual)
+            ),
+            TypeError::CallArityMismatch {
+                span,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "call arity mismatch at {}: expected {expected} arguments, got {actual}",
+                at(*span)
+            ),
+            TypeError::CallArgumentMismatch {
+                span,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "call argument type mismatch at {}: expected type {}, found type {}",
+                at(*span),
+                type_id_label(*expected),
+                type_id_label(*actual)
+            ),
+            TypeError::EnumConstructorMismatch {
+                span,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "enum constructor arity mismatch at {}: expected {expected} arguments, got {actual}",
+                at(*span)
+            ),
+            TypeError::UnknownCallTarget { span } => {
+                write!(f, "unknown call target at {}", at(*span))
+            }
+            TypeError::InvalidBinaryOp { span } => {
+                write!(f, "invalid binary operation at {}", at(*span))
+            }
+            TypeError::InvalidUnaryOp { span } => {
+                write!(f, "invalid unary operation at {}", at(*span))
+            }
+            TypeError::NonBoolCondition { span } => {
+                write!(f, "non-boolean condition at {}", at(*span))
+            }
+            TypeError::UnsupportedExpression { span } => {
+                write!(f, "unsupported expression at {}", at(*span))
+            }
+            TypeError::InvalidTryTarget { span } => {
+                write!(f, "invalid try target at {}", at(*span))
+            }
+            TypeError::InvalidEventInvocationScope { span } => {
+                write!(f, "invalid event invocation scope at {}", at(*span))
+            }
+            TypeError::InvalidEventCapacity { span } => {
+                write!(f, "invalid event capacity at {}", at(*span))
+            }
+            TypeError::InvalidEventSubscriptionTarget { span } => {
+                write!(f, "invalid event subscription target at {}", at(*span))
+            }
+            TypeError::ReturnTypeMismatch {
+                span,
+                expected,
+                actual,
+            } => match actual {
+                Some(a) => write!(
+                    f,
+                    "return type mismatch at {}: expected type {}, found type {}",
+                    at(*span),
+                    type_id_label(*expected),
+                    type_id_label(*a)
+                ),
+                None => write!(
+                    f,
+                    "return type mismatch at {}: expected type {}, found no value",
+                    at(*span),
+                    type_id_label(*expected)
+                ),
+            },
+            TypeError::MissingTypeArguments { span } => {
+                write!(f, "missing type arguments at {}", at(*span))
+            }
+            TypeError::GenericArgumentMismatch {
+                span,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "generic argument count mismatch at {}: expected {expected}, got {actual}",
+                at(*span)
+            ),
+            TypeError::NonIterableForTarget { span } => {
+                write!(f, "non-iterable for-loop target at {}", at(*span))
+            }
+            TypeError::IterableNextArityMismatch {
+                span,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "iterable `next` arity mismatch at {}: expected {expected} bindings, got {actual}",
+                at(*span)
+            ),
+            TypeError::IterableNextReturnNotOption { span } => write!(
+                f,
+                "iterable `next` must return an option-like type at {}",
+                at(*span)
+            ),
+            TypeError::IterableOptionSomeArityMismatch {
+                span,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "option `Some` arity mismatch at {}: expected {expected} arguments, got {actual}",
+                at(*span)
+            ),
+            TypeError::ExternInvalidAbi { span, abi } => match abi {
+                Some(a) => write!(f, "invalid extern ABI `{a}` at {}", at(*span)),
+                None => write!(f, "invalid extern ABI at {}", at(*span)),
+            },
+            TypeError::ExternMissingLibrary { span } => {
+                write!(f, "extern declaration missing library at {}", at(*span))
+            }
+            TypeError::ExternDisallowedParamType { span, method } => write!(
+                f,
+                "extern method `{method}` has a disallowed parameter type at {}",
+                at(*span)
+            ),
+            TypeError::ExternDisallowedReturnType { span, method } => write!(
+                f,
+                "extern method `{method}` has a disallowed return type at {}",
+                at(*span)
+            ),
+        }
+    }
+}
+
+/// Where a method or contract dispatch receiver came from (expression vs local).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MethodReceiverSource {
     Expression(SpanInfo),
     Local(LocalId),
 }
 
+/// How a call site lowers for backends (free function, method, contract, event, or value call).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallLoweringKind {
     MethodDispatch {
@@ -166,6 +366,7 @@ pub enum CallLoweringKind {
     CallableValueCall,
 }
 
+/// Output of type checking: intern table, per-span expression types, signatures, and cast intents.
 #[derive(Debug)]
 pub struct TypeResult {
     pub types: TypeTable,
@@ -200,12 +401,14 @@ impl TypeResult {
     }
 }
 
+/// Parameter and return [`TypeId`]s for a callable item.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionSignature {
     pub params: Vec<TypeId>,
     pub return_type: TypeId,
 }
 
+/// Recorded numeric or widening conversion the codegen layer may insert at `span`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CastIntent {
     pub span: SpanInfo,
@@ -213,6 +416,7 @@ pub struct CastIntent {
     pub to: TypeId,
 }
 
+/// Stateful visitor over one [`HirProgram`](crate::hir::HirProgram) and its [`Resolution`].
 pub struct TypeContext<'a> {
     pub(super) resolution: &'a Resolution,
     pub(super) type_table: TypeTable,
@@ -594,6 +798,7 @@ impl<'a> TypeContext<'a> {
     }
 }
 
+/// Type-check `program`; returns `Err` when any [`TypeError`] was recorded.
 pub fn type_program(
     program: &Spanned<HirProgram>,
     resolution: &Resolution,
@@ -601,6 +806,7 @@ pub fn type_program(
     TypeContext::new(resolution).type_program(program)
 }
 
+/// Like [`type_program`] but returns partial [`TypeResult`] together with all accumulated errors (for IDE).
 pub fn type_program_with_errors(
     program: &Spanned<HirProgram>,
     resolution: &Resolution,

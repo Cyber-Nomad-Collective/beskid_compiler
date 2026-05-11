@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
-use tower_lsp_server::ls_types::{
-    Position, PrepareRenameResponse, TextEdit, Uri, WorkspaceEdit,
-};
+use tower_lsp_server::ls_types::{Position, PrepareRenameResponse, TextEdit, Uri, WorkspaceEdit};
 
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::{offset_range_to_lsp, position_to_offset};
 use crate::session::store::Document;
 
+/// Valid rename range for the identifier at `offset` (manifest tokens or resolved Beskid refs).
 pub fn handle_prepare_rename(
     uri: &Uri,
     doc: &Document,
@@ -28,6 +27,7 @@ pub fn handle_prepare_rename(
     )))
 }
 
+/// Produce a workspace edit renaming the symbol at `position` when the new name is a valid identifier.
 pub fn handle_rename(
     uri: &Uri,
     doc: &Document,

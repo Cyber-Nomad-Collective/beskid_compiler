@@ -1,27 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::codegen::util::lower_resolve_type;
-use beskid_aot::{
-    AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, RuntimeStrategy, build,
-};
+use crate::test_harness::temp_case_dir;
+use beskid_aot::{AotBuildRequest, BuildOutputKind, build};
 use beskid_codegen::lowering::lower_program;
 use beskid_engine::Engine;
-
-fn temp_case_dir(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time ok")
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "beskid_parity_tests_{name}_{}_{}",
-        std::process::id(),
-        nanos
-    ));
-    std::fs::create_dir_all(&dir).expect("create temp dir");
-    dir
-}
 
 fn compile_artifact(source: &str) -> beskid_codegen::CodegenArtifact {
     let (hir, resolution, typed) = lower_resolve_type(source);
@@ -125,19 +109,12 @@ fn jit_run_main_i32(source: &str) -> i32 {
 
 fn build_aot_object(source: &str, output: PathBuf) -> PathBuf {
     let artifact = compile_artifact(source);
-    let result = build(AotBuildRequest {
+    let result = build(AotBuildRequest::with_defaults(
         artifact,
-        output_kind: BuildOutputKind::ObjectOnly,
-        output_path: output,
-        object_path: None,
-        target_triple: None,
-        profile: BuildProfile::Debug,
-        entrypoint: "main".to_owned(),
-        export_policy: ExportPolicy::PublicOnly,
-        link_mode: LinkMode::Auto,
-        runtime: RuntimeStrategy::BuildOnTheFly,
-        verbose_link: false,
-    })
+        BuildOutputKind::ObjectOnly,
+        output,
+        "main",
+    ))
     .expect("expected AOT object build to succeed");
 
     result.object_path
@@ -164,6 +141,30 @@ fn parity_interop_usize_dispatch_path_is_consistent() {
     assert!(
         object_contains_symbol(&object_path, "str_len"),
         "expected AOT object to reference direct str_len symbol"
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn parity_array_len_reads_beskid_array_length() {
+    let source = "
+        i64 main() {
+            i64 h = __array_new(8, 3);
+            return __array_len(h);
+        }
+    ";
+    let jit_value = jit_run_main_i64(source);
+    assert_eq!(
+        jit_value, 3,
+        "expected __array_len to match allocation length"
+    );
+
+    let dir = temp_case_dir("array_len");
+    let object_path = build_aot_object(source, dir.join("parity_array_len.o"));
+    assert!(
+        object_contains_symbol(&object_path, "array_len"),
+        "expected AOT object to reference array_len runtime symbol"
     );
 
     let _ = std::fs::remove_dir_all(dir);
@@ -199,19 +200,12 @@ fn parity_panic_builtin_compiles_for_both_backends() {
         .expect("expected JIT compile to succeed for panic builtin path");
 
     let dir = temp_case_dir("panic_builtin");
-    let result = build(AotBuildRequest {
+    let result = build(AotBuildRequest::with_defaults(
         artifact,
-        output_kind: BuildOutputKind::ObjectOnly,
-        output_path: dir.join("panic.o"),
-        object_path: None,
-        target_triple: None,
-        profile: BuildProfile::Debug,
-        entrypoint: "main".to_owned(),
-        export_policy: ExportPolicy::PublicOnly,
-        link_mode: LinkMode::Auto,
-        runtime: RuntimeStrategy::BuildOnTheFly,
-        verbose_link: false,
-    })
+        BuildOutputKind::ObjectOnly,
+        dir.join("panic.o"),
+        "main",
+    ))
     .expect("expected AOT compile to succeed for panic builtin path");
 
     assert!(

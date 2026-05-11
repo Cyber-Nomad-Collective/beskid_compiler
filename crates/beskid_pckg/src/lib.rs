@@ -1,3 +1,6 @@
+//! HTTP client, models, and `beskid pckg` CLI for the pckg package registry.
+
+pub mod api_doc;
 pub mod api_keys;
 pub mod cli;
 pub mod client;

@@ -1,3 +1,5 @@
+//! C ABI entry points invoked from generated code (`extern "C-unwind"`), backed by [`crate::gc`].
+
 mod alloc;
 mod arrays;
 mod events;
@@ -12,7 +14,7 @@ mod test_helpers;
 mod version;
 
 pub use alloc::alloc;
-pub use arrays::array_new;
+pub use arrays::{array_len, array_new};
 pub use events::{
     EventState, event_get_handler, event_len, event_subscribe, event_unsubscribe_first,
 };

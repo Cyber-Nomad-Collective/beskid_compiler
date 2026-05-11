@@ -1,3 +1,5 @@
+//! Name and module-path resolution over HIR: [`Resolver::resolve_program`], span-keyed tables, and warnings.
+
 pub mod errors;
 pub mod ids;
 pub mod items;

@@ -32,6 +32,8 @@ pub enum Item<P: Phase> {
     ContractDefinition(Spanned<P::ContractDefinition>),
     #[phase(from = "TestDefinition")]
     TestDefinition(Spanned<P::TestDefinition>),
+    #[phase(from = "MetaDefinition")]
+    MetaDefinition(Spanned<P::MetaDefinition>),
     AttributeDeclaration(Spanned<P::AttributeDeclaration>),
     ModuleDeclaration(Spanned<P::ModuleDeclaration>),
     InlineModule(Spanned<P::InlineModule>),
@@ -51,6 +53,7 @@ impl HirNode for Item<crate::hir::HirPhase> {
             Item::EnumDefinition(def) => push(HirNodeRef(&def.node)),
             Item::ContractDefinition(def) => push(HirNodeRef(&def.node)),
             Item::TestDefinition(def) => push(HirNodeRef(&def.node)),
+            Item::MetaDefinition(def) => push(HirNodeRef(&def.node)),
             Item::AttributeDeclaration(def) => push(HirNodeRef(&def.node)),
             Item::ModuleDeclaration(def) => push(HirNodeRef(&def.node)),
             Item::InlineModule(def) => push(HirNodeRef(&def.node)),
@@ -95,6 +98,19 @@ pub struct HirMethodDefinition {
     pub return_type: Option<Spanned<HirType>>,
     #[ast(child)]
     pub body: Spanned<HirBlock>,
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "MetaDefinition")]
+pub struct HirMetaDefinition {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<HirAttribute>>,
+    #[ast(child)]
+    pub visibility: Spanned<HirVisibility>,
+    #[ast(child)]
+    pub name: Spanned<HirIdentifier>,
+    #[ast(children)]
+    pub entries: Vec<Spanned<HirTestMetadataEntry>>,
 }
 
 #[derive(beskid_ast_derive::HirNode)]

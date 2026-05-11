@@ -1,27 +1,40 @@
 use anyhow::Result;
 use beskid_analysis::resolve::ItemKind;
+use beskid_pipeline::PipelineObserver;
 
 use crate::Engine;
 use crate::jit_callable::JitCallable;
 
+/// Parse, lower, JIT-compile, and run `entrypoint` (no-arg function or test); returns a string summary of the return value.
 pub fn run_entrypoint(
     source_path: &std::path::Path,
     source: &str,
     entrypoint: &str,
 ) -> Result<String> {
-    let lowered = beskid_codegen::lower_source(source_path, source, true)?;
+    run_entrypoint_with_pipeline(source_path, source, entrypoint, None)
+}
+
+/// Same as [`run_entrypoint`] with optional pipeline observation for codegen and JIT phases.
+pub fn run_entrypoint_with_pipeline(
+    source_path: &std::path::Path,
+    source: &str,
+    entrypoint: &str,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<String> {
+    let lowered = beskid_codegen::lower_source_with_pipeline(source_path, source, true, pipeline)?;
 
     let mut engine = Engine::new();
     engine
-        .compile_artifact(&lowered.artifact)
-        .map_err(|err| anyhow::anyhow!("JIT compile failed: {err:?}"))?;
+        .compile_artifact_with_pipeline(&lowered.artifact, pipeline)
+        .map_err(|err| anyhow::anyhow!("JIT compile failed: {err}"))?;
 
     let entrypoint_info = lowered
         .resolution
         .items
         .iter()
         .find(|item| {
-            item.name == entrypoint && (item.kind == ItemKind::Function || item.kind == ItemKind::Test)
+            item.name == entrypoint
+                && (item.kind == ItemKind::Function || item.kind == ItemKind::Test)
         })
         .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
 
@@ -44,7 +57,7 @@ pub fn run_entrypoint(
         .ok_or_else(|| anyhow::anyhow!("Missing return type for `{entrypoint}`"))?;
 
     let ptr = unsafe { engine.entrypoint_ptr(entrypoint) }
-        .map_err(|err| anyhow::anyhow!("Entrypoint lookup failed: {err:?}"))?;
+        .map_err(|err| anyhow::anyhow!("Entrypoint lookup failed: {err}"))?;
     if ptr.is_null() {
         return Err(anyhow::anyhow!(
             "Entrypoint `{entrypoint}` returned null pointer"

@@ -128,6 +128,14 @@ impl<'a> TypeContext<'a> {
                     type_id
                 }
             }
+            Some(TypeInfo::Array(element)) => {
+                let substituted = self.substitute_type_id(element, mapping);
+                if substituted != element {
+                    self.type_table.intern(TypeInfo::Array(substituted))
+                } else {
+                    type_id
+                }
+            }
             _ => type_id,
         }
     }
@@ -137,6 +145,12 @@ impl<'a> TypeContext<'a> {
             return;
         }
         if self.is_never(expected) || self.is_never(actual) {
+            return;
+        }
+        if let (Some(TypeInfo::Array(e1)), Some(TypeInfo::Array(e2))) =
+            (self.type_table.get(expected), self.type_table.get(actual))
+            && e1 == e2
+        {
             return;
         }
         if self.named_item_id(expected).is_some()
@@ -265,6 +279,7 @@ impl<'a> TypeContext<'a> {
                 | Some(TypeInfo::Applied { .. })
                 | Some(TypeInfo::GenericParam(_))
                 | Some(TypeInfo::Function { .. })
+                | Some(TypeInfo::Array(_))
                 | Some(TypeInfo::Primitive(HirPrimitiveType::String))
         )
     }

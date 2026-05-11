@@ -1,5 +1,6 @@
 use crate::gc::{RawAllocation, with_current_mutation_and_root};
 
+/// GC-tracked zero-filled allocation; optional `type_desc_ptr` is written unaligned at the start when non-null.
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn alloc(size: usize, type_desc_ptr: *const u8) -> *mut u8 {
     with_current_mutation_and_root(|mc, root| {

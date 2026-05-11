@@ -4,6 +4,7 @@ use crate::features::semantic_tokens::encoder::build_semantic_tokens;
 use crate::position::offset_to_position;
 use crate::session::store::Document;
 
+/// Encoded semantic token stream for syntax highlighting when analysis is available.
 pub fn handle_semantic_tokens(doc: &Document) -> SemanticTokensResult {
     SemanticTokensResult::Tokens(SemanticTokens {
         result_id: None,

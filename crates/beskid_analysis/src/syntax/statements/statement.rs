@@ -10,6 +10,7 @@ use crate::syntax::{
 
 use beskid_ast_derive::AstNode;
 
+/// Executable statement inside a block (not a top-level item).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub enum Statement {
     #[ast(child)]

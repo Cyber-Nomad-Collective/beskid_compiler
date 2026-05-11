@@ -1,3 +1,5 @@
+//! Structural type interning ([`TypeTable`]) and HIR type checking ([`context::TypeContext`]) against a [`crate::resolve::Resolution`].
+
 pub mod context;
 pub mod table;
 

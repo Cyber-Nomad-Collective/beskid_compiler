@@ -39,12 +39,45 @@ pub struct WorkspaceRegistry {
     pub url: String,
 }
 
+/// `project.type` in `Project.proj` (`Host` is the implicit default when omitted).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProjectKind {
+    #[default]
+    Host,
+    Meta,
+}
+
+/// `project.meta.attachTo` entry: reserved `default` or a workspace member id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttachToSelector {
+    Default,
+    Member(String),
+}
+
+/// Nested `project.meta { ... }` block for [`ProjectKind::Meta`] manifests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectMetaSection {
+    pub attach_to: Vec<AttachToSelector>,
+    pub entry_modules: Vec<String>,
+    pub max_meta_rounds: Option<u32>,
+    pub capabilities: Option<Vec<String>>,
+}
+
+impl ProjectMetaSection {
+    /// Normative default when `maxMetaRounds` is omitted (project manifest contract).
+    pub fn resolved_max_meta_rounds(&self) -> u32 {
+        self.max_meta_rounds.unwrap_or(4)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectSection {
     pub name: String,
     pub version: String,
     pub root: String,
     pub root_namespace: Option<String>,
+    pub kind: ProjectKind,
+    pub meta: Option<ProjectMetaSection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +123,13 @@ pub struct UnresolvedDependencyNote {
     pub dependency_name: String,
     pub source: DependencySource,
     pub descriptor: String,
+}
+
+/// Workspace member selection aligned with [`super::manifest_resolve`](crate::projects::manifest_resolve).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceResolutionSummary {
+    pub workspace_manifest_path: PathBuf,
+    pub selected_member_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

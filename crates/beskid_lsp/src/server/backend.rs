@@ -23,6 +23,7 @@ use crate::workspace_scan::{
     scan_workspace, uri_to_path,
 };
 
+/// Tower-LSP [`LanguageServer`] implementation for Beskid (sync, diagnostics, IDE features).
 pub struct Backend {
     client: Client,
     state: Arc<RwLock<State>>,
@@ -32,6 +33,7 @@ pub struct Backend {
 }
 
 impl Backend {
+    /// Construct server state wired to the LSP [`Client`] (empty workspace until `initialize`).
     pub fn new(client: Client) -> Self {
         Self {
             client,
@@ -124,8 +126,13 @@ impl LanguageServer for Backend {
 
     async fn initialized(&self, _: InitializedParams) {
         let filter = *self.log_filter.read().await;
-        client_log(&self.client, filter, MessageType::INFO, "Beskid LSP initialized".to_string())
-            .await;
+        client_log(
+            &self.client,
+            filter,
+            MessageType::INFO,
+            "Beskid LSP initialized".to_string(),
+        )
+        .await;
         self.refresh_workspace_scan().await;
     }
 
@@ -158,13 +165,20 @@ impl LanguageServer for Backend {
             .find(|change| change.range.is_none())
             .map(|change| change.text)
         {
-            set_document(&self.state, uri.clone(), params.text_document.version, full_text).await;
+            set_document(
+                &self.state,
+                uri.clone(),
+                params.text_document.version,
+                full_text,
+            )
+            .await;
             self.schedule_publish_diagnostics(uri).await;
         }
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        self.schedule_publish_diagnostics(params.text_document.uri).await;
+        self.schedule_publish_diagnostics(params.text_document.uri)
+            .await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
@@ -293,7 +307,10 @@ impl LanguageServer for Backend {
         )))
     }
 
-    async fn symbol(&self, params: WorkspaceSymbolParams) -> Result<Option<WorkspaceSymbolResponse>> {
+    async fn symbol(
+        &self,
+        params: WorkspaceSymbolParams,
+    ) -> Result<Option<WorkspaceSymbolResponse>> {
         let state = self.state.read().await;
         Ok(Some(workspace_symbols::handler::handle_workspace_symbols(
             &state, params,

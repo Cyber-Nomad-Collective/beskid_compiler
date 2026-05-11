@@ -7,12 +7,14 @@ use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleResult};
 use crate::lowering::CodegenArtifact;
 use crate::lowering::descriptor::TypeDescriptorData;
 
+/// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
 #[derive(Debug, Clone)]
 pub struct DescriptorHandles {
     pub descriptor: DataId,
     pub offsets: DataId,
 }
 
+/// Define one module-local data object per entry in `artifact.string_literals`.
 pub fn emit_string_literals<M: Module>(
     module: &mut M,
     artifact: &CodegenArtifact,
@@ -28,6 +30,7 @@ pub fn emit_string_literals<M: Module>(
     Ok(handles)
 }
 
+/// Emit descriptor and offset-table data for every type in `artifact.type_descriptors`.
 pub fn emit_type_descriptors<M: Module>(
     module: &mut M,
     artifact: &CodegenArtifact,

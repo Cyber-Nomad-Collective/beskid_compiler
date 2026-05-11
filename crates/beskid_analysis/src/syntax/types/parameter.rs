@@ -2,6 +2,7 @@ use crate::syntax::{Identifier, ParameterModifier, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
+/// Function or method parameter: optional modifier, name, and type (`ty name` surface order).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct Parameter {
     #[ast(child)]

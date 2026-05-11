@@ -7,4 +7,4 @@ mod policy;
 mod statements_emit;
 mod types_emit;
 
-pub use emit::{Emit, EmitCtx, EmitError, Emitter, format_program};
+pub use emit::{Emit, EmitCtx, EmitError, Emitter, emit_error_semantic_diagnostic, format_program};

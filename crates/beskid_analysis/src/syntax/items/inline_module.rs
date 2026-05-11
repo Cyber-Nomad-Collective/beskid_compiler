@@ -10,6 +10,7 @@ use crate::syntax::{Attribute, Identifier, Node, SpanInfo, Spanned, Visibility};
 
 use beskid_ast_derive::AstNode;
 
+/// Inline `module Name { ... }` with nested items and optional leading docs per item.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct InlineModule {
     #[ast(children)]
@@ -34,7 +35,10 @@ impl Parsable for InlineModule {
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
         let (items, leading_docs) =
             if let Some(body) = inner.find(|p| p.as_rule() == Rule::InlineModuleBody) {
-                parse_doc_attached_items(body.into_inner().filter(|p| p.as_rule() == Rule::ItemWithDocs))?
+                parse_doc_attached_items(
+                    body.into_inner()
+                        .filter(|p| p.as_rule() == Rule::ItemWithDocs),
+                )?
             } else {
                 (Vec::new(), Vec::new())
             };

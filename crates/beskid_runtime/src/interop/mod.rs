@@ -1,7 +1,10 @@
+//! Host interop: decode enum tags from generated payloads and dispatch to Rust handlers.
+
 use crate::interop_layout::enum_tag;
 
 pub mod dispatch_table;
 
+/// Unit-returning interop dispatch; panics when the tag is unknown or the handler returns false.
 #[unsafe(no_mangle)]
 pub extern "C" fn interop_dispatch_unit(enum_ptr: *const u8) {
     let tag = enum_tag(enum_ptr);
@@ -11,6 +14,7 @@ pub extern "C" fn interop_dispatch_unit(enum_ptr: *const u8) {
     panic!("invalid interop tag for unit dispatch");
 }
 
+/// `usize`-returning interop dispatch (e.g. string length); panics on unknown tag or missing handler.
 #[unsafe(no_mangle)]
 pub extern "C" fn interop_dispatch_usize(enum_ptr: *const u8) -> usize {
     let tag = enum_tag(enum_ptr);
@@ -20,6 +24,7 @@ pub extern "C" fn interop_dispatch_usize(enum_ptr: *const u8) -> usize {
     panic!("invalid interop tag for usize dispatch");
 }
 
+/// Pointer-returning interop dispatch; panics on unknown tag or missing handler.
 #[unsafe(no_mangle)]
 pub extern "C" fn interop_dispatch_ptr(enum_ptr: *const u8) -> *mut u8 {
     let tag = enum_tag(enum_ptr);

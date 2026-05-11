@@ -9,6 +9,7 @@ use crate::syntax::{Identifier, Parameter, SpanInfo, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
+/// Abstract method signature inside a `contract` (no body).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct ContractMethodSignature {
     #[ast(child)]

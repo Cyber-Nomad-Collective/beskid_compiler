@@ -12,8 +12,11 @@ pub i64 main() { return 0; }
     let err = lower_source(std::path::Path::new("<memory>"), src, false)
         .err()
         .expect("type checking should fail for invalid ABI");
-    let msg = format!("{err:?}");
-    assert!(msg.contains("ExternInvalidAbi"));
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("invalid extern ABI"),
+        "unexpected message: {msg}"
+    );
     Ok(())
 }
 
@@ -28,8 +31,11 @@ pub i64 main() { return 0; }
     let err = lower_source(std::path::Path::new("<memory>"), src, false)
         .err()
         .expect("type checking should fail for missing library");
-    let msg = format!("{err:?}");
-    assert!(msg.contains("ExternMissingLibrary"));
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("extern declaration missing library"),
+        "unexpected message: {msg}"
+    );
     Ok(())
 }
 
@@ -44,8 +50,11 @@ pub i64 main() { return 0; }
     let err = lower_source(std::path::Path::new("<memory>"), src, false)
         .err()
         .expect("type checking should fail for disallowed param type");
-    let msg = format!("{err:?}");
-    assert!(msg.contains("ExternDisallowedParamType"));
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("disallowed parameter type") && msg.contains("nope"),
+        "unexpected message: {msg}"
+    );
     Ok(())
 }
 
@@ -60,7 +69,10 @@ pub i64 main() { return 0; }
     let err = lower_source(std::path::Path::new("<memory>"), src, false)
         .err()
         .expect("type checking should fail for disallowed ref param type");
-    let msg = format!("{err:?}");
-    assert!(msg.contains("ExternDisallowedParamType"));
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("disallowed parameter type") && msg.contains("nope"),
+        "unexpected message: {msg}"
+    );
     Ok(())
 }

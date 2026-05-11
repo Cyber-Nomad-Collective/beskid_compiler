@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+beskid_analysis = { path = "../beskid_analysis" }
 clap = { version = "4.4", features = ["derive", "env"] }
 comfy-table = "7"
 indicatif = { version = "0.18", features = ["tokio"] }

@@ -29,7 +29,8 @@ impl JitCallable {
             | TypeInfo::Named(_)
             | TypeInfo::GenericParam(_)
             | TypeInfo::Applied { .. }
-            | TypeInfo::Function { .. } => {
+            | TypeInfo::Function { .. }
+            | TypeInfo::Array(_) => {
                 // SAFETY: JIT pointer-like returns are represented as `u64`.
                 call_entrypoint!(ptr, u64, value => format!("0x{value:016x}"))
             }

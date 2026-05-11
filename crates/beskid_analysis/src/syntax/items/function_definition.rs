@@ -11,6 +11,7 @@ use crate::syntax::{Block, Identifier, Parameter, SpanInfo, Spanned, Type, Visib
 
 use beskid_ast_derive::AstNode;
 
+/// Top-level or nested function: visibility, signature, and body block.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDefinition {
     #[ast(child)]

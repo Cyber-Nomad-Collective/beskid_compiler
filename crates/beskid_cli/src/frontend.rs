@@ -1,12 +1,14 @@
+//! Thin wrappers around `beskid_analysis::services` for CLI resolution, parsing, and light validation.
+
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use beskid_analysis::parser::{BeskidParser, Rule};
-use beskid_analysis::parsing::parsable::Parsable;
-use beskid_analysis::services;
+use beskid_analysis::projects::UnresolvedDependencyPolicy;
+use beskid_analysis::services::{self, ResolvedProject};
 use beskid_analysis::syntax::{Program, Spanned};
-use pest::Parser;
+use beskid_pipeline::PipelineObserver;
 
+/// Resolve `input` / `project` / lockfile flags the same way as most CLI subcommands.
 pub fn resolve_input(
     input: Option<&PathBuf>,
     project: Option<&PathBuf>,
@@ -18,21 +20,57 @@ pub fn resolve_input(
     services::resolve_input(input, project, target, workspace_member, frozen, locked)
 }
 
-pub fn parse_program(path: &Path, source: &str) -> Result<Spanned<Program>> {
-    let mut pairs = BeskidParser::parse(Rule::Program, source).map_err(|err| {
-        let diagnostic = services::pest_error_diagnostic(&path.display().to_string(), source, &err);
-        anyhow::anyhow!("{:?}", miette::Report::new(diagnostic))
-    })?;
-    let pair = pairs
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("No program found"))?;
-    Program::parse(pair).map_err(|err| {
-        let diagnostic =
-            services::parse_error_diagnostic(&path.display().to_string(), source, &err);
-        anyhow::anyhow!("{:?}", miette::Report::new(diagnostic))
-    })
+/// Like [`resolve_input`], forwarding [`PipelineObserver`] events (e.g. for CLI progress).
+pub fn resolve_input_with_pipeline(
+    input: Option<&PathBuf>,
+    project: Option<&PathBuf>,
+    target: Option<&str>,
+    workspace_member: Option<&str>,
+    frozen: bool,
+    locked: bool,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<services::ResolvedInput> {
+    services::resolve_input_with_policy(
+        input,
+        project,
+        target,
+        workspace_member,
+        frozen,
+        locked,
+        UnresolvedDependencyPolicy::Error,
+        pipeline,
+    )
 }
 
+/// Resolve to a [`ResolvedProject`] with optional pipeline reporting and unresolved-deps policy.
+pub fn resolve_project_with_pipeline(
+    input: Option<&PathBuf>,
+    project: Option<&PathBuf>,
+    target: Option<&str>,
+    workspace_member: Option<&str>,
+    frozen: bool,
+    locked: bool,
+    unresolved_dependency_policy: UnresolvedDependencyPolicy,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<ResolvedProject> {
+    services::resolve_project_with_policy(
+        input,
+        project,
+        target,
+        workspace_member,
+        frozen,
+        locked,
+        unresolved_dependency_policy,
+        pipeline,
+    )
+}
+
+/// Parse `source` as a Beskid program using `path` for error labels.
+pub fn parse_program(path: &Path, source: &str) -> Result<Spanned<Program>> {
+    services::parse_program_with_source_name(&path.display().to_string(), source)
+}
+
+/// Fail if `source` does not parse as a Beskid program at `path`.
 pub fn validate_source(path: &Path, source: &str) -> Result<()> {
     let _ = parse_program(path, source)?;
     Ok(())

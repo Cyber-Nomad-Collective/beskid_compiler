@@ -1,5 +1,8 @@
+//! `beskid format` / `fmt` — canonical pretty-printer for `.bd` sources (file, tree, or check).
+
 use anyhow::{Context, Result, bail};
-use beskid_analysis::format::format_program;
+use beskid_analysis::MietteReportError;
+use beskid_analysis::format::{emit_error_semantic_diagnostic, format_program};
 use beskid_analysis::services;
 use clap::Args;
 use std::ffi::OsStr;
@@ -27,6 +30,7 @@ pub struct FormatArgs {
     pub check: bool,
 }
 
+/// Format paths per `--write`, `--check`, or stdout/`--output` rules.
 pub fn execute(args: FormatArgs) -> Result<()> {
     let started = Instant::now();
     let input_is_dir = fs::metadata(&args.input)
@@ -67,7 +71,9 @@ pub fn execute(args: FormatArgs) -> Result<()> {
     }
 
     // Single file → `--output`
-    if paths.len() == 1 && let Some(out) = args.output.as_ref() {
+    if paths.len() == 1
+        && let Some(out) = args.output.as_ref()
+    {
         let formatted = format_path_to_string(&paths[0])?;
         fs::write(out, formatted).with_context(|| format!("write {}", out.display()))?;
         eprintln!(
@@ -83,11 +89,7 @@ pub fn execute(args: FormatArgs) -> Result<()> {
     }
 
     let elapsed = started.elapsed();
-    let label = if args.check {
-        "checked"
-    } else {
-        "formatted"
-    };
+    let label = if args.check { "checked" } else { "formatted" };
     eprintln!(
         "beskid format: {label} {} .bd file(s) in {}",
         paths.len(),
@@ -101,14 +103,26 @@ fn format_path_to_string(path: &Path) -> Result<String> {
     let source = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let program = services::parse_program_with_source_name(&path.display().to_string(), &source)
         .with_context(|| format!("parse {}", path.display()))?;
-    format_program(&program).map_err(|e| anyhow::anyhow!("format: {e:?}"))
+    format_program(&program).map_err(|e| {
+        anyhow::Error::new(MietteReportError::new(emit_error_semantic_diagnostic(
+            &path.display().to_string(),
+            &source,
+            e,
+        )))
+    })
 }
 
 fn format_one_write_or_check(path: &Path, write: bool, check: bool) -> Result<()> {
     let source = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let program = services::parse_program_with_source_name(&path.display().to_string(), &source)
         .with_context(|| format!("parse {}", path.display()))?;
-    let formatted = format_program(&program).map_err(|e| anyhow::anyhow!("format: {e:?}"))?;
+    let formatted = format_program(&program).map_err(|e| {
+        anyhow::Error::new(MietteReportError::new(emit_error_semantic_diagnostic(
+            &path.display().to_string(),
+            &source,
+            e,
+        )))
+    })?;
 
     if check {
         if formatted != source {
@@ -151,10 +165,7 @@ fn collect_bd_files(path: &Path, input_is_dir: bool) -> Result<Vec<PathBuf>> {
     } else if is_bd_path(path) {
         Ok(vec![path.to_path_buf()])
     } else {
-        bail!(
-            "expected a `.bd` file or directory, got {}",
-            path.display()
-        );
+        bail!("expected a `.bd` file or directory, got {}", path.display());
     }
 }
 
@@ -168,7 +179,14 @@ fn is_skipped_dir(name: &OsStr) -> bool {
     matches!(
         name.to_str(),
         Some(
-            ".git" | ".svn" | ".hg" | "target" | "node_modules" | "dist" | ".venv" | "vendor"
+            ".git"
+                | ".svn"
+                | ".hg"
+                | "target"
+                | "node_modules"
+                | "dist"
+                | ".venv"
+                | "vendor"
                 | "__pycache__"
         )
     )

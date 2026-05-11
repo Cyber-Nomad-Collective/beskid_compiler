@@ -84,6 +84,7 @@ fn collect_dependency_projects_from_node(
             project_root,
             project_name,
             source_root,
+            ..
         }) = graph.dag.graph().node_weight(child)
         {
             output.push(ResolvedDependencyProject {

@@ -1,9 +1,7 @@
 use crate::doc::LeadingDocComment;
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::format::items::helpers::emit_attribute_lines;
-use crate::syntax::{
-    InlineModule, Node, Program, Spanned,
-};
+use crate::syntax::{InlineModule, Node, Program, Spanned};
 use std::fmt::Write;
 
 fn emit_leading_doc_lines<W: Write>(
@@ -51,6 +49,7 @@ impl Emit for Node {
             Node::EnumDefinition(e) => e.emit(w, cx),
             Node::ContractDefinition(c) => c.emit(w, cx),
             Node::TestDefinition(t) => t.emit(w, cx),
+            Node::MetaDefinition(m) => m.emit(w, cx),
             Node::AttributeDeclaration(a) => a.emit(w, cx),
             Node::ModuleDeclaration(m) => m.emit(w, cx),
             Node::InlineModule(m) => m.emit(w, cx),

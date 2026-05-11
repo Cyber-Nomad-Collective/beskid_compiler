@@ -1,6 +1,12 @@
+//! Public AOT API: build requests, output kinds, and the [`build`] orchestration entry point.
+
 use std::path::PathBuf;
 
 use beskid_codegen::CodegenArtifact;
+use beskid_pipeline::{
+    SharedPipelineObserver, observe_phase_result,
+    phases::{AOT_EMIT_OBJECT, AOT_LINK, AOT_RUNTIME},
+};
 
 use crate::error::{AotError, AotResult};
 use crate::linker::{LinkRequest, link};
@@ -8,6 +14,7 @@ use crate::object_module::BeskidObjectModule;
 use crate::runtime::{RuntimeBuildRequest, prepare_runtime};
 use crate::target::detect_target;
 
+/// Final linked artifact shape (or object-only emission without linking).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildOutputKind {
     Exe,
@@ -16,6 +23,7 @@ pub enum BuildOutputKind {
     ObjectOnly,
 }
 
+/// Beskid project classification used when choosing a default [`BuildOutputKind`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectTargetKind {
     App,
@@ -23,12 +31,14 @@ pub enum ProjectTargetKind {
     Test,
 }
 
+/// Optimization profile passed through to runtime bridge `cargo build` when applicable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildProfile {
     Debug,
     Release,
 }
 
+/// Hint for shared-library link lines (`-Wl,-Bstatic` / `-Wl,-Bdynamic`); ignored for other kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkMode {
     Auto,
@@ -36,6 +46,7 @@ pub enum LinkMode {
     PreferDynamic,
 }
 
+/// How the AOT pipeline obtains a runtime static library to link against.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeStrategy {
     BuildOnTheFly,
@@ -46,6 +57,7 @@ pub enum RuntimeStrategy {
     Standalone,
 }
 
+/// Which symbols from the object file participate in export lists / entrypoint checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExportPolicy {
     PublicOnly,
@@ -53,7 +65,8 @@ pub enum ExportPolicy {
     AllDefined,
 }
 
-#[derive(Debug, Clone)]
+/// Inputs and options for a single AOT build (object emit, optional runtime, link).
+#[derive(Clone)]
 pub struct AotBuildRequest {
     pub artifact: CodegenArtifact,
     pub output_kind: BuildOutputKind,
@@ -66,8 +79,59 @@ pub struct AotBuildRequest {
     pub link_mode: LinkMode,
     pub runtime: RuntimeStrategy,
     pub verbose_link: bool,
+    /// Optional compilation pipeline observer (e.g. CLI progress).
+    pub pipeline: Option<SharedPipelineObserver>,
 }
 
+impl std::fmt::Debug for AotBuildRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AotBuildRequest")
+            .field("output_kind", &self.output_kind)
+            .field("output_path", &self.output_path)
+            .field("object_path", &self.object_path)
+            .field("target_triple", &self.target_triple)
+            .field("profile", &self.profile)
+            .field("entrypoint", &self.entrypoint)
+            .field("export_policy", &self.export_policy)
+            .field("link_mode", &self.link_mode)
+            .field("runtime", &self.runtime)
+            .field("verbose_link", &self.verbose_link)
+            .field("pipeline", &self.pipeline.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl AotBuildRequest {
+    /// Build request with defaults shared by integration tests and ad hoc tooling runs.
+    ///
+    /// Sets [`BuildProfile::Debug`], [`ExportPolicy::PublicOnly`], [`LinkMode::Auto`],
+    /// [`RuntimeStrategy::BuildOnTheFly`], no pipeline observer, and no explicit target triple
+    /// or secondary object path. Override any field with struct update syntax, for example
+    /// `AotBuildRequest { runtime: RuntimeStrategy::Standalone, ..AotBuildRequest::with_defaults(...) }`.
+    pub fn with_defaults(
+        artifact: CodegenArtifact,
+        output_kind: BuildOutputKind,
+        output_path: PathBuf,
+        entrypoint: impl Into<String>,
+    ) -> Self {
+        Self {
+            artifact,
+            output_kind,
+            output_path,
+            object_path: None,
+            target_triple: None,
+            profile: BuildProfile::Debug,
+            entrypoint: entrypoint.into(),
+            export_policy: ExportPolicy::PublicOnly,
+            link_mode: LinkMode::Auto,
+            runtime: RuntimeStrategy::BuildOnTheFly,
+            verbose_link: false,
+            pipeline: None,
+        }
+    }
+}
+
+/// Paths and metadata produced by [`build`] or [`emit_object_only`].
 #[derive(Debug, Clone)]
 pub struct AotBuildResult {
     pub object_path: PathBuf,
@@ -82,6 +146,7 @@ struct ObjectStageResult {
     exported_symbols: Vec<String>,
 }
 
+/// Emit a single object file; fails unless `req.output_kind` is [`BuildOutputKind::ObjectOnly`].
 pub fn emit_object_only(req: AotBuildRequest) -> AotResult<AotBuildResult> {
     if req.output_kind != BuildOutputKind::ObjectOnly {
         return Err(AotError::InvalidRequest {
@@ -91,6 +156,7 @@ pub fn emit_object_only(req: AotBuildRequest) -> AotResult<AotBuildResult> {
     build(req)
 }
 
+/// Default artifact kind for a project target (`Lib` → shared library, else executable).
 pub fn default_output_kind(target_kind: Option<ProjectTargetKind>) -> BuildOutputKind {
     match target_kind {
         Some(ProjectTargetKind::Lib) => BuildOutputKind::SharedLib,
@@ -98,6 +164,7 @@ pub fn default_output_kind(target_kind: Option<ProjectTargetKind>) -> BuildOutpu
     }
 }
 
+/// Normalize CLI-style entrypoint: non-empty string or default `"main"`.
 pub fn resolve_entrypoint(entrypoint: Option<String>) -> AotResult<String> {
     if let Some(entrypoint) = entrypoint {
         if entrypoint.trim().is_empty() {
@@ -111,6 +178,7 @@ pub fn resolve_entrypoint(entrypoint: Option<String>) -> AotResult<String> {
     Ok("main".to_owned())
 }
 
+/// Run object emission, optional runtime preparation, and linking per `req.output_kind`.
 pub fn build(req: AotBuildRequest) -> AotResult<AotBuildResult> {
     validate_request(&req)?;
 
@@ -147,7 +215,10 @@ fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
         .unwrap_or_else(|| req.output_path.with_extension(target.object_ext));
 
     let mut object_module = BeskidObjectModule::new(req.target_triple.as_deref())?;
-    object_module.compile_artifact(&req.artifact)?;
+    let obs = req.pipeline.as_deref();
+    observe_phase_result(obs, AOT_EMIT_OBJECT, || {
+        object_module.compile_artifact(&req.artifact, obs)
+    })?;
 
     let all_symbols = object_module.declared_symbols();
     let exported_symbols = apply_export_policy(all_symbols, &req.export_policy);
@@ -171,11 +242,14 @@ fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]
 }
 
 fn prepare_runtime_stage(req: &AotBuildRequest) -> AotResult<crate::runtime::RuntimeArtifact> {
-    prepare_runtime(&RuntimeBuildRequest {
-        strategy: req.runtime.clone(),
-        target_triple: req.target_triple.clone(),
-        profile: req.profile,
-        work_dir: std::env::temp_dir().join("beskid_aot_runtime"),
+    let obs = req.pipeline.as_deref();
+    observe_phase_result(obs, AOT_RUNTIME, || {
+        prepare_runtime(&RuntimeBuildRequest {
+            strategy: req.runtime.clone(),
+            target_triple: req.target_triple.clone(),
+            profile: req.profile,
+            work_dir: std::env::temp_dir().join("beskid_aot_runtime"),
+        })
     })
 }
 
@@ -184,16 +258,19 @@ fn link_stage(
     object_stage: &ObjectStageResult,
     runtime_staticlib: Option<PathBuf>,
 ) -> AotResult<crate::linker::LinkResult> {
-    link(&LinkRequest {
-        target_triple: req.target_triple.clone(),
-        output_kind: req.output_kind,
-        output_path: req.output_path.clone(),
-        object_path: object_stage.object_path.clone(),
-        runtime_staticlib,
-        entrypoint_symbol: req.entrypoint.clone(),
-        exported_symbols: object_stage.exported_symbols.clone(),
-        link_mode: req.link_mode,
-        verbose: req.verbose_link,
+    let obs = req.pipeline.as_deref();
+    observe_phase_result(obs, AOT_LINK, || {
+        link(&LinkRequest {
+            target_triple: req.target_triple.clone(),
+            output_kind: req.output_kind,
+            output_path: req.output_path.clone(),
+            object_path: object_stage.object_path.clone(),
+            runtime_staticlib,
+            entrypoint_symbol: req.entrypoint.clone(),
+            exported_symbols: object_stage.exported_symbols.clone(),
+            link_mode: req.link_mode,
+            verbose: req.verbose_link,
+        })
     })
 }
 
@@ -230,5 +307,29 @@ fn apply_export_policy(symbols: Vec<String>, policy: &ExportPolicy) -> Vec<Strin
             .into_iter()
             .filter(|name| expected.iter().any(|wanted| wanted == name))
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod with_defaults_tests {
+    use super::*;
+
+    #[test]
+    fn with_defaults_matches_expected_shared_fields() {
+        let req = AotBuildRequest::with_defaults(
+            CodegenArtifact::default(),
+            BuildOutputKind::ObjectOnly,
+            PathBuf::from("/tmp/out.o"),
+            "main",
+        );
+        assert_eq!(req.object_path, None);
+        assert_eq!(req.target_triple, None);
+        assert_eq!(req.profile, BuildProfile::Debug);
+        assert_eq!(req.entrypoint, "main");
+        assert_eq!(req.export_policy, ExportPolicy::PublicOnly);
+        assert_eq!(req.link_mode, LinkMode::Auto);
+        assert!(matches!(req.runtime, RuntimeStrategy::BuildOnTheFly));
+        assert!(!req.verbose_link);
+        assert!(req.pipeline.is_none());
     }
 }

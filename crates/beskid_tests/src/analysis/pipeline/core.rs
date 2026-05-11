@@ -132,6 +132,7 @@ fn analysis_suppresses_cast_intent_warnings_when_warnings_disabled() {
         &builtin_rules(),
         AnalysisOptions {
             emit_warnings: false,
+            module_level_meta_items_allowed: None,
         },
     );
 
@@ -1076,7 +1077,7 @@ fn analysis_emits_duplicate_attribute_declaration_target_errors() {
         result
             .diagnostics
             .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1806"))
+            .any(|diag| diag.code.as_deref() == Some("E1508"))
     );
 }
 
@@ -1096,7 +1097,7 @@ fn analysis_emits_unknown_attribute_declaration_target_errors() {
         result
             .diagnostics
             .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1807"))
+            .any(|diag| diag.code.as_deref() == Some("E1509"))
     );
 }
 
@@ -1115,8 +1116,8 @@ fn analysis_emits_attribute_target_not_allowed_errors() {
     let diagnostic = result
         .diagnostics
         .iter()
-        .find(|diag| diag.code.as_deref() == Some("E1809"))
-        .expect("expected E1809 diagnostic");
+        .find(|diag| diag.code.as_deref() == Some("E1510"))
+        .expect("expected E1510 diagnostic");
     assert!(diagnostic.message.contains("cannot be applied"));
     assert!(
         diagnostic

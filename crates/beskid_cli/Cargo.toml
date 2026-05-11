@@ -8,6 +8,7 @@ build = "build.rs"
 beskid_aot = { path = "../beskid_aot" }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_codegen = { path = "../beskid_codegen" }
+beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_engine = { path = "../beskid_engine" }
 beskid_pckg = { path = "../beskid_pckg" }
 anyhow = "1.0"

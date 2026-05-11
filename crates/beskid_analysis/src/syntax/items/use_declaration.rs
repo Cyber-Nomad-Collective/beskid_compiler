@@ -8,6 +8,7 @@ use crate::syntax::{Identifier, Path, SpanInfo, Spanned, Visibility};
 
 use beskid_ast_derive::AstNode;
 
+/// `use` import: path with optional alias.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct UseDeclaration {
     #[ast(child)]

@@ -1,3 +1,5 @@
+//! Post-resolution HIR invariants: spans, resolved paths, control-flow shape, and attribute targets.
+
 use crate::hir::{
     AttributeTargetKind, HirAttribute, HirBlock, HirContractNode, HirExpressionNode, HirItem,
     HirPattern, HirProgram, HirStatementNode, HirType,
@@ -6,6 +8,7 @@ use crate::resolve::Resolution;
 use crate::syntax::{SpanInfo, Spanned};
 use std::collections::HashMap;
 
+/// Violations of structural rules expected after resolve (orthogonal to type checking).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HirLegalityError {
     InvalidSpan {
@@ -39,6 +42,7 @@ pub enum HirLegalityError {
     },
 }
 
+/// Collect legality issues without mutating `program` (unlike normalize/type passes).
 pub fn validate_hir_program(
     program: &Spanned<HirProgram>,
     resolution: &Resolution,
@@ -161,6 +165,14 @@ impl<'a> HirLegalityValidator<'a> {
                     }
                 }
                 self.validate_block(&def.node.body);
+            }
+            HirItem::MetaDefinition(def) => {
+                self.check_span(def.span, "meta_definition");
+                self.validate_applied_attributes(&def.node.attributes, "ModuleDeclaration");
+                for entry in &def.node.entries {
+                    self.check_span(entry.span, "meta_metadata_entry");
+                    self.validate_expression(&entry.node.value);
+                }
             }
             HirItem::TypeDefinition(def) => {
                 self.check_span(def.span, "type_definition");

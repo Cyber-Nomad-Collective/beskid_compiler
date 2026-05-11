@@ -1,20 +1,23 @@
+//! Cranelift object-module wrapper: declare imports, lower [`CodegenArtifact`] functions, write `.o`/`.obj`.
+
 use std::collections::HashMap;
 use std::path::Path;
 
-use beskid_abi::{
-    AbiParamKind, AbiReturnKind, BUILTIN_SPECS, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN,
-    SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST,
+use beskid_codegen::cranelift_host::{
+    declare_builtin_imports, declare_user_functions, declare_validated_extern_imports,
+    remap_testcase_externals,
 };
 use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
-use cranelift_codegen::ir::{AbiParam, ExternalName, Signature, UserExternalName, types};
-use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;
-use cranelift_module::{DataId, FuncId, FuncOrDataId, Linkage, Module, default_libcall_names};
+use cranelift_module::{DataId, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
+
+use beskid_pipeline::{PipelineObserver, emit_work_unit, phases::AOT_EMIT_OBJECT};
 
 use crate::error::{AotError, AotResult};
 
+/// Owns a Cranelift object builder until [`Self::finalize_to_path`] consumes it.
 pub struct BeskidObjectModule {
     module: Option<ObjectModule>,
     func_ids: HashMap<String, FuncId>,
@@ -24,6 +27,7 @@ pub struct BeskidObjectModule {
 }
 
 impl BeskidObjectModule {
+    /// Construct module for `target_triple` or the host ISA when `None` (PIC enabled).
     pub fn new(target_triple: Option<&str>) -> AotResult<Self> {
         let mut flag_builder = settings::builder();
         flag_builder
@@ -63,7 +67,12 @@ impl BeskidObjectModule {
         })
     }
 
-    pub fn compile_artifact(&mut self, artifact: &CodegenArtifact) -> AotResult<()> {
+    /// Declare builtins, user functions, externs, data, then define every lowered function in `artifact`.
+    pub fn compile_artifact(
+        &mut self,
+        artifact: &CodegenArtifact,
+        pipeline: Option<&dyn PipelineObserver>,
+    ) -> AotResult<()> {
         let module = self
             .module
             .as_mut()
@@ -72,19 +81,23 @@ impl BeskidObjectModule {
             })?;
 
         if !self.builtins_declared {
-            declare_builtins(module, &mut self.func_ids)?;
+            declare_builtin_imports(module, &mut self.func_ids)?;
             self.builtins_declared = true;
         }
 
-        for function in &artifact.functions {
-            let func_id = module.declare_function(
-                &function.name,
-                Linkage::Export,
-                &function.function.signature,
-            )?;
-            self.func_ids.insert(function.name.clone(), func_id);
-            self.declared_symbols.push(function.name.clone());
-        }
+        let declared =
+            declare_user_functions(module, artifact, Linkage::Export, &mut self.func_ids)?;
+        self.declared_symbols.extend(declared);
+        declare_validated_extern_imports(module, artifact, &mut self.func_ids).map_err(|err| {
+            match err {
+                beskid_codegen::cranelift_host::ExternDeclarationError::InvalidSignature(
+                    message,
+                ) => AotError::InvalidRequest { message },
+                beskid_codegen::cranelift_host::ExternDeclarationError::Module(error) => {
+                    AotError::from(error)
+                }
+            }
+        })?;
 
         self.data_ids = emit_string_literals(module, artifact)?;
         let descriptor_ids = emit_type_descriptors(module, artifact)?;
@@ -98,29 +111,51 @@ impl BeskidObjectModule {
         }
 
         let mut ctx = module.make_context();
-        for function in &artifact.functions {
+        let total = artifact.functions.len() as u64;
+        for (index, function) in artifact.functions.iter().enumerate() {
             let func_id = self.func_ids.get(&function.name).copied().ok_or_else(|| {
                 AotError::MissingFunction {
                     name: function.name.clone(),
                 }
             })?;
             ctx.func = function.function.clone();
-            remap_external_names(module, &mut ctx, &self.func_ids)?;
+            remap_testcase_externals(module, &mut ctx, &self.func_ids).map_err(
+                |err| match err {
+                    beskid_codegen::cranelift_host::HostError::MissingSymbol(name) => {
+                        AotError::MissingFunction { name }
+                    }
+                    beskid_codegen::cranelift_host::HostError::InvalidGlobalValue => {
+                        AotError::InvalidRequest {
+                            message: "expected symbol global value".to_owned(),
+                        }
+                    }
+                },
+            )?;
             module.define_function(func_id, &mut ctx)?;
             module.clear_context(&mut ctx);
+            emit_work_unit(
+                pipeline,
+                AOT_EMIT_OBJECT,
+                (index as u64) + 1,
+                total,
+                function.name.clone(),
+            );
         }
 
         Ok(())
     }
 
+    /// Resolved Cranelift function id after declarations (tests / diagnostics).
     pub fn get_func_id(&self, name: &str) -> Option<FuncId> {
         self.func_ids.get(name).copied()
     }
 
+    /// User-declared export symbol names accumulated during [`Self::compile_artifact`].
     pub fn declared_symbols(&self) -> Vec<String> {
         self.declared_symbols.clone()
     }
 
+    /// Finish the module and write object bytes to `output_object` (consumes `self`).
     pub fn finalize_to_path(mut self, output_object: &Path) -> AotResult<()> {
         let module = self.module.take().ok_or_else(|| AotError::InvalidRequest {
             message: "object module already finalized".to_owned(),
@@ -140,131 +175,4 @@ impl BeskidObjectModule {
             message: err.to_string(),
         })
     }
-}
-
-fn builtin_signature(
-    pointer: cranelift_codegen::ir::Type,
-    call_conv: CallConv,
-    params: &[AbiParamKind],
-    returns: AbiReturnKind,
-) -> Signature {
-    let mut sig = Signature::new(call_conv);
-    for param in params {
-        let ty = match param {
-            AbiParamKind::Ptr => pointer,
-            AbiParamKind::I64 => types::I64,
-        };
-        sig.params.push(AbiParam::new(ty));
-    }
-    match returns {
-        AbiReturnKind::Void | AbiReturnKind::Never => {}
-        AbiReturnKind::Ptr => sig.returns.push(AbiParam::new(pointer)),
-        AbiReturnKind::I64 => sig.returns.push(AbiParam::new(types::I64)),
-        AbiReturnKind::I32 => sig.returns.push(AbiParam::new(types::I32)),
-    }
-    sig
-}
-
-fn declare_builtins(
-    module: &mut ObjectModule,
-    func_ids: &mut HashMap<String, FuncId>,
-) -> AotResult<()> {
-    let pointer = module.isa().pointer_type();
-
-    let call_conv = module.isa().default_call_conv();
-    for spec in BUILTIN_SPECS {
-        let sig = builtin_signature(pointer, call_conv, spec.params, spec.returns);
-        let id = module.declare_function(spec.symbol, Linkage::Import, &sig)?;
-        func_ids.insert(spec.symbol.to_owned(), id);
-    }
-
-    let mut declare = |symbol: &str, params: &[AbiParamKind], returns: AbiReturnKind| {
-        let sig = builtin_signature(pointer, call_conv, params, returns);
-        let id = module.declare_function(symbol, Linkage::Import, &sig)?;
-        func_ids.insert(symbol.to_owned(), id);
-        Ok::<(), cranelift_module::ModuleError>(())
-    };
-    declare(
-        SYM_EVENT_SUBSCRIBE,
-        &[AbiParamKind::Ptr, AbiParamKind::Ptr, AbiParamKind::Ptr],
-        AbiReturnKind::I64,
-    )?;
-    declare(
-        SYM_EVENT_UNSUBSCRIBE_FIRST,
-        &[AbiParamKind::Ptr, AbiParamKind::Ptr],
-        AbiReturnKind::I64,
-    )?;
-    declare(SYM_EVENT_LEN, &[AbiParamKind::Ptr], AbiReturnKind::I64)?;
-    declare(
-        SYM_EVENT_GET_HANDLER,
-        &[AbiParamKind::Ptr, AbiParamKind::Ptr],
-        AbiReturnKind::Ptr,
-    )?;
-
-    Ok(())
-}
-
-fn remap_external_names(
-    module: &ObjectModule,
-    ctx: &mut cranelift_codegen::Context,
-    func_ids: &HashMap<String, FuncId>,
-) -> AotResult<()> {
-    let mut func_remaps = Vec::new();
-    for (func_ref, ext_func) in ctx.func.dfg.ext_funcs.iter() {
-        let ExternalName::TestCase(name) = &ext_func.name else {
-            continue;
-        };
-        let symbol = String::from_utf8_lossy(name.raw()).to_string();
-        func_remaps.push((func_ref, symbol));
-    }
-    for (func_ref, symbol) in func_remaps {
-        let func_id = func_ids
-            .get(&symbol)
-            .copied()
-            .ok_or_else(|| AotError::MissingFunction {
-                name: symbol.clone(),
-            })?;
-        let user_ref = ctx.func.declare_imported_user_function(UserExternalName {
-            namespace: 0,
-            index: func_id.as_u32(),
-        });
-        ctx.func.dfg.ext_funcs[func_ref].name = ExternalName::user(user_ref);
-    }
-
-    let mut data_remaps = Vec::new();
-    for (gv, data) in ctx.func.global_values.iter() {
-        let cranelift_codegen::ir::GlobalValueData::Symbol { name, .. } = data else {
-            continue;
-        };
-        let ExternalName::TestCase(test_name) = name else {
-            continue;
-        };
-        let symbol = String::from_utf8_lossy(test_name.raw()).to_string();
-        data_remaps.push((gv, symbol));
-    }
-
-    for (gv, symbol) in data_remaps {
-        let id = module
-            .get_name(&symbol)
-            .ok_or_else(|| AotError::MissingFunction {
-                name: symbol.clone(),
-            })?;
-        let FuncOrDataId::Data(data_id) = id else {
-            return Err(AotError::MissingFunction { name: symbol });
-        };
-        let user_ref = ctx.func.declare_imported_user_function(UserExternalName {
-            namespace: 1,
-            index: data_id.as_u32(),
-        });
-        let cranelift_codegen::ir::GlobalValueData::Symbol { name, .. } =
-            &mut ctx.func.global_values[gv]
-        else {
-            return Err(AotError::InvalidRequest {
-                message: "expected symbol global value".to_owned(),
-            });
-        };
-        *name = ExternalName::user(user_ref);
-    }
-
-    Ok(())
 }

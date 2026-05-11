@@ -9,6 +9,7 @@ use crate::syntax::{Node, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// Parsed compilation unit: top-level items with optional leading doc comments per item.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct Program {
     #[ast(children)]
@@ -20,13 +21,16 @@ pub struct Program {
 impl Parsable for Program {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
-        let (items, leading_docs) = if let Some(item_list) =
-            pair.into_inner().find(|p| p.as_rule() == Rule::ItemList)
-        {
-            parse_doc_attached_items(item_list.into_inner().filter(|p| p.as_rule() == Rule::ItemWithDocs))?
-        } else {
-            (Vec::new(), Vec::new())
-        };
+        let (items, leading_docs) =
+            if let Some(item_list) = pair.into_inner().find(|p| p.as_rule() == Rule::ItemList) {
+                parse_doc_attached_items(
+                    item_list
+                        .into_inner()
+                        .filter(|p| p.as_rule() == Rule::ItemWithDocs),
+                )?
+            } else {
+                (Vec::new(), Vec::new())
+            };
 
         Ok(Spanned::new(
             Self {

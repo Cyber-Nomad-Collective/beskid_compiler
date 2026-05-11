@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 const ENV_CORELIB_SOURCE: &str = "BESKID_CORELIB_SOURCE";
@@ -7,17 +8,19 @@ fn main() {
 
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR set by Cargo"));
-    let candidates: Vec<PathBuf> = corelib_source_candidates(manifest_dir);
+    let candidates: Vec<PathBuf> = corelib_workspace_candidates(manifest_dir);
 
-    let corelib_dir = candidates
+    let corelib_workspace_dir = candidates
         .into_iter()
-        .find(|p| p.is_dir())
+        .find(|p| p.join("Workspace.proj").is_file() && p.join("beskid_corelib").is_dir())
         .unwrap_or_else(|| {
             panic!(
-                "beskid_cli: corelib sources not found. Expected `../../corelib/beskid_corelib` \
-             (the `corelib` Git submodule at the compiler repository root). \
-             Set BESKID_CORELIB_SOURCE to an absolute path to override. \
-             Hint: `git submodule update --init --recursive` from the compiler repo root."
+                "beskid_cli: corelib workspace not found. Expected `../../corelib` with \
+                 `Workspace.proj` plus `beskid_corelib/` (init the `compiler/corelib` submodule). \
+                 Set {} to an absolute path to the **workspace** directory (parent of \
+                 `beskid_corelib/`) to override. Hint: `git submodule update --init --recursive` \
+                 from the compiler repo root.",
+                ENV_CORELIB_SOURCE
             )
         });
 
@@ -25,37 +28,80 @@ fn main() {
     if dest.exists() {
         std::fs::remove_dir_all(&dest).expect("remove stale embedded_corelib");
     }
-    copy_dir_all(&corelib_dir, &dest).expect("copy corelib into OUT_DIR");
+    copy_corelib_workspace_for_embed(&corelib_workspace_dir, &dest).expect("copy corelib slice");
 
-    register_rerun_if_changed(&corelib_dir);
+    register_rerun_if_changed(&corelib_workspace_dir);
     println!("cargo:rerun-if-env-changed={ENV_CORELIB_SOURCE}");
 }
 
-fn corelib_source_candidates(manifest_dir: &Path) -> Vec<PathBuf> {
+fn corelib_workspace_candidates(manifest_dir: &Path) -> Vec<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(override_path) = std::env::var(ENV_CORELIB_SOURCE) {
         if !override_path.trim().is_empty() {
-            candidates.push(PathBuf::from(override_path));
+            let p = PathBuf::from(&override_path);
+            // Allow override to point at either workspace root or legacy beskid_corelib only.
+            if p.join("Workspace.proj").is_file() {
+                candidates.push(p);
+            } else if p.file_name().is_some_and(|n| n == "beskid_corelib")
+                && p.join("Project.proj").is_file()
+            {
+                if let Some(parent) = p.parent() {
+                    candidates.push(parent.to_path_buf());
+                }
+                candidates.push(p);
+            } else {
+                candidates.push(p);
+            }
         }
     }
-    candidates.push(manifest_dir.join("../../corelib/beskid_corelib"));
+    candidates.push(manifest_dir.join("../../corelib"));
     candidates
 }
 
-fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+fn copy_corelib_workspace_for_embed(src_workspace: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    let workspace_proj = src_workspace.join("Workspace.proj");
+    if workspace_proj.is_file() {
+        std::fs::copy(&workspace_proj, dst.join("Workspace.proj"))?;
+    }
+    copy_dir_for_embed(&src_workspace.join("packages"), &dst.join("packages"))?;
+    copy_dir_for_embed(
+        &src_workspace.join("beskid_corelib"),
+        &dst.join("beskid_corelib"),
+    )?;
+    Ok(())
+}
+
+fn copy_dir_for_embed(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
+        let name = entry.file_name();
+        if should_skip_embed_copy_component(&name) {
+            continue;
+        }
         let ty = entry.file_type()?;
         let from = entry.path();
-        let to = dst.join(entry.file_name());
+        let to = dst.join(&name);
         if ty.is_dir() {
-            copy_dir_all(&from, &to)?;
+            copy_dir_for_embed(&from, &to)?;
         } else {
             std::fs::copy(&from, &to)?;
         }
     }
     Ok(())
+}
+
+fn should_skip_embed_copy_component(name: &OsStr) -> bool {
+    matches!(
+        name,
+        n if n == ".git"
+            || n == "obj"
+            || n == ".beskid"
+            || n == "target"
+            || n == ".venv-ci"
+            || n == ".nox"
+    )
 }
 
 fn register_rerun_if_changed(dir: &Path) {
@@ -64,9 +110,15 @@ fn register_rerun_if_changed(dir: &Path) {
     };
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
+        let name = entry.file_name();
+        if name == ".git" || name == ".venv-ci" || name == ".nox" {
+            continue;
+        }
         if path.is_dir() {
-            register_rerun_if_changed(&path);
-        } else {
+            if name == "beskid_corelib" || name == "packages" {
+                register_rerun_if_changed(&path);
+            }
+        } else if path.is_file() {
             println!("cargo:rerun-if-changed={}", path.display());
         }
     }

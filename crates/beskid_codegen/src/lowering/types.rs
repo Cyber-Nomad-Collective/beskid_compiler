@@ -10,6 +10,7 @@ pub(crate) fn map_type_id_to_clif(
 ) -> Option<cranelift_codegen::ir::Type> {
     match type_result.types.get(type_id) {
         Some(TypeInfo::Primitive(primitive)) => map_primitive_to_clif(*primitive),
+        Some(TypeInfo::Array(_)) => Some(pointer_type()),
         Some(TypeInfo::Named(_))
         | Some(TypeInfo::GenericParam(_))
         | Some(TypeInfo::Applied { .. })
@@ -53,9 +54,11 @@ pub(crate) fn type_id_for_type(
             ResolvedType::Item(item_id) => find_named_type_id(type_result, *item_id),
             ResolvedType::Generic(_) => None,
         },
-        HirType::Array(inner) | HirType::Ref(inner) => {
-            type_id_for_type(resolution, type_result, inner)
+        HirType::Array(inner) => {
+            let inner_id = type_id_for_type(resolution, type_result, inner)?;
+            type_result.types.find_array_of(inner_id)
         }
+        HirType::Ref(inner) => type_id_for_type(resolution, type_result, inner),
         HirType::Function {
             return_type,
             parameters,

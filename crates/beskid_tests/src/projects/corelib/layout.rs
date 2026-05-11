@@ -1,4 +1,8 @@
-use super::{corelib_root, expected_corelib_files};
+use std::fs;
+
+use super::{
+    corelib_root, corelib_workspace_root, expected_corelib_workspace_sources, foundation_src,
+};
 
 #[test]
 fn checked_in_corelib_template_has_manifest_and_prelude() {
@@ -29,6 +33,21 @@ fn checked_in_corelib_template_is_resolved_from_corelib_submodule() {
 }
 
 #[test]
+fn checked_in_corelib_workspace_declares_workspace_manifest() {
+    let ws = corelib_workspace_root().join("Workspace.proj");
+    assert!(
+        ws.is_file(),
+        "missing corelib workspace manifest: {}",
+        ws.display()
+    );
+    let raw = std::fs::read_to_string(&ws).expect("read Workspace.proj");
+    assert!(
+        raw.contains("workspace {"),
+        "Workspace.proj should open a workspace block"
+    );
+}
+
+#[test]
 fn checked_in_corelib_template_declares_corelib_project_name() {
     let root = corelib_root();
     let manifest = std::fs::read_to_string(root.join("Project.proj")).expect("read manifest");
@@ -40,9 +59,9 @@ fn checked_in_corelib_template_declares_corelib_project_name() {
 
 #[test]
 fn checked_in_corelib_template_has_mvp_module_files() {
-    let root = corelib_root().join("src");
+    let root = corelib_workspace_root();
 
-    for relative in expected_corelib_files() {
+    for relative in expected_corelib_workspace_sources() {
         let path = root.join(relative);
         assert!(
             path.is_file(),
@@ -50,6 +69,36 @@ fn checked_in_corelib_template_has_mvp_module_files() {
             path.display()
         );
     }
+}
+
+#[test]
+fn compiler_sdk_syntax_node_files_track_inventory() {
+    let inv_path = super::compiler_sdk_src().join("Beskid/Compiler/Syntax/Nodes/_inventory.txt");
+    assert!(
+        inv_path.is_file(),
+        "missing syntax node inventory: {}",
+        inv_path.display()
+    );
+    let raw = fs::read_to_string(&inv_path).expect("read _inventory.txt");
+    let nodes_dir = inv_path.parent().expect("Nodes dir");
+    for line in raw.lines() {
+        let name = line.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let node_file = nodes_dir.join(format!("{name}.bd"));
+        assert!(
+            node_file.is_file(),
+            "inventory lists {name} but missing {}",
+            node_file.display()
+        );
+    }
+}
+
+#[test]
+fn checked_in_corelib_foundation_package_has_manifest() {
+    let p = foundation_src().parent().expect("src").join("Project.proj");
+    assert!(p.is_file(), "missing foundation manifest: {}", p.display());
 }
 
 #[test]

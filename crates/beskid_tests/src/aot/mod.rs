@@ -1,3 +1,5 @@
+//! End-to-end AOT tests: codegen artifact → object / link, entrypoints, runtime strategies.
+
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -25,6 +27,7 @@ mod object_build;
 mod runtime_symbols;
 mod standalone;
 
+/// Isolated temp directory for AOT outputs (distinct prefix from `test_harness::temp_case_dir`).
 fn temp_case_dir(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -39,10 +42,12 @@ fn temp_case_dir(name: &str) -> PathBuf {
     dir
 }
 
+/// Minimal valid program source for default AOT samples.
 fn sample_program() -> &'static str {
     "unit main() { }"
 }
 
+/// Parse `sample_program`, run analysis, HIR, resolve, typecheck, and lower to a codegen artifact.
 fn lower_sample_artifact() -> beskid_codegen::CodegenArtifact {
     let source = sample_program();
     let mut pairs = BeskidParser::parse(Rule::Program, source).expect("parse program");

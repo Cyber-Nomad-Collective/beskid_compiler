@@ -1,16 +1,57 @@
 //! Opinionated pretty-printing: `Emit` trait and formatting context (mirrors bsharp `emit_trait.rs`, without JSONL instrumentation).
 
 use crate::format::policy;
-use crate::syntax::{Block, Program, Spanned, Statement};
+use crate::syntax::{Block, Program, SpanInfo, Spanned, Statement};
 use std::fmt::{self, Write};
 
 #[derive(Debug)]
 pub struct EmitError(pub fmt::Error);
 
+impl fmt::Display for EmitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for EmitError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
 impl From<fmt::Error> for EmitError {
     fn from(e: fmt::Error) -> Self {
         EmitError(e)
     }
+}
+
+/// Rich diagnostic for a pretty-printer failure (for [`crate::MietteReportError`] / CLI).
+pub fn emit_error_semantic_diagnostic(
+    source_name: &str,
+    source: &str,
+    err: EmitError,
+) -> crate::analysis::diagnostics::SemanticDiagnostic {
+    use crate::analysis::diagnostics::{Severity, make_diagnostic};
+    let end = if source.is_empty() {
+        0
+    } else {
+        1.min(source.len())
+    };
+    make_diagnostic(
+        source_name,
+        source,
+        SpanInfo {
+            start: 0,
+            end,
+            line_col_start: (1, 1),
+            line_col_end: (1, 1),
+        },
+        format!("format error: {err}"),
+        "format",
+        None,
+        Some("format".to_string()),
+        Severity::Error,
+    )
 }
 
 #[derive(Default)]
@@ -99,10 +140,12 @@ impl EmitCtx {
     }
 }
 
+/// Pretty-print one syntactic construct into `w` using indentation and spacing policy in `cx`.
 pub trait Emit {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError>;
 }
 
+/// Stateless formatter: delegates to [`Emit`] impls (typically the syntax AST).
 pub struct Emitter;
 
 impl Default for Emitter {

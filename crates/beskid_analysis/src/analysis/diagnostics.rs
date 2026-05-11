@@ -1,10 +1,14 @@
 #![allow(unused_assignments)]
+//! [`SemanticDiagnostic`] (miette-backed) and helpers for stable codes, spans, and severity.
+
+use std::fmt;
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use thiserror::Error;
 
 use crate::syntax::SpanInfo;
 
+/// Diagnostic band for rules and parse/project adapters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     Error,
@@ -12,6 +16,7 @@ pub enum Severity {
     Note,
 }
 
+/// One issue anchored in source with optional help text and machine-readable `code`.
 #[derive(Error, Diagnostic, Debug, Clone)]
 #[error("{message}")]
 pub struct SemanticDiagnostic {
@@ -25,6 +30,37 @@ pub struct SemanticDiagnostic {
     pub help: Option<String>,
     pub code: Option<String>,
     pub severity: Severity,
+}
+
+/// Wraps a [`SemanticDiagnostic`] so it can be stored as the root payload of an [`anyhow::Error`]
+/// while remaining downcastable for CLI / tooling that want a structured [`miette::Report`].
+#[derive(Debug, Clone)]
+pub struct MietteReportError(SemanticDiagnostic);
+
+impl MietteReportError {
+    pub fn new(diagnostic: SemanticDiagnostic) -> Self {
+        Self(diagnostic)
+    }
+
+    pub fn diagnostic(&self) -> &SemanticDiagnostic {
+        &self.0
+    }
+
+    pub fn into_diagnostic(self) -> SemanticDiagnostic {
+        self.0
+    }
+}
+
+impl fmt::Display for MietteReportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", miette::Report::new(self.0.clone()))
+    }
+}
+
+impl std::error::Error for MietteReportError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.0.source()
+    }
 }
 
 pub fn span_to_sourcespan(span: SpanInfo) -> SourceSpan {
@@ -77,4 +113,38 @@ macro_rules! diag {
     (@help) => { None };
     (@severity $severity:expr) => { $severity };
     (@severity) => { $crate::analysis::diagnostics::Severity::Error };
+}
+
+#[cfg(test)]
+mod miette_report_error_tests {
+    use super::*;
+
+    #[test]
+    fn miette_report_error_anyhow_roundtrip() {
+        let diagnostic = make_diagnostic(
+            "test.bd",
+            "hello",
+            SpanInfo {
+                start: 0,
+                end: 1,
+                line_col_start: (1, 1),
+                line_col_end: (1, 2),
+            },
+            "example diagnostic",
+            "here",
+            None,
+            Some("E9999".to_string()),
+            Severity::Error,
+        );
+        let wrapped = MietteReportError::new(diagnostic.clone());
+        let anyhow_err = anyhow::Error::new(wrapped);
+        let downcast = anyhow_err
+            .downcast_ref::<MietteReportError>()
+            .expect("MietteReportError should round-trip through anyhow");
+        assert_eq!(downcast.diagnostic().message, diagnostic.message);
+        assert_eq!(
+            downcast.diagnostic().code.as_deref(),
+            diagnostic.code.as_deref()
+        );
+    }
 }

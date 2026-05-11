@@ -7,6 +7,7 @@ use crate::syntax::{Expression, Path, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// Path used as a value expression (name resolution happens later).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct PathExpression {
     #[ast(child)]

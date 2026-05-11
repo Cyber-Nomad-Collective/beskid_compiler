@@ -9,6 +9,7 @@ use crate::syntax::{Field, Identifier, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// Single enum variant and its field list.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
     #[ast(child)]

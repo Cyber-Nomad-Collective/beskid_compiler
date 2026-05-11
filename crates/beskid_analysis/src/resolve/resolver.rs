@@ -14,6 +14,7 @@ use super::module_graph::ModuleGraph;
 use super::tables::{ResolutionTables, ResolvedType, ResolvedValue};
 use crate::builtins::builtin_specs;
 
+/// Two-pass resolver: collect items and module graph, then resolve references and fill [`ResolutionTables`].
 #[derive(Debug, Default)]
 pub struct Resolver {
     items: Vec<ItemInfo>,
@@ -48,6 +49,7 @@ impl Resolver {
         Self::default()
     }
 
+    /// Run collection and resolution; on success moves tables and graph into [`Resolution`].
     pub fn resolve_program(&mut self, program: &Spanned<HirProgram>) -> ResolveResult<Resolution> {
         let file_scoped_module_index = file_scoped_module_index(program);
         self.current_module = file_scoped_module_path(program)
@@ -173,7 +175,7 @@ impl Resolver {
                 ItemKind::Use,
                 def.node.visibility.node,
             ),
-            HirItem::AttributeDeclaration(_) => {
+            HirItem::AttributeDeclaration(_) | HirItem::MetaDefinition(_) => {
                 return;
             }
         };
@@ -400,6 +402,13 @@ impl Resolver {
                 }
             }
             HirItem::AttributeDeclaration(_) => {}
+            HirItem::MetaDefinition(def) => {
+                self.push_scope();
+                for entry in &def.node.entries {
+                    self.resolve_expression(&entry.node.value);
+                }
+                self.pop_scope();
+            }
             HirItem::ModuleDeclaration(_) | HirItem::UseDeclaration(_) => {}
         }
     }
@@ -850,6 +859,7 @@ impl Resolver {
     }
 }
 
+/// Stable [`ItemId`] list, module graph, and span maps produced by [`Resolver::resolve_program`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolution {
     pub items: Vec<ItemInfo>,

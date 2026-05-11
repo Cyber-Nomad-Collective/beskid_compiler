@@ -1,3 +1,5 @@
+//! Expression AST: operators, calls, control-flow expressions, literals, and patterns.
+
 pub mod assign_expression;
 pub mod binary_expression;
 pub mod block_expression;

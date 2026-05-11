@@ -1,5 +1,6 @@
 use crate::gc::with_current_root;
 
+/// Allocation call counter from `crate::gc::RuntimeState::alloc_calls`.
 #[unsafe(no_mangle)]
 #[cfg(feature = "metrics")]
 pub extern "C-unwind" fn rt_metrics_alloc_calls() -> usize {
@@ -10,6 +11,7 @@ pub extern "C-unwind" fn rt_metrics_alloc_calls() -> usize {
     out
 }
 
+/// Bytes requested across `alloc` calls (`crate::gc::RuntimeState::alloc_bytes`).
 #[unsafe(no_mangle)]
 #[cfg(feature = "metrics")]
 pub extern "C-unwind" fn rt_metrics_alloc_bytes() -> usize {
@@ -20,6 +22,7 @@ pub extern "C-unwind" fn rt_metrics_alloc_bytes() -> usize {
     out
 }
 
+/// `str_concat` invocation count.
 #[unsafe(no_mangle)]
 #[cfg(feature = "metrics")]
 pub extern "C-unwind" fn rt_metrics_str_concat_calls() -> usize {
@@ -30,6 +33,7 @@ pub extern "C-unwind" fn rt_metrics_str_concat_calls() -> usize {
     out
 }
 
+/// Bytes copied by `str_concat`.
 #[unsafe(no_mangle)]
 #[cfg(feature = "metrics")]
 pub extern "C-unwind" fn rt_metrics_str_concat_bytes() -> usize {
@@ -40,6 +44,7 @@ pub extern "C-unwind" fn rt_metrics_str_concat_bytes() -> usize {
     out
 }
 
+/// `event_subscribe` invocation count.
 #[unsafe(no_mangle)]
 #[cfg(feature = "metrics")]
 pub extern "C-unwind" fn rt_metrics_event_subscribe_calls() -> usize {
@@ -50,6 +55,7 @@ pub extern "C-unwind" fn rt_metrics_event_subscribe_calls() -> usize {
     out
 }
 
+/// `event_unsubscribe_first` invocation count.
 #[unsafe(no_mangle)]
 #[cfg(feature = "metrics")]
 pub extern "C-unwind" fn rt_metrics_event_unsubscribe_calls() -> usize {
@@ -60,6 +66,7 @@ pub extern "C-unwind" fn rt_metrics_event_unsubscribe_calls() -> usize {
     out
 }
 
+/// `event_get_handler` invocation count.
 #[unsafe(no_mangle)]
 #[cfg(feature = "metrics")]
 pub extern "C-unwind" fn rt_metrics_event_get_handler_calls() -> usize {
@@ -70,6 +77,7 @@ pub extern "C-unwind" fn rt_metrics_event_get_handler_calls() -> usize {
     out
 }
 
+/// Bytes reserved in the arena allocator (`heap_total_bytes`).
 #[unsafe(no_mangle)]
 #[cfg(feature = "metrics")]
 pub extern "C-unwind" fn rt_metrics_heap_total_bytes() -> usize {
@@ -80,6 +88,7 @@ pub extern "C-unwind" fn rt_metrics_heap_total_bytes() -> usize {
     out
 }
 
+/// Bytes considered live (`heap_live_bytes`).
 #[unsafe(no_mangle)]
 #[cfg(feature = "metrics")]
 pub extern "C-unwind" fn rt_metrics_heap_live_bytes() -> usize {
@@ -90,6 +99,7 @@ pub extern "C-unwind" fn rt_metrics_heap_live_bytes() -> usize {
     out
 }
 
+/// `heap_total_bytes - heap_live_bytes` (saturating).
 #[unsafe(no_mangle)]
 #[cfg(feature = "metrics")]
 pub extern "C-unwind" fn rt_metrics_heap_fragmentation_bytes() -> usize {

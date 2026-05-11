@@ -1,17 +1,21 @@
+//! Parameter/return classification for builtins shared by codegen (`BUILTIN_SPECS`) and JIT hosts.
+
 use crate::symbols::{
-    SYM_ALLOC, SYM_ARRAY_NEW, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT,
+    SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT,
     SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_PTR,
     SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR,
-    SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, SYM_TEST_BYTES_LEN,
-    SYM_TEST_BYTES_PTR,
+    SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE,
+    SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR,
 };
 
+/// Scalar kinds used when building Cranelift signatures for builtins (`Ptr` vs fixed `I64`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbiParamKind {
     Ptr,
     I64,
 }
 
+/// Builtin return slot shape (including [`AbiReturnKind::Never`] for diverging calls).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbiReturnKind {
     Void,
@@ -21,6 +25,7 @@ pub enum AbiReturnKind {
     Never,
 }
 
+/// One importable runtime function: exported `symbol` string and Cranelift ABI shape.
 #[derive(Debug, Clone, Copy)]
 pub struct BuiltinFnSpec {
     pub symbol: &'static str,
@@ -34,6 +39,7 @@ const I64_ONLY: [AbiParamKind; 1] = [AbiParamKind::I64];
 const I64_PTR: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::Ptr];
 const I64_I64: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::I64];
 
+/// Canonical list of builtin imports (alloc, strings, GC hooks, syscalls, test helpers, …).
 pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
     BuiltinFnSpec {
         symbol: SYM_ALLOC,
@@ -54,6 +60,11 @@ pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
         symbol: SYM_ARRAY_NEW,
         params: &PTR_PTR,
         returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_ARRAY_LEN,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::I64,
     },
     BuiltinFnSpec {
         symbol: SYM_PANIC,

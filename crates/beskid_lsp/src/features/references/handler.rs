@@ -4,6 +4,7 @@ use crate::features::project_manifest::api as project_manifest;
 use crate::position::offset_range_to_lsp;
 use crate::session::store::Document;
 
+/// Find references (optionally including the declaration) for manifest tokens or Beskid symbols.
 pub fn handle_references(
     uri: &Uri,
     doc: &Document,

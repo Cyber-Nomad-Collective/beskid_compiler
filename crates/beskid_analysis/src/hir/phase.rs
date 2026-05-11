@@ -1,11 +1,13 @@
+//! Phase-parameterized AST vs HIR: [`Phase`] maps each syntactic slot to either syntax or HIR types.
+
 use crate::syntax::{
     AssignExpression, AttributeDeclaration, BinaryExpression, BlockExpression, BreakStatement,
     CallExpression, ContinueStatement, ContractDefinition, EnumConstructorExpression,
     EnumDefinition, ExpressionStatement, ForStatement, FunctionDefinition, GroupedExpression,
     IfStatement, InlineModule, LambdaExpression, LetStatement, LiteralExpression, MatchExpression,
-    MemberExpression, MethodDefinition, ModuleDeclaration, PathExpression, ReturnStatement,
-    StructLiteralExpression, TestDefinition, TryExpression, TypeDefinition, UnaryExpression,
-    UseDeclaration, WhileStatement,
+    MemberExpression, MetaDefinition, MethodDefinition, ModuleDeclaration, PathExpression,
+    ReturnStatement, StructLiteralExpression, TestDefinition, TryExpression, TypeDefinition,
+    UnaryExpression, UseDeclaration, WhileStatement,
 };
 
 use super::{
@@ -13,12 +15,13 @@ use super::{
     HirCallExpression, HirContinueStatement, HirContractDefinition, HirEnumConstructorExpression,
     HirEnumDefinition, HirExpressionStatement, HirForStatement, HirFunctionDefinition,
     HirGroupedExpression, HirIfStatement, HirInlineModule, HirLambdaExpression, HirLetStatement,
-    HirLiteralExpression, HirMatchExpression, HirMemberExpression, HirMethodDefinition,
-    HirModuleDeclaration, HirPathExpression, HirReturnStatement, HirStructLiteralExpression,
-    HirTestDefinition, HirTryExpression, HirTypeDefinition, HirUnaryExpression, HirUseDeclaration,
-    HirWhileStatement, item::HirAttributeDeclaration,
+    HirLiteralExpression, HirMatchExpression, HirMemberExpression, HirMetaDefinition,
+    HirMethodDefinition, HirModuleDeclaration, HirPathExpression, HirReturnStatement,
+    HirStructLiteralExpression, HirTestDefinition, HirTryExpression, HirTypeDefinition,
+    HirUnaryExpression, HirUseDeclaration, HirWhileStatement, item::HirAttributeDeclaration,
 };
 
+/// Type-level association between one program shape (AST or HIR) and the concrete types of items and statements.
 pub trait Phase {
     type FunctionDefinition;
     type MethodDefinition;
@@ -26,6 +29,7 @@ pub trait Phase {
     type EnumDefinition;
     type ContractDefinition;
     type TestDefinition;
+    type MetaDefinition;
     type AttributeDeclaration;
     type ModuleDeclaration;
     type InlineModule;
@@ -56,9 +60,11 @@ pub trait Phase {
     type LambdaExpression;
 }
 
+/// Marker for [`Program`](super::program::Program) nodes that still use syntax tree types.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AstPhase;
 
+/// Marker for [`Program`](super::program::Program) after [`super::lowering::lower_program`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct HirPhase;
 
@@ -69,6 +75,7 @@ impl Phase for AstPhase {
     type EnumDefinition = EnumDefinition;
     type ContractDefinition = ContractDefinition;
     type TestDefinition = TestDefinition;
+    type MetaDefinition = MetaDefinition;
     type AttributeDeclaration = AttributeDeclaration;
     type ModuleDeclaration = ModuleDeclaration;
     type InlineModule = InlineModule;
@@ -106,6 +113,7 @@ impl Phase for HirPhase {
     type EnumDefinition = HirEnumDefinition;
     type ContractDefinition = HirContractDefinition;
     type TestDefinition = HirTestDefinition;
+    type MetaDefinition = HirMetaDefinition;
     type AttributeDeclaration = HirAttributeDeclaration;
     type ModuleDeclaration = HirModuleDeclaration;
     type InlineModule = HirInlineModule;

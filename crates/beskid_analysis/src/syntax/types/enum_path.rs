@@ -2,6 +2,7 @@ use crate::syntax::{Identifier, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// Two-part path naming an enum variant (`TypeName.Variant`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct EnumPath {
     #[ast(child)]

@@ -1,3 +1,5 @@
+//! Install or refresh the bundled Beskid corelib snapshot (user cache or `BESKID_CORELIB_ROOT`).
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -7,15 +9,17 @@ use anyhow::{Context, Result};
 use include_dir::{Dir, include_dir};
 use semver::Version;
 
-// Populated by build.rs from ../../corelib/beskid_corelib.
+// Populated by build.rs from ../../corelib (workspace: Workspace.proj + packages + beskid_corelib).
 static EMBEDDED_CORELIB: Dir<'_> = include_dir!("$OUT_DIR/embedded_corelib");
 
+/// Outcome of [`ensure_bundled_corelib`]: install root, embedded version string, and whether files were refreshed.
 pub struct CorelibProvisioning {
     pub root: PathBuf,
     pub version: String,
     pub updated: bool,
 }
 
+/// Ensure the embedded corelib template is materialized when newer than any existing install.
 pub fn ensure_bundled_corelib() -> Result<CorelibProvisioning> {
     let target_root = corelib_install_root()?;
     let bundled_version = embedded_version()?;
@@ -91,8 +95,10 @@ fn embedded_version() -> Result<Version> {
     }
 
     let project = EMBEDDED_CORELIB
-        .get_file("Project.proj")
-        .ok_or_else(|| anyhow::anyhow!("embedded corelib is missing Project.proj"))?;
+        .get_file("beskid_corelib/Project.proj")
+        .ok_or_else(|| {
+            anyhow::anyhow!("embedded corelib is missing beskid_corelib/Project.proj")
+        })?;
     parse_project_manifest_version(
         project.contents_utf8().unwrap_or_default(),
         "embedded Project.proj",
@@ -100,22 +106,31 @@ fn embedded_version() -> Result<Version> {
 }
 
 fn installed_version(root: &Path) -> Result<Option<Version>> {
-    let package_path = root.join("package.json");
-    if package_path.is_file() {
-        let content = fs::read_to_string(&package_path).with_context(|| {
-            format!(
-                "read installed corelib package file {}",
-                package_path.display()
-            )
-        })?;
-        return Ok(Some(parse_package_json_version(
-            &content,
-            "installed package.json",
-        )?));
+    for package_path in [
+        root.join("beskid_corelib/package.json"),
+        root.join("package.json"),
+    ] {
+        if package_path.is_file() {
+            let content = fs::read_to_string(&package_path).with_context(|| {
+                format!(
+                    "read installed corelib package file {}",
+                    package_path.display()
+                )
+            })?;
+            return Ok(Some(parse_package_json_version(
+                &content,
+                "installed package.json",
+            )?));
+        }
     }
 
-    let project_path = root.join("Project.proj");
-    if project_path.is_file() {
+    for project_path in [
+        root.join("beskid_corelib/Project.proj"),
+        root.join("Project.proj"),
+    ] {
+        if !project_path.is_file() {
+            continue;
+        }
         let content = fs::read_to_string(&project_path).with_context(|| {
             format!(
                 "read installed corelib project manifest {}",
@@ -142,9 +157,8 @@ fn parse_package_json_version(content: &str, source: &str) -> Result<Version> {
 }
 
 fn parse_project_manifest_version(content: &str, source: &str) -> Result<Version> {
-    let manifest = beskid_analysis::projects::parse_manifest(content).with_context(|| {
-        format!("parse project manifest for {source}")
-    })?;
+    let manifest = beskid_analysis::projects::parse_manifest(content)
+        .with_context(|| format!("parse project manifest for {source}"))?;
     let raw = manifest.project.version.as_str();
     Version::parse(raw).with_context(|| format!("invalid semver `{raw}` in {source}"))
 }

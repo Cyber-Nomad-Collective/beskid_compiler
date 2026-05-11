@@ -279,6 +279,7 @@ fn top_level_kinds(items: &[beskid_analysis::syntax::Spanned<Node>]) -> Vec<&'st
             Node::ModuleDeclaration(_) => "module_decl",
             Node::InlineModule(_) => "inline_module",
             Node::UseDeclaration(_) => "use",
+            Node::MetaDefinition(_) => "meta",
         })
         .collect()
 }

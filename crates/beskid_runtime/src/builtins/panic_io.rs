@@ -122,6 +122,7 @@ fn read_fd_bytes(fd: i64, max_bytes: i64) -> *mut BeskidStr {
     str_new(buffer, read)
 }
 
+/// Abort with a fixed message (payload is currently ignored).
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn panic(_msg_ptr: *const u8, _msg_len: usize) -> ! {
     panic!("beskid panic");
@@ -149,6 +150,7 @@ pub extern "C-unwind" fn syscall_read(fd: i64, max_bytes: i64) -> *mut BeskidStr
     read_fd_bytes(fd, max_bytes)
 }
 
+/// Abort after decoding UTF-8 from `value` (falls back to a placeholder on invalid UTF-8).
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn panic_str(value: *const BeskidStr) -> ! {
     if value.is_null() {

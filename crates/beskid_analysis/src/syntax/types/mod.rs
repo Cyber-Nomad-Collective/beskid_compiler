@@ -1,3 +1,5 @@
+//! Type syntax: paths, parameters, fields, and Beskid type expressions.
+
 pub mod enum_path;
 pub mod field;
 pub mod parameter;

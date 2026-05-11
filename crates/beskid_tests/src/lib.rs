@@ -1,8 +1,15 @@
+//! Integration tests for the Beskid compiler workspace (`cargo test -p beskid_tests`).
+//!
+//! Modules are `#[cfg(test)]`-gated helpers and suites: parsing, analysis, AOT, projects, LSP, and more.
+
 #[cfg(test)]
 pub mod format;
 
 #[cfg(test)]
 mod doc_tests;
+
+#[cfg(test)]
+mod test_harness;
 
 #[cfg(test)]
 pub mod parsing;

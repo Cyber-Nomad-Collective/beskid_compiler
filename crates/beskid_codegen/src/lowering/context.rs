@@ -5,11 +5,15 @@ use beskid_analysis::types::TypeId;
 use cranelift_codegen::ir::Function;
 use std::collections::HashMap;
 
+/// Result of lowering a single node or expression.
 pub type CodegenResult<T> = Result<T, CodegenError>;
 
+/// One user function lowered to a standalone Cranelift [`Function`] (still uses `TestCase` extern names until linking).
 #[derive(Debug, Clone)]
 pub struct LoweredFunction {
+    /// Beskid symbol name used when declaring and defining this function on the module.
     pub name: String,
+    /// CLIF body and signature for `name`.
     pub function: Function,
 }
 
@@ -35,12 +39,14 @@ pub struct CodegenArtifact {
     pub extern_imports: Vec<ExternImport>,
 }
 
+/// Key for a monomorphized function instance (`item` plus concrete type `args`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MonomorphKey {
     pub item: ItemId,
     pub args: Vec<TypeId>,
 }
 
+/// Mutable accumulator while lowering: emitted functions, layouts, string pool, and monomorph cache.
 #[derive(Default)]
 pub struct CodegenContext {
     pub functions_emitted: usize,
@@ -53,10 +59,12 @@ pub struct CodegenContext {
 }
 
 impl CodegenContext {
+    /// Empty context (no functions or literals yet).
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Compute or return cached [`crate::lowering::descriptor::TypeLayout`] for `type_id`.
     pub fn type_layout(
         &mut self,
         type_result: &beskid_analysis::types::TypeResult,
@@ -69,6 +77,7 @@ impl CodegenContext {
         )
     }
 
+    /// Compute or return cached [`crate::lowering::descriptor::TypeDescriptorData`] for runtime metadata emission.
     pub fn type_descriptor(
         &mut self,
         type_result: &beskid_analysis::types::TypeResult,
@@ -83,6 +92,7 @@ impl CodegenContext {
         Some(descriptor)
     }
 
+    /// Deduplicating pool for string literal globals; returns a stable symbol name for `bytes`.
     pub fn intern_string_literal(&mut self, bytes: &[u8]) -> String {
         for (symbol, data) in &self.string_literals {
             if data.as_slice() == bytes {

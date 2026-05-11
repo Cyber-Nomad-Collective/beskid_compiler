@@ -1,3 +1,5 @@
+//! [`Lowerable`] implementations and [`lower_program`] driver.
+
 use crate::lowering::cast_intent::validate_cast_intents;
 use crate::lowering::context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport};
 use crate::lowering::function::{lower_function, lower_method, lower_test};
@@ -10,10 +12,19 @@ use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use std::collections::HashMap;
 
+/// HIR (or sub-) node that can be lowered with a specific context type `Ctx`.
 pub trait Lowerable<Ctx>: Sized {
     type Output;
 
     fn lower(node: &Spanned<Self>, ctx: &mut Ctx) -> CodegenResult<Self::Output>;
+}
+
+/// Dispatch to [`Lowerable::lower`] for the concrete node type behind `T`.
+pub fn lower_node<T, Ctx>(node: &Spanned<T>, ctx: &mut Ctx) -> CodegenResult<T::Output>
+where
+    T: Lowerable<Ctx>,
+{
+    T::lower(node, ctx)
 }
 
 fn collect_function_defs<'a>(
@@ -79,13 +90,7 @@ fn lower_function_items(
     }
 }
 
-pub fn lower_node<T, Ctx>(node: &Spanned<T>, ctx: &mut Ctx) -> CodegenResult<T::Output>
-where
-    T: Lowerable<Ctx>,
-{
-    T::lower(node, ctx)
-}
-
+/// Lower an entire [`HirProgram`]: validates cast intents, precomputes named type descriptors, lowers items, collects extern imports.
 pub fn lower_program(
     program: &Spanned<HirProgram>,
     resolution: &Resolution,

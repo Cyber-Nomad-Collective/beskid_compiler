@@ -1,32 +1,27 @@
+//! `beskid doc` — emit `api.json` and `index.md` API documentation for resolved sources.
+
 use anyhow::{Context, Result};
+use beskid_analysis::doc::{API_JSON_SCHEMA_VERSION, ApiDocItem, ApiDocRoot, ApiLocation};
 use beskid_analysis::hir::HirVisibility;
 use beskid_analysis::services;
 use beskid_analysis::syntax::SpanInfo;
 use clap::Args;
-use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+
+use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
 #[derive(Args, Debug)]
 pub struct DocArgs {
     /// Beskid source file (same resolution as `analyze` when combined with `--project`)
     pub input: Option<PathBuf>,
 
-    #[arg(long)]
-    pub project: Option<PathBuf>,
+    #[command(flatten)]
+    pub project: ProjectResolveArgs,
 
-    #[arg(long)]
-    pub target: Option<String>,
-
-    #[arg(long = "workspace-member")]
-    pub workspace_member: Option<String>,
-
-    #[arg(long)]
-    pub frozen: bool,
-
-    #[arg(long)]
-    pub locked: bool,
+    #[command(flatten)]
+    pub lockfile: LockfilePolicyArgs,
 
     /// Output directory for `api.json` and `index.md`
     #[arg(long, default_value = "doc-out")]
@@ -35,11 +30,8 @@ pub struct DocArgs {
 
 #[derive(Clone, Debug)]
 struct DocEntry {
-    id: Option<usize>,
     qualified_name: String,
     kind: String,
-    visibility: Option<String>,
-    location: LocationJson,
     doc_markdown: Option<String>,
 }
 
@@ -82,57 +74,93 @@ fn location_for_byte_range(source: &str, file: &str, start: usize, end: usize) -
     location_for_span(source, file, &span)
 }
 
+/// Resolve, analyze, and write API docs into `args.out`.
 pub fn execute(args: DocArgs) -> Result<()> {
     let resolved = services::resolve_input(
         args.input.as_ref(),
-        args.project.as_ref(),
-        args.target.as_deref(),
-        args.workspace_member.as_deref(),
-        args.frozen,
-        args.locked,
+        args.project.project.as_ref(),
+        args.project.target.as_deref(),
+        args.project.workspace_member.as_deref(),
+        args.lockfile.frozen,
+        args.lockfile.locked,
     )?;
     let program = services::parse_program_with_source_name(
         &resolved.source_path.display().to_string(),
         &resolved.source,
     )
     .with_context(|| format!("parse {}", resolved.source_path.display()))?;
-    let snap = services::build_document_analysis(&program);
+    let snap = services::build_document_analysis(
+        &program,
+        &resolved.source_path.display().to_string(),
+        &resolved.source,
+    );
 
     let source_path_str = resolved.source_path.to_string_lossy().into_owned();
 
     fs::create_dir_all(&args.out).with_context(|| format!("create {}", args.out.display()))?;
 
     let mut entries: Vec<DocEntry> = Vec::new();
+    let mut api_items: Vec<ApiDocItem> = Vec::new();
     if let Some(res) = snap.resolution.as_ref() {
         for item in &res.items {
-            let doc_markdown = snap
-                .item_docs
-                .get(item.id.0)
-                .and_then(|slot| slot.as_ref())
-                .map(|d| d.markdown.clone());
+            let slot = snap.item_docs.get(item.id.0).and_then(|x| x.as_ref());
+            let doc_markdown = slot
+                .map(|d| d.markdown.clone())
+                .filter(|s| !s.trim().is_empty());
+            let doc = slot.and_then(|d| d.structured.clone());
+            let loc = location_for_span(&resolved.source, &source_path_str, &item.span);
             entries.push(DocEntry {
-                id: Some(item.id.0),
                 qualified_name: item.name.clone(),
                 kind: item.kind.as_stable_doc_kind().to_string(),
+                doc_markdown: doc_markdown.clone(),
+            });
+            api_items.push(ApiDocItem {
+                id: Some(item.id.0),
+                qualified_name: item.name.clone(),
+                name: item.name.clone(),
+                kind: item.kind.as_stable_doc_kind().to_string(),
                 visibility: Some(visibility_stable(item.visibility).to_string()),
-                location: location_for_span(&resolved.source, &source_path_str, &item.span),
+                location: ApiLocation {
+                    file: loc.file,
+                    start_line: loc.start_line,
+                    start_column: loc.start_column,
+                    end_line: loc.end_line,
+                    end_column: loc.end_column,
+                },
                 doc_markdown,
+                doc,
+                controls: vec![],
             });
         }
     } else {
         for symbol in services::collect_document_symbols(&snap) {
+            let loc = location_for_byte_range(
+                &resolved.source,
+                &source_path_str,
+                symbol.selection_start,
+                symbol.selection_end,
+            );
             entries.push(DocEntry {
+                qualified_name: symbol.name.clone(),
+                kind: services::symbol_kind_name(symbol.kind).to_string(),
+                doc_markdown: None,
+            });
+            api_items.push(ApiDocItem {
                 id: None,
-                qualified_name: symbol.name,
+                qualified_name: symbol.name.clone(),
+                name: symbol.name.clone(),
                 kind: services::symbol_kind_name(symbol.kind).to_string(),
                 visibility: None,
-                location: location_for_byte_range(
-                    &resolved.source,
-                    &source_path_str,
-                    symbol.selection_start,
-                    symbol.selection_end,
-                ),
+                location: ApiLocation {
+                    file: loc.file,
+                    start_line: loc.start_line,
+                    start_column: loc.start_column,
+                    end_line: loc.end_line,
+                    end_column: loc.end_column,
+                },
                 doc_markdown: None,
+                doc: None,
+                controls: vec![],
             });
         }
     }
@@ -141,33 +169,18 @@ pub fn execute(args: DocArgs) -> Result<()> {
             .cmp(&b.qualified_name)
             .then(a.kind.cmp(&b.kind))
     });
-
-    let mut items_json = Vec::new();
-    for entry in &entries {
-        let loc = &entry.location;
-        items_json.push(json!({
-            "id": entry.id,
-            "qualifiedName": entry.qualified_name,
-            "name": entry.qualified_name,
-            "kind": entry.kind,
-            "visibility": entry.visibility,
-            "location": {
-                "file": loc.file,
-                "startLine": loc.start_line,
-                "startColumn": loc.start_column,
-                "endLine": loc.end_line,
-                "endColumn": loc.end_column,
-            },
-            "doc_markdown": entry.doc_markdown,
-            "controls": [],
-        }));
-    }
-    let api = json!({
-        "schemaVersion": 1,
-        "generator": concat!("beskid-cli ", env!("CARGO_PKG_VERSION")),
-        "source": source_path_str,
-        "items": items_json,
+    api_items.sort_by(|a, b| {
+        a.qualified_name
+            .cmp(&b.qualified_name)
+            .then(a.kind.cmp(&b.kind))
     });
+
+    let api = ApiDocRoot {
+        schema_version: API_JSON_SCHEMA_VERSION,
+        generator: format!("beskid-cli {}", env!("CARGO_PKG_VERSION")),
+        source: source_path_str,
+        items: api_items,
+    };
     fs::write(
         args.out.join("api.json"),
         serde_json::to_string_pretty(&api).context("serialize api.json")?,
@@ -234,16 +247,24 @@ type User {
 
         execute(DocArgs {
             input: Some(source_path.clone()),
-            project: None,
-            target: None,
-            workspace_member: None,
-            frozen: false,
-            locked: false,
+            project: crate::project_args::ProjectResolveArgs {
+                project: None,
+                target: None,
+                workspace_member: None,
+            },
+            lockfile: crate::project_args::LockfilePolicyArgs {
+                frozen: false,
+                locked: false,
+            },
             out: out_path.clone(),
         })
         .expect("execute doc");
 
         let api = std::fs::read_to_string(out_path.join("api.json")).expect("read api.json");
+        assert!(
+            api.contains("\"schemaVersion\": 2"),
+            "api.json should declare schema v2: {api}"
+        );
         assert!(
             api.contains("Display name of user."),
             "api.json should include member doc markdown: {api}"
@@ -297,33 +318,20 @@ fn render_tree_node(node: &TreeNode, entries: &[DocEntry], depth: usize, out: &m
 
 #[cfg(test)]
 mod tests {
-    use super::{DocEntry, LocationJson, render_structure_tree};
+    use super::{DocEntry, render_structure_tree};
     use beskid_analysis::syntax::SpanInfo;
 
     #[test]
     fn structure_tree_renders_nested_paths() {
-        let loc = LocationJson {
-            file: "main.bd".into(),
-            start_line: 1,
-            start_column: 1,
-            end_line: 1,
-            end_column: 1,
-        };
         let entries = vec![
             DocEntry {
-                id: Some(0),
                 qualified_name: "util::math::sum".to_string(),
                 kind: "function".to_string(),
-                visibility: None,
-                location: loc.clone(),
                 doc_markdown: None,
             },
             DocEntry {
-                id: Some(1),
                 qualified_name: "util::math::Vec2".to_string(),
                 kind: "type".to_string(),
-                visibility: None,
-                location: loc,
                 doc_markdown: None,
             },
         ];

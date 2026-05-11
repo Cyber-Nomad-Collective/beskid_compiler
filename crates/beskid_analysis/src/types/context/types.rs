@@ -13,7 +13,15 @@ impl<'a> TypeContext<'a> {
                 self.primitive_type_id(mapped)
             }
             HirType::Complex(path) => self.type_id_for_path_with_args(path),
-            HirType::Array(inner) | HirType::Ref(inner) => self.type_id_for_type(inner),
+            HirType::Array(inner) => {
+                let inner_id = self.type_id_for_type(inner)?;
+                if let Some(existing) = self.type_table.find_array_of(inner_id) {
+                    Some(existing)
+                } else {
+                    Some(self.type_table.intern(TypeInfo::Array(inner_id)))
+                }
+            }
+            HirType::Ref(inner) => self.type_id_for_type(inner),
             HirType::Function {
                 return_type,
                 parameters,

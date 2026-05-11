@@ -7,6 +7,7 @@ use crate::syntax::{Expression, Path, SpanInfo, Spanned, StructLiteralField};
 
 use beskid_ast_derive::AstNode;
 
+/// Struct or nominal value literal: path plus field assignments.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct StructLiteralExpression {
     #[ast(child)]

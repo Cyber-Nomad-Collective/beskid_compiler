@@ -3,6 +3,7 @@ use crate::syntax::SpanInfo;
 
 use super::ids::ItemId;
 
+/// Classification of each [`ItemInfo`] row (used for docs, queries, and stable API snapshots).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemKind {
     Function,
@@ -45,6 +46,7 @@ impl ItemKind {
     }
 }
 
+/// One resolved declaration: stable id, stable name, kind, visibility, and source span.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemInfo {
     pub id: ItemId,

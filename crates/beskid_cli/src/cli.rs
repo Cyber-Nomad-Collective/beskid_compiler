@@ -1,3 +1,5 @@
+//! Root Clap model and subcommand dispatch for the `beskid` executable.
+
 use crate::commands::analyze::AnalyzeArgs;
 use crate::commands::build::BuildArgs;
 use crate::commands::clif::ClifArgs;
@@ -15,6 +17,7 @@ use crate::commands::{
     analyze, build, clif, corelib, doc, fetch, format, lock, parse, run, test, tree, update,
 };
 use crate::corelib_runtime;
+use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_pckg::PckgArgs;
 use beskid_pckg::cli::PckgCommand;
 use clap::{Parser, Subcommand};
@@ -23,6 +26,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+/// Parsed `beskid` invocation (after `@file` argv expansion).
 #[derive(Parser)]
 #[command(name = "beskid")]
 #[command(about = "Beskid CLI tool", version, author)]
@@ -77,6 +81,7 @@ pub enum Commands {
     Pckg(PckgArgs),
 }
 
+/// Parses argv, provisions bundled corelib when needed, and runs the selected subcommand.
 pub fn run() -> miette::Result<()> {
     let os_args = env::args_os();
     let all_args =
@@ -120,7 +125,7 @@ fn ensure_corelib_ready() -> anyhow::Result<()> {
 fn anyhow_to_miette(error: anyhow::Error) -> Report {
     match error.downcast::<Report>() {
         Ok(report) => report,
-        Err(error) => miette::miette!("{error:#}"),
+        Err(error) => crate::errors::report_from_anyhow(&error),
     }
 }
 
@@ -135,11 +140,15 @@ fn maybe_generate_docs_for_pack(args: &PckgArgs) -> anyhow::Result<()> {
 
     let doc_args = DocArgs {
         input,
-        project,
-        target: None,
-        workspace_member: None,
-        frozen: false,
-        locked: false,
+        project: ProjectResolveArgs {
+            project,
+            target: None,
+            workspace_member: None,
+        },
+        lockfile: LockfilePolicyArgs {
+            frozen: false,
+            locked: false,
+        },
         out,
     };
     doc::execute(doc_args)?;
@@ -153,7 +162,9 @@ fn absolutize_source_root(source: &Path) -> anyhow::Result<PathBuf> {
     Ok(env::current_dir()?.join(source))
 }
 
-fn resolve_doc_entrypoint(source_root: &Path) -> anyhow::Result<(Option<PathBuf>, Option<PathBuf>)> {
+fn resolve_doc_entrypoint(
+    source_root: &Path,
+) -> anyhow::Result<(Option<PathBuf>, Option<PathBuf>)> {
     let project_manifest = source_root.join("Project.proj");
     if project_manifest.exists() {
         return Ok((None, Some(project_manifest)));

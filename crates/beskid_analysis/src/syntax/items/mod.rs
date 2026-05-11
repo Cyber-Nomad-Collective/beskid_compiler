@@ -1,3 +1,5 @@
+//! Top-level and inner items: declarations, modules, contracts, tests, and attributes.
+
 pub mod attribute;
 pub mod contract_definition;
 pub mod contract_embedding;
@@ -9,6 +11,7 @@ pub mod enum_variant;
 pub mod function_definition;
 pub mod impl_block;
 pub mod inline_module;
+pub mod meta_definition;
 pub mod method_definition;
 pub mod module_declaration;
 pub mod node;
@@ -29,6 +32,7 @@ pub use enum_definition::EnumDefinition;
 pub use enum_variant::EnumVariant;
 pub use function_definition::FunctionDefinition;
 pub use inline_module::InlineModule;
+pub use meta_definition::MetaDefinition;
 pub use method_definition::MethodDefinition;
 pub use module_declaration::ModuleDeclaration;
 pub use node::Node;

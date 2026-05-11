@@ -1,3 +1,5 @@
+//! JIT execution host: compile a [`beskid_codegen::CodegenArtifact`] with Cranelift-JIT and run entrypoints under the GC arena.
+
 mod engine;
 mod jit_callable;
 mod jit_module;

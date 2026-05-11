@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 mod emit_idents;
+mod syntax_helpers;
 
 pub mod syntax_nodes;
 
@@ -47,9 +48,12 @@ impl Default for GenOptions {
     }
 }
 
+/// I/O or `syn` parse failures while reading Rust sources for stub generation.
 #[derive(Debug)]
 pub enum GenError {
+    /// Underlying filesystem error.
     Io(std::io::Error),
+    /// `syn::parse_file` failed for a specific path.
     Parse { path: PathBuf, message: String },
 }
 
@@ -313,12 +317,14 @@ pub fn parse_cli_args(args: &[OsString]) -> Result<CliInvocation, String> {
     })
 }
 
+/// Normalized CLI invocation after [`parse_cli_args`].
 pub struct CliInvocation {
     pub options: GenOptions,
     pub out_path: Option<PathBuf>,
     pub paths: Vec<PathBuf>,
 }
 
+/// Write generated output to `inv.out_path`, `OUT_DIR/ast_reflect/generated.bd`, or stdout.
 pub fn run_cli(inv: CliInvocation) -> Result<(), GenError> {
     let generated = generate_from_paths(&inv.paths, &inv.options)?;
     let out = inv.out_path.or_else(|| {

@@ -7,6 +7,7 @@ use crate::syntax::{SpanInfo, Spanned, Statement};
 
 use beskid_ast_derive::AstNode;
 
+/// Braced sequence of statements.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct Block {
     #[ast(children)]

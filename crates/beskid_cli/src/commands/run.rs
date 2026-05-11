@@ -1,51 +1,55 @@
-use crate::frontend;
-use anyhow::Result;
-use beskid_engine::services::run_entrypoint;
-use clap::Args;
+//! `beskid run` — JIT-compile the resolved program and invoke an entrypoint.
+
 use std::path::PathBuf;
+
+use crate::frontend;
+use crate::pipeline_ui::resolve_input_with_cli_pipeline;
+use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
+use anyhow::Result;
+use beskid_engine::services::run_entrypoint_with_pipeline;
+use beskid_pipeline::PipelineObserver;
+use clap::Args;
 
 #[derive(Args, Debug)]
 pub struct RunArgs {
     /// The input Beskid file to JIT-compile and execute
     pub input: Option<PathBuf>,
 
-    /// Path to a project directory or Project.proj file
-    #[arg(long)]
-    pub project: Option<PathBuf>,
+    #[command(flatten)]
+    pub project: ProjectResolveArgs,
 
-    /// Target name from Project.proj
-    #[arg(long)]
-    pub target: Option<String>,
-
-    /// Workspace member name when resolving from Workspace.proj
-    #[arg(long = "workspace-member")]
-    pub workspace_member: Option<String>,
-
-    /// Require lockfile to be up to date and forbid lockfile updates
-    #[arg(long)]
-    pub frozen: bool,
-
-    /// Require lockfile to exist and match resolution
-    #[arg(long)]
-    pub locked: bool,
+    #[command(flatten)]
+    pub lockfile: LockfilePolicyArgs,
 
     /// Entrypoint function name
     #[arg(long, default_value = "main")]
     pub entrypoint: String,
+
+    /// Disable animated progress and graph output
+    #[arg(long)]
+    pub plain: bool,
 }
 
+/// Resolve, JIT, and run `args.entrypoint` with pipeline progress on stderr when enabled.
 pub fn execute(args: RunArgs) -> Result<()> {
-    let resolved = frontend::resolve_input(
+    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline(
         args.input.as_ref(),
-        args.project.as_ref(),
-        args.target.as_deref(),
-        args.workspace_member.as_deref(),
-        args.frozen,
-        args.locked,
+        args.project.project.as_ref(),
+        args.project.target.as_deref(),
+        args.project.workspace_member.as_deref(),
+        args.lockfile.frozen,
+        args.lockfile.locked,
+        args.plain,
     )?;
+    let obs: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
     frontend::validate_source(&resolved.source_path, &resolved.source)?;
 
-    let output = run_entrypoint(&resolved.source_path, &resolved.source, &args.entrypoint)?;
+    let output = run_entrypoint_with_pipeline(
+        &resolved.source_path,
+        &resolved.source,
+        &args.entrypoint,
+        obs,
+    )?;
     println!("{output}");
 
     Ok(())

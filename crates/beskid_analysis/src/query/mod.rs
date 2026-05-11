@@ -1,3 +1,7 @@
+//! Syntax and HIR tree walks: [`Query`] / [`Walker`](walker::AstWalker), [`Visit`](visit::Visit), and kind enums.
+//!
+//! The [`node_kinds!`] macro defines [`NodeKind`] and [`HirNodeKind`] for type-filtered traversal.
+
 #[macro_export]
 macro_rules! node_kinds {
     ($enum_name:ident; $($name:ident),+ $(,)?) => {
@@ -22,6 +26,7 @@ node_kinds!(
     EnumVariant,
     ContractDefinition,
     TestDefinition,
+    MetaDefinition,
     TestMetaSection,
     TestMetadataEntry,
     TestSkipSection,
@@ -95,6 +100,7 @@ node_kinds!(
     EnumVariant,
     ContractDefinition,
     TestDefinition,
+    MetaDefinition,
     TestMetaSection,
     TestMetadataEntry,
     TestSkipSection,

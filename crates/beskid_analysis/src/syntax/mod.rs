@@ -1,3 +1,8 @@
+//! Parsed concrete syntax for Beskid sources (items, types, statements, expressions).
+//!
+//! Types here are produced by the pest-based parser and wrapped in [`Spanned`](crate::syntax::Spanned)
+//! for source locations. See [`Parsable`](crate::parsing::parsable::Parsable) for parsing entry points.
+
 pub mod common;
 pub mod expressions;
 pub mod items;
@@ -15,9 +20,9 @@ pub use expressions::{
 pub use items::{
     Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
     ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition,
-    EnumVariant, FunctionDefinition, InlineModule, MethodDefinition, ModuleDeclaration, Node, Program,
-    TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection,
-    TypeDefinition, UseDeclaration,
+    EnumVariant, FunctionDefinition, InlineModule, MetaDefinition, MethodDefinition,
+    ModuleDeclaration, Node, Program, TestDefinition, TestMetaSection, TestMetadataEntry,
+    TestSkipEntry, TestSkipSection, TypeDefinition, UseDeclaration,
 };
 pub use statements::{
     Block, BreakStatement, ContinueStatement, ExpressionStatement, ForStatement, IfStatement,

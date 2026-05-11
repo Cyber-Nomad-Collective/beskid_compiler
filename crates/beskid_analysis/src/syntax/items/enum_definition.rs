@@ -11,6 +11,7 @@ use crate::syntax::{EnumVariant, Identifier, SpanInfo, Spanned, Visibility};
 
 use beskid_ast_derive::AstNode;
 
+/// `enum` definition with variants and optional generic parameters.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct EnumDefinition {
     #[ast(child)]
@@ -40,8 +41,11 @@ impl Parsable for EnumDefinition {
             match item.as_rule() {
                 Rule::GenericParameters => generics = parse_identifier_list(item)?,
                 Rule::EnumVariantList => {
-                    let (parsed_variants, parsed_docs) =
-                        parse_doc_attached_list(item, Rule::EnumVariantWithDocs, Rule::EnumVariant)?;
+                    let (parsed_variants, parsed_docs) = parse_doc_attached_list(
+                        item,
+                        Rule::EnumVariantWithDocs,
+                        Rule::EnumVariant,
+                    )?;
                     variants = parsed_variants;
                     variant_docs = parsed_docs;
                 }

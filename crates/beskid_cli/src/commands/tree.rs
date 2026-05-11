@@ -1,3 +1,5 @@
+//! `beskid tree` — print a textual AST tree for a Beskid source file.
+
 use anyhow::{Context, Result};
 use beskid_analysis::services;
 use clap::Args;
@@ -11,6 +13,7 @@ pub struct TreeArgs {
     pub input: PathBuf,
 }
 
+/// Parse `args.input` and print the formatter-style syntax tree.
 pub fn execute(args: TreeArgs) -> Result<()> {
     let source = fs::read_to_string(&args.input)
         .with_context(|| format!("Failed to read file: {}", args.input.display()))?;

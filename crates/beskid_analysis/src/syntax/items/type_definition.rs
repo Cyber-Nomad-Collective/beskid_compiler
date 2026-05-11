@@ -1,9 +1,9 @@
 use pest::iterators::Pair;
 
+use crate::doc::LeadingDocComment;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::doc::LeadingDocComment;
 use crate::syntax::items::parse_helpers::{
     parse_doc_attached_list, parse_identifier_list, parse_visibility_or_default,
 };
@@ -11,6 +11,7 @@ use crate::syntax::{Field, Identifier, Path, SpanInfo, Spanned, Visibility};
 
 use beskid_ast_derive::AstNode;
 
+/// `type` definition: name, generics, optional conformances, and fields.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct TypeDefinition {
     #[ast(child)]

@@ -7,6 +7,7 @@ use crate::syntax::{SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// `break` out of the nearest enclosing loop.
 #[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BreakStatement;
 

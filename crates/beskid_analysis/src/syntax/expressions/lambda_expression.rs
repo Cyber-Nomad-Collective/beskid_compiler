@@ -7,6 +7,7 @@ use crate::syntax::{Expression, Identifier, SpanInfo, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
+/// Single lambda parameter, optionally with an explicit type.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct LambdaParameter {
     #[ast(child)]
@@ -15,6 +16,7 @@ pub struct LambdaParameter {
     pub ty: Option<Spanned<Type>>,
 }
 
+/// Anonymous function expression (`params => body`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct LambdaExpression {
     #[ast(children)]

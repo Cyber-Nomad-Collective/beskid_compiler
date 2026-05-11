@@ -1,9 +1,11 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
-use crate::format::items::helpers::{emit_attribute_lines, emit_generics_list, emit_parameter_list};
+use crate::format::items::helpers::{
+    emit_attribute_lines, emit_generics_list, emit_parameter_list,
+};
 use crate::syntax::items::impl_block::ImplBlock;
 use crate::syntax::{
     ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition,
-    EnumVariant, ModuleDeclaration, TypeDefinition, UseDeclaration, Spanned,
+    EnumVariant, ModuleDeclaration, Spanned, TypeDefinition, UseDeclaration,
 };
 use std::fmt::Write;
 

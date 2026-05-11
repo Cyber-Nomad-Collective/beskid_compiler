@@ -1,5 +1,8 @@
+//! Built-in primitive type keywords.
+
 use beskid_ast_derive::AstNode;
 
+/// Core primitive types supported in the surface language.
 #[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {
     Bool,

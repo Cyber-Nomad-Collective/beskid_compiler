@@ -1,4 +1,6 @@
-//! Runtime support for Beskid (allocation, builtins, GC hooks).
+//! Runtime support for Beskid: GC-arena allocation, string/array builtins, syscalls, and JIT TLS hooks.
+//!
+//! Symbols and layouts are shared with [`beskid_abi`] for codegen and linker registration.
 
 pub mod builtins;
 pub mod gc;
@@ -6,7 +8,7 @@ pub mod interop;
 mod interop_layout;
 
 pub use builtins::{
-    alloc, array_new, beskid_runtime_abi_version, event_get_handler, event_len, event_subscribe,
+    alloc, array_len, array_new, beskid_runtime_abi_version, event_get_handler, event_len, event_subscribe,
     event_unsubscribe_first, gc_register_root, gc_root_handle, gc_unregister_root,
     gc_unroot_handle, gc_write_barrier, panic, panic_str, str_concat, str_len, str_new,
     syscall_read, syscall_write, test_bytes_len, test_bytes_ptr,

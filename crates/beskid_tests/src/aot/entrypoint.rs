@@ -6,19 +6,12 @@ fn executable_build_rejects_empty_entrypoint() {
     let dir = temp_case_dir("entrypoint_required_exe");
     let output = dir.join("sample");
 
-    let err = build(AotBuildRequest {
+    let err = build(AotBuildRequest::with_defaults(
         artifact,
-        output_kind: BuildOutputKind::Exe,
-        output_path: output,
-        object_path: None,
-        target_triple: None,
-        profile: BuildProfile::Debug,
-        entrypoint: "   ".to_owned(),
-        export_policy: ExportPolicy::PublicOnly,
-        link_mode: LinkMode::Auto,
-        runtime: RuntimeStrategy::BuildOnTheFly,
-        verbose_link: false,
-    })
+        BuildOutputKind::Exe,
+        output,
+        "   ",
+    ))
     .expect_err("blank entrypoint for executable should fail");
 
     assert!(matches!(err, AotError::InvalidRequest { .. }));
@@ -32,19 +25,12 @@ fn object_only_build_allows_empty_entrypoint() {
     let dir = temp_case_dir("entrypoint_not_required_object");
     let output = dir.join("sample.o");
 
-    let result = build(AotBuildRequest {
+    let result = build(AotBuildRequest::with_defaults(
         artifact,
-        output_kind: BuildOutputKind::ObjectOnly,
-        output_path: output,
-        object_path: None,
-        target_triple: None,
-        profile: BuildProfile::Debug,
-        entrypoint: "   ".to_owned(),
-        export_policy: ExportPolicy::PublicOnly,
-        link_mode: LinkMode::Auto,
-        runtime: RuntimeStrategy::BuildOnTheFly,
-        verbose_link: false,
-    })
+        BuildOutputKind::ObjectOnly,
+        output,
+        "   ",
+    ))
     .expect("object-only build should not require entrypoint");
 
     assert!(result.object_path.exists(), "expected object file to exist");

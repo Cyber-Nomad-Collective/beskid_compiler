@@ -1,5 +1,8 @@
+//! Byte and line/column span metadata for syntax nodes.
+
 use pest::Span;
 
+/// Source span: UTF-8 byte range and 1-based line/column endpoints (inclusive-style reporting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SpanInfo {
     pub start: usize,
@@ -9,6 +12,7 @@ pub struct SpanInfo {
 }
 
 impl SpanInfo {
+    /// Builds span metadata from a pest [`Span`].
     pub fn from_span(span: &Span) -> Self {
         let start_pos = span.start_pos();
         let end_pos = span.end_pos();
@@ -73,10 +77,12 @@ fn byte_offset_to_line_col(source: &str, offset: usize) -> (usize, usize) {
     (line, col)
 }
 
+/// Types that carry a primary [`SpanInfo`] (typically the whole node’s extent).
 pub trait HasSpan {
     fn span(&self) -> &SpanInfo;
 }
 
+/// AST node bundled with its source span.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spanned<T> {
     pub node: T,
@@ -84,6 +90,7 @@ pub struct Spanned<T> {
 }
 
 impl<T> Spanned<T> {
+    /// Wraps `node` with `span`.
     pub fn new(node: T, span: SpanInfo) -> Self {
         Self { node, span }
     }

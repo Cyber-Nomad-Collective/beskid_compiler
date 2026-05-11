@@ -129,7 +129,10 @@ where
 {
     let mut values = Vec::new();
     let mut docs = Vec::new();
-    for inner in pair.into_inner().filter(|inner| inner.as_rule() == wrapper_rule) {
+    for inner in pair
+        .into_inner()
+        .filter(|inner| inner.as_rule() == wrapper_rule)
+    {
         let (doc, value) = parse_doc_attached_pair(inner, wrapper_rule, inner_rule)?;
         values.push(value);
         docs.push(doc);

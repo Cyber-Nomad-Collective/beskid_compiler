@@ -1,21 +1,26 @@
+//! Span-keyed resolution products and local symbol table used by type checking and codegen.
+
 use std::collections::HashMap;
 
 use crate::syntax::SpanInfo;
 
 use super::ids::{ItemId, LocalId};
 
+/// Result of resolving a value-position path or identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResolvedValue {
     Item(ItemId),
     Local(LocalId),
 }
 
+/// Result of resolving a type-position path (named item or generic parameter).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedType {
     Item(ItemId),
     Generic(String),
 }
 
+/// Name and span for a [`LocalId`] interned during resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalInfo {
     pub id: LocalId,
@@ -23,6 +28,7 @@ pub struct LocalInfo {
     pub span: SpanInfo,
 }
 
+/// Maps expression/type spans to resolved symbols plus conformance edges.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ResolutionTables {
     pub resolved_values: HashMap<SpanInfo, ResolvedValue>,

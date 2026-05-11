@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use crate::projects::error::ProjectError;
 use crate::projects::model::{
-    Dependency, DependencySource, ProjectManifest, ProjectSection, Target, TargetKind,
-    WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry, WorkspaceSection,
+    AttachToSelector, Dependency, DependencySource, ProjectKind, ProjectManifest,
+    ProjectMetaSection, ProjectSection, Target, TargetKind, WorkspaceManifest, WorkspaceMember,
+    WorkspaceOverride, WorkspaceRegistry, WorkspaceSection,
 };
 use crate::projects::validator::{validate_manifest, validate_workspace_manifest};
 
@@ -124,7 +125,221 @@ fn parse_block_header_text(line: &str) -> Result<(&str, Option<String>), String>
 }
 
 fn allows_enum_literal(field: &str) -> bool {
-    matches!(field, "kind" | "source" | "resolver")
+    matches!(field, "kind" | "source" | "resolver" | "type")
+}
+
+#[derive(Debug, Clone)]
+enum MetaFieldValue {
+    StringList(Vec<String>),
+    U32(u32),
+}
+
+fn split_comma_list_items(inner: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut in_string = false;
+    for (i, c) in inner.char_indices() {
+        match c {
+            '"' => {
+                in_string = !in_string;
+            }
+            ',' if !in_string => {
+                parts.push(inner.get(start..i).unwrap_or(""));
+                start = i + c.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(inner.get(start..).unwrap_or(""));
+    parts
+}
+
+fn parse_bracket_string_list(raw: &str) -> Result<Vec<String>, String> {
+    let t = raw.trim();
+    if !(t.starts_with('[') && t.ends_with(']')) {
+        return Err(format!("expected `[...]` list, found `{t}`"));
+    }
+    let inner = t[1..t.len() - 1].trim();
+    if inner.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for part in split_comma_list_items(inner) {
+        let p = part.trim();
+        if p.is_empty() {
+            continue;
+        }
+        let token = if p == "default" {
+            "default".to_string()
+        } else if p.starts_with('"') {
+            parse_quoted_string_token(p)?
+        } else {
+            parse_ident_token(p)?
+        };
+        out.push(token);
+    }
+    Ok(out)
+}
+
+fn parse_string_or_list_field(raw: &str, field: &str) -> Result<Vec<String>, String> {
+    let t = raw.trim();
+    if t.starts_with('[') {
+        return parse_bracket_string_list(t);
+    }
+    if t == "default" {
+        return Ok(vec!["default".to_string()]);
+    }
+    if t.starts_with('"') {
+        return Ok(vec![parse_quoted_string_token(t)?]);
+    }
+    Ok(vec![
+        parse_ident_token(t).map_err(|e| format!("{field}: {e}"))?,
+    ])
+}
+
+fn parse_positive_u32(raw: &str, field: &str) -> Result<u32, String> {
+    let t = raw.trim();
+    if t.is_empty() || !t.chars().all(|c| c.is_ascii_digit()) {
+        return Err(format!(
+            "`{field}` must be a positive decimal integer, found `{t}`"
+        ));
+    }
+    t.parse::<u32>()
+        .map_err(|_| format!("`{field}` integer overflow or invalid: `{t}`"))
+}
+
+fn parse_meta_block_contents(
+    lines: &mut PhysicalLines<'_>,
+    open_ctx: &LineCtx<'_>,
+) -> Result<HashMap<String, MetaFieldValue>, ProjectError> {
+    let mut fields = HashMap::new();
+    let mut closed = false;
+    while let Some(ctx) = lines.next_line() {
+        let body = strip_comment(ctx.text).trim();
+        if body.is_empty() {
+            continue;
+        }
+        if body == "}" {
+            closed = true;
+            break;
+        }
+        if body.ends_with('{') {
+            return Err(parse_err(
+                &ctx,
+                "nested blocks are not allowed inside `meta`",
+                None,
+            ));
+        }
+        let line = strip_comment(ctx.text).trim();
+        let (left, right) = line.split_once('=').ok_or_else(|| {
+            parse_err(&ctx, "expected key = value assignment inside `meta`", None)
+        })?;
+        let key = left.trim();
+        if key.is_empty() {
+            return Err(parse_err(
+                &ctx,
+                "assignment key cannot be empty inside `meta`",
+                None,
+            ));
+        }
+        let value = parse_meta_field_value(key, right, &ctx)?;
+        if fields.insert(key.to_string(), value).is_some() {
+            return Err(parse_err(
+                &ctx,
+                format!("duplicate `meta` field `{key}`"),
+                None,
+            ));
+        }
+    }
+    if !closed {
+        return Err(ProjectError::ParseAt {
+            line: open_ctx.line_1,
+            message: "missing closing `}` for `meta` block".to_string(),
+            start: None,
+            end: None,
+        });
+    }
+    Ok(fields)
+}
+
+fn parse_project_block(
+    lines: &mut PhysicalLines<'_>,
+    header_ctx: &LineCtx<'_>,
+) -> Result<ParsedProjectBlock, ProjectError> {
+    let mut fields: HashMap<String, String> = HashMap::new();
+    let mut meta: Option<HashMap<String, MetaFieldValue>> = None;
+    let mut closed = false;
+    while let Some(ctx) = lines.next_line() {
+        let body = strip_comment(ctx.text).trim();
+        if body.is_empty() {
+            continue;
+        }
+        if body == "}" {
+            closed = true;
+            break;
+        }
+        if body.ends_with('{') {
+            let (nested_kind, nested_label) = parse_block_header(&ctx)?;
+            if nested_kind == "meta" && nested_label.is_none() {
+                if meta.is_some() {
+                    return Err(parse_err(
+                        &ctx,
+                        "duplicate `meta` block inside `project`",
+                        None,
+                    ));
+                }
+                meta = Some(parse_meta_block_contents(lines, &ctx)?);
+                continue;
+            }
+            return Err(parse_err(
+                &ctx,
+                format!("unknown nested block `{nested_kind}` inside `project`"),
+                None,
+            ));
+        }
+        let (key, value) = parse_assignment_line(&ctx)?;
+        if fields.insert(key.clone(), value).is_some() {
+            return Err(parse_err(
+                &ctx,
+                format!("duplicate `project` field `{key}`"),
+                None,
+            ));
+        }
+    }
+    if !closed {
+        return Err(ProjectError::ParseAt {
+            line: header_ctx.line_1,
+            message: "missing closing `}` for `project` block".to_string(),
+            start: None,
+            end: None,
+        });
+    }
+    Ok(ParsedProjectBlock { fields, meta })
+}
+
+fn parse_meta_field_value(
+    key: &str,
+    raw_rhs: &str,
+    ctx: &LineCtx<'_>,
+) -> Result<MetaFieldValue, ProjectError> {
+    let trimmed = raw_rhs.trim();
+    let span = value_span_in_source(ctx, trimmed);
+    let err = |message: String| parse_err(ctx, message, span);
+    match key {
+        "attachTo" | "entryModules" | "entryModule" | "capabilities" => {
+            parse_string_or_list_field(trimmed, key)
+                .map(MetaFieldValue::StringList)
+                .map_err(err)
+        }
+        "maxMetaRounds" => parse_positive_u32(trimmed, key)
+            .map(MetaFieldValue::U32)
+            .map_err(err),
+        other => Err(parse_err(
+            ctx,
+            format!("unknown `meta` field `{other}`"),
+            span,
+        )),
+    }
 }
 
 fn parse_ident_token(raw: &str) -> Result<String, String> {
@@ -264,9 +479,15 @@ fn parse_workspace_blocks(source: &str) -> Result<ParsedWorkspaceBlocks, Project
     Ok(parsed)
 }
 
+#[derive(Debug)]
+struct ParsedProjectBlock {
+    fields: HashMap<String, String>,
+    meta: Option<HashMap<String, MetaFieldValue>>,
+}
+
 #[derive(Debug, Default)]
 struct ParsedBlocks {
-    project: Option<ParsedBlock>,
+    project: Option<ParsedProjectBlock>,
     targets: Vec<ParsedBlock>,
     dependencies: Vec<ParsedBlock>,
 }
@@ -293,6 +514,43 @@ pub fn parse_workspace_manifest(source: &str) -> Result<WorkspaceManifest, Proje
     Ok(manifest)
 }
 
+fn parse_flat_block(
+    lines: &mut PhysicalLines<'_>,
+    header_ctx: &LineCtx<'_>,
+    kind: &str,
+) -> Result<ParsedBlock, ProjectError> {
+    let mut fields = HashMap::new();
+    let mut closed = false;
+    while let Some(body_ctx) = lines.next_line() {
+        let body = strip_comment(body_ctx.text).trim();
+        if body.is_empty() {
+            continue;
+        }
+        if body == "}" {
+            closed = true;
+            break;
+        }
+
+        let (key, value) = parse_assignment_line(&body_ctx)?;
+        fields.insert(key, value);
+    }
+
+    if !closed {
+        return Err(ProjectError::ParseAt {
+            line: header_ctx.line_1,
+            message: format!("missing closing `}}` for `{kind}` block"),
+            start: None,
+            end: None,
+        });
+    }
+
+    Ok(ParsedBlock {
+        kind: kind.to_string(),
+        label: None,
+        fields,
+    })
+}
+
 fn parse_blocks(source: &str) -> Result<ParsedBlocks, ProjectError> {
     let mut lines = PhysicalLines::new(source);
     let mut parsed = ParsedBlocks::default();
@@ -305,39 +563,23 @@ fn parse_blocks(source: &str) -> Result<ParsedBlocks, ProjectError> {
 
         let (kind, label) = parse_block_header(&line_ctx)?;
 
-        let mut fields = HashMap::new();
-        let mut closed = false;
-        while let Some(body_ctx) = lines.next_line() {
-            let body = strip_comment(body_ctx.text).trim();
-            if body.is_empty() {
-                continue;
+        if kind == "project" {
+            if label.is_some() {
+                return Err(parse_err(
+                    &line_ctx,
+                    "`project` block cannot carry a label",
+                    None,
+                ));
             }
-            if body == "}" {
-                closed = true;
-                break;
-            }
-
-            let (key, value) = parse_assignment_line(&body_ctx)?;
-            fields.insert(key, value);
+            let project_block = parse_project_block(&mut lines, &line_ctx)?;
+            parsed.project = Some(project_block);
+            continue;
         }
 
-        if !closed {
-            return Err(ProjectError::ParseAt {
-                line: line_ctx.line_1,
-                message: format!("missing closing `}}` for `{kind}` block"),
-                start: None,
-                end: None,
-            });
-        }
-
-        let block = ParsedBlock {
-            kind,
-            label,
-            fields,
-        };
+        let mut block = parse_flat_block(&mut lines, &line_ctx, &kind)?;
+        block.label = label;
 
         match block.kind.as_str() {
-            "project" => parsed.project = Some(block),
             "target" => parsed.targets.push(block),
             "dependency" => parsed.dependencies.push(block),
             other => {
@@ -354,12 +596,115 @@ fn parse_blocks(source: &str) -> Result<ParsedBlocks, ProjectError> {
     Ok(parsed)
 }
 
-fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError> {
-    let project = parsed
-        .project
-        .ok_or_else(|| ProjectError::Validation("missing required `project` block".to_string()))?;
+fn build_project_kind(type_field: Option<&str>) -> Result<ProjectKind, ProjectError> {
+    match type_field.map(str::trim).filter(|s| !s.is_empty()) {
+        None => Ok(ProjectKind::Host),
+        Some("Meta") => Ok(ProjectKind::Meta),
+        Some(other) => Err(ProjectError::meta_contract(
+            "E1807",
+            format!(
+                "unsupported project.type `{other}` (omit the field for ordinary projects, or use `Meta`)"
+            ),
+        )),
+    }
+}
 
-    let project_section = ProjectSection {
+fn build_project_meta_from_fields(
+    meta_fields: &HashMap<String, MetaFieldValue>,
+) -> Result<ProjectMetaSection, ProjectError> {
+    let attach_raw = match meta_fields.get("attachTo") {
+        Some(MetaFieldValue::StringList(v)) => v.as_slice(),
+        Some(MetaFieldValue::U32(_)) => {
+            return Err(ProjectError::meta_contract(
+                "E1808",
+                "`project.meta.attachTo` must be a string or list of strings",
+            ));
+        }
+        None => {
+            return Err(ProjectError::meta_contract(
+                "E1809",
+                "missing required `project.meta.attachTo` for `type = Meta`",
+            ));
+        }
+    };
+    if attach_raw.is_empty() {
+        return Err(ProjectError::meta_contract(
+            "E1810",
+            "`project.meta.attachTo` must not be empty",
+        ));
+    }
+
+    let mut entry_modules: Vec<String> = Vec::new();
+    if let Some(MetaFieldValue::StringList(v)) = meta_fields.get("entryModules") {
+        entry_modules.extend(v.iter().cloned());
+    }
+    if let Some(MetaFieldValue::StringList(v)) = meta_fields.get("entryModule") {
+        entry_modules.extend(v.iter().cloned());
+    }
+    if entry_modules.is_empty() {
+        return Err(ProjectError::meta_contract(
+            "E1871",
+            "`project.meta` requires non-empty `entryModules` (or legacy `entryModule`)",
+        ));
+    }
+
+    let attach_to: Vec<AttachToSelector> = attach_raw
+        .iter()
+        .map(|s| {
+            if s == "default" {
+                AttachToSelector::Default
+            } else {
+                AttachToSelector::Member(s.clone())
+            }
+        })
+        .collect();
+
+    let max_meta_rounds = match meta_fields.get("maxMetaRounds") {
+        None => None,
+        Some(MetaFieldValue::U32(u)) => Some(*u),
+        Some(MetaFieldValue::StringList(_)) => {
+            return Err(ProjectError::meta_contract(
+                "E1872",
+                "`project.meta.maxMetaRounds` must be a positive integer",
+            ));
+        }
+    };
+
+    let capabilities = match meta_fields.get("capabilities") {
+        None => None,
+        Some(MetaFieldValue::StringList(v)) => Some(v.clone()),
+        Some(MetaFieldValue::U32(_)) => {
+            return Err(ProjectError::meta_contract(
+                "E1873",
+                "`project.meta.capabilities` must be a list of capability names",
+            ));
+        }
+    };
+
+    Ok(ProjectMetaSection {
+        attach_to,
+        entry_modules,
+        max_meta_rounds,
+        capabilities,
+    })
+}
+
+fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSection, ProjectError> {
+    let kind = build_project_kind(project.fields.get("type").map(|s| s.as_str()))?;
+    let meta = match (&kind, &project.meta) {
+        (ProjectKind::Host, Some(_)) => {
+            return Err(ProjectError::meta_contract(
+                "E1874",
+                "`project.meta` is only allowed when `type = Meta`",
+            ));
+        }
+        (ProjectKind::Meta, Some(meta_fields)) => {
+            Some(build_project_meta_from_fields(meta_fields)?)
+        }
+        _ => None,
+    };
+
+    Ok(ProjectSection {
         name: required_field(&project.fields, "name")?,
         version: required_field(&project.fields, "version")?,
         root: project
@@ -368,7 +713,17 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
             .cloned()
             .unwrap_or_else(|| "Src".to_string()),
         root_namespace: project.fields.get("root_namespace").cloned(),
-    };
+        kind,
+        meta,
+    })
+}
+
+fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError> {
+    let project = parsed
+        .project
+        .ok_or_else(|| ProjectError::Validation("missing required `project` block".to_string()))?;
+
+    let project_section = assemble_project_section(&project)?;
 
     let mut targets = Vec::with_capacity(parsed.targets.len());
     for target in parsed.targets {

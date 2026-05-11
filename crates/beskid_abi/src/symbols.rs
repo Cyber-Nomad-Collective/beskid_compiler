@@ -1,8 +1,11 @@
+//! Stable linker symbol names for runtime exports (must match `#[unsafe(no_mangle)]` functions).
+
 pub const SYM_ABI_VERSION: &str = "beskid_runtime_abi_version";
 pub const SYM_ALLOC: &str = "alloc";
 pub const SYM_STR_NEW: &str = "str_new";
 pub const SYM_STR_CONCAT: &str = "str_concat";
 pub const SYM_ARRAY_NEW: &str = "array_new";
+pub const SYM_ARRAY_LEN: &str = "array_len";
 pub const SYM_PANIC: &str = "panic";
 pub const SYM_PANIC_STR: &str = "panic_str";
 pub const SYM_SYSCALL_WRITE: &str = "syscall_write";
@@ -23,6 +26,7 @@ pub const SYM_INTEROP_DISPATCH_USIZE: &str = "interop_dispatch_usize";
 pub const SYM_TEST_BYTES_PTR: &str = "test_bytes_ptr";
 pub const SYM_TEST_BYTES_LEN: &str = "test_bytes_len";
 
+/// All symbols the JIT builder registers when wiring the Beskid runtime.
 pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_ABI_VERSION,
     SYM_ALLOC,
@@ -30,6 +34,7 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_STR_CONCAT,
     SYM_STR_LEN,
     SYM_ARRAY_NEW,
+    SYM_ARRAY_LEN,
     SYM_PANIC,
     SYM_PANIC_STR,
     SYM_SYSCALL_WRITE,

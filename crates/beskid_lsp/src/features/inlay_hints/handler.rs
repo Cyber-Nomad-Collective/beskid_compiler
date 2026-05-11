@@ -5,6 +5,7 @@ use crate::position::offset_to_position;
 use crate::session::store::Document;
 use beskid_analysis::resolve::{Resolution, ResolvedType};
 
+/// Type- and parameter-name inlays when analysis produced a resolution snapshot.
 pub fn handle_inlay_hints(uri: &Uri, doc: &Document, _params: &InlayHintParams) -> Vec<InlayHint> {
     if project_manifest::is_manifest_uri(uri) {
         return Vec::new();

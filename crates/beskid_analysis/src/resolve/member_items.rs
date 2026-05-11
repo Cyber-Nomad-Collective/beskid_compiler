@@ -1,8 +1,11 @@
+//! Synthetic [`MemberItemSpec`] rows for parameters, fields, and nested contract members (resolution item list).
+
 use crate::hir::{HirContractNode, HirItem};
 use crate::syntax::{SpanInfo, Spanned};
 
 use super::items::ItemKind;
 
+/// Child symbol surfaced alongside its parent for hover / API docs (`parent::child` name).
 #[derive(Debug, Clone)]
 pub struct MemberItemSpec {
     pub name: String,
@@ -10,6 +13,7 @@ pub struct MemberItemSpec {
     pub span: SpanInfo,
 }
 
+/// Walk one HIR item and append specs for visible members (used when extending [`ItemInfo`] lists).
 pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<MemberItemSpec> {
     let mut out = Vec::new();
     match &item.node {
@@ -70,10 +74,7 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
                         });
                         for parameter in &signature.node.parameters {
                             out.push(MemberItemSpec {
-                                name: format!(
-                                    "{}::{}",
-                                    method_name, parameter.node.name.node.name
-                                ),
+                                name: format!("{}::{}", method_name, parameter.node.name.node.name),
                                 kind: ItemKind::Parameter,
                                 span: parameter.span,
                             });

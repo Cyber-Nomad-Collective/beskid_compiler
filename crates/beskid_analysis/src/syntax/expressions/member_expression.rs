@@ -7,6 +7,7 @@ use crate::syntax::{Expression, Identifier, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// Field or member access (`expr.member`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct MemberExpression {
     #[ast(child)]

@@ -8,7 +8,7 @@ pub unit mg()
     let x = Foo::Bar();
     let v = match x
     {
-        Foo::Bar when 1 == 1 => 1,
+        Foo::Bar when true => 1,
 
         _ => 0,
     };

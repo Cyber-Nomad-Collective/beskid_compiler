@@ -1,12 +1,13 @@
 use pest::iterators::Pair;
 
-use crate::doc::{leading_doc_from_doc_run, LeadingDocComment};
+use crate::doc::{LeadingDocComment, leading_doc_from_doc_run};
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::impl_block::ImplBlock;
 use crate::syntax::{Node, Spanned};
 
+/// Parses `ItemWithDocs` pairs into nodes and parallel leading-doc slots (including `impl` splitting).
 pub fn parse_doc_attached_items<'i, I>(
     pairs: I,
 ) -> Result<(Vec<Spanned<Node>>, Vec<Option<LeadingDocComment>>), ParseError>

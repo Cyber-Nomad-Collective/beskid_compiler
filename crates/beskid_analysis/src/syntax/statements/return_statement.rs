@@ -7,6 +7,7 @@ use crate::syntax::{Expression, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// `return` with an optional value expression.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct ReturnStatement {
     #[ast(child)]

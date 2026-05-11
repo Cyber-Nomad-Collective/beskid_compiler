@@ -6,8 +6,11 @@ use tower_lsp_server::Client;
 use tower_lsp_server::ls_types::Uri;
 
 use crate::diagnostics::analyze_document;
+use crate::session::project_context::cached_compilation_context;
 use crate::session::store::{Document, State};
+use crate::workspace_scan::uri_to_path;
 
+/// Document text/analysis cache format; bump when snapshot shape changes.
 const ANALYSIS_CACHE_VERSION: u32 = 1;
 
 fn is_project_manifest_uri(uri: &Uri) -> bool {
@@ -28,11 +31,14 @@ fn build_document_analysis(
         return None;
     }
 
-    beskid_analysis::services::parse_program(text)
+    beskid_analysis::services::parse_program_with_source_name(&uri.to_string(), text)
         .ok()
-        .map(|program| beskid_analysis::services::build_document_analysis(&program))
+        .map(|program| {
+            beskid_analysis::services::build_document_analysis(&program, &uri.to_string(), text)
+        })
 }
 
+/// Build a [`Document`] for `uri`, hashing text and attaching a fresh analysis snapshot when possible.
 pub fn build_document(uri: &Uri, version: i32, text: String) -> Document {
     let text_hash = hash_text(&text);
     let analysis = build_document_analysis(uri, &text);
@@ -45,6 +51,7 @@ pub fn build_document(uri: &Uri, version: i32, text: String) -> Document {
     }
 }
 
+/// Store a disk-backed snapshot when the URI is not already an open buffer.
 pub async fn set_disk_snapshot(state: &RwLock<State>, uri: Uri, doc: Document) {
     let mut write_state = state.write().await;
     if write_state.docs.contains_key(&uri) {
@@ -53,6 +60,7 @@ pub async fn set_disk_snapshot(state: &RwLock<State>, uri: Uri, doc: Document) {
     write_state.workspace_index.insert(uri, doc);
 }
 
+/// Upsert an open document, respecting monotonic versions and unchanged-text fast paths.
 pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: String) {
     let text_hash = hash_text(&text);
     let mut write_state = state.write().await;
@@ -87,10 +95,12 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
     );
 }
 
+/// Drop an open buffer after `didClose` (disk hydration may repopulate the workspace index).
 pub async fn remove_document(state: &RwLock<State>, uri: &Uri) {
     state.write().await.docs.remove(uri);
 }
 
+/// Recompute diagnostics for the union of open buffer or workspace snapshot and push to the client.
 pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>, uri: &Uri) {
     let snapshot = {
         let state = state.read().await;
@@ -101,7 +111,17 @@ pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>,
         return;
     };
 
-    let diagnostics = analyze_document(uri, &doc.text, doc.analysis.as_ref());
+    let compilation_context = if let Some(path) = uri_to_path(uri) {
+        cached_compilation_context(state, &path).await
+    } else {
+        None
+    };
+    let diagnostics = analyze_document(
+        uri,
+        &doc.text,
+        doc.analysis.as_ref(),
+        compilation_context.as_ref(),
+    );
     client
         .publish_diagnostics(uri.clone(), diagnostics, Some(doc.version))
         .await;

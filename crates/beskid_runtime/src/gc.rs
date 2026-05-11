@@ -1,7 +1,10 @@
+//! GC arena root, TLS helpers, and ephemeral handle storage used by allocation builtins.
+
 use std::cell::Cell;
 
 use gc_arena::{Collect, DynamicRootSet, Gc, Mutation};
 
+/// Counters and root lists updated by runtime builtins (extended when `metrics` is enabled).
 #[derive(Default)]
 pub struct RuntimeState {
     pub allocation_counter: usize,
@@ -29,6 +32,7 @@ unsafe impl<'gc> Collect<'gc> for RuntimeState {
     fn trace<T: gc_arena::collect::Trace<'gc>>(&self, _: &mut T) {}
 }
 
+/// Opaque byte backing for a [`Gc`] allocation (not traced; treated as raw bytes).
 pub struct RawAllocation {
     pub data: Box<[u8]>,
 }
@@ -37,6 +41,7 @@ unsafe impl<'gc> Collect<'gc> for RawAllocation {
     fn trace<T: gc_arena::collect::Trace<'gc>>(&self, _: &mut T) {}
 }
 
+/// Per-arena root: tracked allocations, dynamic roots, and [`RuntimeState`].
 #[derive(Collect)]
 #[collect(no_drop)]
 pub struct RuntimeRoot<'gc> {
@@ -51,6 +56,7 @@ thread_local! {
     static RUNTIME_SCOPE_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
+/// Increment runtime TLS nesting depth; panics on re-entrant nested scopes.
 pub fn enter_runtime_scope() {
     RUNTIME_SCOPE_DEPTH.with(|depth| {
         let current = depth.get();
@@ -61,6 +67,7 @@ pub fn enter_runtime_scope() {
     });
 }
 
+/// Pair with [`enter_runtime_scope`]; panics if depth was zero.
 pub fn leave_runtime_scope() {
     RUNTIME_SCOPE_DEPTH.with(|depth| {
         let current = depth.get();
@@ -73,15 +80,18 @@ pub fn leave_runtime_scope() {
     });
 }
 
+/// Install the active arena mutation pointer used by [`with_current_mutation`] and allocation builtins.
 pub fn set_current_mutation(mc: *mut Mutation<'_>) {
     let ptr = mc as *mut Mutation<'static>;
     CURRENT_MUTATION.with(|cell| cell.set(ptr));
 }
 
+/// Clear the TLS mutation pointer (typically when leaving an engine scope).
 pub fn clear_current_mutation() {
     CURRENT_MUTATION.with(|cell| cell.set(std::ptr::null_mut()));
 }
 
+/// Run `f` with the current arena [`Mutation`]; panics if none is installed.
 pub fn with_current_mutation<R>(f: impl FnOnce(&Mutation<'_>) -> R) -> R {
     CURRENT_MUTATION.with(|cell| {
         let ptr = cell.get();
@@ -93,15 +103,18 @@ pub fn with_current_mutation<R>(f: impl FnOnce(&Mutation<'_>) -> R) -> R {
     })
 }
 
+/// Install the active [`RuntimeRoot`] pointer for builtins that touch runtime state.
 pub fn set_current_root(root: *mut RuntimeRoot<'_>) {
     let ptr = root as *mut RuntimeRoot<'static>;
     CURRENT_ROOT.with(|cell| cell.set(ptr));
 }
 
+/// Clear the TLS root pointer.
 pub fn clear_current_root() {
     CURRENT_ROOT.with(|cell| cell.set(std::ptr::null_mut()));
 }
 
+/// Run `f` with the current [`RuntimeRoot`]; panics if none is installed.
 pub fn with_current_root<R>(f: impl FnOnce(&mut RuntimeRoot<'_>) -> R) -> R {
     CURRENT_ROOT.with(|cell| {
         let ptr = cell.get();
@@ -113,6 +126,7 @@ pub fn with_current_root<R>(f: impl FnOnce(&mut RuntimeRoot<'_>) -> R) -> R {
     })
 }
 
+/// Run `f` with both current mutation and root; panics if either TLS slot is unset.
 pub fn with_current_mutation_and_root<R>(
     f: impl for<'gc> FnOnce(&'gc Mutation<'gc>, &'gc mut RuntimeRoot<'gc>) -> R,
 ) -> R {
@@ -132,12 +146,14 @@ pub fn with_current_mutation_and_root<R>(
     }
 }
 
+/// Append `ptr` to `root.runtime_state.handles` and return its index as a handle id.
 pub fn store_handle(root: &mut RuntimeRoot<'_>, ptr: *mut u8) -> u64 {
     let index = root.runtime_state.handles.len();
     root.runtime_state.handles.push(ptr);
     index as u64
 }
 
+/// Null out the handle slot at `handle` if in range (used by [`crate::builtins::gc_unroot_handle`]).
 pub fn drop_handle(root: &mut RuntimeRoot<'_>, handle: u64) {
     if let Some(slot) = root.runtime_state.handles.get_mut(handle as usize) {
         *slot = std::ptr::null_mut();

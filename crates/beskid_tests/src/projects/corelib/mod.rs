@@ -13,40 +13,71 @@ pub(super) fn corelib_root() -> PathBuf {
     );
 }
 
+/// Parent `compiler/corelib` directory containing `Workspace.proj` and `packages/`.
+pub(super) fn corelib_workspace_root() -> PathBuf {
+    let pkg = corelib_root();
+    pkg.parent()
+        .expect("corelib package must live under compiler/corelib workspace root")
+        .to_path_buf()
+}
+
+pub(super) fn foundation_src() -> PathBuf {
+    corelib_workspace_root().join("packages/foundation/src")
+}
+
+pub(super) fn runtime_src() -> PathBuf {
+    corelib_workspace_root().join("packages/runtime/src")
+}
+
+pub(super) fn compiler_sdk_src() -> PathBuf {
+    corelib_workspace_root().join("packages/compiler-sdk/src")
+}
+
 fn corelib_source_candidates(manifest_dir: &Path) -> [PathBuf; 1] {
     [manifest_dir.join("../../corelib/beskid_corelib")]
 }
 
-pub(super) fn expected_corelib_files() -> &'static [&'static str] {
+/// Workspace-relative `.bd` sources that must exist for the split corelib layout.
+pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
     &[
-        "Collections/Array.bd",
-        "Collections/List.bd",
-        "Collections/Map.bd",
-        "Collections/Queue.bd",
-        "Collections/Set.bd",
-        "Collections/Stack.bd",
-        "Core/ErrorHandling.bd",
-        "Core/Results.bd",
-        "Core/String.bd",
-        "Prelude.bd",
-        "Query/Contracts.bd",
-        "Query/Execution.bd",
-        "Query/Operators.bd",
-        "System/Environment.bd",
-        "System/FS.bd",
-        "System/IO.bd",
-        "System/Path.bd",
-        "System/Process.bd",
-        "System/Syscall.bd",
-        "System/Syscall/Descriptor.bd",
-        "System/Syscall/ReadRequest.bd",
-        "System/Syscall/ReadLimit.bd",
-        "System/Syscall/StandardStream.bd",
-        "System/Syscall/SyscallError.bd",
-        "System/Syscall/WriteRequest.bd",
-        "System/Time.bd",
-        "Testing/Assertions.bd",
-        "Testing/Contracts.bd",
+        "packages/foundation/src/Prelude.bd",
+        "packages/foundation/src/Collections/Array.bd",
+        "packages/foundation/src/Collections/List.bd",
+        "packages/foundation/src/Collections/Map.bd",
+        "packages/foundation/src/Collections/Queue.bd",
+        "packages/foundation/src/Collections/Set.bd",
+        "packages/foundation/src/Collections/Stack.bd",
+        "packages/foundation/src/Core/ErrorHandling.bd",
+        "packages/foundation/src/Core/Results.bd",
+        "packages/foundation/src/Core/String.bd",
+        "packages/foundation/src/Query/Contracts.bd",
+        "packages/foundation/src/Query/Execution.bd",
+        "packages/foundation/src/Query/Operators.bd",
+        "packages/foundation/src/Testing/Assertions.bd",
+        "packages/foundation/src/Testing/Contracts.bd",
+        "packages/runtime/src/Prelude.bd",
+        "packages/runtime/src/System/Environment.bd",
+        "packages/runtime/src/System/FS.bd",
+        "packages/runtime/src/System/IO.bd",
+        "packages/runtime/src/System/Path.bd",
+        "packages/runtime/src/System/Process.bd",
+        "packages/runtime/src/System/Syscall.bd",
+        "packages/runtime/src/System/Syscall/Descriptor.bd",
+        "packages/runtime/src/System/Syscall/ReadRequest.bd",
+        "packages/runtime/src/System/Syscall/ReadLimit.bd",
+        "packages/runtime/src/System/Syscall/StandardStream.bd",
+        "packages/runtime/src/System/Syscall/SyscallError.bd",
+        "packages/runtime/src/System/Syscall/WriteRequest.bd",
+        "packages/runtime/src/System/Time.bd",
+        "packages/compiler-sdk/src/Prelude.bd",
+        "packages/compiler-sdk/src/Beskid/Compiler/Syntax.bd",
+        "packages/compiler-sdk/src/Beskid/Compiler/Syntax/Nodes.bd",
+        "packages/compiler-sdk/src/Beskid/Compiler/Query.bd",
+        "packages/compiler-sdk/src/Beskid/Compiler/Diagnostics.bd",
+        "packages/compiler-sdk/src/Beskid/Compiler/Emit.bd",
+        "packages/compiler-sdk/src/Beskid/Compiler/Process.bd",
+        "packages/compiler-sdk/src/Beskid/Compiler/Compilation.bd",
+        "beskid_corelib/src/Prelude.bd",
     ]
 }
 

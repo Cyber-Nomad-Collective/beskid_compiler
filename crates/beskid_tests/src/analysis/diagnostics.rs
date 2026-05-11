@@ -64,6 +64,26 @@ fn invalid_conformance_target_issue_contract_is_stable() {
 }
 
 #[test]
+fn unknown_attribute_declaration_target_issue_contract_is_stable() {
+    let issue = SemanticIssueKind::UnknownAttributeDeclarationTarget {
+        target: "BadTarget".to_string(),
+        allowed: vec!["TypeDeclaration".to_string()],
+    };
+    assert_eq!(issue.code(), "E1509");
+    assert_eq!(issue.severity(), Severity::Error);
+    assert_eq!(issue.label(), "unknown attribute declaration target");
+    assert!(
+        issue
+            .message()
+            .contains("unknown attribute declaration target kind `BadTarget`")
+    );
+    assert_eq!(
+        issue.help().as_deref(),
+        Some("allowed targets: TypeDeclaration")
+    );
+}
+
+#[test]
 fn attribute_target_mismatch_issue_contract_is_stable() {
     let issue = SemanticIssueKind::AttributeTargetNotAllowed {
         attribute: "Extern".to_string(),
@@ -71,7 +91,7 @@ fn attribute_target_mismatch_issue_contract_is_stable() {
         allowed: vec!["ContractDeclaration".to_string()],
     };
 
-    assert_eq!(issue.code(), "E1809");
+    assert_eq!(issue.code(), "E1510");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "attribute target not allowed");
     assert!(
@@ -92,7 +112,7 @@ fn duplicate_attribute_target_issue_contract_is_stable() {
         previous: span(),
     };
 
-    assert_eq!(issue.code(), "E1806");
+    assert_eq!(issue.code(), "E1508");
     assert_eq!(issue.severity(), Severity::Error);
     assert!(
         issue
@@ -128,7 +148,11 @@ fn resolve_unknown_module_path_issue_uses_distinct_code() {
     assert_eq!(issue.code(), "E1108");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "unknown module path");
-    assert!(issue.message().contains("unknown module path `Core::Results`"));
+    assert!(
+        issue
+            .message()
+            .contains("unknown module path `Core::Results`")
+    );
 }
 
 #[test]
@@ -187,5 +211,16 @@ fn forbidden_module_declaration_in_file_scoped_issue_contract_is_stable() {
             .message()
             .contains("not allowed in a file-scoped module file")
     );
+    assert!(issue.help().is_some());
+}
+
+#[test]
+fn forbidden_meta_module_item_uses_meta_surface_diagnostic_band() {
+    let issue = SemanticIssueKind::ForbiddenMetaModuleItem {
+        name: "Mod".to_string(),
+    };
+    assert_eq!(issue.code(), "E1851");
+    assert_eq!(issue.severity(), Severity::Error);
+    assert!(issue.message().contains("meta"));
     assert!(issue.help().is_some());
 }

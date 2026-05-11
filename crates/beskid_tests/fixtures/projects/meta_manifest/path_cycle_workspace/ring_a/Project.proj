@@ -1,0 +1,14 @@
+project {
+  name = "RingA"
+  version = "0.1.0"
+}
+
+target "RingALib" {
+  kind = "Lib"
+  entry = "A.bd"
+}
+
+dependency "RingB" {
+  source = "path"
+  path = "../ring_b"
+}

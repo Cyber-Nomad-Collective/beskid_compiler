@@ -6,10 +6,11 @@ edition = "2024"
 [dependencies]
 beskid_abi = { path = "../beskid_abi" }
 beskid_codegen = { path = "../beskid_codegen" }
-cranelift-codegen = "0.128.3"
-cranelift-module = "0.128.3"
-cranelift-native = "0.128.3"
-cranelift-object = "0.128.3"
+beskid_pipeline = { path = "../beskid_pipeline" }
+cranelift-codegen = { workspace = true }
+cranelift-module = { workspace = true }
+cranelift-native = { workspace = true }
+cranelift-object = { workspace = true }
 thiserror = "2"
 tempfile = "3"
 cc = "1"

@@ -1,5 +1,8 @@
+//! Built-in literal forms (numeric, string, char, bool).
+
 use beskid_ast_derive::AstNode;
 
+/// Literal token; numeric and text forms keep raw source text where precision matters.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub enum Literal {
     #[ast(skip)]

@@ -1,34 +1,27 @@
+//! `beskid test` — discover `test` items, filter by tags/group, and run them under JIT.
+
 use anyhow::{Result, anyhow};
 use beskid_analysis::services;
-use beskid_engine::services::run_entrypoint;
+use beskid_engine::services::run_entrypoint_with_pipeline;
+use beskid_pipeline::PipelineObserver;
 use clap::Args;
 use serde::Serialize;
 use std::path::PathBuf;
+
+use crate::errors;
+use crate::pipeline_ui::resolve_input_with_cli_pipeline;
+use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
 #[derive(Args, Debug)]
 pub struct TestArgs {
     /// The input Beskid file to test
     pub input: Option<PathBuf>,
 
-    /// Path to a project directory or Project.proj file
-    #[arg(long)]
-    pub project: Option<PathBuf>,
+    #[command(flatten)]
+    pub project: ProjectResolveArgs,
 
-    /// Target name from Project.proj
-    #[arg(long)]
-    pub target: Option<String>,
-
-    /// Workspace member name when resolving from Workspace.proj
-    #[arg(long = "workspace-member")]
-    pub workspace_member: Option<String>,
-
-    /// Require lockfile to be up to date and forbid lockfile updates
-    #[arg(long)]
-    pub frozen: bool,
-
-    /// Require lockfile to exist and match resolution
-    #[arg(long)]
-    pub locked: bool,
+    #[command(flatten)]
+    pub lockfile: LockfilePolicyArgs,
 
     /// Include only tests with any of these tags
     #[arg(long = "include-tag")]
@@ -45,6 +38,10 @@ pub struct TestArgs {
     /// Print machine-readable JSON summary
     #[arg(long)]
     pub json: bool,
+
+    /// Disable animated progress and graph output
+    #[arg(long)]
+    pub plain: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -75,15 +72,20 @@ struct TestSummary {
     filtered_out: usize,
 }
 
+/// Run the test harness for the resolved project and print human or `--json` results.
 pub fn execute(args: TestArgs) -> Result<()> {
-    let resolved = services::resolve_input(
+    // One shared observer for the whole `test` command: work-unit labels name each test's JIT
+    // entrypoint without resetting the CLI progress bar between tests (stable TTY UX).
+    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline(
         args.input.as_ref(),
-        args.project.as_ref(),
-        args.target.as_deref(),
-        args.workspace_member.as_deref(),
-        args.frozen,
-        args.locked,
+        args.project.project.as_ref(),
+        args.project.target.as_deref(),
+        args.project.workspace_member.as_deref(),
+        args.lockfile.frozen,
+        args.lockfile.locked,
+        args.plain,
     )?;
+    let obs: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
     let program = services::parse_program_with_source_name(
         &resolved.source_path.display().to_string(),
         &resolved.source,
@@ -147,7 +149,8 @@ pub fn execute(args: TestArgs) -> Result<()> {
             continue;
         }
 
-        match run_entrypoint(&resolved.source_path, &resolved.source, &test.name) {
+        match run_entrypoint_with_pipeline(&resolved.source_path, &resolved.source, &test.name, obs)
+        {
             Ok(output) => {
                 executions.push(TestExecution {
                     name: test.name.clone(),
@@ -159,11 +162,16 @@ pub fn execute(args: TestArgs) -> Result<()> {
                 summary.passed += 1;
             }
             Err(error) => {
+                let reason = if args.json {
+                    error.to_string()
+                } else {
+                    format!("{}", errors::report_from_anyhow(&error))
+                };
                 executions.push(TestExecution {
                     name: test.name.clone(),
                     qualified_name: test.qualified_name.clone(),
                     outcome: TestOutcome::Failed,
-                    reason: Some(error.to_string()),
+                    reason: Some(reason),
                     output: None,
                 });
                 summary.failed += 1;

@@ -28,6 +28,7 @@ fn build_document_symbol(
     .expect("valid DocumentSymbol payload")
 }
 
+/// Document outline symbols for Beskid AST or structured manifest fields.
 pub fn handle_document_symbols(uri: &Uri, doc: &Document) -> DocumentSymbolResponse {
     if project_manifest::is_manifest_uri(uri) {
         return DocumentSymbolResponse::Nested(project_manifest::document_symbols(uri, &doc.text));

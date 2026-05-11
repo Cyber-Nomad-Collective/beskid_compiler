@@ -1,3 +1,6 @@
+//! High-level intermediate representation: generic [`program::Program`] / [`module::Module`] over
+//! [`phase::Phase`] ([`AstPhase`] vs [`HirPhase`]), lowering from syntax, normalization, and legality checks.
+
 pub mod attribute_target_kind;
 pub mod block;
 pub mod common;
@@ -32,9 +35,9 @@ pub use item::{
     HirAttribute, HirAttributeDeclaration, HirAttributeParameter, HirAttributeTarget,
     HirContractDefinition, HirContractEmbedding, HirContractMethodSignature, HirContractNode,
     HirEnumDefinition, HirEnumVariant, HirExternInterface, HirFunctionDefinition, HirInlineModule,
-    HirMethodDefinition, HirModuleDeclaration, HirTestDefinition, HirTestMetaSection,
-    HirTestMetadataEntry, HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition,
-    HirUseDeclaration, Item,
+    HirMetaDefinition, HirMethodDefinition, HirModuleDeclaration, HirTestDefinition,
+    HirTestMetaSection, HirTestMetadataEntry, HirTestSkipEntry, HirTestSkipSection,
+    HirTypeDefinition, HirUseDeclaration, Item,
 };
 pub use legality::{HirLegalityError, validate_hir_program};
 pub use literal::HirLiteral;

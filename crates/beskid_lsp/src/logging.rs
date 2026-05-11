@@ -1,6 +1,9 @@
+//! Client log throttling: map VS Code log levels to forwarded `window/logMessage` traffic.
+
 use tower_lsp_server::Client;
 use tower_lsp_server::ls_types::MessageType;
 
+/// Minimum severity forwarded to the editor (`initializationOptions` / settings may raise or lower it).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClientLogFilter {
     Error,
@@ -11,6 +14,7 @@ pub enum ClientLogFilter {
 }
 
 impl ClientLogFilter {
+    /// Parse a user-supplied level string (e.g. from `logLevel` / `beskid.lsp.log.level`).
     pub fn parse(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "error" => Self::Error,
@@ -47,7 +51,13 @@ impl ClientLogFilter {
     }
 }
 
-pub async fn client_log(client: &Client, filter: ClientLogFilter, msg: MessageType, message: String) {
+/// Send `message` to the client when `filter` allows this `msg` severity.
+pub async fn client_log(
+    client: &Client,
+    filter: ClientLogFilter,
+    msg: MessageType,
+    message: String,
+) {
     if filter.allows(msg) {
         client.log_message(msg, message).await;
     }

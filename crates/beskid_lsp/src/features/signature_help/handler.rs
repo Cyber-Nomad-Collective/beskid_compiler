@@ -5,13 +5,16 @@ use tower_lsp_server::ls_types::{
 use crate::features::project_manifest::api as project_manifest;
 use crate::session::store::Document;
 
+/// Signature help derived from hover/callee span heuristics before the active call paren.
 pub fn handle_signature_help(uri: &Uri, doc: &Document, offset: usize) -> Option<SignatureHelp> {
     if project_manifest::is_manifest_uri(uri) {
         return None;
     }
     let analysis = doc.analysis.as_ref()?;
     let (start, end) = callee_span_before_open_paren(&doc.text, offset)?;
-    let mid = start.saturating_add((end.saturating_sub(start)) / 2).min(doc.text.len());
+    let mid = start
+        .saturating_add((end.saturating_sub(start)) / 2)
+        .min(doc.text.len());
     let hover = beskid_analysis::services::hover_at_offset(analysis, mid)?;
     let label = hover
         .markdown

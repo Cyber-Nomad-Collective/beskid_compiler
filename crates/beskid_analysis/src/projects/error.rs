@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+/// Manifest / lockfile / workspace / materialization failures with stable diagnostic codes.
 #[derive(Debug, Error)]
 pub enum ProjectError {
     #[error("failed to read manifest at {path}: {source}")]
@@ -22,6 +23,11 @@ pub enum ProjectError {
     },
     #[error("manifest validation error: {0}")]
     Validation(String),
+    /// Meta / manifest contract failure in diagnostic band **E1801–E1899** (platform-spec
+    /// diagnostic-code-registry). Prefer this over [`ProjectError::Validation`] for `Meta` manifest
+    /// shape, `project.meta`, and workspace `attachTo` resolution failures.
+    #[error("{message}")]
+    MetaContractViolation { code: &'static str, message: String },
     #[error("project file not found from {0}")]
     ProjectFileNotFound(PathBuf),
     #[error("target `{0}` not found")]
@@ -80,6 +86,13 @@ pub enum ProjectError {
 }
 
 impl ProjectError {
+    pub fn meta_contract(code: &'static str, message: impl Into<String>) -> Self {
+        Self::MetaContractViolation {
+            code,
+            message: message.into(),
+        }
+    }
+
     /// Byte span in the manifest source when this error was produced with location info.
     pub fn manifest_source_span(&self) -> Option<(usize, usize)> {
         match self {
@@ -103,6 +116,7 @@ impl ProjectError {
             Self::ReadManifest { .. } => "E3002",
             Self::Parse(_) | Self::ParseAt { .. } => "E3003",
             Self::Validation(_) => "E3004",
+            Self::MetaContractViolation { code, .. } => code,
             Self::ProjectFileNotFound(_) => "E3001",
             Self::TargetNotFound(_) => "E3005",
             Self::DependencyManifestNotFound { .. } => "E3006",

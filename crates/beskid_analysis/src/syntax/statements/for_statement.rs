@@ -7,6 +7,7 @@ use crate::syntax::{Block, Expression, Identifier, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// `for` loop over an iterable value.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct ForStatement {
     #[ast(child)]

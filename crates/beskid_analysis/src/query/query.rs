@@ -1,5 +1,8 @@
+//! Fluent entry for descendant iterators over syntax [`NodeRef`](crate::query::NodeRef).
+
 use crate::query::{AstNode, Descendants, NodeRef};
 
+/// Borrowed cursor at a syntax node; use [`Query::descendants`] or [`Query::of`] to traverse.
 #[derive(Clone, Copy)]
 pub struct Query<'a> {
     start: NodeRef<'a>,

@@ -1,12 +1,16 @@
+//! Helpers to build [`SpanInfo`](crate::syntax::SpanInfo) from raw byte ranges in the parser input.
+
 use pest::Span;
 
 use crate::syntax::SpanInfo;
 
+/// Span covering `[start, end)` in `input`, if pest can construct a [`pest::Span`].
 pub(crate) fn span_from_bounds(input: &str, start: usize, end: usize) -> Option<SpanInfo> {
     let span = Span::new(input, start, end)?;
     Some(SpanInfo::from_span(&span))
 }
 
+/// Span for `op_text` between `start` and `end` in `input` (used for operator tokens).
 pub(crate) fn span_from_range(
     input: &str,
     start: usize,

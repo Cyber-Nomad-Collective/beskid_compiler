@@ -1,3 +1,5 @@
+//! HIR type checker: [`context::TypeContext`] walks items and expressions, filling [`context::TypeResult`].
+
 pub mod context;
 pub mod expressions;
 pub mod helpers;

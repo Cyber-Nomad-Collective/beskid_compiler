@@ -22,6 +22,7 @@ use super::unary_expression::{UnaryExpression, parse_unary_expression};
 
 use beskid_ast_derive::AstNode;
 
+/// Top-level expression shape after parsing (postfix chains, operators, literals, etc.).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     #[ast(child)]
@@ -94,6 +95,7 @@ fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError>
     }
 }
 
+/// Parses a postfix chain: calls, member access, and `?` try wrapping.
 pub(crate) fn parse_postfix_expression(
     pair: Pair<Rule>,
 ) -> Result<Spanned<Expression>, ParseError> {
@@ -141,6 +143,7 @@ pub(crate) fn parse_postfix_expression(
     Ok(Spanned::new(expr.node, span))
 }
 
+/// Parses the innermost `PrimaryExpression` / delegate to nested expression rules.
 pub(crate) fn parse_primary_expression(
     pair: Pair<Rule>,
 ) -> Result<Spanned<Expression>, ParseError> {

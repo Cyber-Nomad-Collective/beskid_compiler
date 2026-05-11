@@ -7,6 +7,7 @@ use crate::syntax::{Expression, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// Compound or simple assignment operator token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssignOp {
     Assign,
@@ -14,6 +15,7 @@ pub enum AssignOp {
     SubAssign,
 }
 
+/// Assignment or compound assignment (`=`, `+=`, `-=`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct AssignExpression {
     #[ast(child)]

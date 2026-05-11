@@ -1,5 +1,8 @@
+//! Parameter passing mode keywords.
+
 use beskid_ast_derive::AstNode;
 
+/// `ref` or `out` parameter modifier.
 #[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParameterModifier {
     Ref,

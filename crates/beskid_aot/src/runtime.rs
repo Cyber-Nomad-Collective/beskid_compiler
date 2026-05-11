@@ -1,3 +1,5 @@
+//! Beskid runtime static library: prebuilt path, on-the-fly `cargo` bridge, or standalone (no runtime).
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -7,6 +9,7 @@ use crate::api::{BuildProfile, RuntimeStrategy};
 use crate::error::{AotError, AotResult};
 use crate::target::detect_target;
 
+/// Optional path to a `.a`/`.lib` to pass the linker, plus symbols re-exported for tests/tooling.
 #[derive(Debug, Clone)]
 pub struct RuntimeArtifact {
     pub staticlib_path: Option<PathBuf>,
@@ -60,6 +63,7 @@ fn ensure_runtime_symbols_present(archive_path: &Path, required: &[&str]) -> Aot
     Ok(())
 }
 
+/// Strategy, target triple, profile, and scratch directory for runtime builds.
 #[derive(Debug, Clone)]
 pub struct RuntimeBuildRequest {
     pub strategy: RuntimeStrategy,
@@ -68,6 +72,7 @@ pub struct RuntimeBuildRequest {
     pub work_dir: PathBuf,
 }
 
+/// Resolve or build the runtime archive according to `req.strategy`.
 pub fn prepare_runtime(req: &RuntimeBuildRequest) -> AotResult<RuntimeArtifact> {
     match &req.strategy {
         RuntimeStrategy::Standalone => Ok(RuntimeArtifact {

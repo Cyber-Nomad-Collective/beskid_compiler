@@ -1,24 +1,43 @@
-use beskid_analysis::parser::{BeskidParser, Rule};
-use beskid_analysis::parsing::error::ParseError;
-use beskid_analysis::parsing::parsable::Parsable;
+//! Map Beskid parse/semantic/manifest errors to LSP [`Diagnostic`] values.
+
+use beskid_analysis::AnalysisOptions;
+use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{parse_manifest, parse_workspace_manifest};
 use beskid_analysis::services::{self, DocumentAnalysisSnapshot};
 use beskid_analysis::syntax::Program;
-use beskid_analysis::{AnalysisOptions, SemanticDiagnostic, Severity, builtin_rules, run_rules};
-use pest::Parser;
-use pest::error::Error as PestError;
+use beskid_analysis::{SemanticDiagnostic, Severity};
 use tower_lsp_server::ls_types::*;
 
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::offset_range_to_lsp;
 
+/// Produce LSP diagnostics for a `.bd`, `.proj`, or manifest buffer using the best available context.
 pub fn analyze_document(
     uri: &Uri,
     source: &str,
     cached: Option<&DocumentAnalysisSnapshot>,
+    compilation_context: Option<&CompilationContext>,
 ) -> Vec<Diagnostic> {
     if is_project_manifest_uri(uri) {
         return analyze_project_manifest(uri, source);
+    }
+
+    if let Some(path) = uri.to_file_path() {
+        if path.extension().and_then(|ext| ext.to_str()) == Some("bd") {
+            if let Some(ctx) = compilation_context {
+                if let Ok(mut diags) =
+                    services::analyze_source_with_compilation_context(path.as_ref(), source, ctx)
+                {
+                    if let Some(snap) = cached {
+                        diags.extend(snap.doc_diagnostics.iter().cloned());
+                    }
+                    return diags
+                        .into_iter()
+                        .map(|diag| semantic_to_lsp_diagnostic(source, diag))
+                        .collect();
+                }
+            }
+        }
     }
 
     if let Some(project_diags) = analyze_project_file(uri, source) {
@@ -26,28 +45,29 @@ pub fn analyze_document(
     }
 
     if let Some(snap) = cached {
-        return semantic_diagnostics(uri, source, &snap.program.node);
+        let mut out: Vec<Diagnostic> =
+            semantic_diagnostics(&uri.to_string(), source, &snap.program.node);
+        out.extend(
+            snap.doc_diagnostics
+                .iter()
+                .cloned()
+                .map(|d| semantic_to_lsp_diagnostic(source, d)),
+        );
+        out.sort_by(|a, b| {
+            (a.range.start.line, a.range.start.character)
+                .cmp(&(b.range.start.line, b.range.start.character))
+        });
+        return out;
     }
 
-    let mut pairs = match BeskidParser::parse(Rule::Program, source) {
-        Ok(pairs) => pairs,
-        Err(err) => return vec![pest_error_to_lsp_diagnostic(source, &err)],
-    };
-
-    let Some(pair) = pairs.next() else {
-        return vec![simple_error(
+    match services::parse_program_with_source_name(&uri.to_string(), source) {
+        Ok(program) => semantic_diagnostics(&uri.to_string(), source, &program.node),
+        Err(err) => vec![simple_error(
             "parse",
-            "No program found",
+            &format!("{err:#}"),
             Range::new(Position::new(0, 0), Position::new(0, 0)),
-        )];
-    };
-
-    let program = match Program::parse(pair) {
-        Ok(program) => program,
-        Err(err) => return vec![parse_error_to_lsp_diagnostic(source, &err)],
-    };
-
-    semantic_diagnostics(uri, source, &program.node)
+        )],
+    }
 }
 
 fn analyze_project_file(uri: &Uri, source: &str) -> Option<Vec<Diagnostic>> {
@@ -61,15 +81,13 @@ fn analyze_project_file(uri: &Uri, source: &str) -> Option<Vec<Diagnostic>> {
     )
 }
 
-fn semantic_diagnostics(uri: &Uri, source: &str, program: &Program) -> Vec<Diagnostic> {
-    run_rules(
+fn semantic_diagnostics(source_name: &str, source: &str, program: &Program) -> Vec<Diagnostic> {
+    services::semantic_rule_diagnostics_for_program(
         program,
-        uri.to_string(),
+        source_name.to_string(),
         source,
-        &builtin_rules(),
         AnalysisOptions::default(),
     )
-    .diagnostics
     .into_iter()
     .map(|diag| semantic_to_lsp_diagnostic(source, diag))
     .collect()
@@ -115,20 +133,6 @@ fn analyze_project_manifest(uri: &Uri, source: &str) -> Vec<Diagnostic> {
 
 fn is_project_manifest_uri(uri: &Uri) -> bool {
     uri.to_string().to_lowercase().ends_with(".proj")
-}
-
-fn pest_error_to_lsp_diagnostic(source: &str, err: &PestError<Rule>) -> Diagnostic {
-    semantic_to_lsp_diagnostic(
-        source,
-        services::pest_error_diagnostic("source.bd", source, err),
-    )
-}
-
-fn parse_error_to_lsp_diagnostic(source: &str, err: &ParseError) -> Diagnostic {
-    semantic_to_lsp_diagnostic(
-        source,
-        services::parse_error_diagnostic("source.bd", source, err),
-    )
 }
 
 fn simple_error(code: &str, message: &str, range: Range) -> Diagnostic {

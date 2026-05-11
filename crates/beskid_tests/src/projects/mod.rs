@@ -1,3 +1,8 @@
+//! Project and workspace manifest tests: compile plans, corelib layout, resolution, lockfiles.
+
+#[cfg(test)]
+mod test_cwd;
+
 #[cfg(test)]
 mod std_env_lock;
 
@@ -16,6 +21,8 @@ mod graph;
 mod lockfile;
 #[cfg(test)]
 mod manifest;
+#[cfg(test)]
+mod meta_manifest;
 #[cfg(test)]
 mod resolution;
 #[cfg(test)]

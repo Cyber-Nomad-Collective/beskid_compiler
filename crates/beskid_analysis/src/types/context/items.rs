@@ -79,6 +79,11 @@ impl<'a> TypeContext<'a> {
                 self.record_signature(item.span, Vec::new(), return_type);
                 self.type_block(&def.node.body);
             }
+            HirItem::MetaDefinition(def) => {
+                for entry in &def.node.entries {
+                    self.type_expression(&entry.node.value);
+                }
+            }
             HirItem::TypeDefinition(def) => {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {

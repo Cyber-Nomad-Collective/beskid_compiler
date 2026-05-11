@@ -1,3 +1,5 @@
+//! Semantic analysis, lowering, HIR, types, and pipeline rule tests.
+
 mod analyze_program;
 mod diagnostics;
 mod hir_query;

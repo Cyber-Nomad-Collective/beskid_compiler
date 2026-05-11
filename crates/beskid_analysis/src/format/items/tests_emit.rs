@@ -1,6 +1,8 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::format::items::helpers::emit_attribute_lines;
-use crate::syntax::{Spanned, TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection};
+use crate::syntax::{
+    Spanned, TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection,
+};
 use std::fmt::Write;
 
 impl Emit for TestMetadataEntry {

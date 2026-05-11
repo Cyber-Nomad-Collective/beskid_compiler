@@ -1,14 +1,24 @@
+use std::fmt;
+
 use crate::hir::{HirBlock, HirExpressionNode, HirProgram};
 use crate::syntax::Spanned;
 
 use super::normalizable::Normalize;
 use super::{builders, builders::desugar_try_expression};
 
+/// Normalization failures (currently empty; reserved for future HIR transforms).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HirNormalizeError {
     // Placeholder for future normalization errors
 }
 
+impl fmt::Display for HirNormalizeError {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {}
+    }
+}
+
+/// In-place desugaring and shape fixes on HIR (for example `try` expansion).
 pub fn normalize_program(program: &mut Spanned<HirProgram>) -> Result<(), Vec<HirNormalizeError>> {
     let mut normalizer = Normalizer::new();
     normalizer.visit_program(program);
@@ -19,6 +29,7 @@ pub fn normalize_program(program: &mut Spanned<HirProgram>) -> Result<(), Vec<Hi
     }
 }
 
+/// Visitor that applies normalization passes and accumulates [`HirNormalizeError`].
 pub struct Normalizer {
     pub(crate) errors: Vec<HirNormalizeError>,
 }

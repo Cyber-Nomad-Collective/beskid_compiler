@@ -7,6 +7,7 @@ use crate::syntax::{Expression, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// Inclusive-style range used in `for` headers (`start..end`).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct RangeExpression {
     #[ast(child)]

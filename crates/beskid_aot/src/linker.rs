@@ -1,9 +1,12 @@
+//! Host linker and static-archive integration (`cc` / `cl`, `ar`, `libtool`, version scripts).
+
 use std::path::PathBuf;
 use std::process::Command;
 
 use crate::api::{BuildOutputKind, LinkMode};
 use crate::error::{AotError, AotResult};
 
+/// Arguments for [`link`]: object path, optional runtime archive, output shape, and exports.
 #[derive(Debug, Clone)]
 pub struct LinkRequest {
     pub target_triple: Option<String>,
@@ -32,6 +35,7 @@ fn detect_c_compiler() -> String {
     }
 }
 
+/// Successful link or archive merge: output path, echoed command line, and export list carried through.
 #[derive(Debug, Clone)]
 pub struct LinkResult {
     pub output_path: PathBuf,
@@ -39,6 +43,7 @@ pub struct LinkResult {
     pub exported_symbols: Vec<String>,
 }
 
+/// Link or merge into `req.output_path` using the host toolchain (see module docs for platform notes).
 pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
     if !req.object_path.exists() {
         return Err(AotError::Io {
@@ -155,9 +160,8 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
 
     // macOS ships BSD `ar`, which does not implement GNU binutils MRI scripts (`ar -M`).
     // Xcode's `libtool -static` is the supported way to merge a static archive with objects.
-    let is_apple_host_style = target.contains("darwin")
-        || target.contains("apple")
-        || target.contains("macos");
+    let is_apple_host_style =
+        target.contains("darwin") || target.contains("apple") || target.contains("macos");
     if is_apple_host_style {
         return archive_static_libtool(req);
     }

@@ -13,6 +13,7 @@ use crate::syntax::{
 
 use beskid_ast_derive::AstNode;
 
+/// Method inside an `impl` block: receiver type, parameters, return type, and body.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct MethodDefinition {
     #[ast(child)]
@@ -48,6 +49,7 @@ fn parse_path_segment(pair: Pair<Rule>) -> Result<Spanned<crate::syntax::PathSeg
 }
 
 impl Parsable for MethodDefinition {
+    /// Always fails; use [`MethodDefinition::parse_with_receiver`] for `impl` methods.
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         Err(ParseError::unexpected_rule(
             pair,
@@ -57,6 +59,11 @@ impl Parsable for MethodDefinition {
 }
 
 impl MethodDefinition {
+    /// Parses an `impl` method given the already-parsed receiver type.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseError`] on malformed input or if any parameter is named `self`.
     pub(crate) fn parse_with_receiver(
         pair: Pair<Rule>,
         receiver_type: Spanned<Type>,
@@ -110,6 +117,7 @@ impl MethodDefinition {
     }
 }
 
+/// Parses the `impl` receiver type (primitive, single segment, or full path).
 pub(crate) fn parse_receiver_type(pair: Pair<Rule>) -> Result<Spanned<Type>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
     let first = if pair.as_rule() == Rule::ReceiverType {

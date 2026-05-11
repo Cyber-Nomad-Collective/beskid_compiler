@@ -3,6 +3,7 @@ use tower_lsp_server::ls_types::{Range, TextEdit};
 use crate::position::offset_range_to_lsp;
 use crate::session::store::Document;
 
+/// Full-document canonical format; returns `None` when the buffer does not parse.
 pub fn handle_document_formatting(document: &Document) -> Option<Vec<TextEdit>> {
     let parsed = beskid_analysis::services::parse_program(&document.text).ok()?;
     let formatted = beskid_analysis::format::format_program(&parsed).ok()?;
@@ -12,6 +13,7 @@ pub fn handle_document_formatting(document: &Document) -> Option<Vec<TextEdit>> 
     Some(vec![full_document_edit(&document.text, formatted)])
 }
 
+/// Range formatting currently delegates to full-document formatting (canonical emitter).
 pub fn handle_range_formatting(document: &Document, _range: Range) -> Option<Vec<TextEdit>> {
     // Current formatter emits canonical full-program output.
     // Range formatting is implemented as a full-document replacement strategy.

@@ -7,6 +7,7 @@ use crate::syntax::{Expression, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// Function- or method-style call with positional arguments.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct CallExpression {
     #[ast(child)]

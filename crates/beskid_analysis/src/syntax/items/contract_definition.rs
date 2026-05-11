@@ -11,6 +11,7 @@ use crate::syntax::{Attribute, ContractNode, Identifier, SpanInfo, Spanned, Visi
 
 use beskid_ast_derive::AstNode;
 
+/// `contract` interface: members (method signatures and embeddings) with per-item docs.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct ContractDefinition {
     #[ast(children)]
@@ -35,9 +36,10 @@ impl Parsable for ContractDefinition {
         let mut items = Vec::new();
         let mut item_docs = Vec::new();
         for pair in inner {
-            let (doc, item) = parse_doc_attached_with(pair, Rule::ContractItemWithDocs, |inner_pair| {
-                ContractNode::parse(inner_pair)
-            })?;
+            let (doc, item) =
+                parse_doc_attached_with(pair, Rule::ContractItemWithDocs, |inner_pair| {
+                    ContractNode::parse(inner_pair)
+                })?;
             items.push(item);
             item_docs.push(doc);
         }

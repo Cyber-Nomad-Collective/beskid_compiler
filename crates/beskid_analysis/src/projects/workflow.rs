@@ -9,6 +9,8 @@ use serde_json::Value;
 use zip::ZipArchive;
 
 use crate::projects::error::ProjectError;
+use crate::projects::graph::WorkspaceResolutionRules;
+use crate::projects::graph::builder::discover_workspace_resolution_rules;
 use crate::projects::model::{
     CompilePlan, DependencySource, MaterializedDependencyProject, PreparedProjectWorkspace,
     UnresolvedDependencyNote,
@@ -234,6 +236,8 @@ pub fn prepare_project_workspace_with_options(
         source,
     })?;
 
+    let workspace_rules = discover_workspace_resolution_rules(&plan.manifest_path)?;
+
     let source_segment = plan
         .source_root
         .file_name()
@@ -282,7 +286,7 @@ pub fn prepare_project_workspace_with_options(
         .filter(|x| x.source == DependencySource::Registry)
     {
         if let Some((lock_entry, materialized_dependency)) =
-            materialize_registry_dependency(unresolved, &deps_root)?
+            materialize_registry_dependency(unresolved, &deps_root, workspace_rules.as_ref())?
         {
             lock_entries.push(lock_entry);
             materialized_dependencies.push(materialized_dependency);
@@ -453,9 +457,10 @@ fn sanitize_segment(value: &str) -> String {
 fn materialize_registry_dependency(
     unresolved: &UnresolvedDependencyNote,
     deps_root: &Path,
+    workspace_rules: Option<&WorkspaceResolutionRules>,
 ) -> Result<Option<(ProjectLockDependencyEntry, MaterializedDependencyProject)>, ProjectError> {
     let (registry_alias, requested_version) = parse_registry_descriptor(&unresolved.descriptor);
-    let base_url = resolve_registry_base_url();
+    let base_url = resolve_registry_base_url(workspace_rules, registry_alias.as_deref());
     let versions_url = format!(
         "{}/api/packages/{}/versions",
         base_url, unresolved.dependency_name
@@ -566,13 +571,22 @@ fn materialize_registry_dependency(
     Ok(Some((lock_entry, materialized_dependency)))
 }
 
-fn resolve_registry_base_url() -> String {
-    env::var("BESKID_PCKG_URL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "http://127.0.0.1:8082".to_string())
-        .trim_end_matches('/')
-        .to_string()
+fn resolve_registry_base_url(
+    workspace_rules: Option<&WorkspaceResolutionRules>,
+    registry_alias: Option<&str>,
+) -> String {
+    if let Ok(url) = env::var("BESKID_PCKG_URL") {
+        let trimmed = url.trim();
+        if !trimmed.is_empty() {
+            return trimmed.trim_end_matches('/').to_string();
+        }
+    }
+    if let Some(rules) = workspace_rules {
+        if let Some(url) = rules.registry_base_url(registry_alias) {
+            return url.trim_end_matches('/').to_string();
+        }
+    }
+    "http://127.0.0.1:8082".trim_end_matches('/').to_string()
 }
 
 fn parse_registry_descriptor(descriptor: &str) -> (Option<String>, Option<String>) {

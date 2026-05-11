@@ -1,3 +1,5 @@
+//! `beskid parse` — parse a `.bd` file and dump the AST (debug format).
+
 use anyhow::{Context, Result};
 use beskid_analysis::services;
 use clap::Args;
@@ -15,6 +17,7 @@ pub struct ParseArgs {
     pub format: String,
 }
 
+/// Read `args.input`, parse, and print `Debug` AST output.
 pub fn execute(args: ParseArgs) -> Result<()> {
     let source = fs::read_to_string(&args.input)
         .with_context(|| format!("Failed to read file: {}", args.input.display()))?;

@@ -1,0 +1,11 @@
+workspace {
+  name = "MetaDefaultAmbiguityFixture"
+}
+
+member "app" {
+  path = "app"
+}
+
+member "tools" {
+  path = "tools"
+}

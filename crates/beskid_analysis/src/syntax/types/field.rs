@@ -2,12 +2,14 @@ use crate::syntax::{Identifier, Parameter, PrimitiveType, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
+/// Distinguishes ordinary value fields from event/signal-style fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldKind {
     Value,
     Event,
 }
 
+/// Struct or enum variant field with name and type (and optional event capacity).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     #[ast(skip)]
@@ -102,18 +104,18 @@ impl crate::parsing::parsable::Parsable for Field {
                         })
                         .map(|entry| {
                             let mut inner = entry.into_inner();
-                            let first = inner.next().ok_or(
-                                crate::parsing::error::ParseError::missing(
-                                    crate::parser::Rule::Parameter,
-                                ),
-                            )?;
-                            let parameter_pair = if first.as_rule() == crate::parser::Rule::DocRun
-                            {
-                                inner.next().ok_or(
-                                    crate::parsing::error::ParseError::missing(
+                            let first =
+                                inner
+                                    .next()
+                                    .ok_or(crate::parsing::error::ParseError::missing(
                                         crate::parser::Rule::Parameter,
-                                    ),
-                                )?
+                                    ))?;
+                            let parameter_pair = if first.as_rule() == crate::parser::Rule::DocRun {
+                                inner
+                                    .next()
+                                    .ok_or(crate::parsing::error::ParseError::missing(
+                                        crate::parser::Rule::Parameter,
+                                    ))?
                             } else {
                                 first
                             };

@@ -5,12 +5,18 @@ use crate::syntax::Program;
 #[derive(Debug, Clone)]
 pub struct AnalysisOptions {
     pub emit_warnings: bool,
+    /// When `Some`, staged rules use the resolved [`crate::projects::ProjectKind`] signal:
+    /// `Some(true)` allows module-level `meta` items ([`ProjectKind::Meta`]); `Some(false)` runs
+    /// the forbidden-meta gate for ordinary host projects. `None` skips that gate (no manifest
+    /// classification available).
+    pub module_level_meta_items_allowed: Option<bool>,
 }
 
 impl Default for AnalysisOptions {
     fn default() -> Self {
         Self {
             emit_warnings: true,
+            module_level_meta_items_allowed: None,
         }
     }
 }

@@ -1,7 +1,10 @@
+//! Nested module tree: each [`ModuleInfo`] tracks path, parent link, child modules, and exported item ids.
+
 use std::collections::HashMap;
 
 use super::ids::{ItemId, ModuleId};
 
+/// One module node in [`ModuleGraph`] (path from root, parent pointer, item list, per-name scope).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleInfo {
     pub id: ModuleId,
@@ -12,6 +15,7 @@ pub struct ModuleInfo {
     pub scope: HashMap<String, ItemId>,
 }
 
+/// Mutable builder for module paths used while walking HIR during resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleGraph {
     modules: Vec<ModuleInfo>,

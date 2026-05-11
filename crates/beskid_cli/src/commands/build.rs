@@ -1,16 +1,21 @@
-use std::path::PathBuf;
+//! `beskid build` — AOT compile and link Beskid projects to objects, libraries, or executables.
 
-use crate::build_ui::BuildUx;
-use crate::frontend;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::pipeline_ui::{CliPipeline, resolve_input_with_cli_pipeline};
+use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::TargetKind;
 use beskid_aot::{
     AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, ProjectTargetKind,
     RuntimeStrategy, build, default_output_kind, resolve_entrypoint,
 };
-use beskid_codegen::lower_source;
+use beskid_codegen::lower_source_with_pipeline;
+use beskid_pipeline::PipelineObserver;
 use clap::{Args, ValueEnum};
 
+/// CLI-selected output artifact shape for [`BuildArgs::kind`].
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum BuildKind {
     Exe,
@@ -19,30 +24,17 @@ pub enum BuildKind {
     Object,
 }
 
+/// Full set of flags for `beskid build` (output kind, profile, linker, progress).
 #[derive(Args, Debug)]
 pub struct BuildArgs {
     /// The input Beskid file to compile
     pub input: Option<PathBuf>,
 
-    /// Path to a project directory or Project.proj file
-    #[arg(long)]
-    pub project: Option<PathBuf>,
+    #[command(flatten)]
+    pub project: ProjectResolveArgs,
 
-    /// Target name from Project.proj
-    #[arg(long)]
-    pub target: Option<String>,
-
-    /// Workspace member name when resolving from Workspace.proj
-    #[arg(long = "workspace-member")]
-    pub workspace_member: Option<String>,
-
-    /// Require lockfile to be up to date and forbid lockfile updates
-    #[arg(long)]
-    pub frozen: bool,
-
-    /// Require lockfile to exist and match resolution
-    #[arg(long)]
-    pub locked: bool,
+    #[command(flatten)]
+    pub lockfile: LockfilePolicyArgs,
 
     /// Entrypoint function name
     #[arg(long)]
@@ -101,15 +93,23 @@ pub struct BuildArgs {
     pub plain: bool,
 }
 
+/// Resolve, lower, emit CLIF, and run the AOT/link pipeline according to `args`.
 pub fn execute(args: BuildArgs) -> Result<()> {
-    let resolved = frontend::resolve_input(
+    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline(
         args.input.as_ref(),
-        args.project.as_ref(),
-        args.target.as_deref(),
-        args.workspace_member.as_deref(),
-        args.frozen,
-        args.locked,
+        args.project.project.as_ref(),
+        args.project.target.as_deref(),
+        args.project.workspace_member.as_deref(),
+        args.lockfile.frozen,
+        args.lockfile.locked,
+        args.plain,
     )?;
+    let obs: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
+
+    if !args.plain {
+        CliPipeline::print_project_graph(&resolved);
+    }
+
     let source = resolved.source.clone();
     let input_path = resolved.source_path.clone();
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
@@ -118,12 +118,8 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         .as_ref()
         .map(|plan| plan.target.name.clone());
 
-    let ux = BuildUx::start(!args.plain, &resolved);
-    ux.stage("Parsing source and validating syntax");
-    frontend::validate_source(&input_path, &source)?;
-
-    ux.stage("Lowering source to IR");
-    let artifact = lower_source(&input_path, &source, true)?.artifact;
+    let lowered = lower_source_with_pipeline(&input_path, &source, true, obs)?;
+    let artifact = lowered.artifact;
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
     let entrypoint = resolve_entrypoint(args.entrypoint)?;
@@ -179,7 +175,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         ExportPolicy::Explicit(args.export_symbols)
     };
 
-    ux.stage("Building object file, bundling runtime, linking output");
+    let pipeline_arc: Arc<dyn PipelineObserver> = pipeline_ui.clone();
     let result = build(AotBuildRequest {
         artifact,
         output_kind,
@@ -196,8 +192,9 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         link_mode,
         runtime,
         verbose_link: args.verbose_link,
+        pipeline: Some(pipeline_arc),
     })?;
-    ux.finish("Build complete");
+    pipeline_ui.finish_build("Build complete");
 
     println!("object: {}", result.object_path.display());
     if let Some(final_path) = result.final_path {
@@ -220,7 +217,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
             }
         );
     }
-    if ux.is_enabled() {
+    if pipeline_ui.is_spinner_enabled() {
         println!("tip: use --plain for non-animated output");
     }
 

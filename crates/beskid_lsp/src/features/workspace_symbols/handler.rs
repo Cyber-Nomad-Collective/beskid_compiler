@@ -1,11 +1,17 @@
-use tower_lsp_server::ls_types::{Location, SymbolInformation, WorkspaceSymbolParams, WorkspaceSymbolResponse};
+use tower_lsp_server::ls_types::{
+    Location, SymbolInformation, WorkspaceSymbolParams, WorkspaceSymbolResponse,
+};
 
 use crate::adapters::symbol::analysis_symbol_kind_to_lsp;
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::offset_range_to_lsp;
 use crate::session::store::State;
 
-pub fn handle_workspace_symbols(state: &State, params: WorkspaceSymbolParams) -> WorkspaceSymbolResponse {
+/// Workspace-wide symbol search across open buffers and indexed disk snapshots.
+pub fn handle_workspace_symbols(
+    state: &State,
+    params: WorkspaceSymbolParams,
+) -> WorkspaceSymbolResponse {
     let query = params.query.to_lowercase();
     let mut out: Vec<SymbolInformation> = Vec::new();
 
@@ -20,8 +26,7 @@ pub fn handle_workspace_symbols(state: &State, params: WorkspaceSymbolParams) ->
             if !query.is_empty() && !sym.name.to_lowercase().contains(&query) {
                 continue;
             }
-            let range =
-                offset_range_to_lsp(&doc.text, sym.selection_start, sym.selection_end);
+            let range = offset_range_to_lsp(&doc.text, sym.selection_start, sym.selection_end);
             #[allow(deprecated)]
             out.push(SymbolInformation {
                 name: sym.name,

@@ -1,0 +1,12 @@
+# Informative sketch — NOT valid for parse_manifest until nested `meta` blocks exist.
+# Normative keys (platform-spec): attachTo, entryModules, optional maxMetaRounds, capabilities.
+#
+# project {
+#   name = "my-meta-pack"
+#   version = "0.1.0"
+#   type = "Meta"
+#   meta {
+#     attachTo = ["default"]   # or explicit workspace member ids
+#     entryModules = ["Meta/Main.bd"]
+#   }
+# }

@@ -1,3 +1,5 @@
+//! One module per `beskid` subcommand; each exposes an `execute` function consumed by [`crate::cli::run`].
+
 pub mod analyze;
 pub mod build;
 pub mod clif;

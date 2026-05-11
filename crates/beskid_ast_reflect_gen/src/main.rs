@@ -8,6 +8,7 @@ use beskid_ast_reflect_gen::{
     default_allowlist_paths, parse_cli_args, run_cli, syntax_nodes::emit_syntax_sdk,
 };
 
+/// Parse argv, optionally fill allowlisted paths from `--workspace`, then generate or emit SDK.
 fn main() -> std::process::ExitCode {
     let raw: Vec<OsString> = env::args_os().skip(1).collect();
     if raw.iter().any(|a| a == "--help" || a == "-h") {
@@ -55,6 +56,7 @@ fn main() -> std::process::ExitCode {
     std::process::ExitCode::SUCCESS
 }
 
+/// `beskid_ast_reflect_gen --emit-syntax-sdk <DIR> --workspace <ROOT>`: write per-node `.bd` files.
 fn run_emit_syntax_sdk(raw: &[OsString], flag_idx: usize) -> std::process::ExitCode {
     let sdk_arg = raw.get(flag_idx + 1).filter(|a| {
         let s = a.to_string_lossy();
@@ -108,6 +110,7 @@ fn run_emit_syntax_sdk(raw: &[OsString], flag_idx: usize) -> std::process::ExitC
     }
 }
 
+/// Strip `--workspace <DIR>` from args for `parse_cli_args` while remembering the workspace root.
 fn extract_workspace_flag(args: Vec<OsString>) -> (Option<PathBuf>, Vec<OsString>) {
     let mut workspace = None;
     let mut out = Vec::new();
@@ -128,6 +131,7 @@ fn extract_workspace_flag(args: Vec<OsString>) -> (Option<PathBuf>, Vec<OsString
     (workspace, out)
 }
 
+/// Usage and flags (stderr).
 fn print_help() {
     eprintln!(
         "\

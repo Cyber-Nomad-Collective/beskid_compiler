@@ -10,6 +10,7 @@ use crate::syntax::{Expression, Literal, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// Expression consisting of a single [`Literal`]; string literals may desugar to concatenation.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct LiteralExpression {
     #[ast(child)]

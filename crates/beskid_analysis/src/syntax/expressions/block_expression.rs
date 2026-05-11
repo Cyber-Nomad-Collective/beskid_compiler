@@ -7,6 +7,7 @@ use crate::syntax::{Block, Expression, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
+/// Block used as an expression (`{ ... }` value).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct BlockExpression {
     #[ast(child)]

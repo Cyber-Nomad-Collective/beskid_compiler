@@ -1,31 +1,12 @@
 use std::fs;
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
 use beskid_analysis::projects::{
-    PROJECT_FILE_NAME, UnresolvedDependencyKind, build_project_graph, collect_dependency_projects,
+    UnresolvedDependencyKind, build_project_graph, collect_dependency_projects,
     collect_unresolved_dependencies,
 };
 
-fn temp_case_dir(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time ok")
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "beskid_graph_tests_{name}_{}_{}",
-        std::process::id(),
-        nanos
-    ));
-    fs::create_dir_all(&dir).expect("create temp dir");
-    dir
-}
-
-fn write_manifest(dir: &PathBuf, source: &str) -> PathBuf {
-    let manifest_path = dir.join(PROJECT_FILE_NAME);
-    fs::write(&manifest_path, source).expect("write manifest");
-    manifest_path
-}
+use super::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 #[test]
 fn collect_unresolved_dependencies_reports_git_and_registry_nodes() {
@@ -54,23 +35,25 @@ dependency "PkgCore" {
 "#;
     let manifest_path = write_manifest(&dir, source);
 
-    let graph = build_project_graph(&manifest_path).expect("graph should build");
-    let unresolved = collect_unresolved_dependencies(&graph);
-    assert_eq!(unresolved.len(), 2);
+    with_cwd_at_workspace_root(&dir, || {
+        let graph = build_project_graph(&manifest_path).expect("graph should build");
+        let unresolved = collect_unresolved_dependencies(&graph);
+        assert_eq!(unresolved.len(), 2);
 
-    let git = unresolved
-        .iter()
-        .find(|note| note.kind == UnresolvedDependencyKind::Git)
-        .expect("git unresolved dep");
-    assert_eq!(git.dependency_name, "RemoteStd");
-    assert_eq!(git.descriptor, "git@example.com/std.git@abc123");
+        let git = unresolved
+            .iter()
+            .find(|note| note.kind == UnresolvedDependencyKind::Git)
+            .expect("git unresolved dep");
+        assert_eq!(git.dependency_name, "RemoteStd");
+        assert_eq!(git.descriptor, "git@example.com/std.git@abc123");
 
-    let registry = unresolved
-        .iter()
-        .find(|note| note.kind == UnresolvedDependencyKind::Registry)
-        .expect("registry unresolved dep");
-    assert_eq!(registry.dependency_name, "PkgCore");
-    assert_eq!(registry.descriptor, "1.2.3");
+        let registry = unresolved
+            .iter()
+            .find(|note| note.kind == UnresolvedDependencyKind::Registry)
+            .expect("registry unresolved dep");
+        assert_eq!(registry.dependency_name, "PkgCore");
+        assert_eq!(registry.descriptor, "1.2.3");
+    });
 
     let _ = fs::remove_dir_all(dir);
 }
@@ -167,14 +150,16 @@ dependency "Feature" {
 "#,
     );
 
-    let graph = build_project_graph(&app_manifest_path).expect("graph should build");
-    let deps = collect_dependency_projects(&graph);
+    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+        let graph = build_project_graph(&app_manifest_path).expect("graph should build");
+        let deps = collect_dependency_projects(&graph);
 
-    assert_eq!(deps.len(), 4);
-    assert_eq!(deps[0].dependency_name, "Std");
-    assert_eq!(deps[1].dependency_name, "Util");
-    assert_eq!(deps[2].dependency_name, "Core");
-    assert_eq!(deps[3].dependency_name, "Feature");
+        assert_eq!(deps.len(), 4);
+        assert_eq!(deps[0].dependency_name, "Std");
+        assert_eq!(deps[1].dependency_name, "Util");
+        assert_eq!(deps[2].dependency_name, "Core");
+        assert_eq!(deps[3].dependency_name, "Feature");
+    });
 
     let _ = fs::remove_dir_all(root);
 }

@@ -97,7 +97,7 @@ Program = { SOI ~ ItemList ~ EOI }
 
 DocLineContent = { "///" ~ !("/") ~ (!(NEWLINE) ~ ANY)* ~ NEWLINE? }
 DocRun = @{ DocLineContent+ }
-InnerItem = _{ FunctionDefinition | ImplBlock | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
+InnerItem = _{ FunctionDefinition | ImplBlock | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | MetaDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
 
 AttributeList = { Attribute+ }
 Attribute = { "[" ~ Identifier ~ ("(" ~ AttributeArgumentList? ~ ")")? ~ "]" }
@@ -177,6 +177,10 @@ TestMetaSection = { "meta" ~ "{" ~ TestMetadataEntry* ~ "}" }
 TestMetadataEntry = { Identifier ~ "=" ~ Expression ~ ";" }
 TestSkipSection = { "skip" ~ "{" ~ TestSkipEntry* ~ "}" }
 TestSkipEntry = { Identifier ~ "=" ~ Expression ~ ";" }
+
+// Module-level language-meta block (metaprogramming host surface); body uses the same
+// `name = expr;` entries as `test` meta sections.
+MetaDefinition = { AttributeList? ~ Visibility? ~ "meta" ~ Identifier ~ "{" ~ TestMetadataEntry* ~ "}" }
 
 ////////////////////////////////////////////////////////////
 // 5) STATEMENTS AND BLOCKS

@@ -4,6 +4,7 @@ use crate::features::project_manifest::api as project_manifest;
 use crate::position::{offset_in_range, offset_range_to_lsp};
 use crate::session::store::Document;
 
+/// Markdown hover for symbols, types, or manifest tokens at `offset`.
 pub fn handle_hover(uri: &Uri, doc: &Document, offset: usize) -> Option<Hover> {
     if project_manifest::is_manifest_uri(uri) {
         if let Some(token) = project_manifest::token_at_offset(&doc.text, offset)

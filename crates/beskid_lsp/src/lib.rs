@@ -1,3 +1,5 @@
+//! Beskid Language Server: document sync, semantic features, and workspace-wide indexing.
+
 pub(crate) mod adapters;
 pub(crate) mod diagnostics;
 pub(crate) mod features;

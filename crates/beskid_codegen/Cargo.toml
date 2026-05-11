@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-cranelift-codegen = "0.128.3"
-cranelift-frontend = "0.128.3"
-cranelift-module = "0.128.3"
+beskid_abi = { path = "../beskid_abi" }
+beskid_pipeline = { path = "../beskid_pipeline" }
+cranelift-codegen = { workspace = true }
+cranelift-frontend = { workspace = true }
+cranelift-module = { workspace = true }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_runtime = { path = "../beskid_runtime" }
 anyhow = "1"

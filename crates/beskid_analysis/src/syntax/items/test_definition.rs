@@ -7,12 +7,11 @@ use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::{
     parse_attributes, parse_doc_attached_pair_raw, parse_visibility_or_default,
 };
-use crate::syntax::{
-    Attribute, Expression, Identifier, SpanInfo, Spanned, Statement, Visibility,
-};
+use crate::syntax::{Attribute, Expression, Identifier, SpanInfo, Spanned, Statement, Visibility};
 
 use beskid_ast_derive::AstNode;
 
+/// Single `name = expr` entry in a test `meta { ... }` section.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct TestMetadataEntry {
     #[ast(child)]
@@ -31,6 +30,7 @@ impl Parsable for TestMetadataEntry {
     }
 }
 
+/// Entry in a test `skip { ... }` section (conditional skip metadata).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct TestSkipEntry {
     #[ast(child)]
@@ -49,6 +49,7 @@ impl Parsable for TestSkipEntry {
     }
 }
 
+/// Braced `meta` section inside a test body.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct TestMetaSection {
     #[ast(children)]
@@ -67,6 +68,7 @@ impl Parsable for TestMetaSection {
     }
 }
 
+/// Braced `skip` section inside a test body.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct TestSkipSection {
     #[ast(children)]
@@ -85,6 +87,7 @@ impl Parsable for TestSkipSection {
     }
 }
 
+/// `test` item: optional meta/skip sections and a statement body with optional statement docs.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct TestDefinition {
     #[ast(children)]

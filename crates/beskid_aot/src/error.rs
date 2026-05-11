@@ -1,9 +1,13 @@
+//! Typed errors for ISA setup, object emission, runtime preparation, and linking.
+
 use std::path::PathBuf;
 
 use crate::api::BuildOutputKind;
 
+/// Result alias used across the AOT crate.
 pub type AotResult<T> = Result<T, AotError>;
 
+/// Failure modes for the AOT pipeline (codes in `thiserror` messages align with compiler diagnostics).
 #[derive(Debug, thiserror::Error)]
 pub enum AotError {
     #[error("[E4001] ISA initialization failed: {message}")]

@@ -1,44 +1,40 @@
+//! `beskid analyze` — run builtin semantic rules and print diagnostics.
+
 use anyhow::Result;
 use beskid_analysis::services;
 use clap::Args;
 use std::path::PathBuf;
 
 use crate::errors;
+use crate::pipeline_ui::resolve_input_with_cli_pipeline;
+use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
 #[derive(Args, Debug)]
 pub struct AnalyzeArgs {
     /// The input Beskid file to analyze
     pub input: Option<PathBuf>,
 
-    /// Path to a project directory or Project.proj file
-    #[arg(long)]
-    pub project: Option<PathBuf>,
+    #[command(flatten)]
+    pub project: ProjectResolveArgs,
 
-    /// Target name from Project.proj
-    #[arg(long)]
-    pub target: Option<String>,
+    #[command(flatten)]
+    pub lockfile: LockfilePolicyArgs,
 
-    /// Workspace member name when resolving from Workspace.proj
-    #[arg(long = "workspace-member")]
-    pub workspace_member: Option<String>,
-
-    /// Require lockfile to be up to date and forbid lockfile updates
+    /// Disable animated progress (resolve phases still emit pipeline events for tracing)
     #[arg(long)]
-    pub frozen: bool,
-
-    /// Require lockfile to exist and match resolution
-    #[arg(long)]
-    pub locked: bool,
+    pub plain: bool,
 }
 
+/// Resolve the project, analyze the entry source, and print diagnostics (or "No diagnostics.").
 pub fn execute(args: AnalyzeArgs) -> Result<()> {
-    let resolved = services::resolve_input(
+    let (_pipeline_ui, resolved) = resolve_input_with_cli_pipeline(
         args.input.as_ref(),
-        args.project.as_ref(),
-        args.target.as_deref(),
-        args.workspace_member.as_deref(),
-        args.frozen,
-        args.locked,
+        args.project.project.as_ref(),
+        args.project.target.as_deref(),
+        args.project.workspace_member.as_deref(),
+        args.lockfile.frozen,
+        args.lockfile.locked,
+        args.plain,
     )?;
     let diagnostics = services::analyze_program(&resolved.source_path, &resolved.source)?;
 

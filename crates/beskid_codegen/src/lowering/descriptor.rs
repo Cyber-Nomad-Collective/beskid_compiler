@@ -8,6 +8,7 @@ const HEADER_ALIGN: usize = std::mem::align_of::<usize>();
 const ENUM_TAG_SIZE: usize = 4;
 const ENUM_TAG_ALIGN: usize = 4;
 
+/// Concrete size, alignment, and GC-relevant pointer byte offsets for a Beskid type.
 #[derive(Debug, Clone)]
 pub struct TypeLayout {
     pub size: usize,
@@ -15,6 +16,7 @@ pub struct TypeLayout {
     pub pointer_offsets: Vec<usize>,
 }
 
+/// Serialized type descriptor payload (mirrors `TypeLayout` fields for emission into object/JIT data).
 #[derive(Debug, Clone)]
 pub struct TypeDescriptorData {
     pub size: usize,
@@ -50,6 +52,7 @@ fn compute_layout(type_result: &TypeResult, type_id: TypeId) -> Option<TypeLayou
         TypeInfo::GenericParam(_) => Some(pointer_layout()),
         TypeInfo::Applied { base, .. } => compute_named_layout(type_result, *base),
         TypeInfo::Function { .. } => Some(pointer_layout()),
+        TypeInfo::Array(_) => Some(pointer_layout()),
     }
 }
 
@@ -161,6 +164,7 @@ pub(crate) fn is_pointer_like_type(type_result: &TypeResult, type_id: TypeId) ->
         Some(TypeInfo::Applied { .. }) => true,
         Some(TypeInfo::GenericParam(_)) => true,
         Some(TypeInfo::Function { .. }) => true,
+        Some(TypeInfo::Array(_)) => true,
         Some(TypeInfo::Primitive(_)) => false,
         None => false,
     }

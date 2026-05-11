@@ -2,8 +2,8 @@ use crate::hir::{
     AstItem, AstProgram, HirAttribute, HirAttributeDeclaration, HirAttributeParameter,
     HirAttributeTarget, HirContractDefinition, HirContractEmbedding, HirContractMethodSignature,
     HirContractNode, HirEnumDefinition, HirEnumVariant, HirExternInterface, HirFunctionDefinition,
-    HirInlineModule, HirItem, HirMethodDefinition, HirModuleDeclaration, HirProgram,
-    HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry, HirTestSkipEntry,
+    HirInlineModule, HirItem, HirMetaDefinition, HirMethodDefinition, HirModuleDeclaration,
+    HirProgram, HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry, HirTestSkipEntry,
     HirTestSkipSection, HirTypeDefinition, HirUseDeclaration,
 };
 use crate::syntax::{self, Spanned};
@@ -81,6 +81,7 @@ impl Lowerable for Spanned<AstItem> {
             AstItem::EnumDefinition(def) => HirItem::EnumDefinition(def.lower()),
             AstItem::ContractDefinition(def) => HirItem::ContractDefinition(def.lower()),
             AstItem::TestDefinition(def) => HirItem::TestDefinition(def.lower()),
+            AstItem::MetaDefinition(def) => HirItem::MetaDefinition(def.lower()),
             AstItem::AttributeDeclaration(def) => HirItem::AttributeDeclaration(def.lower()),
             AstItem::ModuleDeclaration(def) => HirItem::ModuleDeclaration(def.lower()),
             AstItem::InlineModule(def) => HirItem::InlineModule(def.lower()),
@@ -120,6 +121,22 @@ impl Lowerable for Spanned<syntax::MethodDefinition> {
                 parameters: self.node.parameters.iter().map(Lowerable::lower).collect(),
                 return_type: self.node.return_type.as_ref().map(Lowerable::lower),
                 body: self.node.body.lower(),
+            },
+            self.span,
+        )
+    }
+}
+
+impl Lowerable for Spanned<syntax::MetaDefinition> {
+    type Output = Spanned<HirMetaDefinition>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirMetaDefinition {
+                attributes: lower_attributes(&self.node.attributes),
+                visibility: self.node.visibility.lower(),
+                name: self.node.name.lower(),
+                entries: self.node.entries.iter().map(Lowerable::lower).collect(),
             },
             self.span,
         )
@@ -393,6 +410,7 @@ impl Lowerable for Spanned<syntax::InlineModule> {
                         HirItem::ContractDefinition(def.lower())
                     }
                     syntax::Node::TestDefinition(def) => HirItem::TestDefinition(def.lower()),
+                    syntax::Node::MetaDefinition(def) => HirItem::MetaDefinition(def.lower()),
                     syntax::Node::AttributeDeclaration(def) => {
                         HirItem::AttributeDeclaration(def.lower())
                     }

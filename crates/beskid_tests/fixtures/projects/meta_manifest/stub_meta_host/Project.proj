@@ -1,0 +1,11 @@
+# Placeholder host project co-located with future Meta packs in workspace layouts.
+# When Meta manifests land, a sibling Meta project will attachTo this member (or "default").
+project {
+  name = "StubHost"
+  version = "0.1.0"
+}
+
+target "StubHostLib" {
+  kind = "Lib"
+  entry = "Stub.bd"
+}

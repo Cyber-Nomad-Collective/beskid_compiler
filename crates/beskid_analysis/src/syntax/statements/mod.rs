@@ -1,3 +1,5 @@
+//! Statement AST: control flow, bindings, and expression statements.
+
 pub mod block;
 pub mod break_statement;
 pub mod continue_statement;

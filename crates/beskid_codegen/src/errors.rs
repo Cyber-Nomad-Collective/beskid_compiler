@@ -3,6 +3,7 @@ use std::fmt;
 use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::types::TypeId;
 
+/// Recoverable lowering or CLIF verification failure; map with [`crate::codegen_error_to_diagnostic`].
 #[derive(Debug)]
 pub enum CodegenError {
     UnsupportedNode {

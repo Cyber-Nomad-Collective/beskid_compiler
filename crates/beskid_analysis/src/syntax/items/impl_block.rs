@@ -8,6 +8,7 @@ use crate::syntax::items::method_definition::parse_receiver_type;
 use crate::syntax::items::parse_helpers::parse_doc_attached_with;
 use crate::syntax::{MethodDefinition, SpanInfo, Spanned, Type};
 
+/// `impl` block for a concrete receiver type and its methods (with per-method leading docs).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImplBlock {
     pub receiver_type: Spanned<Type>,
@@ -28,11 +29,10 @@ impl Parsable for ImplBlock {
         let mut methods = Vec::new();
         let mut method_docs = Vec::new();
         for method_pair in inner {
-            let (doc_opt, method) = parse_doc_attached_with(
-                method_pair,
-                Rule::ImplMethodWithDocs,
-                |inner_pair| MethodDefinition::parse_with_receiver(inner_pair, receiver_type.clone()),
-            )?;
+            let (doc_opt, method) =
+                parse_doc_attached_with(method_pair, Rule::ImplMethodWithDocs, |inner_pair| {
+                    MethodDefinition::parse_with_receiver(inner_pair, receiver_type.clone())
+                })?;
             methods.push(method);
             method_docs.push(doc_opt);
         }

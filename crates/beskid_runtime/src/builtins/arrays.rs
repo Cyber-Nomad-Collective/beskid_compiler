@@ -2,6 +2,7 @@ use beskid_abi::BeskidArray;
 
 use super::alloc::alloc;
 
+/// Allocate a [`BeskidArray`] header; backing element storage is only allocated when `arrays_backing` is enabled.
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn array_new(elem_size: usize, len: usize) -> *mut BeskidArray {
     let size = std::mem::size_of::<BeskidArray>();
@@ -35,4 +36,13 @@ pub extern "C-unwind" fn array_new(elem_size: usize, len: usize) -> *mut BeskidA
         });
     }
     target
+}
+
+/// Return logical element count for a [`BeskidArray`] handle. Null yields `0`.
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn array_len(value: *const BeskidArray) -> usize {
+    if value.is_null() {
+        return 0;
+    }
+    unsafe { (*value).len }
 }

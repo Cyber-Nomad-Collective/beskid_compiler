@@ -1,3 +1,5 @@
+//! Clap surface and command execution for `beskid pckg` (pack, upload, registry queries).
+
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -20,6 +22,7 @@ use zip::{CompressionMethod, ZipWriter};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
+use crate::api_doc::API_JSON_SCHEMA_VERSION;
 use crate::models::PackageVersionSummaryResponse;
 use crate::{PckgClient, PckgClientConfig, PckgError};
 
@@ -36,6 +39,7 @@ struct RepositoryAuthConfig {
     api_key: String,
 }
 
+/// Connection, auth, timeout, and subcommand selection for `beskid pckg`.
 #[derive(Args, Debug, Clone)]
 pub struct PckgArgs {
     /// pckg server base URL.
@@ -245,6 +249,7 @@ fn print_package_versions_table(versions: &[PackageVersionSummaryResponse]) {
     println!("{table}");
 }
 
+/// Individual registry operations (pack locally or call HTTP APIs).
 #[derive(Subcommand, Debug, Clone)]
 pub enum PckgCommand {
     /// Build a publishable .bpk artifact from a package directory.
@@ -350,6 +355,7 @@ pub struct PackArgs {
     pub version_state_file: PathBuf,
 }
 
+/// Run `args.command` on a fresh multi-thread Tokio runtime (`block_on` internally).
 pub fn execute(args: PckgArgs) -> Result<(), PckgError> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -456,10 +462,25 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
         });
     }
 
+    for (name, bytes) in &entries {
+        if name == ".beskid/docs/api.json" {
+            let _ =
+                crate::api_doc::ApiDocRoot::from_json_slice(bytes).map_err(|e| PckgError::Api {
+                    status: reqwest::StatusCode::BAD_REQUEST,
+                    message: format!("invalid `.beskid/docs/api.json` in package sources: {e}"),
+                    body: None,
+                })?;
+        }
+    }
+
     let package_json = serde_json::to_string_pretty(&serde_json::json!({
         "schema": "beskid.package.v1",
         "id": args.package,
         "version": resolved_version,
+        "documentation": {
+            "apiJson": ".beskid/docs/api.json",
+            "schemaVersion": API_JSON_SCHEMA_VERSION,
+        },
     }))
     .map_err(|source| PckgError::Api {
         status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
@@ -705,7 +726,10 @@ async fn execute_publish(
                 println!("published_at_utc: {}", version.published_at_utc);
                 print_package_versions_table(std::slice::from_ref(version));
             } else {
-                println!("version:  (not returned by registry — check `beskid pckg versions {}`)", args.package.trim());
+                println!(
+                    "version:  (not returned by registry — check `beskid pckg versions {}`)",
+                    args.package.trim()
+                );
             }
             println!("------------------------");
             Ok(())

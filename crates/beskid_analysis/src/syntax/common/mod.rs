@@ -1,3 +1,5 @@
+//! Shared syntax primitives: identifiers, spans, and visibility keywords.
+
 pub mod identifier;
 pub mod span;
 pub mod visibility;

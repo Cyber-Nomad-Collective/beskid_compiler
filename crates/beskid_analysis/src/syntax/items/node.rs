@@ -5,12 +5,14 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::InlineModule;
 use crate::syntax::{
-    AttributeDeclaration, ContractDefinition, EnumDefinition, FunctionDefinition, MethodDefinition,
-    ModuleDeclaration, SpanInfo, Spanned, TestDefinition, TypeDefinition, UseDeclaration,
+    AttributeDeclaration, ContractDefinition, EnumDefinition, FunctionDefinition, MetaDefinition,
+    MethodDefinition, ModuleDeclaration, SpanInfo, Spanned, TestDefinition, TypeDefinition,
+    UseDeclaration,
 };
 
 use beskid_ast_derive::AstNode;
 
+/// Inner module item: function, type, enum, contract, test, module, use, etc.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub enum Node {
     #[ast(child)]
@@ -25,6 +27,8 @@ pub enum Node {
     ContractDefinition(Spanned<ContractDefinition>),
     #[ast(child)]
     TestDefinition(Spanned<TestDefinition>),
+    #[ast(child)]
+    MetaDefinition(Spanned<MetaDefinition>),
     #[ast(child)]
     AttributeDeclaration(Spanned<AttributeDeclaration>),
     #[ast(child)]
@@ -71,6 +75,10 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
         Rule::TestDefinition => {
             let node = TestDefinition::parse(pair)?;
             Ok(Spanned::new(Node::TestDefinition(node), span))
+        }
+        Rule::MetaDefinition => {
+            let node = MetaDefinition::parse(pair)?;
+            Ok(Spanned::new(Node::MetaDefinition(node), span))
         }
         Rule::AttributeDeclaration => {
             let node = AttributeDeclaration::parse(pair)?;

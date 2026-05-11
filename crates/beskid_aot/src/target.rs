@@ -1,6 +1,9 @@
+//! Target triple normalization and filename extensions for objects and linked artifacts.
+
 use crate::api::BuildOutputKind;
 use crate::error::{AotError, AotResult};
 
+/// Resolved triple string plus platform-specific file extensions.
 #[derive(Debug, Clone)]
 pub struct TargetInfo {
     pub triple: String,
@@ -10,6 +13,7 @@ pub struct TargetInfo {
     pub exe_ext: &'static str,
 }
 
+/// Infer [`TargetInfo`] from `triple_override` or `{ARCH}-{OS}-{FAMILY}`; errors on unknown OS families.
 pub fn detect_target(triple_override: Option<&str>) -> AotResult<TargetInfo> {
     let triple = if let Some(explicit) = triple_override {
         explicit.to_owned()
@@ -59,6 +63,7 @@ pub fn detect_target(triple_override: Option<&str>) -> AotResult<TargetInfo> {
     })
 }
 
+/// Default filename for `kind` on `target` (e.g. `libfoo.so`, `hello.exe`, `hello.o`).
 pub fn output_filename(base: &str, kind: BuildOutputKind, target: &TargetInfo) -> String {
     match kind {
         BuildOutputKind::ObjectOnly => format!("{base}.{}", target.object_ext),

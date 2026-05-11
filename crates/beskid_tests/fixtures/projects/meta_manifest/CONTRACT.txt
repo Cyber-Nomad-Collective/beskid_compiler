@@ -1,0 +1,13 @@
+Meta manifest contract scaffolding (v0.2 platform-spec anchors).
+
+- Project manifest (nested project.meta when type is Meta):
+  site/website/src/content/docs/platform-spec/tooling/manifests-and-lockfiles/project-manifest-contract/design-model.mdx
+- Workspace resolution / default ambiguity:
+  site/website/src/content/docs/platform-spec/compiler/resolution-and-projects/workspace-resolution-contract/design-model.mdx
+- Diagnostic band E1801–E1899 (meta/manifest):
+  site/website/src/content/docs/platform-spec/compiler/semantic-pipeline/diagnostic-code-registry/
+
+Fixture files use the brace-style Project.proj / Workspace.proj surface expected by
+beskid_analysis::projects::parse_manifest today. Fields not yet modeled (project.type,
+nested meta { }) are documented in comments or companion .future snippets until the
+manifest parser grows nested Meta blocks.

@@ -3,9 +3,30 @@ NEWLINE = _{ "\n" | "\r\n" | "\r" }
 
 DocBody = { SOI ~ piece* ~ EOI }
 
-piece = { RefInline | Run }
+// Directive openers (keep in sync with `Run` negated prefixes below).
+piece = { RefInline | ArgTag | ReturnsTag | VariantTag | ParTag | UnknownDirective | Run }
 
 RefInline = { "@ref(" ~ inner ~ ")" }
 inner = { (!(")") ~ ANY)* }
 
-Run = { (!"@ref(" ~ ANY)+ }
+DocIdent = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// `ArgSuffix` is atomic so implicit WHITESPACE is not inserted between ")" and the description
+// (which would swallow a following line that starts with @returns). `DocIdent` stays outside
+// that atomic so `into_inner()` on `ArgTag` still exposes the parameter name for tooling.
+ArgTag = { "@arg(" ~ DocIdent ~ ArgSuffix }
+ArgSuffix = @{ ")" ~ (!("\n" | "\r" | "@") ~ ANY)* }
+
+ReturnsTag = { "@returns" ~ ReturnsSuffix }
+ReturnsSuffix = @{ (!("\n" | "\r") ~ ANY)* }
+
+VariantTag = { "@variant(" ~ DocIdent ~ VariantSuffix }
+VariantSuffix = @{ ")" ~ (!("\n" | "\r" | "@") ~ ANY)* }
+
+ParTag = { "@par(" ~ DocIdent ~ ParSuffix }
+ParSuffix = @{ ")" ~ (!("\n" | "\r" | "@") ~ ANY)* }
+
+UnknownDirective = { "@" ~ DocIdent ~ UnknownSuffix }
+UnknownSuffix = @{ (!("\n" | "\r") ~ ANY)* }
+
+Run = { (!(("@ref(" | "@arg(" | "@returns" | "@variant(" | "@par(")) ~ ANY)+ }

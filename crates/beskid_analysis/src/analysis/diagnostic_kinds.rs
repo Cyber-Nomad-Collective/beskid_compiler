@@ -238,6 +238,52 @@ pub enum SemanticIssueKind {
         from: String,
         to: String,
     },
+
+    /// Module-level `meta` items are only legal in projects classified as Meta hosts.
+    ForbiddenMetaModuleItem {
+        name: String,
+    },
+
+    /// `@arg(name)` does not match a parameter on the documented callable.
+    DocUnknownArgName {
+        name: String,
+    },
+    /// Duplicate `@arg(name)` in the same documentation block.
+    DocDuplicateArgName {
+        name: String,
+    },
+    /// `@arg` / `@returns` used where only callables accept them.
+    DocArgOrReturnsOnNonCallable,
+    /// `@returns` on a `unit` return type.
+    DocReturnsOnUnit,
+    /// Unknown `@foo` documentation directive.
+    DocUnknownDirective {
+        name: String,
+    },
+    /// `@ref(...)` path does not resolve.
+    DocUnresolvedRef {
+        path: String,
+    },
+    /// `@variant(...)` is only valid on an enum declaration's leading documentation.
+    DocVariantOnNonEnum,
+    /// `@variant(name)` does not match any variant on this enum.
+    DocUnknownVariantName {
+        name: String,
+    },
+    /// Duplicate `@variant(name)` in the same documentation block.
+    DocDuplicateVariantName {
+        name: String,
+    },
+    /// `@par(...)` requires generic type parameters on this declaration.
+    DocParWithoutGenerics,
+    /// `@par(name)` does not match any generic type parameter on this item.
+    DocUnknownGenericName {
+        name: String,
+    },
+    /// Duplicate `@par(name)` in the same documentation block.
+    DocDuplicateGenericName {
+        name: String,
+    },
 }
 
 impl SemanticIssueKind {
@@ -257,9 +303,9 @@ impl SemanticIssueKind {
             Self::UnresolvedHirValuePath => "E1152",
             Self::UnresolvedHirTypePath => "E1153",
             Self::NonNormalizedHirControlFlow { .. } => "E1154",
-            Self::DuplicateAttributeDeclarationTarget { .. } => "E1806",
-            Self::UnknownAttributeDeclarationTarget { .. } => "E1807",
-            Self::AttributeTargetNotAllowed { .. } => "E1809",
+            Self::DuplicateAttributeDeclarationTarget { .. } => "E1508",
+            Self::UnknownAttributeDeclarationTarget { .. } => "E1509",
+            Self::AttributeTargetNotAllowed { .. } => "E1510",
 
             Self::VisibilityViolationImportPrivate { .. } => "E1501",
             Self::VisibilityModuleNotFound { .. } => "E1502",
@@ -329,6 +375,21 @@ impl SemanticIssueKind {
             Self::TypeIterableNextReturnNotOption => "E1217",
             Self::TypeIterableOptionSomeArityMismatch { .. } => "E1218",
             Self::TypeImplicitNumericCast { .. } => "W1203",
+
+            Self::ForbiddenMetaModuleItem { .. } => "E1851",
+
+            Self::DocUnknownArgName { .. } => "W1610",
+            Self::DocDuplicateArgName { .. } => "W1611",
+            Self::DocArgOrReturnsOnNonCallable => "W1612",
+            Self::DocReturnsOnUnit => "W1613",
+            Self::DocUnknownDirective { .. } => "W1614",
+            Self::DocUnresolvedRef { .. } => "W1615",
+            Self::DocVariantOnNonEnum => "W1620",
+            Self::DocUnknownVariantName { .. } => "W1621",
+            Self::DocDuplicateVariantName { .. } => "W1622",
+            Self::DocParWithoutGenerics => "W1623",
+            Self::DocUnknownGenericName { .. } => "W1624",
+            Self::DocDuplicateGenericName { .. } => "W1625",
         }
     }
 
@@ -338,7 +399,19 @@ impl SemanticIssueKind {
             | Self::UnusedPrivateItem { .. }
             | Self::UnreachableCode
             | Self::ResolveShadowedLocal { .. }
-            | Self::TypeImplicitNumericCast { .. } => Severity::Warning,
+            | Self::TypeImplicitNumericCast { .. }
+            | Self::DocUnknownArgName { .. }
+            | Self::DocDuplicateArgName { .. }
+            | Self::DocArgOrReturnsOnNonCallable
+            | Self::DocReturnsOnUnit
+            | Self::DocUnknownDirective { .. }
+            | Self::DocUnresolvedRef { .. }
+            | Self::DocVariantOnNonEnum
+            | Self::DocUnknownVariantName { .. }
+            | Self::DocDuplicateVariantName { .. }
+            | Self::DocParWithoutGenerics
+            | Self::DocUnknownGenericName { .. }
+            | Self::DocDuplicateGenericName { .. } => Severity::Warning,
             _ => Severity::Error,
         }
     }
@@ -454,6 +527,20 @@ impl SemanticIssueKind {
                 "iterable Option::Some arity mismatch".to_string()
             }
             Self::TypeImplicitNumericCast { .. } => "implicit numeric cast".to_string(),
+            Self::ForbiddenMetaModuleItem { .. } => "forbidden meta module item".to_string(),
+
+            Self::DocUnknownArgName { .. } => "unknown @arg parameter".to_string(),
+            Self::DocDuplicateArgName { .. } => "duplicate @arg".to_string(),
+            Self::DocArgOrReturnsOnNonCallable => "invalid @arg/@returns placement".to_string(),
+            Self::DocReturnsOnUnit => "redundant @returns".to_string(),
+            Self::DocUnknownDirective { .. } => "unknown documentation directive".to_string(),
+            Self::DocUnresolvedRef { .. } => "unresolved documentation @ref".to_string(),
+            Self::DocVariantOnNonEnum => "invalid @variant placement".to_string(),
+            Self::DocUnknownVariantName { .. } => "unknown @variant name".to_string(),
+            Self::DocDuplicateVariantName { .. } => "duplicate @variant".to_string(),
+            Self::DocParWithoutGenerics => "invalid @par placement".to_string(),
+            Self::DocUnknownGenericName { .. } => "unknown @par type parameter".to_string(),
+            Self::DocDuplicateGenericName { .. } => "duplicate @par".to_string(),
         }
     }
 
@@ -665,6 +752,45 @@ impl SemanticIssueKind {
             Self::TypeImplicitNumericCast { from, to } => {
                 format!("implicit numeric cast from {from} to {to}")
             }
+            Self::ForbiddenMetaModuleItem { name } => {
+                format!("module-level `meta` item `{name}` is not allowed in this project kind")
+            }
+
+            Self::DocUnknownArgName { name } => {
+                format!("`@arg({name})` does not match any parameter of this callable")
+            }
+            Self::DocDuplicateArgName { name } => {
+                format!("duplicate `@arg({name})` in the same documentation block")
+            }
+            Self::DocArgOrReturnsOnNonCallable => {
+                "`@arg` / `@returns` are only valid on leading documentation for a function, method, or contract method signature".to_string()
+            }
+            Self::DocReturnsOnUnit => "`@returns` is redundant when the callable returns `unit`".to_string(),
+            Self::DocUnknownDirective { name } => {
+                format!("unknown documentation directive `@{name}`")
+            }
+            Self::DocUnresolvedRef { path } => {
+                format!("documentation `@ref` does not resolve: `{path}`")
+            }
+            Self::DocVariantOnNonEnum => {
+                "`@variant(...)` is only valid on leading documentation for an `enum` declaration"
+                    .to_string()
+            }
+            Self::DocUnknownVariantName { name } => {
+                format!("`@variant({name})` does not match any variant of this enum")
+            }
+            Self::DocDuplicateVariantName { name } => {
+                format!("duplicate `@variant({name})` in the same documentation block")
+            }
+            Self::DocParWithoutGenerics => {
+                "`@par(...)` requires this declaration to declare generic type parameters".to_string()
+            }
+            Self::DocUnknownGenericName { name } => {
+                format!("`@par({name})` does not match any generic type parameter on this item")
+            }
+            Self::DocDuplicateGenericName { name } => {
+                format!("duplicate `@par({name})` in the same documentation block")
+            }
         }
     }
 
@@ -739,6 +865,13 @@ impl SemanticIssueKind {
             Self::UnreachableCode => Some(
                 "remove this statement or move it before the terminating statement".to_string(),
             ),
+            Self::ForbiddenMetaModuleItem { .. } => Some(
+                "declare `type = Meta` in `Project.proj` for module-level `meta`, or remove `meta` items from ordinary App/Lib/Test sources (see project manifest contract)"
+                    .to_string(),
+            ),
+            Self::DocUnresolvedRef { .. } => {
+                Some("use a name that exists in this compilation unit".to_string())
+            }
             _ => None,
         }
     }

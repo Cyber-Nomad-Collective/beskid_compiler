@@ -5,6 +5,7 @@ use crate::errors::CodegenError;
 
 const CODEGEN_ERROR_PREFIX: &str = "E20";
 
+/// Map a single [`CodegenError`] to a semantic diagnostic with stable `E20xx` codes.
 pub fn codegen_error_to_diagnostic(
     source_name: &str,
     source: &str,
@@ -134,6 +135,7 @@ pub fn codegen_error_to_diagnostic(
     }
 }
 
+/// Map a batch of codegen errors to diagnostics in source order.
 pub fn codegen_errors_to_diagnostics(
     source_name: &str,
     source: &str,

@@ -299,5 +299,9 @@ fn render_type_from_result(result: &TypeResult, type_id: crate::types::TypeId) -
             let return_name = render_type_from_result(result, *return_type);
             format!("{return_name}({params})")
         }
+        TypeInfo::Array(element) => {
+            let inner = render_type_from_result(result, *element);
+            format!("{inner}[]")
+        }
     }
 }

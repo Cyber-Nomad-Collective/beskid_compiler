@@ -238,6 +238,11 @@ impl SemanticPipelineRule {
                         }
                     }
                 }
+                HirItem::MetaDefinition(definition) => {
+                    for expression in HirQuery::from(&definition.node).of::<HirExpressionNode>() {
+                        self.collect_used_from_expression(expression, &mut used);
+                    }
+                }
                 _ => {}
             }
         }

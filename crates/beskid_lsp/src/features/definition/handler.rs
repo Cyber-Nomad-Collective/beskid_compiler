@@ -4,6 +4,7 @@ use crate::features::project_manifest::api as project_manifest;
 use crate::position::{offset_in_range, offset_range_to_lsp};
 use crate::session::store::Document;
 
+/// Go-to-definition for Beskid sources or manifest dependency path targets.
 pub fn handle_definition(
     uri: &Uri,
     doc: &Document,

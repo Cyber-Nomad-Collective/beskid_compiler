@@ -1,7 +1,10 @@
+//! Compiler-known callables (paths, ABI symbols, arity) merged into [`crate::resolve::Resolver`].
+
 use std::collections::HashMap;
 
 use crate::resolve::ItemId;
 
+/// Parameter or return classification for a [`BuiltinSpec`] entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinType {
     String,
@@ -12,6 +15,7 @@ pub enum BuiltinType {
     Never,
 }
 
+/// One intrinsic or injected runtime entry point visible during resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuiltinSpec {
     pub beskid_path: &'static [&'static str],
@@ -43,6 +47,7 @@ macro_rules! define_builtins {
     };
 }
 
+/// All table entries for [`BuiltinSpec`] (from `define_builtins!`).
 pub fn builtin_specs() -> &'static [BuiltinSpec] {
     BUILTINS
 }
@@ -91,6 +96,12 @@ define_builtins! {
     &["__array_new"] => {
         symbol: "array_new",
         params: [Usize, Usize],
+        returns: Usize,
+        injected: true,
+    },
+    &["__array_len"] => {
+        symbol: "array_len",
+        params: [Ptr],
         returns: Usize,
         injected: true,
     },

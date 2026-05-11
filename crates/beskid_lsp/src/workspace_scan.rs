@@ -1,3 +1,5 @@
+//! Walk workspace roots to index `.bd` / `.proj` files and publish disk-backed diagnostics.
+
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -9,8 +11,9 @@ use url::Url;
 use walkdir::WalkDir;
 
 use crate::diagnostics::analyze_document;
-use crate::protocol::status::{send_beskid_status, BeskidStatusParams};
+use crate::protocol::status::{BeskidStatusParams, send_beskid_status};
 use crate::session::lifecycle::{build_document, set_disk_snapshot};
+use crate::session::project_context::{cached_compilation_context, invalidate_compilation_cache};
 use crate::session::store::State;
 
 const MAX_CONCURRENT_READS: usize = 24;
@@ -39,8 +42,7 @@ async fn maybe_emit_scan_progress(
     let elapsed_ok = last_emit
         .map(|t| now.duration_since(t) >= STATUS_EMIT_INTERVAL)
         .unwrap_or(true);
-    let milestone =
-        processed == 0 || processed == total || processed.is_multiple_of(25);
+    let milestone = processed == 0 || processed == total || processed.is_multiple_of(25);
     if !milestone && !elapsed_ok {
         return;
     }
@@ -74,16 +76,14 @@ async fn emit_scan_idle(client: &Client) {
     .await;
 }
 
+/// Recursively index `root` for Beskid sources, publish diagnostics for closed files, then emit idle status.
 pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path) {
     let mut paths: Vec<PathBuf> = Vec::new();
     for entry in WalkDir::new(root)
         .into_iter()
         .filter_entry(|e| {
             if e.file_type().is_dir() {
-                !e.file_name()
-                    .to_str()
-                    .map(should_skip_dir)
-                    .unwrap_or(false)
+                !e.file_name().to_str().map(should_skip_dir).unwrap_or(false)
             } else {
                 true
             }
@@ -99,6 +99,16 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path)
             paths.push(entry.path().to_path_buf());
         }
     }
+
+    paths.sort_by(|a, b| {
+        let a_proj = a.extension().and_then(|e| e.to_str()) == Some("proj");
+        let b_proj = b.extension().and_then(|e| e.to_str()) == Some("proj");
+        b_proj
+            .cmp(&a_proj)
+            .then_with(|| a.as_path().cmp(b.as_path()))
+    });
+
+    invalidate_compilation_cache(state).await;
 
     let total = paths.len() as u32;
     let mut last_emit = None;
@@ -141,11 +151,19 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path)
             continue;
         };
         let doc = build_document(&uri, 0, text);
-        let diagnostics = analyze_document(&uri, &doc.text, doc.analysis.as_ref());
+        let compilation_context = if path.extension().and_then(|e| e.to_str()) == Some("bd") {
+            cached_compilation_context(state, &path).await
+        } else {
+            None
+        };
+        let diagnostics = analyze_document(
+            &uri,
+            &doc.text,
+            doc.analysis.as_ref(),
+            compilation_context.as_ref(),
+        );
         set_disk_snapshot(state, uri.clone(), doc).await;
-        client
-            .publish_diagnostics(uri, diagnostics, Some(0))
-            .await;
+        client.publish_diagnostics(uri, diagnostics, Some(0)).await;
     }
 
     let mut stale: Vec<Uri> = Vec::new();
@@ -171,6 +189,7 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path)
     emit_scan_idle(client).await;
 }
 
+/// Remove a workspace-indexed document and clear its diagnostics.
 pub async fn clear_disk_snapshot(client: &Client, state: &RwLock<State>, uri: &Uri) {
     state.write().await.workspace_index.remove(uri);
     client
@@ -178,13 +197,18 @@ pub async fn clear_disk_snapshot(client: &Client, state: &RwLock<State>, uri: &U
         .await;
 }
 
+/// Best-effort `file://` URI to local path (for workspace scanning and file watchers).
 pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
     let url = Url::parse(uri.as_str()).ok()?;
     url.to_file_path().ok()
 }
 
 /// Clears closed-file workspace cache and diagnostics for every indexed URI under `root`.
-pub async fn clear_closed_workspace_under_root(client: &Client, state: &RwLock<State>, root: &Path) {
+pub async fn clear_closed_workspace_under_root(
+    client: &Client,
+    state: &RwLock<State>,
+    root: &Path,
+) {
     let root_key = root.to_string_lossy().to_string();
     let mut remove: Vec<Uri> = Vec::new();
     {
@@ -203,11 +227,19 @@ pub async fn clear_closed_workspace_under_root(client: &Client, state: &RwLock<S
     }
 }
 
+/// Re-read changed paths on disk when buffers are closed; may invalidate compilation cache on `.proj` edits.
 pub async fn refresh_after_disk_change(
     client: &Client,
     state: &RwLock<State>,
     changed_paths: &[PathBuf],
 ) {
+    if changed_paths.iter().any(|p| {
+        p.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("proj"))
+    }) {
+        invalidate_compilation_cache(state).await;
+    }
     for path in changed_paths {
         let Some(uri) = uri_from_path(path) else {
             continue;
@@ -224,14 +256,23 @@ pub async fn refresh_after_disk_change(
             continue;
         };
         let doc = build_document(&uri, 0, text);
-        let diagnostics = analyze_document(&uri, &doc.text, doc.analysis.as_ref());
+        let compilation_context = if path.extension().and_then(|e| e.to_str()) == Some("bd") {
+            cached_compilation_context(state, path).await
+        } else {
+            None
+        };
+        let diagnostics = analyze_document(
+            &uri,
+            &doc.text,
+            doc.analysis.as_ref(),
+            compilation_context.as_ref(),
+        );
         set_disk_snapshot(state, uri.clone(), doc).await;
-        client
-            .publish_diagnostics(uri, diagnostics, Some(0))
-            .await;
+        client.publish_diagnostics(uri, diagnostics, Some(0)).await;
     }
 }
 
+/// After `didClose`, reload disk contents into the workspace index when the file still exists.
 pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, uri: &Uri) {
     let Some(path) = uri_to_path(uri) else {
         client
@@ -248,7 +289,17 @@ pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, ur
         return;
     };
     let doc = build_document(uri, 0, text);
-    let diagnostics = analyze_document(uri, &doc.text, doc.analysis.as_ref());
+    let compilation_context = if path.extension().and_then(|e| e.to_str()) == Some("bd") {
+        cached_compilation_context(state, &path).await
+    } else {
+        None
+    };
+    let diagnostics = analyze_document(
+        uri,
+        &doc.text,
+        doc.analysis.as_ref(),
+        compilation_context.as_ref(),
+    );
     set_disk_snapshot(state, uri.clone(), doc).await;
     client
         .publish_diagnostics(uri.clone(), diagnostics, Some(0))

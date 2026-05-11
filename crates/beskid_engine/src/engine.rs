@@ -1,6 +1,7 @@
 use beskid_codegen::CodegenArtifact;
 #[cfg(feature = "extern_dlopen")]
 use beskid_codegen::ExternImport;
+use beskid_pipeline::PipelineObserver;
 use beskid_runtime::{
     RuntimeRoot, RuntimeState, clear_current_mutation, clear_current_root, enter_runtime_scope,
     leave_runtime_scope, set_current_mutation, set_current_root,
@@ -11,12 +12,14 @@ use crate::jit_module::{BeskidJitModule, JitError};
 
 type BeskidArena = Arena<Rootable![RuntimeRoot<'_>]>;
 
+/// Owns the [`gc_arena::Arena`] for allocations and a [`BeskidJitModule`] used to compile and resolve JIT code.
 pub struct Engine {
     arena: BeskidArena,
     jit: BeskidJitModule,
 }
 
 impl Engine {
+    /// Build an engine with a fresh arena root and empty JIT module.
     pub fn new() -> Self {
         let arena = Arena::new(|mc| RuntimeRoot {
             globals: Vec::new(),
@@ -27,7 +30,17 @@ impl Engine {
         Self { arena, jit }
     }
 
+    /// Load `artifact` into a fresh or reused JIT module, declare builtins/externs, define functions, finalize.
     pub fn compile_artifact(&mut self, artifact: &CodegenArtifact) -> Result<(), JitError> {
+        self.compile_artifact_with_pipeline(artifact, None)
+    }
+
+    /// Same as [`Self::compile_artifact`], emitting [`beskid_pipeline::phases::JIT_EMIT`] / [`beskid_pipeline::phases::JIT_FINALIZE`] work when `pipeline` is set.
+    pub fn compile_artifact_with_pipeline(
+        &mut self,
+        artifact: &CodegenArtifact,
+        pipeline: Option<&dyn PipelineObserver>,
+    ) -> Result<(), JitError> {
         #[cfg(feature = "extern_dlopen")]
         let extras = resolve_extern_symbols(&artifact.extern_imports)
             .map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?;
@@ -56,9 +69,10 @@ impl Engine {
             BeskidJitModule::new_with_symbols(&extras)?
         };
 
-        self.jit.compile(artifact)
+        self.jit.compile_with_pipeline(artifact, pipeline)
     }
 
+    /// Resolved machine code for `name` after successful compile; caller must match the real signature.
     pub unsafe fn entrypoint_ptr(&mut self, name: &str) -> Result<*const u8, JitError> {
         let func_id = self
             .jit
@@ -67,6 +81,7 @@ impl Engine {
         Ok(unsafe { self.jit.get_finalized_function_ptr(func_id) })
     }
 
+    /// Run `f` with TLS pointing at the arena mutation and root (required by runtime builtins).
     pub fn with_arena<R>(
         &mut self,
         f: impl for<'gc> FnOnce(&'gc Mutation<'gc>, &'gc mut RuntimeRoot<'gc>) -> R,

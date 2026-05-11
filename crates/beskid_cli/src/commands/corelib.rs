@@ -1,3 +1,5 @@
+//! `beskid corelib` — materialize the bundled Beskid standard library workspace template.
+
 use anyhow::{Context, Result};
 use clap::Args;
 use std::fs;
@@ -7,11 +9,13 @@ use crate::corelib_runtime;
 
 #[derive(Args, Debug)]
 pub struct CorelibArgs {
-    /// Destination directory for the Beskid corelib project
-    #[arg(long, default_value = "corelib/beskid_corelib")]
+    /// Destination directory for the materialized corelib **workspace** tree
+    /// (`Workspace.proj`, `packages/`, `beskid_corelib/`)
+    #[arg(long, default_value = "corelib")]
     pub output: PathBuf,
 }
 
+/// Copy or reuse the embedded corelib tree under `args.output`.
 pub fn execute(args: CorelibArgs) -> Result<()> {
     generate_corelib_project(&args.output)
 }
@@ -42,8 +46,16 @@ fn generate_corelib_project(output: &Path) -> Result<()> {
 }
 
 fn validate_template_layout(template_root: &Path) -> Result<()> {
-    let manifest = template_root.join("Project.proj");
-    let prelude = template_root.join("src/Prelude.bd");
+    let workspace = template_root.join("Workspace.proj");
+    if !workspace.is_file() {
+        anyhow::bail!(
+            "missing corelib workspace template at `{}`",
+            workspace.display()
+        );
+    }
+
+    let manifest = template_root.join("beskid_corelib/Project.proj");
+    let prelude = template_root.join("beskid_corelib/src/Prelude.bd");
 
     if !manifest.is_file() {
         anyhow::bail!(
