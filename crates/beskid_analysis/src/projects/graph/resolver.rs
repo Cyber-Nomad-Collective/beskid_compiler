@@ -346,10 +346,23 @@ fn attach_path_dependency(
 
 fn default_corelib_dependency_path() -> Option<String> {
     if let Ok(explicit_root) = env::var(ENV_CORELIB_ROOT) {
-        return Some(PathBuf::from(explicit_root).display().to_string());
+        let root = PathBuf::from(explicit_root);
+        return Some(corelib_aggregate_project_dir(&root).display().to_string());
     }
 
     discover_repo_corelib_root().map(|path| path.display().to_string())
+}
+
+/// `BESKID_CORELIB_ROOT` / install roots may be either the aggregate `beskid_corelib/` package
+/// (contains `Project.proj`) or the parent **workspace** directory (has `Workspace.proj` and
+/// nests `beskid_corelib/Project.proj`). `Std` path resolution must always end at the package.
+fn corelib_aggregate_project_dir(root: &Path) -> PathBuf {
+    let nested = root.join("beskid_corelib");
+    if nested.join("Project.proj").is_file() {
+        nested
+    } else {
+        root.to_path_buf()
+    }
 }
 
 /// `Project.proj` files under `compiler/corelib/packages/*` are split shards of the aggregate

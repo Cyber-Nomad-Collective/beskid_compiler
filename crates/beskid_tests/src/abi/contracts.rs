@@ -2,14 +2,14 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use beskid_abi::{
-    BESKID_RUNTIME_ABI_VERSION, BUILTIN_SPECS, BeskidArray, BeskidStr, RUNTIME_EXPORT_SYMBOLS,
-    SYM_ABI_VERSION, SYM_ALLOC, SYM_ARRAY_NEW, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN,
+    BeskidArray, BeskidStr, BESKID_RUNTIME_ABI_VERSION, BUILTIN_SPECS, RUNTIME_EXPORT_SYMBOLS,
+    SYM_ABI_VERSION, SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN,
     SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
     SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_PTR,
     SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR,
     SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE,
 };
-use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
+use beskid_aot::runtime::{prepare_runtime, RuntimeBuildRequest};
 use beskid_aot::{AotError, BuildProfile, RuntimeStrategy};
 
 #[test]
@@ -27,6 +27,7 @@ fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
         SYM_STR_CONCAT,
         SYM_STR_LEN,
         SYM_ARRAY_NEW,
+        SYM_ARRAY_LEN,
         SYM_PANIC,
         SYM_PANIC_STR,
         SYM_SYSCALL_WRITE,
