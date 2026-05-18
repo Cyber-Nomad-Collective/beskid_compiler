@@ -35,7 +35,16 @@ def workspace_check(session: nox.Session) -> None:
 
 @nox.session(python=False)
 def test(session: nox.Session) -> None:
-    _cargo(session, "test", "-p", "beskid_tests", env=_LARGE_TEST_STACK)
+    _cargo(
+        session,
+        "test",
+        "-p",
+        "beskid_tests",
+        "--",
+        "--skip",
+        "prelude_lowers_to_codegen_artifact",
+        env=_LARGE_TEST_STACK,
+    )
     # Prelude lowering overflows the default per-test thread stack on Linux when run in parallel.
     _cargo(
         session,
