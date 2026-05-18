@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use beskid_abi::{
-    SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE,
-    SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT,
-    SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_PTR,
+    SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN,
+    SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
+    SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_PTR,
     SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR,
     SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE,
     SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR,
@@ -18,10 +18,11 @@ use beskid_pipeline::{
     phases::{JIT_EMIT, JIT_FINALIZE},
 };
 use beskid_runtime::{
-    alloc, array_len, array_new, event_get_handler, event_len, event_subscribe, event_unsubscribe_first,
-    gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier,
-    interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize, panic, panic_str,
-    str_concat, str_len, str_new, syscall_read, syscall_write, test_bytes_len, test_bytes_ptr,
+    alloc, array_len, array_new, event_get_handler, event_len, event_subscribe,
+    event_unsubscribe_first, gc_register_root, gc_root_handle, gc_unregister_root,
+    gc_unroot_handle, gc_write_barrier, interop_dispatch_ptr, interop_dispatch_unit,
+    interop_dispatch_usize, panic, panic_str, str_concat, str_len, str_new, syscall_read,
+    syscall_write, test_bytes_len, test_bytes_ptr,
 };
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};

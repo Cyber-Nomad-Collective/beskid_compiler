@@ -464,12 +464,17 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
 
     for (name, bytes) in &entries {
         if name == ".beskid/docs/api.json" {
-            let _ =
+            let root =
                 crate::api_doc::ApiDocRoot::from_json_slice(bytes).map_err(|e| PckgError::Api {
                     status: reqwest::StatusCode::BAD_REQUEST,
                     message: format!("invalid `.beskid/docs/api.json` in package sources: {e}"),
                     body: None,
                 })?;
+            crate::api_doc::validate_packed_api_doc(&root).map_err(|e| PckgError::Api {
+                status: reqwest::StatusCode::BAD_REQUEST,
+                message: format!("invalid `.beskid/docs/api.json` in package sources: {e}"),
+                body: None,
+            })?;
         }
     }
 

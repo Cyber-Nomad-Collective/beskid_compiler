@@ -50,6 +50,8 @@ impl ItemKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemInfo {
     pub id: ItemId,
+    /// Immediate lexical parent item when this row was collected as a member (e.g. type fields).
+    pub parent_id: Option<ItemId>,
     pub name: String,
     pub kind: ItemKind,
     pub visibility: HirVisibility,

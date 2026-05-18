@@ -1,8 +1,14 @@
-//! Machine-readable API documentation (`api.json` v2) shared by `beskid doc` and `beskid_pckg`.
+//! Machine-readable API documentation (`api.json`) shared by `beskid doc` and `beskid_pckg`.
 
 use serde::{Deserialize, Serialize};
 
-pub const API_JSON_SCHEMA_VERSION: u32 = 2;
+pub const API_JSON_SCHEMA_VERSION: u32 = 3;
+
+/// Schema used when `api.json` is emitted without a resolver graph (symbol list only).
+pub const API_JSON_SCHEMA_VERSION_BEFORE_GRAPH: u32 = 2;
+
+/// When present on [`ApiDocRoot`], consumers should build navigation only from `parentId` / `memberIds`, not from splitting `qualifiedName`.
+pub const API_JSON_NAVIGATION_MODEL_GRAPH_V1: &str = "graph-v1";
 
 /// Pointer embedded in `.bpk` `package.json` for registry ingestion.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -53,6 +59,12 @@ pub struct ApiDocItem {
     pub kind: String,
     pub visibility: Option<String>,
     pub location: ApiLocation,
+    /// Parent row in `items` when this row is a member; `None` for roots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<usize>,
+    /// Child row ids in emission order (same id space as `id`); redundant with `parentId` edges.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub member_ids: Vec<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc_markdown: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,6 +77,8 @@ pub struct ApiDocItem {
 #[serde(rename_all = "camelCase")]
 pub struct ApiDocRoot {
     pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub navigation_model: Option<String>,
     pub generator: String,
     pub source: String,
     pub items: Vec<ApiDocItem>,

@@ -2,6 +2,7 @@ use std::borrow::ToOwned;
 
 use crate::analysis::diagnostics::SemanticDiagnostic;
 use crate::doc::ResolvedDoc;
+use crate::doc::DocRefLinkContext;
 use crate::hir::{AstProgram, HirProgram, lower_program as lower_hir_program, normalize_program};
 use crate::resolve::{ItemKind, Resolution, ResolvedValue, Resolver};
 use crate::syntax::{Expression, Literal, Node, Program, Spanned, TestDefinition};
@@ -205,11 +206,12 @@ pub fn build_document_analysis(
     program: &Spanned<Program>,
     source_name: impl AsRef<str>,
     source_text: &str,
+    docs_ref_links: Option<&DocRefLinkContext>,
 ) -> DocumentAnalysisSnapshot {
     let resolution = resolve_program(program);
     let item_docs = resolution
         .as_ref()
-        .map(|r| crate::doc::build_item_docs_markdown(&program.node, r))
+        .map(|r| crate::doc::build_item_docs_markdown(&program.node, r, docs_ref_links))
         .unwrap_or_default();
     let doc_diagnostics = resolution
         .as_ref()

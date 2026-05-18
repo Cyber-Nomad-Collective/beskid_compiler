@@ -2,7 +2,11 @@
 
 use beskid_analysis::doc_comment_parser::DocSyntaxParser;
 use beskid_analysis::doc_comment_parser::Rule as DocRule;
+use beskid_analysis::doc::DocRefLinkContext;
+use beskid_analysis::resolve::{ItemKind, Resolution, Resolver};
 use beskid_analysis::services::{build_document_analysis, hover_at_offset, parse_program};
+use beskid_analysis::hir::{lower_program as lower_hir_program, normalize_program, AstProgram, HirProgram};
+use beskid_analysis::syntax::Spanned;
 use beskid_analysis::{BeskidParser, Rule as MainRule};
 use pest::Parser;
 
@@ -76,7 +80,7 @@ fn doc_body_grammar_splits_variant_and_par_tags() {
 fn doc_diagnostics_unknown_variant_name() {
     let src = "/// @variant(Ghost) nope\nenum Color {\n    Red,\n    Blue,\n}\n";
     let program = parse_program(src).unwrap();
-    let snap = build_document_analysis(&program, "t.bd", src);
+    let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some());
     assert!(
         snap.doc_diagnostics
@@ -91,7 +95,7 @@ fn doc_diagnostics_unknown_variant_name() {
 fn doc_diagnostics_variant_on_type_is_wrong_placement() {
     let src = "/// @variant(x) bad\ntype Point { i64 x, }\n";
     let program = parse_program(src).unwrap();
-    let snap = build_document_analysis(&program, "t.bd", src);
+    let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some());
     assert!(
         snap.doc_diagnostics
@@ -106,7 +110,7 @@ fn doc_diagnostics_variant_on_type_is_wrong_placement() {
 fn doc_diagnostics_par_without_generics_on_function() {
     let src = "/// @par(T) bad\nunit main() { return 42; }\n";
     let program = parse_program(src).unwrap();
-    let snap = build_document_analysis(&program, "t.bd", src);
+    let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some());
     assert!(
         snap.doc_diagnostics
@@ -122,7 +126,7 @@ fn doc_diagnostics_flag_unknown_arg_name() {
     let src =
         "/// @arg(nope) bad\ni64 Sum(\n    i64 left,\n    i64 right\n) { return left + right; }\n";
     let program = parse_program(src).unwrap();
-    let snap = build_document_analysis(&program, "t.bd", src);
+    let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some(), "resolution should succeed");
     assert!(
         snap.doc_diagnostics
@@ -137,7 +141,7 @@ fn doc_diagnostics_flag_unknown_arg_name() {
 fn hover_includes_doc_markdown_when_resolved() {
     let src = "/// Hello **doc**\nunit main() { return 42; }\n";
     let program = parse_program(src).unwrap();
-    let snap = build_document_analysis(&program, "<memory>", src);
+    let snap = build_document_analysis(&program, "<memory>", src, None);
     let name_start = src.find("main").expect("main");
     let hover = hover_at_offset(&snap, name_start).expect("hover");
     assert!(hover.markdown.contains("Hello"));
@@ -230,8 +234,86 @@ type User {
 }
 "#;
     let program = parse_program(src).expect("program parse");
-    let snap = build_document_analysis(&program, "<memory>", src);
+    let snap = build_document_analysis(&program, "<memory>", src, None);
     let offset = src.rfind("name,").expect("field name");
     let hover = hover_at_offset(&snap, offset).expect("hover");
     assert!(hover.markdown.contains("Display name of the user."));
+}
+
+#[test]
+fn resolved_ref_emits_pckg_doc_route_in_markdown_when_context_set() {
+    let src = r#"
+/// See @ref(main) for details.
+unit other() { return 1; }
+unit main() { return 42; }
+"#;
+    let program = parse_program(src).unwrap();
+    let ctx = DocRefLinkContext {
+        package_with_version: "demo-pkg@1.0.0".into(),
+    };
+    let snap = build_document_analysis(&program, "t.bd", src, Some(&ctx));
+    let blob: String = snap
+        .item_docs
+        .iter()
+        .filter_map(|slot| slot.as_ref().map(|d| d.markdown.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        blob.contains("/docs/demo-pkg%401.0.0/api/"),
+        "expected pckg docs link, got {blob:?}"
+    );
+    assert!(
+        blob.contains("](") && blob.contains("main"),
+        "expected markdown link mentioning main, got {blob:?}"
+    );
+}
+
+fn resolve_program_for_test(src: &str) -> Resolution {
+    let program = parse_program(src).expect("parse");
+    let ast: Spanned<AstProgram> = program.clone().into();
+    let mut hir: Spanned<HirProgram> = lower_hir_program(&ast);
+    normalize_program(&mut hir).expect("normalize");
+    Resolver::new().resolve_program(&hir).expect("resolve")
+}
+
+#[test]
+fn member_rows_carry_parent_id_in_resolution() {
+    let src = r#"
+type Box {
+    i64 value,
+}
+
+enum Color {
+    Red,
+    Blue,
+}
+
+i64 Add(i64 a, i64 b) { return a + b; }
+"#;
+    let resolution = resolve_program_for_test(src);
+    let type_id = resolution
+        .items
+        .iter()
+        .find(|i| i.kind == ItemKind::Type && i.name.ends_with("Box"))
+        .map(|i| i.id)
+        .expect("type Box");
+    let field = resolution
+        .items
+        .iter()
+        .find(|i| i.kind == ItemKind::Field && i.name.contains("value"))
+        .expect("field value");
+    assert_eq!(field.parent_id, Some(type_id));
+
+    let enum_id = resolution
+        .items
+        .iter()
+        .find(|i| i.kind == ItemKind::Enum)
+        .map(|i| i.id)
+        .expect("enum");
+    let variant = resolution
+        .items
+        .iter()
+        .find(|i| i.kind == ItemKind::EnumVariant)
+        .expect("enum variant");
+    assert_eq!(variant.parent_id, Some(enum_id));
 }

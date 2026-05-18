@@ -14,13 +14,14 @@ use std::fs;
 use std::path::Path;
 
 use syn::{
-    Attribute, Expr, Fields, GenericArgument, GenericParam, Generics, Item, Lit, Meta, PathArguments,
-    Type, Visibility,
+    Attribute, Expr, Fields, GenericArgument, GenericParam, Generics, Item, Lit, Meta,
+    PathArguments, Type, Visibility,
 };
 
 use crate::emit_idents::rust_snake_to_beskid_field_camel;
 use crate::syntax_helpers::{
-    self, HelperPaths, list_element_rust_name, option_payload_rust_name, peel_type, vec_element_type,
+    self, HelperPaths, list_element_rust_name, option_payload_rust_name, peel_type,
+    vec_element_type,
 };
 
 pub use crate::syntax_helpers::{
@@ -51,11 +52,7 @@ fn collect_declarations(
     let skipped_generics = Vec::new();
     for (rel_path, file) in &files {
         for item in &file.items {
-            if let Some((ident, parsed)) = parse_top_level_item(
-                item,
-                rel_path.as_str(),
-                helpers,
-            ) {
+            if let Some((ident, parsed)) = parse_top_level_item(item, rel_path.as_str(), helpers) {
                 map.insert(ident, parsed);
             }
         }
@@ -349,11 +346,8 @@ fn parse_enum_variant(
                 let tm = map_rust_type(&f.ty, stub, helpers, type_params);
                 let beskid_name = unique_field_name(&base_name, &mut used);
                 let rust_src = format!("{name}::{base_name}");
-                let rust_doc_lines = field_sdk_doc_lines(
-                    &f.attrs,
-                    &tm.beskid_ty,
-                    tm.stub_note.as_deref(),
-                );
+                let rust_doc_lines =
+                    field_sdk_doc_lines(&f.attrs, &tm.beskid_ty, tm.stub_note.as_deref());
                 out.push(FieldMirror {
                     name: beskid_name,
                     rust_field_source: rust_src,
@@ -379,11 +373,8 @@ fn parse_enum_variant(
                 let tm = map_rust_type(&f.ty, stub, helpers, type_params);
                 let beskid_name = unique_field_name(&base, &mut used);
                 let rust_src = format!("{name}::{base}");
-                let rust_doc_lines = field_sdk_doc_lines(
-                    &f.attrs,
-                    &tm.beskid_ty,
-                    tm.stub_note.as_deref(),
-                );
+                let rust_doc_lines =
+                    field_sdk_doc_lines(&f.attrs, &tm.beskid_ty, tm.stub_note.as_deref());
                 out.push(FieldMirror {
                     name: beskid_name,
                     rust_field_source: rust_src,
@@ -421,11 +412,8 @@ fn struct_fields(
                     let base = f.ident.as_ref().expect("named field").to_string();
                     let tm = map_rust_type(&f.ty, stub, helpers, type_params);
                     let name = unique_field_name(&base, &mut used);
-                    let rust_doc_lines = field_sdk_doc_lines(
-                        &f.attrs,
-                        &tm.beskid_ty,
-                        tm.stub_note.as_deref(),
-                    );
+                    let rust_doc_lines =
+                        field_sdk_doc_lines(&f.attrs, &tm.beskid_ty, tm.stub_note.as_deref());
                     FieldMirror {
                         name,
                         rust_field_source: base,
@@ -451,11 +439,8 @@ fn struct_fields(
                     let tm = map_rust_type(&f.ty, stub, helpers, type_params);
                     let name = unique_field_name(&base, &mut used);
                     let rust_src = format!("tuple field {i} (`{base}`)");
-                    let rust_doc_lines = field_sdk_doc_lines(
-                        &f.attrs,
-                        &tm.beskid_ty,
-                        tm.stub_note.as_deref(),
-                    );
+                    let rust_doc_lines =
+                        field_sdk_doc_lines(&f.attrs, &tm.beskid_ty, tm.stub_note.as_deref());
                     FieldMirror {
                         name,
                         rust_field_source: rust_src,
@@ -604,8 +589,7 @@ fn map_path_type(
         return TypeMirror {
             beskid_ty: stub_path.into(),
             stub_note: Some(
-                "Vec subtrees are not expanded field-for-field in Mod SDK (ReflectStub)"
-                    .into(),
+                "Vec subtrees are not expanded field-for-field in Mod SDK (ReflectStub)".into(),
             ),
         };
     }
@@ -1070,8 +1054,7 @@ mod tests {
         let analysis_src = manifest.join("../beskid_analysis/src");
         let files = syntax_helpers::load_syntax_files(&analysis_src).expect("load");
         let helpers = syntax_helpers::build_helper_paths(&files);
-        let (decls, _) =
-            collect_declarations(&analysis_src, Some(&helpers)).expect("collect");
+        let (decls, _) = collect_declarations(&analysis_src, Some(&helpers)).expect("collect");
         for (name, parsed) in &decls {
             let text = emit_type_bd(name, parsed);
             for line in text.lines() {
@@ -1098,8 +1081,7 @@ mod tests {
         let analysis_src = manifest.join("../beskid_analysis/src");
         let files = syntax_helpers::load_syntax_files(&analysis_src).expect("load");
         let helpers = syntax_helpers::build_helper_paths(&files);
-        let (decls, _) =
-            collect_declarations(&analysis_src, Some(&helpers)).expect("collect");
+        let (decls, _) = collect_declarations(&analysis_src, Some(&helpers)).expect("collect");
         for (name, parsed) in &decls {
             let text = emit_type_bd(name, parsed);
             assert!(

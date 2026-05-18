@@ -115,6 +115,7 @@ impl Resolver {
             }
             self.items.push(ItemInfo {
                 id,
+                parent_id: None,
                 name,
                 kind: ItemKind::Function,
                 visibility: HirVisibility::Public,
@@ -207,6 +208,7 @@ impl Resolver {
         }
         self.items.push(ItemInfo {
             id,
+            parent_id: None,
             name,
             kind,
             visibility,
@@ -249,10 +251,12 @@ impl Resolver {
         kind: ItemKind,
         visibility: HirVisibility,
         span: syntax::SpanInfo,
+        parent_id: ItemId,
     ) {
         let id = ItemId(self.items.len());
         self.items.push(ItemInfo {
             id,
+            parent_id: Some(parent_id),
             name,
             kind,
             visibility,
@@ -267,7 +271,7 @@ impl Resolver {
         let parent_name = parent.name.clone();
         let visibility = parent.visibility;
         for spec in member_items::collect_member_items(item, &parent_name) {
-            self.push_member_item(spec.name, spec.kind, visibility, spec.span);
+            self.push_member_item(spec.name, spec.kind, visibility, spec.span, parent_id);
         }
     }
 

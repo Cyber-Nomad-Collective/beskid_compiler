@@ -77,8 +77,18 @@ pub fn handle_code_actions(
                 }
                 if matches!(
                     code.as_str(),
-                    "W1610" | "W1611" | "W1612" | "W1613" | "W1614" | "W1615" | "W1620"
-                        | "W1621" | "W1622" | "W1623" | "W1624" | "W1625"
+                    "W1610"
+                        | "W1611"
+                        | "W1612"
+                        | "W1613"
+                        | "W1614"
+                        | "W1615"
+                        | "W1620"
+                        | "W1621"
+                        | "W1622"
+                        | "W1623"
+                        | "W1624"
+                        | "W1625"
                 ) && let Some(action) = doc_comment_code_action(
                     uri,
                     doc,

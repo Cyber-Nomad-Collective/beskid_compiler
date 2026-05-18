@@ -9,13 +9,14 @@ mod render;
 mod validate;
 
 pub use api_snapshot::{
-    API_JSON_SCHEMA_VERSION, ApiDocItem, ApiDocRoot, ApiDocumentationPointer, ApiLocation,
+    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
+    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocRoot, ApiDocumentationPointer, ApiLocation,
     ItemDocArgument, ItemDocStructured,
 };
 pub use callable::callable_signatures_for_span;
 pub use edit::{DocCommentEdit, doc_comment_edit_for_offset};
 pub use item_shape::{enum_variant_names_for_span, generic_param_names_for_span};
-pub use refs::{ref_path_resolves, resolve_ref_markdown};
+pub use refs::{ref_path_resolves, resolve_ref_markdown, DocRefLinkContext};
 pub use render::ResolvedDoc;
 pub use validate::collect_doc_diagnostics;
 
@@ -38,6 +39,7 @@ pub struct LeadingDocComment {
 pub fn build_item_docs_markdown(
     syntax: &Program,
     resolution: &Resolution,
+    docs_ref_links: Option<&DocRefLinkContext>,
 ) -> Vec<Option<ResolvedDoc>> {
     let mut by_span: HashMap<(usize, usize), LeadingDocComment> = HashMap::new();
     for (span, doc_opt) in flatten_leading_docs(syntax) {
@@ -61,7 +63,7 @@ pub fn build_item_docs_markdown(
         if leading.normalized_source.trim().is_empty() {
             continue;
         }
-        let md = render_doc_body(&leading.normalized_source, resolution, item);
+        let md = render_doc_body(&leading.normalized_source, resolution, item, docs_ref_links);
         let structured = extract_structured_doc(&leading.normalized_source);
         out[item.id.0] = Some(ResolvedDoc {
             markdown: md,
@@ -71,7 +73,12 @@ pub fn build_item_docs_markdown(
     out
 }
 
-fn render_doc_body(body: &str, resolution: &Resolution, _item: &ItemInfo) -> String {
+fn render_doc_body(
+    body: &str,
+    resolution: &Resolution,
+    _item: &ItemInfo,
+    docs_ref_links: Option<&DocRefLinkContext>,
+) -> String {
     let Ok(mut pairs) = DocSyntaxParser::parse(DocSyntaxRule::DocBody, body) else {
         return body.to_string();
     };
@@ -87,7 +94,7 @@ fn render_doc_body(body: &str, resolution: &Resolution, _item: &ItemInfo) -> Str
         match piece.as_rule() {
             DocSyntaxRule::RefInline => {
                 let inner = inner_text(&piece, DocSyntaxRule::inner);
-                let link = resolve_ref_markdown(&inner, resolution);
+                let link = resolve_ref_markdown(&inner, resolution, docs_ref_links);
                 out.push_str(&link);
             }
             DocSyntaxRule::ArgTag => {

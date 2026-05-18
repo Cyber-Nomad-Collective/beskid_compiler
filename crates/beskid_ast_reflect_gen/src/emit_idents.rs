@@ -6,9 +6,32 @@
 /// grammar). Reserved Rust names are prefixed with `_` so the Beskid lexer sees a normal
 /// identifier (`_attribute`, `_type`, …).
 pub const BESKID_RESERVED_IDENTIFIERS: &[&str] = &[
-    "type", "enum", "contract", "attribute", "impl", "match", "event", "when", "if", "else",
-    "while", "for", "in", "return", "break", "continue", "let", "mut", "mod", "use", "pub",
-    "ref", "out", "test", "meta", "skip",
+    "type",
+    "enum",
+    "contract",
+    "attribute",
+    "impl",
+    "match",
+    "event",
+    "when",
+    "if",
+    "else",
+    "while",
+    "for",
+    "in",
+    "return",
+    "break",
+    "continue",
+    "let",
+    "mut",
+    "mod",
+    "use",
+    "pub",
+    "ref",
+    "out",
+    "test",
+    "meta",
+    "skip",
 ];
 
 fn reserved_keyword_prefix_conflict(lower: &str) -> bool {
@@ -76,18 +99,27 @@ mod tests {
 
     #[test]
     fn camel_case_return_type() {
-        assert_eq!(rust_snake_to_beskid_field_camel("return_type"), "returnType");
+        assert_eq!(
+            rust_snake_to_beskid_field_camel("return_type"),
+            "returnType"
+        );
     }
 
     #[test]
     fn camel_case_contract_name() {
-        assert_eq!(rust_snake_to_beskid_field_camel("contract_name"), "contractName");
+        assert_eq!(
+            rust_snake_to_beskid_field_camel("contract_name"),
+            "contractName"
+        );
     }
 
     #[test]
     fn camel_field_index_placeholders() {
         assert_eq!(rust_snake_to_beskid_field_camel("field_0"), "field0");
-        assert_eq!(rust_snake_to_beskid_field_camel("variant_field_1"), "variantField1");
+        assert_eq!(
+            rust_snake_to_beskid_field_camel("variant_field_1"),
+            "variantField1"
+        );
     }
 
     #[test]

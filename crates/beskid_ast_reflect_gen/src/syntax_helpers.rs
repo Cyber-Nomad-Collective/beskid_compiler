@@ -253,7 +253,10 @@ fn walk_item(item: &syn::Item, decl_names: &BTreeSet<String>, needs: &mut BTreeS
     }
 }
 
-fn collect_rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) -> std::io::Result<()> {
+fn collect_rs_files(
+    dir: &std::path::Path,
+    out: &mut Vec<std::path::PathBuf>,
+) -> std::io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let p = entry?.path();
         if p.is_dir() {
@@ -324,7 +327,10 @@ pub fn decl_names_from_files(files: &[(String, syn::File)]) -> BTreeSet<String> 
     names
 }
 
-fn discover_raw_needs(files: &[(String, syn::File)], decl_names: &BTreeSet<String>) -> BTreeSet<RawNeed> {
+fn discover_raw_needs(
+    files: &[(String, syn::File)],
+    decl_names: &BTreeSet<String>,
+) -> BTreeSet<RawNeed> {
     let mut needs = BTreeSet::new();
     for (_, file) in files {
         for item in &file.items {

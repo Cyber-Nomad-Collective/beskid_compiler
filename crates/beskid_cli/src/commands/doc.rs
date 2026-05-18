@@ -1,12 +1,16 @@
 //! `beskid doc` — emit `api.json` and `index.md` API documentation for resolved sources.
 
 use anyhow::{Context, Result};
-use beskid_analysis::doc::{API_JSON_SCHEMA_VERSION, ApiDocItem, ApiDocRoot, ApiLocation};
+use beskid_analysis::doc::{
+    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
+    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocRoot, ApiLocation, DocRefLinkContext,
+};
 use beskid_analysis::hir::HirVisibility;
+use beskid_analysis::projects::load_manifest_from_path;
 use beskid_analysis::services;
 use beskid_analysis::syntax::SpanInfo;
 use clap::Args;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
@@ -74,6 +78,38 @@ fn location_for_byte_range(source: &str, file: &str, start: usize, end: usize) -
     location_for_span(source, file, &span)
 }
 
+fn fill_member_ids_from_parents(items: &mut [ApiDocItem]) {
+    let mut by_parent: HashMap<usize, Vec<usize>> = HashMap::new();
+    for it in items.iter() {
+        if let (Some(child_id), Some(pid)) = (it.id, it.parent_id) {
+            by_parent.entry(pid).or_default().push(child_id);
+        }
+    }
+    for v in by_parent.values_mut() {
+        v.sort_unstable();
+    }
+    for it in items.iter_mut() {
+        if let Some(id) = it.id {
+            it.member_ids = by_parent.remove(&id).unwrap_or_default();
+        } else {
+            it.member_ids.clear();
+        }
+    }
+}
+
+fn docs_ref_link_context(resolved: &beskid_analysis::services::ResolvedInput) -> Option<DocRefLinkContext> {
+    let plan = resolved.compile_plan.as_ref()?;
+    let manifest = load_manifest_from_path(&plan.manifest_path).ok()?;
+    let name = manifest.project.name.trim();
+    let ver = manifest.project.version.trim();
+    if name.is_empty() || ver.is_empty() {
+        return None;
+    }
+    Some(DocRefLinkContext {
+        package_with_version: format!("{name}@{ver}"),
+    })
+}
+
 /// Resolve, analyze, and write API docs into `args.out`.
 pub fn execute(args: DocArgs) -> Result<()> {
     let resolved = services::resolve_input(
@@ -89,10 +125,12 @@ pub fn execute(args: DocArgs) -> Result<()> {
         &resolved.source,
     )
     .with_context(|| format!("parse {}", resolved.source_path.display()))?;
+    let docs_ref = docs_ref_link_context(&resolved);
     let snap = services::build_document_analysis(
         &program,
         &resolved.source_path.display().to_string(),
         &resolved.source,
+        docs_ref.as_ref(),
     );
 
     let source_path_str = resolved.source_path.to_string_lossy().into_owned();
@@ -120,6 +158,8 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 name: item.name.clone(),
                 kind: item.kind.as_stable_doc_kind().to_string(),
                 visibility: Some(visibility_stable(item.visibility).to_string()),
+                parent_id: item.parent_id.map(|p| p.0),
+                member_ids: Vec::new(),
                 location: ApiLocation {
                     file: loc.file,
                     start_line: loc.start_line,
@@ -151,6 +191,8 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 name: symbol.name.clone(),
                 kind: services::symbol_kind_name(symbol.kind).to_string(),
                 visibility: None,
+                parent_id: None,
+                member_ids: Vec::new(),
                 location: ApiLocation {
                     file: loc.file,
                     start_line: loc.start_line,
@@ -175,11 +217,27 @@ pub fn execute(args: DocArgs) -> Result<()> {
             .then(a.kind.cmp(&b.kind))
     });
 
-    let api = ApiDocRoot {
-        schema_version: API_JSON_SCHEMA_VERSION,
-        generator: format!("beskid-cli {}", env!("CARGO_PKG_VERSION")),
-        source: source_path_str,
-        items: api_items,
+    let had_resolution = snap.resolution.is_some();
+    if had_resolution {
+        fill_member_ids_from_parents(&mut api_items);
+    }
+
+    let api = if had_resolution {
+        ApiDocRoot {
+            schema_version: API_JSON_SCHEMA_VERSION,
+            navigation_model: Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1.to_string()),
+            generator: format!("beskid-cli {}", env!("CARGO_PKG_VERSION")),
+            source: source_path_str,
+            items: api_items,
+        }
+    } else {
+        ApiDocRoot {
+            schema_version: API_JSON_SCHEMA_VERSION_BEFORE_GRAPH,
+            navigation_model: None,
+            generator: format!("beskid-cli {}", env!("CARGO_PKG_VERSION")),
+            source: source_path_str,
+            items: api_items,
+        }
     };
     fs::write(
         args.out.join("api.json"),
@@ -262,12 +320,182 @@ type User {
 
         let api = std::fs::read_to_string(out_path.join("api.json")).expect("read api.json");
         assert!(
-            api.contains("\"schemaVersion\": 2"),
-            "api.json should declare schema v2: {api}"
+            api.contains("\"schemaVersion\": 3"),
+            "api.json should declare schema v3: {api}"
+        );
+        assert!(
+            api.contains("\"navigationModel\": \"graph-v1\""),
+            "api.json should declare graph navigation model: {api}"
+        );
+        assert!(
+            api.contains("\"parentId\":"),
+            "api.json should include parentId for member rows: {api}"
         );
         assert!(
             api.contains("Display name of user."),
             "api.json should include member doc markdown: {api}"
+        );
+
+        let _ = std::fs::remove_file(source_path);
+        let _ = std::fs::remove_file(out_path.join("api.json"));
+        let _ = std::fs::remove_file(out_path.join("index.md"));
+        let _ = std::fs::remove_dir(&out_path);
+        let _ = std::fs::remove_dir(&root);
+    }
+
+    #[test]
+    fn api_json_graph_links_type_field_enum_variant_and_method() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("beskid-doc-graph-{nonce}"));
+        std::fs::create_dir_all(&root).expect("create root");
+        let source_path = root.join("Graph.bd");
+        let out_path = root.join("out");
+
+        let source = r#"
+type Widget {
+    /// widget value
+    i64 value,
+}
+
+enum Mode {
+    /// on
+    On,
+    /// off
+    Off,
+}
+
+/// Adds values.
+i64 Add(
+    i64 left,
+    i64 right
+) { return left + right; }
+"#;
+        std::fs::write(&source_path, source).expect("write source");
+
+        execute(DocArgs {
+            input: Some(source_path.clone()),
+            project: crate::project_args::ProjectResolveArgs {
+                project: None,
+                target: None,
+                workspace_member: None,
+            },
+            lockfile: crate::project_args::LockfilePolicyArgs {
+                frozen: false,
+                locked: false,
+            },
+            out: out_path.clone(),
+        })
+        .expect("execute doc");
+
+        let api: ApiDocRoot =
+            serde_json::from_str(&std::fs::read_to_string(out_path.join("api.json")).expect("read"))
+                .expect("parse api.json");
+        assert_eq!(api.schema_version, API_JSON_SCHEMA_VERSION);
+        assert_eq!(
+            api.navigation_model.as_deref(),
+            Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1)
+        );
+
+        let by_id = api
+            .items
+            .iter()
+            .filter_map(|i| i.id.map(|id| (id, i)))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        let type_row = api
+            .items
+            .iter()
+            .find(|i| i.kind == "type" && i.name.contains("Widget"))
+            .expect("type Widget");
+        let type_id = type_row.id.expect("type id");
+        let field = api
+            .items
+            .iter()
+            .find(|i| i.kind == "field")
+            .expect("field");
+        assert_eq!(field.parent_id, Some(type_id));
+        assert!(type_row.member_ids.contains(&field.id.unwrap()));
+
+        let enum_row = api.items.iter().find(|i| i.kind == "enum").expect("enum");
+        let enum_id = enum_row.id.expect("enum id");
+        let variants: Vec<_> = api
+            .items
+            .iter()
+            .filter(|i| i.kind == "enum_variant")
+            .collect();
+        assert_eq!(variants.len(), 2);
+        for v in &variants {
+            assert_eq!(v.parent_id, Some(enum_id));
+        }
+
+        let func = api
+            .items
+            .iter()
+            .find(|i| i.kind == "function" && i.name.contains("Add"))
+            .expect("function");
+        assert!(func.parent_id.is_none());
+
+        // Every id referenced as parentId must exist.
+        for item in &api.items {
+            if let (Some(id), Some(pid)) = (item.id, item.parent_id) {
+                assert!(
+                    by_id.contains_key(&pid),
+                    "item {id} parent {pid} missing"
+                );
+            }
+        }
+
+        let _ = std::fs::remove_file(source_path);
+        let _ = std::fs::remove_file(out_path.join("api.json"));
+        let _ = std::fs::remove_file(out_path.join("index.md"));
+        let _ = std::fs::remove_dir(&out_path);
+        let _ = std::fs::remove_dir(&root);
+    }
+
+    #[test]
+    fn api_json_ref_markdown_is_backtick_without_project_context() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("beskid-doc-ref-{nonce}"));
+        std::fs::create_dir_all(&root).expect("create root");
+        let source_path = root.join("Refs.bd");
+        let out_path = root.join("out");
+        let source = r#"
+/// See @ref(helper) for details.
+unit main() { return 1; }
+
+unit helper() { return 0; }
+"#;
+        std::fs::write(&source_path, source).expect("write source");
+
+        execute(DocArgs {
+            input: Some(source_path.clone()),
+            project: crate::project_args::ProjectResolveArgs {
+                project: None,
+                target: None,
+                workspace_member: None,
+            },
+            lockfile: crate::project_args::LockfilePolicyArgs {
+                frozen: false,
+                locked: false,
+            },
+            out: out_path.clone(),
+        })
+        .expect("execute doc");
+
+        let api = std::fs::read_to_string(out_path.join("api.json")).expect("read api.json");
+        assert!(
+            api.contains("`helper`") || api.contains("helper"),
+            "resolved @ref should appear in doc markdown: {api}"
+        );
+        assert!(
+            !api.contains("/docs/"),
+            "single-file doc without Project.proj must not emit pckg routes: {api}"
         );
 
         let _ = std::fs::remove_file(source_path);

@@ -34,7 +34,7 @@ fn build_document_analysis(
     beskid_analysis::services::parse_program_with_source_name(&uri.to_string(), text)
         .ok()
         .map(|program| {
-            beskid_analysis::services::build_document_analysis(&program, &uri.to_string(), text)
+            beskid_analysis::services::build_document_analysis(&program, &uri.to_string(), text, None)
         })
 }
 
