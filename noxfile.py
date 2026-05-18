@@ -18,6 +18,9 @@ _ASAN = {
     "ASAN_OPTIONS": "detect_leaks=0",
 }
 
+# Linux CI default thread stacks are ~2 MiB; corelib lowering/doc tests need more headroom.
+_LARGE_TEST_STACK = {"RUST_MIN_STACK": str(32 * 1024 * 1024)}
+
 
 def _cargo(session: nox.Session, *args: str, env: dict[str, str] | None = None) -> None:
     merged = {**os.environ, **(env or {})}
@@ -32,7 +35,7 @@ def workspace_check(session: nox.Session) -> None:
 
 @nox.session(python=False)
 def test(session: nox.Session) -> None:
-    _cargo(session, "test", "-p", "beskid_tests")
+    _cargo(session, "test", "-p", "beskid_tests", env=_LARGE_TEST_STACK)
 
 
 @nox.session(python=False, name="format_regression")
@@ -130,7 +133,14 @@ def release_cli(session: nox.Session) -> None:
 
 @nox.session(python=False, name="corelib_quality")
 def corelib_quality(session: nox.Session) -> None:
-    _cargo(session, "test", "-p", "beskid_tests", "projects::corelib::")
+    _cargo(
+        session,
+        "test",
+        "-p",
+        "beskid_tests",
+        "projects::corelib::",
+        env=_LARGE_TEST_STACK,
+    )
     corelib = ROOT / "corelib" / "beskid_corelib"
     _cargo(
         session,
