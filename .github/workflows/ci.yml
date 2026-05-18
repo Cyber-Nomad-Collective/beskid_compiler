@@ -24,6 +24,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    env:
+      RUST_MIN_STACK: "67108864"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -167,6 +169,8 @@ jobs:
 
   corelib-quality:
     runs-on: ubuntu-latest
+    env:
+      RUST_MIN_STACK: "67108864"
     steps:
       - uses: actions/checkout@v4
         with:
