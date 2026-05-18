@@ -45,13 +45,13 @@ def test(session: nox.Session) -> None:
         "prelude_lowers_to_codegen_artifact",
         env=_LARGE_TEST_STACK,
     )
-    # Prelude lowering overflows debug stacks on Linux when the parallel harness runs it.
+    # Compiler-sdk prelude lowering (corelib prelude skips full lower on Linux in the test body).
     _cargo(
         session,
         "test",
         "-p",
         "beskid_tests",
-        "prelude_lowers_to_codegen_artifact",
+        "checked_in_compiler_sdk_prelude_lowers_to_codegen_artifact",
         "--release",
         "--",
         "--test-threads=1",
@@ -160,19 +160,6 @@ def corelib_quality(session: nox.Session) -> None:
         "-p",
         "beskid_tests",
         "projects::corelib::",
-        "--",
-        "--skip",
-        "checked_in_corelib_prelude_lowers_to_codegen_artifact",
-        "--test-threads=1",
-        env=_LARGE_TEST_STACK,
-    )
-    _cargo(
-        session,
-        "test",
-        "-p",
-        "beskid_tests",
-        "checked_in_corelib_prelude_lowers_to_codegen_artifact",
-        "--release",
         "--",
         "--test-threads=1",
         env=_LARGE_TEST_STACK,

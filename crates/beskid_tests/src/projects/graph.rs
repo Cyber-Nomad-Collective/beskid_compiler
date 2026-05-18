@@ -153,12 +153,20 @@ dependency "Feature" {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let graph = build_project_graph(&app_manifest_path).expect("graph should build");
         let deps = collect_dependency_projects(&graph);
-
-        assert_eq!(deps.len(), 4);
-        assert_eq!(deps[0].dependency_name, "Std");
-        assert_eq!(deps[1].dependency_name, "Util");
-        assert_eq!(deps[2].dependency_name, "Core");
-        assert_eq!(deps[3].dependency_name, "Feature");
+        let names: Vec<_> = deps.iter().map(|d| d.dependency_name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "corelib_compiler_sdk",
+                "corelib_foundation",
+                "corelib_runtime",
+                "Std",
+                "Util",
+                "Core",
+                "Feature",
+            ],
+            "dependency order: {names:?}"
+        );
     });
 
     let _ = fs::remove_dir_all(root);
