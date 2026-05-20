@@ -74,9 +74,8 @@ let heap = Arc::new(Heap::new(GcOptions::default()));
 
 ## License
 
-Dual-licensed under **MIT** or **Apache-2.0**, same as upstream [HellButcher/abfall](https://github.com/HellButcher/abfall).
+licensed under **MIT**,  same as upstream [HellButcher/abfall](https://github.com/HellButcher/abfall).
 
-- [LICENSE-MIT](LICENSE-MIT)
-- [LICENSE-APACHE](LICENSE-APACHE)
+- [LICENSE-MIT](LICENSE)
 
 Contributions intended for upstream should be submitted to the original repository when they are not Beskid-specific.
