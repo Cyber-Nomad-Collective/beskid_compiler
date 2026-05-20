@@ -72,7 +72,9 @@ impl Resolver {
         &mut self,
         program: &Spanned<HirProgram>,
         module_path: &[String],
+        source_path: Option<&PathBuf>,
     ) {
+        self.current_source_path = source_path.cloned();
         if file_scoped_module_index(program).is_some() {
             self.collect_program(program);
             return;
@@ -133,6 +135,7 @@ impl Resolver {
                 tables: std::mem::take(&mut self.tables),
                 warnings: std::mem::take(&mut self.warnings),
                 builtin_items: std::mem::take(&mut self.builtin_items),
+                module_imports: std::mem::take(&mut self.module_imports),
             })
         } else {
             Err(std::mem::take(&mut self.errors))
@@ -1032,6 +1035,8 @@ pub struct Resolution {
     pub tables: ResolutionTables,
     pub warnings: Vec<ResolveWarning>,
     pub builtin_items: HashMap<ItemId, usize>,
+    /// `use` alias → full module path from the entry unit (e.g. `IO` → `Std::System::IO`).
+    pub module_imports: HashMap<String, Vec<String>>,
 }
 
 fn path_tail(path: &Spanned<HirPath>) -> String {
