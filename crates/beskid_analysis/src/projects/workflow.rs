@@ -32,6 +32,22 @@ pub struct ProjectLockDependencyEntry {
 }
 
 impl ProjectLockDependencyEntry {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn project(&self) -> &str {
+        &self.project
+    }
+
+    pub fn source_root(&self) -> &str {
+        &self.source_root
+    }
+
+    pub fn materialized_root(&self) -> &str {
+        &self.materialized_root
+    }
+
     pub fn to_v1_line(&self) -> String {
         let mut line = format!(
             "name={};manifest={};project={};source_root={};materialized_root={}",
@@ -589,9 +605,10 @@ fn resolve_registry_base_url(
         }
     }
     if let Some(rules) = workspace_rules
-        && let Some(url) = rules.registry_base_url(registry_alias) {
-            return url.trim_end_matches('/').to_string();
-        }
+        && let Some(url) = rules.registry_base_url(registry_alias)
+    {
+        return url.trim_end_matches('/').to_string();
+    }
     "http://127.0.0.1:8082".trim_end_matches('/').to_string()
 }
 

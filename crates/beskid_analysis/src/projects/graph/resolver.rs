@@ -182,12 +182,13 @@ pub fn resolve_dependencies(
                     }
 
                     if let Some(registry_alias) = dependency.registry.as_deref()
-                        && !rules.has_registry_alias(registry_alias) {
-                            return Err(ProjectError::Validation(format!(
-                                "dependency `{}` references unknown workspace registry alias `{}`",
-                                dependency.name, registry_alias
-                            )));
-                        }
+                        && !rules.has_registry_alias(registry_alias)
+                    {
+                        return Err(ProjectError::Validation(format!(
+                            "dependency `{}` references unknown workspace registry alias `{}`",
+                            dependency.name, registry_alias
+                        )));
+                    }
                 }
 
                 let unresolved_index =

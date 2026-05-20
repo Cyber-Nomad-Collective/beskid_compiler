@@ -5,11 +5,12 @@ use beskid_abi::{
     SYM_CHANNEL_RECEIVE, SYM_CHANNEL_RECEIVE_VALUE, SYM_CHANNEL_SEND, SYM_CHANNEL_TRY_RECEIVE,
     SYM_CHANNEL_TRY_SEND, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE,
     SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_FIBER_CANCEL, SYM_FIBER_CURRENT_ID, SYM_FIBER_DETACH,
-    SYM_FIBER_JOIN, SYM_FIBER_JOIN_VALUE, SYM_FIBER_NOW_MILLIS, SYM_FIBER_SPAWN, SYM_FIBER_YIELD,
-    SYM_GC_BYTES_ALLOCATED, SYM_GC_COLLECT, SYM_GC_COLLECT_IF_NEEDED, SYM_GC_EXTERNAL_ROOT_COUNT,
-    SYM_GC_OBJECT_COUNT, SYM_GC_PHASE, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
-    SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_HUB_CREATE,
-    SYM_HUB_REGISTER, SYM_HUB_UNREGISTER, SYM_HUB_WAIT_RECEIVE, SYM_HUB_WAIT_RECEIVE_INDEX,
+    SYM_FIBER_JOIN, SYM_FIBER_JOIN_VALUE, SYM_FIBER_NOW_MILLIS, SYM_FIBER_PROCESSOR_COUNT,
+    SYM_FIBER_SPAWN, SYM_FIBER_SPAWN_WITH_CANCEL_SLOT, SYM_FIBER_YIELD, SYM_GC_BYTES_ALLOCATED,
+    SYM_GC_COLLECT, SYM_GC_COLLECT_IF_NEEDED, SYM_GC_EXTERNAL_ROOT_COUNT, SYM_GC_OBJECT_COUNT,
+    SYM_GC_PHASE, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT,
+    SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_HUB_CREATE, SYM_HUB_REGISTER,
+    SYM_HUB_UNREGISTER, SYM_HUB_WAIT_RECEIVE, SYM_HUB_WAIT_RECEIVE_INDEX,
     SYM_HUB_WAIT_RECEIVE_VALUE, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
     SYM_INTEROP_DISPATCH_USIZE, SYM_MUTEX_CREATE, SYM_MUTEX_LOCK, SYM_MUTEX_TRY_LOCK,
     SYM_MUTEX_UNLOCK, SYM_PANIC, SYM_PANIC_STR, SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW,
@@ -29,14 +30,15 @@ use beskid_runtime::{
     alloc, array_len, array_new, channel_close, channel_create, channel_receive_status,
     channel_receive_value, channel_send, channel_try_receive, channel_try_send, event_get_handler,
     event_len, event_subscribe, event_unsubscribe_first, fiber_cancel, fiber_current_id,
-    fiber_detach, fiber_join_status, fiber_join_value, fiber_now_millis, fiber_spawn, fiber_yield,
-    gc_bytes_allocated, gc_collect, gc_collect_if_needed, gc_external_root_count, gc_object_count,
-    gc_phase, gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle,
-    gc_write_barrier, hub_create, hub_register, hub_unregister, hub_wait_receive_index,
-    hub_wait_receive_status, hub_wait_receive_value, interop_dispatch_ptr, interop_dispatch_unit,
-    interop_dispatch_usize, mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, panic,
-    panic_str, str_concat, str_len, str_new, syscall_read, syscall_write, test_bytes_len,
-    test_bytes_ptr, wait_group_add, wait_group_create, wait_group_done, wait_group_wait,
+    fiber_detach, fiber_join_status, fiber_join_value, fiber_now_millis, fiber_processor_count,
+    fiber_spawn, fiber_spawn_with_cancel_slot, fiber_yield, gc_bytes_allocated, gc_collect,
+    gc_collect_if_needed, gc_external_root_count, gc_object_count, gc_phase, gc_register_root,
+    gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier, hub_create,
+    hub_register, hub_unregister, hub_wait_receive_index, hub_wait_receive_status,
+    hub_wait_receive_value, interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize,
+    mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, panic, panic_str, str_concat, str_len,
+    str_new, syscall_read, syscall_write, test_bytes_len, test_bytes_ptr, wait_group_add,
+    wait_group_create, wait_group_done, wait_group_wait,
 };
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
@@ -259,6 +261,10 @@ fn register_runtime_symbols(builder: &mut JITBuilder) {
     builder.symbol(SYM_TEST_BYTES_PTR, test_bytes_ptr as *const u8);
     builder.symbol(SYM_TEST_BYTES_LEN, test_bytes_len as *const u8);
     builder.symbol(SYM_FIBER_SPAWN, fiber_spawn as *const u8);
+    builder.symbol(
+        SYM_FIBER_SPAWN_WITH_CANCEL_SLOT,
+        fiber_spawn_with_cancel_slot as *const u8,
+    );
     builder.symbol(SYM_FIBER_JOIN, fiber_join_status as *const u8);
     builder.symbol(SYM_FIBER_JOIN_VALUE, fiber_join_value as *const u8);
     builder.symbol(SYM_FIBER_DETACH, fiber_detach as *const u8);
@@ -266,6 +272,10 @@ fn register_runtime_symbols(builder: &mut JITBuilder) {
     builder.symbol(SYM_FIBER_YIELD, fiber_yield as *const u8);
     builder.symbol(SYM_FIBER_NOW_MILLIS, fiber_now_millis as *const u8);
     builder.symbol(SYM_FIBER_CURRENT_ID, fiber_current_id as *const u8);
+    builder.symbol(
+        SYM_FIBER_PROCESSOR_COUNT,
+        fiber_processor_count as *const u8,
+    );
     builder.symbol(SYM_CHANNEL_CREATE, channel_create as *const u8);
     builder.symbol(SYM_CHANNEL_SEND, channel_send as *const u8);
     builder.symbol(SYM_CHANNEL_RECEIVE, channel_receive_status as *const u8);

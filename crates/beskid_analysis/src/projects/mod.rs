@@ -1,5 +1,6 @@
 //! `Project.proj` / workspace manifests, lockfiles, dependency graphs, compile plans, and validation.
 
+pub mod assembly;
 pub mod compile_plan;
 pub mod discovery;
 pub mod error;
@@ -11,6 +12,11 @@ mod readme;
 pub mod validator;
 pub mod workflow;
 
+pub use assembly::{
+    AssemblyError, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
+    assemble_program, effective_roots_for_plan, module_path_exists_on_disk, module_roots_for_plan,
+    module_roots_from_effective,
+};
 pub use compile_plan::{
     build_compile_plan, build_compile_plan_with_policy, build_compile_plan_with_policy_and_graph,
     load_manifest_from_path,
@@ -31,11 +37,11 @@ pub use manifest_resolve::{
     resolve_workspace_candidate_path, resolve_workspace_candidate_with_summary,
 };
 pub use model::{
-    CompilePlan, Dependency, DependencySource, MaterializedDependencyProject,
-    PreparedProjectWorkspace, ProjectKind, ProjectManifest, ProjectModSection, ProjectSection,
-    ResolvedDependencyProject, Target, TargetKind, UnresolvedDependencyNote,
-    UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember, WorkspaceOverride,
-    WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
+    AssemblyDiscovery, AssemblyOptions, CompilePlan, Dependency, DependencySource,
+    MaterializedDependencyProject, PreparedProjectWorkspace, ProjectKind, ProjectManifest,
+    ProjectModSection, ProjectSection, ResolvedDependencyProject, Target, TargetKind,
+    UnresolvedDependencyNote, UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember,
+    WorkspaceOverride, WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
 };
 pub use parser::{parse_manifest, parse_workspace_manifest};
 pub use readme::{

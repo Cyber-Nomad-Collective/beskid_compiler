@@ -153,6 +153,23 @@ impl SemanticPipelineRule {
     }
 
     fn check_unknown_import_paths(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
+        if let Some(known_paths) = ctx.options.known_assembly_module_paths.clone() {
+            for item in &hir.node.items {
+                let HirItem::UseDeclaration(use_decl) = &item.node else {
+                    continue;
+                };
+                let path = self.path_to_string_local(&use_decl.node.path);
+                if known_paths.contains(&path) {
+                    continue;
+                }
+                ctx.emit_issue(
+                    use_decl.node.path.span,
+                    SemanticIssueKind::UnknownImportPath { path },
+                );
+            }
+            return;
+        }
+
         let mut known_roots = HashSet::new();
         known_roots.insert("std".to_string());
         for item in &hir.node.items {

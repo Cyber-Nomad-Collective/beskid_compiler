@@ -103,7 +103,7 @@ Program = { SOI ~ ItemList ~ EOI }
 
 DocLineContent = { "///" ~ !("/") ~ (!(NEWLINE) ~ ANY)* ~ NEWLINE? }
 DocRun = @{ DocLineContent+ }
-InnerItem = _{ FunctionDefinition | ImplBlock | ExtendTypeDefinition | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
+InnerItem = _{ FunctionDefinition | ImplBlock | ExtendTypeDefinition | MacroDefinition | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
 
 AttributeList = { Attribute+ }
 Attribute = { "[" ~ Identifier ~ ("(" ~ AttributeArgumentList? ~ ")")? ~ "]" }
@@ -149,6 +149,11 @@ FunctionDefinition = { Visibility? ~ BeskidType ~ Identifier ~ GenericParameters
 ReceiverType = { PrimitiveType | Path }
 ImplBlock = { "impl" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 ExtendTypeDefinition = { "extend" ~ "type" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
+
+MacroFragmentKind = _{ "block" | "expression" | "statement" | "type" | "identifier" | "literal" | "pattern" | "path" | "item" | "node" }
+MacroParameter = { MacroFragmentKind ~ Identifier }
+MacroParameterList = { MacroParameter ~ ("," ~ MacroParameter)* }
+MacroDefinition = { Visibility? ~ "macro" ~ Identifier ~ "(" ~ MacroParameterList? ~ ")" ~ Block }
 ImplMethodWithDocs = { ((DocRun ~ ImplMethodDefinition) | ImplMethodDefinition) ~ DocGap* }
 ImplMethodDefinition = { Visibility? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ Block }
 ParameterList = { ParameterWithDocs ~ ("," ~ DocGap* ~ ParameterWithDocs)* }
@@ -239,7 +244,12 @@ CallOperator = { "(" ~ ArgumentList? ~ ")" }
 MemberAccess = { "." ~ Identifier }
 TryOperator = { "?" }
 
-PrimaryExpression = { Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | Path }
+MacroInvocation = { Identifier ~ "!" ~ "(" ~ MacroArgumentList? ~ ")"? ~ MacroInvocationBlock? }
+MacroArgumentList = { Expression ~ ("," ~ Expression)* }
+MacroInvocationBlock = { Block }
+MacroMetavariable = { "$" ~ Identifier }
+
+PrimaryExpression = { MacroInvocation | MacroMetavariable | Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | Path }
 
 EnumConstructorExpression = { EnumPath ~ "(" ~ ArgumentList? ~ ")" }
 

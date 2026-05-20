@@ -99,10 +99,7 @@ fn resolve_program(program: &Spanned<Program>) -> Option<Resolution> {
     Resolver::new().resolve_program(&hir).ok()
 }
 
-fn resolved_value_at_offset(
-    resolution: &Resolution,
-    offset: usize,
-) -> Option<&ResolvedValue> {
+fn resolved_value_at_offset(resolution: &Resolution, offset: usize) -> Option<&ResolvedValue> {
     resolution
         .tables
         .resolved_values
@@ -452,10 +449,11 @@ fn hover_for_item(snapshot: &DocumentAnalysisSnapshot, item_idx: usize) -> Optio
         .item_docs
         .get(item_idx)
         .and_then(|slot| slot.as_ref())
-        && !doc.markdown.trim().is_empty() {
-            markdown.push_str("\n\n---\n\n");
-            markdown.push_str(&doc.markdown);
-        }
+        && !doc.markdown.trim().is_empty()
+    {
+        markdown.push_str("\n\n---\n\n");
+        markdown.push_str(&doc.markdown);
+    }
     Some(HoverInfo {
         markdown,
         start: item.span.start,

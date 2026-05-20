@@ -102,18 +102,19 @@ pub fn handle_code_actions(
         }
 
         if let Some(path) = uri.to_file_path()
-            && path.extension().and_then(|e| e.to_str()) == Some("bd") {
-                let offset = position_to_offset(&doc.text, params.range.start);
-                if let Some(action) = doc_comment_code_action(
-                    uri,
-                    doc,
-                    offset,
-                    "Generate or update documentation comment",
-                    None,
-                ) {
-                    actions.push(CodeActionOrCommand::CodeAction(action));
-                }
+            && path.extension().and_then(|e| e.to_str()) == Some("bd")
+        {
+            let offset = position_to_offset(&doc.text, params.range.start);
+            if let Some(action) = doc_comment_code_action(
+                uri,
+                doc,
+                offset,
+                "Generate or update documentation comment",
+                None,
+            ) {
+                actions.push(CodeActionOrCommand::CodeAction(action));
             }
+        }
     }
 
     CodeActionResponse::from(actions)

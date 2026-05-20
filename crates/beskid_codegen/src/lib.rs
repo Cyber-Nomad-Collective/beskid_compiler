@@ -23,4 +23,7 @@ pub use lowering::{
     lower_node, lower_program,
 };
 pub use module_emission::{DescriptorHandles, emit_string_literals, emit_type_descriptors};
-pub use services::{LoweredProgram, lower_source, lower_source_with_pipeline, render_clif};
+pub use services::{
+    LoweredProgram, lower_resolved_input_with_pipeline, lower_source, lower_source_with_pipeline,
+    render_clif,
+};

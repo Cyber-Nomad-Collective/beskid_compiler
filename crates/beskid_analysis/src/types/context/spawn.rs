@@ -1,5 +1,6 @@
 use crate::builtins::builtin_for_path;
 use crate::hir::{HirExpressionNode, HirLambdaExpression, HirSpawnExpression, HirStatementNode};
+use crate::resolve::ResolvedValue;
 use crate::syntax::Spanned;
 use crate::types::{TypeId, TypeInfo};
 
@@ -20,10 +21,10 @@ impl<'a> TypeContext<'a> {
                 self.fiber_scope_stack.pop();
                 self.check_spawn_lambda_captures(&spawn.node.callee, spawn.span);
                 typed.and_then(|fn_type| self.function_return_type(fn_type))
+            } else if let HirExpressionNode::CallExpression(call) = &spawn.node.callee.node {
+                self.spawn_return_type_for_entry(&call.node.callee, spawn.span)
             } else {
-                let callee_type = self.type_expression(&spawn.node.callee)?;
-                self.check_spawn_callee(callee_type, spawn.span);
-                self.function_return_type(callee_type)
+                self.spawn_return_type_for_entry(&spawn.node.callee, spawn.span)
             };
 
         let Some(return_type) = return_type else {
@@ -87,6 +88,30 @@ impl<'a> TypeContext<'a> {
             TypeInfo::Function { return_type, .. } => Some(*return_type),
             _ => None,
         }
+    }
+
+    fn spawn_return_type_for_entry(
+        &mut self,
+        entry: &Spanned<HirExpressionNode>,
+        spawn_span: crate::syntax::SpanInfo,
+    ) -> Option<TypeId> {
+        if let HirExpressionNode::PathExpression(path) = &entry.node
+            && let Some(ResolvedValue::Item(item_id)) = self
+                .resolution
+                .tables
+                .resolved_values
+                .get(&path.node.path.span)
+                .or_else(|| self.resolution.tables.resolved_values.get(&entry.span))
+        {
+            return self
+                .function_signatures
+                .get(item_id)
+                .map(|signature| signature.return_type);
+        }
+
+        let callee_type = self.type_expression(entry)?;
+        self.check_spawn_callee(callee_type, spawn_span);
+        self.function_return_type(callee_type)
     }
 
     fn check_spawn_callee(&mut self, callee_type: TypeId, span: crate::syntax::SpanInfo) {

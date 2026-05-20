@@ -4,7 +4,7 @@ use crate::frontend;
 use crate::pipeline_ui::{PipelineProgressKind, resolve_input_with_cli_pipeline_kind};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
-use beskid_codegen::{lower_source_with_pipeline, render_clif};
+use beskid_codegen::{lower_resolved_input_with_pipeline, render_clif};
 use clap::Args;
 use std::path::PathBuf;
 
@@ -46,7 +46,7 @@ pub fn execute(args: ClifArgs) -> Result<()> {
     )?;
     pipeline_ui.finish_prepare_ui("Analysis complete");
 
-    let lowered = lower_source_with_pipeline(&resolved.source_path, &resolved.source, false, None)?;
+    let lowered = lower_resolved_input_with_pipeline(&resolved, false, None)?;
     pipeline_ui.finish_session("CLIF ready");
     print!("{}", render_clif(&lowered.artifact));
 

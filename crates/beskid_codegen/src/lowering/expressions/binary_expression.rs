@@ -163,7 +163,6 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     });
                 }
 
-                
                 if operand_clif_ty.is_float() {
                     let cond = match node.node.op.node {
                         HirBinaryOp::IdentityEq => FloatCC::Equal,
@@ -197,7 +196,6 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     });
                 }
 
-                
                 if operand_clif_ty.is_float() {
                     let cond = match node.node.op.node {
                         HirBinaryOp::Eq => FloatCC::Equal,

@@ -119,6 +119,18 @@ fn jit_entrypoint_pointer_is_available() {
 }
 
 #[test]
+fn jit_executes_spawn_expression() {
+    let source = "i64 child() { return 42; } i64 main() { spawn child; return 5; }";
+    let mut engine = compile_jit(source);
+
+    let value = unsafe { run_main_i64(&mut engine) };
+    assert_eq!(
+        value, 5,
+        "expected spawned child to run without corrupting main"
+    );
+}
+
+#[test]
 fn jit_compiles_syscall_write_builtin_call() {
     let source = "i64 main() { return __syscall_write(1, \"hello\"); }";
     compile_jit(source);

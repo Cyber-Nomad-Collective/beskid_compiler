@@ -2,7 +2,7 @@ use Std.System.IO;
 use Std.Core.String;
 
 i32 main() {
-    IO.Println("ok");
+    IO.PrintLine("ok");
     if String.IsEmpty("ok") {
         return 31;
     }

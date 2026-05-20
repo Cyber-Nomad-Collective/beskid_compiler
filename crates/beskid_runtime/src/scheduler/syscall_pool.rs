@@ -1,5 +1,6 @@
 //! Thread pool for blocking syscalls (Phase A: workers must not allocate without scheduler lock).
 
+use std::any::Any;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -8,8 +9,8 @@ use super::{FiberKey, park_current, wake_fiber};
 
 struct SyscallJob {
     fiber: FiberKey,
-    task: Box<dyn FnOnce() -> i64 + Send>,
-    done_tx: mpsc::Sender<i64>,
+    task: Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>,
+    done_tx: mpsc::Sender<Box<dyn Any + Send>>,
 }
 
 struct PoolInner {
@@ -49,19 +50,32 @@ fn syscall_worker(rx: Arc<Mutex<Receiver<SyscallJob>>>) {
 }
 
 /// Run `task` on a pool thread and park the current fiber until it completes.
-pub fn run_blocking<F>(fiber: FiberKey, task: F) -> i64
+pub fn run_blocking_value<T, F>(fiber: FiberKey, task: F) -> T
 where
-    F: FnOnce() -> i64 + Send + 'static,
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
 {
     let (done_tx, done_rx) = mpsc::channel();
     pool()
         .jobs
         .send(SyscallJob {
             fiber,
-            task: Box::new(task),
+            task: Box::new(|| Box::new(task())),
             done_tx,
         })
         .expect("syscall job send");
     park_current(|_| {});
-    done_rx.recv().unwrap_or(-1)
+    *done_rx
+        .recv()
+        .expect("syscall job result")
+        .downcast::<T>()
+        .expect("syscall result type")
+}
+
+/// Run an integer-returning task on a pool thread and park the current fiber until it completes.
+pub fn run_blocking<F>(fiber: FiberKey, task: F) -> i64
+where
+    F: FnOnce() -> i64 + Send + 'static,
+{
+    run_blocking_value(fiber, task)
 }

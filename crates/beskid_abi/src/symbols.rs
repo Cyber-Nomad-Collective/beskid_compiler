@@ -33,6 +33,7 @@ pub const SYM_TEST_BYTES_PTR: &str = "test_bytes_ptr";
 pub const SYM_TEST_BYTES_LEN: &str = "test_bytes_len";
 
 pub const SYM_FIBER_SPAWN: &str = "fiber_spawn";
+pub const SYM_FIBER_SPAWN_WITH_CANCEL_SLOT: &str = "fiber_spawn_with_cancel_slot";
 /// Blocks until the target fiber completes; returns join status only (see `fiber_join_value`).
 pub const SYM_FIBER_JOIN: &str = "fiber_join_status";
 pub const SYM_FIBER_JOIN_VALUE: &str = "fiber_join_value";
@@ -41,6 +42,7 @@ pub const SYM_FIBER_CANCEL: &str = "fiber_cancel";
 pub const SYM_FIBER_YIELD: &str = "fiber_yield";
 pub const SYM_FIBER_NOW_MILLIS: &str = "fiber_now_millis";
 pub const SYM_FIBER_CURRENT_ID: &str = "fiber_current_id";
+pub const SYM_FIBER_PROCESSOR_COUNT: &str = "fiber_processor_count";
 
 pub const SYM_CHANNEL_CREATE: &str = "channel_create";
 pub const SYM_CHANNEL_SEND: &str = "channel_send";
@@ -103,6 +105,7 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_TEST_BYTES_PTR,
     SYM_TEST_BYTES_LEN,
     SYM_FIBER_SPAWN,
+    SYM_FIBER_SPAWN_WITH_CANCEL_SLOT,
     SYM_FIBER_JOIN,
     SYM_FIBER_JOIN_VALUE,
     SYM_FIBER_DETACH,
@@ -110,6 +113,7 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_FIBER_YIELD,
     SYM_FIBER_NOW_MILLIS,
     SYM_FIBER_CURRENT_ID,
+    SYM_FIBER_PROCESSOR_COUNT,
     SYM_CHANNEL_CREATE,
     SYM_CHANNEL_SEND,
     SYM_CHANNEL_RECEIVE,

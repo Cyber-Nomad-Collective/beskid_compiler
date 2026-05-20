@@ -74,24 +74,35 @@ fn empty_string_handle() -> *mut BeskidStr {
     str_new(b"".as_ptr(), 0)
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn read_fd_bytes(fd: i64, max_bytes: i64) -> *mut BeskidStr {
-    use std::arch::asm;
-    if fd < 0 || fd > i32::MAX as i64 || max_bytes <= 0 {
+fn string_handle_from_bytes(bytes: Vec<u8>) -> *mut BeskidStr {
+    if bytes.is_empty() {
         return empty_string_handle();
     }
-    let cap = max_bytes as usize;
-    let buffer = alloc(cap, std::ptr::null()).cast::<u8>();
+    let buffer = alloc(bytes.len(), std::ptr::null()).cast::<u8>();
     if buffer.is_null() {
         return empty_string_handle();
     }
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len());
+    }
+    str_new(buffer, bytes.len())
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn read_fd_bytes(fd: i64, max_bytes: i64) -> Vec<u8> {
+    use std::arch::asm;
+    if fd < 0 || fd > i32::MAX as i64 || max_bytes <= 0 {
+        return Vec::new();
+    }
+    let cap = max_bytes as usize;
+    let mut buffer = vec![0u8; cap];
     let mut result: isize;
     unsafe {
         asm!(
             "syscall",
             in("rax") 0usize,
             in("rdi") fd as usize,
-            in("rsi") buffer,
+            in("rsi") buffer.as_mut_ptr(),
             in("rdx") cap,
             lateout("rax") result,
             lateout("rcx") _,
@@ -99,28 +110,26 @@ fn read_fd_bytes(fd: i64, max_bytes: i64) -> *mut BeskidStr {
         );
     }
     if result <= 0 {
-        return empty_string_handle();
+        return Vec::new();
     }
-    str_new(buffer, result as usize)
+    buffer.truncate(result as usize);
+    buffer
 }
 
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-fn read_fd_bytes(fd: i64, max_bytes: i64) -> *mut BeskidStr {
+fn read_fd_bytes(fd: i64, max_bytes: i64) -> Vec<u8> {
     use std::io::Read;
     if fd != 0 || max_bytes <= 0 {
-        return empty_string_handle();
+        return Vec::new();
     }
     let cap = max_bytes as usize;
-    let buffer = alloc(cap, std::ptr::null()).cast::<u8>();
-    if buffer.is_null() {
-        return empty_string_handle();
-    }
-    let target = unsafe { std::slice::from_raw_parts_mut(buffer, cap) };
-    let read = std::io::stdin().read(target).unwrap_or(0);
+    let mut buffer = vec![0u8; cap];
+    let read = std::io::stdin().read(&mut buffer).unwrap_or(0);
     if read == 0 {
-        return empty_string_handle();
+        return Vec::new();
     }
-    str_new(buffer, read)
+    buffer.truncate(read);
+    buffer
 }
 
 /// Abort with a fixed message (payload is currently ignored).
@@ -162,7 +171,15 @@ pub extern "C-unwind" fn syscall_write(fd: i64, value: *const BeskidStr) -> i64 
 /// Returns an empty string when no bytes are available or `fd` is unsupported.
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn syscall_read(fd: i64, max_bytes: i64) -> *mut BeskidStr {
-    read_fd_bytes(fd, max_bytes)
+    let run = move || read_fd_bytes(fd, max_bytes);
+    let bytes = if let Some(fiber) = scheduler::current_fiber_key()
+        && scheduler::in_fiber_scheduler()
+    {
+        scheduler::run_blocking_value(fiber, run)
+    } else {
+        run()
+    };
+    string_handle_from_bytes(bytes)
 }
 
 /// Abort after decoding UTF-8 from `value` (falls back to a placeholder on invalid UTF-8).

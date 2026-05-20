@@ -1,10 +1,9 @@
 //! WaitGroup counter with Add/Done/Wait operations.
 
-use std::sync::Mutex;
-
 use slotmap::Key;
 
 use crate::scheduler::{self, FiberKey};
+use crate::slot_table::{LazySlotMap, lock_lazy_slot_map};
 use crate::status::{STATUS_CANCELLED, STATUS_OK};
 
 pub type WaitGroupId = i64;
@@ -14,22 +13,21 @@ struct WaitGroupInner {
     waiters: Vec<FiberKey>,
 }
 
-static WAIT_GROUPS: Mutex<Option<slotmap::SlotMap<slotmap::DefaultKey, WaitGroupInner>>> =
-    Mutex::new(None);
+static WAIT_GROUPS: LazySlotMap<WaitGroupInner> = LazySlotMap::new(None);
 
 fn table()
 -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, WaitGroupInner>>> {
-    let mut guard = WAIT_GROUPS.lock().expect("wait_group table lock");
-    if guard.is_none() {
-        *guard = Some(slotmap::SlotMap::with_key());
-    }
-    guard
+    lock_lazy_slot_map(&WAIT_GROUPS, "wait_group table lock")
 }
-
+/// Convert a slotmap key to a wait group id.
+/// @param(key) The slotmap key to convert.
+/// @returns(WaitGroupId) The wait group id.
 fn key_to_id(key: slotmap::DefaultKey) -> WaitGroupId {
     key.data().as_ffi() as i64
 }
 
+/// Create a wait group.
+/// @returns(WaitGroupId) The wait group id.
 pub fn wait_group_create() -> WaitGroupId {
     let mut guard = table();
     let map = guard.as_mut().expect("wait_group map");
@@ -40,12 +38,17 @@ pub fn wait_group_create() -> WaitGroupId {
     key_to_id(key)
 }
 
+/// Add a delta to a wait group.
+/// @param(id) The wait group id.
+/// @param(delta) The delta to add.
 pub fn wait_group_add(id: WaitGroupId, delta: i64) {
     let _ = with_wg(id, |wg| {
         wg.counter += delta;
     });
 }
 
+/// Decrement the counter of a wait group.
+/// @param(id) The wait group id.
 pub fn wait_group_done(id: WaitGroupId) {
     let wake = with_wg(id, |wg| {
         wg.counter -= 1;
@@ -63,6 +66,9 @@ pub fn wait_group_done(id: WaitGroupId) {
     }
 }
 
+/// Wait for a wait group to be ready.
+/// @param(id) The wait group id.
+/// @returns(i64) The status of the wait.
 pub fn wait_group_wait(id: WaitGroupId) -> i64 {
     if scheduler::current_fiber_cancelled() {
         return STATUS_CANCELLED;
@@ -85,6 +91,10 @@ pub fn wait_group_wait(id: WaitGroupId) -> i64 {
     }
 }
 
+/// Helper function to get a wait group inner.
+/// @param(id) The wait group id.
+/// @param(f) The function to call with the wait group inner.
+/// @returns(Option<R>) The result of the function.
 fn with_wg<F, R>(id: WaitGroupId, f: F) -> Option<R>
 where
     F: FnOnce(&mut WaitGroupInner) -> R,

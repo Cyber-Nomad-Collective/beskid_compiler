@@ -76,12 +76,13 @@ pub fn resolve_ref_markdown(
     }
     if let Some(target) = find_resolved_item(path, resolution) {
         if let Some(ctx) = links
-            && !ctx.package_with_version.trim().is_empty() {
-                let pkg = percent_encode_path_segment(ctx.package_with_version.trim());
-                let qn = percent_encode_path_segment(&target.name);
-                let label = escape_markdown_link_text(&target.name);
-                return format!("[{label}](/docs/{pkg}/api/{qn})");
-            }
+            && !ctx.package_with_version.trim().is_empty()
+        {
+            let pkg = percent_encode_path_segment(ctx.package_with_version.trim());
+            let qn = percent_encode_path_segment(&target.name);
+            let label = escape_markdown_link_text(&target.name);
+            return format!("[{label}](/docs/{pkg}/api/{qn})");
+        }
         return format!("`{}`", target.name);
     }
     format!("`{path}` _(unresolved)_")

@@ -70,9 +70,10 @@ fn walk_contract_items(
 ) -> Option<CallableSignatures> {
     for item in items {
         if let ContractNode::MethodSignature(sig) = &item.node
-            && sig.span == span {
-                return Some(from_contract_method(sig));
-            }
+            && sig.span == span
+        {
+            return Some(from_contract_method(sig));
+        }
     }
     None
 }

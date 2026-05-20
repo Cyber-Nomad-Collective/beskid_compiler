@@ -1,11 +1,11 @@
 //! FIFO channel queues (pointer-sized payloads at ABI; unbounded by default).
 
 use std::collections::VecDeque;
-use std::sync::Mutex;
 
 use slotmap::Key;
 
 use crate::scheduler::{self, FiberKey};
+use crate::slot_table::{LazySlotMap, lock_lazy_slot_map};
 use crate::status::{STATUS_CANCELLED, STATUS_CLOSED, STATUS_OK, STATUS_WOULD_BLOCK};
 
 pub type ChannelId = i64;
@@ -18,16 +18,11 @@ struct ChannelInner {
     wait_receivers: Vec<FiberKey>,
 }
 
-static CHANNELS: Mutex<Option<slotmap::SlotMap<slotmap::DefaultKey, ChannelInner>>> =
-    Mutex::new(None);
+static CHANNELS: LazySlotMap<ChannelInner> = LazySlotMap::new(None);
 
 fn channels()
 -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, ChannelInner>>> {
-    let mut guard = CHANNELS.lock().expect("channel table lock");
-    if guard.is_none() {
-        *guard = Some(slotmap::SlotMap::with_key());
-    }
-    guard
+    lock_lazy_slot_map(&CHANNELS, "channel table lock")
 }
 
 fn key_to_id(key: slotmap::DefaultKey) -> ChannelId {
@@ -254,18 +249,22 @@ pub fn channel_close(id: ChannelId) {
     }
 }
 
-/// Wake all parked send/receive waiters with cancellation (used by fiber cancel).
-pub fn channel_cancel_waiters(id: ChannelId) {
-    let waiters = with_channel(id, |ch| {
-        let mut w = ch.wait_senders.clone();
-        w.extend(ch.wait_receivers.iter().copied());
-        ch.wait_senders.clear();
-        ch.wait_receivers.clear();
-        w
-    });
-    if let Some(waiters) = waiters {
-        for f in waiters {
-            scheduler::wake_fiber(f);
-        }
+/// Remove `waiter` from every channel wait list and wake it if it was parked on a channel.
+pub fn channel_cancel_waiter(waiter: FiberKey) {
+    let mut guard = channels();
+    let Some(map) = guard.as_mut() else {
+        return;
+    };
+    let mut removed = false;
+    for ch in map.values_mut() {
+        let before_senders = ch.wait_senders.len();
+        ch.wait_senders.retain(|f| *f != waiter);
+        let before_receivers = ch.wait_receivers.len();
+        ch.wait_receivers.retain(|f| *f != waiter);
+        removed |= ch.wait_senders.len() != before_senders;
+        removed |= ch.wait_receivers.len() != before_receivers;
+    }
+    if removed {
+        scheduler::wake_fiber(waiter);
     }
 }

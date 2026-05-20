@@ -87,6 +87,11 @@ node_kinds!(
     PrimitiveType,
     StructLiteralField,
     Visibility,
+    MacroFragmentKind,
+    MacroParameter,
+    MacroDefinition,
+    MacroInvocation,
+    MacroMetavariable,
 );
 
 node_kinds!(
@@ -164,9 +169,11 @@ node_kinds!(
     Visibility,
 );
 
+mod ancestors;
 mod ast_node;
 mod descendants;
 mod dyn_node_ref;
+mod syntax_snapshot;
 mod hir_descendants;
 mod hir_node;
 mod hir_node_ref;
@@ -178,9 +185,11 @@ mod traversal_core;
 mod visit;
 mod walker;
 
+pub use ancestors::Ancestors;
 pub use ast_node::{AstNode, NodeRef};
 pub use descendants::Descendants;
 pub use dyn_node_ref::DynNodeRef;
+pub use syntax_snapshot::{SyntaxNodeId, SyntaxSnapshot};
 pub use hir_descendants::HirDescendants;
 pub use hir_node::HirNode;
 pub use hir_node_ref::HirNodeRef;

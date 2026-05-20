@@ -55,6 +55,7 @@ mod tests {
             source: String::new(),
             workspace_summary: None,
             prepared_workspace: None,
+            assembly: None,
             compile_plan: Some(CompilePlan {
                 project_name: "demo".to_owned(),
                 project_root: PathBuf::from("."),
@@ -93,6 +94,7 @@ mod tests {
             source: String::new(),
             workspace_summary: None,
             prepared_workspace: None,
+            assembly: None,
             compile_plan: Some(CompilePlan {
                 project_name: "demo".to_owned(),
                 project_root: PathBuf::from("."),

@@ -39,22 +39,23 @@ pub(crate) fn ensure_type_compatibility(
         return Ok(contract_value);
     }
 
-    if is_numeric_type(expected_info) && is_numeric_type(actual_info)
+    if is_numeric_type(expected_info)
+        && is_numeric_type(actual_info)
         && let (Some(TypeInfo::Primitive(expected_prim)), Some(TypeInfo::Primitive(actual_prim))) =
             (expected_info, actual_info)
-        {
-            let expected_width = expected_prim.bit_width();
-            let actual_width = actual_prim.bit_width();
-            let target_ty = crate::lowering::types::map_primitive_to_clif(*expected_prim)
-                .expect("expected clif type for numeric cast");
+    {
+        let expected_width = expected_prim.bit_width();
+        let actual_width = actual_prim.bit_width();
+        let target_ty = crate::lowering::types::map_primitive_to_clif(*expected_prim)
+            .expect("expected clif type for numeric cast");
 
-            if expected_width > actual_width {
-                value = builder.ins().sextend(target_ty, value);
-            } else if expected_width < actual_width {
-                value = builder.ins().ireduce(target_ty, value);
-            }
-            return Ok(value);
+        if expected_width > actual_width {
+            value = builder.ins().sextend(target_ty, value);
+        } else if expected_width < actual_width {
+            value = builder.ins().ireduce(target_ty, value);
         }
+        return Ok(value);
+    }
 
     Err(CodegenError::TypeMismatch {
         span,

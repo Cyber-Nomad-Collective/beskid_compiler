@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::super::diagnostics::{SemanticDiagnostic, Severity, make_diagnostic};
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::syntax::Program;
@@ -10,6 +12,9 @@ pub struct AnalysisOptions {
     /// the forbidden-meta gate for ordinary host projects. `None` skips that gate (no manifest
     /// classification available).
     pub module_level_meta_items_allowed: Option<bool>,
+    /// Module paths (`Std::System::IO`) from program assembly; when set, `use` validation uses
+    /// the merged module graph instead of file-local root heuristics.
+    pub known_assembly_module_paths: Option<HashSet<String>>,
 }
 
 impl Default for AnalysisOptions {
@@ -17,6 +22,7 @@ impl Default for AnalysisOptions {
         Self {
             emit_warnings: true,
             module_level_meta_items_allowed: None,
+            known_assembly_module_paths: None,
         }
     }
 }

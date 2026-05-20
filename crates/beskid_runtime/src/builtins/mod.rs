@@ -13,8 +13,6 @@ mod hub;
 mod metrics;
 mod mutex;
 mod panic_io;
-#[cfg(feature = "sched")]
-mod sched;
 mod strings;
 mod test_helpers;
 mod version;
@@ -49,8 +47,6 @@ pub use hub::{
 pub use metrics::*;
 pub use mutex::{mutex_create, mutex_lock, mutex_try_lock, mutex_unlock};
 pub use panic_io::{panic, panic_str, syscall_read, syscall_write};
-#[cfg(feature = "sched")]
-pub use sched::{rt_now_millis, rt_yield};
 pub use strings::{str_concat, str_len, str_new};
 pub use test_helpers::{test_bytes_len, test_bytes_ptr};
 pub use version::beskid_runtime_abi_version;

@@ -65,12 +65,13 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
 
     if let Some(mod_section) = &manifest.project.mod_section {
         if let Some(n) = mod_section.max_generator_rounds
-            && n == 0 {
-                return Err(ProjectError::meta_contract(
-                    "E1803",
-                    "`project.mod.maxGeneratorRounds` must be a positive integer",
-                ));
-            }
+            && n == 0
+        {
+            return Err(ProjectError::meta_contract(
+                "E1803",
+                "`project.mod.maxGeneratorRounds` must be a positive integer",
+            ));
+        }
         if let Some(caps) = &mod_section.capabilities {
             for cap in caps {
                 if !MOD_CAPABILITY_NAMES.iter().any(|known| *known == cap) {
@@ -82,14 +83,15 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
             }
         }
         if let Some(policy) = mod_section.artifact_policy.as_deref()
-            && !MOD_ARTIFACT_POLICIES.contains(&policy) {
-                return Err(ProjectError::meta_contract(
-                    "E1805",
-                    format!(
-                        "unknown `project.mod.artifactPolicy` `{policy}` (expected reuse, rebuild, or clean_rebuild)"
-                    ),
-                ));
-            }
+            && !MOD_ARTIFACT_POLICIES.contains(&policy)
+        {
+            return Err(ProjectError::meta_contract(
+                "E1805",
+                format!(
+                    "unknown `project.mod.artifactPolicy` `{policy}` (expected reuse, rebuild, or clean_rebuild)"
+                ),
+            ));
+        }
     }
 
     let mut dependency_names = HashSet::new();

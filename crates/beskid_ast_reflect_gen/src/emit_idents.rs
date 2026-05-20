@@ -61,13 +61,15 @@ pub fn escape_beskid_ident(raw: &str) -> String {
 pub fn rust_snake_to_beskid_field_camel(raw: &str) -> String {
     // Tuple placeholder names from the generator.
     if let Some(rest) = raw.strip_prefix("field_")
-        && rest.chars().all(|c| c.is_ascii_digit()) {
-            return escape_beskid_ident(&format!("field{rest}"));
-        }
+        && rest.chars().all(|c| c.is_ascii_digit())
+    {
+        return escape_beskid_ident(&format!("field{rest}"));
+    }
     if let Some(rest) = raw.strip_prefix("variant_field_")
-        && rest.chars().all(|c| c.is_ascii_digit()) {
-            return escape_beskid_ident(&format!("variantField{rest}"));
-        }
+        && rest.chars().all(|c| c.is_ascii_digit())
+    {
+        return escape_beskid_ident(&format!("variantField{rest}"));
+    }
     if raw == "payload" {
         return escape_beskid_ident("payload");
     }

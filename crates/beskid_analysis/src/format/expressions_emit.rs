@@ -455,6 +455,8 @@ impl Emit for Expression {
             Expression::Grouped(g) => g.emit(w, cx),
             Expression::Try(t) => t.emit(w, cx),
             Expression::Spawn(s) => s.emit(w, cx),
+            Expression::MacroInvocation(m) => m.emit(w, cx),
+            Expression::MacroMetavariable(m) => m.emit(w, cx),
         }
     }
 }

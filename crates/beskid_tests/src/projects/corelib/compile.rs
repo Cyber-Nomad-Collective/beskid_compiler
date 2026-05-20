@@ -2,6 +2,8 @@ use std::fs;
 
 use beskid_analysis::Severity;
 use beskid_analysis::projects::build_compile_plan;
+use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions, assemble_program};
+use beskid_analysis::services::lower_normalize_resolve_type_spanned_with_assembly;
 use beskid_analysis::services::{analyze_file_in_project, parse_program, resolve_input};
 use beskid_codegen::lower_source;
 
@@ -95,6 +97,97 @@ fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context()
                 path.display()
             );
         }
+    });
+}
+
+#[test]
+fn corelib_mvp_fixture_resolves_std_modules_via_program_assembly() {
+    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../beskid_e2e_tests/fixtures/corelib_mvp");
+        let resolved = resolve_input(
+            Some(&fixture.join("Src/Main.bd")),
+            Some(&fixture),
+            None,
+            None,
+            false,
+            false,
+        )
+        .expect("resolve corelib_mvp");
+
+        let plan = resolved.compile_plan.expect("compile plan");
+        let options = AssemblyOptions {
+            discovery: AssemblyDiscovery::ImportClosure,
+            ..Default::default()
+        };
+
+        let assembly = resolved
+            .assembly
+            .clone()
+            .or_else(|| {
+                assemble_program(
+                    &plan,
+                    resolved.prepared_workspace.as_ref(),
+                    &resolved.source_path,
+                    Some(&resolved.source),
+                    &options,
+                )
+                .ok()
+            })
+            .expect("program assembly");
+
+        let resolution = assembly
+            .module_index
+            .resolve_entry(&assembly.entry_unit().program)
+            .expect("cross-module resolve via ModuleIndex");
+
+        assert!(
+            resolution.items.iter().any(|item| item.name == "Print"),
+            "expected Print from Std.System.IO in merged resolution"
+        );
+        assert!(
+            resolution.items.iter().any(|item| item.name == "Len"),
+            "expected Len from Std.Core.String in merged resolution"
+        );
+    });
+}
+
+#[test]
+fn corelib_mvp_fixture_lowers_via_program_assembly() {
+    with_large_test_stack(|| {
+        let _env_guard = std_dependency_env_lock();
+        with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+            let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../beskid_e2e_tests/fixtures/corelib_mvp");
+            let resolved = resolve_input(
+                Some(&fixture.join("Src/Main.bd")),
+                Some(&fixture),
+                None,
+                None,
+                false,
+                false,
+            )
+            .expect("resolve corelib_mvp");
+
+            let options = AssemblyOptions {
+                discovery: AssemblyDiscovery::ImportClosure,
+                ..Default::default()
+            };
+            let assembly = assemble_program(
+                &resolved.compile_plan.expect("compile plan"),
+                resolved.prepared_workspace.as_ref(),
+                &resolved.source_path,
+                Some(&resolved.source),
+                &options,
+            )
+            .expect("assemble corelib_mvp");
+
+            lower_normalize_resolve_type_spanned_with_assembly(
+                &assembly.entry_unit().program,
+                Some(&assembly),
+            )
+            .expect("corelib_mvp should resolve and type-check with use aliases");
+        });
     });
 }
 

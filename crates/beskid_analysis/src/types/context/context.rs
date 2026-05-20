@@ -558,9 +558,20 @@ impl<'a> TypeContext<'a> {
     }
 
     pub fn type_program_with_errors(
-        mut self,
+        self,
         program: &Spanned<HirProgram>,
     ) -> (TypeResult, Vec<TypeError>) {
+        self.type_program_with_errors_and_dependencies(program, &[])
+    }
+
+    pub fn type_program_with_errors_and_dependencies(
+        mut self,
+        program: &Spanned<HirProgram>,
+        dependency_programs: &[Spanned<HirProgram>],
+    ) -> (TypeResult, Vec<TypeError>) {
+        for dependency in dependency_programs {
+            self.register_foreign_function_signatures(dependency);
+        }
         for item in &program.node.items {
             let (span, generics) = match &item.node {
                 HirItem::FunctionDefinition(def) => (item.span, &def.node.generics),
@@ -685,54 +696,56 @@ impl<'a> TypeContext<'a> {
 
             // If this contract has an extern interface, perform static validation.
             if let Some(def) = definitions.get(&contract_name)
-                && let Some(ext) = &def.node.extern_interface {
-                    // ABI must be exactly "C"
-                    let abi_ok = ext
-                        .abi
-                        .as_ref()
-                        .map(|s| s.eq_ignore_ascii_case("C"))
-                        .unwrap_or(false);
-                    if !abi_ok {
-                        self.errors.push(TypeError::ExternInvalidAbi {
-                            span: def.node.name.span,
-                            abi: ext.abi.clone(),
-                        });
-                    }
-                    // Library must be present and non-empty
-                    let lib_ok = ext
-                        .library
-                        .as_ref()
-                        .map(|s| !s.trim().is_empty())
-                        .unwrap_or(false);
-                    if !lib_ok {
-                        self.errors.push(TypeError::ExternMissingLibrary {
-                            span: def.node.name.span,
-                        });
-                    }
+                && let Some(ext) = &def.node.extern_interface
+            {
+                // ABI must be exactly "C"
+                let abi_ok = ext
+                    .abi
+                    .as_ref()
+                    .map(|s| s.eq_ignore_ascii_case("C"))
+                    .unwrap_or(false);
+                if !abi_ok {
+                    self.errors.push(TypeError::ExternInvalidAbi {
+                        span: def.node.name.span,
+                        abi: ext.abi.clone(),
+                    });
+                }
+                // Library must be present and non-empty
+                let lib_ok = ext
+                    .library
+                    .as_ref()
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false);
+                if !lib_ok {
+                    self.errors.push(TypeError::ExternMissingLibrary {
+                        span: def.node.name.span,
+                    });
+                }
 
-                    // Validate method signatures declared directly in this contract
-                    for node in &def.node.items {
-                        if let HirContractNode::MethodSignature(sig) = &node.node {
-                            // Params
-                            for param in &sig.node.parameters {
-                                if !self.is_allowed_ffi_param(param) {
-                                    self.errors.push(TypeError::ExternDisallowedParamType {
-                                        span: param.span,
-                                        method: sig.node.name.node.name.clone(),
-                                    });
-                                }
+                // Validate method signatures declared directly in this contract
+                for node in &def.node.items {
+                    if let HirContractNode::MethodSignature(sig) = &node.node {
+                        // Params
+                        for param in &sig.node.parameters {
+                            if !self.is_allowed_ffi_param(param) {
+                                self.errors.push(TypeError::ExternDisallowedParamType {
+                                    span: param.span,
+                                    method: sig.node.name.node.name.clone(),
+                                });
                             }
-                            // Return type
-                            if let Some(ret) = &sig.node.return_type
-                                && !self.is_allowed_ffi_return(ret) {
-                                    self.errors.push(TypeError::ExternDisallowedReturnType {
-                                        span: ret.span,
-                                        method: sig.node.name.node.name.clone(),
-                                    });
-                                }
+                        }
+                        // Return type
+                        if let Some(ret) = &sig.node.return_type
+                            && !self.is_allowed_ffi_return(ret)
+                        {
+                            self.errors.push(TypeError::ExternDisallowedReturnType {
+                                span: ret.span,
+                                method: sig.node.name.node.name.clone(),
+                            });
                         }
                     }
                 }
+            }
         }
     }
 

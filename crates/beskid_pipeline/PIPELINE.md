@@ -22,11 +22,11 @@ Normative string ids (Compiler Mods / stage ordering):
 | `workspace.graph_changed` | `WORKSPACE_GRAPH_CHANGED` | After a workspace compile graph is (re)built |
 
 **Full build** — `FULL_BUILD_PHASE_ORDER` lists: resolve → `workspace.graph_changed` →
-`workspace.materialize` → `parse` → `mod.load` → `mod.collect` → `mod.generate` →
+`workspace.materialize` → `program.assemble` → `parse` → `mod.load` → `mod.collect` → `mod.generate` →
 `syntax.generation` → `semantic` → `semantic.snapshot` → `mod.analyze` → `mod.rewrite` →
 `lower.ready` → `lower` → `codegen_clif` → AOT tail as today.
 
-**Mod rebuild** — `MOD_BUILD_PHASE_ORDER` lists: resolve → `workspace.materialize` → `parse` →
+**Mod rebuild** — `MOD_BUILD_PHASE_ORDER` lists: resolve → `workspace.materialize` → `program.assemble` → `parse` →
 `lower.ready` → `lower` → `codegen_clif` → `aot.emit_object` → `aot.link` for Mod package AOT
 artifacts only (no host `mod.*` orchestration or `aot.runtime`).
 

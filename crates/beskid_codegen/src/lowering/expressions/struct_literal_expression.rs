@@ -136,7 +136,8 @@ fn emit_alloc(
     let call = ctx.builder.ins().call(func_ref, &[size_val, desc_val]);
     let result =
         ctx.builder
-            .inst_results(call).first()
+            .inst_results(call)
+            .first()
             .copied()
             .ok_or(CodegenError::UnsupportedNode {
                 span,

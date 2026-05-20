@@ -1,10 +1,9 @@
 //! Fiber-aware mutex (parks waiting fibers; no poison in v1).
 
-use std::sync::Mutex;
-
 use slotmap::Key;
 
 use crate::scheduler::{self, FiberKey};
+use crate::slot_table::{LazySlotMap, lock_lazy_slot_map};
 use crate::status::{MUTEX_OK, MUTEX_WOULD_BLOCK, STATUS_CANCELLED};
 
 pub type MutexId = i64;
@@ -15,15 +14,11 @@ struct MutexInner {
     waiters: Vec<FiberKey>,
 }
 
-static MUTEXES: Mutex<Option<slotmap::SlotMap<slotmap::DefaultKey, MutexInner>>> = Mutex::new(None);
+static MUTEXES: LazySlotMap<MutexInner> = LazySlotMap::new(None);
 
 fn mutex_table()
 -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, MutexInner>>> {
-    let mut guard = MUTEXES.lock().expect("mutex table lock");
-    if guard.is_none() {
-        *guard = Some(slotmap::SlotMap::with_key());
-    }
-    guard
+    lock_lazy_slot_map(&MUTEXES, "mutex table lock")
 }
 
 fn key_to_id(key: slotmap::DefaultKey) -> MutexId {

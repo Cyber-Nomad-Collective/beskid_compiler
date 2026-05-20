@@ -164,9 +164,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
                 arm.node.value.span,
             )?;
             if let Some(var) = result_var
-                && let MatchArmOutcome::Value(value) = arm_outcome {
-                    ctx.builder.def_var(var, value);
-                }
+                && let MatchArmOutcome::Value(value) = arm_outcome
+            {
+                ctx.builder.def_var(var, value);
+            }
             if !ctx.state.block_terminated {
                 ctx.builder.ins().jump(merge_block, &[]);
             }

@@ -1,12 +1,12 @@
 //! Homogeneous hub with round-robin `wait_receive` (max 256 registrations).
 
 use std::cell::RefCell;
-use std::sync::Mutex;
 
 use slotmap::Key;
 
 use crate::channel::{self, ChannelId};
 use crate::scheduler;
+use crate::slot_table::{LazySlotMap, lock_lazy_slot_map};
 use crate::status::{
     STATUS_CANCELLED, STATUS_HUB_EMPTY, STATUS_HUB_LIMIT, STATUS_HUB_NOT_FOUND, STATUS_OK,
 };
@@ -26,15 +26,11 @@ struct HubInner {
     round_robin_cursor: usize,
 }
 
-static HUBS: Mutex<Option<slotmap::SlotMap<slotmap::DefaultKey, HubInner>>> = Mutex::new(None);
+static HUBS: LazySlotMap<HubInner> = LazySlotMap::new(None);
 
 fn hubs() -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, HubInner>>>
 {
-    let mut guard = HUBS.lock().expect("hub table lock");
-    if guard.is_none() {
-        *guard = Some(slotmap::SlotMap::with_key());
-    }
-    guard
+    lock_lazy_slot_map(&HUBS, "hub table lock")
 }
 
 fn key_to_id(key: slotmap::DefaultKey) -> HubId {

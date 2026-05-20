@@ -24,18 +24,18 @@ pub fn analyze_document(
 
     if let Some(path) = uri.to_file_path()
         && path.extension().and_then(|ext| ext.to_str()) == Some("bd")
-            && let Some(ctx) = compilation_context
-                && let Ok(mut diags) =
-                    services::analyze_source_with_compilation_context(path.as_ref(), source, ctx)
-                {
-                    if let Some(snap) = cached {
-                        diags.extend(snap.doc_diagnostics.iter().cloned());
-                    }
-                    return diags
-                        .into_iter()
-                        .map(|diag| semantic_to_lsp_diagnostic(source, diag))
-                        .collect();
-                }
+        && let Some(mut ctx) = compilation_context.cloned()
+        && let Ok(mut diags) =
+            services::analyze_source_with_compilation_context(path.as_ref(), source, &mut ctx)
+    {
+        if let Some(snap) = cached {
+            diags.extend(snap.doc_diagnostics.iter().cloned());
+        }
+        return diags
+            .into_iter()
+            .map(|diag| semantic_to_lsp_diagnostic(source, diag))
+            .collect();
+    }
 
     if let Some(project_diags) = analyze_project_file(uri, source) {
         return project_diags;

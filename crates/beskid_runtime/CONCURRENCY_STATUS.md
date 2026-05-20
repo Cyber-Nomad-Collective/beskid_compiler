@@ -9,18 +9,18 @@ Scope document for the fiber concurrency plan (M0–M8). Normative spec:
 | --- | --- | --- | --- |
 | **M0** | ABI + builtins | Landed | `beskid_abi::BUILTIN_SPECS`, `beskid_analysis::builtins`, JIT/AOT import of split status/value symbols |
 | **M1** | Runtime channels | Landed | `channel.rs`, `channel_receive_status` / `channel_receive_value`, bounded/unbounded FIFO |
-| **M2** | Scheduler | Landed (Phase A) | `scheduler/mod.rs`, corosensei stacks, single mutator; park/wake on channels |
-| **M3** | `spawn` + analysis | Partial | Spawn expression/HIR/types in progress; corelib does not call `__fiber_spawn` yet |
-| **M4** | Corelib package | Landed | `compiler/corelib/packages/concurrency/` thin wrappers over `__fiber_*`, `__channel_*`, `__hub_*`, `__mutex_*`, `__wait_group_*` |
-| **M5** | Sync + cancel | Landed | Mutex, WaitGroup, Hub round-robin; `Fiber.OnCancelled` on handle struct |
-| **M6** | Syscall parking | Partial | `syscall_pool`; full console blocking integration ongoing |
+| **M2** | Scheduler | Landed (Phase A) | Split `scheduler/{state,tls,spawn,run_loop}.rs`, corosensei stacks, single mutator; park/wake on channels |
+| **M3** | `spawn` + analysis | Landed (Phase A) | Spawn lowering calls `fiber_spawn_with_cancel_slot`, returns the `i64` fiber id through the ABI table, and has JIT/corelib coverage |
+| **M4** | Corelib package | Landed | `compiler/corelib/packages/concurrency/` thin wrappers over split `__fiber_*`, `__channel_*`, `__hub_*`, `__mutex_*`, `__wait_group_*` |
+| **M5** | Sync + cancel | Landed | Mutex, WaitGroup, Hub round-robin; cancel wakes parked channel waiters and raises `Fiber.OnCancelled` |
+| **M6** | Syscall parking | Landed (Phase A) | `syscall_pool` parks the current fiber while blocking read/write work runs on worker threads |
 | **M7** | Console channel | Landed | `Channel<ConsoleMessage>`, `Console.MessagesChannel()`, `Terminal.PollResize` → `Send(Resize)` |
 | **M8** | OS threading | Landed (v1) | `System.Threading.Thread` pthread extern surface; distinct from cooperative `Concurrency.Yield` |
 
 ## Stable surfaces (v1 Phase A)
 
 - **Channel**: `Create` / `CreateWithOptions`, `Send` → `Result<SendOk, ChannelError>`, `Receive` / `TryReceive`, `Close`
-- **Fiber handle**: `Join` / `Detach` / `Cancel`, `event OnCancelled()` on struct (spawn lowering wires cancel slot)
+- **Fiber handle**: `Join` / `Detach` / `Cancel`, `event OnCancelled()` on struct (spawn lowering wires the cancel slot through `fiber_spawn_with_cancel_slot`)
 - **Hub**: homogeneous `Hub<T>`, `Register`, `WaitReceive` via `hub_wait_receive_status` + index/value builtins
 - **Mutex / WaitGroup**: map to runtime status codes in `Concurrency.Status`
 - **Clock / yield**: `Concurrency.Yield`, `NowMillis`, `ProcessorCount` → `__fiber_processor_count`
@@ -30,10 +30,8 @@ Scope document for the fiber concurrency plan (M0–M8). Normative spec:
 
 - **Phase B GC**: multiple mutators, write barriers on channel edges — not enabled; scheduler remains single mutator
 - **`SetProcessorCount`**: corelib no-op until runtime exposes dynamic worker resize (no `__fiber_set_processor_count`)
-- **`spawn` keyword**: user code should use platform-spec `spawn` when M3 lowering is complete; corelib does not wrap spawn yet
 - **`Result<unit, _>`**: `Send` uses zero-size `SendOk` struct until `unit` is a valid `Result` payload type
 - **Generic channel payloads**: runtime queues are `i64`; wider types need copy/GC tracing (Phase B)
-- **Cranelift legacy declares**: `cranelift_host.rs` still declares some Ptr-typed legacy symbols alongside `BUILTIN_SPECS` — prefer `beskid_abi` table for new work
 
 ## Safe test commands
 
@@ -120,7 +118,7 @@ If RSS climbs while CPU stays hot, suspect a **busy scheduler loop** (`run_main_
 
 - `crates/beskid_abi/src/builtins.rs`, `symbols.rs`
 - `crates/beskid_runtime/src/channel.rs`, `hub.rs`, `mutex.rs`, `wait_group.rs`
-- `crates/beskid_runtime/src/scheduler/mod.rs` (do not grow without Phase B plan)
+- `crates/beskid_runtime/src/scheduler/{state,tls,spawn,run_loop,syscall_pool}.rs`
 - `crates/beskid_runtime/src/builtins/{channel,fiber,hub,mutex,wait_group}.rs`
 - `crates/beskid_runtime/tests/concurrency.rs`
 - `crates/beskid_tests/src/runtime/`

@@ -54,6 +54,7 @@ impl Emit for Node {
             Node::ModuleDeclaration(m) => m.emit(w, cx),
             Node::InlineModule(m) => m.emit(w, cx),
             Node::UseDeclaration(u) => u.emit(w, cx),
+            Node::MacroDefinition(m) => m.emit(w, cx),
         }
     }
 }

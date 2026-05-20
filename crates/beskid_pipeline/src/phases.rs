@@ -11,6 +11,8 @@ pub const RESOLVE_GRAPH: &str = "resolve.graph";
 pub const WORKSPACE_GRAPH_CHANGED: &str = "workspace.graph_changed";
 /// Lockfile + materialize dependency trees.
 pub const WORKSPACE_MATERIALIZE: &str = "workspace.materialize";
+/// Discover and parse compilation units from effective roots + compile plan.
+pub const PROGRAM_ASSEMBLE: &str = "program.assemble";
 /// Parse Beskid source.
 pub const PARSE: &str = "parse";
 /// Load mod AOT artifacts and contract descriptors for the active compile plan.
@@ -55,6 +57,7 @@ pub const FULL_BUILD_PHASE_ORDER: &[&str] = &[
     RESOLVE_GRAPH,
     WORKSPACE_GRAPH_CHANGED,
     WORKSPACE_MATERIALIZE,
+    PROGRAM_ASSEMBLE,
     PARSE,
     MOD_LOAD,
     MOD_COLLECT,
@@ -82,6 +85,7 @@ pub const MOD_BUILD_PHASE_ORDER: &[&str] = &[
     RESOLVE_GRAPH,
     WORKSPACE_GRAPH_CHANGED,
     WORKSPACE_MATERIALIZE,
+    PROGRAM_ASSEMBLE,
     PARSE,
     LOWER_READY,
     LOWER,
@@ -142,7 +146,8 @@ mod tests {
     fn mod_build_orders_resolve_through_link_without_mod_orchestration() {
         let o = MOD_BUILD_PHASE_ORDER;
         assert!(pos(o, RESOLVE_MANIFEST).unwrap() < pos(o, WORKSPACE_MATERIALIZE).unwrap());
-        assert!(pos(o, WORKSPACE_MATERIALIZE).unwrap() < pos(o, PARSE).unwrap());
+        assert!(pos(o, WORKSPACE_MATERIALIZE).unwrap() < pos(o, PROGRAM_ASSEMBLE).unwrap());
+        assert!(pos(o, PROGRAM_ASSEMBLE).unwrap() < pos(o, PARSE).unwrap());
         assert!(pos(o, PARSE).unwrap() < pos(o, LOWER_READY).unwrap());
         assert!(pos(o, LOWER).unwrap() < pos(o, AOT_EMIT_OBJECT).unwrap());
         assert!(pos(o, AOT_EMIT_OBJECT).unwrap() < pos(o, AOT_LINK).unwrap());

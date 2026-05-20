@@ -13,6 +13,8 @@ use super::enum_constructor_expression::parse_enum_constructor_expression;
 use super::grouped_expression::parse_grouped_expression;
 use super::lambda_expression::parse_lambda_expression;
 use super::literal_expression::parse_literal_expression;
+use super::macro_invocation::MacroInvocation;
+use super::macro_metavariable::MacroMetavariable;
 use super::match_expression::parse_match_expression;
 use super::member_expression::parse_member_expression;
 use super::path_expression::parse_path_expression;
@@ -56,6 +58,10 @@ pub enum Expression {
     Try(Spanned<TryExpression>),
     #[ast(child)]
     Spawn(Spanned<super::spawn_expression::SpawnExpression>),
+    #[ast(child)]
+    MacroInvocation(Spanned<MacroInvocation>),
+    #[ast(child)]
+    MacroMetavariable(Spanned<MacroMetavariable>),
 }
 
 impl Parsable for Expression {
@@ -64,7 +70,7 @@ impl Parsable for Expression {
     }
 }
 
-fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
+pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
 
     match pair.as_rule() {
@@ -108,6 +114,14 @@ fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError>
         Rule::EnumConstructorExpression => parse_enum_constructor_expression(pair),
         Rule::StructLiteralExpression => parse_struct_literal_expression(pair),
         Rule::Literal => parse_literal_expression(pair),
+        Rule::MacroInvocation => {
+            let node = MacroInvocation::parse(pair)?;
+            Ok(Spanned::new(Expression::MacroInvocation(node), span))
+        }
+        Rule::MacroMetavariable => {
+            let node = MacroMetavariable::parse(pair)?;
+            Ok(Spanned::new(Expression::MacroMetavariable(node), span))
+        }
         Rule::Path => parse_path_expression(pair),
         _ => Err(ParseError::unexpected_rule(pair, None)),
     }

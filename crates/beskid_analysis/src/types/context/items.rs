@@ -1,10 +1,44 @@
-use crate::hir::{HirItem, HirPrimitiveType};
+use crate::hir::{HirItem, HirPrimitiveType, HirProgram};
 use crate::syntax::Spanned;
 use crate::types::TypeId;
 
 use super::context::{FunctionSignature, TypeContext};
 
 impl<'a> TypeContext<'a> {
+    /// Register callable signatures from dependency units without typing their bodies.
+    pub(super) fn register_foreign_function_signatures(&mut self, program: &Spanned<HirProgram>) {
+        for item in &program.node.items {
+            let HirItem::FunctionDefinition(def) = &item.node else {
+                continue;
+            };
+            let mut inserted = Vec::new();
+            for generic in &def.node.generics {
+                let name = generic.node.name.clone();
+                let type_id = self
+                    .type_table
+                    .intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                self.generic_params.insert(name.clone(), type_id);
+                inserted.push(name);
+            }
+            let return_type = def
+                .node
+                .return_type
+                .as_ref()
+                .and_then(|ty| self.type_id_for_type(ty))
+                .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
+            let mut params = Vec::new();
+            for param in &def.node.parameters {
+                if let Some(type_id) = self.type_id_for_type(&param.node.ty) {
+                    params.push(type_id);
+                }
+            }
+            self.record_signature(item.span, params, return_type);
+            for name in inserted {
+                self.generic_params.remove(&name);
+            }
+        }
+    }
+
     pub(super) fn type_item(&mut self, item: &Spanned<HirItem>) {
         match &item.node {
             HirItem::FunctionDefinition(def) => {

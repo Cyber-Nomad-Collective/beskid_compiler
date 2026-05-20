@@ -176,12 +176,7 @@ pub fn execute(args: TestArgs) -> Result<()> {
                 .as_deref()
                 .or(Some("skip.condition is true"));
             if !args.json {
-                test_ui.finish_row(
-                    row_index,
-                    TestRowState::Skipped,
-                    Duration::ZERO,
-                    reason,
-                )?;
+                test_ui.finish_row(row_index, TestRowState::Skipped, Duration::ZERO, reason)?;
             }
             executions.push(TestExecution {
                 name: test.name.to_string(),

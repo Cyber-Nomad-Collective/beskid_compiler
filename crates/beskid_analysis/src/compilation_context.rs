@@ -3,25 +3,28 @@
 use std::path::{Path, PathBuf};
 
 use crate::projects::{
-    CompilePlan, ProjectGraphBuildOptions, ProjectKind, UnresolvedDependencyPolicy,
-    build_compile_plan_with_policy_and_graph, discover_workspace_file, load_manifest_from_path,
-    resolve_project_manifest_for_source_path,
+    AssemblyDiscovery, AssemblyOptions, CompilePlan, PreparedProjectWorkspace, ProgramAssembly,
+    ProjectGraphBuildOptions, ProjectKind, UnresolvedDependencyPolicy, assemble_program,
+    build_compile_plan_with_policy_and_graph, discover_workspace_file, effective_roots_for_plan,
+    load_manifest_from_path, module_roots_from_effective, resolve_project_manifest_for_source_path,
 };
 
 /// Workspace-aware compilation slice: selected `Project.proj`, optional [`CompilePlan`] for
 /// host and mod roots, [`ProjectKind`] for staged rules (for example compiler-mod contract placement),
-/// and source roots for on-disk module path checks.
+/// materialized-first [`module_roots`](Self::module_roots), and optional cached [`ProgramAssembly`].
 #[derive(Debug, Clone)]
 pub struct CompilationContext {
     pub project_manifest_path: PathBuf,
     pub workspace_manifest_path: Option<PathBuf>,
     pub project_kind: ProjectKind,
     pub compile_plan: Option<CompilePlan>,
+    pub prepared_workspace: Option<PreparedProjectWorkspace>,
     pub module_roots: Vec<PathBuf>,
+    pub assembly: Option<ProgramAssembly>,
 }
 
 impl CompilationContext {
-    /// Build context for IDE/analysis: no materialized dependency workspace required.
+    /// Build context for IDE/analysis: uses lockfile materialized paths when present; no full materialize.
     pub fn try_for_analysis_path(path: &Path, workspace_member: Option<&str>) -> Option<Self> {
         Self::try_for_analysis_path_with_graph_options(
             path,
@@ -41,7 +44,6 @@ impl CompilationContext {
             resolve_project_manifest_for_source_path(path, workspace_member).ok()??;
         let manifest = load_manifest_from_path(&manifest_path).ok()?;
         let project_kind = manifest.project.kind;
-        // Reuse workspace path from manifest resolution when present to avoid a second walk.
         let workspace_manifest_path = workspace_resolution
             .map(|summary| summary.workspace_manifest_path)
             .or_else(|| discover_workspace_file(&manifest_path));
@@ -54,9 +56,15 @@ impl CompilationContext {
             )
             .ok(),
         };
+        let prepared_workspace = None;
         let module_roots = compile_plan
             .as_ref()
-            .map(crate::module_roots_for_plan)
+            .map(|plan| {
+                module_roots_from_effective(&effective_roots_for_plan(
+                    plan,
+                    prepared_workspace.as_ref(),
+                ))
+            })
             .unwrap_or_else(|| {
                 let project_root = manifest_path
                     .parent()
@@ -69,8 +77,33 @@ impl CompilationContext {
             workspace_manifest_path,
             project_kind,
             compile_plan,
+            prepared_workspace,
             module_roots,
+            assembly: None,
         })
+    }
+
+    /// Lazily build or return cached assembly for `entry_path` (workspace-scan for IDE).
+    pub fn assembly_for_entry(
+        &mut self,
+        entry_path: &Path,
+        entry_source: &str,
+    ) -> Option<&ProgramAssembly> {
+        if self.assembly.is_some() {
+            return self.assembly.as_ref();
+        }
+        let plan = self.compile_plan.as_ref()?;
+        let mut options = AssemblyOptions::default();
+        options.discovery = AssemblyDiscovery::WorkspaceScan;
+        self.assembly = assemble_program(
+            plan,
+            self.prepared_workspace.as_ref(),
+            entry_path,
+            Some(entry_source),
+            &options,
+        )
+        .ok();
+        self.assembly.as_ref()
     }
 
     /// Whether compiler-mod contract items may be placed at module scope in this project's Beskid sources.
@@ -82,12 +115,5 @@ impl CompilationContext {
 
 /// On-disk source roots for the primary project plus each dependency in `plan` (module path existence checks).
 pub fn module_roots_for_plan(plan: &CompilePlan) -> Vec<PathBuf> {
-    let mut roots = Vec::with_capacity(1 + plan.dependency_projects.len());
-    roots.push(plan.source_root.clone());
-    roots.extend(
-        plan.dependency_projects
-            .iter()
-            .map(|dep| dep.source_root.clone()),
-    );
-    roots
+    module_roots_from_effective(&effective_roots_for_plan(plan, None))
 }

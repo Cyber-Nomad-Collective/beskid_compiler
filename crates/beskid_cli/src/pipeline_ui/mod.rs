@@ -173,6 +173,7 @@ impl CliPipeline {
             compile_plan: compile_plan.cloned(),
             prepared_workspace: None,
             workspace_summary: workspace_summary.cloned(),
+            assembly: None,
         };
         self.show_build_graph(&resolved);
     }

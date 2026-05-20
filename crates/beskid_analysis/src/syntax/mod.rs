@@ -13,6 +13,7 @@ pub use common::{HasSpan, Identifier, SpanInfo, Spanned, Visibility};
 pub use expressions::{
     AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression, CallExpression,
     EnumConstructorExpression, EnumPattern, Expression, GroupedExpression, LambdaExpression,
+    MacroInvocation, MacroMetavariable,
     LambdaParameter, Literal, LiteralExpression, MatchArm, MatchExpression, MemberExpression,
     PathExpression, Pattern, SpawnExpression, StructLiteralExpression, StructLiteralField,
     TryExpression, UnaryExpression, UnaryOp,
@@ -20,8 +21,9 @@ pub use expressions::{
 pub use items::{
     Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
     ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition,
-    EnumVariant, ExtendTypeDefinition, FunctionDefinition, InlineModule, MethodDefinition,
-    ModuleDeclaration, Node, Program, TestDefinition, TestMetaSection, TestMetadataEntry,
+    EnumVariant, ExtendTypeDefinition, FunctionDefinition, InlineModule, MacroDefinition,
+    MacroFragmentKind, MacroParameter, MethodDefinition, ModuleDeclaration, Node, Program,
+    TestDefinition, TestMetaSection, TestMetadataEntry,
     TestSkipEntry, TestSkipSection, TypeDefinition, UseDeclaration,
 };
 pub use statements::{

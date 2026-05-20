@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use beskid_pipeline::PipelineObserver;
 
 use crate::projects::{
-    CompilePlan, PROJECT_FILE_NAME, PreparedProjectWorkspace, UnresolvedDependencyPolicy,
-    WorkspaceResolutionSummary,
+    AssemblyDiscovery, AssemblyOptions, CompilePlan, PROJECT_FILE_NAME, PreparedProjectWorkspace,
+    ProgramAssembly, UnresolvedDependencyPolicy, WorkspaceResolutionSummary, assemble_program,
 };
 
 use super::project::{infer_manifest_from_input, resolve_project_with_policy};
@@ -18,6 +18,7 @@ pub struct ResolvedInput {
     pub compile_plan: Option<CompilePlan>,
     pub prepared_workspace: Option<PreparedProjectWorkspace>,
     pub workspace_summary: Option<WorkspaceResolutionSummary>,
+    pub assembly: Option<ProgramAssembly>,
 }
 
 /// Optional workspace member name for analysis parity with CLI `--workspace-member`.
@@ -120,11 +121,26 @@ pub fn resolve_input_with_policy(
     let source = fs::read_to_string(&source_path)
         .with_context(|| format!("Failed to read file: {}", source_path.display()))?;
 
+    let mut assembly_options = AssemblyOptions::default();
+    assembly_options.discovery = AssemblyDiscovery::ImportClosure;
+    let assembly = compile_plan.as_ref().and_then(|plan| {
+        assemble_program(
+            plan,
+            prepared_workspace.as_ref(),
+            &source_path,
+            Some(&source),
+            &assembly_options,
+        )
+        .ok()
+    });
+    // Assembly is best-effort at resolve time; lowering will re-assemble if this failed.
+
     Ok(ResolvedInput {
         source_path,
         source,
         compile_plan,
         prepared_workspace,
         workspace_summary,
+        assembly,
     })
 }

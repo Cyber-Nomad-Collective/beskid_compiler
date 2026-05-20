@@ -20,10 +20,115 @@ use beskid_pipeline::phases::{
 };
 use beskid_runtime::{array_len, array_new};
 
+fn corelib_concurrency_source(module: &str) -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corelib/packages/concurrency/src/Concurrency")
+        .join(format!("{module}.bd"));
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("failed to read corelib module `{}`: {err}", path.display()))
+}
+
+fn corelib_i64_constant(source: &str, name: &str) -> i64 {
+    let signature = format!("pub i64 {name}()");
+    let start = source
+        .find(&signature)
+        .unwrap_or_else(|| panic!("missing corelib i64 constant `{name}`"));
+    let body = &source[start..];
+    let return_start = body
+        .find("return ")
+        .unwrap_or_else(|| panic!("missing return for corelib i64 constant `{name}`"))
+        + "return ".len();
+    let return_body = &body[return_start..];
+    let return_end = return_body
+        .find(';')
+        .unwrap_or_else(|| panic!("missing semicolon for corelib i64 constant `{name}`"));
+    return_body[..return_end]
+        .trim()
+        .parse::<i64>()
+        .unwrap_or_else(|err| panic!("invalid value for corelib i64 constant `{name}`: {err}"))
+}
+
 #[test]
 fn builtin_symbols_are_unique() {
     let set: HashSet<&'static str> = BUILTIN_SPECS.iter().map(|spec| spec.symbol).collect();
     assert_eq!(set.len(), BUILTIN_SPECS.len());
+}
+
+#[test]
+fn concurrency_corelib_status_codes_match_runtime_contract() {
+    let status = corelib_concurrency_source("Status");
+    let fiber_join_status = corelib_concurrency_source("FiberJoinStatus");
+
+    assert_eq!(
+        corelib_i64_constant(&status, "Ok"),
+        beskid_runtime::status::STATUS_OK
+    );
+    assert_eq!(
+        corelib_i64_constant(&status, "Closed"),
+        beskid_runtime::status::STATUS_CLOSED
+    );
+    assert_eq!(
+        corelib_i64_constant(&status, "Cancelled"),
+        beskid_runtime::status::STATUS_CANCELLED
+    );
+    assert_eq!(
+        corelib_i64_constant(&status, "WouldBlock"),
+        beskid_runtime::status::STATUS_WOULD_BLOCK
+    );
+    assert_eq!(
+        corelib_i64_constant(&status, "HubEmpty"),
+        beskid_runtime::status::STATUS_HUB_EMPTY
+    );
+    assert_eq!(
+        corelib_i64_constant(&status, "HubLimit"),
+        beskid_runtime::status::STATUS_HUB_LIMIT
+    );
+    assert_eq!(
+        corelib_i64_constant(&status, "HubNotFound"),
+        beskid_runtime::status::STATUS_HUB_NOT_FOUND
+    );
+    assert_eq!(
+        corelib_i64_constant(&status, "MutexBusy"),
+        beskid_runtime::status::MUTEX_WOULD_BLOCK
+    );
+
+    assert_eq!(
+        corelib_i64_constant(&fiber_join_status, "Ok"),
+        beskid_runtime::status::FIBER_JOIN_OK
+    );
+    assert_eq!(
+        corelib_i64_constant(&fiber_join_status, "Cancelled"),
+        beskid_runtime::status::FIBER_JOIN_CANCELLED
+    );
+    assert_eq!(
+        corelib_i64_constant(&fiber_join_status, "Panicked"),
+        beskid_runtime::status::FIBER_JOIN_PANICKED
+    );
+    assert_eq!(
+        corelib_i64_constant(&fiber_join_status, "StackOverflow"),
+        beskid_runtime::status::FIBER_JOIN_STACK_OVERFLOW
+    );
+    assert_eq!(
+        corelib_i64_constant(&fiber_join_status, "NotDone"),
+        beskid_runtime::status::FIBER_JOIN_NOT_DONE
+    );
+}
+
+#[test]
+fn fiber_abi_symbols_cover_processor_count_and_cancel_slot_spawn() {
+    let builtin_symbols: HashSet<&'static str> =
+        BUILTIN_SPECS.iter().map(|spec| spec.symbol).collect();
+
+    for symbol in ["fiber_processor_count", "fiber_spawn_with_cancel_slot"] {
+        assert!(
+            builtin_symbols.contains(symbol),
+            "BUILTIN_SPECS should include `{symbol}`"
+        );
+        assert!(
+            RUNTIME_EXPORT_SYMBOLS.contains(&symbol),
+            "RUNTIME_EXPORT_SYMBOLS should include `{symbol}`"
+        );
+    }
 }
 
 #[test]
@@ -61,6 +166,7 @@ fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
         beskid_abi::SYM_TEST_BYTES_PTR,
         beskid_abi::SYM_TEST_BYTES_LEN,
         beskid_abi::SYM_FIBER_SPAWN,
+        beskid_abi::SYM_FIBER_SPAWN_WITH_CANCEL_SLOT,
         beskid_abi::SYM_FIBER_JOIN,
         beskid_abi::SYM_FIBER_JOIN_VALUE,
         beskid_abi::SYM_FIBER_DETACH,
@@ -68,6 +174,7 @@ fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
         beskid_abi::SYM_FIBER_YIELD,
         beskid_abi::SYM_FIBER_NOW_MILLIS,
         beskid_abi::SYM_FIBER_CURRENT_ID,
+        beskid_abi::SYM_FIBER_PROCESSOR_COUNT,
         beskid_abi::SYM_CHANNEL_CREATE,
         beskid_abi::SYM_CHANNEL_SEND,
         beskid_abi::SYM_CHANNEL_RECEIVE,

@@ -3,13 +3,17 @@ use crate::lowering::expressions::call_expression::lower_lambda_function_value;
 use crate::lowering::lowerable::Lowerable;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::pointer_type;
+use beskid_abi::SYM_FIBER_SPAWN_WITH_CANCEL_SLOT;
 use beskid_analysis::hir::{HirExpressionNode, HirSpawnExpression};
 use beskid_analysis::resolve::ResolvedValue;
 use beskid_analysis::syntax::Spanned;
-use cranelift_codegen::ir::{AbiParam, ExtFuncData, ExternalName, InstBuilder, Signature};
+use cranelift_codegen::ir::{
+    AbiParam, ExtFuncData, ExternalName, InstBuilder, Signature, StackSlotData, StackSlotKind,
+    types,
+};
 use cranelift_codegen::isa::CallConv;
 
-/// Lower `spawn callee` to `fiber_spawn(entry_trampoline, env)` returning an opaque handle pointer.
+/// Lower `spawn callee` to `fiber_spawn_with_cancel_slot(entry_trampoline, env, event_slot)`.
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirSpawnExpression {
     type Output = Option<cranelift_codegen::ir::Value>;
 
@@ -25,10 +29,61 @@ fn lower_spawn_expression(
     spawn: &Spanned<HirSpawnExpression>,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<cranelift_codegen::ir::Value>, CodegenError> {
-    let entry_ptr = match &spawn.node.callee.node {
+    let entry_ptr = lower_spawn_entry(&spawn.node.callee, spawn.span, ctx)?;
+
+    let env = ctx.builder.ins().iconst(pointer_type(), 0);
+    let on_cancelled_slot =
+        ctx.builder
+            .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
+    ctx.builder.ins().stack_store(env, on_cancelled_slot, 0);
+    let on_cancelled_slot_addr = ctx
+        .builder
+        .ins()
+        .stack_addr(pointer_type(), on_cancelled_slot, 0);
+
+    let mut sig = Signature::new(CallConv::SystemV);
+    sig.params.push(AbiParam::new(pointer_type()));
+    sig.params.push(AbiParam::new(pointer_type()));
+    sig.params.push(AbiParam::new(pointer_type()));
+    sig.returns.push(AbiParam::new(types::I64));
+    let sig_ref = ctx.builder.func.import_signature(sig);
+    let func_ref = ctx.builder.func.import_function(ExtFuncData {
+        name: ExternalName::testcase(SYM_FIBER_SPAWN_WITH_CANCEL_SLOT),
+        signature: sig_ref,
+        colocated: false,
+        patchable: false,
+    });
+    let call = ctx
+        .builder
+        .ins()
+        .call(func_ref, &[entry_ptr, env, on_cancelled_slot_addr]);
+    let handle = *ctx
+        .builder
+        .inst_results(call)
+        .first()
+        .ok_or(CodegenError::UnsupportedNode {
+            span: spawn.span,
+            node: "fiber_spawn_with_cancel_slot result",
+        })?;
+    Ok(Some(handle))
+}
+
+fn lower_spawn_entry(
+    callee: &Spanned<HirExpressionNode>,
+    spawn_span: beskid_analysis::syntax::SpanInfo,
+    ctx: &mut NodeLoweringContext<'_, '_>,
+) -> Result<cranelift_codegen::ir::Value, CodegenError> {
+    match &callee.node {
         HirExpressionNode::LambdaExpression(lambda) => {
-            lower_lambda_function_value(lambda, spawn.span, ctx)?
+            lower_lambda_function_value(lambda, spawn_span, ctx)
         }
+        HirExpressionNode::CallExpression(call) if call.node.args.is_empty() => {
+            lower_spawn_entry(&call.node.callee, spawn_span, ctx)
+        }
+        HirExpressionNode::CallExpression(_) => Err(CodegenError::UnsupportedNode {
+            span: spawn_span,
+            node: "spawn callee arguments",
+        }),
         HirExpressionNode::PathExpression(path) => {
             if let Some(ResolvedValue::Item(item_id)) = ctx
                 .resolution
@@ -52,43 +107,17 @@ fn lower_spawn_expression(
                     colocated: true,
                     patchable: false,
                 });
-                ctx.builder.ins().func_addr(pointer_type(), func_ref)
+                Ok(ctx.builder.ins().func_addr(pointer_type(), func_ref))
             } else {
-                return Err(CodegenError::UnsupportedNode {
-                    span: spawn.span,
+                Err(CodegenError::UnsupportedNode {
+                    span: spawn_span,
                     node: "spawn entry path",
-                });
+                })
             }
         }
-        _ => {
-            return Err(CodegenError::UnsupportedNode {
-                span: spawn.span,
-                node: "spawn callee",
-            });
-        }
-    };
-
-    let env = ctx.builder.ins().iconst(pointer_type(), 0);
-
-    let mut sig = Signature::new(CallConv::SystemV);
-    sig.params.push(AbiParam::new(pointer_type()));
-    sig.params.push(AbiParam::new(pointer_type()));
-    sig.returns.push(AbiParam::new(pointer_type()));
-    let sig_ref = ctx.builder.func.import_signature(sig);
-    let func_ref = ctx.builder.func.import_function(ExtFuncData {
-        name: ExternalName::testcase("fiber_spawn"),
-        signature: sig_ref,
-        colocated: false,
-        patchable: false,
-    });
-    let call = ctx.builder.ins().call(func_ref, &[entry_ptr, env]);
-    let handle = *ctx
-        .builder
-        .inst_results(call)
-        .first()
-        .ok_or(CodegenError::UnsupportedNode {
-            span: spawn.span,
-            node: "fiber_spawn result",
-        })?;
-    Ok(Some(handle))
+        _ => Err(CodegenError::UnsupportedNode {
+            span: spawn_span,
+            node: "spawn callee",
+        }),
+    }
 }

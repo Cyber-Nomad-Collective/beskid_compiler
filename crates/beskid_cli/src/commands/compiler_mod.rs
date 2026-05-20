@@ -229,7 +229,8 @@ fn resolve_explicit_project_path(project: &Path) -> Result<PathBuf> {
         ));
     }
 
-    resolve_workspace_candidate_path(&candidate, None, None)}
+    resolve_workspace_candidate_path(&candidate, None, None)
+}
 
 fn discover_mod_entry_source(source_root: &Path) -> Result<PathBuf> {
     for candidate in [

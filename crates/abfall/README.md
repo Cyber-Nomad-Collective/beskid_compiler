@@ -1,7 +1,5 @@
 # Abfall — concurrent tri-color tracing GC
 
-**Upstream:** [HellButcher/abfall](https://github.com/HellButcher/abfall) — MIT OR Apache-2.0.
-
 This directory is a **vendored copy** inside the [Beskid compiler](https://github.com/Cyber-Nomad-Collective/beskid_compiler) workspace (`compiler/crates/abfall`). It extends the upstream design with hooks required by the Beskid runtime and codegen. When contributing GC fixes, prefer aligning with upstream where possible; Beskid-specific behavior lives in `src/beskid.rs` and the `Heap::allocate_beskid` / `write_barrier` paths.
 
 ## Features
@@ -74,7 +72,7 @@ let heap = Arc::new(Heap::new(GcOptions::default()));
 
 ## License
 
-licensed under **MIT**,  same as upstream [HellButcher/abfall](https://github.com/HellButcher/abfall).
+licensed under **MIT** per upstream choice clause [HellButcher/abfall](https://github.com/HellButcher/abfall).
 
 - [LICENSE-MIT](LICENSE)
 

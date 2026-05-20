@@ -154,6 +154,33 @@ pub struct MaterializedDependencyProject {
     pub materialized_source_root: PathBuf,
 }
 
+/// How assembly discovers `.bd` files under effective roots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssemblyDiscovery {
+    /// Entry plus transitive `use` paths and optional std prelude.
+    ImportClosure,
+    /// All `*.bd` files under each root (IDE / project analyze), capped by `max_units`.
+    WorkspaceScan,
+}
+
+/// Options for [`super::assembly::assemble_program`].
+#[derive(Debug, Clone)]
+pub struct AssemblyOptions {
+    pub discovery: AssemblyDiscovery,
+    pub include_std_prelude: bool,
+    pub max_units: usize,
+}
+
+impl Default for AssemblyOptions {
+    fn default() -> Self {
+        Self {
+            discovery: AssemblyDiscovery::ImportClosure,
+            include_std_prelude: true,
+            max_units: 4096,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedProjectWorkspace {
     pub lockfile_path: PathBuf,

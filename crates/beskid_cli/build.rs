@@ -37,22 +37,23 @@ fn main() {
 fn corelib_workspace_candidates(manifest_dir: &Path) -> Vec<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(override_path) = std::env::var(ENV_CORELIB_SOURCE)
-        && !override_path.trim().is_empty() {
-            let p = PathBuf::from(&override_path);
-            // Allow override to point at either workspace root or legacy beskid_corelib only.
-            if p.join("Workspace.proj").is_file() {
-                candidates.push(p);
-            } else if p.file_name().is_some_and(|n| n == "beskid_corelib")
-                && p.join("Project.proj").is_file()
-            {
-                if let Some(parent) = p.parent() {
-                    candidates.push(parent.to_path_buf());
-                }
-                candidates.push(p);
-            } else {
-                candidates.push(p);
+        && !override_path.trim().is_empty()
+    {
+        let p = PathBuf::from(&override_path);
+        // Allow override to point at either workspace root or legacy beskid_corelib only.
+        if p.join("Workspace.proj").is_file() {
+            candidates.push(p);
+        } else if p.file_name().is_some_and(|n| n == "beskid_corelib")
+            && p.join("Project.proj").is_file()
+        {
+            if let Some(parent) = p.parent() {
+                candidates.push(parent.to_path_buf());
             }
+            candidates.push(p);
+        } else {
+            candidates.push(p);
         }
+    }
     candidates.push(manifest_dir.join("../../corelib"));
     candidates
 }

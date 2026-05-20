@@ -264,7 +264,10 @@ impl<'a> TypeContext<'a> {
         }
     }
 
-    fn type_call_expression(&mut self, call: &Spanned<HirCallExpression>) -> Option<TypeId> {
+    pub(super) fn type_call_expression(
+        &mut self,
+        call: &Spanned<HirCallExpression>,
+    ) -> Option<TypeId> {
         if let Some((receiver_source, receiver_type, receiver_item_id, field_type)) =
             self.resolve_event_call_target(&call.node.callee)
         {
@@ -457,43 +460,44 @@ impl<'a> TypeContext<'a> {
                     .tables
                     .resolved_values
                     .get(&path_expr.node.path.span)
+            {
+                let method_name = member.node.member.node.name.as_str().to_string();
+                if let Some(signature) = self
+                    .contract_signatures
+                    .get(&(*item_id, method_name.clone()))
+                    .cloned()
                 {
-                    let method_name = member.node.member.node.name.as_str().to_string();
-                    if let Some(signature) = self
-                        .contract_signatures
-                        .get(&(*item_id, method_name.clone()))
-                        .cloned()
-                    {
-                        if call.node.args.len() != signature.params.len() {
-                            self.errors.push(TypeError::CallArityMismatch {
-                                span: call.span,
-                                expected: signature.params.len(),
-                                actual: call.node.args.len(),
-                            });
-                            return Some(signature.return_type);
-                        }
-                        for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
-                            if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                                self.require_same_type(arg.span, *expected, actual);
-                            }
-                        }
-                        let receiver_type =
-                            self.named_types.get(item_id).copied().unwrap_or_else(|| {
-                                self.type_table.intern(TypeInfo::Named(*item_id))
-                            });
-                        self.call_kinds.insert(
-                            call.span,
-                            CallLoweringKind::ContractDispatch {
-                                contract_item_id: *item_id,
-                                receiver_source: MethodReceiverSource::Expression(
-                                    member.node.target.span,
-                                ),
-                                receiver_type,
-                            },
-                        );
+                    if call.node.args.len() != signature.params.len() {
+                        self.errors.push(TypeError::CallArityMismatch {
+                            span: call.span,
+                            expected: signature.params.len(),
+                            actual: call.node.args.len(),
+                        });
                         return Some(signature.return_type);
                     }
+                    for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+                        if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                            self.require_same_type(arg.span, *expected, actual);
+                        }
+                    }
+                    let receiver_type = self
+                        .named_types
+                        .get(item_id)
+                        .copied()
+                        .unwrap_or_else(|| self.type_table.intern(TypeInfo::Named(*item_id)));
+                    self.call_kinds.insert(
+                        call.span,
+                        CallLoweringKind::ContractDispatch {
+                            contract_item_id: *item_id,
+                            receiver_source: MethodReceiverSource::Expression(
+                                member.node.target.span,
+                            ),
+                            receiver_type,
+                        },
+                    );
+                    return Some(signature.return_type);
                 }
+            }
 
             let target_type = self.type_expression(&member.node.target)?;
             let method_name = member.node.member.node.name.as_str();

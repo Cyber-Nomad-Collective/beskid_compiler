@@ -35,7 +35,6 @@ fn fiber_spawn_join_returns_value() {
 }
 
 #[test]
-#[ignore = "corosensei force-unwind on main fiber drop after child yield; see beskid_runtime concurrency tests"]
 fn fiber_yield_runs_other_fiber() {
     run_closure_as_main(|| {
         let child = fiber_spawn(yield_once, std::ptr::null_mut());

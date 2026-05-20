@@ -26,6 +26,8 @@ pub struct Resolver {
     errors: Vec<ResolveError>,
     warnings: Vec<ResolveWarning>,
     builtin_items: HashMap<ItemId, usize>,
+    /// `use` alias → full module path (e.g. `IO` → `["Std","System","IO"]`).
+    module_imports: HashMap<String, Vec<String>>,
 }
 
 fn type_name_for_method_receiver(receiver_type: &Spanned<HirType>) -> String {
@@ -49,23 +51,69 @@ impl Resolver {
         Self::default()
     }
 
-    /// Run collection and resolution; on success moves tables and graph into [`Resolution`].
-    pub fn resolve_program(&mut self, program: &Spanned<HirProgram>) -> ResolveResult<Resolution> {
+    /// Seed module graph and items from a multi-unit [`super::module_index::ModuleIndex`] prefetch.
+    pub fn with_module_prefetch(
+        items: Vec<ItemInfo>,
+        module_graph: ModuleGraph,
+        builtin_items: HashMap<ItemId, usize>,
+    ) -> Self {
+        Self {
+            items,
+            module_graph,
+            builtin_items,
+            ..Self::default()
+        }
+    }
+
+    /// Collect items as members of `module_path` when the unit has no file-scoped module declaration.
+    pub fn collect_program_in_module(
+        &mut self,
+        program: &Spanned<HirProgram>,
+        module_path: &[String],
+    ) {
+        if file_scoped_module_index(program).is_some() {
+            self.collect_program(program);
+            return;
+        }
+        self.current_module = self.module_graph.ensure_module_path(module_path);
+        for item in &program.node.items {
+            self.collect_item(item);
+        }
+    }
+
+    /// Register top-level items and nested modules from `program` without resolving references.
+    pub fn collect_program(&mut self, program: &Spanned<HirProgram>) {
+        self.module_imports.clear();
         let file_scoped_module_index = file_scoped_module_index(program);
         self.current_module = file_scoped_module_path(program)
             .map(|path| self.module_graph.ensure_module_path(&path))
             .unwrap_or(self.module_graph.root());
-        self.tables = ResolutionTables::new();
-        self.local_scopes.clear();
-        self.generic_scopes.clear();
-        self.builtin_items.clear();
-        self.collect_builtins();
         for (index, item) in program.node.items.iter().enumerate() {
             if Some(index) == file_scoped_module_index {
                 continue;
             }
             self.collect_item(item);
         }
+    }
+
+    /// Run collection and resolution; on success moves tables and graph into [`Resolution`].
+    pub fn resolve_program(&mut self, program: &Spanned<HirProgram>) -> ResolveResult<Resolution> {
+        self.tables = ResolutionTables::new();
+        self.local_scopes.clear();
+        self.generic_scopes.clear();
+        if self.builtin_items.is_empty() {
+            self.collect_builtins();
+        }
+        self.collect_program(program);
+        self.resolve_collected_program(program)
+    }
+
+    /// Resolve references for a program whose items were already collected (e.g. after prefetch).
+    pub fn resolve_collected_program(
+        &mut self,
+        program: &Spanned<HirProgram>,
+    ) -> ResolveResult<Resolution> {
+        let file_scoped_module_index = file_scoped_module_index(program);
         self.current_module = file_scoped_module_path(program)
             .map(|path| self.module_graph.ensure_module_path(&path))
             .unwrap_or(self.module_graph.root());
@@ -89,7 +137,13 @@ impl Resolver {
         }
     }
 
-    fn collect_builtins(&mut self) {
+    pub(crate) fn into_prefetch_parts(
+        self,
+    ) -> (Vec<ItemInfo>, ModuleGraph, HashMap<ItemId, usize>) {
+        (self.items, self.module_graph, self.builtin_items)
+    }
+
+    pub(crate) fn collect_builtins(&mut self) {
         for (index, spec) in builtin_specs().iter().enumerate() {
             let module_path: Vec<String> = spec
                 .beskid_path
@@ -191,11 +245,10 @@ impl Resolver {
                 ItemKind::Module,
                 def.node.visibility.node,
             ),
-            HirItem::UseDeclaration(def) => (
-                use_imported_name(&def.node),
-                ItemKind::Use,
-                def.node.visibility.node,
-            ),
+            HirItem::UseDeclaration(def) => {
+                self.collect_use_declaration(item, def);
+                return;
+            }
             HirItem::AttributeDeclaration(_) => {
                 return;
             }
@@ -263,6 +316,31 @@ impl Resolver {
             }
             self.current_module = previous_module;
         }
+    }
+
+    fn collect_use_declaration(
+        &mut self,
+        item: &Spanned<HirItem>,
+        def: &Spanned<crate::hir::HirUseDeclaration>,
+    ) {
+        let alias = use_imported_name(&def.node);
+        let module_path = path_segments(&def.node.path);
+        if self.module_imports.contains_key(&alias) {
+            self.errors.push(ResolveError::DuplicateItem {
+                name: alias.clone(),
+                span: item.span,
+                previous: def.node.path.span,
+            });
+            return;
+        }
+        if self.module_graph.module_id(&module_path).is_none() {
+            self.errors.push(ResolveError::UnknownModulePath {
+                path: module_path.join("::"),
+                span: def.node.path.span,
+            });
+            return;
+        }
+        self.module_imports.insert(alias, module_path);
     }
 
     fn push_member_item(
@@ -674,16 +752,20 @@ impl Resolver {
                 .insert_value(path.span, ResolvedValue::Local(local));
             return;
         }
-        match self.resolve_item_in_module_path(&segments) {
+        let lookup_segments = self.expand_import_alias(&segments);
+        match self.resolve_item_in_module_path(&lookup_segments) {
             ModulePathLookup::Found(item) => {
                 self.tables
                     .insert_value(path.span, ResolvedValue::Item(item));
             }
             ModulePathLookup::ModuleMissing => {
-                // Fallback: if the first segment names an item in the current scope (e.g., a Contract),
-                // treat the whole path as a value referring to that item. This enables `C.getpid()`
-                // forms to be handled later by the type checker and codegen as contract-as-namespace calls.
-                if let Some(item) = self.resolve_item_in_scope(&segments[0]) {
+                // Fallback: contract-as-namespace (`C.getpid()`), not `use` aliases.
+                if let Some(item) = self.resolve_item_in_scope(&segments[0])
+                    && self
+                        .items
+                        .get(item.0)
+                        .is_some_and(|info| info.kind == ItemKind::Contract)
+                {
                     self.tables
                         .insert_value(path.span, ResolvedValue::Item(item));
                 } else {
@@ -736,7 +818,8 @@ impl Resolver {
             });
             return;
         }
-        match self.resolve_item_in_module_path(&segments) {
+        let lookup_segments = self.expand_import_alias(&segments);
+        match self.resolve_item_in_module_path(&lookup_segments) {
             ModulePathLookup::Found(item) => {
                 self.tables.insert_type(path.span, ResolvedType::Item(item));
             }
@@ -809,6 +892,18 @@ impl Resolver {
             current = module.parent;
         }
         None
+    }
+
+    fn expand_import_alias(&self, segments: &[String]) -> Vec<String> {
+        if segments.len() < 2 {
+            return segments.to_vec();
+        }
+        let Some(module_path) = self.module_imports.get(&segments[0]) else {
+            return segments.to_vec();
+        };
+        let mut expanded = module_path.clone();
+        expanded.extend_from_slice(&segments[1..]);
+        expanded
     }
 
     fn resolve_item_in_module_path(&self, segments: &[String]) -> ModulePathLookup {

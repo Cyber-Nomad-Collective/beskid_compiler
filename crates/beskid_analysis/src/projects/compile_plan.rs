@@ -157,7 +157,11 @@ fn pick_default_host_target(targets: &[Target]) -> Option<&Target> {
     targets
         .iter()
         .find(|target| target.kind == TargetKind::App)
-        .or_else(|| targets.iter().find(|target| target.kind == TargetKind::Test))
+        .or_else(|| {
+            targets
+                .iter()
+                .find(|target| target.kind == TargetKind::Test)
+        })
         .or_else(|| targets.iter().find(|target| target.kind == TargetKind::Lib))
         .or_else(|| targets.first())
 }

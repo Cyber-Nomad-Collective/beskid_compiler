@@ -13,7 +13,7 @@ use beskid_aot::{
     LinkMode, ProjectTargetKind, RuntimeStrategy, build, default_output_kind,
     default_runtime_strategy, resolve_entrypoint,
 };
-use beskid_codegen::lower_source_with_pipeline;
+use beskid_codegen::lower_resolved_input_with_pipeline;
 use beskid_pipeline::PipelineObserver;
 use clap::{Args, ValueEnum};
 
@@ -120,7 +120,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         .as_ref()
         .map(|plan| plan.target.name.clone());
 
-    let lowered = lower_source_with_pipeline(&input_path, &source, false, obs)?;
+    let lowered = lower_resolved_input_with_pipeline(&resolved, false, obs)?;
     let artifact = lowered.artifact;
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
@@ -204,20 +204,21 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     pipeline_ui.finish_build("Build complete");
 
     if args.plain
-        && let Some(plan) = resolved.compile_plan.as_ref() {
-            println!(
-                "deps: {} materialized dependency project(s)",
-                plan.dependency_projects.len()
-            );
-            println!(
-                "corelib: {}",
-                if plan.has_std_dependency {
-                    "available (implicit or declared)"
-                } else {
-                    "not available"
-                }
-            );
-        }
+        && let Some(plan) = resolved.compile_plan.as_ref()
+    {
+        println!(
+            "deps: {} materialized dependency project(s)",
+            plan.dependency_projects.len()
+        );
+        println!(
+            "corelib: {}",
+            if plan.has_std_dependency {
+                "available (implicit or declared)"
+            } else {
+                "not available"
+            }
+        );
+    }
 
     println!();
     println!("  object   {}", result.object_path.display());
@@ -225,9 +226,10 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         println!("  output   {}", final_path.display());
     }
     if args.verbose_link
-        && let Some(cmd) = result.linker_invocation {
-            println!("  link     {cmd}");
-        }
+        && let Some(cmd) = result.linker_invocation
+    {
+        println!("  link     {cmd}");
+    }
 
     Ok(())
 }

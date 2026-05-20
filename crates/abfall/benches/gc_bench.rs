@@ -55,7 +55,7 @@ fn bench_concurrent_alloc(c: &mut Criterion) {
                         thread::spawn(move || {
                             let worker_ctx = GcContext::with_heap(heap_cl);
                             for i in 0..25_000 {
-                                let _ = worker_ctx.allocate((t as u64) << 32 | i as u64  );
+                                let _ = worker_ctx.allocate((t as u64) << 32 | i as u64);
                                 if i % 500 == 0 {
                                     worker_ctx.heap().collect();
                                 }
