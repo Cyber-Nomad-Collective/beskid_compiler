@@ -138,6 +138,7 @@ impl Normalizer {
             HirExpressionNode::SpawnExpression(spawn_expr) => {
                 self.visit_expression(&mut spawn_expr.node.callee);
             }
+            HirExpressionNode::MacroInvocation(_) | HirExpressionNode::MacroMetavariable(_) => {}
         }
     }
 }

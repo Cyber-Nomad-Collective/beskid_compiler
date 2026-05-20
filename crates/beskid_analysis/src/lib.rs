@@ -23,6 +23,7 @@ pub mod doc;
 pub mod doc_comment_parser;
 pub mod format;
 pub mod hir;
+pub mod macros;
 pub mod mod_host;
 pub mod parser;
 pub mod parsing;

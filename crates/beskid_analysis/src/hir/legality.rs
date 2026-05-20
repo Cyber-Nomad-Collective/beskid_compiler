@@ -275,6 +275,9 @@ impl<'a> HirLegalityValidator<'a> {
             HirItem::UseDeclaration(def) => {
                 self.check_span(def.span, "use_declaration");
             }
+            HirItem::MacroDefinition(def) => {
+                self.check_span(def.span, "macro_definition");
+            }
         }
     }
 
@@ -459,6 +462,12 @@ impl<'a> HirLegalityValidator<'a> {
             HirExpressionNode::SpawnExpression(spawn_expr) => {
                 self.check_span(spawn_expr.span, "spawn_expression");
                 self.validate_expression(&spawn_expr.node.callee);
+            }
+            HirExpressionNode::MacroInvocation(expr) => {
+                self.check_span(expr.span, "macro_invocation");
+            }
+            HirExpressionNode::MacroMetavariable(expr) => {
+                self.check_span(expr.span, "macro_metavariable");
             }
         }
     }

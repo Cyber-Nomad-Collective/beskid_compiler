@@ -252,6 +252,9 @@ impl Resolver {
             HirItem::AttributeDeclaration(_) => {
                 return;
             }
+            HirItem::MacroDefinition(_) => {
+                return;
+            }
         };
 
         let id = ItemId(self.items.len());
@@ -548,6 +551,7 @@ impl Resolver {
             }
             HirItem::AttributeDeclaration(_) => {}
             HirItem::ModuleDeclaration(_) | HirItem::UseDeclaration(_) => {}
+            HirItem::MacroDefinition(_) => {}
         }
     }
 
@@ -670,6 +674,7 @@ impl Resolver {
             HirExpressionNode::SpawnExpression(spawn_expr) => {
                 self.resolve_expression(&spawn_expr.node.callee);
             }
+            HirExpressionNode::MacroInvocation(_) | HirExpressionNode::MacroMetavariable(_) => {}
         }
     }
 

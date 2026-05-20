@@ -86,6 +86,7 @@ impl Lowerable for Spanned<AstItem> {
             AstItem::ModuleDeclaration(def) => HirItem::ModuleDeclaration(def.lower()),
             AstItem::InlineModule(def) => HirItem::InlineModule(def.lower()),
             AstItem::UseDeclaration(def) => HirItem::UseDeclaration(def.lower()),
+            AstItem::MacroDefinition(def) => HirItem::MacroDefinition(def.clone()),
         };
         Spanned::new(node, self.span)
     }
