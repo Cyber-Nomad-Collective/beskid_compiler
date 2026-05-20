@@ -66,7 +66,11 @@ pub fn validate_packed_api_doc(root: &ApiDocRoot) -> Result<(), String> {
                     ),
                 )?;
             }
+
+            validate_library_tree_row(item)?;
         }
+
+        validate_library_tree_aggregate(root)?;
     } else if root.schema_version > API_JSON_SCHEMA_VERSION_BEFORE_GRAPH {
         return Err(format!(
             "unsupported api.json schemaVersion {} (max supported: {})",
@@ -74,6 +78,50 @@ pub fn validate_packed_api_doc(root: &ApiDocRoot) -> Result<(), String> {
         ));
     }
 
+    Ok(())
+}
+
+const KIND_MODULE: &str = "module";
+const MODULE_LEVEL_KINDS: &[&str] = &["type", "enum", "contract", "function", "test"];
+
+fn validate_library_tree_row(item: &beskid_analysis::doc::ApiDocItem) -> Result<(), String> {
+    let Some(id) = item.id else {
+        return Ok(());
+    };
+    if item.kind == KIND_MODULE {
+        let depth = item.module_path.len();
+        if depth > 1 && item.parent_id.is_none() {
+            return Err(format!(
+                "module id {id} (\"{}\") with modulePath depth {depth} requires parentId",
+                item.qualified_name
+            ));
+        }
+    }
+    if MODULE_LEVEL_KINDS.contains(&item.kind.as_str()) && item.parent_id.is_none() {
+        let has_module_path = !item.module_path.is_empty()
+            || item.qualified_name.contains("::");
+        if has_module_path {
+            return Err(format!(
+                "item id {id} (\"{}\") kind \"{}\" at module scope requires parentId to its module",
+                item.qualified_name, item.kind
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_library_tree_aggregate(root: &ApiDocRoot) -> Result<(), String> {
+    const MAX_GRAPH_ROOTS: usize = 128;
+    let roots = root
+        .items
+        .iter()
+        .filter(|i| i.parent_id.is_none())
+        .count();
+    if roots > MAX_GRAPH_ROOTS {
+        return Err(format!(
+            "api.json has {roots} graph roots (max {MAX_GRAPH_ROOTS}); re-run beskid doc with a current CLI to link the module library tree"
+        ));
+    }
     Ok(())
 }
 
@@ -117,6 +165,7 @@ mod tests {
             generic_parameters: vec![],
             doc_markdown: None,
             doc: None,
+            declaring_package: None,
             controls: vec![],
         }
     }

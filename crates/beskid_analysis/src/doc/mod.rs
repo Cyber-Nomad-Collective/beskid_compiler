@@ -4,6 +4,7 @@ mod api_signatures;
 mod api_snapshot;
 mod callable;
 mod edit;
+mod graph_link;
 mod item_shape;
 mod qualified_names;
 mod refs;
@@ -19,6 +20,10 @@ pub use api_snapshot::{
     API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, API_JSON_SCHEMA_VERSION_GRAPH_V3, ApiDocItem,
     ApiDocRoot, ApiDocumentationPointer, ApiGenericParameterDoc, ApiItemSignature, ApiLocation,
     ApiParameterDoc, ApiTypeAnnotation, ItemDocArgument, ItemDocStructured,
+};
+pub use graph_link::{
+    ApiDocLinkContext, assign_declaring_packages, fill_member_ids_from_parents,
+    link_api_doc_library_tree,
 };
 pub use qualified_names::{display_name_for_item, module_path_for_item, qualified_names_for_items};
 pub use callable::callable_signatures_for_span;
@@ -556,4 +561,34 @@ pub(crate) fn parse_doc_body_pairs<'a>(
         }
         wrapper.into_inner().next()
     }))
+}
+
+#[cfg(test)]
+mod structured_doc_tests {
+    use super::extract_structured_doc;
+
+    #[test]
+    fn parses_arg_returns_and_variant_tags() {
+        let body = "Summary line.\n@arg(x) param docs\n@returns return text\n@variant(Blue) blue tone";
+        let doc = extract_structured_doc(body, None, None).expect("structured doc");
+        assert_eq!(doc.summary_markdown.as_deref(), Some("Summary line."));
+        assert_eq!(doc.returns_markdown.as_deref(), Some("return text"));
+        assert_eq!(doc.arguments.len(), 1);
+        assert_eq!(doc.arguments[0].name, "x");
+        assert_eq!(doc.enum_variants.len(), 1);
+        assert_eq!(doc.enum_variants[0].name, "Blue");
+    }
+
+    #[test]
+    fn parses_ref_in_summary() {
+        let body = "See @ref(Widget::value) for details.";
+        let doc = extract_structured_doc(body, None, None).expect("structured doc");
+        assert!(
+            doc.summary_markdown
+                .as_deref()
+                .is_some_and(|s| s.contains("@ref(Widget::value)")),
+            "{:?}",
+            doc.summary_markdown
+        );
+    }
 }

@@ -1,14 +1,23 @@
 //! Shared `@ref(...)` resolution for doc rendering and validation.
 
+use std::collections::HashMap;
+use std::path::PathBuf;
+
 use crate::resolve::{ItemInfo, Resolution};
+
+use super::qualified_names::{lookup_type_ref_id, qualified_names_for_items, type_ref_lookup_index};
 
 /// Registry documentation route context for turning resolved `@ref` paths into markdown links.
 ///
 /// `package_with_version` is the raw `{{package}}@{{version}}` segment used by pckg
 /// (`/docs/{{PackageWithVersion}}/api/...`), before per-segment percent-encoding.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DocRefLinkContext {
     pub package_with_version: String,
+    /// Publishing package id (same package as `package_with_version` prefix).
+    pub publishing_package: Option<String>,
+    /// Dependency source roots → registry package id for cross-package doc links.
+    pub dependency_roots: Vec<(PathBuf, String)>,
 }
 
 fn percent_encode_path_segment(input: &str) -> String {
@@ -34,34 +43,76 @@ fn escape_markdown_link_text(label: &str) -> String {
         .replace(']', "\\]")
 }
 
-fn find_resolved_item<'a>(path: &str, resolution: &'a Resolution) -> Option<&'a ItemInfo> {
+fn version_suffix(package_with_version: &str) -> String {
+    package_with_version
+        .rsplit_once('@')
+        .map(|(_, ver)| ver.to_string())
+        .unwrap_or_else(|| "latest".to_string())
+}
+
+fn package_for_item(target: &ItemInfo, ctx: &DocRefLinkContext) -> String {
+    let ver = version_suffix(&ctx.package_with_version);
+    if let Some(path) = &target.source_path {
+        let mut best: Option<(usize, String)> = None;
+        for (root, package) in &ctx.dependency_roots {
+            if path.starts_with(root) {
+                let len = root.as_os_str().len();
+                if best.as_ref().is_none_or(|(l, _)| len > *l) {
+                    best = Some((len, package.clone()));
+                }
+            }
+        }
+        if let Some((_, dep_pkg)) = best {
+            if ctx
+                .publishing_package
+                .as_ref()
+                .is_none_or(|pub_pkg| pub_pkg != &dep_pkg)
+            {
+                return format!("{dep_pkg}@{ver}");
+            }
+        }
+    }
+    ctx.package_with_version.trim().to_string()
+}
+
+fn find_resolved_item_id(path: &str, resolution: &Resolution) -> Option<usize> {
     let path = path.trim();
     if path.is_empty() {
         return None;
     }
+    let qnames = qualified_names_for_items(resolution);
+    if qnames.values().any(|qn| qn == path) {
+        return qnames
+            .iter()
+            .find(|(_, qn)| *qn == path)
+            .map(|(id, _)| *id);
+    }
+    let index = type_ref_lookup_index(resolution);
+    if let Some(id) = lookup_type_ref_id(path, &index) {
+        return Some(id);
+    }
     for item in &resolution.items {
         if item.name == path {
-            return Some(item);
+            return Some(item.id.0);
         }
     }
     let suffix = format!("::{path}");
     for item in &resolution.items {
-        if item.name.ends_with(&suffix) {
-            return Some(item);
-        }
-    }
-    let needle = path.rsplit('.').next().unwrap_or(path);
-    for item in &resolution.items {
-        if item.name == needle {
-            return Some(item);
-        }
-    }
-    for item in &resolution.items {
-        if item.name.ends_with(&format!("::{needle}")) {
-            return Some(item);
+        if let Some(qn) = qnames.get(&item.id.0) {
+            if qn == path || qn.ends_with(&suffix) {
+                return Some(item.id.0);
+            }
         }
     }
     None
+}
+
+fn qualified_name_for_id(id: usize, resolution: &Resolution) -> String {
+    let qnames = qualified_names_for_items(resolution);
+    qnames
+        .get(&id)
+        .cloned()
+        .unwrap_or_else(|| resolution.items.get(id).map(|i| i.name.clone()).unwrap_or_default())
 }
 
 /// Resolve a `@ref` path to a Markdown fragment (markdown link when [DocRefLinkContext] is set, else backticks).
@@ -74,23 +125,27 @@ pub fn resolve_ref_markdown(
     if path.is_empty() {
         return "`@ref()`".to_string();
     }
-    if let Some(target) = find_resolved_item(path, resolution) {
-        if let Some(ctx) = links
-            && !ctx.package_with_version.trim().is_empty()
-        {
-            let pkg = percent_encode_path_segment(ctx.package_with_version.trim());
-            let qn = percent_encode_path_segment(&target.name);
-            let label = escape_markdown_link_text(&target.name);
-            return format!("[{label}](/docs/{pkg}/api/{qn})");
-        }
-        return format!("`{}`", target.name);
+    let Some(target_id) = find_resolved_item_id(path, resolution) else {
+        return format!("`{path}` _(unresolved)_");
+    };
+    let Some(target) = resolution.items.get(target_id) else {
+        return format!("`{path}` _(unresolved)_");
+    };
+    let qn = qualified_name_for_id(target_id, resolution);
+    if let Some(ctx) = links
+        && !ctx.package_with_version.trim().is_empty()
+    {
+        let pkg = percent_encode_path_segment(&package_for_item(target, ctx));
+        let encoded_qn = percent_encode_path_segment(&qn);
+        let label = escape_markdown_link_text(&qn);
+        return format!("[{label}](/docs/{pkg}/api/{encoded_qn})");
     }
-    format!("`{path}` _(unresolved)_")
+    format!("`{qn}`")
 }
 
 /// `true` when the path resolves to a known item (no "unresolved" marker).
 pub fn ref_path_resolves(path: &str, resolution: &Resolution) -> bool {
-    find_resolved_item(path, resolution).is_some()
+    find_resolved_item_id(path, resolution).is_some()
 }
 
 #[cfg(test)]
@@ -118,7 +173,7 @@ mod tests {
         Resolution {
             items: vec![
                 item(0, "Widget", ItemKind::Type, None),
-                item(1, "Widget::value", ItemKind::Field, Some(ItemId(0))),
+                item(1, "value", ItemKind::Field, Some(ItemId(0))),
                 item(2, "main", ItemKind::Function, None),
             ],
             module_graph: ModuleGraph::new_root(),
@@ -130,10 +185,12 @@ mod tests {
     }
 
     #[test]
-    fn ref_markdown_link_when_context_and_resolved() {
+    fn ref_markdown_link_uses_qualified_name() {
         let resolution = sample_resolution();
         let ctx = DocRefLinkContext {
             package_with_version: "demo@1.0.0".into(),
+            publishing_package: Some("demo".into()),
+            dependency_roots: vec![],
         };
         let md = resolve_ref_markdown("Widget::value", &resolution, Some(&ctx));
         assert!(

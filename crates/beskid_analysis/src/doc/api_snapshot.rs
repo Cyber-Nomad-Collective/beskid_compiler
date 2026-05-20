@@ -132,6 +132,9 @@ pub struct ApiDocItem {
     pub doc_markdown: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<ItemDocStructured>,
+    /// Registry package id when `location.file` is outside the publishing project root (workspace scan).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declaring_package: Option<String>,
     #[serde(default)]
     pub controls: Vec<serde_json::Value>,
 }

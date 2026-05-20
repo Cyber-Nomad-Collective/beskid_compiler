@@ -3,10 +3,12 @@
 use anyhow::{Context, Result};
 use beskid_analysis::doc::{
     API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
-    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocRoot, ApiLocation, DocRefLinkContext,
-    apply_signature_to_item, build_item_signature, display_name_for_item, hir_programs_by_path,
-    qualified_names_for_items,
+    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocLinkContext, ApiDocRoot, ApiLocation,
+    DocRefLinkContext, apply_signature_to_item, assign_declaring_packages,
+    build_item_signature, display_name_for_item, fill_member_ids_from_parents,
+    hir_programs_by_path, link_api_doc_library_tree, qualified_names_for_items,
 };
+use beskid_analysis::projects::assembly::effective_roots_from_plan_and_workspace;
 use beskid_analysis::projects::assembly::ProgramAssembly;
 use beskid_analysis::resolve::ItemInfo;
 use beskid_analysis::hir::HirVisibility;
@@ -14,7 +16,7 @@ use beskid_analysis::projects::load_manifest_from_path;
 use beskid_analysis::services;
 use beskid_analysis::syntax::SpanInfo;
 use clap::Args;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -98,23 +100,29 @@ fn location_for_item(
     location_for_span(entry_source, entry_path, &item.span)
 }
 
-fn fill_member_ids_from_parents(items: &mut [ApiDocItem]) {
-    let mut by_parent: HashMap<usize, Vec<usize>> = HashMap::new();
-    for it in items.iter() {
-        if let (Some(child_id), Some(pid)) = (it.id, it.parent_id) {
-            by_parent.entry(pid).or_default().push(child_id);
-        }
+fn api_doc_link_context(resolved: &beskid_analysis::services::ResolvedInput) -> Option<ApiDocLinkContext> {
+    let plan = resolved.compile_plan.as_ref()?;
+    let manifest = load_manifest_from_path(&plan.manifest_path).ok()?;
+    let publishing = manifest.project.name.trim().to_string();
+    if publishing.is_empty() {
+        return None;
     }
-    for v in by_parent.values_mut() {
-        v.sort_unstable();
+    let roots = effective_roots_from_plan_and_workspace(plan, resolved.prepared_workspace.as_ref());
+    let mut entries = vec![(roots.host.source_root.clone(), publishing.clone())];
+    for dep in &roots.dependencies {
+        let manifest_path = dep.source_root.join("Project.proj");
+        let name = load_manifest_from_path(&manifest_path)
+            .ok()
+            .map(|m| m.project.name.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or(dep.dependency_name.clone())
+            .unwrap_or_else(|| "dependency".to_string());
+        entries.push((dep.source_root.clone(), name));
     }
-    for it in items.iter_mut() {
-        if let Some(id) = it.id {
-            it.member_ids = by_parent.remove(&id).unwrap_or_default();
-        } else {
-            it.member_ids.clear();
-        }
-    }
+    Some(ApiDocLinkContext {
+        publishing_package: publishing,
+        roots: entries,
+    })
 }
 
 fn docs_ref_link_context(
@@ -127,9 +135,20 @@ fn docs_ref_link_context(
     if name.is_empty() || ver.is_empty() {
         return None;
     }
-    Some(DocRefLinkContext {
+    let mut ctx = DocRefLinkContext {
         package_with_version: format!("{name}@{ver}"),
-    })
+        publishing_package: Some(name.to_string()),
+        dependency_roots: vec![],
+    };
+    if let Some(link_ctx) = api_doc_link_context(resolved) {
+        ctx.publishing_package = Some(link_ctx.publishing_package.clone());
+        ctx.dependency_roots = link_ctx
+            .roots
+            .into_iter()
+            .filter(|(_, pkg)| pkg != &link_ctx.publishing_package)
+            .collect();
+    }
+    Some(ctx)
 }
 
 /// Resolve, analyze, and write API docs into `args.out`.
@@ -233,6 +252,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 },
                 doc_markdown,
                 doc,
+                declaring_package: None,
                 controls: vec![],
             };
             let sig = build_item_signature(
@@ -286,6 +306,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 },
                 doc_markdown: None,
                 doc: None,
+                declaring_package: None,
                 controls: vec![],
             });
         }
@@ -303,6 +324,13 @@ pub fn execute(args: DocArgs) -> Result<()> {
 
     let had_resolution = snap.resolution.is_some();
     if had_resolution {
+        if let (Some(res), Some(ctx)) = (snap.resolution.as_ref(), api_doc_link_context(&resolved))
+        {
+            link_api_doc_library_tree(&mut api_items, res);
+            assign_declaring_packages(&mut api_items, &ctx);
+        } else if let Some(res) = snap.resolution.as_ref() {
+            link_api_doc_library_tree(&mut api_items, res);
+        }
         fill_member_ids_from_parents(&mut api_items);
     }
 
@@ -517,7 +545,10 @@ i64 Add(
             .iter()
             .find(|i| i.kind == "function" && i.name.contains("Add"))
             .expect("function");
-        assert!(func.parent_id.is_none());
+        assert!(
+            func.parent_id.is_some(),
+            "module-level functions must be parented under a module row for library-tree navigation"
+        );
 
         // Every id referenced as parentId must exist.
         for item in &api.items {

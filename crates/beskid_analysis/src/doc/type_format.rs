@@ -6,6 +6,7 @@ use crate::resolve::{Resolution, ResolvedType};
 use crate::syntax::Spanned;
 
 use super::api_snapshot::ApiTypeAnnotation;
+use super::qualified_names::{lookup_type_ref_id, type_ref_lookup_index};
 
 /// Format a HIR type for API documentation display (stable, non-semantic).
 pub fn format_hir_type(ty: &Spanned<HirType>) -> String {
@@ -58,17 +59,21 @@ pub fn type_annotation_for_type(
 ) -> ApiTypeAnnotation {
     let display = format_hir_type(ty);
     let ref_item_id = resolution.and_then(|res| {
-        res.tables
-            .resolved_types
-            .get(&ty.span)
-            .and_then(|resolved| match resolved {
+        let from_span = res.tables.resolved_types.get(&ty.span).and_then(|resolved| {
+            match resolved {
                 ResolvedType::Item(item_id) => res
                     .items
                     .get(item_id.0)
                     .filter(|item| type_kind_links_to_item(item.kind))
                     .map(|item| item.id.0),
                 ResolvedType::Generic(_) => None,
-            })
+            }
+        });
+        if from_span.is_some() {
+            return from_span;
+        }
+        let index = type_ref_lookup_index(res);
+        lookup_type_ref_id(&display, &index)
     });
     ApiTypeAnnotation {
         display,
