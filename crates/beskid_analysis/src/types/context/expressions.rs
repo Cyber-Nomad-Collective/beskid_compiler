@@ -108,6 +108,9 @@ impl<'a> TypeContext<'a> {
             HirExpressionNode::SpawnExpression(spawn_expr) => {
                 self.type_spawn_expression(spawn_expr)
             }
+            HirExpressionNode::MacroInvocation(_) | HirExpressionNode::MacroMetavariable(_) => {
+                self.primitive_type_id(HirPrimitiveType::Unit)
+            }
         };
 
         if let Some(type_id) = type_id {

@@ -23,7 +23,7 @@ impl Emit for Spanned<MacroDefinition> {
 impl Emit for MacroInvocation {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         self.name.emit(w, cx)?;
-        write!(w, "!(").map_err(|e| EmitError::Fmt(e))?;
+        write!(w, "!(").map_err(EmitError)?;
         Ok(())
     }
 }
@@ -36,7 +36,7 @@ impl Emit for Spanned<MacroInvocation> {
 
 impl Emit for MacroMetavariable {
     fn emit<W: Write>(&self, w: &mut W, _cx: &mut EmitCtx) -> Result<(), EmitError> {
-        write!(w, "${}", self.name.node.name).map_err(|e| EmitError::Fmt(e))
+        write!(w, "${}", self.name.node.name).map_err(EmitError)
     }
 }
 

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::hir::HirVisibility;
 use crate::syntax::SpanInfo;
 
@@ -56,4 +58,6 @@ pub struct ItemInfo {
     pub kind: ItemKind,
     pub visibility: HirVisibility,
     pub span: SpanInfo,
+    /// Declaring source file when known (assembly prefetch or entry unit).
+    pub source_path: Option<PathBuf>,
 }

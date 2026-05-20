@@ -180,6 +180,7 @@ impl<'a> TypeContext<'a> {
                 }
             }
             HirItem::ModuleDeclaration(_) | HirItem::UseDeclaration(_) => {}
+            HirItem::MacroDefinition(_) => {}
         }
         self.current_return_type = None;
     }

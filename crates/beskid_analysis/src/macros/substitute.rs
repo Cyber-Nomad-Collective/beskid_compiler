@@ -149,9 +149,7 @@ fn substitute_statement(
         )),
         Statement::Let(ls) => {
             let mut n = ls.clone();
-            if let Some(init) = &ls.node.initializer {
-                n.node.initializer = Some(substitute_expression(init, bindings));
-            }
+            n.node.value = substitute_expression(&ls.node.value, bindings);
             Statement::Let(n)
         }
         Statement::Return(rs) => {

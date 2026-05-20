@@ -81,18 +81,26 @@ fn expand_block(
                 .node
                 .statements
                 .iter()
-                .map(|s| expand_statement(s, registry, changed))
+                .map(|s| expand_statement_spanned(s, registry, changed))
                 .collect(),
         },
         block.span,
     )
 }
 
-fn expand_statement(
+fn expand_statement_spanned(
     stmt: &Spanned<Statement>,
     registry: &MacroRegistry,
     changed: &mut bool,
 ) -> Spanned<Statement> {
+    Spanned::new(expand_statement_node(stmt, registry, changed), stmt.span)
+}
+
+fn expand_statement_node(
+    stmt: &Spanned<Statement>,
+    registry: &MacroRegistry,
+    changed: &mut bool,
+) -> Statement {
     match &stmt.node {
         Statement::Expression(es) => {
             let expr = expand_expression(&es.node.expression, registry, changed);
@@ -103,9 +111,7 @@ fn expand_statement(
         }
         Statement::Let(ls) => {
             let mut n = ls.clone();
-            if let Some(init) = &ls.node.initializer {
-                n.node.initializer = Some(expand_expression(init, registry, changed));
-            }
+            n.node.value = expand_expression(&ls.node.value, registry, changed);
             Statement::Let(n)
         }
         Statement::Return(rs) => {
@@ -117,14 +123,6 @@ fn expand_statement(
         }
         other => other.clone(),
     }
-}
-
-fn expand_statement_spanned(
-    stmt: &Spanned<Statement>,
-    registry: &MacroRegistry,
-    changed: &mut bool,
-) -> Spanned<Statement> {
-    Spanned::new(expand_statement(stmt, registry, changed), stmt.span)
 }
 
 fn expand_expression(

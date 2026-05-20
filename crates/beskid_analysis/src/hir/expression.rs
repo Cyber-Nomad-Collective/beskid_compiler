@@ -88,8 +88,7 @@ impl HirNode for ExpressionNode<HirPhase> {
             ExpressionNode::GroupedExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::TryExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::SpawnExpression(expr) => push(HirNodeRef(&expr.node)),
-            ExpressionNode::MacroInvocation(expr) => push(HirNodeRef(&expr.node)),
-            ExpressionNode::MacroMetavariable(expr) => push(HirNodeRef(&expr.node)),
+            ExpressionNode::MacroInvocation(_) | ExpressionNode::MacroMetavariable(_) => {}
         }
     }
 

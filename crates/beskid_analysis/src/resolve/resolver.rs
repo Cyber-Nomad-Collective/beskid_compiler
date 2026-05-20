@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::hir::{
     HirBlock, HirContractNode, HirEnumPath, HirExpressionNode, HirItem, HirPath, HirPattern,
@@ -28,6 +29,7 @@ pub struct Resolver {
     builtin_items: HashMap<ItemId, usize>,
     /// `use` alias → full module path (e.g. `IO` → `["Std","System","IO"]`).
     module_imports: HashMap<String, Vec<String>>,
+    current_source_path: Option<PathBuf>,
 }
 
 fn type_name_for_method_receiver(receiver_type: &Spanned<HirType>) -> String {

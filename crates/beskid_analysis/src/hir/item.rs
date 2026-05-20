@@ -59,7 +59,7 @@ impl HirNode for Item<crate::hir::HirPhase> {
             Item::ModuleDeclaration(def) => push(HirNodeRef(&def.node)),
             Item::InlineModule(def) => push(HirNodeRef(&def.node)),
             Item::UseDeclaration(def) => push(HirNodeRef(&def.node)),
-            Item::MacroDefinition(def) => push(HirNodeRef(&def.node)),
+            Item::MacroDefinition(_) => {}
         }
     }
 
