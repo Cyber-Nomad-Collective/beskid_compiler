@@ -11,7 +11,10 @@ pub enum ReservedKeyword {
 
 /// Find the first reserved keyword token in `source` (word boundaries).
 pub fn find_reserved_keyword(source: &str) -> Option<(SpanInfo, ReservedKeyword)> {
-    for (keyword, kind) in [("async", ReservedKeyword::Async), ("await", ReservedKeyword::Await)] {
+    for (keyword, kind) in [
+        ("async", ReservedKeyword::Async),
+        ("await", ReservedKeyword::Await),
+    ] {
         let mut search_from = 0usize;
         while let Some(rel) = source[search_from..].find(keyword) {
             let start = search_from + rel;

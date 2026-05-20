@@ -162,6 +162,10 @@ impl Emit for Parameter {
             cx.space(w)?;
         }
         self.ty.emit(w, cx)?;
+        if self.mutable {
+            cx.space(w)?;
+            cx.token(w, "mut")?;
+        }
         cx.space(w)?;
         self.name.emit(w, cx)
     }
@@ -175,11 +179,13 @@ impl Emit for Spanned<Parameter> {
 
 impl Emit for Field {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.visibility.emit(w, cx)?;
         match self.kind {
             FieldKind::Value => {
                 self.ty.emit(w, cx)?;
                 cx.space(w)?;
-                self.name.emit(w, cx)
+                self.name.emit(w, cx)?;
+                Ok(())
             }
             FieldKind::Event => {
                 cx.token(w, "event")?;

@@ -123,11 +123,11 @@ fn build_descriptor_data<M: Module>(
 
     pad_to_alignment(&mut bytes, usize_align);
     let ptr_offsets_offset = bytes.len();
-    bytes.extend(std::iter::repeat(0u8).take(usize_align));
+    bytes.extend(std::iter::repeat_n(0u8, usize_align));
 
     pad_to_alignment(&mut bytes, usize_align);
     let _name_offset = bytes.len();
-    bytes.extend(std::iter::repeat(0u8).take(usize_align));
+    bytes.extend(std::iter::repeat_n(0u8, usize_align));
 
     ctx.define(bytes.into_boxed_slice());
     let gv = module.declare_data_in_data(offsets_id, &mut ctx);
@@ -172,6 +172,6 @@ fn push_u32(buf: &mut Vec<u8>, value: u32, little_endian: bool, align: usize) ->
 fn pad_to_alignment(buf: &mut Vec<u8>, align: usize) {
     let padding = (align - (buf.len() % align)) % align;
     if padding > 0 {
-        buf.extend(std::iter::repeat(0u8).take(padding));
+        buf.extend(std::iter::repeat_n(0u8, padding));
     }
 }

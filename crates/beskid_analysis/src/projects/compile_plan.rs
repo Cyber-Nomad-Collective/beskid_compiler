@@ -6,8 +6,8 @@
 //!   [`build_compile_plan_with_policy`] with [`UnresolvedDependencyPolicy::Error`]
 //!   and default graph build options.
 //! - [`build_compile_plan_with_policy`]: same as the full builder, but fixes
-//!   [`ProjectGraphBuildOptions::default`] (for example default `Meta` workspace attachment rules).
-//!   Use this when you need a custom [`UnresolvedDependencyPolicy`] but not custom graph resolution.
+//!   [`ProjectGraphBuildOptions::default`]. Use this when you need a custom
+//!   [`UnresolvedDependencyPolicy`] but not custom graph resolution.
 //! - [`build_compile_plan_with_policy_and_graph`]: full control — supplies both unresolved-dependency
 //!   handling and [`ProjectGraphBuildOptions`] passed into the project graph builder.
 
@@ -107,25 +107,30 @@ pub fn build_compile_plan_with_policy_and_graph(
     let project_root = graph.root_project_root;
     let normalized_manifest_path = graph.root_manifest_path;
 
-    if manifest.project.kind == ProjectKind::Meta {
-        return Err(ProjectError::meta_contract(
-            "E1820",
-            "cannot build a compilation plan for `type = Meta` projects; select a host `Project.proj`",
-        ));
-    }
-
-    let target = match target_name {
-        Some(name) => manifest
-            .targets
-            .iter()
-            .find(|target| target.name == name)
-            .cloned()
-            .ok_or_else(|| ProjectError::TargetNotFound(name.to_string()))?,
-        None => pick_default_target(&manifest.targets)
-            .cloned()
-            .ok_or_else(|| {
-                ProjectError::Validation("manifest must declare at least one target".to_string())
-            })?,
+    let target = if manifest.project.kind == ProjectKind::Mod {
+        if target_name.is_some() {
+            return Err(ProjectError::meta_contract(
+                "E1820",
+                "`Mod` projects do not declare host `target` blocks; omit `--target` when building mod artifacts",
+            ));
+        }
+        mod_artifact_placeholder_target()
+    } else {
+        match target_name {
+            Some(name) => manifest
+                .targets
+                .iter()
+                .find(|target| target.name == name)
+                .cloned()
+                .ok_or_else(|| ProjectError::TargetNotFound(name.to_string()))?,
+            None => pick_default_host_target(&manifest.targets)
+                .cloned()
+                .ok_or_else(|| {
+                    ProjectError::Validation(
+                        "manifest must declare at least one target".to_string(),
+                    )
+                })?,
+        }
     };
 
     Ok(CompilePlan {
@@ -140,9 +145,19 @@ pub fn build_compile_plan_with_policy_and_graph(
     })
 }
 
-fn pick_default_target(targets: &[Target]) -> Option<&Target> {
+fn mod_artifact_placeholder_target() -> Target {
+    Target {
+        name: "__mod__".to_string(),
+        kind: TargetKind::Lib,
+        entry: "__mod__.bd".to_string(),
+    }
+}
+
+fn pick_default_host_target(targets: &[Target]) -> Option<&Target> {
     targets
         .iter()
         .find(|target| target.kind == TargetKind::App)
+        .or_else(|| targets.iter().find(|target| target.kind == TargetKind::Test))
+        .or_else(|| targets.iter().find(|target| target.kind == TargetKind::Lib))
         .or_else(|| targets.first())
 }

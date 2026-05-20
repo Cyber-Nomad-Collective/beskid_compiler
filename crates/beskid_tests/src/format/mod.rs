@@ -272,6 +272,7 @@ fn top_level_kinds(items: &[beskid_analysis::syntax::Spanned<Node>]) -> Vec<&'st
             Node::Function(_) => "function",
             Node::Method(_) => "method",
             Node::TypeDefinition(_) => "type",
+            Node::ExtendTypeDefinition(_) => "extend_type",
             Node::EnumDefinition(_) => "enum",
             Node::ContractDefinition(_) => "contract",
             Node::TestDefinition(_) => "test",
@@ -279,7 +280,6 @@ fn top_level_kinds(items: &[beskid_analysis::syntax::Spanned<Node>]) -> Vec<&'st
             Node::ModuleDeclaration(_) => "module_decl",
             Node::InlineModule(_) => "inline_module",
             Node::UseDeclaration(_) => "use",
-            Node::MetaDefinition(_) => "meta",
         })
         .collect()
 }

@@ -40,7 +40,7 @@ target "App" {
         assert_eq!(plan.project_name, "MyApp");
         assert_eq!(plan.target.name, "App");
         assert_eq!(plan.target.kind, TargetKind::App);
-        assert_same_canonical_path(&plan.source_root, &dir.join("Src"));
+        assert_same_canonical_path(&plan.source_root, dir.join("Src"));
     });
 
     let _ = fs::remove_dir_all(dir);
@@ -442,7 +442,7 @@ dependency "Core" {
         let lockfile_path = app_dir.join(PROJECT_LOCK_FILE_NAME);
         assert!(lockfile_path.is_file());
         assert_same_canonical_path(&workspace.lockfile_path, &lockfile_path);
-        assert!(workspace.materialized_dependencies.len() >= 1);
+        assert!(!workspace.materialized_dependencies.is_empty());
         assert!(
             workspace
                 .materialized_dependencies
@@ -484,10 +484,23 @@ fn prepare_project_workspace_skips_obj_when_materializing_path_dependencies() {
     fs::create_dir_all(&app_dir).expect("create app dir");
     fs::create_dir_all(&core_dir).expect("create core dir");
     fs::create_dir_all(core_dir.join("obj").join("beskid").join("stale")).expect("stale obj");
-    fs::write(core_dir.join("obj").join("beskid").join("stale").join("junk.txt"), "x")
-        .expect("stale obj file");
-    fs::create_dir_all(core_dir.join("tests").join("nested").join("obj").join("beskid"))
-        .expect("stale nested tests obj");
+    fs::write(
+        core_dir
+            .join("obj")
+            .join("beskid")
+            .join("stale")
+            .join("junk.txt"),
+        "x",
+    )
+    .expect("stale obj file");
+    fs::create_dir_all(
+        core_dir
+            .join("tests")
+            .join("nested")
+            .join("obj")
+            .join("beskid"),
+    )
+    .expect("stale nested tests obj");
 
     write_manifest(
         &core_dir,
@@ -541,7 +554,10 @@ dependency "Core" {
 
         for entry in fs::read_dir(&deps_src_root).expect("read deps src dir") {
             let dependency_root = entry.expect("valid deps entry").path();
-            if dependency_root.file_name().is_some_and(|name| name == "Core-stale") {
+            if dependency_root
+                .file_name()
+                .is_some_and(|name| name == "Core-stale")
+            {
                 continue;
             }
             assert!(

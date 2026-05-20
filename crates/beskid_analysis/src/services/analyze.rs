@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
 use crate::compilation_context::CompilationContext;
+use crate::mod_host::{ModHostInput, run_analyze_rewrite, run_through_generate};
 use crate::projects::CompilePlan;
 
 use super::input::AnalyzeInProjectOptions;
@@ -24,8 +25,16 @@ pub fn analyze_program_with_options(
     source: &str,
     options: AnalysisOptions,
 ) -> Result<Vec<SemanticDiagnostic>> {
-    if let Some((span, keyword)) =
-        crate::parsing::reserved_keywords::find_reserved_keyword(source)
+    analyze_program_with_options_and_plan(path, source, options, None)
+}
+
+fn analyze_program_with_options_and_plan(
+    path: &Path,
+    source: &str,
+    options: AnalysisOptions,
+    compile_plan: Option<&CompilePlan>,
+) -> Result<Vec<SemanticDiagnostic>> {
+    if let Some((span, keyword)) = crate::parsing::reserved_keywords::find_reserved_keyword(source)
     {
         use crate::analysis::diagnostic_kinds::SemanticIssueKind;
         use crate::analysis::diagnostics::make_diagnostic;
@@ -57,13 +66,26 @@ pub fn analyze_program_with_options(
         )]);
     }
 
-    let program = parse_program_with_source_name(&path.display().to_string(), source)?;
-    Ok(semantic_rule_diagnostics_for_program(
-        &program.node,
-        path.display().to_string(),
+    let source_name = path.display().to_string();
+    let program = parse_program_with_source_name(&source_name, source)?;
+    let generated = run_through_generate(
+        program,
+        &ModHostInput {
+            compile_plan,
+            source_name: &source_name,
+            source,
+            pipeline: None,
+        },
+    )?;
+    let diagnostics = semantic_rule_diagnostics_for_program(
+        &generated.program.node,
+        source_name,
         source,
         options,
-    ))
+    );
+    let _program = run_analyze_rewrite(generated.program, &generated.session, None)?;
+
+    Ok(diagnostics)
 }
 
 pub fn analyze_file_in_project(path: &Path) -> Result<Vec<SemanticDiagnostic>> {
@@ -86,7 +108,12 @@ pub fn analyze_source_with_compilation_context(
     let mut rule_options = AnalysisOptions::default();
     rule_options.module_level_meta_items_allowed = Some(ctx.module_level_meta_items_allowed());
 
-    let mut diagnostics = analyze_program_with_options(path, source, rule_options)?;
+    let mut diagnostics = analyze_program_with_options_and_plan(
+        path,
+        source,
+        rule_options,
+        ctx.compile_plan.as_ref(),
+    )?;
 
     if is_non_entry_project_file(path, ctx.compile_plan.as_ref()) {
         diagnostics.retain(|diagnostic| diagnostic.code.as_deref() == Some("parse"));
@@ -129,11 +156,10 @@ pub fn analyze_source_in_project_with_options(
     options: AnalyzeInProjectOptions<'_>,
 ) -> Result<Vec<SemanticDiagnostic>> {
     let mut graph_opts = options.project_graph.clone();
-    if graph_opts.workspace_member_for_meta_default.is_none() {
-        if let Some(member) = options.workspace_member {
+    if graph_opts.workspace_member_for_meta_default.is_none()
+        && let Some(member) = options.workspace_member {
             graph_opts.workspace_member_for_meta_default = Some(member.to_string());
         }
-    }
 
     match CompilationContext::try_for_analysis_path_with_graph_options(
         path,
@@ -175,8 +201,8 @@ fn collect_symbol_hints_from_source(source: &str, module_roots: &[PathBuf]) -> V
                 .split_once(" as ")
                 .map(|(path, _)| path.trim())
                 .unwrap_or(without_semicolon);
-            if module_path_exists_on_disk(import_path, module_roots) {
-                if let Some(name) = import_path
+            if module_path_exists_on_disk(import_path, module_roots)
+                && let Some(name) = import_path
                     .split('.')
                     .next_back()
                     .map(str::trim)
@@ -184,7 +210,6 @@ fn collect_symbol_hints_from_source(source: &str, module_roots: &[PathBuf]) -> V
                 {
                     hints.push(name.to_string());
                 }
-            }
         }
 
         for token in

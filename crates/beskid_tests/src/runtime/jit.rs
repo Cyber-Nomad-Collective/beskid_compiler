@@ -13,7 +13,7 @@ macro_rules! run_entrypoint0 {
 unsafe fn execute_entrypoint0<R>(engine: &mut Engine, entrypoint: &str) -> R {
     let ptr = unsafe { engine.entrypoint_ptr(entrypoint) }.expect("expected entrypoint pointer");
     assert!(!ptr.is_null(), "expected non-null entrypoint pointer");
-    engine.with_arena(|_, _| {
+    engine.with_runtime(|_, _| {
         // SAFETY: tests provide the expected return type for the compiled entrypoint.
         unsafe { invoke0::<R>(ptr) }
     })

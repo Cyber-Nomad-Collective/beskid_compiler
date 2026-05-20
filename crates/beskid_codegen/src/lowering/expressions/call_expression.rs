@@ -270,7 +270,7 @@ fn lower_event_invoke_call(
     len_sig.returns.push(AbiParam::new(pointer_type()));
     let len_sig_ref = ctx.builder.func.import_signature(len_sig);
     let len_ref = ctx.builder.func.import_function(ExtFuncData {
-        name: ExternalName::testcase("event_len".to_string()),
+        name: ExternalName::testcase("event_len"),
         signature: len_sig_ref,
         colocated: false,
         patchable: false,
@@ -282,7 +282,7 @@ fn lower_event_invoke_call(
     get_sig.returns.push(AbiParam::new(pointer_type()));
     let get_sig_ref = ctx.builder.func.import_signature(get_sig);
     let get_ref = ctx.builder.func.import_function(ExtFuncData {
-        name: ExternalName::testcase("event_get_handler".to_string()),
+        name: ExternalName::testcase("event_get_handler"),
         signature: get_sig_ref,
         colocated: false,
         patchable: false,
@@ -662,7 +662,7 @@ fn lower_indirect_function_call_with_signature(
     }
 
     let (signature_ir, returns_value) =
-        lambda_signature_from_types(&params, return_type, node.span, ctx)?;
+        lambda_signature_from_types(params, return_type, node.span, ctx)?;
 
     let sig_ref = ctx.builder.func.import_signature(signature_ir);
     let call = ctx.builder.ins().call_indirect(sig_ref, callee_ptr, &args);
@@ -721,15 +721,14 @@ fn lower_contract_dispatch_call(
     // Special-case: language-level extern contract call such as `C.getpid(...)`.
     // If the callee target resolves to an Item (contract type) rather than an instance wrapper,
     // emit a direct external call with no implicit receiver argument.
-    if let HirExpressionNode::MemberExpression(member_expr) = &node.node.callee.node {
-        if let HirExpressionNode::PathExpression(path) = &member_expr.node.target.node {
-            if let Some(resolved) = ctx
+    if let HirExpressionNode::MemberExpression(member_expr) = &node.node.callee.node
+        && let HirExpressionNode::PathExpression(path) = &member_expr.node.target.node
+            && let Some(resolved) = ctx
                 .resolution
                 .tables
                 .resolved_values
                 .get(&path.node.path.span)
-            {
-                if matches!(resolved, ResolvedValue::Item(item_id) if *item_id == contract_item_id)
+                && matches!(resolved, ResolvedValue::Item(item_id) if *item_id == contract_item_id)
                 {
                     // Direct extern call: build args from call site only, no receiver wrapper.
                     if signature.params.len() != node.node.args.len() {
@@ -806,20 +805,16 @@ fn lower_contract_dispatch_call(
                         ctx,
                     );
                 }
-            }
-        }
-    }
     // Also support the dotted PathExpression form emitted by the frontend for `C.getpid(...)`.
     if let HirExpressionNode::PathExpression(path_expr) = &node.node.callee.node {
         // Expect at least two segments: C.getpid
-        if path_expr.node.path.node.segments.len() >= 2 {
-            if let Some(ResolvedValue::Item(item_id)) = ctx
+        if path_expr.node.path.node.segments.len() >= 2
+            && let Some(ResolvedValue::Item(item_id)) = ctx
                 .resolution
                 .tables
                 .resolved_values
                 .get(&path_expr.node.path.span)
-            {
-                if *item_id == contract_item_id {
+                && *item_id == contract_item_id {
                     // Build direct extern call with method_name
                     let mut args = Vec::with_capacity(node.node.args.len());
                     for (arg, expected) in node.node.args.iter().zip(signature.params.iter()) {
@@ -888,8 +883,6 @@ fn lower_contract_dispatch_call(
                         ctx,
                     );
                 }
-            }
-        }
     }
 
     let receiver_wrapper = match receiver_source {
@@ -1549,7 +1542,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                             .get(&arg.span)
                             .copied()
                             .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
-                        let lowered = ensure_type_compatibility(
+                        
+                        ensure_type_compatibility(
                             arg.span,
                             *expected,
                             actual,
@@ -1557,8 +1551,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                             ctx.resolution,
                             ctx.builder,
                             value,
-                        )?;
-                        lowered
+                        )?
                     };
                 args.push(value);
             }
@@ -1613,7 +1606,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             signature_ir.returns.push(AbiParam::new(clif_ty));
         }
 
-        let is_builtin = ctx.resolution.builtin_items.get(&item_id).is_some();
+        let is_builtin = ctx.resolution.builtin_items.contains_key(&item_id);
         let name = if let Some(index) = ctx.resolution.builtin_items.get(&item_id) {
             builtin_specs()
                 .get(*index)

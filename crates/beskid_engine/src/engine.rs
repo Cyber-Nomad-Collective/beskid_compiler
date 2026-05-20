@@ -1,35 +1,36 @@
+use abfall::Heap;
 use beskid_codegen::CodegenArtifact;
 #[cfg(feature = "extern_dlopen")]
 use beskid_codegen::ExternImport;
 use beskid_pipeline::PipelineObserver;
 use beskid_runtime::{
-    RuntimeRoot, RuntimeState, clear_current_mutation, clear_current_root, enter_runtime_scope,
-    leave_runtime_scope, scheduler_init, run_closure_as_main, set_current_mutation,
-    set_current_root,
+    GcSnapshot, RuntimeRoot, beskid_heap_options_for_engine, clear_current_heap,
+    clear_current_root, enter_runtime_scope, leave_runtime_scope, run_closure_as_main,
+    scheduler_init, set_current_heap, set_current_root, snapshot_gc,
 };
-use gc_arena::{Arena, DynamicRootSet, Mutation, Rootable};
+use std::sync::Arc;
 
 use crate::jit_module::{BeskidJitModule, JitError};
 
-type BeskidArena = Arena<Rootable![RuntimeRoot<'_>]>;
-
-/// Owns the [`gc_arena::Arena`] for allocations and a [`BeskidJitModule`] used to compile and resolve JIT code.
+/// Owns the GC heap and a [`BeskidJitModule`] used to compile and resolve JIT code.
 pub struct Engine {
-    arena: BeskidArena,
+    heap: Arc<Heap>,
+    runtime_root: RuntimeRoot,
     jit: BeskidJitModule,
 }
 
 impl Engine {
-    /// Build an engine with a fresh arena root and empty JIT module.
+    /// Build an engine with a fresh runtime root and empty JIT module.
     pub fn new() -> Self {
         scheduler_init();
-        let arena = Arena::new(|mc| RuntimeRoot {
-            globals: Vec::new(),
-            dynamic_roots: DynamicRootSet::new(mc),
-            runtime_state: RuntimeState::default(),
-        });
+        let heap = Heap::with_options(beskid_heap_options_for_engine());
+        let runtime_root = RuntimeRoot::new(Arc::clone(&heap));
         let jit = BeskidJitModule::new().expect("failed to initialize JIT module");
-        Self { arena, jit }
+        Self {
+            heap,
+            runtime_root,
+            jit,
+        }
     }
 
     /// Load `artifact` into a fresh or reused JIT module, declare builtins/externs, define functions, finalize.
@@ -75,6 +76,11 @@ impl Engine {
     }
 
     /// Resolved machine code for `name` after successful compile; caller must match the real signature.
+    ///
+    /// # Safety
+    ///
+    /// The caller must cast the returned pointer to the exact generated function signature and
+    /// must only call it while the owning JIT module remains alive.
     pub unsafe fn entrypoint_ptr(&mut self, name: &str) -> Result<*const u8, JitError> {
         let func_id = self
             .jit
@@ -83,26 +89,30 @@ impl Engine {
         Ok(unsafe { self.jit.get_finalized_function_ptr(func_id) })
     }
 
-    /// Run `f` with TLS pointing at the arena mutation and root (required by runtime builtins).
-    pub fn with_arena<R>(
-        &mut self,
-        f: impl for<'gc> FnOnce(&'gc Mutation<'gc>, &'gc mut RuntimeRoot<'gc>) -> R,
-    ) -> R {
-        self.arena.mutate_root(|mc, root| {
-            enter_runtime_scope();
-            set_current_mutation(mc as *const _ as *mut _);
-            set_current_root(root as *mut _);
-            struct Guard;
-            impl Drop for Guard {
-                fn drop(&mut self) {
-                    clear_current_mutation();
-                    clear_current_root();
-                    leave_runtime_scope();
-                }
+    /// Run `f` with TLS pointing at the active heap session and runtime root.
+    pub fn with_runtime<R>(&mut self, f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R {
+        enter_runtime_scope();
+        set_current_heap(&self.heap);
+        set_current_root(&mut self.runtime_root as *mut _);
+        struct Guard;
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                clear_current_heap();
+                clear_current_root();
+                leave_runtime_scope();
             }
-            let _guard = Guard;
-            f(mc, root)
-        })
+        }
+        let _guard = Guard;
+        f(&self.heap, &mut self.runtime_root)
+    }
+
+    #[deprecated(note = "use Engine::with_runtime")]
+    pub fn with_arena<R>(&mut self, f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R {
+        self.with_runtime(f)
+    }
+
+    pub fn gc_snapshot(&mut self) -> Option<GcSnapshot> {
+        self.with_runtime(|_, _| snapshot_gc())
     }
 
     #[doc(hidden)]
@@ -111,17 +121,27 @@ impl Engine {
     }
 
     /// Run a `() -> i64` entrypoint on fiber 0 with scheduler shutdown join of non-detached children.
+    ///
+    /// # Safety
+    ///
+    /// `entrypoint` must name a finalized function with the `extern "C" fn() -> i64` ABI.
     pub unsafe fn execute_main_i64_with_scheduler(
         &mut self,
         entrypoint: &str,
     ) -> Result<i64, JitError> {
-        let entry = self.entrypoint_ptr(entrypoint)? as usize;
-        Ok(self.with_arena(|_, _| {
+        let entry = unsafe { self.entrypoint_ptr(entrypoint)? as usize };
+        Ok(self.with_runtime(|_, _| {
             run_closure_as_main(move || {
                 let callable: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };
                 callable()
             })
         }))
+    }
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

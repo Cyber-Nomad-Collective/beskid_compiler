@@ -100,7 +100,7 @@ pub fn collect_doc_diagnostics(
         for piece in &pieces_vec {
             match piece.as_rule() {
                 DocSyntaxRule::RefInline => {
-                    let inner = inner_text(&piece, DocSyntaxRule::inner);
+                    let inner = inner_text(piece, DocSyntaxRule::inner);
                     if !inner.is_empty() && !ref_path_resolves(&inner, resolution) {
                         push_issue(
                             &mut out,
@@ -112,7 +112,7 @@ pub fn collect_doc_diagnostics(
                     }
                 }
                 DocSyntaxRule::ArgTag => {
-                    let name = first_ident(&piece);
+                    let name = first_ident(piece);
                     if name.is_empty() {
                         continue;
                     }
@@ -170,7 +170,7 @@ pub fn collect_doc_diagnostics(
                     }
                 }
                 DocSyntaxRule::VariantTag => {
-                    let name = first_ident(&piece);
+                    let name = first_ident(piece);
                     if name.is_empty() {
                         continue;
                     }
@@ -215,7 +215,7 @@ pub fn collect_doc_diagnostics(
                     }
                 }
                 DocSyntaxRule::ParTag => {
-                    let name = first_ident(&piece);
+                    let name = first_ident(piece);
                     if name.is_empty() {
                         continue;
                     }
@@ -250,7 +250,7 @@ pub fn collect_doc_diagnostics(
                     }
                 }
                 DocSyntaxRule::UnknownDirective => {
-                    let name = first_ident(&piece);
+                    let name = first_ident(piece);
                     if !name.is_empty() {
                         push_issue(
                             &mut out,
@@ -286,7 +286,7 @@ pub fn collect_doc_diagnostics(
         for piece in &pieces_vec {
             match piece.as_rule() {
                 DocSyntaxRule::RefInline => {
-                    let inner = inner_text(&piece, DocSyntaxRule::inner);
+                    let inner = inner_text(piece, DocSyntaxRule::inner);
                     if !inner.is_empty() && !ref_path_resolves(&inner, resolution) {
                         push_issue(
                             &mut out,
@@ -307,7 +307,7 @@ pub fn collect_doc_diagnostics(
                     bad_par_directive = true;
                 }
                 DocSyntaxRule::UnknownDirective => {
-                    let name = first_ident(&piece);
+                    let name = first_ident(piece);
                     if !name.is_empty() {
                         push_issue(
                             &mut out,

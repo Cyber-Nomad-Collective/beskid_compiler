@@ -25,7 +25,7 @@ mod manifest;
 // #[cfg(test)]
 // mod readme;
 #[cfg(test)]
-mod meta_manifest;
+mod mod_manifest;
 #[cfg(test)]
 mod resolution;
 #[cfg(test)]

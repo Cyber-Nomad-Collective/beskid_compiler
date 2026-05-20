@@ -1,4 +1,5 @@
 //! Host interop: decode enum tags from generated payloads and dispatch to Rust handlers.
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use crate::interop_layout::enum_tag;
 

@@ -21,10 +21,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
             span: node.node.left.span,
             node: "unit-valued binary operand",
         })?;
-        let mut right = lower_node(&node.node.right, ctx)?.ok_or(CodegenError::UnsupportedNode {
-            span: node.node.right.span,
-            node: "unit-valued binary operand",
-        })?;
+        let mut right =
+            lower_node(&node.node.right, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                span: node.node.right.span,
+                node: "unit-valued binary operand",
+            })?;
 
         let left_type = ctx
             .type_result
@@ -162,7 +163,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     });
                 }
 
-                let cmp = if operand_clif_ty.is_float() {
+                
+                if operand_clif_ty.is_float() {
                     let cond = match node.node.op.node {
                         HirBinaryOp::IdentityEq => FloatCC::Equal,
                         HirBinaryOp::IdentityNotEq => FloatCC::NotEqual,
@@ -176,8 +178,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                         _ => unreachable!("checked operator"),
                     };
                     ctx.builder.ins().icmp(cond, left, right)
-                };
-                cmp
+                }
             }
             HirBinaryOp::Eq
             | HirBinaryOp::NotEq
@@ -196,7 +197,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     });
                 }
 
-                let cmp = if operand_clif_ty.is_float() {
+                
+                if operand_clif_ty.is_float() {
                     let cond = match node.node.op.node {
                         HirBinaryOp::Eq => FloatCC::Equal,
                         HirBinaryOp::NotEq => FloatCC::NotEqual,
@@ -223,8 +225,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                         span: node.span,
                         node: "binary comparison type",
                     });
-                };
-                cmp
+                }
             }
         };
 
@@ -247,7 +248,7 @@ fn lower_string_concat(
         .builder
         .func
         .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("str_concat".to_string()),
+            name: ExternalName::testcase("str_concat"),
             signature: sig_ref,
             colocated: false,
             patchable: false,

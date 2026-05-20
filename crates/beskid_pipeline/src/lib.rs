@@ -4,7 +4,8 @@
 //! [`PipelineObserver`]. Emitters (`beskid_analysis`, `beskid_codegen`, `beskid_aot`,
 //! `beskid_engine`) depend on this leaf crate only.
 //!
-//! Canonical phase order for a full CLI build is listed in [`phases::FULL_BUILD_PHASE_ORDER`].
+//! Canonical phase orders: [`phases::FULL_BUILD_PHASE_ORDER`] (host build),
+//! [`phases::MOD_BUILD_PHASE_ORDER`] (mod artifact rebuild), [`phases::JIT_RUN_PHASE_ORDER`] (run/test).
 
 pub mod phases;
 

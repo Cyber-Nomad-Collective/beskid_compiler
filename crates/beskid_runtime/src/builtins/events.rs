@@ -108,12 +108,8 @@ pub extern "C-unwind" fn event_get_handler(state: *mut EventState, idx: usize) -
     if state.is_null() {
         return std::ptr::null_mut();
     }
-    let result = unsafe {
-        (&(*state).handlers)
-            .get(idx)
-            .copied()
-            .unwrap_or(std::ptr::null_mut())
-    };
+    let handlers = unsafe { &*std::ptr::addr_of!((*state).handlers) };
+    let result = handlers.get(idx).copied().unwrap_or(std::ptr::null_mut());
     #[cfg(feature = "metrics")]
     if !result.is_null() {
         use crate::gc::with_current_root;

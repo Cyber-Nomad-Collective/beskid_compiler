@@ -159,7 +159,9 @@ dependency "Feature" {
             [
                 "corelib_compiler_sdk",
                 "corelib_foundation",
+                "corelib_concurrency",
                 "corelib_runtime",
+                "corelib_console",
                 "Std",
                 "Util",
                 "Core",

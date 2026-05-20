@@ -3,9 +3,7 @@
 use std::path::PathBuf;
 
 use crate::frontend;
-use crate::pipeline_ui::{
-    PipelineProgressKind, resolve_input_with_cli_pipeline_kind,
-};
+use crate::pipeline_ui::{PipelineProgressKind, resolve_input_with_cli_pipeline_kind};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_engine::services::run_entrypoint_with_pipeline;

@@ -1,4 +1,4 @@
-//! WaitGroup counter (Go-style Add/Done/Wait).
+//! WaitGroup counter with Add/Done/Wait operations.
 
 use std::sync::Mutex;
 
@@ -17,9 +17,8 @@ struct WaitGroupInner {
 static WAIT_GROUPS: Mutex<Option<slotmap::SlotMap<slotmap::DefaultKey, WaitGroupInner>>> =
     Mutex::new(None);
 
-fn table(
-) -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, WaitGroupInner>>>
-{
+fn table()
+-> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, WaitGroupInner>>> {
     let mut guard = WAIT_GROUPS.lock().expect("wait_group table lock");
     if guard.is_none() {
         *guard = Some(slotmap::SlotMap::with_key());

@@ -15,10 +15,7 @@ pub const DEFAULT_README_FILE: &str = "readme.md";
 pub const PACKAGE_README_ARTIFACT_NAME: &str = "README.md";
 
 /// Resolve a readme path from an explicit manifest value and on-disk defaults.
-pub fn resolve_readme_relative_path(
-    explicit: Option<&str>,
-    package_root: &Path,
-) -> Option<String> {
+pub fn resolve_readme_relative_path(explicit: Option<&str>, package_root: &Path) -> Option<String> {
     if let Some(path) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
         return Some(path.to_string());
     }
@@ -32,16 +29,16 @@ pub fn resolve_readme_relative_path(
 
 pub fn resolve_readme_from_project_manifest(
     package_root: &Path,
-    manifest: &ProjectManifest,
+    _manifest: &ProjectManifest,
 ) -> Option<String> {
-    resolve_readme_relative_path(manifest.project.readme.as_deref(), package_root)
+    resolve_readme_relative_path(None, package_root)
 }
 
 pub fn resolve_readme_from_workspace_manifest(
     package_root: &Path,
-    manifest: &WorkspaceManifest,
+    _manifest: &WorkspaceManifest,
 ) -> Option<String> {
-    resolve_readme_relative_path(manifest.workspace.readme.as_deref(), package_root)
+    resolve_readme_relative_path(None, package_root)
 }
 
 /// Discover readme settings for a package directory (project manifest preferred over workspace).
@@ -57,7 +54,10 @@ pub fn discover_readme_for_package_root(
             }
         })?;
         let manifest = parse_manifest(&source)?;
-        return Ok(resolve_readme_from_project_manifest(package_root, &manifest));
+        return Ok(resolve_readme_from_project_manifest(
+            package_root,
+            &manifest,
+        ));
     }
 
     let workspace_manifest_path = package_root.join(WORKSPACE_FILE_NAME);
@@ -69,17 +69,17 @@ pub fn discover_readme_for_package_root(
             }
         })?;
         let manifest = parse_workspace_manifest(&source)?;
-        return Ok(resolve_readme_from_workspace_manifest(package_root, &manifest));
+        return Ok(resolve_readme_from_workspace_manifest(
+            package_root,
+            &manifest,
+        ));
     }
 
     Ok(resolve_readme_relative_path(None, package_root))
 }
 
 /// Absolute path to the resolved readme file when present.
-pub fn resolve_readme_file_path(
-    package_root: &Path,
-    relative: &str,
-) -> PathBuf {
+pub fn resolve_readme_file_path(package_root: &Path, relative: &str) -> PathBuf {
     package_root.join(relative)
 }
 

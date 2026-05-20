@@ -67,9 +67,13 @@ fn install_layout_runtime_archive(
     let profile_dir = profile_dir_name(profile);
 
     for ancestor in exe.ancestors() {
-        let candidate = ancestor.join("lib").join("beskid-runtime").join(format!(
-            "abi-{BESKID_RUNTIME_ABI_VERSION}"
-        )).join(&target.triple).join(profile_dir).join(lib_name);
+        let candidate = ancestor
+            .join("lib")
+            .join("beskid-runtime")
+            .join(format!("abi-{BESKID_RUNTIME_ABI_VERSION}"))
+            .join(&target.triple)
+            .join(profile_dir)
+            .join(lib_name);
         if candidate.is_file() {
             return Ok(Some(candidate));
         }

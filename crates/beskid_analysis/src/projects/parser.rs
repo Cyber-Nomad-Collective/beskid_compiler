@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use crate::projects::error::ProjectError;
 use crate::projects::model::{
-    AttachToSelector, Dependency, DependencySource, ProjectKind, ProjectManifest,
-    ProjectMetaSection, ProjectSection, Target, TargetKind, WorkspaceManifest, WorkspaceMember,
-    WorkspaceOverride, WorkspaceRegistry, WorkspaceSection,
+    Dependency, DependencySource, ProjectKind, ProjectManifest, ProjectModSection, ProjectSection,
+    Target, TargetKind, WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry,
+    WorkspaceSection,
 };
 use crate::projects::validator::{validate_manifest, validate_workspace_manifest};
 
@@ -129,9 +129,10 @@ fn allows_enum_literal(field: &str) -> bool {
 }
 
 #[derive(Debug, Clone)]
-enum MetaFieldValue {
+enum ModFieldValue {
     StringList(Vec<String>),
     U32(u32),
+    String(String),
 }
 
 fn split_comma_list_items(inner: &str) -> Vec<&str> {
@@ -208,10 +209,10 @@ fn parse_positive_u32(raw: &str, field: &str) -> Result<u32, String> {
         .map_err(|_| format!("`{field}` integer overflow or invalid: `{t}`"))
 }
 
-fn parse_meta_block_contents(
+fn parse_mod_block_contents(
     lines: &mut PhysicalLines<'_>,
     open_ctx: &LineCtx<'_>,
-) -> Result<HashMap<String, MetaFieldValue>, ProjectError> {
+) -> Result<HashMap<String, ModFieldValue>, ProjectError> {
     let mut fields = HashMap::new();
     let mut closed = false;
     while let Some(ctx) = lines.next_line() {
@@ -226,27 +227,27 @@ fn parse_meta_block_contents(
         if body.ends_with('{') {
             return Err(parse_err(
                 &ctx,
-                "nested blocks are not allowed inside `meta`",
+                "nested blocks are not allowed inside `mod`",
                 None,
             ));
         }
         let line = strip_comment(ctx.text).trim();
-        let (left, right) = line.split_once('=').ok_or_else(|| {
-            parse_err(&ctx, "expected key = value assignment inside `meta`", None)
-        })?;
+        let (left, right) = line
+            .split_once('=')
+            .ok_or_else(|| parse_err(&ctx, "expected key = value assignment inside `mod`", None))?;
         let key = left.trim();
         if key.is_empty() {
             return Err(parse_err(
                 &ctx,
-                "assignment key cannot be empty inside `meta`",
+                "assignment key cannot be empty inside `mod`",
                 None,
             ));
         }
-        let value = parse_meta_field_value(key, right, &ctx)?;
+        let value = parse_mod_field_value(key, right, &ctx)?;
         if fields.insert(key.to_string(), value).is_some() {
             return Err(parse_err(
                 &ctx,
-                format!("duplicate `meta` field `{key}`"),
+                format!("duplicate `mod` field `{key}`"),
                 None,
             ));
         }
@@ -254,7 +255,7 @@ fn parse_meta_block_contents(
     if !closed {
         return Err(ProjectError::ParseAt {
             line: open_ctx.line_1,
-            message: "missing closing `}` for `meta` block".to_string(),
+            message: "missing closing `}` for `mod` block".to_string(),
             start: None,
             end: None,
         });
@@ -267,7 +268,7 @@ fn parse_project_block(
     header_ctx: &LineCtx<'_>,
 ) -> Result<ParsedProjectBlock, ProjectError> {
     let mut fields: HashMap<String, String> = HashMap::new();
-    let mut meta: Option<HashMap<String, MetaFieldValue>> = None;
+    let mut mod_section: Option<HashMap<String, ModFieldValue>> = None;
     let mut closed = false;
     while let Some(ctx) = lines.next_line() {
         let body = strip_comment(ctx.text).trim();
@@ -280,15 +281,15 @@ fn parse_project_block(
         }
         if body.ends_with('{') {
             let (nested_kind, nested_label) = parse_block_header(&ctx)?;
-            if nested_kind == "meta" && nested_label.is_none() {
-                if meta.is_some() {
+            if (nested_kind == "mod" || nested_kind == "meta") && nested_label.is_none() {
+                if mod_section.is_some() {
                     return Err(parse_err(
                         &ctx,
-                        "duplicate `meta` block inside `project`",
+                        "duplicate `mod` block inside `project`",
                         None,
                     ));
                 }
-                meta = Some(parse_meta_block_contents(lines, &ctx)?);
+                mod_section = Some(parse_mod_block_contents(lines, &ctx)?);
                 continue;
             }
             return Err(parse_err(
@@ -314,29 +315,40 @@ fn parse_project_block(
             end: None,
         });
     }
-    Ok(ParsedProjectBlock { fields, meta })
+    Ok(ParsedProjectBlock {
+        fields,
+        mod_section,
+    })
 }
 
-fn parse_meta_field_value(
+fn parse_mod_field_value(
     key: &str,
     raw_rhs: &str,
     ctx: &LineCtx<'_>,
-) -> Result<MetaFieldValue, ProjectError> {
+) -> Result<ModFieldValue, ProjectError> {
     let trimmed = raw_rhs.trim();
     let span = value_span_in_source(ctx, trimmed);
     let err = |message: String| parse_err(ctx, message, span);
     match key {
-        "attachTo" | "entryModules" | "entryModule" | "capabilities" => {
-            parse_string_or_list_field(trimmed, key)
-                .map(MetaFieldValue::StringList)
-                .map_err(err)
-        }
-        "maxMetaRounds" => parse_positive_u32(trimmed, key)
-            .map(MetaFieldValue::U32)
+        // Legacy meta-project keys are accepted and ignored during transition.
+        "attachTo" | "entryModules" | "entryModule" => Ok(ModFieldValue::StringList(Vec::new())),
+        "capabilities" => parse_string_or_list_field(trimmed, key)
+            .map(ModFieldValue::StringList)
             .map_err(err),
+        "maxGeneratorRounds" | "maxMetaRounds" => parse_positive_u32(trimmed, key)
+            .map(ModFieldValue::U32)
+            .map_err(err),
+        "artifactPolicy" => {
+            let token = if trimmed.starts_with('"') {
+                parse_quoted_string_token(trimmed)
+            } else {
+                parse_ident_token(trimmed)
+            };
+            token.map(ModFieldValue::String).map_err(err)
+        }
         other => Err(parse_err(
             ctx,
-            format!("unknown `meta` field `{other}`"),
+            format!("unknown `mod` field `{other}`"),
             span,
         )),
     }
@@ -482,7 +494,7 @@ fn parse_workspace_blocks(source: &str) -> Result<ParsedWorkspaceBlocks, Project
 #[derive(Debug)]
 struct ParsedProjectBlock {
     fields: HashMap<String, String>,
-    meta: Option<HashMap<String, MetaFieldValue>>,
+    mod_section: Option<HashMap<String, ModFieldValue>>,
 }
 
 #[derive(Debug, Default)]
@@ -599,108 +611,78 @@ fn parse_blocks(source: &str) -> Result<ParsedBlocks, ProjectError> {
 fn build_project_kind(type_field: Option<&str>) -> Result<ProjectKind, ProjectError> {
     match type_field.map(str::trim).filter(|s| !s.is_empty()) {
         None => Ok(ProjectKind::Host),
-        Some("Meta") => Ok(ProjectKind::Meta),
+        Some("Mod") | Some("Meta") => Ok(ProjectKind::Mod),
         Some(other) => Err(ProjectError::meta_contract(
             "E1807",
             format!(
-                "unsupported project.type `{other}` (omit the field for ordinary projects, or use `Meta`)"
+                "unsupported project.type `{other}` (omit the field for ordinary host projects, or use `Mod`)"
             ),
         )),
     }
 }
 
-fn build_project_meta_from_fields(
-    meta_fields: &HashMap<String, MetaFieldValue>,
-) -> Result<ProjectMetaSection, ProjectError> {
-    let attach_raw = match meta_fields.get("attachTo") {
-        Some(MetaFieldValue::StringList(v)) => v.as_slice(),
-        Some(MetaFieldValue::U32(_)) => {
-            return Err(ProjectError::meta_contract(
-                "E1808",
-                "`project.meta.attachTo` must be a string or list of strings",
-            ));
-        }
-        None => {
-            return Err(ProjectError::meta_contract(
-                "E1809",
-                "missing required `project.meta.attachTo` for `type = Meta`",
-            ));
-        }
-    };
-    if attach_raw.is_empty() {
-        return Err(ProjectError::meta_contract(
-            "E1810",
-            "`project.meta.attachTo` must not be empty",
-        ));
-    }
-
-    let mut entry_modules: Vec<String> = Vec::new();
-    if let Some(MetaFieldValue::StringList(v)) = meta_fields.get("entryModules") {
-        entry_modules.extend(v.iter().cloned());
-    }
-    if let Some(MetaFieldValue::StringList(v)) = meta_fields.get("entryModule") {
-        entry_modules.extend(v.iter().cloned());
-    }
-    if entry_modules.is_empty() {
-        return Err(ProjectError::meta_contract(
-            "E1871",
-            "`project.meta` requires non-empty `entryModules` (or legacy `entryModule`)",
-        ));
-    }
-
-    let attach_to: Vec<AttachToSelector> = attach_raw
-        .iter()
-        .map(|s| {
-            if s == "default" {
-                AttachToSelector::Default
-            } else {
-                AttachToSelector::Member(s.clone())
+fn build_project_mod_from_fields(
+    mod_fields: &HashMap<String, ModFieldValue>,
+) -> Result<ProjectModSection, ProjectError> {
+    let max_generator_rounds = match mod_fields.get("maxGeneratorRounds") {
+        None => match mod_fields.get("maxMetaRounds") {
+            None => None,
+            Some(ModFieldValue::U32(u)) => Some(*u),
+            Some(ModFieldValue::StringList(_)) | Some(ModFieldValue::String(_)) => {
+                return Err(ProjectError::meta_contract(
+                    "E1872",
+                    "`project.mod.maxMetaRounds` must be a positive integer",
+                ));
             }
-        })
-        .collect();
-
-    let max_meta_rounds = match meta_fields.get("maxMetaRounds") {
-        None => None,
-        Some(MetaFieldValue::U32(u)) => Some(*u),
-        Some(MetaFieldValue::StringList(_)) => {
+        },
+        Some(ModFieldValue::U32(u)) => Some(*u),
+        Some(ModFieldValue::StringList(_)) | Some(ModFieldValue::String(_)) => {
             return Err(ProjectError::meta_contract(
                 "E1872",
-                "`project.meta.maxMetaRounds` must be a positive integer",
+                "`project.mod.maxGeneratorRounds` must be a positive integer",
             ));
         }
     };
 
-    let capabilities = match meta_fields.get("capabilities") {
+    let capabilities = match mod_fields.get("capabilities") {
         None => None,
-        Some(MetaFieldValue::StringList(v)) => Some(v.clone()),
-        Some(MetaFieldValue::U32(_)) => {
+        Some(ModFieldValue::StringList(v)) => Some(v.clone()),
+        Some(ModFieldValue::U32(_)) | Some(ModFieldValue::String(_)) => {
             return Err(ProjectError::meta_contract(
                 "E1873",
-                "`project.meta.capabilities` must be a list of capability names",
+                "`project.mod.capabilities` must be a list of capability names",
             ));
         }
     };
 
-    Ok(ProjectMetaSection {
-        attach_to,
-        entry_modules,
-        max_meta_rounds,
+    let artifact_policy = match mod_fields.get("artifactPolicy") {
+        None => None,
+        Some(ModFieldValue::String(v)) => Some(v.clone()),
+        Some(ModFieldValue::StringList(_)) | Some(ModFieldValue::U32(_)) => {
+            return Err(ProjectError::meta_contract(
+                "E1875",
+                "`project.mod.artifactPolicy` must be a single identifier or quoted string",
+            ));
+        }
+    };
+
+    Ok(ProjectModSection {
+        max_generator_rounds,
         capabilities,
+        artifact_policy,
     })
 }
 
 fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSection, ProjectError> {
     let kind = build_project_kind(project.fields.get("type").map(|s| s.as_str()))?;
-    let meta = match (&kind, &project.meta) {
+    let mod_section = match (&kind, &project.mod_section) {
         (ProjectKind::Host, Some(_)) => {
             return Err(ProjectError::meta_contract(
                 "E1874",
-                "`project.meta` is only allowed when `type = Meta`",
+                "`project.mod` is only allowed when `type = Mod`",
             ));
         }
-        (ProjectKind::Meta, Some(meta_fields)) => {
-            Some(build_project_meta_from_fields(meta_fields)?)
-        }
+        (ProjectKind::Mod, Some(mod_fields)) => Some(build_project_mod_from_fields(mod_fields)?),
         _ => None,
     };
 
@@ -714,7 +696,7 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
             .unwrap_or_else(|| "Src".to_string()),
         root_namespace: project.fields.get("root_namespace").cloned(),
         kind,
-        meta,
+        mod_section,
     })
 }
 

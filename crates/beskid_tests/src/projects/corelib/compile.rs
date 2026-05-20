@@ -137,8 +137,9 @@ fn checked_in_compiler_sdk_prelude_lowers_to_codegen_artifact() {
         let _env_guard = std_dependency_env_lock();
         with_cwd_at_workspace_root(&compiler_workspace_root(), || {
             let sdk = corelib_workspace_root().join("packages/compiler-sdk");
-            let resolved = resolve_input(None, Some(&sdk), Some("CompilerSdkLib"), None, false, false)
-                .expect("resolve compiler-sdk project input");
+            let resolved =
+                resolve_input(None, Some(&sdk), Some("CompilerSdkLib"), None, false, false)
+                    .expect("resolve compiler-sdk project input");
 
             let _lowered = lower_source(&resolved.source_path, &resolved.source, true)
                 .expect("lower compiler-sdk prelude should succeed");
@@ -209,9 +210,56 @@ fn checked_in_compiler_sdk_prelude_exports_mod_sdk_modules() {
     let prelude = fs::read_to_string(compiler_sdk_src().join("Prelude.bd"))
         .expect("read compiler-sdk prelude");
     assert!(
-        prelude.contains("pub mod Beskid.Compiler.Syntax;"),
-        "compiler-sdk prelude should export Beskid.Compiler.Syntax"
+        prelude.contains("pub mod Beskid.Syntax;"),
+        "compiler-sdk prelude should export Beskid.Syntax"
     );
+    assert!(
+        prelude.contains("pub mod Beskid.Compiler.TypedEmitter;"),
+        "compiler-sdk prelude should export Beskid.Compiler.TypedEmitter"
+    );
+    assert!(
+        prelude.contains("pub mod Beskid.Compiler.Collect;"),
+        "compiler-sdk prelude should export Beskid.Compiler.Collect"
+    );
+    assert!(
+        !prelude.contains("pub mod Beskid.Compiler.Emit;"),
+        "compiler-sdk prelude should not export legacy Beskid.Compiler.Emit"
+    );
+    assert!(
+        !prelude.contains("pub mod Beskid.Compiler.Process;"),
+        "compiler-sdk prelude should not export obsolete process hook vocabulary"
+    );
+}
+
+#[test]
+fn checked_in_compiler_sdk_collect_declares_mod_contracts() {
+    let collect = fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Collect.bd"))
+        .expect("read Beskid.Compiler.Collect");
+
+    for contract_name in [
+        "pub contract Collector",
+        "pub contract Generator",
+        "pub contract Analyzer",
+        "pub contract Rewriter",
+        "pub contract AttributeGenerator",
+    ] {
+        assert!(
+            collect.contains(contract_name),
+            "Collect facade missing {contract_name}"
+        );
+    }
+    for method_shape in [
+        "Collect(",
+        "Generate(",
+        "Analyze(",
+        "Rewrite(TSourceNode sourceNode)",
+        "Attributes(",
+    ] {
+        assert!(
+            collect.contains(method_shape),
+            "Collect facade missing method shape {method_shape}"
+        );
+    }
 }
 
 #[test]
@@ -286,11 +334,28 @@ fn checked_in_corelib_beskid_test_sources_parse() {
         root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd"),
         root.join("tests/corelib_tests/src/system/SyscallApiTests.bd"),
         root.join("tests/corelib_tests/src/system/SyscallErgonomicsTests.bd"),
+        root.join("tests/corelib_tests/src/system/OutputWriteLineTests.bd"),
+        root.join("tests/corelib_tests/src/system/InputReadTests.bd"),
+        root.join("tests/corelib_tests/src/system/ErrorWriteTests.bd"),
         root.join("tests/corelib_tests/src/core/ResultsTests.bd"),
         root.join("tests/corelib_tests/src/collections/ArrayTests.bd"),
+        root.join("tests/corelib_tests/src/console/AnsiEscapeTests.bd"),
+        root.join("tests/corelib_tests/src/console/AnsiStyleChainTests.bd"),
+        root.join("tests/corelib_tests/src/console/AnsiSgrGoldenTests.bd"),
+        root.join("tests/corelib_tests/src/console/AnsiBuildersTests.bd"),
+        root.join("tests/corelib_tests/src/console/FormatMarkdownTests.bd"),
+        root.join("tests/corelib_tests/src/console/FormatAttributesTests.bd"),
+        root.join("tests/corelib_tests/src/console/FormatScanTests.bd"),
+        root.join("tests/corelib_tests/src/console/CapabilitiesTests.bd"),
+        root.join("tests/corelib_tests/src/console/TerminalPlatformTests.bd"),
+        root.join("tests/corelib_tests/src/console/ConsoleFacadeTests.bd"),
+        root.join("tests/corelib_tests/src/console/ConsoleMessageChannelTests.bd"),
+        root.join("tests/corelib_tests/src/console/ConsoleStyleTests.bd"),
         root.join("tests/corelib_tests/src/console/ControlsPanelTests.bd"),
         root.join("tests/corelib_tests/src/console/ControlsProgressBarTests.bd"),
         root.join("tests/corelib_tests/src/console/ControlsLayoutTests.bd"),
+        root.join("tests/corelib_tests/src/console/ControlsFrameTests.bd"),
+        root.join("tests/corelib_tests/src/console/RenderContextTests.bd"),
     ];
     for path in test_files {
         let source = fs::read_to_string(&path)

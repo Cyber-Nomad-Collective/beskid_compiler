@@ -7,6 +7,7 @@ pub mod graph;
 pub mod manifest_resolve;
 pub mod model;
 pub mod parser;
+mod readme;
 pub mod validator;
 pub mod workflow;
 
@@ -19,10 +20,10 @@ pub use discovery::{
 };
 pub use error::ProjectError;
 pub use graph::{
-    DependencyEdge, MetaAttachmentResolution, ProjectGraph, ProjectGraphBuildOptions,
-    ProjectGraphNode, UnresolvedDependency, UnresolvedDependencyKind, WorkspaceResolutionRules,
-    build_project_graph, build_project_graph_with_options, collect_dependency_projects,
-    collect_unresolved_dependencies, discover_workspace_resolution_rules,
+    DependencyEdge, ProjectGraph, ProjectGraphBuildOptions, ProjectGraphNode, UnresolvedDependency,
+    UnresolvedDependencyKind, WorkspaceResolutionRules, build_project_graph,
+    build_project_graph_with_options, collect_dependency_projects, collect_unresolved_dependencies,
+    discover_workspace_resolution_rules,
 };
 pub use manifest_resolve::{
     discover_project_manifest_from_input_or_cwd, resolve_project_manifest_for_cwd,
@@ -30,14 +31,18 @@ pub use manifest_resolve::{
     resolve_workspace_candidate_path, resolve_workspace_candidate_with_summary,
 };
 pub use model::{
-    AttachToSelector, CompilePlan, Dependency, DependencySource, MaterializedDependencyProject,
-    PreparedProjectWorkspace, ProjectKind, ProjectManifest, ProjectMetaSection, ProjectSection,
+    CompilePlan, Dependency, DependencySource, MaterializedDependencyProject,
+    PreparedProjectWorkspace, ProjectKind, ProjectManifest, ProjectModSection, ProjectSection,
     ResolvedDependencyProject, Target, TargetKind, UnresolvedDependencyNote,
     UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember, WorkspaceOverride,
     WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
 };
 pub use parser::{parse_manifest, parse_workspace_manifest};
-pub use validator::{META_CAPABILITY_NAMES, validate_manifest, validate_workspace_manifest};
+pub use readme::{
+    PACKAGE_README_ARTIFACT_NAME, discover_readme_for_package_root, is_package_root_readme_entry,
+    resolve_readme_file_path,
+};
+pub use validator::{MOD_CAPABILITY_NAMES, validate_manifest, validate_workspace_manifest};
 pub use workflow::{
     PROJECT_LOCK_FILE_NAME, ProjectLockDependencyEntry, WorkspacePrepareOptions,
     prepare_project_workspace, prepare_project_workspace_with_options,

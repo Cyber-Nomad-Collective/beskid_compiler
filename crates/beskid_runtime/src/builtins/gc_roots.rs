@@ -1,4 +1,4 @@
-use crate::gc::{drop_handle, store_handle, with_current_root};
+use crate::gc::{drop_handle, store_handle, with_current_heap, with_current_root};
 
 /// Opaque handle storing `value_ptr` in the current root's handle table (for temporary roots).
 #[unsafe(no_mangle)]
@@ -19,7 +19,7 @@ pub extern "C-unwind" fn gc_register_root(ptr_addr: *mut *mut u8) {
         return;
     }
     with_current_root(|root| {
-        root.runtime_state.registered_roots.push(ptr_addr);
+        root.heap.external_roots().register_root(ptr_addr);
     });
 }
 
@@ -30,12 +30,11 @@ pub extern "C-unwind" fn gc_unregister_root(ptr_addr: *mut *mut u8) {
         return;
     }
     with_current_root(|root| {
-        root.runtime_state
-            .registered_roots
-            .retain(|entry| *entry != ptr_addr);
+        root.heap.external_roots().unregister_root(ptr_addr);
     });
 }
 
-/// Placeholder write barrier hook (no-op in the current runtime).
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn gc_write_barrier(_dst_obj: *mut u8, _value_ptr: *mut u8) {}
+pub extern "C-unwind" fn gc_write_barrier(dst_obj: *mut u8, value_ptr: *mut u8) {
+    with_current_heap(|heap| heap.write_barrier(dst_obj, value_ptr));
+}

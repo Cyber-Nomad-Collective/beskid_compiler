@@ -82,13 +82,13 @@ pub(crate) fn lower_literal(
             let func_ref = builder
                 .func
                 .import_function(cranelift_codegen::ir::ExtFuncData {
-                    name: ExternalName::testcase("str_new".to_string()),
+                    name: ExternalName::testcase("str_new"),
                     signature: sig_ref,
                     colocated: false,
                     patchable: false,
                 });
             let call = builder.ins().call(func_ref, &[str_ptr, len_val]);
-            let result = builder.inst_results(call).get(0).copied().ok_or(
+            let result = builder.inst_results(call).first().copied().ok_or(
                 CodegenError::UnsupportedNode {
                     span: literal.span,
                     node: "string literal result",

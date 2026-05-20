@@ -3,6 +3,7 @@
 use crate::commands::analyze::AnalyzeArgs;
 use crate::commands::build::BuildArgs;
 use crate::commands::clif::ClifArgs;
+use crate::commands::compiler_mod::ModArgs;
 use crate::commands::corelib::CorelibArgs;
 use crate::commands::doc::DocArgs;
 use crate::commands::fetch::FetchArgs;
@@ -14,7 +15,8 @@ use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::{
-    analyze, build, clif, corelib, doc, fetch, format, lock, parse, run, test, tree, update,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, lock, parse, run, test, tree,
+    update,
 };
 use crate::corelib_runtime;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
@@ -75,6 +77,9 @@ pub enum Commands {
     /// AOT-compile and link a Beskid file into object/library/executable outputs
     Build(BuildArgs),
 
+    /// Manage compiler Mod AOT artifacts
+    Mod(ModArgs),
+
     /// Resolve and materialize project dependencies
     Fetch(FetchArgs),
 
@@ -110,6 +115,7 @@ pub fn run() -> miette::Result<()> {
         Commands::Run(args) => run::execute(args),
         Commands::Test(args) => test::execute(args),
         Commands::Build(args) => build::execute(args),
+        Commands::Mod(args) => compiler_mod::execute(args),
         Commands::Fetch(args) => fetch::execute(args),
         Commands::Lock(args) => lock::execute(args),
         Commands::Update(args) => update::execute(args),
@@ -207,4 +213,46 @@ fn resolve_doc_entrypoint(
         "cannot infer docs entrypoint for package source {} (expected Project.proj, main.bd/src/main.bd, or a single .bd file)",
         source_root.display()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_mod_rebuild_with_clean_project_and_target() {
+        let cli = Cli::try_parse_from([
+            "beskid",
+            "mod",
+            "rebuild",
+            "--clean",
+            "--target-triple",
+            "aarch64-apple-darwin",
+            "mods/MyMod",
+        ])
+        .expect("parse cli");
+
+        let Commands::Mod(args) = cli.command else {
+            panic!("expected mod command");
+        };
+        let crate::commands::compiler_mod::ModCommand::Rebuild(args) = args.command else {
+            panic!("expected rebuild command");
+        };
+        assert!(args.clean);
+        assert_eq!(args.target_triple.as_deref(), Some("aarch64-apple-darwin"));
+        assert_eq!(args.project.as_deref(), Some(Path::new("mods/MyMod")));
+    }
+
+    #[test]
+    fn parses_mod_clean_with_project() {
+        let cli = Cli::try_parse_from(["beskid", "mod", "clean", "mods/MyMod"]).expect("parse cli");
+
+        let Commands::Mod(args) = cli.command else {
+            panic!("expected mod command");
+        };
+        let crate::commands::compiler_mod::ModCommand::Clean(args) = args.command else {
+            panic!("expected clean command");
+        };
+        assert_eq!(args.project.as_deref(), Some(Path::new("mods/MyMod")));
+    }
 }

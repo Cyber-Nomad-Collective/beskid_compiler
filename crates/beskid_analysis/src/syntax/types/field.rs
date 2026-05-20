@@ -1,4 +1,4 @@
-use crate::syntax::{Identifier, Parameter, PrimitiveType, Spanned, Type};
+use crate::syntax::{Identifier, Parameter, PrimitiveType, Spanned, Type, Visibility};
 
 use beskid_ast_derive::AstNode;
 
@@ -12,6 +12,8 @@ pub enum FieldKind {
 /// Struct or enum variant field with name and type (and optional event capacity).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct Field {
+    #[ast(child)]
+    pub visibility: Spanned<Visibility>,
     #[ast(skip)]
     pub kind: FieldKind,
     #[ast(skip)]
@@ -34,12 +36,22 @@ impl crate::parsing::parsable::Parsable for Field {
         }
 
         let span = crate::syntax::SpanInfo::from_span(&pair.as_span());
-        let field_node =
-            pair.into_inner()
-                .next()
-                .ok_or(crate::parsing::error::ParseError::missing(
-                    crate::parser::Rule::ValueField,
-                ))?;
+        let mut field_inner = pair.clone().into_inner().peekable();
+        let visibility = if field_inner
+            .peek()
+            .is_some_and(|item| item.as_rule() == crate::parser::Rule::Visibility)
+        {
+            <Visibility as crate::parsing::parsable::Parsable>::parse(field_inner.next().ok_or(
+                crate::parsing::error::ParseError::missing(crate::parser::Rule::Visibility),
+            )?)?
+        } else {
+            Spanned::new(Visibility::Private, span)
+        };
+        let field_node = field_inner
+            .next()
+            .ok_or(crate::parsing::error::ParseError::missing(
+                crate::parser::Rule::ValueField,
+            ))?;
         let (kind, mut inner) = match field_node.as_rule() {
             crate::parser::Rule::ValueField => (FieldKind::Value, field_node.into_inner()),
             crate::parser::Rule::EventField => (FieldKind::Event, field_node.into_inner()),
@@ -147,6 +159,7 @@ impl crate::parsing::parsable::Parsable for Field {
 
         Ok(crate::syntax::Spanned::new(
             Self {
+                visibility,
                 kind,
                 event_capacity,
                 name,

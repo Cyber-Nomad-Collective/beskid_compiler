@@ -31,7 +31,7 @@ fn leading_doc_for_item_span(program: &Program, item_span: SpanInfo) -> Option<L
     None
 }
 
-fn innermost_item_at_offset<'a>(resolution: &'a Resolution, offset: usize) -> Option<&'a ItemInfo> {
+fn innermost_item_at_offset(resolution: &Resolution, offset: usize) -> Option<&ItemInfo> {
     resolution
         .items
         .iter()

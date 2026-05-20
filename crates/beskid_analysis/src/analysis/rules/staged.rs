@@ -6,7 +6,6 @@ mod contracts;
 mod control_flow;
 mod definitions;
 mod error_handling;
-mod meta_programming;
 mod name_resolution;
 mod type_checking;
 mod visibility;
@@ -44,6 +43,5 @@ impl Rule for SemanticPipelineRule {
         self.stage5_modules_and_visibility(ctx, &hir);
         self.stage6_contracts_and_methods(ctx, &hir, &resolution);
         self.stage7_error_handling(ctx, &hir);
-        self.stage8_metaprogramming(ctx, &hir);
     }
 }

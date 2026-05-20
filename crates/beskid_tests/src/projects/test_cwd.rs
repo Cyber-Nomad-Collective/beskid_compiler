@@ -8,7 +8,9 @@ use std::sync::Mutex;
 pub(crate) static PROJECT_TEST_CWD_LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) fn with_cwd_at_workspace_root<R>(root: &Path, f: impl FnOnce() -> R) -> R {
-    let _guard = PROJECT_TEST_CWD_LOCK.lock().expect("project test cwd lock");
+    let _guard = PROJECT_TEST_CWD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(root).expect("chdir to temp workspace");
     let out = f();

@@ -2,11 +2,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use beskid_runtime::{
     channel_close, channel_create, channel_receive, channel_send, channel_try_receive,
-    fiber_cancel, fiber_detach, fiber_join, fiber_spawn, fiber_yield,
-    run_closure_as_main,
-    status::{
-        FIBER_JOIN_CANCELLED, FIBER_JOIN_OK, STATUS_CLOSED, STATUS_OK, STATUS_WOULD_BLOCK,
-    },
+    fiber_cancel, fiber_detach, fiber_join, fiber_spawn, fiber_yield, run_closure_as_main,
+    status::{FIBER_JOIN_CANCELLED, FIBER_JOIN_OK, STATUS_CLOSED, STATUS_OK, STATUS_WOULD_BLOCK},
 };
 
 static COUNTER: AtomicI64 = AtomicI64::new(0);

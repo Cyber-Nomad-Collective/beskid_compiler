@@ -3,6 +3,7 @@
 pub mod analyze;
 pub mod build;
 pub mod clif;
+pub mod compiler_mod;
 pub mod corelib;
 pub mod doc;
 pub mod fetch;

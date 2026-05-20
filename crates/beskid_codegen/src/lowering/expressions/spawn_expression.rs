@@ -36,10 +36,16 @@ fn lower_spawn_expression(
                 .resolved_values
                 .get(&path.node.path.span)
             {
-                let name = ctx.resolution.items.get(item_id.0).map(|i| i.name.clone()).ok_or(
-                    CodegenError::MissingSymbol("spawn entry function"),
-                )?;
-                let sig_ref = ctx.builder.func.import_signature(Signature::new(CallConv::SystemV));
+                let name = ctx
+                    .resolution
+                    .items
+                    .get(item_id.0)
+                    .map(|i| i.name.clone())
+                    .ok_or(CodegenError::MissingSymbol("spawn entry function"))?;
+                let sig_ref = ctx
+                    .builder
+                    .func
+                    .import_signature(Signature::new(CallConv::SystemV));
                 let func_ref = ctx.builder.func.import_function(ExtFuncData {
                     name: ExternalName::testcase(name),
                     signature: sig_ref,
@@ -76,11 +82,13 @@ fn lower_spawn_expression(
         patchable: false,
     });
     let call = ctx.builder.ins().call(func_ref, &[entry_ptr, env]);
-    let handle = *ctx.builder.inst_results(call).first().ok_or(
-        CodegenError::UnsupportedNode {
+    let handle = *ctx
+        .builder
+        .inst_results(call)
+        .first()
+        .ok_or(CodegenError::UnsupportedNode {
             span: spawn.span,
             node: "fiber_spawn result",
-        },
-    )?;
+        })?;
     Ok(Some(handle))
 }

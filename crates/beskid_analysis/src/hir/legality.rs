@@ -148,6 +148,22 @@ impl<'a> HirLegalityValidator<'a> {
                     self.validate_type(return_type);
                 }
             }
+            HirItem::ExtendTypeDefinition(def) => {
+                self.check_span(def.span, "extend_type_definition");
+                self.validate_type(&def.node.target_type);
+                for method in &def.node.methods {
+                    self.check_span(method.span, "method_definition");
+                    self.validate_type(&method.node.receiver_type);
+                    self.validate_block(&method.node.body);
+                    for parameter in &method.node.parameters {
+                        self.check_span(parameter.span, "parameter");
+                        self.validate_type(&parameter.node.ty);
+                    }
+                    if let Some(return_type) = &method.node.return_type {
+                        self.validate_type(return_type);
+                    }
+                }
+            }
             HirItem::TestDefinition(def) => {
                 self.check_span(def.span, "test_definition");
                 if let Some(meta) = &def.node.meta {
@@ -165,14 +181,6 @@ impl<'a> HirLegalityValidator<'a> {
                     }
                 }
                 self.validate_block(&def.node.body);
-            }
-            HirItem::MetaDefinition(def) => {
-                self.check_span(def.span, "meta_definition");
-                self.validate_applied_attributes(&def.node.attributes, "ModuleDeclaration");
-                for entry in &def.node.entries {
-                    self.check_span(entry.span, "meta_metadata_entry");
-                    self.validate_expression(&entry.node.value);
-                }
             }
             HirItem::TypeDefinition(def) => {
                 self.check_span(def.span, "type_definition");

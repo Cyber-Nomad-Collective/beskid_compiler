@@ -2,9 +2,8 @@ use crate::hir::{
     HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBlockExpression, HirCallExpression,
     HirEnumConstructorExpression, HirEnumPattern, HirExpressionNode, HirGroupedExpression,
     HirLambdaExpression, HirLambdaParameter, HirLiteral, HirLiteralExpression, HirMatchArm,
-    HirMatchExpression, HirMemberExpression, HirPathExpression, HirPattern,
-    HirSpawnExpression, HirStructLiteralExpression, HirStructLiteralField, HirTryExpression,
-    HirUnaryExpression,
+    HirMatchExpression, HirMemberExpression, HirPathExpression, HirPattern, HirSpawnExpression,
+    HirStructLiteralExpression, HirStructLiteralField, HirTryExpression, HirUnaryExpression,
 };
 use crate::syntax::{self, Spanned};
 

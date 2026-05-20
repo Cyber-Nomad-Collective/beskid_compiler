@@ -3,34 +3,34 @@
 use crate::syntax::{
     AssignExpression, AttributeDeclaration, BinaryExpression, BlockExpression, BreakStatement,
     CallExpression, ContinueStatement, ContractDefinition, EnumConstructorExpression,
-    EnumDefinition, ExpressionStatement, ForStatement, FunctionDefinition, GroupedExpression,
-    IfStatement, InlineModule, LambdaExpression, LetStatement, LiteralExpression, MatchExpression,
-    MemberExpression, MetaDefinition, MethodDefinition, ModuleDeclaration, PathExpression,
-    ReturnStatement, SpawnExpression, StructLiteralExpression, TestDefinition, TryExpression,
-    TypeDefinition,
-    UnaryExpression, UseDeclaration, WhileStatement,
+    EnumDefinition, ExpressionStatement, ExtendTypeDefinition, ForStatement, FunctionDefinition,
+    GroupedExpression, IfStatement, InlineModule, LambdaExpression, LetStatement,
+    LiteralExpression, MatchExpression, MemberExpression, MethodDefinition, ModuleDeclaration,
+    PathExpression, ReturnStatement, SpawnExpression, StructLiteralExpression, TestDefinition,
+    TryExpression, TypeDefinition, UnaryExpression, UseDeclaration, WhileStatement,
 };
 
 use super::{
     HirAssignExpression, HirBinaryExpression, HirBlockExpression, HirBreakStatement,
     HirCallExpression, HirContinueStatement, HirContractDefinition, HirEnumConstructorExpression,
-    HirEnumDefinition, HirExpressionStatement, HirForStatement, HirFunctionDefinition,
-    HirGroupedExpression, HirIfStatement, HirInlineModule, HirLambdaExpression, HirLetStatement,
-    HirLiteralExpression, HirMatchExpression, HirMemberExpression, HirMetaDefinition,
-    HirMethodDefinition, HirModuleDeclaration,     HirPathExpression, HirReturnStatement, HirSpawnExpression, HirStructLiteralExpression,
-    HirTestDefinition, HirTryExpression, HirTypeDefinition,
-    HirUnaryExpression, HirUseDeclaration, HirWhileStatement, item::HirAttributeDeclaration,
+    HirEnumDefinition, HirExpressionStatement, HirExtendTypeDefinition, HirForStatement,
+    HirFunctionDefinition, HirGroupedExpression, HirIfStatement, HirInlineModule,
+    HirLambdaExpression, HirLetStatement, HirLiteralExpression, HirMatchExpression,
+    HirMemberExpression, HirMethodDefinition, HirModuleDeclaration, HirPathExpression,
+    HirReturnStatement, HirSpawnExpression, HirStructLiteralExpression, HirTestDefinition,
+    HirTryExpression, HirTypeDefinition, HirUnaryExpression, HirUseDeclaration, HirWhileStatement,
+    item::HirAttributeDeclaration,
 };
 
 /// Type-level association between one program shape (AST or HIR) and the concrete types of items and statements.
 pub trait Phase {
     type FunctionDefinition;
     type MethodDefinition;
+    type ExtendTypeDefinition;
     type TypeDefinition;
     type EnumDefinition;
     type ContractDefinition;
     type TestDefinition;
-    type MetaDefinition;
     type AttributeDeclaration;
     type ModuleDeclaration;
     type InlineModule;
@@ -73,11 +73,11 @@ pub struct HirPhase;
 impl Phase for AstPhase {
     type FunctionDefinition = FunctionDefinition;
     type MethodDefinition = MethodDefinition;
+    type ExtendTypeDefinition = ExtendTypeDefinition;
     type TypeDefinition = TypeDefinition;
     type EnumDefinition = EnumDefinition;
     type ContractDefinition = ContractDefinition;
     type TestDefinition = TestDefinition;
-    type MetaDefinition = MetaDefinition;
     type AttributeDeclaration = AttributeDeclaration;
     type ModuleDeclaration = ModuleDeclaration;
     type InlineModule = InlineModule;
@@ -112,11 +112,11 @@ impl Phase for AstPhase {
 impl Phase for HirPhase {
     type FunctionDefinition = HirFunctionDefinition;
     type MethodDefinition = HirMethodDefinition;
+    type ExtendTypeDefinition = HirExtendTypeDefinition;
     type TypeDefinition = HirTypeDefinition;
     type EnumDefinition = HirEnumDefinition;
     type ContractDefinition = HirContractDefinition;
     type TestDefinition = HirTestDefinition;
-    type MetaDefinition = HirMetaDefinition;
     type AttributeDeclaration = HirAttributeDeclaration;
     type ModuleDeclaration = HirModuleDeclaration;
     type InlineModule = HirInlineModule;

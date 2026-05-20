@@ -2,13 +2,16 @@ use beskid_engine::Engine;
 use beskid_runtime::builtins::EventState;
 use beskid_runtime::{event_get_handler, event_len, event_subscribe, event_unsubscribe_first};
 
+extern "C" fn event_handler_a() {}
+extern "C" fn event_handler_b() {}
+
 #[test]
 fn runtime_event_helpers_subscribe_and_iterate_handlers() {
     let mut engine = Engine::new();
-    engine.with_arena(|_, _| {
+    engine.with_runtime(|_, _| {
         let mut slot: *mut EventState = std::ptr::null_mut();
-        let handler_a = 1usize as *mut u8;
-        let handler_b = 2usize as *mut u8;
+        let handler_a = event_handler_a as *const () as *mut u8;
+        let handler_b = event_handler_b as *const () as *mut u8;
 
         let len_after_first = event_subscribe(&mut slot, handler_a, 4);
         let len_after_second = event_subscribe(&mut slot, handler_b, 4);
@@ -28,7 +31,7 @@ fn runtime_event_helpers_subscribe_and_iterate_handlers() {
 #[test]
 fn runtime_event_helpers_unsubscribe_first_match_only() {
     let mut engine = Engine::new();
-    engine.with_arena(|_, _| {
+    engine.with_runtime(|_, _| {
         let mut slot: *mut EventState = std::ptr::null_mut();
         let handler_a = 3usize as *mut u8;
         let handler_b = 4usize as *mut u8;
@@ -53,7 +56,7 @@ fn runtime_event_helpers_unsubscribe_first_match_only() {
 #[test]
 fn runtime_event_helpers_reject_capacity_overflow() {
     let mut engine = Engine::new();
-    engine.with_arena(|_, _| {
+    engine.with_runtime(|_, _| {
         let mut slot: *mut EventState = std::ptr::null_mut();
         let handler_a = 5usize as *mut u8;
         let handler_b = 6usize as *mut u8;

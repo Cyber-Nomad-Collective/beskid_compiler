@@ -24,11 +24,7 @@ pub fn execute(args: ParseArgs) -> Result<()> {
     let program =
         services::parse_program_with_source_name(&args.input.display().to_string(), &source)?;
 
-    match args.format.as_str() {
-        _ => {
-            println!("{:#?}", program.node);
-        }
-    }
-
+    let _ = args.format.as_str();
+    println!("{:#?}", program.node);
     Ok(())
 }

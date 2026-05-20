@@ -34,6 +34,7 @@ impl Lowerable for Spanned<syntax::Field> {
     fn lower(&self) -> Self::Output {
         Spanned::new(
             HirField {
+                visibility: self.node.visibility.lower(),
                 kind: match self.node.kind {
                     syntax::FieldKind::Value => HirFieldKind::Value,
                     syntax::FieldKind::Event => HirFieldKind::Event,
@@ -54,6 +55,7 @@ impl Lowerable for Spanned<syntax::Parameter> {
         Spanned::new(
             HirParameter {
                 modifier: self.node.modifier.as_ref().map(Lowerable::lower),
+                mutable: self.node.mutable,
                 name: self.node.name.lower(),
                 ty: self.node.ty.lower(),
             },

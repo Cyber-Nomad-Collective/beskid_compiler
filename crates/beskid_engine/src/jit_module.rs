@@ -2,16 +2,18 @@ use std::collections::HashMap;
 
 use beskid_abi::{
     SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_CHANNEL_CLOSE, SYM_CHANNEL_CREATE,
-    SYM_CHANNEL_RECEIVE, SYM_CHANNEL_SEND, SYM_CHANNEL_TRY_RECEIVE, SYM_CHANNEL_TRY_SEND,
-    SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST,
-    SYM_FIBER_CANCEL, SYM_FIBER_CURRENT_ID, SYM_FIBER_DETACH, SYM_FIBER_JOIN, SYM_FIBER_NOW_MILLIS,
-    SYM_FIBER_JOIN_VALUE, SYM_FIBER_SPAWN, SYM_FIBER_YIELD, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
-    SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_CHANNEL_RECEIVE_VALUE,
-    SYM_HUB_CREATE, SYM_HUB_REGISTER, SYM_HUB_UNREGISTER, SYM_HUB_WAIT_RECEIVE,
-    SYM_HUB_WAIT_RECEIVE_INDEX, SYM_HUB_WAIT_RECEIVE_VALUE, SYM_INTEROP_DISPATCH_PTR,
-    SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_MUTEX_CREATE, SYM_MUTEX_LOCK,
-    SYM_MUTEX_TRY_LOCK, SYM_MUTEX_UNLOCK, SYM_PANIC, SYM_PANIC_STR, SYM_STR_CONCAT, SYM_STR_LEN,
-    SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR,
+    SYM_CHANNEL_RECEIVE, SYM_CHANNEL_RECEIVE_VALUE, SYM_CHANNEL_SEND, SYM_CHANNEL_TRY_RECEIVE,
+    SYM_CHANNEL_TRY_SEND, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE,
+    SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_FIBER_CANCEL, SYM_FIBER_CURRENT_ID, SYM_FIBER_DETACH,
+    SYM_FIBER_JOIN, SYM_FIBER_JOIN_VALUE, SYM_FIBER_NOW_MILLIS, SYM_FIBER_SPAWN, SYM_FIBER_YIELD,
+    SYM_GC_BYTES_ALLOCATED, SYM_GC_COLLECT, SYM_GC_COLLECT_IF_NEEDED, SYM_GC_EXTERNAL_ROOT_COUNT,
+    SYM_GC_OBJECT_COUNT, SYM_GC_PHASE, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
+    SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_HUB_CREATE,
+    SYM_HUB_REGISTER, SYM_HUB_UNREGISTER, SYM_HUB_WAIT_RECEIVE, SYM_HUB_WAIT_RECEIVE_INDEX,
+    SYM_HUB_WAIT_RECEIVE_VALUE, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
+    SYM_INTEROP_DISPATCH_USIZE, SYM_MUTEX_CREATE, SYM_MUTEX_LOCK, SYM_MUTEX_TRY_LOCK,
+    SYM_MUTEX_UNLOCK, SYM_PANIC, SYM_PANIC_STR, SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW,
+    SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR,
     SYM_WAIT_GROUP_ADD, SYM_WAIT_GROUP_CREATE, SYM_WAIT_GROUP_DONE, SYM_WAIT_GROUP_WAIT,
 };
 use beskid_codegen::cranelift_host::{
@@ -25,13 +27,13 @@ use beskid_pipeline::{
 };
 use beskid_runtime::{
     alloc, array_len, array_new, channel_close, channel_create, channel_receive_status,
-    channel_receive_value, channel_send, channel_try_receive,
-    channel_try_send, event_get_handler, event_len, event_subscribe, event_unsubscribe_first,
-    fiber_cancel, fiber_current_id, fiber_detach, fiber_join_status, fiber_join_value,
-    fiber_now_millis, fiber_spawn, fiber_yield, gc_register_root, gc_root_handle,
-    gc_unregister_root, gc_unroot_handle, gc_write_barrier, hub_create, hub_register,
-    hub_unregister, hub_wait_receive_index, hub_wait_receive_status, hub_wait_receive_value,
-    interop_dispatch_ptr, interop_dispatch_unit,
+    channel_receive_value, channel_send, channel_try_receive, channel_try_send, event_get_handler,
+    event_len, event_subscribe, event_unsubscribe_first, fiber_cancel, fiber_current_id,
+    fiber_detach, fiber_join_status, fiber_join_value, fiber_now_millis, fiber_spawn, fiber_yield,
+    gc_bytes_allocated, gc_collect, gc_collect_if_needed, gc_external_root_count, gc_object_count,
+    gc_phase, gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle,
+    gc_write_barrier, hub_create, hub_register, hub_unregister, hub_wait_receive_index,
+    hub_wait_receive_status, hub_wait_receive_value, interop_dispatch_ptr, interop_dispatch_unit,
     interop_dispatch_usize, mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, panic,
     panic_str, str_concat, str_len, str_new, syscall_read, syscall_write, test_bytes_len,
     test_bytes_ptr, wait_group_add, wait_group_create, wait_group_done, wait_group_wait,
@@ -45,7 +47,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum JitError {
     Isa(String),
-    Module(ModuleError),
+    Module(Box<ModuleError>),
     MissingFunction(String),
 }
 
@@ -62,7 +64,7 @@ impl fmt::Display for JitError {
 impl std::error::Error for JitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            JitError::Module(err) => Some(err),
+            JitError::Module(err) => Some(err.as_ref()),
             _ => None,
         }
     }
@@ -70,7 +72,7 @@ impl std::error::Error for JitError {
 
 impl From<ModuleError> for JitError {
     fn from(error: ModuleError) -> Self {
-        Self::Module(error)
+        Self::Module(Box::new(error))
     }
 }
 
@@ -89,7 +91,7 @@ impl From<ExternDeclarationError> for JitError {
     fn from(value: ExternDeclarationError) -> Self {
         match value {
             ExternDeclarationError::InvalidSignature(message) => JitError::Isa(message),
-            ExternDeclarationError::Module(error) => JitError::Module(error),
+            ExternDeclarationError::Module(error) => JitError::Module(Box::new(error)),
         }
     }
 }
@@ -185,6 +187,11 @@ impl BeskidJitModule {
     }
 
     /// Executable address after [`JITModule::finalize_definitions`]; undefined if not finalized.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `func_id` belongs to this finalized module and cast the returned
+    /// pointer to the exact generated function signature before calling it.
     pub unsafe fn get_finalized_function_ptr(&mut self, func_id: FuncId) -> *const u8 {
         self.module.get_finalized_function(func_id)
     }
@@ -229,6 +236,15 @@ fn register_runtime_symbols(builder: &mut JITBuilder) {
         interop_dispatch_usize as *const u8,
     );
     builder.symbol(SYM_GC_WRITE_BARRIER, gc_write_barrier as *const u8);
+    builder.symbol(SYM_GC_BYTES_ALLOCATED, gc_bytes_allocated as *const u8);
+    builder.symbol(SYM_GC_OBJECT_COUNT, gc_object_count as *const u8);
+    builder.symbol(SYM_GC_PHASE, gc_phase as *const u8);
+    builder.symbol(SYM_GC_COLLECT, gc_collect as *const u8);
+    builder.symbol(SYM_GC_COLLECT_IF_NEEDED, gc_collect_if_needed as *const u8);
+    builder.symbol(
+        SYM_GC_EXTERNAL_ROOT_COUNT,
+        gc_external_root_count as *const u8,
+    );
     builder.symbol(SYM_GC_ROOT_HANDLE, gc_root_handle as *const u8);
     builder.symbol(SYM_GC_UNROOT_HANDLE, gc_unroot_handle as *const u8);
     builder.symbol(SYM_GC_REGISTER_ROOT, gc_register_root as *const u8);
@@ -253,7 +269,10 @@ fn register_runtime_symbols(builder: &mut JITBuilder) {
     builder.symbol(SYM_CHANNEL_CREATE, channel_create as *const u8);
     builder.symbol(SYM_CHANNEL_SEND, channel_send as *const u8);
     builder.symbol(SYM_CHANNEL_RECEIVE, channel_receive_status as *const u8);
-    builder.symbol(SYM_CHANNEL_RECEIVE_VALUE, channel_receive_value as *const u8);
+    builder.symbol(
+        SYM_CHANNEL_RECEIVE_VALUE,
+        channel_receive_value as *const u8,
+    );
     builder.symbol(SYM_CHANNEL_TRY_SEND, channel_try_send as *const u8);
     builder.symbol(SYM_CHANNEL_TRY_RECEIVE, channel_try_receive as *const u8);
     builder.symbol(SYM_CHANNEL_CLOSE, channel_close as *const u8);
@@ -261,8 +280,14 @@ fn register_runtime_symbols(builder: &mut JITBuilder) {
     builder.symbol(SYM_HUB_REGISTER, hub_register as *const u8);
     builder.symbol(SYM_HUB_UNREGISTER, hub_unregister as *const u8);
     builder.symbol(SYM_HUB_WAIT_RECEIVE, hub_wait_receive_status as *const u8);
-    builder.symbol(SYM_HUB_WAIT_RECEIVE_INDEX, hub_wait_receive_index as *const u8);
-    builder.symbol(SYM_HUB_WAIT_RECEIVE_VALUE, hub_wait_receive_value as *const u8);
+    builder.symbol(
+        SYM_HUB_WAIT_RECEIVE_INDEX,
+        hub_wait_receive_index as *const u8,
+    );
+    builder.symbol(
+        SYM_HUB_WAIT_RECEIVE_VALUE,
+        hub_wait_receive_value as *const u8,
+    );
     builder.symbol(SYM_MUTEX_CREATE, mutex_create as *const u8);
     builder.symbol(SYM_MUTEX_LOCK, mutex_lock as *const u8);
     builder.symbol(SYM_MUTEX_TRY_LOCK, mutex_try_lock as *const u8);

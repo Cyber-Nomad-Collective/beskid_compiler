@@ -1,4 +1,14 @@
 //! Semantic analysis for Beskid: parse → HIR → resolve → types, project graphs, IDE helpers, and rules.
+
+#![allow(
+    clippy::collapsible_match,
+    clippy::field_reassign_with_default,
+    clippy::large_enum_variant,
+    clippy::module_inception,
+    clippy::question_mark,
+    clippy::too_many_arguments,
+    clippy::type_complexity
+)]
 //!
 //! Public entry points include [`services`] (workspace-aware analysis), [`projects`] (manifests and
 //! compile plans), and re-exports for queries, diagnostics, and formatting.
@@ -13,6 +23,7 @@ pub mod doc;
 pub mod doc_comment_parser;
 pub mod format;
 pub mod hir;
+pub mod mod_host;
 pub mod parser;
 pub mod parsing;
 pub mod projects;

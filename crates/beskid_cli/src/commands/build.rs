@@ -165,9 +165,8 @@ pub fn execute(args: BuildArgs) -> Result<()> {
                 .unwrap_or(BESKID_RUNTIME_ABI_VERSION),
         }
     } else {
-        default_runtime_strategy(profile, args.target_triple.as_deref()).map_err(|err| {
-            anyhow::anyhow!("{err}")
-        })?
+        default_runtime_strategy(profile, args.target_triple.as_deref())
+            .map_err(|err| anyhow::anyhow!("{err}"))?
     };
 
     let link_mode = match (args.prefer_static, args.prefer_dynamic) {
@@ -204,8 +203,8 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     })?;
     pipeline_ui.finish_build("Build complete");
 
-    if args.plain {
-        if let Some(plan) = resolved.compile_plan.as_ref() {
+    if args.plain
+        && let Some(plan) = resolved.compile_plan.as_ref() {
             println!(
                 "deps: {} materialized dependency project(s)",
                 plan.dependency_projects.len()
@@ -219,18 +218,16 @@ pub fn execute(args: BuildArgs) -> Result<()> {
                 }
             );
         }
-    }
 
     println!();
     println!("  object   {}", result.object_path.display());
     if let Some(final_path) = result.final_path {
         println!("  output   {}", final_path.display());
     }
-    if args.verbose_link {
-        if let Some(cmd) = result.linker_invocation {
+    if args.verbose_link
+        && let Some(cmd) = result.linker_invocation {
             println!("  link     {cmd}");
         }
-    }
 
     Ok(())
 }

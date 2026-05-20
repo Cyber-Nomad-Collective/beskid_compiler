@@ -10,7 +10,7 @@ use beskid_runtime::{
 #[test]
 fn runtime_metrics_snapshot_counters_increase_for_typical_flow() {
     let mut engine = Engine::new();
-    engine.with_arena(|_, _| {
+    engine.with_runtime(|_, _| {
         static Z: [u8; 1] = [0];
         let _ = alloc(16, std::ptr::null());
         let _ = alloc(8, std::ptr::null());

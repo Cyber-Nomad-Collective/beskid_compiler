@@ -1,12 +1,13 @@
 //! Cranelift-based code generation for Beskid.
+
+#![allow(clippy::drop_non_drop, clippy::question_mark, clippy::result_large_err)]
 //!
 //! Pipeline: [`services::lower_source_with_pipeline`] reports `parse`, optional semantic phases,
 //! [`beskid_pipeline::phases::LOWER_READY`] (instant boundary before HIR work), then `lower` and
-//! `codegen_clif`. Meta scheduling ids ([`beskid_pipeline::phases::META_HOST_ATTACHED`], round
-//! start/commit, [`beskid_pipeline::phases::SYNTAX_GENERATION`]) are **not** emitted here; they are
-//! reserved for hosts that run the meta SDK and should call [`beskid_pipeline::observe_phase`]
-//! around real meta work so observers match [`beskid_pipeline::phases::JIT_RUN_PHASE_ORDER`] when
-//! meta is active.
+//! `codegen_clif`. Mod orchestration ids (`mod.load` … `mod.rewrite`,
+//! [`beskid_pipeline::phases::SYNTAX_GENERATION`]) are **not** emitted here; they are reserved for
+//! hosts that run the mod SDK and should call [`beskid_pipeline::observe_phase`] around real mod
+//! work so observers match [`beskid_pipeline::phases::JIT_RUN_PHASE_ORDER`] when mods are active.
 
 pub mod cranelift_host;
 pub mod diagnostics;

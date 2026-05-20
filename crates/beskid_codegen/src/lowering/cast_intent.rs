@@ -39,8 +39,8 @@ pub(crate) fn ensure_type_compatibility(
         return Ok(contract_value);
     }
 
-    if is_numeric_type(expected_info) && is_numeric_type(actual_info) {
-        if let (Some(TypeInfo::Primitive(expected_prim)), Some(TypeInfo::Primitive(actual_prim))) =
+    if is_numeric_type(expected_info) && is_numeric_type(actual_info)
+        && let (Some(TypeInfo::Primitive(expected_prim)), Some(TypeInfo::Primitive(actual_prim))) =
             (expected_info, actual_info)
         {
             let expected_width = expected_prim.bit_width();
@@ -55,7 +55,6 @@ pub(crate) fn ensure_type_compatibility(
             }
             return Ok(value);
         }
-    }
 
     Err(CodegenError::TypeMismatch {
         span,
@@ -174,7 +173,7 @@ fn emit_contract_wrapper_alloc(builder: &mut FunctionBuilder, method_count: usiz
     let func_ref = builder
         .func
         .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("alloc".to_string()),
+            name: ExternalName::testcase("alloc"),
             signature: sig_ref,
             colocated: false,
             patchable: false,

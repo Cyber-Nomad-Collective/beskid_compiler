@@ -377,11 +377,10 @@ pub(crate) fn lower_function_with_name(
                 .and_then(|ty| type_id_for_type(resolution, type_result, ty))
         })
         .map(substitute);
-    if let Some(type_id) = return_type_id {
-        if let Some(clif_ty) = map_type_id_to_clif(type_result, type_id) {
+    if let Some(type_id) = return_type_id
+        && let Some(clif_ty) = map_type_id_to_clif(type_result, type_id) {
             signature.returns.push(AbiParam::new(clif_ty));
         }
-    }
     let expects_return = signature_has_return(&signature);
     let expected_return_type = return_type_id;
 

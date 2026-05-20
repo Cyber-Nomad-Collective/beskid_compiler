@@ -65,7 +65,7 @@ impl std::error::Error for MietteReportError {
 
 pub fn span_to_sourcespan(span: SpanInfo) -> SourceSpan {
     let len = span.end.saturating_sub(span.start).max(1);
-    SourceSpan::new(span.start.into(), len.into())
+    SourceSpan::new(span.start.into(), len)
 }
 
 pub fn make_diagnostic(

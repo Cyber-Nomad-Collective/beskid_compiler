@@ -9,7 +9,7 @@ use crate::projects::{
 };
 
 /// Workspace-aware compilation slice: selected `Project.proj`, optional [`CompilePlan`] for
-/// [`ProjectKind::Host`], [`ProjectKind`] for staged rules (for example module-level `meta` law),
+/// host and mod roots, [`ProjectKind`] for staged rules (for example compiler-mod contract placement),
 /// and source roots for on-disk module path checks.
 #[derive(Debug, Clone)]
 pub struct CompilationContext {
@@ -31,7 +31,7 @@ impl CompilationContext {
     }
 
     /// Like [`Self::try_for_analysis_path`], but forwards [`ProjectGraphBuildOptions`] (for example
-    /// `workspace_member_for_meta_default`) into graph / compile-plan construction.
+    /// `workspace_member_for_meta_default`) into graph / compile-plan construction (legacy field; ignored).
     pub fn try_for_analysis_path_with_graph_options(
         path: &Path,
         workspace_member: Option<&str>,
@@ -45,16 +45,14 @@ impl CompilationContext {
         let workspace_manifest_path = workspace_resolution
             .map(|summary| summary.workspace_manifest_path)
             .or_else(|| discover_workspace_file(&manifest_path));
-        let compile_plan = if project_kind == ProjectKind::Host {
-            build_compile_plan_with_policy_and_graph(
+        let compile_plan = match project_kind {
+            ProjectKind::Host | ProjectKind::Mod => build_compile_plan_with_policy_and_graph(
                 &manifest_path,
                 None,
                 UnresolvedDependencyPolicy::Error,
                 graph_options,
             )
-            .ok()
-        } else {
-            None
+            .ok(),
         };
         let module_roots = compile_plan
             .as_ref()
@@ -75,10 +73,10 @@ impl CompilationContext {
         })
     }
 
-    /// Whether module-level `meta` items are permitted in this project's Beskid sources.
+    /// Whether compiler-mod contract items may be placed at module scope in this project's Beskid sources.
     #[inline]
     pub fn module_level_meta_items_allowed(&self) -> bool {
-        self.project_kind == ProjectKind::Meta
+        self.project_kind == ProjectKind::Mod
     }
 }
 

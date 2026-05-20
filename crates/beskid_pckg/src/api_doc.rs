@@ -1,8 +1,8 @@
 //! Typed `api.json` (schema v3 + graph navigation) embedded in `.bpk` artifacts under `.beskid/docs/`.
 
 pub use beskid_analysis::doc::{
-    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION, API_JSON_SCHEMA_VERSION_BEFORE_GRAPH,
-    ApiDocRoot,
+    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
+    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocRoot,
 };
 
 /// Validates that a packed `api.json` satisfies the graph navigation contract for schema v3+.

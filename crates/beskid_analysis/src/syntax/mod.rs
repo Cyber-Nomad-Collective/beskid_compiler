@@ -15,13 +15,12 @@ pub use expressions::{
     EnumConstructorExpression, EnumPattern, Expression, GroupedExpression, LambdaExpression,
     LambdaParameter, Literal, LiteralExpression, MatchArm, MatchExpression, MemberExpression,
     PathExpression, Pattern, SpawnExpression, StructLiteralExpression, StructLiteralField,
-    TryExpression,
-    UnaryExpression, UnaryOp,
+    TryExpression, UnaryExpression, UnaryOp,
 };
 pub use items::{
     Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
     ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition,
-    EnumVariant, FunctionDefinition, InlineModule, MetaDefinition, MethodDefinition,
+    EnumVariant, ExtendTypeDefinition, FunctionDefinition, InlineModule, MethodDefinition,
     ModuleDeclaration, Node, Program, TestDefinition, TestMetaSection, TestMetadataEntry,
     TestSkipEntry, TestSkipSection, TypeDefinition, UseDeclaration,
 };

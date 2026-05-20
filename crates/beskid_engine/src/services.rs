@@ -64,7 +64,7 @@ pub fn run_entrypoint_with_pipeline(
         ));
     }
 
-    let output = engine.with_arena(|_, _| JitCallable::execute_and_format(ptr, return_info));
+    let output = engine.with_runtime(|_, _| JitCallable::execute_and_format(ptr, return_info));
 
     Ok(output)
 }

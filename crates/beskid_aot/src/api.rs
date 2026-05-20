@@ -49,10 +49,7 @@ pub enum LinkMode {
 /// How the AOT pipeline obtains a runtime static library to link against.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeStrategy {
-    UsePrebuilt {
-        path: PathBuf,
-        abi_version: u32,
-    },
+    UsePrebuilt { path: PathBuf, abi_version: u32 },
     Standalone,
 }
 
@@ -332,10 +329,7 @@ mod with_defaults_tests {
         assert_eq!(req.entrypoint, "main");
         assert_eq!(req.export_policy, ExportPolicy::PublicOnly);
         assert_eq!(req.link_mode, LinkMode::Auto);
-        assert!(matches!(
-            req.runtime,
-            RuntimeStrategy::UsePrebuilt { .. }
-        ));
+        assert!(matches!(req.runtime, RuntimeStrategy::UsePrebuilt { .. }));
         assert!(!req.verbose_link);
         assert!(req.pipeline.is_none());
     }

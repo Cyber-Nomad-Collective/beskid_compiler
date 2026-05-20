@@ -20,7 +20,10 @@ pub(crate) fn parse_spawn_unary(pair: Pair<Rule>) -> Result<Spanned<Expression>,
         .next()
         .ok_or(ParseError::missing(Rule::SpawnKeyword))?;
     if spawn_keyword.as_rule() != Rule::SpawnKeyword {
-        return Err(ParseError::unexpected_rule(spawn_keyword, Some(Rule::SpawnKeyword)));
+        return Err(ParseError::unexpected_rule(
+            spawn_keyword,
+            Some(Rule::SpawnKeyword),
+        ));
     }
     let postfix = super::expression::parse_postfix_expression(
         inner

@@ -1,34 +1,28 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 
+use abfall::Heap;
 use beskid_runtime::{
-    RuntimeRoot, RuntimeState, clear_current_mutation, clear_current_root, enter_runtime_scope,
-    leave_runtime_scope, set_current_mutation, set_current_root, str_concat, str_new,
+    RuntimeRoot, clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope,
+    set_current_heap, set_current_root, str_concat, str_new,
 };
-use gc_arena::{Arena, DynamicRootSet, Rootable};
 
-fn with_runtime_scope<R>(f: impl for<'gc> FnOnce() -> R) -> R {
-    type BenchArena = Arena<Rootable![RuntimeRoot<'_>]>;
-    let mut arena = BenchArena::new(|mc| RuntimeRoot {
-        globals: Vec::new(),
-        dynamic_roots: DynamicRootSet::new(mc),
-        runtime_state: RuntimeState::default(),
-    });
+fn with_runtime_scope<R>(f: impl FnOnce() -> R) -> R {
+    let heap = Heap::new();
+    let mut root = RuntimeRoot::new(heap.clone());
 
-    arena.mutate_root(|mc, root| {
-        enter_runtime_scope();
-        set_current_mutation(mc as *const _ as *mut _);
-        set_current_root(root as *mut _);
-        struct Guard;
-        impl Drop for Guard {
-            fn drop(&mut self) {
-                clear_current_mutation();
-                clear_current_root();
-                leave_runtime_scope();
-            }
+    enter_runtime_scope();
+    set_current_heap(&heap);
+    set_current_root(&mut root as *mut _);
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            clear_current_heap();
+            clear_current_root();
+            leave_runtime_scope();
         }
-        let _guard = Guard;
-        f()
-    })
+    }
+    let _guard = Guard;
+    f()
 }
 
 fn bench_string_concat(c: &mut Criterion) {

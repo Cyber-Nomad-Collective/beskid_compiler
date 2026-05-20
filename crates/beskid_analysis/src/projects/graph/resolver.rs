@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -6,23 +6,19 @@ const ENV_CORELIB_ROOT: &str = "BESKID_CORELIB_ROOT";
 
 use daggy::{Dag, NodeIndex};
 
-use crate::projects::discovery::PROJECT_FILE_NAME;
 use crate::projects::error::ProjectError;
 use crate::projects::graph::loader::load_manifest_from_path;
 use crate::projects::graph::pathing::{
     dependency_manifest_path, normalize_existing_path, project_root_from_manifest_path,
 };
 use crate::projects::graph::project_graph::{DependencyEdge, ProjectGraphNode};
-use crate::projects::model::{
-    AttachToSelector, DependencySource, ProjectKind, ProjectManifest, ProjectMetaSection,
-    WorkspaceMember,
-};
+use crate::projects::model::{DependencySource, ProjectManifest, WorkspaceMember};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceResolutionRules {
     /// Parent directory of `Workspace.proj` when a workspace was discovered.
     pub workspace_root: Option<PathBuf>,
-    /// `member` entries from `Workspace.proj` (used for `Meta.attachTo` resolution).
+    /// `member` entries from `Workspace.proj`.
     pub workspace_members: Vec<WorkspaceMember>,
     overrides_by_dependency: HashMap<String, String>,
     registry_aliases: HashSet<String>,
@@ -185,14 +181,13 @@ pub fn resolve_dependencies(
                         version = override_version.to_string();
                     }
 
-                    if let Some(registry_alias) = dependency.registry.as_deref() {
-                        if !rules.has_registry_alias(registry_alias) {
+                    if let Some(registry_alias) = dependency.registry.as_deref()
+                        && !rules.has_registry_alias(registry_alias) {
                             return Err(ProjectError::Validation(format!(
                                 "dependency `{}` references unknown workspace registry alias `{}`",
                                 dependency.name, registry_alias
                             )));
                         }
-                    }
                 }
 
                 let unresolved_index =
@@ -296,8 +291,6 @@ fn attach_path_dependency(
             project_name: dependency_manifest.project.name.clone(),
             source_root: dependency_source_root,
             project_kind: dependency_manifest.project.kind,
-            meta_section: dependency_manifest.project.meta.clone(),
-            meta_attachments: None,
         });
 
         node_by_manifest.insert(dependency_manifest_path.clone(), dependency_index);
@@ -373,7 +366,7 @@ fn is_corelib_workspace_shard_manifest(manifest_path: &Path) -> bool {
         return false;
     };
     let aggregate_root = normalize_existing_path(&aggregate_root);
-    let Some(workspace_root) = aggregate_root.parent().map(|p| normalize_existing_path(p)) else {
+    let Some(workspace_root) = aggregate_root.parent().map(normalize_existing_path) else {
         return false;
     };
     let packages_root = normalize_existing_path(&workspace_root.join("packages"));
@@ -400,103 +393,6 @@ fn is_std_manifest_path(manifest_path: &Path) -> bool {
     let corelib_manifest =
         normalize_existing_path(&PathBuf::from(corelib_root).join("Project.proj"));
     normalized_manifest == corelib_manifest
-}
-
-pub fn resolve_default_workspace_member_id(
-    members: &[WorkspaceMember],
-    cli_member: Option<&str>,
-) -> Result<String, ProjectError> {
-    if let Some(requested) = cli_member {
-        return members
-            .iter()
-            .find(|member| member.name == requested)
-            .map(|member| member.name.clone())
-            .ok_or_else(|| {
-                ProjectError::meta_contract(
-                    "E1816",
-                    format!(
-                        "unknown workspace member `{requested}` for `attachTo: default` resolution"
-                    ),
-                )
-            });
-    }
-    if members.is_empty() {
-        return Err(ProjectError::meta_contract(
-            "E1817",
-            "workspace has no members for `attachTo: default` resolution",
-        ));
-    }
-    if members.len() == 1 {
-        return Ok(members[0].name.clone());
-    }
-    Err(ProjectError::meta_contract(
-        "E1818",
-        "`attachTo` contains `default`, which is ambiguous for this workspace (multiple members); select a member with `--workspace-member` or name members explicitly in `attachTo`",
-    ))
-}
-
-pub fn workspace_member_project_kinds(
-    rules: &WorkspaceResolutionRules,
-) -> Result<HashMap<String, ProjectKind>, ProjectError> {
-    let Some(ws_root) = rules.workspace_root.as_ref() else {
-        return Ok(HashMap::new());
-    };
-    let mut kinds = HashMap::new();
-    for member in &rules.workspace_members {
-        let mp = ws_root.join(&member.path).join(PROJECT_FILE_NAME);
-        if !mp.is_file() {
-            return Err(ProjectError::ProjectFileNotFound(mp));
-        }
-        let manifest = load_manifest_from_path(&mp)?;
-        kinds.insert(member.name.clone(), manifest.project.kind);
-    }
-    Ok(kinds)
-}
-
-pub fn resolve_meta_attach_to_member_ids(
-    meta: &ProjectMetaSection,
-    member_kinds: &HashMap<String, ProjectKind>,
-    workspace_members: &[WorkspaceMember],
-    cli_workspace_member: Option<&str>,
-) -> Result<Vec<String>, ProjectError> {
-    let mut seen: BTreeSet<String> = BTreeSet::new();
-    for selector in &meta.attach_to {
-        let id = match selector {
-            AttachToSelector::Default => {
-                resolve_default_workspace_member_id(workspace_members, cli_workspace_member)?
-            }
-            AttachToSelector::Member(name) => {
-                if !workspace_members.iter().any(|member| member.name == *name) {
-                    return Err(ProjectError::meta_contract(
-                        "E1813",
-                        format!(
-                            "`project.meta.attachTo` references unknown workspace member `{name}`"
-                        ),
-                    ));
-                }
-                name.clone()
-            }
-        };
-        match member_kinds.get(&id) {
-            Some(ProjectKind::Meta) => {
-                return Err(ProjectError::meta_contract(
-                    "E1814",
-                    format!(
-                        "`Meta` project must not attach to workspace member `{id}` (that member is also `type = Meta`)"
-                    ),
-                ));
-            }
-            None => {
-                return Err(ProjectError::meta_contract(
-                    "E1815",
-                    format!("missing resolved project kind for workspace member `{id}`"),
-                ));
-            }
-            Some(ProjectKind::Host) => {}
-        }
-        seen.insert(id);
-    }
-    Ok(seen.into_iter().collect())
 }
 
 fn format_cycle_from_visiting(

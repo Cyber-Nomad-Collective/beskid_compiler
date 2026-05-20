@@ -10,13 +10,13 @@ mod validate;
 
 pub use api_snapshot::{
     API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
-    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocRoot, ApiDocumentationPointer, ApiLocation,
-    ItemDocArgument, ItemDocStructured,
+    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocRoot, ApiDocumentationPointer,
+    ApiLocation, ItemDocArgument, ItemDocStructured,
 };
 pub use callable::callable_signatures_for_span;
 pub use edit::{DocCommentEdit, doc_comment_edit_for_offset};
 pub use item_shape::{enum_variant_names_for_span, generic_param_names_for_span};
-pub use refs::{ref_path_resolves, resolve_ref_markdown, DocRefLinkContext};
+pub use refs::{DocRefLinkContext, ref_path_resolves, resolve_ref_markdown};
 pub use render::ResolvedDoc;
 pub use validate::collect_doc_diagnostics;
 
@@ -327,6 +327,13 @@ fn walk_item_doc(
         }
         Node::Method(def) => {
             walk_parameter_docs(&def.node.parameters, &def.node.parameter_docs, out)
+        }
+        Node::ExtendTypeDefinition(def) => {
+            for (index, method) in def.node.methods.iter().enumerate() {
+                let docs = def.node.method_docs.get(index).cloned().flatten();
+                out.push((method.span, docs));
+                walk_parameter_docs(&method.node.parameters, &method.node.parameter_docs, out);
+            }
         }
         Node::TestDefinition(def) => walk_statement_docs(def, out),
         _ => {}

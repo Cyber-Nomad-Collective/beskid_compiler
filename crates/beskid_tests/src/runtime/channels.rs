@@ -1,6 +1,7 @@
 use beskid_runtime::{
     channel_close, channel_create, channel_receive, channel_send, channel_try_receive,
-    channel_try_send, run_closure_as_main, status::{STATUS_CLOSED, STATUS_OK, STATUS_WOULD_BLOCK},
+    channel_try_send, run_closure_as_main,
+    status::{STATUS_CLOSED, STATUS_OK, STATUS_WOULD_BLOCK},
 };
 
 #[test]

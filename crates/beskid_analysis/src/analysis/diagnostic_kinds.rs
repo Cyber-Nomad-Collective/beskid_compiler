@@ -75,6 +75,11 @@ pub enum SemanticIssueKind {
         name: String,
         private_span: SpanInfo,
     },
+    ExtendTypePrivateMemberAccess {
+        member_name: String,
+        type_name: String,
+        private_span: SpanInfo,
+    },
     UnusedImport {
         path: String,
     },
@@ -244,11 +249,6 @@ pub enum SemanticIssueKind {
         to: String,
     },
 
-    /// Module-level `meta` items are only legal in projects classified as Meta hosts.
-    ForbiddenMetaModuleItem {
-        name: String,
-    },
-
     /// `@arg(name)` does not match a parameter on the documented callable.
     DocUnknownArgName {
         name: String,
@@ -317,6 +317,7 @@ impl SemanticIssueKind {
             Self::FileScopedModuleNotFirstItem { .. } => "E1505",
             Self::DuplicateFileScopedModule { .. } => "E1506",
             Self::ModuleDeclarationForbiddenInFileScopedModule => "E1507",
+            Self::ExtendTypePrivateMemberAccess { .. } => "E1511",
             Self::UnusedImport { .. } => "W1503",
             Self::UnusedPrivateItem { .. } => "W1504",
 
@@ -385,8 +386,6 @@ impl SemanticIssueKind {
             Self::TypeIterableNextReturnNotOption => "E1217",
             Self::TypeIterableOptionSomeArityMismatch { .. } => "E1218",
             Self::TypeImplicitNumericCast { .. } => "W1203",
-
-            Self::ForbiddenMetaModuleItem { .. } => "E1851",
 
             Self::DocUnknownArgName { .. } => "W1610",
             Self::DocDuplicateArgName { .. } => "W1611",
@@ -461,6 +460,9 @@ impl SemanticIssueKind {
                 "module declaration not allowed".to_string()
             }
             Self::VisibilityViolationImportPrivate { .. } => "visibility violation".to_string(),
+            Self::ExtendTypePrivateMemberAccess { .. } => {
+                "extend type private member access".to_string()
+            }
             Self::UnusedImport { .. } => "unused import".to_string(),
             Self::UnusedPrivateItem { .. } => "unused private item".to_string(),
             Self::ContractMethodNotFound { .. } => "method not found".to_string(),
@@ -525,13 +527,9 @@ impl SemanticIssueKind {
             Self::TypeInvalidEventSubscriptionTarget => {
                 "invalid event subscription target".to_string()
             }
-            Self::SpawnTargetNotFiberCompatible => {
-                "spawn target not fiber compatible".to_string()
-            }
+            Self::SpawnTargetNotFiberCompatible => "spawn target not fiber compatible".to_string(),
             Self::JoinWouldDeadlock => "join would deadlock".to_string(),
-            Self::StackReferenceEscapesSpawn => {
-                "stack reference escapes spawn".to_string()
-            }
+            Self::StackReferenceEscapesSpawn => "stack reference escapes spawn".to_string(),
             Self::AsyncKeywordReserved => "async keyword reserved".to_string(),
             Self::AwaitKeywordReserved => "await keyword reserved".to_string(),
             Self::TypeReturnMismatch { .. } => "return type mismatch".to_string(),
@@ -546,7 +544,6 @@ impl SemanticIssueKind {
                 "iterable Option::Some arity mismatch".to_string()
             }
             Self::TypeImplicitNumericCast { .. } => "implicit numeric cast".to_string(),
-            Self::ForbiddenMetaModuleItem { .. } => "forbidden meta module item".to_string(),
 
             Self::DocUnknownArgName { .. } => "unknown @arg parameter".to_string(),
             Self::DocDuplicateArgName { .. } => "duplicate @arg".to_string(),
@@ -625,6 +622,13 @@ impl SemanticIssueKind {
             }
             Self::VisibilityViolationImportPrivate { name, .. } => {
                 format!("visibility violation while importing private item `{name}`")
+            }
+            Self::ExtendTypePrivateMemberAccess {
+                member_name,
+                type_name,
+                ..
+            } => {
+                format!("extend type `{type_name}` cannot access private member `{member_name}`")
             }
             Self::UnusedImport { path } => format!("unused import `{path}`"),
             Self::UnusedPrivateItem { name } => format!("unused private item `{name}`"),
@@ -786,10 +790,6 @@ impl SemanticIssueKind {
             Self::TypeImplicitNumericCast { from, to } => {
                 format!("implicit numeric cast from {from} to {to}")
             }
-            Self::ForbiddenMetaModuleItem { name } => {
-                format!("module-level `meta` item `{name}` is not allowed in this project kind")
-            }
-
             Self::DocUnknownArgName { name } => {
                 format!("`@arg({name})` does not match any parameter of this callable")
             }
@@ -865,6 +865,10 @@ impl SemanticIssueKind {
                 "item is private (declared at line {}, column {})",
                 private_span.line_col_start.0, private_span.line_col_start.1
             )),
+            Self::ExtendTypePrivateMemberAccess { private_span, .. } => Some(format!(
+                "member is private (declared at line {}, column {})",
+                private_span.line_col_start.0, private_span.line_col_start.1
+            )),
             Self::ContractImplementationSignatureMismatch {
                 expected, actual, ..
             } => Some(format!("expected `{expected}`, got `{actual}`")),
@@ -898,10 +902,6 @@ impl SemanticIssueKind {
             }
             Self::UnreachableCode => Some(
                 "remove this statement or move it before the terminating statement".to_string(),
-            ),
-            Self::ForbiddenMetaModuleItem { .. } => Some(
-                "declare `type = Meta` in `Project.proj` for module-level `meta`, or remove `meta` items from ordinary App/Lib/Test sources (see project manifest contract)"
-                    .to_string(),
             ),
             Self::DocUnresolvedRef { .. } => {
                 Some("use a name that exists in this compilation unit".to_string())

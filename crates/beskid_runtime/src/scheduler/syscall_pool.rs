@@ -1,10 +1,10 @@
 //! Thread pool for blocking syscalls (Phase A: workers must not allocate without scheduler lock).
 
-use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
-use super::{park_current, wake_fiber, FiberKey};
+use super::{FiberKey, park_current, wake_fiber};
 
 struct SyscallJob {
     fiber: FiberKey,

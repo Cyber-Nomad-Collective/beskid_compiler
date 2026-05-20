@@ -22,7 +22,7 @@ fn jit_run_main_i64(source: &str) -> i64 {
     let ptr = unsafe { engine.entrypoint_ptr("main") }.expect("expected main entrypoint pointer");
     assert!(!ptr.is_null(), "expected non-null entrypoint pointer");
     let main_fn: extern "C" fn() -> i64 = unsafe { std::mem::transmute(ptr) };
-    engine.with_arena(|_, _| main_fn())
+    engine.with_runtime(|_, _| main_fn())
 }
 
 fn jit_compile_only(source: &str) {
@@ -104,7 +104,7 @@ fn jit_run_main_i32(source: &str) -> i32 {
     let ptr = unsafe { engine.entrypoint_ptr("main") }.expect("expected main entrypoint pointer");
     assert!(!ptr.is_null(), "expected non-null entrypoint pointer");
     let main_fn: extern "C" fn() -> i32 = unsafe { std::mem::transmute(ptr) };
-    engine.with_arena(|_, _| main_fn())
+    engine.with_runtime(|_, _| main_fn())
 }
 
 fn build_aot_object(source: &str, output: PathBuf) -> PathBuf {

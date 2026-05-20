@@ -1,6 +1,6 @@
 use crate::syntax::Spanned;
 
-use super::common::{HirIdentifier, HirPath};
+use super::common::{HirIdentifier, HirPath, HirVisibility};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, beskid_ast_derive::HirNode)]
 #[ast(kind = "PrimitiveType")]
@@ -60,6 +60,8 @@ pub enum HirType {
 #[derive(Debug, Clone, PartialEq, Eq, beskid_ast_derive::HirNode)]
 #[ast(kind = "Field")]
 pub struct HirField {
+    #[ast(child)]
+    pub visibility: Spanned<HirVisibility>,
     #[ast(skip)]
     pub kind: HirFieldKind,
     #[ast(skip)]
@@ -88,6 +90,8 @@ pub enum HirParameterModifier {
 pub struct HirParameter {
     #[ast(child)]
     pub modifier: Option<Spanned<HirParameterModifier>>,
+    #[ast(skip)]
+    pub mutable: bool,
     #[ast(child)]
     pub name: Spanned<HirIdentifier>,
     #[ast(child)]

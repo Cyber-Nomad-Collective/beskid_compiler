@@ -38,30 +38,13 @@ impl<'a> TypeContext<'a> {
                 }
             }
             HirItem::MethodDefinition(def) => {
-                let receiver_type = self.type_id_for_type(&def.node.receiver_type);
-                let previous_receiver = self.current_receiver_item_id;
-                self.current_receiver_item_id =
-                    receiver_type.and_then(|type_id| self.named_item_id(type_id));
-                let return_type = def
-                    .node
-                    .return_type
-                    .as_ref()
-                    .and_then(|ty| self.type_id_for_type(ty))
-                    .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
-                self.current_return_type = return_type;
-                if let Some(receiver_type) = receiver_type {
-                    self.insert_local_type(def.node.receiver_type.span, receiver_type);
+                self.type_method_definition(item.span, def);
+            }
+            HirItem::ExtendTypeDefinition(def) => {
+                self.type_id_for_type(&def.node.target_type);
+                for method in &def.node.methods {
+                    self.type_method_definition(method.span, method);
                 }
-                let mut params = Vec::new();
-                for param in &def.node.parameters {
-                    if let Some(type_id) = self.type_id_for_type(&param.node.ty) {
-                        params.push(type_id);
-                        self.insert_local_type(param.node.name.span, type_id);
-                    }
-                }
-                self.record_signature(item.span, params, return_type);
-                self.type_block(&def.node.body);
-                self.current_receiver_item_id = previous_receiver;
             }
             HirItem::TestDefinition(def) => {
                 if let Some(meta) = &def.node.meta {
@@ -78,11 +61,6 @@ impl<'a> TypeContext<'a> {
                 self.current_return_type = return_type;
                 self.record_signature(item.span, Vec::new(), return_type);
                 self.type_block(&def.node.body);
-            }
-            HirItem::MetaDefinition(def) => {
-                for entry in &def.node.entries {
-                    self.type_expression(&entry.node.value);
-                }
             }
             HirItem::TypeDefinition(def) => {
                 let mut inserted = Vec::new();
@@ -191,5 +169,36 @@ impl<'a> TypeContext<'a> {
                 return_type,
             },
         );
+    }
+
+    fn type_method_definition(
+        &mut self,
+        item_span: crate::syntax::SpanInfo,
+        def: &Spanned<crate::hir::HirMethodDefinition>,
+    ) {
+        let receiver_type = self.type_id_for_type(&def.node.receiver_type);
+        let previous_receiver = self.current_receiver_item_id;
+        self.current_receiver_item_id =
+            receiver_type.and_then(|type_id| self.named_item_id(type_id));
+        let return_type = def
+            .node
+            .return_type
+            .as_ref()
+            .and_then(|ty| self.type_id_for_type(ty))
+            .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
+        self.current_return_type = return_type;
+        if let Some(receiver_type) = receiver_type {
+            self.insert_local_type(def.node.receiver_type.span, receiver_type);
+        }
+        let mut params = Vec::new();
+        for param in &def.node.parameters {
+            if let Some(type_id) = self.type_id_for_type(&param.node.ty) {
+                params.push(type_id);
+                self.insert_local_type(param.node.name.span, type_id);
+            }
+        }
+        self.record_signature(item_span, params, return_type);
+        self.type_block(&def.node.body);
+        self.current_receiver_item_id = previous_receiver;
     }
 }

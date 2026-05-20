@@ -7,6 +7,8 @@ use beskid_ast_derive::AstNode;
 pub struct Parameter {
     #[ast(child)]
     pub modifier: Option<Spanned<ParameterModifier>>,
+    #[ast(skip)]
+    pub mutable: bool,
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(child)]
@@ -45,12 +47,30 @@ impl crate::parsing::parsable::Parsable for Parameter {
         };
 
         let ty = crate::syntax::Type::parse(ty_pair)?;
-        let name = crate::syntax::Identifier::parse(inner.next().ok_or(
-            crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier),
-        )?)?;
+        let (mutable, name_pair) =
+            if let Some(next) = inner.next() {
+                if next.as_rule() == crate::parser::Rule::MutKeyword {
+                    let name_pair = inner.next().ok_or(
+                        crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier),
+                    )?;
+                    (true, name_pair)
+                } else {
+                    (false, next)
+                }
+            } else {
+                return Err(crate::parsing::error::ParseError::missing(
+                    crate::parser::Rule::Identifier,
+                ));
+            };
+        let name = crate::syntax::Identifier::parse(name_pair)?;
 
         Ok(crate::syntax::Spanned::new(
-            Self { modifier, name, ty },
+            Self {
+                modifier,
+                mutable,
+                name,
+                ty,
+            },
             span,
         ))
     }

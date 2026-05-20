@@ -23,6 +23,7 @@ EnumPattern
 EnumVariant
 Expression
 ExpressionStatement
+ExtendTypeDefinition
 Field
 FieldKind
 ForStatement
@@ -39,7 +40,6 @@ LiteralExpression
 MatchArm
 MatchExpression
 MemberExpression
-MetaDefinition
 MethodDefinition
 ModuleDeclaration
 Node
@@ -53,6 +53,7 @@ PrimitiveType
 Program
 RangeExpression
 ReturnStatement
+SpawnExpression
 Statement
 StructLiteralExpression
 StructLiteralField

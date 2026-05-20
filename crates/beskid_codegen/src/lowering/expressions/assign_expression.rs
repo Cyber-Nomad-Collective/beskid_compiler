@@ -333,7 +333,7 @@ fn call_event_subscribe(
         .builder
         .func
         .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("event_subscribe".to_string()),
+            name: ExternalName::testcase("event_subscribe"),
             signature: sig_ref,
             colocated: false,
             patchable: false,
@@ -358,7 +358,7 @@ fn call_event_unsubscribe(
         .builder
         .func
         .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("event_unsubscribe_first".to_string()),
+            name: ExternalName::testcase("event_unsubscribe_first"),
             signature: sig_ref,
             colocated: false,
             patchable: false,
@@ -381,7 +381,7 @@ fn lower_string_concat(
         .builder
         .func
         .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("str_concat".to_string()),
+            name: ExternalName::testcase("str_concat"),
             signature: sig_ref,
             colocated: false,
             patchable: false,

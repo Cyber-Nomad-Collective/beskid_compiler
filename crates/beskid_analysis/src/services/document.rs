@@ -1,8 +1,8 @@
 use std::borrow::ToOwned;
 
 use crate::analysis::diagnostics::SemanticDiagnostic;
-use crate::doc::ResolvedDoc;
 use crate::doc::DocRefLinkContext;
+use crate::doc::ResolvedDoc;
 use crate::hir::{AstProgram, HirProgram, lower_program as lower_hir_program, normalize_program};
 use crate::resolve::{ItemKind, Resolution, ResolvedValue, Resolver};
 use crate::syntax::{Expression, Literal, Node, Program, Spanned, TestDefinition};
@@ -99,10 +99,10 @@ fn resolve_program(program: &Spanned<Program>) -> Option<Resolution> {
     Resolver::new().resolve_program(&hir).ok()
 }
 
-fn resolved_value_at_offset<'a>(
-    resolution: &'a Resolution,
+fn resolved_value_at_offset(
+    resolution: &Resolution,
     offset: usize,
-) -> Option<&'a ResolvedValue> {
+) -> Option<&ResolvedValue> {
     resolution
         .tables
         .resolved_values
@@ -360,13 +360,13 @@ pub fn collect_document_symbols(snapshot: &DocumentAnalysisSnapshot) -> Vec<Docu
                 selection_start: definition.node.name.span.start,
                 selection_end: definition.node.name.span.end,
             }),
+            Node::ExtendTypeDefinition(_) => None,
             Node::TestDefinition(definition) => Some(DocumentSymbolInfo {
                 name: definition.node.name.node.name.clone(),
                 kind: AnalysisSymbolKind::Test,
                 selection_start: definition.node.name.span.start,
                 selection_end: definition.node.name.span.end,
             }),
-            Node::MetaDefinition(_) => None,
             Node::TypeDefinition(definition) => Some(DocumentSymbolInfo {
                 name: definition.node.name.node.name.clone(),
                 kind: AnalysisSymbolKind::Type,
@@ -452,12 +452,10 @@ fn hover_for_item(snapshot: &DocumentAnalysisSnapshot, item_idx: usize) -> Optio
         .item_docs
         .get(item_idx)
         .and_then(|slot| slot.as_ref())
-    {
-        if !doc.markdown.trim().is_empty() {
+        && !doc.markdown.trim().is_empty() {
             markdown.push_str("\n\n---\n\n");
             markdown.push_str(&doc.markdown);
         }
-    }
     Some(HoverInfo {
         markdown,
         start: item.span.start,

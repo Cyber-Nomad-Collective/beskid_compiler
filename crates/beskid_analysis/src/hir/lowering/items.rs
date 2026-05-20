@@ -1,10 +1,10 @@
 use crate::hir::{
     AstItem, AstProgram, HirAttribute, HirAttributeDeclaration, HirAttributeParameter,
     HirAttributeTarget, HirContractDefinition, HirContractEmbedding, HirContractMethodSignature,
-    HirContractNode, HirEnumDefinition, HirEnumVariant, HirExternInterface, HirFunctionDefinition,
-    HirInlineModule, HirItem, HirMetaDefinition, HirMethodDefinition, HirModuleDeclaration,
-    HirProgram, HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry, HirTestSkipEntry,
-    HirTestSkipSection, HirTypeDefinition, HirUseDeclaration,
+    HirContractNode, HirEnumDefinition, HirEnumVariant, HirExtendTypeDefinition,
+    HirExternInterface, HirFunctionDefinition, HirInlineModule, HirItem, HirMethodDefinition,
+    HirModuleDeclaration, HirProgram, HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry,
+    HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition, HirUseDeclaration,
 };
 use crate::syntax::{self, Spanned};
 
@@ -77,17 +77,32 @@ impl Lowerable for Spanned<AstItem> {
         let node = match &self.node {
             AstItem::FunctionDefinition(def) => HirItem::FunctionDefinition(def.lower()),
             AstItem::MethodDefinition(def) => HirItem::MethodDefinition(def.lower()),
+            AstItem::ExtendTypeDefinition(def) => HirItem::ExtendTypeDefinition(def.lower()),
             AstItem::TypeDefinition(def) => HirItem::TypeDefinition(def.lower()),
             AstItem::EnumDefinition(def) => HirItem::EnumDefinition(def.lower()),
             AstItem::ContractDefinition(def) => HirItem::ContractDefinition(def.lower()),
             AstItem::TestDefinition(def) => HirItem::TestDefinition(def.lower()),
-            AstItem::MetaDefinition(def) => HirItem::MetaDefinition(def.lower()),
             AstItem::AttributeDeclaration(def) => HirItem::AttributeDeclaration(def.lower()),
             AstItem::ModuleDeclaration(def) => HirItem::ModuleDeclaration(def.lower()),
             AstItem::InlineModule(def) => HirItem::InlineModule(def.lower()),
             AstItem::UseDeclaration(def) => HirItem::UseDeclaration(def.lower()),
         };
         Spanned::new(node, self.span)
+    }
+}
+
+impl Lowerable for Spanned<syntax::ExtendTypeDefinition> {
+    type Output = Spanned<HirExtendTypeDefinition>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirExtendTypeDefinition {
+                target_type: self.node.target_type.lower(),
+                methods: self.node.methods.iter().map(Lowerable::lower).collect(),
+                method_docs: self.node.method_docs.clone(),
+            },
+            self.span,
+        )
     }
 }
 
@@ -121,22 +136,6 @@ impl Lowerable for Spanned<syntax::MethodDefinition> {
                 parameters: self.node.parameters.iter().map(Lowerable::lower).collect(),
                 return_type: self.node.return_type.as_ref().map(Lowerable::lower),
                 body: self.node.body.lower(),
-            },
-            self.span,
-        )
-    }
-}
-
-impl Lowerable for Spanned<syntax::MetaDefinition> {
-    type Output = Spanned<HirMetaDefinition>;
-
-    fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirMetaDefinition {
-                attributes: lower_attributes(&self.node.attributes),
-                visibility: self.node.visibility.lower(),
-                name: self.node.name.lower(),
-                entries: self.node.entries.iter().map(Lowerable::lower).collect(),
             },
             self.span,
         )
@@ -404,13 +403,15 @@ impl Lowerable for Spanned<syntax::InlineModule> {
                 let node = match &item.node {
                     syntax::Node::Function(def) => HirItem::FunctionDefinition(def.lower()),
                     syntax::Node::Method(def) => HirItem::MethodDefinition(def.lower()),
+                    syntax::Node::ExtendTypeDefinition(def) => {
+                        HirItem::ExtendTypeDefinition(def.lower())
+                    }
                     syntax::Node::TypeDefinition(def) => HirItem::TypeDefinition(def.lower()),
                     syntax::Node::EnumDefinition(def) => HirItem::EnumDefinition(def.lower()),
                     syntax::Node::ContractDefinition(def) => {
                         HirItem::ContractDefinition(def.lower())
                     }
                     syntax::Node::TestDefinition(def) => HirItem::TestDefinition(def.lower()),
-                    syntax::Node::MetaDefinition(def) => HirItem::MetaDefinition(def.lower()),
                     syntax::Node::AttributeDeclaration(def) => {
                         HirItem::AttributeDeclaration(def.lower())
                     }

@@ -1,0 +1,245 @@
+//! Garbage collector context and main API
+//!
+//! This module provides thread-local GC context management via `GcContext`.
+//! Each thread has its own heap, accessed through a RAII guard.
+
+use crate::Tracer;
+use crate::heap::{GcOptions, Heap};
+use crate::trace::Trace;
+use std::cell::Cell;
+use std::ops::Deref;
+use std::pin::Pin;
+use std::ptr;
+use std::sync::Arc;
+
+thread_local! {
+    static CURRENT_CTX: Cell<*const GcContextInner> = const { Cell::new(ptr::null()) };
+    static CURRENT_HEAP: Cell<*const Heap> = const { Cell::new(ptr::null()) };
+    static CURRENT_HEAP_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Set the current thread-local heap
+fn set_current_context(ctx: &Pin<Box<GcContextInner>>) {
+    let target_ptr: *const GcContextInner = ctx.as_ref().get_ref();
+    CURRENT_CTX.with(|tls| {
+        if !tls.get().is_null() {
+            panic!("A GcContext is already set for this thread");
+        }
+        tls.set(target_ptr);
+    });
+}
+
+fn reset_current_context(ctx: &Pin<Box<GcContextInner>>) {
+    let target_ptr: *const GcContextInner = ctx.as_ref().get_ref();
+    CURRENT_CTX.with(|tls| {
+        if tls.get().addr() == target_ptr.addr() {
+            tls.set(ptr::null());
+        }
+    });
+}
+
+pub(crate) fn with_current_context(f: impl FnOnce(&GcContextInner)) -> bool {
+    CURRENT_CTX.with(|tls| {
+        let ctx_ptr = tls.get();
+        if ctx_ptr.is_null() {
+            false
+        } else {
+            // SAFETY: ctx_ptr is valid as long as the GcContext is alive
+            let ctx = unsafe { &*ctx_ptr };
+            f(ctx);
+            true
+        }
+    })
+}
+
+/// Run a closure with the currently active embedder heap session.
+pub fn with_current_heap<R>(f: impl FnOnce(&Heap) -> R) -> Option<R> {
+    CURRENT_HEAP.with(|heap_cell| {
+        let ptr = heap_cell.get();
+        if ptr.is_null() {
+            None
+        } else {
+            // SAFETY: `ptr` is set by `enter_heap_session` and remains valid until
+            // corresponding guard drop.
+            Some(f(unsafe { &*ptr }))
+        }
+    })
+}
+
+/// Guard returned by [`enter_heap_session`].
+pub struct HeapSessionGuard {
+    ptr: *const Heap,
+}
+
+impl Drop for HeapSessionGuard {
+    fn drop(&mut self) {
+        CURRENT_HEAP_DEPTH.with(|depth| {
+            let current = depth.get();
+            if current == 0 {
+                return;
+            }
+            let next = current - 1;
+            depth.set(next);
+            if next == 0 {
+                CURRENT_HEAP.with(|heap_cell| {
+                    if heap_cell.get().addr() == self.ptr.addr() {
+                        heap_cell.set(ptr::null());
+                    }
+                });
+            }
+        });
+    }
+}
+
+/// Enter a re-entrant heap session for embedders (for example `beskid_engine::Engine::with_runtime`).
+pub fn enter_heap_session(heap: &Arc<Heap>) -> HeapSessionGuard {
+    let ptr = Arc::as_ptr(heap);
+    CURRENT_HEAP.with(|heap_cell| {
+        let current = heap_cell.get();
+        if current.is_null() {
+            heap_cell.set(ptr);
+            CURRENT_HEAP_DEPTH.with(|depth| depth.set(1));
+        } else if current.addr() == ptr.addr() {
+            CURRENT_HEAP_DEPTH.with(|depth| depth.set(depth.get().saturating_add(1)));
+        } else {
+            panic!("a different heap is already active in this thread");
+        }
+    });
+    HeapSessionGuard { ptr }
+}
+
+pub(crate) struct GcContextInner {
+    pub heap: Arc<Heap>,
+    pub local_gray: Tracer,
+    _marker: std::marker::PhantomData<*const ()>, // Makes GcContext !Send + !Sync
+}
+
+/// RAII guard for GC context
+///
+/// While this guard is alive, the thread has an active GC context.
+/// Dropping the guard clears the thread-local context.
+///
+/// GcContext is not Send or Sync because it manages a thread-local variable.
+/// To share a heap across threads, clone the underlying heap and create a new
+/// GcContext in each thread.
+///
+/// # Example
+///
+/// ```
+/// use abfall::GcContext;
+///
+/// let ctx = GcContext::new();
+/// let value = ctx.allocate(42);
+/// // ctx is dropped here, clearing thread-local context
+/// ```
+pub struct GcContext(Pin<Box<GcContextInner>>);
+
+impl Default for GcContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GcContext {
+    /// Create a new GC context and a new Heap for the current thread
+    ///
+    /// Sets this as the active context for allocations in this thread.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use abfall::GcContext;
+    ///
+    /// let ctx = GcContext::new();
+    /// let value = ctx.allocate(42);
+    /// ```
+    pub fn new() -> Self {
+        let heap = Heap::new();
+        Self::with_heap(heap)
+    }
+
+    pub fn off() -> Self {
+        let heap = Heap::off();
+        Self::with_heap(heap)
+    }
+
+    /// Create a new GC context and a new Heap with custom options
+    pub fn with_options(options: GcOptions) -> Self {
+        let heap = Heap::with_options(options);
+        Self::with_heap(heap)
+    }
+
+    /// Create a new GC context for the current thread using a shared heap
+    ///
+    /// This allows multiple threads to share the same underlying heap,
+    /// each with its own thread-local context.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use abfall::GcContext;
+    /// use std::sync::Arc;
+    /// use std::thread;
+    ///
+    /// let ctx = GcContext::new();
+    /// let heap = Arc::clone(ctx.heap());
+    ///
+    /// let handle = thread::spawn(move || {
+    ///     let ctx2 = GcContext::with_heap(heap);
+    ///     let value = ctx2.allocate(42);
+    ///     *value
+    /// });
+    ///
+    /// let result = handle.join().unwrap();
+    /// ```
+    pub fn with_heap(heap: Arc<Heap>) -> Self {
+        let inner = Box::pin(GcContextInner {
+            heap,
+            local_gray: Tracer::new(),
+            _marker: std::marker::PhantomData,
+        });
+        set_current_context(&inner);
+        GcContext(inner)
+    }
+
+    /// Allocate an object on the GC heap
+    ///
+    /// Returns a `GcRoot` that keeps the object alive. The object is allocated
+    /// in rooted state (root_count = 1). When all roots are dropped, it becomes
+    /// eligible for collection.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use abfall::GcContext;
+    ///
+    /// let ctx = GcContext::new();
+    /// let number = ctx.allocate(42);
+    /// let text = ctx.allocate("Hello");
+    /// assert_eq!(*number, 42);
+    /// ```
+    pub fn allocate<T: Trace>(&self, data: T) -> crate::GcRoot<T> {
+        self.0.heap.allocate(data)
+    }
+
+    /// Get reference to the underlying heap (for advanced use)
+    pub fn heap(&self) -> &Arc<Heap> {
+        &self.0.heap
+    }
+}
+
+impl Drop for GcContext {
+    fn drop(&mut self) {
+        // Clear thread-local heap when context is dropped
+        reset_current_context(&self.0);
+    }
+}
+
+impl Deref for GcContext {
+    type Target = Arc<Heap>;
+
+    #[inline]
+    fn deref(&self) -> &Arc<Heap> {
+        &self.0.heap
+    }
+}

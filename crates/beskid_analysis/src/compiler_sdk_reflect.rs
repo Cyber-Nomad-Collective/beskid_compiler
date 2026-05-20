@@ -15,7 +15,6 @@ pub enum ReflectSdkNodeKind {
     EnumVariant,
     ContractDefinition,
     TestDefinition,
-    MetaDefinition,
     TestMetaSection,
     TestMetadataEntry,
     TestSkipSection,
@@ -41,7 +40,9 @@ pub enum ReflectSdkNodeKind {
     ForStatement,
     IfStatement,
     ExpressionStatement,
+    ExtendTypeDefinition,
     RangeExpression,
+    SpawnExpression,
     Expression,
     AssignExpression,
     BinaryExpression,
@@ -90,7 +91,6 @@ pub enum ReflectSdkHirNodeKind {
     EnumVariant,
     ContractDefinition,
     TestDefinition,
-    MetaDefinition,
     TestMetaSection,
     TestMetadataEntry,
     TestSkipSection,
@@ -116,7 +116,9 @@ pub enum ReflectSdkHirNodeKind {
     ForStatement,
     IfStatement,
     ExpressionStatement,
+    ExtendTypeDefinition,
     RangeExpression,
+    SpawnExpression,
     Expression,
     AssignExpression,
     BinaryExpression,
@@ -158,15 +160,6 @@ pub enum ReflectSdkEmitContributionKind {
     Metadata,
     LoweringDirective,
     DiagnosticAttachment,
-}
-
-/// Process lifecycle hooks visible to meta projects (names align with platform-spec vocabulary).
-#[beskid_ast_derive::beskid_reflect]
-pub enum ReflectSdkProcessHookKind {
-    WorkspaceDiscovered,
-    CompilationScheduled,
-    PhaseEntered,
-    PhaseCompleted,
 }
 
 /// Read-only compilation snapshot planes exposed to queries.

@@ -7,7 +7,7 @@ use clap::Args;
 use serde::Serialize;
 use std::io::Write;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::errors;
 use crate::frontend;
@@ -134,7 +134,8 @@ pub fn execute(args: TestArgs) -> Result<()> {
     let mut test_ui = TestRunUi::new(args.plain, use_cli_spinner(args.plain));
     let mut planned = Vec::new();
     for (row_index, test) in tests.iter().enumerate() {
-        let initial = if is_filtered_out(test, &include_tags, &exclude_tags, args.group.as_deref()) {
+        let initial = if is_filtered_out(test, &include_tags, &exclude_tags, args.group.as_deref())
+        {
             TestRowState::FilteredOut
         } else if test.skip_condition == Some(true) {
             TestRowState::Skipped
@@ -170,14 +171,23 @@ pub fn execute(args: TestArgs) -> Result<()> {
         }
 
         if initial == TestRowState::Skipped {
+            let reason = test
+                .skip_reason
+                .as_deref()
+                .or(Some("skip.condition is true"));
+            if !args.json {
+                test_ui.finish_row(
+                    row_index,
+                    TestRowState::Skipped,
+                    Duration::ZERO,
+                    reason,
+                )?;
+            }
             executions.push(TestExecution {
                 name: test.name.to_string(),
                 qualified_name: test.qualified_name.clone(),
                 outcome: TestOutcome::Skipped,
-                reason: test
-                    .skip_reason
-                    .clone()
-                    .or_else(|| Some("skip.condition is true".to_string())),
+                reason: reason.map(str::to_owned),
                 output: None,
             });
             summary.skipped += 1;
@@ -197,7 +207,7 @@ pub fn execute(args: TestArgs) -> Result<()> {
             Ok(output) => {
                 let duration = started.elapsed();
                 if !args.json {
-                    test_ui.finish_row(row_index, TestRowState::Passed, duration)?;
+                    test_ui.finish_row(row_index, TestRowState::Passed, duration, None)?;
                 }
                 executions.push(TestExecution {
                     name: test.name.to_string(),
@@ -213,14 +223,14 @@ pub fn execute(args: TestArgs) -> Result<()> {
                 let reason = if args.json {
                     error.to_string()
                 } else {
-                    format!("{}", errors::format_report(&errors::report_from_anyhow(&error)))
+                    errors::format_report(&errors::report_from_anyhow(&error)).to_string()
                 };
                 if !args.json {
                     if !test_ui.is_plain() {
                         eprint!("{reason}");
                         let _ = std::io::stderr().flush();
                     }
-                    test_ui.finish_row(row_index, TestRowState::Failed, duration)?;
+                    test_ui.finish_row(row_index, TestRowState::Failed, duration, None)?;
                 }
                 executions.push(TestExecution {
                     name: test.name.to_string(),

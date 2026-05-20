@@ -10,7 +10,7 @@ use beskid_runtime::{
 #[test]
 fn engine_runtime_metrics_strings_and_events() -> Result<()> {
     let mut engine = Engine::new();
-    engine.with_arena(|_, _| {
+    engine.with_runtime(|_, _| {
         // Strings metrics
         static Z: [u8; 1] = [0];
         let empty = str_new(Z.as_ptr(), 0);
@@ -30,7 +30,7 @@ fn engine_runtime_metrics_strings_and_events() -> Result<()> {
         assert_eq!(len1, 1);
         assert_eq!(rt_metrics_event_subscribe_calls(), 1);
 
-        let got = event_get_handler(unsafe { *(event_slot as *mut *mut _) }, 0);
+        let got = event_get_handler(unsafe { *event_slot }, 0);
         assert!(!got.is_null());
         assert_eq!(rt_metrics_event_get_handler_calls(), 1);
 

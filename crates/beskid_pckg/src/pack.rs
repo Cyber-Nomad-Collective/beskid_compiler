@@ -75,10 +75,7 @@ pub fn apply_pack_readme(
 
     if !is_package_root_readme_entry(&normalized) {
         entries.retain(|(name, _)| !name.eq_ignore_ascii_case(PACKAGE_README_ARTIFACT_NAME));
-        entries.push((
-            PACKAGE_README_ARTIFACT_NAME.to_string(),
-            bytes.clone(),
-        ));
+        entries.push((PACKAGE_README_ARTIFACT_NAME.to_string(), bytes.clone()));
     }
 
     Ok(())

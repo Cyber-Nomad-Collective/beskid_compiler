@@ -45,6 +45,7 @@ pub fn resolve_input_with_pipeline(
 }
 
 /// Resolve to a [`ResolvedProject`] with optional pipeline reporting and unresolved-deps policy.
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_project_with_pipeline(
     input: Option<&PathBuf>,
     project: Option<&PathBuf>,
@@ -86,7 +87,7 @@ pub fn run_semantic_analysis_gate(
     session: &CliPipeline,
 ) -> Result<()> {
     observe_phase_result(pipeline, SEMANTIC, || {
-        let diagnostics = services::analyze_program(path, source)?;
+        let diagnostics = services::analyze_source_in_project(path, source)?;
         session.report_semantic_diagnostics(&diagnostics);
         services::require_no_semantic_errors(&diagnostics).map_err(anyhow::Error::from)
     })

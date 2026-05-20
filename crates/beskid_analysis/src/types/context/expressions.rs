@@ -105,7 +105,9 @@ impl<'a> TypeContext<'a> {
                 self.type_match_expression(match_expr)
             }
             HirExpressionNode::TryExpression(try_expr) => self.type_try_expression(try_expr),
-            HirExpressionNode::SpawnExpression(spawn_expr) => self.type_spawn_expression(spawn_expr),
+            HirExpressionNode::SpawnExpression(spawn_expr) => {
+                self.type_spawn_expression(spawn_expr)
+            }
         };
 
         if let Some(type_id) = type_id {
@@ -449,8 +451,8 @@ impl<'a> TypeContext<'a> {
 
         if let HirExpressionNode::MemberExpression(member) = &call.node.callee.node {
             // Special-case: contract-as-namespace calls like `C.getpid()` where `C` is a contract item.
-            if let HirExpressionNode::PathExpression(path_expr) = &member.node.target.node {
-                if let Some(super::super::super::resolve::ResolvedValue::Item(item_id)) = self
+            if let HirExpressionNode::PathExpression(path_expr) = &member.node.target.node
+                && let Some(super::super::super::resolve::ResolvedValue::Item(item_id)) = self
                     .resolution
                     .tables
                     .resolved_values
@@ -492,7 +494,6 @@ impl<'a> TypeContext<'a> {
                         return Some(signature.return_type);
                     }
                 }
-            }
 
             let target_type = self.type_expression(&member.node.target)?;
             let method_name = member.node.member.node.name.as_str();

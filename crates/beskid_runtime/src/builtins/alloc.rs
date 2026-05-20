@@ -1,29 +1,24 @@
-use crate::gc::{RawAllocation, with_current_mutation_and_root};
+use crate::gc::{collect_if_needed, with_current_heap_and_root};
 
 /// GC-tracked zero-filled allocation; optional `type_desc_ptr` is written unaligned at the start when non-null.
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn alloc(size: usize, type_desc_ptr: *const u8) -> *mut u8 {
-    with_current_mutation_and_root(|mc, root| {
-        let data = vec![0u8; size].into_boxed_slice();
-        let allocation = RawAllocation { data };
-        let gc_alloc = gc_arena::Gc::new(mc, allocation);
-        let ptr = gc_alloc.data.as_ptr() as *mut u8;
-        if !type_desc_ptr.is_null() {
-            unsafe {
-                std::ptr::write_unaligned(ptr.cast::<*const u8>(), type_desc_ptr);
-            }
-        }
+    with_current_heap_and_root(|heap, root| {
+        let ptr = heap.allocate_beskid(size, type_desc_ptr);
         root.runtime_state.allocation_counter += 1;
-        root.runtime_state.heap_total_bytes =
-            root.runtime_state.heap_total_bytes.saturating_add(size);
-        root.runtime_state.heap_live_bytes =
-            root.runtime_state.heap_live_bytes.saturating_add(size);
+        let live_bytes = heap.bytes_allocated();
+        root.runtime_state.heap_total_bytes = root
+            .runtime_state
+            .heap_total_bytes
+            .saturating_add(size)
+            .max(live_bytes);
+        root.runtime_state.heap_live_bytes = live_bytes;
         #[cfg(feature = "metrics")]
         {
             root.runtime_state.alloc_calls = root.runtime_state.alloc_calls.saturating_add(1);
             root.runtime_state.alloc_bytes = root.runtime_state.alloc_bytes.saturating_add(size);
         }
-        root.globals.push(gc_alloc);
+        collect_if_needed(root);
         ptr
     })
 }

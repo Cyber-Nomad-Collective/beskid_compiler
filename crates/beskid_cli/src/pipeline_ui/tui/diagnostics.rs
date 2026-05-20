@@ -1,7 +1,7 @@
 //! Diagnostic count summaries for CLI sessions.
 
-use beskid_analysis::analysis::Severity;
 use beskid_analysis::analysis::SemanticDiagnostic;
+use beskid_analysis::analysis::Severity;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct SeverityCounts {

@@ -10,31 +10,25 @@ impl<'a> TypeContext<'a> {
         &mut self,
         spawn: &Spanned<HirSpawnExpression>,
     ) -> Option<TypeId> {
-        let parent_scope = self
-            .fiber_scope_stack
-            .last()
-            .copied()
-            .unwrap_or(0);
+        let parent_scope = self.fiber_scope_stack.last().copied().unwrap_or(0);
         let child_scope = self.alloc_fiber_scope(parent_scope);
 
-        let return_type = if let HirExpressionNode::LambdaExpression(lambda) =
-            &spawn.node.callee.node
-        {
-            self.fiber_scope_stack.push(child_scope);
-            let typed = self.type_lambda_expression_with_expected(lambda, None);
-            self.fiber_scope_stack.pop();
-            self.check_spawn_lambda_captures(&spawn.node.callee, spawn.span);
-            typed.and_then(|fn_type| self.function_return_type(fn_type))
-        } else {
-            let callee_type = self.type_expression(&spawn.node.callee)?;
-            self.check_spawn_callee(callee_type, spawn.span);
-            self.function_return_type(callee_type)
-        };
+        let return_type =
+            if let HirExpressionNode::LambdaExpression(lambda) = &spawn.node.callee.node {
+                self.fiber_scope_stack.push(child_scope);
+                let typed = self.type_lambda_expression_with_expected(lambda, None);
+                self.fiber_scope_stack.pop();
+                self.check_spawn_lambda_captures(&spawn.node.callee, spawn.span);
+                typed.and_then(|fn_type| self.function_return_type(fn_type))
+            } else {
+                let callee_type = self.type_expression(&spawn.node.callee)?;
+                self.check_spawn_callee(callee_type, spawn.span);
+                self.function_return_type(callee_type)
+            };
 
         let Some(return_type) = return_type else {
-            self.errors.push(TypeError::SpawnTargetNotFiberCompatible {
-                span: spawn.span,
-            });
+            self.errors
+                .push(TypeError::SpawnTargetNotFiberCompatible { span: spawn.span });
             return None;
         };
 
@@ -53,9 +47,8 @@ impl<'a> TypeContext<'a> {
         };
         let current_scope = self.fiber_scope_stack.last().copied().unwrap_or(0);
         if self.fiber_scope_is_strict_ancestor(handle_scope, current_scope) {
-            self.errors.push(TypeError::JoinWouldDeadlock {
-                span: join_span,
-            });
+            self.errors
+                .push(TypeError::JoinWouldDeadlock { span: join_span });
         }
     }
 
@@ -77,10 +70,7 @@ impl<'a> TypeContext<'a> {
         false
     }
 
-    fn fiber_scope_for_expression(
-        &self,
-        expression: &Spanned<HirExpressionNode>,
-    ) -> Option<usize> {
+    fn fiber_scope_for_expression(&self, expression: &Spanned<HirExpressionNode>) -> Option<usize> {
         if let Some(scope) = self.fiber_handle_scopes.get(&expression.span) {
             return Some(*scope);
         }
@@ -179,22 +169,28 @@ impl<'a> TypeContext<'a> {
             HirExpressionNode::MemberExpression(member) => {
                 self.expression_references_outer_local(&member.node.target, param_locals)
             }
-            HirExpressionNode::BlockExpression(block) => block.node.block.node.statements.iter().any(
-                |stmt| match &stmt.node {
+            HirExpressionNode::BlockExpression(block) => block
+                .node
+                .block
+                .node
+                .statements
+                .iter()
+                .any(|stmt| match &stmt.node {
                     HirStatementNode::ExpressionStatement(expr_stmt) => self
-                        .expression_references_outer_local(&expr_stmt.node.expression, param_locals),
-                    HirStatementNode::ReturnStatement(ret) => ret
-                        .node
-                        .value
-                        .as_ref()
-                        .is_some_and(|value| {
+                        .expression_references_outer_local(
+                            &expr_stmt.node.expression,
+                            param_locals,
+                        ),
+                    HirStatementNode::ReturnStatement(ret) => {
+                        ret.node.value.as_ref().is_some_and(|value| {
                             self.expression_references_outer_local(value, param_locals)
-                        }),
-                    HirStatementNode::LetStatement(let_stmt) => self
-                        .expression_references_outer_local(&let_stmt.node.value, param_locals),
+                        })
+                    }
+                    HirStatementNode::LetStatement(let_stmt) => {
+                        self.expression_references_outer_local(&let_stmt.node.value, param_locals)
+                    }
                     _ => false,
-                },
-            ),
+                }),
             _ => false,
         }
     }

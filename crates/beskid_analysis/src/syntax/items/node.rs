@@ -5,9 +5,9 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::InlineModule;
 use crate::syntax::{
-    AttributeDeclaration, ContractDefinition, EnumDefinition, FunctionDefinition, MetaDefinition,
-    MethodDefinition, ModuleDeclaration, SpanInfo, Spanned, TestDefinition, TypeDefinition,
-    UseDeclaration,
+    AttributeDeclaration, ContractDefinition, EnumDefinition, ExtendTypeDefinition,
+    FunctionDefinition, MethodDefinition, ModuleDeclaration, SpanInfo, Spanned, TestDefinition,
+    TypeDefinition, UseDeclaration,
 };
 
 use beskid_ast_derive::AstNode;
@@ -20,6 +20,8 @@ pub enum Node {
     #[ast(child)]
     Method(Spanned<MethodDefinition>),
     #[ast(child)]
+    ExtendTypeDefinition(Spanned<ExtendTypeDefinition>),
+    #[ast(child)]
     TypeDefinition(Spanned<TypeDefinition>),
     #[ast(child)]
     EnumDefinition(Spanned<EnumDefinition>),
@@ -27,8 +29,6 @@ pub enum Node {
     ContractDefinition(Spanned<ContractDefinition>),
     #[ast(child)]
     TestDefinition(Spanned<TestDefinition>),
-    #[ast(child)]
-    MetaDefinition(Spanned<MetaDefinition>),
     #[ast(child)]
     AttributeDeclaration(Spanned<AttributeDeclaration>),
     #[ast(child)]
@@ -64,6 +64,10 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
             let node = TypeDefinition::parse(pair)?;
             Ok(Spanned::new(Node::TypeDefinition(node), span))
         }
+        Rule::ExtendTypeDefinition => {
+            let node = ExtendTypeDefinition::parse(pair)?;
+            Ok(Spanned::new(Node::ExtendTypeDefinition(node), span))
+        }
         Rule::EnumDefinition => {
             let node = EnumDefinition::parse(pair)?;
             Ok(Spanned::new(Node::EnumDefinition(node), span))
@@ -75,10 +79,6 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
         Rule::TestDefinition => {
             let node = TestDefinition::parse(pair)?;
             Ok(Spanned::new(Node::TestDefinition(node), span))
-        }
-        Rule::MetaDefinition => {
-            let node = MetaDefinition::parse(pair)?;
-            Ok(Spanned::new(Node::MetaDefinition(node), span))
         }
         Rule::AttributeDeclaration => {
             let node = AttributeDeclaration::parse(pair)?;
@@ -97,5 +97,54 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
             Ok(Spanned::new(Node::UseDeclaration(node), span))
         }
         _ => Err(ParseError::unexpected_rule(pair, Some(Rule::InnerItem))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parser::{BeskidParser, Rule};
+    use crate::parsing::parsable::Parsable;
+    use crate::{format::format_program, hir::lower_program, syntax::Program};
+    use pest::Parser;
+
+    #[test]
+    fn module_level_meta_definition_is_not_a_valid_inner_item() {
+        let src = r#"meta demo { flag = true; }"#;
+        assert!(
+            BeskidParser::parse(Rule::Program, src).is_err(),
+            "module-level `meta` blocks were removed; use Mod projects and compiler mods instead"
+        );
+    }
+
+    #[test]
+    fn extend_type_parses_lowers_and_formats() {
+        let src = r#"
+            type Account { i64 balance }
+            extend type Account {
+                pub unit Deposit(i64 amount) {
+                    return;
+                }
+                pub i64 Balance() {
+                    return 0;
+                }
+            }
+        "#;
+        let pair = BeskidParser::parse(Rule::Program, src)
+            .expect("extend type should parse")
+            .next()
+            .expect("program pair");
+        let program = Program::parse(pair).expect("extend type should build AST");
+
+        let hir = lower_program(&program.clone().into());
+        assert_eq!(
+            hir.node.items.len(),
+            2,
+            "lowering should preserve the extend-type block as one top-level HIR item"
+        );
+
+        let formatted = format_program(&program).expect("extend type should format");
+        assert!(formatted.contains("extend type Account"));
+        assert!(formatted.contains("pub unit Deposit(i64 amount)"));
+        assert!(formatted.contains("pub i64 Balance()"));
     }
 }

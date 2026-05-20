@@ -24,11 +24,11 @@ pub const SYNTAX_SCAN_SKIP_FILES: &[&str] = &[
 ];
 
 /// Module prefix for emitted node modules (under compiler-sdk `src/`).
-pub const SYNTAX_NODES_MODULE_PREFIX: &str = "Beskid.Compiler.Syntax.Nodes";
+pub const SYNTAX_NODES_MODULE_PREFIX: &str = "Beskid.Syntax.Nodes";
 
 /// Full Beskid path to the shared placeholder type (defined in `Syntax.bd`).
 pub fn reflect_stub_path() -> &'static str {
-    "Beskid.Compiler.Syntax.ReflectStub"
+    "Beskid.Syntax.ReflectStub"
 }
 
 /// Full Beskid path for a helper or node type under [`SYNTAX_NODES_MODULE_PREFIX`].
@@ -36,7 +36,7 @@ pub fn nodes_path(type_name: &str) -> String {
     format!("{SYNTAX_NODES_MODULE_PREFIX}.{type_name}")
 }
 
-pub(crate) fn peel_type<'a>(ty: &'a Type) -> &'a Type {
+pub(crate) fn peel_type(ty: &Type) -> &Type {
     let mut t = ty;
     loop {
         match t {
@@ -135,7 +135,7 @@ fn is_vec_u8(ty: &Type) -> bool {
     )
 }
 
-/// Maps `Vec<…>` / `Option<…>` Rust shapes to concrete `Beskid.Compiler.Syntax.Nodes.*` paths.
+/// Maps `Vec<…>` / `Option<…>` Rust shapes to concrete `Beskid.Syntax.Nodes.*` paths.
 #[derive(Debug, Clone, Default)]
 pub struct HelperPaths {
     /// Element Rust type name (e.g. `Identifier`) → full Beskid path for `{Element}List`.
@@ -344,7 +344,7 @@ fn resolve_optional_payload_path(
     inner_key: &str,
     list_by_element: &BTreeMap<String, String>,
 ) -> String {
-    for (_, fullp) in list_by_element {
+    for fullp in list_by_element.values() {
         if fullp.rsplit('.').next() == Some(inner_key) {
             return fullp.clone();
         }
@@ -458,4 +458,15 @@ pub enum {helper_name} {{
 }}
 "#
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SYNTAX_NODES_MODULE_PREFIX, reflect_stub_path};
+
+    #[test]
+    fn syntax_node_module_prefix_uses_public_beskid_syntax_surface() {
+        assert_eq!(SYNTAX_NODES_MODULE_PREFIX, "Beskid.Syntax.Nodes");
+        assert_eq!(reflect_stub_path(), "Beskid.Syntax.ReflectStub");
+    }
 }

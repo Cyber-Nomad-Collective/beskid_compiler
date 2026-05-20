@@ -131,7 +131,7 @@ fn emit_alloc(
         .builder
         .func
         .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("alloc".to_string()),
+            name: ExternalName::testcase("alloc"),
             signature: sig_ref,
             colocated: false,
             patchable: false,
@@ -151,8 +151,7 @@ fn emit_alloc(
     let call = ctx.builder.ins().call(func_ref, &[size_val, desc_val]);
     let result =
         ctx.builder
-            .inst_results(call)
-            .get(0)
+            .inst_results(call).first()
             .copied()
             .ok_or(CodegenError::UnsupportedNode {
                 span,
@@ -174,7 +173,7 @@ fn emit_write_barrier(
         .builder
         .func
         .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("gc_write_barrier".to_string()),
+            name: ExternalName::testcase("gc_write_barrier"),
             signature: sig_ref,
             colocated: false,
             patchable: false,

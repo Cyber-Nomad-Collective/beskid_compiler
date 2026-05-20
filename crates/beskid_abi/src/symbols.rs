@@ -11,6 +11,12 @@ pub const SYM_PANIC_STR: &str = "panic_str";
 pub const SYM_SYSCALL_WRITE: &str = "syscall_write";
 pub const SYM_SYSCALL_READ: &str = "syscall_read";
 pub const SYM_STR_LEN: &str = "str_len";
+pub const SYM_GC_BYTES_ALLOCATED: &str = "gc_bytes_allocated";
+pub const SYM_GC_OBJECT_COUNT: &str = "gc_object_count";
+pub const SYM_GC_PHASE: &str = "gc_phase";
+pub const SYM_GC_COLLECT: &str = "gc_collect";
+pub const SYM_GC_COLLECT_IF_NEEDED: &str = "gc_collect_if_needed";
+pub const SYM_GC_EXTERNAL_ROOT_COUNT: &str = "gc_external_root_count";
 pub const SYM_GC_WRITE_BARRIER: &str = "gc_write_barrier";
 pub const SYM_GC_ROOT_HANDLE: &str = "gc_root_handle";
 pub const SYM_GC_UNROOT_HANDLE: &str = "gc_unroot_handle";
@@ -76,6 +82,12 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_PANIC_STR,
     SYM_SYSCALL_WRITE,
     SYM_SYSCALL_READ,
+    SYM_GC_BYTES_ALLOCATED,
+    SYM_GC_OBJECT_COUNT,
+    SYM_GC_PHASE,
+    SYM_GC_COLLECT,
+    SYM_GC_COLLECT_IF_NEEDED,
+    SYM_GC_EXTERNAL_ROOT_COUNT,
     SYM_GC_WRITE_BARRIER,
     SYM_GC_ROOT_HANDLE,
     SYM_GC_UNROOT_HANDLE,

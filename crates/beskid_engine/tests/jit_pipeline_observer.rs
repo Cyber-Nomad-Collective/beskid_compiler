@@ -46,7 +46,7 @@ pub i64 main() { return 0; }
 
     let events = recorder.0.lock().unwrap().clone();
     assert!(
-        events.iter().any(|&id| id == phases::JIT_EMIT),
+        events.contains(&phases::JIT_EMIT),
         "expected jit.emit work units, got {events:?}"
     );
     assert!(

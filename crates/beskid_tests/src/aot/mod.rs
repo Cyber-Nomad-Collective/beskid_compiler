@@ -6,17 +6,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub(super) use beskid_abi::{SYM_ABI_VERSION, SYM_INTEROP_DISPATCH_UNIT};
 use beskid_analysis::analysis::diagnostics::Severity;
 use beskid_analysis::hir::{
-    lower_program as lower_hir_program, normalize_program, AstProgram, HirProgram,
+    AstProgram, HirProgram, lower_program as lower_hir_program, normalize_program,
 };
 use beskid_analysis::parser::{BeskidParser, Rule};
 use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::resolve::Resolver;
 use beskid_analysis::syntax::{Program, Spanned};
 use beskid_analysis::types::type_program;
-use beskid_analysis::{builtin_rules, run_rules, AnalysisOptions};
+use beskid_analysis::{AnalysisOptions, builtin_rules, run_rules};
 pub(super) use beskid_aot::{
-    build, default_output_kind, resolve_entrypoint, AotBuildRequest, AotError, BuildOutputKind,
-    ProjectTargetKind, RuntimeStrategy,
+    AotBuildRequest, AotError, BuildOutputKind, ProjectTargetKind, RuntimeStrategy, build,
+    default_output_kind, resolve_entrypoint,
 };
 use beskid_codegen::lower_program;
 use pest::Parser;

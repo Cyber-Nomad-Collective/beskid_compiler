@@ -14,6 +14,9 @@ mod events;
 mod guard;
 
 #[cfg(test)]
+mod gc;
+
+#[cfg(test)]
 mod jit;
 
 #[cfg(test)]

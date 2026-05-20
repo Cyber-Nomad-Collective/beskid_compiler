@@ -171,13 +171,13 @@ fn rejects_argument_list_starting_with_comma() {
     assert_parse_fail(Rule::ArgumentList, ", 1");
 }
 
-fn expect_binary<'a>(
-    expr: &'a Expression,
+fn expect_binary(
+    expr: &Expression,
     op: BinaryOp,
 ) -> (
-    &'a Spanned<Expression>,
-    &'a Spanned<BinaryOp>,
-    &'a Spanned<Expression>,
+    &Spanned<Expression>,
+    &Spanned<BinaryOp>,
+    &Spanned<Expression>,
 ) {
     if let Expression::Binary(binary) = expr {
         assert_eq!(binary.node.op.node, op);
@@ -205,10 +205,10 @@ fn expect_assign(
     panic!("expected assign expression");
 }
 
-fn expect_call<'a>(
-    expr: &'a Expression,
+fn expect_call(
+    expr: &Expression,
     args_len: usize,
-) -> (&'a Spanned<Expression>, &'a [Spanned<Expression>]) {
+) -> (&Spanned<Expression>, &[Spanned<Expression>]) {
     if let Expression::Call(call) = expr {
         assert_eq!(call.node.args.len(), args_len);
         return (&call.node.callee, &call.node.args);
@@ -225,12 +225,12 @@ fn expect_try(expr: &Expression) -> &Spanned<Expression> {
     panic!("expected try expression");
 }
 
-fn expect_lambda<'a>(
-    expr: &'a Expression,
+fn expect_lambda(
+    expr: &Expression,
     params_len: usize,
 ) -> (
-    &'a [Spanned<beskid_analysis::syntax::LambdaParameter>],
-    &'a Spanned<Expression>,
+    &[Spanned<beskid_analysis::syntax::LambdaParameter>],
+    &Spanned<Expression>,
 ) {
     if let Expression::Lambda(lambda) = expr {
         assert_eq!(lambda.node.parameters.len(), params_len);
@@ -266,33 +266,33 @@ fn expect_path_segments(expr: &Expression, expected: &[&str]) {
 }
 
 fn expect_integer_literal(expr: &Expression, expected: &str) {
-    if let Expression::Literal(literal) = expr {
-        if let Literal::Integer(value) = &literal.node.literal.node {
-            assert_eq!(value, expected);
-            return;
-        }
+    if let Expression::Literal(literal) = expr
+        && let Literal::Integer(value) = &literal.node.literal.node
+    {
+        assert_eq!(value, expected);
+        return;
     }
 
     panic!("expected integer literal");
 }
 
 fn expect_bool_literal(expr: &Expression, expected: bool) {
-    if let Expression::Literal(literal) = expr {
-        if let Literal::Bool(value) = &literal.node.literal.node {
-            assert_eq!(*value, expected);
-            return;
-        }
+    if let Expression::Literal(literal) = expr
+        && let Literal::Bool(value) = &literal.node.literal.node
+    {
+        assert_eq!(*value, expected);
+        return;
     }
 
     panic!("expected bool literal");
 }
 
 fn expect_string_literal(expr: &Expression, expected: &str) {
-    if let Expression::Literal(literal) = expr {
-        if let Literal::String(value) = &literal.node.literal.node {
-            assert_eq!(value, expected);
-            return;
-        }
+    if let Expression::Literal(literal) = expr
+        && let Literal::String(value) = &literal.node.literal.node
+    {
+        assert_eq!(value, expected);
+        return;
     }
 
     panic!("expected string literal");

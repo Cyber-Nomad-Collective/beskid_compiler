@@ -73,7 +73,7 @@ fn checked_in_corelib_template_has_mvp_module_files() {
 
 #[test]
 fn compiler_sdk_syntax_node_files_track_inventory() {
-    let inv_path = super::compiler_sdk_src().join("Beskid/Compiler/Syntax/Nodes/_inventory.txt");
+    let inv_path = super::compiler_sdk_src().join("Beskid/Syntax/Nodes/_inventory.txt");
     assert!(
         inv_path.is_file(),
         "missing syntax node inventory: {}",
@@ -93,6 +93,25 @@ fn compiler_sdk_syntax_node_files_track_inventory() {
             node_file.display()
         );
     }
+}
+
+#[test]
+fn compiler_sdk_syntax_inventory_excludes_removed_meta_definition() {
+    let inv_path = super::compiler_sdk_src().join("Beskid/Syntax/Nodes/_inventory.txt");
+    let raw = fs::read_to_string(&inv_path).expect("read _inventory.txt");
+
+    assert!(
+        !raw.lines().any(|line| line.trim() == "MetaDefinition"),
+        "MetaDefinition was removed from the syntax SDK inventory"
+    );
+    assert!(
+        !inv_path
+            .parent()
+            .expect("Nodes dir")
+            .join("MetaDefinition.bd")
+            .exists(),
+        "MetaDefinition syntax node mirror should not be checked in"
+    );
 }
 
 #[test]
@@ -132,9 +151,8 @@ fn checked_in_corelib_template_has_beskid_tests_project() {
 
 #[test]
 fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
-    let manifest =
-        std::fs::read_to_string(corelib_root().join("tests/corelib_tests/Project.proj"))
-            .expect("read corelib_tests Project.proj");
+    let manifest = std::fs::read_to_string(corelib_root().join("tests/corelib_tests/Project.proj"))
+        .expect("read corelib_tests Project.proj");
     assert!(
         manifest.contains("name = \"corelib_tests\""),
         "corelib test harness must use project name corelib_tests (not corelib) to avoid recursive obj/ paths"
@@ -156,14 +174,32 @@ fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
         "SystemSyscallApiTests",
         "SystemSyscallErgonomicsTests",
         "SystemOutputWriteLineTests",
+        "SystemInputReadTests",
+        "SystemErrorWriteTests",
         "ConsoleAnsiEscapeTests",
         "ConsoleAnsiStyleChainTests",
         "ConsoleAnsiSgrGoldenTests",
+        "ConsoleAnsiBuildersTests",
+        "ConsoleFormatMarkdownTests",
+        "ConsoleFormatAttributesTests",
+        "ConsoleFormatScanTests",
+        "ConsoleCapabilitiesTests",
+        "ConsoleTerminalPlatformTests",
+        "ConsoleFacadeTests",
+        "ConsoleMessageChannelTests",
+        "ConsoleStyleTests",
         "ConsoleControlsPanelTests",
         "ConsoleControlsProgressBarTests",
         "ConsoleControlsLayoutTests",
+        "ConsoleControlsFrameTests",
+        "ConsoleRenderContextTests",
         "CoreResultsTests",
         "CollectionsArrayTests",
+        "ConcurrencyChannelApiTests",
+        "ConcurrencyMutexTryLockTests",
+        "ConcurrencyClockTests",
+        "ConcurrencyHubRegisterTests",
+        "ConcurrencyFiberHandleTests",
     ] {
         assert!(
             manifest.contains(&format!("target \"{target}\"")),

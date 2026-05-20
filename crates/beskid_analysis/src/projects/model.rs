@@ -44,29 +44,21 @@ pub struct WorkspaceRegistry {
 pub enum ProjectKind {
     #[default]
     Host,
-    Meta,
+    Mod,
 }
 
-/// `project.meta.attachTo` entry: reserved `default` or a workspace member id.
+/// Nested `project.mod { ... }` block for [`ProjectKind::Mod`] manifests.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AttachToSelector {
-    Default,
-    Member(String),
-}
-
-/// Nested `project.meta { ... }` block for [`ProjectKind::Meta`] manifests.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectMetaSection {
-    pub attach_to: Vec<AttachToSelector>,
-    pub entry_modules: Vec<String>,
-    pub max_meta_rounds: Option<u32>,
+pub struct ProjectModSection {
+    pub max_generator_rounds: Option<u32>,
     pub capabilities: Option<Vec<String>>,
+    pub artifact_policy: Option<String>,
 }
 
-impl ProjectMetaSection {
-    /// Normative default when `maxMetaRounds` is omitted (project manifest contract).
-    pub fn resolved_max_meta_rounds(&self) -> u32 {
-        self.max_meta_rounds.unwrap_or(4)
+impl ProjectModSection {
+    /// Normative default when `maxGeneratorRounds` is omitted (project manifest contract).
+    pub fn resolved_max_generator_rounds(&self) -> u32 {
+        self.max_generator_rounds.unwrap_or(4)
     }
 }
 
@@ -77,7 +69,7 @@ pub struct ProjectSection {
     pub root: String,
     pub root_namespace: Option<String>,
     pub kind: ProjectKind,
-    pub meta: Option<ProjectMetaSection>,
+    pub mod_section: Option<ProjectModSection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

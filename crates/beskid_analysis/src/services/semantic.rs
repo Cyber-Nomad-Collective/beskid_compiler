@@ -52,25 +52,25 @@ impl miette::Diagnostic for SemanticDiagnosticsError {
     fn code<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
         self.diagnostics
             .first()
-            .and_then(|d| miette::Diagnostic::code(d))
+            .and_then(miette::Diagnostic::code)
     }
 
     fn severity(&self) -> Option<miette::Severity> {
         self.diagnostics
             .first()
-            .and_then(|d| miette::Diagnostic::severity(d))
+            .and_then(miette::Diagnostic::severity)
     }
 
     fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
         self.diagnostics
             .first()
-            .and_then(|d| miette::Diagnostic::help(d))
+            .and_then(miette::Diagnostic::help)
     }
 
     fn url<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
         self.diagnostics
             .first()
-            .and_then(|d| miette::Diagnostic::url(d))
+            .and_then(miette::Diagnostic::url)
     }
 
     fn source_code(&self) -> Option<&dyn miette::SourceCode> {
@@ -82,7 +82,7 @@ impl miette::Diagnostic for SemanticDiagnosticsError {
     fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
         self.diagnostics
             .first()
-            .and_then(|d| miette::Diagnostic::labels(d))
+            .and_then(miette::Diagnostic::labels)
     }
 
     fn related<'a>(&'a self) -> Option<Box<dyn Iterator<Item = &'a dyn miette::Diagnostic> + 'a>> {

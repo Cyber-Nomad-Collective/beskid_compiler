@@ -2,6 +2,7 @@
 
 mod analyze_program;
 mod diagnostics;
+mod ffi_v03_spec;
 mod hir_query;
 mod legality;
 mod lowering;

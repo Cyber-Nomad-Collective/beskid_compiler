@@ -141,6 +141,26 @@ impl Resolver {
                 ItemKind::Method,
                 def.node.visibility.node,
             ),
+            HirItem::ExtendTypeDefinition(def) => {
+                for method in &def.node.methods {
+                    let method_name = format!(
+                        "{}::{}",
+                        type_name_for_method_receiver(&method.node.receiver_type),
+                        method.node.name.node.name
+                    );
+                    let method_id = ItemId(self.items.len());
+                    self.items.push(ItemInfo {
+                        id: method_id,
+                        parent_id: None,
+                        name: method_name,
+                        kind: ItemKind::Method,
+                        visibility: method.node.visibility.node,
+                        span: method.span,
+                    });
+                    self.collect_member_items_for_method(method, method_id);
+                }
+                return;
+            }
             HirItem::TestDefinition(def) => (
                 def.node.name.node.name.clone(),
                 ItemKind::Test,
@@ -176,7 +196,7 @@ impl Resolver {
                 ItemKind::Use,
                 def.node.visibility.node,
             ),
-            HirItem::AttributeDeclaration(_) | HirItem::MetaDefinition(_) => {
+            HirItem::AttributeDeclaration(_) => {
                 return;
             }
         };
@@ -275,6 +295,32 @@ impl Resolver {
         }
     }
 
+    fn collect_member_items_for_method(
+        &mut self,
+        method: &Spanned<crate::hir::HirMethodDefinition>,
+        parent_id: ItemId,
+    ) {
+        let parent_name = self
+            .items
+            .get(parent_id.0)
+            .map(|item| item.name.clone())
+            .unwrap_or_default();
+        let visibility = self
+            .items
+            .get(parent_id.0)
+            .map(|item| item.visibility)
+            .unwrap_or(HirVisibility::Private);
+        for parameter in &method.node.parameters {
+            self.push_member_item(
+                format!("{}::{}", parent_name, parameter.node.name.node.name),
+                ItemKind::Parameter,
+                visibility,
+                parameter.span,
+                parent_id,
+            );
+        }
+    }
+
     fn resolve_item(&mut self, item: &Spanned<HirItem>) {
         match &item.node {
             HirItem::FunctionDefinition(def) => {
@@ -307,6 +353,23 @@ impl Resolver {
                 }
                 self.resolve_block(&def.node.body);
                 self.pop_scope();
+            }
+            HirItem::ExtendTypeDefinition(def) => {
+                self.resolve_type(&def.node.target_type);
+                for method in &def.node.methods {
+                    self.push_scope();
+                    self.resolve_type(&method.node.receiver_type);
+                    self.insert_local("this", method.node.receiver_type.span);
+                    for param in &method.node.parameters {
+                        self.resolve_type(&param.node.ty);
+                        self.insert_local(&param.node.name.node.name, param.node.name.span);
+                    }
+                    if let Some(return_type) = &method.node.return_type {
+                        self.resolve_type(return_type);
+                    }
+                    self.resolve_block(&method.node.body);
+                    self.pop_scope();
+                }
             }
             HirItem::TestDefinition(def) => {
                 self.push_scope();
@@ -406,13 +469,6 @@ impl Resolver {
                 }
             }
             HirItem::AttributeDeclaration(_) => {}
-            HirItem::MetaDefinition(def) => {
-                self.push_scope();
-                for entry in &def.node.entries {
-                    self.resolve_expression(&entry.node.value);
-                }
-                self.pop_scope();
-            }
             HirItem::ModuleDeclaration(_) | HirItem::UseDeclaration(_) => {}
         }
     }

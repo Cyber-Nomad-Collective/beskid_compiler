@@ -60,16 +60,14 @@ pub fn escape_beskid_ident(raw: &str) -> String {
 /// `.bd` field names, then [`escape_beskid_ident`] for keyword / `kw_` prefix safety.
 pub fn rust_snake_to_beskid_field_camel(raw: &str) -> String {
     // Tuple placeholder names from the generator.
-    if let Some(rest) = raw.strip_prefix("field_") {
-        if rest.chars().all(|c| c.is_ascii_digit()) {
+    if let Some(rest) = raw.strip_prefix("field_")
+        && rest.chars().all(|c| c.is_ascii_digit()) {
             return escape_beskid_ident(&format!("field{rest}"));
         }
-    }
-    if let Some(rest) = raw.strip_prefix("variant_field_") {
-        if rest.chars().all(|c| c.is_ascii_digit()) {
+    if let Some(rest) = raw.strip_prefix("variant_field_")
+        && rest.chars().all(|c| c.is_ascii_digit()) {
             return escape_beskid_ident(&format!("variantField{rest}"));
         }
-    }
     if raw == "payload" {
         return escape_beskid_ident("payload");
     }

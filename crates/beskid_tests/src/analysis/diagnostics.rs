@@ -213,14 +213,3 @@ fn forbidden_module_declaration_in_file_scoped_issue_contract_is_stable() {
     );
     assert!(issue.help().is_some());
 }
-
-#[test]
-fn forbidden_meta_module_item_uses_meta_surface_diagnostic_band() {
-    let issue = SemanticIssueKind::ForbiddenMetaModuleItem {
-        name: "Mod".to_string(),
-    };
-    assert_eq!(issue.code(), "E1851");
-    assert_eq!(issue.severity(), Severity::Error);
-    assert!(issue.message().contains("meta"));
-    assert!(issue.help().is_some());
-}

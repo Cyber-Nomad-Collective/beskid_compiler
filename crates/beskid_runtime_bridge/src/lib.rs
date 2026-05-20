@@ -5,8 +5,9 @@ use beskid_runtime::{
     alloc, array_new, beskid_runtime_abi_version, channel_close, channel_create, channel_receive,
     channel_send, channel_try_receive, channel_try_send, event_get_handler, event_len,
     event_subscribe, event_unsubscribe_first, fiber_cancel, fiber_current_id, fiber_detach,
-    fiber_join, fiber_now_millis, fiber_spawn, fiber_yield, gc_register_root, gc_root_handle,
-    gc_unregister_root, gc_unroot_handle, gc_write_barrier, hub_create, hub_register,
+    fiber_join, fiber_now_millis, fiber_spawn, fiber_yield, gc_bytes_allocated, gc_collect,
+    gc_collect_if_needed, gc_external_root_count, gc_object_count, gc_phase, gc_register_root,
+    gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier, hub_create, hub_register,
     hub_unregister, hub_wait_receive, interop_dispatch_ptr, interop_dispatch_unit,
     interop_dispatch_usize, mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, panic,
     panic_str, str_concat, str_len, str_new, syscall_read, syscall_write, test_bytes_len,
@@ -23,6 +24,12 @@ pub extern "C" fn beskid_runtime_link_anchor() {
     let _ = panic as usize;
     let _ = panic_str as usize;
     let _ = gc_write_barrier as usize;
+    let _ = gc_bytes_allocated as usize;
+    let _ = gc_object_count as usize;
+    let _ = gc_phase as usize;
+    let _ = gc_collect as usize;
+    let _ = gc_collect_if_needed as usize;
+    let _ = gc_external_root_count as usize;
     let _ = gc_root_handle as usize;
     let _ = gc_unroot_handle as usize;
     let _ = gc_register_root as usize;

@@ -5,7 +5,7 @@ use crate::format::items::helpers::{
 use crate::syntax::items::impl_block::ImplBlock;
 use crate::syntax::{
     ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition,
-    EnumVariant, ModuleDeclaration, Spanned, TypeDefinition, UseDeclaration,
+    EnumVariant, ExtendTypeDefinition, ModuleDeclaration, Spanned, TypeDefinition, UseDeclaration,
 };
 use std::fmt::Write;
 
@@ -272,6 +272,40 @@ impl Emit for ImplBlock {
 }
 
 impl Emit for Spanned<ImplBlock> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.node.emit(w, cx)
+    }
+}
+
+impl Emit for ExtendTypeDefinition {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        cx.token(w, "extend")?;
+        cx.space(w)?;
+        cx.token(w, "type")?;
+        cx.space(w)?;
+        self.target_type.emit(w, cx)?;
+        if self.methods.is_empty() {
+            cx.space(w)?;
+            w.write_str("{ }")?;
+            return Ok(());
+        }
+        cx.nl(w)?;
+        cx.write_indent(w)?;
+        cx.open_brace(w)?;
+        for (i, method) in self.methods.iter().enumerate() {
+            if i > 0 {
+                cx.between_members(w)?;
+            }
+            cx.write_indent(w)?;
+            method.emit(w, cx)?;
+            cx.nl(w)?;
+        }
+        cx.close_brace(w)?;
+        Ok(())
+    }
+}
+
+impl Emit for Spanned<ExtendTypeDefinition> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         self.node.emit(w, cx)
     }

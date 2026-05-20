@@ -29,16 +29,15 @@ pub use expression::{
     HirBlockExpression, HirCallExpression, HirEnumConstructorExpression, HirGroupedExpression,
     HirLambdaExpression, HirLambdaParameter, HirLiteralExpression, HirMatchExpression,
     HirMemberExpression, HirPathExpression, HirSpawnExpression, HirStructLiteralExpression,
-    HirTryExpression,
-    HirUnaryExpression, HirUnaryOp,
+    HirTryExpression, HirUnaryExpression, HirUnaryOp,
 };
 pub use item::{
     HirAttribute, HirAttributeDeclaration, HirAttributeParameter, HirAttributeTarget,
     HirContractDefinition, HirContractEmbedding, HirContractMethodSignature, HirContractNode,
-    HirEnumDefinition, HirEnumVariant, HirExternInterface, HirFunctionDefinition, HirInlineModule,
-    HirMetaDefinition, HirMethodDefinition, HirModuleDeclaration, HirTestDefinition,
-    HirTestMetaSection, HirTestMetadataEntry, HirTestSkipEntry, HirTestSkipSection,
-    HirTypeDefinition, HirUseDeclaration, Item,
+    HirEnumDefinition, HirEnumVariant, HirExtendTypeDefinition, HirExternInterface,
+    HirFunctionDefinition, HirInlineModule, HirMethodDefinition, HirModuleDeclaration,
+    HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry, HirTestSkipEntry,
+    HirTestSkipSection, HirTypeDefinition, HirUseDeclaration, Item,
 };
 pub use legality::{HirLegalityError, validate_hir_program};
 pub use literal::HirLiteral;

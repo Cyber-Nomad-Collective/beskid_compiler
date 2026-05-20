@@ -15,11 +15,10 @@ struct MutexInner {
     waiters: Vec<FiberKey>,
 }
 
-static MUTEXES: Mutex<Option<slotmap::SlotMap<slotmap::DefaultKey, MutexInner>>> =
-    Mutex::new(None);
+static MUTEXES: Mutex<Option<slotmap::SlotMap<slotmap::DefaultKey, MutexInner>>> = Mutex::new(None);
 
-fn mutex_table(
-) -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, MutexInner>>> {
+fn mutex_table()
+-> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, MutexInner>>> {
     let mut guard = MUTEXES.lock().expect("mutex table lock");
     if guard.is_none() {
         *guard = Some(slotmap::SlotMap::with_key());

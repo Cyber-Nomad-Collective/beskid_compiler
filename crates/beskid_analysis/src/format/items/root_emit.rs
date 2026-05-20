@@ -45,11 +45,11 @@ impl Emit for Node {
         match self {
             Node::Function(f) => f.emit(w, cx),
             Node::Method(m) => m.emit(w, cx),
+            Node::ExtendTypeDefinition(e) => e.emit(w, cx),
             Node::TypeDefinition(t) => t.emit(w, cx),
             Node::EnumDefinition(e) => e.emit(w, cx),
             Node::ContractDefinition(c) => c.emit(w, cx),
             Node::TestDefinition(t) => t.emit(w, cx),
-            Node::MetaDefinition(m) => m.emit(w, cx),
             Node::AttributeDeclaration(a) => a.emit(w, cx),
             Node::ModuleDeclaration(m) => m.emit(w, cx),
             Node::InlineModule(m) => m.emit(w, cx),

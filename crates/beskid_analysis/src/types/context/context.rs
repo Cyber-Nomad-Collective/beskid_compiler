@@ -268,7 +268,11 @@ impl fmt::Display for TypeError {
                 write!(f, "invalid event subscription target at {}", at(*span))
             }
             TypeError::SpawnTargetNotFiberCompatible { span } => {
-                write!(f, "spawn target is not a valid fiber entry at {}", at(*span))
+                write!(
+                    f,
+                    "spawn target is not a valid fiber entry at {}",
+                    at(*span)
+                )
             }
             TypeError::JoinWouldDeadlock { span } => {
                 write!(
@@ -574,24 +578,17 @@ impl<'a> TypeContext<'a> {
         }
         self.seed_contract_signatures(program);
         for item in &program.node.items {
-            let HirItem::MethodDefinition(def) = &item.node else {
-                continue;
-            };
-            let Some(method_item_id) = self.item_id_for_span(item.span) else {
-                continue;
-            };
-            let Some(ResolvedType::Item(receiver_item_id)) = self
-                .resolution
-                .tables
-                .resolved_types
-                .get(&def.node.receiver_type.span)
-            else {
-                continue;
-            };
-            self.methods_by_receiver.insert(
-                (*receiver_item_id, def.node.name.node.name.clone()),
-                method_item_id,
-            );
+            match &item.node {
+                HirItem::MethodDefinition(def) => {
+                    self.seed_method_receiver(item.span, def);
+                }
+                HirItem::ExtendTypeDefinition(def) => {
+                    for method in &def.node.methods {
+                        self.seed_method_receiver(method.span, method);
+                    }
+                }
+                _ => {}
+            }
         }
         for item in &program.node.items {
             self.type_item(item);
@@ -631,6 +628,28 @@ impl<'a> TypeContext<'a> {
         (result, errors)
     }
 
+    fn seed_method_receiver(
+        &mut self,
+        method_span: SpanInfo,
+        def: &Spanned<crate::hir::HirMethodDefinition>,
+    ) {
+        let Some(method_item_id) = self.item_id_for_span(method_span) else {
+            return;
+        };
+        let Some(ResolvedType::Item(receiver_item_id)) = self
+            .resolution
+            .tables
+            .resolved_types
+            .get(&def.node.receiver_type.span)
+        else {
+            return;
+        };
+        self.methods_by_receiver.insert(
+            (*receiver_item_id, def.node.name.node.name.clone()),
+            method_item_id,
+        );
+    }
+
     fn seed_contract_signatures(&mut self, program: &Spanned<HirProgram>) {
         let definitions: HashMap<String, &Spanned<crate::hir::HirContractDefinition>> = program
             .node
@@ -665,8 +684,8 @@ impl<'a> TypeContext<'a> {
             }
 
             // If this contract has an extern interface, perform static validation.
-            if let Some(def) = definitions.get(&contract_name) {
-                if let Some(ext) = &def.node.extern_interface {
+            if let Some(def) = definitions.get(&contract_name)
+                && let Some(ext) = &def.node.extern_interface {
                     // ABI must be exactly "C"
                     let abi_ok = ext
                         .abi
@@ -704,18 +723,16 @@ impl<'a> TypeContext<'a> {
                                 }
                             }
                             // Return type
-                            if let Some(ret) = &sig.node.return_type {
-                                if !self.is_allowed_ffi_return(ret) {
+                            if let Some(ret) = &sig.node.return_type
+                                && !self.is_allowed_ffi_return(ret) {
                                     self.errors.push(TypeError::ExternDisallowedReturnType {
                                         span: ret.span,
                                         method: sig.node.name.node.name.clone(),
                                     });
                                 }
-                            }
                         }
                     }
                 }
-            }
         }
     }
 

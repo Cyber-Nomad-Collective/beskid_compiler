@@ -9,7 +9,7 @@ cranelift-jit = { workspace = true }
 cranelift-module = { workspace = true }
 cranelift-native = { workspace = true }
 cranelift-object = { workspace = true }
-gc-arena = { path = "../gc-arena" }
+abfall = { path = "../abfall" }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_abi = { path = "../beskid_abi" }
 beskid_codegen = { path = "../beskid_codegen" }

@@ -2,16 +2,22 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use beskid_abi::{
-    BeskidArray, BeskidStr, BESKID_RUNTIME_ABI_VERSION, BUILTIN_SPECS, RUNTIME_EXPORT_SYMBOLS,
+    BESKID_RUNTIME_ABI_VERSION, BUILTIN_SPECS, BeskidArray, BeskidStr, RUNTIME_EXPORT_SYMBOLS,
     SYM_ABI_VERSION, SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN,
-    SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
-    SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_PTR,
-    SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR,
-    SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE,
+    SYM_EVENT_SUBSCRIBE, SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_GC_BYTES_ALLOCATED, SYM_GC_COLLECT,
+    SYM_GC_COLLECT_IF_NEEDED, SYM_GC_EXTERNAL_ROOT_COUNT, SYM_GC_OBJECT_COUNT, SYM_GC_PHASE,
+    SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE,
+    SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
+    SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR, SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW,
+    SYM_SYSCALL_READ, SYM_SYSCALL_WRITE,
 };
-use beskid_aot::runtime::{prepare_runtime, RuntimeBuildRequest};
+use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
 use beskid_aot::{AotError, RuntimeStrategy};
 use beskid_engine::Engine;
+use beskid_pipeline::phases::{
+    MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE, SEMANTIC_SNAPSHOT,
+    SYNTAX_GENERATION,
+};
 use beskid_runtime::{array_len, array_new};
 
 #[test]
@@ -34,6 +40,12 @@ fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
         SYM_PANIC_STR,
         SYM_SYSCALL_WRITE,
         SYM_SYSCALL_READ,
+        SYM_GC_BYTES_ALLOCATED,
+        SYM_GC_OBJECT_COUNT,
+        SYM_GC_PHASE,
+        SYM_GC_COLLECT,
+        SYM_GC_COLLECT_IF_NEEDED,
+        SYM_GC_EXTERNAL_ROOT_COUNT,
         SYM_GC_WRITE_BARRIER,
         SYM_GC_ROOT_HANDLE,
         SYM_GC_UNROOT_HANDLE,
@@ -135,7 +147,7 @@ fn prebuilt_runtime_missing_archive_fails() {
 #[test]
 fn runtime_array_len_matches_array_new_length() {
     let mut engine = Engine::new();
-    engine.with_arena(|_, _| {
+    engine.with_runtime(|_, _| {
         let ptr = array_new(8, 3);
         assert!(!ptr.is_null(), "array_new should return a non-null handle");
         assert_eq!(
@@ -155,5 +167,30 @@ fn ffi_types_have_stable_sizes() {
     assert_eq!(
         std::mem::size_of::<BeskidArray>(),
         std::mem::size_of::<usize>() * 3
+    );
+}
+
+#[test]
+fn mod_pipeline_phase_ids_match_platform_contract() {
+    let expected = [
+        "mod.load",
+        "mod.collect",
+        "mod.generate",
+        "syntax.generation",
+        "semantic.snapshot",
+        "mod.analyze",
+        "mod.rewrite",
+    ];
+    assert_eq!(
+        [
+            MOD_LOAD,
+            MOD_COLLECT,
+            MOD_GENERATE,
+            SYNTAX_GENERATION,
+            SEMANTIC_SNAPSHOT,
+            MOD_ANALYZE,
+            MOD_REWRITE,
+        ],
+        expected
     );
 }

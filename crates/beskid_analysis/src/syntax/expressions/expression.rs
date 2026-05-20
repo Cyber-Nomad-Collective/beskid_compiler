@@ -93,7 +93,10 @@ fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError>
             match inner.as_rule() {
                 Rule::SpawnUnary => parse_spawn_unary(inner),
                 Rule::PrefixUnary => parse_prefix_unary_expression(inner),
-                _ => Err(ParseError::unexpected_rule(inner, Some(Rule::UnaryExpression))),
+                _ => Err(ParseError::unexpected_rule(
+                    inner,
+                    Some(Rule::UnaryExpression),
+                )),
             }
         }
         Rule::SpawnUnary => parse_spawn_unary(pair),

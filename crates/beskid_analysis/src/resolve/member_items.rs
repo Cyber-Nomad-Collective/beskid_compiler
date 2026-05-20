@@ -106,7 +106,7 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     #[test]
     fn statement_member_name_is_stable() {

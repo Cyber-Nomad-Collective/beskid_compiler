@@ -26,7 +26,7 @@ fn runtime_panic_message_for_null_string_handle_is_stable() {
 #[test]
 fn runtime_panic_message_for_invalid_utf8_is_stable() {
     let mut engine = Engine::new();
-    let message = engine.with_arena(|_, _| {
+    let message = engine.with_runtime(|_, _| {
         panic_text(std::panic::catch_unwind(|| {
             let invalid = [0xffu8];
             let _ = str_new(invalid.as_ptr(), invalid.len());
@@ -42,13 +42,13 @@ fn runtime_panic_message_for_invalid_utf8_is_stable() {
 #[test]
 fn runtime_panic_message_for_event_capacity_is_stable() {
     let mut engine = Engine::new();
-    let message = engine.with_arena(|_, _| {
+    let message = engine.with_runtime(|_, _| {
         let mut slot = std::ptr::null_mut();
-        let _ = event_subscribe(&mut slot, 1usize as *mut u8, 1);
+        let _ = event_subscribe(&mut slot, std::ptr::dangling_mut::<u8>(), 1);
 
         let text = panic_text(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
             || {
-                let _ = event_subscribe(&mut slot, 2usize as *mut u8, 1);
+                let _ = event_subscribe(&mut slot, std::ptr::dangling_mut::<u8>(), 1);
             },
         )));
 

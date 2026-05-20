@@ -75,14 +75,13 @@ pub fn resolve_ref_markdown(
         return "`@ref()`".to_string();
     }
     if let Some(target) = find_resolved_item(path, resolution) {
-        if let Some(ctx) = links {
-            if !ctx.package_with_version.trim().is_empty() {
+        if let Some(ctx) = links
+            && !ctx.package_with_version.trim().is_empty() {
                 let pkg = percent_encode_path_segment(ctx.package_with_version.trim());
                 let qn = percent_encode_path_segment(&target.name);
                 let label = escape_markdown_link_text(&target.name);
                 return format!("[{label}](/docs/{pkg}/api/{qn})");
             }
-        }
         return format!("`{}`", target.name);
     }
     format!("`{path}` _(unresolved)_")
@@ -99,9 +98,7 @@ mod tests {
     use crate::hir::HirVisibility;
     use std::collections::HashMap;
 
-    use crate::resolve::{
-        ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables,
-    };
+    use crate::resolve::{ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables};
     use crate::syntax::SpanInfo;
 
     fn item(id: usize, name: &str, kind: ItemKind, parent_id: Option<ItemId>) -> ItemInfo {
@@ -136,7 +133,10 @@ mod tests {
             package_with_version: "demo@1.0.0".into(),
         };
         let md = resolve_ref_markdown("Widget::value", &resolution, Some(&ctx));
-        assert!(md.contains("[Widget::value](/docs/demo%401.0.0/api/Widget%3A%3Avalue)"), "{md}");
+        assert!(
+            md.contains("[Widget::value](/docs/demo%401.0.0/api/Widget%3A%3Avalue)"),
+            "{md}"
+        );
     }
 
     #[test]

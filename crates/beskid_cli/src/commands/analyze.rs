@@ -36,17 +36,13 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
         args.plain,
     )?;
     pipeline_ui.show_build_graph(&resolved);
-    let counts = pipeline_ui.report_semantic_diagnostics(
-        &services::analyze_program(&resolved.source_path, &resolved.source)?,
-    );
-    pipeline_ui.finish_session(format!("Analyze complete ({})", format_severity_summary(counts)));
-
-    if counts.errors > 0 {
-        return Err(anyhow::anyhow!(
-            "analysis reported {} error(s)",
-            counts.errors
-        ));
-    }
-
+    let counts = pipeline_ui.report_semantic_diagnostics(&services::analyze_source_in_project(
+        &resolved.source_path,
+        &resolved.source,
+    )?);
+    pipeline_ui.finish_session(format!(
+        "Analyze complete ({})",
+        format_severity_summary(counts)
+    ));
     Ok(())
 }

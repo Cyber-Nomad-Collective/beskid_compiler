@@ -14,11 +14,13 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
-use beskid_analysis::projects::{CompilePlan, UnresolvedDependencyPolicy, WorkspaceResolutionSummary};
+use beskid_analysis::projects::{
+    CompilePlan, UnresolvedDependencyPolicy, WorkspaceResolutionSummary,
+};
 use beskid_analysis::services::{ResolvedInput, ResolvedProject};
 use beskid_pipeline::{
     PipelineEvent, PipelineObserver,
-    phases::{FULL_BUILD_PHASE_ORDER, JIT_RUN_PHASE_ORDER},
+    phases::{FULL_BUILD_PHASE_ORDER, JIT_RUN_PHASE_ORDER, MOD_BUILD_PHASE_ORDER},
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
@@ -49,7 +51,9 @@ impl WorkUnitThrottleState {
             .last_emit
             .map(|t| now.duration_since(t) >= WORK_UNIT_UI_MIN_INTERVAL)
             .unwrap_or(true);
-        let due_burst = self.work_unit_events % WORK_UNIT_UI_BURST_INTERVAL == 0;
+        let due_burst = self
+            .work_unit_events
+            .is_multiple_of(WORK_UNIT_UI_BURST_INTERVAL);
         if due_time || due_burst {
             self.last_emit = Some(now);
             true
@@ -68,6 +72,8 @@ impl WorkUnitThrottleState {
 pub enum PipelineProgressKind {
     /// Full `beskid build` pipeline (resolve through link).
     FullBuild,
+    /// Resolve and rebuild a compiler-mod AOT artifact.
+    ModBuild,
     /// Resolve/materialize plus a single JIT lower/run (test, run, clif).
     PrepareAndRun,
 }
@@ -119,6 +125,7 @@ impl CliPipeline {
         let multi = MultiProgress::new();
         let phase_count = match kind {
             PipelineProgressKind::FullBuild => FULL_BUILD_PHASE_ORDER.len(),
+            PipelineProgressKind::ModBuild => MOD_BUILD_PHASE_ORDER.len(),
             PipelineProgressKind::PrepareAndRun => {
                 // Resolve/materialize (4) + semantic gate + one JIT path.
                 4 + JIT_RUN_PHASE_ORDER.len()
@@ -178,10 +185,7 @@ impl CliPipeline {
     }
 
     pub fn show_build_graph(&self, resolved: &ResolvedInput) {
-        let mut shown = self
-            .graph_shown
-            .lock()
-            .expect("graph_shown mutex poisoned");
+        let mut shown = self.graph_shown.lock().expect("graph_shown mutex poisoned");
         if *shown {
             return;
         }
@@ -226,11 +230,7 @@ impl CliPipeline {
     }
 
     fn progress_bars_active(&self) -> bool {
-        !self.progress_bars_halted()
-            && self
-                .step_bar
-                .as_ref()
-                .is_some_and(|bar| !bar.is_finished())
+        !self.progress_bars_halted() && self.step_bar.as_ref().is_some_and(|bar| !bar.is_finished())
     }
 
     fn progress_bars_halted(&self) -> bool {
@@ -241,11 +241,14 @@ impl CliPipeline {
     }
 
     /// Print semantic diagnostics (suspending progress bars when needed) and return severity counts.
-    pub fn report_semantic_diagnostics(&self, diagnostics: &[SemanticDiagnostic]) -> tui::SeverityCounts {
+    pub fn report_semantic_diagnostics(
+        &self,
+        diagnostics: &[SemanticDiagnostic],
+    ) -> tui::SeverityCounts {
         let counts = count_severities(diagnostics);
         self.halt_progress_bars_for_output();
         if diagnostics.is_empty() {
-            self.println_session("Analysis: no issues found.");
+            self.println_session("No diagnostics.");
             return counts;
         }
         for diagnostic in diagnostics {
@@ -253,10 +256,7 @@ impl CliPipeline {
             eprint!("{rendered}");
         }
         let _ = stderr().flush();
-        self.println_session(format!(
-            "Analysis: {}",
-            format_severity_summary(counts)
-        ));
+        self.println_session(format!("Analysis: {}", format_severity_summary(counts)));
         counts
     }
 
@@ -296,16 +296,16 @@ impl CliPipeline {
         let summary = format!("{msg} in {}", format_duration(elapsed));
 
         let bars_active = self.step_bar.as_ref().is_some_and(|bar| !bar.is_finished());
-        if let Some(work) = &self.work_bar {
-            if !work.is_finished() {
-                work.finish_and_clear();
-            }
+        if let Some(work) = &self.work_bar
+            && !work.is_finished()
+        {
+            work.finish_and_clear();
         }
-        if let Some(bar) = &self.step_bar {
-            if bars_active {
-                bar.finish_with_message(summary);
-                return;
-            }
+        if let Some(bar) = &self.step_bar
+            && bars_active
+        {
+            bar.finish_with_message(summary);
+            return;
         }
         eprintln!("{summary}");
     }
@@ -382,20 +382,16 @@ impl CliPipeline {
         if self.plain || !self.progress_bars_active() {
             eprintln!("✓ {label} ({})", format_duration(duration));
         } else {
-            self.println_session(format!(
-                "  ✓ {} ({})",
-                label,
-                format_duration(duration)
-            ));
+            self.println_session(format!("  ✓ {} ({})", label, format_duration(duration)));
             if let Some(steps) = &self.step_bar {
                 steps.inc(1);
                 steps.set_message(label);
             }
         }
-        if self.progress_bars_active() {
-            if let Some(work) = &self.work_bar {
-                work.set_message("");
-            }
+        if self.progress_bars_active()
+            && let Some(work) = &self.work_bar
+        {
+            work.set_message("");
         }
     }
 }
@@ -448,6 +444,7 @@ pub fn resolve_input_with_cli_pipeline(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_input_with_cli_pipeline_kind(
     input: Option<&PathBuf>,
     project: Option<&PathBuf>,
@@ -474,6 +471,7 @@ pub fn resolve_input_with_cli_pipeline_kind(
     Ok((pipeline_ui, resolved))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_project_with_cli_pipeline(
     input: Option<&PathBuf>,
     project: Option<&PathBuf>,

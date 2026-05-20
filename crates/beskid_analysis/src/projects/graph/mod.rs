@@ -1,4 +1,4 @@
-//! Workspace [`ProjectGraph`](project_graph::ProjectGraph): discovery, meta attachment, edges, and resolution rules.
+//! Workspace [`ProjectGraph`](project_graph::ProjectGraph): discovery, dependency edges, and resolution rules.
 
 pub mod builder;
 pub mod loader;
@@ -12,8 +12,7 @@ pub use builder::{
     discover_workspace_resolution_rules,
 };
 pub use project_graph::{
-    DependencyEdge, MetaAttachmentResolution, ProjectGraph, ProjectGraphNode, UnresolvedDependency,
-    UnresolvedDependencyKind,
+    DependencyEdge, ProjectGraph, ProjectGraphNode, UnresolvedDependency, UnresolvedDependencyKind,
 };
 pub use projection::{collect_dependency_projects, collect_unresolved_dependencies};
 pub use resolver::WorkspaceResolutionRules;

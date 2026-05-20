@@ -42,7 +42,7 @@ fn resolve_project_uses_workspace_member_for_input_path() {
     assert_eq!(compile_plan.project_name, "Compiler");
     assert_same_canonical_path(
         &compile_plan.manifest_path,
-        &compiler_dir.join("Project.proj"),
+        compiler_dir.join("Project.proj"),
     );
 
     let _ = fs::remove_dir_all(root);
@@ -116,7 +116,7 @@ fn resolve_project_with_workspace_manifest_uses_first_member_when_no_input() {
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Alpha");
-    assert_same_canonical_path(&compile_plan.manifest_path, &alpha_dir.join("Project.proj"));
+    assert_same_canonical_path(&compile_plan.manifest_path, alpha_dir.join("Project.proj"));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -149,7 +149,7 @@ fn resolve_project_prefers_deepest_matching_workspace_member() {
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Cli");
-    assert_same_canonical_path(&compile_plan.manifest_path, &cli_dir.join("Project.proj"));
+    assert_same_canonical_path(&compile_plan.manifest_path, cli_dir.join("Project.proj"));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -188,7 +188,7 @@ fn resolve_project_uses_explicit_workspace_member() {
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Beta");
-    assert_same_canonical_path(&compile_plan.manifest_path, &beta_dir.join("Project.proj"));
+    assert_same_canonical_path(&compile_plan.manifest_path, beta_dir.join("Project.proj"));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -255,7 +255,7 @@ fn compilation_context_matches_workspace_member_for_bd_file() {
     );
     assert_same_canonical_path(
         &ctx.project_manifest_path,
-        &compiler_dir.join("Project.proj"),
+        compiler_dir.join("Project.proj"),
     );
 
     let _ = fs::remove_dir_all(root);

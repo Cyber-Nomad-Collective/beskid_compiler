@@ -12,6 +12,7 @@ use slotmap::{Key, KeyData, SlotMap};
 
 use crate::builtins::{EventState, event_get_handler, event_len};
 use crate::fiber::Yielder;
+use crate::gc::with_current_root_if_active;
 use crate::status::{
     FIBER_JOIN_CANCELLED, FIBER_JOIN_OK, FIBER_JOIN_PANICKED, FIBER_JOIN_STACK_OVERFLOW,
 };
@@ -253,10 +254,7 @@ pub fn fiber_now_millis() -> i64 {
 }
 
 pub fn current_fiber_id() -> i64 {
-    TLS_CURRENT
-        .with(|c| c.get())
-        .map(key_to_id)
-        .unwrap_or(0)
+    TLS_CURRENT.with(|c| c.get()).map(key_to_id).unwrap_or(0)
 }
 
 pub fn current_fiber_key() -> Option<FiberKey> {
@@ -303,7 +301,9 @@ fn key_to_id(key: FiberKey) -> i64 {
 
 pub fn wake_fiber(key: FiberKey) {
     let woke = SCHEDULER.with(|cell| {
-        if let Ok(mut guard) = cell.try_borrow_mut() && let Some(s) = guard.as_mut() {
+        if let Ok(mut guard) = cell.try_borrow_mut()
+            && let Some(s) = guard.as_mut()
+        {
             wake_fiber_immediate(s, key);
             return true;
         }
@@ -343,7 +343,9 @@ pub fn fiber_spawn(
 ) -> i64 {
     let parent = TLS_CURRENT.with(|c| c.get());
     let spawned = SCHEDULER.with(|cell| {
-        if let Ok(mut guard) = cell.try_borrow_mut() && let Some(s) = guard.as_mut() {
+        if let Ok(mut guard) = cell.try_borrow_mut()
+            && let Some(s) = guard.as_mut()
+        {
             let key = s.spawn_fiber(entry, env, on_cancelled_slot, parent);
             return Some(key_to_id(key));
         }
@@ -445,9 +447,9 @@ impl Scheduler {
         on_cancelled_slot: *mut *mut EventState,
         parent: Option<FiberKey>,
     ) -> FiberKey {
-        let coroutine = Coroutine::new(
-            move |yielder: &Yielder<(), ()>, ()| run_fiber_body(yielder, entry, env),
-        );
+        let coroutine = Coroutine::new(move |yielder: &Yielder<(), ()>, ()| {
+            run_fiber_body(yielder, entry, env)
+        });
         let key = self.fibers.insert(Fiber {
             state: FiberState::Runnable,
             coroutine: Some(coroutine),
@@ -501,7 +503,10 @@ impl Scheduler {
     fn all_blocked(&self) -> bool {
         self.run_queue.is_empty()
             && self.fibers.values().all(|f| {
-                matches!(f.state, FiberState::Parked | FiberState::Done | FiberState::Cancelled)
+                matches!(
+                    f.state,
+                    FiberState::Parked | FiberState::Done | FiberState::Cancelled
+                )
             })
     }
 
@@ -514,7 +519,12 @@ impl Scheduler {
         ) {
             return;
         }
-        let cancelled = self.fibers.get(key).expect("fiber").cancelled.load(Ordering::Acquire);
+        let cancelled = self
+            .fibers
+            .get(key)
+            .expect("fiber")
+            .cancelled
+            .load(Ordering::Acquire);
         self.fibers.get_mut(key).expect("fiber").state = FiberState::Running;
         TLS_CURRENT.with(|c| c.set(Some(key)));
         TLS_CANCELLED.with(|c| c.set(cancelled));
@@ -616,9 +626,9 @@ impl Fiber {
     fn start(&mut self, entry: extern "C" fn(*mut u8) -> i64, env: *mut u8) {
         self.entry = Some(entry);
         self.env = env;
-        self.coroutine = Some(Coroutine::new(
-            move |yielder: &Yielder<(), ()>, ()| run_fiber_body(yielder, entry, env),
-        ));
+        self.coroutine = Some(Coroutine::new(move |yielder: &Yielder<(), ()>, ()| {
+            run_fiber_body(yielder, entry, env)
+        }));
         self.state = FiberState::Runnable;
     }
 }
@@ -682,6 +692,10 @@ pub fn run_main_fiber(main: extern "C" fn(*mut u8) -> i64, env: *mut u8) -> i64 
                     }
                 });
             }
+            with_current_root_if_active(|root| {
+                root.heap.collect();
+                root.runtime_state.heap_live_bytes = root.heap.bytes_allocated();
+            });
             std::thread::yield_now();
         }
     }
@@ -690,7 +704,8 @@ pub fn run_main_fiber(main: extern "C" fn(*mut u8) -> i64, env: *mut u8) -> i64 
     let mut result = 0i64;
     with_scheduler(|s| {
         s.join_non_detached_children();
-        if let Some(JoinOutcome::Value(n)) = s.fibers.get(main_key).and_then(|f| f.outcome.as_ref()) {
+        if let Some(JoinOutcome::Value(n)) = s.fibers.get(main_key).and_then(|f| f.outcome.as_ref())
+        {
             result = *n;
         }
         // Leak coroutine stacks on shutdown so Drop does not force-unwind across C unwind boundaries.

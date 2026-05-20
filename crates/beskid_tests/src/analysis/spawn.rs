@@ -34,32 +34,18 @@ fn spawn_expression_parses() {
     let source = "unit child() { }\nunit main() { spawn child(); }\n";
     let program = parse_program(source).expect("parse spawn");
     use beskid_analysis::syntax::Expression;
-    let has_spawn = program
-        .node
-        .items
-        .iter()
-        .any(|item| {
-            if let beskid_analysis::syntax::Node::Function(def) = &item.node {
-                def.node
-                    .body
-                    .node
-                    .statements
-                    .iter()
-                    .any(|stmt| {
-                        if let beskid_analysis::syntax::Statement::Expression(expr_stmt) =
-                            &stmt.node
-                        {
-                            matches!(
-                                expr_stmt.node.expression.node,
-                                Expression::Spawn(_)
-                            )
-                        } else {
-                            false
-                        }
-                    })
-            } else {
-                false
-            }
-        });
+    let has_spawn = program.node.items.iter().any(|item| {
+        if let beskid_analysis::syntax::Node::Function(def) = &item.node {
+            def.node.body.node.statements.iter().any(|stmt| {
+                if let beskid_analysis::syntax::Statement::Expression(expr_stmt) = &stmt.node {
+                    matches!(expr_stmt.node.expression.node, Expression::Spawn(_))
+                } else {
+                    false
+                }
+            })
+        } else {
+            false
+        }
+    });
     assert!(has_spawn, "expected spawn expression in AST");
 }

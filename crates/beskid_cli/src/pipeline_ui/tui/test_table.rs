@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use indicatif::MultiProgress;
 
-use super::hyperlink::{maybe_link_label, FileLineLink};
+use super::hyperlink::{FileLineLink, maybe_link_label};
 use super::timer::format_duration;
 
 const TABLE_INNER_WIDTH: usize = 68;
@@ -96,6 +96,7 @@ impl TestRunUi {
         index: usize,
         state: TestRowState,
         duration: Duration,
+        detail: Option<&str>,
     ) -> io::Result<()> {
         if index >= self.rows.len() {
             return Ok(());
@@ -104,14 +105,19 @@ impl TestRunUi {
         self.rows[index].duration = Some(duration);
         if self.plain {
             let name = &self.rows[index].qualified_name;
-            let label = match state {
-                TestRowState::Passed => "PASS",
-                TestRowState::Failed => "FAIL",
-                TestRowState::Skipped => "SKIP",
-                TestRowState::FilteredOut => "FILT",
-                TestRowState::Pending | TestRowState::Running => "????",
-            };
-            eprintln!("{label} {name}");
+            match state {
+                TestRowState::Passed => eprintln!("PASS {name}"),
+                TestRowState::Failed => eprintln!("FAIL {name}"),
+                TestRowState::Skipped => {
+                    if let Some(reason) = detail {
+                        eprintln!("SKIP {name}: {reason}");
+                    } else {
+                        eprintln!("SKIP {name}");
+                    }
+                }
+                TestRowState::FilteredOut => eprintln!("FILT {name}"),
+                TestRowState::Pending | TestRowState::Running => eprintln!("???? {name}"),
+            }
             return Ok(());
         }
         self.redraw_table()?;
@@ -245,7 +251,7 @@ fn strip_ansi(text: &str) -> String {
                 }
             } else if chars.peek() == Some(&'[') {
                 chars.next();
-                while matches!(chars.peek(), Some(c) if c != 'm' && c != 'M') {
+                while matches!(chars.peek(), Some(c) if *c != 'm' && *c != 'M') {
                     chars.next();
                 }
                 if matches!(chars.peek(), Some('m' | 'M')) {

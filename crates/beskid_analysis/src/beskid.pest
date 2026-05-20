@@ -20,6 +20,7 @@ EnumDeclarationKeyword = { "enum" }
 ContractDeclarationKeyword = { "contract" }
 AttributeDeclarationKeyword = { "attribute" }
 ImplKeyword = { "impl" }
+ExtendKeyword = { "extend" }
 MatchKeyword = { "match" }
 EventKeyword = { "event" }
 WhenKeyword = { "when" }
@@ -39,7 +40,6 @@ PubKeyword = { "pub" }
 RefKeyword = { "ref" }
 OutKeyword = { "out" }
 TestKeyword = { "test" }
-MetaKeyword = { "meta" }
 SkipKeyword = { "skip" }
 SpawnKeyword = { "spawn" }
 AsyncKeyword = { "async" }
@@ -52,6 +52,7 @@ Keyword = {
       | ContractDeclarationKeyword
       | AttributeDeclarationKeyword
       | ImplKeyword
+      | ExtendKeyword
       | MatchKeyword
       | EventKeyword
       | WhenKeyword
@@ -71,7 +72,6 @@ Keyword = {
       | RefKeyword
       | OutKeyword
       | TestKeyword
-      | MetaKeyword
       | SkipKeyword
       | SpawnKeyword
       | AsyncKeyword
@@ -103,7 +103,7 @@ Program = { SOI ~ ItemList ~ EOI }
 
 DocLineContent = { "///" ~ !("/") ~ (!(NEWLINE) ~ ANY)* ~ NEWLINE? }
 DocRun = @{ DocLineContent+ }
-InnerItem = _{ FunctionDefinition | ImplBlock | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | MetaDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
+InnerItem = _{ FunctionDefinition | ImplBlock | ExtendTypeDefinition | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
 
 AttributeList = { Attribute+ }
 Attribute = { "[" ~ Identifier ~ ("(" ~ AttributeArgumentList? ~ ")")? ~ "]" }
@@ -148,11 +148,12 @@ BeskidType = { ArrowFunctionType | FunctionType | TypeReference | ArrayType | Ty
 FunctionDefinition = { Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ Block }
 ReceiverType = { PrimitiveType | Path }
 ImplBlock = { "impl" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
+ExtendTypeDefinition = { "extend" ~ "type" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 ImplMethodWithDocs = { ((DocRun ~ ImplMethodDefinition) | ImplMethodDefinition) ~ DocGap* }
 ImplMethodDefinition = { Visibility? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ Block }
 ParameterList = { ParameterWithDocs ~ ("," ~ DocGap* ~ ParameterWithDocs)* }
 ParameterWithDocs = { (DocRun ~ Parameter) | Parameter }
-Parameter = { ParameterModifier? ~ BeskidType ~ Identifier }
+Parameter = { ParameterModifier? ~ BeskidType ~ MutKeyword? ~ Identifier }
 ParameterModifier = { "ref" | "out" }
 
 FieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
@@ -160,7 +161,7 @@ FieldWithDocs = { (DocRun ~ Field) | Field }
 ValueField = { BeskidType ~ Identifier }
 EventCapacity = { "{" ~ IntegerLiteral ~ "}" }
 EventField = { "event" ~ EventCapacity? ~ Identifier ~ "(" ~ ParameterList? ~ ")" }
-Field = { EventField | ValueField }
+Field = { Visibility? ~ (EventField | ValueField) }
 
 TypeConformanceList = { ":" ~ PathList }
 TypeDefinition = { Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ FieldList? ~ "}" }
@@ -183,10 +184,6 @@ TestMetaSection = { "meta" ~ "{" ~ TestMetadataEntry* ~ "}" }
 TestMetadataEntry = { Identifier ~ "=" ~ Expression ~ ";" }
 TestSkipSection = { "skip" ~ "{" ~ TestSkipEntry* ~ "}" }
 TestSkipEntry = { Identifier ~ "=" ~ Expression ~ ";" }
-
-// Module-level language-meta block (metaprogramming host surface); body uses the same
-// `name = expr;` entries as `test` meta sections.
-MetaDefinition = { AttributeList? ~ Visibility? ~ "meta" ~ Identifier ~ "{" ~ TestMetadataEntry* ~ "}" }
 
 ////////////////////////////////////////////////////////////
 // 5) STATEMENTS AND BLOCKS
@@ -228,7 +225,7 @@ LogicalOrExpression = { LogicalAndExpression ~ ("||" ~ LogicalAndExpression)* }
 LogicalAndExpression = { EqualityExpression ~ ("&&" ~ EqualityExpression)* }
 
 EqualityExpression = { ComparisonExpression ~ (("===" | "!==" | "==" | "!=") ~ ComparisonExpression)* }
-ComparisonExpression = { AdditionExpression ~ (("<" | "<=" | ">" | ">=") ~ AdditionExpression)* }
+ComparisonExpression = { AdditionExpression ~ (("<=" | ">=" | "<" | ">") ~ AdditionExpression)* }
 AdditionExpression = { MultiplicationExpression ~ (("+" | "-") ~ MultiplicationExpression)* }
 MultiplicationExpression = { UnaryExpression ~ (("*" | "/") ~ UnaryExpression)* }
 
@@ -253,7 +250,7 @@ FieldValue = { Identifier ~ ":" ~ Expression }
 CallExpression = { Identifier ~ "(" ~ ArgumentList? ~ ")" }
 ArgumentList = { Expression ~ ("," ~ Expression)* }
 
-MatchExpression = { "match" ~ Expression ~ "{" ~ (MatchArm ~ ("," ~ MatchArm)* ~ ","?)? ~ "}" }
+MatchExpression = { "match" ~ Expression ~ "{" ~ (MatchArm ~ ("," ~ MatchArm?)*)? ~ "}" }
 MatchArm = { Pattern ~ MatchGuard? ~ "=>" ~ Expression }
 MatchGuard = { "when" ~ Expression }
 

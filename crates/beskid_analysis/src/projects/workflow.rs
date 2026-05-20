@@ -356,6 +356,10 @@ fn sync_project_lockfile(
     Ok(lock_path)
 }
 
+fn should_skip_materialized_subdir(name: Option<&str>) -> bool {
+    matches!(name, Some("obj") | Some("tests"))
+}
+
 fn copy_directory_when_newer(source: &Path, destination: &Path) -> Result<(), ProjectError> {
     fs::create_dir_all(destination).map_err(|source| ProjectError::MaterializationCreateDir {
         path: destination.to_path_buf(),
@@ -381,6 +385,9 @@ fn copy_directory_when_newer(source: &Path, destination: &Path) -> Result<(), Pr
                 })?;
 
         if file_type.is_dir() {
+            if should_skip_materialized_subdir(entry.file_name().to_str()) {
+                continue;
+            }
             copy_directory_when_newer(&entry_path, &destination_path)?;
             continue;
         }
@@ -581,11 +588,10 @@ fn resolve_registry_base_url(
             return trimmed.trim_end_matches('/').to_string();
         }
     }
-    if let Some(rules) = workspace_rules {
-        if let Some(url) = rules.registry_base_url(registry_alias) {
+    if let Some(rules) = workspace_rules
+        && let Some(url) = rules.registry_base_url(registry_alias) {
             return url.trim_end_matches('/').to_string();
         }
-    }
     "http://127.0.0.1:8082".trim_end_matches('/').to_string()
 }
 

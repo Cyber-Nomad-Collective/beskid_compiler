@@ -27,13 +27,12 @@ pub enum Item<P: Phase> {
     FunctionDefinition(Spanned<P::FunctionDefinition>),
     #[phase(from = "Method")]
     MethodDefinition(Spanned<P::MethodDefinition>),
+    ExtendTypeDefinition(Spanned<P::ExtendTypeDefinition>),
     TypeDefinition(Spanned<P::TypeDefinition>),
     EnumDefinition(Spanned<P::EnumDefinition>),
     ContractDefinition(Spanned<P::ContractDefinition>),
     #[phase(from = "TestDefinition")]
     TestDefinition(Spanned<P::TestDefinition>),
-    #[phase(from = "MetaDefinition")]
-    MetaDefinition(Spanned<P::MetaDefinition>),
     AttributeDeclaration(Spanned<P::AttributeDeclaration>),
     ModuleDeclaration(Spanned<P::ModuleDeclaration>),
     InlineModule(Spanned<P::InlineModule>),
@@ -49,11 +48,11 @@ impl HirNode for Item<crate::hir::HirPhase> {
         match self {
             Item::FunctionDefinition(def) => push(HirNodeRef(&def.node)),
             Item::MethodDefinition(def) => push(HirNodeRef(&def.node)),
+            Item::ExtendTypeDefinition(def) => push(HirNodeRef(&def.node)),
             Item::TypeDefinition(def) => push(HirNodeRef(&def.node)),
             Item::EnumDefinition(def) => push(HirNodeRef(&def.node)),
             Item::ContractDefinition(def) => push(HirNodeRef(&def.node)),
             Item::TestDefinition(def) => push(HirNodeRef(&def.node)),
-            Item::MetaDefinition(def) => push(HirNodeRef(&def.node)),
             Item::AttributeDeclaration(def) => push(HirNodeRef(&def.node)),
             Item::ModuleDeclaration(def) => push(HirNodeRef(&def.node)),
             Item::InlineModule(def) => push(HirNodeRef(&def.node)),
@@ -64,6 +63,17 @@ impl HirNode for Item<crate::hir::HirPhase> {
     fn node_kind(&self) -> HirNodeKind {
         HirNodeKind::Item
     }
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "ExtendTypeDefinition")]
+pub struct HirExtendTypeDefinition {
+    #[ast(child)]
+    pub target_type: Spanned<HirType>,
+    #[ast(children)]
+    pub methods: Vec<Spanned<HirMethodDefinition>>,
+    #[ast(skip)]
+    pub method_docs: Vec<Option<crate::doc::LeadingDocComment>>,
 }
 
 #[derive(beskid_ast_derive::HirNode)]
@@ -98,19 +108,6 @@ pub struct HirMethodDefinition {
     pub return_type: Option<Spanned<HirType>>,
     #[ast(child)]
     pub body: Spanned<HirBlock>,
-}
-
-#[derive(beskid_ast_derive::HirNode)]
-#[ast(kind = "MetaDefinition")]
-pub struct HirMetaDefinition {
-    #[ast(children)]
-    pub attributes: Vec<Spanned<HirAttribute>>,
-    #[ast(child)]
-    pub visibility: Spanned<HirVisibility>,
-    #[ast(child)]
-    pub name: Spanned<HirIdentifier>,
-    #[ast(children)]
-    pub entries: Vec<Spanned<HirTestMetadataEntry>>,
 }
 
 #[derive(beskid_ast_derive::HirNode)]

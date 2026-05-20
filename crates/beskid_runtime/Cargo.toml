@@ -5,8 +5,7 @@ edition = "2024"
 
 [dependencies]
 beskid_abi = { path = "../beskid_abi" }
-gc-arena = { path = "../gc-arena" }
-gc-arena-derive = { path = "../gc-arena/derive" }
+abfall = { path = "../abfall" }
 slotmap = { workspace = true }
 corosensei = { version = "0.3.3", default-features = true }
 

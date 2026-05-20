@@ -151,8 +151,7 @@ mod tests {
     fn missing_required_symbols_detects_absent_entries() {
         let names = vec!["_alloc".to_owned()];
         let present = present_export_symbols(&names);
-        let missing =
-            missing_required_symbols(&present, &[SYM_ABI_VERSION, "alloc", "str_new"]);
+        let missing = missing_required_symbols(&present, &[SYM_ABI_VERSION, "alloc", "str_new"]);
         assert_eq!(missing, vec![SYM_ABI_VERSION, "str_new"]);
     }
 }

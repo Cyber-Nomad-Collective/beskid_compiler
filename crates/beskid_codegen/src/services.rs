@@ -5,8 +5,8 @@ use beskid_analysis::AnalysisOptions;
 use beskid_analysis::hir::HirProgram;
 use beskid_analysis::resolve::Resolution;
 use beskid_analysis::services::{
-    SemanticDiagnosticsError, lower_normalize_resolve_type_spanned, require_no_semantic_errors,
-    semantic_rule_diagnostics_for_program,
+    SemanticDiagnosticsError, compile_plan_for_input_path, lower_normalize_resolve_type_spanned,
+    require_no_semantic_errors, semantic_rule_diagnostics_for_program,
 };
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeResult;
@@ -41,18 +41,27 @@ pub fn lower_source_with_pipeline(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
+    let source_name = path.display().to_string();
     let program = observe_phase_result(pipeline, PARSE, || {
-        beskid_analysis::services::parse_program_with_source_name(
-            &path.display().to_string(),
-            source,
-        )
+        beskid_analysis::services::parse_program_with_source_name(&source_name, source)
     })?;
+    let compile_plan = compile_plan_for_input_path(path);
+    let generated = beskid_analysis::mod_host::run_through_generate(
+        program,
+        &beskid_analysis::mod_host::ModHostInput {
+            compile_plan: compile_plan.as_ref(),
+            source_name: &source_name,
+            source,
+            pipeline,
+        },
+    )?;
+    let mut program = generated.program;
 
     if with_diagnostics {
         observe_phase_result(pipeline, SEMANTIC, || {
             let diagnostics = semantic_rule_diagnostics_for_program(
                 &program.node,
-                path.display().to_string(),
+                source_name.clone(),
                 source,
                 AnalysisOptions::default(),
             );
@@ -60,6 +69,8 @@ pub fn lower_source_with_pipeline(
         })?;
         observe_phase(pipeline, SEMANTIC_SNAPSHOT, || {});
     }
+    program =
+        beskid_analysis::mod_host::run_analyze_rewrite(program, &generated.session, pipeline)?;
 
     observe_phase(pipeline, LOWER_READY, || {});
 

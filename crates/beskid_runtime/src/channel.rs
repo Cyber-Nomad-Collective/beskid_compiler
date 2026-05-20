@@ -21,8 +21,8 @@ struct ChannelInner {
 static CHANNELS: Mutex<Option<slotmap::SlotMap<slotmap::DefaultKey, ChannelInner>>> =
     Mutex::new(None);
 
-fn channels() -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, ChannelInner>>>
-{
+fn channels()
+-> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, ChannelInner>>> {
     let mut guard = CHANNELS.lock().expect("channel table lock");
     if guard.is_none() {
         *guard = Some(slotmap::SlotMap::with_key());
@@ -92,7 +92,9 @@ pub fn channel_send(id: ChannelId, value: i64) -> i64 {
             if ch.closed {
                 return STATUS_CLOSED;
             }
-            if let Some(cap) = ch.capacity && ch.queue.len() >= cap {
+            if let Some(cap) = ch.capacity
+                && ch.queue.len() >= cap
+            {
                 return STATUS_WOULD_BLOCK;
             }
         }
@@ -115,7 +117,9 @@ pub fn channel_try_send(id: ChannelId, value: i64) -> i64 {
         if ch.closed {
             return STATUS_CLOSED;
         }
-        if let Some(cap) = ch.capacity && ch.queue.len() >= cap {
+        if let Some(cap) = ch.capacity
+            && ch.queue.len() >= cap
+        {
             return STATUS_WOULD_BLOCK;
         }
         ch.queue.push_back(value);
@@ -165,11 +169,7 @@ pub fn channel_receive_status(id: ChannelId) -> i64 {
 pub fn channel_receive_value(id: ChannelId) -> i64 {
     let mut out = 0i64;
     let status = channel_receive(id, &mut out);
-    if status == STATUS_OK {
-        out
-    } else {
-        0
-    }
+    if status == STATUS_OK { out } else { 0 }
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)] // `out` validated non-null; JIT passes stack slots.

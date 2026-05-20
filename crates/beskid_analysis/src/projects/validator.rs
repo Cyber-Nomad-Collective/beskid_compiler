@@ -2,19 +2,18 @@ use std::collections::HashSet;
 use std::path::{Component, Path};
 
 use crate::projects::error::ProjectError;
-use crate::projects::model::{
-    AttachToSelector, DependencySource, ProjectKind, ProjectManifest, WorkspaceManifest,
-};
+use crate::projects::model::{DependencySource, ProjectKind, ProjectManifest, WorkspaceManifest};
 
-/// Normative capability names from the meta block host bridge contract.
-/// Closed capability names accepted in `project.meta.capabilities` (meta-block host bridge).
-pub const META_CAPABILITY_NAMES: &[&str] = &[
-    "diagnostics",
-    "read_project_sources",
+/// Closed capability names accepted in `project.mod.capabilities` (compiler-mod host bridge).
+pub const MOD_CAPABILITY_NAMES: &[&str] = &[
     "emit_syntax",
+    "read_project_sources",
     "query_semantic_snapshot",
     "extern_ffi",
+    "rewrite_syntax",
 ];
+
+const MOD_ARTIFACT_POLICIES: &[&str] = &["reuse", "rebuild", "clean_rebuild"];
 
 pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError> {
     if manifest.project.name.trim().is_empty() {
@@ -35,19 +34,19 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
     match manifest.project.kind {
         ProjectKind::Host if manifest.targets.is_empty() => {
             return Err(ProjectError::Validation(
-                "at least one `target` block is required for non-Meta projects".to_string(),
+                "at least one `target` block is required for host projects".to_string(),
             ));
         }
-        ProjectKind::Meta if !manifest.targets.is_empty() => {
+        ProjectKind::Mod if !manifest.targets.is_empty() => {
             return Err(ProjectError::meta_contract(
                 "E1801",
-                "`Meta` projects must not declare `target` blocks in v0.2 (use `project.meta.entryModules` instead)",
+                "`Mod` projects must not declare `target` blocks in v0.2 (compiler mods are discovered via dependencies and contracts)",
             ));
         }
-        ProjectKind::Meta if manifest.project.meta.is_none() => {
+        ProjectKind::Mod if manifest.project.mod_section.is_none() => {
             return Err(ProjectError::meta_contract(
                 "E1802",
-                "`type = Meta` requires a nested `meta { ... }` block under `project`",
+                "`type = Mod` requires a nested `mod { ... }` block under `project`",
             ));
         }
         _ => {}
@@ -64,38 +63,33 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
         validate_relative_entry_path(&target.entry)?;
     }
 
-    if let Some(meta) = &manifest.project.meta {
-        if let Some(n) = meta.max_meta_rounds {
-            if n == 0 {
+    if let Some(mod_section) = &manifest.project.mod_section {
+        if let Some(n) = mod_section.max_generator_rounds
+            && n == 0 {
                 return Err(ProjectError::meta_contract(
                     "E1803",
-                    "`project.meta.maxMetaRounds` must be a positive integer",
+                    "`project.mod.maxGeneratorRounds` must be a positive integer",
                 ));
             }
-        }
-        if let Some(caps) = &meta.capabilities {
+        if let Some(caps) = &mod_section.capabilities {
             for cap in caps {
-                if !META_CAPABILITY_NAMES.iter().any(|known| *known == cap) {
+                if !MOD_CAPABILITY_NAMES.iter().any(|known| *known == cap) {
                     return Err(ProjectError::meta_contract(
                         "E1804",
-                        format!("unknown `project.meta.capabilities` entry `{cap}`"),
+                        format!("unknown `project.mod.capabilities` entry `{cap}`"),
                     ));
                 }
             }
         }
-        for module_path in &meta.entry_modules {
-            validate_relative_entry_path(module_path)?;
-        }
-        for selector in &meta.attach_to {
-            if let AttachToSelector::Member(name) = selector {
-                if name.trim().is_empty() {
-                    return Err(ProjectError::meta_contract(
-                        "E1805",
-                        "`project.meta.attachTo` member id must not be empty",
-                    ));
-                }
+        if let Some(policy) = mod_section.artifact_policy.as_deref()
+            && !MOD_ARTIFACT_POLICIES.contains(&policy) {
+                return Err(ProjectError::meta_contract(
+                    "E1805",
+                    format!(
+                        "unknown `project.mod.artifactPolicy` `{policy}` (expected reuse, rebuild, or clean_rebuild)"
+                    ),
+                ));
             }
-        }
     }
 
     let mut dependency_names = HashSet::new();
@@ -168,32 +162,6 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
         }
     }
 
-    Ok(())
-}
-
-/// Ensure each `entryModules` path exists under `source_root` (graph-time check).
-pub fn validate_meta_entry_modules_on_disk(
-    manifest: &ProjectManifest,
-    source_root: &Path,
-) -> Result<(), ProjectError> {
-    let Some(meta) = manifest.project.meta.as_ref() else {
-        return Ok(());
-    };
-    if manifest.project.kind != ProjectKind::Meta {
-        return Ok(());
-    }
-    for rel in &meta.entry_modules {
-        let path = source_root.join(rel);
-        if !path.is_file() {
-            return Err(ProjectError::meta_contract(
-                "E1806",
-                format!(
-                    "`project.meta.entryModules` path does not exist or is not a file: {}",
-                    path.display()
-                ),
-            ));
-        }
-    }
     Ok(())
 }
 

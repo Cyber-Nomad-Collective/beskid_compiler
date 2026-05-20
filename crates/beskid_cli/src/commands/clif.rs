@@ -1,9 +1,7 @@
 //! `beskid clif` — lower resolved Beskid source to CLIF and print the IR.
 
 use crate::frontend;
-use crate::pipeline_ui::{
-    PipelineProgressKind, resolve_input_with_cli_pipeline_kind,
-};
+use crate::pipeline_ui::{PipelineProgressKind, resolve_input_with_cli_pipeline_kind};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_codegen::{lower_source_with_pipeline, render_clif};

@@ -97,7 +97,9 @@ fn fill_member_ids_from_parents(items: &mut [ApiDocItem]) {
     }
 }
 
-fn docs_ref_link_context(resolved: &beskid_analysis::services::ResolvedInput) -> Option<DocRefLinkContext> {
+fn docs_ref_link_context(
+    resolved: &beskid_analysis::services::ResolvedInput,
+) -> Option<DocRefLinkContext> {
     let plan = resolved.compile_plan.as_ref()?;
     let manifest = load_manifest_from_path(&plan.manifest_path).ok()?;
     let name = manifest.project.name.trim();
@@ -128,7 +130,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
     let docs_ref = docs_ref_link_context(&resolved);
     let snap = services::build_document_analysis(
         &program,
-        &resolved.source_path.display().to_string(),
+        resolved.source_path.display().to_string(),
         &resolved.source,
         docs_ref.as_ref(),
     );
@@ -390,9 +392,10 @@ i64 Add(
         })
         .expect("execute doc");
 
-        let api: ApiDocRoot =
-            serde_json::from_str(&std::fs::read_to_string(out_path.join("api.json")).expect("read"))
-                .expect("parse api.json");
+        let api: ApiDocRoot = serde_json::from_str(
+            &std::fs::read_to_string(out_path.join("api.json")).expect("read"),
+        )
+        .expect("parse api.json");
         assert_eq!(api.schema_version, API_JSON_SCHEMA_VERSION);
         assert_eq!(
             api.navigation_model.as_deref(),
@@ -411,11 +414,7 @@ i64 Add(
             .find(|i| i.kind == "type" && i.name.contains("Widget"))
             .expect("type Widget");
         let type_id = type_row.id.expect("type id");
-        let field = api
-            .items
-            .iter()
-            .find(|i| i.kind == "field")
-            .expect("field");
+        let field = api.items.iter().find(|i| i.kind == "field").expect("field");
         assert_eq!(field.parent_id, Some(type_id));
         assert!(type_row.member_ids.contains(&field.id.unwrap()));
 
@@ -441,10 +440,7 @@ i64 Add(
         // Every id referenced as parentId must exist.
         for item in &api.items {
             if let (Some(id), Some(pid)) = (item.id, item.parent_id) {
-                assert!(
-                    by_id.contains_key(&pid),
-                    "item {id} parent {pid} missing"
-                );
+                assert!(by_id.contains_key(&pid), "item {id} parent {pid} missing");
             }
         }
 

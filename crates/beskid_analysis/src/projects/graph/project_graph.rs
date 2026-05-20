@@ -3,13 +3,7 @@ use std::path::PathBuf;
 
 use daggy::{Dag, NodeIndex};
 
-use crate::projects::model::{DependencySource, ProjectKind, ProjectManifest, ProjectMetaSection};
-
-/// Resolved `attachTo` host workspace member ids for a [`ProjectKind::Meta`] graph node.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MetaAttachmentResolution {
-    pub host_member_ids: Vec<String>,
-}
+use crate::projects::model::{DependencySource, ProjectKind, ProjectManifest};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectGraphNode {
@@ -18,10 +12,7 @@ pub enum ProjectGraphNode {
         project_root: PathBuf,
         project_name: String,
         source_root: PathBuf,
-        /// Present when `project.kind` is [`ProjectKind::Meta`]; carries manifest `project.meta`.
-        meta_section: Option<ProjectMetaSection>,
-        /// Workspace member ids this meta project attaches to (after `default` resolution).
-        meta_attachments: Option<MetaAttachmentResolution>,
+        project_kind: ProjectKind,
     },
     ResolvedPathDependency {
         dependency_name: String,
@@ -30,8 +21,6 @@ pub enum ProjectGraphNode {
         project_name: String,
         source_root: PathBuf,
         project_kind: ProjectKind,
-        meta_section: Option<ProjectMetaSection>,
-        meta_attachments: Option<MetaAttachmentResolution>,
     },
     UnresolvedGitDependency {
         dependency_name: String,

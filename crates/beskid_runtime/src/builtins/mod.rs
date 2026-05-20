@@ -1,10 +1,12 @@
 //! C ABI entry points invoked from generated code (`extern "C-unwind"`), backed by [`crate::gc`].
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 mod alloc;
 mod arrays;
 mod channel;
 mod events;
 mod fiber;
+mod gc;
 mod gc_roots;
 mod hub;
 #[cfg(feature = "metrics")]
@@ -29,7 +31,12 @@ pub use events::{
 };
 pub use fiber::{
     fiber_cancel, fiber_current_id, fiber_detach, fiber_join, fiber_join_status, fiber_join_value,
-    fiber_now_millis, fiber_processor_count, fiber_spawn, fiber_spawn_with_cancel_slot, fiber_yield,
+    fiber_now_millis, fiber_processor_count, fiber_spawn, fiber_spawn_with_cancel_slot,
+    fiber_yield,
+};
+pub use gc::{
+    gc_bytes_allocated, gc_collect, gc_collect_if_needed, gc_external_root_count, gc_object_count,
+    gc_phase,
 };
 pub use gc_roots::{
     gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier,

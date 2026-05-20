@@ -44,9 +44,7 @@ pub fn write_build_graph(resolved: &ResolvedInput, out: &mut dyn Write) -> io::R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use beskid_analysis::projects::{
-        CompilePlan, ResolvedDependencyProject, Target, TargetKind,
-    };
+    use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
     use beskid_analysis::services::ResolvedInput;
     use std::path::PathBuf;
 

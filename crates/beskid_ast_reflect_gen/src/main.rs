@@ -63,9 +63,7 @@ fn run_emit_syntax_sdk(raw: &[OsString], flag_idx: usize) -> std::process::ExitC
         !s.is_empty() && !s.starts_with('-')
     });
     let Some(sdk_arg) = sdk_arg else {
-        eprintln!(
-            "error: --emit-syntax-sdk requires a directory path (…/compiler-sdk/src/Beskid/Compiler)"
-        );
+        eprintln!("error: --emit-syntax-sdk requires a directory path (…/compiler-sdk/src/Beskid)");
         return std::process::ExitCode::from(2);
     };
     let sdk_path = PathBuf::from(sdk_arg);

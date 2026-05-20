@@ -1,11 +1,13 @@
 //! Documentation comment parsing, hover, and `build_document_analysis` behavior.
 
+use beskid_analysis::doc::DocRefLinkContext;
 use beskid_analysis::doc_comment_parser::DocSyntaxParser;
 use beskid_analysis::doc_comment_parser::Rule as DocRule;
-use beskid_analysis::doc::DocRefLinkContext;
+use beskid_analysis::hir::{
+    AstProgram, HirProgram, lower_program as lower_hir_program, normalize_program,
+};
 use beskid_analysis::resolve::{ItemKind, Resolution, Resolver};
 use beskid_analysis::services::{build_document_analysis, hover_at_offset, parse_program};
-use beskid_analysis::hir::{lower_program as lower_hir_program, normalize_program, AstProgram, HirProgram};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::{BeskidParser, Rule as MainRule};
 use pest::Parser;
