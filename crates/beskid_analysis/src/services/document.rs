@@ -398,6 +398,7 @@ pub fn collect_document_symbols(snapshot: &DocumentAnalysisSnapshot) -> Vec<Docu
                 selection_start: definition.node.name.span.start,
                 selection_end: definition.node.name.span.end,
             }),
+            Node::MacroDefinition(_) => None,
             Node::UseDeclaration(definition) => {
                 if let Some(alias) = &definition.node.alias {
                     return Some(DocumentSymbolInfo {

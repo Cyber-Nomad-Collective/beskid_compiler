@@ -57,6 +57,12 @@ impl Lowerable for Spanned<syntax::Expression> {
             syntax::Expression::Spawn(spawn_expr) => {
                 HirExpressionNode::SpawnExpression(spawn_expr.lower())
             }
+            syntax::Expression::MacroInvocation(m) => {
+                HirExpressionNode::MacroInvocation(m.clone())
+            }
+            syntax::Expression::MacroMetavariable(m) => {
+                HirExpressionNode::MacroMetavariable(m.clone())
+            }
         };
         Spanned::new(node, self.span)
     }

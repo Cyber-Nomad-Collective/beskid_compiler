@@ -5,9 +5,10 @@ use crate::syntax::{
     CallExpression, ContinueStatement, ContractDefinition, EnumConstructorExpression,
     EnumDefinition, ExpressionStatement, ExtendTypeDefinition, ForStatement, FunctionDefinition,
     GroupedExpression, IfStatement, InlineModule, LambdaExpression, LetStatement,
-    LiteralExpression, MatchExpression, MemberExpression, MethodDefinition, ModuleDeclaration,
-    PathExpression, ReturnStatement, SpawnExpression, StructLiteralExpression, TestDefinition,
-    TryExpression, TypeDefinition, UnaryExpression, UseDeclaration, WhileStatement,
+    LiteralExpression, MacroDefinition, MacroInvocation, MacroMetavariable, MatchExpression,
+    MemberExpression, MethodDefinition, ModuleDeclaration, PathExpression, ReturnStatement,
+    SpawnExpression, StructLiteralExpression, TestDefinition, TryExpression, TypeDefinition,
+    UnaryExpression, UseDeclaration, WhileStatement,
 };
 
 use super::{
@@ -35,6 +36,7 @@ pub trait Phase {
     type ModuleDeclaration;
     type InlineModule;
     type UseDeclaration;
+    type MacroDefinition;
 
     type LetStatement;
     type ReturnStatement;
@@ -60,6 +62,8 @@ pub trait Phase {
     type TryExpression;
     type LambdaExpression;
     type SpawnExpression;
+    type MacroInvocation;
+    type MacroMetavariable;
 }
 
 /// Marker for [`Program`](super::program::Program) nodes that still use syntax tree types.
@@ -82,6 +86,7 @@ impl Phase for AstPhase {
     type ModuleDeclaration = ModuleDeclaration;
     type InlineModule = InlineModule;
     type UseDeclaration = UseDeclaration;
+    type MacroDefinition = MacroDefinition;
 
     type LetStatement = LetStatement;
     type ReturnStatement = ReturnStatement;
@@ -107,6 +112,8 @@ impl Phase for AstPhase {
     type TryExpression = TryExpression;
     type LambdaExpression = LambdaExpression;
     type SpawnExpression = SpawnExpression;
+    type MacroInvocation = MacroInvocation;
+    type MacroMetavariable = MacroMetavariable;
 }
 
 impl Phase for HirPhase {
@@ -121,6 +128,7 @@ impl Phase for HirPhase {
     type ModuleDeclaration = HirModuleDeclaration;
     type InlineModule = HirInlineModule;
     type UseDeclaration = HirUseDeclaration;
+    type MacroDefinition = MacroDefinition;
 
     type LetStatement = HirLetStatement;
     type ReturnStatement = HirReturnStatement;
@@ -146,4 +154,6 @@ impl Phase for HirPhase {
     type TryExpression = HirTryExpression;
     type LambdaExpression = HirLambdaExpression;
     type SpawnExpression = HirSpawnExpression;
+    type MacroInvocation = MacroInvocation;
+    type MacroMetavariable = MacroMetavariable;
 }

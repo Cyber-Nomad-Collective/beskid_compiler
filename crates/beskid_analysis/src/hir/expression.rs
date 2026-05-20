@@ -42,6 +42,10 @@ pub enum ExpressionNode<P: Phase> {
     TryExpression(Spanned<P::TryExpression>),
     #[phase(from = "Spawn")]
     SpawnExpression(Spanned<P::SpawnExpression>),
+    #[phase(from = "MacroInvocation")]
+    MacroInvocation(Spanned<P::MacroInvocation>),
+    #[phase(from = "MacroMetavariable")]
+    MacroMetavariable(Spanned<P::MacroMetavariable>),
 }
 
 #[derive(beskid_ast_derive::HirNode)]
@@ -84,6 +88,8 @@ impl HirNode for ExpressionNode<HirPhase> {
             ExpressionNode::GroupedExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::TryExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::SpawnExpression(expr) => push(HirNodeRef(&expr.node)),
+            ExpressionNode::MacroInvocation(expr) => push(HirNodeRef(&expr.node)),
+            ExpressionNode::MacroMetavariable(expr) => push(HirNodeRef(&expr.node)),
         }
     }
 

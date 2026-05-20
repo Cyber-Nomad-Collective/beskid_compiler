@@ -418,6 +418,7 @@ impl Lowerable for Spanned<syntax::InlineModule> {
                     syntax::Node::ModuleDeclaration(def) => HirItem::ModuleDeclaration(def.lower()),
                     syntax::Node::InlineModule(def) => HirItem::InlineModule(def.lower()),
                     syntax::Node::UseDeclaration(def) => HirItem::UseDeclaration(def.lower()),
+                    syntax::Node::MacroDefinition(def) => HirItem::MacroDefinition(def.clone()),
                 };
                 Spanned::new(node, item.span)
             })

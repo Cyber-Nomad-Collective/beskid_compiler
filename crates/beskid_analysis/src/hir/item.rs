@@ -37,6 +37,8 @@ pub enum Item<P: Phase> {
     ModuleDeclaration(Spanned<P::ModuleDeclaration>),
     InlineModule(Spanned<P::InlineModule>),
     UseDeclaration(Spanned<P::UseDeclaration>),
+    #[phase(from = "MacroDefinition")]
+    MacroDefinition(Spanned<P::MacroDefinition>),
 }
 
 impl HirNode for Item<crate::hir::HirPhase> {
@@ -57,6 +59,7 @@ impl HirNode for Item<crate::hir::HirPhase> {
             Item::ModuleDeclaration(def) => push(HirNodeRef(&def.node)),
             Item::InlineModule(def) => push(HirNodeRef(&def.node)),
             Item::UseDeclaration(def) => push(HirNodeRef(&def.node)),
+            Item::MacroDefinition(def) => push(HirNodeRef(&def.node)),
         }
     }
 
