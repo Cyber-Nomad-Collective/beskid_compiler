@@ -1,6 +1,7 @@
 use beskid_abi::BeskidStr;
 
 use super::{alloc::alloc, strings::str_new};
+use crate::scheduler::{self, run_blocking};
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn linux_write_fd(fd: i32, mut ptr: *const u8, mut len: usize) -> i64 {
@@ -128,6 +129,18 @@ pub extern "C-unwind" fn panic(_msg_ptr: *const u8, _msg_len: usize) -> ! {
     panic!("beskid panic");
 }
 
+fn maybe_park_blocking<F>(run: F) -> i64
+where
+    F: FnOnce() -> i64 + Send + 'static,
+{
+    if let Some(fiber) = scheduler::current_fiber_key()
+        && scheduler::in_fiber_scheduler()
+    {
+        return run_blocking(fiber, run);
+    }
+    run()
+}
+
 /// Cross-platform write of UTF-8 string payload to `fd`.
 /// Returns bytes written, or `-1` on error / unsupported `fd` (non-Linux: only `1` and `2`).
 #[unsafe(no_mangle)]
@@ -140,7 +153,9 @@ pub extern "C-unwind" fn syscall_write(fd: i64, value: *const BeskidStr) -> i64 
         panic!("null string data");
     }
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    write_fd_bytes(fd, bytes)
+    let fd_copy = fd;
+    let bytes_vec = bytes.to_vec();
+    maybe_park_blocking(move || write_fd_bytes(fd_copy, &bytes_vec))
 }
 
 /// Cross-platform read of UTF-8 payload from `fd`.

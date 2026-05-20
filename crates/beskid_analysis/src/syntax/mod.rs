@@ -14,7 +14,8 @@ pub use expressions::{
     AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression, CallExpression,
     EnumConstructorExpression, EnumPattern, Expression, GroupedExpression, LambdaExpression,
     LambdaParameter, Literal, LiteralExpression, MatchArm, MatchExpression, MemberExpression,
-    PathExpression, Pattern, StructLiteralExpression, StructLiteralField, TryExpression,
+    PathExpression, Pattern, SpawnExpression, StructLiteralExpression, StructLiteralField,
+    TryExpression,
     UnaryExpression, UnaryOp,
 };
 pub use items::{

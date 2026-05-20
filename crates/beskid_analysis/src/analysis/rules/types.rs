@@ -141,6 +141,15 @@ pub(crate) fn emit_type_error(
         TypeError::InvalidEventSubscriptionTarget { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeInvalidEventSubscriptionTarget);
         }
+        TypeError::SpawnTargetNotFiberCompatible { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::SpawnTargetNotFiberCompatible);
+        }
+        TypeError::JoinWouldDeadlock { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::JoinWouldDeadlock);
+        }
+        TypeError::StackReferenceEscapesSpawn { span } => {
+            ctx.emit_issue(span, SemanticIssueKind::StackReferenceEscapesSpawn);
+        }
         TypeError::ReturnTypeMismatch {
             span,
             expected,
@@ -302,6 +311,10 @@ fn render_type_from_result(result: &TypeResult, type_id: crate::types::TypeId) -
         TypeInfo::Array(element) => {
             let inner = render_type_from_result(result, *element);
             format!("{inner}[]")
+        }
+        TypeInfo::Fiber(payload) => {
+            let inner = render_type_from_result(result, *payload);
+            format!("Fiber<{inner}>")
         }
     }
 }

@@ -135,6 +135,9 @@ impl Normalizer {
             }
             HirExpressionNode::LiteralExpression(_) | HirExpressionNode::PathExpression(_) => {}
             HirExpressionNode::TryExpression(_) => unreachable!("try desugared before traversal"),
+            HirExpressionNode::SpawnExpression(spawn_expr) => {
+                self.visit_expression(&mut spawn_expr.node.callee);
+            }
         }
     }
 }

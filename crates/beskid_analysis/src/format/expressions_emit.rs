@@ -454,7 +454,15 @@ impl Emit for Expression {
             Expression::Block(b) => b.emit(w, cx),
             Expression::Grouped(g) => g.emit(w, cx),
             Expression::Try(t) => t.emit(w, cx),
+            Expression::Spawn(s) => s.emit(w, cx),
         }
+    }
+}
+
+impl Emit for Spanned<crate::syntax::SpawnExpression> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        write!(w, "spawn ")?;
+        self.node.callee.emit(w, cx)
     }
 }
 

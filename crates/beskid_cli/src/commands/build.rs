@@ -3,13 +3,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::pipeline_ui::{CliPipeline, resolve_input_with_cli_pipeline};
+use crate::frontend;
+use crate::pipeline_ui::resolve_input_with_cli_pipeline;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::TargetKind;
 use beskid_aot::{
-    AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, ProjectTargetKind,
-    RuntimeStrategy, build, default_output_kind, resolve_entrypoint,
+    AotBuildRequest, BESKID_RUNTIME_ABI_VERSION, BuildOutputKind, BuildProfile, ExportPolicy,
+    LinkMode, ProjectTargetKind, RuntimeStrategy, build, default_output_kind,
+    default_runtime_strategy, resolve_entrypoint,
 };
 use beskid_codegen::lower_source_with_pipeline;
 use beskid_pipeline::PipelineObserver;
@@ -60,11 +62,11 @@ pub struct BuildArgs {
     #[arg(long)]
     pub object_output: Option<PathBuf>,
 
-    /// Runtime archive path to reuse instead of building runtime on the fly
+    /// Prebuilt runtime static library (overrides the toolchain-bundled archive)
     #[arg(long)]
     pub runtime_archive: Option<PathBuf>,
 
-    /// ABI version for prebuilt runtime archive
+    /// ABI version for `--runtime-archive` (defaults to the toolchain ABI version)
     #[arg(long)]
     pub runtime_abi_version: Option<u32>,
 
@@ -106,19 +108,19 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     )?;
     let obs: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
 
-    if !args.plain {
-        CliPipeline::print_project_graph(&resolved);
-    }
+    pipeline_ui.show_build_graph(&resolved);
+    pipeline_ui.halt_progress_bars_for_output();
 
     let source = resolved.source.clone();
     let input_path = resolved.source_path.clone();
+    frontend::run_semantic_analysis_gate(&input_path, &source, None, pipeline_ui.as_ref())?;
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
     let default_output_stem = resolved
         .compile_plan
         .as_ref()
         .map(|plan| plan.target.name.clone());
 
-    let lowered = lower_source_with_pipeline(&input_path, &source, true, obs)?;
+    let lowered = lower_source_with_pipeline(&input_path, &source, false, obs)?;
     let artifact = lowered.artifact;
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
@@ -142,6 +144,12 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         parent.join(file_name)
     };
 
+    let profile = if args.release {
+        BuildProfile::Release
+    } else {
+        BuildProfile::Debug
+    };
+
     let runtime = if args.standalone {
         if args.runtime_archive.is_some() {
             return Err(anyhow::anyhow!(
@@ -152,10 +160,14 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     } else if let Some(path) = args.runtime_archive {
         RuntimeStrategy::UsePrebuilt {
             path,
-            abi_version: args.runtime_abi_version,
+            abi_version: args
+                .runtime_abi_version
+                .unwrap_or(BESKID_RUNTIME_ABI_VERSION),
         }
     } else {
-        RuntimeStrategy::BuildOnTheFly
+        default_runtime_strategy(profile, args.target_triple.as_deref()).map_err(|err| {
+            anyhow::anyhow!("{err}")
+        })?
     };
 
     let link_mode = match (args.prefer_static, args.prefer_dynamic) {
@@ -182,11 +194,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         output_path: output.clone(),
         object_path: args.object_output,
         target_triple: args.target_triple,
-        profile: if args.release {
-            BuildProfile::Release
-        } else {
-            BuildProfile::Debug
-        },
+        profile,
         entrypoint,
         export_policy,
         link_mode,
@@ -196,29 +204,32 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     })?;
     pipeline_ui.finish_build("Build complete");
 
-    println!("object: {}", result.object_path.display());
+    if args.plain {
+        if let Some(plan) = resolved.compile_plan.as_ref() {
+            println!(
+                "deps: {} materialized dependency project(s)",
+                plan.dependency_projects.len()
+            );
+            println!(
+                "corelib: {}",
+                if plan.has_std_dependency {
+                    "available (implicit or declared)"
+                } else {
+                    "not available"
+                }
+            );
+        }
+    }
+
+    println!();
+    println!("  object   {}", result.object_path.display());
     if let Some(final_path) = result.final_path {
-        println!("output: {}", final_path.display());
+        println!("  output   {}", final_path.display());
     }
-    if let Some(cmd) = result.linker_invocation {
-        println!("link: {cmd}");
-    }
-    if let Some(plan) = resolved.compile_plan.as_ref() {
-        println!(
-            "deps: {} materialized dependency project(s)",
-            plan.dependency_projects.len()
-        );
-        println!(
-            "corelib: {}",
-            if plan.has_std_dependency {
-                "available (implicit or declared)"
-            } else {
-                "not available"
-            }
-        );
-    }
-    if pipeline_ui.is_spinner_enabled() {
-        println!("tip: use --plain for non-animated output");
+    if args.verbose_link {
+        if let Some(cmd) = result.linker_invocation {
+            println!("  link     {cmd}");
+        }
     }
 
     Ok(())

@@ -30,6 +30,15 @@ impl<'a> TypeContext<'a> {
                 }
                 None => {
                     if let Some(actual) = self.type_expression(&let_stmt.node.value) {
+                        if matches!(
+                            self.type_table.get(actual),
+                            Some(crate::types::TypeInfo::Fiber(_))
+                        ) {
+                            self.register_fiber_handle_local(
+                                let_stmt.node.name.span,
+                                let_stmt.node.value.span,
+                            );
+                        }
                         self.insert_local_type(let_stmt.node.name.span, actual);
                     }
                 }

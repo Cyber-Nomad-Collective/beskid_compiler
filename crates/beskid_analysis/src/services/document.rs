@@ -86,6 +86,10 @@ pub struct TestCaseInfo {
     pub skip_reason: Option<String>,
     pub selection_start: usize,
     pub selection_end: usize,
+    /// 1-based line of the `test` name token (editor / terminal links).
+    pub definition_line: usize,
+    /// 1-based column of the `test` name token.
+    pub definition_column: usize,
 }
 
 fn resolve_program(program: &Spanned<Program>) -> Option<Resolution> {
@@ -284,6 +288,7 @@ fn test_case_info(definition: &Spanned<TestDefinition>, module_path: &[String]) 
             }
         }
     }
+    let (definition_line, definition_column) = definition.node.name.span.line_col_start;
     TestCaseInfo {
         name,
         qualified_name,
@@ -293,6 +298,8 @@ fn test_case_info(definition: &Spanned<TestDefinition>, module_path: &[String]) 
         skip_reason,
         selection_start: definition.node.name.span.start,
         selection_end: definition.node.name.span.end,
+        definition_line,
+        definition_column,
     }
 }
 

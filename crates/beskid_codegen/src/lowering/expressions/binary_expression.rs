@@ -1,10 +1,11 @@
 use crate::errors::CodegenError;
+use crate::lowering::cast_intent::ensure_type_compatibility;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::{HirBinaryExpression, HirBinaryOp, HirPrimitiveType};
 use beskid_analysis::syntax::Spanned;
-use beskid_analysis::types::TypeInfo;
+use beskid_analysis::types::{TypeId, TypeInfo};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, Signature, Value};
 use cranelift_codegen::isa::CallConv;
@@ -16,11 +17,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, crate::errors::CodegenError> {
-        let left = lower_node(&node.node.left, ctx)?.ok_or(CodegenError::UnsupportedNode {
+        let mut left = lower_node(&node.node.left, ctx)?.ok_or(CodegenError::UnsupportedNode {
             span: node.node.left.span,
             node: "unit-valued binary operand",
         })?;
-        let right = lower_node(&node.node.right, ctx)?.ok_or(CodegenError::UnsupportedNode {
+        let mut right = lower_node(&node.node.right, ctx)?.ok_or(CodegenError::UnsupportedNode {
             span: node.node.right.span,
             node: "unit-valued binary operand",
         })?;
@@ -41,14 +42,38 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
             .ok_or(CodegenError::MissingExpressionType {
                 span: node.node.right.span,
             })?;
-        if left_type != right_type {
+        let operand_type = if left_type == right_type {
+            left_type
+        } else if is_numeric_type(ctx.type_result.types.get(left_type))
+            && is_numeric_type(ctx.type_result.types.get(right_type))
+        {
+            let target = preferred_numeric_type_id(ctx, left_type, right_type);
+            left = ensure_type_compatibility(
+                node.node.left.span,
+                target,
+                left_type,
+                ctx.type_result,
+                ctx.resolution,
+                ctx.builder,
+                left,
+            )?;
+            right = ensure_type_compatibility(
+                node.node.right.span,
+                target,
+                right_type,
+                ctx.type_result,
+                ctx.resolution,
+                ctx.builder,
+                right,
+            )?;
+            target
+        } else {
             return Err(CodegenError::TypeMismatch {
                 span: node.span,
                 expected: left_type,
                 actual: right_type,
             });
-        }
-        let operand_type = left_type;
+        };
         let operand_info = ctx.type_result.types.get(operand_type);
         let operand_clif_ty = map_type_id_to_clif(ctx.type_result, operand_type).ok_or(
             CodegenError::UnsupportedNode {
@@ -238,4 +263,37 @@ fn lower_string_concat(
             node: "string concat result",
         })?;
     Ok(Some(result))
+}
+
+fn is_numeric_type(info: Option<&TypeInfo>) -> bool {
+    matches!(
+        info,
+        Some(TypeInfo::Primitive(
+            HirPrimitiveType::I32
+                | HirPrimitiveType::I64
+                | HirPrimitiveType::U8
+                | HirPrimitiveType::F64
+        ))
+    )
+}
+
+fn preferred_numeric_type_id(
+    ctx: &NodeLoweringContext<'_, '_>,
+    left: TypeId,
+    right: TypeId,
+) -> TypeId {
+    let left_width = numeric_bit_width(ctx.type_result.types.get(left));
+    let right_width = numeric_bit_width(ctx.type_result.types.get(right));
+    if left_width >= right_width {
+        left
+    } else {
+        right
+    }
+}
+
+fn numeric_bit_width(info: Option<&TypeInfo>) -> u32 {
+    match info {
+        Some(TypeInfo::Primitive(primitive)) => primitive.bit_width(),
+        _ => 0,
+    }
 }

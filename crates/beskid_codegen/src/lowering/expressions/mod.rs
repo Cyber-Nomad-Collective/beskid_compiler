@@ -10,5 +10,6 @@ mod literal_expression;
 mod match_expression;
 mod member_expression;
 mod path_expression;
+mod spawn_expression;
 mod struct_literal_expression;
 mod unary_expression;

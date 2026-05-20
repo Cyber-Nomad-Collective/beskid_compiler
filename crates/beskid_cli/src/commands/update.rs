@@ -17,7 +17,7 @@ pub struct UpdateArgs {
 
 /// Resolve with update semantics (non-frozen) and rematerialize dependencies.
 pub fn execute(args: UpdateArgs) -> Result<()> {
-    let _ = resolve_project_with_cli_pipeline(
+    let (pipeline_ui, resolved) = resolve_project_with_cli_pipeline(
         None,
         args.project.project.as_ref(),
         args.project.target.as_deref(),
@@ -27,6 +27,8 @@ pub fn execute(args: UpdateArgs) -> Result<()> {
         args.progress.plain,
         UnresolvedDependencyPolicy::Warn,
     )?;
+    pipeline_ui.show_project_graph(&resolved);
+    pipeline_ui.finish_session("Workspace updated");
     println!("Dependency lock and materialized workspace updated.");
     Ok(())
 }

@@ -1,0 +1,10 @@
+[package]
+name = "beskid_runtime_bridge"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+beskid_runtime = { path = "../beskid_runtime" }

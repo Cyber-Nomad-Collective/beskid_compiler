@@ -95,6 +95,15 @@ pub enum TypeError {
     InvalidEventSubscriptionTarget {
         span: SpanInfo,
     },
+    SpawnTargetNotFiberCompatible {
+        span: SpanInfo,
+    },
+    JoinWouldDeadlock {
+        span: SpanInfo,
+    },
+    StackReferenceEscapesSpawn {
+        span: SpanInfo,
+    },
     ReturnTypeMismatch {
         span: SpanInfo,
         expected: TypeId,
@@ -257,6 +266,23 @@ impl fmt::Display for TypeError {
             }
             TypeError::InvalidEventSubscriptionTarget { span } => {
                 write!(f, "invalid event subscription target at {}", at(*span))
+            }
+            TypeError::SpawnTargetNotFiberCompatible { span } => {
+                write!(f, "spawn target is not a valid fiber entry at {}", at(*span))
+            }
+            TypeError::JoinWouldDeadlock { span } => {
+                write!(
+                    f,
+                    "join would deadlock: child fiber cannot join an ancestor handle at {}",
+                    at(*span)
+                )
+            }
+            TypeError::StackReferenceEscapesSpawn { span } => {
+                write!(
+                    f,
+                    "stack reference would escape across spawn boundary at {}",
+                    at(*span)
+                )
             }
             TypeError::ReturnTypeMismatch {
                 span,
@@ -440,6 +466,11 @@ pub struct TypeContext<'a> {
     pub(super) contract_method_order: HashMap<ItemId, Vec<String>>,
     pub(super) contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
     pub(super) current_receiver_item_id: Option<ItemId>,
+    pub(super) fiber_scope_stack: Vec<usize>,
+    pub(super) fiber_scope_parent: HashMap<usize, usize>,
+    pub(super) next_fiber_scope: usize,
+    pub(super) fiber_handle_scopes: HashMap<SpanInfo, usize>,
+    pub(super) fiber_handle_locals: HashMap<crate::resolve::LocalId, usize>,
 }
 
 impl<'a> TypeContext<'a> {
@@ -467,6 +498,11 @@ impl<'a> TypeContext<'a> {
             contract_method_order: HashMap::new(),
             contract_signatures: HashMap::new(),
             current_receiver_item_id: None,
+            fiber_scope_stack: vec![0],
+            fiber_scope_parent: HashMap::from([(0, 0)]),
+            next_fiber_scope: 1,
+            fiber_handle_scopes: HashMap::new(),
+            fiber_handle_locals: HashMap::new(),
         };
         context.seed_types();
         context.seed_builtin_signatures();

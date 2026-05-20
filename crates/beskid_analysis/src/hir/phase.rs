@@ -6,7 +6,8 @@ use crate::syntax::{
     EnumDefinition, ExpressionStatement, ForStatement, FunctionDefinition, GroupedExpression,
     IfStatement, InlineModule, LambdaExpression, LetStatement, LiteralExpression, MatchExpression,
     MemberExpression, MetaDefinition, MethodDefinition, ModuleDeclaration, PathExpression,
-    ReturnStatement, StructLiteralExpression, TestDefinition, TryExpression, TypeDefinition,
+    ReturnStatement, SpawnExpression, StructLiteralExpression, TestDefinition, TryExpression,
+    TypeDefinition,
     UnaryExpression, UseDeclaration, WhileStatement,
 };
 
@@ -16,8 +17,8 @@ use super::{
     HirEnumDefinition, HirExpressionStatement, HirForStatement, HirFunctionDefinition,
     HirGroupedExpression, HirIfStatement, HirInlineModule, HirLambdaExpression, HirLetStatement,
     HirLiteralExpression, HirMatchExpression, HirMemberExpression, HirMetaDefinition,
-    HirMethodDefinition, HirModuleDeclaration, HirPathExpression, HirReturnStatement,
-    HirStructLiteralExpression, HirTestDefinition, HirTryExpression, HirTypeDefinition,
+    HirMethodDefinition, HirModuleDeclaration,     HirPathExpression, HirReturnStatement, HirSpawnExpression, HirStructLiteralExpression,
+    HirTestDefinition, HirTryExpression, HirTypeDefinition,
     HirUnaryExpression, HirUseDeclaration, HirWhileStatement, item::HirAttributeDeclaration,
 };
 
@@ -58,6 +59,7 @@ pub trait Phase {
     type GroupedExpression;
     type TryExpression;
     type LambdaExpression;
+    type SpawnExpression;
 }
 
 /// Marker for [`Program`](super::program::Program) nodes that still use syntax tree types.
@@ -104,6 +106,7 @@ impl Phase for AstPhase {
     type GroupedExpression = GroupedExpression;
     type TryExpression = TryExpression;
     type LambdaExpression = LambdaExpression;
+    type SpawnExpression = SpawnExpression;
 }
 
 impl Phase for HirPhase {
@@ -142,4 +145,5 @@ impl Phase for HirPhase {
     type GroupedExpression = HirGroupedExpression;
     type TryExpression = HirTryExpression;
     type LambdaExpression = HirLambdaExpression;
+    type SpawnExpression = HirSpawnExpression;
 }

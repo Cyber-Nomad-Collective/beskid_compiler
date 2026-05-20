@@ -1,13 +1,15 @@
-//! Beskid runtime static library: prebuilt path, on-the-fly `cargo` bridge, or standalone (no runtime).
+//! Beskid runtime static library: prebuilt archive validation or standalone (no runtime).
 
+use std::collections::BTreeSet;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use beskid_abi::{BESKID_RUNTIME_ABI_VERSION, RUNTIME_EXPORT_SYMBOLS};
+use object::read::archive::ArchiveFile;
+use object::{Object, ObjectSymbol};
 
-use crate::api::{BuildProfile, RuntimeStrategy};
+use crate::api::RuntimeStrategy;
 use crate::error::{AotError, AotResult};
-use crate::target::detect_target;
 
 /// Optional path to a `.a`/`.lib` to pass the linker, plus symbols re-exported for tests/tooling.
 #[derive(Debug, Clone)]
@@ -16,15 +18,56 @@ pub struct RuntimeArtifact {
     pub exported_symbols: Vec<String>,
 }
 
-fn parse_nm_symbols(symbol_table: &str) -> std::collections::BTreeSet<&str> {
-    symbol_table
-        .lines()
-        .filter_map(|line| line.split_whitespace().last())
-        .collect()
+/// Collect exported symbol names from every object embedded in a static `ar` archive.
+///
+/// System `nm` from Xcode cannot parse LLVM object files produced by newer Rust
+/// toolchains (it exits non-zero with "Unknown attribute kind"), so we use the
+/// `object` crate—the same stack as codegen—for inspection.
+fn static_archive_symbol_names(path: &Path) -> AotResult<Vec<String>> {
+    let data = fs::read(path).map_err(|err| AotError::RuntimeBuild {
+        message: format!("failed to read runtime archive `{}`: {err}", path.display()),
+    })?;
+    let archive = ArchiveFile::parse(data.as_slice()).map_err(|err| AotError::RuntimeBuild {
+        message: format!(
+            "failed to parse runtime archive `{}`: {err:#}",
+            path.display()
+        ),
+    })?;
+    let mut names = Vec::new();
+    for member in archive.members() {
+        let Ok(member) = member else {
+            continue;
+        };
+        let Ok(member_data) = member.data(data.as_slice()) else {
+            continue;
+        };
+        if member_data.is_empty() {
+            continue;
+        }
+        let Ok(obj) = object::read::File::parse(member_data) else {
+            continue;
+        };
+        for symbol in obj.symbols() {
+            if let Ok(name) = symbol.name() {
+                names.push(name.to_owned());
+            }
+        }
+    }
+    Ok(names)
 }
 
-fn missing_required_symbols<'a>(symbol_table: &'a str, required: &[&'a str]) -> Vec<&'a str> {
-    let present = parse_nm_symbols(symbol_table);
+fn present_export_symbols(names: &[String]) -> BTreeSet<&str> {
+    let mut present = BTreeSet::new();
+    for name in names {
+        present.insert(name.as_str());
+        if let Some(stripped) = name.strip_prefix('_') {
+            present.insert(stripped);
+        }
+    }
+    present
+}
+
+fn missing_required_symbols<'a>(present: &BTreeSet<&str>, required: &[&'a str]) -> Vec<&'a str> {
     required
         .iter()
         .copied()
@@ -33,23 +76,9 @@ fn missing_required_symbols<'a>(symbol_table: &'a str, required: &[&'a str]) -> 
 }
 
 fn ensure_runtime_symbols_present(archive_path: &Path, required: &[&str]) -> AotResult<()> {
-    let mut command = Command::new("nm");
-    command.arg("-g").arg(archive_path);
-    let output = command.output().map_err(|err| AotError::RuntimeBuild {
-        message: format!("failed to inspect runtime archive symbols: {err}"),
-    })?;
-
-    if !output.status.success() {
-        return Err(AotError::RuntimeBuild {
-            message: format!(
-                "failed to inspect runtime archive symbols via `nm -g {}`",
-                archive_path.display()
-            ),
-        });
-    }
-
-    let text = String::from_utf8_lossy(&output.stdout);
-    let missing = missing_required_symbols(&text, required);
+    let names = static_archive_symbol_names(archive_path)?;
+    let present = present_export_symbols(&names);
+    let missing = missing_required_symbols(&present, required);
     if !missing.is_empty() {
         return Err(AotError::RuntimeBuild {
             message: format!(
@@ -63,16 +92,13 @@ fn ensure_runtime_symbols_present(archive_path: &Path, required: &[&str]) -> Aot
     Ok(())
 }
 
-/// Strategy, target triple, profile, and scratch directory for runtime builds.
+/// How the AOT pipeline obtains a runtime static library to link against.
 #[derive(Debug, Clone)]
 pub struct RuntimeBuildRequest {
     pub strategy: RuntimeStrategy,
-    pub target_triple: Option<String>,
-    pub profile: BuildProfile,
-    pub work_dir: PathBuf,
 }
 
-/// Resolve or build the runtime archive according to `req.strategy`.
+/// Resolve the runtime archive according to `req.strategy`.
 pub fn prepare_runtime(req: &RuntimeBuildRequest) -> AotResult<RuntimeArtifact> {
     match &req.strategy {
         RuntimeStrategy::Standalone => Ok(RuntimeArtifact {
@@ -80,13 +106,10 @@ pub fn prepare_runtime(req: &RuntimeBuildRequest) -> AotResult<RuntimeArtifact> 
             exported_symbols: Vec::new(),
         }),
         RuntimeStrategy::UsePrebuilt { path, abi_version } => {
-            let Some(version) = abi_version else {
-                return Err(AotError::RuntimeAbiVersionRequired);
-            };
-            if *version != BESKID_RUNTIME_ABI_VERSION {
+            if *abi_version != BESKID_RUNTIME_ABI_VERSION {
                 return Err(AotError::RuntimeAbiMismatch {
                     expected: BESKID_RUNTIME_ABI_VERSION,
-                    actual: *version,
+                    actual: *abi_version,
                 });
             }
             if !path.exists() {
@@ -98,147 +121,7 @@ pub fn prepare_runtime(req: &RuntimeBuildRequest) -> AotResult<RuntimeArtifact> 
                 exported_symbols: runtime_symbols(),
             })
         }
-        RuntimeStrategy::BuildOnTheFly => build_runtime_on_the_fly(req),
     }
-}
-
-fn build_runtime_on_the_fly(req: &RuntimeBuildRequest) -> AotResult<RuntimeArtifact> {
-    std::fs::create_dir_all(&req.work_dir).map_err(|err| AotError::Io {
-        path: req.work_dir.clone(),
-        message: err.to_string(),
-    })?;
-
-    let target = detect_target(req.target_triple.as_deref())?;
-    let target_key = req
-        .target_triple
-        .as_deref()
-        .unwrap_or("host")
-        .replace(['/', '\\', ':'], "_");
-    let profile_key = if matches!(req.profile, BuildProfile::Release) {
-        "release"
-    } else {
-        "debug"
-    };
-    let cache_key =
-        format!("runtime_bridge_{target_key}_{profile_key}_abi{BESKID_RUNTIME_ABI_VERSION}");
-    let package_root = req.work_dir.join(cache_key);
-    let src_dir = package_root.join("src");
-    std::fs::create_dir_all(&src_dir).map_err(|err| AotError::Io {
-        path: src_dir.clone(),
-        message: err.to_string(),
-    })?;
-
-    let runtime_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../beskid_runtime");
-    let runtime_path = runtime_path.canonicalize().map_err(|err| AotError::Io {
-        path: runtime_path.clone(),
-        message: err.to_string(),
-    })?;
-
-    let cargo_toml = format!(
-        "[package]\nname = \"beskid_runtime_bridge\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"staticlib\"]\n\n[dependencies]\nbeskid_runtime = {{ path = \"{}\" }}\n",
-        runtime_path.display()
-    );
-    let lib_rs = "
-#[allow(unused_imports)]
-use beskid_runtime::{
-    alloc, array_new, beskid_runtime_abi_version, event_get_handler, event_len, event_subscribe,
-    event_unsubscribe_first, gc_register_root, gc_root_handle, gc_unregister_root,
-    gc_unroot_handle, gc_write_barrier, interop_dispatch_ptr, interop_dispatch_unit,
-    interop_dispatch_usize, panic, panic_str, str_concat, str_len, str_new, syscall_read,
-    syscall_write, test_bytes_len, test_bytes_ptr,
-};
-
-#[unsafe(no_mangle)]
-pub extern \"C\" fn beskid_runtime_link_anchor() {
-    let _ = beskid_runtime_abi_version as usize;
-    let _ = alloc as usize;
-    let _ = str_new as usize;
-    let _ = str_concat as usize;
-    let _ = array_new as usize;
-    let _ = panic as usize;
-    let _ = panic_str as usize;
-    let _ = gc_write_barrier as usize;
-    let _ = gc_root_handle as usize;
-    let _ = gc_unroot_handle as usize;
-    let _ = gc_register_root as usize;
-    let _ = gc_unregister_root as usize;
-    let _ = event_subscribe as usize;
-    let _ = event_unsubscribe_first as usize;
-    let _ = event_len as usize;
-    let _ = event_get_handler as usize;
-    let _ = interop_dispatch_unit as usize;
-    let _ = interop_dispatch_ptr as usize;
-    let _ = interop_dispatch_usize as usize;
-    let _ = syscall_write as usize;
-    let _ = syscall_read as usize;
-    let _ = test_bytes_ptr as usize;
-    let _ = test_bytes_len as usize;
-    let _ = str_len as usize;
-}
-";
-
-    let manifest_path = package_root.join("Cargo.toml");
-    std::fs::write(&manifest_path, cargo_toml).map_err(|err| AotError::Io {
-        path: manifest_path.clone(),
-        message: err.to_string(),
-    })?;
-    let lib_path = src_dir.join("lib.rs");
-    std::fs::write(&lib_path, lib_rs).map_err(|err| AotError::Io {
-        path: lib_path.clone(),
-        message: err.to_string(),
-    })?;
-
-    let profile_dir = if matches!(req.profile, BuildProfile::Release) {
-        "release"
-    } else {
-        "debug"
-    };
-
-    let mut artifact_path = package_root.join("target");
-    if let Some(triple) = &req.target_triple {
-        artifact_path = artifact_path.join(triple);
-    }
-    artifact_path = artifact_path
-        .join(profile_dir)
-        .join(runtime_bridge_library_name(target.static_lib_ext));
-
-    if !artifact_path.exists() {
-        let mut command = Command::new("cargo");
-        command
-            .arg("build")
-            .arg("--manifest-path")
-            .arg(&manifest_path);
-        if matches!(req.profile, BuildProfile::Release) {
-            command.arg("--release");
-        }
-        if let Some(triple) = &req.target_triple {
-            command.arg("--target").arg(triple);
-        }
-        let output = command.output().map_err(|err| AotError::RuntimeBuild {
-            message: err.to_string(),
-        })?;
-
-        if !output.status.success() {
-            let mut message = String::new();
-            message.push_str(&String::from_utf8_lossy(&output.stderr));
-            if message.trim().is_empty() {
-                message.push_str(&String::from_utf8_lossy(&output.stdout));
-            }
-            return Err(AotError::RuntimeBuild { message });
-        }
-    }
-
-    if !artifact_path.exists() {
-        return Err(AotError::RuntimeArchiveMissing {
-            path: artifact_path,
-        });
-    }
-    ensure_runtime_symbols_present(&artifact_path, RUNTIME_EXPORT_SYMBOLS)?;
-
-    Ok(RuntimeArtifact {
-        staticlib_path: Some(artifact_path),
-        exported_symbols: runtime_symbols(),
-    })
 }
 
 fn runtime_symbols() -> Vec<String> {
@@ -248,14 +131,6 @@ fn runtime_symbols() -> Vec<String> {
         .collect()
 }
 
-fn runtime_bridge_library_name(static_lib_ext: &str) -> &'static str {
-    if static_lib_ext == "lib" {
-        "beskid_runtime_bridge.lib"
-    } else {
-        "libbeskid_runtime_bridge.a"
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,15 +138,21 @@ mod tests {
 
     #[test]
     fn missing_required_symbols_returns_empty_when_all_present() {
-        let table = "00000000 T alloc\n00000000 T beskid_runtime_abi_version\n";
-        let missing = missing_required_symbols(table, &[SYM_ABI_VERSION, "alloc"]);
+        let names = vec![
+            "_alloc".to_owned(),
+            "_beskid_runtime_abi_version".to_owned(),
+        ];
+        let present = present_export_symbols(&names);
+        let missing = missing_required_symbols(&present, &[SYM_ABI_VERSION, "alloc"]);
         assert!(missing.is_empty());
     }
 
     #[test]
     fn missing_required_symbols_detects_absent_entries() {
-        let table = "00000000 T alloc\n";
-        let missing = missing_required_symbols(table, &[SYM_ABI_VERSION, "alloc", "str_new"]);
+        let names = vec!["_alloc".to_owned()];
+        let present = present_export_symbols(&names);
+        let missing =
+            missing_required_symbols(&present, &[SYM_ABI_VERSION, "alloc", "str_new"]);
         assert_eq!(missing, vec![SYM_ABI_VERSION, "str_new"]);
     }
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -18,8 +19,8 @@ _ASAN = {
     "ASAN_OPTIONS": "detect_leaks=0",
 }
 
-# Linux CI default thread stacks are ~2 MiB; corelib lowering needs more headroom on worker threads.
-_LARGE_TEST_STACK = {"RUST_MIN_STACK": str(64 * 1024 * 1024)}
+# Corelib lowering can recurse deeply; scope a modest stack bump to test sessions only (not full workspace).
+_LARGE_TEST_STACK = {"RUST_MIN_STACK": str(16 * 1024 * 1024)}
 
 
 def _cargo(session: nox.Session, *args: str, env: dict[str, str] | None = None) -> None:
@@ -35,6 +36,7 @@ def workspace_check(session: nox.Session) -> None:
 
 @nox.session(python=False)
 def test(session: nox.Session) -> None:
+    _cargo(session, "build", "-p", "beskid_runtime_bridge", "-q")
     _cargo(
         session,
         "test",
@@ -43,6 +45,7 @@ def test(session: nox.Session) -> None:
         "--",
         "--skip",
         "prelude_lowers_to_codegen_artifact",
+        "--test-threads=1",
         env=_LARGE_TEST_STACK,
     )
     # Compiler-sdk prelude lowering (corelib prelude skips full lower on Linux in the test body).
@@ -96,6 +99,7 @@ def bench_compile(session: nox.Session) -> None:
 
 @nox.session(python=False, name="e2e_linux")
 def e2e_linux(session: nox.Session) -> None:
+    _cargo(session, "build", "-p", "beskid_runtime_bridge", "-q")
     _cargo(session, "build", "-p", "beskid_cli")
     _cargo(session, "test", "-p", "beskid_e2e_tests")
 
@@ -110,6 +114,8 @@ def runtime_asan_linux(session: nox.Session) -> None:
         "--target",
         "x86_64-unknown-linux-gnu",
         "runtime::",
+        "--",
+        "--test-threads=1",
         env=_ASAN,
     )
 
@@ -152,8 +158,24 @@ def release_cli(session: nox.Session) -> None:
         session.run("python", "-m", "ci.release_cli")
 
 
+_CORELIB_TEST_TARGETS = (
+    "SystemSyscallWriteTests",
+    "SystemSyscallApiTests",
+    "SystemSyscallErgonomicsTests",
+    "CoreResultsTests",
+    "ConcurrencyChannelApiTests",
+    "ConcurrencyMutexTryLockTests",
+    "ConcurrencyClockTests",
+    "ConcurrencyHubRegisterTests",
+    "ConcurrencyFiberHandleTests",
+    "ConsoleMessageChannelTests",
+    # CollectionsArrayTests: enable when src/collections/ArrayTests.bd lands (Agent 3).
+)
+
+
 @nox.session(python=False, name="corelib_quality")
 def corelib_quality(session: nox.Session) -> None:
+    _cargo(session, "build", "-p", "beskid_runtime_bridge", "-q")
     _cargo(
         session,
         "test",
@@ -164,17 +186,22 @@ def corelib_quality(session: nox.Session) -> None:
         "--test-threads=1",
         env=_LARGE_TEST_STACK,
     )
-    corelib = ROOT / "corelib" / "beskid_corelib"
-    _cargo(
-        session,
-        "run",
-        "-p",
-        "beskid_cli",
-        "--quiet",
-        "--",
-        "test",
-        "--project",
-        str(corelib),
-        "--target",
-        "CoreLib",
-    )
+    test_project = ROOT / "corelib" / "beskid_corelib" / "tests" / "corelib_tests"
+    for rel in ("tests/corelib_tests/obj", "beskid_corelib/obj"):
+        obj = ROOT / "corelib" / rel
+        if obj.is_dir():
+            shutil.rmtree(obj)
+    for target in _CORELIB_TEST_TARGETS:
+        _cargo(
+            session,
+            "run",
+            "-p",
+            "beskid_cli",
+            "--quiet",
+            "--",
+            "test",
+            "--project",
+            str(test_project),
+            "--target",
+            target,
+        )

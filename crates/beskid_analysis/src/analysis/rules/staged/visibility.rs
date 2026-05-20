@@ -108,6 +108,11 @@ impl SemanticPipelineRule {
         let used_names = self.collect_used_value_names(hir);
 
         for item in &hir.node.items {
+            // Tests are invoked by the `beskid test` harness, not by name references in source.
+            if matches!(&item.node, HirItem::TestDefinition(_)) {
+                continue;
+            }
+
             let (name, visibility, span) = match &item.node {
                 HirItem::FunctionDefinition(definition) => (
                     definition.node.name.node.name.clone(),
@@ -115,11 +120,6 @@ impl SemanticPipelineRule {
                     definition.node.name.span,
                 ),
                 HirItem::TypeDefinition(definition) => (
-                    definition.node.name.node.name.clone(),
-                    definition.node.visibility.node,
-                    definition.node.name.span,
-                ),
-                HirItem::TestDefinition(definition) => (
                     definition.node.name.node.name.clone(),
                     definition.node.visibility.node,
                     definition.node.name.span,

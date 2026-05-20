@@ -1,11 +1,12 @@
 //! `beskid clif` — lower resolved Beskid source to CLIF and print the IR.
 
 use crate::frontend;
-use crate::pipeline_ui::resolve_input_with_cli_pipeline;
+use crate::pipeline_ui::{
+    PipelineProgressKind, resolve_input_with_cli_pipeline_kind,
+};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_codegen::{lower_source_with_pipeline, render_clif};
-use beskid_pipeline::PipelineObserver;
 use clap::Args;
 use std::path::PathBuf;
 
@@ -27,7 +28,7 @@ pub struct ClifArgs {
 
 /// Resolve and lower the program, then print rendered CLIF for the default entry.
 pub fn execute(args: ClifArgs) -> Result<()> {
-    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline(
+    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline_kind(
         args.input.as_ref(),
         args.project.project.as_ref(),
         args.project.target.as_deref(),
@@ -35,11 +36,20 @@ pub fn execute(args: ClifArgs) -> Result<()> {
         args.lockfile.frozen,
         args.lockfile.locked,
         args.plain,
+        PipelineProgressKind::PrepareAndRun,
     )?;
-    let obs: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
-    frontend::validate_source(&resolved.source_path, &resolved.source)?;
+    pipeline_ui.show_build_graph(&resolved);
+    pipeline_ui.halt_progress_bars_for_output();
+    frontend::run_semantic_analysis_gate(
+        &resolved.source_path,
+        &resolved.source,
+        None,
+        pipeline_ui.as_ref(),
+    )?;
+    pipeline_ui.finish_prepare_ui("Analysis complete");
 
-    let lowered = lower_source_with_pipeline(&resolved.source_path, &resolved.source, false, obs)?;
+    let lowered = lower_source_with_pipeline(&resolved.source_path, &resolved.source, false, None)?;
+    pipeline_ui.finish_session("CLIF ready");
     print!("{}", render_clif(&lowered.artifact));
 
     Ok(())

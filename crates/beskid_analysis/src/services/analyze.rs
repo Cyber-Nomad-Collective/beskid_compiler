@@ -24,6 +24,39 @@ pub fn analyze_program_with_options(
     source: &str,
     options: AnalysisOptions,
 ) -> Result<Vec<SemanticDiagnostic>> {
+    if let Some((span, keyword)) =
+        crate::parsing::reserved_keywords::find_reserved_keyword(source)
+    {
+        use crate::analysis::diagnostic_kinds::SemanticIssueKind;
+        use crate::analysis::diagnostics::make_diagnostic;
+        use crate::parsing::reserved_keywords::ReservedKeyword;
+
+        let (code, message) = match keyword {
+            ReservedKeyword::Async => (
+                SemanticIssueKind::AsyncKeywordReserved.code(),
+                SemanticIssueKind::AsyncKeywordReserved.message(),
+            ),
+            ReservedKeyword::Await => (
+                SemanticIssueKind::AwaitKeywordReserved.code(),
+                SemanticIssueKind::AwaitKeywordReserved.message(),
+            ),
+        };
+        let label = match keyword {
+            ReservedKeyword::Async => SemanticIssueKind::AsyncKeywordReserved.label(),
+            ReservedKeyword::Await => SemanticIssueKind::AwaitKeywordReserved.label(),
+        };
+        return Ok(vec![make_diagnostic(
+            &path.display().to_string(),
+            source,
+            span,
+            message,
+            label,
+            None,
+            Some(code.to_string()),
+            crate::analysis::Severity::Error,
+        )]);
+    }
+
     let program = parse_program_with_source_name(&path.display().to_string(), source)?;
     Ok(semantic_rule_diagnostics_for_program(
         &program.node,

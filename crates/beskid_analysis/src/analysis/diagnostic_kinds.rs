@@ -220,6 +220,11 @@ pub enum SemanticIssueKind {
     TypeInvalidEventInvocationScope,
     TypeInvalidEventCapacity,
     TypeInvalidEventSubscriptionTarget,
+    SpawnTargetNotFiberCompatible,
+    JoinWouldDeadlock,
+    StackReferenceEscapesSpawn,
+    AsyncKeywordReserved,
+    AwaitKeywordReserved,
     TypeReturnMismatch {
         expected_name: String,
         actual_name: String,
@@ -369,6 +374,11 @@ impl SemanticIssueKind {
             Self::TypeInvalidEventInvocationScope => "E1219",
             Self::TypeInvalidEventCapacity => "E1220",
             Self::TypeInvalidEventSubscriptionTarget => "E1221",
+            Self::SpawnTargetNotFiberCompatible => "E1223",
+            Self::JoinWouldDeadlock => "E1224",
+            Self::StackReferenceEscapesSpawn => "E1225",
+            Self::AsyncKeywordReserved => "E1226",
+            Self::AwaitKeywordReserved => "E1227",
             Self::TypeReturnMismatch { .. } => "E1207",
             Self::TypeNonIterableForTarget => "E1215",
             Self::TypeIterableNextArityMismatch { .. } => "E1216",
@@ -515,6 +525,15 @@ impl SemanticIssueKind {
             Self::TypeInvalidEventSubscriptionTarget => {
                 "invalid event subscription target".to_string()
             }
+            Self::SpawnTargetNotFiberCompatible => {
+                "spawn target not fiber compatible".to_string()
+            }
+            Self::JoinWouldDeadlock => "join would deadlock".to_string(),
+            Self::StackReferenceEscapesSpawn => {
+                "stack reference escapes spawn".to_string()
+            }
+            Self::AsyncKeywordReserved => "async keyword reserved".to_string(),
+            Self::AwaitKeywordReserved => "await keyword reserved".to_string(),
             Self::TypeReturnMismatch { .. } => "return type mismatch".to_string(),
             Self::TypeNonIterableForTarget => "non-iterable for target".to_string(),
             Self::TypeIterableNextArityMismatch { .. } => {
@@ -732,6 +751,21 @@ impl SemanticIssueKind {
             }
             Self::TypeInvalidEventSubscriptionTarget => {
                 "event subscription target must be an event field".to_string()
+            }
+            Self::SpawnTargetNotFiberCompatible => {
+                "spawn target must be a callable with a type-checkable return type".to_string()
+            }
+            Self::JoinWouldDeadlock => {
+                "a fiber cannot join an ancestor fiber handle (would deadlock)".to_string()
+            }
+            Self::StackReferenceEscapesSpawn => {
+                "spawn closure cannot capture stack references from the spawning fiber".to_string()
+            }
+            Self::AsyncKeywordReserved => {
+                "`async` is reserved and not implemented in this language version".to_string()
+            }
+            Self::AwaitKeywordReserved => {
+                "`await` is reserved and not implemented in this language version".to_string()
             }
             Self::TypeReturnMismatch {
                 expected_name,

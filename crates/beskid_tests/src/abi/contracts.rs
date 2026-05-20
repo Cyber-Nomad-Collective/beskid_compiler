@@ -10,7 +10,9 @@ use beskid_abi::{
     SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE,
 };
 use beskid_aot::runtime::{prepare_runtime, RuntimeBuildRequest};
-use beskid_aot::{AotError, BuildProfile, RuntimeStrategy};
+use beskid_aot::{AotError, RuntimeStrategy};
+use beskid_engine::Engine;
+use beskid_runtime::{array_len, array_new};
 
 #[test]
 fn builtin_symbols_are_unique() {
@@ -44,9 +46,37 @@ fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
         SYM_INTEROP_DISPATCH_UNIT,
         SYM_INTEROP_DISPATCH_PTR,
         SYM_INTEROP_DISPATCH_USIZE,
-        // Test helpers for demos (safe to export)
         beskid_abi::SYM_TEST_BYTES_PTR,
         beskid_abi::SYM_TEST_BYTES_LEN,
+        beskid_abi::SYM_FIBER_SPAWN,
+        beskid_abi::SYM_FIBER_JOIN,
+        beskid_abi::SYM_FIBER_JOIN_VALUE,
+        beskid_abi::SYM_FIBER_DETACH,
+        beskid_abi::SYM_FIBER_CANCEL,
+        beskid_abi::SYM_FIBER_YIELD,
+        beskid_abi::SYM_FIBER_NOW_MILLIS,
+        beskid_abi::SYM_FIBER_CURRENT_ID,
+        beskid_abi::SYM_CHANNEL_CREATE,
+        beskid_abi::SYM_CHANNEL_SEND,
+        beskid_abi::SYM_CHANNEL_RECEIVE,
+        beskid_abi::SYM_CHANNEL_RECEIVE_VALUE,
+        beskid_abi::SYM_CHANNEL_TRY_SEND,
+        beskid_abi::SYM_CHANNEL_TRY_RECEIVE,
+        beskid_abi::SYM_CHANNEL_CLOSE,
+        beskid_abi::SYM_HUB_CREATE,
+        beskid_abi::SYM_HUB_REGISTER,
+        beskid_abi::SYM_HUB_UNREGISTER,
+        beskid_abi::SYM_HUB_WAIT_RECEIVE,
+        beskid_abi::SYM_HUB_WAIT_RECEIVE_INDEX,
+        beskid_abi::SYM_HUB_WAIT_RECEIVE_VALUE,
+        beskid_abi::SYM_MUTEX_CREATE,
+        beskid_abi::SYM_MUTEX_LOCK,
+        beskid_abi::SYM_MUTEX_TRY_LOCK,
+        beskid_abi::SYM_MUTEX_UNLOCK,
+        beskid_abi::SYM_WAIT_GROUP_CREATE,
+        beskid_abi::SYM_WAIT_GROUP_ADD,
+        beskid_abi::SYM_WAIT_GROUP_DONE,
+        beskid_abi::SYM_WAIT_GROUP_WAIT,
     ];
     assert_eq!(RUNTIME_EXPORT_SYMBOLS, expected);
 }
@@ -69,33 +99,13 @@ fn runtime_exports_cover_mvp_corelib_symbols() {
 }
 
 #[test]
-fn prebuilt_runtime_requires_abi_version() {
-    let path = PathBuf::from("/tmp/nonexistent-runtime-archive.a");
-    let request = RuntimeBuildRequest {
-        strategy: RuntimeStrategy::UsePrebuilt {
-            path,
-            abi_version: None,
-        },
-        target_triple: None,
-        profile: BuildProfile::Debug,
-        work_dir: std::env::temp_dir().join("beskid_tests_abi_version_required"),
-    };
-
-    let err = prepare_runtime(&request).expect_err("expected ABI version requirement failure");
-    assert!(matches!(err, AotError::RuntimeAbiVersionRequired));
-}
-
-#[test]
 fn prebuilt_runtime_rejects_wrong_abi_version() {
     let path = PathBuf::from("/tmp/nonexistent-runtime-archive.a");
     let request = RuntimeBuildRequest {
         strategy: RuntimeStrategy::UsePrebuilt {
             path,
-            abi_version: Some(BESKID_RUNTIME_ABI_VERSION + 1),
+            abi_version: BESKID_RUNTIME_ABI_VERSION + 1,
         },
-        target_triple: None,
-        profile: BuildProfile::Debug,
-        work_dir: std::env::temp_dir().join("beskid_tests_abi_version_mismatch"),
     };
 
     let err = prepare_runtime(&request).expect_err("expected ABI mismatch failure");
@@ -114,15 +124,26 @@ fn prebuilt_runtime_missing_archive_fails() {
     let request = RuntimeBuildRequest {
         strategy: RuntimeStrategy::UsePrebuilt {
             path: path.clone(),
-            abi_version: Some(BESKID_RUNTIME_ABI_VERSION),
+            abi_version: BESKID_RUNTIME_ABI_VERSION,
         },
-        target_triple: None,
-        profile: BuildProfile::Debug,
-        work_dir: std::env::temp_dir().join("beskid_tests_abi_archive_missing"),
     };
 
     let err = prepare_runtime(&request).expect_err("expected missing archive failure");
     assert!(matches!(err, AotError::RuntimeArchiveMissing { path: missing } if missing == path));
+}
+
+#[test]
+fn runtime_array_len_matches_array_new_length() {
+    let mut engine = Engine::new();
+    engine.with_arena(|_, _| {
+        let ptr = array_new(8, 3);
+        assert!(!ptr.is_null(), "array_new should return a non-null handle");
+        assert_eq!(
+            array_len(ptr),
+            3,
+            "array_len(array_new(8, 3)) should report logical length 3"
+        );
+    });
 }
 
 #[test]

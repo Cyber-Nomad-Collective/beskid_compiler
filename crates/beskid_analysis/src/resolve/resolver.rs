@@ -533,6 +533,9 @@ impl Resolver {
             HirExpressionNode::TryExpression(try_expr) => {
                 self.resolve_expression(&try_expr.node.expr);
             }
+            HirExpressionNode::SpawnExpression(spawn_expr) => {
+                self.resolve_expression(&spawn_expr.node.callee);
+            }
         }
     }
 

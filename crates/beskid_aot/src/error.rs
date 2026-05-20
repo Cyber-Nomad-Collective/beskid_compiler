@@ -28,9 +28,6 @@ pub enum AotError {
     #[error("[E4012] Runtime ABI version mismatch (expected {expected}, got {actual})")]
     RuntimeAbiMismatch { expected: u32, actual: u32 },
 
-    #[error("[E4013] Runtime ABI version is required for prebuilt runtime archive")]
-    RuntimeAbiVersionRequired,
-
     #[error("[E4020] Linker tool not available")]
     LinkerUnavailable,
 

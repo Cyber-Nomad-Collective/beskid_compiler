@@ -3,13 +3,18 @@
 use anyhow::{Result, anyhow};
 use beskid_analysis::services;
 use beskid_engine::services::run_entrypoint_with_pipeline;
-use beskid_pipeline::PipelineObserver;
 use clap::Args;
 use serde::Serialize;
+use std::io::Write;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use crate::errors;
-use crate::pipeline_ui::resolve_input_with_cli_pipeline;
+use crate::frontend;
+use crate::pipeline_ui::{
+    PipelineProgressKind, resolve_input_with_cli_pipeline_kind, tui::FileLineLink,
+    tui::TestRowState, tui::TestRunUi, use_cli_spinner,
+};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
 #[derive(Args, Debug)]
@@ -74,9 +79,7 @@ struct TestSummary {
 
 /// Run the test harness for the resolved project and print human or `--json` results.
 pub fn execute(args: TestArgs) -> Result<()> {
-    // One shared observer for the whole `test` command: work-unit labels name each test's JIT
-    // entrypoint without resetting the CLI progress bar between tests (stable TTY UX).
-    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline(
+    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline_kind(
         args.input.as_ref(),
         args.project.project.as_ref(),
         args.project.target.as_deref(),
@@ -84,8 +87,17 @@ pub fn execute(args: TestArgs) -> Result<()> {
         args.lockfile.frozen,
         args.lockfile.locked,
         args.plain,
+        PipelineProgressKind::PrepareAndRun,
     )?;
-    let obs: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
+    pipeline_ui.show_build_graph(&resolved);
+    pipeline_ui.halt_progress_bars_for_output();
+    frontend::run_semantic_analysis_gate(
+        &resolved.source_path,
+        &resolved.source,
+        None,
+        pipeline_ui.as_ref(),
+    )?;
+    pipeline_ui.finish_prepare_ui("Analysis complete");
     let program = services::parse_program_with_source_name(
         &resolved.source_path.display().to_string(),
         &resolved.source,
@@ -119,12 +131,35 @@ pub fn execute(args: TestArgs) -> Result<()> {
         .filter(|tag| !tag.is_empty())
         .collect();
 
+    let mut test_ui = TestRunUi::new(args.plain, use_cli_spinner(args.plain));
+    let mut planned = Vec::new();
+    for (row_index, test) in tests.iter().enumerate() {
+        let initial = if is_filtered_out(test, &include_tags, &exclude_tags, args.group.as_deref()) {
+            TestRowState::FilteredOut
+        } else if test.skip_condition == Some(true) {
+            TestRowState::Skipped
+        } else {
+            TestRowState::Pending
+        };
+        let link = FileLineLink {
+            path: resolved.source_path.clone(),
+            line: test.definition_line,
+            column: test.definition_column,
+        };
+        test_ui.push_row(test.qualified_name.clone(), initial, Some(link));
+        planned.push((test, row_index, initial));
+    }
+
+    if !args.json {
+        test_ui.draw_initial()?;
+    }
+
     let mut executions = Vec::new();
     let mut summary = TestSummary::default();
-    for test in tests {
-        if is_filtered_out(&test, &include_tags, &exclude_tags, args.group.as_deref()) {
+    for (test, row_index, initial) in planned {
+        if initial == TestRowState::FilteredOut {
             executions.push(TestExecution {
-                name: test.name.clone(),
+                name: test.name.to_string(),
                 qualified_name: test.qualified_name.clone(),
                 outcome: TestOutcome::FilteredOut,
                 reason: Some("filtered by CLI options".to_string()),
@@ -134,9 +169,9 @@ pub fn execute(args: TestArgs) -> Result<()> {
             continue;
         }
 
-        if test.skip_condition == Some(true) {
+        if initial == TestRowState::Skipped {
             executions.push(TestExecution {
-                name: test.name.clone(),
+                name: test.name.to_string(),
                 qualified_name: test.qualified_name.clone(),
                 outcome: TestOutcome::Skipped,
                 reason: test
@@ -149,11 +184,23 @@ pub fn execute(args: TestArgs) -> Result<()> {
             continue;
         }
 
-        match run_entrypoint_with_pipeline(&resolved.source_path, &resolved.source, &test.name, obs)
-        {
+        if !args.json {
+            test_ui.start_running(row_index)?;
+        }
+        let started = Instant::now();
+        match run_entrypoint_with_pipeline(
+            &resolved.source_path,
+            &resolved.source,
+            &test.name,
+            None,
+        ) {
             Ok(output) => {
+                let duration = started.elapsed();
+                if !args.json {
+                    test_ui.finish_row(row_index, TestRowState::Passed, duration)?;
+                }
                 executions.push(TestExecution {
-                    name: test.name.clone(),
+                    name: test.name.to_string(),
                     qualified_name: test.qualified_name.clone(),
                     outcome: TestOutcome::Passed,
                     reason: None,
@@ -162,13 +209,21 @@ pub fn execute(args: TestArgs) -> Result<()> {
                 summary.passed += 1;
             }
             Err(error) => {
+                let duration = started.elapsed();
                 let reason = if args.json {
                     error.to_string()
                 } else {
-                    format!("{}", errors::report_from_anyhow(&error))
+                    format!("{}", errors::format_report(&errors::report_from_anyhow(&error)))
                 };
+                if !args.json {
+                    if !test_ui.is_plain() {
+                        eprint!("{reason}");
+                        let _ = std::io::stderr().flush();
+                    }
+                    test_ui.finish_row(row_index, TestRowState::Failed, duration)?;
+                }
                 executions.push(TestExecution {
-                    name: test.name.clone(),
+                    name: test.name.to_string(),
                     qualified_name: test.qualified_name.clone(),
                     outcome: TestOutcome::Failed,
                     reason: Some(reason),
@@ -188,39 +243,19 @@ pub fn execute(args: TestArgs) -> Result<()> {
             }))?
         );
     } else {
-        for execution in &executions {
-            match execution.outcome {
-                TestOutcome::Passed => println!("PASS {}", execution.qualified_name),
-                TestOutcome::Failed => println!(
-                    "FAIL {}{}",
-                    execution.qualified_name,
-                    execution
-                        .reason
-                        .as_deref()
-                        .map(|reason| format!(": {reason}"))
-                        .unwrap_or_default()
-                ),
-                TestOutcome::Skipped => println!(
-                    "SKIP {}{}",
-                    execution.qualified_name,
-                    execution
-                        .reason
-                        .as_deref()
-                        .map(|reason| format!(": {reason}"))
-                        .unwrap_or_default()
-                ),
-                TestOutcome::FilteredOut => println!("FILT {}", execution.qualified_name),
-            }
-        }
-        println!(
-            "Result: passed={}, failed={}, skipped={}, filtered_out={}",
-            summary.passed, summary.failed, summary.skipped, summary.filtered_out
-        );
+        test_ui.print_summary(
+            summary.passed,
+            summary.failed,
+            summary.skipped,
+            summary.filtered_out,
+        )?;
     }
 
     if summary.failed > 0 {
+        pipeline_ui.finish_session("Tests failed");
         return Err(anyhow!("{} test(s) failed", summary.failed));
     }
+    pipeline_ui.finish_session("Tests complete");
     Ok(())
 }
 

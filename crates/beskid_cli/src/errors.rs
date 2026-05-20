@@ -1,14 +1,35 @@
+use std::io::{self, Write};
+
 use anyhow::Error;
 use beskid_analysis::parser::Rule;
 use beskid_analysis::parsing::error::ParseError;
 use beskid_analysis::services::{self, LowerResolveTypeError, SemanticDiagnosticsError};
 use beskid_analysis::{MietteReportError, SemanticDiagnostic};
-use miette::Report;
+use miette::{Diagnostic, GraphicalReportHandler, Report};
 use pest::error::Error as PestError;
 
-/// Human-facing miette output (uses `Display`, not `Debug`, so fancy rendering applies).
+/// Render a diagnostic into a string without touching stderr.
+///
+/// Buffering avoids interleaving with indicatif and reduces TTY re-entrancy issues when the
+/// progress UI was active moments earlier.
+pub fn format_diagnostic(diagnostic: &(dyn Diagnostic + '_)) -> String {
+    let mut out = String::new();
+    let handler = GraphicalReportHandler::new();
+    if handler.render_report(&mut out, diagnostic).is_err() {
+        return diagnostic.to_string();
+    }
+    out
+}
+
+/// Like [`format_diagnostic`] for a [`Report`].
+pub fn format_report(report: &Report) -> String {
+    format_diagnostic(&**report)
+}
+
+/// Human-facing miette output written after any progress UI has been halted.
 pub fn print_report(report: &Report) {
-    eprintln!("{report}");
+    eprint!("{}", format_report(report));
+    let _ = io::stderr().flush();
 }
 
 /// Pretty-print a Pest grammar error for `source` labeled as `file`.
@@ -23,7 +44,7 @@ pub fn print_pretty_parse_error(file: &str, source: &str, err: &ParseError) {
     print_report(&Report::new(diagnostic));
 }
 
-/// Print each semantic diagnostic on its own line using miette rendering.
+/// Print each semantic diagnostic using miette rendering.
 pub fn print_semantic_diagnostics(diagnostics: impl IntoIterator<Item = SemanticDiagnostic>) {
     for diagnostic in diagnostics {
         print_report(&Report::new(diagnostic));

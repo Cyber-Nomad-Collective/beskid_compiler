@@ -2,6 +2,12 @@
 mod alloc;
 
 #[cfg(test)]
+mod channels;
+
+#[cfg(test)]
+mod fibers;
+
+#[cfg(test)]
 mod events;
 
 #[cfg(test)]

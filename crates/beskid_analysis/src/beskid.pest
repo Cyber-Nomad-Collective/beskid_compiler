@@ -41,6 +41,9 @@ OutKeyword = { "out" }
 TestKeyword = { "test" }
 MetaKeyword = { "meta" }
 SkipKeyword = { "skip" }
+SpawnKeyword = { "spawn" }
+AsyncKeyword = { "async" }
+AwaitKeyword = { "await" }
 
 Keyword = {
     (
@@ -70,6 +73,9 @@ Keyword = {
       | TestKeyword
       | MetaKeyword
       | SkipKeyword
+      | SpawnKeyword
+      | AsyncKeyword
+      | AwaitKeyword
     ) ~ !ASCII_ALPHANUMERIC
 }
 
@@ -226,7 +232,9 @@ ComparisonExpression = { AdditionExpression ~ (("<" | "<=" | ">" | ">=") ~ Addit
 AdditionExpression = { MultiplicationExpression ~ (("+" | "-") ~ MultiplicationExpression)* }
 MultiplicationExpression = { UnaryExpression ~ (("*" | "/") ~ UnaryExpression)* }
 
-UnaryExpression = { ("-" | "!")* ~ PostfixExpression }
+UnaryExpression = _{ SpawnUnary | PrefixUnary }
+SpawnUnary = { SpawnKeyword ~ PostfixExpression }
+PrefixUnary = { ("-" | "!")* ~ PostfixExpression }
 PostfixExpression = { PrimaryExpression ~ PostfixOperator* }
 PostfixOperator = { CallOperator | MemberAccess | TryOperator }
 

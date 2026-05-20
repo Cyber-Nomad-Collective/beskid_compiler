@@ -40,6 +40,8 @@ pub enum ExpressionNode<P: Phase> {
     GroupedExpression(Spanned<P::GroupedExpression>),
     #[phase(from = "Try")]
     TryExpression(Spanned<P::TryExpression>),
+    #[phase(from = "Spawn")]
+    SpawnExpression(Spanned<P::SpawnExpression>),
 }
 
 #[derive(beskid_ast_derive::HirNode)]
@@ -81,6 +83,7 @@ impl HirNode for ExpressionNode<HirPhase> {
             ExpressionNode::BlockExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::GroupedExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::TryExpression(expr) => push(HirNodeRef(&expr.node)),
+            ExpressionNode::SpawnExpression(expr) => push(HirNodeRef(&expr.node)),
         }
     }
 
@@ -231,4 +234,11 @@ pub struct HirGroupedExpression {
 pub struct HirTryExpression {
     #[ast(child)]
     pub expr: Box<Spanned<ExpressionNode<HirPhase>>>,
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "SpawnExpression")]
+pub struct HirSpawnExpression {
+    #[ast(child)]
+    pub callee: Box<Spanned<ExpressionNode<HirPhase>>>,
 }

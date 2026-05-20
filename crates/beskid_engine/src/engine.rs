@@ -4,7 +4,8 @@ use beskid_codegen::ExternImport;
 use beskid_pipeline::PipelineObserver;
 use beskid_runtime::{
     RuntimeRoot, RuntimeState, clear_current_mutation, clear_current_root, enter_runtime_scope,
-    leave_runtime_scope, set_current_mutation, set_current_root,
+    leave_runtime_scope, scheduler_init, run_closure_as_main, set_current_mutation,
+    set_current_root,
 };
 use gc_arena::{Arena, DynamicRootSet, Mutation, Rootable};
 
@@ -21,6 +22,7 @@ pub struct Engine {
 impl Engine {
     /// Build an engine with a fresh arena root and empty JIT module.
     pub fn new() -> Self {
+        scheduler_init();
         let arena = Arena::new(|mc| RuntimeRoot {
             globals: Vec::new(),
             dynamic_roots: DynamicRootSet::new(mc),
@@ -106,6 +108,20 @@ impl Engine {
     #[doc(hidden)]
     pub fn jit_module_mut(&mut self) -> &mut cranelift_jit::JITModule {
         self.jit.module()
+    }
+
+    /// Run a `() -> i64` entrypoint on fiber 0 with scheduler shutdown join of non-detached children.
+    pub unsafe fn execute_main_i64_with_scheduler(
+        &mut self,
+        entrypoint: &str,
+    ) -> Result<i64, JitError> {
+        let entry = self.entrypoint_ptr(entrypoint)? as usize;
+        Ok(self.with_arena(|_, _| {
+            run_closure_as_main(move || {
+                let callable: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };
+                callable()
+            })
+        }))
     }
 }
 

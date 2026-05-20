@@ -20,7 +20,7 @@ use crate::corelib_runtime;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_pckg::PckgArgs;
 use beskid_pckg::cli::PckgCommand;
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
 use miette::Report;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -31,6 +31,16 @@ use walkdir::WalkDir;
 #[command(name = "beskid")]
 #[command(about = "Beskid CLI tool", version, author)]
 pub struct Cli {
+    /// Emit Cranelift JIT/codegen backend logs (also `BESKID_LOG_CRANELIFT=1`)
+    #[arg(
+        long = "log-cranelift",
+        global = true,
+        env = "BESKID_LOG_CRANELIFT",
+        action = ArgAction::SetTrue,
+        help = "Enable Cranelift JIT/codegen backend logs (default: off; see logging.rs)"
+    )]
+    pub log_cranelift: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -87,6 +97,7 @@ pub fn run() -> miette::Result<()> {
     let all_args =
         argfile::expand_args_from(os_args, argfile::parse_fromfile, argfile::PREFIX).unwrap();
     let cli = Cli::parse_from(all_args);
+    crate::logging::init(cli.log_cranelift);
     ensure_corelib_ready().map_err(anyhow_to_miette)?;
 
     let result = match cli.command {

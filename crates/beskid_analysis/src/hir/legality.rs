@@ -448,6 +448,10 @@ impl<'a> HirLegalityValidator<'a> {
                 self.check_span(try_expr.span, "try_expression");
                 self.validate_expression(&try_expr.node.expr);
             }
+            HirExpressionNode::SpawnExpression(spawn_expr) => {
+                self.check_span(spawn_expr.span, "spawn_expression");
+                self.validate_expression(&spawn_expr.node.callee);
+            }
         }
     }
 

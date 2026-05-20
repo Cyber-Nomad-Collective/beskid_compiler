@@ -29,6 +29,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionNode {
             HirExpressionNode::EnumConstructorExpression(inner) => lower_node(inner, ctx),
             HirExpressionNode::BlockExpression(inner) => lower_node(inner, ctx),
             HirExpressionNode::GroupedExpression(inner) => lower_node(inner, ctx),
+            HirExpressionNode::SpawnExpression(inner) => lower_node(inner, ctx),
             HirExpressionNode::TryExpression(inner) => {
                 // Invariant: normalization should always desugar try to match before codegen.
                 debug_assert!(

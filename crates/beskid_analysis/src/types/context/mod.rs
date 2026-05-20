@@ -3,6 +3,7 @@
 pub mod context;
 pub mod expressions;
 pub mod helpers;
+pub mod spawn;
 pub mod items;
 pub mod iterable;
 pub mod statements;

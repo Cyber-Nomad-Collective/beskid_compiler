@@ -570,6 +570,27 @@ fn analysis_emits_unused_import_warnings_for_aliases() {
 }
 
 #[test]
+fn analysis_private_test_is_not_reported_as_unused() {
+    let source = r#"test my_case { }"#;
+    let program = parse_program_ast(source);
+    let result = run_rules(
+        &program.node,
+        "test.bd",
+        source,
+        &builtin_rules(),
+        AnalysisOptions::default(),
+    );
+
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("W1504")),
+        "tests are run by the harness and must not trigger unused-private-item warnings"
+    );
+}
+
+#[test]
 fn analysis_visibility_private_import_still_uses_resolved_symbol_name() {
     let source = "type Secret { i32 value } use private.Secret as AliasSecret;";
     let program = parse_program_ast(source);

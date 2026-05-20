@@ -1,4 +1,4 @@
-//! Thin wrappers around `beskid_analysis::services` for CLI resolution, parsing, and light validation.
+//! Thin wrappers around `beskid_analysis::services` for CLI resolution, parsing, and analysis gates.
 
 use std::path::{Path, PathBuf};
 
@@ -6,7 +6,9 @@ use anyhow::Result;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;
 use beskid_analysis::services::{self, ResolvedProject};
 use beskid_analysis::syntax::{Program, Spanned};
-use beskid_pipeline::PipelineObserver;
+use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::SEMANTIC};
+
+use crate::pipeline_ui::CliPipeline;
 
 /// Resolve `input` / `project` / lockfile flags the same way as most CLI subcommands.
 pub fn resolve_input(
@@ -74,4 +76,18 @@ pub fn parse_program(path: &Path, source: &str) -> Result<Spanned<Program>> {
 pub fn validate_source(path: &Path, source: &str) -> Result<()> {
     let _ = parse_program(path, source)?;
     Ok(())
+}
+
+/// Run semantic analysis, print diagnostics through the CLI session, and fail on errors.
+pub fn run_semantic_analysis_gate(
+    path: &Path,
+    source: &str,
+    pipeline: Option<&dyn PipelineObserver>,
+    session: &CliPipeline,
+) -> Result<()> {
+    observe_phase_result(pipeline, SEMANTIC, || {
+        let diagnostics = services::analyze_program(path, source)?;
+        session.report_semantic_diagnostics(&diagnostics);
+        services::require_no_semantic_errors(&diagnostics).map_err(anyhow::Error::from)
+    })
 }

@@ -3,7 +3,8 @@ use crate::hir::{
     HirEnumConstructorExpression, HirEnumPattern, HirExpressionNode, HirGroupedExpression,
     HirLambdaExpression, HirLambdaParameter, HirLiteral, HirLiteralExpression, HirMatchArm,
     HirMatchExpression, HirMemberExpression, HirPathExpression, HirPattern,
-    HirStructLiteralExpression, HirStructLiteralField, HirTryExpression, HirUnaryExpression,
+    HirSpawnExpression, HirStructLiteralExpression, HirStructLiteralField, HirTryExpression,
+    HirUnaryExpression,
 };
 use crate::syntax::{self, Spanned};
 
@@ -54,8 +55,24 @@ impl Lowerable for Spanned<syntax::Expression> {
                 HirExpressionNode::GroupedExpression(grouped_expr.lower())
             }
             syntax::Expression::Try(try_expr) => HirExpressionNode::TryExpression(try_expr.lower()),
+            syntax::Expression::Spawn(spawn_expr) => {
+                HirExpressionNode::SpawnExpression(spawn_expr.lower())
+            }
         };
         Spanned::new(node, self.span)
+    }
+}
+
+impl Lowerable for Spanned<syntax::SpawnExpression> {
+    type Output = Spanned<HirSpawnExpression>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirSpawnExpression {
+                callee: Box::new(self.node.callee.lower()),
+            },
+            self.span,
+        )
     }
 }
 

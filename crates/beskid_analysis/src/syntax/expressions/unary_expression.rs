@@ -24,7 +24,9 @@ pub enum UnaryOp {
     Not,
 }
 
-pub(crate) fn parse_unary_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
+pub(crate) fn parse_prefix_unary_expression(
+    pair: Pair<Rule>,
+) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
     let input = pair.as_span().get_input();
     let mut inner = pair.into_inner();

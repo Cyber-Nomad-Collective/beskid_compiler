@@ -1,4 +1,4 @@
-use beskid_runtime::{rt_now_millis, rt_yield};
+use beskid_runtime::{fiber_now_millis, fiber_yield, rt_now_millis, rt_yield};
 
 #[test]
 fn runtime_scheduler_now_millis_is_monotonic() {
@@ -11,4 +11,17 @@ fn runtime_scheduler_now_millis_is_monotonic() {
 #[test]
 fn runtime_scheduler_yield_is_callable() {
     rt_yield();
+}
+
+#[test]
+fn fiber_now_millis_is_monotonic() {
+    let first = fiber_now_millis();
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let second = fiber_now_millis();
+    assert!(second >= first);
+}
+
+#[test]
+fn fiber_yield_without_scheduler_is_callable() {
+    fiber_yield();
 }

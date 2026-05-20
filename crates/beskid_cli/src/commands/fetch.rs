@@ -20,7 +20,7 @@ pub struct FetchArgs {
 
 /// Resolve with unresolved-deps warnings and materialize the workspace (see `Project.lock`).
 pub fn execute(args: FetchArgs) -> Result<()> {
-    let _ = resolve_project_with_cli_pipeline(
+    let (pipeline_ui, resolved) = resolve_project_with_cli_pipeline(
         None,
         args.project.project.as_ref(),
         args.project.target.as_deref(),
@@ -30,6 +30,8 @@ pub fn execute(args: FetchArgs) -> Result<()> {
         args.progress.plain,
         UnresolvedDependencyPolicy::Warn,
     )?;
+    pipeline_ui.show_project_graph(&resolved);
+    pipeline_ui.finish_session("Dependencies resolved and materialized");
     println!("Dependencies resolved and materialized.");
     Ok(())
 }

@@ -5,8 +5,7 @@ use beskid_analysis::services;
 use clap::Args;
 use std::path::PathBuf;
 
-use crate::errors;
-use crate::pipeline_ui::resolve_input_with_cli_pipeline;
+use crate::pipeline_ui::{resolve_input_with_cli_pipeline, tui::format_severity_summary};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
 #[derive(Args, Debug)]
@@ -27,7 +26,7 @@ pub struct AnalyzeArgs {
 
 /// Resolve the project, analyze the entry source, and print diagnostics (or "No diagnostics.").
 pub fn execute(args: AnalyzeArgs) -> Result<()> {
-    let (_pipeline_ui, resolved) = resolve_input_with_cli_pipeline(
+    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline(
         args.input.as_ref(),
         args.project.project.as_ref(),
         args.project.target.as_deref(),
@@ -36,12 +35,17 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
         args.lockfile.locked,
         args.plain,
     )?;
-    let diagnostics = services::analyze_program(&resolved.source_path, &resolved.source)?;
+    pipeline_ui.show_build_graph(&resolved);
+    let counts = pipeline_ui.report_semantic_diagnostics(
+        &services::analyze_program(&resolved.source_path, &resolved.source)?,
+    );
+    pipeline_ui.finish_session(format!("Analyze complete ({})", format_severity_summary(counts)));
 
-    if diagnostics.is_empty() {
-        println!("No diagnostics.");
-    } else {
-        errors::print_semantic_diagnostics(diagnostics);
+    if counts.errors > 0 {
+        return Err(anyhow::anyhow!(
+            "analysis reported {} error(s)",
+            counts.errors
+        ));
     }
 
     Ok(())

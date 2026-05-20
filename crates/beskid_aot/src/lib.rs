@@ -5,6 +5,7 @@
 //! [`beskid_codegen::CodegenArtifact`].
 
 pub mod api;
+pub mod bundled;
 pub mod error;
 pub mod linker;
 pub mod object_module;
@@ -16,5 +17,7 @@ pub use api::{
     ProjectTargetKind, RuntimeStrategy, build, default_output_kind, emit_object_only,
     resolve_entrypoint,
 };
+pub use bundled::{default_runtime_strategy, resolve_bundled_runtime_archive};
+pub use beskid_abi::BESKID_RUNTIME_ABI_VERSION;
 pub use beskid_pipeline::SharedPipelineObserver;
 pub use error::{AotError, AotResult};

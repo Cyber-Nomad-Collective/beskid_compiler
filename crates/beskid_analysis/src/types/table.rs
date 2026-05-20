@@ -23,6 +23,8 @@ pub enum TypeInfo {
     },
     /// Slice-like `T[]`: runtime value is a `BeskidArray` fat pointer (see `beskid_abi::BeskidArray`).
     Array(TypeId),
+    /// Opaque cooperative fiber handle for spawn entry return type `T`.
+    Fiber(TypeId),
 }
 
 /// Intern table for [`TypeInfo`] used by [`crate::types::context::TypeContext`].

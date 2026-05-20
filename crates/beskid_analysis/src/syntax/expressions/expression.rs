@@ -16,9 +16,10 @@ use super::literal_expression::parse_literal_expression;
 use super::match_expression::parse_match_expression;
 use super::member_expression::parse_member_expression;
 use super::path_expression::parse_path_expression;
+use super::spawn_expression::parse_spawn_unary;
 use super::struct_literal_expression::parse_struct_literal_expression;
 use super::try_expression::TryExpression;
-use super::unary_expression::{UnaryExpression, parse_unary_expression};
+use super::unary_expression::{UnaryExpression, parse_prefix_unary_expression};
 
 use beskid_ast_derive::AstNode;
 
@@ -53,6 +54,8 @@ pub enum Expression {
     Grouped(Spanned<super::grouped_expression::GroupedExpression>),
     #[ast(child)]
     Try(Spanned<TryExpression>),
+    #[ast(child)]
+    Spawn(Spanned<super::spawn_expression::SpawnExpression>),
 }
 
 impl Parsable for Expression {
@@ -82,7 +85,19 @@ fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError>
         | Rule::ComparisonExpression
         | Rule::AdditionExpression
         | Rule::MultiplicationExpression => parse_binary_expression(pair),
-        Rule::UnaryExpression => parse_unary_expression(pair),
+        Rule::UnaryExpression => {
+            let inner = pair
+                .into_inner()
+                .next()
+                .ok_or(ParseError::missing(Rule::UnaryExpression))?;
+            match inner.as_rule() {
+                Rule::SpawnUnary => parse_spawn_unary(inner),
+                Rule::PrefixUnary => parse_prefix_unary_expression(inner),
+                _ => Err(ParseError::unexpected_rule(inner, Some(Rule::UnaryExpression))),
+            }
+        }
+        Rule::SpawnUnary => parse_spawn_unary(pair),
+        Rule::PrefixUnary => parse_prefix_unary_expression(pair),
         Rule::PostfixExpression => parse_postfix_expression(pair),
         Rule::PrimaryExpression => parse_primary_expression(pair),
         Rule::GroupedExpression => parse_grouped_expression(pair),

@@ -31,7 +31,7 @@ pub enum ProjectTargetKind {
     Test,
 }
 
-/// Optimization profile passed through to runtime bridge `cargo build` when applicable.
+/// Optimization profile for selecting a matching prebuilt runtime archive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildProfile {
     Debug,
@@ -49,10 +49,9 @@ pub enum LinkMode {
 /// How the AOT pipeline obtains a runtime static library to link against.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeStrategy {
-    BuildOnTheFly,
     UsePrebuilt {
         path: PathBuf,
-        abi_version: Option<u32>,
+        abi_version: u32,
     },
     Standalone,
 }
@@ -105,26 +104,34 @@ impl AotBuildRequest {
     /// Build request with defaults shared by integration tests and ad hoc tooling runs.
     ///
     /// Sets [`BuildProfile::Debug`], [`ExportPolicy::PublicOnly`], [`LinkMode::Auto`],
-    /// [`RuntimeStrategy::BuildOnTheFly`], no pipeline observer, and no explicit target triple
-    /// or secondary object path. Override any field with struct update syntax, for example
-    /// `AotBuildRequest { runtime: RuntimeStrategy::Standalone, ..AotBuildRequest::with_defaults(...) }`.
+    /// bundled prebuilt [`RuntimeStrategy::UsePrebuilt`], no pipeline observer, and no explicit
+    /// target triple or secondary object path. Override any field with struct update syntax, for
+    /// example `AotBuildRequest { runtime: RuntimeStrategy::Standalone, ..AotBuildRequest::with_defaults(...) }`.
     pub fn with_defaults(
         artifact: CodegenArtifact,
         output_kind: BuildOutputKind,
         output_path: PathBuf,
         entrypoint: impl Into<String>,
     ) -> Self {
+        let profile = BuildProfile::Debug;
+        let runtime = crate::bundled::default_runtime_strategy(profile, None).unwrap_or_else(
+            |err| {
+                panic!(
+                    "with_defaults requires a prebuilt runtime archive (build beskid_runtime_bridge): {err}"
+                )
+            },
+        );
         Self {
             artifact,
             output_kind,
             output_path,
             object_path: None,
             target_triple: None,
-            profile: BuildProfile::Debug,
+            profile,
             entrypoint: entrypoint.into(),
             export_policy: ExportPolicy::PublicOnly,
             link_mode: LinkMode::Auto,
-            runtime: RuntimeStrategy::BuildOnTheFly,
+            runtime,
             verbose_link: false,
             pipeline: None,
         }
@@ -246,9 +253,6 @@ fn prepare_runtime_stage(req: &AotBuildRequest) -> AotResult<crate::runtime::Run
     observe_phase_result(obs, AOT_RUNTIME, || {
         prepare_runtime(&RuntimeBuildRequest {
             strategy: req.runtime.clone(),
-            target_triple: req.target_triple.clone(),
-            profile: req.profile,
-            work_dir: std::env::temp_dir().join("beskid_aot_runtime"),
         })
     })
 }
@@ -328,7 +332,10 @@ mod with_defaults_tests {
         assert_eq!(req.entrypoint, "main");
         assert_eq!(req.export_policy, ExportPolicy::PublicOnly);
         assert_eq!(req.link_mode, LinkMode::Auto);
-        assert!(matches!(req.runtime, RuntimeStrategy::BuildOnTheFly));
+        assert!(matches!(
+            req.runtime,
+            RuntimeStrategy::UsePrebuilt { .. }
+        ));
         assert!(!req.verbose_link);
         assert!(req.pipeline.is_none());
     }

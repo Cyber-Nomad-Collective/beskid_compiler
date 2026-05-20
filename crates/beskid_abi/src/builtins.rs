@@ -1,11 +1,18 @@
 //! Parameter/return classification for builtins shared by codegen (`BUILTIN_SPECS`) and JIT hosts.
 
 use crate::symbols::{
-    SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
-    SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_PTR,
-    SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR,
-    SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE,
-    SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR,
+    SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_CHANNEL_CLOSE, SYM_CHANNEL_CREATE,
+    SYM_CHANNEL_RECEIVE, SYM_CHANNEL_RECEIVE_VALUE, SYM_CHANNEL_SEND, SYM_CHANNEL_TRY_RECEIVE,
+    SYM_CHANNEL_TRY_SEND, SYM_FIBER_CANCEL, SYM_FIBER_CURRENT_ID, SYM_FIBER_DETACH, SYM_FIBER_JOIN,
+    SYM_FIBER_JOIN_VALUE, SYM_FIBER_NOW_MILLIS, SYM_FIBER_SPAWN, SYM_FIBER_YIELD,
+    SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE,
+    SYM_GC_WRITE_BARRIER, SYM_HUB_CREATE, SYM_HUB_REGISTER, SYM_HUB_UNREGISTER,
+    SYM_HUB_WAIT_RECEIVE, SYM_HUB_WAIT_RECEIVE_INDEX, SYM_HUB_WAIT_RECEIVE_VALUE,
+    SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_MUTEX_CREATE,
+    SYM_MUTEX_LOCK, SYM_MUTEX_TRY_LOCK, SYM_MUTEX_UNLOCK, SYM_PANIC, SYM_PANIC_STR, SYM_STR_CONCAT,
+    SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, SYM_TEST_BYTES_LEN,
+    SYM_TEST_BYTES_PTR, SYM_WAIT_GROUP_ADD, SYM_WAIT_GROUP_CREATE, SYM_WAIT_GROUP_DONE,
+    SYM_WAIT_GROUP_WAIT,
 };
 
 /// Scalar kinds used when building Cranelift signatures for builtins (`Ptr` vs fixed `I64`).
@@ -38,6 +45,7 @@ const PTR_ONLY: [AbiParamKind; 1] = [AbiParamKind::Ptr];
 const I64_ONLY: [AbiParamKind; 1] = [AbiParamKind::I64];
 const I64_PTR: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::Ptr];
 const I64_I64: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::I64];
+const I64_I64_I64: [AbiParamKind; 3] = [AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::I64];
 
 /// Canonical list of builtin imports (alloc, strings, GC hooks, syscalls, test helpers, …).
 pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
@@ -139,6 +147,151 @@ pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
     BuiltinFnSpec {
         symbol: SYM_TEST_BYTES_LEN,
         params: &[],
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FIBER_SPAWN,
+        params: &PTR_PTR,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FIBER_JOIN,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FIBER_JOIN_VALUE,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FIBER_DETACH,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::Void,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FIBER_CANCEL,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::Void,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FIBER_YIELD,
+        params: &[],
+        returns: AbiReturnKind::Void,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FIBER_NOW_MILLIS,
+        params: &[],
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FIBER_CURRENT_ID,
+        params: &[],
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_CHANNEL_CREATE,
+        params: &I64_I64,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_CHANNEL_SEND,
+        params: &I64_I64,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_CHANNEL_RECEIVE,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_CHANNEL_RECEIVE_VALUE,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_CHANNEL_TRY_SEND,
+        params: &I64_I64,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_CHANNEL_TRY_RECEIVE,
+        params: &I64_PTR,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_CHANNEL_CLOSE,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::Void,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_HUB_CREATE,
+        params: &[],
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_HUB_REGISTER,
+        params: &I64_I64_I64,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_HUB_UNREGISTER,
+        params: &I64_I64,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_HUB_WAIT_RECEIVE,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_HUB_WAIT_RECEIVE_INDEX,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_HUB_WAIT_RECEIVE_VALUE,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_MUTEX_CREATE,
+        params: &[],
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_MUTEX_LOCK,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_MUTEX_TRY_LOCK,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_MUTEX_UNLOCK,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::Void,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_WAIT_GROUP_CREATE,
+        params: &[],
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_WAIT_GROUP_ADD,
+        params: &I64_I64,
+        returns: AbiReturnKind::Void,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_WAIT_GROUP_DONE,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::Void,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_WAIT_GROUP_WAIT,
+        params: &I64_ONLY,
         returns: AbiReturnKind::I64,
     },
 ];

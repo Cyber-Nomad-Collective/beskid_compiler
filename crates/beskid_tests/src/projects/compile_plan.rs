@@ -477,6 +477,90 @@ dependency "Core" {
 }
 
 #[test]
+fn prepare_project_workspace_skips_obj_when_materializing_path_dependencies() {
+    let root = temp_case_dir("workspace_materialize_skips_obj");
+    let app_dir = root.join("App");
+    let core_dir = root.join("Core");
+    fs::create_dir_all(&app_dir).expect("create app dir");
+    fs::create_dir_all(&core_dir).expect("create core dir");
+    fs::create_dir_all(core_dir.join("obj").join("beskid").join("stale")).expect("stale obj");
+    fs::write(core_dir.join("obj").join("beskid").join("stale").join("junk.txt"), "x")
+        .expect("stale obj file");
+    fs::create_dir_all(core_dir.join("tests").join("nested").join("obj").join("beskid"))
+        .expect("stale nested tests obj");
+
+    write_manifest(
+        &core_dir,
+        r#"
+project {
+  name = "Core"
+  version = "0.1.0"
+}
+
+target "CoreLib" {
+  kind = "Lib"
+  entry = "Core.bd"
+}
+"#,
+    );
+    fs::create_dir_all(core_dir.join("Src")).expect("create core src dir");
+    fs::write(core_dir.join("Src").join("Core.bd"), "Fn Main() { }").expect("write core source");
+
+    let app_manifest_path = write_manifest(
+        &app_dir,
+        r#"
+project {
+  name = "App"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+
+dependency "Core" {
+  source = "path"
+  path = "../Core"
+}
+"#,
+    );
+    fs::create_dir_all(app_dir.join("Src")).expect("create app src dir");
+    fs::write(app_dir.join("Src").join("Main.bd"), "Fn Main() { }").expect("write app source");
+
+    let deps_src_root = app_dir.join("obj").join("beskid").join("deps").join("src");
+    fs::create_dir_all(&deps_src_root).expect("create deps src root");
+    let stale_materialized_core = deps_src_root.join("Core-stale");
+    fs::create_dir_all(stale_materialized_core.join("obj")).expect("stale materialized obj");
+    fs::create_dir_all(stale_materialized_core.join("tests").join("nested"))
+        .expect("stale materialized tests");
+
+    with_cwd_at_workspace_root(&root, || {
+        let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
+        prepare_project_workspace(&plan).expect("workspace should prepare");
+
+        for entry in fs::read_dir(&deps_src_root).expect("read deps src dir") {
+            let dependency_root = entry.expect("valid deps entry").path();
+            if dependency_root.file_name().is_some_and(|name| name == "Core-stale") {
+                continue;
+            }
+            assert!(
+                !dependency_root.join("obj").exists(),
+                "materialized dependency should not copy obj/: {}",
+                dependency_root.display()
+            );
+            assert!(
+                !dependency_root.join("tests").exists(),
+                "materialized dependency should not copy tests/: {}",
+                dependency_root.display()
+            );
+        }
+    });
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn compile_plan_errors_when_dependency_manifest_missing() {
     let root = temp_case_dir("missing_dependency_manifest");
     let app_dir = root.join("App");

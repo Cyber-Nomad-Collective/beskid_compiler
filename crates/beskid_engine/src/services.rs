@@ -21,7 +21,7 @@ pub fn run_entrypoint_with_pipeline(
     entrypoint: &str,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
-    let lowered = beskid_codegen::lower_source_with_pipeline(source_path, source, true, pipeline)?;
+    let lowered = beskid_codegen::lower_source_with_pipeline(source_path, source, false, pipeline)?;
 
     let mut engine = Engine::new();
     engine

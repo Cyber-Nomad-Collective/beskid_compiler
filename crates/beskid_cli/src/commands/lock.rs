@@ -17,7 +17,7 @@ pub struct LockArgs {
 
 /// Resolve the project and refresh the lockfile (non-frozen, non-locked policy).
 pub fn execute(args: LockArgs) -> Result<()> {
-    let _ = resolve_project_with_cli_pipeline(
+    let (pipeline_ui, resolved) = resolve_project_with_cli_pipeline(
         None,
         args.project.project.as_ref(),
         args.project.target.as_deref(),
@@ -27,6 +27,8 @@ pub fn execute(args: LockArgs) -> Result<()> {
         args.progress.plain,
         UnresolvedDependencyPolicy::Warn,
     )?;
+    pipeline_ui.show_project_graph(&resolved);
+    pipeline_ui.finish_session("Project.lock synchronized");
     println!("Project.lock synchronized.");
     Ok(())
 }

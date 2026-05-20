@@ -153,6 +153,12 @@ impl<'a> TypeContext<'a> {
         {
             return;
         }
+        if let (Some(TypeInfo::Fiber(p1)), Some(TypeInfo::Fiber(p2))) =
+            (self.type_table.get(expected), self.type_table.get(actual))
+            && p1 == p2
+        {
+            return;
+        }
         if self.named_item_id(expected).is_some()
             && self.named_item_id(expected) == self.named_item_id(actual)
         {

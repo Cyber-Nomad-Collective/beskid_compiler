@@ -21,6 +21,9 @@ mod graph;
 mod lockfile;
 #[cfg(test)]
 mod manifest;
+// Disabled until manifest `readme` fields land in project/workspace sections.
+// #[cfg(test)]
+// mod readme;
 #[cfg(test)]
 mod meta_manifest;
 #[cfg(test)]

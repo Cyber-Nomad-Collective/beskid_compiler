@@ -107,6 +107,7 @@ fn checked_in_corelib_template_has_beskid_tests_project() {
     let tests_project = root.join("tests/corelib_tests/Project.proj");
     let write_tests = root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd");
     let api_tests = root.join("tests/corelib_tests/src/system/SyscallApiTests.bd");
+    let ergonomics_tests = root.join("tests/corelib_tests/src/system/SyscallErgonomicsTests.bd");
     assert!(
         tests_project.is_file(),
         "missing corelib tests project manifest: {}",
@@ -122,4 +123,51 @@ fn checked_in_corelib_template_has_beskid_tests_project() {
         "missing syscall api tests: {}",
         api_tests.display()
     );
+    assert!(
+        ergonomics_tests.is_file(),
+        "missing syscall ergonomics tests: {}",
+        ergonomics_tests.display()
+    );
+}
+
+#[test]
+fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
+    let manifest =
+        std::fs::read_to_string(corelib_root().join("tests/corelib_tests/Project.proj"))
+            .expect("read corelib_tests Project.proj");
+    assert!(
+        manifest.contains("name = \"corelib_tests\""),
+        "corelib test harness must use project name corelib_tests (not corelib) to avoid recursive obj/ paths"
+    );
+    assert!(
+        !manifest.contains("name = \"corelib\""),
+        "corelib_tests Project.proj must not reuse aggregate package name corelib"
+    );
+    assert!(
+        manifest.contains("dependency \"corelib\""),
+        "corelib_tests should path-depend on aggregate beskid_corelib (package corelib)"
+    );
+    assert!(
+        manifest.contains("path = \"../..\""),
+        "corelib_tests path dependency should reference beskid_corelib root"
+    );
+    for target in [
+        "SystemSyscallWriteTests",
+        "SystemSyscallApiTests",
+        "SystemSyscallErgonomicsTests",
+        "SystemOutputWriteLineTests",
+        "ConsoleAnsiEscapeTests",
+        "ConsoleAnsiStyleChainTests",
+        "ConsoleAnsiSgrGoldenTests",
+        "ConsoleControlsPanelTests",
+        "ConsoleControlsProgressBarTests",
+        "ConsoleControlsLayoutTests",
+        "CoreResultsTests",
+        "CollectionsArrayTests",
+    ] {
+        assert!(
+            manifest.contains(&format!("target \"{target}\"")),
+            "corelib_tests manifest missing target \"{target}\""
+        );
+    }
 }

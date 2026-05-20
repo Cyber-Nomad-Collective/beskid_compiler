@@ -82,3 +82,31 @@ pub extern "C-unwind" fn str_concat(
 
     str_new(buffer.cast::<u8>(), total_len)
 }
+
+/// Copy a UTF-8 substring into a newly allocated `BeskidStr`.
+///
+/// `start` is a byte offset; `count` is the number of bytes to copy. Out-of-range
+/// inputs clamp to an empty or shorter slice rather than panicking.
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn str_slice(
+    value: *const BeskidStr,
+    start: usize,
+    count: usize,
+) -> *mut BeskidStr {
+    if value.is_null() {
+        panic!("null string handle");
+    }
+    let (ptr, len) = unsafe { ((*value).ptr, (*value).len) };
+    if ptr.is_null() || len == 0 {
+        static Z: [u8; 1] = [0];
+        return str_new(Z.as_ptr(), 0);
+    }
+    let start = start.min(len);
+    let end = start.saturating_add(count).min(len);
+    let slice_len = end.saturating_sub(start);
+    if slice_len == 0 {
+        static Z: [u8; 1] = [0];
+        return str_new(Z.as_ptr(), 0);
+    }
+    str_new(unsafe { ptr.add(start) }, slice_len)
+}

@@ -105,6 +105,7 @@ impl<'a> TypeContext<'a> {
                 self.type_match_expression(match_expr)
             }
             HirExpressionNode::TryExpression(try_expr) => self.type_try_expression(try_expr),
+            HirExpressionNode::SpawnExpression(spawn_expr) => self.type_spawn_expression(spawn_expr),
         };
 
         if let Some(type_id) = type_id {
@@ -310,6 +311,19 @@ impl<'a> TypeContext<'a> {
         }
 
         if let HirExpressionNode::PathExpression(path_expr) = &call.node.callee.node {
+            let path: Vec<String> = path_expr
+                .node
+                .path
+                .node
+                .segments
+                .iter()
+                .map(|segment| segment.node.name.node.name.clone())
+                .collect();
+            if Self::is_fiber_join_path(&path)
+                && let Some(handle) = call.node.args.first()
+            {
+                self.check_fiber_join_call(call.span, handle);
+            }
             let segments = &path_expr.node.path.node.segments;
             let resolved = self
                 .resolution

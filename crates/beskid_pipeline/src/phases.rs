@@ -1,6 +1,6 @@
 //! Stable phase identifiers for observers and UX. Add new constants; do not rename.
 //!
-//! Meta-related ids align with platform-spec `compiler/metaprogramming-mod-sdk` and
+//! Meta-related ids align with platform-spec `compiler/compiler-mods` and
 //! `compiler/build-pipeline/stage-ordering` (see crate `PIPELINE.md`).
 
 /// Locate and select `Project.proj` / workspace member.
@@ -37,7 +37,7 @@ pub const AOT_EMIT_OBJECT: &str = "aot.emit_object";
 pub const JIT_EMIT: &str = "jit.emit";
 /// JIT `finalize_definitions` boundary.
 pub const JIT_FINALIZE: &str = "jit.finalize";
-/// Runtime archive preparation / build-on-the-fly.
+/// Prebuilt runtime archive resolution and validation.
 pub const AOT_RUNTIME: &str = "aot.runtime";
 /// Platform linker invocation.
 pub const AOT_LINK: &str = "aot.link";

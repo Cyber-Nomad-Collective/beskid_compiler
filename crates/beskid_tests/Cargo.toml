@@ -3,14 +3,18 @@ name = "beskid_tests"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+pckg = ["dep:beskid_pckg"]
+
 [dependencies]
+beskid_pckg = { path = "../beskid_pckg", optional = true }
 beskid_aot = { path = "../beskid_aot" }
 beskid_abi = { path = "../beskid_abi" }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_engine = { path = "../beskid_engine" }
 beskid_lsp = { path = "../beskid_lsp" }
-beskid_pckg = { path = "../beskid_pckg" }
 beskid_runtime = { path = "../beskid_runtime", features = ["metrics", "sched"] }
 cranelift-codegen = { workspace = true }
 cranelift-jit = { workspace = true }

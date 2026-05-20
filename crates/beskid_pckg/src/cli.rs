@@ -15,7 +15,6 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use url::Url;
-use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -24,6 +23,7 @@ use std::os::unix::fs::PermissionsExt;
 
 use crate::api_doc::API_JSON_SCHEMA_VERSION;
 use crate::models::PackageVersionSummaryResponse;
+use crate::pack::{collect_pack_entries, zip_to_pckg_error};
 use crate::{PckgClient, PckgClientConfig, PckgError};
 
 const DEFAULT_PCKG_CONFIG_PATH: &str = ".beskid/pckg/repositories.json";
@@ -878,47 +878,11 @@ async fn execute_whoami(client: &PckgClient) -> Result<(), PckgError> {
     Ok(())
 }
 
-fn collect_pack_entries(source_root: &Path) -> Result<Vec<(String, Vec<u8>)>, PckgError> {
-    let mut entries = Vec::new();
-
-    for entry in WalkDir::new(source_root).into_iter().filter_map(Result::ok) {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let rel_path = path.strip_prefix(source_root).map_err(io::Error::other)?;
-        let rel = normalize_rel_path(rel_path);
-
-        if rel == "checksums.sha256" || rel == "package.json" {
-            continue;
-        }
-
-        let bytes = fs::read(path)?;
-        entries.push((rel, bytes));
-    }
-
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(entries)
-}
-
-fn normalize_rel_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     let hash = hasher.finalize();
     format!("{hash:x}")
-}
-
-fn zip_to_pckg_error(source: zip::result::ZipError) -> PckgError {
-    PckgError::Api {
-        status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-        message: format!("zip packaging error: {source}"),
-        body: None,
-    }
 }
 
 fn spinner(message: &str) -> ProgressBar {
