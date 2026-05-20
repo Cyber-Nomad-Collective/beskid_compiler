@@ -7,7 +7,8 @@ use beskid_analysis::projects::{
 };
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_pipeline::phases::{
-    FULL_BUILD_PHASE_ORDER, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE,
+    COMPOSITION_RESOLVE, FULL_BUILD_PHASE_ORDER, MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT,
+    MOD_GENERATE, MOD_LOAD, MOD_REWRITE, SEMANTIC_SNAPSHOT,
 };
 use beskid_pipeline::{PipelineEvent, PipelineObserver};
 
@@ -119,9 +120,11 @@ project {
     assert_subsequence(
         &events,
         &[
+            MACRO_EXPAND,
             MOD_LOAD,
             MOD_COLLECT,
             MOD_GENERATE,
+            MACRO_EXPAND,
             MOD_ANALYZE,
             MOD_REWRITE,
         ],
@@ -135,9 +138,12 @@ fn full_build_phase_order_keeps_mod_hooks_between_parse_and_lower_ready() {
     assert_subsequence(
         FULL_BUILD_PHASE_ORDER,
         &[
+            MACRO_EXPAND,
             MOD_LOAD,
             MOD_COLLECT,
             MOD_GENERATE,
+            SEMANTIC_SNAPSHOT,
+            COMPOSITION_RESOLVE,
             MOD_ANALYZE,
             MOD_REWRITE,
         ],

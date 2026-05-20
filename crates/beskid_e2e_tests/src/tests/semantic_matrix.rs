@@ -45,6 +45,12 @@ const CASES: &[SemanticCase] = &[
         native_exec_expected: false,
         expected_symbols: &[],
     },
+    SemanticCase {
+        fixture: "composition_app",
+        expected: 0,
+        native_exec_expected: false,
+        expected_symbols: &[],
+    },
 ];
 
 #[test]

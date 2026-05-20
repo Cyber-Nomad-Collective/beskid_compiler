@@ -249,6 +249,40 @@ pub enum SemanticIssueKind {
         to: String,
     },
 
+    MacroUnknown {
+        name: String,
+    },
+    MacroArgumentArityMismatch {
+        name: String,
+        expected: usize,
+        actual: usize,
+    },
+    MacroArgumentKindMismatch {
+        name: String,
+        parameter: String,
+        expected_kind: String,
+    },
+    MacroMetavariableOutsideBody {
+        name: String,
+    },
+    MacroExpansionDepthExceeded {
+        max_depth: u32,
+    },
+    MacroAmbiguousName {
+        name: String,
+    },
+    MacroDuplicateParameter {
+        name: String,
+        parameter: String,
+    },
+    QueryBoundsExceeded {
+        max_nodes: u64,
+        max_depth: u64,
+    },
+    QueryNodeSpanUnavailable,
+    QueryPipelineConflict,
+    QueryPipelineStaleGeneration,
+
     /// `@arg(name)` does not match a parameter on the documented callable.
     DocUnknownArgName {
         name: String,
@@ -288,6 +322,43 @@ pub enum SemanticIssueKind {
     /// Duplicate `@par(name)` in the same documentation block.
     DocDuplicateGenericName {
         name: String,
+    },
+    CompositionMissingLaunchHost,
+    CompositionMultipleLaunchHosts,
+    CompositionDependencyCycle {
+        from_id: u32,
+        to_id: u32,
+    },
+    CompositionUnresolvedInject {
+        requested_type: String,
+    },
+    CompositionAmbiguousInject {
+        requested_type: String,
+    },
+    CompositionScopedOutsideWith,
+    CompositionChildScopeWithoutParent {
+        scope_name: String,
+    },
+    CompositionWithArgsMismatch {
+        scope_name: String,
+    },
+    CompositionLaunchTargetNotHost {
+        target_name: String,
+    },
+    CompositionHostInheritanceCycle {
+        host_name: String,
+    },
+    CompositionDuplicateScopeName {
+        scope_name: String,
+    },
+    CompositionHostInModProject,
+    CompositionLaunchInLibProject,
+    CompositionInjectOnConstructor,
+    CompositionOverrideLifetimeMismatch {
+        binding: String,
+    },
+    CompositionInvalidScopeQualifier {
+        qualifier: String,
     },
 }
 
@@ -386,6 +457,35 @@ impl SemanticIssueKind {
             Self::TypeIterableNextReturnNotOption => "E1217",
             Self::TypeIterableOptionSomeArityMismatch { .. } => "E1218",
             Self::TypeImplicitNumericCast { .. } => "W1203",
+
+            Self::MacroUnknown { .. } => "E1901",
+            Self::MacroArgumentArityMismatch { .. } => "E1902",
+            Self::MacroArgumentKindMismatch { .. } => "E1903",
+            Self::MacroMetavariableOutsideBody { .. } => "E1904",
+            Self::MacroExpansionDepthExceeded { .. } => "E1905",
+            Self::MacroAmbiguousName { .. } => "E1907",
+            Self::MacroDuplicateParameter { .. } => "E1908",
+            Self::QueryBoundsExceeded { .. } => "E1880",
+            Self::QueryNodeSpanUnavailable => "E1881",
+            Self::QueryPipelineConflict => "E1883",
+            Self::QueryPipelineStaleGeneration => "E1884",
+
+            Self::CompositionMissingLaunchHost => "E1701",
+            Self::CompositionMultipleLaunchHosts => "E1702",
+            Self::CompositionDependencyCycle { .. } => "E1703",
+            Self::CompositionUnresolvedInject { .. } => "E1704",
+            Self::CompositionAmbiguousInject { .. } => "E1705",
+            Self::CompositionScopedOutsideWith => "E1706",
+            Self::CompositionChildScopeWithoutParent { .. } => "E1707",
+            Self::CompositionWithArgsMismatch { .. } => "E1708",
+            Self::CompositionLaunchTargetNotHost { .. } => "E1709",
+            Self::CompositionHostInheritanceCycle { .. } => "E1715",
+            Self::CompositionDuplicateScopeName { .. } => "E1716",
+            Self::CompositionHostInModProject => "E1710",
+            Self::CompositionLaunchInLibProject => "E1711",
+            Self::CompositionInjectOnConstructor => "E1712",
+            Self::CompositionOverrideLifetimeMismatch { .. } => "E1713",
+            Self::CompositionInvalidScopeQualifier { .. } => "E1714",
 
             Self::DocUnknownArgName { .. } => "W1610",
             Self::DocDuplicateArgName { .. } => "W1611",
@@ -532,6 +632,47 @@ impl SemanticIssueKind {
             Self::StackReferenceEscapesSpawn => "stack reference escapes spawn".to_string(),
             Self::AsyncKeywordReserved => "async keyword reserved".to_string(),
             Self::AwaitKeywordReserved => "await keyword reserved".to_string(),
+            Self::MacroUnknown { .. } => "unknown macro".to_string(),
+            Self::MacroArgumentArityMismatch { .. } => "macro argument count mismatch".to_string(),
+            Self::MacroArgumentKindMismatch { .. } => "macro argument kind mismatch".to_string(),
+            Self::MacroMetavariableOutsideBody { .. } => "macro metavariable outside body".to_string(),
+            Self::MacroExpansionDepthExceeded { .. } => "macro expansion depth exceeded".to_string(),
+            Self::MacroAmbiguousName { .. } => "ambiguous macro name".to_string(),
+            Self::MacroDuplicateParameter { .. } => "duplicate macro parameter".to_string(),
+            Self::QueryBoundsExceeded { .. } => "query bounds exceeded".to_string(),
+            Self::QueryNodeSpanUnavailable => "node span unavailable".to_string(),
+            Self::QueryPipelineConflict => "query pipeline conflict".to_string(),
+            Self::QueryPipelineStaleGeneration => "query pipeline stale generation".to_string(),
+
+            Self::CompositionMissingLaunchHost => "missing launch host".to_string(),
+            Self::CompositionMultipleLaunchHosts => "multiple launch hosts".to_string(),
+            Self::CompositionDependencyCycle { .. } => "composition dependency cycle".to_string(),
+            Self::CompositionUnresolvedInject { .. } => "unresolved inject".to_string(),
+            Self::CompositionAmbiguousInject { .. } => "ambiguous inject".to_string(),
+            Self::CompositionScopedOutsideWith => "scope used outside with".to_string(),
+            Self::CompositionChildScopeWithoutParent { .. } => {
+                "child scope without parent".to_string()
+            }
+            Self::CompositionWithArgsMismatch { .. } => "with argument mismatch".to_string(),
+            Self::CompositionLaunchTargetNotHost { .. } => {
+                "launch target is not a host".to_string()
+            }
+            Self::CompositionHostInheritanceCycle { .. } => {
+                "host inheritance cycle".to_string()
+            }
+            Self::CompositionDuplicateScopeName { .. } => {
+                "duplicate scope name".to_string()
+            }
+            Self::CompositionHostInModProject => "host in mod project".to_string(),
+            Self::CompositionLaunchInLibProject => "launch in lib project".to_string(),
+            Self::CompositionInjectOnConstructor => "inject on constructor".to_string(),
+            Self::CompositionOverrideLifetimeMismatch { .. } => {
+                "override lifetime mismatch".to_string()
+            }
+            Self::CompositionInvalidScopeQualifier { .. } => {
+                "invalid scope qualifier".to_string()
+            }
+
             Self::TypeReturnMismatch { .. } => "return type mismatch".to_string(),
             Self::TypeNonIterableForTarget => "non-iterable for target".to_string(),
             Self::TypeIterableNextArityMismatch { .. } => {
@@ -790,6 +931,96 @@ impl SemanticIssueKind {
             Self::TypeImplicitNumericCast { from, to } => {
                 format!("implicit numeric cast from {from} to {to}")
             }
+            Self::MacroUnknown { name } => format!("unknown macro `{name}!`"),
+            Self::MacroArgumentArityMismatch {
+                name,
+                expected,
+                actual,
+            } => format!(
+                "macro `{name}!` expects {expected} argument(s), got {actual}"
+            ),
+            Self::MacroArgumentKindMismatch {
+                name,
+                parameter,
+                expected_kind,
+            } => format!(
+                "macro `{name}!` argument `{parameter}` does not match fragment kind `{expected_kind}`"
+            ),
+            Self::MacroMetavariableOutsideBody { name } => {
+                format!("`${name}` is only valid inside a macro definition body")
+            }
+            Self::MacroExpansionDepthExceeded { max_depth } => format!(
+                "macro expansion exceeded max depth ({max_depth})"
+            ),
+            Self::MacroAmbiguousName { name } => {
+                format!("ambiguous macro name `{name}` (multiple definitions in scope)")
+            }
+            Self::MacroDuplicateParameter { name, parameter } => format!(
+                "macro `{name}` has duplicate parameter `{parameter}`"
+            ),
+            Self::QueryBoundsExceeded {
+                max_nodes,
+                max_depth,
+            } => format!(
+                "query traversal exceeded bounds (maxNodes={max_nodes}, maxDepth={max_depth})"
+            ),
+            Self::QueryNodeSpanUnavailable => {
+                "span unavailable for the requested node in current syntax generation".to_string()
+            }
+            Self::QueryPipelineConflict => {
+                "query pipeline contains conflicting operations for one target".to_string()
+            }
+            Self::QueryPipelineStaleGeneration => {
+                "query pipeline references a stale syntax generation".to_string()
+            }
+            Self::CompositionMissingLaunchHost => {
+                "composition requires exactly one `launch` host entry point".to_string()
+            }
+            Self::CompositionMultipleLaunchHosts => {
+                "composition allows only one `launch` host entry point".to_string()
+            }
+            Self::CompositionDependencyCycle { from_id, to_id } => format!(
+                "composition dependency cycle between registrations {from_id} and {to_id}"
+            ),
+            Self::CompositionUnresolvedInject { requested_type } => {
+                format!("no registration provides inject type `{requested_type}`")
+            }
+            Self::CompositionAmbiguousInject { requested_type } => {
+                format!("multiple registrations provide inject type `{requested_type}`")
+            }
+            Self::CompositionScopedOutsideWith => {
+                "`with` scope is required for scoped service resolution".to_string()
+            }
+            Self::CompositionChildScopeWithoutParent { scope_name } => format!(
+                "scope `{scope_name}` has no parent in the host scope tree"
+            ),
+            Self::CompositionWithArgsMismatch { scope_name } => format!(
+                "`with {scope_name}(...)` argument list does not match the scope definition"
+            ),
+            Self::CompositionLaunchTargetNotHost { target_name } => {
+                format!("launch target `{target_name}` is not a host definition")
+            }
+            Self::CompositionHostInheritanceCycle { host_name } => {
+                format!("host inheritance cycle detected at `{host_name}`")
+            }
+            Self::CompositionDuplicateScopeName { scope_name } => {
+                format!("duplicate scope name `{scope_name}` in merged host scope tree")
+            }
+            Self::CompositionHostInModProject => {
+                "host definitions are not allowed in compiler mod projects".to_string()
+            }
+            Self::CompositionLaunchInLibProject => {
+                "`launch` is not allowed in library projects".to_string()
+            }
+            Self::CompositionInjectOnConstructor => {
+                "`inject` fields are not allowed on constructors".to_string()
+            }
+            Self::CompositionOverrideLifetimeMismatch { binding } => format!(
+                "registration lifetime override mismatch for `{binding}`"
+            ),
+            Self::CompositionInvalidScopeQualifier { qualifier } => format!(
+                "invalid scope inject qualifier `{qualifier}`"
+            ),
             Self::DocUnknownArgName { name } => {
                 format!("`@arg({name})` does not match any parameter of this callable")
             }

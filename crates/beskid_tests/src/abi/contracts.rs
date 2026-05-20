@@ -15,8 +15,8 @@ use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
 use beskid_aot::{AotError, RuntimeStrategy};
 use beskid_engine::Engine;
 use beskid_pipeline::phases::{
-    MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE, SEMANTIC_SNAPSHOT,
-    SYNTAX_GENERATION,
+    MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE,
+    SEMANTIC_SNAPSHOT, SYNTAX_GENERATION,
 };
 use beskid_runtime::{array_len, array_new};
 
@@ -275,6 +275,11 @@ fn ffi_types_have_stable_sizes() {
         std::mem::size_of::<BeskidArray>(),
         std::mem::size_of::<usize>() * 3
     );
+}
+
+#[test]
+fn macro_expand_phase_id_matches_platform_contract() {
+    assert_eq!(MACRO_EXPAND, "macro.expand");
 }
 
 #[test]

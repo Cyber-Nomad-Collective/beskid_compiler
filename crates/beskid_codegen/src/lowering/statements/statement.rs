@@ -23,6 +23,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStatementNode {
             }),
             HirStatementNode::IfStatement(inner) => lower_node(inner, ctx),
             HirStatementNode::ExpressionStatement(inner) => lower_node(inner, ctx),
+            HirStatementNode::WithStatement(_) | HirStatementNode::LaunchStatement(_) => {
+                const _: () = assert!(
+                    !crate::lowering::composition_policy::RUNTIME_CONTAINER_LOWERING_ENABLED,
+                    "launch/with lowering is gated until runtime container support lands"
+                );
+                Ok(())
+            }
         }
     }
 }

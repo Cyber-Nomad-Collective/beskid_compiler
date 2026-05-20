@@ -1,7 +1,9 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 use super::super::diagnostics::{SemanticDiagnostic, Severity, make_diagnostic};
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
+use crate::projects::assembly::ModuleIndex;
 use crate::syntax::Program;
 
 #[derive(Debug, Clone)]
@@ -15,6 +17,10 @@ pub struct AnalysisOptions {
     /// Module paths (`Std::System::IO`) from program assembly; when set, `use` validation uses
     /// the merged module graph instead of file-local root heuristics.
     pub known_assembly_module_paths: Option<HashSet<String>>,
+    /// Prefetched cross-unit graph for entry resolution (analyze / IDE parity with [`ModuleIndex::resolve_entry_hir`]).
+    pub program_assembly_module_index: Option<ModuleIndex>,
+    /// Entry `.bd` path paired with [`Self::program_assembly_module_index`].
+    pub entry_source_path: Option<PathBuf>,
 }
 
 impl Default for AnalysisOptions {
@@ -23,6 +29,8 @@ impl Default for AnalysisOptions {
             emit_warnings: true,
             module_level_meta_items_allowed: None,
             known_assembly_module_paths: None,
+            program_assembly_module_index: None,
+            entry_source_path: None,
         }
     }
 }

@@ -4,11 +4,11 @@ use crate::syntax::{
     AssignExpression, AttributeDeclaration, BinaryExpression, BlockExpression, BreakStatement,
     CallExpression, ContinueStatement, ContractDefinition, EnumConstructorExpression,
     EnumDefinition, ExpressionStatement, ExtendTypeDefinition, ForStatement, FunctionDefinition,
-    GroupedExpression, IfStatement, InlineModule, LambdaExpression, LetStatement,
-    LiteralExpression, MacroDefinition, MacroInvocation, MacroMetavariable, MatchExpression,
-    MemberExpression, MethodDefinition, ModuleDeclaration, PathExpression, ReturnStatement,
-    SpawnExpression, StructLiteralExpression, TestDefinition, TryExpression, TypeDefinition,
-    UnaryExpression, UseDeclaration, WhileStatement,
+    GroupedExpression, HostDefinition, IfStatement, InlineModule, LambdaExpression,
+    LaunchStatement, LetStatement, LiteralExpression, MacroDefinition, MacroInvocation,
+    MacroMetavariable, MatchExpression, MemberExpression, MethodDefinition, ModuleDeclaration,
+    PathExpression, ReturnStatement, SpawnExpression, StructLiteralExpression, TestDefinition,
+    TryExpression, TypeDefinition, UnaryExpression, UseDeclaration, WhileStatement, WithStatement,
 };
 
 use super::{
@@ -25,6 +25,7 @@ use super::{
 
 /// Type-level association between one program shape (AST or HIR) and the concrete types of items and statements.
 pub trait Phase {
+    type HostDefinition;
     type FunctionDefinition;
     type MethodDefinition;
     type ExtendTypeDefinition;
@@ -45,6 +46,8 @@ pub trait Phase {
     type WhileStatement;
     type ForStatement;
     type IfStatement;
+    type WithStatement;
+    type LaunchStatement;
     type ExpressionStatement;
 
     type MatchExpression;
@@ -75,6 +78,7 @@ pub struct AstPhase;
 pub struct HirPhase;
 
 impl Phase for AstPhase {
+    type HostDefinition = HostDefinition;
     type FunctionDefinition = FunctionDefinition;
     type MethodDefinition = MethodDefinition;
     type ExtendTypeDefinition = ExtendTypeDefinition;
@@ -95,6 +99,8 @@ impl Phase for AstPhase {
     type WhileStatement = WhileStatement;
     type ForStatement = ForStatement;
     type IfStatement = IfStatement;
+    type WithStatement = WithStatement;
+    type LaunchStatement = LaunchStatement;
     type ExpressionStatement = ExpressionStatement;
 
     type MatchExpression = MatchExpression;
@@ -117,6 +123,7 @@ impl Phase for AstPhase {
 }
 
 impl Phase for HirPhase {
+    type HostDefinition = HostDefinition;
     type FunctionDefinition = HirFunctionDefinition;
     type MethodDefinition = HirMethodDefinition;
     type ExtendTypeDefinition = HirExtendTypeDefinition;
@@ -137,6 +144,8 @@ impl Phase for HirPhase {
     type WhileStatement = HirWhileStatement;
     type ForStatement = HirForStatement;
     type IfStatement = HirIfStatement;
+    type WithStatement = WithStatement;
+    type LaunchStatement = LaunchStatement;
     type ExpressionStatement = HirExpressionStatement;
 
     type MatchExpression = HirMatchExpression;

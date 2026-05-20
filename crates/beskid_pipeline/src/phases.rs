@@ -15,6 +15,8 @@ pub const WORKSPACE_MATERIALIZE: &str = "workspace.materialize";
 pub const PROGRAM_ASSEMBLE: &str = "program.assemble";
 /// Parse Beskid source.
 pub const PARSE: &str = "parse";
+/// Expand language `macro` rules (`name!` invocations) via typed AST substitution.
+pub const MACRO_EXPAND: &str = "macro.expand";
 /// Load mod AOT artifacts and contract descriptors for the active compile plan.
 pub const MOD_LOAD: &str = "mod.load";
 /// Run Collector contracts to declare generation targets.
@@ -27,6 +29,8 @@ pub const SYNTAX_GENERATION: &str = "syntax.generation";
 pub const SEMANTIC: &str = "semantic";
 /// Builtin semantic rules finished for the generation (snapshot boundary for inspectors).
 pub const SEMANTIC_SNAPSHOT: &str = "semantic.snapshot";
+/// Native composition graph resolution for host DI (after semantic snapshot).
+pub const COMPOSITION_RESOLVE: &str = "composition.resolve";
 /// Run Analyzer contracts after semantic snapshot.
 pub const MOD_ANALYZE: &str = "mod.analyze";
 /// Run Rewriter contracts after analysis.
@@ -59,12 +63,14 @@ pub const FULL_BUILD_PHASE_ORDER: &[&str] = &[
     WORKSPACE_MATERIALIZE,
     PROGRAM_ASSEMBLE,
     PARSE,
+    MACRO_EXPAND,
     MOD_LOAD,
     MOD_COLLECT,
     MOD_GENERATE,
     SYNTAX_GENERATION,
     SEMANTIC,
     SEMANTIC_SNAPSHOT,
+    COMPOSITION_RESOLVE,
     MOD_ANALYZE,
     MOD_REWRITE,
     LOWER_READY,
@@ -87,6 +93,7 @@ pub const MOD_BUILD_PHASE_ORDER: &[&str] = &[
     WORKSPACE_MATERIALIZE,
     PROGRAM_ASSEMBLE,
     PARSE,
+    MACRO_EXPAND,
     LOWER_READY,
     LOWER,
     CODEGEN_CLIF,
@@ -102,12 +109,14 @@ pub const MOD_BUILD_PHASE_ORDER: &[&str] = &[
 /// before [`LOWER`].
 pub const JIT_RUN_PHASE_ORDER: &[&str] = &[
     PARSE,
+    MACRO_EXPAND,
     MOD_LOAD,
     MOD_COLLECT,
     MOD_GENERATE,
     SYNTAX_GENERATION,
     SEMANTIC,
     SEMANTIC_SNAPSHOT,
+    COMPOSITION_RESOLVE,
     MOD_ANALYZE,
     MOD_REWRITE,
     LOWER_READY,
@@ -128,7 +137,8 @@ mod tests {
     #[test]
     fn full_build_orders_mod_between_parse_and_semantic() {
         let o = FULL_BUILD_PHASE_ORDER;
-        assert!(pos(o, PARSE).unwrap() < pos(o, MOD_LOAD).unwrap());
+        assert!(pos(o, PARSE).unwrap() < pos(o, MACRO_EXPAND).unwrap());
+        assert!(pos(o, MACRO_EXPAND).unwrap() < pos(o, MOD_LOAD).unwrap());
         assert!(pos(o, MOD_LOAD).unwrap() < pos(o, MOD_COLLECT).unwrap());
         assert!(pos(o, MOD_COLLECT).unwrap() < pos(o, MOD_GENERATE).unwrap());
         assert!(pos(o, MOD_GENERATE).unwrap() < pos(o, SYNTAX_GENERATION).unwrap());
@@ -158,7 +168,8 @@ mod tests {
     #[test]
     fn jit_run_matches_mod_prefix_before_lower() {
         let o = JIT_RUN_PHASE_ORDER;
-        assert!(pos(o, PARSE).unwrap() < pos(o, MOD_LOAD).unwrap());
+        assert!(pos(o, PARSE).unwrap() < pos(o, MACRO_EXPAND).unwrap());
+        assert!(pos(o, MACRO_EXPAND).unwrap() < pos(o, MOD_LOAD).unwrap());
         assert!(pos(o, MOD_GENERATE).unwrap() < pos(o, SEMANTIC).unwrap());
         assert!(pos(o, SEMANTIC_SNAPSHOT).unwrap() < pos(o, MOD_ANALYZE).unwrap());
         assert!(pos(o, MOD_ANALYZE).unwrap() < pos(o, MOD_REWRITE).unwrap());

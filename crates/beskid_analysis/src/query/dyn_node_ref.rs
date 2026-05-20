@@ -1,4 +1,5 @@
 use crate::query::AstNode;
+use crate::syntax::SpanInfo;
 
 #[derive(Clone, Copy)]
 pub struct DynNodeRef<'a>(pub &'a dyn AstNode);
@@ -20,6 +21,10 @@ impl<'a> DynNodeRef<'a> {
 
     pub fn node_kind(self) -> crate::query::NodeKind {
         self.0.node_kind()
+    }
+
+    pub fn span(self) -> Option<SpanInfo> {
+        self.0.span()
     }
 }
 

@@ -29,7 +29,7 @@ pub struct Resolver {
     builtin_items: HashMap<ItemId, usize>,
     /// `use` alias → full module path (e.g. `IO` → `["Std","System","IO"]`).
     module_imports: HashMap<String, Vec<String>>,
-    current_source_path: Option<PathBuf>,
+    pub(crate) current_source_path: Option<PathBuf>,
 }
 
 fn type_name_for_method_receiver(receiver_type: &Spanned<HirType>) -> String {
@@ -85,6 +85,10 @@ impl Resolver {
         }
     }
 
+    pub(crate) fn set_current_source_path(&mut self, source_path: Option<PathBuf>) {
+        self.current_source_path = source_path;
+    }
+
     /// Register top-level items and nested modules from `program` without resolving references.
     pub fn collect_program(&mut self, program: &Spanned<HirProgram>) {
         self.module_imports.clear();
@@ -129,16 +133,38 @@ impl Resolver {
         }
 
         if self.errors.is_empty() {
-            Ok(Resolution {
-                items: std::mem::take(&mut self.items),
-                module_graph: std::mem::take(&mut self.module_graph),
-                tables: std::mem::take(&mut self.tables),
-                warnings: std::mem::take(&mut self.warnings),
-                builtin_items: std::mem::take(&mut self.builtin_items),
-                module_imports: std::mem::take(&mut self.module_imports),
-            })
+            Ok(self.take_resolution())
         } else {
             Err(std::mem::take(&mut self.errors))
+        }
+    }
+
+    /// Like [`Self::resolve_collected_program`], but always returns symbol rows and partial tables (for `api.json`).
+    pub fn resolve_collected_program_for_api_documentation(
+        &mut self,
+        program: &Spanned<HirProgram>,
+    ) -> Resolution {
+        let file_scoped_module_index = file_scoped_module_index(program);
+        self.current_module = file_scoped_module_path(program)
+            .map(|path| self.module_graph.ensure_module_path(&path))
+            .unwrap_or(self.module_graph.root());
+        for (index, item) in program.node.items.iter().enumerate() {
+            if Some(index) == file_scoped_module_index {
+                continue;
+            }
+            self.resolve_item(item);
+        }
+        self.take_resolution()
+    }
+
+    fn take_resolution(&mut self) -> Resolution {
+        Resolution {
+            items: std::mem::take(&mut self.items),
+            module_graph: std::mem::take(&mut self.module_graph),
+            tables: std::mem::take(&mut self.tables),
+            warnings: std::mem::take(&mut self.warnings),
+            builtin_items: std::mem::take(&mut self.builtin_items),
+            module_imports: std::mem::take(&mut self.module_imports),
         }
     }
 
@@ -172,20 +198,23 @@ impl Resolver {
                 });
                 continue;
             }
-            self.items.push(ItemInfo {
+            self.items.push(self.item_info(
                 id,
-                parent_id: None,
+                None,
                 name,
-                kind: ItemKind::Function,
-                visibility: HirVisibility::Public,
-                span: builtin_span(),
-            });
+                ItemKind::Function,
+                HirVisibility::Public,
+                builtin_span(),
+            ));
             self.builtin_items.insert(id, index);
         }
     }
 
     fn collect_item(&mut self, item: &Spanned<HirItem>) {
         let (name, kind, visibility) = match &item.node {
+            HirItem::HostDefinition(_) => {
+                return;
+            }
             HirItem::FunctionDefinition(def) => (
                 def.node.name.node.name.clone(),
                 ItemKind::Function,
@@ -208,14 +237,14 @@ impl Resolver {
                         method.node.name.node.name
                     );
                     let method_id = ItemId(self.items.len());
-                    self.items.push(ItemInfo {
-                        id: method_id,
-                        parent_id: None,
-                        name: method_name,
-                        kind: ItemKind::Method,
-                        visibility: method.node.visibility.node,
-                        span: method.span,
-                    });
+                    self.items.push(self.item_info(
+                        method_id,
+                        None,
+                        method_name,
+                        ItemKind::Method,
+                        method.node.visibility.node,
+                        method.span,
+                    ));
                     self.collect_member_items_for_method(method, method_id);
                 }
                 return;
@@ -287,14 +316,7 @@ impl Resolver {
             });
             return;
         }
-        self.items.push(ItemInfo {
-            id,
-            parent_id: None,
-            name,
-            kind,
-            visibility,
-            span: item.span,
-        });
+        self.items.push(self.item_info(id, None, name, kind, visibility, item.span));
 
         self.collect_member_items(item, id);
 
@@ -360,14 +382,28 @@ impl Resolver {
         parent_id: ItemId,
     ) {
         let id = ItemId(self.items.len());
-        self.items.push(ItemInfo {
+        self.items
+            .push(self.item_info(id, Some(parent_id), name, kind, visibility, span));
+    }
+
+    fn item_info(
+        &self,
+        id: ItemId,
+        parent_id: Option<ItemId>,
+        name: String,
+        kind: ItemKind,
+        visibility: HirVisibility,
+        span: syntax::SpanInfo,
+    ) -> ItemInfo {
+        ItemInfo {
             id,
-            parent_id: Some(parent_id),
+            parent_id,
             name,
             kind,
             visibility,
             span,
-        });
+            source_path: self.current_source_path.clone(),
+        }
     }
 
     fn collect_member_items(&mut self, item: &Spanned<HirItem>, parent_id: ItemId) {
@@ -409,6 +445,7 @@ impl Resolver {
 
     fn resolve_item(&mut self, item: &Spanned<HirItem>) {
         match &item.node {
+            HirItem::HostDefinition(_) => {}
             HirItem::FunctionDefinition(def) => {
                 self.push_generic_scope();
                 for generic in &def.node.generics {
@@ -609,6 +646,7 @@ impl Resolver {
             HirStatementNode::ExpressionStatement(expr_stmt) => {
                 self.resolve_expression(&expr_stmt.node.expression);
             }
+            HirStatementNode::WithStatement(_) | HirStatementNode::LaunchStatement(_) => {}
         }
     }
 

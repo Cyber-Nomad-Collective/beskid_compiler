@@ -9,6 +9,7 @@ mod emit_idents;
 mod syntax_helpers;
 
 pub mod syntax_nodes;
+pub mod syntax_traversal;
 
 use std::collections::BTreeSet;
 use std::ffi::OsString;

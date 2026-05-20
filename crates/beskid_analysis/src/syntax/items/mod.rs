@@ -11,6 +11,7 @@ pub mod enum_variant;
 pub mod extend_type;
 pub mod function_definition;
 pub mod macro_definition;
+pub mod host_definition;
 pub mod impl_block;
 pub mod inline_module;
 pub mod method_definition;
@@ -33,6 +34,10 @@ pub use enum_definition::EnumDefinition;
 pub use enum_variant::EnumVariant;
 pub use extend_type::ExtendTypeDefinition;
 pub use function_definition::FunctionDefinition;
+pub use host_definition::{
+    HostBodyItem, HostDefinition, InjectQualifier, LaunchStatement, RegistrationLifetime,
+    RegistryBlock, RegistryEntry, ScopeDefinition, ScopeHook, ScopeHookKind, WithStatement,
+};
 pub use macro_definition::{MacroDefinition, MacroFragmentKind, MacroParameter};
 pub use inline_module::InlineModule;
 pub use method_definition::MethodDefinition;

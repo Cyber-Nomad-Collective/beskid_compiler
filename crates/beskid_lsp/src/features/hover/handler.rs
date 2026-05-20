@@ -1,8 +1,9 @@
 use tower_lsp_server::ls_types::{Hover, HoverContents, MarkupContent, MarkupKind, Uri};
 
 use crate::features::project_manifest::api as project_manifest;
-use crate::position::{offset_in_range, offset_range_to_lsp};
+use crate::position::{offset_in_range, offset_range_to_lsp, symbol_location_to_lsp_range};
 use crate::session::store::Document;
+use crate::workspace_scan::uri_to_path;
 
 /// Markdown hover for symbols, types, or manifest tokens at `offset`.
 pub fn handle_hover(uri: &Uri, doc: &Document, offset: usize) -> Option<Hover> {
@@ -44,12 +45,17 @@ pub fn handle_hover(uri: &Uri, doc: &Document, offset: usize) -> Option<Hover> {
         });
     }
 
+    let entry_path = uri_to_path(uri);
     let hover = beskid_analysis::services::hover_at_offset(analysis, offset)?;
     Some(Hover {
         contents: HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
             value: hover.markdown,
         }),
-        range: Some(offset_range_to_lsp(&doc.text, hover.start, hover.end)),
+        range: Some(symbol_location_to_lsp_range(
+            &hover.location,
+            entry_path.as_deref(),
+            &doc.text,
+        )),
     })
 }

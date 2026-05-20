@@ -9,6 +9,7 @@ use thiserror::Error;
 use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 use crate::services::parse_program_with_source_name;
+use crate::syntax::{Program, Spanned};
 
 use super::discovery::resolve_module_file;
 use super::module_index::ModuleIndex;
@@ -28,6 +29,16 @@ pub enum AssemblyError {
     EntryNotFound { path: PathBuf },
     #[error("assembly exceeded max_units ({max})")]
     MaxUnits { max: usize },
+}
+
+fn expand_syntax_for_assembly(program: Spanned<Program>) -> Spanned<Program> {
+    crate::macros::expand_program_with_diagnostics(
+        program,
+        crate::macros::DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+        "",
+        "",
+    )
+    .program
 }
 
 /// Build a [`ProgramAssembly`] for `entry_path` using effective roots and discovery options.
@@ -134,33 +145,53 @@ pub fn assemble_program(
 
     let mut units = Vec::with_capacity(discovered.len());
     let mut entry_index = 0usize;
+    let entry_key = entry_canonical.canonicalize().unwrap_or(entry_canonical.clone());
 
-    for (index, path) in discovered.iter().enumerate() {
-        let source = if path.canonicalize().ok() == entry_canonical.canonicalize().ok()
-            && entry_source.is_some()
-        {
-            entry_source.unwrap().to_string()
+    for path in &discovered {
+        let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let is_entry = path_key == entry_key;
+
+        let source = if is_entry && entry_source.is_some() {
+            entry_source.expect("entry source when is_entry").to_string()
         } else {
-            fs::read_to_string(path).map_err(|source| AssemblyError::Read {
-                path: path.clone(),
-                source,
-            })?
+            match fs::read_to_string(path) {
+                Ok(text) => text,
+                Err(source) if options.skip_parse_errors && !is_entry => {
+                    eprintln!(
+                        "note: skipping unreadable unit {} ({source})",
+                        path.display()
+                    );
+                    continue;
+                }
+                Err(source) => {
+                    return Err(AssemblyError::Read {
+                        path: path.clone(),
+                        source,
+                    });
+                }
+            }
         };
 
         let logical_name = path.display().to_string();
-        let program = parse_program_with_source_name(&logical_name, &source).map_err(|err| {
-            AssemblyError::Parse {
-                path: path.clone(),
-                message: err.to_string(),
+        let program = match parse_program_with_source_name(&logical_name, &source) {
+            Ok(program) => expand_syntax_for_assembly(program),
+            Err(err) if options.skip_parse_errors && !is_entry => {
+                eprintln!(
+                    "note: skipping unparseable unit {} ({err})",
+                    path.display()
+                );
+                continue;
             }
-        })?;
+            Err(err) => {
+                return Err(AssemblyError::Parse {
+                    path: path.clone(),
+                    message: err.to_string(),
+                });
+            }
+        };
 
-        if path.canonicalize().unwrap_or(path.clone())
-            == entry_canonical
-                .canonicalize()
-                .unwrap_or(entry_canonical.clone())
-        {
-            entry_index = index;
+        if is_entry {
+            entry_index = units.len();
         }
 
         units.push(SourceUnit {
@@ -168,6 +199,12 @@ pub fn assemble_program(
             path: path.clone(),
             source,
             program,
+        });
+    }
+
+    if units.is_empty() {
+        return Err(AssemblyError::EntryNotFound {
+            path: entry_path.to_path_buf(),
         });
     }
 

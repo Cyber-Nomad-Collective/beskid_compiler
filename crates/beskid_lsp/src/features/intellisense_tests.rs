@@ -1,0 +1,222 @@
+#[cfg(test)]
+mod tests {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::path::PathBuf;
+    use beskid_analysis::compilation_context::CompilationContext;
+    use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions, assemble_program};
+    use beskid_analysis::services::{
+        build_document_analysis_with_context, parse_program_with_source_name, resolve_input,
+    };
+    use tower_lsp_server::ls_types::{GotoDefinitionResponse, Hover, Uri};
+
+    use crate::features::{completion, definition, hover, references};
+    use crate::position::position_to_offset;
+    use crate::session::lifecycle::{ANALYSIS_CACHE_VERSION, build_document};
+    use crate::session::store::{Document, State};
+    use crate::workspace_scan::path_to_uri;
+
+    struct CorelibMvpFixture {
+        main_path: PathBuf,
+        project_root: PathBuf,
+        source: String,
+        uri: Uri,
+    }
+
+    fn compiler_workspace_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("beskid_lsp crate layout")
+            .to_path_buf()
+    }
+
+    fn with_cwd_at_workspace_root<R>(root: &PathBuf, f: impl FnOnce() -> R) -> R {
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(root).expect("chdir");
+        let out = f();
+        std::env::set_current_dir(previous).expect("restore cwd");
+        out
+    }
+
+    fn hash_text(text: &str) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        text.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn corelib_mvp_paths() -> CorelibMvpFixture {
+        let main_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
+        let source = std::fs::read_to_string(&main_path).expect("read Main.bd");
+        let project_root = main_path
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("fixture root")
+            .to_path_buf();
+        let uri = path_to_uri(&main_path).expect("file uri");
+        CorelibMvpFixture {
+            main_path,
+            project_root,
+            source,
+            uri,
+        }
+    }
+
+    fn corelib_mvp_document_with_assembly() -> (Uri, Document, CorelibMvpFixture) {
+        let root = compiler_workspace_root();
+        with_cwd_at_workspace_root(&root, || {
+            let fixture = corelib_mvp_paths();
+            let program =
+                parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
+                    .expect("parse");
+            let resolved = resolve_input(
+                Some(&fixture.main_path),
+                Some(&fixture.project_root),
+                None,
+                None,
+                false,
+                false,
+            )
+            .expect("resolve");
+            let plan = resolved.compile_plan.expect("plan");
+            let assembly = assemble_program(
+                &plan,
+                resolved.prepared_workspace.as_ref(),
+                &fixture.main_path,
+                Some(&fixture.source),
+                &AssemblyOptions {
+                    discovery: AssemblyDiscovery::ImportClosure,
+                    ..Default::default()
+                },
+            )
+            .expect("assemble");
+            let mut ctx = CompilationContext::try_for_analysis_path(&fixture.main_path, None)
+                .expect("ctx");
+            ctx.assembly = Some(assembly);
+            let analysis = build_document_analysis_with_context(
+                &program,
+                fixture.main_path.to_string_lossy(),
+                &fixture.source,
+                &fixture.main_path,
+                Some(&mut ctx),
+                None,
+            );
+            let doc = Document {
+                version: 1,
+                text: fixture.source.clone(),
+                text_hash: hash_text(&fixture.source),
+                analysis_cache_version: ANALYSIS_CACHE_VERSION,
+                analysis: Some(analysis),
+            };
+            (fixture.uri.clone(), doc, fixture)
+        })
+    }
+
+    #[test]
+    fn completion_after_io_dot_lists_printline() {
+        let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
+        let offset = fixture.source.find("IO.PrintLine").expect("IO.PrintLine") + "IO.".len();
+        let response = completion::handler::handle_completion(&uri, &doc, offset);
+        let labels: Vec<String> = match response {
+            tower_lsp_server::ls_types::CompletionResponse::Array(items) => {
+                items.into_iter().map(|item| item.label).collect()
+            }
+            _ => Vec::new(),
+        };
+        assert!(
+            labels.iter().any(|label| label == "PrintLine"),
+            "expected PrintLine in completion labels, got {labels:?}"
+        );
+    }
+
+    #[test]
+    fn definition_on_printline_targets_dependency_file() {
+        let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
+        let offset = fixture.source.find("PrintLine").expect("PrintLine");
+        let response = definition::handler::handle_definition(&uri, &doc, offset)
+            .expect("definition response");
+        let location = match response {
+            GotoDefinitionResponse::Scalar(location) => location,
+            _ => panic!("expected scalar location"),
+        };
+        let target = location.uri.to_string();
+        assert!(
+            target.contains("IO") || target.contains("System"),
+            "expected IO/System path in definition uri {target}"
+        );
+    }
+
+    #[tokio::test]
+    async fn lifecycle_build_document_corelib_mvp_has_resolution() {
+        let root = compiler_workspace_root();
+        let (uri, fixture) = with_cwd_at_workspace_root(&root, || {
+            let fixture = corelib_mvp_paths();
+            (fixture.uri.clone(), fixture)
+        });
+        let state = tokio::sync::RwLock::new(State::default());
+        let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
+        let analysis = doc.analysis.expect("analysis from lifecycle build_document");
+        let resolution = analysis
+            .resolution
+            .as_ref()
+            .expect("project-aware resolution");
+        assert!(
+            resolution.module_imports.contains_key("IO"),
+            "expected IO alias: {:?}",
+            resolution.module_imports
+        );
+    }
+
+    #[test]
+    fn references_on_printline_includes_dependency() {
+        let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
+        let offset = fixture.source.find("PrintLine").expect("PrintLine");
+        let ctx =
+            CompilationContext::try_for_analysis_path(&fixture.main_path, None).expect("ctx");
+        let locations = references::handler::handle_references(
+            &uri,
+            &doc,
+            offset,
+            true,
+            Some(fixture.main_path.as_path()),
+            Some(ctx),
+        );
+        assert!(
+            locations
+                .iter()
+                .any(|location| location.uri.to_string().contains("IO")),
+            "expected IO dependency reference, got {:?}",
+            locations.iter().map(|l| l.uri.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn hover_on_printline_range_in_dependency_file() {
+        let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
+        let offset = fixture.source.find("PrintLine").expect("PrintLine");
+        let hover = hover::handler::handle_hover(&uri, &doc, offset).expect("hover");
+        let Hover { range, .. } = hover;
+        let range = range.expect("hover range");
+        let analysis = doc.analysis.as_ref().expect("analysis");
+        let hover_info = beskid_analysis::services::hover_at_offset(analysis, offset).expect("hover info");
+        assert!(
+            hover_info
+                .location
+                .path
+                .to_string_lossy()
+                .contains("IO"),
+            "hover target should be IO module file"
+        );
+        let dependency_source =
+            std::fs::read_to_string(&hover_info.location.path).expect("read dependency source");
+        let start = position_to_offset(&dependency_source, range.start);
+        let end = position_to_offset(&dependency_source, range.end);
+        assert!(start < end, "hover range should be non-empty in dependency file");
+        let snippet = &dependency_source[start..end];
+        assert!(
+            snippet.contains("PrintLine"),
+            "hover range should cover PrintLine in dependency, got `{snippet}`"
+        );
+    }
+}

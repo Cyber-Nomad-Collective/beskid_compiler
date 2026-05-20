@@ -21,9 +21,12 @@ pub use expressions::{
 pub use items::{
     Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
     ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition,
-    EnumVariant, ExtendTypeDefinition, FunctionDefinition, InlineModule, MacroDefinition,
-    MacroFragmentKind, MacroParameter, MethodDefinition, ModuleDeclaration, Node, Program,
-    TestDefinition, TestMetaSection, TestMetadataEntry,
+    EnumVariant, ExtendTypeDefinition, FunctionDefinition, HostBodyItem, HostDefinition,
+    InjectQualifier, InlineModule, LaunchStatement, MacroDefinition, MacroFragmentKind,
+    MacroParameter, MethodDefinition, ModuleDeclaration, Node, Program, RegistrationLifetime,
+    RegistryBlock, RegistryEntry, ScopeDefinition, ScopeHook, ScopeHookKind, TestDefinition,
+    WithStatement,
+    TestMetaSection, TestMetadataEntry,
     TestSkipEntry, TestSkipSection, TypeDefinition, UseDeclaration,
 };
 pub use statements::{

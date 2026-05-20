@@ -34,8 +34,10 @@ pub fn lower_source_with_pipeline(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    let mut options = FrontEndOptions::default();
-    options.with_semantic_diagnostics = with_diagnostics;
+    let options = FrontEndOptions {
+        with_semantic_diagnostics: with_diagnostics,
+        ..Default::default()
+    };
 
     if let Some(plan) = beskid_analysis::services::compile_plan_for_input_path(path) {
         let front =
@@ -111,8 +113,10 @@ pub fn lower_resolved_input_with_pipeline(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    let mut options = FrontEndOptions::default();
-    options.with_semantic_diagnostics = with_diagnostics;
+    let options = FrontEndOptions {
+        with_semantic_diagnostics: with_diagnostics,
+        ..Default::default()
+    };
 
     let front = compile_front_end_from_resolved_input(resolved, options, pipeline)?;
 

@@ -458,9 +458,11 @@ fn gen_push_for_type(
                         }
                     }
                     ("Spanned", PathArguments::AngleBracketed(ab)) => {
-                        if let Some(GenericArgument::Type(inner_ty)) = ab.args.first() {
-                            let inner_access = quote! { &((#access).node) };
-                            return gen_push_for_type(inner_ty, inner_access, node_trait, node_ref);
+                        if ab.args.first().is_some() {
+                            return quote! {
+                                let __n: &'a dyn #node_trait = #access;
+                                push(#node_ref(__n));
+                            };
                         }
                     }
                     _ => {}

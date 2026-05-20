@@ -1,5 +1,7 @@
 //! Formatter (`Emit`) integration tests.
 
+mod macro_roundtrip;
+
 use beskid_analysis::format::Emitter;
 use beskid_analysis::format::format_program;
 use beskid_analysis::parsing::parsable::Parsable;
@@ -280,6 +282,8 @@ fn top_level_kinds(items: &[beskid_analysis::syntax::Spanned<Node>]) -> Vec<&'st
             Node::ModuleDeclaration(_) => "module_decl",
             Node::InlineModule(_) => "inline_module",
             Node::UseDeclaration(_) => "use",
+            Node::HostDefinition(_) => "host",
+            Node::MacroDefinition(_) => "macro",
         })
         .collect()
 }
@@ -349,6 +353,8 @@ fn count_statement(stmt: &Statement) -> usize {
             .unwrap_or(0),
         Statement::Expression(e) => count_expr_blocks(&e.node.expression.node),
         Statement::Break(_) | Statement::Continue(_) => 0,
+        Statement::With(w) => count_block_statements(&w.node.body.node),
+        Statement::Launch(_) => 0,
     }
 }
 

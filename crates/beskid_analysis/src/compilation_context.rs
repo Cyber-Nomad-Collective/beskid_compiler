@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 
 use crate::projects::{
     AssemblyDiscovery, AssemblyOptions, CompilePlan, PreparedProjectWorkspace, ProgramAssembly,
-    ProjectGraphBuildOptions, ProjectKind, UnresolvedDependencyPolicy, assemble_program,
-    build_compile_plan_with_policy_and_graph, discover_workspace_file, effective_roots_for_plan,
-    load_manifest_from_path, module_roots_from_effective, resolve_project_manifest_for_source_path,
+    ProjectGraphBuildOptions, ProjectKind, UnresolvedDependencyPolicy, WorkspacePrepareOptions,
+    assemble_program, build_compile_plan_with_policy_and_graph, discover_workspace_file,
+    effective_roots_for_plan, load_manifest_from_path, module_roots_from_effective,
+    prepare_project_workspace_with_options, resolve_project_manifest_for_source_path,
 };
 
 /// Workspace-aware compilation slice: selected `Project.proj`, optional [`CompilePlan`] for
@@ -83,7 +84,7 @@ impl CompilationContext {
         })
     }
 
-    /// Lazily build or return cached assembly for `entry_path` (workspace-scan for IDE).
+    /// Lazily build or return cached assembly for `entry_path` (import-closure for IDE).
     pub fn assembly_for_entry(
         &mut self,
         entry_path: &Path,
@@ -93,8 +94,22 @@ impl CompilationContext {
             return self.assembly.as_ref();
         }
         let plan = self.compile_plan.as_ref()?;
+        if self.prepared_workspace.is_none() {
+            self.prepared_workspace = prepare_project_workspace_with_options(
+                plan,
+                WorkspacePrepareOptions {
+                    frozen: false,
+                    locked: true,
+                },
+            )
+            .ok();
+            if let Some(workspace) = self.prepared_workspace.as_ref() {
+                self.module_roots =
+                    module_roots_from_effective(&effective_roots_for_plan(plan, Some(workspace)));
+            }
+        }
         let mut options = AssemblyOptions::default();
-        options.discovery = AssemblyDiscovery::WorkspaceScan;
+        options.discovery = AssemblyDiscovery::ImportClosure;
         self.assembly = assemble_program(
             plan,
             self.prepared_workspace.as_ref(),

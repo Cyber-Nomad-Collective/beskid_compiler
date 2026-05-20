@@ -39,6 +39,12 @@ impl Lowerable for Spanned<syntax::Statement> {
             }
             syntax::Statement::For(for_stmt) => HirStatementNode::ForStatement(for_stmt.lower()),
             syntax::Statement::If(if_stmt) => HirStatementNode::IfStatement(if_stmt.lower()),
+            syntax::Statement::With(with_stmt) => {
+                HirStatementNode::WithStatement(with_stmt.clone())
+            }
+            syntax::Statement::Launch(launch_stmt) => {
+                HirStatementNode::LaunchStatement(launch_stmt.clone())
+            }
             syntax::Statement::Expression(expr_stmt) => {
                 HirStatementNode::ExpressionStatement(expr_stmt.lower())
             }

@@ -213,3 +213,81 @@ fn forbidden_module_declaration_in_file_scoped_issue_contract_is_stable() {
     );
     assert!(issue.help().is_some());
 }
+
+#[test]
+fn composition_diagnostic_codes_are_stable() {
+    let issues = [
+        (SemanticIssueKind::CompositionMissingLaunchHost, "E1701"),
+        (SemanticIssueKind::CompositionMultipleLaunchHosts, "E1702"),
+        (
+            SemanticIssueKind::CompositionDependencyCycle {
+                from_id: 1,
+                to_id: 2,
+            },
+            "E1703",
+        ),
+        (
+            SemanticIssueKind::CompositionUnresolvedInject {
+                requested_type: "StorageContract".to_string(),
+            },
+            "E1704",
+        ),
+        (
+            SemanticIssueKind::CompositionAmbiguousInject {
+                requested_type: "StorageContract".to_string(),
+            },
+            "E1705",
+        ),
+        (SemanticIssueKind::CompositionScopedOutsideWith, "E1706"),
+        (
+            SemanticIssueKind::CompositionChildScopeWithoutParent {
+                scope_name: "HttpScope".to_string(),
+            },
+            "E1707",
+        ),
+        (
+            SemanticIssueKind::CompositionWithArgsMismatch {
+                scope_name: "HttpScope".to_string(),
+            },
+            "E1708",
+        ),
+        (
+            SemanticIssueKind::CompositionLaunchTargetNotHost {
+                target_name: "NotHost".to_string(),
+            },
+            "E1709",
+        ),
+        (SemanticIssueKind::CompositionHostInModProject, "E1710"),
+        (SemanticIssueKind::CompositionLaunchInLibProject, "E1711"),
+        (SemanticIssueKind::CompositionInjectOnConstructor, "E1712"),
+        (
+            SemanticIssueKind::CompositionOverrideLifetimeMismatch {
+                binding: "StorageContract".to_string(),
+            },
+            "E1713",
+        ),
+        (
+            SemanticIssueKind::CompositionInvalidScopeQualifier {
+                qualifier: "self".to_string(),
+            },
+            "E1714",
+        ),
+        (
+            SemanticIssueKind::CompositionHostInheritanceCycle {
+                host_name: "AppHost".to_string(),
+            },
+            "E1715",
+        ),
+        (
+            SemanticIssueKind::CompositionDuplicateScopeName {
+                scope_name: "HttpScope".to_string(),
+            },
+            "E1716",
+        ),
+    ];
+
+    for (issue, expected_code) in issues {
+        assert_eq!(issue.code(), expected_code);
+        assert_eq!(issue.severity(), Severity::Error);
+    }
+}

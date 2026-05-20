@@ -76,6 +76,19 @@ pub enum ReflectSdkNodeKind {
     PrimitiveType,
     StructLiteralField,
     Visibility,
+    MacroFragmentKind,
+    MacroParameter,
+    MacroDefinition,
+    MacroInvocation,
+    MacroMetavariable,
+    HostDefinition,
+    HostBodyItem,
+    RegistryBlock,
+    RegistryEntry,
+    ScopeDefinition,
+    ScopeHook,
+    WithStatement,
+    LaunchStatement,
 }
 
 /// HIR query classification tokens (mirrors [`crate::query::HirNodeKind`]).

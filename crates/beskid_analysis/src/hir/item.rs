@@ -23,6 +23,8 @@ pub struct HirAttribute {
 #[derive(beskid_ast_derive::PhaseFromAst)]
 #[phase(source = "crate::syntax::Node", phase = "crate::hir::AstPhase")]
 pub enum Item<P: Phase> {
+    #[phase(from = "HostDefinition")]
+    HostDefinition(Spanned<P::HostDefinition>),
     #[phase(from = "Function")]
     FunctionDefinition(Spanned<P::FunctionDefinition>),
     #[phase(from = "Method")]
@@ -48,6 +50,7 @@ impl HirNode for Item<crate::hir::HirPhase> {
 
     fn children<'a>(&'a self, push: &mut dyn FnMut(HirNodeRef<'a>)) {
         match self {
+            Item::HostDefinition(_) => {}
             Item::FunctionDefinition(def) => push(HirNodeRef(&def.node)),
             Item::MethodDefinition(def) => push(HirNodeRef(&def.node)),
             Item::ExtendTypeDefinition(def) => push(HirNodeRef(&def.node)),

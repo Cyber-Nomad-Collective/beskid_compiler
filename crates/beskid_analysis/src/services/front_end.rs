@@ -5,7 +5,10 @@ use std::path::Path;
 use anyhow::Result;
 use beskid_pipeline::{
     PipelineObserver, observe_phase, observe_phase_result,
-    phases::{LOWER, LOWER_READY, PARSE, PROGRAM_ASSEMBLE, SEMANTIC, SEMANTIC_SNAPSHOT},
+    phases::{
+        COMPOSITION_RESOLVE, LOWER, LOWER_READY, PARSE, PROGRAM_ASSEMBLE, SEMANTIC,
+        SEMANTIC_SNAPSHOT,
+    },
 };
 
 use crate::projects::{
@@ -15,6 +18,7 @@ use crate::projects::{
 use crate::syntax::Spanned;
 
 use super::input::ResolvedInput;
+use super::composition::{composition_result_to_diagnostics, resolve_program_composition};
 use super::lower::lower_normalize_resolve_type_spanned_with_assembly;
 use super::semantic::{require_no_semantic_errors, semantic_rule_diagnostics_for_program};
 use crate::AnalysisOptions;
@@ -27,6 +31,8 @@ pub struct FrontEndTypedResult {
     pub hir: Spanned<crate::hir::HirProgram>,
     pub resolution: crate::resolve::Resolution,
     pub typed: crate::types::TypeResult,
+    pub binding_plan: crate::composition::BindingPlan,
+    pub composition_snapshot: crate::composition::CompositionSnapshot,
 }
 
 /// Options for [`compile_front_end_with_pipeline`].
@@ -78,7 +84,7 @@ pub fn compile_front_end_with_pipeline(
     let mut program = entry_unit.program.clone();
     observe_phase(pipeline, PARSE, || {});
 
-    let generated = run_through_generate(
+    let mut generated = run_through_generate(
         program.clone(),
         &ModHostInput {
             compile_plan: Some(plan),
@@ -105,6 +111,22 @@ pub fn compile_front_end_with_pipeline(
         })?;
         observe_phase(pipeline, SEMANTIC_SNAPSHOT, || {});
     }
+    let composition_result = observe_phase_result(pipeline, COMPOSITION_RESOLVE, || {
+        Ok::<_, anyhow::Error>(resolve_program_composition(&program, Some(plan)))
+    })?;
+    if options.with_semantic_diagnostics {
+        let composition_diagnostics = composition_result_to_diagnostics(
+            &composition_result,
+            program.span,
+            entry_unit.logical_name.as_str(),
+            entry_source,
+            Some(plan),
+        );
+        require_no_semantic_errors(&composition_diagnostics).map_err(anyhow::Error::from)?;
+    }
+    generated
+        .session
+        .set_composition_snapshot(composition_result.snapshot.clone());
 
     program = run_analyze_rewrite(program, &generated.session, pipeline)?;
 
@@ -121,6 +143,8 @@ pub fn compile_front_end_with_pipeline(
         hir,
         resolution,
         typed,
+        binding_plan: composition_result.plan,
+        composition_snapshot: composition_result.snapshot,
     })
 }
 

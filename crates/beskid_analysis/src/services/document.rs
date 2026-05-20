@@ -1,9 +1,16 @@
 use std::borrow::ToOwned;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use crate::analysis::diagnostics::SemanticDiagnostic;
+use crate::compilation_context::CompilationContext;
 use crate::doc::DocRefLinkContext;
 use crate::doc::ResolvedDoc;
 use crate::hir::{AstProgram, HirProgram, lower_program as lower_hir_program, normalize_program};
+use crate::projects::assembly::{AssemblyError, ProgramAssembly};
+use crate::projects::{
+    AssemblyDiscovery, AssemblyOptions, CompilePlan, PreparedProjectWorkspace, assemble_program,
+};
 use crate::resolve::{ItemKind, Resolution, ResolvedValue, Resolver};
 use crate::syntax::{Expression, Literal, Node, Program, Spanned, TestDefinition};
 
@@ -15,6 +22,19 @@ pub struct DocumentAnalysisSnapshot {
     pub item_docs: Vec<Option<ResolvedDoc>>,
     /// Documentation validation (codes `W161x`); empty when resolution failed.
     pub doc_diagnostics: Vec<SemanticDiagnostic>,
+    /// Native IoC composition diagnostics (`E170x`); populated for IDE snapshot warm paths.
+    pub composition_diagnostics: Vec<SemanticDiagnostic>,
+    /// Entry file path used for IDE location fallbacks.
+    pub source_path: PathBuf,
+    /// Known logical module paths when assembly-backed resolution ran.
+    pub assembly_module_paths: HashSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolLocation {
+    pub path: PathBuf,
+    pub start: usize,
+    pub end: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,20 +80,17 @@ pub struct CompletionInfo {
 #[derive(Debug, Clone)]
 pub struct HoverInfo {
     pub markdown: String,
-    pub start: usize,
-    pub end: usize,
+    pub location: SymbolLocation,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionInfo {
-    pub start: usize,
-    pub end: usize,
+    pub location: SymbolLocation,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceInfo {
-    pub start: usize,
-    pub end: usize,
+    pub location: SymbolLocation,
 }
 
 #[derive(Debug, Clone)]
@@ -92,11 +109,76 @@ pub struct TestCaseInfo {
     pub definition_column: usize,
 }
 
-fn resolve_program(program: &Spanned<Program>) -> Option<Resolution> {
+fn lower_normalize_hir(program: &Spanned<Program>) -> Option<Spanned<HirProgram>> {
     let ast: Spanned<AstProgram> = program.clone().into();
     let mut hir: Spanned<HirProgram> = lower_hir_program(&ast);
     normalize_program(&mut hir).ok()?;
+    Some(hir)
+}
+
+fn resolve_program(program: &Spanned<Program>) -> Option<Resolution> {
+    let hir = lower_normalize_hir(program)?;
     Resolver::new().resolve_program(&hir).ok()
+}
+
+pub(crate) fn resolve_program_with_assembly(
+    program: &Spanned<Program>,
+    assembly: &ProgramAssembly,
+    entry_path: &Path,
+) -> Option<(Resolution, HashSet<String>)> {
+    let resolution = resolve_assembly_for_api_documentation(program, assembly, entry_path)?;
+    let module_paths = assembly.module_index.known_module_path_strings();
+    Some((resolution, module_paths))
+}
+
+/// Discover all `.bd` units under host + dependency roots (not import-closure only).
+pub fn assemble_for_api_documentation(
+    plan: &CompilePlan,
+    workspace: Option<&PreparedProjectWorkspace>,
+    entry_path: &Path,
+    entry_source: Option<&str>,
+) -> Result<ProgramAssembly, AssemblyError> {
+    let mut options = AssemblyOptions::default();
+    options.discovery = AssemblyDiscovery::WorkspaceScan;
+    options.skip_parse_errors = true;
+    assemble_program(plan, workspace, entry_path, entry_source, &options)
+}
+
+/// Full-project resolution for `api.json`: prefetch symbols from every unit, resolve entry, then merge type/value tables from each unit.
+pub fn resolve_assembly_for_api_documentation(
+    entry_program: &Spanned<Program>,
+    assembly: &ProgramAssembly,
+    entry_path: &Path,
+) -> Option<Resolution> {
+    let entry_hir = lower_normalize_hir(entry_program)?;
+    assembly.module_index.resolve_for_api_documentation(
+        &entry_hir,
+        Some(&entry_path.to_path_buf()),
+        &assembly.units,
+        assembly.entry_index,
+    )
+}
+
+fn symbol_location_for_item(
+    item: &crate::resolve::ItemInfo,
+    fallback_path: &Path,
+) -> SymbolLocation {
+    SymbolLocation {
+        path: item
+            .source_path
+            .clone()
+            .unwrap_or_else(|| fallback_path.to_path_buf()),
+        start: item.span.start,
+        end: item.span.end,
+    }
+}
+
+fn symbol_location_for_span(path: &Path, start: usize, end: usize) -> SymbolLocation {
+    SymbolLocation {
+        path: path.to_path_buf(),
+        start,
+        end,
+    }
 }
 
 fn resolved_value_at_offset(resolution: &Resolution, offset: usize) -> Option<&ResolvedValue> {
@@ -209,7 +291,136 @@ pub fn build_document_analysis(
     source_text: &str,
     docs_ref_links: Option<&DocRefLinkContext>,
 ) -> DocumentAnalysisSnapshot {
-    let resolution = resolve_program(program);
+    let source_path = Path::new(source_name.as_ref());
+    let source_name_owned = source_name.as_ref().to_string();
+    build_document_analysis_for_resolved(
+        program,
+        source_name_owned,
+        source_text,
+        source_path,
+        None,
+        docs_ref_links,
+    )
+}
+
+/// Like [`build_document_analysis`], with optional [`ProgramAssembly`] for multi-unit docs and resolution.
+pub fn build_document_analysis_for_resolved(
+    program: &Spanned<Program>,
+    source_name: impl AsRef<str>,
+    source_text: &str,
+    path: &Path,
+    assembly: Option<&ProgramAssembly>,
+    docs_ref_links: Option<&DocRefLinkContext>,
+) -> DocumentAnalysisSnapshot {
+    let (resolution, assembly_module_paths) = if let Some(asm) = assembly {
+        resolve_assembly_for_api_documentation(program, asm, path)
+            .map(|resolution| {
+                (
+                    Some(resolution),
+                    asm.module_index.known_module_path_strings(),
+                )
+            })
+            .unwrap_or_else(|| (resolve_program(program), HashSet::new()))
+    } else {
+        (resolve_program(program), HashSet::new())
+    };
+
+    let item_docs = if let Some(res) = resolution.as_ref() {
+        if let Some(asm) = assembly {
+            let programs: Vec<(&Path, &Program)> = asm
+                .units
+                .iter()
+                .map(|unit| (unit.path.as_path(), &unit.program.node))
+                .collect();
+            crate::doc::build_item_docs_for_resolution(res, &programs, docs_ref_links)
+        } else {
+            crate::doc::build_item_docs_markdown(&program.node, res, docs_ref_links)
+        }
+    } else {
+        Vec::new()
+    };
+
+    let doc_diagnostics = resolution
+        .as_ref()
+        .map(|r| {
+            crate::doc::collect_doc_diagnostics(
+                &program.node,
+                r,
+                source_name.as_ref(),
+                source_text,
+            )
+        })
+        .unwrap_or_default();
+    let composition_diagnostics =
+        super::composition::composition_diagnostics_for_program(
+            program,
+            None,
+            source_name.as_ref(),
+            source_text,
+        )
+        .unwrap_or_default();
+
+    DocumentAnalysisSnapshot {
+        program: program.clone(),
+        resolution,
+        item_docs,
+        doc_diagnostics,
+        composition_diagnostics,
+        source_path: path.to_path_buf(),
+        assembly_module_paths,
+    }
+}
+
+pub fn build_document_analysis_with_context(
+    program: &Spanned<Program>,
+    source_name: impl AsRef<str>,
+    source_text: &str,
+    path: &Path,
+    ctx: Option<&mut CompilationContext>,
+    docs_ref_links: Option<&DocRefLinkContext>,
+) -> DocumentAnalysisSnapshot {
+    let (resolution, assembly_module_paths, composition_diagnostics) = match ctx {
+        Some(ctx) => {
+            let compile_plan = ctx.compile_plan.as_ref();
+            let composition_diagnostics =
+                super::composition::composition_diagnostics_for_program(
+                    program,
+                    compile_plan,
+                    source_name.as_ref(),
+                    source_text,
+                )
+                .unwrap_or_default();
+            let (resolution, assembly_module_paths) =
+                if let Some(assembly) = ctx.assembly_for_entry(path, source_text) {
+                    resolve_program_with_assembly(program, assembly, path)
+                        .map(|(resolution, paths)| (Some(resolution), paths))
+                        .unwrap_or_else(|| (resolve_program(program), HashSet::new()))
+                } else {
+                    (resolve_program(program), HashSet::new())
+                };
+            (
+                resolution,
+                assembly_module_paths,
+                composition_diagnostics,
+            )
+        }
+        None => {
+            let composition_diagnostics =
+                super::composition::composition_diagnostics_for_program(
+                    program,
+                    None,
+                    source_name.as_ref(),
+                    source_text,
+                )
+                .unwrap_or_default();
+            (
+                resolve_program(program),
+                HashSet::new(),
+                composition_diagnostics,
+            )
+        }
+    };
+
     let item_docs = resolution
         .as_ref()
         .map(|r| crate::doc::build_item_docs_markdown(&program.node, r, docs_ref_links))
@@ -225,6 +436,9 @@ pub fn build_document_analysis(
         resolution,
         item_docs,
         doc_diagnostics,
+        composition_diagnostics,
+        source_path: path.to_path_buf(),
+        assembly_module_paths,
     }
 }
 
@@ -399,6 +613,7 @@ pub fn collect_document_symbols(snapshot: &DocumentAnalysisSnapshot) -> Vec<Docu
                 selection_end: definition.node.name.span.end,
             }),
             Node::MacroDefinition(_) => None,
+            Node::HostDefinition(_) => None,
             Node::UseDeclaration(definition) => {
                 if let Some(alias) = &definition.node.alias {
                     return Some(DocumentSymbolInfo {
@@ -429,8 +644,11 @@ pub fn hover_at_offset(snapshot: &DocumentAnalysisSnapshot, offset: usize) -> Op
                 let local = resolution.tables.local_info(*local_id)?;
                 Some(HoverInfo {
                     markdown: format!("**local** `{}`", local.name),
-                    start: local.span.start,
-                    end: local.span.end,
+                    location: symbol_location_for_span(
+                        &snapshot.source_path,
+                        local.span.start,
+                        local.span.end,
+                    ),
                 })
             }
         };
@@ -457,8 +675,7 @@ fn hover_for_item(snapshot: &DocumentAnalysisSnapshot, item_idx: usize) -> Optio
     }
     Some(HoverInfo {
         markdown,
-        start: item.span.start,
-        end: item.span.end,
+        location: symbol_location_for_item(item, &snapshot.source_path),
     })
 }
 
@@ -466,25 +683,23 @@ pub fn definition_at_offset(
     snapshot: &DocumentAnalysisSnapshot,
     offset: usize,
 ) -> Option<DefinitionInfo> {
-    let resolved = resolved_value_at_offset(snapshot.resolution.as_ref()?, offset)?;
+    let resolution = snapshot.resolution.as_ref()?;
+    let resolved = resolved_value_at_offset(resolution, offset)?;
     match resolved {
         ResolvedValue::Item(item_id) => {
-            let span = snapshot.resolution.as_ref()?.items.get(item_id.0)?.span;
+            let item = resolution.items.get(item_id.0)?;
             Some(DefinitionInfo {
-                start: span.start,
-                end: span.end,
+                location: symbol_location_for_item(item, &snapshot.source_path),
             })
         }
         ResolvedValue::Local(local_id) => {
-            let span = snapshot
-                .resolution
-                .as_ref()?
-                .tables
-                .local_info(*local_id)?
-                .span;
+            let local = resolution.tables.local_info(*local_id)?;
             Some(DefinitionInfo {
-                start: span.start,
-                end: span.end,
+                location: symbol_location_for_span(
+                    &snapshot.source_path,
+                    local.span.start,
+                    local.span.end,
+                ),
             })
         }
     }
@@ -510,8 +725,11 @@ pub fn references_at_offset(
         .filter_map(|(span, resolved)| {
             if *resolved == target {
                 Some(ReferenceInfo {
-                    start: span.start,
-                    end: span.end,
+                    location: symbol_location_for_span(
+                        &snapshot.source_path,
+                        span.start,
+                        span.end,
+                    ),
                 })
             } else {
                 None
@@ -524,28 +742,280 @@ pub fn references_at_offset(
             ResolvedValue::Item(item_id) => {
                 if let Some(item) = resolution.items.get(item_id.0) {
                     references.push(ReferenceInfo {
-                        start: item.span.start,
-                        end: item.span.end,
+                        location: symbol_location_for_item(item, &snapshot.source_path),
                     });
                 }
             }
             ResolvedValue::Local(local_id) => {
                 if let Some(local) = resolution.tables.local_info(local_id) {
                     references.push(ReferenceInfo {
-                        start: local.span.start,
-                        end: local.span.end,
+                        location: symbol_location_for_span(
+                            &snapshot.source_path,
+                            local.span.start,
+                            local.span.end,
+                        ),
                     });
                 }
             }
         }
     }
 
-    references.sort_by_key(|reference| (reference.start, reference.end));
-    references.dedup_by(|left, right| left.start == right.start && left.end == right.end);
+    references.sort_by_key(|reference| {
+        (
+            reference.location.path.clone(),
+            reference.location.start,
+            reference.location.end,
+        )
+    });
+    references.dedup_by(|left, right| left.location == right.location);
     references
 }
 
-pub fn completion_candidates(snapshot: &DocumentAnalysisSnapshot) -> Vec<CompletionInfo> {
+pub fn references_at_offset_workspace(
+    snapshot: &DocumentAnalysisSnapshot,
+    assembly: &ProgramAssembly,
+    entry_path: &Path,
+    offset: usize,
+    include_declaration: bool,
+) -> Vec<ReferenceInfo> {
+    let mut references = references_at_offset(snapshot, offset, include_declaration);
+
+    let resolution = match snapshot.resolution.as_ref() {
+        Some(r) => r,
+        None => return references,
+    };
+    let target = match resolved_value_at_offset(resolution, offset) {
+        Some(t) => *t,
+        None => return references,
+    };
+
+    for (index, unit) in assembly.units.iter().enumerate() {
+        if index == assembly.entry_index {
+            continue;
+        }
+        let Some(hir) = lower_normalize_hir(&unit.program) else {
+            continue;
+        };
+        let Ok(unit_resolution) = assembly
+            .module_index
+            .resolve_unit_hir(&hir, &unit.path)
+        else {
+            continue;
+        };
+        for (span, resolved) in &unit_resolution.tables.resolved_values {
+            if *resolved != target {
+                continue;
+            }
+            references.push(ReferenceInfo {
+                location: symbol_location_for_span(&unit.path, span.start, span.end),
+            });
+        }
+    }
+
+    if include_declaration
+        && let ResolvedValue::Item(item_id) = target
+        && let Some(item) = resolution.items.get(item_id.0)
+        && item
+            .source_path
+            .as_ref()
+            .is_some_and(|path| path != entry_path)
+    {
+        references.push(ReferenceInfo {
+            location: symbol_location_for_item(item, entry_path),
+        });
+    }
+
+    references.sort_by_key(|reference| {
+        (
+            reference.location.path.clone(),
+            reference.location.start,
+            reference.location.end,
+        )
+    });
+    references.dedup_by(|left, right| left.location == right.location);
+    references
+}
+
+fn member_access_prefix(source_text: &str, offset: usize) -> Option<(String, String)> {
+    let prefix = source_text.get(..offset)?;
+    let mut alias_end = offset;
+    let bytes = prefix.as_bytes();
+    let mut index = offset;
+    while index > 0 {
+        index -= 1;
+        let ch = bytes[index];
+        if ch.is_ascii_alphanumeric() || ch == b'_' {
+            alias_end = index;
+            continue;
+        }
+        if ch == b'.' {
+            let alias_start = alias_end;
+            let alias = prefix.get(alias_start..offset)?.to_string();
+            if alias.is_empty() || !alias.as_bytes()[0].is_ascii_alphabetic() && alias.as_bytes()[0] != b'_' {
+                return None;
+            }
+            let partial_start = index + 1;
+            let partial = prefix.get(partial_start..offset).unwrap_or("").to_string();
+            return Some((alias, partial));
+        }
+        return None;
+    }
+    None
+}
+
+fn use_path_prefix(source_text: &str, offset: usize) -> Option<String> {
+    let line_start = source_text[..offset].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let line = source_text.get(line_start..offset)?;
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with("use ") {
+        return None;
+    }
+    let path_part = trimmed.strip_prefix("use ")?.trim_start();
+    if path_part.contains(';') {
+        return None;
+    }
+    Some(path_part.to_string())
+}
+
+fn module_path_display(path: &[String]) -> String {
+    path.join("::")
+}
+
+fn member_completion_candidates(
+    resolution: &Resolution,
+    alias: &str,
+    partial: &str,
+) -> Vec<CompletionInfo> {
+    let Some(module_path) = resolution.module_imports.get(alias) else {
+        return Vec::new();
+    };
+    let Some(module_id) = resolution.module_graph.module_id(module_path) else {
+        return Vec::new();
+    };
+    let Some(module) = resolution.module_graph.module(module_id) else {
+        return Vec::new();
+    };
+    let module_label = module_path_display(module_path);
+    let partial_lower = partial.to_lowercase();
+
+    module
+        .scope
+        .keys()
+        .filter(|name| {
+            partial.is_empty() || name.to_lowercase().starts_with(partial_lower.as_str())
+        })
+        .filter_map(|name| {
+            let item_id = module.scope.get(name)?;
+            let item = resolution.items.get(item_id.0)?;
+            if !matches!(
+                item.kind,
+                ItemKind::Function | ItemKind::Method | ItemKind::Type | ItemKind::Enum
+            ) {
+                return None;
+            }
+            Some(CompletionInfo {
+                label: name.clone(),
+                kind: completion_kind_from_item_kind(item.kind),
+                detail: Some(module_label.clone()),
+            })
+        })
+        .collect()
+}
+
+fn use_path_completion_candidates(
+    typed_prefix: &str,
+    assembly_module_paths: &HashSet<String>,
+    module_graph: &crate::resolve::ModuleGraph,
+) -> Vec<CompletionInfo> {
+    let typed = typed_prefix.trim();
+    let typed_segments: Vec<&str> = typed.split('.').filter(|s| !s.is_empty()).collect();
+    let partial = if typed.ends_with('.') {
+        ""
+    } else {
+        typed_segments.last().copied().unwrap_or("")
+    };
+    let parent_path: Vec<&str> = if typed.ends_with('.') {
+        typed_segments
+    } else {
+        typed_segments[..typed_segments.len().saturating_sub(1)].to_vec()
+    };
+    let partial_lower = partial.to_lowercase();
+
+    let paths: Vec<String> = if !assembly_module_paths.is_empty() {
+        assembly_module_paths.iter().cloned().collect()
+    } else {
+        module_graph
+            .modules()
+            .iter()
+            .filter(|module| !module.path.is_empty())
+            .map(|module| module_path_display(&module.path))
+            .collect()
+    };
+
+    let mut candidates = Vec::new();
+    for path in paths {
+        let segments: Vec<&str> = path.split("::").collect();
+        if segments.len() <= parent_path.len() {
+            continue;
+        }
+        if parent_path
+            .iter()
+            .zip(segments.iter())
+            .any(|(left, right)| *left != *right)
+        {
+            continue;
+        }
+        let Some(next) = segments.get(parent_path.len()) else {
+            continue;
+        };
+        if !partial.is_empty() && !next.to_lowercase().starts_with(partial_lower.as_str()) {
+            continue;
+        }
+        let mut completed = parent_path
+            .iter()
+            .map(|segment| (*segment).to_string())
+            .collect::<Vec<_>>();
+        completed.push((*next).to_string());
+        let label = completed.join(".");
+        candidates.push(CompletionInfo {
+            label: label.clone(),
+            kind: CompletionKind::Module,
+            detail: Some(path),
+        });
+    }
+
+    candidates.sort_by(|left, right| left.label.cmp(&right.label));
+    candidates.dedup_by(|left, right| left.label == right.label);
+    candidates
+}
+
+pub fn completion_candidates(
+    snapshot: &DocumentAnalysisSnapshot,
+    source_text: &str,
+    offset: usize,
+) -> Vec<CompletionInfo> {
+    if let Some((alias, partial)) = member_access_prefix(source_text, offset)
+        && let Some(resolution) = snapshot.resolution.as_ref()
+    {
+        let members = member_completion_candidates(resolution, &alias, &partial);
+        if !members.is_empty() {
+            return members;
+        }
+    }
+
+    if let Some(use_prefix) = use_path_prefix(source_text, offset)
+        && let Some(resolution) = snapshot.resolution.as_ref()
+    {
+        let paths = use_path_completion_candidates(
+            &use_prefix,
+            &snapshot.assembly_module_paths,
+            &resolution.module_graph,
+        );
+        if !paths.is_empty() {
+            return paths;
+        }
+    }
+
     let Some(resolution) = snapshot.resolution.as_ref() else {
         return collect_document_symbols(snapshot)
             .into_iter()

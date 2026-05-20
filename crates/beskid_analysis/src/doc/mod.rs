@@ -1,18 +1,26 @@
 //! Documentation comments (`///`), `@ref` / `@arg` / `@returns` / `@variant` / `@par`, and API doc snapshots.
 
+mod api_signatures;
 mod api_snapshot;
 mod callable;
 mod edit;
 mod item_shape;
+mod qualified_names;
 mod refs;
 mod render;
+mod type_format;
 mod validate;
 
+pub use api_signatures::{
+    apply_signature_to_item, build_item_signature, hir_programs_by_path,
+};
 pub use api_snapshot::{
     API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
-    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocRoot, ApiDocumentationPointer,
-    ApiLocation, ItemDocArgument, ItemDocStructured,
+    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, API_JSON_SCHEMA_VERSION_GRAPH_V3, ApiDocItem,
+    ApiDocRoot, ApiDocumentationPointer, ApiGenericParameterDoc, ApiItemSignature, ApiLocation,
+    ApiParameterDoc, ApiTypeAnnotation, ItemDocArgument, ItemDocStructured,
 };
+pub use qualified_names::{display_name_for_item, module_path_for_item, qualified_names_for_items};
 pub use callable::callable_signatures_for_span;
 pub use edit::{DocCommentEdit, doc_comment_edit_for_offset};
 pub use item_shape::{enum_variant_names_for_span, generic_param_names_for_span};
@@ -27,6 +35,7 @@ use crate::syntax::{Program, SpanInfo, Spanned};
 use pest::Parser;
 use pest::iterators::Pair;
 use std::collections::HashMap;
+use std::path::Path;
 
 /// Raw `///` block extracted by the main grammar (normalized body text + source span).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,7 +73,11 @@ pub fn build_item_docs_markdown(
             continue;
         }
         let md = render_doc_body(&leading.normalized_source, resolution, item, docs_ref_links);
-        let structured = extract_structured_doc(&leading.normalized_source);
+        let structured = extract_structured_doc(
+            &leading.normalized_source,
+            Some(resolution),
+            docs_ref_links,
+        );
         out[item.id.0] = Some(ResolvedDoc {
             markdown: md,
             structured,
@@ -214,7 +227,69 @@ fn closing_paren_suffix_rest(pair: &Pair<'_, DocSyntaxRule>, suffix: DocSyntaxRu
         .to_string()
 }
 
-fn extract_structured_doc(body: &str) -> Option<ItemDocStructured> {
+/// Merge leading `///` docs from all compilation units into `item_docs` (assembly-backed doc runs).
+pub fn build_item_docs_for_resolution(
+    resolution: &Resolution,
+    programs: &[(&Path, &Program)],
+    docs_ref_links: Option<&DocRefLinkContext>,
+) -> Vec<Option<ResolvedDoc>> {
+    let mut caches: HashMap<
+        std::path::PathBuf,
+        HashMap<(usize, usize), LeadingDocComment>,
+    > = HashMap::new();
+    for (path, program) in programs {
+        let mut by_span = HashMap::new();
+        for (span, doc_opt) in flatten_leading_docs(program) {
+            if let Some(d) = doc_opt {
+                by_span.insert((span.start, span.end), d);
+            }
+        }
+        caches.insert(path.to_path_buf(), by_span);
+    }
+
+    let mut out: Vec<Option<ResolvedDoc>> = vec![None; resolution.items.len()];
+    for item in &resolution.items {
+        let lookup_path = item
+            .source_path
+            .as_deref()
+            .or_else(|| programs.first().map(|(p, _)| *p));
+        let Some(path) = lookup_path else {
+            continue;
+        };
+        let Some(by_span) = caches.get(path) else {
+            continue;
+        };
+        let key = (item.span.start, item.span.end);
+        let Some(leading) = by_span.get(&key) else {
+            continue;
+        };
+        if leading.normalized_source.trim().is_empty() {
+            continue;
+        }
+        let md = render_doc_body(
+            &leading.normalized_source,
+            resolution,
+            item,
+            docs_ref_links,
+        );
+        let structured = extract_structured_doc(
+            &leading.normalized_source,
+            Some(resolution),
+            docs_ref_links,
+        );
+        out[item.id.0] = Some(ResolvedDoc {
+            markdown: md,
+            structured,
+        });
+    }
+    out
+}
+
+fn extract_structured_doc(
+    body: &str,
+    resolution: Option<&Resolution>,
+    docs_ref_links: Option<&DocRefLinkContext>,
+) -> Option<ItemDocStructured> {
     let Ok(mut pairs) = DocSyntaxParser::parse(DocSyntaxRule::DocBody, body) else {
         return None;
     };
@@ -234,7 +309,16 @@ fn extract_structured_doc(body: &str) -> Option<ItemDocStructured> {
         match piece.as_rule() {
             DocSyntaxRule::Run => summary.push_str(piece.as_str()),
             DocSyntaxRule::RefInline => {
-                summary.push_str(piece.as_str());
+                let inner = inner_text(&piece, DocSyntaxRule::inner);
+                if let Some(res) = resolution {
+                    summary.push_str(&resolve_ref_markdown(
+                        &inner,
+                        res,
+                        docs_ref_links,
+                    ));
+                } else {
+                    summary.push_str(piece.as_str());
+                }
             }
             DocSyntaxRule::ArgTag => {
                 let name = first_ident(&piece);

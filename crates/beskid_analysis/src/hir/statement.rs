@@ -24,6 +24,10 @@ pub enum StatementNode<P: Phase> {
     ForStatement(Spanned<P::ForStatement>),
     #[phase(from = "If")]
     IfStatement(Spanned<P::IfStatement>),
+    #[phase(from = "With")]
+    WithStatement(Spanned<P::WithStatement>),
+    #[phase(from = "Launch")]
+    LaunchStatement(Spanned<P::LaunchStatement>),
     #[phase(from = "Expression")]
     ExpressionStatement(Spanned<P::ExpressionStatement>),
 }
@@ -42,6 +46,8 @@ impl HirNode for StatementNode<HirPhase> {
             StatementNode::WhileStatement(stmt) => push(HirNodeRef(&stmt.node)),
             StatementNode::ForStatement(stmt) => push(HirNodeRef(&stmt.node)),
             StatementNode::IfStatement(stmt) => push(HirNodeRef(&stmt.node)),
+            StatementNode::WithStatement(_) => {}
+            StatementNode::LaunchStatement(_) => {}
             StatementNode::ExpressionStatement(stmt) => push(HirNodeRef(&stmt.node)),
         }
     }

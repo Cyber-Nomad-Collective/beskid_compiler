@@ -6,7 +6,29 @@ use std::path::PathBuf;
 
 use beskid_ast_reflect_gen::{
     default_allowlist_paths, parse_cli_args, run_cli, syntax_nodes::emit_syntax_sdk,
+    syntax_nodes::inventory_syntax_type_names, syntax_traversal::emit_query_facade_body,
 };
+
+fn run_dump_syntax_inventory(raw: &[OsString]) -> std::process::ExitCode {
+    let (workspace, _) = extract_workspace_flag(raw.to_vec());
+    let Some(ws) = workspace else {
+        eprintln!("error: --dump-syntax-inventory requires --workspace <COMPILER_ROOT>");
+        return std::process::ExitCode::from(2);
+    };
+    let analysis_src = ws.join("crates/beskid_analysis/src");
+    match inventory_syntax_type_names(&analysis_src) {
+        Ok(names) => {
+            for name in names {
+                println!("{name}");
+            }
+            std::process::ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::ExitCode::from(1)
+        }
+    }
+}
 
 /// Parse argv, optionally fill allowlisted paths from `--workspace`, then generate or emit SDK.
 fn main() -> std::process::ExitCode {
@@ -16,8 +38,16 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::SUCCESS;
     }
 
+    if raw.iter().any(|a| a == "--dump-syntax-inventory") {
+        return run_dump_syntax_inventory(&raw);
+    }
+
     if let Some(idx) = raw.iter().position(|a| a == "--emit-syntax-sdk") {
         return run_emit_syntax_sdk(&raw, idx);
+    }
+
+    if raw.iter().any(|a| a == "--emit-query-facade") {
+        return run_emit_query_facade(&raw);
     }
 
     let (workspace, rest) = extract_workspace_flag(raw);
@@ -99,6 +129,36 @@ fn run_emit_syntax_sdk(raw: &[OsString], flag_idx: usize) -> std::process::ExitC
                 rep.type_names.len(),
                 sdk_path.display()
             );
+            std::process::ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::ExitCode::from(1)
+        }
+    }
+}
+
+/// `beskid_ast_reflect_gen --emit-query-facade` — print `Beskid.Compiler.Query` facade body (stdout).
+fn run_emit_query_facade(raw: &[OsString]) -> std::process::ExitCode {
+    let mut workspace_root: Option<PathBuf> = None;
+    let mut i = 0usize;
+    while i < raw.len() {
+        if raw[i] == "--workspace" {
+            if i + 1 < raw.len() {
+                workspace_root = Some(PathBuf::from(&raw[i + 1]));
+            }
+            break;
+        }
+        i += 1;
+    }
+    let Some(ws) = workspace_root else {
+        eprintln!("error: --emit-query-facade requires --workspace <COMPILER_ROOT>");
+        return std::process::ExitCode::from(2);
+    };
+    let analysis_src = ws.join("crates/beskid_analysis/src");
+    match inventory_syntax_type_names(&analysis_src) {
+        Ok(inv) => {
+            print!("{}", emit_query_facade_body(&inv));
             std::process::ExitCode::SUCCESS
         }
         Err(e) => {

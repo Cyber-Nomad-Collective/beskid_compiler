@@ -1,3 +1,6 @@
+use std::path::Path;
+
+use beskid_analysis::services::SymbolLocation;
 use tower_lsp_server::ls_types::{Position, Range};
 
 pub fn offset_in_range(offset: usize, start: usize, end: usize) -> bool {
@@ -38,6 +41,22 @@ pub fn offset_range_to_lsp(source: &str, start: usize, end: usize) -> Range {
         offset_to_position(source, bounded_start),
         offset_to_position(source, bounded_end),
     )
+}
+
+/// Map a [`SymbolLocation`] to an LSP range, reading `location.path` when it differs from `fallback_path`.
+pub fn symbol_location_to_lsp_range(
+    location: &SymbolLocation,
+    fallback_path: Option<&Path>,
+    fallback_source: &str,
+) -> Range {
+    let same_file = fallback_path.is_some_and(|path| path == location.path.as_path());
+    if same_file {
+        return offset_range_to_lsp(fallback_source, location.start, location.end);
+    }
+    if let Ok(text) = std::fs::read_to_string(&location.path) {
+        return offset_range_to_lsp(&text, location.start, location.end);
+    }
+    offset_range_to_lsp(fallback_source, location.start, location.end)
 }
 
 pub fn offset_to_position(source: &str, target_offset: usize) -> Position {

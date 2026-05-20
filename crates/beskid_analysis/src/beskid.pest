@@ -44,6 +44,19 @@ SkipKeyword = { "skip" }
 SpawnKeyword = { "spawn" }
 AsyncKeyword = { "async" }
 AwaitKeyword = { "await" }
+HostKeyword = { "host" }
+RegistryKeyword = { "registry" }
+ScopeKeyword = { "scope" }
+StartupKeyword = { "startup" }
+InitKeyword = { "init" }
+DisposeKeyword = { "dispose" }
+WithKeyword = { "with" }
+LaunchKeyword = { "launch" }
+InjectKeyword = { "inject" }
+SingleKeyword = { "single" }
+TransientKeyword = { "transient" }
+GlobalKeyword = { "global" }
+ParentKeyword = { "parent" }
 
 Keyword = {
     (
@@ -76,6 +89,19 @@ Keyword = {
       | SpawnKeyword
       | AsyncKeyword
       | AwaitKeyword
+      | HostKeyword
+      | RegistryKeyword
+      | ScopeKeyword
+      | StartupKeyword
+      | InitKeyword
+      | DisposeKeyword
+      | WithKeyword
+      | LaunchKeyword
+      | InjectKeyword
+      | SingleKeyword
+      | TransientKeyword
+      | GlobalKeyword
+      | ParentKeyword
     ) ~ !ASCII_ALPHANUMERIC
 }
 
@@ -103,7 +129,7 @@ Program = { SOI ~ ItemList ~ EOI }
 
 DocLineContent = { "///" ~ !("/") ~ (!(NEWLINE) ~ ANY)* ~ NEWLINE? }
 DocRun = @{ DocLineContent+ }
-InnerItem = _{ FunctionDefinition | ImplBlock | ExtendTypeDefinition | MacroDefinition | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
+InnerItem = _{ HostDefinition | MacroDefinition | FunctionDefinition | ImplBlock | ExtendTypeDefinition | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
 
 AttributeList = { Attribute+ }
 Attribute = { "[" ~ Identifier ~ ("(" ~ AttributeArgumentList? ~ ")")? ~ "]" }
@@ -150,7 +176,7 @@ ReceiverType = { PrimitiveType | Path }
 ImplBlock = { "impl" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 ExtendTypeDefinition = { "extend" ~ "type" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 
-MacroFragmentKind = _{ "block" | "expression" | "statement" | "type" | "identifier" | "literal" | "pattern" | "path" | "item" | "node" }
+MacroFragmentKind = { "block" | "expression" | "statement" | "type" | "identifier" | "literal" | "pattern" | "path" | "item" | "node" }
 MacroParameter = { MacroFragmentKind ~ Identifier }
 MacroParameterList = { MacroParameter ~ ("," ~ MacroParameter)* }
 MacroDefinition = { Visibility? ~ "macro" ~ Identifier ~ "(" ~ MacroParameterList? ~ ")" ~ Block }
@@ -166,7 +192,9 @@ FieldWithDocs = { (DocRun ~ Field) | Field }
 ValueField = { BeskidType ~ Identifier }
 EventCapacity = { "{" ~ IntegerLiteral ~ "}" }
 EventField = { "event" ~ EventCapacity? ~ Identifier ~ "(" ~ ParameterList? ~ ")" }
-Field = { Visibility? ~ (EventField | ValueField) }
+InjectQualifier = { ("global" | "parent") ~ "::" }
+InjectField = { "inject" ~ InjectQualifier? ~ BeskidType ~ Identifier }
+Field = { Visibility? ~ (InjectField | EventField | ValueField) }
 
 TypeConformanceList = { ":" ~ PathList }
 TypeDefinition = { Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ FieldList? ~ "}" }
@@ -181,6 +209,19 @@ ContractItemWithDocs = { ((DocRun ~ ContractItem) | ContractItem) ~ DocGap* }
 ContractItem = _{ ContractMethodSignature | ContractEmbedding }
 ContractMethodSignature = { BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
 ContractEmbedding = { Identifier ~ ";"? }
+
+RegistrationLifetime = { "single" | "transient" }
+RegistrationTarget = { "for" ~ Path }
+RegistryEntry = { RegistrationLifetime? ~ Path ~ RegistrationTarget? ~ ";" }
+RegistryBlock = { "registry" ~ "{" ~ RegistryEntry* ~ "}" }
+
+ScopeHookName = { "init" | "dispose" | "startup" }
+ScopeHook = { ScopeHookName ~ "(" ~ ParameterList? ~ ")" ~ Block }
+ScopeBodyItem = _{ RegistryBlock | ScopeHook | ScopeDefinition | RegistryEntry }
+ScopeDefinition = { "scope" ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ "{" ~ ScopeBodyItem* ~ "}" }
+HostBodyItem = _{ RegistryBlock | ScopeHook | ScopeDefinition }
+HostDefinition = { "host" ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ (":" ~ Path)? ~ "{" ~ HostBodyItem* ~ "}" }
+
 TestDefinition = { AttributeList? ~ Visibility? ~ "test" ~ Identifier ~ TestBody }
 TestBody = { "{" ~ TestBodyItemWithDocs* ~ "}" }
 TestBodyItemWithDocs = { ((DocRun ~ Statement) | TestMetaSection | TestSkipSection | Statement) ~ DocGap* }
@@ -195,7 +236,9 @@ TestSkipEntry = { Identifier ~ "=" ~ Expression ~ ";" }
 ////////////////////////////////////////////////////////////
 Block = { "{" ~ Statement* ~ "}" }
 
-Statement = _{ LetStatement | ReturnStatement | BreakStatement | ContinueStatement | WhileStatement | ForStatement | IfStatement | ExpressionStatement }
+WithStatement = { "with" ~ Identifier ~ "(" ~ ArgumentList? ~ ")" ~ Block }
+LaunchStatement = { "launch" ~ Path ~ "(" ~ ArgumentList? ~ ")" ~ ";" }
+Statement = _{ LetStatement | ReturnStatement | BreakStatement | ContinueStatement | WhileStatement | ForStatement | IfStatement | WithStatement | LaunchStatement | ExpressionStatement }
 
 LetStatement = { TypedLetStatement | InferredLetStatement }
 TypedLetStatement = { BeskidType ~ MutKeyword? ~ Identifier ~ "=" ~ Expression ~ ";" }

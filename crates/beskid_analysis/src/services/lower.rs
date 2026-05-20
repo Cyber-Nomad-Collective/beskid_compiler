@@ -28,7 +28,7 @@ pub fn lower_normalize_resolve_type_spanned_with_assembly(
     let resolution = if let Some(assembly) = assembly {
         assembly
             .module_index
-            .resolve_entry_hir(&hir)
+            .resolve_entry_hir(&hir, Some(&assembly.entry_unit().path))
             .map_err(LowerResolveTypeError::Resolve)?
     } else {
         Resolver::new()

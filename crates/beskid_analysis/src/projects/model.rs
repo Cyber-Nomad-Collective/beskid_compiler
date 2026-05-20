@@ -169,6 +169,8 @@ pub struct AssemblyOptions {
     pub discovery: AssemblyDiscovery,
     pub include_std_prelude: bool,
     pub max_units: usize,
+    /// When true, skip units that fail to parse instead of failing the whole assembly (`beskid doc`).
+    pub skip_parse_errors: bool,
 }
 
 impl Default for AssemblyOptions {
@@ -177,6 +179,7 @@ impl Default for AssemblyOptions {
             discovery: AssemblyDiscovery::ImportClosure,
             include_std_prelude: true,
             max_units: 4096,
+            skip_parse_errors: false,
         }
     }
 }

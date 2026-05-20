@@ -50,11 +50,15 @@ pub(crate) struct LoadedModArtifact {
 #[derive(Debug, Clone, Default)]
 pub struct ModHostSession {
     loaded: Vec<LoadedModArtifact>,
+    composition_snapshot: Option<crate::composition::CompositionSnapshot>,
 }
 
 impl ModHostSession {
     pub(crate) fn new(loaded: Vec<LoadedModArtifact>) -> Self {
-        Self { loaded }
+        Self {
+            loaded,
+            composition_snapshot: None,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -73,6 +77,18 @@ impl ModHostSession {
             .filter(|artifact| artifact.descriptor.is_some())
             .count()
     }
+
+    pub fn set_composition_snapshot(&mut self, snapshot: crate::composition::CompositionSnapshot) {
+        self.composition_snapshot = Some(snapshot);
+    }
+
+    pub fn composition_snapshot(&self) -> Option<&crate::composition::CompositionSnapshot> {
+        self.composition_snapshot.as_ref()
+    }
+
+    pub fn composition_snapshot_or_default(&self) -> crate::composition::CompositionSnapshot {
+        self.composition_snapshot.clone().unwrap_or_default()
+    }
 }
 
 pub struct ModHostInput<'a> {
@@ -85,6 +101,8 @@ pub struct ModHostInput<'a> {
 pub struct ModHostGenerateResult {
     pub program: crate::syntax::Spanned<crate::syntax::Program>,
     pub session: ModHostSession,
+    /// Diagnostics from `macro.expand` (including registry issues and residual invocations).
+    pub macro_diagnostics: Vec<crate::analysis::SemanticDiagnostic>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -101,5 +119,33 @@ pub(crate) struct GeneratedSyntax {
 impl GeneratedSyntax {
     pub(crate) fn requires_reparse(&self) -> bool {
         !self.contributions.is_empty() || !self.registrations.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModHostSession;
+
+    #[test]
+    fn composition_snapshot_defaults_when_unset() {
+        let session = ModHostSession::default();
+        let snapshot = session.composition_snapshot_or_default();
+        assert!(snapshot.launched_host.is_empty());
+        assert!(snapshot.registrations.is_empty());
+    }
+
+    #[test]
+    fn composition_snapshot_roundtrips_when_set() {
+        let mut session = ModHostSession::default();
+        let snapshot = crate::composition::CompositionSnapshot {
+            version: 1,
+            launched_host: "AppHost".to_string(),
+            launch_span: None,
+            registrations: Vec::new(),
+            scope_names: std::collections::HashMap::new(),
+        };
+        session.set_composition_snapshot(snapshot.clone());
+        assert_eq!(session.composition_snapshot(), Some(&snapshot));
+        assert_eq!(session.composition_snapshot_or_default(), snapshot);
     }
 }

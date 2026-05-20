@@ -20,14 +20,26 @@ impl SemanticPipelineRule {
         self.check_unknown_import_paths(ctx, hir);
         self.check_use_before_declaration(ctx, hir);
 
-        let mut resolver = Resolver::new();
-        let resolution = match resolver.resolve_program(hir) {
-            Ok(resolution) => resolution,
-            Err(errors) => {
-                for error in errors {
-                    resolve::emit_resolve_error(ctx, error);
+        let resolution = if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
+            match index.resolve_entry_hir(hir, ctx.options.entry_source_path.as_ref()) {
+                Ok(resolution) => resolution,
+                Err(errors) => {
+                    for error in errors {
+                        resolve::emit_resolve_error(ctx, error);
+                    }
+                    return None;
                 }
-                return None;
+            }
+        } else {
+            let mut resolver = Resolver::new();
+            match resolver.resolve_program(hir) {
+                Ok(resolution) => resolution,
+                Err(errors) => {
+                    for error in errors {
+                        resolve::emit_resolve_error(ctx, error);
+                    }
+                    return None;
+                }
             }
         };
 
@@ -152,6 +164,18 @@ impl SemanticPipelineRule {
         }
     }
 
+    fn import_path_known_in_assembly(use_path: &str, known_paths: &HashSet<String>) -> bool {
+        if known_paths.contains(use_path) {
+            return true;
+        }
+        let dotted = use_path.replace("::", ".");
+        if known_paths.contains(&dotted) {
+            return true;
+        }
+        let colon = use_path.replace('.', "::");
+        known_paths.contains(&colon)
+    }
+
     fn check_unknown_import_paths(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
         if let Some(known_paths) = ctx.options.known_assembly_module_paths.clone() {
             for item in &hir.node.items {
@@ -159,7 +183,7 @@ impl SemanticPipelineRule {
                     continue;
                 };
                 let path = self.path_to_string_local(&use_decl.node.path);
-                if known_paths.contains(&path) {
+                if Self::import_path_known_in_assembly(&path, &known_paths) {
                     continue;
                 }
                 ctx.emit_issue(

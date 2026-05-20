@@ -14,6 +14,8 @@ mod assembly;
 #[cfg(test)]
 mod compile_plan;
 #[cfg(test)]
+mod composition;
+#[cfg(test)]
 mod corelib;
 #[cfg(test)]
 mod discovery;

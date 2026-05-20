@@ -66,6 +66,8 @@ pub struct HirField {
     pub kind: HirFieldKind,
     #[ast(skip)]
     pub event_capacity: Option<usize>,
+    #[ast(skip)]
+    pub inject_qualifier: Option<crate::syntax::InjectQualifier>,
     #[ast(child)]
     pub name: Spanned<HirIdentifier>,
     #[ast(child)]
@@ -76,6 +78,7 @@ pub struct HirField {
 pub enum HirFieldKind {
     Value,
     Event,
+    Injected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, beskid_ast_derive::HirNode)]

@@ -43,6 +43,14 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionNode {
                     node: "unexpected raw try expression",
                 })
             }
+            HirExpressionNode::MacroInvocation(_) => Err(CodegenError::UnsupportedNode {
+                span: node.span,
+                node: "macro invocation expression",
+            }),
+            HirExpressionNode::MacroMetavariable(_) => Err(CodegenError::UnsupportedNode {
+                span: node.span,
+                node: "macro metavariable expression",
+            }),
         }
     }
 }

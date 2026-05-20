@@ -11,7 +11,7 @@ use crate::session::store::{Document, State};
 use crate::workspace_scan::uri_to_path;
 
 /// Document text/analysis cache format; bump when snapshot shape changes.
-const ANALYSIS_CACHE_VERSION: u32 = 1;
+pub const ANALYSIS_CACHE_VERSION: u32 = 3;
 
 fn is_project_manifest_uri(uri: &Uri) -> bool {
     uri.to_string().to_lowercase().ends_with(".proj")
@@ -23,7 +23,8 @@ fn hash_text(text: &str) -> u64 {
     hasher.finish()
 }
 
-fn build_document_analysis(
+async fn build_document_analysis(
+    state: &RwLock<State>,
     uri: &Uri,
     text: &str,
 ) -> Option<beskid_analysis::services::DocumentAnalysisSnapshot> {
@@ -31,22 +32,27 @@ fn build_document_analysis(
         return None;
     }
 
+    let path = uri_to_path(uri)?;
+    let mut compilation_context = cached_compilation_context(state, &path).await;
+
     beskid_analysis::services::parse_program_with_source_name(&uri.to_string(), text)
         .ok()
         .map(|program| {
-            beskid_analysis::services::build_document_analysis(
+            beskid_analysis::services::build_document_analysis_with_context(
                 &program,
                 uri.to_string(),
                 text,
+                &path,
+                compilation_context.as_mut(),
                 None,
             )
         })
 }
 
 /// Build a [`Document`] for `uri`, hashing text and attaching a fresh analysis snapshot when possible.
-pub fn build_document(uri: &Uri, version: i32, text: String) -> Document {
+pub async fn build_document(state: &RwLock<State>, uri: &Uri, version: i32, text: String) -> Document {
     let text_hash = hash_text(&text);
-    let analysis = build_document_analysis(uri, &text);
+    let analysis = build_document_analysis(state, uri, &text).await;
     Document {
         version,
         text,
@@ -86,8 +92,10 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
         }
     }
 
-    let analysis = build_document_analysis(&uri, &text);
+    drop(write_state);
+    let analysis = build_document_analysis(state, &uri, &text).await;
 
+    let mut write_state = state.write().await;
     write_state.docs.insert(
         uri,
         Document {
@@ -103,6 +111,31 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
 /// Drop an open buffer after `didClose` (disk hydration may repopulate the workspace index).
 pub async fn remove_document(state: &RwLock<State>, uri: &Uri) {
     state.write().await.docs.remove(uri);
+}
+
+/// Rebuild analysis snapshots for open `.bd` buffers after compilation context / assembly invalidation.
+pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
+    let entries: Vec<(Uri, String)> = {
+        let read = state.read().await;
+        read.docs
+            .iter()
+            .filter(|(uri, _)| !is_project_manifest_uri(uri))
+            .map(|(uri, doc)| (uri.clone(), doc.text.clone()))
+            .collect()
+    };
+
+    for (uri, text) in entries {
+        let analysis = build_document_analysis(state, &uri, &text).await;
+        let text_hash = hash_text(&text);
+        let mut write = state.write().await;
+        if let Some(doc) = write.docs.get_mut(&uri)
+            && doc.text == text
+        {
+            doc.text_hash = text_hash;
+            doc.analysis = analysis;
+            doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
+        }
+    }
 }
 
 /// Recompute diagnostics for the union of open buffer or workspace snapshot and push to the client.

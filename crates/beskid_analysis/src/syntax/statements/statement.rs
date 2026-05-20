@@ -5,7 +5,8 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::{
     BreakStatement, ContinueStatement, ExpressionStatement, ForStatement, IfStatement,
-    LetStatement, ReturnStatement, SpanInfo, Spanned, WhileStatement,
+    LaunchStatement, LetStatement, ReturnStatement, SpanInfo, Spanned, WhileStatement,
+    WithStatement,
 };
 
 use beskid_ast_derive::AstNode;
@@ -27,6 +28,10 @@ pub enum Statement {
     For(Spanned<ForStatement>),
     #[ast(child)]
     If(Spanned<IfStatement>),
+    #[ast(child)]
+    With(Spanned<WithStatement>),
+    #[ast(child)]
+    Launch(Spanned<LaunchStatement>),
     #[ast(child)]
     Expression(Spanned<ExpressionStatement>),
 }
@@ -76,10 +81,46 @@ fn parse_statement(pair: Pair<Rule>) -> Result<Spanned<Statement>, ParseError> {
             let statement = IfStatement::parse(pair)?;
             Ok(Spanned::new(Statement::If(statement), span))
         }
+        Rule::WithStatement => {
+            let statement = WithStatement::parse(pair)?;
+            Ok(Spanned::new(Statement::With(statement), span))
+        }
+        Rule::LaunchStatement => {
+            let statement = LaunchStatement::parse(pair)?;
+            Ok(Spanned::new(Statement::Launch(statement), span))
+        }
         Rule::ExpressionStatement => {
             let statement = ExpressionStatement::parse(pair)?;
             Ok(Spanned::new(Statement::Expression(statement), span))
         }
         _ => Err(ParseError::unexpected_rule(pair, Some(Rule::Statement))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parser::{BeskidParser, Rule};
+    use crate::parsing::parsable::Parsable;
+    use crate::syntax::Statement;
+    use pest::Parser;
+
+    #[test]
+    fn with_statement_parses() {
+        let pair = BeskidParser::parse(Rule::Statement, "with HttpScope(request) { return; }")
+            .expect("with should parse")
+            .next()
+            .expect("statement pair");
+        let statement = Statement::parse(pair).expect("statement parse");
+        assert!(matches!(statement.node, Statement::With(_)));
+    }
+
+    #[test]
+    fn launch_statement_parses() {
+        let pair = BeskidParser::parse(Rule::Statement, "launch AppHost(args);")
+            .expect("launch should parse")
+            .next()
+            .expect("statement pair");
+        let statement = Statement::parse(pair).expect("statement parse");
+        assert!(matches!(statement.node, Statement::Launch(_)));
     }
 }

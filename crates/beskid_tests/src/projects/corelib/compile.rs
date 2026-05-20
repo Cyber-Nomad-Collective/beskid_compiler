@@ -296,6 +296,10 @@ fn checked_in_corelib_prelude_exports_mvp_modules() {
         prelude.contains("pub mod Collections.Array;"),
         "Prelude should export Collections.Array"
     );
+    assert!(
+        prelude.contains("host ConsoleHost()"),
+        "Prelude should declare ConsoleHost baseline for native IoC launch"
+    );
 }
 
 #[test]
@@ -305,6 +309,10 @@ fn checked_in_compiler_sdk_prelude_exports_mod_sdk_modules() {
     assert!(
         prelude.contains("pub mod Beskid.Syntax;"),
         "compiler-sdk prelude should export Beskid.Syntax"
+    );
+    assert!(
+        prelude.contains("pub mod Beskid.Compiler.Query;"),
+        "compiler-sdk prelude should export Beskid.Compiler.Query"
     );
     assert!(
         prelude.contains("pub mod Beskid.Compiler.TypedEmitter;"),
@@ -418,6 +426,77 @@ fn checked_in_corelib_compiler_sdk_exports_version_tokens() {
         compilation.contains("SemanticSnapshotFamilyToken"),
         "Compilation facade should expose semantic snapshot family token"
     );
+}
+
+#[test]
+fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
+    let query = fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Query.bd"))
+        .expect("read Beskid.Compiler.Query");
+    let syntax = fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax.bd"))
+        .expect("read Beskid.Syntax");
+    let node_contract =
+        fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/Node.bd"))
+            .expect("read Beskid.Syntax.Nodes.Node");
+    let node_span =
+        fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/NodeSpan.bd"))
+            .expect("read Beskid.Syntax.Nodes.NodeSpan");
+    let node_list =
+        fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/NodeList.bd"))
+            .expect("read Beskid.Syntax.Nodes.NodeList");
+
+    assert!(
+        query.contains(r#"return "0.4.0";"#),
+        "Query facade version should be 0.4.0 after span + pipeline expansion"
+    );
+    assert!(
+        syntax.contains(r#"return "0.4.0";"#),
+        "Syntax facade version should be 0.4.0"
+    );
+    assert!(
+        !query.contains("pub type ReflectStub"),
+        "Query facade must not declare ReflectStub placeholders"
+    );
+    assert!(
+        !query.contains("ReflectSdk"),
+        "Query facade must not use legacy ReflectSdk* tokens"
+    );
+    assert!(
+        node_contract.contains("pub contract Node"),
+        "syntax navigation surface must be the Node contract, not an item enum"
+    );
+    assert!(
+        !node_contract.contains("pub enum Node"),
+        "mirrored item wrapper enum must not be emitted into the Mod SDK"
+    );
+    assert!(
+        node_list.contains("Beskid.Syntax.Nodes.NodeRef head"),
+        "NodeList must carry NodeRef handles for program items"
+    );
+    assert!(
+        node_contract.contains("Beskid.Syntax.Nodes.NodeSpan Span();"),
+        "Node contract should expose span metadata"
+    );
+    assert!(
+        node_span.contains("pub type NodeSpan"),
+        "NodeSpan contract type should be generated"
+    );
+    for api in [
+        "pub SyntaxQuery At(",
+        "pub SyntaxQuery AtProgram(",
+        "pub Beskid.Syntax.Nodes.NodeRef[] Descendants(",
+        "pub Option<Beskid.Syntax.Nodes.NodeRef> Parent(",
+        "pub Beskid.Syntax.Nodes.NodeSpan Span(",
+        "pub Option<Beskid.Syntax.Nodes.NodeSpan> TrySpan(",
+        "pub SyntaxPipeline Pipeline(",
+        "pub SyntaxPipeline Replace(",
+        "pub Beskid.Syntax.Nodes.NodeRef Apply(",
+        "pub Option<FunctionDefinition> AsFunctionDefinition(",
+    ] {
+        assert!(
+            query.contains(api),
+            "Query facade missing API: {api}"
+        );
+    }
 }
 
 #[test]

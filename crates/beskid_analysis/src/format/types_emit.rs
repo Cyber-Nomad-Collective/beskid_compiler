@@ -208,6 +208,20 @@ impl Emit for Field {
                 w.write_char(')')?;
                 Ok(())
             }
+            FieldKind::Injected => {
+                cx.token(w, "inject")?;
+                cx.space(w)?;
+                if let Some(qualifier) = self.inject_qualifier {
+                    match qualifier {
+                        crate::syntax::InjectQualifier::Global => cx.token(w, "global::")?,
+                        crate::syntax::InjectQualifier::Parent => cx.token(w, "parent::")?,
+                    }
+                }
+                self.ty.emit(w, cx)?;
+                cx.space(w)?;
+                self.name.emit(w, cx)?;
+                Ok(())
+            }
         }
     }
 }

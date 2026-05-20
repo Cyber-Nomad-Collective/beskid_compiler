@@ -12,7 +12,9 @@ use walkdir::WalkDir;
 
 use crate::diagnostics::analyze_document;
 use crate::protocol::status::{BeskidStatusParams, send_beskid_status};
-use crate::session::lifecycle::{build_document, set_disk_snapshot};
+use crate::session::lifecycle::{
+    build_document, rebuild_open_document_analysis, set_disk_snapshot,
+};
 use crate::session::project_context::{cached_compilation_context, invalidate_compilation_cache};
 use crate::session::store::State;
 
@@ -109,6 +111,7 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path)
     });
 
     invalidate_compilation_cache(state).await;
+    rebuild_open_document_analysis(state).await;
 
     let total = paths.len() as u32;
     let mut last_emit = None;
@@ -150,7 +153,7 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path)
         let Ok(text) = tokio::fs::read_to_string(&path).await else {
             continue;
         };
-        let doc = build_document(&uri, 0, text);
+        let doc = build_document(state, &uri, 0, text).await;
         let compilation_context = if path.extension().and_then(|e| e.to_str()) == Some("bd") {
             cached_compilation_context(state, &path).await
         } else {
@@ -203,6 +206,11 @@ pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
     url.to_file_path().ok()
 }
 
+/// Map a local filesystem path to an LSP `file://` URI.
+pub fn path_to_uri(path: &Path) -> Option<Uri> {
+    uri_from_path(path)
+}
+
 /// Clears closed-file workspace cache and diagnostics for every indexed URI under `root`.
 pub async fn clear_closed_workspace_under_root(
     client: &Client,
@@ -239,6 +247,7 @@ pub async fn refresh_after_disk_change(
             .is_some_and(|ext| ext.eq_ignore_ascii_case("proj"))
     }) {
         invalidate_compilation_cache(state).await;
+        rebuild_open_document_analysis(state).await;
     }
     for path in changed_paths {
         let Some(uri) = uri_from_path(path) else {
@@ -255,7 +264,7 @@ pub async fn refresh_after_disk_change(
             clear_disk_snapshot(client, state, &uri).await;
             continue;
         };
-        let doc = build_document(&uri, 0, text);
+        let doc = build_document(state, &uri, 0, text).await;
         let compilation_context = if path.extension().and_then(|e| e.to_str()) == Some("bd") {
             cached_compilation_context(state, path).await
         } else {
@@ -288,7 +297,7 @@ pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, ur
         clear_disk_snapshot(client, state, uri).await;
         return;
     };
-    let doc = build_document(uri, 0, text);
+    let doc = build_document(state, uri, 0, text).await;
     let compilation_context = if path.extension().and_then(|e| e.to_str()) == Some("bd") {
         cached_compilation_context(state, &path).await
     } else {

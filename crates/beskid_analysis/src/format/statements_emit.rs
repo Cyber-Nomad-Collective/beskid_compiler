@@ -1,7 +1,8 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
     BreakStatement, ContinueStatement, Expression, ExpressionStatement, ForStatement, IfStatement,
-    LetStatement, RangeExpression, ReturnStatement, Spanned, Statement, WhileStatement,
+    LaunchStatement, LetStatement, RangeExpression, ReturnStatement, Spanned, Statement,
+    WhileStatement, WithStatement,
 };
 use std::fmt::Write;
 
@@ -202,12 +203,63 @@ impl Emit for Statement {
             Statement::While(s) => s.emit(w, cx),
             Statement::For(s) => s.emit(w, cx),
             Statement::If(s) => s.emit(w, cx),
+            Statement::With(s) => s.emit(w, cx),
+            Statement::Launch(s) => s.emit(w, cx),
             Statement::Expression(s) => s.emit(w, cx),
         }
     }
 }
 
 impl Emit for Spanned<Statement> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.node.emit(w, cx)
+    }
+}
+
+impl Emit for WithStatement {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        cx.token(w, "with")?;
+        cx.space(w)?;
+        self.scope_name.emit(w, cx)?;
+        w.write_char('(')?;
+        for (i, arg) in self.arguments.iter().enumerate() {
+            if i > 0 {
+                cx.token(w, ", ")?;
+            }
+            arg.emit(w, cx)?;
+        }
+        w.write_char(')')?;
+        cx.nl(w)?;
+        cx.write_indent(w)?;
+        self.body.emit(w, cx)
+    }
+}
+
+impl Emit for Spanned<WithStatement> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.node.emit(w, cx)
+    }
+}
+
+impl Emit for LaunchStatement {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        cx.token(w, "launch")?;
+        cx.space(w)?;
+        self.host_path.emit(w, cx)?;
+        w.write_char('(')?;
+        for (i, arg) in self.arguments.iter().enumerate() {
+            if i > 0 {
+                cx.token(w, ", ")?;
+            }
+            arg.emit(w, cx)?;
+        }
+        w.write_char(')')?;
+        w.write_char(';')?;
+        Ok(())
+    }
+}
+
+impl Emit for Spanned<LaunchStatement> {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         self.node.emit(w, cx)
     }

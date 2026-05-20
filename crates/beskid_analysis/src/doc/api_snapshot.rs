@@ -2,10 +2,13 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const API_JSON_SCHEMA_VERSION: u32 = 3;
+pub const API_JSON_SCHEMA_VERSION: u32 = 4;
 
 /// Schema used when `api.json` is emitted without a resolver graph (symbol list only).
 pub const API_JSON_SCHEMA_VERSION_BEFORE_GRAPH: u32 = 2;
+
+/// Previous graph schema (v3); consumers may ignore v4-only fields when reading v3.
+pub const API_JSON_SCHEMA_VERSION_GRAPH_V3: u32 = 3;
 
 /// When present on [`ApiDocRoot`], consumers should build navigation only from `parentId` / `memberIds`, not from splitting `qualifiedName`.
 pub const API_JSON_NAVIGATION_MODEL_GRAPH_V1: &str = "graph-v1";
@@ -42,6 +45,52 @@ pub struct ItemDocStructured {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ApiTypeAnnotation {
+    pub display: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ref_item_id: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiParameterDoc {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: ApiTypeAnnotation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_markdown: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiGenericParameterDoc {
+    pub name: String,
+}
+
+/// Compiler-derived signature payload merged into [`ApiDocItem`] at emit time.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiItemSignature {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_type: Option<ApiTypeAnnotation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub return_type: Option<ApiTypeAnnotation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parameters: Vec<ApiParameterDoc>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub generic_parameters: Vec<ApiGenericParameterDoc>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub module_path: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ApiLocation {
     pub file: String,
     pub start_line: usize,
@@ -65,6 +114,20 @@ pub struct ApiDocItem {
     /// Child row ids in emission order (same id space as `id`); redundant with `parentId` edges.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub member_ids: Vec<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub module_path: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_type: Option<ApiTypeAnnotation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub return_type: Option<ApiTypeAnnotation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parameters: Vec<ApiParameterDoc>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub generic_parameters: Vec<ApiGenericParameterDoc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc_markdown: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

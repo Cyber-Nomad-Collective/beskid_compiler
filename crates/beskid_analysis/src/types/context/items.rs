@@ -41,6 +41,7 @@ impl<'a> TypeContext<'a> {
 
     pub(super) fn type_item(&mut self, item: &Spanned<HirItem>) {
         match &item.node {
+            HirItem::HostDefinition(_) => {}
             HirItem::FunctionDefinition(def) => {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
@@ -110,6 +111,9 @@ impl<'a> TypeContext<'a> {
                 let mut ordered = Vec::new();
                 let mut event_fields = std::collections::HashMap::new();
                 for field in &def.node.fields {
+                    if field.node.kind == crate::hir::HirFieldKind::Injected {
+                        continue;
+                    }
                     if field.node.kind == crate::hir::HirFieldKind::Event {
                         if matches!(field.node.event_capacity, Some(0)) {
                             self.errors

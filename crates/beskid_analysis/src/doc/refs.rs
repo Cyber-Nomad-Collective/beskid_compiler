@@ -110,6 +110,7 @@ mod tests {
             kind,
             visibility: HirVisibility::Public,
             span: SpanInfo::from_byte_range_in_source("", 0, 1),
+            source_path: None,
         }
     }
 
@@ -124,6 +125,7 @@ mod tests {
             tables: ResolutionTables::new(),
             warnings: Vec::new(),
             builtin_items: HashMap::new(),
+            module_imports: HashMap::new(),
         }
     }
 

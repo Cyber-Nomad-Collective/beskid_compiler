@@ -35,7 +35,7 @@ pub fn handle_completion(uri: &Uri, doc: &Document, offset: usize) -> Completion
         .analysis
         .as_ref()
         .map(|analysis| {
-            beskid_analysis::services::completion_candidates(analysis)
+            beskid_analysis::services::completion_candidates(analysis, &doc.text, offset)
                 .into_iter()
                 .filter(|candidate| {
                     prefix.is_empty() || candidate.label.to_lowercase().starts_with(prefix.as_str())

@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use crate::query::{AstNode, DynNodeRef, NodeKind};
-use crate::syntax::{Program, Spanned};
+use crate::query::{DynNodeRef, NodeKind};
+use crate::syntax::{Program, SpanInfo, Spanned};
 
 /// Stable handle matching Mod SDK `NodeRef` (`syntaxGenerationId` + `nodeId`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -18,6 +18,7 @@ struct SnapshotEntry<'a> {
     node: DynNodeRef<'a>,
     parent_id: Option<u32>,
     kind: NodeKind,
+    span: Option<SpanInfo>,
 }
 
 /// Immutable index over a syntax tree: parent links, kinds, and `DynNodeRef` lookup.
@@ -87,6 +88,10 @@ impl<'a> SyntaxSnapshot<'a> {
         self.entries.get(node_id as usize).map(|e| e.kind)
     }
 
+    pub fn span_of(&self, node_id: u32) -> Option<SpanInfo> {
+        self.entries.get(node_id as usize)?.span
+    }
+
     pub fn parent_id(&self, node_id: u32) -> Option<u32> {
         self.entries.get(node_id as usize)?.parent_id
     }
@@ -102,6 +107,13 @@ impl<'a> SyntaxSnapshot<'a> {
             return None;
         }
         self.node_at(stable.node_id)
+    }
+
+    pub fn resolve_span(&self, stable: SyntaxNodeId) -> Option<SpanInfo> {
+        if stable.generation_id != self.generation_id {
+            return None;
+        }
+        self.span_of(stable.node_id)
     }
 }
 
@@ -121,6 +133,7 @@ fn index_subtree<'a>(
         node,
         parent_id,
         kind: node.node_kind(),
+        span: node.span(),
     });
     node.children(|child| index_subtree(child, Some(node_id), entries, ptr_to_id));
 }

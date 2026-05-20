@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use crate::macros::run_macro_expand_with_diagnostics;
 use crate::syntax::{Program, Spanned};
 
 use super::capabilities::enforce_capabilities;
@@ -16,11 +17,20 @@ pub fn run_through_generate(
     program: Spanned<Program>,
     input: &ModHostInput<'_>,
 ) -> Result<ModHostGenerateResult> {
+    let macro_outcome = run_macro_expand_with_diagnostics(
+        program,
+        input.pipeline,
+        input.source_name,
+        input.source,
+    )?;
+    let mut macro_diagnostics = macro_outcome.diagnostics;
+    let mut program = macro_outcome.program;
     let discovered = discover_mod_dependencies(input.compile_plan)?;
     if discovered.is_empty() {
         return Ok(ModHostGenerateResult {
             program,
             session: ModHostSession::default(),
+            macro_diagnostics,
         });
     }
 
@@ -30,18 +40,27 @@ pub fn run_through_generate(
 
     let collected = collect_contracts(&loaded, input.pipeline)?;
     let generated = run_generators(&loaded, &collected, input.pipeline)?;
-    let program = merge_generated_syntax(program, &generated)?;
-    let program = reparse_if_needed(
+    program = merge_generated_syntax(program, &generated)?;
+    program = reparse_if_needed(
         program,
         &generated,
         input.source_name,
         input.source,
         input.pipeline,
     )?;
+    let macro_outcome = run_macro_expand_with_diagnostics(
+        program,
+        input.pipeline,
+        input.source_name,
+        input.source,
+    )?;
+    program = macro_outcome.program;
+    macro_diagnostics.extend(macro_outcome.diagnostics);
 
     Ok(ModHostGenerateResult {
         program,
         session: ModHostSession::new(loaded),
+        macro_diagnostics,
     })
 }
 
@@ -102,7 +121,11 @@ mod tests {
         .expect("mod host");
 
         assert!(result.session.is_empty());
-        assert!(pipeline.events.lock().expect("events").is_empty());
+        assert_eq!(
+            pipeline.events.lock().expect("events").as_slice(),
+            &[beskid_pipeline::phases::MACRO_EXPAND],
+            "mod host should skip mod.* phases when the compile plan has no mod dependencies"
+        );
     }
 
     #[test]
@@ -186,10 +209,12 @@ project {
         assert_eq!(
             events,
             vec![
+                beskid_pipeline::phases::MACRO_EXPAND,
                 beskid_pipeline::phases::MOD_LOAD,
                 beskid_pipeline::phases::MOD_COLLECT,
                 beskid_pipeline::phases::MOD_GENERATE,
                 beskid_pipeline::phases::SYNTAX_GENERATION,
+                beskid_pipeline::phases::MACRO_EXPAND,
                 beskid_pipeline::phases::MOD_ANALYZE,
                 beskid_pipeline::phases::MOD_REWRITE,
             ]

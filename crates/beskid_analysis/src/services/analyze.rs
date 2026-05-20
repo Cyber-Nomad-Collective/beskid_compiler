@@ -8,9 +8,13 @@ use anyhow::{Context, Result};
 use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
 use crate::compilation_context::CompilationContext;
-use crate::mod_host::{ModHostInput, run_analyze_rewrite, run_through_generate};
+use crate::mod_host::run_analyze_rewrite;
 use crate::projects::CompilePlan;
 
+use super::composition::{
+    composition_result_to_diagnostics, prepare_program_for_composition, resolve_program_composition,
+};
+use super::document::resolve_program_with_assembly;
 use super::input::AnalyzeInProjectOptions;
 use super::parse::parse_program_with_source_name;
 use super::semantic::semantic_rule_diagnostics_for_program;
@@ -67,21 +71,25 @@ fn analyze_program_with_options_and_plan(
 
     let source_name = path.display().to_string();
     let program = parse_program_with_source_name(&source_name, source)?;
-    let generated = run_through_generate(
-        program,
-        &ModHostInput {
-            compile_plan,
-            source_name: &source_name,
-            source,
-            pipeline: None,
-        },
-    )?;
-    let diagnostics = semantic_rule_diagnostics_for_program(
+    let mut generated = prepare_program_for_composition(program, compile_plan, &source_name, source)?;
+    let mut diagnostics = generated.macro_diagnostics;
+    diagnostics.extend(semantic_rule_diagnostics_for_program(
         &generated.program.node,
         source_name,
         source,
         options,
-    );
+    ));
+    let composition_result = resolve_program_composition(&generated.program, compile_plan);
+    generated
+        .session
+        .set_composition_snapshot(composition_result.snapshot.clone());
+    diagnostics.extend(composition_result_to_diagnostics(
+        &composition_result,
+        generated.program.span,
+        &path.display().to_string(),
+        source,
+        compile_plan,
+    ));
     let _program = run_analyze_rewrite(generated.program, &generated.session, None)?;
 
     Ok(diagnostics)
@@ -108,6 +116,8 @@ pub fn analyze_source_with_compilation_context(
     if let Some(assembly) = ctx.assembly_for_entry(path, source) {
         rule_options.known_assembly_module_paths =
             Some(assembly.module_index.known_module_path_strings());
+        rule_options.program_assembly_module_index = Some(assembly.module_index.clone());
+        rule_options.entry_source_path = Some(path.to_path_buf());
     }
 
     let mut diagnostics = analyze_program_with_options_and_plan(
@@ -116,6 +126,17 @@ pub fn analyze_source_with_compilation_context(
         rule_options,
         ctx.compile_plan.as_ref(),
     )?;
+
+    if let Some(assembly) = ctx.assembly_for_entry(path, source) {
+        let source_name = path.display().to_string();
+        if let Ok(program) = parse_program_with_source_name(&source_name, source)
+            && resolve_program_with_assembly(&program, assembly, path).is_some()
+        {
+            diagnostics.retain(|diag| {
+                !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))
+            });
+        }
+    }
 
     if is_non_entry_project_file(path, ctx.compile_plan.as_ref()) {
         diagnostics.retain(|diagnostic| diagnostic.code.as_deref() == Some("parse"));
@@ -163,5 +184,8 @@ fn is_non_entry_project_file(path: &Path, plan: Option<&CompilePlan>) -> bool {
         return false;
     };
     let entry_path = plan.source_root.join(&plan.target.entry);
-    path != entry_path
+    match (path.canonicalize(), entry_path.canonicalize()) {
+        (Ok(path), Ok(entry)) => path != entry,
+        _ => path != entry_path,
+    }
 }

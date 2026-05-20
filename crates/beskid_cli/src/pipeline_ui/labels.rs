@@ -10,6 +10,7 @@ pub fn phase_label(id: &str) -> &str {
         phases::WORKSPACE_GRAPH_CHANGED => "Refresh workspace graph",
         phases::WORKSPACE_MATERIALIZE => "Materialize dependencies",
         phases::PARSE => "Parse sources",
+        phases::MACRO_EXPAND => "Expand macros",
         phases::MOD_LOAD => "Load compiler mods",
         phases::MOD_COLLECT => "Collect mod targets",
         phases::MOD_GENERATE => "Generate from mods",

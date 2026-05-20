@@ -9,12 +9,14 @@ Normative string ids (Compiler Mods / stage ordering):
 
 | Id | Constant | Typical emitter |
 |----|----------|-----------------|
-| `mod.load` | `MOD_LOAD` | After `parse`, when mod AOT artifacts and contract descriptors are available |
+| `macro.expand` | `MACRO_EXPAND` | After `parse`, expand language `macro` rules before mod load |
+| `mod.load` | `MOD_LOAD` | After `macro.expand`, when mod AOT artifacts and contract descriptors are available |
 | `mod.collect` | `MOD_COLLECT` | Collector contracts declare generation targets |
 | `mod.generate` | `MOD_GENERATE` | Generators emit typed AST contributions |
 | `syntax.generation` | `SYNTAX_GENERATION` | After a `Program` snapshot exists (initial parse or re-parse) |
 | `semantic` | `SEMANTIC` | Builtin semantic rules / diagnostics gate |
 | `semantic.snapshot` | `SEMANTIC_SNAPSHOT` | Immediately after semantic rules complete for the generation |
+| `composition.resolve` | `COMPOSITION_RESOLVE` | Resolve native host DI graph and emit composition snapshot |
 | `mod.analyze` | `MOD_ANALYZE` | Analyzer contracts after semantic snapshot |
 | `mod.rewrite` | `MOD_REWRITE` | Rewriter contracts after analysis |
 | `lower.ready` | `LOWER_READY` | Instant boundary immediately before the `lower` entrypoint |
@@ -22,15 +24,15 @@ Normative string ids (Compiler Mods / stage ordering):
 | `workspace.graph_changed` | `WORKSPACE_GRAPH_CHANGED` | After a workspace compile graph is (re)built |
 
 **Full build** — `FULL_BUILD_PHASE_ORDER` lists: resolve → `workspace.graph_changed` →
-`workspace.materialize` → `program.assemble` → `parse` → `mod.load` → `mod.collect` → `mod.generate` →
-`syntax.generation` → `semantic` → `semantic.snapshot` → `mod.analyze` → `mod.rewrite` →
+`workspace.materialize` → `program.assemble` → `parse` → `macro.expand` → `mod.load` → `mod.collect` → `mod.generate` →
+`syntax.generation` → `semantic` → `semantic.snapshot` → `composition.resolve` → `mod.analyze` → `mod.rewrite` →
 `lower.ready` → `lower` → `codegen_clif` → AOT tail as today.
 
 **Mod rebuild** — `MOD_BUILD_PHASE_ORDER` lists: resolve → `workspace.materialize` → `program.assemble` → `parse` →
 `lower.ready` → `lower` → `codegen_clif` → `aot.emit_object` → `aot.link` for Mod package AOT
 artifacts only (no host `mod.*` orchestration or `aot.runtime`).
 
-**JIT run** — `JIT_RUN_PHASE_ORDER` uses the same mod + syntax + semantic snapshot + `mod.analyze` /
+**JIT run** — `JIT_RUN_PHASE_ORDER` uses the same mod + syntax + semantic snapshot + `composition.resolve` + `mod.analyze` /
 `mod.rewrite` + `lower.ready` prefix after `parse`, then `lower`, `codegen_clif`, `jit.emit`,
 `jit.finalize`.
 

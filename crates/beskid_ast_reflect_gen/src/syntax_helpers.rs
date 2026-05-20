@@ -57,7 +57,7 @@ pub(crate) fn path_last_ident(ty: &Type) -> Option<String> {
     tp.path.segments.last().map(|s| s.ident.to_string())
 }
 
-fn spanned_inner_type(ty: &Type) -> Option<&Type> {
+pub(crate) fn spanned_inner_type(ty: &Type) -> Option<&Type> {
     let t = peel_type(ty);
     let Type::Path(tp) = t else {
         return None;

@@ -15,6 +15,7 @@
 
 pub mod analysis;
 pub mod builtins;
+pub mod composition;
 pub mod compilation_context;
 #[doc(hidden)]
 #[allow(dead_code)]
@@ -23,7 +24,6 @@ pub mod doc;
 pub mod doc_comment_parser;
 pub mod format;
 pub mod hir;
-#[cfg(feature = "macro-expand")]
 pub mod macros;
 pub mod mod_host;
 pub mod parser;

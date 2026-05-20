@@ -6,8 +6,8 @@ use crate::parsing::parsable::Parsable;
 use crate::syntax::items::InlineModule;
 use crate::syntax::{
     AttributeDeclaration, ContractDefinition, EnumDefinition, ExtendTypeDefinition,
-    FunctionDefinition, MacroDefinition, MethodDefinition, ModuleDeclaration, SpanInfo, Spanned,
-    TestDefinition, TypeDefinition, UseDeclaration,
+    FunctionDefinition, HostDefinition, MacroDefinition, MethodDefinition, ModuleDeclaration,
+    SpanInfo, Spanned, TestDefinition, TypeDefinition, UseDeclaration,
 };
 
 use beskid_ast_derive::AstNode;
@@ -15,6 +15,8 @@ use beskid_ast_derive::AstNode;
 /// Inner module item: function, type, enum, contract, test, module, use, etc.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub enum Node {
+    #[ast(child)]
+    HostDefinition(Spanned<HostDefinition>),
     #[ast(child)]
     Function(Spanned<FunctionDefinition>),
     #[ast(child)]
@@ -61,6 +63,10 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
         Rule::FunctionDefinition => {
             let node = FunctionDefinition::parse(pair)?;
             Ok(Spanned::new(Node::Function(node), span))
+        }
+        Rule::HostDefinition => {
+            let node = HostDefinition::parse(pair)?;
+            Ok(Spanned::new(Node::HostDefinition(node), span))
         }
         Rule::TypeDefinition => {
             let node = TypeDefinition::parse(pair)?;
@@ -152,5 +158,37 @@ mod tests {
         assert!(formatted.contains("extend type Account"));
         assert!(formatted.contains("pub unit Deposit(i64 amount)"));
         assert!(formatted.contains("pub i64 Balance()"));
+    }
+
+    #[test]
+    fn host_definition_parses_and_formats() {
+        let src = r#"
+            host AppHost(string[] args) : ConsoleHost {
+                registry {
+                    single Storage for IStorage;
+                    transient Logger;
+                }
+
+                scope HttpScope(string requestId) {
+                    DbSession for IDbSession;
+                    init(string requestId) {
+                        let x = requestId;
+                    }
+                }
+
+                startup(IStorage[] storages) {
+                    let amount = 0;
+                }
+            }
+        "#;
+        let pair = BeskidParser::parse(Rule::Program, src)
+            .expect("host should parse")
+            .next()
+            .expect("program pair");
+        let program = Program::parse(pair).expect("host should build AST");
+        assert_eq!(program.node.items.len(), 1);
+        let formatted = format_program(&program).expect("host should format");
+        assert!(formatted.contains("host AppHost(string[] args) : ConsoleHost"));
+        assert!(!formatted.contains("with"));
     }
 }

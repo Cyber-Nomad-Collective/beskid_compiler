@@ -37,15 +37,20 @@ pub fn analyze_document(
             .collect();
     }
 
-    if let Some(project_diags) = analyze_project_file(uri, source) {
-        return project_diags;
-    }
-
-    if let Some(snap) = cached {
+    if let Some(path) = uri.to_file_path()
+        && path.extension().and_then(|ext| ext.to_str()) == Some("bd")
+        && let Some(snap) = cached
+    {
         let mut out: Vec<Diagnostic> =
             semantic_diagnostics(&uri.to_string(), source, &snap.program.node);
         out.extend(
             snap.doc_diagnostics
+                .iter()
+                .cloned()
+                .map(|d| semantic_to_lsp_diagnostic(source, d)),
+        );
+        out.extend(
+            snap.composition_diagnostics
                 .iter()
                 .cloned()
                 .map(|d| semantic_to_lsp_diagnostic(source, d)),
@@ -56,6 +61,11 @@ pub fn analyze_document(
         });
         return out;
     }
+
+    if let Some(project_diags) = analyze_project_file(uri, source) {
+        return project_diags;
+    }
+
 
     match services::parse_program_with_source_name(&uri.to_string(), source) {
         Ok(program) => semantic_diagnostics(&uri.to_string(), source, &program.node),
@@ -140,5 +150,50 @@ fn simple_error(code: &str, message: &str, range: Range) -> Diagnostic {
         source: Some("beskid".to_string()),
         message: message.to_string(),
         ..Diagnostic::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use tower_lsp_server::ls_types::{NumberOrString, Uri};
+
+    use beskid_analysis::services::{build_document_analysis, parse_program_with_source_name};
+
+    use super::analyze_document;
+
+    #[test]
+    fn lsp_cached_snapshot_surfaces_composition_diagnostic_codes() {
+        let uri = Uri::from_str("file:///composition.bd").expect("uri");
+        let source = r#"
+host AppHost() : ConsoleHost {
+    registry {
+        single Logger;
+    }
+}
+
+i32 main() {
+    launch MissingHost();
+    return 0;
+}
+"#;
+        let program =
+            parse_program_with_source_name("composition.bd", source).expect("parse source");
+        let snapshot = build_document_analysis(&program, "composition.bd", source, None);
+        let diagnostics = analyze_document(&uri, source, Some(&snapshot), None);
+        let codes = diagnostics
+            .iter()
+            .filter_map(|diagnostic| diagnostic.code.as_ref())
+            .filter_map(|code| match code {
+                NumberOrString::String(value) => Some(value.clone()),
+                NumberOrString::Number(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            codes.iter().filter(|code| code.starts_with("E17")).collect::<Vec<_>>(),
+            vec!["E1709"],
+            "warm snapshot path should surface only expected composition code"
+        );
     }
 }

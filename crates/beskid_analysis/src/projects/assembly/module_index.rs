@@ -43,8 +43,9 @@ impl ModuleIndex {
             }
             if let Ok(hir) = unit_to_hir(&unit.program) {
                 if let Some(module_path) = infer_logical_module_path(unit, roots, plan) {
-                    resolver.collect_program_in_module(&hir, &module_path);
+                    resolver.collect_program_in_module(&hir, &module_path, Some(&unit.path));
                 } else {
+                    resolver.set_current_source_path(Some(unit.path.clone()));
                     resolver.collect_program(&hir);
                 }
             }
@@ -71,18 +72,74 @@ impl ModuleIndex {
     /// Resolve the entry unit against prefetched external modules (lowers AST only; prefer [`Self::resolve_entry_hir`] when HIR is already normalized).
     pub fn resolve_entry(&self, entry_program: &Spanned<Program>) -> ResolveResult<Resolution> {
         let entry_hir = unit_to_hir(entry_program).map_err(|_| Vec::new())?;
-        self.resolve_entry_hir(&entry_hir)
+        self.resolve_entry_hir(&entry_hir, None)
     }
 
     /// Resolve entry HIR against prefetched modules (spans must match the HIR passed to type checking).
-    pub fn resolve_entry_hir(&self, entry_hir: &Spanned<HirProgram>) -> ResolveResult<Resolution> {
+    pub fn resolve_entry_hir(
+        &self,
+        entry_hir: &Spanned<HirProgram>,
+        entry_source_path: Option<&std::path::PathBuf>,
+    ) -> ResolveResult<Resolution> {
         let mut resolver = Resolver::with_module_prefetch(
             self.items.clone(),
             self.module_graph.clone(),
             self.builtin_items.clone(),
         );
+        resolver.set_current_source_path(entry_source_path.cloned());
         resolver.collect_program(entry_hir);
         resolver.resolve_collected_program(entry_hir)
+    }
+
+    /// Resolve references in a non-entry unit using the prefetch graph (skips re-collection).
+    pub fn resolve_unit_hir(
+        &self,
+        unit_hir: &Spanned<HirProgram>,
+        unit_source_path: &std::path::Path,
+    ) -> ResolveResult<Resolution> {
+        let mut resolver = Resolver::with_module_prefetch(
+            self.items.clone(),
+            self.module_graph.clone(),
+            self.builtin_items.clone(),
+        );
+        resolver.set_current_source_path(Some(unit_source_path.to_path_buf()));
+        resolver.resolve_collected_program(unit_hir)
+    }
+
+    /// Full-project resolution for `api.json`: prefetch symbols, best-effort resolve entry + every unit.
+    pub fn resolve_for_api_documentation(
+        &self,
+        entry_hir: &Spanned<HirProgram>,
+        entry_source_path: Option<&std::path::PathBuf>,
+        units: &[SourceUnit],
+        entry_index: usize,
+    ) -> Option<Resolution> {
+        let mut resolver = Resolver::with_module_prefetch(
+            self.items.clone(),
+            self.module_graph.clone(),
+            self.builtin_items.clone(),
+        );
+        resolver.set_current_source_path(entry_source_path.cloned());
+        resolver.collect_program(entry_hir);
+        let mut resolution = resolver.resolve_collected_program_for_api_documentation(entry_hir);
+
+        for (index, unit) in units.iter().enumerate() {
+            if index == entry_index {
+                continue;
+            }
+            let hir = unit_to_hir(&unit.program).ok()?;
+            let mut unit_resolver = Resolver::with_module_prefetch(
+                self.items.clone(),
+                self.module_graph.clone(),
+                self.builtin_items.clone(),
+            );
+            unit_resolver.set_current_source_path(Some(unit.path.clone()));
+            let unit_resolution =
+                unit_resolver.resolve_collected_program_for_api_documentation(&hir);
+            resolution.tables.merge_from(&unit_resolution.tables);
+        }
+
+        Some(resolution)
     }
 }
 

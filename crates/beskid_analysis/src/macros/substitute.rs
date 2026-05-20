@@ -1,181 +1,136 @@
+//! Apply macro fragment bindings to syntax trees.
+
 use std::collections::HashMap;
 
-use crate::syntax::expressions::{BlockExpression, Expression, MacroMetavariable};
-use crate::syntax::items::MacroFragmentKind;
+use crate::syntax::expressions::{BlockExpression, Expression, LiteralExpression, PathExpression};
 use crate::syntax::statements::{Block, Statement};
 use crate::syntax::{SpanInfo, Spanned};
 
-/// Captured macro argument for substitution.
-#[derive(Debug, Clone)]
-pub enum FragmentBinding {
-    Block(Spanned<Block>),
-    Expression(Spanned<Expression>),
+use super::match_args::FragmentBinding;
+use super::walk::{map_block, map_expression};
+
+pub type Bindings = HashMap<String, FragmentBinding>;
+
+pub fn bindings_from_pairs(pairs: Vec<(String, FragmentBinding)>) -> Bindings {
+    pairs.into_iter().collect()
 }
 
-pub fn build_bindings(
-    parameters: &[crate::syntax::items::MacroParameter],
-    args: &[Spanned<Expression>],
-    block: Option<&Spanned<Block>>,
-) -> Result<HashMap<String, FragmentBinding>, ()> {
-    let mut map = HashMap::new();
-    let mut arg_index = 0usize;
-    for param in parameters {
-        let name = param.node.name.node.name.clone();
-        let binding = match param.node.kind.node {
-            MacroFragmentKind::Block => FragmentBinding::Block(block.ok_or(())?.clone()),
-            MacroFragmentKind::Expression => {
-                let expr = args.get(arg_index).ok_or(())?.clone();
-                arg_index += 1;
-                FragmentBinding::Expression(expr)
+#[allow(dead_code)]
+pub fn substitute_expression(expr: &Spanned<Expression>, bindings: &Bindings) -> Spanned<Expression> {
+    map_expression(expr.clone(), &mut |mapped| {
+        if let Expression::MacroMetavariable(mv) = &mapped.node
+            && let Some(binding) = bindings.get(&mv.node.name.node.name) {
+                return binding_to_expression(binding, mv.span);
             }
-            _ => return Err(()),
-        };
-        map.insert(name, binding);
-    }
-    Ok(map)
+        mapped
+    })
 }
 
-pub fn substitute_expression(
-    expr: &Spanned<Expression>,
-    bindings: &HashMap<String, FragmentBinding>,
-) -> Spanned<Expression> {
-    Spanned::new(substitute_expression_node(&expr.node, bindings), expr.span)
-}
-
-fn substitute_expression_node(
-    expr: &Expression,
-    bindings: &HashMap<String, FragmentBinding>,
-) -> Expression {
-    match expr {
-        Expression::MacroMetavariable(mv) => {
-            let key = &mv.node.name.node.name;
-            if let Some(FragmentBinding::Expression(e)) = bindings.get(key) {
-                return e.node.clone();
+pub fn substitute_block(block: &Spanned<Block>, bindings: &Bindings) -> Spanned<Block> {
+    map_block(block.clone(), &mut |mapped| {
+        if let Expression::MacroMetavariable(mv) = &mapped.node
+            && let Some(binding) = bindings.get(&mv.node.name.node.name) {
+                return binding_to_expression(binding, mv.span);
             }
-            if let Some(FragmentBinding::Block(b)) = bindings.get(key) {
-                return Expression::Block(Spanned::new(
-                    BlockExpression { block: b.clone() },
-                    b.span,
-                ));
-            }
-            Expression::MacroMetavariable(mv.clone())
-        }
-        Expression::MacroInvocation(_) => expr.clone(),
-        Expression::Block(b) => Expression::Block(Spanned::new(
-            BlockExpression {
-                block: substitute_block_spanned(&b.node.block, bindings),
-            },
-            b.span,
-        )),
-        Expression::Assign(a) => {
-            let mut n = a.clone();
-            n.node.target = substitute_expression(&a.node.target, bindings);
-            n.node.value = substitute_expression(&a.node.value, bindings);
-            Expression::Assign(n)
-        }
-        Expression::Binary(b) => {
-            let mut n = b.clone();
-            n.node.left = substitute_expression(&b.node.left, bindings);
-            n.node.right = substitute_expression(&b.node.right, bindings);
-            Expression::Binary(n)
-        }
-        Expression::Unary(u) => {
-            let mut n = u.clone();
-            n.node.operand = substitute_expression(&u.node.operand, bindings);
-            Expression::Unary(n)
-        }
-        Expression::Call(c) => {
-            let mut n = c.clone();
-            n.node.callee = substitute_expression(&c.node.callee, bindings);
-            n.node.arguments = c
-                .node
-                .arguments
-                .iter()
-                .map(|a| substitute_expression(a, bindings))
-                .collect();
-            Expression::Call(n)
-        }
-        Expression::Member(m) => {
-            let mut n = m.clone();
-            n.node.target = substitute_expression(&m.node.target, bindings);
-            Expression::Member(n)
-        }
-        Expression::Grouped(g) => {
-            let mut n = g.clone();
-            n.node.inner = substitute_expression(&g.node.inner, bindings);
-            Expression::Grouped(n)
-        }
-        Expression::Try(t) => {
-            let mut n = t.clone();
-            n.node.expr = Box::new(substitute_expression(&t.node.expr, bindings));
-            Expression::Try(n)
-        }
-        Expression::Spawn(s) => {
-            let mut n = s.clone();
-            n.node.callee = substitute_expression(&s.node.callee, bindings);
-            Expression::Spawn(n)
-        }
-        other => other.clone(),
-    }
+        mapped
+    })
 }
 
-fn substitute_block_spanned(
-    block: &Spanned<Block>,
-    bindings: &HashMap<String, FragmentBinding>,
-) -> Spanned<Block> {
-    Spanned::new(
-        Block {
-            statements: block
-                .node
-                .statements
-                .iter()
-                .map(|s| substitute_statement(s, bindings))
-                .collect(),
+fn binding_to_expression(binding: &FragmentBinding, fallback_span: SpanInfo) -> Spanned<Expression> {
+    match binding {
+        FragmentBinding::Expression(e) => e.clone(),
+        FragmentBinding::Block(b) => Spanned::new(
+            Expression::Block(Spanned::new(BlockExpression { block: b.clone() }, b.span)),
+            fallback_span,
+        ),
+        FragmentBinding::Statement(s) => match &s.node {
+            Statement::Expression(es) => es.node.expression.clone(),
+            _ => Spanned::new(
+                Expression::Block(Spanned::new(
+                    BlockExpression {
+                        block: Spanned::new(Block { statements: vec![s.clone()] }, s.span),
+                    },
+                    s.span,
+                )),
+                fallback_span,
+            ),
         },
-        block.span,
-    )
+        FragmentBinding::Literal(lit) => Spanned::new(
+            Expression::Literal(Spanned::new(LiteralExpression { literal: lit.clone() }, lit.span)),
+            fallback_span,
+        ),
+        FragmentBinding::Path(path) => Spanned::new(
+            Expression::Path(Spanned::new(PathExpression { path: path.clone() }, path.span)),
+            fallback_span,
+        ),
+        FragmentBinding::Identifier(id) => Spanned::new(
+            Expression::Path(Spanned::new(
+                PathExpression {
+                    path: Spanned::new(
+                        crate::syntax::Path {
+                            segments: vec![Spanned::new(
+                                crate::syntax::PathSegment {
+                                    name: id.clone(),
+                                    type_args: Vec::new(),
+                                },
+                                id.span,
+                            )],
+                        },
+                        id.span,
+                    ),
+                },
+                id.span,
+            )),
+            fallback_span,
+        ),
+        FragmentBinding::Type(ty) => match &ty.node {
+            crate::syntax::Type::Complex(path) => Spanned::new(
+                Expression::Path(Spanned::new(PathExpression { path: path.clone() }, path.span)),
+                fallback_span,
+            ),
+            _ => Spanned::new(
+                Expression::Path(Spanned::new(
+                    PathExpression {
+                        path: Spanned::new(crate::syntax::Path { segments: Vec::new() }, fallback_span),
+                    },
+                    fallback_span,
+                )),
+                fallback_span,
+            ),
+        },
+        FragmentBinding::Node(e) => e.clone(),
+        FragmentBinding::Pattern(_) | FragmentBinding::Item(_) => mapped_metavariable_placeholder(fallback_span),
+    }
 }
 
-fn substitute_statement(
-    stmt: &Spanned<Statement>,
-    bindings: &HashMap<String, FragmentBinding>,
-) -> Spanned<Statement> {
-    let node = match &stmt.node {
-        Statement::Expression(es) => Statement::Expression(Spanned::new(
-            crate::syntax::ExpressionStatement {
-                expression: substitute_expression(&es.node.expression, bindings),
+fn mapped_metavariable_placeholder(span: SpanInfo) -> Spanned<Expression> {
+    Spanned::new(
+        Expression::MacroMetavariable(Spanned::new(
+            crate::syntax::MacroMetavariable {
+                name: Spanned::new(
+                    crate::syntax::Identifier {
+                        name: "_fragment".to_string(),
+                    },
+                    span,
+                ),
             },
-            es.span,
+            span,
         )),
-        Statement::Let(ls) => {
-            let mut n = ls.clone();
-            n.node.value = substitute_expression(&ls.node.value, bindings);
-            Statement::Let(n)
-        }
-        Statement::Return(rs) => {
-            let mut n = rs.clone();
-            if let Some(v) = &rs.node.value {
-                n.node.value = Some(substitute_expression(v, bindings));
-            }
-            Statement::Return(n)
-        }
-        other => other.clone(),
-    };
-    Spanned::new(node, stmt.span)
+        span,
+    )
 }
 
 /// Expand a macro body block into a single expression suitable for expression-position invocation.
 pub fn block_body_as_expression(
     body: &Spanned<Block>,
-    bindings: &HashMap<String, FragmentBinding>,
+    bindings: &Bindings,
     fallback_span: SpanInfo,
 ) -> Spanned<Expression> {
-    let block = substitute_block_spanned(body, bindings);
-    if block.node.statements.len() == 1 {
-        if let Statement::Expression(es) = &block.node.statements[0].node {
+    let block = substitute_block(body, bindings);
+    if block.node.statements.len() == 1
+        && let Statement::Expression(es) = &block.node.statements[0].node {
             return es.node.expression.clone();
         }
-    }
     Spanned::new(
         Expression::Block(Spanned::new(BlockExpression { block }, fallback_span)),
         fallback_span,

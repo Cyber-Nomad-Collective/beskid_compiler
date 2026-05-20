@@ -45,7 +45,7 @@ pub fn handle_rename(
         let analysis = doc.analysis.as_ref()?;
         beskid_analysis::services::references_at_offset(analysis, offset, true)
             .into_iter()
-            .map(|reference| (reference.start, reference.end))
+            .map(|reference| (reference.location.start, reference.location.end))
             .collect()
     };
 
@@ -130,10 +130,11 @@ mod tests {
         "i32 add(i32 lhs, i32 rhs) {\n    return lhs + rhs;\n}\n\ni32 main() {\n    return add(1, 2);\n}\n"
     }
 
-    #[test]
-    fn prepare_rename_for_resolved_symbol_returns_selection() {
+    #[tokio::test]
+    async fn prepare_rename_for_resolved_symbol_returns_selection() {
+        let state = tokio::sync::RwLock::new(crate::session::store::State::default());
         let uri = Uri::from_str("file:///rename_test.bd").expect("valid uri");
-        let doc = build_document(&uri, 1, source().to_string());
+        let doc = build_document(&state, &uri, 1, source().to_string()).await;
         let offset = source().find("lhs +").expect("lhs");
         let response = handle_prepare_rename(&uri, &doc, offset).expect("prepare rename");
         let PrepareRenameResponse::Range(range) = response else {
@@ -142,10 +143,11 @@ mod tests {
         assert_eq!(range.start.line, 1);
     }
 
-    #[test]
-    fn rename_updates_definition_and_references() {
+    #[tokio::test]
+    async fn rename_updates_definition_and_references() {
+        let state = tokio::sync::RwLock::new(crate::session::store::State::default());
         let uri = Uri::from_str("file:///rename_test.bd").expect("valid uri");
-        let doc = build_document(&uri, 1, source().to_string());
+        let doc = build_document(&state, &uri, 1, source().to_string()).await;
         let position = Position::new(1, 11);
         let edit = handle_rename(&uri, &doc, position, "left").expect("workspace edit");
         let changes = edit.changes.expect("changes map");

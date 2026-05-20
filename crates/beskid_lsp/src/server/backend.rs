@@ -16,6 +16,7 @@ use crate::logging::{ClientLogFilter, client_log};
 use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot_request};
 use crate::server::init::initialize_result;
 use crate::session::lifecycle::{publish_diagnostics_for_uri, remove_document, set_document};
+use crate::session::project_context::cached_compilation_context;
 use crate::session::store::State;
 use crate::text_sync::apply_document_changes;
 use crate::workspace_scan::{
@@ -231,11 +232,19 @@ impl LanguageServer for Backend {
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
             return Ok(Some(Vec::new()));
         };
+        let entry_path = uri_to_path(&snapshot.uri);
+        let compilation_context = if let Some(path) = entry_path.as_deref() {
+            cached_compilation_context(&self.state, path).await
+        } else {
+            None
+        };
         Ok(Some(references::handler::handle_references(
             &snapshot.uri,
             &snapshot.document,
             snapshot.offset,
             include_declaration,
+            entry_path.as_deref(),
+            compilation_context,
         )))
     }
 

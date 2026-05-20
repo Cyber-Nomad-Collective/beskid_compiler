@@ -85,6 +85,7 @@ impl<'a> TypeContext<'a> {
                 self.type_expression(&expr_stmt.node.expression);
             }
             HirStatementNode::BreakStatement(_) | HirStatementNode::ContinueStatement(_) => {}
+            HirStatementNode::WithStatement(_) | HirStatementNode::LaunchStatement(_) => {}
         }
     }
 }

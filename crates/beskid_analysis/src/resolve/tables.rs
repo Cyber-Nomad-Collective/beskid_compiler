@@ -75,4 +75,20 @@ impl ResolutionTables {
         }
         entries.push((contract_item_id, span));
     }
+
+    /// Merge span-keyed products from `other` (later entries win on duplicate spans).
+    pub fn merge_from(&mut self, other: &ResolutionTables) {
+        self.resolved_types
+            .extend(other.resolved_types.iter().map(|(k, v)| (*k, v.clone())));
+        self.resolved_values
+            .extend(other.resolved_values.iter().map(|(k, v)| (*k, *v)));
+        for (type_id, edges) in &other.type_conformances {
+            let dst = self.type_conformances.entry(*type_id).or_default();
+            for edge in edges {
+                if !dst.iter().any(|existing| existing == edge) {
+                    dst.push(*edge);
+                }
+            }
+        }
+    }
 }

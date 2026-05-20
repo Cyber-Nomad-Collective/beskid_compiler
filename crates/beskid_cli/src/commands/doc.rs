@@ -4,7 +4,11 @@ use anyhow::{Context, Result};
 use beskid_analysis::doc::{
     API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
     API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocRoot, ApiLocation, DocRefLinkContext,
+    apply_signature_to_item, build_item_signature, display_name_for_item, hir_programs_by_path,
+    qualified_names_for_items,
 };
+use beskid_analysis::projects::assembly::ProgramAssembly;
+use beskid_analysis::resolve::ItemInfo;
 use beskid_analysis::hir::HirVisibility;
 use beskid_analysis::projects::load_manifest_from_path;
 use beskid_analysis::services;
@@ -78,6 +82,22 @@ fn location_for_byte_range(source: &str, file: &str, start: usize, end: usize) -
     location_for_span(source, file, &span)
 }
 
+fn location_for_item(
+    item: &ItemInfo,
+    assembly: Option<&ProgramAssembly>,
+    entry_source: &str,
+    entry_path: &str,
+) -> LocationJson {
+    if let Some(asm) = assembly {
+        if let Some(path) = &item.source_path {
+            if let Some(unit) = asm.units.iter().find(|u| u.path == *path) {
+                return location_for_span(&unit.source, &path.to_string_lossy(), &item.span);
+            }
+        }
+    }
+    location_for_span(entry_source, entry_path, &item.span)
+}
+
 fn fill_member_ids_from_parents(items: &mut [ApiDocItem]) {
     let mut by_parent: HashMap<usize, Vec<usize>> = HashMap::new();
     for it in items.iter() {
@@ -128,14 +148,44 @@ pub fn execute(args: DocArgs) -> Result<()> {
     )
     .with_context(|| format!("parse {}", resolved.source_path.display()))?;
     let docs_ref = docs_ref_link_context(&resolved);
-    let snap = services::build_document_analysis(
+    let assembly = resolved.compile_plan.as_ref().and_then(|plan| {
+        services::assemble_for_api_documentation(
+            plan,
+            resolved.prepared_workspace.as_ref(),
+            &resolved.source_path,
+            Some(&resolved.source),
+        )
+        .ok()
+    });
+    let snap = services::build_document_analysis_for_resolved(
         &program,
         resolved.source_path.display().to_string(),
         &resolved.source,
+        &resolved.source_path,
+        assembly.as_ref(),
         docs_ref.as_ref(),
     );
 
     let source_path_str = resolved.source_path.to_string_lossy().into_owned();
+    let mut hir_by_path = assembly
+        .as_ref()
+        .map(|asm| hir_programs_by_path(&asm.units))
+        .unwrap_or_default();
+    if hir_by_path.is_empty() {
+        let ast: beskid_analysis::syntax::Spanned<beskid_analysis::hir::AstProgram> =
+            program.clone().into();
+        let mut hir = beskid_analysis::hir::lower_program(&ast);
+        if beskid_analysis::hir::normalize_program(&mut hir).is_ok() {
+            hir_by_path.insert(resolved.source_path.clone(), hir);
+        }
+    }
+    let entry_hir = hir_by_path
+        .get(&resolved.source_path)
+        .or_else(|| hir_by_path.values().next());
+    let qualified_names = snap
+        .resolution
+        .as_ref()
+        .map(qualified_names_for_items);
 
     fs::create_dir_all(&args.out).with_context(|| format!("create {}", args.out.display()))?;
 
@@ -148,20 +198,32 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 .map(|d| d.markdown.clone())
                 .filter(|s| !s.trim().is_empty());
             let doc = slot.and_then(|d| d.structured.clone());
-            let loc = location_for_span(&resolved.source, &source_path_str, &item.span);
-            entries.push(DocEntry {
-                qualified_name: item.name.clone(),
-                kind: item.kind.as_stable_doc_kind().to_string(),
-                doc_markdown: doc_markdown.clone(),
-            });
-            api_items.push(ApiDocItem {
+            let loc = location_for_item(
+                item,
+                assembly.as_ref(),
+                &resolved.source,
+                &source_path_str,
+            );
+            let qualified_name = qualified_names
+                .as_ref()
+                .and_then(|names| names.get(&item.id.0).cloned())
+                .unwrap_or_else(|| item.name.clone());
+            let display_name = display_name_for_item(item);
+            let mut api_item = ApiDocItem {
                 id: Some(item.id.0),
-                qualified_name: item.name.clone(),
+                qualified_name: qualified_name.clone(),
                 name: item.name.clone(),
+                display_name: Some(display_name),
                 kind: item.kind.as_stable_doc_kind().to_string(),
                 visibility: Some(visibility_stable(item.visibility).to_string()),
                 parent_id: item.parent_id.map(|p| p.0),
                 member_ids: Vec::new(),
+                module_path: Vec::new(),
+                signature: None,
+                field_type: None,
+                return_type: None,
+                parameters: Vec::new(),
+                generic_parameters: Vec::new(),
                 location: ApiLocation {
                     file: loc.file,
                     start_line: loc.start_line,
@@ -172,7 +234,20 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 doc_markdown,
                 doc,
                 controls: vec![],
+            };
+            let sig = build_item_signature(
+                item,
+                Some(res),
+                &hir_by_path,
+                entry_hir,
+            );
+            apply_signature_to_item(&mut api_item, sig);
+            entries.push(DocEntry {
+                qualified_name,
+                kind: item.kind.as_stable_doc_kind().to_string(),
+                doc_markdown: api_item.doc_markdown.clone(),
             });
+            api_items.push(api_item);
         }
     } else {
         for symbol in services::collect_document_symbols(&snap) {
@@ -191,10 +266,17 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 id: None,
                 qualified_name: symbol.name.clone(),
                 name: symbol.name.clone(),
+                display_name: None,
                 kind: services::symbol_kind_name(symbol.kind).to_string(),
                 visibility: None,
                 parent_id: None,
                 member_ids: Vec::new(),
+                module_path: Vec::new(),
+                signature: None,
+                field_type: None,
+                return_type: None,
+                parameters: Vec::new(),
+                generic_parameters: Vec::new(),
                 location: ApiLocation {
                     file: loc.file,
                     start_line: loc.start_line,
@@ -322,8 +404,8 @@ type User {
 
         let api = std::fs::read_to_string(out_path.join("api.json")).expect("read api.json");
         assert!(
-            api.contains("\"schemaVersion\": 3"),
-            "api.json should declare schema v3: {api}"
+            api.contains("\"schemaVersion\": 4"),
+            "api.json should declare schema v4: {api}"
         );
         assert!(
             api.contains("\"navigationModel\": \"graph-v1\""),
@@ -443,6 +525,67 @@ i64 Add(
                 assert!(by_id.contains_key(&pid), "item {id} parent {pid} missing");
             }
         }
+
+        let _ = std::fs::remove_file(source_path);
+        let _ = std::fs::remove_file(out_path.join("api.json"));
+        let _ = std::fs::remove_file(out_path.join("index.md"));
+        let _ = std::fs::remove_dir(&out_path);
+        let _ = std::fs::remove_dir(&root);
+    }
+
+    #[test]
+    fn api_json_v4_emits_field_type_ref_for_nested_types() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("beskid-doc-nested-{nonce}"));
+        std::fs::create_dir_all(&root).expect("create root");
+        let source_path = root.join("Nested.bd");
+        let out_path = root.join("out");
+        let source = r#"
+type Inner { i64 x, }
+type Outer { Inner inner, }
+"#;
+        std::fs::write(&source_path, source).expect("write source");
+        execute(DocArgs {
+            input: Some(source_path.clone()),
+            project: crate::project_args::ProjectResolveArgs {
+                project: None,
+                target: None,
+                workspace_member: None,
+            },
+            lockfile: crate::project_args::LockfilePolicyArgs {
+                frozen: false,
+                locked: false,
+            },
+            out: out_path.clone(),
+        })
+        .expect("execute doc");
+
+        let api: ApiDocRoot = serde_json::from_str(
+            &std::fs::read_to_string(out_path.join("api.json")).expect("read"),
+        )
+        .expect("parse api.json");
+        assert_eq!(api.schema_version, API_JSON_SCHEMA_VERSION);
+
+        let inner_type = api
+            .items
+            .iter()
+            .find(|i| i.kind == "type" && i.name == "Inner")
+            .expect("Inner type");
+        let field = api
+            .items
+            .iter()
+            .find(|i| i.kind == "field" && i.name.contains("inner"))
+            .expect("inner field");
+        let field_type = field.field_type.as_ref().expect("fieldType");
+        assert_eq!(field_type.display, "Inner");
+        assert_eq!(field_type.ref_item_id, inner_type.id);
+        assert!(
+            field.signature.as_deref().unwrap_or("").contains("Inner"),
+            "signature should mention Inner"
+        );
 
         let _ = std::fs::remove_file(source_path);
         let _ = std::fs::remove_file(out_path.join("api.json"));

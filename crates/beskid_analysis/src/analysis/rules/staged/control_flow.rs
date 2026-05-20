@@ -305,6 +305,8 @@ impl<'a> ControlFlowVisitor<'a> {
             | HirStatementNode::WhileStatement(_)
             | HirStatementNode::ForStatement(_)
             | HirStatementNode::IfStatement(_)
+            | HirStatementNode::WithStatement(_)
+            | HirStatementNode::LaunchStatement(_)
             | HirStatementNode::ExpressionStatement(_) => false,
         }
     }

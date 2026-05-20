@@ -1,4 +1,6 @@
-use crate::syntax::{Identifier, Parameter, PrimitiveType, Spanned, Type, Visibility};
+use crate::syntax::{
+    Identifier, InjectQualifier, Parameter, PrimitiveType, Spanned, Type, Visibility,
+};
 
 use beskid_ast_derive::AstNode;
 
@@ -7,6 +9,7 @@ use beskid_ast_derive::AstNode;
 pub enum FieldKind {
     Value,
     Event,
+    Injected,
 }
 
 /// Struct or enum variant field with name and type (and optional event capacity).
@@ -18,6 +21,8 @@ pub struct Field {
     pub kind: FieldKind,
     #[ast(skip)]
     pub event_capacity: Option<usize>,
+    #[ast(skip)]
+    pub inject_qualifier: Option<InjectQualifier>,
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(child)]
@@ -55,6 +60,7 @@ impl crate::parsing::parsable::Parsable for Field {
         let (kind, mut inner) = match field_node.as_rule() {
             crate::parser::Rule::ValueField => (FieldKind::Value, field_node.into_inner()),
             crate::parser::Rule::EventField => (FieldKind::Event, field_node.into_inner()),
+            crate::parser::Rule::InjectField => (FieldKind::Injected, field_node.into_inner()),
             _ => {
                 return Err(crate::parsing::error::ParseError::unexpected_rule(
                     field_node,
@@ -62,7 +68,7 @@ impl crate::parsing::parsable::Parsable for Field {
                 ));
             }
         };
-        let (event_capacity, name, ty) = match kind {
+        let (event_capacity, inject_qualifier, name, ty) = match kind {
             FieldKind::Value => {
                 let ty = crate::syntax::Type::parse(inner.next().ok_or(
                     crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType),
@@ -70,7 +76,7 @@ impl crate::parsing::parsable::Parsable for Field {
                 let name = crate::syntax::Identifier::parse(inner.next().ok_or(
                     crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier),
                 )?)?;
-                (None, name, ty)
+                (None, None, name, ty)
             }
             FieldKind::Event => {
                 let first = inner
@@ -153,7 +159,38 @@ impl crate::parsing::parsable::Parsable for Field {
                     },
                     span,
                 );
-                (event_capacity, name, ty)
+                (event_capacity, None, name, ty)
+            }
+            FieldKind::Injected => {
+                let first = inner.next().ok_or(
+                    crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType),
+                )?;
+                let (inject_qualifier, ty_pair) =
+                    if first.as_rule() == crate::parser::Rule::InjectQualifier {
+                        let qualifier = match first.as_str().strip_suffix("::") {
+                            Some("global") => Some(InjectQualifier::Global),
+                            Some("parent") => Some(InjectQualifier::Parent),
+                            _ => {
+                                return Err(crate::parsing::error::ParseError::unexpected_rule(
+                                    first,
+                                    Some(crate::parser::Rule::InjectQualifier),
+                                ));
+                            }
+                        };
+                        (
+                            qualifier,
+                            inner.next().ok_or(crate::parsing::error::ParseError::missing(
+                                crate::parser::Rule::BeskidType,
+                            ))?,
+                        )
+                    } else {
+                        (None, first)
+                    };
+                let ty = crate::syntax::Type::parse(ty_pair)?;
+                let name = crate::syntax::Identifier::parse(inner.next().ok_or(
+                    crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier),
+                )?)?;
+                (None, inject_qualifier, name, ty)
             }
         };
 
@@ -162,6 +199,7 @@ impl crate::parsing::parsable::Parsable for Field {
                 visibility,
                 kind,
                 event_capacity,
+                inject_qualifier,
                 name,
                 ty,
             },
