@@ -12,7 +12,7 @@ use crate::projects::graph::pathing::{
     dependency_manifest_path, normalize_existing_path, project_root_from_manifest_path,
 };
 use crate::projects::graph::project_graph::{DependencyEdge, ProjectGraphNode};
-use crate::projects::model::{DependencySource, ProjectManifest, WorkspaceMember};
+use crate::projects::model::{DependencySource, ProjectKind, ProjectManifest, WorkspaceMember};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceResolutionRules {
@@ -222,6 +222,7 @@ pub fn resolve_dependencies(
 
     if !has_explicit_std_dependency
         && !is_std_project
+        && consumer_manifest.project.kind != ProjectKind::Template
         && !is_corelib_workspace_shard_manifest(consumer_manifest_path)
         && let Some(corelib_path) = default_corelib_dependency_path()
     {

@@ -26,11 +26,15 @@ fn uri_from_path(path: &Path) -> Option<Uri> {
     Uri::from_str(url.as_str()).ok()
 }
 
-fn should_skip_dir(name: &str) -> bool {
+pub(crate) fn should_skip_dir_for_scan(name: &str) -> bool {
     matches!(
         name,
         ".git" | "target" | "node_modules" | ".beskid" | "out" | "bin" | "obj" | ".vs"
     )
+}
+
+fn should_skip_dir(name: &str) -> bool {
+    should_skip_dir_for_scan(name)
 }
 
 async fn maybe_emit_scan_progress(
@@ -79,7 +83,12 @@ async fn emit_scan_idle(client: &Client) {
 }
 
 /// Recursively index `root` for Beskid sources, publish diagnostics for closed files, then emit idle status.
-pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path) {
+pub async fn scan_workspace(
+    client: &Client,
+    state: &RwLock<State>,
+    root: &Path,
+    focused_project: Option<&Path>,
+) {
     let mut paths: Vec<PathBuf> = Vec::new();
     for entry in WalkDir::new(root)
         .into_iter()
@@ -102,11 +111,17 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path)
         }
     }
 
+    let focus_root = focused_project.and_then(|manifest| manifest.parent());
     paths.sort_by(|a, b| {
-        let a_proj = a.extension().and_then(|e| e.to_str()) == Some("proj");
-        let b_proj = b.extension().and_then(|e| e.to_str()) == Some("proj");
-        b_proj
-            .cmp(&a_proj)
+        let a_focus = focus_root.is_some_and(|focus| a.starts_with(focus));
+        let b_focus = focus_root.is_some_and(|focus| b.starts_with(focus));
+        b_focus
+            .cmp(&a_focus)
+            .then_with(|| {
+                let a_proj = a.extension().and_then(|e| e.to_str()) == Some("proj");
+                let b_proj = b.extension().and_then(|e| e.to_str()) == Some("proj");
+                b_proj.cmp(&a_proj)
+            })
             .then_with(|| a.as_path().cmp(b.as_path()))
     });
 

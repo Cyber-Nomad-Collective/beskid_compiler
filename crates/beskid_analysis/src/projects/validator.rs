@@ -49,6 +49,12 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                 "`type = Mod` requires a nested `mod { ... }` block under `project`",
             ));
         }
+        ProjectKind::Template if !manifest.targets.is_empty() => {
+            return Err(ProjectError::meta_contract(
+                "E1878",
+                "`Template` projects must not declare `target` blocks (template authoring packages are not host compile roots)",
+            ));
+        }
         _ => {}
     }
 

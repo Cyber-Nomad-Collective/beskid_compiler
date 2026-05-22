@@ -49,6 +49,7 @@ impl CompilationContext {
             .map(|summary| summary.workspace_manifest_path)
             .or_else(|| discover_workspace_file(&manifest_path));
         let compile_plan = match project_kind {
+            ProjectKind::Template => None,
             ProjectKind::Host | ProjectKind::Mod => build_compile_plan_with_policy_and_graph(
                 &manifest_path,
                 None,

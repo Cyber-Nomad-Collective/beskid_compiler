@@ -9,4 +9,5 @@ pub(crate) mod protocol;
 pub mod server;
 pub(crate) mod session;
 pub(crate) mod text_sync;
+pub(crate) mod project_explorer_api;
 pub(crate) mod workspace_scan;

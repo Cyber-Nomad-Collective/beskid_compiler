@@ -48,6 +48,18 @@ impl ProjectLockDependencyEntry {
         &self.materialized_root
     }
 
+    pub fn manifest(&self) -> &str {
+        &self.manifest
+    }
+
+    pub fn resolved_version(&self) -> Option<&str> {
+        self.resolved_version.as_deref()
+    }
+
+    pub fn registry(&self) -> Option<&str> {
+        self.registry.as_deref()
+    }
+
     pub fn to_v1_line(&self) -> String {
         let mut line = format!(
             "name={};manifest={};project={};source_root={};materialized_root={}",
@@ -222,6 +234,20 @@ impl ProjectLockfileV1 {
 
         content
     }
+}
+
+/// Load dependency lines from `project_root/Project.lock` when the file exists.
+pub fn load_project_lock_dependencies(
+    project_root: &Path,
+) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
+    let lock_path = project_root.join(PROJECT_LOCK_FILE_NAME);
+    if !lock_path.is_file() {
+        return Ok(Vec::new());
+    }
+    let content = fs::read_to_string(&lock_path).map_err(|e| {
+        ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display()))
+    })?;
+    Ok(ProjectLockfileV1::parse_v1(&content)?.dependencies)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

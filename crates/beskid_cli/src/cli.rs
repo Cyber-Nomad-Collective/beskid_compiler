@@ -9,13 +9,14 @@ use crate::commands::doc::DocArgs;
 use crate::commands::fetch::FetchArgs;
 use crate::commands::format::FormatArgs;
 use crate::commands::lock::LockArgs;
+use crate::commands::new::NewArgs;
 use crate::commands::parse::ParseArgs;
 use crate::commands::run::RunArgs;
 use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::{
-    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, lock, parse, run, test, tree,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, lock, new, parse, run, test, tree,
     update,
 };
 use crate::corelib_runtime;
@@ -92,6 +93,9 @@ pub enum Commands {
     /// Materialize the checked-in Beskid corelib project template
     Corelib(CorelibArgs),
 
+    /// Scaffold projects from templates (`list`, `install`, `uninstall`, or `<shortName>`)
+    New(NewArgs),
+
     /// Package-manager operations backed by the pckg service
     Pckg(PckgArgs),
 }
@@ -120,6 +124,7 @@ pub fn run() -> miette::Result<()> {
         Commands::Lock(args) => lock::execute(args),
         Commands::Update(args) => update::execute(args),
         Commands::Corelib(args) => corelib::execute(args),
+        Commands::New(args) => new::execute(args),
         Commands::Pckg(args) => maybe_generate_docs_for_pack(&args)
             .and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into)),
     };
@@ -152,6 +157,12 @@ fn maybe_generate_docs_for_pack(args: &PckgArgs) -> anyhow::Result<()> {
     };
 
     let source_root = absolutize_source_root(&pack_args.source)?;
+    if matches!(
+        beskid_pckg::detect_pack_profile(&source_root)?,
+        beskid_pckg::PackProfile::Template(_)
+    ) {
+        return Ok(());
+    }
     let (input, project) = resolve_doc_entrypoint(&source_root)?;
     let out = source_root.join(".beskid").join("docs");
 
@@ -241,6 +252,38 @@ mod tests {
         assert!(args.clean);
         assert_eq!(args.target_triple.as_deref(), Some("aarch64-apple-darwin"));
         assert_eq!(args.project.as_deref(), Some(Path::new("mods/MyMod")));
+    }
+
+    #[test]
+    fn parses_new_list_with_online() {
+        let cli = Cli::try_parse_from(["beskid", "new", "list", "--online"]).expect("parse");
+        let Commands::New(args) = cli.command else {
+            panic!("expected new command");
+        };
+        let Some(crate::commands::new::NewCommand::List(list)) = args.command else {
+            panic!("expected list subcommand");
+        };
+        assert!(list.online);
+    }
+
+    #[test]
+    fn parses_new_console_instantiate() {
+        let cli = Cli::try_parse_from([
+            "beskid",
+            "new",
+            "console",
+            "-n",
+            "MyApp",
+            "-o",
+            "./MyApp",
+            "--no-interactive",
+        ])
+        .expect("parse");
+        let Commands::New(args) = cli.command else {
+            panic!("expected new");
+        };
+        assert_eq!(args.short_name.as_deref(), Some("console"));
+        assert_eq!(args.instantiate.name.as_deref(), Some("MyApp"));
     }
 
     #[test]

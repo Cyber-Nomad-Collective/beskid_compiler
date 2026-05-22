@@ -41,5 +41,8 @@ pub mod lsp;
 #[cfg(test)]
 pub mod interop;
 
+#[cfg(test)]
+pub mod template;
+
 #[cfg(all(test, feature = "pckg"))]
 pub mod pckg;

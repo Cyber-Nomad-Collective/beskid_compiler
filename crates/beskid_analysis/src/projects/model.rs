@@ -45,6 +45,14 @@ pub enum ProjectKind {
     #[default]
     Host,
     Mod,
+    Template,
+}
+
+/// Nested `project.template { ... }` block for [`ProjectKind::Template`] manifests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectTemplateSection {
+    pub short_name: Option<String>,
+    pub identity: Option<String>,
 }
 
 /// Nested `project.mod { ... }` block for [`ProjectKind::Mod`] manifests.
@@ -70,6 +78,7 @@ pub struct ProjectSection {
     pub root_namespace: Option<String>,
     pub kind: ProjectKind,
     pub mod_section: Option<ProjectModSection>,
+    pub template_section: Option<ProjectTemplateSection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

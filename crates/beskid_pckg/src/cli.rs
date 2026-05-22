@@ -21,9 +21,11 @@ use zip::{CompressionMethod, ZipWriter};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use crate::api_doc::API_JSON_SCHEMA_VERSION;
 use crate::models::PackageVersionSummaryResponse;
-use crate::pack::{collect_pack_entries, zip_to_pckg_error};
+use crate::pack::{
+    PackProfile, build_package_json, collect_pack_entries, detect_pack_profile,
+    strip_template_pack_excludes, zip_to_pckg_error,
+};
 use crate::{PckgClient, PckgClientConfig, PckgError};
 
 const DEFAULT_PCKG_CONFIG_PATH: &str = ".beskid/pckg/repositories.json";
@@ -452,8 +454,12 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
     let source = args.source.clone();
     let output = args.output.clone();
     let resolved_version = resolve_pack_version(&source, &args)?;
+    let profile = detect_pack_profile(&source)?;
 
-    let entries = collect_pack_entries(&source)?;
+    let mut entries = collect_pack_entries(&source)?;
+    if profile.is_template() {
+        strip_template_pack_excludes(&mut entries);
+    }
     if entries.is_empty() {
         return Err(PckgError::Api {
             status: reqwest::StatusCode::BAD_REQUEST,
@@ -462,36 +468,28 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
         });
     }
 
-    for (name, bytes) in &entries {
-        if name == ".beskid/docs/api.json" {
-            let root =
-                crate::api_doc::ApiDocRoot::from_json_slice(bytes).map_err(|e| PckgError::Api {
+    if matches!(&profile, PackProfile::Library) {
+        for (name, bytes) in &entries {
+            if name == ".beskid/docs/api.json" {
+                let root = crate::api_doc::ApiDocRoot::from_json_slice(bytes).map_err(|e| {
+                    PckgError::Api {
+                        status: reqwest::StatusCode::BAD_REQUEST,
+                        message: format!(
+                            "invalid `.beskid/docs/api.json` in package sources: {e}"
+                        ),
+                        body: None,
+                    }
+                })?;
+                crate::api_doc::validate_packed_api_doc(&root).map_err(|e| PckgError::Api {
                     status: reqwest::StatusCode::BAD_REQUEST,
                     message: format!("invalid `.beskid/docs/api.json` in package sources: {e}"),
                     body: None,
                 })?;
-            crate::api_doc::validate_packed_api_doc(&root).map_err(|e| PckgError::Api {
-                status: reqwest::StatusCode::BAD_REQUEST,
-                message: format!("invalid `.beskid/docs/api.json` in package sources: {e}"),
-                body: None,
-            })?;
+            }
         }
     }
 
-    let package_json = serde_json::to_string_pretty(&serde_json::json!({
-        "schema": "beskid.package.v1",
-        "id": args.package,
-        "version": resolved_version,
-        "documentation": {
-            "apiJson": ".beskid/docs/api.json",
-            "schemaVersion": API_JSON_SCHEMA_VERSION,
-        },
-    }))
-    .map_err(|source| PckgError::Api {
-        status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-        message: format!("failed to serialize package.json: {source}"),
-        body: None,
-    })?;
+    let package_json = build_package_json(&args.package, &resolved_version, &profile)?;
 
     let mut checksums = BTreeMap::new();
     for (name, content) in &entries {

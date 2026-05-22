@@ -18,6 +18,8 @@ pub struct Document {
 /// In-memory LSP workspace: open docs, closed-but-indexed files, and compilation context cache.
 #[derive(Default)]
 pub struct State {
+    /// Canonical `Project.proj` path from init options or `beskid.focusedProjectUri` configuration.
+    pub focused_project: Option<PathBuf>,
     pub docs: HashMap<Uri, Document>,
     /// Closed files on disk that still receive diagnostics (not managed by the editor buffer).
     pub workspace_index: HashMap<Uri, Document>,

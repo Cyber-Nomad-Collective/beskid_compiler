@@ -252,6 +252,8 @@ unit main() { return 42; }
     let program = parse_program(src).unwrap();
     let ctx = DocRefLinkContext {
         package_with_version: "demo-pkg@1.0.0".into(),
+        publishing_package: Some("demo-pkg".into()),
+        dependency_roots: vec![],
     };
     let snap = build_document_analysis(&program, "t.bd", src, Some(&ctx));
     let blob: String = snap

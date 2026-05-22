@@ -7,7 +7,7 @@ use daggy::petgraph::visit::EdgeRef;
 use crate::projects::graph::project_graph::{
     ProjectGraph, ProjectGraphNode, UnresolvedDependency, UnresolvedDependencyKind,
 };
-use crate::projects::model::ResolvedDependencyProject;
+use crate::projects::model::{ProjectKind, ResolvedDependencyProject};
 
 pub fn collect_dependency_projects(graph: &ProjectGraph) -> Vec<ResolvedDependencyProject> {
     let mut visited = HashSet::new();
@@ -72,11 +72,24 @@ fn collect_dependency_projects_from_node(
     children.sort_by(|left, right| left.0.cmp(&right.0));
 
     for (_, child) in children {
+        let child_kind = graph
+            .dag
+            .graph()
+            .node_weight(child)
+            .and_then(|node| match node {
+                ProjectGraphNode::ResolvedPathDependency { project_kind, .. } => {
+                    Some(*project_kind)
+                }
+                _ => None,
+            });
+
         if !visited.insert(child) {
             continue;
         }
 
-        collect_dependency_projects_from_node(graph, child, visited, output);
+        if child_kind != Some(ProjectKind::Template) {
+            collect_dependency_projects_from_node(graph, child, visited, output);
+        }
 
         if let Some(ProjectGraphNode::ResolvedPathDependency {
             dependency_name,
@@ -84,8 +97,10 @@ fn collect_dependency_projects_from_node(
             project_root,
             project_name,
             source_root,
+            project_kind,
             ..
         }) = graph.dag.graph().node_weight(child)
+            && *project_kind != ProjectKind::Template
         {
             output.push(ResolvedDependencyProject {
                 dependency_name: dependency_name.clone(),

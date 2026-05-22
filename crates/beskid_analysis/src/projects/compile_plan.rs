@@ -107,7 +107,12 @@ pub fn build_compile_plan_with_policy_and_graph(
     let project_root = graph.root_project_root;
     let normalized_manifest_path = graph.root_manifest_path;
 
-    let target = if manifest.project.kind == ProjectKind::Mod {
+    let target = if manifest.project.kind == ProjectKind::Template {
+        return Err(ProjectError::meta_contract(
+            "E1877",
+            "`Template` projects are template-authoring roots and cannot be built with `beskid build`; instantiate with `beskid new` first",
+        ));
+    } else if manifest.project.kind == ProjectKind::Mod {
         if target_name.is_some() {
             return Err(ProjectError::meta_contract(
                 "E1820",

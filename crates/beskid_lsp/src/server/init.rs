@@ -1,4 +1,5 @@
 use crate::features::semantic_tokens::encoder::semantic_token_legend;
+use crate::project_explorer_api::PROJECT_EXPLORER_COMMANDS;
 use tower_lsp_server::ls_types::*;
 
 pub fn initialize_result() -> InitializeResult {
@@ -36,7 +37,10 @@ pub fn initialize_result() -> InitializeResult {
             rename_provider: Some(OneOf::Left(true)),
             inlay_hint_provider: Some(OneOf::Left(true)),
             execute_command_provider: Some(ExecuteCommandOptions {
-                commands: vec!["beskid.refreshWorkspace".to_string()],
+                commands: PROJECT_EXPLORER_COMMANDS
+                    .iter()
+                    .map(|command| (*command).to_string())
+                    .collect(),
                 ..ExecuteCommandOptions::default()
             }),
             workspace: Some(WorkspaceServerCapabilities {

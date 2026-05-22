@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::projects::error::ProjectError;
 use crate::projects::model::{
     Dependency, DependencySource, ProjectKind, ProjectManifest, ProjectModSection, ProjectSection,
-    Target, TargetKind, WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry,
-    WorkspaceSection,
+    ProjectTemplateSection, Target, TargetKind, WorkspaceManifest, WorkspaceMember,
+    WorkspaceOverride, WorkspaceRegistry, WorkspaceSection,
 };
 use crate::projects::validator::{validate_manifest, validate_workspace_manifest};
 
@@ -209,6 +209,103 @@ fn parse_positive_u32(raw: &str, field: &str) -> Result<u32, String> {
         .map_err(|_| format!("`{field}` integer overflow or invalid: `{t}`"))
 }
 
+fn reject_corelib_opt_out_assignment(ctx: &LineCtx<'_>) -> Result<(), ProjectError> {
+    let line = strip_comment(ctx.text).trim();
+    let Some((left, right)) = line.split_once('=') else {
+        return Ok(());
+    };
+    let key = left.trim();
+    if key == "noCorelib" {
+        return Err(ProjectError::meta_contract(
+            "E1876",
+            "manifest must not declare `noCorelib`; host projects always resolve corelib through toolchain defaults",
+        ));
+    }
+    if key == "useCorelib" {
+        let rhs = right.trim();
+        let disables = rhs.eq_ignore_ascii_case("false")
+            || rhs == "\"false\""
+            || rhs == "'false'";
+        if disables {
+            return Err(ProjectError::meta_contract(
+                "E1876",
+                "manifest must not set `useCorelib = false`; host projects always resolve corelib through toolchain defaults",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn reject_corelib_opt_out_keys(fields: &HashMap<String, String>) -> Result<(), ProjectError> {
+    if fields.contains_key("noCorelib") {
+        return Err(ProjectError::meta_contract(
+            "E1876",
+            "manifest must not declare `noCorelib`; host projects always resolve corelib through toolchain defaults",
+        ));
+    }
+    if fields
+        .get("useCorelib")
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("false"))
+    {
+        return Err(ProjectError::meta_contract(
+            "E1876",
+            "manifest must not set `useCorelib = false`; host projects always resolve corelib through toolchain defaults",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_template_block_contents(
+    lines: &mut PhysicalLines<'_>,
+    open_ctx: &LineCtx<'_>,
+) -> Result<HashMap<String, String>, ProjectError> {
+    let mut fields = HashMap::new();
+    let mut closed = false;
+    while let Some(ctx) = lines.next_line() {
+        let body = strip_comment(ctx.text).trim();
+        if body.is_empty() {
+            continue;
+        }
+        if body == "}" {
+            closed = true;
+            break;
+        }
+        if body.ends_with('{') {
+            return Err(parse_err(
+                &ctx,
+                "nested blocks are not allowed inside `template`",
+                None,
+            ));
+        }
+        let (key, value) = parse_assignment_line(&ctx)?;
+        match key.as_str() {
+            "shortName" | "identity" => {}
+            other => {
+                return Err(ProjectError::meta_contract(
+                    "E1885",
+                    format!("unknown `template` field `{other}`"),
+                ));
+            }
+        }
+        if fields.insert(key.clone(), value).is_some() {
+            return Err(parse_err(
+                &ctx,
+                format!("duplicate `template` field `{key}`"),
+                None,
+            ));
+        }
+    }
+    if !closed {
+        return Err(ProjectError::ParseAt {
+            line: open_ctx.line_1,
+            message: "missing closing `}` for `template` block".to_string(),
+            start: None,
+            end: None,
+        });
+    }
+    Ok(fields)
+}
+
 fn parse_mod_block_contents(
     lines: &mut PhysicalLines<'_>,
     open_ctx: &LineCtx<'_>,
@@ -269,6 +366,7 @@ fn parse_project_block(
 ) -> Result<ParsedProjectBlock, ProjectError> {
     let mut fields: HashMap<String, String> = HashMap::new();
     let mut mod_section: Option<HashMap<String, ModFieldValue>> = None;
+    let mut template_section: Option<HashMap<String, String>> = None;
     let mut closed = false;
     while let Some(ctx) = lines.next_line() {
         let body = strip_comment(ctx.text).trim();
@@ -292,12 +390,24 @@ fn parse_project_block(
                 mod_section = Some(parse_mod_block_contents(lines, &ctx)?);
                 continue;
             }
+            if nested_kind == "template" && nested_label.is_none() {
+                if template_section.is_some() {
+                    return Err(parse_err(
+                        &ctx,
+                        "duplicate `template` block inside `project`",
+                        None,
+                    ));
+                }
+                template_section = Some(parse_template_block_contents(lines, &ctx)?);
+                continue;
+            }
             return Err(parse_err(
                 &ctx,
                 format!("unknown nested block `{nested_kind}` inside `project`"),
                 None,
             ));
         }
+        reject_corelib_opt_out_assignment(&ctx)?;
         let (key, value) = parse_assignment_line(&ctx)?;
         if fields.insert(key.clone(), value).is_some() {
             return Err(parse_err(
@@ -318,6 +428,7 @@ fn parse_project_block(
     Ok(ParsedProjectBlock {
         fields,
         mod_section,
+        template_section,
     })
 }
 
@@ -495,6 +606,7 @@ fn parse_workspace_blocks(source: &str) -> Result<ParsedWorkspaceBlocks, Project
 struct ParsedProjectBlock {
     fields: HashMap<String, String>,
     mod_section: Option<HashMap<String, ModFieldValue>>,
+    template_section: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Default)]
@@ -612,10 +724,11 @@ fn build_project_kind(type_field: Option<&str>) -> Result<ProjectKind, ProjectEr
     match type_field.map(str::trim).filter(|s| !s.is_empty()) {
         None => Ok(ProjectKind::Host),
         Some("Mod") | Some("Meta") => Ok(ProjectKind::Mod),
+        Some("Template") => Ok(ProjectKind::Template),
         Some(other) => Err(ProjectError::meta_contract(
             "E1807",
             format!(
-                "unsupported project.type `{other}` (omit the field for ordinary host projects, or use `Mod`)"
+                "unsupported project.type `{other}` (omit the field for ordinary host projects, or use `Mod` / `Template`)"
             ),
         )),
     }
@@ -673,16 +786,38 @@ fn build_project_mod_from_fields(
     })
 }
 
+fn build_project_template_from_fields(
+    template_fields: &HashMap<String, String>,
+) -> ProjectTemplateSection {
+    ProjectTemplateSection {
+        short_name: template_fields.get("shortName").cloned(),
+        identity: template_fields.get("identity").cloned(),
+    }
+}
+
 fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSection, ProjectError> {
+    reject_corelib_opt_out_keys(&project.fields)?;
     let kind = build_project_kind(project.fields.get("type").map(|s| s.as_str()))?;
     let mod_section = match (&kind, &project.mod_section) {
-        (ProjectKind::Host, Some(_)) => {
+        (ProjectKind::Host | ProjectKind::Template, Some(_)) => {
             return Err(ProjectError::meta_contract(
                 "E1874",
                 "`project.mod` is only allowed when `type = Mod`",
             ));
         }
         (ProjectKind::Mod, Some(mod_fields)) => Some(build_project_mod_from_fields(mod_fields)?),
+        _ => None,
+    };
+    let template_section = match (&kind, &project.template_section) {
+        (ProjectKind::Host | ProjectKind::Mod, Some(_)) => {
+            return Err(ProjectError::meta_contract(
+                "E1879",
+                "`project.template` is only allowed when `type = Template`",
+            ));
+        }
+        (ProjectKind::Template, Some(template_fields)) => {
+            Some(build_project_template_from_fields(template_fields))
+        }
         _ => None,
     };
 
@@ -697,6 +832,7 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
         root_namespace: project.fields.get("root_namespace").cloned(),
         kind,
         mod_section,
+        template_section,
     })
 }
 

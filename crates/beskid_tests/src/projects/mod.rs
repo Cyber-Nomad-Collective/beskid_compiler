@@ -31,6 +31,8 @@ mod manifest;
 #[cfg(test)]
 mod mod_manifest;
 #[cfg(test)]
+mod templates;
+#[cfg(test)]
 mod resolution;
 #[cfg(test)]
 mod workspace_manifest;

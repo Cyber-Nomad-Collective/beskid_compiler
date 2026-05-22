@@ -9,6 +9,7 @@ pub mod doc;
 pub mod fetch;
 pub mod format;
 pub mod lock;
+pub mod new;
 pub mod parse;
 pub mod run;
 pub mod test;

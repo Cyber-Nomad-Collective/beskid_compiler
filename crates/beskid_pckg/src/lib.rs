@@ -15,4 +15,9 @@ pub use cli::PckgArgs;
 pub use client::PckgClient;
 pub use config::PckgClientConfig;
 pub use error::PckgError;
-pub use pack::{apply_pack_readme, collect_pack_entries, normalize_rel_path, zip_to_pckg_error};
+pub use pack::{
+    PackProfile, PACKAGE_KIND_TEMPLATE, TEMPLATE_JSON_REL, TemplatePackageSummary,
+    apply_pack_readme, build_package_json, collect_pack_entries, detect_pack_profile,
+    load_template_package_summary, normalize_rel_path, strip_template_pack_excludes,
+    template_summary_json, zip_to_pckg_error,
+};

@@ -8,6 +8,9 @@ use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::*;
 use tower_lsp_server::{Client, LanguageServer};
 
+use crate::project_explorer_api::{
+    focused_project_from_configuration, focused_project_from_value, handle_project_explorer_command,
+};
 use crate::features::{
     code_actions, completion, definition, document_symbols, formatting, hover, inlay_hints,
     references, rename, semantic_tokens, signature_help, workspace_symbols,
@@ -78,6 +81,7 @@ impl Backend {
 
     async fn refresh_workspace_scan(&self) {
         let roots = { self.workspace_roots.read().await.clone() };
+        let focused = { self.state.read().await.focused_project.clone() };
         let filter = *self.log_filter.read().await;
         for root in roots {
             client_log(
@@ -87,7 +91,7 @@ impl Backend {
                 format!("workspace scan started: {}", root.display()),
             )
             .await;
-            scan_workspace(&self.client, &self.state, &root).await;
+            scan_workspace(&self.client, &self.state, &root, focused.as_deref()).await;
             client_log(
                 &self.client,
                 filter,
@@ -117,10 +121,13 @@ impl LanguageServer for Backend {
         }
         *self.workspace_roots.write().await = roots;
 
-        if let Some(options) = params.initialization_options
-            && let Some(level) = options.get("logLevel").and_then(|v| v.as_str())
-        {
-            *self.log_filter.write().await = ClientLogFilter::parse(level);
+        if let Some(options) = params.initialization_options {
+            if let Some(level) = options.get("logLevel").and_then(|v| v.as_str()) {
+                *self.log_filter.write().await = ClientLogFilter::parse(level);
+            }
+            if let Some(focused) = focused_project_from_value(&options) {
+                self.state.write().await.focused_project = Some(focused);
+            }
         }
         Ok(initialize_result())
     }
@@ -359,6 +366,12 @@ impl LanguageServer for Backend {
             self.refresh_workspace_scan().await;
             return Ok(None);
         }
+        let roots = self.workspace_roots.read().await.clone();
+        if let Some(result) =
+            handle_project_explorer_command(&params.command, Some(params.arguments), &roots)?
+        {
+            return Ok(Some(result));
+        }
         Ok(None)
     }
 
@@ -372,6 +385,18 @@ impl LanguageServer for Backend {
             .and_then(|v| v.as_str())
         {
             *self.log_filter.write().await = ClientLogFilter::parse(level);
+        }
+        if let Some(focused) = focused_project_from_configuration(&params.settings) {
+            let changed = {
+                let mut state = self.state.write().await;
+                let changed = state.focused_project != focused;
+                state.focused_project = focused;
+                changed
+            };
+            if changed {
+                crate::session::project_context::invalidate_compilation_cache(&self.state)
+                    .await;
+            }
         }
     }
 

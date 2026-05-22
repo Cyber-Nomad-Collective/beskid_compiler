@@ -26,7 +26,19 @@ pub async fn cached_compilation_context(
     state: &RwLock<State>,
     path: &Path,
 ) -> Option<CompilationContext> {
-    let (manifest, _) = resolve_project_manifest_for_source_path(path, None).ok()??;
+    let focused = { state.read().await.focused_project.clone() };
+    let (manifest, _) = match resolve_project_manifest_for_source_path(path, None).ok().flatten() {
+        Some(resolved) => resolved,
+        None => {
+            let focused_manifest = focused.as_ref()?;
+            let focus_root = focused_manifest.parent()?;
+            if path.starts_with(focus_root) {
+                (focused_manifest.clone(), None)
+            } else {
+                return None;
+            }
+        }
+    };
     let graph_options = project_graph_options_from_env();
     let cache_key = (
         manifest.clone(),

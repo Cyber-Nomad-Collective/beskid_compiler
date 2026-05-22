@@ -39,7 +39,8 @@ pub use manifest_resolve::{
 pub use model::{
     AssemblyDiscovery, AssemblyOptions, CompilePlan, Dependency, DependencySource,
     MaterializedDependencyProject, PreparedProjectWorkspace, ProjectKind, ProjectManifest,
-    ProjectModSection, ProjectSection, ResolvedDependencyProject, Target, TargetKind,
+    ProjectModSection, ProjectSection, ProjectTemplateSection, ResolvedDependencyProject,
+    Target, TargetKind,
     UnresolvedDependencyNote, UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember,
     WorkspaceOverride, WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
 };
@@ -51,5 +52,6 @@ pub use readme::{
 pub use validator::{MOD_CAPABILITY_NAMES, validate_manifest, validate_workspace_manifest};
 pub use workflow::{
     PROJECT_LOCK_FILE_NAME, ProjectLockDependencyEntry, WorkspacePrepareOptions,
-    prepare_project_workspace, prepare_project_workspace_with_options,
+    load_project_lock_dependencies, prepare_project_workspace,
+    prepare_project_workspace_with_options,
 };
