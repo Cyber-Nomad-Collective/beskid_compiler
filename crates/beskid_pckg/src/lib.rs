@@ -16,8 +16,10 @@ pub use client::PckgClient;
 pub use config::PckgClientConfig;
 pub use error::PckgError;
 pub use pack::{
-    PackProfile, PACKAGE_KIND_TEMPLATE, TEMPLATE_JSON_REL, TemplatePackageSummary,
-    apply_pack_readme, build_package_json, collect_pack_entries, detect_pack_profile,
-    load_template_package_summary, normalize_rel_path, strip_template_pack_excludes,
-    template_summary_json, zip_to_pckg_error,
+    PACKAGE_KIND_LIBRARY, PACKAGE_KIND_TEMPLATE, PACKAGE_KIND_TOOL, PackProfile,
+    PackProfileOverride, TEMPLATE_JSON_REL, TemplatePackageSummary, apply_pack_readme,
+    build_package_json, collect_pack_entries, detect_pack_profile,
+    detect_pack_profile_with_override, load_template_package_summary, normalize_rel_path,
+    strip_template_pack_excludes, strip_tool_pack_excludes, template_summary_json,
+    zip_to_pckg_error,
 };

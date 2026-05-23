@@ -20,6 +20,12 @@ pub const TEMPLATE_JSON_REL: &str = ".beskid/template.json";
 /// `package.json` discriminator for scaffold packages (see platform-spec template packages).
 pub const PACKAGE_KIND_TEMPLATE: &str = "template";
 
+/// `package.json` discriminator for tool packages (see platform-spec package kinds, D-TOOL-PCKG-0004).
+pub const PACKAGE_KIND_TOOL: &str = "tool";
+
+/// `package.json` discriminator for library packages (the implicit default).
+pub const PACKAGE_KIND_LIBRARY: &str = "library";
+
 /// Summary copied from `.beskid/template.json` into packed `package.json`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplatePackageSummary {
@@ -28,40 +34,99 @@ pub struct TemplatePackageSummary {
     pub tags: Option<Value>,
 }
 
-/// Whether the pack uses library docs (`api.json`) or the template profile.
+/// Whether the pack uses library docs (`api.json`), the template profile, or the tool profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackProfile {
     Library,
     Template(TemplatePackageSummary),
+    /// CLI / developer-tool package — no required `api.json`, no `.beskid/template.json`.
+    Tool,
 }
 
 impl PackProfile {
     pub fn is_template(&self) -> bool {
         matches!(self, Self::Template(_))
     }
+
+    pub fn is_tool(&self) -> bool {
+        matches!(self, Self::Tool)
+    }
+}
+
+/// CLI-supplied override for [`detect_pack_profile_with_override`].
+///
+/// `Auto` reproduces the manifest-driven detection used before the `tool` packageKind landed
+/// (D-TOOL-PCKG-0004). `Tool` forces the tool profile even when the source tree omits
+/// `Project.proj`, which keeps `beskid pckg pack --package-kind tool` usable for CLI-only
+/// tool packages that ship without a normative project manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackProfileOverride {
+    Auto,
+    Tool,
+}
+
+impl Default for PackProfileOverride {
+    fn default() -> Self {
+        Self::Auto
+    }
 }
 
 /// Resolve pack profile from `Project.proj` when present; otherwise library.
 pub fn detect_pack_profile(source_root: &Path) -> Result<PackProfile, PckgError> {
+    detect_pack_profile_with_override(source_root, PackProfileOverride::Auto)
+}
+
+/// Resolve pack profile honoring an explicit CLI override.
+///
+/// * `Auto` matches [`detect_pack_profile`] — `Project.proj` selects template vs library, with
+///   no manifest defaulting to library.
+/// * `Tool` selects [`PackProfile::Tool`] unconditionally, but still rejects template projects
+///   so we never silently drop a `.beskid/template.json` payload at pack time.
+pub fn detect_pack_profile_with_override(
+    source_root: &Path,
+    override_kind: PackProfileOverride,
+) -> Result<PackProfile, PckgError> {
     let manifest_path = source_root.join("Project.proj");
-    if !manifest_path.is_file() {
-        return Ok(PackProfile::Library);
+
+    let manifest = if manifest_path.is_file() {
+        let source = fs::read_to_string(&manifest_path).map_err(|err| PckgError::Api {
+            status: reqwest::StatusCode::BAD_REQUEST,
+            message: format!(
+                "failed to read Project.proj at {}: {err}",
+                manifest_path.display()
+            ),
+            body: None,
+        })?;
+
+        Some(parse_manifest(&source).map_err(|err| PckgError::Api {
+            status: reqwest::StatusCode::BAD_REQUEST,
+            message: format!("invalid Project.proj: {err}"),
+            body: None,
+        })?)
+    } else {
+        None
+    };
+
+    if override_kind == PackProfileOverride::Tool {
+        if let Some(manifest) = manifest.as_ref()
+            && manifest.project.kind == ProjectKind::Template
+        {
+            return Err(PckgError::Api {
+                status: reqwest::StatusCode::BAD_REQUEST,
+                message: format!(
+                    "--package-kind tool conflicts with template project at {}: refuse to drop \
+                     `{TEMPLATE_JSON_REL}` from a template artifact",
+                    source_root.display()
+                ),
+                body: None,
+            });
+        }
+        return Ok(PackProfile::Tool);
     }
 
-    let source = fs::read_to_string(&manifest_path).map_err(|err| PckgError::Api {
-        status: reqwest::StatusCode::BAD_REQUEST,
-        message: format!(
-            "failed to read Project.proj at {}: {err}",
-            manifest_path.display()
-        ),
-        body: None,
-    })?;
-
-    let manifest = parse_manifest(&source).map_err(|err| PckgError::Api {
-        status: reqwest::StatusCode::BAD_REQUEST,
-        message: format!("invalid Project.proj: {err}"),
-        body: None,
-    })?;
+    let Some(manifest) = manifest else {
+        return Ok(PackProfile::Library);
+    };
 
     if manifest.project.kind != ProjectKind::Template {
         return Ok(PackProfile::Library);
@@ -159,6 +224,12 @@ pub fn build_package_json(
             "packageKind": PACKAGE_KIND_TEMPLATE,
             "template": template_summary_json(summary),
         }),
+        PackProfile::Tool => json!({
+            "schema": "beskid.package.v1",
+            "id": package_id,
+            "version": version,
+            "packageKind": PACKAGE_KIND_TOOL,
+        }),
     };
 
     serde_json::to_string_pretty(&value).map_err(|source| PckgError::Api {
@@ -170,6 +241,18 @@ pub fn build_package_json(
 
 /// Remove generated API docs from template artifacts (template profile skips doc generation).
 pub fn strip_template_pack_excludes(entries: &mut Vec<(String, Vec<u8>)>) {
+    entries.retain(|(name, _)| {
+        !name.starts_with(".beskid/docs/")
+            && name != ".beskid/docs/api.json"
+            && name != ".beskid/docs/index.md"
+    });
+}
+
+/// Remove generated API docs from tool artifacts (tool profile does not require api.json).
+///
+/// `api.json` is *optional* for tool packages per platform-spec, but `beskid pckg pack` strips
+/// any prior generated docs to keep the artifact body lean unless the publisher explicitly opts in.
+pub fn strip_tool_pack_excludes(entries: &mut Vec<(String, Vec<u8>)>) {
     entries.retain(|(name, _)| {
         !name.starts_with(".beskid/docs/")
             && name != ".beskid/docs/api.json"
@@ -323,6 +406,122 @@ mod tests {
         let err = load_template_package_summary(&dir.join(TEMPLATE_JSON_REL))
             .expect_err("wrong schema");
         assert!(err.to_string().contains("beskid.template.v1"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pack_profile_helpers_track_variant() {
+        let summary = TemplatePackageSummary {
+            short_name: None,
+            identity: None,
+            tags: None,
+        };
+        let library = PackProfile::Library;
+        let template = PackProfile::Template(summary);
+        let tool = PackProfile::Tool;
+
+        assert!(!library.is_template());
+        assert!(!library.is_tool());
+        assert!(template.is_template());
+        assert!(!template.is_tool());
+        assert!(!tool.is_template());
+        assert!(tool.is_tool());
+    }
+
+    #[test]
+    fn build_package_json_tool_profile_omits_api_doc_pointer() {
+        let json = build_package_json("beskid.cli.fmt-extra", "0.1.0", &PackProfile::Tool)
+            .expect("serialize");
+        let root: Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(root["schema"], "beskid.package.v1");
+        assert_eq!(root["packageKind"], PACKAGE_KIND_TOOL);
+        assert!(root.get("documentation").is_none());
+        assert!(root.get("template").is_none());
+    }
+
+    #[test]
+    fn strip_tool_pack_excludes_removes_generated_docs() {
+        let mut entries: Vec<(String, Vec<u8>)> = vec![
+            (".beskid/docs/api.json".into(), vec![0xAB]),
+            (".beskid/docs/index.md".into(), vec![0xCD]),
+            (".beskid/docs/types/Foo.md".into(), vec![]),
+            ("bin/beskid-fmt-extra".into(), vec![0xEF]),
+            ("README.md".into(), vec![]),
+        ];
+        strip_tool_pack_excludes(&mut entries);
+        let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(!names.iter().any(|n| n.starts_with(".beskid/docs/")));
+        assert!(names.contains(&"bin/beskid-fmt-extra"));
+        assert!(names.contains(&"README.md"));
+    }
+
+    #[test]
+    fn detect_pack_profile_with_override_forces_tool_when_no_manifest() {
+        let dir = std::env::temp_dir().join(format!(
+            "beskid_pckg_tool_no_manifest_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+
+        let profile = detect_pack_profile_with_override(&dir, PackProfileOverride::Tool)
+            .expect("tool override succeeds without manifest");
+        assert!(profile.is_tool());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detect_pack_profile_with_override_rejects_template_project() {
+        let dir = std::env::temp_dir().join(format!(
+            "beskid_pckg_tool_vs_template_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join(".beskid")).expect("mkdir");
+        fs::write(
+            dir.join("Project.proj"),
+            r#"project {
+  name = "Tpl"
+  version = "0.1.0"
+  type = Template
+  template {
+    shortName = "tpl"
+    identity  = "beskid.test.tpl"
+  }
+}
+"#,
+        )
+        .expect("write proj");
+        fs::write(
+            dir.join(TEMPLATE_JSON_REL),
+            r#"{"schema":"beskid.template.v1","shortName":"x"}"#,
+        )
+        .expect("write template.json");
+
+        let err = detect_pack_profile_with_override(&dir, PackProfileOverride::Tool)
+            .expect_err("template + tool override must conflict");
+        assert!(
+            err.to_string().contains("--package-kind tool"),
+            "error mentions the conflicting flag: {err}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detect_pack_profile_auto_matches_legacy_behavior() {
+        let dir = std::env::temp_dir().join(format!(
+            "beskid_pckg_auto_no_manifest_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+
+        let profile = detect_pack_profile_with_override(&dir, PackProfileOverride::Auto)
+            .expect("library profile without manifest");
+        assert!(matches!(profile, PackProfile::Library));
+
         let _ = fs::remove_dir_all(&dir);
     }
 }
