@@ -8,6 +8,7 @@ use crate::commands::corelib::CorelibArgs;
 use crate::commands::doc::DocArgs;
 use crate::commands::fetch::FetchArgs;
 use crate::commands::format::FormatArgs;
+use crate::commands::import::ImportArgs;
 use crate::commands::lock::LockArgs;
 use crate::commands::new::NewArgs;
 use crate::commands::parse::ParseArgs;
@@ -16,8 +17,8 @@ use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::{
-    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, lock, new, parse, run, test, tree,
-    update,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, import, lock, new, parse,
+    run, test, tree, update,
 };
 use crate::corelib_runtime;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
@@ -81,6 +82,9 @@ pub enum Commands {
     /// Manage compiler Mod AOT artifacts
     Mod(ModArgs),
 
+    /// Import foreign libraries (currently `lib <name>`) into Project.proj `link` metadata
+    Import(ImportArgs),
+
     /// Resolve and materialize project dependencies
     Fetch(FetchArgs),
 
@@ -120,6 +124,7 @@ pub fn run() -> miette::Result<()> {
         Commands::Test(args) => test::execute(args),
         Commands::Build(args) => build::execute(args),
         Commands::Mod(args) => compiler_mod::execute(args),
+        Commands::Import(args) => import::execute(args),
         Commands::Fetch(args) => fetch::execute(args),
         Commands::Lock(args) => lock::execute(args),
         Commands::Update(args) => update::execute(args),

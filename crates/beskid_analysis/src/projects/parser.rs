@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use crate::projects::error::ProjectError;
 use crate::projects::model::{
-    Dependency, DependencySource, ProjectKind, ProjectManifest, ProjectModSection, ProjectSection,
-    ProjectTemplateSection, Target, TargetKind, WorkspaceManifest, WorkspaceMember,
-    WorkspaceOverride, WorkspaceRegistry, WorkspaceSection,
+    Dependency, DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest,
+    ProjectModSection, ProjectSection, ProjectTemplateSection, Target, TargetKind,
+    WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry, WorkspaceSection,
 };
 use crate::projects::validator::{validate_manifest, validate_workspace_manifest};
 
@@ -614,6 +614,12 @@ struct ParsedBlocks {
     project: Option<ParsedProjectBlock>,
     targets: Vec<ParsedBlock>,
     dependencies: Vec<ParsedBlock>,
+    link: Option<ParsedLinkBlock>,
+}
+
+#[derive(Debug)]
+struct ParsedLinkBlock {
+    fields: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Default)]
@@ -700,6 +706,25 @@ fn parse_blocks(source: &str) -> Result<ParsedBlocks, ProjectError> {
             continue;
         }
 
+        if kind == "link" {
+            if label.is_some() {
+                return Err(parse_err(
+                    &line_ctx,
+                    "`link` block cannot carry a label",
+                    None,
+                ));
+            }
+            if parsed.link.is_some() {
+                return Err(ProjectError::meta_contract(
+                    "E1890",
+                    "duplicate `link` block at top level",
+                ));
+            }
+            let link_block = parse_link_block_contents(&mut lines, &line_ctx)?;
+            parsed.link = Some(link_block);
+            continue;
+        }
+
         let mut block = parse_flat_block(&mut lines, &line_ctx, &kind)?;
         block.label = label;
 
@@ -718,6 +743,76 @@ fn parse_blocks(source: &str) -> Result<ParsedBlocks, ProjectError> {
     }
 
     Ok(parsed)
+}
+
+const LINK_FIELDS: &[&str] = &["libraries", "searchPaths", "extraArgs"];
+
+fn parse_link_block_contents(
+    lines: &mut PhysicalLines<'_>,
+    open_ctx: &LineCtx<'_>,
+) -> Result<ParsedLinkBlock, ProjectError> {
+    let mut fields: HashMap<String, Vec<String>> = HashMap::new();
+    let mut closed = false;
+    while let Some(ctx) = lines.next_line() {
+        let body = strip_comment(ctx.text).trim();
+        if body.is_empty() {
+            continue;
+        }
+        if body == "}" {
+            closed = true;
+            break;
+        }
+        if body.ends_with('{') {
+            return Err(parse_err(
+                &ctx,
+                "nested blocks are not allowed inside `link`",
+                None,
+            ));
+        }
+        let line = body;
+        let (left, right) = line.split_once('=').ok_or_else(|| {
+            parse_err(&ctx, "expected key = value assignment inside `link`", None)
+        })?;
+        let key = left.trim();
+        if key.is_empty() {
+            return Err(parse_err(
+                &ctx,
+                "assignment key cannot be empty inside `link`",
+                None,
+            ));
+        }
+        if !LINK_FIELDS.iter().any(|known| *known == key) {
+            return Err(ProjectError::meta_contract(
+                "E1891",
+                format!(
+                    "unknown `link` field `{key}` (expected one of libraries, searchPaths, extraArgs)"
+                ),
+            ));
+        }
+        let values = parse_bracket_string_list(right).map_err(|message| {
+            parse_err(
+                &ctx,
+                format!("`link.{key}` {message}"),
+                value_span_in_source(&ctx, right.trim()),
+            )
+        })?;
+        if fields.insert(key.to_string(), values).is_some() {
+            return Err(parse_err(
+                &ctx,
+                format!("duplicate `link` field `{key}`"),
+                None,
+            ));
+        }
+    }
+    if !closed {
+        return Err(ProjectError::ParseAt {
+            line: open_ctx.line_1,
+            message: "missing closing `}` for `link` block".to_string(),
+            start: None,
+            end: None,
+        });
+    }
+    Ok(ParsedLinkBlock { fields })
 }
 
 fn build_project_kind(type_field: Option<&str>) -> Result<ProjectKind, ProjectError> {
@@ -893,11 +988,22 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
         });
     }
 
+    let link = parsed.link.as_ref().map(build_link_section);
+
     Ok(ProjectManifest {
         project: project_section,
         targets,
         dependencies,
+        link,
     })
+}
+
+fn build_link_section(parsed: &ParsedLinkBlock) -> ProjectLinkSection {
+    ProjectLinkSection {
+        libraries: parsed.fields.get("libraries").cloned().unwrap_or_default(),
+        search_paths: parsed.fields.get("searchPaths").cloned().unwrap_or_default(),
+        extra_args: parsed.fields.get("extraArgs").cloned().unwrap_or_default(),
+    }
 }
 
 fn build_workspace_manifest(
@@ -1055,6 +1161,88 @@ target "t" { kind = Lib entry = "e.bd" }
             ProjectError::Validation(msg) => assert!(msg.contains("Blob")),
             other => panic!("expected Validation, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_link_block_libraries_and_paths() {
+        let src = r#"project {
+  name = "p"
+  version = "0.1.0"
+}
+
+target "t" {
+  kind = App
+  entry = "Main.bd"
+}
+
+link {
+  libraries = [libc, pthread]
+  searchPaths = ["/usr/lib", "/opt/local/lib"]
+  extraArgs = ["-lm"]
+}
+"#;
+        let m = parse_manifest(src).expect("parse link block");
+        let link = m.link.expect("link section present");
+        assert_eq!(link.libraries, vec!["libc", "pthread"]);
+        assert_eq!(link.search_paths, vec!["/usr/lib", "/opt/local/lib"]);
+        assert_eq!(link.extra_args, vec!["-lm"]);
+    }
+
+    #[test]
+    fn parse_link_block_unknown_key_rejected() {
+        let src = r#"project {
+  name = "p"
+  version = "0.1.0"
+}
+target "t" {
+  kind = App
+  entry = "Main.bd"
+}
+link {
+  bogus = [libc]
+}
+"#;
+        let err = parse_manifest(src).expect_err("unknown link key must error");
+        match err {
+            ProjectError::MetaContractViolation { code, .. } => assert_eq!(code, "E1891"),
+            other => panic!("expected MetaContractViolation E1891, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_link_block_duplicate_library_rejected() {
+        let src = r#"project {
+  name = "p"
+  version = "0.1.0"
+}
+target "t" {
+  kind = App
+  entry = "Main.bd"
+}
+link {
+  libraries = [libc, libc]
+}
+"#;
+        let err = parse_manifest(src).expect_err("duplicate library must error");
+        match err {
+            ProjectError::MetaContractViolation { code, .. } => assert_eq!(code, "E1893"),
+            other => panic!("expected MetaContractViolation E1893, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_link_block_absent_yields_none() {
+        let src = r#"project {
+  name = "p"
+  version = "0.1.0"
+}
+target "t" {
+  kind = App
+  entry = "Main.bd"
+}
+"#;
+        let m = parse_manifest(src).expect("parse without link");
+        assert!(m.link.is_none());
     }
 
     #[test]

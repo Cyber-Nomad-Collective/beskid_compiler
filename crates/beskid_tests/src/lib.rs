@@ -42,6 +42,9 @@ pub mod aot;
 pub mod lsp;
 
 #[cfg(test)]
+pub mod cli;
+
+#[cfg(test)]
 pub mod interop;
 
 #[cfg(test)]

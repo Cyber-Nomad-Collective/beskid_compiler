@@ -22,6 +22,7 @@ pub mod compilation_context;
 pub mod compiler_sdk_reflect;
 pub mod doc;
 pub mod doc_comment_parser;
+pub mod external_library;
 pub mod format;
 pub mod hir;
 pub mod macros;

@@ -2,7 +2,9 @@ use std::collections::HashSet;
 use std::path::{Component, Path};
 
 use crate::projects::error::ProjectError;
-use crate::projects::model::{DependencySource, ProjectKind, ProjectManifest, WorkspaceManifest};
+use crate::projects::model::{
+    DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest, WorkspaceManifest,
+};
 
 /// Closed capability names accepted in `project.mod.capabilities` (compiler-mod host bridge).
 pub const MOD_CAPABILITY_NAMES: &[&str] = &[
@@ -100,6 +102,10 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
         }
     }
 
+    if let Some(link) = &manifest.link {
+        validate_link_section(link)?;
+    }
+
     let mut dependency_names = HashSet::new();
     for dependency in &manifest.dependencies {
         if !dependency_names.insert(dependency.name.clone()) {
@@ -167,6 +173,41 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                     )));
                 }
             }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validates a [`ProjectLinkSection`] per the v0.3 project link libraries spec.
+///
+/// Diagnostic codes use the **E1801-E1899** manifest band:
+/// - **E1892**: empty entry inside any list field.
+/// - **E1893**: duplicate library name.
+fn validate_link_section(link: &ProjectLinkSection) -> Result<(), ProjectError> {
+    let lists: [(&str, &[String]); 3] = [
+        ("libraries", &link.libraries),
+        ("searchPaths", &link.search_paths),
+        ("extraArgs", &link.extra_args),
+    ];
+    for (field_name, values) in lists {
+        for value in values {
+            if value.trim().is_empty() {
+                return Err(ProjectError::meta_contract(
+                    "E1892",
+                    format!("`link.{field_name}` contains empty entry"),
+                ));
+            }
+        }
+    }
+
+    let mut seen: HashSet<String> = HashSet::new();
+    for library in &link.libraries {
+        if !seen.insert(library.clone()) {
+            return Err(ProjectError::meta_contract(
+                "E1893",
+                format!("duplicate `link.libraries` entry `{library}`"),
+            ));
         }
     }
 
