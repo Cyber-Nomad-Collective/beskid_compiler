@@ -2,6 +2,7 @@
 
 mod api_signatures;
 mod api_snapshot;
+mod api_tier;
 mod callable;
 mod edit;
 mod graph_link;
@@ -20,6 +21,9 @@ pub use api_snapshot::{
     API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, API_JSON_SCHEMA_VERSION_GRAPH_V3, ApiDocItem,
     ApiDocRoot, ApiDocumentationPointer, ApiGenericParameterDoc, ApiItemSignature, ApiLocation,
     ApiParameterDoc, ApiTypeAnnotation, ItemDocArgument, ItemDocStructured,
+};
+pub use api_tier::{
+    TIER_STANDARD, TIER_SUPPORTED, TIER_UNSTABLE, parse_tier_directive, resolve_item_tiers,
 };
 pub use graph_link::{
     ApiDocLinkContext, assign_declaring_packages, fill_member_ids_from_parents,

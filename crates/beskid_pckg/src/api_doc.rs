@@ -167,6 +167,7 @@ mod tests {
             doc: None,
             declaring_package: None,
             controls: vec![],
+            tier: None,
         }
     }
 

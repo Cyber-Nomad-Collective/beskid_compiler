@@ -176,6 +176,8 @@ fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
         "SystemOutputWriteLineTests",
         "SystemInputReadTests",
         "SystemErrorWriteTests",
+        "SystemFsTests",
+        "SystemPathTests",
         "ConsoleAnsiEscapeTests",
         "ConsoleAnsiStyleChainTests",
         "ConsoleAnsiSgrGoldenTests",
@@ -195,6 +197,12 @@ fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
         "ConsoleRenderContextTests",
         "CoreResultsTests",
         "CollectionsArrayTests",
+        "CollectionsTier1Tests",
+        "CollectionsListTests",
+        "CollectionsMapTests",
+        "CollectionsSetTests",
+        "CollectionsQueueTests",
+        "CollectionsStackTests",
         "ConcurrencyChannelApiTests",
         "ConcurrencyMutexTryLockTests",
         "ConcurrencyClockTests",
@@ -206,4 +214,128 @@ fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
             "corelib_tests manifest missing target \"{target}\""
         );
     }
+}
+
+#[test]
+fn corelib_collections_sources_carry_api_shape_tier_directives() {
+    let collections_root = super::foundation_src().join("Collections");
+    let mut missing: Vec<String> = Vec::new();
+    for file in [
+        "Array.bd",
+        "List.bd",
+        "Map.bd",
+        "Set.bd",
+        "Queue.bd",
+        "Stack.bd",
+    ] {
+        let path = collections_root.join(file);
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("read corelib collection source {}", path.display()));
+        if !text.contains("@tier(") {
+            missing.push(file.to_string());
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "corelib collection sources without @tier(...) directive: {missing:?}"
+    );
+}
+
+#[test]
+fn corelib_system_streams_carry_api_shape_tier_directives() {
+    let runtime_root = super::runtime_src().join("System");
+    let mut missing: Vec<String> = Vec::new();
+    for file in [
+        "Input.bd",
+        "Output.bd",
+        "Error.bd",
+        "Syscall.bd",
+        "FS.bd",
+        "Path.bd",
+    ] {
+        let path = runtime_root.join(file);
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("read corelib system source {}", path.display()));
+        if !text.contains("@tier(") {
+            missing.push(file.to_string());
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "corelib System.* sources without @tier(...) directive: {missing:?}"
+    );
+}
+
+#[test]
+fn checked_in_corelib_tier_metadata_round_trips_through_api_json() {
+    use beskid_analysis::doc::{
+        ApiDocItem, ApiLocation, TIER_STANDARD, TIER_SUPPORTED, TIER_UNSTABLE,
+        resolve_item_tiers,
+    };
+
+    fn item(id: usize, parent: Option<usize>, doc: &str) -> ApiDocItem {
+        ApiDocItem {
+            id: Some(id),
+            qualified_name: format!("Sample::item{id}"),
+            name: format!("item{id}"),
+            kind: "function".to_string(),
+            visibility: Some("public".to_string()),
+            location: ApiLocation {
+                file: "Sample.bd".to_string(),
+                start_line: 1,
+                start_column: 1,
+                end_line: 1,
+                end_column: 1,
+            },
+            parent_id: parent,
+            member_ids: Vec::new(),
+            display_name: None,
+            module_path: Vec::new(),
+            signature: None,
+            field_type: None,
+            return_type: None,
+            parameters: Vec::new(),
+            generic_parameters: Vec::new(),
+            doc_markdown: Some(doc.to_string()),
+            doc: None,
+            declaring_package: None,
+            controls: vec![],
+            tier: None,
+        }
+    }
+
+    let mut items = vec![
+        item(1, None, "/// @tier(standard)"),
+        item(2, Some(1), "/// member without directive"),
+        item(3, None, "/// @tier(supported)"),
+        item(4, None, "/// @tier(unstable)"),
+        item(5, None, "/// no tier"),
+    ];
+    resolve_item_tiers(&mut items);
+    assert_eq!(items[0].tier.as_deref(), Some(TIER_STANDARD));
+    assert_eq!(items[1].tier.as_deref(), Some(TIER_STANDARD));
+    assert_eq!(items[2].tier.as_deref(), Some(TIER_SUPPORTED));
+    assert_eq!(items[3].tier.as_deref(), Some(TIER_UNSTABLE));
+    assert_eq!(items[4].tier, None);
+
+    let serialized = serde_json::to_string(&items[0]).expect("serialize item");
+    assert!(
+        serialized.contains("\"tier\":\"standard\""),
+        "tier must serialize as camelCase lowercase: {serialized}"
+    );
+    let omitted = serde_json::to_string(&items[4]).expect("serialize untiered item");
+    assert!(
+        !omitted.contains("\"tier\""),
+        "tier field must be omitted when None: {omitted}"
+    );
+}
+
+#[test]
+fn api_doc_root_advertises_v4_schema_for_tier_metadata() {
+    use beskid_analysis::doc::API_JSON_SCHEMA_VERSION;
+    assert_eq!(
+        API_JSON_SCHEMA_VERSION, 4,
+        "tier metadata lives in api.json schema v4; bumping the schema version requires \
+         spec sync per ADR D-CORE-API-SHAPE-0003"
+    );
 }

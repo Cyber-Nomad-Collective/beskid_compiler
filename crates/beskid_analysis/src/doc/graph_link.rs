@@ -180,6 +180,7 @@ pub fn link_api_doc_library_tree(items: &mut Vec<ApiDocItem>, _resolution: &Reso
             doc: None,
             declaring_package: None,
             controls: vec![],
+            tier: None,
         });
     }
 
@@ -267,6 +268,7 @@ mod tests {
                 doc: None,
                 declaring_package: None,
                 controls: vec![],
+                tier: None,
             },
             ApiDocItem {
                 id: Some(2),
@@ -288,6 +290,7 @@ mod tests {
                 doc: None,
                 declaring_package: None,
                 controls: vec![],
+                tier: None,
             },
             ApiDocItem {
                 id: Some(3),
@@ -309,6 +312,7 @@ mod tests {
                 doc: None,
                 declaring_package: None,
                 controls: vec![],
+                tier: None,
             },
         ];
 

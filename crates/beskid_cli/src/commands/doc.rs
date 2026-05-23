@@ -7,6 +7,7 @@ use beskid_analysis::doc::{
     DocRefLinkContext, apply_signature_to_item, assign_declaring_packages,
     build_item_signature, display_name_for_item, fill_member_ids_from_parents,
     hir_programs_by_path, link_api_doc_library_tree, qualified_names_for_items,
+    resolve_item_tiers,
 };
 use beskid_analysis::projects::assembly::effective_roots_from_plan_and_workspace;
 use beskid_analysis::projects::assembly::ProgramAssembly;
@@ -254,6 +255,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 doc,
                 declaring_package: None,
                 controls: vec![],
+                tier: None,
             };
             let sig = build_item_signature(
                 item,
@@ -308,6 +310,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 doc: None,
                 declaring_package: None,
                 controls: vec![],
+                tier: None,
             });
         }
     }
@@ -333,6 +336,10 @@ pub fn execute(args: DocArgs) -> Result<()> {
         }
         fill_member_ids_from_parents(&mut api_items);
     }
+
+    // Tier resolution must run after link_api_doc_library_tree so that parent_id
+    // edges (used by the cascade) reflect the final navigation graph.
+    resolve_item_tiers(&mut api_items);
 
     let api = if had_resolution {
         ApiDocRoot {
