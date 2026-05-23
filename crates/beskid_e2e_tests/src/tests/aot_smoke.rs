@@ -27,8 +27,8 @@ fn aot_build_and_execute_smoke_fixture() {
         object_output.to_str().expect("object output path str"),
     ]);
     assert_success(&build, "build smoke fixture");
-    assert_output_contains(&build, "object:", "build smoke fixture");
-    assert_output_contains(&build, "output:", "build smoke fixture");
+    assert_output_contains(&build, "object   ", "build smoke fixture");
+    assert_output_contains(&build, "output   ", "build smoke fixture");
 
     assert_file_exists(&output_binary, "smoke build output");
     assert_file_exists(&object_output, "smoke object output");

@@ -30,7 +30,7 @@ fn perf_smoke_aot_build_and_run_stay_within_time_budget() {
     ]);
     let build_elapsed = build_start.elapsed();
     assert_success(&build, "build perf-loop fixture");
-    assert_output_contains(&build, "output:", "build perf-loop fixture");
+    assert_output_contains(&build, "output   ", "build perf-loop fixture");
     assert_file_exists(&output_binary, "perf-loop output binary");
     assert!(
         build_elapsed <= Duration::from_millis(build_max_ms),

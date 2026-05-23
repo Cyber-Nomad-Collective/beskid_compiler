@@ -35,7 +35,7 @@ fn runtime_calls_fixture_jit_runs_and_aot_contains_runtime_symbols() {
     assert_success(&build, "build runtime-calls fixture");
     assert_file_exists(&output_binary, "runtime-calls output binary");
     assert_file_exists(&object_output, "runtime-calls object file");
-    assert_output_contains(&build, "output:", "build runtime-calls fixture");
+    assert_output_contains(&build, "output   ", "build runtime-calls fixture");
     assert!(
         nm_contains_symbol(&object_output, "str_len"),
         "expected runtime-calls object to reference str_len"

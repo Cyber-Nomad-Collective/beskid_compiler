@@ -25,12 +25,13 @@ fn aot_binary_links_runtime_symbols_and_executes_runtime_path() {
         output_binary.to_str().expect("output path str"),
         "--object-output",
         object_output.to_str().expect("object path str"),
+        "--verbose-link",
     ]);
     assert_success(&build, "build runtime-linkage fixture");
     assert_file_exists(&output_binary, "runtime linkage output binary");
     assert_file_exists(&object_output, "runtime linkage object output");
 
-    assert_output_contains(&build, "link:", "build runtime-linkage fixture");
+    assert_output_contains(&build, "link     ", "build runtime-linkage fixture");
 
     let run = run_binary(&output_binary, Duration::from_secs(10));
     assert_success(&run, "execute runtime-linkage binary");
