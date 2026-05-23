@@ -137,6 +137,12 @@ pub struct ApiDocItem {
     pub declaring_package: Option<String>,
     #[serde(default)]
     pub controls: Vec<serde_json::Value>,
+    /// API-shape tier (`standard` / `supported` / `unstable`); omitted when no `@tier(...)` directive resolves.
+    ///
+    /// Per `/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/` consumers treat the
+    /// absence of this field as the default `supported` tier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
