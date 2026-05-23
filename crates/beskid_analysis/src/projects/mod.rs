@@ -38,11 +38,11 @@ pub use manifest_resolve::{
 };
 pub use model::{
     AssemblyDiscovery, AssemblyOptions, CompilePlan, Dependency, DependencySource,
-    MaterializedDependencyProject, PreparedProjectWorkspace, ProjectKind, ProjectManifest,
-    ProjectModSection, ProjectSection, ProjectTemplateSection, ResolvedDependencyProject,
-    Target, TargetKind,
-    UnresolvedDependencyNote, UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember,
-    WorkspaceOverride, WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
+    MaterializedDependencyProject, PreparedProjectWorkspace, ProjectKind, ProjectLinkSection,
+    ProjectManifest, ProjectModSection, ProjectSection, ProjectTemplateSection,
+    ResolvedDependencyProject, Target, TargetKind, UnresolvedDependencyNote,
+    UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember, WorkspaceOverride,
+    WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
 };
 pub use parser::{parse_manifest, parse_workspace_manifest};
 pub use readme::{

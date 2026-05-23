@@ -5,6 +5,21 @@ pub struct ProjectManifest {
     pub project: ProjectSection,
     pub targets: Vec<Target>,
     pub dependencies: Vec<Dependency>,
+    pub link: Option<ProjectLinkSection>,
+}
+
+/// Top-level `link { ... }` block populating foreign linker inputs (v0.3).
+///
+/// Maps the **Foreign library import** platform-spec feature; see
+/// `site/website/src/content/docs/platform-spec/tooling/manifests-and-lockfiles/project-manifest-contract/project-link-libraries.mdx`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProjectLinkSection {
+    /// Logical library names matching `Extern` `Library` strings (for example `"libc"`).
+    pub libraries: Vec<String>,
+    /// Additional linker search paths (passed as `-L`/`/LIBPATH:`).
+    pub search_paths: Vec<String>,
+    /// Raw linker arguments appended after provider resolution.
+    pub extra_args: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
