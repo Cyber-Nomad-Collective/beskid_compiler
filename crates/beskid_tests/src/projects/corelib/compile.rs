@@ -142,8 +142,8 @@ fn corelib_mvp_fixture_resolves_std_modules_via_program_assembly() {
             .expect("cross-module resolve via ModuleIndex");
 
         assert!(
-            resolution.items.iter().any(|item| item.name == "Print"),
-            "expected Print from Std.System.IO in merged resolution"
+            resolution.items.iter().any(|item| item.name == "WriteLine"),
+            "expected WriteLine from Std.System.Output in merged resolution"
         );
         assert!(
             resolution.items.iter().any(|item| item.name == "Len"),

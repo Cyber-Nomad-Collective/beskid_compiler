@@ -2,13 +2,30 @@ use crate::hir::{
     AstItem, AstProgram, HirAttribute, HirAttributeDeclaration, HirAttributeParameter,
     HirAttributeTarget, HirContractDefinition, HirContractEmbedding, HirContractMethodSignature,
     HirContractNode, HirEnumDefinition, HirEnumVariant, HirExtendTypeDefinition,
-    HirExternInterface, HirFunctionDefinition, HirInlineModule, HirItem, HirMethodDefinition,
+    HirExportInterface, HirExternInterface, HirFunctionDefinition, HirInlineModule, HirItem,
+    HirMethodDefinition,
     HirModuleDeclaration, HirProgram, HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry,
     HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition, HirUseDeclaration,
 };
 use crate::syntax::{self, Spanned};
 
 use super::Lowerable;
+
+fn lower_export_interface(attributes: &[Spanned<syntax::Attribute>]) -> Option<HirExportInterface> {
+    let export_attr = attributes
+        .iter()
+        .find(|attr| attr.node.name.node.name == "Export")?;
+    let mut abi = None;
+    let mut symbol = None;
+    for arg in &export_attr.node.arguments {
+        match arg.node.name.node.name.as_str() {
+            "Abi" => abi = extract_string_literal(&arg.node.value),
+            "Symbol" => symbol = extract_string_literal(&arg.node.value),
+            _ => {}
+        }
+    }
+    Some(HirExportInterface { abi, symbol })
+}
 
 fn lower_extern_interface(attributes: &[Spanned<syntax::Attribute>]) -> Option<HirExternInterface> {
     let extern_attr = attributes
@@ -114,6 +131,8 @@ impl Lowerable for Spanned<syntax::FunctionDefinition> {
     fn lower(&self) -> Self::Output {
         Spanned::new(
             HirFunctionDefinition {
+                export_interface: lower_export_interface(&self.node.attributes),
+                attributes: lower_attributes(&self.node.attributes),
                 visibility: self.node.visibility.lower(),
                 name: self.node.name.lower(),
                 generics: self.node.generics.iter().map(Lowerable::lower).collect(),

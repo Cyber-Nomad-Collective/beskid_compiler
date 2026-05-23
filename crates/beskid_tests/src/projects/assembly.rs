@@ -87,8 +87,8 @@ fn assembly_closure_loads_std_units_for_corelib_mvp() {
         assert!(
             loaded
                 .iter()
-                .any(|p| p.contains("System") && p.contains("IO")),
-            "expected System.IO module in assembly closure, got: {loaded:?}"
+                .any(|p| p.contains("System") && p.contains("Output")),
+            "expected System.Output module in assembly closure, got: {loaded:?}"
         );
     });
 }
@@ -157,8 +157,8 @@ fn module_index_known_paths_include_std_io_for_corelib_mvp() {
 
         let paths = assembly.module_index.known_module_path_strings();
         assert!(
-            paths.contains("Std::System::IO"),
-            "expected Std::System::IO in known module paths, got: {paths:?}"
+            paths.contains("Std::System::Output"),
+            "expected Std::System::Output in known module paths, got: {paths:?}"
         );
     });
 }
@@ -198,17 +198,17 @@ fn module_index_resolve_entry_succeeds_for_corelib_mvp_main() {
             .expect("entry resolve with use aliases");
 
         let print_item = resolution.items.iter().find(|item| {
-            item.name == "PrintLine" && item.kind == beskid_analysis::resolve::ItemKind::Function
+            item.name == "WriteLine" && item.kind == beskid_analysis::resolve::ItemKind::Function
         });
         assert!(
             print_item.is_some(),
-            "expected PrintLine in resolution items"
+            "expected WriteLine in resolution items"
         );
 
         let use_io = resolution
             .items
             .iter()
-            .find(|item| item.kind == beskid_analysis::resolve::ItemKind::Use && item.name == "IO");
+            .find(|item| item.kind == beskid_analysis::resolve::ItemKind::Use && item.name == "Output");
         assert!(
             use_io.is_none(),
             "use aliases should not remain as callable scope items"

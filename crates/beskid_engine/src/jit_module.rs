@@ -3,7 +3,11 @@ use std::collections::HashMap;
 use beskid_abi::{
     SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_CHANNEL_CLOSE, SYM_CHANNEL_CREATE,
     SYM_CHANNEL_RECEIVE, SYM_CHANNEL_RECEIVE_VALUE, SYM_CHANNEL_SEND, SYM_CHANNEL_TRY_RECEIVE,
-    SYM_CHANNEL_TRY_SEND, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE,
+    SYM_CHANNEL_TRY_SEND, SYM_COMPOSITION_BIND_PLURAL, SYM_COMPOSITION_CONTAINER_CREATE,
+    SYM_COMPOSITION_CONTAINER_DROP, SYM_COMPOSITION_LAUNCH, SYM_COMPOSITION_REGISTER,
+    SYM_COMPOSITION_RESOLVE, SYM_COMPOSITION_RESOLVE_PLURAL, SYM_COMPOSITION_SCOPE_DEPTH,
+    SYM_COMPOSITION_SCOPE_ENTER, SYM_COMPOSITION_SCOPE_LEAVE, SYM_COMPOSITION_SHUTDOWN,
+    SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE,
     SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_FIBER_CANCEL, SYM_FIBER_CURRENT_ID, SYM_FIBER_DETACH,
     SYM_FIBER_JOIN, SYM_FIBER_JOIN_VALUE, SYM_FIBER_NOW_MILLIS, SYM_FIBER_PROCESSOR_COUNT,
     SYM_FIBER_SPAWN, SYM_FIBER_SPAWN_WITH_CANCEL_SLOT, SYM_FIBER_YIELD, SYM_GC_BYTES_ALLOCATED,
@@ -28,7 +32,11 @@ use beskid_pipeline::{
 };
 use beskid_runtime::{
     alloc, array_len, array_new, channel_close, channel_create, channel_receive_status,
-    channel_receive_value, channel_send, channel_try_receive, channel_try_send, event_get_handler,
+    channel_receive_value, channel_send, channel_try_receive, channel_try_send,
+    composition_bind_plural, composition_container_create, composition_container_drop,
+    composition_launch, composition_register, composition_resolve, composition_resolve_plural,
+    composition_scope_depth, composition_scope_enter, composition_scope_leave,
+    composition_shutdown, event_get_handler,
     event_len, event_subscribe, event_unsubscribe_first, fiber_cancel, fiber_current_id,
     fiber_detach, fiber_join_status, fiber_join_value, fiber_now_millis, fiber_processor_count,
     fiber_spawn, fiber_spawn_with_cancel_slot, fiber_yield, gc_bytes_allocated, gc_collect,
@@ -286,6 +294,29 @@ fn register_runtime_symbols(builder: &mut JITBuilder) {
     builder.symbol(SYM_CHANNEL_TRY_SEND, channel_try_send as *const u8);
     builder.symbol(SYM_CHANNEL_TRY_RECEIVE, channel_try_receive as *const u8);
     builder.symbol(SYM_CHANNEL_CLOSE, channel_close as *const u8);
+    builder.symbol(
+        SYM_COMPOSITION_CONTAINER_CREATE,
+        composition_container_create as *const u8,
+    );
+    builder.symbol(
+        SYM_COMPOSITION_CONTAINER_DROP,
+        composition_container_drop as *const u8,
+    );
+    builder.symbol(SYM_COMPOSITION_REGISTER, composition_register as *const u8);
+    builder.symbol(
+        SYM_COMPOSITION_BIND_PLURAL,
+        composition_bind_plural as *const u8,
+    );
+    builder.symbol(SYM_COMPOSITION_LAUNCH, composition_launch as *const u8);
+    builder.symbol(SYM_COMPOSITION_SHUTDOWN, composition_shutdown as *const u8);
+    builder.symbol(SYM_COMPOSITION_SCOPE_ENTER, composition_scope_enter as *const u8);
+    builder.symbol(SYM_COMPOSITION_SCOPE_LEAVE, composition_scope_leave as *const u8);
+    builder.symbol(SYM_COMPOSITION_RESOLVE, composition_resolve as *const u8);
+    builder.symbol(
+        SYM_COMPOSITION_RESOLVE_PLURAL,
+        composition_resolve_plural as *const u8,
+    );
+    builder.symbol(SYM_COMPOSITION_SCOPE_DEPTH, composition_scope_depth as *const u8);
     builder.symbol(SYM_HUB_CREATE, hub_create as *const u8);
     builder.symbol(SYM_HUB_REGISTER, hub_register as *const u8);
     builder.symbol(SYM_HUB_UNREGISTER, hub_unregister as *const u8);

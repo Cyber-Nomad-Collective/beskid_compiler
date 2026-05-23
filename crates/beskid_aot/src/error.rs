@@ -51,6 +51,9 @@ pub enum AotError {
 
     #[error("[E4041] Invalid build request: {message}")]
     InvalidRequest { message: String },
+
+    #[error("[E4050] unresolved extern library `{library}` for symbol `{symbol}`")]
+    UnresolvedExternLibrary { library: String, symbol: String },
 }
 
 impl From<cranelift_module::ModuleError> for AotError {

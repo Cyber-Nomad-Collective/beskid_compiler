@@ -13,6 +13,13 @@ pub struct HirExternInterface {
     pub library: Option<String>,
 }
 
+/// Parsed `[Export(Abi: "...", Symbol: "...")]` metadata on a function definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HirExportInterface {
+    pub abi: Option<String>,
+    pub symbol: Option<String>,
+}
+
 #[derive(beskid_ast_derive::HirNode)]
 #[ast(kind = "Attribute")]
 pub struct HirAttribute {
@@ -85,6 +92,10 @@ pub struct HirExtendTypeDefinition {
 #[derive(beskid_ast_derive::HirNode)]
 #[ast(kind = "FunctionDefinition")]
 pub struct HirFunctionDefinition {
+    #[ast(skip)]
+    pub export_interface: Option<HirExportInterface>,
+    #[ast(children)]
+    pub attributes: Vec<Spanned<HirAttribute>>,
     #[ast(child)]
     pub visibility: Spanned<HirVisibility>,
     #[ast(child)]

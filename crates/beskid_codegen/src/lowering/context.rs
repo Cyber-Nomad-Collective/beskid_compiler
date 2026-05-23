@@ -30,13 +30,14 @@ pub struct ExternImport {
     pub library: Option<String>,
 }
 
-/// Output of codegen: lowered functions, descriptors, literals, and extern imports.
+/// Output of codegen: lowered functions, descriptors, literals, extern imports, and exports.
 #[derive(Debug, Clone, Default)]
 pub struct CodegenArtifact {
     pub functions: Vec<LoweredFunction>,
     pub type_descriptors: HashMap<TypeId, TypeDescriptorData>,
     pub string_literals: HashMap<String, Vec<u8>>,
     pub extern_imports: Vec<ExternImport>,
+    pub exports: Vec<crate::lowering::expressions::export::ExportEntry>,
 }
 
 /// Key for a monomorphized function instance (`item` plus concrete type `args`).

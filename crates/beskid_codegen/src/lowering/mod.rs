@@ -13,4 +13,5 @@ mod statements;
 mod types;
 
 pub use context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport, LoweredFunction};
+pub use expressions::export::ExportEntry;
 pub use lowerable::{Lowerable, lower_node, lower_program};

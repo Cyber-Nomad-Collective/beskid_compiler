@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn completion_after_io_dot_lists_printline() {
         let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
-        let offset = fixture.source.find("IO.PrintLine").expect("IO.PrintLine") + "IO.".len();
+        let offset = fixture.source.find("Output.WriteLine").expect("Output.WriteLine") + "Output.".len();
         let response = completion::handler::handle_completion(&uri, &doc, offset);
         let labels: Vec<String> = match response {
             tower_lsp_server::ls_types::CompletionResponse::Array(items) => {
@@ -125,15 +125,15 @@ mod tests {
             _ => Vec::new(),
         };
         assert!(
-            labels.iter().any(|label| label == "PrintLine"),
-            "expected PrintLine in completion labels, got {labels:?}"
+            labels.iter().any(|label| label == "WriteLine"),
+            "expected WriteLine in completion labels, got {labels:?}"
         );
     }
 
     #[test]
     fn definition_on_printline_targets_dependency_file() {
         let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
-        let offset = fixture.source.find("PrintLine").expect("PrintLine");
+        let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let response = definition::handler::handle_definition(&uri, &doc, offset)
             .expect("definition response");
         let location = match response {
@@ -142,8 +142,8 @@ mod tests {
         };
         let target = location.uri.to_string();
         assert!(
-            target.contains("IO") || target.contains("System"),
-            "expected IO/System path in definition uri {target}"
+            target.contains("Output") || target.contains("System"),
+            "expected Output/System path in definition uri {target}"
         );
     }
 
@@ -162,8 +162,8 @@ mod tests {
             .as_ref()
             .expect("project-aware resolution");
         assert!(
-            resolution.module_imports.contains_key("IO"),
-            "expected IO alias: {:?}",
+            resolution.module_imports.contains_key("Output"),
+            "expected Output alias: {:?}",
             resolution.module_imports
         );
     }
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn references_on_printline_includes_dependency() {
         let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
-        let offset = fixture.source.find("PrintLine").expect("PrintLine");
+        let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let ctx =
             CompilationContext::try_for_analysis_path(&fixture.main_path, None).expect("ctx");
         let locations = references::handler::handle_references(
@@ -185,8 +185,8 @@ mod tests {
         assert!(
             locations
                 .iter()
-                .any(|location| location.uri.to_string().contains("IO")),
-            "expected IO dependency reference, got {:?}",
+                .any(|location| location.uri.to_string().contains("Output")),
+            "expected Output dependency reference, got {:?}",
             locations.iter().map(|l| l.uri.to_string()).collect::<Vec<_>>()
         );
     }
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn hover_on_printline_range_in_dependency_file() {
         let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
-        let offset = fixture.source.find("PrintLine").expect("PrintLine");
+        let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let hover = hover::handler::handle_hover(&uri, &doc, offset).expect("hover");
         let Hover { range, .. } = hover;
         let range = range.expect("hover range");
@@ -205,8 +205,8 @@ mod tests {
                 .location
                 .path
                 .to_string_lossy()
-                .contains("IO"),
-            "hover target should be IO module file"
+                .contains("Output"),
+            "hover target should be Output module file"
         );
         let dependency_source =
             std::fs::read_to_string(&hover_info.location.path).expect("read dependency source");
@@ -215,8 +215,8 @@ mod tests {
         assert!(start < end, "hover range should be non-empty in dependency file");
         let snippet = &dependency_source[start..end];
         assert!(
-            snippet.contains("PrintLine"),
-            "hover range should cover PrintLine in dependency, got `{snippet}`"
+            snippet.contains("WriteLine"),
+            "hover range should cover WriteLine in dependency, got `{snippet}`"
         );
     }
 }

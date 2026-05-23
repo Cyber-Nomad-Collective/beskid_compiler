@@ -127,6 +127,10 @@ impl<'a> HirLegalityValidator<'a> {
         match &item.node {
             HirItem::FunctionDefinition(def) => {
                 self.check_span(def.span, "function_definition");
+                self.validate_applied_attributes(
+                    &def.node.attributes,
+                    AttributeTargetKind::FunctionDeclaration.as_str(),
+                );
                 self.validate_block(&def.node.body);
                 for parameter in &def.node.parameters {
                     self.check_span(parameter.span, "parameter");

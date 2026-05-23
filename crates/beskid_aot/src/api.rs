@@ -8,7 +8,10 @@ use beskid_pipeline::{
     phases::{AOT_EMIT_OBJECT, AOT_LINK, AOT_RUNTIME},
 };
 
+use std::collections::HashSet;
+
 use crate::error::{AotError, AotResult};
+use crate::export_table::ExportTable;
 use crate::linker::{LinkRequest, link};
 use crate::object_module::BeskidObjectModule;
 use crate::runtime::{RuntimeBuildRequest, prepare_runtime};
@@ -75,6 +78,10 @@ pub struct AotBuildRequest {
     pub link_mode: LinkMode,
     pub runtime: RuntimeStrategy,
     pub verbose_link: bool,
+    /// Logical library names (for example `"c"`, `"m"`) passed as `-l<name>` to the host linker.
+    pub external_libraries: Vec<String>,
+    /// Extra `-L` search paths for the host linker.
+    pub library_search_paths: Vec<PathBuf>,
     /// Optional compilation pipeline observer (e.g. CLI progress).
     pub pipeline: Option<SharedPipelineObserver>,
 }
@@ -130,6 +137,8 @@ impl AotBuildRequest {
             link_mode: LinkMode::Auto,
             runtime,
             verbose_link: false,
+            external_libraries: Vec::new(),
+            library_search_paths: Vec::new(),
             pipeline: None,
         }
     }

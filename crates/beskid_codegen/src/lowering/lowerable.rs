@@ -2,6 +2,7 @@
 
 use crate::lowering::cast_intent::validate_cast_intents;
 use crate::lowering::context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport};
+use crate::lowering::expressions::export::collect_exports;
 use crate::lowering::function::{lower_function, lower_method, lower_test};
 use beskid_analysis::hir::{
     HirContractDefinition, HirContractNode, HirFunctionDefinition, HirInlineModule, HirItem,
@@ -133,6 +134,7 @@ pub fn lower_program(
                 collect_extern_imports(&program.node.items, None, &mut v);
                 v
             },
+            exports: collect_exports(&program.node.items),
         })
     } else {
         Err(errors)

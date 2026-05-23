@@ -34,7 +34,8 @@ pub use expression::{
 pub use item::{
     HirAttribute, HirAttributeDeclaration, HirAttributeParameter, HirAttributeTarget,
     HirContractDefinition, HirContractEmbedding, HirContractMethodSignature, HirContractNode,
-    HirEnumDefinition, HirEnumVariant, HirExtendTypeDefinition, HirExternInterface,
+    HirEnumDefinition, HirEnumVariant, HirExtendTypeDefinition, HirExportInterface,
+    HirExternInterface,
     HirFunctionDefinition, HirInlineModule, HirMethodDefinition, HirModuleDeclaration,
     HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry, HirTestSkipEntry,
     HirTestSkipSection, HirTypeDefinition, HirUseDeclaration, Item,

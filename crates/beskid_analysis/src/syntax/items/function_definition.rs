@@ -5,15 +5,18 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::{
-    parse_identifier_list, parse_parameter_list_with_docs, parse_visibility_or_default,
+    parse_attributes, parse_identifier_list, parse_parameter_list_with_docs,
+    parse_visibility_or_default,
 };
-use crate::syntax::{Block, Identifier, Parameter, SpanInfo, Spanned, Type, Visibility};
+use crate::syntax::{Attribute, Block, Identifier, Parameter, SpanInfo, Spanned, Type, Visibility};
 
 use beskid_ast_derive::AstNode;
 
 /// Top-level or nested function: visibility, signature, and body block.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDefinition {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<Attribute>>,
     #[ast(child)]
     pub visibility: Spanned<Visibility>,
     #[ast(child)]
@@ -34,6 +37,7 @@ impl Parsable for FunctionDefinition {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.clone().into_inner().peekable();
+        let attributes = parse_attributes(&mut inner)?;
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
         let return_type = Some(Type::parse(
             inner.next().ok_or(ParseError::missing(Rule::BeskidType))?,
@@ -65,6 +69,7 @@ impl Parsable for FunctionDefinition {
 
         Ok(Spanned::new(
             Self {
+                attributes,
                 visibility,
                 name,
                 generics,

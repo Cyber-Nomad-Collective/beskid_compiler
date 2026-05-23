@@ -42,6 +42,10 @@ pub enum CodegenError {
         function: String,
         message: String,
     },
+    InvalidExport {
+        span: SpanInfo,
+        message: String,
+    },
 }
 
 impl fmt::Display for CodegenError {
@@ -87,6 +91,9 @@ impl fmt::Display for CodegenError {
             }
             CodegenError::VerificationFailed { function, message } => {
                 write!(f, "CLIF verification failed for `{function}`: {message}")
+            }
+            CodegenError::InvalidExport { message, .. } => {
+                write!(f, "invalid export: {message}")
             }
         }
     }

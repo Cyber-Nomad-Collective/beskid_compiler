@@ -138,36 +138,36 @@ mod tests {
             .as_ref()
             .expect("assembly-backed resolution");
         assert!(
-            resolution.module_imports.contains_key("IO"),
-            "expected IO import alias: {:?}",
+            resolution.module_imports.contains_key("Output"),
+            "expected Output import alias: {:?}",
             resolution.module_imports
         );
         assert!(
-            resolution.items.iter().any(|item| item.name == "PrintLine"),
-            "expected PrintLine in merged items"
+            resolution.items.iter().any(|item| item.name == "WriteLine"),
+            "expected WriteLine in merged items"
         );
     }
 
     #[test]
     fn corelib_mvp_definition_at_printline_targets_io_module() {
         let (snapshot, fixture, _) = snapshot_with_manual_assembly();
-        let offset = fixture.source.find("PrintLine").expect("PrintLine usage");
+        let offset = fixture.source.find("WriteLine").expect("WriteLine usage");
         let definition = definition_at_offset(&snapshot, offset).expect("definition");
         let def_path = definition.location.path.to_string_lossy();
         assert!(
-            def_path.contains("IO") || def_path.contains("System"),
-            "expected cross-file definition under IO module, got {def_path}"
+            def_path.contains("Output") || def_path.contains("System"),
+            "expected cross-file definition under Output module, got {def_path}"
         );
     }
 
     #[test]
     fn corelib_mvp_completion_after_io_dot_includes_printline() {
         let (snapshot, fixture, _) = snapshot_with_manual_assembly();
-        let offset = fixture.source.find("IO.PrintLine").expect("IO.PrintLine") + "IO.".len();
+        let offset = fixture.source.find("Output.WriteLine").expect("Output.WriteLine") + "Output.".len();
         let candidates = completion_candidates(&snapshot, &fixture.source, offset);
         assert!(
-            candidates.iter().any(|c| c.label == "PrintLine"),
-            "expected PrintLine member completion after IO., got {:?}",
+            candidates.iter().any(|c| c.label == "WriteLine"),
+            "expected WriteLine member completion after Output., got {:?}",
             candidates.iter().map(|c| &c.label).collect::<Vec<_>>()
         );
     }
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn corelib_mvp_workspace_references_include_io_definition() {
         let (snapshot, fixture, assembly) = snapshot_with_manual_assembly();
-        let offset = fixture.source.find("PrintLine").expect("PrintLine usage");
+        let offset = fixture.source.find("WriteLine").expect("WriteLine usage");
         let references = references_at_offset_workspace(
             &snapshot,
             &assembly,
@@ -201,9 +201,9 @@ mod tests {
                     .location
                     .path
                     .to_string_lossy()
-                    .contains("IO")
+                    .contains("Output")
             }),
-            "expected a reference in IO.bd, got {:?}",
+            "expected a reference in Output.bd, got {:?}",
             references
                 .iter()
                 .map(|r| r.location.path.display())
@@ -219,13 +219,13 @@ mod tests {
             .as_ref()
             .expect("lifecycle assembly-backed resolution");
         assert!(
-            resolution.module_imports.contains_key("IO"),
-            "expected IO alias without manual assembly seed: {:?}",
+            resolution.module_imports.contains_key("Output"),
+            "expected Output alias without manual assembly seed: {:?}",
             resolution.module_imports
         );
         assert!(
-            resolution.items.iter().any(|item| item.name == "PrintLine"),
-            "expected PrintLine via assembly_for_entry"
+            resolution.items.iter().any(|item| item.name == "WriteLine"),
+            "expected WriteLine via assembly_for_entry"
         );
         assert!(
             fixture.main_path.is_file(),
@@ -253,12 +253,12 @@ mod tests {
             let resolution = snapshot.resolution.as_ref();
             if let Some(resolution) = resolution {
                 assert!(
-                    !resolution.module_imports.contains_key("IO"),
-                    "degraded mode should not expose IO alias"
+                    !resolution.module_imports.contains_key("Output"),
+                    "degraded mode should not expose Output alias"
                 );
                 assert!(
-                    !resolution.items.iter().any(|item| item.name == "PrintLine"),
-                    "degraded mode should not merge dependency PrintLine"
+                    !resolution.items.iter().any(|item| item.name == "WriteLine"),
+                    "degraded mode should not merge dependency WriteLine"
                 );
             }
         });

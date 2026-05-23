@@ -91,12 +91,9 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/compiler-sdk/src/Prelude.bd",
         "packages/compiler-sdk/src/Beskid/Syntax.bd",
         "packages/compiler-sdk/src/Beskid/Syntax/Nodes.bd",
-        "packages/compiler-sdk/src/Beskid/Compiler/Query.bd",
-        "packages/compiler-sdk/src/Beskid/Compiler/Diagnostics.bd",
         "packages/compiler-sdk/src/Beskid/Compiler/TypedEmitter.bd",
         "packages/compiler-sdk/src/Beskid/Compiler/Collect.bd",
         "packages/compiler-sdk/src/Beskid/Compiler/Compilation.bd",
-        "beskid_corelib/src/Prelude.bd",
     ]
 }
 

@@ -1,5 +1,6 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::{CodegenContext, CodegenResult, LoweredFunction};
+use crate::lowering::expressions::export::{export_linker_name, validate_export_function};
 use crate::lowering::lowerable::lower_node;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, type_id_for_type};
@@ -385,6 +386,9 @@ pub(crate) fn lower_function_with_name(
     let expects_return = signature_has_return(&signature);
     let expected_return_type = return_type_id;
 
+    let pointer = cranelift_codegen::ir::types::I64;
+    let _export_entry = validate_export_function(def, &signature, pointer)?;
+
     let mut function = Function::new();
     function.signature = signature;
 
@@ -473,7 +477,7 @@ pub(crate) fn lower_function_with_name(
     }
 
     ctx.functions_emitted += 1;
-    let function_name = name_override.unwrap_or_else(|| def.node.name.node.name.clone());
+    let function_name = name_override.unwrap_or_else(|| export_linker_name(def));
     ctx.lowered_functions.push(LoweredFunction {
         name: function_name,
         function,

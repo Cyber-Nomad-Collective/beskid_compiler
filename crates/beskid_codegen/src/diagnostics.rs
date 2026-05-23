@@ -132,6 +132,16 @@ pub fn codegen_error_to_diagnostic(
             Some(format!("{CODEGEN_ERROR_PREFIX}11")),
             Severity::Error,
         ),
+        CodegenError::InvalidExport { span, message } => make_diagnostic(
+            source_name,
+            source,
+            *span,
+            message.clone(),
+            "invalid export",
+            None,
+            Some(format!("{CODEGEN_ERROR_PREFIX}12")),
+            Severity::Error,
+        ),
     }
 }
 
