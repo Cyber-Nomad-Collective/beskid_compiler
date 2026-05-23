@@ -44,5 +44,8 @@ pub mod interop;
 #[cfg(test)]
 pub mod template;
 
+#[cfg(test)]
+pub mod mods;
+
 #[cfg(all(test, feature = "pckg"))]
 pub mod pckg;

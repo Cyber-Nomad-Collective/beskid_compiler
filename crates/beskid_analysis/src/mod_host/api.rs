@@ -346,7 +346,7 @@ project {
         let plan = compile_plan(&host, &mod_dir);
         let pipeline = CapturePipeline::default();
 
-        let err = run_through_generate(
+        let result = run_through_generate(
             program,
             &ModHostInput {
                 compile_plan: Some(&plan),
@@ -355,8 +355,11 @@ project {
                 pipeline: Some(&pipeline),
                 invoker: None,
             },
-        )
-        .expect_err("duplicate must abort");
+        );
+        let err = match result {
+            Ok(_) => panic!("duplicate (contractId, typeId) registration must abort"),
+            Err(err) => err,
+        };
         let diagnostics = extract_mod_host_diagnostics(&err)
             .expect("mod host diagnostics surfaced through anyhow chain");
         assert!(diagnostics.codes().contains(&"E1829"));
