@@ -235,6 +235,120 @@ pub fn channel_try_receive(id: ChannelId, out: *mut i64) -> i64 {
     .unwrap_or(STATUS_CLOSED)
 }
 
+/// Phase B pointer-payload send: register `value_ptr` as an external GC handle, push the handle
+/// onto the channel as an `i64`, and apply the insertion write barrier so concurrent marking
+/// retains the pointer reachable through the channel queue.
+///
+/// When called from a Beskid fiber, blocking semantics defer to the fiber scheduler. When called
+/// from a Phase B mutator that lives on a raw OS thread (no fiber context), back-pressure on a
+/// bounded queue is handled with a short `thread::yield_now` spin-poll rather than parking the
+/// nonexistent fiber.
+pub fn channel_send_ptr(id: ChannelId, value_ptr: *mut u8) -> i64 {
+    if fiber_cancelled() {
+        return STATUS_CANCELLED;
+    }
+    let handle =
+        crate::gc::with_current_root_if_active(|root| crate::gc::store_handle(root, value_ptr));
+    let Some(handle) = handle else {
+        return STATUS_CLOSED;
+    };
+    crate::gc::with_current_heap(|heap| heap.write_barrier(std::ptr::null_mut(), value_ptr));
+    let status = if scheduler::in_fiber_scheduler() {
+        channel_send(id, handle as i64)
+    } else {
+        // OS-thread mutator: poll with `try_send` until the channel accepts or closes. Without a
+        // fiber, the standard channel parking path would panic ("park outside fiber").
+        loop {
+            let s = channel_try_send(id, handle as i64);
+            if s != STATUS_WOULD_BLOCK {
+                break s;
+            }
+            std::thread::yield_now();
+        }
+    };
+    if status != STATUS_OK {
+        crate::gc::with_current_root_if_active(|root| crate::gc::drop_handle(root, handle));
+    }
+    status
+}
+
+/// Phase B pointer-payload try-send variant; see [`channel_send_ptr`].
+pub fn channel_try_send_ptr(id: ChannelId, value_ptr: *mut u8) -> i64 {
+    if fiber_cancelled() {
+        return STATUS_CANCELLED;
+    }
+    let handle =
+        crate::gc::with_current_root_if_active(|root| crate::gc::store_handle(root, value_ptr));
+    let Some(handle) = handle else {
+        return STATUS_CLOSED;
+    };
+    crate::gc::with_current_heap(|heap| heap.write_barrier(std::ptr::null_mut(), value_ptr));
+    let status = channel_try_send(id, handle as i64);
+    if status != STATUS_OK {
+        crate::gc::with_current_root_if_active(|root| crate::gc::drop_handle(root, handle));
+    }
+    status
+}
+
+/// Phase B pointer-payload receive: dequeue an external GC handle, resolve it to the original
+/// pointer, drop the handle, and apply the insertion write barrier on the receiver side so the
+/// pointer is grayed for the receiver's mutator view.
+///
+/// OS-thread Phase B mutators poll with `try_receive` plus `thread::yield_now` rather than
+/// parking, mirroring [`channel_send_ptr`].
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub fn channel_receive_ptr(id: ChannelId, out_ptr: *mut *mut u8) -> i64 {
+    if out_ptr.is_null() {
+        return STATUS_CLOSED;
+    }
+    let mut handle_slot = 0i64;
+    let status = if scheduler::in_fiber_scheduler() {
+        channel_receive(id, &mut handle_slot)
+    } else {
+        loop {
+            let s = channel_try_receive(id, &mut handle_slot);
+            if s != STATUS_WOULD_BLOCK {
+                break s;
+            }
+            std::thread::yield_now();
+        }
+    };
+    if status != STATUS_OK {
+        return status;
+    }
+    let handle = handle_slot as u64;
+    let value_ptr = crate::gc::with_current_heap(|heap| heap.external_roots().get_handle(handle))
+        .unwrap_or(std::ptr::null_mut());
+    crate::gc::with_current_root_if_active(|root| crate::gc::drop_handle(root, handle));
+    crate::gc::with_current_heap(|heap| heap.write_barrier(std::ptr::null_mut(), value_ptr));
+    unsafe {
+        *out_ptr = value_ptr;
+    }
+    STATUS_OK
+}
+
+/// Phase B pointer-payload try-receive variant; see [`channel_receive_ptr`].
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub fn channel_try_receive_ptr(id: ChannelId, out_ptr: *mut *mut u8) -> i64 {
+    if out_ptr.is_null() {
+        return STATUS_CLOSED;
+    }
+    let mut handle_slot = 0i64;
+    let status = channel_try_receive(id, &mut handle_slot);
+    if status != STATUS_OK {
+        return status;
+    }
+    let handle = handle_slot as u64;
+    let value_ptr = crate::gc::with_current_heap(|heap| heap.external_roots().get_handle(handle))
+        .unwrap_or(std::ptr::null_mut());
+    crate::gc::with_current_root_if_active(|root| crate::gc::drop_handle(root, handle));
+    crate::gc::with_current_heap(|heap| heap.write_barrier(std::ptr::null_mut(), value_ptr));
+    unsafe {
+        *out_ptr = value_ptr;
+    }
+    STATUS_OK
+}
+
 pub fn channel_close(id: ChannelId) {
     let waiters = with_channel(id, |ch| {
         ch.closed = true;

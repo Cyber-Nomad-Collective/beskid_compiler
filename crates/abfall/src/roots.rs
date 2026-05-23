@@ -42,6 +42,15 @@ impl ExternalRootSet {
         }
     }
 
+    /// Look up the pointer previously stored for `handle`. Returns `None` if the slot was
+    /// already dropped or never assigned. Phase B channel receive uses this to retrieve a
+    /// pointer payload before clearing the handle.
+    pub fn get_handle(&self, handle: u64) -> Option<*mut u8> {
+        let handles = self.handles.lock();
+        let ptr = handles.get(handle as usize).copied()?;
+        if ptr.is_null() { None } else { Some(ptr) }
+    }
+
     pub(crate) fn snapshot_roots(&self) -> Vec<*mut u8> {
         let mut out = Vec::new();
 
