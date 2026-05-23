@@ -20,6 +20,12 @@ pub const TEMPLATE_JSON_REL: &str = ".beskid/template.json";
 /// `package.json` discriminator for scaffold packages (see platform-spec template packages).
 pub const PACKAGE_KIND_TEMPLATE: &str = "template";
 
+/// `package.json` discriminator for tool packages (see platform-spec package kinds, D-TOOL-PCKG-0004).
+pub const PACKAGE_KIND_TOOL: &str = "tool";
+
+/// `package.json` discriminator for library packages (the implicit default).
+pub const PACKAGE_KIND_LIBRARY: &str = "library";
+
 /// Summary copied from `.beskid/template.json` into packed `package.json`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplatePackageSummary {
@@ -28,16 +34,22 @@ pub struct TemplatePackageSummary {
     pub tags: Option<Value>,
 }
 
-/// Whether the pack uses library docs (`api.json`) or the template profile.
+/// Whether the pack uses library docs (`api.json`), the template profile, or the tool profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackProfile {
     Library,
     Template(TemplatePackageSummary),
+    /// CLI / developer-tool package — no required `api.json`, no `.beskid/template.json`.
+    Tool,
 }
 
 impl PackProfile {
     pub fn is_template(&self) -> bool {
         matches!(self, Self::Template(_))
+    }
+
+    pub fn is_tool(&self) -> bool {
+        matches!(self, Self::Tool)
     }
 }
 
@@ -159,6 +171,12 @@ pub fn build_package_json(
             "packageKind": PACKAGE_KIND_TEMPLATE,
             "template": template_summary_json(summary),
         }),
+        PackProfile::Tool => json!({
+            "schema": "beskid.package.v1",
+            "id": package_id,
+            "version": version,
+            "packageKind": PACKAGE_KIND_TOOL,
+        }),
     };
 
     serde_json::to_string_pretty(&value).map_err(|source| PckgError::Api {
@@ -170,6 +188,18 @@ pub fn build_package_json(
 
 /// Remove generated API docs from template artifacts (template profile skips doc generation).
 pub fn strip_template_pack_excludes(entries: &mut Vec<(String, Vec<u8>)>) {
+    entries.retain(|(name, _)| {
+        !name.starts_with(".beskid/docs/")
+            && name != ".beskid/docs/api.json"
+            && name != ".beskid/docs/index.md"
+    });
+}
+
+/// Remove generated API docs from tool artifacts (tool profile does not require api.json).
+///
+/// `api.json` is *optional* for tool packages per platform-spec, but `beskid pckg pack` strips
+/// any prior generated docs to keep the artifact body lean unless the publisher explicitly opts in.
+pub fn strip_tool_pack_excludes(entries: &mut Vec<(String, Vec<u8>)>) {
     entries.retain(|(name, _)| {
         !name.starts_with(".beskid/docs/")
             && name != ".beskid/docs/api.json"
