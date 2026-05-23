@@ -3,7 +3,11 @@
 use crate::symbols::{
     SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_CHANNEL_CLOSE, SYM_CHANNEL_CREATE,
     SYM_CHANNEL_RECEIVE, SYM_CHANNEL_RECEIVE_VALUE, SYM_CHANNEL_SEND, SYM_CHANNEL_TRY_RECEIVE,
-    SYM_CHANNEL_TRY_SEND, SYM_FIBER_CANCEL, SYM_FIBER_CURRENT_ID, SYM_FIBER_DETACH, SYM_FIBER_JOIN,
+    SYM_CHANNEL_TRY_SEND, SYM_COMPOSITION_BIND_PLURAL, SYM_COMPOSITION_CONTAINER_CREATE,
+    SYM_COMPOSITION_CONTAINER_DROP, SYM_COMPOSITION_LAUNCH, SYM_COMPOSITION_REGISTER,
+    SYM_COMPOSITION_RESOLVE, SYM_COMPOSITION_RESOLVE_PLURAL, SYM_COMPOSITION_SCOPE_DEPTH,
+    SYM_COMPOSITION_SCOPE_ENTER, SYM_COMPOSITION_SCOPE_LEAVE, SYM_COMPOSITION_SHUTDOWN,
+    SYM_FIBER_CANCEL, SYM_FIBER_CURRENT_ID, SYM_FIBER_DETACH, SYM_FIBER_JOIN,
     SYM_FIBER_JOIN_VALUE, SYM_FIBER_NOW_MILLIS, SYM_FIBER_PROCESSOR_COUNT, SYM_FIBER_SPAWN,
     SYM_FIBER_SPAWN_WITH_CANCEL_SLOT, SYM_FIBER_YIELD, SYM_GC_BYTES_ALLOCATED, SYM_GC_COLLECT,
     SYM_GC_COLLECT_IF_NEEDED, SYM_GC_EXTERNAL_ROOT_COUNT, SYM_GC_OBJECT_COUNT, SYM_GC_PHASE,
@@ -49,6 +53,19 @@ const I64_PTR: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::Ptr];
 const I64_I64: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::I64];
 const I64_I64_I64: [AbiParamKind; 3] = [AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::I64];
 const PTR_PTR_PTR: [AbiParamKind; 3] = [AbiParamKind::Ptr, AbiParamKind::Ptr, AbiParamKind::Ptr];
+const PTR_I64: [AbiParamKind; 2] = [AbiParamKind::Ptr, AbiParamKind::I64];
+const PTR_I64_I64_I64: [AbiParamKind; 4] = [
+    AbiParamKind::Ptr,
+    AbiParamKind::I64,
+    AbiParamKind::I64,
+    AbiParamKind::I64,
+];
+const PTR_I64_PTR_I64: [AbiParamKind; 4] = [
+    AbiParamKind::Ptr,
+    AbiParamKind::I64,
+    AbiParamKind::Ptr,
+    AbiParamKind::I64,
+];
 
 /// Canonical list of builtin imports (alloc, strings, GC hooks, syscalls, test helpers, …).
 pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
@@ -335,6 +352,61 @@ pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
     BuiltinFnSpec {
         symbol: SYM_WAIT_GROUP_WAIT,
         params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_CONTAINER_CREATE,
+        params: &[],
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_CONTAINER_DROP,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::Void,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_REGISTER,
+        params: &PTR_I64_I64_I64,
+        returns: AbiReturnKind::I32,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_BIND_PLURAL,
+        params: &PTR_I64_PTR_I64,
+        returns: AbiReturnKind::I32,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_LAUNCH,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::I32,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_SHUTDOWN,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::I32,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_SCOPE_ENTER,
+        params: &PTR_I64,
+        returns: AbiReturnKind::I32,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_SCOPE_LEAVE,
+        params: &PTR_I64,
+        returns: AbiReturnKind::I32,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_RESOLVE,
+        params: &PTR_I64,
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_RESOLVE_PLURAL,
+        params: &PTR_I64_PTR_I64,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_COMPOSITION_SCOPE_DEPTH,
+        params: &PTR_ONLY,
         returns: AbiReturnKind::I64,
     },
 ];

@@ -7,6 +7,7 @@
 
 pub mod builtins;
 pub mod channel;
+pub mod composition;
 pub mod fiber;
 pub mod gc;
 pub mod hub;
@@ -22,7 +23,10 @@ pub mod wait_group;
 pub use builtins::{
     alloc, array_len, array_new, beskid_runtime_abi_version, channel_close, channel_create,
     channel_receive, channel_receive_status, channel_receive_value, channel_send,
-    channel_try_receive, channel_try_send, event_get_handler, event_len, event_subscribe,
+    channel_try_receive, channel_try_send, composition_bind_plural, composition_container_create,
+    composition_container_drop, composition_launch, composition_register, composition_resolve,
+    composition_resolve_plural, composition_scope_depth, composition_scope_enter,
+    composition_scope_leave, composition_shutdown, event_get_handler, event_len, event_subscribe,
     event_unsubscribe_first, fiber_cancel, fiber_current_id, fiber_detach, fiber_join,
     fiber_join_status, fiber_join_value, fiber_now_millis, fiber_processor_count, fiber_spawn,
     fiber_spawn_with_cancel_slot, fiber_yield, gc_bytes_allocated, gc_collect,

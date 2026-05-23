@@ -4,6 +4,7 @@
 mod alloc;
 mod arrays;
 mod channel;
+mod composition;
 mod events;
 mod fiber;
 mod gc;
@@ -23,6 +24,12 @@ pub use arrays::{array_len, array_new};
 pub use channel::{
     channel_close, channel_create, channel_receive, channel_receive_status, channel_receive_value,
     channel_send, channel_try_receive, channel_try_send,
+};
+pub use composition::{
+    composition_bind_plural, composition_container_create, composition_container_drop,
+    composition_launch, composition_register, composition_resolve, composition_resolve_plural,
+    composition_scope_depth, composition_scope_enter, composition_scope_leave,
+    composition_shutdown,
 };
 pub use events::{
     EventState, event_get_handler, event_len, event_subscribe, event_unsubscribe_first,
