@@ -108,6 +108,7 @@ project {
             source_name: "Main.bd",
             source,
             pipeline: Some(&pipeline),
+            invoker: None,
         },
     )
     .expect("mod host generate");

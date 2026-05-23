@@ -91,6 +91,7 @@ pub fn compile_front_end_with_pipeline(
             source_name: &entry_unit.logical_name,
             source: entry_source,
             pipeline,
+            invoker: None,
         },
     )?;
     program = generated.program;
