@@ -1,9 +1,18 @@
-//! Thread pool for blocking syscalls (Phase A: workers must not allocate without scheduler lock).
+//! Thread pool for blocking syscalls.
+//!
+//! Phase A invariant: workers never act as Beskid mutators (no `alloc`, no channel pointer
+//! sends, no GC writes). Phase B keeps that constraint by tagging every worker thread via
+//! [`crate::gc::set_syscall_pool_worker`] so that any accidental allocation panics before it can
+//! corrupt the heap. Workers that need to allocate (callback trampolines, foreign-thread
+//! bridges, ...) must call [`crate::gc::enter_runtime_scope`] explicitly and own a scoped
+//! [`crate::RuntimeRoot`].
 
 use std::any::Any;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
+
+use crate::gc::set_syscall_pool_worker;
 
 use super::{FiberKey, park_current, wake_fiber};
 
@@ -38,6 +47,10 @@ fn pool() -> &'static PoolInner {
 }
 
 fn syscall_worker(rx: Arc<Mutex<Receiver<SyscallJob>>>) {
+    // Phase B guard: mark this OS thread so any accidental `alloc` or pointer-payload channel send
+    // from inside a blocking syscall task panics with a descriptive runtime message rather than
+    // silently re-entering the GC as a second mutator.
+    set_syscall_pool_worker();
     loop {
         let job = match rx.lock().expect("syscall rx lock").recv() {
             Ok(job) => job,

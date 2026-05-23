@@ -52,6 +52,18 @@ pub const SYM_CHANNEL_RECEIVE_VALUE: &str = "channel_receive_value";
 pub const SYM_CHANNEL_TRY_SEND: &str = "channel_try_send";
 pub const SYM_CHANNEL_TRY_RECEIVE: &str = "channel_try_receive";
 pub const SYM_CHANNEL_CLOSE: &str = "channel_close";
+/// Phase B pointer-payload channel send; applies the insertion write barrier and registers the
+/// payload as an external GC root for in-flight tracing.
+pub const SYM_CHANNEL_SEND_PTR: &str = "channel_send_ptr";
+/// Phase B pointer-payload `try_send`; non-blocking variant of [`SYM_CHANNEL_SEND_PTR`].
+pub const SYM_CHANNEL_TRY_SEND_PTR: &str = "channel_try_send_ptr";
+/// Phase B pointer-payload channel receive; drops the external root and applies a receiver-side
+/// write barrier before storing the pointer through `out_ptr`.
+pub const SYM_CHANNEL_RECEIVE_PTR: &str = "channel_receive_ptr";
+/// Phase B pointer-payload `try_receive`; non-blocking variant of [`SYM_CHANNEL_RECEIVE_PTR`].
+pub const SYM_CHANNEL_TRY_RECEIVE_PTR: &str = "channel_try_receive_ptr";
+/// Phase B optional preemption check called at function entry by codegen when preemption is on.
+pub const SYM_RUNTIME_PREEMPT_CHECK: &str = "runtime_preempt_check";
 
 pub const SYM_HUB_CREATE: &str = "hub_create";
 pub const SYM_HUB_REGISTER: &str = "hub_register";
@@ -133,6 +145,11 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_CHANNEL_TRY_SEND,
     SYM_CHANNEL_TRY_RECEIVE,
     SYM_CHANNEL_CLOSE,
+    SYM_CHANNEL_SEND_PTR,
+    SYM_CHANNEL_TRY_SEND_PTR,
+    SYM_CHANNEL_RECEIVE_PTR,
+    SYM_CHANNEL_TRY_RECEIVE_PTR,
+    SYM_RUNTIME_PREEMPT_CHECK,
     SYM_HUB_CREATE,
     SYM_HUB_REGISTER,
     SYM_HUB_UNREGISTER,

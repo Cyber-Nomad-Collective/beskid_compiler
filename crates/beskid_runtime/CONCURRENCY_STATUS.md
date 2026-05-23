@@ -16,6 +16,7 @@ Scope document for the fiber concurrency plan (M0–M8). Normative spec:
 | **M6** | Syscall parking | Landed (Phase A) | `syscall_pool` parks the current fiber while blocking read/write work runs on worker threads |
 | **M7** | Console channel | Landed | `Channel<ConsoleMessage>`, `Console.MessagesChannel()`, `Terminal.PollResize` → `Send(Resize)` |
 | **M8** | OS threading | Landed (v1) | `System.Threading.Thread` pthread extern surface; distinct from cooperative `Concurrency.Yield` |
+| **M9 (Phase B GC)** | Multi-mutator GC | Landed (opt-in) | Multiple Beskid mutators attach to one shared heap via `attach_phase_b_mutator`; insertion write barrier active on pointer-payload channels; syscall pool workers explicitly tagged and blocked from allocating outside a runtime scope; optional preemption hook (`runtime_preempt_check`) |
 
 ## Stable surfaces (v1 Phase A)
 
@@ -26,12 +27,53 @@ Scope document for the fiber concurrency plan (M0–M8). Normative spec:
 - **Clock / yield**: `Concurrency.Yield`, `NowMillis`, `ProcessorCount` → `__fiber_processor_count`
 - **Console**: `ConsoleMessage` enum (`Resize`, `Tick`); cross-fiber UI uses `Channel<ConsoleMessage>` not `event`
 
+## Phase B GC (opt-in)
+
+Phase B is wired and tested but not yet the default mode. Enable globally via
+`set_runtime_phase(RuntimePhase::PhaseB)` or by exporting `BESKID_RUNTIME_PHASE_B=1`.
+Optional preemption hooks are controlled by `set_preemption_enabled` or
+`BESKID_RUNTIME_PREEMPT=1`.
+
+What Phase B turns on:
+
+- **Multiple mutators on one heap.** Foreign OS threads register as Beskid mutators by
+  holding a `MutatorAttachGuard` from `attach_phase_b_mutator(heap, ctx)`. While the
+  guard is alive, the thread shares the same `Heap`/`GcContext` and may allocate, read,
+  and write GC-managed pointers.
+- **Real `gc_write_barrier`.** The Dijkstra insertion barrier is applied on every
+  pointer-payload channel send and receive (`channel_send_ptr`, `channel_try_send_ptr`,
+  `channel_receive_ptr`, `channel_try_receive_ptr`) so handles in transit are kept
+  reachable during concurrent marking.
+- **Pointer-payload channels.** Sender registers the pointer as an external GC handle
+  before pushing the handle id onto the queue; receiver resolves the handle, drops the
+  registration, and applies the receiver-side barrier. OS-thread mutators outside the
+  fiber scheduler fall back to `try_send`/`try_receive` plus `thread::yield_now`
+  instead of `park_current`.
+- **Syscall-pool guard.** `syscall_worker` threads call `set_syscall_pool_worker()`;
+  `assert_mutator_allowed()` panics if a syscall worker tries to drive `Heap::alloc`
+  (or any path that reaches `with_current_root`) without explicitly entering a runtime
+  scope (`enter_runtime_scope` / a fresh `MutatorAttachGuard`). This catches accidental
+  allocations from threads designed not to be mutators.
+- **Optional preemption.** `runtime_preempt_check` is a no-op by default; once
+  preemption is enabled it yields the current fiber (or `thread::yield_now` if called
+  off the fiber scheduler) so JIT/AOT codegen can plant safe-point calls at function
+  prologues without paying the cost unless preemption is requested.
+
+Stress coverage lives in `crates/beskid_runtime/tests/phase_b_concurrency.rs`
+(`phase_b_stress_many_mutators_concurrent_allocations`,
+`pointer_channel_round_trip_applies_write_barrier`,
+`pointer_channel_cross_thread_with_phase_b_mutators`,
+`syscall_pool_worker_without_scope_blocks_alloc`,
+`syscall_pool_worker_with_runtime_scope_can_allocate`,
+`preemption_check_*`, `phase_b_enables_via_setter`).
+
 ## Known gaps
 
-- **Phase B GC**: multiple mutators, write barriers on channel edges — not enabled; scheduler remains single mutator
 - **`SetProcessorCount`**: corelib no-op until runtime exposes dynamic worker resize (no `__fiber_set_processor_count`)
 - **`Result<unit, _>`**: `Send` uses zero-size `SendOk` struct until `unit` is a valid `Result` payload type
-- **Generic channel payloads**: runtime queues are `i64`; wider types need copy/GC tracing (Phase B)
+- **Generic channel payloads at codegen**: ABI exposes `channel_*_ptr` builtins; corelib `Channel<T>` lowering for non-`i64` payloads is still pending
+- **Phase B as default**: still opt-in via `set_runtime_phase` / `BESKID_RUNTIME_PHASE_B`; the scheduler boots in Phase A
+- **Preemption code emission**: `runtime_preempt_check` is reachable from the ABI; AOT/JIT prologue insertion of the safe-point call is not yet wired
 
 ## Safe test commands
 
