@@ -181,3 +181,64 @@ fn expand_to_project_manifest(path: &Path) -> Result<PathBuf> {
     }
     Ok(path.to_path_buf())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use beskid_analysis::external_library::known_provider_ids;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(subcommand)]
+        cmd: crate::cli::Commands,
+    }
+
+    #[test]
+    fn parses_import_lib_invocation() {
+        let cli = TestCli::try_parse_from(["beskid", "import", "lib", "libc"]).expect("parse");
+        match cli.cmd {
+            crate::cli::Commands::Import(args) => match args.command {
+                ImportCommand::Lib(lib_args) => {
+                    assert_eq!(lib_args.logical, "libc");
+                    assert_eq!(lib_args.provider, "c-posix");
+                    assert!(!lib_args.dry_run);
+                    assert!(lib_args.project.is_none());
+                }
+            },
+            _ => panic!("expected Import command"),
+        }
+    }
+
+    #[test]
+    fn parses_import_lib_with_options() {
+        let cli = TestCli::try_parse_from([
+            "beskid",
+            "import",
+            "lib",
+            "libc",
+            "--provider",
+            "posix",
+            "--dry-run",
+            "--project",
+            "/tmp/example",
+        ])
+        .expect("parse");
+        let crate::cli::Commands::Import(args) = cli.cmd else {
+            panic!("expected Import command");
+        };
+        let ImportCommand::Lib(lib_args) = args.command;
+        assert_eq!(lib_args.logical, "libc");
+        assert_eq!(lib_args.provider, "posix");
+        assert!(lib_args.dry_run);
+        assert_eq!(lib_args.project, Some(PathBuf::from("/tmp/example")));
+    }
+
+    #[test]
+    fn default_registry_advertises_closed_providers() {
+        let ids = known_provider_ids();
+        assert!(ids.contains(&"c-posix"));
+        assert!(ids.contains(&"posix"));
+        assert!(!ids.contains(&"msvc"));
+    }
+}
