@@ -1,5 +1,6 @@
 //! HIR lowering to Cranelift IR: [`CodegenContext`], [`Lowerable`], and [`lower_program`].
 
+pub mod composition;
 pub mod composition_policy;
 mod cast_intent;
 mod context;

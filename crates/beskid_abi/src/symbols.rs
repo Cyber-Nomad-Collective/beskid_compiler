@@ -71,6 +71,18 @@ pub const SYM_WAIT_GROUP_ADD: &str = "wait_group_add";
 pub const SYM_WAIT_GROUP_DONE: &str = "wait_group_done";
 pub const SYM_WAIT_GROUP_WAIT: &str = "wait_group_wait";
 
+pub const SYM_COMPOSITION_CONTAINER_CREATE: &str = "composition_container_create";
+pub const SYM_COMPOSITION_CONTAINER_DROP: &str = "composition_container_drop";
+pub const SYM_COMPOSITION_REGISTER: &str = "composition_register";
+pub const SYM_COMPOSITION_BIND_PLURAL: &str = "composition_bind_plural";
+pub const SYM_COMPOSITION_LAUNCH: &str = "composition_launch";
+pub const SYM_COMPOSITION_SHUTDOWN: &str = "composition_shutdown";
+pub const SYM_COMPOSITION_SCOPE_ENTER: &str = "composition_scope_enter";
+pub const SYM_COMPOSITION_SCOPE_LEAVE: &str = "composition_scope_leave";
+pub const SYM_COMPOSITION_RESOLVE: &str = "composition_resolve";
+pub const SYM_COMPOSITION_RESOLVE_PLURAL: &str = "composition_resolve_plural";
+pub const SYM_COMPOSITION_SCOPE_DEPTH: &str = "composition_scope_depth";
+
 /// All symbols the JIT builder registers when wiring the Beskid runtime.
 pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_ABI_VERSION,
@@ -135,4 +147,15 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_WAIT_GROUP_ADD,
     SYM_WAIT_GROUP_DONE,
     SYM_WAIT_GROUP_WAIT,
+    SYM_COMPOSITION_CONTAINER_CREATE,
+    SYM_COMPOSITION_CONTAINER_DROP,
+    SYM_COMPOSITION_REGISTER,
+    SYM_COMPOSITION_BIND_PLURAL,
+    SYM_COMPOSITION_LAUNCH,
+    SYM_COMPOSITION_SHUTDOWN,
+    SYM_COMPOSITION_SCOPE_ENTER,
+    SYM_COMPOSITION_SCOPE_LEAVE,
+    SYM_COMPOSITION_RESOLVE,
+    SYM_COMPOSITION_RESOLVE_PLURAL,
+    SYM_COMPOSITION_SCOPE_DEPTH,
 ];

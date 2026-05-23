@@ -1,4 +1,6 @@
 use crate::errors::CodegenError;
+use crate::lowering::composition::{lower_launch_statement, lower_with_statement};
+use crate::lowering::composition_policy::RUNTIME_CONTAINER_LOWERING_ENABLED;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use beskid_analysis::hir::HirStatementNode;
@@ -23,12 +25,19 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStatementNode {
             }),
             HirStatementNode::IfStatement(inner) => lower_node(inner, ctx),
             HirStatementNode::ExpressionStatement(inner) => lower_node(inner, ctx),
-            HirStatementNode::WithStatement(_) | HirStatementNode::LaunchStatement(_) => {
-                const _: () = assert!(
-                    !crate::lowering::composition_policy::RUNTIME_CONTAINER_LOWERING_ENABLED,
-                    "launch/with lowering is gated until runtime container support lands"
-                );
-                Ok(())
+            HirStatementNode::WithStatement(inner) => {
+                if RUNTIME_CONTAINER_LOWERING_ENABLED {
+                    lower_with_statement(inner, ctx)
+                } else {
+                    Ok(())
+                }
+            }
+            HirStatementNode::LaunchStatement(inner) => {
+                if RUNTIME_CONTAINER_LOWERING_ENABLED {
+                    lower_launch_statement(inner, ctx)
+                } else {
+                    Ok(())
+                }
             }
         }
     }
