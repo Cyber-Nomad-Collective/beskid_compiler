@@ -73,6 +73,7 @@ fn lower_source_single_unit_legacy(
             source_name: &source_name,
             source,
             pipeline,
+            invoker: None,
         },
     )?;
     let mut program = generated.program;

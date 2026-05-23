@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::projects::{CompilePlan, ProjectModSection};
 
+use super::invoker::{AnalyzerOutcome, CollectorOutcome, GeneratorOutcome, RewriterOutcome};
+
 #[derive(Debug, Clone)]
 pub(crate) struct DiscoveredMod {
     pub(crate) dependency_name: String,
@@ -38,6 +40,19 @@ pub struct ModArtifactDescriptor {
     pub registrations: Vec<ContractRegistration>,
     #[serde(skip)]
     pub artifact_dir: PathBuf,
+}
+
+impl ModArtifactDescriptor {
+    /// Absolute native object path relative to this descriptor's artifact directory.
+    pub fn object_path(&self) -> PathBuf {
+        self.artifact_dir.join(&self.object_file)
+    }
+
+    /// Absolute sidecar JSON path inside this descriptor's artifact directory. Mirrors the
+    /// path that `beskid_aot::mod_artifact` writes when packing a Mod project.
+    pub fn sidecar_path(&self) -> PathBuf {
+        self.artifact_dir.join("mod.descriptor.json")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +111,11 @@ pub struct ModHostInput<'a> {
     pub source_name: &'a str,
     pub source: &'a str,
     pub pipeline: Option<&'a dyn beskid_pipeline::PipelineObserver>,
+    /// Optional contract invoker. When `None`, the host installs a default
+    /// [`crate::mod_host::StubContractInvoker`] so all four contract phases still
+    /// dispatch deterministically. Tests can pass a recording invoker to assert
+    /// `(contractId, typeId, entrySymbol)` tuples were dispatched.
+    pub invoker: Option<&'a dyn super::invoker::ContractInvoker>,
 }
 
 pub struct ModHostGenerateResult {
@@ -103,23 +123,50 @@ pub struct ModHostGenerateResult {
     pub session: ModHostSession,
     /// Diagnostics from `macro.expand` (including registry issues and residual invocations).
     pub macro_diagnostics: Vec<crate::analysis::SemanticDiagnostic>,
+    /// Outcomes returned by `Collector` invocations during `mod.collect`.
+    pub collector_outcomes: Vec<CollectorOutcome>,
+    /// Outcomes returned by `Generator` invocations during `mod.generate`.
+    pub generator_outcomes: Vec<GeneratorOutcome>,
+}
+
+pub struct ModHostAnalyzeResult {
+    pub program: crate::syntax::Spanned<crate::syntax::Program>,
+    /// Outcomes returned by `Analyzer` invocations during `mod.analyze`.
+    pub analyzer_outcomes: Vec<AnalyzerOutcome>,
+    /// Outcomes returned by `Rewriter` invocations during `mod.rewrite`.
+    pub rewriter_outcomes: Vec<RewriterOutcome>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CollectedContracts {
     pub(crate) registrations: Vec<ContractRegistration>,
+    pub(crate) outcomes: Vec<CollectorOutcome>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct GeneratedSyntax {
     pub(crate) registrations: Vec<ContractRegistration>,
     pub(crate) contributions: Vec<String>,
+    pub(crate) outcomes: Vec<GeneratorOutcome>,
 }
 
 impl GeneratedSyntax {
     pub(crate) fn requires_reparse(&self) -> bool {
         !self.contributions.is_empty() || !self.registrations.is_empty()
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct AnalyzedContracts {
+    pub(crate) registrations: Vec<ContractRegistration>,
+    pub(crate) outcomes: Vec<AnalyzerOutcome>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RewriteResult {
+    pub(crate) program: crate::syntax::Spanned<crate::syntax::Program>,
+    pub(crate) registrations: Vec<ContractRegistration>,
+    pub(crate) outcomes: Vec<RewriterOutcome>,
 }
 
 #[cfg(test)]

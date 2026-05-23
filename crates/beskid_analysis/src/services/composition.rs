@@ -25,6 +25,7 @@ pub fn prepare_program_for_composition(
             source_name,
             source,
             pipeline: None,
+            invoker: None,
         },
     )
 }
