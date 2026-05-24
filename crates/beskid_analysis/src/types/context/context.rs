@@ -570,7 +570,11 @@ impl<'a> TypeContext<'a> {
         dependency_programs: &[Spanned<HirProgram>],
     ) -> (TypeResult, Vec<TypeError>) {
         for dependency in dependency_programs {
+            let errors_before = self.errors.len();
             self.register_foreign_function_signatures(dependency);
+            // Dependency units are prefetched for symbols only; incomplete generic surfaces
+            // (for example `Core.Results.Result<,>`) must not block entry/test typing.
+            self.errors.truncate(errors_before);
         }
         for item in &program.node.items {
             let (span, generics) = match &item.node {

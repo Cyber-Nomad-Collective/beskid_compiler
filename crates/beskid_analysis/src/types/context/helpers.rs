@@ -140,6 +140,36 @@ impl<'a> TypeContext<'a> {
         }
     }
 
+  /// Widen `i32` to `i64` when paired with `i64` so integer literals compare with syscall counts.
+    pub(super) fn promote_binary_numeric_operands(
+        &self,
+        left: TypeId,
+        right: TypeId,
+    ) -> (TypeId, TypeId) {
+        let Some(i64_id) = self.primitive_type_id(HirPrimitiveType::I64) else {
+            return (left, right);
+        };
+        let left_prim = self
+            .type_table
+            .get(left)
+            .and_then(|info| match info {
+                TypeInfo::Primitive(primitive) => Some(*primitive),
+                _ => None,
+            });
+        let right_prim = self
+            .type_table
+            .get(right)
+            .and_then(|info| match info {
+                TypeInfo::Primitive(primitive) => Some(*primitive),
+                _ => None,
+            });
+        match (left_prim, right_prim) {
+            (Some(HirPrimitiveType::I64), Some(HirPrimitiveType::I32)) => (left, i64_id),
+            (Some(HirPrimitiveType::I32), Some(HirPrimitiveType::I64)) => (i64_id, right),
+            _ => (left, right),
+        }
+    }
+
     pub(super) fn require_same_type(&mut self, span: SpanInfo, expected: TypeId, actual: TypeId) {
         if expected == actual {
             return;

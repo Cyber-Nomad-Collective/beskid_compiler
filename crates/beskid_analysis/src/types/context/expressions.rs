@@ -1207,7 +1207,7 @@ impl<'a> TypeContext<'a> {
         let left = self.type_expression(&binary.node.left);
         let right = self.type_expression(&binary.node.right);
         let (left, right) = match (left, right) {
-            (Some(left), Some(right)) => (left, right),
+            (Some(left), Some(right)) => self.promote_binary_numeric_operands(left, right),
             _ => return None,
         };
         if left != right {

@@ -224,6 +224,7 @@ pub fn resolve_dependencies(
         && !is_std_project
         && consumer_manifest.project.kind != ProjectKind::Template
         && !is_corelib_workspace_shard_manifest(consumer_manifest_path)
+        && !depends_on_corelib_aggregate(consumer_manifest, &consumer_project_root)
         && let Some(corelib_path) = default_corelib_dependency_path()
     {
         attach_path_dependency(
@@ -358,6 +359,32 @@ fn corelib_aggregate_project_dir(root: &Path) -> PathBuf {
     } else {
         root.to_path_buf()
     }
+}
+
+/// True when the consumer already path-depends on the aggregate `beskid_corelib` project
+/// (explicit `corelib` / `Std` link). Skip implicit `Std` injection so module paths stay on the
+/// shard layout (`Testing::Assertions`) instead of duplicating the aggregate as `Std::*`.
+fn depends_on_corelib_aggregate(
+    consumer_manifest: &ProjectManifest,
+    consumer_project_root: &Path,
+) -> bool {
+    let Some(corelib_root) = default_corelib_dependency_path().map(PathBuf::from) else {
+        return false;
+    };
+    let corelib_manifest =
+        normalize_existing_path(&PathBuf::from(corelib_root).join("Project.proj"));
+    consumer_manifest.dependencies.iter().any(|dependency| {
+        if dependency.source != DependencySource::Path {
+            return false;
+        }
+        dependency.name.eq_ignore_ascii_case("corelib")
+            || dependency.name.eq_ignore_ascii_case("Std")
+            || dependency.path.as_ref().is_some_and(|relative_path| {
+                let dependency_manifest =
+                    dependency_manifest_path(consumer_project_root, relative_path);
+                normalize_existing_path(&dependency_manifest) == corelib_manifest
+            })
+    })
 }
 
 /// `Project.proj` files under `compiler/corelib/packages/*` are split shards of the aggregate

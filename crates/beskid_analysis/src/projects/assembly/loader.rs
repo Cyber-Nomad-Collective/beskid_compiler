@@ -73,15 +73,42 @@ pub fn assemble_program(
     }
 
     let mut prelude_seeds = Vec::new();
-    if options.discovery == AssemblyDiscovery::WorkspaceScan
-        && options.include_std_prelude
-        && plan.has_std_dependency
-    {
+    let mut prelude_reexport_paths = Vec::new();
+    if options.include_std_prelude {
         for root in &module_roots {
+            if is_compiler_mod_sdk_source_root(root) {
+                continue;
+            }
             let prelude = root.join("Prelude.bd");
-            if prelude.is_file() {
-                prelude_seeds.push(prelude);
+            if !prelude.is_file() || prelude_seeds.contains(&prelude) {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&prelude) else {
+                continue;
+            };
+            if text.contains("pub mod Testing.Assertions") {
+                for module_path in [
+                    "Testing.Assertions",
+                    "Testing.Contracts",
+                    "Core.Results",
+                    "Core.String",
+                    "Core.ErrorHandling",
+                ] {
+                    prelude_reexport_paths.push(module_path.to_string());
+                }
                 break;
+            }
+        }
+        if options.discovery == AssemblyDiscovery::WorkspaceScan && plan.has_std_dependency {
+            for root in &module_roots {
+                if is_compiler_mod_sdk_source_root(root) {
+                    continue;
+                }
+                let prelude = root.join("Prelude.bd");
+                if prelude.is_file() && !prelude_seeds.contains(&prelude) {
+                    prelude_seeds.push(prelude);
+                    break;
+                }
             }
         }
     }
@@ -95,6 +122,11 @@ pub fn assemble_program(
             queue.push_back(entry_canonical.clone());
             for seed in prelude_seeds {
                 queue.push_back(seed);
+            }
+            for module_path in prelude_reexport_paths {
+                if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
+                    queue.push_back(dep_file);
+                }
             }
 
             while let Some(path) = queue.pop_front() {
@@ -237,16 +269,28 @@ fn import_paths_from_source_full(source: &str) -> Vec<String> {
     let mut paths = Vec::new();
     for line in source.lines() {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("use ") {
-            let without_semicolon = rest.trim_end_matches(';').trim();
-            let import_path = without_semicolon
-                .split_once(" as ")
-                .map(|(path, _)| path.trim())
-                .unwrap_or(without_semicolon);
-            if !import_path.is_empty() {
-                paths.push(import_path.to_string());
-            }
+        if trimmed.starts_with("//") {
+            continue;
+        }
+        if let Some(import_path) = parse_use_import_path(trimmed) {
+            paths.push(import_path);
         }
     }
     paths
 }
+
+fn parse_use_import_path(trimmed: &str) -> Option<String> {
+    let rest = trimmed.strip_prefix("use ")?;
+    let without_comment = rest.split("//").next()?.trim_end_matches(';').trim();
+    let import_path = without_comment
+        .split_once(" as ")
+        .map(|(path, _)| path.trim())
+        .unwrap_or(without_comment);
+    (!import_path.is_empty()).then(|| import_path.to_string())
+}
+
+fn is_compiler_mod_sdk_source_root(root: &Path) -> bool {
+    let root_str = root.to_string_lossy();
+    root_str.contains("compiler_sdk") || root_str.contains("compiler-sdk")
+}
+

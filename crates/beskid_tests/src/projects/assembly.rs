@@ -215,3 +215,64 @@ fn module_index_resolve_entry_succeeds_for_corelib_mvp_main() {
         );
     });
 }
+
+#[test]
+fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
+    use crate::projects::corelib::corelib_root;
+    use beskid_analysis::resolve::ItemKind;
+
+    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+        let project = corelib_root().join("tests/corelib_tests");
+        let entry = project.join("src/system/SyscallWriteTests.bd");
+        let resolved = resolve_input(
+            Some(&entry),
+            Some(&project),
+            Some("SystemSyscallWriteTests"),
+            None,
+            false,
+            false,
+        )
+        .expect("resolve corelib_tests syscall target");
+
+        let plan = resolved.compile_plan.expect("compile plan");
+        let options = AssemblyOptions {
+            discovery: AssemblyDiscovery::ImportClosure,
+            ..Default::default()
+        };
+        let assembly = assemble_program(
+            &plan,
+            resolved.prepared_workspace.as_ref(),
+            &resolved.source_path,
+            Some(&resolved.source),
+            &options,
+        )
+        .expect("assemble syscall tests");
+
+        let loaded: Vec<String> = assembly
+            .units
+            .iter()
+            .map(|unit| unit.path.display().to_string())
+            .collect();
+        assert!(
+            loaded.iter().any(|p| p.contains("Testing/Assertions.bd")),
+            "expected Testing.Assertions in import closure, got: {loaded:?}"
+        );
+
+        let known_modules = assembly.module_index.known_module_path_strings();
+        assert!(
+            known_modules.contains("Testing::Assertions"),
+            "expected Testing::Assertions module in prefetch graph, got: {known_modules:?}"
+        );
+
+        let resolution = assembly
+            .module_index
+            .resolve_entry(&assembly.entry_unit().program)
+            .expect("resolve syscall tests entry");
+        assert!(
+            resolution.items.iter().any(|item| {
+                item.name == "AssertTrue" && item.kind == ItemKind::Function
+            }),
+            "expected AssertTrue in merged resolution"
+        );
+    });
+}
