@@ -11,4 +11,7 @@ pub(crate) mod util;
 mod descriptors;
 
 #[cfg(test)]
+mod dynamic_types;
+
+#[cfg(test)]
 mod unsupported;

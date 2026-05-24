@@ -7,8 +7,11 @@ use crate::symbols::{
     SYM_CHANNEL_TRY_SEND, SYM_CHANNEL_TRY_SEND_PTR, SYM_COMPOSITION_BIND_PLURAL,
     SYM_COMPOSITION_CONTAINER_CREATE, SYM_COMPOSITION_CONTAINER_DROP, SYM_COMPOSITION_LAUNCH,
     SYM_COMPOSITION_REGISTER, SYM_COMPOSITION_RESOLVE, SYM_COMPOSITION_RESOLVE_PLURAL,
-    SYM_COMPOSITION_SCOPE_DEPTH, SYM_COMPOSITION_SCOPE_ENTER, SYM_COMPOSITION_SCOPE_LEAVE,
-    SYM_COMPOSITION_SHUTDOWN, SYM_FIBER_CANCEL, SYM_FIBER_CURRENT_ID, SYM_FIBER_DETACH,
+    SYM_BESKID_REGISTER_CALLBACKS, SYM_COMPOSITION_SCOPE_DEPTH, SYM_COMPOSITION_SCOPE_ENTER,
+    SYM_COMPOSITION_SCOPE_LEAVE, SYM_COMPOSITION_SHUTDOWN, SYM_DYNAMIC_CAST_CHECKED,
+    SYM_DYNAMIC_CELL_CREATE, SYM_DYNAMIC_CELL_WRAP, SYM_DYNAMIC_MAP_AOT, SYM_DYNAMIC_MAP_FALLBACK,
+    SYM_DYNAMIC_OBJECT_ALLOC, SYM_FIBER_CANCEL, SYM_FIBER_CURRENT_ID,
+    SYM_FIBER_DETACH,
     SYM_FIBER_JOIN, SYM_FIBER_JOIN_VALUE, SYM_FIBER_NOW_MILLIS, SYM_FIBER_PROCESSOR_COUNT,
     SYM_FIBER_SPAWN, SYM_FIBER_SPAWN_WITH_CANCEL_SLOT, SYM_FIBER_YIELD, SYM_GC_BYTES_ALLOCATED,
     SYM_GC_COLLECT, SYM_GC_COLLECT_IF_NEEDED, SYM_GC_EXTERNAL_ROOT_COUNT, SYM_GC_OBJECT_COUNT,
@@ -67,6 +70,17 @@ const PTR_I64_PTR_I64: [AbiParamKind; 4] = [
     AbiParamKind::I64,
     AbiParamKind::Ptr,
     AbiParamKind::I64,
+];
+const PTR_I64_PTR: [AbiParamKind; 3] = [
+    AbiParamKind::Ptr,
+    AbiParamKind::I64,
+    AbiParamKind::Ptr,
+];
+const I64_I64_PTR_PTR: [AbiParamKind; 4] = [
+    AbiParamKind::I64,
+    AbiParamKind::I64,
+    AbiParamKind::Ptr,
+    AbiParamKind::Ptr,
 ];
 
 /// Canonical list of builtin imports (alloc, strings, GC hooks, syscalls, test helpers, …).
@@ -435,5 +449,40 @@ pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
         symbol: SYM_COMPOSITION_SCOPE_DEPTH,
         params: &PTR_ONLY,
         returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_BESKID_REGISTER_CALLBACKS,
+        params: &[AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64],
+        returns: AbiReturnKind::I32,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_DYNAMIC_CELL_CREATE,
+        params: &I64_PTR,
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_DYNAMIC_CELL_WRAP,
+        params: &I64_PTR,
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_DYNAMIC_CAST_CHECKED,
+        params: &PTR_I64,
+        returns: AbiReturnKind::I32,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_DYNAMIC_MAP_AOT,
+        params: &I64_I64_PTR_PTR,
+        returns: AbiReturnKind::I32,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_DYNAMIC_MAP_FALLBACK,
+        params: &PTR_I64_PTR,
+        returns: AbiReturnKind::I32,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_DYNAMIC_OBJECT_ALLOC,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::Ptr,
     },
 ];

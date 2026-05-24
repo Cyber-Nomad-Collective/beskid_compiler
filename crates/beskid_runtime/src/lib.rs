@@ -20,6 +20,7 @@
 pub mod builtins;
 pub mod channel;
 pub mod composition;
+pub mod dynamic;
 pub mod fiber;
 pub mod gc;
 pub mod hub;
@@ -33,12 +34,15 @@ pub mod status;
 pub mod wait_group;
 
 pub use builtins::{
-    alloc, array_len, array_new, beskid_runtime_abi_version, channel_close, channel_create,
+    alloc, array_len, array_new, beskid_register_callbacks, beskid_runtime_abi_version,
+    channel_close, channel_create,
     channel_receive, channel_receive_status, channel_receive_value, channel_send,
     channel_try_receive, channel_try_send, composition_bind_plural, composition_container_create,
     composition_container_drop, composition_launch, composition_register, composition_resolve,
     composition_resolve_plural, composition_scope_depth, composition_scope_enter,
-    composition_scope_leave, composition_shutdown, event_get_handler, event_len, event_subscribe,
+    composition_scope_leave, composition_shutdown, dynamic_cast_checked, dynamic_cell_create,
+    dynamic_cell_wrap, dynamic_map_aot, dynamic_map_fallback, dynamic_object_alloc,
+    event_get_handler, event_len, event_subscribe,
     event_unsubscribe_first, fiber_cancel, fiber_current_id, fiber_detach, fiber_join,
     fiber_join_status, fiber_join_value, fiber_now_millis, fiber_processor_count, fiber_spawn,
     fiber_spawn_with_cancel_slot, fiber_yield, gc_bytes_allocated, gc_collect,
@@ -48,7 +52,7 @@ pub use builtins::{
     hub_wait_receive_status, hub_wait_receive_value, mutex_create, mutex_lock, mutex_try_lock,
     mutex_unlock, panic, panic_str, str_concat, str_len, str_new, syscall_read, syscall_write,
     test_bytes_len, test_bytes_ptr, wait_group_add, wait_group_create, wait_group_done,
-    wait_group_wait,
+    wait_group_wait, CallbackTableEntry, install_callback_trampoline, registered_callbacks,
 };
 
 #[cfg(feature = "metrics")]
@@ -60,6 +64,12 @@ pub use builtins::{
 };
 pub use channel::{
     channel_receive_ptr, channel_send_ptr, channel_try_receive_ptr, channel_try_send_ptr,
+};
+pub use dynamic::{
+    DynamicCell, DYNAMIC_ERR_INCOMPATIBLE, DYNAMIC_ERR_NULL_PAYLOAD,
+    DYNAMIC_ERR_UNKNOWN_DST_SHAPE, DYNAMIC_ERR_UNKNOWN_SRC_SHAPE, DYNAMIC_OK, FieldStep,
+    map_dynamic_fallback, map_objects_aot, mapping_steps, register_mapping, register_shape,
+    reset_tables_for_test, shape_object_size,
 };
 pub use gc::{
     MutatorAttachGuard, RuntimePhase, RuntimeRoot, RuntimeState, assert_mutator_allowed,

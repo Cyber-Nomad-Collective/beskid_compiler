@@ -223,6 +223,13 @@ fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
         SYM_COMPOSITION_RESOLVE,
         SYM_COMPOSITION_RESOLVE_PLURAL,
         SYM_COMPOSITION_SCOPE_DEPTH,
+        beskid_abi::SYM_BESKID_REGISTER_CALLBACKS,
+        beskid_abi::SYM_DYNAMIC_CAST_CHECKED,
+        beskid_abi::SYM_DYNAMIC_CELL_CREATE,
+        beskid_abi::SYM_DYNAMIC_CELL_WRAP,
+        beskid_abi::SYM_DYNAMIC_MAP_AOT,
+        beskid_abi::SYM_DYNAMIC_MAP_FALLBACK,
+        beskid_abi::SYM_DYNAMIC_OBJECT_ALLOC,
     ];
     assert_eq!(RUNTIME_EXPORT_SYMBOLS, expected);
 }

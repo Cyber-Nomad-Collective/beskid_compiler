@@ -14,6 +14,7 @@ use beskid_aot::{
     default_runtime_strategy, resolve_entrypoint,
 };
 use beskid_codegen::lower_resolved_input_with_pipeline;
+use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
 use clap::{Args, ValueEnum};
 
@@ -186,8 +187,9 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         ExportPolicy::Explicit(args.export_symbols)
     };
 
+    let link_inputs = link_libraries_for_artifact(&artifact, resolved.compile_plan.as_ref());
     let pipeline_arc: Arc<dyn PipelineObserver> = pipeline_ui.clone();
-    let result = build(AotBuildRequest {
+    let mut build_request = AotBuildRequest {
         artifact,
         output_kind,
         output_path: output.clone(),
@@ -199,8 +201,12 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         link_mode,
         runtime,
         verbose_link: args.verbose_link,
+        external_libraries: Vec::new(),
+        library_search_paths: Vec::new(),
         pipeline: Some(pipeline_arc),
-    })?;
+    };
+    apply_link_libraries(&mut build_request, link_inputs);
+    let result = build(build_request)?;
     pipeline_ui.finish_build("Build complete");
 
     if args.plain

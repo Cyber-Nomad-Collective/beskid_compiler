@@ -5,13 +5,20 @@ pub mod composition_policy;
 mod cast_intent;
 mod context;
 pub(crate) mod descriptor;
-mod expressions;
+pub mod expressions;
 mod function;
 pub mod lowerable;
 mod node_context;
 mod statements;
-mod types;
+pub mod types;
 
 pub use context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport, LoweredFunction};
 pub use expressions::export::ExportEntry;
+pub use expressions::mapping::shape_id_for_item;
+pub use expressions::serialize::{
+    DYNAMIC_TYPE_NAME, mapping_pair_eligible, require_mapping_eligible,
+};
 pub use lowerable::{Lowerable, lower_node, lower_program};
+pub use types::{
+    dynamic_clif_type, is_dynamic_type_id, map_type_id_to_clif_with_dynamic, pointer_type,
+};

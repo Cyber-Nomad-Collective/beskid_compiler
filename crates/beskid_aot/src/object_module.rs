@@ -87,6 +87,8 @@ impl BeskidObjectModule {
 
         let declared =
             declare_user_functions(module, artifact, Linkage::Export, &mut self.func_ids)?;
+        // User functions use Export linkage so AOT shared libraries surface symbols to the host
+        // linker; `[Export(Symbol:"...")]` renames the emitted symbol via codegen export metadata.
         self.declared_symbols.extend(declared);
         declare_validated_extern_imports(module, artifact, &mut self.func_ids).map_err(|err| {
             match err {

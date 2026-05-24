@@ -18,6 +18,8 @@ pub struct LinkRequest {
     pub exported_symbols: Vec<String>,
     pub link_mode: LinkMode,
     pub verbose: bool,
+    pub external_libraries: Vec<String>,
+    pub library_search_paths: Vec<PathBuf>,
 }
 
 fn detect_c_compiler() -> String {
@@ -92,6 +94,8 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
         cmd.arg(runtime_staticlib);
     }
     cmd.arg("-o").arg(&req.output_path);
+    append_library_search_paths(req, &target, &mut cmd)?;
+    append_external_libraries(req, &target, &mut cmd)?;
 
     if matches!(req.output_kind, BuildOutputKind::SharedLib) {
         cmd.arg("-shared");
@@ -280,6 +284,50 @@ fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
         ),
         exported_symbols: req.exported_symbols.clone(),
     })
+}
+
+fn append_library_search_paths(
+    req: &LinkRequest,
+    target: &str,
+    cmd: &mut Command,
+) -> AotResult<()> {
+    if req.library_search_paths.is_empty() {
+        return Ok(());
+    }
+    if target.contains("windows") {
+        for path in &req.library_search_paths {
+            cmd.arg(format!("/LIBPATH:{}", path.display()));
+        }
+        return Ok(());
+    }
+    for path in &req.library_search_paths {
+        cmd.arg(format!("-L{}", path.display()));
+    }
+    Ok(())
+}
+
+fn append_external_libraries(req: &LinkRequest, target: &str, cmd: &mut Command) -> AotResult<()> {
+    if req.external_libraries.is_empty() {
+        return Ok(());
+    }
+    if target.contains("windows") {
+        for library in &req.external_libraries {
+            cmd.arg(format!("{}.lib", library.trim()));
+        }
+        return Ok(());
+    }
+    for library in &req.external_libraries {
+        let name = library.trim();
+        if name.is_empty() {
+            continue;
+        }
+        if name.starts_with("-l") {
+            cmd.arg(name);
+        } else {
+            cmd.arg(format!("-l{name}"));
+        }
+    }
+    Ok(())
 }
 
 fn append_export_policy_flags(req: &LinkRequest, target: &str, cmd: &mut Command) -> AotResult<()> {

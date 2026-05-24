@@ -3,6 +3,7 @@
 mod engine;
 mod jit_callable;
 mod jit_module;
+pub mod link_libraries;
 pub mod services;
 
 pub use engine::Engine;

@@ -46,6 +46,11 @@ pub enum CodegenError {
         span: SpanInfo,
         message: String,
     },
+    IneligibleSerializeMapping {
+        span: SpanInfo,
+        src_name: String,
+        dst_name: String,
+    },
 }
 
 impl fmt::Display for CodegenError {
@@ -94,6 +99,16 @@ impl fmt::Display for CodegenError {
             }
             CodegenError::InvalidExport { message, .. } => {
                 write!(f, "invalid export: {message}")
+            }
+            CodegenError::IneligibleSerializeMapping {
+                src_name,
+                dst_name,
+                ..
+            } => {
+                write!(
+                    f,
+                    "ineligible serialize mapping from `{src_name}` to `{dst_name}`"
+                )
             }
         }
     }

@@ -4,6 +4,8 @@ use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use cranelift_codegen::ir::types;
 
+use super::expressions::serialize::DYNAMIC_TYPE_NAME;
+
 pub(crate) fn map_type_id_to_clif(
     type_result: &TypeResult,
     type_id: TypeId,
@@ -17,6 +19,38 @@ pub(crate) fn map_type_id_to_clif(
         | Some(TypeInfo::Function { .. }) => Some(pointer_type()),
         _ => None,
     }
+}
+
+/// Whether `type_id` resolves to the v0.3 `dynamic` cell type (named alias until primitive lands).
+pub fn is_dynamic_type_id(
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    type_id: TypeId,
+) -> bool {
+    match type_result.types.get(type_id) {
+        Some(TypeInfo::Named(item_id)) => resolution
+            .items
+            .iter()
+            .any(|item| item.id == *item_id && item.name == DYNAMIC_TYPE_NAME),
+        _ => false,
+    }
+}
+
+/// CLIF representation for `dynamic`: pointer to [`beskid_runtime::dynamic::DynamicCell`].
+pub fn dynamic_clif_type() -> cranelift_codegen::ir::Type {
+    pointer_type()
+}
+
+/// Map a type to CLIF, treating the `dynamic` named alias as a cell pointer.
+pub fn map_type_id_to_clif_with_dynamic(
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    type_id: TypeId,
+) -> Option<cranelift_codegen::ir::Type> {
+    if is_dynamic_type_id(resolution, type_result, type_id) {
+        return Some(dynamic_clif_type());
+    }
+    map_type_id_to_clif(type_result, type_id)
 }
 
 fn find_function_type_id(
@@ -73,7 +107,7 @@ pub(crate) fn type_id_for_type(
     }
 }
 
-pub(crate) fn pointer_type() -> cranelift_codegen::ir::Type {
+pub fn pointer_type() -> cranelift_codegen::ir::Type {
     types::I64
 }
 

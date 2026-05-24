@@ -142,6 +142,22 @@ pub fn codegen_error_to_diagnostic(
             Some(format!("{CODEGEN_ERROR_PREFIX}12")),
             Severity::Error,
         ),
+        CodegenError::IneligibleSerializeMapping {
+            span,
+            src_name,
+            dst_name,
+        } => make_diagnostic(
+            source_name,
+            source,
+            *span,
+            format!(
+                "mapping from `{src_name}` to `{dst_name}` is not eligible for AOT serialize mapping (Serialization Mod analyzer / structural rules)"
+            ),
+            "ineligible serialize mapping",
+            None,
+            Some(format!("{CODEGEN_ERROR_PREFIX}13")),
+            Severity::Error,
+        ),
     }
 }
 

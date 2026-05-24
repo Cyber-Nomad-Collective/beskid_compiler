@@ -19,8 +19,10 @@ pub mod services;
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
 pub use errors::CodegenError;
 pub use lowering::{
-    CodegenArtifact, CodegenContext, CodegenResult, ExportEntry, ExternImport, Lowerable,
-    LoweredFunction, lower_node, lower_program,
+    CodegenArtifact, CodegenContext, CodegenResult, DYNAMIC_TYPE_NAME, ExportEntry, ExternImport,
+    Lowerable, LoweredFunction, dynamic_clif_type, is_dynamic_type_id,
+    map_type_id_to_clif_with_dynamic, mapping_pair_eligible, pointer_type, require_mapping_eligible,
+    shape_id_for_item, lower_node, lower_program,
 };
 pub use module_emission::{DescriptorHandles, emit_string_literals, emit_type_descriptors};
 pub use services::{

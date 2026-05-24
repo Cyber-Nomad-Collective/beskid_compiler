@@ -3,8 +3,10 @@
 
 mod alloc;
 mod arrays;
+pub mod callback;
 mod channel;
 mod composition;
+mod dynamic;
 mod events;
 mod fiber;
 mod gc;
@@ -20,6 +22,9 @@ mod version;
 mod wait_group;
 
 pub use alloc::alloc;
+pub use callback::{
+    CallbackTableEntry, beskid_register_callbacks, install_callback_trampoline, registered_callbacks,
+};
 pub use arrays::{array_len, array_new};
 pub use channel::{
     channel_close, channel_create, channel_receive, channel_receive_status, channel_receive_value,
@@ -30,6 +35,10 @@ pub use composition::{
     composition_launch, composition_register, composition_resolve, composition_resolve_plural,
     composition_scope_depth, composition_scope_enter, composition_scope_leave,
     composition_shutdown,
+};
+pub use dynamic::{
+    dynamic_cast_checked, dynamic_cell_create, dynamic_cell_wrap, dynamic_map_aot,
+    dynamic_map_fallback, dynamic_object_alloc,
 };
 pub use events::{
     EventState, event_get_handler, event_len, event_subscribe, event_unsubscribe_first,

@@ -234,7 +234,9 @@ fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
     })?;
 
     let all_symbols = object_module.declared_symbols();
-    let exported_symbols = apply_export_policy(all_symbols, &req.export_policy);
+    let export_table = ExportTable::from_artifact(&req.artifact);
+    let export_policy = export_table.resolve_export_policy(&req.export_policy);
+    let exported_symbols = apply_export_policy(all_symbols, &export_policy);
 
     object_module.finalize_to_path(&object_path)?;
 
@@ -280,11 +282,15 @@ fn link_stage(
             exported_symbols: object_stage.exported_symbols.clone(),
             link_mode: req.link_mode,
             verbose: req.verbose_link,
+            external_libraries: req.external_libraries.clone(),
+            library_search_paths: req.library_search_paths.clone(),
         })
     })
 }
 
 fn validate_request(req: &AotBuildRequest) -> AotResult<()> {
+    validate_extern_libraries(&req.artifact, &req.external_libraries)?;
+
     if req.artifact.functions.is_empty() && requires_lowered_functions(req.output_kind) {
         return Err(AotError::InvalidRequest {
             message: "codegen artifact has no lowered functions for executable build".to_owned(),
@@ -304,6 +310,43 @@ fn requires_lowered_functions(output_kind: BuildOutputKind) -> bool {
 
 fn requires_entrypoint(output_kind: BuildOutputKind) -> bool {
     output_kind == BuildOutputKind::Exe
+}
+
+fn canonical_logical_name(logical: &str) -> String {
+    let lower = logical.trim().to_ascii_lowercase();
+    let stripped_prefix = lower.strip_prefix("lib").unwrap_or(&lower);
+    let stripped_suffix = stripped_prefix
+        .strip_suffix(".so")
+        .or_else(|| stripped_prefix.strip_suffix(".dylib"))
+        .or_else(|| stripped_prefix.strip_suffix(".a"))
+        .unwrap_or(stripped_prefix);
+    stripped_suffix.to_string()
+}
+
+fn validate_extern_libraries(
+    artifact: &CodegenArtifact,
+    external_libraries: &[String],
+) -> AotResult<()> {
+    if artifact.extern_imports.is_empty() {
+        return Ok(());
+    }
+    let available: HashSet<String> = external_libraries
+        .iter()
+        .map(|name| canonical_logical_name(name))
+        .collect();
+    for import in &artifact.extern_imports {
+        let Some(library) = import.library.as_deref() else {
+            continue;
+        };
+        let canon = canonical_logical_name(library);
+        if !available.contains(&canon) {
+            return Err(AotError::UnresolvedExternLibrary {
+                library: library.to_owned(),
+                symbol: import.symbol.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn apply_export_policy(symbols: Vec<String>, policy: &ExportPolicy) -> Vec<String> {
@@ -340,6 +383,8 @@ mod with_defaults_tests {
         assert_eq!(req.link_mode, LinkMode::Auto);
         assert!(matches!(req.runtime, RuntimeStrategy::UsePrebuilt { .. }));
         assert!(!req.verbose_link);
+        assert!(req.external_libraries.is_empty());
+        assert!(req.library_search_paths.is_empty());
         assert!(req.pipeline.is_none());
     }
 }

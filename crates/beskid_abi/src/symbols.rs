@@ -95,6 +95,19 @@ pub const SYM_COMPOSITION_RESOLVE: &str = "composition_resolve";
 pub const SYM_COMPOSITION_RESOLVE_PLURAL: &str = "composition_resolve_plural";
 pub const SYM_COMPOSITION_SCOPE_DEPTH: &str = "composition_scope_depth";
 
+pub const SYM_BESKID_REGISTER_CALLBACKS: &str = "beskid_register_callbacks";
+
+pub const SYM_DYNAMIC_CELL_CREATE: &str = "dynamic_cell_create";
+pub const SYM_DYNAMIC_CELL_WRAP: &str = "dynamic_cell_wrap";
+pub const SYM_DYNAMIC_CAST_CHECKED: &str = "dynamic_cast_checked";
+pub const SYM_DYNAMIC_MAP_AOT: &str = "dynamic_map_aot";
+pub const SYM_DYNAMIC_MAP_FALLBACK: &str = "dynamic_map_fallback";
+pub const SYM_DYNAMIC_OBJECT_ALLOC: &str = "dynamic_object_alloc";
+
+/// User-facing FFI layout band for callback registration tables (independent of
+/// [`crate::BESKID_RUNTIME_ABI_VERSION`]).
+pub const BESKID_USER_FFI_LAYOUT_BAND: u32 = 1;
+
 /// All symbols the JIT builder registers when wiring the Beskid runtime.
 pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_ABI_VERSION,
@@ -175,4 +188,11 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_COMPOSITION_RESOLVE,
     SYM_COMPOSITION_RESOLVE_PLURAL,
     SYM_COMPOSITION_SCOPE_DEPTH,
+    SYM_BESKID_REGISTER_CALLBACKS,
+    SYM_DYNAMIC_CAST_CHECKED,
+    SYM_DYNAMIC_CELL_CREATE,
+    SYM_DYNAMIC_CELL_WRAP,
+    SYM_DYNAMIC_MAP_AOT,
+    SYM_DYNAMIC_MAP_FALLBACK,
+    SYM_DYNAMIC_OBJECT_ALLOC,
 ];

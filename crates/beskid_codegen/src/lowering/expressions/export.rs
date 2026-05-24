@@ -1,6 +1,6 @@
 //! `[Export]` metadata on `pub` functions for AOT linker-visible symbols.
 
-use beskid_analysis::hir::{HirExportInterface, HirFunctionDefinition, HirVisibility};
+use beskid_analysis::hir::{HirFunctionDefinition, HirVisibility};
 use beskid_analysis::syntax::Spanned;
 use cranelift_codegen::ir::Signature;
 

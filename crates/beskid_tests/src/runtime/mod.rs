@@ -5,6 +5,9 @@ mod alloc;
 mod channels;
 
 #[cfg(test)]
+mod dynamic;
+
+#[cfg(test)]
 mod fibers;
 
 #[cfg(test)]
