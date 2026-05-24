@@ -6,10 +6,9 @@ use beskid_analysis::doc::{
     API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocLinkContext, ApiDocRoot, ApiLocation,
     DocRefLinkContext, apply_signature_to_item, assign_declaring_packages,
     build_item_signature, display_name_for_item, fill_member_ids_from_parents,
-    hir_programs_by_path, link_api_doc_library_tree, qualified_names_for_items,
-    resolve_item_tiers,
+    hir_programs_by_path,     build_api_doc_link_context, link_api_doc_library_tree, qualified_names_for_items,
+    relativize_api_doc_paths, resolve_item_tiers,
 };
-use beskid_analysis::projects::assembly::effective_roots_from_plan_and_workspace;
 use beskid_analysis::projects::assembly::ProgramAssembly;
 use beskid_analysis::resolve::ItemInfo;
 use beskid_analysis::hir::HirVisibility;
@@ -101,29 +100,11 @@ fn location_for_item(
     location_for_span(entry_source, entry_path, &item.span)
 }
 
-fn api_doc_link_context(resolved: &beskid_analysis::services::ResolvedInput) -> Option<ApiDocLinkContext> {
+fn api_doc_link_context(
+    resolved: &beskid_analysis::services::ResolvedInput,
+) -> Option<ApiDocLinkContext> {
     let plan = resolved.compile_plan.as_ref()?;
-    let manifest = load_manifest_from_path(&plan.manifest_path).ok()?;
-    let publishing = manifest.project.name.trim().to_string();
-    if publishing.is_empty() {
-        return None;
-    }
-    let roots = effective_roots_from_plan_and_workspace(plan, resolved.prepared_workspace.as_ref());
-    let mut entries = vec![(roots.host.source_root.clone(), publishing.clone())];
-    for dep in &roots.dependencies {
-        let manifest_path = dep.source_root.join("Project.proj");
-        let name = load_manifest_from_path(&manifest_path)
-            .ok()
-            .map(|m| m.project.name.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .or(dep.dependency_name.clone())
-            .unwrap_or_else(|| "dependency".to_string());
-        entries.push((dep.source_root.clone(), name));
-    }
-    Some(ApiDocLinkContext {
-        publishing_package: publishing,
-        roots: entries,
-    })
+    build_api_doc_link_context(plan, resolved.prepared_workspace.as_ref())
 }
 
 fn docs_ref_link_context(
@@ -144,9 +125,10 @@ fn docs_ref_link_context(
     if let Some(link_ctx) = api_doc_link_context(resolved) {
         ctx.publishing_package = Some(link_ctx.publishing_package.clone());
         ctx.dependency_roots = link_ctx
-            .roots
-            .into_iter()
-            .filter(|(_, pkg)| pkg != &link_ctx.publishing_package)
+            .packages
+            .iter()
+            .filter(|pkg| pkg.package != link_ctx.publishing_package)
+            .map(|pkg| (pkg.match_root.clone(), pkg.package.clone()))
             .collect();
     }
     Some(ctx)
@@ -327,7 +309,8 @@ pub fn execute(args: DocArgs) -> Result<()> {
 
     let had_resolution = snap.resolution.is_some();
     if had_resolution {
-        if let (Some(res), Some(ctx)) = (snap.resolution.as_ref(), api_doc_link_context(&resolved))
+        if let (Some(res), Some(ctx)) =
+            (snap.resolution.as_ref(), api_doc_link_context(&resolved))
         {
             link_api_doc_library_tree(&mut api_items, res);
             assign_declaring_packages(&mut api_items, &ctx);
@@ -341,7 +324,8 @@ pub fn execute(args: DocArgs) -> Result<()> {
     // edges (used by the cascade) reflect the final navigation graph.
     resolve_item_tiers(&mut api_items);
 
-    let api = if had_resolution {
+    let link_ctx = api_doc_link_context(&resolved);
+    let mut api = if had_resolution {
         ApiDocRoot {
             schema_version: API_JSON_SCHEMA_VERSION,
             navigation_model: Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1.to_string()),
@@ -358,6 +342,9 @@ pub fn execute(args: DocArgs) -> Result<()> {
             items: api_items,
         }
     };
+    relativize_api_doc_paths(&mut api, link_ctx.as_ref()).map_err(|message| {
+        anyhow::anyhow!("relativize api.json paths to artifact layout: {message}")
+    })?;
     fs::write(
         args.out.join("api.json"),
         serde_json::to_string_pretty(&api).context("serialize api.json")?,
@@ -606,6 +593,18 @@ type Outer { Inner inner, }
         )
         .expect("parse api.json");
         assert_eq!(api.schema_version, API_JSON_SCHEMA_VERSION);
+        assert!(
+            !std::path::Path::new(&api.source).is_absolute(),
+            "api.json source must be package-relative: {}",
+            api.source
+        );
+        for item in &api.items {
+            assert!(
+                !std::path::Path::new(&item.location.file).is_absolute(),
+                "location.file must be package-relative: {}",
+                item.location.file
+            );
+        }
 
         let inner_type = api
             .items

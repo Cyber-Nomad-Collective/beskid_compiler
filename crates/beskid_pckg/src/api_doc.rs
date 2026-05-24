@@ -2,7 +2,7 @@
 
 pub use beskid_analysis::doc::{
     API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
-    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocRoot,
+    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocRoot, path_looks_absolute,
 };
 
 fn validate_type_ref(target: Option<usize>, root: &ApiDocRoot, item_label: &str) -> Result<(), String> {
@@ -18,8 +18,28 @@ fn validate_type_ref(target: Option<usize>, root: &ApiDocRoot, item_label: &str)
     }
 }
 
+fn validate_package_relative_paths(root: &ApiDocRoot) -> Result<(), String> {
+    if path_looks_absolute(&root.source) {
+        return Err(format!(
+            "api.json source must be package-relative, not absolute: \"{}\"",
+            root.source
+        ));
+    }
+    for item in &root.items {
+        if path_looks_absolute(&item.location.file) {
+            return Err(format!(
+                "api.json item \"{}\" location.file must be package-relative, not absolute: \"{}\"",
+                item.qualified_name, item.location.file
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Validates that a packed `api.json` satisfies the graph navigation contract for schema v3+.
 pub fn validate_packed_api_doc(root: &ApiDocRoot) -> Result<(), String> {
+    validate_package_relative_paths(root)?;
+
     if root.schema_version >= API_JSON_SCHEMA_VERSION {
         if root.navigation_model.as_deref() != Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1) {
             return Err(format!(
@@ -182,6 +202,32 @@ mod tests {
         };
         let err = validate_packed_api_doc(&root).expect_err("expected error");
         assert!(err.contains("navigationModel"));
+    }
+
+    #[test]
+    fn rejects_absolute_source_path() {
+        let root = ApiDocRoot {
+            schema_version: API_JSON_SCHEMA_VERSION,
+            navigation_model: Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1.into()),
+            generator: "test".into(),
+            source: "/tmp/pkg/src/Main.bd".into(),
+            items: vec![minimal_item(1, "Root", "module", None, vec![])],
+        };
+        let err = validate_packed_api_doc(&root).expect_err("expected error");
+        assert!(err.contains("package-relative"));
+    }
+
+    #[test]
+    fn rejects_windows_drive_source_path() {
+        let root = ApiDocRoot {
+            schema_version: API_JSON_SCHEMA_VERSION,
+            navigation_model: Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1.into()),
+            generator: "test".into(),
+            source: "C:\\pkg\\src\\Main.bd".into(),
+            items: vec![minimal_item(1, "Root", "module", None, vec![])],
+        };
+        let err = validate_packed_api_doc(&root).expect_err("expected error");
+        assert!(err.contains("package-relative"));
     }
 
     #[test]

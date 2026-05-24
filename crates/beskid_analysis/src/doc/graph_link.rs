@@ -7,22 +7,32 @@ use crate::resolve::Resolution;
 
 use super::api_snapshot::{ApiDocItem, ApiLocation};
 
-/// Source-root → registry package name (longest prefix wins for `location.file`).
+/// Per-package roots for doc linking: absolute `match_root` for analysis, artifact prefix for packed paths.
+#[derive(Debug, Clone)]
+pub struct ApiDocPackageRoots {
+    pub package: String,
+    /// Absolute path prefix of compilation units (materialized or plan source root).
+    pub match_root: PathBuf,
+    /// Path from package root (`project_root`) to `source_root` in `.bpk` entries (e.g. `src`).
+    pub artifact_source_prefix: String,
+}
+
+/// Package roots for `declaringPackage` assignment and artifact-relative path emission.
 #[derive(Debug, Clone)]
 pub struct ApiDocLinkContext {
     pub publishing_package: String,
-    pub roots: Vec<(PathBuf, String)>,
+    pub packages: Vec<ApiDocPackageRoots>,
 }
 
 impl ApiDocLinkContext {
     pub fn declaring_package_for_file(&self, file: &str) -> Option<String> {
         let path = Path::new(file);
         let mut best: Option<(usize, String)> = None;
-        for (root, package) in &self.roots {
-            if path.starts_with(root) {
-                let len = root.as_os_str().len();
+        for entry in &self.packages {
+            if path.starts_with(&entry.match_root) {
+                let len = entry.match_root.as_os_str().len();
                 if best.as_ref().is_none_or(|(l, _)| len > *l) {
-                    best = Some((len, package.clone()));
+                    best = Some((len, entry.package.clone()));
                 }
             }
         }
@@ -226,7 +236,7 @@ mod tests {
 
     fn sample_location() -> ApiLocation {
         ApiLocation {
-            file: "/proj/src/A.bd".into(),
+            file: "src/A.bd".into(),
             start_line: 1,
             start_column: 1,
             end_line: 1,

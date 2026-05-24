@@ -6,6 +6,7 @@ mod api_tier;
 mod callable;
 mod edit;
 mod graph_link;
+mod path_rel;
 mod item_shape;
 mod qualified_names;
 mod refs;
@@ -26,9 +27,10 @@ pub use api_tier::{
     TIER_STANDARD, TIER_SUPPORTED, TIER_UNSTABLE, parse_tier_directive, resolve_item_tiers,
 };
 pub use graph_link::{
-    ApiDocLinkContext, assign_declaring_packages, fill_member_ids_from_parents,
-    link_api_doc_library_tree,
+    ApiDocLinkContext, ApiDocPackageRoots, assign_declaring_packages,
+    fill_member_ids_from_parents, link_api_doc_library_tree,
 };
+pub use path_rel::{build_api_doc_link_context, path_looks_absolute, relativize_api_doc_paths};
 pub use qualified_names::{display_name_for_item, module_path_for_item, qualified_names_for_items};
 pub use callable::callable_signatures_for_span;
 pub use edit::{DocCommentEdit, doc_comment_edit_for_offset};
