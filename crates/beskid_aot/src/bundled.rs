@@ -89,11 +89,32 @@ fn workspace_dev_runtime_archive(profile: BuildProfile) -> Option<PathBuf> {
     } else {
         "libbeskid_runtime_bridge.a"
     };
-    let candidate = workspace
-        .join("target")
-        .join(profile_dir_name(profile))
-        .join(lib_name);
-    candidate.is_file().then_some(candidate)
+    let profile_dir = profile_dir_name(profile);
+    let target_root = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace.join("target"));
+
+    let mut candidates = vec![
+        target_root.join(profile_dir).join(lib_name),
+    ];
+    if let Ok(host_triple) = std::env::var("HOST") {
+        candidates.push(
+            target_root
+                .join(&host_triple)
+                .join(profile_dir)
+                .join(lib_name),
+        );
+    }
+    if let Ok(build_target) = std::env::var("CARGO_BUILD_TARGET") {
+        candidates.push(
+            target_root
+                .join(build_target)
+                .join(profile_dir)
+                .join(lib_name),
+        );
+    }
+
+    candidates.into_iter().find(|path| path.is_file())
 }
 
 fn profile_dir_name(profile: BuildProfile) -> &'static str {

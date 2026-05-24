@@ -23,6 +23,21 @@ _ASAN = {
 _LARGE_TEST_STACK = {"RUST_MIN_STACK": str(16 * 1024 * 1024)}
 
 
+def _runtime_bridge_archive(
+    profile: str = "debug",
+    target_triple: str | None = None,
+) -> Path:
+    base = ROOT / "target"
+    if target_triple:
+        base = base / target_triple
+    name = (
+        "beskid_runtime_bridge.lib"
+        if sys.platform.startswith("win")
+        else "libbeskid_runtime_bridge.a"
+    )
+    return base / profile / name
+
+
 def _cargo(session: nox.Session, *args: str, env: dict[str, str] | None = None) -> None:
     merged = {**os.environ, **(env or {})}
     with session.chdir(str(ROOT)):
@@ -100,23 +115,39 @@ def bench_compile(session: nox.Session) -> None:
 @nox.session(python=False, name="e2e_linux")
 def e2e_linux(session: nox.Session) -> None:
     _cargo(session, "build", "-p", "beskid_runtime_bridge", "-q")
+    _cargo(session, "build", "-p", "beskid_runtime_bridge", "-q", "--release")
     _cargo(session, "build", "-p", "beskid_cli")
     _cargo(session, "test", "-p", "beskid_e2e_tests")
 
 
 @nox.session(python=False, name="runtime_asan_linux")
 def runtime_asan_linux(session: nox.Session) -> None:
+    triple = "x86_64-unknown-linux-gnu"
+    _cargo(
+        session,
+        "build",
+        "-p",
+        "beskid_runtime_bridge",
+        "-q",
+        "--target",
+        triple,
+    )
+    bridge = _runtime_bridge_archive("debug", triple)
+    asan_env = {
+        **_ASAN,
+        "BESKID_RUNTIME_ARCHIVE": str(bridge),
+    }
     _cargo(
         session,
         "test",
         "-p",
         "beskid_tests",
         "--target",
-        "x86_64-unknown-linux-gnu",
+        triple,
         "runtime::",
         "--",
         "--test-threads=1",
-        env=_ASAN,
+        env=asan_env,
     )
 
 
