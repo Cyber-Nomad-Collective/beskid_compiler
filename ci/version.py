@@ -48,6 +48,11 @@ def read_package_version() -> str:
     return str(data["package"]["version"])
 
 
+def cli_release_tag(version: str) -> str:
+    """Immutable GitHub release tag for a resolved CLI semver."""
+    return f"cli-v{version}"
+
+
 def _parse_semver(version: str) -> tuple[int, int, int]:
     match = SEMVER_RE.match(version.strip())
     if not match:

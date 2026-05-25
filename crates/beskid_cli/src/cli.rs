@@ -10,6 +10,7 @@ use crate::commands::fetch::FetchArgs;
 use crate::commands::format::FormatArgs;
 use crate::commands::import::ImportArgs;
 use crate::commands::lock::LockArgs;
+use crate::commands::lsp::LspArgs;
 use crate::commands::new::NewArgs;
 use crate::commands::parse::ParseArgs;
 use crate::commands::run::RunArgs;
@@ -17,8 +18,8 @@ use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::{
-    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, import, lock, new, parse,
-    run, test, tree, update,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, import, lock, lsp, new,
+    parse, run, test, tree, update,
 };
 use crate::corelib_runtime;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
@@ -102,6 +103,9 @@ pub enum Commands {
 
     /// Package-manager operations backed by the pckg service
     Pckg(PckgArgs),
+
+    /// Run the Beskid language server on stdio (for editors and `beskid-vscode`)
+    Lsp(LspArgs),
 }
 
 /// Parses argv, provisions bundled corelib when needed, and runs the selected subcommand.
@@ -132,6 +136,7 @@ pub fn run() -> miette::Result<()> {
         Commands::New(args) => new::execute(args),
         Commands::Pckg(args) => maybe_generate_docs_for_pack(&args)
             .and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into)),
+        Commands::Lsp(args) => lsp::execute(args),
     };
 
     result.map_err(anyhow_to_miette)

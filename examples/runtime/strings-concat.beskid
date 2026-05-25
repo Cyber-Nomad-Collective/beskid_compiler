@@ -1,7 +1,0 @@
-i64 main() {
-    string base = "hello";
-    string world = " world";
-    string output = base + world;
-    __syscall_write(1, output);
-    return __str_len(output);
-}

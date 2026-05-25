@@ -12,6 +12,7 @@ beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_engine = { path = "../beskid_engine" }
 beskid_pckg = { path = "../beskid_pckg" }
 beskid_template = { path = "../beskid_template" }
+beskid_lsp = { path = "../beskid_lsp" }
 tokio = { version = "1.48", features = ["rt-multi-thread"] }
 anyhow = "1.0"
 clap = { version = "4.4", features = ["derive"] }

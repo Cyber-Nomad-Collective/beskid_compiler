@@ -262,6 +262,7 @@ dependencies = [
  "beskid_aot",
  "beskid_codegen",
  "beskid_engine",
+ "beskid_lsp",
  "beskid_pckg",
  "beskid_pipeline",
  "beskid_template",
@@ -325,6 +326,7 @@ dependencies = [
 name = "beskid_lsp"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "beskid_analysis",
  "daggy",
  "pest",

@@ -10,6 +10,7 @@ pub mod fetch;
 pub mod format;
 pub mod import;
 pub mod lock;
+pub mod lsp;
 pub mod new;
 pub mod parse;
 pub mod run;

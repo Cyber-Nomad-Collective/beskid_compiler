@@ -1,9 +1,0 @@
-[Extern(Abi:"C", Library:"libc.so.6")]
-pub contract C {
-    i64 getpid();
-}
-
-pub i64 main() {
-    return C.getpid();
-}
-
