@@ -118,6 +118,15 @@ pub fn lower_resolved_input_with_pipeline(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
+    if resolved.compile_plan.is_none() {
+        return lower_source_with_pipeline(
+            &resolved.source_path,
+            &resolved.source,
+            with_diagnostics,
+            pipeline,
+        );
+    }
+
     let options = FrontEndOptions {
         with_semantic_diagnostics: with_diagnostics,
         ..Default::default()

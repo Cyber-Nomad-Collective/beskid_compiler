@@ -81,6 +81,13 @@ fn path_matches(expected: &[&str], actual: &[String]) -> bool {
 }
 
 define_builtins! {
+    // Compile-time `for i in range(start, end)` sugar (see hir/normalize for_statement).
+    &["range"] => {
+        symbol: "range",
+        params: [U64, U64],
+        returns: Unit,
+        injected: false,
+    },
     &["__alloc"] => {
         symbol: "alloc",
         params: [Usize, Ptr],
