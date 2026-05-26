@@ -6,7 +6,6 @@ use crate::frontend;
 use crate::pipeline_ui::{PipelineProgressKind, resolve_input_with_cli_pipeline_kind};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
-use beskid_engine::services::run_entrypoint_with_pipeline;
 use clap::Args;
 
 #[derive(Args, Debug)]
@@ -51,11 +50,10 @@ pub fn execute(args: RunArgs) -> Result<()> {
     )?;
     pipeline_ui.finish_prepare_ui("Analysis complete");
 
-    let output = run_entrypoint_with_pipeline(
-        &resolved.source_path,
-        &resolved.source,
+    let output = beskid_engine::services::run_resolved_entrypoint_with_pipeline(
+        &resolved,
         &args.entrypoint,
-        None,
+        Some(pipeline_ui.as_ref()),
     )?;
     pipeline_ui.finish_session("Run complete");
     println!("{output}");

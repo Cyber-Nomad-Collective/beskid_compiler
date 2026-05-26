@@ -7,4 +7,5 @@ pub mod items;
 pub mod iterable;
 pub mod spawn;
 pub mod statements;
+pub mod try_infer;
 pub mod types;

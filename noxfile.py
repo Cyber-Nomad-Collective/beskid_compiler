@@ -189,6 +189,13 @@ def release_cli(session: nox.Session) -> None:
         session.run("python", "-m", "ci.release_cli")
 
 
+@nox.session(python="3.12", name="release_lsp")
+def release_lsp(session: nox.Session) -> None:
+    session.install("-r", str(ROOT / "ci" / "requirements.txt"))
+    with session.chdir(str(ROOT)):
+        session.run("python", "-m", "ci.release_lsp")
+
+
 _CORELIB_TEST_TARGETS = (
     "SystemSyscallWriteTests",
     "SystemSyscallApiTests",

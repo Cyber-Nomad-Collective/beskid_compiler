@@ -1,7 +1,10 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use crate::hir::{HirBlock, HirExpressionNode, HirProgram};
-use crate::syntax::Spanned;
+use crate::resolve::Resolution;
+use crate::syntax::{SpanInfo, Spanned};
+use crate::types::context::try_infer::{TryDesugarTarget, try_desugar_targets_for_program};
 
 use super::normalizable::Normalize;
 use super::{builders, builders::desugar_try_expression};
@@ -20,7 +23,19 @@ impl fmt::Display for HirNormalizeError {
 
 /// In-place desugaring and shape fixes on HIR (for example `try` expansion).
 pub fn normalize_program(program: &mut Spanned<HirProgram>) -> Result<(), Vec<HirNormalizeError>> {
-    let mut normalizer = Normalizer::new();
+    normalize_program_with_resolution(program, None, &[])
+}
+
+/// Like [`normalize_program`], using pass-1 [`Resolution`] to desugar `?` from the scrutinee enum.
+pub fn normalize_program_with_resolution(
+    program: &mut Spanned<HirProgram>,
+    resolution: Option<&Resolution>,
+    dependency_programs: &[Spanned<HirProgram>],
+) -> Result<(), Vec<HirNormalizeError>> {
+    let try_targets = resolution.map(|resolution| {
+        try_desugar_targets_for_program(resolution, program, dependency_programs)
+    });
+    let mut normalizer = Normalizer::new(try_targets);
     normalizer.visit_program(program);
     if normalizer.errors.is_empty() {
         Ok(())
@@ -32,11 +47,15 @@ pub fn normalize_program(program: &mut Spanned<HirProgram>) -> Result<(), Vec<Hi
 /// Visitor that applies normalization passes and accumulates [`HirNormalizeError`].
 pub struct Normalizer {
     pub(crate) errors: Vec<HirNormalizeError>,
+    try_targets: HashMap<SpanInfo, TryDesugarTarget>,
 }
 
 impl Normalizer {
-    fn new() -> Self {
-        Self { errors: Vec::new() }
+    fn new(try_targets: Option<HashMap<SpanInfo, TryDesugarTarget>>) -> Self {
+        Self {
+            errors: Vec::new(),
+            try_targets: try_targets.unwrap_or_default(),
+        }
     }
 
     fn visit_program(&mut self, program: &mut Spanned<HirProgram>) {
@@ -52,6 +71,11 @@ impl Normalizer {
             }
             crate::hir::Item::MethodDefinition(def) => {
                 self.visit_block(&mut def.node.body);
+            }
+            crate::hir::Item::InlineModule(inline) => {
+                for nested in &mut inline.node.items {
+                    self.visit_item(nested);
+                }
             }
             _ => {}
         }
@@ -79,7 +103,8 @@ impl Normalizer {
                 unreachable!("guarded by TryExpression match");
             };
             self.visit_expression(&mut try_expr.node.expr);
-            *expr = desugar_try_expression(try_expr, original.span);
+            let target = self.try_targets.get(&original.span);
+            *expr = desugar_try_expression(try_expr, original.span, target);
             self.visit_expression(expr);
             return;
         }

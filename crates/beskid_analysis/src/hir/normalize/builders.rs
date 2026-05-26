@@ -4,6 +4,7 @@ use crate::hir::{
     HirPathSegment, HirPattern, HirTryExpression,
 };
 use crate::syntax::{SpanInfo, Spanned};
+use crate::types::context::try_infer::TryDesugarTarget;
 
 const TRY_OK_BINDING_OFFSET: usize = 10;
 const TRY_OK_PATTERN_OFFSET: usize = 11;
@@ -38,7 +39,11 @@ pub(super) fn hir_path_expr(name: &str, span: SpanInfo) -> Spanned<HirExpression
 pub(super) fn desugar_try_expression(
     try_expr: Spanned<HirTryExpression>,
     parent_span: SpanInfo,
+    target: Option<&TryDesugarTarget>,
 ) -> Spanned<HirExpressionNode> {
+    let (type_name, ok_variant) = target
+        .map(|t| (t.type_name.as_str(), t.ok_variant.as_str()))
+        .unwrap_or(("Result", "Ok"));
     let ok_binding_span = offset_span(parent_span, TRY_OK_BINDING_OFFSET);
     let ok_pattern_span = offset_span(parent_span, TRY_OK_PATTERN_OFFSET);
     let wildcard_arm_span = offset_span(parent_span, TRY_ERR_ARM_OFFSET);
@@ -52,8 +57,8 @@ pub(super) fn desugar_try_expression(
                     HirEnumPattern {
                         path: Spanned::new(
                             HirEnumPath {
-                                type_name: hir_identifier("Result", ok_pattern_span),
-                                variant: hir_identifier("Ok", ok_pattern_span),
+                                type_name: hir_identifier(type_name, ok_pattern_span),
+                                variant: hir_identifier(ok_variant, ok_pattern_span),
                             },
                             ok_pattern_span,
                         ),

@@ -8,8 +8,9 @@ use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::*;
 use tower_lsp_server::{Client, LanguageServer};
 
-use crate::project_explorer_api::{
-    focused_project_from_configuration, focused_project_from_value, handle_project_explorer_command,
+use crate::commands::{
+    PckgRegistryState, focused_project_from_configuration, focused_project_from_value,
+    handle_execute_command,
 };
 use crate::features::{
     code_actions, completion, definition, document_symbols, formatting, hover, inlay_hints,
@@ -32,6 +33,7 @@ pub struct Backend {
     client: Client,
     state: Arc<RwLock<State>>,
     workspace_roots: Arc<RwLock<Vec<PathBuf>>>,
+    pckg_registry: Arc<RwLock<PckgRegistryState>>,
     log_filter: Arc<RwLock<ClientLogFilter>>,
     diagnostics_revision: Arc<Mutex<HashMap<Uri, u64>>>,
 }
@@ -43,6 +45,7 @@ impl Backend {
             client,
             state: Arc::new(RwLock::new(State::default())),
             workspace_roots: Arc::new(RwLock::new(Vec::new())),
+            pckg_registry: Arc::new(RwLock::new(PckgRegistryState::default())),
             log_filter: Arc::new(RwLock::new(ClientLogFilter::Info)),
             diagnostics_revision: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -367,12 +370,13 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
         let roots = self.workspace_roots.read().await.clone();
-        if let Some(result) =
-            handle_project_explorer_command(&params.command, Some(params.arguments), &roots)?
-        {
-            return Ok(Some(result));
-        }
-        Ok(None)
+        handle_execute_command(
+            &params.command,
+            Some(params.arguments),
+            &roots,
+            &self.pckg_registry,
+        )
+        .await
     }
 
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {

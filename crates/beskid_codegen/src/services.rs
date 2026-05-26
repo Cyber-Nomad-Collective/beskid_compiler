@@ -3,9 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 use beskid_analysis::hir::HirProgram;
 use beskid_analysis::resolve::Resolution;
-use beskid_analysis::services::{
-    FrontEndOptions, compile_front_end_from_resolved_input, compile_front_end_with_pipeline,
-};
+use beskid_analysis::services::{FrontEndOptions, compile_front_end_from_resolved_input};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeResult;
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::CODEGEN_CLIF};
@@ -40,9 +38,15 @@ pub fn lower_source_with_pipeline(
     };
 
     if let Some(plan) = beskid_analysis::services::compile_plan_for_input_path(path) {
-        let front =
-            compile_front_end_with_pipeline(path, source, Some(&plan), None, options, pipeline)?;
-        return lower_from_front_end(&path.display().to_string(), source, front, pipeline);
+        let resolved = ResolvedInput {
+            source_path: path.to_path_buf(),
+            source: source.to_string(),
+            compile_plan: Some(plan),
+            prepared_workspace: None,
+            workspace_summary: None,
+            assembly: None,
+        };
+        return lower_resolved_input_with_pipeline(&resolved, with_diagnostics, pipeline);
     }
 
     lower_source_single_unit_legacy(path, source, with_diagnostics, pipeline)

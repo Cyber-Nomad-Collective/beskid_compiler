@@ -27,3 +27,31 @@ impl Notification for BeskidStatus {
 pub async fn send_beskid_status(client: &Client, params: BeskidStatusParams) {
     client.send_notification::<BeskidStatus>(params).await;
 }
+
+/// Progress notification while indexing workspace files on disk.
+pub fn workspace_scan_status(
+    current: u32,
+    total: u32,
+    message: Option<String>,
+) -> BeskidStatusParams {
+    BeskidStatusParams {
+        source: "lsp".into(),
+        phase: "workspace_scan".into(),
+        message,
+        current: Some(current),
+        total: Some(total),
+        active: true,
+    }
+}
+
+/// Idle status after workspace scan or when no work is in flight.
+pub fn idle_status() -> BeskidStatusParams {
+    BeskidStatusParams {
+        source: "lsp".into(),
+        phase: "idle".into(),
+        message: None,
+        current: None,
+        total: None,
+        active: false,
+    }
+}

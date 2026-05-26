@@ -6,6 +6,58 @@ use super::context::{FunctionSignature, TypeContext};
 
 impl<'a> TypeContext<'a> {
     /// Register callable signatures from dependency units without typing their bodies.
+    /// Populate [`enum_variants`](super::context::TypeContext::enum_variants) from enum items without typing bodies.
+    pub(super) fn seed_enum_definitions(&mut self, program: &Spanned<HirProgram>) {
+        for item in &program.node.items {
+            self.seed_enum_definitions_item(item);
+        }
+    }
+
+    fn seed_enum_definitions_item(&mut self, item: &Spanned<HirItem>) {
+        match &item.node {
+            HirItem::EnumDefinition(def) => {
+                let mut inserted = Vec::new();
+                for generic in &def.node.generics {
+                    let name = generic.node.name.clone();
+                    let type_id = self
+                        .type_table
+                        .intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    self.generic_params.insert(name.clone(), type_id);
+                    inserted.push(name);
+                }
+                let mut variants = std::collections::HashMap::new();
+                let mut ordered = Vec::new();
+                for variant in &def.node.variants {
+                    let mut fields = Vec::new();
+                    for field in &variant.node.fields {
+                        if let Some(type_id) = self.type_id_for_type(&field.node.ty) {
+                            fields.push(type_id);
+                        }
+                    }
+                    variants.insert(variant.node.name.node.name.clone(), fields.clone());
+                    ordered.push((variant.node.name.node.name.clone(), fields));
+                }
+                let enum_name = def.node.name.node.name.as_str();
+                let item_id = self
+                    .item_id_for_name(enum_name, crate::resolve::ItemKind::Enum)
+                    .or_else(|| self.item_id_for_span(item.span));
+                if let Some(item_id) = item_id {
+                    self.enum_variants.insert(item_id, variants);
+                    self.enum_variants_ordered.insert(item_id, ordered);
+                }
+                for name in inserted {
+                    self.generic_params.remove(&name);
+                }
+            }
+            HirItem::InlineModule(def) => {
+                for nested in &def.node.items {
+                    self.seed_enum_definitions_item(nested);
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub(super) fn register_foreign_function_signatures(&mut self, program: &Spanned<HirProgram>) {
         for item in &program.node.items {
             let HirItem::FunctionDefinition(def) = &item.node else {

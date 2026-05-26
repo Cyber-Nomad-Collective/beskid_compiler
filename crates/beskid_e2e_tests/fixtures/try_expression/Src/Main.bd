@@ -1,4 +1,4 @@
-enum Result { Ok(i32 value), Error(string message) }
+enum Result { Ok(i32 value), Error(string error) }
 
 i32 main() {
     Result r = Result::Ok(1);

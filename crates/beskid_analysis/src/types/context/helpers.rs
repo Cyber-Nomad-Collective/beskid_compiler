@@ -39,6 +39,8 @@ impl<'a> TypeContext<'a> {
     pub(super) fn insert_local_type(&mut self, span: SpanInfo, type_id: TypeId) {
         if let Some(local_id) = self.local_id_for_span(span) {
             self.local_types.insert(local_id, type_id);
+        } else {
+            self.errors.push(TypeError::UnknownValueType { span });
         }
     }
 
@@ -60,11 +62,20 @@ impl<'a> TypeContext<'a> {
     }
 
     pub(super) fn item_id_for_name(&self, name: &str, kind: ItemKind) -> Option<ItemId> {
-        self.resolution
+        let matches: Vec<_> = self
+            .resolution
             .items
             .iter()
-            .find(|info| info.name == name && info.kind == kind)
-            .map(|info| info.id)
+            .filter(|info| info.name == name && info.kind == kind)
+            .collect();
+        match matches.as_slice() {
+            [] => None,
+            [single] => Some(single.id),
+            many => {
+                // Entry-unit symbols are collected after dependency prefetch; prefer the last match.
+                many.last().map(|info| info.id)
+            }
+        }
     }
 
     pub(super) fn named_item_id(&self, type_id: TypeId) -> Option<ItemId> {
@@ -73,6 +84,14 @@ impl<'a> TypeContext<'a> {
             Some(TypeInfo::Applied { base, .. }) => Some(*base),
             _ => None,
         }
+    }
+
+    pub(super) fn ok_variant_name(&self, enum_item_id: ItemId, variant: &str) -> Option<String> {
+        self.enum_variants_ordered
+            .get(&enum_item_id)?
+            .iter()
+            .find(|(name, _)| name == variant)
+            .map(|(name, _)| name.clone())
     }
 
     pub(super) fn method_item_for_receiver(

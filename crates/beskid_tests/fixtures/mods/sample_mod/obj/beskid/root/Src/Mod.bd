@@ -1,0 +1,58 @@
+// Reference compiler-mod sources exercising all four contract kinds defined by
+// `compiler/corelib/packages/compiler-sdk/src/Beskid/Compiler/Collect.bd`. Each
+// implementation is a no-op stub so the host pipeline can dispatch through every
+// phase without needing to actually inspect typed syntax (the host pipeline does
+// the AOT dispatch through `ContractInvoker`).
+
+use Beskid.Compiler.Collect.{
+    CollectRequest,
+    CollectTargetSet,
+    GenerationRequest,
+    GeneratedSyntaxContribution,
+    AnalysisRequest,
+    AnalysisResult,
+    AttributeGenerationRequest,
+    AttributeDeclarationSet,
+    FixError,
+    Collector,
+    Generator,
+    AttributeGenerator,
+    Analyzer,
+    Rewriter,
+};
+
+pub type SampleCollect {}
+pub type SampleGenerate {}
+pub type SampleAttribute {}
+pub type SampleAnalyze {}
+pub type SampleRewrite {}
+
+contract Collector for SampleCollect {
+    CollectTargetSet Collect(CollectRequest request) {
+        return CollectTargetSet {};
+    }
+}
+
+contract Generator for SampleGenerate {
+    GeneratedSyntaxContribution Generate(GenerationRequest request) {
+        return GeneratedSyntaxContribution {};
+    }
+}
+
+contract AttributeGenerator for SampleAttribute {
+    AttributeDeclarationSet Attributes(AttributeGenerationRequest request) {
+        return AttributeDeclarationSet {};
+    }
+}
+
+contract Analyzer for SampleAnalyze {
+    AnalysisResult Analyze(AnalysisRequest request) {
+        return AnalysisResult {};
+    }
+}
+
+contract Rewriter for SampleRewrite {
+    Result<TTargetNode, FixError> Rewrite(TSourceNode sourceNode) {
+        return Ok(sourceNode);
+    }
+}

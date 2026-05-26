@@ -28,3 +28,4 @@ indicatif = "0.18.4"
 include_dir = "0.7.4"
 semver = "1.0.27"
 walkdir = "2"
+ureq = { version = "3", default-features = false, features = ["rustls"] }

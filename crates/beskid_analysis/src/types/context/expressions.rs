@@ -124,7 +124,23 @@ impl<'a> TypeContext<'a> {
         try_expr: &Spanned<crate::hir::HirTryExpression>,
     ) -> Option<TypeId> {
         let target_type = self.type_expression(&try_expr.node.expr)?;
-        let Some(result_item_id) = self.item_id_for_name("Result", ItemKind::Enum) else {
+        let Some(result_item_id) = self.named_item_id(target_type) else {
+            self.errors.push(TypeError::InvalidTryTarget {
+                span: try_expr.span,
+            });
+            return None;
+        };
+
+        let ok_fields = self
+            .enum_variants_ordered
+            .get(&result_item_id)
+            .and_then(|variants| {
+                variants
+                    .iter()
+                    .find(|(name, _)| name == "Ok")
+                    .map(|(_, fields)| fields.clone())
+            });
+        let Some(fields) = ok_fields else {
             self.errors.push(TypeError::InvalidTryTarget {
                 span: try_expr.span,
             });
@@ -132,9 +148,11 @@ impl<'a> TypeContext<'a> {
         };
 
         match self.type_table.get(target_type).cloned() {
-            Some(TypeInfo::Applied { base, args }) if base == result_item_id => {
+            Some(TypeInfo::Applied { args, .. }) => {
                 if let Some(payload_type) = args.first().copied() {
                     Some(payload_type)
+                } else if fields.len() == 1 {
+                    Some(fields[0])
                 } else {
                     self.errors.push(TypeError::InvalidTryTarget {
                         span: try_expr.span,
@@ -142,22 +160,7 @@ impl<'a> TypeContext<'a> {
                     None
                 }
             }
-            Some(TypeInfo::Named(item_id)) if item_id == result_item_id => {
-                let ok_fields =
-                    self.enum_variants_ordered
-                        .get(&result_item_id)
-                        .and_then(|variants| {
-                            variants
-                                .iter()
-                                .find(|(name, _)| name == "Ok")
-                                .map(|(_, fields)| fields.clone())
-                        });
-                let Some(fields) = ok_fields else {
-                    self.errors.push(TypeError::InvalidTryTarget {
-                        span: try_expr.span,
-                    });
-                    return None;
-                };
+            Some(TypeInfo::Named(_)) => {
                 if fields.len() == 1 {
                     Some(fields[0])
                 } else {

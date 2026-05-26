@@ -8,3 +8,4 @@ pub use context::context::{
     type_program_with_errors,
 };
 pub use table::{TypeId, TypeInfo, TypeTable};
+pub use context::try_infer::{TryDesugarTarget, try_desugar_target_for_operand};

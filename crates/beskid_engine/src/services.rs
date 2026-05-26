@@ -1,5 +1,6 @@
 use anyhow::Result;
 use beskid_analysis::resolve::ItemKind;
+use beskid_analysis::services::ResolvedInput;
 use beskid_pipeline::PipelineObserver;
 
 use crate::Engine;
@@ -21,7 +22,28 @@ pub fn run_entrypoint_with_pipeline(
     entrypoint: &str,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
-    let lowered = beskid_codegen::lower_source_with_pipeline(source_path, source, false, pipeline)?;
+    run_resolved_entrypoint_with_pipeline(
+        &ResolvedInput {
+            source_path: source_path.to_path_buf(),
+            source: source.to_string(),
+            compile_plan: beskid_analysis::services::compile_plan_for_input_path(source_path),
+            prepared_workspace: None,
+            workspace_summary: None,
+            assembly: None,
+        },
+        entrypoint,
+        pipeline,
+    )
+}
+
+/// JIT-compile and run using a fully resolved project input (same assembly path as `beskid build`).
+pub fn run_resolved_entrypoint_with_pipeline(
+    resolved: &ResolvedInput,
+    entrypoint: &str,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<String> {
+    let lowered =
+        beskid_codegen::lower_resolved_input_with_pipeline(resolved, false, pipeline)?;
 
     let mut engine = Engine::new();
     engine

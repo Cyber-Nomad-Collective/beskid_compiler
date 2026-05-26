@@ -8,6 +8,7 @@ pub mod frontend;
 pub mod logging;
 pub mod pipeline_ui;
 pub mod project_args;
+pub mod toolchain;
 
 fn main() {
     if let Err(report) = cli::run() {

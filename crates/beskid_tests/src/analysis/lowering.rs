@@ -1,6 +1,6 @@
 use beskid_analysis::hir::{
     AstItem, AstProgram, HirAssignOp, HirBinaryOp, HirExpressionNode, HirFieldKind, HirItem,
-    HirPattern, HirProgram, HirStatementNode, lower_program, normalize_program,
+    HirPattern, HirProgram, HirStatementNode, lower_program,
 };
 use beskid_analysis::syntax::Spanned;
 
@@ -22,7 +22,11 @@ fn lower_sample_program() -> (Spanned<AstProgram>, Spanned<HirProgram>) {
     let program = parse_program_ast(sample_source());
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    normalize_program(&mut hir).expect("normalization failed");
+    let resolution = beskid_analysis::resolve::Resolver::new()
+        .resolve_program(&hir)
+        .expect("resolution for try desugar test");
+    beskid_analysis::hir::normalize_program_with_resolution(&mut hir, Some(&resolution), &[])
+        .expect("normalization failed");
     (ast, hir)
 }
 
@@ -208,7 +212,11 @@ fn analysis_desugars_try_to_match() {
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    normalize_program(&mut hir).expect("normalization failed");
+    let resolution = beskid_analysis::resolve::Resolver::new()
+        .resolve_program(&hir)
+        .expect("resolution for try desugar test");
+    beskid_analysis::hir::normalize_program_with_resolution(&mut hir, Some(&resolution), &[])
+        .expect("normalization failed");
 
     let main_fn = hir
         .node
@@ -262,7 +270,11 @@ fn lowering_normalizes_iterable_for_statement_to_state_machine() {
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    normalize_program(&mut hir).expect("normalization failed");
+    let resolution = beskid_analysis::resolve::Resolver::new()
+        .resolve_program(&hir)
+        .expect("resolution for try desugar test");
+    beskid_analysis::hir::normalize_program_with_resolution(&mut hir, Some(&resolution), &[])
+        .expect("normalization failed");
 
     let main_fn = hir
         .node
@@ -299,7 +311,11 @@ fn lowering_normalizes_range_for_statement_to_fast_path() {
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    normalize_program(&mut hir).expect("normalization failed");
+    let resolution = beskid_analysis::resolve::Resolver::new()
+        .resolve_program(&hir)
+        .expect("resolution for try desugar test");
+    beskid_analysis::hir::normalize_program_with_resolution(&mut hir, Some(&resolution), &[])
+        .expect("normalization failed");
 
     let main_fn = hir
         .node
@@ -359,7 +375,11 @@ fn lowering_maps_identity_binary_and_assign_ops() {
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    normalize_program(&mut hir).expect("normalization failed");
+    let resolution = beskid_analysis::resolve::Resolver::new()
+        .resolve_program(&hir)
+        .expect("resolution for try desugar test");
+    beskid_analysis::hir::normalize_program_with_resolution(&mut hir, Some(&resolution), &[])
+        .expect("normalization failed");
 
     let main_fn = hir
         .node

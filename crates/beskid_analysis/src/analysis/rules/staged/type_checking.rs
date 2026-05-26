@@ -1,31 +1,49 @@
 use super::SemanticPipelineRule;
-use crate::analysis::diagnostic_kinds::SemanticIssueKind;
-use crate::analysis::rules::{RuleContext, types};
+use crate::analysis::rules::{RuleContext, resolve, types};
 use crate::hir::{
     HirBlock, HirExpressionNode, HirForStatement, HirLetStatement, HirParameter, HirProgram,
 };
 use crate::query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
 use crate::resolve::Resolution;
+use crate::services::{
+    LowerResolveTypeError, typed_hir_from_lowered_after_resolution,
+    typed_hir_from_lowered_with_module_index,
+};
 use crate::syntax::Spanned;
-use crate::types::type_program_with_errors;
 use std::collections::HashMap;
 
 impl SemanticPipelineRule {
     pub(super) fn stage2_type_check(
         &self,
         ctx: &mut RuleContext,
-        hir: &Spanned<HirProgram>,
+        hir: Spanned<HirProgram>,
         resolution: &Resolution,
     ) {
-        self.check_immutable_assignments(ctx, hir);
+        self.check_immutable_assignments(ctx, &hir);
 
-        let (typed, errors) = type_program_with_errors(hir, resolution);
-        if errors.is_empty() {
-            types::emit_cast_intent_warnings(ctx, &typed);
-            return;
-        }
-        for error in errors {
-            types::emit_type_error(ctx, error, Some(&typed));
+        let result = if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
+            typed_hir_from_lowered_with_module_index(
+                hir,
+                index,
+                ctx.options.entry_source_path.clone(),
+            )
+        } else {
+            typed_hir_from_lowered_after_resolution(hir, resolution)
+        };
+
+        match result {
+            Ok((_, _, typed)) => types::emit_cast_intent_warnings(ctx, &typed),
+            Err(LowerResolveTypeError::Type(errors)) => {
+                for error in errors {
+                    types::emit_type_error(ctx, error, None);
+                }
+            }
+            Err(LowerResolveTypeError::Resolve(errors)) => {
+                for error in errors {
+                    resolve::emit_resolve_error(ctx, error);
+                }
+            }
+            Err(LowerResolveTypeError::Normalize(_)) => {}
         }
     }
 
@@ -138,7 +156,7 @@ impl HirVisit for MutabilityVisitor<'_> {
             {
                 self.ctx.emit_issue(
                     assign_expression.node.target.span,
-                    SemanticIssueKind::ImmutableAssignment {
+                    crate::analysis::diagnostic_kinds::SemanticIssueKind::ImmutableAssignment {
                         name: name_value.clone(),
                     },
                 );

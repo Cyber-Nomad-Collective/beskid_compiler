@@ -14,18 +14,20 @@ impl<'a> TypeContext<'a> {
         match &statement.node {
             HirStatementNode::LetStatement(let_stmt) => match &let_stmt.node.type_annotation {
                 Some(ty) => {
-                    if let Some(expected) = self.type_id_for_type(ty) {
-                        let actual = match &let_stmt.node.value.node {
-                            HirExpressionNode::LambdaExpression(lambda) => {
-                                self.type_lambda_expression_with_expected(lambda, Some(expected))
-                            }
-                            _ => self.type_expression(&let_stmt.node.value),
-                        };
-                        if let Some(actual) = actual {
-                            self.expr_types.insert(let_stmt.node.value.span, actual);
-                            self.require_same_type(let_stmt.node.name.span, expected, actual);
+                    let expected = self.type_id_for_type(ty);
+                    let actual = match (expected, &let_stmt.node.value.node) {
+                        (Some(expected), HirExpressionNode::LambdaExpression(lambda)) => {
+                            self.type_lambda_expression_with_expected(lambda, Some(expected))
                         }
+                        (Some(_), _) | (None, _) => self.type_expression(&let_stmt.node.value),
+                    };
+                    if let (Some(expected), Some(actual)) = (expected, actual) {
+                        self.expr_types.insert(let_stmt.node.value.span, actual);
+                        self.require_same_type(let_stmt.node.name.span, expected, actual);
                         self.insert_local_type(let_stmt.node.name.span, expected);
+                    } else if let Some(actual) = actual {
+                        self.expr_types.insert(let_stmt.node.value.span, actual);
+                        self.insert_local_type(let_stmt.node.name.span, actual);
                     }
                 }
                 None => {

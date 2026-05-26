@@ -45,7 +45,7 @@ pub use literal::HirLiteral;
 pub use lowering::lower_program;
 pub use match_arm::HirMatchArm;
 pub use module::Module;
-pub use normalize::{HirNormalizeError, normalize_program};
+pub use normalize::{HirNormalizeError, normalize_program, normalize_program_with_resolution};
 pub use pattern::{HirEnumPattern, HirPattern};
 pub use phase::{AstPhase, HirPhase, Phase};
 pub use program::Program;

@@ -240,6 +240,8 @@ fn forward_slashes_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::doc::api_snapshot::{ApiDocItem, ApiLocation};
     use crate::doc::graph_link::{ApiDocLinkContext, ApiDocPackageRoots};

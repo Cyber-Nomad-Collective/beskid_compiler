@@ -104,7 +104,7 @@ pub enum Commands {
     /// Package-manager operations backed by the pckg service
     Pckg(PckgArgs),
 
-    /// Run the Beskid language server on stdio (for editors and `beskid-vscode`)
+    /// Run the Beskid language server on stdio, or install a release binary (`beskid lsp install`)
     Lsp(LspArgs),
 }
 
@@ -294,6 +294,19 @@ mod tests {
         };
         assert_eq!(args.short_name.as_deref(), Some("console"));
         assert_eq!(args.instantiate.name.as_deref(), Some("MyApp"));
+    }
+
+    #[test]
+    fn parses_lsp_install_with_release_tag() {
+        let cli = Cli::try_parse_from(["beskid", "lsp", "install", "--release-tag", "lsp-v0.1.5"])
+            .expect("parse cli");
+        let Commands::Lsp(args) = cli.command else {
+            panic!("expected lsp command");
+        };
+        let Some(crate::commands::lsp::LspCommand::Install(install)) = args.command else {
+            panic!("expected lsp install");
+        };
+        assert_eq!(install.release_tag, "lsp-v0.1.5");
     }
 
     #[test]

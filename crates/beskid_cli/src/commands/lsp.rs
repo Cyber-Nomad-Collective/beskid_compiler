@@ -1,15 +1,60 @@
-//! `beskid lsp` — run the Beskid language server on stdio (editor integration).
+//! `beskid lsp` — run or install the Beskid language server.
 
-use anyhow::Result;
-use clap::Args;
+use crate::toolchain::release::{LspInstallArgs, install_lsp, managed_lsp_exists, managed_lsp_path};
+use anyhow::{Context, Result};
+use clap::{Args, Subcommand};
+use std::process::Command;
 
 #[derive(Args, Debug)]
-pub struct LspArgs {}
+pub struct LspArgs {
+    #[command(subcommand)]
+    pub command: Option<LspCommand>,
+}
 
-/// Start the LSP server on stdin/stdout.
-pub fn execute(_args: LspArgs) -> Result<()> {
+#[derive(Subcommand, Debug)]
+pub enum LspCommand {
+    /// Download `beskid_lsp` from GitHub releases into `~/.beskid/bin`.
+    Install(LspInstallArgs),
+}
+
+/// Start the LSP server on stdin/stdout, or run an install subcommand.
+pub fn execute(args: LspArgs) -> Result<()> {
+    match args.command {
+        Some(LspCommand::Install(install)) => {
+            install_lsp(&install)?;
+            Ok(())
+        }
+        None => run_stdio_server(),
+    }
+}
+
+fn run_stdio_server() -> Result<()> {
+    if managed_lsp_exists() {
+        let path = managed_lsp_path()?;
+        let status = Command::new(&path)
+            .status()
+            .with_context_spawn(&path)?;
+        if !status.success() {
+            anyhow::bail!(
+                "managed language server exited with {}",
+                status.code().unwrap_or(-1)
+            );
+        }
+        return Ok(());
+    }
+
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
         .block_on(beskid_lsp::run_stdio_server())
+}
+
+trait WithContextSpawn {
+    fn with_context_spawn(self, path: &std::path::Path) -> Result<std::process::ExitStatus>;
+}
+
+impl WithContextSpawn for std::io::Result<std::process::ExitStatus> {
+    fn with_context_spawn(self, path: &std::path::Path) -> Result<std::process::ExitStatus> {
+        self.map_err(|error| anyhow::anyhow!("failed to run {}: {error}", path.display()))
+    }
 }

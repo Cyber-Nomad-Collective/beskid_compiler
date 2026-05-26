@@ -1,7 +1,10 @@
 //! Walk workspace roots to index `.bd` / `.proj` files and publish disk-backed diagnostics.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+
+use beskid_analysis::projects::WORKSPACE_FILE_NAME;
 use std::time::{Duration, Instant};
 
 use tokio::sync::{RwLock, Semaphore};
@@ -11,7 +14,7 @@ use url::Url;
 use walkdir::WalkDir;
 
 use crate::diagnostics::analyze_document;
-use crate::protocol::status::{BeskidStatusParams, send_beskid_status};
+use crate::protocol::status::{idle_status, send_beskid_status, workspace_scan_status};
 use crate::session::lifecycle::{
     build_document, rebuild_open_document_analysis, set_disk_snapshot,
 };
@@ -33,9 +36,6 @@ pub(crate) fn should_skip_dir_for_scan(name: &str) -> bool {
     )
 }
 
-fn should_skip_dir(name: &str) -> bool {
-    should_skip_dir_for_scan(name)
-}
 
 async fn maybe_emit_scan_progress(
     client: &Client,
@@ -53,33 +53,11 @@ async fn maybe_emit_scan_progress(
         return;
     }
     *last_emit = Some(now);
-    send_beskid_status(
-        client,
-        BeskidStatusParams {
-            source: "lsp".into(),
-            phase: "workspace_scan".into(),
-            message: detail,
-            current: Some(processed),
-            total: Some(total),
-            active: true,
-        },
-    )
-    .await;
+    send_beskid_status(client, workspace_scan_status(processed, total, detail)).await;
 }
 
 async fn emit_scan_idle(client: &Client) {
-    send_beskid_status(
-        client,
-        BeskidStatusParams {
-            source: "lsp".into(),
-            phase: "idle".into(),
-            message: None,
-            current: None,
-            total: None,
-            active: false,
-        },
-    )
-    .await;
+    send_beskid_status(client, idle_status()).await;
 }
 
 /// Recursively index `root` for Beskid sources, publish diagnostics for closed files, then emit idle status.
@@ -94,7 +72,10 @@ pub async fn scan_workspace(
         .into_iter()
         .filter_entry(|e| {
             if e.file_type().is_dir() {
-                !e.file_name().to_str().map(should_skip_dir).unwrap_or(false)
+                !e.file_name()
+                    .to_str()
+                    .map(should_skip_dir_for_scan)
+                    .unwrap_or(false)
             } else {
                 true
             }
@@ -224,6 +205,52 @@ pub fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
 /// Map a local filesystem path to an LSP `file://` URI.
 pub fn path_to_uri(path: &Path) -> Option<Uri> {
     uri_from_path(path)
+}
+
+/// Map a local path to a `file://` URI string (fallback uses `path.display()`).
+pub fn path_to_uri_string(path: &Path) -> String {
+    path_to_uri(path)
+        .map(|u| u.to_string())
+        .unwrap_or_else(|| format!("file://{}", path.display()))
+}
+
+/// Parse a URI string to a local filesystem path.
+pub fn path_from_uri_string(uri: &str) -> Option<PathBuf> {
+    Uri::from_str(uri).ok().and_then(|u| uri_to_path(&u))
+}
+
+/// Discover `Workspace.proj` manifests under workspace roots (sorted, deduplicated).
+pub fn discover_workspace_manifest_paths(workspace_roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut manifests = Vec::new();
+    let mut seen = HashSet::new();
+    for root in workspace_roots {
+        for entry in WalkDir::new(root)
+            .into_iter()
+            .filter_entry(|e| {
+                if e.file_type().is_dir() {
+                    !e.file_name()
+                        .to_str()
+                        .map(should_skip_dir_for_scan)
+                        .unwrap_or(false)
+                } else {
+                    true
+                }
+            })
+            .filter_map(|entry| entry.ok())
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            if path.file_name().and_then(|n| n.to_str()) != Some(WORKSPACE_FILE_NAME) {
+                continue;
+            }
+            let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+            if seen.insert(canonical.clone()) {
+                manifests.push(canonical);
+            }
+        }
+    }
+    manifests.sort();
+    manifests
 }
 
 /// Clears closed-file workspace cache and diagnostics for every indexed URI under `root`.

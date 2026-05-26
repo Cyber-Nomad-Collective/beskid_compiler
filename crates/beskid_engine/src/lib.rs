@@ -7,6 +7,7 @@ pub mod link_libraries;
 pub mod services;
 
 pub use engine::Engine;
+pub use services::run_resolved_entrypoint_with_pipeline;
 #[cfg(feature = "extern_dlopen")]
 pub use engine::resolve_for_tests;
 #[cfg(feature = "extern_dlopen")]

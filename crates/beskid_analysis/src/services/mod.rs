@@ -48,7 +48,8 @@ pub use input::{
 pub use lower::{
     LowerResolveTypeError, lower_normalize_resolve_type_spanned,
     lower_normalize_resolve_type_spanned_with_assembly,
-    lower_normalize_resolve_type_spanned_with_index,
+    lower_normalize_resolve_type_spanned_with_index, typed_hir_from_lowered_with_assembly,
+    typed_hir_from_lowered_after_resolution, typed_hir_from_lowered_with_module_index,
 };
 pub use parse::{parse_program, parse_program_with_source_name};
 pub use project::{ResolvedProject, resolve_project, resolve_project_with_policy};

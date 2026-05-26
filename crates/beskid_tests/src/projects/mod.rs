@@ -36,3 +36,5 @@ mod templates;
 mod resolution;
 #[cfg(test)]
 mod workspace_manifest;
+#[cfg(test)]
+mod try_expression;

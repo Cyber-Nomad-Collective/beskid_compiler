@@ -58,13 +58,13 @@ struct TryParityOkCase {
 const TRY_PARITY_OK_CASES: &[TryParityOkCase] = &[
     TryParityOkCase {
         name: "try_expression",
-        source: "enum Result { Ok(i64 value), Error(string message) } i64 main() { Result r = Result::Ok(1); i64 value = r?; return value; }",
+        source: "enum Result { Ok(i64 value), Error(string error) } i64 main() { Result r = Result::Ok(1); i64 value = r?; return value; }",
         expected: 1,
     },
     TryParityOkCase {
         name: "try_expression_nested",
         source: "
-            enum Result { Ok(i64 value), Error(string message) }
+            enum Result { Ok(i64 value), Error(string error) }
             i64 unwrap_ok() {
                 Result first = Result::Ok(1);
                 return first?;
@@ -80,7 +80,7 @@ const TRY_PARITY_OK_CASES: &[TryParityOkCase] = &[
     TryParityOkCase {
         name: "try_expression_assignment_branch",
         source: "
-            enum Result { Ok(i64 value), Error(string message) }
+            enum Result { Ok(i64 value), Error(string error) }
             i64 main() {
                 Result source = Result::Ok(7);
                 i64 mut value = 0;
@@ -387,10 +387,10 @@ fn parity_try_success_cases_are_consistent() {
 #[test]
 fn parity_try_expression_err_path_compiles_for_both_backends() {
     let source = "
-        enum Result { Ok(i64 value), Error(string message) }
+        enum Result { Ok(i64 value), Error(string error) }
         i64 main() {
             Result failed = Result::Error(\"boom\");
-            i64 value = failed?;
+            i32 value = failed?;
             return value;
         }
     ";

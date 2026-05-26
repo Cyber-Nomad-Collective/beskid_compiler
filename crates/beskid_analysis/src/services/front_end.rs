@@ -102,6 +102,8 @@ pub fn compile_front_end_with_pipeline(
             rule_options.module_level_meta_items_allowed = options.module_level_meta_items_allowed;
             rule_options.known_assembly_module_paths =
                 Some(assembly.module_index.known_module_path_strings());
+            rule_options.program_assembly_module_index = Some(assembly.module_index.clone());
+            rule_options.entry_source_path = Some(entry_unit.path.clone());
             let diagnostics = semantic_rule_diagnostics_for_program(
                 &program.node,
                 entry_unit.logical_name.clone(),

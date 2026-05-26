@@ -39,6 +39,17 @@ Opinionated compiler project. Not finished. Not apologizing.
 
 The analysis crate includes an opinionated source formatter based on an `Emit` trait (see [docs/formatter.md](docs/formatter.md)). Use `beskid_analysis::format::format_program` on a successfully parsed `Program`.
 
+### Prebuilt releases
+
+CI publishes two rolling GitHub release streams from `main` (same semver source as `compiler/ci/version.py`):
+
+| Stream | Rolling tag | Version file | Example assets |
+|--------|-------------|--------------|----------------|
+| CLI | `cli-latest` | `cli-version.txt` | `beskid-linux-amd64`, `beskid-darwin-arm64`, `beskid-windows-amd64.exe` |
+| LSP | `lsp-latest` | `lsp-version.txt` | `beskid_lsp-linux-amd64`, `beskid_lsp-darwin-arm64`, `beskid_lsp-windows-amd64.exe` |
+
+Each push also creates an immutable `cli-v*` / `lsp-v*` release for pinning. Install the managed LSP with `beskid lsp install` (writes `~/.beskid/bin/beskid_lsp`); `beskid lsp` prefers that binary when present.
+
 ### Building
 
 The **core library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/beskid_corelib/` (or `compiler/corelib/beskid_corelib/` from the aggregate superrepo root). The CLI embeds that tree at build time (`crates/beskid_cli/build.rs`).
