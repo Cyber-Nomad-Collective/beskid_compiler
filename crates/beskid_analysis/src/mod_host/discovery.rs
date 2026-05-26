@@ -116,7 +116,7 @@ target "lib" {
         assert_eq!(discovered.len(), 1);
         assert_eq!(discovered[0].project_name, "ModA");
 
-        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
 
     fn dependency(name: &str, root: &std::path::Path) -> ResolvedDependencyProject {

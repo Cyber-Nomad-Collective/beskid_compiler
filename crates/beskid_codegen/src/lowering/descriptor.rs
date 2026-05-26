@@ -230,6 +230,7 @@ pub(crate) fn enum_variant_field_offsets(
         offset += field_layout.size;
         align = align.max(field_layout.align);
     }
+    // Final struct padding alignment not needed—offsets are already computed.
     let _ = align_to(offset, align);
     Some(offsets)
 }

@@ -1,117 +1,48 @@
-use std::fmt;
-
 use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::types::TypeId;
 
 /// Recoverable lowering or CLIF verification failure; map with [`crate::codegen_error_to_diagnostic`].
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
+    #[error("unsupported node for kickoff lowering: {node}")]
     UnsupportedNode {
         span: SpanInfo,
         node: &'static str,
     },
+    #[error("unsupported feature: {_0}")]
     UnsupportedFeature(&'static str),
+    #[error("missing symbol: {_0}")]
     MissingSymbol(&'static str),
-    MissingResolvedValue {
-        span: SpanInfo,
-    },
-    MissingLocalType {
-        span: SpanInfo,
-    },
-    InvalidLocalBinding {
-        span: SpanInfo,
-    },
-    MissingExpressionType {
-        span: SpanInfo,
-    },
+    #[error("missing resolved value entry")]
+    MissingResolvedValue { span: SpanInfo },
+    #[error("missing local type information")]
+    MissingLocalType { span: SpanInfo },
+    #[error("invalid local binding for kickoff lowering")]
+    InvalidLocalBinding { span: SpanInfo },
+    #[error("missing expression type information")]
+    MissingExpressionType { span: SpanInfo },
+    #[error("missing cast intent for numeric mismatch (expected {expected:?}, actual {actual:?})")]
     MissingCastIntent {
         span: SpanInfo,
         expected: TypeId,
         actual: TypeId,
     },
-    InvalidCastIntent {
-        span: SpanInfo,
-        message: String,
-    },
+    #[error("invalid cast intent: {message}")]
+    InvalidCastIntent { span: SpanInfo, message: String },
+    #[error("type mismatch during codegen (expected {expected:?}, actual {actual:?})")]
     TypeMismatch {
         span: SpanInfo,
         expected: TypeId,
         actual: TypeId,
     },
-    VerificationFailed {
-        function: String,
-        message: String,
-    },
-    InvalidExport {
-        span: SpanInfo,
-        message: String,
-    },
+    #[error("CLIF verification failed for `{function}`: {message}")]
+    VerificationFailed { function: String, message: String },
+    #[error("invalid export: {message}")]
+    InvalidExport { span: SpanInfo, message: String },
+    #[error("ineligible serialize mapping from `{src_name}` to `{dst_name}`")]
     IneligibleSerializeMapping {
         span: SpanInfo,
         src_name: String,
         dst_name: String,
     },
 }
-
-impl fmt::Display for CodegenError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CodegenError::UnsupportedNode { node, .. } => {
-                write!(f, "unsupported node for kickoff lowering: {node}")
-            }
-            CodegenError::UnsupportedFeature(feature) => {
-                write!(f, "unsupported feature: {feature}")
-            }
-            CodegenError::MissingSymbol(symbol) => write!(f, "missing symbol: {symbol}"),
-            CodegenError::MissingResolvedValue { .. } => {
-                write!(f, "missing resolved value entry")
-            }
-            CodegenError::MissingLocalType { .. } => {
-                write!(f, "missing local type information")
-            }
-            CodegenError::InvalidLocalBinding { .. } => {
-                write!(f, "invalid local binding for kickoff lowering")
-            }
-            CodegenError::MissingExpressionType { .. } => {
-                write!(f, "missing expression type information")
-            }
-            CodegenError::MissingCastIntent {
-                expected, actual, ..
-            } => {
-                write!(
-                    f,
-                    "missing cast intent for numeric mismatch (expected {expected:?}, actual {actual:?})"
-                )
-            }
-            CodegenError::InvalidCastIntent { message, .. } => {
-                write!(f, "invalid cast intent: {message}")
-            }
-            CodegenError::TypeMismatch {
-                expected, actual, ..
-            } => {
-                write!(
-                    f,
-                    "type mismatch during codegen (expected {expected:?}, actual {actual:?})"
-                )
-            }
-            CodegenError::VerificationFailed { function, message } => {
-                write!(f, "CLIF verification failed for `{function}`: {message}")
-            }
-            CodegenError::InvalidExport { message, .. } => {
-                write!(f, "invalid export: {message}")
-            }
-            CodegenError::IneligibleSerializeMapping {
-                src_name,
-                dst_name,
-                ..
-            } => {
-                write!(
-                    f,
-                    "ineligible serialize mapping from `{src_name}` to `{dst_name}`"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for CodegenError {}

@@ -189,8 +189,8 @@ pub fn assemble_program(
             match fs::read_to_string(path) {
                 Ok(text) => text,
                 Err(source) if options.skip_parse_errors && !is_entry => {
-                    eprintln!(
-                        "note: skipping unreadable unit {} ({source})",
+                    log::warn!(
+                        "skipping unreadable unit {} ({source})",
                         path.display()
                     );
                     continue;
@@ -208,8 +208,8 @@ pub fn assemble_program(
         let program = match parse_program_with_source_name(&logical_name, &source) {
             Ok(program) => expand_syntax_for_assembly(program),
             Err(err) if options.skip_parse_errors && !is_entry => {
-                eprintln!(
-                    "note: skipping unparseable unit {} ({err})",
+                log::warn!(
+                    "skipping unparseable unit {} ({err})",
                     path.display()
                 );
                 continue;

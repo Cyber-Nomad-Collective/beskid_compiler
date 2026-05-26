@@ -293,3 +293,35 @@ impl Drop for MutatorAttachGuard {
         leave_runtime_scope();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_runtime_phase_default_idle() {
+        // Force Phase A regardless of env-var state so the assertion is deterministic.
+        set_runtime_phase(RuntimePhase::PhaseA);
+        assert_eq!(runtime_phase(), RuntimePhase::PhaseA);
+    }
+
+    #[test]
+    fn test_enter_leave_runtime_scope() {
+        assert!(!in_runtime_scope(), "no scope should be active at test start");
+        enter_runtime_scope();
+        assert!(in_runtime_scope(), "scope should be active after enter");
+        // Nested scopes stack.
+        enter_runtime_scope();
+        assert!(in_runtime_scope(), "scope should remain active after nested enter");
+        leave_runtime_scope();
+        assert!(in_runtime_scope(), "scope should still be active after one leave (nested)");
+        leave_runtime_scope();
+        assert!(!in_runtime_scope(), "scope should be inactive after balanced leave");
+    }
+
+    #[test]
+    #[should_panic(expected = "runtime scope underflow")]
+    fn test_leave_scope_underflow_panics() {
+        leave_runtime_scope();
+    }
+}

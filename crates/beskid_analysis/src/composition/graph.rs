@@ -49,7 +49,7 @@ pub fn build_graph(
                 span: span_by_id.get(from).copied(),
             });
         }
-        let _ = dag.add_edge(from_node, to_node, DependencyEdge);
+        dag.add_edge(from_node, to_node, DependencyEdge).ok(); // cycle already checked above
     }
 
     Ok(dag)

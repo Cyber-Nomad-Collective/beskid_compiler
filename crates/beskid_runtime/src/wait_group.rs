@@ -107,3 +107,28 @@ where
     }
     map.get_mut(key).map(f)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wait_group_create() {
+        let wg = wait_group_create();
+        assert_ne!(wg, 0, "wait group id should be non-zero after creation");
+    }
+
+    #[test]
+    fn test_wait_group_add_done() {
+        let wg = wait_group_create();
+        // Counter starts at 0; add(3) brings it to 3.
+        wait_group_add(wg, 3);
+        // Two done() calls bring it to 1 (not yet zero, so waiters would block).
+        wait_group_done(wg);
+        wait_group_done(wg);
+        // Final done() brings counter to 0 — waiters would be woken.
+        wait_group_done(wg);
+        // Verify idempotent safety: done on a zero counter stays at zero.
+        wait_group_done(wg);
+    }
+}

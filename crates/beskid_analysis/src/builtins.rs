@@ -52,6 +52,7 @@ pub fn builtin_specs() -> &'static [BuiltinSpec] {
     BUILTINS
 }
 
+/// Look up a builtin spec by its Beskid path segments.
 pub fn builtin_for_path(path: &[String]) -> Option<(usize, &'static BuiltinSpec)> {
     for (index, spec) in BUILTINS.iter().enumerate() {
         if path_matches(spec.beskid_path, path) {
@@ -61,6 +62,7 @@ pub fn builtin_for_path(path: &[String]) -> Option<(usize, &'static BuiltinSpec)
     None
 }
 
+/// Look up a builtin spec by its resolved [`ItemId`] and builtin index mapping.
 pub fn builtin_for_item(
     builtin_items: &HashMap<ItemId, usize>,
     item_id: ItemId,

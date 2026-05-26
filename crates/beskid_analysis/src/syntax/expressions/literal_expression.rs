@@ -74,11 +74,8 @@ fn try_desugar_interpolated_string(
             }
 
             let expr_start = cursor + 2;
-            let Some(expr_end) =
-                find_interpolation_end(bytes, literal_span.start, expr_start, content_end)
-            else {
-                return None;
-            };
+            let expr_end =
+                find_interpolation_end(bytes, literal_span.start, expr_start, content_end)?;
 
             let expr_text =
                 source.get(expr_start - literal_span.start..expr_end - literal_span.start)?;

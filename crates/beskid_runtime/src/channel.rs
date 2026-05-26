@@ -190,6 +190,8 @@ pub fn channel_receive(id: ChannelId, out: *mut i64) -> i64 {
         });
         if let Some(Some((status, value))) = result {
             if status == STATUS_OK {
+                // SAFETY: `out` was validated non-null on entry; JIT and generated callers pass
+                // stack-slot pointers that remain valid for the duration of the call.
                 unsafe {
                     *out = value;
                 }
@@ -222,6 +224,8 @@ pub fn channel_try_receive(id: ChannelId, out: *mut i64) -> i64 {
             if let Some(waiter) = ch.wait_senders.pop() {
                 scheduler::wake_fiber(waiter);
             }
+            // SAFETY: `out` was validated non-null on entry; JIT and generated callers pass
+            // stack-slot pointers that remain valid for the duration of the call.
             unsafe {
                 *out = value;
             }
@@ -321,6 +325,8 @@ pub fn channel_receive_ptr(id: ChannelId, out_ptr: *mut *mut u8) -> i64 {
         .unwrap_or(std::ptr::null_mut());
     crate::gc::with_current_root_if_active(|root| crate::gc::drop_handle(root, handle));
     crate::gc::with_current_heap(|heap| heap.write_barrier(std::ptr::null_mut(), value_ptr));
+    // SAFETY: `out_ptr` was validated non-null on entry; the caller-provided pointer storage
+    // lives for the duration of the call and is properly aligned for `*mut u8`.
     unsafe {
         *out_ptr = value_ptr;
     }
@@ -343,6 +349,8 @@ pub fn channel_try_receive_ptr(id: ChannelId, out_ptr: *mut *mut u8) -> i64 {
         .unwrap_or(std::ptr::null_mut());
     crate::gc::with_current_root_if_active(|root| crate::gc::drop_handle(root, handle));
     crate::gc::with_current_heap(|heap| heap.write_barrier(std::ptr::null_mut(), value_ptr));
+    // SAFETY: `out_ptr` was validated non-null on entry; the caller-provided pointer storage
+    // lives for the duration of the call and is properly aligned for `*mut u8`.
     unsafe {
         *out_ptr = value_ptr;
     }
@@ -360,6 +368,71 @@ pub fn channel_close(id: ChannelId) {
         for f in waiters {
             scheduler::wake_fiber(f);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::status::{STATUS_CLOSED, STATUS_OK, STATUS_WOULD_BLOCK};
+
+    #[test]
+    fn test_channel_create_and_close() {
+        let ch = channel_create(0);
+        assert_ne!(ch, 0, "channel id should be non-zero after creation");
+        channel_close(ch);
+        assert_eq!(
+            channel_try_send(ch, 1),
+            STATUS_CLOSED,
+            "try_send on closed channel should return STATUS_CLOSED"
+        );
+    }
+
+    #[test]
+    fn test_channel_send_receive_i64() {
+        // SAFETY: Using an unbounded channel (capacity 0) so channel_send does not attempt to
+        // park the calling fiber outside a scheduler context. The queue is non-empty when
+        // channel_receive is called, so it also skips parking and returns immediately.
+        let ch = channel_create(0);
+        assert_eq!(channel_send(ch, 42), STATUS_OK);
+        let mut out = 0i64;
+        assert_eq!(channel_receive(ch, &mut out), STATUS_OK);
+        assert_eq!(out, 42);
+        channel_close(ch);
+    }
+
+    #[test]
+    fn test_channel_try_send_receive() {
+        let ch = channel_create(0);
+        assert_eq!(channel_try_send(ch, 100), STATUS_OK);
+        let mut out = 0i64;
+        assert_eq!(channel_try_receive(ch, &mut out), STATUS_OK);
+        assert_eq!(out, 100);
+        channel_close(ch);
+    }
+
+    #[test]
+    fn test_channel_close_behavior() {
+        let ch = channel_create(0);
+        channel_close(ch);
+        assert_eq!(channel_try_send(ch, 1), STATUS_CLOSED);
+        let mut out = 0i64;
+        assert_eq!(channel_try_receive(ch, &mut out), STATUS_CLOSED);
+        // Closing an already-closed channel should not panic.
+        channel_close(ch);
+    }
+
+    #[test]
+    fn test_channel_bounded_try_would_block() {
+        let ch = channel_create(1);
+        assert_eq!(channel_try_send(ch, 10), STATUS_OK);
+        assert_eq!(channel_try_send(ch, 11), STATUS_WOULD_BLOCK);
+        let mut out = 0i64;
+        assert_eq!(channel_try_receive(ch, &mut out), STATUS_OK);
+        assert_eq!(out, 10);
+        // After draining, sending should succeed again.
+        assert_eq!(channel_try_send(ch, 20), STATUS_OK);
+        channel_close(ch);
     }
 }
 

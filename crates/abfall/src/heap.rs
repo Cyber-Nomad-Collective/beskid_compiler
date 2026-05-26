@@ -153,8 +153,8 @@ pub struct Heap {
     phase: AtomicU8,
     /// Background GC thread handle
     bg_thread: StartStopJoinHandle,
-    /// Number of Assist mutators or write-barriers active
-    n_busy_marking: std::sync::atomic::AtomicUsize,
+    /// Number of assist mutators or write-barriers active.
+    busy_marking_count: std::sync::atomic::AtomicUsize,
     /// Runtime-registered roots and temporary handles.
     external_roots: ExternalRootSet,
     /// Mapping from payload pointer (`*mut u8`) to owning GC header.
@@ -324,7 +324,7 @@ impl Heap {
             gray_queue: parking_lot::Mutex::new(GrayQueue::new()),
             phase: AtomicU8::new(GcPhase::Idle as u8),
             bg_thread: StartStopJoinHandle::new(),
-            n_busy_marking: std::sync::atomic::AtomicUsize::new(0),
+            busy_marking_count: std::sync::atomic::AtomicUsize::new(0),
             external_roots: ExternalRootSet::default(),
             payload_to_header: parking_lot::Mutex::new(HashMap::new()),
             header_to_payload: parking_lot::Mutex::new(HashMap::new()),
@@ -524,17 +524,17 @@ impl Heap {
     }
 
     pub fn check_is_marking_and_increment_busy(&self) -> bool {
-        self.n_busy_marking.fetch_add(1, Ordering::AcqRel);
+        self.busy_marking_count.fetch_add(1, Ordering::AcqRel);
         if self.is_marking() {
             true
         } else {
-            self.n_busy_marking.fetch_sub(1, Ordering::AcqRel);
+            self.busy_marking_count.fetch_sub(1, Ordering::AcqRel);
             false
         }
     }
 
     pub fn decrement_busy_marking(&self) {
-        self.n_busy_marking.fetch_sub(1, Ordering::AcqRel);
+        self.busy_marking_count.fetch_sub(1, Ordering::AcqRel);
     }
 
     /// Try to transition to marking phase
@@ -647,7 +647,7 @@ impl Heap {
     }
 
     fn yield_once_if_marking_busy(&self) -> bool {
-        if self.n_busy_marking.load(Ordering::Acquire) > 0 {
+        if self.busy_marking_count.load(Ordering::Acquire) > 0 {
             std::thread::yield_now();
             true
         } else {

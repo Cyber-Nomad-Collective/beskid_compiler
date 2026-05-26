@@ -9,6 +9,11 @@ use super::phase::{HirPhase, Phase};
 use super::struct_literal_field::HirStructLiteralField;
 use super::types::HirType;
 
+/// Typed-HIR expression tree, generic over [`Phase`] for AST/HIR separation.
+///
+/// Each variant wraps a spanned node specific to that expression kind.
+/// During lowering the AST phase is converted to the HIR phase by the
+/// `PhaseFromAst` derive macro.
 #[derive(beskid_ast_derive::PhaseFromAst)]
 #[phase(source = "crate::syntax::Expression", phase = "crate::hir::AstPhase")]
 pub enum ExpressionNode<P: Phase> {

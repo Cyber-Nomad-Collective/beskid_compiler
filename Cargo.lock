@@ -204,6 +204,7 @@ dependencies = [
  "beskid_pipeline",
  "daggy",
  "from-pest",
+ "log",
  "miette",
  "pest",
  "pest-ast",
@@ -295,6 +296,7 @@ dependencies = [
  "cranelift-frontend",
  "cranelift-module",
  "pest",
+ "thiserror",
 ]
 
 [[package]]

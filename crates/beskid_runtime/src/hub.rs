@@ -147,6 +147,8 @@ pub fn hub_wait_receive(hub_id: HubId, out_index: *mut i64, out_value: *mut i64)
             let mut value = 0i64;
             let status = channel::channel_try_receive(entry.channel, &mut value);
             if status == STATUS_OK {
+                // SAFETY: `out_index` and `out_value` were validated non-null on entry; the
+                // caller passes stack-slot pointers that remain valid for the call duration.
                 unsafe {
                     *out_index = entry.index;
                     *out_value = value;

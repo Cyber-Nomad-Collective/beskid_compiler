@@ -10,6 +10,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionStatement {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, crate::errors::CodegenError> {
+        // Expression value discarded; errors are still propagated via ?.
         let _ = lower_node(&node.node.expression, ctx)?;
         Ok(())
     }

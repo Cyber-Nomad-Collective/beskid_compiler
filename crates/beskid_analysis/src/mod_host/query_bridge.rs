@@ -226,9 +226,7 @@ impl<'a> SdkSyntaxQuery<'a> {
     }
 
     pub fn find_first_typed<T: crate::query::AstNode + 'static>(&mut self) -> Option<SdkNodeRef> {
-        let Some(start) = self.resolve(self.start) else {
-            return None;
-        };
+        let start = self.resolve(self.start)?;
         for node in Descendants::new(start) {
             if node.of::<T>().is_none() {
                 continue;

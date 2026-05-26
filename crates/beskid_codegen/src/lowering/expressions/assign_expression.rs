@@ -338,6 +338,7 @@ fn call_event_subscribe(
             colocated: false,
             patchable: false,
         });
+    // Inst result unused: instruction is already inserted into the block.
     let _ = ctx
         .builder
         .ins()
@@ -363,6 +364,7 @@ fn call_event_unsubscribe(
             colocated: false,
             patchable: false,
         });
+    // Inst result unused: instruction is already inserted into the block.
     let _ = ctx.builder.ins().call(func_ref, &[field_addr, handler]);
 }
 

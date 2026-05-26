@@ -1,6 +1,10 @@
 //! Static library bridge exporting stable Beskid runtime symbols for AOT linking.
 
-#[allow(unused_imports)]
+// Each `as usize` coercion below forces the linker to resolve the symbol.
+// Suppress unused-imports at the crate level because the imports serve as
+// link-time anchors only — they are not called directly from this crate.
+#![allow(unused_imports)]
+
 use beskid_runtime::{
     alloc, array_len, array_new, beskid_runtime_abi_version, channel_close, channel_create,
     channel_receive, channel_receive_status, channel_receive_value, channel_send,

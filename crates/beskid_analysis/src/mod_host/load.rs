@@ -130,7 +130,7 @@ mod tests {
         assert!(loaded[0].descriptor.is_none());
         assert!(loaded[0].registrations.is_empty());
 
-        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
 
     #[test]
@@ -171,7 +171,7 @@ mod tests {
             descriptor_dir
         );
 
-        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
 
     fn discovered(name: &str, root: &Path) -> DiscoveredMod {

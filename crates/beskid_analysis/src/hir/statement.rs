@@ -7,6 +7,10 @@ use super::expression::ExpressionNode;
 use super::phase::{HirPhase, Phase};
 use super::types::HirType;
 
+/// Typed-HIR statement tree, generic over [`Phase`] for AST/HIR separation.
+///
+/// Covers let bindings, control flow (return, break, continue, while, for, if),
+/// composition statements (with, launch), and expression statements.
 #[derive(beskid_ast_derive::PhaseFromAst)]
 #[phase(source = "crate::syntax::Statement", phase = "crate::hir::AstPhase")]
 pub enum StatementNode<P: Phase> {

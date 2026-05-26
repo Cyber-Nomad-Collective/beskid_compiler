@@ -12,6 +12,7 @@ cranelift-module = { workspace = true }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_runtime = { path = "../beskid_runtime" }
 anyhow = "1"
+thiserror = "2"
 
 [dev-dependencies]
 pest = { workspace = true }

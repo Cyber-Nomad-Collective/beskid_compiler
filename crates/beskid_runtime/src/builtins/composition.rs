@@ -19,7 +19,7 @@ fn container_from_ptr<'a>(ptr: *mut RuntimeContainer) -> Option<&'a mut RuntimeC
     if ptr.is_null() {
         None
     } else {
-        // Safety: codegen only passes pointers handed out by `composition_container_create`
+        // SAFETY: codegen only passes pointers handed out by `composition_container_create`
         // and only on the single mutator thread (Phase A). The pointer is valid until the
         // matching `composition_container_drop`.
         Some(unsafe { &mut *ptr })
@@ -38,7 +38,7 @@ pub extern "C-unwind" fn composition_container_create() -> *mut RuntimeContainer
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn composition_container_drop(ptr: *mut RuntimeContainer) {
     if !ptr.is_null() {
-        // Safety: matches a `Box::into_raw` from `composition_container_create`.
+        // SAFETY: matches a `Box::into_raw` from `composition_container_create`.
         drop(unsafe { Box::from_raw(ptr) });
     }
 }
@@ -89,7 +89,7 @@ pub extern "C-unwind" fn composition_bind_plural(
     let slice: &[u32] = if len == 0 || targets.is_null() {
         &[]
     } else {
-        // Safety: the codegen-emitted call site guarantees `targets` points at a contiguous
+        // SAFETY: the codegen-emitted call site guarantees `targets` points at a contiguous
         // region of `len` u32 values, owned by the generated code for the duration of the
         // call.
         unsafe { std::slice::from_raw_parts(targets, len) }
@@ -189,7 +189,8 @@ pub extern "C-unwind" fn composition_resolve_plural(
     let capacity = if out_capacity < 0 { 0 } else { out_capacity as usize };
     if !out.is_null() && capacity > 0 {
         let to_copy = capacity.min(instances.len());
-        // Safety: the caller pinky-promises `out` has space for `out_capacity` pointers.
+        // SAFETY: the caller guarantees `out` points to valid, aligned memory with room for
+        // `out_capacity` pointers; we copy at most `to_copy ≤ capacity` entries.
         unsafe {
             std::ptr::copy_nonoverlapping(instances.as_ptr(), out, to_copy);
         }

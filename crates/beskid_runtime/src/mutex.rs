@@ -111,3 +111,33 @@ where
     }
     map.get_mut(key).map(f)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::status::{MUTEX_OK, MUTEX_WOULD_BLOCK};
+
+    #[test]
+    fn test_mutex_create_lock_unlock() {
+        let mx = mutex_create();
+        assert_ne!(mx, 0, "mutex id should be non-zero after creation");
+        // SAFETY: mutex_try_lock is safe outside a fiber scheduler; it sets owner to
+        // current_fiber_key() which returns None, and does not park.
+        assert_eq!(mutex_try_lock(mx), MUTEX_OK);
+        mutex_unlock(mx);
+        // After unlock, try_lock should succeed again.
+        assert_eq!(mutex_try_lock(mx), MUTEX_OK);
+        mutex_unlock(mx);
+    }
+
+    #[test]
+    fn test_mutex_try_lock_success() {
+        let mx = mutex_create();
+        assert_eq!(mutex_try_lock(mx), MUTEX_OK);
+        // Locked mutex should report WOULD_BLOCK on a second try_lock.
+        assert_eq!(mutex_try_lock(mx), MUTEX_WOULD_BLOCK);
+        mutex_unlock(mx);
+        assert_eq!(mutex_try_lock(mx), MUTEX_OK);
+        mutex_unlock(mx);
+    }
+}

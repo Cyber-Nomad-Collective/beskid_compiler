@@ -29,7 +29,7 @@ fn percent_encode_path_segment(input: &str) -> String {
             }
             _ => {
                 use std::fmt::Write as _;
-                let _ = write!(out, "%{b:02X}");
+                let _ = write!(out, "%{b:02X}"); // Discard result: writing to String is infallible
             }
         }
     }

@@ -110,6 +110,7 @@ pub fn lower_program(
             break;
         };
         if matches!(info, TypeInfo::Named(_) | TypeInfo::Applied { .. }) {
+            // Side-effect: populates type_descriptors cache; return value not needed here.
             let _ = ctx.type_descriptor(type_result, type_id);
         }
         index += 1;

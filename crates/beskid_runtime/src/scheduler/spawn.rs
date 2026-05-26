@@ -117,6 +117,11 @@ fn dispatch_on_cancelled(slot: *mut *mut EventState) {
     if slot.is_null() {
         return;
     }
+    // SAFETY: `slot` was validated non-null; `*slot` yields a valid `*mut EventState` that
+    // outlives this call. Each handler pointer retrieved via `event_get_handler` is a
+    // codegen-emitted trampoline that satisfies the `extern "C" fn()` ABI. `transmute`
+    // reinterprets the raw function pointer as a Rust callable — sound because codegen
+    // ABI-matches the signature and the handler address is not null.
     unsafe {
         let state_ptr = *slot;
         if state_ptr.is_null() {

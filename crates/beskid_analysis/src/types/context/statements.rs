@@ -55,7 +55,10 @@ impl<'a> TypeContext<'a> {
                     match actual {
                         Some(actual) => self.require_same_type(return_stmt.span, expected, actual),
                         None => {
-                            if expected != self.primitive_type_id(HirPrimitiveType::Unit).unwrap() {
+                            if matches!(
+                                self.primitive_type_id(HirPrimitiveType::Unit),
+                                Some(unit_id) if expected != unit_id
+                            ) {
                                 self.errors.push(TypeError::ReturnTypeMismatch {
                                     span: return_stmt.span,
                                     expected,

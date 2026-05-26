@@ -3,6 +3,8 @@ use crate::syntax::SpanInfo;
 
 #[derive(Debug, Clone)]
 pub enum SemanticIssueKind {
+    // ── Definition / duplicate-name diagnostics ──
+
     DuplicateDefinitionName {
         name: String,
         previous: SpanInfo,
@@ -26,6 +28,8 @@ pub enum SemanticIssueKind {
         contract_name: String,
         method_name: String,
     },
+
+    // ── Import / visibility / naming diagnostics ──
 
     AmbiguousImport {
         name: String,
@@ -87,6 +91,8 @@ pub enum SemanticIssueKind {
         name: String,
     },
 
+    // ── Contract conformance diagnostics ──
+
     ContractMethodNotFound {
         method_name: String,
         receiver_name: String,
@@ -105,6 +111,8 @@ pub enum SemanticIssueKind {
     ImmutableAssignment {
         name: String,
     },
+
+    // ── Pattern / match / control-flow diagnostics ──
 
     MatchGuardMustBeBoolean,
     MatchArmTypeMismatch {
@@ -136,6 +144,8 @@ pub enum SemanticIssueKind {
     BreakOutsideLoop,
     ContinueOutsideLoop,
     UnreachableCode,
+
+    // ── Resolution diagnostics ──
 
     ResolveDuplicateItem {
         name: String,
@@ -173,6 +183,8 @@ pub enum SemanticIssueKind {
         name: String,
         previous: SpanInfo,
     },
+
+    // ── Type-checking diagnostics ──
 
     TypeUnknownType,
     TypeUnknownValueType,
@@ -230,6 +242,9 @@ pub enum SemanticIssueKind {
     StackReferenceEscapesSpawn,
     AsyncKeywordReserved,
     AwaitKeywordReserved,
+
+    // ── Control-flow / match diagnostics ──
+
     TypeReturnMismatch {
         expected_name: String,
         actual_name: String,
@@ -248,6 +263,8 @@ pub enum SemanticIssueKind {
         from: String,
         to: String,
     },
+
+    // ── Macro diagnostics ──
 
     MacroUnknown {
         name: String,
@@ -282,6 +299,8 @@ pub enum SemanticIssueKind {
     QueryNodeSpanUnavailable,
     QueryPipelineConflict,
     QueryPipelineStaleGeneration,
+
+    // ── Documentation diagnostics ──
 
     /// `@arg(name)` does not match a parameter on the documented callable.
     DocUnknownArgName {
@@ -323,6 +342,9 @@ pub enum SemanticIssueKind {
     DocDuplicateGenericName {
         name: String,
     },
+
+    // ── Composition diagnostics ──
+
     CompositionMissingLaunchHost,
     CompositionMultipleLaunchHosts,
     CompositionDependencyCycle {

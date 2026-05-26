@@ -1,6 +1,3 @@
-use std::error::Error;
-use std::fmt;
-
 use crate::hir::{
     AstProgram, HirNormalizeError, HirProgram, lower_program as lower_hir_program,
     normalize_program_with_resolution,
@@ -121,48 +118,28 @@ fn resolve_entry_hir(
 }
 
 /// Resolves with a [`ModuleIndex`] only (no dependency signature seeding). Prefer [`lower_normalize_resolve_type_spanned_with_assembly`].
+///
+/// Currently delegates to [`lower_normalize_resolve_type_spanned_with_assembly`] without assembly;
+/// the `module_index` parameter is reserved for future support of module-index-driven resolution.
+#[allow(unused_variables)]
 pub fn lower_normalize_resolve_type_spanned_with_index(
     program: &Spanned<Program>,
     module_index: Option<&crate::projects::assembly::ModuleIndex>,
 ) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
-    let _ = module_index;
     lower_normalize_resolve_type_spanned_with_assembly(program, None)
 }
 
 /// Which pipeline stage failed when running [`lower_normalize_resolve_type_spanned`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum LowerResolveTypeError {
+    #[error("Normalization failed\n{}", format_errors(.0))]
     Normalize(Vec<HirNormalizeError>),
+    #[error("Resolution failed\n{}", format_errors(.0))]
     Resolve(Vec<ResolveError>),
+    #[error("Type checking failed\n{}", format_errors(.0))]
     Type(Vec<TypeError>),
 }
 
-impl fmt::Display for LowerResolveTypeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LowerResolveTypeError::Normalize(errors) => {
-                writeln!(f, "Normalization failed")?;
-                for err in errors {
-                    writeln!(f, "  - {err}")?;
-                }
-                Ok(())
-            }
-            LowerResolveTypeError::Resolve(errors) => {
-                writeln!(f, "Resolution failed")?;
-                for err in errors {
-                    writeln!(f, "  - {err}")?;
-                }
-                Ok(())
-            }
-            LowerResolveTypeError::Type(errors) => {
-                writeln!(f, "Type checking failed")?;
-                for err in errors {
-                    writeln!(f, "  - {err}")?;
-                }
-                Ok(())
-            }
-        }
-    }
+fn format_errors<E: std::fmt::Display>(errors: &[E]) -> String {
+    errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n")
 }
-
-impl Error for LowerResolveTypeError {}

@@ -2,6 +2,11 @@ use crate::syntax::Spanned;
 
 use super::common::{HirIdentifier, HirPath, HirVisibility};
 
+/// Primitive types natively understood by the compiler and runtime.
+///
+/// Each variant maps to a concrete ABI representation: `I32`/`I64`/`F64`/`U8` for
+/// arithmetic, `Bool` for logic, `Char` for Unicode scalars, `String` for heap
+/// references, `Unit` for void returns, and `Never` for diverging expressions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, beskid_ast_derive::HirNode)]
 #[ast(kind = "PrimitiveType")]
 pub enum HirPrimitiveType {
@@ -39,6 +44,10 @@ impl HirPrimitiveType {
     }
 }
 
+/// Type tree used in HIR declarations and expressions.
+///
+/// `Primitive` and `Complex` cover named/inline types, `Array` for `T[]`,
+/// `Ref` for reference types, and `Function` for callable signatures.
 #[derive(Debug, Clone, PartialEq, Eq, beskid_ast_derive::HirNode)]
 #[ast(kind = "Type")]
 pub enum HirType {

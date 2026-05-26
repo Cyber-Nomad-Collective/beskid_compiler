@@ -3,6 +3,10 @@ use crate::syntax::Spanned;
 use super::common::{HirEnumPath, HirIdentifier};
 use super::literal::HirLiteral;
 
+/// Match and destructuring patterns in HIR.
+///
+/// `Wildcard` matches anything (`_`), `Identifier` binds a value,
+/// `Literal` matches a constant, and `Enum` destructures an enum variant.
 #[derive(beskid_ast_derive::HirNode)]
 #[ast(kind = "Pattern")]
 pub enum HirPattern {

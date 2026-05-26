@@ -181,7 +181,7 @@ fn extract_workspace_flag(args: Vec<OsString>) -> (Option<PathBuf>, Vec<OsString
                 continue;
             }
             eprintln!("error: --workspace requires a directory path");
-            std::process::exit(2);
+            return (None, out);
         }
         out.push(args[i].clone());
         i += 1;

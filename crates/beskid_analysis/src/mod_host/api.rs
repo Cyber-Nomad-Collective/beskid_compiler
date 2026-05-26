@@ -296,7 +296,7 @@ project {
             ]
         );
 
-        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
 
     #[test]
@@ -370,7 +370,7 @@ project {
             "scheduling must abort before mod.collect"
         );
 
-        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
 
     fn compile_plan(host: &std::path::Path, mod_dir: &std::path::Path) -> CompilePlan {

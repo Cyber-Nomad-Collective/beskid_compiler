@@ -5,7 +5,6 @@
     clippy::field_reassign_with_default,
     clippy::large_enum_variant,
     clippy::module_inception,
-    clippy::question_mark,
     clippy::too_many_arguments,
     clippy::type_complexity
 )]
@@ -18,7 +17,6 @@ pub mod builtins;
 pub mod composition;
 pub mod compilation_context;
 #[doc(hidden)]
-#[allow(dead_code)]
 pub mod compiler_sdk_reflect;
 pub mod doc;
 pub mod doc_comment_parser;
