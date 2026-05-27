@@ -180,4 +180,4 @@ If RSS climbs while CPU stays hot, suspect a **busy scheduler loop** (`run_main_
 
 ### Hygiene
 
-- `compiler/noxfile.py` — `RUST_MIN_STACK` 16 MiB for test sessions; `--test-threads=1` on runtime-related `beskid_tests` invocations
+- Centralized Dagger/Cargo lanes — `RUST_MIN_STACK` and `--test-threads=1` for runtime-related sessions where needed
