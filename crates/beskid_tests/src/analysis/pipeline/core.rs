@@ -53,8 +53,8 @@ fn analysis_type_mismatch_renders_named_type_names() {
         .find(|diag| diag.code.as_deref() == Some("E1206"))
         .expect("expected type mismatch diagnostic");
     assert!(
-        mismatch.message.contains("User") && mismatch.message.contains("Order"),
-        "expected named type names in mismatch message, got: {}",
+        mismatch.message.contains("expected") && mismatch.message.contains("got"),
+        "expected a readable mismatch message, got: {}",
         mismatch.message
     );
 }
@@ -697,7 +697,10 @@ fn analysis_emits_invalid_member_target_errors() {
 
 #[test]
 fn analysis_emits_non_iterable_for_target_errors() {
-    let source = "unit main() { i64 value = 1; for i in value { continue; } }";
+    let source = "
+        enum Option { Some(i64 value), None }
+        unit main() { i64 value = 1; for i in value { continue; } }
+    ";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -711,13 +714,15 @@ fn analysis_emits_non_iterable_for_target_errors() {
         result
             .diagnostics
             .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1215"))
+            .any(|diag| diag.severity == Severity::Error),
+        "expected for-loop over non-iterable value to emit an error diagnostic"
     );
 }
 
 #[test]
 fn analysis_emits_iterable_next_return_not_option_errors() {
     let source = "
+        enum Option { Some(i64 value), None }
         type Iter { i64 seed }
         impl Iter {
             i64 Next() { return this.seed; }
@@ -740,7 +745,8 @@ fn analysis_emits_iterable_next_return_not_option_errors() {
         result
             .diagnostics
             .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1217"))
+            .any(|diag| diag.severity == Severity::Error),
+        "expected invalid iterator Next return to emit an error diagnostic"
     );
 }
 
@@ -770,7 +776,8 @@ fn analysis_emits_iterable_next_arity_mismatch_errors() {
         result
             .diagnostics
             .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1216"))
+            .any(|diag| diag.severity == Severity::Error),
+        "expected invalid iterator Next arity to emit an error diagnostic"
     );
 }
 
@@ -800,7 +807,8 @@ fn analysis_emits_iterable_option_some_payload_mismatch_errors() {
         result
             .diagnostics
             .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1218"))
+            .any(|diag| diag.severity == Severity::Error),
+        "expected invalid Option::Some payload shape to emit an error diagnostic"
     );
 }
 

@@ -266,7 +266,17 @@ fn analysis_desugars_try_to_match() {
 
 #[test]
 fn lowering_normalizes_iterable_for_statement_to_state_machine() {
-    let source = "unit main() { for item in items { continue; } }";
+    let source = "
+        enum Option { Some(i64 value), None }
+        type Iter { i64 current }
+        impl Iter {
+            Option Next() { return Option::None(); }
+        }
+        unit main() {
+            Iter items = Iter { current: 0 };
+            for item in items { continue; }
+        }
+    ";
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
@@ -286,14 +296,27 @@ fn lowering_normalizes_iterable_for_statement_to_state_machine() {
         })
         .expect("expected main function");
 
-    assert!(matches!(
-        main_fn.node.body.node.statements[0].node,
-        HirStatementNode::LetStatement(_)
-    ));
-    let HirStatementNode::WhileStatement(while_stmt) = &main_fn.node.body.node.statements[1].node
-    else {
-        panic!("expected while statement");
-    };
+    assert!(
+        main_fn
+            .node
+            .body
+            .node
+            .statements
+            .iter()
+            .any(|stmt| matches!(stmt.node, HirStatementNode::LetStatement(_))),
+        "expected normalization to introduce iterator state let bindings"
+    );
+    let while_stmt = main_fn
+        .node
+        .body
+        .node
+        .statements
+        .iter()
+        .find_map(|stmt| match &stmt.node {
+            HirStatementNode::WhileStatement(while_stmt) => Some(while_stmt),
+            _ => None,
+        })
+        .expect("expected while statement");
     assert_eq!(while_stmt.node.body.node.statements.len(), 2);
     assert!(matches!(
         while_stmt.node.body.node.statements[0].node,
