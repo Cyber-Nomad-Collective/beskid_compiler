@@ -456,7 +456,11 @@ fn copy_file_when_newer(source: &Path, destination: &Path) -> Result<(), Project
                 path: destination.to_path_buf(),
                 source,
             })?;
-        source_modified > destination_modified
+        if source_modified > destination_modified {
+            true
+        } else {
+            !file_contents_equal(source, destination)?
+        }
     } else {
         true
     };
@@ -478,6 +482,18 @@ fn copy_file_when_newer(source: &Path, destination: &Path) -> Result<(), Project
     }
 
     Ok(())
+}
+
+fn file_contents_equal(source: &Path, destination: &Path) -> Result<bool, ProjectError> {
+    let source_bytes = fs::read(source).map_err(|err| ProjectError::MaterializationMetadata {
+        path: source.to_path_buf(),
+        source: err,
+    })?;
+    let destination_bytes = fs::read(destination).map_err(|err| ProjectError::MaterializationMetadata {
+        path: destination.to_path_buf(),
+        source: err,
+    })?;
+    Ok(source_bytes == destination_bytes)
 }
 
 fn materialized_dependency_id(project_name: &str, manifest_path: &Path) -> String {
@@ -710,7 +726,7 @@ fn extract_zip_to_dir(bytes: &[u8], output_dir: &Path) -> Result<(), ProjectErro
         let mut entry = archive.by_index(index).map_err(|err| {
             ProjectError::Validation(format!("failed to read registry artifact entry: {err}"))
         })?;
-        let Some(path) = entry.enclosed_name().map(|p| p.to_path_buf()) else {
+        let Some(path) = entry.enclosed_name() else {
             continue;
         };
         let target = output_dir.join(path);

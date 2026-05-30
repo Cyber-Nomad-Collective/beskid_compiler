@@ -31,7 +31,6 @@ impl Rule for SemanticPipelineRule {
         let spanned_program = Spanned::new(program.clone(), span);
         let ast: Spanned<AstProgram> = spanned_program.into();
         let hir: Spanned<HirProgram> = lower_program(&ast);
-        let hir_for_type_check = lower_program(&ast);
 
         self.stage0_collect_definitions(ctx, &hir);
         self.stage3_control_flow_and_patterns(ctx, &hir);
@@ -40,9 +39,9 @@ impl Rule for SemanticPipelineRule {
             return;
         };
 
-        self.stage2_type_check(ctx, hir_for_type_check, &resolution);
         self.stage5_modules_and_visibility(ctx, &hir);
         self.stage6_contracts_and_methods(ctx, &hir, &resolution);
         self.stage7_error_handling(ctx, &hir, &resolution);
+        self.stage2_type_check(ctx, hir, &resolution);
     }
 }

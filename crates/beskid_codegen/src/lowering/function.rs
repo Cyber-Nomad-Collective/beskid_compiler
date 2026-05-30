@@ -1,6 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::{CodegenContext, CodegenResult, LoweredFunction};
 use crate::lowering::expressions::export::{export_linker_name, validate_export_function};
+use crate::lowering::locals::local_id_for_span;
 use crate::lowering::lowerable::lower_node;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, type_id_for_type};
@@ -24,7 +25,16 @@ pub(crate) fn lower_function(
     function_defs: &HashMap<ItemId, &Spanned<HirFunctionDefinition>>,
     ctx: &mut CodegenContext,
 ) -> CodegenResult<()> {
-    lower_function_with_name(def, resolution, type_result, function_defs, ctx, None, None)
+    let saved_source_path = ctx.current_source_path.clone();
+    ctx.current_source_path = resolution
+        .items
+        .iter()
+        .find(|info| info.span == def.span)
+        .and_then(|info| info.source_path.clone())
+        .or(saved_source_path.clone());
+    let result = lower_function_with_name(def, resolution, type_result, function_defs, ctx, None, None);
+    ctx.current_source_path = saved_source_path;
+    result
 }
 
 pub(crate) fn lower_method(
@@ -40,6 +50,32 @@ pub(crate) fn lower_method(
         .find(|info| info.span == def.span)
         .map(|info| info.id)
         .ok_or(CodegenError::MissingSymbol("method item"))?;
+    ctx.current_source_path = resolution
+        .items
+        .iter()
+        .find(|info| info.span == def.span)
+        .and_then(|info| info.source_path.clone());
+    ctx.emitting_items.insert(item_id);
+    let result = lower_method_body(
+        def,
+        resolution,
+        type_result,
+        function_defs,
+        ctx,
+        item_id,
+    );
+    finish_emitting(ctx, Some(item_id));
+    result
+}
+
+fn lower_method_body(
+    def: &Spanned<HirMethodDefinition>,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    function_defs: &HashMap<ItemId, &Spanned<HirFunctionDefinition>>,
+    ctx: &mut CodegenContext,
+    item_id: ItemId,
+) -> CodegenResult<()> {
     let signature_types = type_result.function_signatures.get(&item_id);
 
     let receiver_type_id = type_id_for_type(resolution, type_result, &def.node.receiver_type)
@@ -104,15 +140,14 @@ pub(crate) fn lower_method(
     let mut state = FunctionLoweringState::default();
     let param_values = builder.block_params(entry).to_vec();
 
-    let this_local_id = resolution
-        .tables
-        .locals
-        .iter()
-        .find(|info| info.span == def.node.receiver_type.span)
-        .map(|info| info.id)
-        .ok_or(CodegenError::InvalidLocalBinding {
-            span: def.node.receiver_type.span,
-        })?;
+    let this_local_id = local_id_for_span(
+        resolution,
+        def.node.receiver_type.span,
+        ctx.current_source_path.as_ref(),
+    )
+    .ok_or(CodegenError::InvalidLocalBinding {
+        span: def.node.receiver_type.span,
+    })?;
     let this_var = builder.declare_var(receiver_clif_ty);
     builder.def_var(this_var, param_values[0]);
     state.locals.insert(this_local_id, this_var);
@@ -124,15 +159,14 @@ pub(crate) fn lower_method(
         .zip(param_values.into_iter().skip(1))
         .enumerate()
     {
-        let local_id = resolution
-            .tables
-            .locals
-            .iter()
-            .find(|info| info.span == param.node.name.span)
-            .map(|info| info.id)
-            .ok_or(CodegenError::InvalidLocalBinding {
-                span: param.node.name.span,
-            })?;
+        let local_id = local_id_for_span(
+            resolution,
+            param.node.name.span,
+            ctx.current_source_path.as_ref(),
+        )
+        .ok_or(CodegenError::InvalidLocalBinding {
+            span: param.node.name.span,
+        })?;
         let type_id = type_result
             .local_types
             .get(&local_id)
@@ -228,6 +262,31 @@ pub(crate) fn lower_test(
         .iter()
         .find(|info| info.span == def.span)
         .map(|info| info.id);
+    let saved_source_path = ctx.current_source_path.clone();
+    ctx.current_source_path = item_id
+        .and_then(|id| resolution.items.get(id.0))
+        .and_then(|info| info.source_path.clone())
+        .or(saved_source_path.clone());
+    let result = lower_test_body(
+        def,
+        resolution,
+        type_result,
+        function_defs,
+        ctx,
+        item_id,
+    );
+    ctx.current_source_path = saved_source_path;
+    result
+}
+
+fn lower_test_body(
+    def: &Spanned<HirTestDefinition>,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    function_defs: &HashMap<ItemId, &Spanned<HirFunctionDefinition>>,
+    ctx: &mut CodegenContext,
+    item_id: Option<ItemId>,
+) -> CodegenResult<()> {
     let signature_types = item_id.and_then(|id| type_result.function_signatures.get(&id));
 
     let mut signature = Signature::new(CallConv::SystemV);
@@ -337,14 +396,48 @@ pub(crate) fn lower_function_with_name(
     generic_args: Option<HashMap<String, beskid_analysis::types::TypeId>>,
 ) -> CodegenResult<()> {
     let generic_args = generic_args.unwrap_or_default();
-    let substitute = |type_id: beskid_analysis::types::TypeId| -> beskid_analysis::types::TypeId {
-        substitute_type_id(type_result, type_id, &generic_args)
-    };
     let item_id = resolution
         .items
         .iter()
         .find(|info| info.span == def.span)
         .map(|info| info.id);
+    if let Some(id) = item_id {
+        ctx.emitting_items.insert(id);
+    }
+    let result = lower_function_with_name_body(
+        def,
+        resolution,
+        type_result,
+        function_defs,
+        ctx,
+        name_override,
+        &generic_args,
+        item_id,
+    );
+    finish_emitting(ctx, item_id);
+    result
+}
+
+fn finish_emitting(ctx: &mut CodegenContext, item_id: Option<ItemId>) {
+    if let Some(id) = item_id {
+        ctx.emitting_items.remove(&id);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lower_function_with_name_body(
+    def: &Spanned<HirFunctionDefinition>,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    function_defs: &HashMap<ItemId, &Spanned<HirFunctionDefinition>>,
+    ctx: &mut CodegenContext,
+    name_override: Option<String>,
+    generic_args: &HashMap<String, beskid_analysis::types::TypeId>,
+    item_id: Option<ItemId>,
+) -> CodegenResult<()> {
+    let substitute = |type_id: beskid_analysis::types::TypeId| -> beskid_analysis::types::TypeId {
+        substitute_type_id(type_result, type_id, generic_args)
+    };
     let signature_types = item_id.and_then(|id| type_result.function_signatures.get(&id));
     let mut signature = Signature::new(CallConv::SystemV);
     for (index, param) in def.node.parameters.iter().enumerate() {
@@ -357,7 +450,7 @@ pub(crate) fn lower_function_with_name(
         let type_id = signature_types
             .and_then(|sig| sig.params.get(index).copied())
             .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))
-            .map(substitute)
+            .map(|tid| substitute(tid))
             .ok_or(CodegenError::UnsupportedNode {
                 span: param.span,
                 node: "function parameter type",
@@ -377,7 +470,7 @@ pub(crate) fn lower_function_with_name(
                 .as_ref()
                 .and_then(|ty| type_id_for_type(resolution, type_result, ty))
         })
-        .map(substitute);
+        .map(|tid| substitute(tid));
     if let Some(type_id) = return_type_id
         && let Some(clif_ty) = map_type_id_to_clif(type_result, type_id)
     {
@@ -408,22 +501,21 @@ pub(crate) fn lower_function_with_name(
         .zip(param_values.into_iter())
         .enumerate()
     {
-        let local_id = resolution
-            .tables
-            .locals
-            .iter()
-            .find(|info| info.span == param.node.name.span)
-            .map(|info| info.id)
-            .ok_or(CodegenError::InvalidLocalBinding {
-                span: param.node.name.span,
-            })?;
+        let local_id = local_id_for_span(
+            resolution,
+            param.node.name.span,
+            ctx.current_source_path.as_ref(),
+        )
+        .ok_or(CodegenError::InvalidLocalBinding {
+            span: param.node.name.span,
+        })?;
         let type_id = type_result
             .local_types
             .get(&local_id)
             .copied()
             .or_else(|| signature_types.and_then(|sig| sig.params.get(index).copied()))
             .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))
-            .map(substitute)
+            .map(|tid| substitute(tid))
             .ok_or(CodegenError::MissingLocalType {
                 span: param.node.name.span,
             })?;

@@ -30,7 +30,7 @@ pub fn normalize_program(program: &mut Spanned<HirProgram>) -> Result<(), Vec<Hi
 pub fn normalize_program_with_resolution(
     program: &mut Spanned<HirProgram>,
     resolution: Option<&Resolution>,
-    dependency_programs: &[Spanned<HirProgram>],
+    dependency_programs: &[&Spanned<HirProgram>],
 ) -> Result<(), Vec<HirNormalizeError>> {
     let try_targets = resolution.map(|resolution| {
         try_desugar_targets_for_program(resolution, program, dependency_programs)

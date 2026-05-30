@@ -12,6 +12,9 @@ mod doc_tests;
 mod test_harness;
 
 #[cfg(test)]
+pub mod spine;
+
+#[cfg(test)]
 pub mod parsing;
 
 #[cfg(test)]

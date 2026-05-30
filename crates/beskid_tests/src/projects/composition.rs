@@ -41,6 +41,9 @@ i32 main() {
     let entry = src_dir.join("Main.bd");
     fs::write(&entry, source).expect("write source");
 
+    let previous_cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(&root).expect("chdir to isolated project");
+
     let mut context = CompilationContext::try_for_analysis_path(&entry, None)
         .expect("compilation context for project");
     assert_eq!(
@@ -63,6 +66,7 @@ i32 main() {
         "expected E1701 for app project without launch, got {codes:?}"
     );
 
+    std::env::set_current_dir(previous_cwd).expect("restore cwd");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -102,6 +106,9 @@ i32 marker() {
     let entry = src_dir.join("Lib.bd");
     fs::write(&entry, source).expect("write source");
 
+    let previous_cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(&root).expect("chdir to isolated project");
+
     let mut context = CompilationContext::try_for_analysis_path(&entry, None)
         .expect("compilation context for project");
     assert_eq!(
@@ -124,5 +131,6 @@ i32 marker() {
         "expected E1711 for launch in lib project, got {codes:?}"
     );
 
+    std::env::set_current_dir(previous_cwd).expect("restore cwd");
     let _ = fs::remove_dir_all(root);
 }

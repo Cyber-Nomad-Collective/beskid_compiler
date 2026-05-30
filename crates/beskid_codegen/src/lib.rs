@@ -12,6 +12,7 @@
 pub mod cranelift_host;
 pub mod diagnostics;
 pub mod errors;
+pub mod linking;
 pub mod lowering;
 pub mod module_emission;
 pub mod services;
@@ -25,7 +26,9 @@ pub use lowering::{
     shape_id_for_item, lower_node, lower_program,
 };
 pub use module_emission::{DescriptorHandles, emit_string_literals, emit_type_descriptors};
+pub use linking::{FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, validate_artifact};
 pub use services::{
-    LoweredProgram, lower_resolved_input_with_pipeline, lower_source, lower_source_with_pipeline,
-    render_clif,
+    LoweredProgram, entrypoint_artifact_from_front_end, lower_from_front_end,
+    lower_resolved_entrypoint_with_pipeline, lower_resolved_input_with_pipeline, lower_source,
+    lower_source_with_pipeline, render_clif,
 };

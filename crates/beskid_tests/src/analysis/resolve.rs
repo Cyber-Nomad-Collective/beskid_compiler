@@ -206,6 +206,31 @@ fn qualified_nested_private_module_path_is_error() {
 }
 
 #[test]
+fn use_import_brings_public_enum_into_value_scope() {
+    let result = resolve_program(
+        r#"
+mod Core {
+    mod Results {
+        pub enum Result {
+            Ok(i64 value),
+            Error(string value),
+        }
+    }
+}
+use Core.Results;
+unit smoke() {
+    let ok = Result::Ok(1);
+}
+"#,
+    );
+    assert!(
+        result.is_ok(),
+        "use Core.Results should bring Result constructors into scope: {:?}",
+        result.err()
+    );
+}
+
+#[test]
 #[ignore = "import alias as type value: resolver gap tracked for v0.3 follow-up"]
 fn aliased_import_name_resolves_in_value_path() {
     let result = resolve_program(

@@ -7,6 +7,7 @@ use crate::query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
 use crate::resolve::Resolution;
 use crate::services::{
     LowerResolveTypeError, typed_hir_from_lowered_after_resolution,
+    typed_hir_from_lowered_gate_with_assembly, typed_hir_from_lowered_with_assembly,
     typed_hir_from_lowered_with_module_index,
 };
 use crate::syntax::Spanned;
@@ -21,11 +22,27 @@ impl SemanticPipelineRule {
     ) {
         self.check_immutable_assignments(ctx, &hir);
 
-        let result = if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
+        let result = if ctx.options.semantic_gate_only {
+            if let Some(assembly) = ctx.options.program_assembly.as_ref() {
+                typed_hir_from_lowered_gate_with_assembly(hir, Some(assembly))
+            } else if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
+                typed_hir_from_lowered_with_module_index(
+                    hir,
+                    index,
+                    ctx.options.entry_source_path.clone(),
+                    None,
+                )
+            } else {
+                typed_hir_from_lowered_after_resolution(hir, resolution)
+            }
+        } else if let Some(assembly) = ctx.options.program_assembly.as_ref() {
+            typed_hir_from_lowered_with_assembly(hir, Some(assembly))
+        } else if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
             typed_hir_from_lowered_with_module_index(
                 hir,
                 index,
                 ctx.options.entry_source_path.clone(),
+                None,
             )
         } else {
             typed_hir_from_lowered_after_resolution(hir, resolution)

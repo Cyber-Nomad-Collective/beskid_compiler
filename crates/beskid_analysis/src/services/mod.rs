@@ -9,11 +9,14 @@ mod document;
 mod document_tests;
 mod front_end;
 mod input;
+mod prepare;
 mod lower;
 mod parse;
 mod project;
+mod queries;
 mod render;
 mod semantic;
+mod session;
 
 pub use composition::{
     composition_diagnostics_for_program, composition_result_to_diagnostics,
@@ -38,8 +41,20 @@ pub use document::{
     references_at_offset, references_at_offset_workspace, symbol_kind_name,
 };
 pub use front_end::{
-    FrontEndOptions, FrontEndTypedResult, compile_front_end_from_resolved_input,
-    compile_front_end_with_pipeline,
+    FrontEndLowerInput, FrontEndOptions, FrontEndTypedResult,
+    compile_front_end_from_resolved_input, compile_front_end_with_pipeline,
+};
+pub use prepare::{
+    PrepareMode, PrepareOptions, PreparedCompilation, prepare_compilation,
+    prepare_compilation_diagnostics, resolved_input_from_plan,
+};
+pub use queries::{
+    assemble_program_query, assemble_unit, invalidate_dependents, module_index_query,
+    resolve_entry, type_dep_signatures, type_entry, type_entry_gate,
+};
+pub use session::{
+    CompilationSession, SemanticSnapshot, SessionFingerprint, cached_executable,
+    session_for_assembly, store_executable_on_session,
 };
 pub use input::{
     AnalyzeInProjectOptions, ResolvedInput, resolve_input, resolve_input_with_pipeline,
@@ -47,9 +62,9 @@ pub use input::{
 };
 pub use lower::{
     LowerResolveTypeError, lower_normalize_resolve_type_spanned,
-    lower_normalize_resolve_type_spanned_with_assembly,
-    lower_normalize_resolve_type_spanned_with_index, typed_hir_from_lowered_with_assembly,
-    typed_hir_from_lowered_after_resolution, typed_hir_from_lowered_with_module_index,
+    lower_normalize_resolve_type_spanned_with_assembly, typed_hir_from_lowered_with_assembly,
+    typed_hir_from_lowered_gate_with_assembly, typed_hir_from_lowered_after_resolution,
+    typed_hir_from_lowered_with_module_index,
 };
 pub use parse::{parse_program, parse_program_with_source_name};
 pub use project::{ResolvedProject, resolve_project, resolve_project_with_policy};

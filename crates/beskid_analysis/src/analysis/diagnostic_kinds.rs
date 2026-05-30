@@ -186,7 +186,9 @@ pub enum SemanticIssueKind {
 
     // ── Type-checking diagnostics ──
 
-    TypeUnknownType,
+    TypeUnknownType {
+        name: String,
+    },
     TypeUnknownValueType,
     TypeUnknownStructType,
     TypeInvalidMemberTarget,
@@ -443,7 +445,7 @@ impl SemanticIssueKind {
             Self::ResolvePrivateItemInModule { .. } => "E1107",
             Self::ResolveShadowedLocal { .. } => "W1103",
 
-            Self::TypeUnknownType => "E1201",
+            Self::TypeUnknownType { .. } => "E1201",
             Self::TypeUnknownValueType => "E1201",
             Self::TypeUnknownStructType => "E1201",
             Self::TypeInvalidMemberTarget => "E1213",
@@ -620,7 +622,7 @@ impl SemanticIssueKind {
             }
             Self::ResolvePrivateItemInModule { .. } => "private item access".to_string(),
             Self::ResolveShadowedLocal { .. } => "shadowed local".to_string(),
-            Self::TypeUnknownType => "unknown type".to_string(),
+            Self::TypeUnknownType { .. } => "unknown type".to_string(),
             Self::TypeUnknownValueType => "unknown value type".to_string(),
             Self::TypeUnknownStructType => "unknown struct type".to_string(),
             Self::TypeInvalidMemberTarget => "invalid member access target".to_string(),
@@ -861,7 +863,7 @@ impl SemanticIssueKind {
                 format!("private item `{name}` cannot be accessed from module `{module_path}`")
             }
             Self::ResolveShadowedLocal { name, .. } => format!("shadowed local `{name}`"),
-            Self::TypeUnknownType => "unknown type".to_string(),
+            Self::TypeUnknownType { name } => format!("unknown type `{name}`"),
             Self::TypeUnknownValueType => "unknown value type".to_string(),
             Self::TypeUnknownStructType => "unknown struct type".to_string(),
             Self::TypeInvalidMemberTarget => {

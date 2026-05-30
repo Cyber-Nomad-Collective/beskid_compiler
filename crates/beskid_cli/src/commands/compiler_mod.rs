@@ -11,7 +11,8 @@ use beskid_analysis::projects::{
     prepare_project_workspace_with_options, resolve_workspace_candidate_path,
 };
 use beskid_aot::{ModArtifactBuildRequest, build_mod_artifact};
-use beskid_codegen::lower_source_with_pipeline;
+use beskid_analysis::services::resolved_input_from_plan;
+use beskid_codegen::lower_resolved_input_with_pipeline;
 use beskid_pipeline::{
     PipelineObserver, observe_phase, observe_phase_result,
     phases::{
@@ -101,7 +102,14 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
     let source_path = discover_mod_entry_source(&resolved.plan.source_root)?;
     let source = fs::read_to_string(&source_path)
         .with_context(|| format!("failed to read mod source {}", source_path.display()))?;
-    let lowered = lower_source_with_pipeline(&source_path, &source, false, pipeline)?;
+    let resolved_input = resolved_input_from_plan(
+        source_path.clone(),
+        source.clone(),
+        resolved.plan.clone(),
+        Some(prepared.clone()),
+        None,
+    );
+    let lowered = lower_resolved_input_with_pipeline(&resolved_input, false, pipeline)?;
     let target = beskid_aot::target::detect_target(args.target_triple.as_deref())?;
     let descriptor = observe_phase_result(pipeline, AOT_LINK, || {
         build_mod_artifact(ModArtifactBuildRequest {

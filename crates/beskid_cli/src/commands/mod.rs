@@ -11,6 +11,7 @@ pub mod format;
 pub mod import;
 pub mod lock;
 pub mod lsp;
+pub mod matrix_test;
 pub mod new;
 pub mod parse;
 pub mod run;

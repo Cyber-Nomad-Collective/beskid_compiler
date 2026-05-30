@@ -1,0 +1,201 @@
+//! Link-plan lowering must pass `validate_artifact` for project entrypoints.
+
+use std::fs;
+use std::path::PathBuf;
+
+use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions, assemble_program};
+use beskid_analysis::services::{
+    compile_front_end_from_resolved_input, resolve_input, resolved_input_from_plan,
+    FrontEndOptions, ResolvedInput,
+};
+use beskid_analysis::CompilationContext;
+use beskid_codegen::linking::{FunctionDefIndex, LinkPlan};
+use beskid_codegen::lowering::{
+    lower_program_with_assembly, lower_program_with_assembly_for_entrypoint,
+};
+use beskid_codegen::validate_artifact;
+
+use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
+
+fn compiler_workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("compiler workspace root")
+        .to_path_buf()
+}
+
+#[test]
+fn main_entry_link_plan_validates_for_temp_project() {
+    let root = temp_case_dir("spine_link_completeness");
+    let src_dir = root.join("Src");
+    fs::create_dir_all(&src_dir).expect("source root");
+    write_manifest(
+        &root,
+        r#"
+project {
+  name = "LinkSmoke"
+  version = "0.1.0"
+}
+
+target "app" {
+  kind = App
+  entry = "Main.bd"
+}
+"#,
+    );
+
+    let source = r#"
+i32 helper() {
+    return 7;
+}
+
+i32 main() {
+    return helper();
+}
+"#;
+    let entry = src_dir.join("Main.bd");
+    fs::write(&entry, source).expect("write source");
+
+    let previous_cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(&root).expect("chdir to isolated project");
+
+    let ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
+    let plan = ctx.compile_plan.clone().expect("plan");
+    let resolved = resolved_input_from_plan(
+        entry.clone(),
+        source.to_string(),
+        plan.clone(),
+        ctx.prepared_workspace.clone(),
+        None,
+    );
+    let assembly = assemble_program(
+        &plan,
+        resolved.prepared_workspace.as_ref(),
+        &entry,
+        Some(source),
+        &AssemblyOptions {
+            discovery: AssemblyDiscovery::ImportClosure,
+            include_std_prelude: false,
+            ..Default::default()
+        },
+    )
+    .expect("assemble");
+
+    let front = compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+        .expect("front end");
+
+    let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
+    let link_plan = LinkPlan::build_for_entrypoint(
+        &front.hir,
+        "main",
+        &front.resolution,
+        &front.typed,
+        &def_index,
+    );
+    assert!(
+        !link_plan.entries.is_empty(),
+        "temp project should expose a main entry"
+    );
+
+    let artifact = lower_program_with_assembly_for_entrypoint(
+        &front.hir,
+        &front.resolution,
+        &front.typed,
+        Some(&assembly),
+        Some("main"),
+    )
+    .expect("lower");
+
+    validate_artifact(&artifact).expect("link plan symbols must be present in artifact");
+
+    std::env::set_current_dir(previous_cwd).expect("restore cwd");
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Corelib `Testing.Assertions.AssertEqualI64` must survive dependency link plans and validate.
+#[test]
+fn corelib_assert_equal_i64_link_plan_validates() {
+    let root = compiler_workspace_root();
+    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/collections/ArrayTests.bd");
+    let project_root: PathBuf = entry
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let source = fs::read_to_string(&entry).expect("read ArrayTests.bd");
+
+    let previous = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(&root).expect("chdir workspace");
+    let resolved = resolve_input(
+        Some(&entry),
+        Some(&project_root),
+        None,
+        None,
+        false,
+        false,
+    )
+    .expect("resolve");
+    std::env::set_current_dir(previous).expect("restore cwd");
+
+    let plan = resolved.compile_plan.expect("compile plan");
+    let assembly = assemble_program(
+        &plan,
+        resolved.prepared_workspace.as_ref(),
+        &entry,
+        Some(&source),
+        &AssemblyOptions {
+            discovery: AssemblyDiscovery::ImportClosure,
+            ..Default::default()
+        },
+    )
+    .expect("assemble");
+
+    let resolved_input = ResolvedInput {
+        source_path: entry,
+        source,
+        compile_plan: Some(plan),
+        prepared_workspace: resolved.prepared_workspace,
+        workspace_summary: resolved.workspace_summary,
+        assembly: Some(assembly),
+    };
+
+    let front = compile_front_end_from_resolved_input(
+        &resolved_input,
+        FrontEndOptions {
+            with_semantic_diagnostics: false,
+            ..Default::default()
+        },
+        None,
+    )
+    .expect("front-end");
+
+    let def_index = FunctionDefIndex::build(&front.resolution, &front.assembly.hir_units);
+    let link_plan = LinkPlan::build(&front.hir, &front.resolution, &front.typed, &def_index);
+    assert!(
+        link_plan
+            .emitted_symbol_names(&front.resolution)
+            .iter()
+            .any(|name| name.contains("AssertEqualI64")),
+        "link plan should reach Testing.Assertions.AssertEqualI64"
+    );
+
+    let artifact = lower_program_with_assembly(
+        &front.hir,
+        &front.resolution,
+        &front.typed,
+        Some(&front.assembly),
+    )
+    .expect("lower corelib array tests");
+
+    let names: Vec<_> = artifact.functions.iter().map(|f| f.name.as_str()).collect();
+    assert!(
+        names.iter().any(|name| name.contains("AssertEqualI64")),
+        "expected AssertEqualI64 in artifact, have {} symbols",
+        names.len()
+    );
+    validate_artifact(&artifact).expect("AssertEqualI64 link plan must validate");
+}

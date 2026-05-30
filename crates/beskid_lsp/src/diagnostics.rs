@@ -11,7 +11,7 @@ use tower_lsp_server::ls_types::*;
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::offset_range_to_lsp;
 
-/// Produce LSP diagnostics for a `.bd`, `.proj`, or manifest buffer using the best available context.
+/// Produce LSP diagnostics for a `.bd`, `.proj`, or manifest buffer using the prepare spine when a project is known.
 pub fn analyze_document(
     uri: &Uri,
     source: &str,
@@ -24,48 +24,63 @@ pub fn analyze_document(
 
     if let Some(path) = uri.to_file_path()
         && path.extension().and_then(|ext| ext.to_str()) == Some("bd")
-        && let Some(mut ctx) = compilation_context.cloned()
-        && let Ok(mut diags) =
-            services::analyze_source_with_compilation_context(path.as_ref(), source, &mut ctx)
     {
-        if let Some(snap) = cached {
-            diags.extend(snap.doc_diagnostics.iter().cloned());
+        let mut ctx = compilation_context
+            .cloned()
+            .or_else(|| CompilationContext::try_for_analysis_path(&path, None));
+        if let Some(ref mut ctx) = ctx
+            && let Ok(mut diags) =
+                services::analyze_source_with_compilation_context(path.as_ref(), source, ctx)
+        {
+            if let Some(snap) = cached {
+                diags.extend(snap.doc_diagnostics.iter().cloned());
+            }
+            return diags
+                .into_iter()
+                .map(|diag| semantic_to_lsp_diagnostic(source, diag))
+                .collect();
         }
-        return diags
-            .into_iter()
-            .map(|diag| semantic_to_lsp_diagnostic(source, diag))
-            .collect();
-    }
 
-    if let Some(path) = uri.to_file_path()
-        && path.extension().and_then(|ext| ext.to_str()) == Some("bd")
-        && let Some(snap) = cached
-    {
-        let mut out: Vec<Diagnostic> =
-            semantic_diagnostics(&uri.to_string(), source, &snap.program.node);
-        out.extend(
-            snap.doc_diagnostics
-                .iter()
-                .cloned()
-                .map(|d| semantic_to_lsp_diagnostic(source, d)),
-        );
-        out.extend(
-            snap.composition_diagnostics
-                .iter()
-                .cloned()
-                .map(|d| semantic_to_lsp_diagnostic(source, d)),
-        );
-        out.sort_by(|a, b| {
-            (a.range.start.line, a.range.start.character)
-                .cmp(&(b.range.start.line, b.range.start.character))
-        });
-        return out;
+        if services::compile_plan_for_input_path(&path).is_some() {
+            if let Ok(diagnostics) = services::analyze_source_in_project(path.as_ref(), source) {
+                return diagnostics
+                    .into_iter()
+                    .map(|diag| semantic_to_lsp_diagnostic(source, diag))
+                    .collect();
+            }
+            return vec![simple_error(
+                "project",
+                "project analysis failed; open the workspace entry or reload the language server",
+                Range::new(Position::new(0, 0), Position::new(0, 0)),
+            )];
+        }
+
+        if let Some(snap) = cached {
+            let mut out: Vec<Diagnostic> =
+                semantic_diagnostics(&uri.to_string(), source, &snap.program.node);
+            out.extend(
+                snap.doc_diagnostics
+                    .iter()
+                    .cloned()
+                    .map(|d| semantic_to_lsp_diagnostic(source, d)),
+            );
+            out.extend(
+                snap.composition_diagnostics
+                    .iter()
+                    .cloned()
+                    .map(|d| semantic_to_lsp_diagnostic(source, d)),
+            );
+            out.sort_by(|a, b| {
+                (a.range.start.line, a.range.start.character)
+                    .cmp(&(b.range.start.line, b.range.start.character))
+            });
+            return out;
+        }
     }
 
     if let Some(project_diags) = analyze_project_file(uri, source) {
         return project_diags;
     }
-
 
     match services::parse_program_with_source_name(&uri.to_string(), source) {
         Ok(program) => semantic_diagnostics(&uri.to_string(), source, &program.node),

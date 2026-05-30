@@ -27,22 +27,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 node: "unit-valued binary operand",
             })?;
 
-        let left_type = ctx
-            .type_result
-            .expr_types
-            .get(&node.node.left.span)
-            .copied()
-            .ok_or(CodegenError::MissingExpressionType {
-                span: node.node.left.span,
-            })?;
-        let right_type = ctx
-            .type_result
-            .expr_types
-            .get(&node.node.right.span)
-            .copied()
-            .ok_or(CodegenError::MissingExpressionType {
-                span: node.node.right.span,
-            })?;
+        let left_type = ctx.require_expr_type_for_node(&node.node.left)?;
+        let right_type = ctx.require_expr_type_for_node(&node.node.right)?;
         let operand_type = if left_type == right_type {
             left_type
         } else if is_numeric_type(ctx.type_result.types.get(left_type))

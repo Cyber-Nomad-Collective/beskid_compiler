@@ -87,7 +87,29 @@ pub fn run_semantic_analysis_gate(
     session: &CliPipeline,
 ) -> Result<()> {
     observe_phase_result(pipeline, SEMANTIC, || {
-        let diagnostics = services::analyze_source_in_project(path, source)?;
+        let diagnostics = if let Some(plan) = services::compile_plan_for_input_path(path) {
+            let resolved = services::resolved_input_from_plan(
+                path.to_path_buf(),
+                source.to_string(),
+                plan,
+                None,
+                None,
+            );
+            let (_, diagnostics) = services::prepare_compilation_diagnostics(
+                &resolved,
+                services::PrepareOptions {
+                    mode: services::PrepareMode::DiagnosticsOnly,
+                    front_end: services::FrontEndOptions {
+                        with_semantic_diagnostics: true,
+                        ..Default::default()
+                    },
+                },
+                pipeline,
+            )?;
+            diagnostics
+        } else {
+            services::analyze_source_in_project(path, source)?
+        };
         session.report_semantic_diagnostics(&diagnostics);
         services::require_no_semantic_errors(&diagnostics).map_err(anyhow::Error::from)
     })

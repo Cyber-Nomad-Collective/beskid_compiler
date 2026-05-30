@@ -33,7 +33,19 @@ pub fn handle_references(
     };
 
     let references = if let (Some(path), Some(ctx)) = (entry_path, compilation_context.as_mut()) {
-        if let Some(assembly) = ctx.assembly_for_entry(path, &doc.text) {
+        if ctx.compile_plan.is_some() {
+            if let Some(assembly) = ctx.assembly_for_entry(path, &doc.text) {
+                beskid_analysis::services::references_at_offset_workspace(
+                    analysis,
+                    assembly,
+                    path,
+                    offset,
+                    include_declaration,
+                )
+            } else {
+                Vec::new()
+            }
+        } else if let Some(assembly) = ctx.assembly_for_entry(path, &doc.text) {
             beskid_analysis::services::references_at_offset_workspace(
                 analysis,
                 assembly,

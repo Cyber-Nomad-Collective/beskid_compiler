@@ -30,7 +30,7 @@ impl<'a> TypeContext<'a> {
                 for variant in &def.node.variants {
                     let mut fields = Vec::new();
                     for field in &variant.node.fields {
-                        if let Some(type_id) = self.type_id_for_type(&field.node.ty) {
+                        if let Some(type_id) = self.type_id_for_type_in_generic_scope(&field.node.ty) {
                             fields.push(type_id);
                         }
                     }
@@ -76,11 +76,11 @@ impl<'a> TypeContext<'a> {
                 .node
                 .return_type
                 .as_ref()
-                .and_then(|ty| self.type_id_for_type(ty))
+                .and_then(|ty| self.type_id_for_type_in_generic_scope(ty))
                 .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
             let mut params = Vec::new();
             for param in &def.node.parameters {
-                if let Some(type_id) = self.type_id_for_type(&param.node.ty) {
+                if let Some(type_id) = self.type_id_for_type_in_generic_scope(&param.node.ty) {
                     params.push(type_id);
                 }
             }
@@ -209,7 +209,7 @@ impl<'a> TypeContext<'a> {
                 for variant in &def.node.variants {
                     let mut fields = Vec::new();
                     for field in &variant.node.fields {
-                        if let Some(type_id) = self.type_id_for_type(&field.node.ty) {
+                        if let Some(type_id) = self.type_id_for_type_in_generic_scope(&field.node.ty) {
                             fields.push(type_id);
                         }
                     }

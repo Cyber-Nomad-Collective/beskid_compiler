@@ -156,9 +156,9 @@ fn collect_invalid_try_targets_in_expression(
 pub fn try_desugar_targets_for_program(
     resolution: &Resolution,
     entry: &Spanned<HirProgram>,
-    dependency_programs: &[Spanned<HirProgram>],
+    dependency_programs: &[&Spanned<HirProgram>],
 ) -> HashMap<SpanInfo, TryDesugarTarget> {
-    let mut programs: Vec<&Spanned<HirProgram>> = dependency_programs.iter().collect();
+    let mut programs: Vec<&Spanned<HirProgram>> = dependency_programs.to_vec();
     programs.push(entry);
     let mut map = HashMap::new();
     collect_try_targets(resolution, &programs, entry, &mut map);

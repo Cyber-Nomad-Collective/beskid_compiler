@@ -20,14 +20,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMemberExpression {
                 span: node.node.target.span,
                 node: "unit-valued member target",
             })?;
-        let target_type = ctx
-            .type_result
-            .expr_types
-            .get(&node.node.target.span)
-            .copied()
-            .ok_or(CodegenError::MissingExpressionType {
-                span: node.node.target.span,
-            })?;
+        let target_type = ctx.require_expr_type(node.node.target.span)?;
         let item_id = match ctx.type_result.types.get(target_type) {
             Some(TypeInfo::Named(item_id)) => *item_id,
             _ => {

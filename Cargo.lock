@@ -209,6 +209,7 @@ dependencies = [
  "pest",
  "pest-ast",
  "pest_derive",
+ "rayon",
  "reqwest",
  "serde",
  "serde_json",

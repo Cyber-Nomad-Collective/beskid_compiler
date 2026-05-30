@@ -1,0 +1,62 @@
+/// Fluent cursor movement builder implementing `Ansi.Contracts.AnsiCursorStep` shapes.
+use Ansi.Escape;
+
+pub type CursorBuilder {
+    string parts,
+}
+
+pub CursorBuilder Start() {
+    return CursorBuilder { parts: "" };
+}
+
+pub CursorBuilder Up(CursorBuilder self, i64 count) {
+    return Append(self, Escape.Csi("${count}", "A"));
+}
+
+pub CursorBuilder Down(CursorBuilder self, i64 count) {
+    return Append(self, Escape.Csi("${count}", "B"));
+}
+
+pub CursorBuilder Right(CursorBuilder self, i64 count) {
+    return Append(self, Escape.Csi("${count}", "C"));
+}
+
+pub CursorBuilder Left(CursorBuilder self, i64 count) {
+    return Append(self, Escape.Csi("${count}", "D"));
+}
+
+pub CursorBuilder NextLine(CursorBuilder self, i64 count) {
+    return Append(self, Escape.Csi("${count}", "E"));
+}
+
+pub CursorBuilder PrevLine(CursorBuilder self, i64 count) {
+    return Append(self, Escape.Csi("${count}", "F"));
+}
+
+pub CursorBuilder Column(CursorBuilder self, i64 col) {
+    return Append(self, Escape.Csi("${col}", "G"));
+}
+
+pub CursorBuilder Home(CursorBuilder self) {
+    return Append(self, Escape.Csi("", "H"));
+}
+
+pub CursorBuilder Position(CursorBuilder self, i64 row, i64 col) {
+    return Append(self, Escape.Csi("${row};${col}", "H"));
+}
+
+pub CursorBuilder SaveDec(CursorBuilder self) {
+    return Append(self, Escape.DecSaveCursor());
+}
+
+pub CursorBuilder RestoreDec(CursorBuilder self) {
+    return Append(self, Escape.DecRestoreCursor());
+}
+
+pub string IntoSequence(CursorBuilder self) {
+    return Escape.WhenEnabled(self.parts);
+}
+
+pub CursorBuilder Append(CursorBuilder self, string fragment) {
+    return CursorBuilder { parts: "${self.parts}${fragment}" };
+}

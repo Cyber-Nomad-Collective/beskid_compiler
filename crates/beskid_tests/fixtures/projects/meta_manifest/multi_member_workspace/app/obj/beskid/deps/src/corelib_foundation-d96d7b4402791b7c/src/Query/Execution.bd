@@ -1,0 +1,17 @@
+/// Query execution helpers for deferred state checks and materialization.
+/// Returns true when the state reports elements but no concrete `first` value yet (lazy placeholder).
+/// @arg(state) Query state to inspect.
+/// @returns `true` when `count > 0` and `first` is `None`.
+pub bool IsDeferred<T>(Query.Operators.QueryState<T> state) {
+    if state.count < 1 {
+        return false;
+    }
+    return !Query.Contracts.HasValue<T>(state.first);
+}
+
+/// Materializes and returns element count.
+/// @arg(state) Query state.
+/// @returns Same as `Query.Operators.Count`.
+pub i64 MaterializeCount<T>(Query.Operators.QueryState<T> state) {
+    return Query.Operators.Count<T>(state);
+}

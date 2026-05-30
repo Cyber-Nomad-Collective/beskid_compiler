@@ -1,4 +1,5 @@
 use crate::errors::CodegenError;
+use crate::lowering::locals::resolved_value_at;
 use crate::lowering::descriptor::struct_field_offsets;
 use crate::lowering::lowerable::Lowerable;
 use crate::lowering::node_context::NodeLoweringContext;
@@ -24,18 +25,18 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
             });
         }
 
-        let resolved = ctx
-            .resolution
-            .tables
-            .resolved_values
-            .get(&node.node.path.span)
-            .ok_or(CodegenError::MissingResolvedValue {
-                span: node.node.path.span,
-            })?;
+        let resolved = resolved_value_at(
+            ctx.resolution,
+            node.node.path.span,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .ok_or(CodegenError::MissingResolvedValue {
+            span: node.node.path.span,
+        })?;
 
         match resolved {
             ResolvedValue::Local(local_id) => {
-                let var = ctx.state.locals.get(local_id).copied().ok_or(
+                let var = ctx.state.locals.get(&local_id).copied().ok_or(
                     CodegenError::InvalidLocalBinding {
                         span: node.node.path.span,
                     },
@@ -44,7 +45,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                 if segments.len() == 1 {
                     return Ok(Some(value));
                 }
-                let mut current_type = ctx.type_result.local_types.get(local_id).copied().ok_or(
+                let mut current_type = ctx.type_result.local_types.get(&local_id).copied().ok_or(
                     CodegenError::MissingLocalType {
                         span: node.node.path.span,
                     },

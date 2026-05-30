@@ -135,7 +135,9 @@ fn analysis_suppresses_cast_intent_warnings_when_warnings_disabled() {
             module_level_meta_items_allowed: None,
             known_assembly_module_paths: None,
             program_assembly_module_index: None,
+            program_assembly: None,
             entry_source_path: None,
+            semantic_gate_only: false,
         },
     );
 

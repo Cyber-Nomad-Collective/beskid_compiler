@@ -1,0 +1,31 @@
+/// UTF-8 string helpers backed by runtime string builtins (`__str_len`).
+/// Returns the number of UTF-8 code units in text.
+/// @arg(text) UTF-8 string handle.
+/// @returns Code unit count as `i64`.
+pub i64 Len(string text) {
+    return __str_len(text);
+}
+
+/// Returns true when text is empty.
+/// @arg(text) UTF-8 string handle.
+/// @returns `true` when `Len` is zero.
+pub bool IsEmpty(string text) {
+    return Len(text) == 0;
+}
+
+/// Returns true when needle is treated as present in text (prefix/suffix equality only in v1).
+/// @arg(text) Haystack UTF-8 string.
+/// @arg(needle) Needle UTF-8 string; empty needle is always considered found.
+/// @returns `true` when `needle` is empty, longer than `text`, or exactly equal to `text`.
+pub bool Contains(string text, string needle) {
+    if needle == "" {
+        return true;
+    }
+    if Len(needle) > Len(text) {
+        return false;
+    }
+    if text == needle {
+        return true;
+    }
+    return false;
+}

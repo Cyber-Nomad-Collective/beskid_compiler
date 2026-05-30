@@ -5,28 +5,24 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
 use crate::compilation_context::CompilationContext;
-use crate::mod_host::run_analyze_rewrite;
 use crate::projects::CompilePlan;
 
-use super::composition::{
-    composition_result_to_diagnostics, prepare_program_for_composition, resolve_program_composition,
-};
 use super::document::resolve_program_with_assembly;
-use super::input::AnalyzeInProjectOptions;
+use super::input::{AnalyzeInProjectOptions, ResolvedInput};
 use super::parse::parse_program_with_source_name;
-use super::semantic::semantic_rule_diagnostics_for_program;
+use super::prepare::{PrepareMode, PrepareOptions, prepare_compilation_diagnostics, resolved_input_from_plan};
+use super::front_end::FrontEndOptions;
 
 pub fn analyze_program(path: &Path, source: &str) -> Result<Vec<SemanticDiagnostic>> {
-    analyze_program_with_options(path, source, AnalysisOptions::default())
+    analyze_program_with_options(path, source, crate::AnalysisOptions::default())
 }
 
 pub fn analyze_program_with_options(
     path: &Path,
     source: &str,
-    options: AnalysisOptions,
+    options: crate::AnalysisOptions,
 ) -> Result<Vec<SemanticDiagnostic>> {
     analyze_program_with_options_and_plan(path, source, options, None)
 }
@@ -34,7 +30,7 @@ pub fn analyze_program_with_options(
 fn analyze_program_with_options_and_plan(
     path: &Path,
     source: &str,
-    options: AnalysisOptions,
+    _options: crate::AnalysisOptions,
     compile_plan: Option<&CompilePlan>,
 ) -> Result<Vec<SemanticDiagnostic>> {
     if let Some((span, keyword)) = crate::parsing::reserved_keywords::find_reserved_keyword(source)
@@ -69,28 +65,36 @@ fn analyze_program_with_options_and_plan(
         )]);
     }
 
-    let source_name = path.display().to_string();
-    let program = parse_program_with_source_name(&source_name, source)?;
-    let mut generated = prepare_program_for_composition(program, compile_plan, &source_name, source)?;
-    let mut diagnostics = generated.macro_diagnostics;
-    diagnostics.extend(semantic_rule_diagnostics_for_program(
-        &generated.program.node,
-        source_name,
-        source,
-        options,
-    ));
-    let composition_result = resolve_program_composition(&generated.program, compile_plan);
-    generated
-        .session
-        .set_composition_snapshot(composition_result.snapshot.clone());
-    diagnostics.extend(composition_result_to_diagnostics(
-        &composition_result,
-        generated.program.span,
-        &path.display().to_string(),
-        source,
-        compile_plan,
-    ));
-    let _program = run_analyze_rewrite(generated.program, &generated.session, None)?;
+    if compile_plan.is_none() {
+        let source_name = path.display().to_string();
+        let program = parse_program_with_source_name(&source_name, source)?;
+        return Ok(super::semantic::semantic_rule_diagnostics_for_program(
+            &program.node,
+            source_name,
+            source,
+            crate::AnalysisOptions::default(),
+        ));
+    }
+
+    let plan = compile_plan.expect("checked above");
+    let resolved = resolved_input_from_plan(
+        path.to_path_buf(),
+        source.to_string(),
+        plan.clone(),
+        None,
+        None,
+    );
+
+    let prepare_options = PrepareOptions {
+        mode: PrepareMode::DiagnosticsOnly,
+        front_end: FrontEndOptions {
+            with_semantic_diagnostics: true,
+            ..Default::default()
+        },
+    };
+
+    let (_prepared, diagnostics) =
+        prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
 
     Ok(diagnostics)
 }
@@ -111,21 +115,30 @@ pub fn analyze_source_with_compilation_context(
     source: &str,
     ctx: &mut CompilationContext,
 ) -> Result<Vec<SemanticDiagnostic>> {
-    let mut rule_options = AnalysisOptions::default();
-    rule_options.module_level_meta_items_allowed = Some(ctx.module_level_meta_items_allowed());
-    if let Some(assembly) = ctx.assembly_for_entry(path, source) {
-        rule_options.known_assembly_module_paths =
-            Some(assembly.module_index.known_module_path_strings());
-        rule_options.program_assembly_module_index = Some(assembly.module_index.clone());
-        rule_options.entry_source_path = Some(path.to_path_buf());
-    }
+    let Some(plan) = ctx.compile_plan.clone() else {
+        return analyze_program(path, source);
+    };
 
-    let mut diagnostics = analyze_program_with_options_and_plan(
-        path,
-        source,
-        rule_options,
-        ctx.compile_plan.as_ref(),
-    )?;
+    let assembly = ctx.assembly_for_entry(path, source).cloned();
+    let resolved = resolved_input_from_plan(
+        path.to_path_buf(),
+        source.to_string(),
+        plan.clone(),
+        ctx.prepared_workspace.clone(),
+        assembly,
+    );
+
+    let prepare_options = PrepareOptions {
+        mode: PrepareMode::DiagnosticsOnly,
+        front_end: FrontEndOptions {
+            with_semantic_diagnostics: true,
+            module_level_meta_items_allowed: Some(ctx.module_level_meta_items_allowed()),
+            ..Default::default()
+        },
+    };
+
+    let (_prepared, mut diagnostics) =
+        prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
 
     if let Some(assembly) = ctx.assembly_for_entry(path, source) {
         let source_name = path.display().to_string();
@@ -138,7 +151,7 @@ pub fn analyze_source_with_compilation_context(
         }
     }
 
-    if is_non_entry_project_file(path, ctx.compile_plan.as_ref()) {
+    if is_non_entry_project_file(path, Some(&plan)) {
         diagnostics.retain(|diagnostic| diagnostic.code.as_deref() == Some("parse"));
         return Ok(diagnostics);
     }
@@ -188,4 +201,20 @@ fn is_non_entry_project_file(path: &Path, plan: Option<&CompilePlan>) -> bool {
         (Ok(path), Ok(entry)) => path != entry,
         _ => path != entry_path,
     }
+}
+
+/// Build a [`ResolvedInput`] from compilation context for shared prepare spine callers.
+pub fn resolved_input_from_context(
+    path: &Path,
+    source: &str,
+    ctx: &CompilationContext,
+) -> Option<ResolvedInput> {
+    let plan = ctx.compile_plan.clone()?;
+    Some(resolved_input_from_plan(
+        path.to_path_buf(),
+        source.to_string(),
+        plan,
+        ctx.prepared_workspace.clone(),
+        ctx.assembly.clone(),
+    ))
 }

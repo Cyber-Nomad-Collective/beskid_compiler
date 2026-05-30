@@ -72,6 +72,17 @@ impl Engine {
             BeskidJitModule::new_with_symbols(&extras)?
         };
 
+        #[cfg(debug_assertions)]
+        {
+            if let Err(missing) = beskid_codegen::validate_artifact(artifact) {
+                let names: Vec<_> = missing.iter().map(|m| m.name.as_str()).collect();
+                return Err(JitError::Isa(format!(
+                    "codegen artifact validation failed: undefined callees: {}",
+                    names.join(", ")
+                )));
+            }
+        }
+
         self.jit.compile_with_pipeline(artifact, pipeline)
     }
 

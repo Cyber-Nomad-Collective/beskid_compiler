@@ -1,0 +1,4 @@
+/// RAII guard acquired from `Mutex.Lock` or `Mutex.TryLock`.
+pub struct MutexGuard {
+    i64 mutexHandle,
+}

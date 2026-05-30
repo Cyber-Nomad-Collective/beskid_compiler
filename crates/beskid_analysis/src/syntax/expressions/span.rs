@@ -10,6 +10,14 @@ pub(crate) fn span_from_bounds(input: &str, start: usize, end: usize) -> Option<
     Some(SpanInfo::from_span(&span))
 }
 
+/// Rebase byte/line spans parsed from a substring back into `source`.
+pub(crate) fn remap_span(span: SpanInfo, offset: usize, source: &str) -> SpanInfo {
+    if offset == 0 {
+        return span;
+    }
+    SpanInfo::from_byte_range_in_source(source, span.start + offset, span.end + offset)
+}
+
 /// Span for `op_text` between `start` and `end` in `input` (used for operator tokens).
 pub(crate) fn span_from_range(
     input: &str,

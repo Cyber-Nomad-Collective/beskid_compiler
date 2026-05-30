@@ -1,5 +1,6 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility;
+use crate::lowering::locals::resolved_value_at;
 use crate::lowering::descriptor::struct_field_offsets;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
@@ -29,14 +30,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
         })?;
 
         let expected_type = target.expected_type;
-        let actual_type = ctx
-            .type_result
-            .expr_types
-            .get(&node.node.value.span)
-            .copied()
-            .ok_or(CodegenError::MissingExpressionType {
-                span: node.node.value.span,
-            })?;
+        let actual_type = ctx.require_expr_type(node.node.value.span)?;
         let value = ensure_type_compatibility(
             node.node.value.span,
             expected_type,
@@ -167,14 +161,14 @@ fn resolve_assign_target(
                     node: "empty assignment target path",
                 });
             }
-            let resolved = ctx
-                .resolution
-                .tables
-                .resolved_values
-                .get(&path_expr.node.path.span)
-                .ok_or(CodegenError::MissingResolvedValue {
-                    span: path_expr.node.path.span,
-                })?;
+            let resolved = resolved_value_at(
+                ctx.resolution,
+                path_expr.node.path.span,
+                ctx.codegen.current_source_path.as_ref(),
+            )
+            .ok_or(CodegenError::MissingResolvedValue {
+                span: path_expr.node.path.span,
+            })?;
             let ResolvedValue::Local(local_id) = resolved else {
                 return Err(CodegenError::UnsupportedNode {
                     span: path_expr.node.path.span,
@@ -183,12 +177,12 @@ fn resolve_assign_target(
             };
 
             if segments.len() == 1 {
-                let var = ctx.state.locals.get(local_id).copied().ok_or(
+                let var = ctx.state.locals.get(&local_id).copied().ok_or(
                     CodegenError::InvalidLocalBinding {
                         span: path_expr.node.path.span,
                     },
                 )?;
-                let expected_type = ctx.type_result.local_types.get(local_id).copied().ok_or(
+                let expected_type = ctx.type_result.local_types.get(&local_id).copied().ok_or(
                     CodegenError::MissingLocalType {
                         span: path_expr.node.path.span,
                     },
@@ -200,13 +194,13 @@ fn resolve_assign_target(
             }
 
             if segments.len() == 2 {
-                let receiver_var = ctx.state.locals.get(local_id).copied().ok_or(
+                let receiver_var = ctx.state.locals.get(&local_id).copied().ok_or(
                     CodegenError::InvalidLocalBinding {
                         span: path_expr.node.path.span,
                     },
                 )?;
                 let receiver_ptr = ctx.builder.use_var(receiver_var);
-                let receiver_type = ctx.type_result.local_types.get(local_id).copied().ok_or(
+                let receiver_type = ctx.type_result.local_types.get(&local_id).copied().ok_or(
                     CodegenError::MissingLocalType {
                         span: path_expr.node.path.span,
                     },
@@ -233,14 +227,7 @@ fn resolve_assign_target(
                     node: "unit-valued assignment receiver",
                 },
             )?;
-            let receiver_type = ctx
-                .type_result
-                .expr_types
-                .get(&member_expr.node.target.span)
-                .copied()
-                .ok_or(CodegenError::MissingExpressionType {
-                    span: member_expr.node.target.span,
-                })?;
+            let receiver_type = ctx.require_expr_type(member_expr.node.target.span)?;
             resolve_event_member_target(
                 node.span,
                 receiver_ptr,

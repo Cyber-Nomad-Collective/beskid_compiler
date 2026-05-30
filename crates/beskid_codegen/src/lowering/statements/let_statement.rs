@@ -1,5 +1,6 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility;
+use crate::lowering::locals::local_id_for_span;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::map_type_id_to_clif;
@@ -13,16 +14,14 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let local_id = ctx
-            .resolution
-            .tables
-            .locals
-            .iter()
-            .find(|info| info.span == node.node.name.span)
-            .map(|info| info.id)
-            .ok_or(CodegenError::InvalidLocalBinding {
-                span: node.node.name.span,
-            })?;
+        let local_id = local_id_for_span(
+            ctx.resolution,
+            node.node.name.span,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .ok_or(CodegenError::InvalidLocalBinding {
+            span: node.node.name.span,
+        })?;
 
         let type_id = ctx.type_result.local_types.get(&local_id).copied().ok_or(
             CodegenError::MissingLocalType {
@@ -54,14 +53,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
                 node: "unit-valued let initializer",
             })?;
 
-            let actual_type = ctx
-                .type_result
-                .expr_types
-                .get(&node.node.value.span)
-                .copied()
-                .ok_or(CodegenError::MissingExpressionType {
-                    span: node.node.value.span,
-                })?;
+            let actual_type = ctx.require_expr_type(node.node.value.span)?;
             let value = ensure_type_compatibility(
                 node.node.value.span,
                 type_id,
@@ -83,14 +75,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
             node: "unit-valued let initializer",
         })?;
 
-        let actual_type = ctx
-            .type_result
-            .expr_types
-            .get(&node.node.value.span)
-            .copied()
-            .ok_or(CodegenError::MissingExpressionType {
-                span: node.node.value.span,
-            })?;
+        let actual_type = ctx.require_expr_type(node.node.value.span)?;
         let value = ensure_type_compatibility(
             node.node.value.span,
             type_id,

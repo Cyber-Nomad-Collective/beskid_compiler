@@ -1,0 +1,5 @@
+# Project.lock v1
+root_manifest=/Users/mikserek/Projects/beskid/compiler/corelib/packages/runtime/Project.proj
+project_name=corelib_runtime
+dependencies:
+- name=corelib_foundation;manifest=/Users/mikserek/Projects/beskid/compiler/corelib/packages/foundation/Project.proj;project=/Users/mikserek/Projects/beskid/compiler/corelib/packages/foundation;source_root=/Users/mikserek/Projects/beskid/compiler/corelib/packages/foundation/src;materialized_root=/Users/mikserek/Projects/beskid/compiler/corelib/packages/runtime/obj/beskid/deps/src/corelib_foundation-d96d7b4402791b7c

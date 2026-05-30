@@ -1,5 +1,6 @@
 use crate::errors::CodegenError;
 use crate::lowering::descriptor::{enum_payload_start, enum_variant_field_offsets};
+use crate::lowering::locals::local_id_for_span;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -43,14 +44,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
                 span: node.node.scrutinee.span,
                 node: "unit-valued match scrutinee",
             })?;
-        let scrutinee_type = ctx
-            .type_result
-            .expr_types
-            .get(&node.node.scrutinee.span)
-            .copied()
-            .ok_or(CodegenError::MissingExpressionType {
-                span: node.node.scrutinee.span,
-            })?;
+        let scrutinee_type = ctx.require_expr_type(node.node.scrutinee.span)?;
         let item_id = match ctx.type_result.types.get(scrutinee_type) {
             Some(TypeInfo::Named(item_id)) => *item_id,
             Some(TypeInfo::Applied { base, .. }) => *base,
@@ -73,7 +67,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
                 node: "match payload start",
             })?;
 
-        let result_type = ctx.type_result.expr_types.get(&node.span).copied();
+        let result_type = ctx.expr_type(node.span);
         let result_clif = result_type.and_then(|ty| map_type_id_to_clif(ctx.type_result, ty));
         let result_var = result_clif.map(|clif_ty| ctx.builder.declare_var(clif_ty));
         let merge_block = ctx.builder.create_block();
@@ -254,14 +248,12 @@ fn bind_local(
     span: beskid_analysis::syntax::SpanInfo,
     value: Value,
 ) -> Result<(), CodegenError> {
-    let local_id = ctx
-        .resolution
-        .tables
-        .locals
-        .iter()
-        .find(|info| info.span == span)
-        .map(|info| info.id)
-        .ok_or(CodegenError::InvalidLocalBinding { span })?;
+    let local_id = local_id_for_span(
+        ctx.resolution,
+        span,
+        ctx.codegen.current_source_path.as_ref(),
+    )
+    .ok_or(CodegenError::InvalidLocalBinding { span })?;
     let type_id = ctx
         .type_result
         .local_types

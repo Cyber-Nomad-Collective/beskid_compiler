@@ -35,7 +35,7 @@ pub fn typed_hir_from_lowered_after_resolution(
         .resolve_program(&hir)
         .map_err(LowerResolveTypeError::Resolve)?;
     let (typed, type_errors) =
-        TypeContext::new(&resolution).type_program_with_errors_and_dependencies(&hir, &[]);
+        TypeContext::new(&resolution).type_program_with_errors_and_dependencies(&hir, &[], None, None, true);
     if !type_errors.is_empty() {
         return Err(LowerResolveTypeError::Type(type_errors));
     }
@@ -47,57 +47,91 @@ pub fn typed_hir_from_lowered_with_module_index(
     mut hir: Spanned<HirProgram>,
     module_index: &crate::projects::assembly::ModuleIndex,
     entry_source_path: Option<std::path::PathBuf>,
+    assembly: Option<&ProgramAssembly>,
 ) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
+    if let Some(assembly) = assembly {
+        return typed_hir_from_lowered_with_assembly(hir, Some(assembly));
+    }
+    let dependency_hir_refs: Vec<&Spanned<HirProgram>> = Vec::new();
     let resolution_pass1 = module_index
         .resolve_entry_hir(&hir, entry_source_path.as_ref())
         .map_err(LowerResolveTypeError::Resolve)?;
-    normalize_program_with_resolution(&mut hir, Some(&resolution_pass1), &[])
+    normalize_program_with_resolution(&mut hir, Some(&resolution_pass1), &dependency_hir_refs)
         .map_err(LowerResolveTypeError::Normalize)?;
     let resolution = module_index
         .resolve_entry_hir(&hir, entry_source_path.as_ref())
         .map_err(LowerResolveTypeError::Resolve)?;
-    let (typed, type_errors) =
-        TypeContext::new(&resolution).type_program_with_errors_and_dependencies(&hir, &[]);
+    let (typed, type_errors) = TypeContext::new(&resolution)
+        .type_program_with_errors_and_dependencies(&hir, &dependency_hir_refs, None, entry_source_path, true);
     if !type_errors.is_empty() {
         return Err(LowerResolveTypeError::Type(type_errors));
     }
     Ok((hir, resolution, typed))
+}
+
+/// Typed HIR spine for semantic gate: dependency signature prefetch only (no dep body typing).
+pub fn typed_hir_from_lowered_gate_with_assembly(
+    mut hir: Spanned<HirProgram>,
+    assembly: Option<&ProgramAssembly>,
+) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
+    typed_hir_from_lowered_with_assembly_options(hir, assembly, false)
 }
 
 /// Typed HIR spine for an already-lowered entry program (semantic rules / document analysis).
 pub fn typed_hir_from_lowered_with_assembly(
-    mut hir: Spanned<HirProgram>,
+    hir: Spanned<HirProgram>,
     assembly: Option<&ProgramAssembly>,
 ) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
-    let dependency_hirs = dependency_hirs_from_assembly(assembly);
-    let resolution_pass1 = resolve_entry_hir(&hir, assembly, None)?;
-    normalize_program_with_resolution(&mut hir, Some(&resolution_pass1), &dependency_hirs)
+    typed_hir_from_lowered_with_assembly_options(hir, assembly, true)
+}
+
+fn typed_hir_from_lowered_with_assembly_options(
+    mut hir: Spanned<HirProgram>,
+    assembly: Option<&ProgramAssembly>,
+    type_dependency_bodies: bool,
+) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
+    let dependency_hir_refs = assembly
+        .map(|a| a.dependency_hir_refs())
+        .unwrap_or_default();
+    let dependency_source_paths: Vec<std::path::PathBuf> = assembly
+        .map(|a| {
+            a.hir_units
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != a.entry_index)
+                .map(|(_, unit)| unit.path.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let entry_source_path = assembly.map(|a| a.entry_unit().path.clone());
+    let resolution_pass1 = resolve_entry_hir(&hir, assembly, entry_source_path.as_ref())?;
+    normalize_program_with_resolution(&mut hir, Some(&resolution_pass1), &dependency_hir_refs)
         .map_err(LowerResolveTypeError::Normalize)?;
-    let entry_path = assembly.map(|a| a.entry_unit().path.clone());
-    let resolution = resolve_entry_hir(&hir, assembly, entry_path.as_ref())?;
+    let resolution = if let Some(assembly) = assembly {
+        assembly
+            .module_index
+            .resolve_for_api_documentation(&hir, assembly)
+            .ok_or(LowerResolveTypeError::Resolve(vec![
+                crate::resolve::ResolveError::UnknownModulePath {
+                    path: "<assembly>".to_string(),
+                    span: hir.span,
+                },
+            ]))?
+    } else {
+        resolve_entry_hir(&hir, None, None)?
+    };
     let (typed, type_errors) = TypeContext::new(&resolution)
-        .type_program_with_errors_and_dependencies(&hir, &dependency_hirs);
+        .type_program_with_errors_and_dependencies(
+            &hir,
+            &dependency_hir_refs,
+            Some(&dependency_source_paths),
+            entry_source_path,
+            type_dependency_bodies,
+        );
     if !type_errors.is_empty() {
         return Err(LowerResolveTypeError::Type(type_errors));
     }
     Ok((hir, resolution, typed))
-}
-
-fn dependency_hirs_from_assembly(assembly: Option<&ProgramAssembly>) -> Vec<Spanned<HirProgram>> {
-    assembly
-        .map(|assembly| {
-            assembly
-                .units
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| *index != assembly.entry_index)
-                .map(|(_, unit)| {
-                    let unit_ast: Spanned<AstProgram> = unit.program.clone().into();
-                    lower_hir_program(&unit_ast)
-                })
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn resolve_entry_hir(
@@ -115,18 +149,6 @@ fn resolve_entry_hir(
             .resolve_program(hir)
             .map_err(LowerResolveTypeError::Resolve)
     }
-}
-
-/// Resolves with a [`ModuleIndex`] only (no dependency signature seeding). Prefer [`lower_normalize_resolve_type_spanned_with_assembly`].
-///
-/// Currently delegates to [`lower_normalize_resolve_type_spanned_with_assembly`] without assembly;
-/// the `module_index` parameter is reserved for future support of module-index-driven resolution.
-#[allow(unused_variables)]
-pub fn lower_normalize_resolve_type_spanned_with_index(
-    program: &Spanned<Program>,
-    module_index: Option<&crate::projects::assembly::ModuleIndex>,
-) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
-    lower_normalize_resolve_type_spanned_with_assembly(program, None)
 }
 
 /// Which pipeline stage failed when running [`lower_normalize_resolve_type_spanned`].

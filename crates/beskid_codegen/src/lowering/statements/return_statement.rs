@@ -21,14 +21,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirReturnStatement {
                         node: "unit return value",
                     })?;
                 if let Some(expected) = ctx.expected_return_type {
-                    let actual = ctx
-                        .type_result
-                        .expr_types
-                        .get(&value_expr.span)
-                        .copied()
-                        .ok_or(CodegenError::MissingExpressionType {
-                            span: value_expr.span,
-                        })?;
+                    let actual = ctx.require_expr_type_for_node(value_expr)?;
                     value = ensure_type_compatibility(
                         value_expr.span,
                         expected,

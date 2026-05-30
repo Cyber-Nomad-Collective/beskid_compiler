@@ -2,7 +2,7 @@
 
 use anyhow::{Result, anyhow};
 use beskid_analysis::services;
-use beskid_engine::services::run_entrypoint_with_pipeline;
+use beskid_engine::services::run_entrypoint_from_front_end_with_pipeline;
 use clap::Args;
 use serde::Serialize;
 use std::io::Write;
@@ -10,14 +10,13 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::errors;
-use crate::frontend;
 use crate::pipeline_ui::{
     PipelineProgressKind, resolve_input_with_cli_pipeline_kind, tui::FileLineLink,
     tui::TestRowState, tui::TestRunUi, use_cli_spinner,
 };
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct TestArgs {
     /// The input Beskid file to test
     pub input: Option<PathBuf>,
@@ -47,6 +46,10 @@ pub struct TestArgs {
     /// Disable animated progress and graph output
     #[arg(long)]
     pub plain: bool,
+
+    /// Run every Test target in the project manifest in one process (shared session).
+    #[arg(long)]
+    pub all_targets: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -79,6 +82,13 @@ struct TestSummary {
 
 /// Run the test harness for the resolved project and print human or `--json` results.
 pub fn execute(args: TestArgs) -> Result<()> {
+    if args.all_targets {
+        return super::matrix_test::execute_all_targets(args);
+    }
+    execute_single_target(args)
+}
+
+pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
     let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline_kind(
         args.input.as_ref(),
         args.project.project.as_ref(),
@@ -91,18 +101,23 @@ pub fn execute(args: TestArgs) -> Result<()> {
     )?;
     pipeline_ui.show_build_graph(&resolved);
     pipeline_ui.halt_progress_bars_for_output();
-    frontend::run_semantic_analysis_gate(
-        &resolved.source_path,
-        &resolved.source,
-        None,
-        pipeline_ui.as_ref(),
+
+    let (prepared, gate_diagnostics) = services::prepare_compilation_diagnostics(
+        &resolved,
+        services::PrepareOptions {
+            mode: services::PrepareMode::DiagnosticsOnly,
+            front_end: services::FrontEndOptions {
+                with_semantic_diagnostics: true,
+                ..Default::default()
+            },
+        },
+        Some(pipeline_ui.as_ref()),
     )?;
+    pipeline_ui.report_semantic_diagnostics(&gate_diagnostics);
+    services::require_no_semantic_errors(&gate_diagnostics).map_err(anyhow::Error::from)?;
     pipeline_ui.finish_prepare_ui("Analysis complete");
-    let program = services::parse_program_with_source_name(
-        &resolved.source_path.display().to_string(),
-        &resolved.source,
-    )?;
-    let tests = services::collect_test_cases(&program);
+
+    let tests = services::collect_test_cases(&prepared.program);
     if tests.is_empty() {
         if args.json {
             println!(
@@ -117,6 +132,22 @@ pub fn execute(args: TestArgs) -> Result<()> {
         }
         return Ok(());
     }
+
+    let resolved_with_assembly = resolved.with_assembly(prepared.assembly.clone());
+    let front = services::prepare_compilation(
+        &resolved_with_assembly,
+        services::PrepareOptions {
+            mode: services::PrepareMode::Executable,
+            front_end: services::FrontEndOptions {
+                with_semantic_diagnostics: false,
+                ..Default::default()
+            },
+        },
+        Some(pipeline_ui.as_ref()),
+    )?
+    .into_executable()?;
+
+    let source_name = resolved.source_path.display().to_string();
 
     let include_tags: Vec<String> = args
         .include_tags
@@ -193,11 +224,12 @@ pub fn execute(args: TestArgs) -> Result<()> {
             test_ui.start_running(row_index)?;
         }
         let started = Instant::now();
-        match run_entrypoint_with_pipeline(
-            &resolved.source_path,
+        match run_entrypoint_from_front_end_with_pipeline(
+            &front,
+            &source_name,
             &resolved.source,
-            &test.name,
-            None,
+            &test.qualified_name,
+            Some(pipeline_ui.as_ref()),
         ) {
             Ok(output) => {
                 let duration = started.elapsed();

@@ -1,0 +1,7 @@
+/// Successful `Hub.WaitReceive` payload.
+pub struct HubReceiveResult<T> {
+    /// User registration index passed to `Hub.Register`.
+    i64 index,
+    /// Message received from the selected member channel.
+    T value,
+}

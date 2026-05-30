@@ -14,6 +14,7 @@ use crate::types::{TypeId, TypeTable};
 pub enum TypeError {
     UnknownType {
         span: SpanInfo,
+        name: String,
     },
     UnknownValueType {
         span: SpanInfo,
@@ -166,7 +167,9 @@ impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let at = |span: SpanInfo| type_error_span_loc(span);
         match self {
-            TypeError::UnknownType { span } => write!(f, "unknown type at {}", at(*span)),
+            TypeError::UnknownType { span, name } => {
+                write!(f, "unknown type `{name}` at {}", at(*span))
+            }
             TypeError::UnknownValueType { span } => {
                 write!(f, "unknown value type at {}", at(*span))
             }
@@ -402,6 +405,7 @@ pub struct TypeResult {
     pub types: TypeTable,
     pub named_type_names: HashMap<ItemId, String>,
     pub expr_types: HashMap<SpanInfo, TypeId>,
+    pub scoped_expr_types: HashMap<std::path::PathBuf, HashMap<SpanInfo, TypeId>>,
     pub local_types: HashMap<LocalId, TypeId>,
     pub function_signatures: HashMap<ItemId, FunctionSignature>,
     pub struct_fields_ordered: HashMap<ItemId, Vec<(String, TypeId)>>,
@@ -409,6 +413,7 @@ pub struct TypeResult {
     pub enum_variants_ordered: HashMap<ItemId, Vec<(String, Vec<TypeId>)>>,
     pub generic_items: HashMap<ItemId, Vec<String>>,
     pub call_kinds: HashMap<SpanInfo, CallLoweringKind>,
+    pub scoped_call_kinds: HashMap<std::path::PathBuf, HashMap<SpanInfo, CallLoweringKind>>,
     pub contract_method_order: HashMap<ItemId, Vec<String>>,
     pub contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
     // Canonical output contract for safe implicit numeric conversions.
@@ -429,6 +434,78 @@ impl TypeResult {
             .iter()
             .filter(move |intent| intent.span == span)
     }
+
+    pub fn cast_intents_for_entry(
+        &self,
+        entry_source_path: Option<&std::path::PathBuf>,
+    ) -> impl Iterator<Item = &CastIntent> {
+        self.cast_intents
+            .iter()
+            .filter(move |intent| cast_intent_belongs_to_entry(intent, entry_source_path))
+    }
+
+    pub fn expr_type_at(
+        &self,
+        span: SpanInfo,
+        source_path: Option<&std::path::PathBuf>,
+    ) -> Option<TypeId> {
+        if let Some(path) = source_path {
+            for (scoped_path, types) in &self.scoped_expr_types {
+                if crate::paths::same_file(scoped_path, path) {
+                    if let Some(type_id) = types.get(&span) {
+                        return Some(*type_id);
+                    }
+                    if let Some((_, type_id)) =
+                        types.iter().find(|(stored, _)| stored.start == span.start)
+                    {
+                        return Some(*type_id);
+                    }
+                    return self.expr_types.get(&span).copied();
+                }
+            }
+        }
+
+        let mut candidate = None;
+        for types in self.scoped_expr_types.values() {
+            if let Some(type_id) = types.get(&span) {
+                if candidate.is_some() {
+                    candidate = None;
+                    break;
+                }
+                candidate = Some(*type_id);
+            }
+        }
+        candidate.or_else(|| self.expr_types.get(&span).copied())
+    }
+
+    pub fn call_kind_at(
+        &self,
+        span: SpanInfo,
+        source_path: Option<&std::path::PathBuf>,
+    ) -> Option<CallLoweringKind> {
+        if let Some(path) = source_path {
+            for (scoped_path, kinds) in &self.scoped_call_kinds {
+                if crate::paths::same_file(scoped_path, path) {
+                    if let Some(kind) = kinds.get(&span) {
+                        return Some(*kind);
+                    }
+                    return self.call_kinds.get(&span).copied();
+                }
+            }
+        }
+
+        let mut candidate = None;
+        for kinds in self.scoped_call_kinds.values() {
+            if let Some(kind) = kinds.get(&span) {
+                if candidate.is_some() {
+                    candidate = None;
+                    break;
+                }
+                candidate = Some(*kind);
+            }
+        }
+        candidate.or_else(|| self.call_kinds.get(&span).copied())
+    }
 }
 
 /// Parameter and return [`TypeId`]s for a callable item.
@@ -444,6 +521,18 @@ pub struct CastIntent {
     pub span: SpanInfo,
     pub from: TypeId,
     pub to: TypeId,
+    pub source_path: Option<std::path::PathBuf>,
+}
+
+fn cast_intent_belongs_to_entry(
+    intent: &CastIntent,
+    entry_source_path: Option<&std::path::PathBuf>,
+) -> bool {
+    match (&intent.source_path, entry_source_path) {
+        (None, None) => true,
+        (Some(intent_path), Some(entry_path)) => crate::paths::same_file(intent_path, entry_path),
+        _ => false,
+    }
 }
 
 /// Stateful visitor over one [`HirProgram`](crate::hir::HirProgram) and its [`Resolution`].
@@ -458,6 +547,9 @@ pub struct TypeContext<'a> {
     pub(super) enum_variants: HashMap<ItemId, HashMap<String, Vec<TypeId>>>,
     pub(super) enum_variants_ordered: HashMap<ItemId, Vec<(String, Vec<TypeId>)>>,
     pub(super) expr_types: HashMap<SpanInfo, TypeId>,
+    pub(super) scoped_expr_types: HashMap<std::path::PathBuf, HashMap<SpanInfo, TypeId>>,
+    pub(super) current_source_path: Option<std::path::PathBuf>,
+    pub(super) contextual_expected_type: Option<TypeId>,
     pub(super) local_types: HashMap<LocalId, TypeId>,
     pub(super) function_signatures: HashMap<ItemId, FunctionSignature>,
     pub(super) cast_intents: Vec<CastIntent>,
@@ -466,6 +558,7 @@ pub struct TypeContext<'a> {
     pub(super) generic_params: HashMap<String, TypeId>,
     pub(super) generic_items: HashMap<ItemId, Vec<String>>,
     pub(super) call_kinds: HashMap<SpanInfo, CallLoweringKind>,
+    pub(super) scoped_call_kinds: HashMap<std::path::PathBuf, HashMap<SpanInfo, CallLoweringKind>>,
     pub(super) methods_by_receiver: HashMap<(ItemId, String), ItemId>,
     pub(super) contract_method_order: HashMap<ItemId, Vec<String>>,
     pub(super) contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
@@ -490,6 +583,9 @@ impl<'a> TypeContext<'a> {
             enum_variants: HashMap::new(),
             enum_variants_ordered: HashMap::new(),
             expr_types: HashMap::new(),
+            scoped_expr_types: HashMap::new(),
+            current_source_path: None,
+            contextual_expected_type: None,
             local_types: HashMap::new(),
             function_signatures: HashMap::new(),
             cast_intents: Vec::new(),
@@ -498,6 +594,7 @@ impl<'a> TypeContext<'a> {
             generic_params: HashMap::new(),
             generic_items: HashMap::new(),
             call_kinds: HashMap::new(),
+            scoped_call_kinds: HashMap::new(),
             methods_by_receiver: HashMap::new(),
             contract_method_order: HashMap::new(),
             contract_signatures: HashMap::new(),
@@ -561,21 +658,67 @@ impl<'a> TypeContext<'a> {
         self,
         program: &Spanned<HirProgram>,
     ) -> (TypeResult, Vec<TypeError>) {
-        self.type_program_with_errors_and_dependencies(program, &[])
+        self.type_program_with_errors_and_dependencies(program, &[], None, None, true)
     }
 
     pub fn type_program_with_errors_and_dependencies(
         mut self,
         program: &Spanned<HirProgram>,
-        dependency_programs: &[Spanned<HirProgram>],
+        dependency_programs: &[&Spanned<HirProgram>],
+        dependency_source_paths: Option<&[std::path::PathBuf]>,
+        entry_source_path: Option<std::path::PathBuf>,
+        type_dependency_bodies: bool,
     ) -> (TypeResult, Vec<TypeError>) {
-        for dependency in dependency_programs {
+        let dependency_errors_before = self.errors.len();
+        let dependency_cast_intents_before = self.cast_intents.len();
+        for (index, dependency) in dependency_programs.iter().enumerate() {
+            self.current_source_path = dependency_source_paths
+                .and_then(|paths| paths.get(index))
+                .cloned();
+            self.seed_enum_definitions(dependency);
+            for item in &dependency.node.items {
+                let (span, generics) = match &item.node {
+                    HirItem::FunctionDefinition(def) => (item.span, &def.node.generics),
+                    HirItem::TypeDefinition(def) => (item.span, &def.node.generics),
+                    HirItem::EnumDefinition(def) => (item.span, &def.node.generics),
+                    _ => continue,
+                };
+                if let Some(item_id) = self.item_id_for_span(span) {
+                    let names = generics
+                        .iter()
+                        .map(|generic| generic.node.name.clone())
+                        .collect::<Vec<_>>();
+                    self.generic_items.insert(item_id, names);
+                }
+            }
             let errors_before = self.errors.len();
+            let cast_intents_before = self.cast_intents.len();
             self.register_foreign_function_signatures(dependency);
             // Dependency units are prefetched for symbols only; incomplete generic surfaces
             // (for example `Core.Results.Result<,>`) must not block entry/test typing.
             self.errors.truncate(errors_before);
+            self.cast_intents.truncate(cast_intents_before);
+            if type_dependency_bodies {
+                for item in &dependency.node.items {
+                    let item_errors_before = self.errors.len();
+                    let item_cast_intents_before = self.cast_intents.len();
+                    match &item.node {
+                        HirItem::FunctionDefinition(_) | HirItem::MethodDefinition(_) => {
+                            self.type_item(item);
+                        }
+                        _ => {}
+                    }
+                    // Best-effort typing for cross-unit codegen; incomplete dependency surfaces
+                    // must not block entry/test typing.
+                    self.errors.truncate(item_errors_before);
+                    self.cast_intents.truncate(item_cast_intents_before);
+                    self.flush_scoped_type_maps_for_current_path();
+                }
+            }
         }
+        self.errors.truncate(dependency_errors_before);
+        self.cast_intents.truncate(dependency_cast_intents_before);
+        self.current_source_path = entry_source_path;
         for item in &program.node.items {
             let (span, generics) = match &item.node {
                 HirItem::FunctionDefinition(def) => (item.span, &def.node.generics),
@@ -610,6 +753,11 @@ impl<'a> TypeContext<'a> {
         }
         self.cast_intents.sort_by_key(|intent| {
             (
+                intent
+                    .source_path
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
                 intent.span.start,
                 intent.span.end,
                 intent.from.0,
@@ -617,7 +765,10 @@ impl<'a> TypeContext<'a> {
             )
         });
         self.cast_intents.dedup_by(|left, right| {
-            left.span == right.span && left.from == right.from && left.to == right.to
+            left.source_path == right.source_path
+                && left.span == right.span
+                && left.from == right.from
+                && left.to == right.to
         });
         let result = TypeResult {
             types: self.type_table,
@@ -628,6 +779,7 @@ impl<'a> TypeContext<'a> {
                 .map(|item| (item.id, item.name.clone()))
                 .collect(),
             expr_types: self.expr_types,
+            scoped_expr_types: self.scoped_expr_types,
             local_types: self.local_types,
             function_signatures: self.function_signatures,
             struct_fields_ordered: self.struct_fields_ordered,
@@ -635,6 +787,7 @@ impl<'a> TypeContext<'a> {
             enum_variants_ordered: self.enum_variants_ordered,
             generic_items: self.generic_items,
             call_kinds: self.call_kinds,
+            scoped_call_kinds: self.scoped_call_kinds,
             contract_method_order: self.contract_method_order,
             contract_signatures: self.contract_signatures,
             cast_intents: self.cast_intents,
@@ -651,16 +804,12 @@ impl<'a> TypeContext<'a> {
         let Some(method_item_id) = self.item_id_for_span(method_span) else {
             return;
         };
-        let Some(ResolvedType::Item(receiver_item_id)) = self
-            .resolution
-            .tables
-            .resolved_types
-            .get(&def.node.receiver_type.span)
+        let Some(ResolvedType::Item(receiver_item_id)) = self.resolved_type_at(def.node.receiver_type.span)
         else {
             return;
         };
         self.methods_by_receiver.insert(
-            (*receiver_item_id, def.node.name.node.name.clone()),
+            (receiver_item_id, def.node.name.node.name.clone()),
             method_item_id,
         );
     }

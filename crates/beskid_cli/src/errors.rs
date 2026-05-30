@@ -67,8 +67,12 @@ pub fn report_from_anyhow(err: &Error) -> Report {
 }
 
 fn semantic_diagnostics_bundle_report(bundle: &SemanticDiagnosticsError) -> Report {
-    if bundle.diagnostics().is_empty() {
+    let diagnostics = bundle.diagnostics();
+    if diagnostics.is_empty() {
         return miette::miette!("semantic errors (empty diagnostic list)");
     }
-    Report::new(bundle.clone())
+    if diagnostics.len() == 1 {
+        return Report::new(diagnostics[0].clone());
+    }
+    Report::new(diagnostics[0].clone())
 }

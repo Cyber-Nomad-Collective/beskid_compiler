@@ -297,7 +297,47 @@ impl Resolver {
             });
             return;
         }
-        self.module_imports.insert(alias, module_path);
+        self.module_imports.insert(alias, module_path.clone());
+        self.import_public_items_from_module(&module_path);
+    }
+
+    /// Bring public items from a used module into the current module scope (types, enums, functions).
+    fn import_public_items_from_module(&mut self, module_path: &[String]) {
+        let Some(target_module_id) = self.module_graph.module_id(module_path) else {
+            return;
+        };
+        let Some(target_module) = self.module_graph.module(target_module_id) else {
+            return;
+        };
+        let imports: Vec<(String, ItemId)> = target_module
+            .scope
+            .iter()
+            .filter_map(|(name, item_id)| {
+                let info = self.items.get(item_id.0)?;
+                if info.visibility != HirVisibility::Public {
+                    return None;
+                }
+                match info.kind {
+                    ItemKind::Function
+                    | ItemKind::Enum
+                    | ItemKind::Type
+                    | ItemKind::Contract => Some((name.clone(), *item_id)),
+                    _ => None,
+                }
+            })
+            .collect();
+        for (name, item_id) in imports {
+            if let Some(prev) = self.module_graph.insert_item(self.current_module, name, item_id) {
+                let prev_span = self.items.get(prev.0).map(|info| info.span);
+                if let Some(previous) = prev_span {
+                    self.errors.push(ResolveError::DuplicateItem {
+                        name: self.items[item_id.0].name.clone(),
+                        span: self.items[item_id.0].span,
+                        previous,
+                    });
+                }
+            }
+        }
     }
 
     fn push_member_item(

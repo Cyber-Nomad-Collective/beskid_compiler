@@ -52,6 +52,13 @@ pub const AOT_RUNTIME: &str = "aot.runtime";
 /// Platform linker invocation.
 pub const AOT_LINK: &str = "aot.link";
 
+/// Salsa query cache hit (incremental reuse).
+pub const SALSA_QUERY_HIT: &str = "salsa.query_hit";
+/// Salsa query cache miss (recomputed).
+pub const SALSA_QUERY_MISS: &str = "salsa.query_miss";
+/// Salsa input revision bump.
+pub const SALSA_REVISION_BUMP: &str = "salsa.revision_bump";
+
 /// Suggested coarse order for a full CLI `beskid build` (for documentation and tests).
 ///
 /// After [`PARSE`], mod phases run through [`MOD_REWRITE`] before [`LOWER_READY`]. Hosts may emit

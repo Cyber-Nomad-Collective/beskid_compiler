@@ -3,7 +3,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::frontend;
 use crate::pipeline_ui::resolve_input_with_cli_pipeline;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
@@ -13,7 +12,7 @@ use beskid_aot::{
     LinkMode, ProjectTargetKind, RuntimeStrategy, build, default_output_kind,
     default_runtime_strategy, resolve_entrypoint,
 };
-use beskid_codegen::lower_resolved_input_with_pipeline;
+use beskid_codegen::lower_resolved_entrypoint_with_pipeline;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
 use clap::{Args, ValueEnum};
@@ -112,20 +111,38 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     pipeline_ui.show_build_graph(&resolved);
     pipeline_ui.halt_progress_bars_for_output();
 
-    let source = resolved.source.clone();
+    let (_, gate_diagnostics) = beskid_analysis::services::prepare_compilation_diagnostics(
+        &resolved,
+        beskid_analysis::services::PrepareOptions {
+            mode: beskid_analysis::services::PrepareMode::DiagnosticsOnly,
+            front_end: beskid_analysis::services::FrontEndOptions {
+                with_semantic_diagnostics: true,
+                ..Default::default()
+            },
+        },
+        Some(pipeline_ui.as_ref()),
+    )?;
+    pipeline_ui.report_semantic_diagnostics(&gate_diagnostics);
+    beskid_analysis::services::require_no_semantic_errors(&gate_diagnostics)
+        .map_err(anyhow::Error::from)?;
+
     let input_path = resolved.source_path.clone();
-    frontend::run_semantic_analysis_gate(&input_path, &source, None, pipeline_ui.as_ref())?;
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
     let default_output_stem = resolved
         .compile_plan
         .as_ref()
         .map(|plan| plan.target.name.clone());
 
-    let lowered = lower_resolved_input_with_pipeline(&resolved, false, obs)?;
+    let entrypoint = resolve_entrypoint(args.entrypoint.clone())?;
+    let lowered = lower_resolved_entrypoint_with_pipeline(
+        &resolved,
+        Some(&entrypoint),
+        false,
+        obs,
+    )?;
     let artifact = lowered.artifact;
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
-    let entrypoint = resolve_entrypoint(args.entrypoint)?;
 
     let target = beskid_aot::target::detect_target(args.target_triple.as_deref())?;
     let output = if let Some(path) = args.output {

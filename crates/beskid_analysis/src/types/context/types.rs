@@ -1,11 +1,80 @@
+use std::collections::HashMap;
+
 use crate::hir::{HirPath, HirType};
-use crate::resolve::ResolvedType;
+use crate::resolve::{ItemKind, ResolvedType};
 use crate::syntax::Spanned;
 use crate::types::{TypeId, TypeInfo};
 
 use super::context::{TypeContext, TypeError};
 
+fn type_display_name(ty: &Spanned<HirType>) -> String {
+    match &ty.node {
+        HirType::Primitive(primitive) => format!("{:?}", primitive.node),
+        HirType::Complex(path) => path_display_name(path),
+        HirType::Array(inner) => format!("{}[]", type_display_name(inner)),
+        HirType::Ref(inner) => format!("&{}", type_display_name(inner)),
+        HirType::Function {
+            return_type,
+            parameters,
+        } => {
+            let params = parameters
+                .iter()
+                .map(type_display_name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}({params})", type_display_name(return_type))
+        }
+    }
+}
+
+fn path_display_name(path: &Spanned<HirPath>) -> String {
+    let segments = &path.node.segments;
+    if segments.is_empty() {
+        return "<unnamed>".to_string();
+    }
+    let head = segments
+        .iter()
+        .take(segments.len().saturating_sub(1))
+        .map(|segment| segment.node.name.node.name.as_str())
+        .collect::<Vec<_>>()
+        .join(".");
+    let last = segments.last().expect("non-empty segments");
+    let tail = last.node.name.node.name.as_str();
+    let mut name = if head.is_empty() {
+        tail.to_string()
+    } else {
+        format!("{head}.{tail}")
+    };
+    if !last.node.type_args.is_empty() {
+        let args = last
+            .node
+            .type_args
+            .iter()
+            .map(type_display_name)
+            .collect::<Vec<_>>()
+            .join(", ");
+        name.push('<');
+        name.push_str(&args);
+        name.push('>');
+    }
+    name
+}
+
 impl<'a> TypeContext<'a> {
+    /// Resolve a type AST node while generic parameters from the enclosing item are in scope.
+    pub(super) fn type_id_for_type_in_generic_scope(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
+        if let HirType::Complex(path) = &ty.node
+            && path.node.segments.len() == 1
+            && path.node.segments[0].node.type_args.is_empty()
+            && let Some(type_id) = self
+                .generic_params
+                .get(&path.node.segments[0].node.name.node.name)
+        {
+            return Some(*type_id);
+        }
+        self.type_id_for_type(ty)
+    }
+
     pub(super) fn type_id_for_type(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
         match &ty.node {
             HirType::Primitive(primitive) => {
@@ -39,17 +108,73 @@ impl<'a> TypeContext<'a> {
         }
     }
 
+    /// Build a generic-parameter substitution map from explicit or inferred type arguments.
+    pub(super) fn generic_substitution_mapping(
+        &self,
+        item_id: crate::resolve::ItemId,
+        substitution: &[TypeId],
+    ) -> HashMap<String, TypeId> {
+        let Some(names) = self.generic_items.get(&item_id) else {
+            return HashMap::new();
+        };
+        if names.len() != substitution.len() {
+            return HashMap::new();
+        }
+        names
+            .iter()
+            .zip(substitution.iter())
+            .map(|(name, type_id)| (name.clone(), *type_id))
+            .collect()
+    }
+
+    fn item_id_for_type_path(&self, path: &Spanned<HirPath>) -> Option<crate::resolve::ItemId> {
+        if let Some(ResolvedType::Item(item_id)) = self.resolved_type_at(path.span) {
+            return Some(item_id);
+        }
+        let segments: Vec<String> = path
+            .node
+            .segments
+            .iter()
+            .map(|segment| segment.node.name.node.name.clone())
+            .collect();
+        if segments.len() >= 2 {
+            let (module_path, tail) = segments.split_at(segments.len() - 1);
+            if let Some(module_id) = self.resolution.module_graph.module_id(module_path)
+                && let Some(module) = self.resolution.module_graph.module(module_id)
+                && let Some(item_id) = module.scope.get(&tail[0])
+            {
+                return Some(*item_id);
+            }
+        }
+        if segments.len() == 1 {
+            let name = &segments[0];
+            return self
+                .item_id_for_name(name, ItemKind::Enum)
+                .or_else(|| self.item_id_for_name(name, ItemKind::Type));
+        }
+        None
+    }
+
+    fn base_item_id_for_applied_path(&self, path: &Spanned<HirPath>) -> Option<crate::resolve::ItemId> {
+        self.item_id_for_type_path(path)
+            .or_else(|| {
+                let last_segment = path.node.segments.last()?;
+                let name = last_segment.node.name.node.name.as_str();
+                self.item_id_for_name(name, ItemKind::Enum)
+                    .or_else(|| self.item_id_for_name(name, ItemKind::Type))
+            })
+    }
+
     pub(super) fn type_id_for_path_with_args(&mut self, path: &Spanned<HirPath>) -> Option<TypeId> {
         if let Some(last_segment) = path.node.segments.last()
             && !last_segment.node.type_args.is_empty()
         {
-            let resolved = self.resolution.tables.resolved_types.get(&path.span);
-            let base = match resolved {
-                Some(ResolvedType::Item(item_id)) => *item_id,
-                _ => {
-                    self.errors.push(TypeError::UnknownType { span: path.span });
-                    return None;
-                }
+            let Some(base) = self.base_item_id_for_applied_path(path) else {
+                self.errors.push(TypeError::UnknownType {
+                    span: path.span,
+                    name: path_display_name(path),
+                });
+                return None;
             };
             if let Some(expected) = self.generic_items.get(&base)
                 && expected.len() != last_segment.node.type_args.len()
@@ -68,26 +193,46 @@ impl<'a> TypeContext<'a> {
             }
             return Some(self.type_table.intern(TypeInfo::Applied { base, args }));
         }
-        self.type_id_for_type_path(path.span)
+        self.type_id_for_type_path(path)
     }
 
     pub(super) fn type_id_for_type_path(
         &mut self,
-        span: crate::syntax::SpanInfo,
+        path: &Spanned<HirPath>,
     ) -> Option<TypeId> {
-        match self.resolution.tables.resolved_types.get(&span) {
+        match self.resolved_type_at(path.span) {
             Some(ResolvedType::Item(item)) => {
-                if let Some(expected) = self.generic_items.get(item)
+                if let Some(expected) = self.generic_items.get(&item)
                     && !expected.is_empty()
                 {
-                    self.errors.push(TypeError::MissingTypeArguments { span });
+                    self.errors.push(TypeError::MissingTypeArguments { span: path.span });
                     return None;
                 }
-                self.named_types.get(item).copied()
+                self.named_types.get(&item).copied()
             }
-            Some(ResolvedType::Generic(name)) => self.generic_params.get(name).copied(),
+            Some(ResolvedType::Generic(name)) => self.generic_params.get(&name).copied(),
             None => {
-                self.errors.push(TypeError::UnknownType { span });
+                if path.node.segments.len() == 1
+                    && path.node.segments[0].node.type_args.is_empty()
+                    && let Some(type_id) = self
+                        .generic_params
+                        .get(&path.node.segments[0].node.name.node.name)
+                {
+                    return Some(*type_id);
+                }
+                if let Some(item_id) = self.item_id_for_type_path(path) {
+                    if let Some(expected) = self.generic_items.get(&item_id)
+                        && !expected.is_empty()
+                    {
+                        self.errors.push(TypeError::MissingTypeArguments { span: path.span });
+                        return None;
+                    }
+                    return self.named_types.get(&item_id).copied();
+                }
+                self.errors.push(TypeError::UnknownType {
+                    span: path.span,
+                    name: path_display_name(path),
+                });
                 None
             }
         }

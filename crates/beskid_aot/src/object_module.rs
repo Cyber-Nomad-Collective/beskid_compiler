@@ -7,7 +7,7 @@ use beskid_codegen::cranelift_host::{
     declare_builtin_imports, declare_user_functions, declare_validated_extern_imports,
     remap_testcase_externals,
 };
-use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
+use beskid_codegen::{validate_artifact, CodegenArtifact, emit_string_literals, emit_type_descriptors};
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;
 use cranelift_module::{DataId, FuncId, Linkage, Module, default_libcall_names};
@@ -79,6 +79,17 @@ impl BeskidObjectModule {
             .ok_or_else(|| AotError::InvalidRequest {
                 message: "object module already finalized".to_owned(),
             })?;
+
+        #[cfg(debug_assertions)]
+        if let Err(missing) = validate_artifact(artifact) {
+            let names: Vec<_> = missing.iter().map(|m| m.name.as_str()).collect();
+            return Err(AotError::InvalidRequest {
+                message: format!(
+                    "codegen artifact validation failed: undefined callees: {}",
+                    names.join(", ")
+                ),
+            });
+        }
 
         if !self.builtins_declared {
             declare_builtin_imports(module, &mut self.func_ids)?;

@@ -21,6 +21,20 @@ pub struct ResolvedInput {
     pub assembly: Option<ProgramAssembly>,
 }
 
+impl ResolvedInput {
+    /// Return a copy of this input with a cached [`ProgramAssembly`].
+    pub fn with_assembly(&self, assembly: ProgramAssembly) -> Self {
+        Self {
+            source_path: self.source_path.clone(),
+            source: self.source.clone(),
+            compile_plan: self.compile_plan.clone(),
+            prepared_workspace: self.prepared_workspace.clone(),
+            workspace_summary: self.workspace_summary.clone(),
+            assembly: Some(assembly),
+        }
+    }
+}
+
 /// Optional workspace member name for analysis parity with CLI `--workspace-member`.
 #[derive(Clone, Default)]
 pub struct AnalyzeInProjectOptions<'a> {
@@ -123,17 +137,17 @@ pub fn resolve_input_with_policy(
 
     let mut assembly_options = AssemblyOptions::default();
     assembly_options.discovery = AssemblyDiscovery::ImportClosure;
-    let assembly = compile_plan.as_ref().and_then(|plan| {
-        assemble_program(
+    let assembly = if let Some(plan) = compile_plan.as_ref() {
+        Some(assemble_program(
             plan,
             prepared_workspace.as_ref(),
             &source_path,
             Some(&source),
             &assembly_options,
-        )
-        .ok()
-    });
-    // Assembly is best-effort at resolve time; lowering will re-assemble if this failed.
+        )?)
+    } else {
+        None
+    };
 
     Ok(ResolvedInput {
         source_path,

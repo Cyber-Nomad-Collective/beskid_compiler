@@ -57,10 +57,15 @@ impl Resolver {
     pub fn resolve_collected_program_for_api_documentation(
         &mut self,
         program: &Spanned<HirProgram>,
+        logical_module_path: Option<&[String]>,
     ) -> Resolution {
         let file_scoped_module_index = resolver::file_scoped_module_index(program);
-        self.current_module = resolver::file_scoped_module_path(program)
-            .map(|path| self.module_graph.ensure_module_path(&path))
+        self.current_module = logical_module_path
+            .map(|path| self.module_graph.ensure_module_path(path))
+            .or_else(|| {
+                resolver::file_scoped_module_path(program)
+                    .map(|path| self.module_graph.ensure_module_path(&path))
+            })
             .unwrap_or(self.module_graph.root());
         for (index, item) in program.node.items.iter().enumerate() {
             if Some(index) == file_scoped_module_index {
@@ -540,6 +545,11 @@ impl Resolver {
 
     fn resolve_enum_path(&mut self, path: &Spanned<HirEnumPath>) {
         let type_name = path.node.type_name.node.name.clone();
+        if self.is_generic(&type_name) {
+            self.tables
+                .insert_type(path.span, ResolvedType::Generic(type_name));
+            return;
+        }
         if let Some(item) = self.resolve_item_in_scope(&type_name) {
             self.tables.insert_type(path.span, ResolvedType::Item(item));
             return;
@@ -669,7 +679,9 @@ impl Resolver {
             });
             return;
         }
-        let id = self.tables.intern_local(name.to_string(), span);
+        let id = self
+            .tables
+            .intern_local(name.to_string(), span, self.current_source_path.clone());
         scope.insert(name.to_string(), id);
     }
 

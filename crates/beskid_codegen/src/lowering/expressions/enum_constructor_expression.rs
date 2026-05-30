@@ -21,12 +21,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirEnumConstructorExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let type_id = ctx
-            .type_result
-            .expr_types
-            .get(&node.span)
-            .copied()
-            .ok_or(CodegenError::MissingExpressionType { span: node.span })?;
+        let type_id = ctx.require_expr_type(node.span)?;
         let item_id = match ctx.type_result.types.get(type_id) {
             Some(TypeInfo::Named(item_id)) => *item_id,
             _ => {

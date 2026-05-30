@@ -53,7 +53,7 @@ impl MietteReportError {
 
 impl fmt::Display for MietteReportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", miette::Report::new(self.0.clone()))
+        write!(f, "{}", self.0.message)
     }
 }
 

@@ -8,7 +8,10 @@ use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeResult;
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::CODEGEN_CLIF};
 
-use crate::{CodegenArtifact, codegen_errors_to_diagnostics, lower_program};
+use crate::{
+    CodegenArtifact, codegen_errors_to_diagnostics,
+    lowering::{lower_program, lower_program_with_assembly, lower_program_with_assembly_for_entrypoint},
+};
 use beskid_analysis::services::{ResolvedInput, SemanticDiagnosticsError};
 
 /// Fully lowered program: typed HIR plus the Cranelift artifact from [`lower_source`] /
@@ -49,10 +52,11 @@ pub fn lower_source_with_pipeline(
         return lower_resolved_input_with_pipeline(&resolved, with_diagnostics, pipeline);
     }
 
-    lower_source_single_unit_legacy(path, source, with_diagnostics, pipeline)
+    lower_single_unit_without_project(path, source, with_diagnostics, pipeline)
 }
 
-fn lower_source_single_unit_legacy(
+/// Single `.bd` file without a `Project.proj` — not used for project-backed hosts.
+fn lower_single_unit_without_project(
     path: &Path,
     source: &str,
     with_diagnostics: bool,
@@ -118,6 +122,16 @@ pub fn lower_resolved_input_with_pipeline(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
+    lower_resolved_entrypoint_with_pipeline(resolved, None, with_diagnostics, pipeline)
+}
+
+/// Lower a single entry function or test from a resolved project input.
+pub fn lower_resolved_entrypoint_with_pipeline(
+    resolved: &ResolvedInput,
+    link_entrypoint: Option<&str>,
+    with_diagnostics: bool,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<LoweredProgram> {
     if resolved.compile_plan.is_none() {
         return lower_source_with_pipeline(
             &resolved.source_path,
@@ -138,18 +152,51 @@ pub fn lower_resolved_input_with_pipeline(
         &resolved.source_path.display().to_string(),
         &resolved.source,
         front,
+        link_entrypoint,
         pipeline,
     )
 }
 
-fn lower_from_front_end(
+/// CLIF artifact for a single entrypoint from a shared front-end bundle.
+pub fn entrypoint_artifact_from_front_end(
+    front: beskid_analysis::services::FrontEndLowerInput<'_>,
+    source_name: &str,
+    source: &str,
+    entrypoint: &str,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<CodegenArtifact> {
+    observe_phase_result(pipeline, CODEGEN_CLIF, || {
+        lower_program_with_assembly_for_entrypoint(
+            front.hir,
+            front.resolution,
+            front.typed,
+            Some(front.assembly),
+            Some(entrypoint),
+        )
+        .map_err(|errors| {
+            let diagnostics = codegen_errors_to_diagnostics(source_name, source, &errors);
+            anyhow::Error::new(SemanticDiagnosticsError::from_diagnostics(diagnostics))
+        })
+    })
+}
+
+/// Lower a pre-built front-end result to CLIF, optionally linking a single entrypoint.
+pub fn lower_from_front_end(
     source_name: &str,
     source: &str,
     front: beskid_analysis::services::FrontEndTypedResult,
+    link_entrypoint: Option<&str>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
     let artifact = observe_phase_result(pipeline, CODEGEN_CLIF, || {
-        lower_program(&front.hir, &front.resolution, &front.typed).map_err(|errors| {
+        lower_program_with_assembly_for_entrypoint(
+            &front.hir,
+            &front.resolution,
+            &front.typed,
+            Some(&front.assembly),
+            link_entrypoint,
+        )
+        .map_err(|errors| {
             let diagnostics = codegen_errors_to_diagnostics(source_name, source, &errors);
             anyhow::Error::new(SemanticDiagnosticsError::from_diagnostics(diagnostics))
         })

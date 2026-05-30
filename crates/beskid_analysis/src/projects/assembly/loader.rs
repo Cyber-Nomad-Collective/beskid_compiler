@@ -3,7 +3,9 @@
 use std::collections::{HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
@@ -14,7 +16,11 @@ use crate::syntax::{Program, Spanned};
 use super::discovery::resolve_module_file;
 use super::module_index::ModuleIndex;
 use super::roots::effective_roots_for_plan;
-use super::{ProgramAssembly, SourceUnit};
+use super::unit_cache::{
+    self, CachedUnitRecord, UnitCacheStats, ensure_manifest, hir_from_cached_record,
+    read_cached_unit, unit_fingerprint, write_cached_unit,
+};
+use super::{ProgramAssembly, SourceUnit, build_hir_units};
 
 #[derive(Debug, Error)]
 pub enum AssemblyError {
@@ -31,7 +37,19 @@ pub enum AssemblyError {
     MaxUnits { max: usize },
 }
 
-fn expand_syntax_for_assembly(program: Spanned<Program>) -> Spanned<Program> {
+fn prelude_reexport_module_paths(prelude_text: &str) -> Vec<String> {
+    prelude_text
+        .lines()
+        .filter_map(|line| {
+            let line = line.split("//").next()?.trim();
+            let rest = line.strip_prefix("pub mod ")?;
+            let path = rest.trim_end_matches(';').trim();
+            (!path.is_empty()).then(|| path.to_string())
+        })
+        .collect()
+}
+
+pub(crate) fn expand_syntax_for_assembly(program: Spanned<Program>) -> Spanned<Program> {
     crate::macros::expand_program_with_diagnostics(
         program,
         crate::macros::DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
@@ -80,25 +98,16 @@ pub fn assemble_program(
                 continue;
             }
             let prelude = root.join("Prelude.bd");
-            if !prelude.is_file() || prelude_seeds.contains(&prelude) {
+            if !prelude.is_file() {
                 continue;
             }
             let Ok(text) = fs::read_to_string(&prelude) else {
                 continue;
             };
-            if text.contains("pub mod Testing.Assertions") {
-                for module_path in [
-                    "Testing.Assertions",
-                    "Testing.Contracts",
-                    "Core.Results",
-                    "Core.String",
-                    "Core.ErrorHandling",
-                ] {
-                    prelude_reexport_paths.push(module_path.to_string());
-                }
-                break;
-            }
+            prelude_reexport_paths.extend(prelude_reexport_module_paths(&text));
         }
+        prelude_reexport_paths.sort();
+        prelude_reexport_paths.dedup();
         if options.discovery == AssemblyDiscovery::WorkspaceScan && plan.has_std_dependency {
             for root in &module_roots {
                 if is_compiler_mod_sdk_source_root(root) {
@@ -122,6 +131,12 @@ pub fn assemble_program(
             queue.push_back(entry_canonical.clone());
             for seed in prelude_seeds {
                 queue.push_back(seed);
+            }
+            for root in &module_roots {
+                let prelude = root.join("Prelude.bd");
+                if prelude.is_file() {
+                    queue.push_back(prelude);
+                }
             }
             for module_path in prelude_reexport_paths {
                 if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
@@ -175,63 +190,143 @@ pub fn assemble_program(
         }
     }
 
-    let mut units = Vec::with_capacity(discovered.len());
-    let mut entry_index = 0usize;
+    let project_root = plan.project_root.clone();
+    let _ = ensure_manifest(&project_root);
+    let cache_hits = std::sync::atomic::AtomicUsize::new(0);
+    let cache_misses = std::sync::atomic::AtomicUsize::new(0);
     let entry_key = entry_canonical.canonicalize().unwrap_or(entry_canonical.clone());
 
-    for path in &discovered {
-        let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
-        let is_entry = path_key == entry_key;
+    struct UnitBuildInput {
+        path: PathBuf,
+        is_entry: bool,
+        source: String,
+    }
 
-        let source = if is_entry && entry_source.is_some() {
-            entry_source.expect("entry source when is_entry").to_string()
-        } else {
-            match fs::read_to_string(path) {
-                Ok(text) => text,
-                Err(source) if options.skip_parse_errors && !is_entry => {
-                    log::warn!(
-                        "skipping unreadable unit {} ({source})",
-                        path.display()
-                    );
-                    continue;
+    let build_inputs: Vec<UnitBuildInput> = discovered
+        .iter()
+        .filter_map(|path| {
+            let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
+            let is_entry = path_key == entry_key;
+            let source = if is_entry && entry_source.is_some() {
+                entry_source.expect("entry source when is_entry").to_string()
+            } else {
+                match fs::read_to_string(path) {
+                    Ok(text) => text,
+                    Err(source) if options.skip_parse_errors && !is_entry => {
+                        log::warn!(
+                            "skipping unreadable unit {} ({source})",
+                            path.display()
+                        );
+                        return None;
+                    }
+                    Err(source) => {
+                        return Some(Err(AssemblyError::Read {
+                            path: path.clone(),
+                            source,
+                        }));
+                    }
                 }
-                Err(source) => {
-                    return Err(AssemblyError::Read {
-                        path: path.clone(),
-                        source,
-                    });
-                }
-            }
-        };
+            };
+            Some(Ok(UnitBuildInput {
+                path: path.clone(),
+                is_entry,
+                source,
+            }))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
-        let logical_name = path.display().to_string();
-        let program = match parse_program_with_source_name(&logical_name, &source) {
-            Ok(program) => expand_syntax_for_assembly(program),
-            Err(err) if options.skip_parse_errors && !is_entry => {
-                log::warn!(
-                    "skipping unparseable unit {} ({err})",
-                    path.display()
-                );
-                continue;
-            }
-            Err(err) => {
-                return Err(AssemblyError::Parse {
-                    path: path.clone(),
-                    message: err.to_string(),
-                });
-            }
-        };
+    let thread_cap = std::env::var("BESKID_ASSEMBLY_THREADS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4));
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(thread_cap.max(1))
+        .build()
+        .map_err(|err| AssemblyError::Parse {
+            path: entry_path.to_path_buf(),
+            message: err.to_string(),
+        })?;
 
+    let built_units: Result<Vec<(usize, bool, SourceUnit, super::UnitHir)>, AssemblyError> =
+        pool.install(|| {
+            build_inputs
+                .par_iter()
+                .enumerate()
+                .map(|(discovered_index, input)| {
+                    let fingerprint = unit_fingerprint(&input.path, &input.source);
+                    if let Some(record) = read_cached_unit(&fingerprint, &project_root)
+                        && record.source == input.source
+                    {
+                        cache_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let unit = unit_cache::source_unit_from_record(&record);
+                        let hir = hir_from_cached_record(&record);
+                        return Ok((discovered_index, input.is_entry, unit, hir));
+                    }
+                    cache_misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                    let logical_name = input.path.display().to_string();
+                    let program = match parse_program_with_source_name(&logical_name, &input.source)
+                    {
+                        Ok(program) => expand_syntax_for_assembly(program),
+                        Err(err) if options.skip_parse_errors && !input.is_entry => {
+                            log::warn!(
+                                "skipping unparseable unit {} ({err})",
+                                input.path.display()
+                            );
+                            return Err(AssemblyError::Parse {
+                                path: input.path.clone(),
+                                message: "skipped".to_string(),
+                            });
+                        }
+                        Err(err) => {
+                            return Err(AssemblyError::Parse {
+                                path: input.path.clone(),
+                                message: err.to_string(),
+                            });
+                        }
+                    };
+
+                    let record = CachedUnitRecord {
+                        fingerprint: fingerprint.clone(),
+                        logical_name: logical_name.clone(),
+                        path: input.path.clone(),
+                        source: input.source.clone(),
+                        imports: unit_cache::import_paths_from_source(&input.source),
+                    };
+                    let _ = write_cached_unit(&project_root, &record);
+
+                    let unit = SourceUnit {
+                        logical_name,
+                        path: input.path.clone(),
+                        source: input.source.clone(),
+                        program,
+                    };
+                    let hir = build_hir_units(&[unit.clone()])
+                        .into_iter()
+                        .next()
+                        .expect("unit hir");
+                    Ok((discovered_index, input.is_entry, unit, hir))
+                })
+                .filter(|result| {
+                    !matches!(
+                        result,
+                        Err(AssemblyError::Parse { message, .. }) if message == "skipped"
+                    )
+                })
+                .collect()
+        });
+
+    let mut built_units = built_units?;
+    built_units.sort_by_key(|(index, _, _, _)| *index);
+    let mut units = Vec::with_capacity(built_units.len());
+    let mut hir_units_vec = Vec::with_capacity(built_units.len());
+    let mut entry_index = 0usize;
+    for (_, is_entry, unit, hir) in built_units {
         if is_entry {
             entry_index = units.len();
         }
-
-        units.push(SourceUnit {
-            logical_name,
-            path: path.clone(),
-            source,
-            program,
-        });
+        units.push(unit);
+        hir_units_vec.push(hir);
     }
 
     if units.is_empty() {
@@ -240,14 +335,29 @@ pub fn assemble_program(
         });
     }
 
-    let module_index = ModuleIndex::build(&units, entry_index, &roots, plan);
+    log::debug!(
+        "assembly cache hits={} misses={}",
+        cache_hits.load(std::sync::atomic::Ordering::Relaxed),
+        cache_misses.load(std::sync::atomic::Ordering::Relaxed)
+    );
+
+    let hir_units = Arc::new(hir_units_vec);
+    let module_index = Arc::new(ModuleIndex::build(
+        &units,
+        hir_units.as_ref(),
+        entry_index,
+        &roots,
+        plan,
+    ));
 
     Ok(ProgramAssembly {
         roots,
-        units,
+        units: Arc::new(units),
+        hir_units,
         entry_index,
         discovery: options.discovery,
         module_index,
+        has_std_dependency: plan.has_std_dependency,
     })
 }
 
@@ -265,7 +375,7 @@ fn collect_bd_files(root: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn import_paths_from_source_full(source: &str) -> Vec<String> {
+pub(crate) fn import_paths_from_source_full(source: &str) -> Vec<String> {
     let mut paths = Vec::new();
     for line in source.lines() {
         let trimmed = line.trim();

@@ -151,12 +151,9 @@ pub fn resolve_assembly_for_api_documentation(
     entry_path: &Path,
 ) -> Option<Resolution> {
     let entry_hir = lower_normalize_hir(entry_program)?;
-    assembly.module_index.resolve_for_api_documentation(
-        &entry_hir,
-        Some(&entry_path.to_path_buf()),
-        &assembly.units,
-        assembly.entry_index,
-    )
+    assembly
+        .module_index
+        .resolve_for_api_documentation(&entry_hir, assembly)
 }
 
 fn symbol_location_for_item(

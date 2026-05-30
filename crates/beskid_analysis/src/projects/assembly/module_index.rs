@@ -2,11 +2,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::hir::{AstProgram, HirProgram, lower_program as lower_hir_program};
+use crate::hir::HirProgram;
 use crate::resolve::{ItemId, ItemInfo, ModuleGraph, Resolution, ResolveResult, Resolver};
 use crate::syntax::{Program, Spanned};
 
 use super::SourceUnit;
+use super::hir_units::UnitHir;
 use super::roots::EffectiveCompilationRoots;
 use crate::projects::CompilePlan;
 
@@ -30,6 +31,7 @@ impl ModuleIndex {
     /// Collect symbols from all units except `entry_index`.
     pub fn build(
         units: &[SourceUnit],
+        hir_units: &[UnitHir],
         entry_index: usize,
         roots: &EffectiveCompilationRoots,
         plan: &CompilePlan,
@@ -41,13 +43,17 @@ impl ModuleIndex {
             if index == entry_index {
                 continue;
             }
-            if let Ok(hir) = unit_to_hir(&unit.program) {
-                if let Some(module_path) = infer_logical_module_path(unit, roots, plan) {
-                    resolver.collect_program_in_module(&hir, &module_path, Some(&unit.path));
-                } else {
-                    resolver.set_current_source_path(Some(unit.path.clone()));
-                    resolver.collect_program(&hir);
-                }
+            let Some(unit_hir) = hir_units.get(index) else {
+                continue;
+            };
+            let hir = &unit_hir.hir;
+            if let Some(module_path) =
+                infer_logical_module_path(unit, roots, plan.has_std_dependency)
+            {
+                resolver.collect_program_in_module(hir, &module_path, Some(&unit.path));
+            } else {
+                resolver.set_current_source_path(Some(unit.path.clone()));
+                resolver.collect_program(hir);
             }
         }
 
@@ -71,7 +77,8 @@ impl ModuleIndex {
 
     /// Resolve the entry unit against prefetched external modules (lowers AST only; prefer [`Self::resolve_entry_hir`] when HIR is already normalized).
     pub fn resolve_entry(&self, entry_program: &Spanned<Program>) -> ResolveResult<Resolution> {
-        let entry_hir = unit_to_hir(entry_program).map_err(|_| Vec::new())?;
+        use super::hir_units::unit_to_hir;
+        let entry_hir = unit_to_hir(entry_program);
         self.resolve_entry_hir(&entry_hir, None)
     }
 
@@ -106,52 +113,79 @@ impl ModuleIndex {
         resolver.resolve_collected_program(unit_hir)
     }
 
-    /// Full-project resolution for `api.json`: prefetch symbols, best-effort resolve entry + every unit.
-    pub fn resolve_for_api_documentation(
+    /// Best-effort resolve for a non-entry unit (merges locals into entry resolution for codegen).
+    pub fn resolve_unit_hir_best_effort(
         &self,
-        entry_hir: &Spanned<HirProgram>,
-        entry_source_path: Option<&std::path::PathBuf>,
-        units: &[SourceUnit],
-        entry_index: usize,
-    ) -> Option<Resolution> {
+        unit_hir: &Spanned<HirProgram>,
+        unit_source_path: &std::path::Path,
+    ) -> Resolution {
         let mut resolver = Resolver::with_module_prefetch(
             self.items.clone(),
             self.module_graph.clone(),
             self.builtin_items.clone(),
         );
-        resolver.set_current_source_path(entry_source_path.cloned());
-        resolver.collect_program(entry_hir);
-        let mut resolution = resolver.resolve_collected_program_for_api_documentation(entry_hir);
+        resolver.set_current_source_path(Some(unit_source_path.to_path_buf()));
+        resolver.resolve_collected_program_for_api_documentation(unit_hir, None)
+    }
 
-        for (index, unit) in units.iter().enumerate() {
-            if index == entry_index {
+    /// Full-project resolution for `api.json`: prefetch symbols, best-effort resolve entry + every unit.
+    pub fn resolve_for_api_documentation(
+        &self,
+        entry_hir: &Spanned<HirProgram>,
+        assembly: &super::ProgramAssembly,
+    ) -> Option<Resolution> {
+        let entry_source_path = assembly.entry_unit().path.clone();
+        let entry_module_path = infer_logical_module_path(
+            assembly.entry_unit(),
+            &assembly.roots,
+            assembly.has_std_dependency,
+        );
+
+        let mut resolver = Resolver::with_module_prefetch(
+            self.items.clone(),
+            self.module_graph.clone(),
+            self.builtin_items.clone(),
+        );
+        resolver.set_current_source_path(Some(entry_source_path.clone()));
+        resolver.collect_program(entry_hir);
+        let mut resolution = resolver.resolve_collected_program_for_api_documentation(
+            entry_hir,
+            entry_module_path.as_deref(),
+        );
+
+        for (index, unit_hir) in assembly.hir_units.iter().enumerate() {
+            if index == assembly.entry_index {
                 continue;
             }
-            let hir = unit_to_hir(&unit.program).ok()?;
+            let Some(unit) = assembly.units.get(index) else {
+                continue;
+            };
+            let module_path = infer_logical_module_path(
+                unit,
+                &assembly.roots,
+                assembly.has_std_dependency,
+            );
             let mut unit_resolver = Resolver::with_module_prefetch(
                 self.items.clone(),
                 self.module_graph.clone(),
                 self.builtin_items.clone(),
             );
-            unit_resolver.set_current_source_path(Some(unit.path.clone()));
-            let unit_resolution =
-                unit_resolver.resolve_collected_program_for_api_documentation(&hir);
-            resolution.tables.merge_from(&unit_resolution.tables);
+            unit_resolver.set_current_source_path(Some(unit_hir.path.clone()));
+            let unit_resolution = unit_resolver.resolve_collected_program_for_api_documentation(
+                &unit_hir.hir,
+                module_path.as_deref(),
+            );
+            resolution.tables.merge_from(&unit_resolution.tables, unit_hir.path.clone());
         }
 
         Some(resolution)
     }
 }
 
-fn unit_to_hir(program: &Spanned<Program>) -> Result<Spanned<HirProgram>, ()> {
-    let ast: Spanned<AstProgram> = program.clone().into();
-    Ok(lower_hir_program(&ast))
-}
-
-fn infer_logical_module_path(
+pub fn infer_logical_module_path(
     unit: &SourceUnit,
     roots: &EffectiveCompilationRoots,
-    plan: &CompilePlan,
+    has_std_dependency: bool,
 ) -> Option<Vec<String>> {
     let path = &unit.path;
     for root in std::iter::once(&roots.host).chain(roots.dependencies.iter()) {
@@ -159,7 +193,7 @@ fn infer_logical_module_path(
             continue;
         };
         let rel = rel.with_extension("");
-        let segments: Vec<String> = rel
+        let mut segments: Vec<String> = rel
             .components()
             .filter_map(|component| match component {
                 std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
@@ -169,12 +203,49 @@ fn infer_logical_module_path(
         if segments.is_empty() {
             continue;
         }
-        if plan.has_std_dependency {
+        collapse_homonymous_module_segment(&mut segments);
+        if has_std_dependency {
             let mut with_std = vec!["Std".to_string()];
             with_std.extend(segments);
             return Some(with_std);
         }
         return Some(segments);
     }
-    None
+    module_path_from_src_suffix(path, has_std_dependency)
+}
+
+/// When `Panel/Panel.bd` is inferred as `[…, Panel, Panel]`, items belong in module `[…, Panel]`.
+fn collapse_homonymous_module_segment(segments: &mut Vec<String>) {
+    if segments.len() >= 2 {
+        let last = segments.len() - 1;
+        if segments[last] == segments[last - 1] {
+            segments.pop();
+        }
+    }
+}
+
+fn module_path_from_src_suffix(path: &std::path::Path, has_std_dependency: bool) -> Option<Vec<String>> {
+    let path_str = path.to_string_lossy();
+    let marker = "/src/";
+    let idx = path_str.find(marker)?;
+    let rel = std::path::Path::new(&path_str[idx + marker.len()..]).with_extension("");
+    let segments: Vec<String> = rel
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect();
+    if segments.is_empty() {
+        return None;
+    }
+    let mut segments = segments;
+    collapse_homonymous_module_segment(&mut segments);
+    if has_std_dependency {
+        let mut with_std = vec!["Std".to_string()];
+        with_std.extend(segments);
+        Some(with_std)
+    } else {
+        Some(segments)
+    }
 }

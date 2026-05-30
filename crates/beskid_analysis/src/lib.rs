@@ -25,6 +25,7 @@ pub mod format;
 pub mod hir;
 pub mod macros;
 pub mod mod_host;
+pub mod paths;
 pub mod parser;
 pub mod parsing;
 pub mod projects;
@@ -41,8 +42,7 @@ pub use analysis::{
 pub use compilation_context::CompilationContext;
 pub use parser::{BeskidParser, Rule};
 pub use projects::{
-    AssemblyDiscovery, AssemblyOptions, ProgramAssembly, assemble_program,
-    effective_roots_for_plan, module_roots_for_plan,
+    AssemblyDiscovery, AssemblyOptions, ProgramAssembly, assemble_program, effective_roots_for_plan,
 };
 pub use projects::{
     ProjectGraphBuildOptions, WorkspaceResolutionSummary, resolve_project_manifest_for_source_path,

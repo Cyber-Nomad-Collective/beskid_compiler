@@ -21,6 +21,10 @@ pub struct AnalysisOptions {
     pub program_assembly_module_index: Option<ModuleIndex>,
     /// Entry `.bd` path paired with [`Self::program_assembly_module_index`].
     pub entry_source_path: Option<PathBuf>,
+    /// Full assembly for dependency-aware type checking in staged rules.
+    pub program_assembly: Option<crate::projects::ProgramAssembly>,
+    /// When true, semantic gate type-checks entry bodies only (dependency signature prefetch).
+    pub semantic_gate_only: bool,
 }
 
 impl Default for AnalysisOptions {
@@ -31,6 +35,8 @@ impl Default for AnalysisOptions {
             known_assembly_module_paths: None,
             program_assembly_module_index: None,
             entry_source_path: None,
+            program_assembly: None,
+            semantic_gate_only: false,
         }
     }
 }

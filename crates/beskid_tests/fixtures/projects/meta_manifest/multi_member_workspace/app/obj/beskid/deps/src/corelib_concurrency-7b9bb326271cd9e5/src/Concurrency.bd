@@ -1,0 +1,23 @@
+/// Scheduler entry points (`fiber_yield`, monotonic clock, worker pool sizing).
+
+/// Cooperative reschedule of the current fiber.
+pub unit Yield() {
+    __fiber_yield();
+    return;
+}
+
+/// Monotonic milliseconds since an unspecified epoch (not wall clock).
+pub i64 NowMillis() {
+    return __fiber_now_millis();
+}
+
+/// Active scheduler worker count (defaults to host logical CPUs at init).
+pub i64 ProcessorCount() {
+    return __fiber_processor_count();
+}
+
+/// Sets scheduler worker pool size (Go `GOMAXPROCS` analogue).
+/// v1 Phase A: no-op until runtime exposes dynamic resizing.
+pub unit SetProcessorCount(i64 count) {
+    return;
+}

@@ -1,7 +1,7 @@
 //! `beskid analyze` — run builtin semantic rules and print diagnostics.
 
 use anyhow::Result;
-use beskid_analysis::services;
+use beskid_analysis::services::{self, PrepareMode, PrepareOptions, FrontEndOptions};
 use clap::Args;
 use std::path::PathBuf;
 
@@ -36,10 +36,24 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
         args.plain,
     )?;
     pipeline_ui.show_build_graph(&resolved);
-    let counts = pipeline_ui.report_semantic_diagnostics(&services::analyze_source_in_project(
-        &resolved.source_path,
-        &resolved.source,
-    )?);
+    let prepare_options = PrepareOptions {
+        mode: PrepareMode::DiagnosticsOnly,
+        front_end: FrontEndOptions {
+            with_semantic_diagnostics: true,
+            ..Default::default()
+        },
+    };
+    let diagnostics = if resolved.compile_plan.is_some() {
+        let (_, diagnostics) = services::prepare_compilation_diagnostics(
+            &resolved,
+            prepare_options,
+            Some(pipeline_ui.as_ref()),
+        )?;
+        diagnostics
+    } else {
+        services::analyze_source_in_project(&resolved.source_path, &resolved.source)?
+    };
+    let counts = pipeline_ui.report_semantic_diagnostics(&diagnostics);
     pipeline_ui.finish_session(format!(
         "Analyze complete ({})",
         format_severity_summary(counts)

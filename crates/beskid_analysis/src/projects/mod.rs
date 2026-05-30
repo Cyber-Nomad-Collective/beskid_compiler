@@ -14,8 +14,10 @@ pub mod workflow;
 
 pub use assembly::{
     AssemblyError, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
-    assemble_program, effective_roots_for_plan, module_path_exists_on_disk, module_roots_for_plan,
-    module_roots_from_effective,
+    UnitHir, assemble_program, build_hir_units, effective_roots_for_plan,
+    effective_roots_from_lockfile, effective_roots_from_plan_and_workspace,
+    infer_logical_module_path, module_path_exists_on_disk, module_path_to_relative_path,
+    module_roots_from_effective, resolve_module_file,
 };
 pub use compile_plan::{
     build_compile_plan, build_compile_plan_with_policy, build_compile_plan_with_policy_and_graph,

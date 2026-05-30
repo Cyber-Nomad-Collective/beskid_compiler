@@ -18,14 +18,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirIfStatement {
                 span: node.node.condition.span,
                 node: "unit-valued if condition",
             })?;
-        let condition_type = ctx
-            .type_result
-            .expr_types
-            .get(&node.node.condition.span)
-            .copied()
-            .ok_or(CodegenError::MissingExpressionType {
-                span: node.node.condition.span,
-            })?;
+        let condition_type = ctx.require_expr_type_for_node(&node.node.condition)?;
         let is_bool = matches!(
             ctx.type_result.types.get(condition_type),
             Some(TypeInfo::Primitive(HirPrimitiveType::Bool))

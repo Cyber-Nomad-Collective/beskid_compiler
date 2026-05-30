@@ -1,12 +1,24 @@
 use crate::hir::{HirExpressionNode, HirPrimitiveType};
-use crate::resolve::{ItemId, ItemKind};
-use crate::syntax::SpanInfo;
+use crate::resolve::{ItemId, ItemKind, ResolvedType, ResolvedValue};
+use crate::syntax::{SpanInfo, Spanned};
 use crate::types::{TypeId, TypeInfo};
 
 use super::context::{CastIntent, TypeContext, TypeError};
 use std::collections::HashMap;
 
 impl<'a> TypeContext<'a> {
+    pub(super) fn resolved_value_at(&self, span: SpanInfo) -> Option<ResolvedValue> {
+        self.resolution
+            .tables
+            .resolved_value_at(span, self.current_source_path.as_ref())
+    }
+
+    pub(super) fn resolved_type_at(&self, span: SpanInfo) -> Option<ResolvedType> {
+        self.resolution
+            .tables
+            .resolved_type_at(span, self.current_source_path.as_ref())
+    }
+
     pub(super) fn seed_types(&mut self) {
         for primitive in [
             HirPrimitiveType::Bool,
@@ -36,6 +48,73 @@ impl<'a> TypeContext<'a> {
         }
     }
 
+    pub(super) fn infer_generic_args_from_call(
+        &mut self,
+        callee_item_id: Option<crate::resolve::ItemId>,
+        args: &[Spanned<crate::hir::HirExpressionNode>],
+    ) -> Option<Vec<TypeId>> {
+        let item_id = callee_item_id?;
+        let expected_len = self.generic_items.get(&item_id)?.len();
+        if expected_len == 0 {
+            return Some(Vec::new());
+        }
+        for arg in args {
+            let Some(arg_type) = self.type_expression(arg) else {
+                continue;
+            };
+            if let Some(TypeInfo::Applied { args, .. }) = self.type_table.get(arg_type)
+                && args.len() == expected_len
+            {
+                return Some(args.clone());
+            }
+        }
+        None
+    }
+
+    pub(super) fn record_call_kind(&mut self, span: SpanInfo, kind: super::context::CallLoweringKind) {
+        if let Some(path) = &self.current_source_path {
+            let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+            self.scoped_call_kinds
+                .entry(key)
+                .or_default()
+                .insert(span, kind);
+        } else {
+            self.call_kinds.insert(span, kind);
+        }
+    }
+
+    pub(super) fn record_expr_type(&mut self, span: SpanInfo, type_id: TypeId) {
+        if let Some(path) = &self.current_source_path {
+            let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+            self.scoped_expr_types
+                .entry(key)
+                .or_default()
+                .insert(span, type_id);
+        } else {
+            self.expr_types.insert(span, type_id);
+        }
+    }
+
+    /// Commit flat per-unit maps into scoped storage after best-effort dependency typing.
+    pub(super) fn flush_scoped_type_maps_for_current_path(&mut self) {
+        let Some(path) = self.current_source_path.clone() else {
+            return;
+        };
+        let key = path.canonicalize().unwrap_or(path);
+        if !self.expr_types.is_empty() {
+            self.scoped_expr_types
+                .entry(key.clone())
+                .or_default()
+                .extend(self.expr_types.drain());
+        }
+        if !self.call_kinds.is_empty() {
+            self.scoped_call_kinds
+                .entry(key)
+                .or_default()
+                .extend(self.call_kinds.drain());
+        }
+    }
+
     pub(super) fn insert_local_type(&mut self, span: SpanInfo, type_id: TypeId) {
         if let Some(local_id) = self.local_id_for_span(span) {
             self.local_types.insert(local_id, type_id);
@@ -47,10 +126,7 @@ impl<'a> TypeContext<'a> {
     pub(super) fn local_id_for_span(&self, span: SpanInfo) -> Option<crate::resolve::LocalId> {
         self.resolution
             .tables
-            .locals
-            .iter()
-            .find(|info| info.span == span)
-            .map(|info| info.id)
+            .local_id_for_span(span, self.current_source_path.as_ref())
     }
 
     pub(super) fn item_id_for_span(&self, span: SpanInfo) -> Option<crate::resolve::ItemId> {
@@ -240,6 +316,7 @@ impl<'a> TypeContext<'a> {
                 span,
                 from: actual,
                 to: expected,
+                source_path: self.current_source_path.clone(),
             });
             return;
         }

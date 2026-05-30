@@ -5,7 +5,7 @@ use crate::hir::{
     HirMemberExpression, HirPath, HirPathExpression, HirPattern, HirPrimitiveType,
     HirStructLiteralExpression, HirUnaryExpression, HirUnaryOp,
 };
-use crate::resolve::{ItemKind, ResolvedValue};
+use crate::resolve::{ItemKind, ResolvedType, ResolvedValue};
 use crate::syntax::Spanned;
 use crate::types::{TypeId, TypeInfo};
 
@@ -114,7 +114,7 @@ impl<'a> TypeContext<'a> {
         };
 
         if let Some(type_id) = type_id {
-            self.expr_types.insert(expression.span, type_id);
+            self.record_expr_type(expression.span, type_id);
         }
         type_id
     }
@@ -311,7 +311,7 @@ impl<'a> TypeContext<'a> {
                     .push(TypeError::InvalidEventInvocationScope { span: call.span });
             }
 
-            self.call_kinds.insert(
+            self.record_call_kind(
                 call.span,
                 CallLoweringKind::EventInvoke {
                     receiver_source,
@@ -336,14 +336,10 @@ impl<'a> TypeContext<'a> {
                 self.check_fiber_join_call(call.span, handle);
             }
             let segments = &path_expr.node.path.node.segments;
-            let resolved = self
-                .resolution
-                .tables
-                .resolved_values
-                .get(&path_expr.node.path.span);
+            let resolved = self.resolved_value_at(path_expr.node.path.span);
             if segments.len() >= 2
                 && let Some(ResolvedValue::Local(local_id)) = resolved
-                && let Some(receiver_type) = self.local_types.get(local_id).copied()
+                && let Some(receiver_type) = self.local_types.get(&local_id).copied()
             {
                 let method_name = segments[1].node.name.node.name.as_str();
                 if let Some(method_item_id) =
@@ -371,11 +367,11 @@ impl<'a> TypeContext<'a> {
                             self.require_same_type(arg.span, *expected, actual);
                         }
                     }
-                    self.call_kinds.insert(
+                    self.record_call_kind(
                         call.span,
                         CallLoweringKind::MethodDispatch {
                             method_item_id,
-                            receiver_source: MethodReceiverSource::Local(*local_id),
+                            receiver_source: MethodReceiverSource::Local(local_id),
                             receiver_type,
                         },
                     );
@@ -401,11 +397,11 @@ impl<'a> TypeContext<'a> {
                             self.require_same_type(arg.span, *expected, actual);
                         }
                     }
-                    self.call_kinds.insert(
+                    self.record_call_kind(
                         call.span,
                         CallLoweringKind::ContractDispatch {
                             contract_item_id,
-                            receiver_source: MethodReceiverSource::Local(*local_id),
+                            receiver_source: MethodReceiverSource::Local(local_id),
                             receiver_type,
                         },
                     );
@@ -420,7 +416,7 @@ impl<'a> TypeContext<'a> {
                 let method_name = segments[1].node.name.node.name.as_str();
                 if let Some(signature) = self
                     .contract_signatures
-                    .get(&(*contract_item_id, method_name.to_string()))
+                    .get(&(contract_item_id, method_name.to_string()))
                     .cloned()
                 {
                     if call.node.args.len() != signature.params.len() {
@@ -438,15 +434,15 @@ impl<'a> TypeContext<'a> {
                     }
                     let receiver_type = self
                         .named_types
-                        .get(contract_item_id)
+                        .get(&contract_item_id)
                         .copied()
                         .unwrap_or_else(|| {
-                            self.type_table.intern(TypeInfo::Named(*contract_item_id))
+                            self.type_table.intern(TypeInfo::Named(contract_item_id))
                         });
-                    self.call_kinds.insert(
+                    self.record_call_kind(
                         call.span,
                         CallLoweringKind::ContractDispatch {
-                            contract_item_id: *contract_item_id,
+                            contract_item_id,
                             receiver_source: MethodReceiverSource::Expression(
                                 path_expr.node.path.span,
                             ),
@@ -461,16 +457,12 @@ impl<'a> TypeContext<'a> {
         if let HirExpressionNode::MemberExpression(member) = &call.node.callee.node {
             // Special-case: contract-as-namespace calls like `C.getpid()` where `C` is a contract item.
             if let HirExpressionNode::PathExpression(path_expr) = &member.node.target.node
-                && let Some(super::super::super::resolve::ResolvedValue::Item(item_id)) = self
-                    .resolution
-                    .tables
-                    .resolved_values
-                    .get(&path_expr.node.path.span)
+                && let Some(super::super::super::resolve::ResolvedValue::Item(item_id)) = self.resolved_value_at(path_expr.node.path.span)
             {
                 let method_name = member.node.member.node.name.as_str().to_string();
                 if let Some(signature) = self
                     .contract_signatures
-                    .get(&(*item_id, method_name.clone()))
+                    .get(&(item_id, method_name.clone()))
                     .cloned()
                 {
                     if call.node.args.len() != signature.params.len() {
@@ -488,13 +480,13 @@ impl<'a> TypeContext<'a> {
                     }
                     let receiver_type = self
                         .named_types
-                        .get(item_id)
+                        .get(&item_id)
                         .copied()
-                        .unwrap_or_else(|| self.type_table.intern(TypeInfo::Named(*item_id)));
-                    self.call_kinds.insert(
+                        .unwrap_or_else(|| self.type_table.intern(TypeInfo::Named(item_id)));
+                    self.record_call_kind(
                         call.span,
                         CallLoweringKind::ContractDispatch {
-                            contract_item_id: *item_id,
+                            contract_item_id: item_id,
                             receiver_source: MethodReceiverSource::Expression(
                                 member.node.target.span,
                             ),
@@ -529,7 +521,7 @@ impl<'a> TypeContext<'a> {
                         self.require_same_type(arg.span, *expected, actual);
                     }
                 }
-                self.call_kinds.insert(
+                self.record_call_kind(
                     call.span,
                     CallLoweringKind::MethodDispatch {
                         method_item_id,
@@ -559,7 +551,7 @@ impl<'a> TypeContext<'a> {
                         self.require_same_type(arg.span, *expected, actual);
                     }
                 }
-                self.call_kinds.insert(
+                self.record_call_kind(
                     call.span,
                     CallLoweringKind::ContractDispatch {
                         contract_item_id,
@@ -573,10 +565,7 @@ impl<'a> TypeContext<'a> {
 
         let is_item_callee = match &call.node.callee.node {
             HirExpressionNode::PathExpression(path_expr) => matches!(
-                self.resolution
-                    .tables
-                    .resolved_values
-                    .get(&path_expr.node.path.span),
+                self.resolved_value_at(path_expr.node.path.span),
                 Some(ResolvedValue::Item(_))
             ),
             _ => false,
@@ -603,8 +592,7 @@ impl<'a> TypeContext<'a> {
                     self.require_same_type(arg.span, *expected, actual);
                 }
             }
-            self.call_kinds
-                .insert(call.span, CallLoweringKind::CallableValueCall);
+            self.record_call_kind(call.span, CallLoweringKind::CallableValueCall);
             return Some(return_type);
         }
 
@@ -624,18 +612,18 @@ impl<'a> TypeContext<'a> {
                     }
                     generic_args = Some(args);
                 }
-                match self.resolution.tables.resolved_values.get(&span) {
+                match self.resolved_value_at(span) {
                     Some(ResolvedValue::Item(item_id)) => {
-                        callee_item_id = Some(*item_id);
-                        if let Some(index) = self.resolution.builtin_items.get(item_id)
+                        callee_item_id = Some(item_id);
+                        if let Some(index) = self.resolution.builtin_items.get(&item_id)
                             && let Some(spec) = builtin_specs().get(*index)
                         {
                             builtin_param_kinds = Some(spec.params.to_vec());
                         }
-                        if let Some(expected) = self.generic_items.get(item_id) {
+                        if let Some(expected) = self.generic_items.get(&item_id) {
                             generic_expected = Some(expected.len());
                         }
-                        self.function_signatures.get(item_id).cloned()
+                        self.function_signatures.get(&item_id).cloned()
                     }
                     _ => None,
                 }
@@ -650,8 +638,7 @@ impl<'a> TypeContext<'a> {
         };
 
         if let Some(item_id) = callee_item_id {
-            self.call_kinds
-                .insert(call.span, CallLoweringKind::ItemCall { item_id });
+            self.record_call_kind(call.span, CallLoweringKind::ItemCall { item_id });
         }
 
         if let Some(expected) = generic_expected {
@@ -668,9 +655,16 @@ impl<'a> TypeContext<'a> {
                 }
                 None => {
                     if expected != 0 {
-                        self.errors
-                            .push(TypeError::MissingTypeArguments { span: call.span });
-                        return Some(signature.return_type);
+                        if let Some(inferred) = self.infer_generic_args_from_call(
+                            callee_item_id,
+                            &call.node.args,
+                        ) {
+                            generic_args = Some(inferred);
+                        } else {
+                            self.errors
+                                .push(TypeError::MissingTypeArguments { span: call.span });
+                            return Some(signature.return_type);
+                        }
                     }
                 }
             }
@@ -685,31 +679,11 @@ impl<'a> TypeContext<'a> {
             return Some(signature.return_type);
         }
 
-        let substitution = if let (Some(args), Some(expected)) = (&generic_args, generic_expected) {
-            if expected == args.len() {
-                args.clone()
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
+        let substitution = generic_args.clone().unwrap_or_default();
 
-        let mapping = if let (Some(item_id), Some(expected), false) =
-            (callee_item_id, generic_expected, substitution.is_empty())
-        {
-            let mut mapping = std::collections::HashMap::new();
-            if expected == substitution.len()
-                && let Some(names) = self.generic_items.get(&item_id)
-            {
-                for (name, arg) in names.iter().zip(substitution.iter()) {
-                    mapping.insert(name.clone(), *arg);
-                }
-            }
-            mapping
-        } else {
-            std::collections::HashMap::new()
-        };
+        let mapping = callee_item_id
+            .map(|item_id| self.generic_substitution_mapping(item_id, &substitution))
+            .unwrap_or_default();
 
         let substituted_params = if mapping.is_empty() {
             signature.params.clone()
@@ -863,6 +837,27 @@ impl<'a> TypeContext<'a> {
             return None;
         };
         let mapping = self.generic_mapping_for_type_id(type_id);
+        let mut applied_type_id = type_id;
+        if mapping.is_empty()
+            && let Some(expected) = self.contextual_expected_type
+            && let Some(expected_item) = self.named_item_id(expected)
+            && expected_item == item_id
+        {
+            applied_type_id = expected;
+        } else if mapping.is_empty()
+            && let Some(generic_names) = self.generic_items.get(&item_id)
+            && !generic_names.is_empty()
+            && let Some(arg_type) = constructor
+                .node
+                .args
+                .first()
+                .and_then(|arg| self.type_expression(arg))
+            && let Some(TypeInfo::Applied { base, .. }) = self.type_table.get(arg_type)
+            && *base == item_id
+        {
+            applied_type_id = arg_type;
+        }
+        let mapping = self.generic_mapping_for_type_id(applied_type_id);
         let variants = self.enum_variants.get(&item_id).cloned().or_else(|| {
             self.resolution
                 .items
@@ -910,7 +905,7 @@ impl<'a> TypeContext<'a> {
             }
         }
 
-        Some(type_id)
+        Some(applied_type_id)
     }
 
     fn type_member_expression(&mut self, member: &Spanned<HirMemberExpression>) -> Option<TypeId> {
@@ -979,13 +974,9 @@ impl<'a> TypeContext<'a> {
             return false;
         }
         let field_name = segments[1].node.name.node.name.as_str();
-        let Some(local_id) = self
-            .resolution
-            .tables
-            .resolved_values
-            .get(&path_expr.node.path.span)
+        let Some(local_id) = self.resolved_value_at(path_expr.node.path.span)
             .and_then(|resolved| match resolved {
-                ResolvedValue::Local(local_id) => Some(*local_id),
+                ResolvedValue::Local(local_id) => Some(local_id),
                 _ => None,
             })
         else {
@@ -1038,13 +1029,9 @@ impl<'a> TypeContext<'a> {
                     return None;
                 }
                 let field_name = segments[1].node.name.node.name.as_str();
-                let local_id = self
-                    .resolution
-                    .tables
-                    .resolved_values
-                    .get(&path_expr.node.path.span)
+                let local_id = self.resolved_value_at(path_expr.node.path.span)
                     .and_then(|resolved| match resolved {
-                        ResolvedValue::Local(local_id) => Some(*local_id),
+                        ResolvedValue::Local(local_id) => Some(local_id),
                         _ => None,
                     })?;
                 let receiver_type = *self.local_types.get(&local_id)?;
@@ -1077,8 +1064,16 @@ impl<'a> TypeContext<'a> {
         &mut self,
         match_expr: &Spanned<HirMatchExpression>,
     ) -> Option<TypeId> {
+        self.type_match_expression_with_expected(match_expr, self.contextual_expected_type)
+    }
+
+    pub(super) fn type_match_expression_with_expected(
+        &mut self,
+        match_expr: &Spanned<HirMatchExpression>,
+        outer_expected: Option<TypeId>,
+    ) -> Option<TypeId> {
         let scrutinee_type = self.type_expression(&match_expr.node.scrutinee);
-        let mut expected: Option<TypeId> = None;
+        let mut expected = outer_expected;
         for arm in &match_expr.node.arms {
             self.type_match_arm(scrutinee_type, arm, &mut expected);
         }
@@ -1095,7 +1090,10 @@ impl<'a> TypeContext<'a> {
             self.require_bool(guard.span, guard);
         }
         self.type_pattern(scrutinee_type, &arm.node.pattern);
+        let previous_expected = self.contextual_expected_type;
+        self.contextual_expected_type = *expected;
         let arm_type = self.type_expression(&arm.node.value);
+        self.contextual_expected_type = previous_expected;
         if let Some(actual) = arm_type {
             if let Some(expected_type) = *expected {
                 if expected_type != actual
@@ -1246,7 +1244,18 @@ impl<'a> TypeContext<'a> {
             | HirBinaryOp::Lte
             | HirBinaryOp::Gt
             | HirBinaryOp::Gte => {
-                if self.is_comparable(left) {
+                let ordering = matches!(
+                    binary.node.op.node,
+                    HirBinaryOp::Lt | HirBinaryOp::Lte | HirBinaryOp::Gt | HirBinaryOp::Gte
+                );
+                let comparable = if ordering {
+                    self.is_comparable(left)
+                } else if self.is_comparable(left) {
+                    true
+                } else {
+                    left == right && self.is_identity_comparable(left)
+                };
+                if comparable {
                     self.primitive_type_id(HirPrimitiveType::Bool)
                 } else {
                     self.errors
@@ -1325,9 +1334,9 @@ impl<'a> TypeContext<'a> {
         if path.node.segments.len() > 1 {
             return self.type_struct_field_path(span, path);
         }
-        match self.resolution.tables.resolved_values.get(&span) {
+        match self.resolved_value_at(span) {
             Some(ResolvedValue::Local(local)) => {
-                self.local_types.get(local).copied().or_else(|| {
+                self.local_types.get(&local).copied().or_else(|| {
                     self.errors.push(TypeError::UnknownValueType { span });
                     None
                 })
@@ -1350,13 +1359,9 @@ impl<'a> TypeContext<'a> {
     ) -> Option<TypeId> {
         let segments = &path.node.segments;
         let field_name = segments.get(1)?.node.name.node.name.clone();
-        let local_id = self
-            .resolution
-            .tables
-            .resolved_values
-            .get(&span)
+        let local_id = self.resolved_value_at(span)
             .and_then(|resolved| match resolved {
-                ResolvedValue::Local(local_id) => Some(*local_id),
+                ResolvedValue::Local(local_id) => Some(local_id),
                 _ => None,
             });
         let Some(local_id) = local_id else {
@@ -1402,8 +1407,16 @@ impl<'a> TypeContext<'a> {
     pub(super) fn type_id_for_enum_path(
         &mut self,
         span: crate::syntax::SpanInfo,
-        _path: &Spanned<crate::hir::HirEnumPath>,
+        path: &Spanned<crate::hir::HirEnumPath>,
     ) -> Option<TypeId> {
-        self.type_id_for_type_path(span)
+        match self.resolved_type_at(span) {
+            Some(ResolvedType::Item(item_id)) => self.named_types.get(&item_id).copied(),
+            Some(ResolvedType::Generic(name)) => self.generic_params.get(&name).copied(),
+            None => {
+                let type_name = path.node.type_name.node.name.as_str();
+                self.item_id_for_name(type_name, ItemKind::Enum)
+                    .and_then(|item_id| self.named_types.get(&item_id).copied())
+            }
+        }
     }
 }

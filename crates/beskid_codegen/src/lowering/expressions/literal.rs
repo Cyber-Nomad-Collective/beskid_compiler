@@ -1,6 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::CodegenContext;
 use crate::lowering::context::CodegenResult;
+use crate::lowering::locals::expr_type_at;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::{HirLiteral, HirPrimitiveType};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
@@ -18,14 +19,17 @@ pub(crate) fn lower_literal(
     codegen: &mut CodegenContext,
     builder: &mut FunctionBuilder,
 ) -> CodegenResult<Value> {
-    let type_id = type_result
-        .expr_types
-        .get(&expression_span)
-        .copied()
+    let type_id = expr_type_at(
+        type_result,
+        expression_span,
+        codegen.current_source_path.as_ref(),
+    )
         .or_else(|| match &literal.node {
             HirLiteral::Integer(_) => find_literal_type(type_result, HirPrimitiveType::I32),
             HirLiteral::Float(_) => find_literal_type(type_result, HirPrimitiveType::F64),
             HirLiteral::Bool(_) => find_literal_type(type_result, HirPrimitiveType::Bool),
+            HirLiteral::String(_) => find_literal_type(type_result, HirPrimitiveType::String),
+            HirLiteral::Char(_) => find_literal_type(type_result, HirPrimitiveType::Char),
             _ => None,
         })
         .ok_or(CodegenError::UnsupportedNode {

@@ -1,0 +1,40 @@
+/// Mutual exclusion between fibers (not for cross-fiber data transfer).
+use Concurrency.MutexError;
+use Concurrency.MutexGuard;
+use Concurrency.Status;
+use Query.Contracts.Option;
+
+pub struct Mutex {
+    i64 handle,
+}
+
+pub Mutex Create() {
+    i64 handle = __mutex_create();
+    return Mutex { handle: handle };
+}
+
+/// Parks until the mutex is acquired or the fiber is cancelled.
+pub Core.Results.Result<MutexGuard, MutexError> Lock(Mutex self) {
+    i64 status = __mutex_lock(self.handle);
+    if status == Status.Ok() {
+        return Result::Ok(MutexGuard { mutexHandle: self.handle });
+    }
+    if status == Status.Cancelled() {
+        return Result::Error(MutexError::Cancelled());
+    }
+    return Result::Error(MutexError::Cancelled());
+}
+
+/// Returns `None` when the mutex would block.
+pub Option<MutexGuard> TryLock(Mutex self) {
+    i64 status = __mutex_try_lock(self.handle);
+    if status == Status.Ok() {
+        return Option::Some(MutexGuard { mutexHandle: self.handle });
+    }
+    return Option::None();
+}
+
+pub unit Unlock(MutexGuard guard) {
+    __mutex_unlock(guard.mutexHandle);
+    return;
+}

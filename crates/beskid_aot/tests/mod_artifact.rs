@@ -4,6 +4,7 @@ use beskid_aot::{
     ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, build_mod_artifact,
     compute_mod_artifact_key,
 };
+use beskid_aot::object_module::BeskidObjectModule;
 use beskid_codegen::CodegenArtifact;
 
 #[test]
@@ -86,4 +87,29 @@ project {
     assert!(sidecar.registrations.is_empty());
     assert_eq!(sidecar.artifact_key, "");
     assert_eq!(sidecar.artifact_dir, std::path::PathBuf::new());
+}
+
+#[test]
+fn lowered_program_validates_and_compiles_to_object() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let source_path = temp.path().join("main.bd");
+    let source = r#"
+i32 helper() {
+    return 7;
+}
+
+i32 main() {
+    return helper();
+}
+"#;
+    fs::write(&source_path, source).expect("write source");
+
+    let lowered =
+        beskid_codegen::lower_source(&source_path, source, false).expect("lower fixture");
+    beskid_codegen::validate_artifact(&lowered.artifact).expect("validate link plan");
+
+    let mut object = BeskidObjectModule::new(None).expect("object module");
+    object
+        .compile_artifact(&lowered.artifact, None)
+        .expect("compile artifact");
 }

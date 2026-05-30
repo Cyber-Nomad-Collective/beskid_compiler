@@ -1,8 +1,9 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility;
 use crate::lowering::function::{
-    lower_function_with_name, mangle_function_name, mangle_method_name,
+    lower_function, lower_function_with_name, mangle_function_name, mangle_method_name,
 };
+use crate::lowering::locals::{local_id_for_span, resolved_value_at};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -79,16 +80,14 @@ fn lambda_signature_type_ids(
 ) -> Result<(Vec<TypeId>, TypeId), CodegenError> {
     let mut params = Vec::with_capacity(lambda.node.parameters.len());
     for parameter in &lambda.node.parameters {
-        let local_id = ctx
-            .resolution
-            .tables
-            .locals
-            .iter()
-            .find(|info| info.span == parameter.node.name.span)
-            .map(|info| info.id)
-            .ok_or(CodegenError::InvalidLocalBinding {
-                span: parameter.node.name.span,
-            })?;
+        let local_id = local_id_for_span(
+            ctx.resolution,
+            parameter.node.name.span,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .ok_or(CodegenError::InvalidLocalBinding {
+            span: parameter.node.name.span,
+        })?;
         let type_id = ctx.type_result.local_types.get(&local_id).copied().ok_or(
             CodegenError::MissingLocalType {
                 span: parameter.node.name.span,
@@ -97,14 +96,7 @@ fn lambda_signature_type_ids(
         params.push(type_id);
     }
 
-    let return_type = ctx
-        .type_result
-        .expr_types
-        .get(&lambda.node.body.span)
-        .copied()
-        .ok_or(CodegenError::MissingExpressionType {
-            span: lambda.node.body.span,
-        })?;
+    let return_type = ctx.require_expr_type(lambda.node.body.span)?;
 
     Ok((params, return_type))
 }
@@ -246,12 +238,7 @@ fn lower_event_invoke_call(
                 span: arg.span,
                 node: "unit-valued event argument",
             })?;
-            let actual = ctx
-                .type_result
-                .expr_types
-                .get(&arg.span)
-                .copied()
-                .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+            let actual = ctx.require_expr_type(arg.span)?;
             ensure_type_compatibility(
                 arg.span,
                 *expected,
@@ -412,16 +399,14 @@ fn lower_lambda_to_symbol(
     let mut state = crate::lowering::function::FunctionLoweringState::default();
     let param_values = builder.block_params(entry).to_vec();
     for (parameter, value) in lambda.node.parameters.iter().zip(param_values.into_iter()) {
-        let local_id = ctx
-            .resolution
-            .tables
-            .locals
-            .iter()
-            .find(|info| info.span == parameter.node.name.span)
-            .map(|info| info.id)
-            .ok_or(CodegenError::InvalidLocalBinding {
-                span: parameter.node.name.span,
-            })?;
+        let local_id = local_id_for_span(
+            ctx.resolution,
+            parameter.node.name.span,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .ok_or(CodegenError::InvalidLocalBinding {
+            span: parameter.node.name.span,
+        })?;
         let type_id = ctx.type_result.local_types.get(&local_id).copied().ok_or(
             CodegenError::MissingLocalType {
                 span: parameter.node.name.span,
@@ -539,14 +524,13 @@ fn lower_function_typed_argument(
             lower_function_typed_argument(&grouped.node.expr, expected_type, ctx)
         }
         HirExpressionNode::PathExpression(path_expr) => {
-            match ctx
-                .resolution
-                .tables
-                .resolved_values
-                .get(&path_expr.node.path.span)
-            {
+            match resolved_value_at(
+                ctx.resolution,
+                path_expr.node.path.span,
+                ctx.codegen.current_source_path.as_ref(),
+            ) {
                 Some(ResolvedValue::Local(local_id)) => {
-                    if let Some(lambda_ptr) = ctx.state.local_lambdas.get(local_id).copied() {
+                    if let Some(lambda_ptr) = ctx.state.local_lambdas.get(&local_id).copied() {
                         // SAFETY: pointer originates from immutable HIR nodes owned by lowering context.
                         let lambda = unsafe { lambda_ptr.as_ref() }.ok_or(
                             CodegenError::UnsupportedNode {
@@ -642,12 +626,7 @@ fn lower_indirect_function_call_with_signature(
                 span: arg.span,
                 node: "unit-valued call argument",
             })?;
-            let actual = ctx
-                .type_result
-                .expr_types
-                .get(&arg.span)
-                .copied()
-                .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+            let actual = ctx.require_expr_type(arg.span)?;
             ensure_type_compatibility(
                 arg.span,
                 *expected,
@@ -723,12 +702,12 @@ fn lower_contract_dispatch_call(
     // emit a direct external call with no implicit receiver argument.
     if let HirExpressionNode::MemberExpression(member_expr) = &node.node.callee.node
         && let HirExpressionNode::PathExpression(path) = &member_expr.node.target.node
-        && let Some(resolved) = ctx
-            .resolution
-            .tables
-            .resolved_values
-            .get(&path.node.path.span)
-        && matches!(resolved, ResolvedValue::Item(item_id) if *item_id == contract_item_id)
+        && let Some(resolved) = resolved_value_at(
+            ctx.resolution,
+            path.node.path.span,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        && matches!(resolved, ResolvedValue::Item(item_id) if item_id == contract_item_id)
     {
         // Direct extern call: build args from call site only, no receiver wrapper.
         if signature.params.len() != node.node.args.len() {
@@ -748,12 +727,7 @@ fn lower_contract_dispatch_call(
                     span: arg.span,
                     node: "unit-valued call argument",
                 })?;
-                let actual = ctx
-                    .type_result
-                    .expr_types
-                    .get(&arg.span)
-                    .copied()
-                    .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+                let actual = ctx.require_expr_type(arg.span)?;
                 ensure_type_compatibility(
                     arg.span,
                     *expected,
@@ -803,12 +777,12 @@ fn lower_contract_dispatch_call(
     if let HirExpressionNode::PathExpression(path_expr) = &node.node.callee.node {
         // Expect at least two segments: C.getpid
         if path_expr.node.path.node.segments.len() >= 2
-            && let Some(ResolvedValue::Item(item_id)) = ctx
-                .resolution
-                .tables
-                .resolved_values
-                .get(&path_expr.node.path.span)
-            && *item_id == contract_item_id
+            && let Some(ResolvedValue::Item(item_id)) = resolved_value_at(
+                ctx.resolution,
+                path_expr.node.path.span,
+                ctx.codegen.current_source_path.as_ref(),
+            )
+            && item_id == contract_item_id
         {
             // Build direct extern call with method_name
             let mut args = Vec::with_capacity(node.node.args.len());
@@ -822,12 +796,7 @@ fn lower_contract_dispatch_call(
                         span: arg.span,
                         node: "unit-valued call argument",
                     })?;
-                    let actual = ctx
-                        .type_result
-                        .expr_types
-                        .get(&arg.span)
-                        .copied()
-                        .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+                    let actual = ctx.require_expr_type(arg.span)?;
                     ensure_type_compatibility(
                         arg.span,
                         *expected,
@@ -926,12 +895,7 @@ fn lower_contract_dispatch_call(
                 span: arg.span,
                 node: "unit-valued call argument",
             })?;
-            let actual = ctx
-                .type_result
-                .expr_types
-                .get(&arg.span)
-                .copied()
-                .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+            let actual = ctx.require_expr_type(arg.span)?;
             ensure_type_compatibility(
                 arg.span,
                 *expected,
@@ -992,16 +956,14 @@ fn lower_local_lambda_call(
     )> = Vec::with_capacity(lambda.node.parameters.len());
 
     for (parameter, arg_expr) in lambda.node.parameters.iter().zip(node.node.args.iter()) {
-        let local_id = ctx
-            .resolution
-            .tables
-            .locals
-            .iter()
-            .find(|info| info.span == parameter.node.name.span)
-            .map(|info| info.id)
-            .ok_or(CodegenError::InvalidLocalBinding {
-                span: parameter.node.name.span,
-            })?;
+        let local_id = local_id_for_span(
+            ctx.resolution,
+            parameter.node.name.span,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .ok_or(CodegenError::InvalidLocalBinding {
+            span: parameter.node.name.span,
+        })?;
 
         let expected_type = ctx.type_result.local_types.get(&local_id).copied().ok_or(
             CodegenError::MissingLocalType {
@@ -1016,14 +978,13 @@ fn lower_local_lambda_call(
         if expected_is_function {
             let lambda_binding = match &arg_expr.node {
                 HirExpressionNode::PathExpression(path_expr) => {
-                    match ctx
-                        .resolution
-                        .tables
-                        .resolved_values
-                        .get(&path_expr.node.path.span)
-                    {
+                    match resolved_value_at(
+                        ctx.resolution,
+                        path_expr.node.path.span,
+                        ctx.codegen.current_source_path.as_ref(),
+                    ) {
                         Some(ResolvedValue::Local(arg_local_id)) => {
-                            ctx.state.local_lambdas.get(arg_local_id).copied()
+                            ctx.state.local_lambdas.get(&arg_local_id).copied()
                         }
                         _ => None,
                     }
@@ -1036,14 +997,13 @@ fn lower_local_lambda_call(
                         Some(arg_lambda as *const Spanned<_>)
                     }
                     HirExpressionNode::PathExpression(path_expr) => {
-                        match ctx
-                            .resolution
-                            .tables
-                            .resolved_values
-                            .get(&path_expr.node.path.span)
-                        {
+                        match resolved_value_at(
+                            ctx.resolution,
+                            path_expr.node.path.span,
+                            ctx.codegen.current_source_path.as_ref(),
+                        ) {
                             Some(ResolvedValue::Local(arg_local_id)) => {
-                                ctx.state.local_lambdas.get(arg_local_id).copied()
+                                ctx.state.local_lambdas.get(&arg_local_id).copied()
                             }
                             _ => None,
                         }
@@ -1064,14 +1024,7 @@ fn lower_local_lambda_call(
             span: arg_expr.span,
             node: "unit-valued lambda argument",
         })?;
-        let actual_type = ctx
-            .type_result
-            .expr_types
-            .get(&arg_expr.span)
-            .copied()
-            .ok_or(CodegenError::MissingExpressionType {
-                span: arg_expr.span,
-            })?;
+        let actual_type = ctx.require_expr_type(arg_expr.span)?;
         let arg_value = ensure_type_compatibility(
             arg_expr.span,
             expected_type,
@@ -1192,12 +1145,7 @@ fn lower_method_dispatch_call(
                 span: arg.span,
                 node: "unit-valued call argument",
             })?;
-            let actual = ctx
-                .type_result
-                .expr_types
-                .get(&arg.span)
-                .copied()
-                .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+            let actual = ctx.require_expr_type(arg.span)?;
             ensure_type_compatibility(
                 arg.span,
                 *expected,
@@ -1260,7 +1208,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let call_kind = ctx.type_result.call_kinds.get(&node.span).copied();
+        let call_kind = ctx
+            .type_result
+            .call_kind_at(node.span, ctx.codegen.current_source_path.as_ref());
         if let Some(CallLoweringKind::MethodDispatch {
             method_item_id,
             receiver_source,
@@ -1301,18 +1251,18 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                     lambda_from_callee(&grouped.node.expr, ctx)
                 }
                 HirExpressionNode::PathExpression(path_expr) => {
-                    let resolved = ctx
-                        .resolution
-                        .tables
-                        .resolved_values
-                        .get(&path_expr.node.path.span)
-                        .ok_or(CodegenError::MissingResolvedValue {
-                            span: path_expr.node.path.span,
-                        })?;
+                    let resolved = resolved_value_at(
+                        ctx.resolution,
+                        path_expr.node.path.span,
+                        ctx.codegen.current_source_path.as_ref(),
+                    )
+                    .ok_or(CodegenError::MissingResolvedValue {
+                        span: path_expr.node.path.span,
+                    })?;
                     let ResolvedValue::Local(local_id) = resolved else {
                         return Ok(None);
                     };
-                    let Some(lambda_ptr) = ctx.state.local_lambdas.get(local_id).copied() else {
+                    let Some(lambda_ptr) = ctx.state.local_lambdas.get(&local_id).copied() else {
                         return Ok(None);
                     };
                     // SAFETY: pointer originates from an immutable borrow of HIR owned by the lowering context.
@@ -1331,11 +1281,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             return lower_local_lambda_call(node, lambda, ctx);
         }
 
-        if let Some(callee_type_id) = ctx
-            .type_result
-            .expr_types
-            .get(&node.node.callee.span)
-            .copied()
+        if let Some(callee_type_id) = ctx.expr_type(node.node.callee.span)
             && let Some(TypeInfo::Function {
                 params,
                 return_type,
@@ -1344,10 +1290,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             let callee_is_item_path = matches!(call_kind, Some(CallLoweringKind::ItemCall { .. }))
                 || if let HirExpressionNode::PathExpression(path_expr) = &node.node.callee.node {
                     matches!(
-                        ctx.resolution
-                            .tables
-                            .resolved_values
-                            .get(&path_expr.node.path.span),
+                        resolved_value_at(
+                            ctx.resolution,
+                            path_expr.node.path.span,
+                            ctx.codegen.current_source_path.as_ref(),
+                        ),
                         Some(ResolvedValue::Item(_))
                     )
                 } else {
@@ -1379,24 +1326,24 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
         let item_id = if let Some(CallLoweringKind::ItemCall { item_id }) = call_kind {
             item_id
         } else {
-            let resolved = ctx
-                .resolution
-                .tables
-                .resolved_values
-                .get(&path_expr.node.path.span)
-                .ok_or(CodegenError::MissingResolvedValue {
-                    span: path_expr.node.path.span,
-                })?;
+            let resolved = resolved_value_at(
+                ctx.resolution,
+                path_expr.node.path.span,
+                ctx.codegen.current_source_path.as_ref(),
+            )
+            .ok_or(CodegenError::MissingResolvedValue {
+                span: path_expr.node.path.span,
+            })?;
 
             match resolved {
-                ResolvedValue::Item(item_id) => *item_id,
+                ResolvedValue::Item(item_id) => item_id,
                 ResolvedValue::Local(local_id) => {
-                    let local_type = ctx.type_result.local_types.get(local_id).copied();
+                    let local_type = ctx.type_result.local_types.get(&local_id).copied();
                     let local_is_function = local_type
                         .and_then(|type_id| ctx.type_result.types.get(type_id))
                         .is_some_and(|info| matches!(info, TypeInfo::Function { .. }));
                     if local_is_function {
-                        return lower_indirect_function_call(node, *local_id, ctx);
+                        return lower_indirect_function_call(node, local_id, ctx);
                     }
 
                     return Err(CodegenError::UnsupportedNode {
@@ -1497,12 +1444,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                             node: "typed builtin parameter mismatch",
                         },
                     )?;
-                    let actual = ctx
-                        .type_result
-                        .expr_types
-                        .get(&arg.span)
-                        .copied()
-                        .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+                    let actual = ctx.require_expr_type(arg.span)?;
                     value = ensure_type_compatibility(
                         arg.span,
                         *expected,
@@ -1526,12 +1468,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                             span: arg.span,
                             node: "unit-valued call argument",
                         })?;
-                        let actual = ctx
-                            .type_result
-                            .expr_types
-                            .get(&arg.span)
-                            .copied()
-                            .ok_or(CodegenError::MissingExpressionType { span: arg.span })?;
+                        let actual = ctx.require_expr_type(arg.span)?;
 
                         ensure_type_compatibility(
                             arg.span,
@@ -1610,8 +1547,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                 .ok_or(CodegenError::MissingSymbol("function item"))?
                 .name
                 .clone();
-            if generic_args.is_empty() {
-                base_name
+            let symbol_name = if generic_args.is_empty() {
+                base_name.clone()
             } else {
                 let key = crate::lowering::context::MonomorphKey {
                     item: item_id,
@@ -1639,7 +1576,16 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                         .insert(key, mangled.clone());
                     mangled
                 }
+            };
+            if !ctx.codegen.symbol_emitted(&symbol_name)
+                && !ctx.codegen.emitting_items.contains(&item_id)
+            {
+                return Err(CodegenError::VerificationFailed {
+                    function: symbol_name.clone(),
+                    message: "link plan missing callee".to_string(),
+                });
             }
+            symbol_name
         };
         let sig_ref = ctx.builder.func.import_signature(signature_ir);
         let func_ref = ctx.builder.func.import_function(ExtFuncData {

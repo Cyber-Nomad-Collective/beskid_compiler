@@ -1,6 +1,8 @@
 use crate::errors::CodegenError;
 use crate::lowering::descriptor::{TypeDescriptorData, TypeLayout};
 use beskid_analysis::resolve::ItemId;
+use std::collections::HashSet;
+use std::path::PathBuf;
 use beskid_analysis::types::TypeId;
 use cranelift_codegen::ir::Function;
 use std::collections::HashMap;
@@ -56,6 +58,10 @@ pub struct CodegenContext {
     pub type_descriptors: HashMap<TypeId, TypeDescriptorData>,
     pub string_literals: HashMap<String, Vec<u8>>,
     pub monomorphized_functions: HashMap<MonomorphKey, String>,
+    /// Items currently being lowered (detects mutual recursion during emission).
+    pub emitting_items: HashSet<ItemId>,
+    /// Source file for the function body currently being lowered (cross-unit local lookup).
+    pub current_source_path: Option<PathBuf>,
     next_string_literal_id: usize,
 }
 
@@ -63,6 +69,11 @@ impl CodegenContext {
     /// Empty context (no functions or literals yet).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether a symbol name was already lowered into [`Self::lowered_functions`].
+    pub fn symbol_emitted(&self, name: &str) -> bool {
+        self.lowered_functions.iter().any(|f| f.name == name)
     }
 
     /// Compute or return cached [`crate::lowering::descriptor::TypeLayout`] for `type_id`.

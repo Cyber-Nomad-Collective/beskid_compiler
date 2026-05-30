@@ -42,7 +42,18 @@ impl SemanticDiagnosticsError {
 
 impl fmt::Display for SemanticDiagnosticsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", miette::Report::new(self.clone()))
+        let count = self.diagnostics.len();
+        if count == 0 {
+            return write!(f, "semantic errors (empty diagnostic list)");
+        }
+        if count == 1 {
+            return write!(f, "{}", self.diagnostics[0].message);
+        }
+        write!(
+            f,
+            "{count} semantic errors (first: {})",
+            self.diagnostics[0].message
+        )
     }
 }
 

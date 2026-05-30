@@ -9,8 +9,8 @@ pub(crate) fn emit_type_error(
     result: Option<&TypeResult>,
 ) {
     match error {
-        TypeError::UnknownType { span } => {
-            ctx.emit_issue(span, SemanticIssueKind::TypeUnknownType);
+        TypeError::UnknownType { span, name } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeUnknownType { name });
         }
         TypeError::UnknownValueType { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeUnknownValueType);
@@ -237,7 +237,11 @@ pub(crate) fn emit_type_error(
 }
 
 pub(crate) fn emit_cast_intent_warnings(ctx: &mut RuleContext, result: &TypeResult) {
-    for intent in &result.cast_intents {
+    let entry_source_path = ctx.options.entry_source_path.as_ref();
+    let intents: Vec<_> = result
+        .cast_intents_for_entry(entry_source_path)
+        .collect();
+    for intent in intents {
         let from = render_type_from_result(result, intent.from);
         let to = render_type_from_result(result, intent.to);
         ctx.emit_issue(

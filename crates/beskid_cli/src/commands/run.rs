@@ -2,7 +2,6 @@
 
 use std::path::PathBuf;
 
-use crate::frontend;
 use crate::pipeline_ui::{PipelineProgressKind, resolve_input_with_cli_pipeline_kind};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
@@ -42,15 +41,24 @@ pub fn execute(args: RunArgs) -> Result<()> {
     )?;
     pipeline_ui.show_build_graph(&resolved);
     pipeline_ui.halt_progress_bars_for_output();
-    frontend::run_semantic_analysis_gate(
-        &resolved.source_path,
-        &resolved.source,
-        None,
-        pipeline_ui.as_ref(),
+
+    let (_, gate_diagnostics) = beskid_analysis::services::prepare_compilation_diagnostics(
+        &resolved,
+        beskid_analysis::services::PrepareOptions {
+            mode: beskid_analysis::services::PrepareMode::DiagnosticsOnly,
+            front_end: beskid_analysis::services::FrontEndOptions {
+                with_semantic_diagnostics: true,
+                ..Default::default()
+            },
+        },
+        Some(pipeline_ui.as_ref()),
     )?;
+    pipeline_ui.report_semantic_diagnostics(&gate_diagnostics);
+    beskid_analysis::services::require_no_semantic_errors(&gate_diagnostics)
+        .map_err(anyhow::Error::from)?;
     pipeline_ui.finish_prepare_ui("Analysis complete");
 
-    let output = beskid_engine::services::run_resolved_entrypoint_with_pipeline(
+    let output = beskid_engine::services::run_resolved_entrypoint_after_gate_with_pipeline(
         &resolved,
         &args.entrypoint,
         Some(pipeline_ui.as_ref()),
