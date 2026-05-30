@@ -7,9 +7,12 @@ build = "build.rs"
 [dependencies]
 beskid_aot = { path = "../beskid_aot" }
 beskid_analysis = { path = "../beskid_analysis" }
+beskid_queries = { path = "../beskid_queries" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_pipeline = { path = "../beskid_pipeline" }
+beskid_graph = { path = "../beskid_graph" }
 beskid_engine = { path = "../beskid_engine" }
+graphs-tui = { workspace = true }
 beskid_pckg = { path = "../beskid_pckg" }
 beskid_template = { path = "../beskid_template" }
 beskid_lsp = { path = "../beskid_lsp" }

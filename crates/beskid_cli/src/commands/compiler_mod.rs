@@ -81,7 +81,6 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
     let pipeline_ui = mod_pipeline(args.plain);
     let pipeline: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
     let resolved = resolve_mod_project(args.project.as_ref(), pipeline)?;
-    pipeline_ui.show_compile_graph(Some(&resolved.plan), None);
 
     observe_phase(pipeline, WORKSPACE_GRAPH_CHANGED, || {});
     let prepared = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE, || {
@@ -138,21 +137,20 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
 fn clean(args: ModCleanArgs) -> Result<()> {
     let pipeline_ui = mod_pipeline(args.plain);
     let pipeline: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
-    let resolved = resolve_mod_project(args.project.as_ref(), pipeline)?;
-    pipeline_ui.show_compile_graph(Some(&resolved.plan), None);
+    let _resolved = resolve_mod_project(args.project.as_ref(), pipeline)?;
 
     let removed =
-        remove_mod_cache_dir(&resolved.plan.project_root, &resolved.manifest.project.name)?;
+        remove_mod_cache_dir(&_resolved.plan.project_root, &_resolved.manifest.project.name)?;
     pipeline_ui.finish_session("Mod clean complete");
     if removed {
         println!(
             "removed mod artifact cache for {}",
-            resolved.manifest.project.name
+            _resolved.manifest.project.name
         );
     } else {
         println!(
             "no mod artifact cache found for {}",
-            resolved.manifest.project.name
+            _resolved.manifest.project.name
         );
     }
     Ok(())

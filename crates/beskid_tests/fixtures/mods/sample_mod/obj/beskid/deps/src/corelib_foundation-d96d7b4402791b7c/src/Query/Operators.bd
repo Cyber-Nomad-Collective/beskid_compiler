@@ -1,0 +1,88 @@
+/// Query combinators and state carrier types for lightweight LINQ-style scaffolding.
+/// @par(T) Element type tracked by the query state.
+pub type QueryState<T> {
+    /// Number of elements represented by state.
+    i64 count,
+    /// Optional first element placeholder for materialized pipelines.
+    Query.Contracts.Option<T> first,
+}
+
+/// Keeps or clears state based on predicate.
+/// @arg(state) Incoming query state.
+/// @arg(predicate) When false, the pipeline resets to empty.
+/// @returns Filtered state.
+pub QueryState<T> Where<T>(QueryState<T> state, bool predicate) {
+    if !predicate {
+        return QueryState<T> { count: 0, first: Option::None() };
+    }
+    return state;
+}
+
+/// Projects state into another element type, carrying a sample value for the `first` slot.
+/// @arg(state) Source state over `TIn`.
+/// @arg(sample) Representative `TOut` value used for the optional first slot.
+/// @returns New state over `TOut`.
+pub QueryState<TOut> Select<TIn, TOut>(QueryState<TIn> state, TOut sample) {
+    if state.count < 1 {
+        return QueryState<TOut> { count: 0, first: Option::None() };
+    }
+    return QueryState<TOut> {
+        count: state.count,
+        first: Option::Some(sample),
+    };
+}
+
+/// Limits state to at most count elements.
+/// @arg(state) Source state.
+/// @arg(count) Maximum elements to retain.
+/// @returns Truncated state.
+pub QueryState<T> Take<T>(QueryState<T> state, i64 count) {
+    if count < 1 {
+        return QueryState<T> { count: 0, first: Option::None() };
+    }
+    if count > state.count {
+        return state;
+    }
+    if count == state.count {
+        return state;
+    }
+    return QueryState<T> { count: count, first: state.first };
+}
+
+/// Removes up to count elements from state.
+/// @arg(state) Source state.
+/// @arg(count) Elements to drop from the logical front.
+/// @returns State after skipping.
+pub QueryState<T> Skip<T>(QueryState<T> state, i64 count) {
+    if count < 1 {
+        return state;
+    }
+    if count > state.count {
+        return QueryState<T> { count: 0, first: Option::None() };
+    }
+    if count == state.count {
+        return QueryState<T> { count: 0, first: Option::None() };
+    }
+    return QueryState<T> { count: state.count - count, first: Option::None() };
+}
+
+/// Returns current logical element count.
+/// @arg(state) Query state.
+/// @returns Logical length.
+pub i64 Count<T>(QueryState<T> state) {
+    return state.count;
+}
+
+/// Returns the optional first element recorded on the state.
+/// @arg(state) Query state.
+/// @returns `first` field unchanged.
+pub Query.Contracts.Option<T> First<T>(QueryState<T> state) {
+    return state.first;
+}
+
+/// Collects state into an array-like count placeholder.
+/// @arg(state) Query state.
+/// @returns Element count (no backing array yet).
+pub i64 CollectArray<T>(QueryState<T> state) {
+    return state.count;
+}

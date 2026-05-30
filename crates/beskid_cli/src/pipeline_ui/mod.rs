@@ -1,6 +1,5 @@
 //! CLI [`beskid_pipeline::PipelineObserver`] with plain lines or an interactive build TUI.
 
-mod graph;
 mod labels;
 pub mod tui;
 
@@ -24,7 +23,6 @@ use beskid_pipeline::{
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
-use graph::write_build_graph;
 use labels::phase_label;
 use tui::{count_severities, format_duration, format_severity_summary};
 
@@ -81,7 +79,6 @@ pub enum PipelineProgressKind {
 /// CLI adapter: maps [`PipelineEvent`] to indicatif or plain `eprintln`.
 pub struct CliPipeline {
     plain: bool,
-    graph_shown: Mutex<bool>,
     prepare_ui_finished: Mutex<bool>,
     progress_bars_halted: Mutex<bool>,
     multi: MultiProgress,
@@ -146,7 +143,6 @@ impl CliPipeline {
         };
         Self {
             plain,
-            graph_shown: Mutex::new(false),
             prepare_ui_finished: Mutex::new(false),
             progress_bars_halted: Mutex::new(false),
             multi,
@@ -159,51 +155,6 @@ impl CliPipeline {
                 work_unit_events: 0,
                 pending_msg: None,
             }),
-        }
-    }
-
-    pub fn show_compile_graph(
-        &self,
-        compile_plan: Option<&CompilePlan>,
-        workspace_summary: Option<&WorkspaceResolutionSummary>,
-    ) {
-        let resolved = ResolvedInput {
-            source_path: PathBuf::new(),
-            source: String::new(),
-            compile_plan: compile_plan.cloned(),
-            prepared_workspace: None,
-            workspace_summary: workspace_summary.cloned(),
-            assembly: None,
-        };
-        self.show_build_graph(&resolved);
-    }
-
-    pub fn show_project_graph(&self, project: &ResolvedProject) {
-        self.show_compile_graph(
-            project.compile_plan.as_ref(),
-            project.workspace_summary.as_ref(),
-        );
-    }
-
-    pub fn show_build_graph(&self, resolved: &ResolvedInput) {
-        let mut shown = self.graph_shown.lock().expect("graph_shown mutex poisoned");
-        if *shown {
-            return;
-        }
-        if self.plain {
-            print_project_graph_plain(resolved);
-        } else {
-            let mut err = stderr();
-            let _ = write_build_graph(resolved, &mut err);
-        }
-        *shown = true;
-    }
-
-    pub fn print_project_graph(resolved: &ResolvedInput) {
-        if use_cli_spinner(false) {
-            CliPipeline::new(true).show_build_graph(resolved);
-        } else {
-            print_project_graph_plain(resolved);
         }
     }
 
@@ -394,33 +345,6 @@ impl CliPipeline {
         {
             work.set_message("");
         }
-    }
-}
-
-fn print_project_graph_plain(resolved: &ResolvedInput) {
-    if let Some(ws) = &resolved.workspace_summary {
-        println!("Workspace: {}", ws.workspace_manifest_path.display());
-        println!("  member: {}", ws.selected_member_id);
-    }
-    let Some(plan) = resolved.compile_plan.as_ref() else {
-        return;
-    };
-    println!("Build graph:");
-    println!("  root: {}", plan.project_name);
-    if plan.dependency_projects.is_empty() {
-        println!("  deps: (none)");
-    } else {
-        for dependency in &plan.dependency_projects {
-            println!(
-                "  root -> {} ({})",
-                dependency.dependency_name, dependency.project_name
-            );
-        }
-    }
-    if plan.has_std_dependency {
-        println!("  corelib: project dependency detected");
-    } else {
-        println!("  corelib: none declared in project graph");
     }
 }
 

@@ -1,0 +1,35 @@
+/// Runtime package prelude: host syscall facades and system integration.
+/// Re-exports syscall facade helpers.
+/// @ref(System.Syscall) low-level read/write entry points.
+/// @ref(System.Input) stdin read helpers.
+/// @ref(System.Output) stdout write helpers.
+/// @ref(System.Error) stderr write helpers.
+pub mod System.Syscall;
+/// Re-exports stream descriptor variants.
+pub mod System.Syscall.StandardStream;
+/// Re-exports typed descriptor selectors.
+pub mod System.Syscall.Descriptor;
+/// Re-exports typed read-limit selectors.
+pub mod System.Syscall.ReadLimit;
+/// Re-exports syscall error variants.
+pub mod System.Syscall.SyscallError;
+/// Re-exports write request payload type.
+pub mod System.Syscall.WriteRequest;
+/// Re-exports read request payload type.
+pub mod System.Syscall.ReadRequest;
+/// Re-exports standard input helpers.
+pub mod System.Input;
+/// Re-exports standard output helpers.
+pub mod System.Output;
+/// Re-exports standard error helpers.
+pub mod System.Error;
+/// Re-exports process helpers.
+pub mod System.Process;
+/// Re-exports path helpers.
+pub mod System.Path;
+/// Re-exports filesystem helpers.
+pub mod System.FS;
+/// Re-exports environment helpers.
+pub mod System.Environment;
+/// Re-exports time helpers.
+pub mod System.Time;

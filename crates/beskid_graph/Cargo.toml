@@ -1,0 +1,15 @@
+[package]
+name = "beskid_graph"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+beskid_analysis = { path = "../beskid_analysis" }
+mermaid-builder = { workspace = true }
+thiserror = "2.0"
+daggy = "0.9.0"
+graphs-tui = { workspace = true }
+serde_json = "1"
+
+[dev-dependencies]
+insta = { version = "1.41", features = ["glob"] }

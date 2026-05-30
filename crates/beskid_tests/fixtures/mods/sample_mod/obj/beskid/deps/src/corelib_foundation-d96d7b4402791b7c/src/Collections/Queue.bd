@@ -1,0 +1,64 @@
+/// FIFO queue shape; v1 tracks only logical `count`. Tier 2 until runtime ring-buffer storage ships;
+/// signatures are stable so authors can call parity helpers today.
+/// @tier(supported)
+/// @par(T) Element type parameter.
+pub type Queue<T> {
+    /// Number of logical elements.
+    i64 count,
+}
+
+/// Creates an empty queue.
+/// @tier(supported)
+/// @returns Queue with `count` zero.
+pub Queue<T> New<T>() {
+    return Queue<T> { count: 0 };
+}
+
+/// Returns the logical element count.
+/// @tier(supported)
+/// @arg(queue) Queue handle.
+/// @returns `count` field.
+pub i64 Count<T>(Queue<T> queue) {
+    return queue.count;
+}
+
+/// Returns true when the queue is empty.
+/// @tier(supported)
+/// @arg(queue) Queue handle.
+/// @returns `true` when `count == 0`.
+pub bool IsEmpty<T>(Queue<T> queue) {
+    return queue.count == 0;
+}
+
+/// Logical enqueue: returns a new queue with `count + 1`; storage is not yet wired so the value
+/// payload is not retained between calls.
+/// @tier(supported)
+/// @arg(queue) Source queue handle.
+/// @arg(value) Element to enqueue (observed only via count in v1).
+/// @returns Queue with `count` incremented.
+pub Queue<T> Enqueue<T>(Queue<T> queue, T value) {
+    return Queue<T> { count: queue.count + 1 };
+}
+
+/// Logical dequeue: returns a new queue with `count - 1` or zero when empty.
+/// @tier(supported)
+/// @arg(queue) Source queue handle.
+/// @returns Queue with `count` decremented; saturates at zero.
+pub Queue<T> Dequeue<T>(Queue<T> queue) {
+    if queue.count <= 0 {
+        return Queue<T> { count: 0 };
+    }
+    return Queue<T> { count: queue.count - 1 };
+}
+
+/// Returns the head element without removing it, or an error when empty / unbacked.
+/// Tier 3 until runtime ring-buffer storage ships; signature stays stable.
+/// @tier(unstable)
+/// @arg(queue) Queue handle.
+/// @returns `Error` while runtime storage is not yet wired.
+pub Core.Results.Result<T, string> Peek<T>(Queue<T> queue) {
+    if queue.count <= 0 {
+        return Result::Error("queue is empty");
+    }
+    return Result::Error("queue storage is not implemented");
+}

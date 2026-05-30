@@ -1,0 +1,64 @@
+/// Fixed-size array helper types and iteration primitives.
+/// Slice-like `T[]` values use the runtime `BeskidArray` layout; length is read via `__array_len`.
+/// @tier(standard)
+/// @par(T) Element type for iterators.
+pub type ArrayIter<T> {
+    /// Current traversal position.
+    i64 index,
+    /// Total number of readable elements.
+    i64 length,
+}
+
+/// Returns array length (element count).
+/// @tier(standard)
+/// @par(T) Element type of the slice (length is independent of `T` in v1).
+/// @arg(values) Slice-like array handle.
+/// @returns Element count from the runtime header.
+pub i64 Len<T>(T[] values) {
+    return __array_len(values);
+}
+
+/// Returns true when the array carries no readable elements.
+/// @tier(standard)
+/// @par(T) Element type of the slice.
+/// @arg(values) Slice-like array handle.
+/// @returns `true` when `Len(values) == 0`.
+pub bool IsEmpty<T>(T[] values) {
+    return __array_len(values) == 0;
+}
+
+/// Creates an iterator at the first element.
+/// @tier(standard)
+/// @par(T) Element type of the slice.
+/// @arg(values) Source array.
+/// @returns Iterator positioned at index zero.
+pub ArrayIter<T> Iterate<T>(T[] values) {
+    return ArrayIter<T> { index: 0, length: Len<T>(values) };
+}
+
+/// Returns true when an iterator has remaining elements.
+/// @tier(standard)
+/// @par(T) Element type of the slice.
+/// @arg(it) Iterator state.
+/// @returns `true` while `index < length`.
+pub bool HasNext<T>(ArrayIter<T> it) {
+    return it.index < it.length;
+}
+
+/// Advance an iterator one element.
+/// @tier(standard)
+/// @par(T) Element type of the slice (the iterator carries no payload in v1).
+/// @arg(it) Iterator state.
+/// @returns Iterator with `index` incremented by one.
+pub ArrayIter<T> Advance<T>(ArrayIter<T> it) {
+    return ArrayIter<T> { index: it.index + 1, length: it.length };
+}
+
+/// Returns the iterator's current zero-based index.
+/// @tier(standard)
+/// @par(T) Element type of the slice.
+/// @arg(it) Iterator state.
+/// @returns `it.index`.
+pub i64 Index<T>(ArrayIter<T> it) {
+    return it.index;
+}

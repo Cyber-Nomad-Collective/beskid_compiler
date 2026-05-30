@@ -30,7 +30,6 @@ pub fn execute(args: FetchArgs) -> Result<()> {
         args.progress.plain,
         UnresolvedDependencyPolicy::Warn,
     )?;
-    pipeline_ui.show_project_graph(&resolved);
     pipeline_ui.finish_session("Dependencies resolved and materialized");
     println!("Dependencies resolved and materialized.");
     Ok(())

@@ -5,8 +5,9 @@ edition = "2024"
 
 [dependencies]
 beskid_analysis = { path = "../beskid_analysis" }
+beskid_graph = { path = "../beskid_graph" }
 beskid_pipeline = { path = "../beskid_pipeline" }
-salsa = { version = "0.26", features = ["macros", "persistence"] }
+salsa = { workspace = true }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

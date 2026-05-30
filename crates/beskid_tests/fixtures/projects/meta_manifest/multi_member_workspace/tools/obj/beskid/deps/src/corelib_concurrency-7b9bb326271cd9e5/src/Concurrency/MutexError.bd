@@ -1,0 +1,5 @@
+/// Errors from `Mutex.Lock`.
+/// @variant(Cancelled) Waiting fiber was cancelled before acquire.
+pub enum MutexError {
+    Cancelled(),
+}

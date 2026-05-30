@@ -5,19 +5,19 @@ use tokio::sync::RwLock;
 use tower_lsp_server::Client;
 use tower_lsp_server::ls_types::Uri;
 
-use crate::diagnostics::analyze_document;
+use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::project_context::cached_compilation_context;
 use crate::session::store::{Document, State};
 use crate::workspace_scan::uri_to_path;
 
-/// Document text/analysis cache format; bump when snapshot shape changes.
-pub const ANALYSIS_CACHE_VERSION: u32 = 3;
+/// Document analysis snapshot shape; bump when snapshot fields change.
+pub const ANALYSIS_CACHE_VERSION: u32 = 4;
 
 fn is_project_manifest_uri(uri: &Uri) -> bool {
     uri.to_string().to_lowercase().ends_with(".proj")
 }
 
-fn hash_text(text: &str) -> u64 {
+fn salsa_revision(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     hasher.finish()
@@ -35,6 +35,15 @@ async fn build_document_analysis(
     let path = uri_to_path(uri)?;
     let mut compilation_context = cached_compilation_context(state, &path).await;
 
+    if let Some(path) = uri_to_path(uri) {
+        let mut write = state.write().await;
+        write
+            .compilation_db
+            .lock()
+            .expect("compilation db lock")
+            .ensure_file_text(path, text.to_string());
+    }
+
     beskid_analysis::services::parse_program_with_source_name(&uri.to_string(), text)
         .ok()
         .map(|program| {
@@ -49,14 +58,12 @@ async fn build_document_analysis(
         })
 }
 
-/// Build a [`Document`] for `uri`, hashing text and attaching a fresh analysis snapshot when possible.
+/// Build a [`Document`] for `uri`, attaching a fresh analysis snapshot when possible.
 pub async fn build_document(state: &RwLock<State>, uri: &Uri, version: i32, text: String) -> Document {
-    let text_hash = hash_text(&text);
     let analysis = build_document_analysis(state, uri, &text).await;
     Document {
         version,
         text,
-        text_hash,
         analysis_cache_version: ANALYSIS_CACHE_VERSION,
         analysis,
     }
@@ -71,9 +78,9 @@ pub async fn set_disk_snapshot(state: &RwLock<State>, uri: Uri, doc: Document) {
     write_state.workspace_index.insert(uri, doc);
 }
 
-/// Upsert an open document, respecting monotonic versions and unchanged-text fast paths.
+/// Upsert an open document, respecting monotonic versions and Salsa revision fast paths.
 pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: String) {
-    let text_hash = hash_text(&text);
+    let revision = salsa_revision(&text);
     let mut write_state = state.write().await;
     write_state.workspace_index.remove(&uri);
 
@@ -82,14 +89,21 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
             return;
         }
 
-        if existing.text_hash == text_hash
-            && existing.analysis_cache_version == ANALYSIS_CACHE_VERSION
+        if existing.analysis_cache_version == ANALYSIS_CACHE_VERSION
+            && salsa_revision(&existing.text) == revision
         {
             existing.version = version;
             existing.text = text;
-            existing.analysis_cache_version = ANALYSIS_CACHE_VERSION;
             return;
         }
+    }
+
+    if let Some(path) = uri_to_path(&uri) {
+        write_state
+            .compilation_db
+            .lock()
+            .expect("compilation db lock")
+            .ensure_file_text(path, text.clone());
     }
 
     drop(write_state);
@@ -101,7 +115,6 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
         Document {
             version,
             text,
-            text_hash,
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
             analysis,
         },
@@ -126,12 +139,10 @@ pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
 
     for (uri, text) in entries {
         let analysis = build_document_analysis(state, &uri, &text).await;
-        let text_hash = hash_text(&text);
         let mut write = state.write().await;
         if let Some(doc) = write.docs.get_mut(&uri)
             && doc.text == text
         {
-            doc.text_hash = text_hash;
             doc.analysis = analysis;
             doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
         }
@@ -154,12 +165,14 @@ pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>,
     } else {
         None
     };
-    let diagnostics = analyze_document(
+    let diagnostics = analyze_document_for_state(
+        state,
         uri,
         &doc.text,
         doc.analysis.as_ref(),
         compilation_context.as_ref(),
-    );
+    )
+    .await;
     client
         .publish_diagnostics(uri.clone(), diagnostics, Some(doc.version))
         .await;
@@ -171,7 +184,7 @@ mod tests {
 
     use tower_lsp_server::ls_types::Uri;
 
-    use super::{ANALYSIS_CACHE_VERSION, hash_text, set_document};
+    use super::{ANALYSIS_CACHE_VERSION, set_document};
     use crate::session::store::{Document, State};
 
     fn source() -> String {
@@ -211,7 +224,6 @@ mod tests {
             Document {
                 version: 1,
                 text: text.clone(),
-                text_hash: hash_text(&text),
                 analysis_cache_version: ANALYSIS_CACHE_VERSION.saturating_sub(1),
                 analysis: None,
             },

@@ -1,4 +1,7 @@
 //! Salsa-lite query boundaries on the unified prepare spine.
+//!
+//! Heavy incremental memoization lives in `beskid_queries::BeskidDatabase`; this module keeps
+//! stable analysis query helpers for callers that do not hold a database handle.
 
 use std::path::Path;
 

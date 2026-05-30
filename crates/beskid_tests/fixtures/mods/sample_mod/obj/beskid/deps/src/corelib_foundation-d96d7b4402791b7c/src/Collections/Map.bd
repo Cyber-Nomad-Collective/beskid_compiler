@@ -1,0 +1,90 @@
+/// Key/value map surface; v1 tracks only logical `count` (no buckets yet). Tier 2 until runtime
+/// bucket storage ships; signatures are stable so authors can call the parity helpers today.
+/// @tier(supported)
+/// @par(TKey) Key type parameter.
+/// @par(TValue) Value type parameter.
+pub type MapEntry<TKey, TValue> {
+    /// Entry key component.
+    TKey key,
+    /// Entry value component.
+    TValue value,
+}
+
+/// Logical map handle without backing storage in v1.
+/// @tier(supported)
+pub type Map<TKey, TValue> {
+    /// Number of logical entries.
+    i64 count,
+}
+
+/// Creates an empty map.
+/// @tier(supported)
+/// @returns Map with `count` zero.
+pub Map<TKey, TValue> New<TKey, TValue>() {
+    return Map<TKey, TValue> { count: 0 };
+}
+
+/// Returns the logical entry count.
+/// @tier(supported)
+/// @arg(map) Map handle.
+/// @returns `count` field.
+pub i64 Count<TKey, TValue>(Map<TKey, TValue> map) {
+    return map.count;
+}
+
+/// Returns true when the map has no entries.
+/// @tier(supported)
+/// @arg(map) Map handle.
+/// @returns `true` when `count == 0`.
+pub bool IsEmpty<TKey, TValue>(Map<TKey, TValue> map) {
+    return map.count == 0;
+}
+
+/// Logical insert: returns a new map with `count + 1`; storage is not yet wired so the key/value
+/// payload is not retained between calls.
+/// @tier(supported)
+/// @arg(map) Source map handle.
+/// @arg(key) Entry key (observed only via count in v1).
+/// @arg(value) Entry value (observed only via count in v1).
+/// @returns Map with `count` incremented.
+pub Map<TKey, TValue> Insert<TKey, TValue>(Map<TKey, TValue> map, TKey key, TValue value) {
+    return Map<TKey, TValue> { count: map.count + 1 };
+}
+
+/// Logical remove: returns a new map with `count - 1` or zero when empty.
+/// @tier(supported)
+/// @arg(map) Source map handle.
+/// @arg(key) Entry key (membership is not tracked in v1).
+/// @returns Map with `count` decremented; saturates at zero.
+pub Map<TKey, TValue> Remove<TKey, TValue>(Map<TKey, TValue> map, TKey key) {
+    if map.count <= 0 {
+        return Map<TKey, TValue> { count: 0 };
+    }
+    return Map<TKey, TValue> { count: map.count - 1 };
+}
+
+/// Reports whether a key is considered present.
+/// Without entry storage, membership cannot be observed; this returns `false` in v1 and is Tier 3
+/// until backing storage ships.
+/// @tier(unstable)
+/// @arg(map) Map handle.
+/// @arg(key) Candidate key (ignored until storage exists).
+/// @returns `false` until the runtime exposes bucket storage.
+pub bool ContainsKey<TKey, TValue>(Map<TKey, TValue> map, TKey key) {
+    if map.count < 1 {
+        return false;
+    }
+    return false;
+}
+
+/// Retrieves a value by key, or returns an error when storage is unavailable.
+/// @tier(unstable)
+/// @arg(map) Map handle.
+/// @arg(key) Candidate key.
+/// @returns `Error` until runtime bucket storage ships.
+pub Core.Results.Result<TValue, string> Get<TKey, TValue>(Map<TKey, TValue> map, TKey key) {
+    if map.count < 1 {
+        return Result::Error("key not found");
+    }
+    return Result::Error("map storage is not implemented");
+}

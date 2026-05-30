@@ -95,7 +95,7 @@ pub fn run_semantic_analysis_gate(
                 None,
                 None,
             );
-            let (_, diagnostics) = services::prepare_compilation_diagnostics(
+            let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
                 &resolved,
                 services::PrepareOptions {
                     mode: services::PrepareMode::DiagnosticsOnly,

@@ -27,7 +27,6 @@ pub fn execute(args: LockArgs) -> Result<()> {
         args.progress.plain,
         UnresolvedDependencyPolicy::Warn,
     )?;
-    pipeline_ui.show_project_graph(&resolved);
     pipeline_ui.finish_session("Project.lock synchronized");
     println!("Project.lock synchronized.");
     Ok(())

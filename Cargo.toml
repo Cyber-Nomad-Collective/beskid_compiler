@@ -1,7 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/beskid_analysis", "crates/beskid_cli", "crates/beskid_template", "crates/beskid_tests", "crates/beskid_e2e_tests", "crates/beskid_ast_derive", "crates/beskid_ast_reflect_gen", "crates/beskid_codegen", "crates/beskid_abi", "crates/beskid_pipeline", "crates/beskid_runtime", "crates/beskid_runtime_bridge", "crates/beskid_engine", "crates/abfall", "crates/beskid_lsp", "crates/beskid_aot", "crates/beskid_pckg"]
+members = ["crates/beskid_analysis", "crates/beskid_cli", "crates/beskid_template", "crates/beskid_tests", "crates/beskid_e2e_tests", "crates/beskid_ast_derive", "crates/beskid_ast_reflect_gen", "crates/beskid_codegen", "crates/beskid_abi", "crates/beskid_pipeline", "crates/beskid_runtime", "crates/beskid_runtime_bridge", "crates/beskid_engine", "crates/abfall", "crates/beskid_lsp", "crates/beskid_aot", "crates/beskid_pckg", "crates/beskid_queries", "crates/beskid_graph"]
 [workspace.dependencies]
+salsa = { version = "0.26", features = ["macros", "persistence"] }
 allocator-api2 = { version = "0.2", default-features = false, features = ["alloc"] }
 enum-map = { version = "2.7", default-features = false }
 hashbrown = { version = "0.16", default-features = false }
@@ -22,6 +23,9 @@ synstructure = "0.13"
 tracing = { version = "0.1.37", default-features = false }
 trybuild = "1.0"
 beskid_template = { path = "crates/beskid_template" }
+mermaid-builder = "0.1.2"
+graphs-tui = "0.4.0"
+beskid_graph = { path = "crates/beskid_graph" }
 
 cranelift-codegen = "0.128.3"
 cranelift-frontend = "0.128.3"

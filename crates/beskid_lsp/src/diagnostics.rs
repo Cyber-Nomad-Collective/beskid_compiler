@@ -3,16 +3,21 @@
 use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{parse_manifest, parse_workspace_manifest};
-use beskid_analysis::services::{self, DocumentAnalysisSnapshot};
+use beskid_analysis::services::{
+    self, DocumentAnalysisSnapshot, FrontEndOptions, PrepareMode, PrepareOptions,
+    ResolvedInput, resolved_input_from_plan,
+};
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity};
+use beskid_queries::BeskidDatabase;
 use tower_lsp_server::ls_types::*;
 
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::offset_range_to_lsp;
 
-/// Produce LSP diagnostics for a `.bd`, `.proj`, or manifest buffer using the prepare spine when a project is known.
+/// Produce LSP diagnostics for a `.bd`, `.proj`, or manifest buffer using the Salsa-backed prepare spine when a project is known.
 pub fn analyze_document(
+    db: Option<&mut BeskidDatabase>,
     uri: &Uri,
     source: &str,
     cached: Option<&DocumentAnalysisSnapshot>,
@@ -25,6 +30,38 @@ pub fn analyze_document(
     if let Some(path) = uri.to_file_path()
         && path.extension().and_then(|ext| ext.to_str()) == Some("bd")
     {
+        if let (Some(db), Some(ctx)) = (db, compilation_context)
+            && let Some(plan) = ctx.compile_plan.clone()
+        {
+            let resolved = resolved_input_from_plan(
+                path.to_path_buf(),
+                source.to_string(),
+                plan,
+                ctx.prepared_workspace.clone(),
+                ctx.assembly.clone(),
+            );
+            if let Ok((_, mut diags)) = beskid_queries::prepare_compilation_diagnostics_with_db(
+                db,
+                &resolved,
+                PrepareOptions {
+                    mode: PrepareMode::DiagnosticsOnly,
+                    front_end: FrontEndOptions {
+                        with_semantic_diagnostics: true,
+                        ..Default::default()
+                    },
+                },
+                None,
+            ) {
+                if let Some(snap) = cached {
+                    diags.extend(snap.doc_diagnostics.iter().cloned());
+                }
+                return diags
+                    .into_iter()
+                    .map(|diag| semantic_to_lsp_diagnostic(source, diag))
+                    .collect();
+            }
+        }
+
         let mut ctx = compilation_context
             .cloned()
             .or_else(|| CompilationContext::try_for_analysis_path(&path, None));
@@ -196,7 +233,7 @@ i32 main() {
         let program =
             parse_program_with_source_name("composition.bd", source).expect("parse source");
         let snapshot = build_document_analysis(&program, "composition.bd", source, None);
-        let diagnostics = analyze_document(&uri, source, Some(&snapshot), None);
+        let diagnostics = analyze_document(None, &uri, source, Some(&snapshot), None);
         let codes = diagnostics
             .iter()
             .filter_map(|diagnostic| diagnostic.code.as_ref())

@@ -25,6 +25,7 @@ pub struct CompositionResult {
     pub plan: BindingPlan,
     pub snapshot: CompositionSnapshot,
     pub issues: Vec<CompositionIssue>,
+    pub dependency_edges: Vec<(u32, u32)>,
 }
 
 pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
@@ -163,5 +164,6 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
         plan,
         snapshot,
         issues,
+        dependency_edges: edges,
     }
 }

@@ -1,7 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
     use std::path::PathBuf;
     use beskid_analysis::compilation_context::CompilationContext;
     use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions, assemble_program};
@@ -10,7 +8,7 @@ mod tests {
     };
     use tower_lsp_server::ls_types::{GotoDefinitionResponse, Hover, Uri};
 
-    use crate::features::{completion, definition, hover, references};
+    use crate::features::{definition, hover, references};
     use crate::position::position_to_offset;
     use crate::session::lifecycle::{ANALYSIS_CACHE_VERSION, build_document};
     use crate::session::store::{Document, State};
@@ -37,12 +35,6 @@ mod tests {
         let out = f();
         std::env::set_current_dir(previous).expect("restore cwd");
         out
-    }
-
-    fn hash_text(text: &str) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        text.hash(&mut hasher);
-        hasher.finish()
     }
 
     fn corelib_mvp_paths() -> CorelibMvpFixture {
@@ -105,7 +97,6 @@ mod tests {
             let doc = Document {
                 version: 1,
                 text: fixture.source.clone(),
-                text_hash: hash_text(&fixture.source),
                 analysis_cache_version: ANALYSIS_CACHE_VERSION,
                 analysis: Some(analysis),
             };
@@ -114,19 +105,20 @@ mod tests {
     }
 
     #[test]
-    fn completion_after_io_dot_lists_printline() {
-        let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
-        let offset = fixture.source.find("Output.WriteLine").expect("Output.WriteLine") + "Output.".len();
-        let response = completion::handler::handle_completion(&uri, &doc, offset);
-        let labels: Vec<String> = match response {
-            tower_lsp_server::ls_types::CompletionResponse::Array(items) => {
-                items.into_iter().map(|item| item.label).collect()
-            }
-            _ => Vec::new(),
-        };
+    fn completion_after_output_dot_lists_writeline() {
+        let (_uri, doc, fixture) = corelib_mvp_document_with_assembly();
+        let analysis = doc.analysis.as_ref().expect("analysis");
+        let offset = fixture
+            .source
+            .find("    Output.")
+            .expect("main Output.")
+            + "    Output.".len();
+        let candidates =
+            beskid_analysis::services::completion_candidates(analysis, &fixture.source, offset);
         assert!(
-            labels.iter().any(|label| label == "WriteLine"),
-            "expected WriteLine in completion labels, got {labels:?}"
+            candidates.iter().any(|candidate| candidate.label == "WriteLine"),
+            "expected WriteLine member completion after Output., got {:?}",
+            candidates.iter().map(|c| &c.label).collect::<Vec<_>>()
         );
     }
 

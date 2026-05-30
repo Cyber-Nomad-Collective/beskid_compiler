@@ -16,11 +16,11 @@ use crate::syntax::{Program, Spanned};
 use super::discovery::resolve_module_file;
 use super::module_index::ModuleIndex;
 use super::roots::effective_roots_for_plan;
-use super::unit_cache::{
-    self, CachedUnitRecord, UnitCacheStats, ensure_manifest, hir_from_cached_record,
-    read_cached_unit, unit_fingerprint, write_cached_unit,
-};
-use super::{ProgramAssembly, SourceUnit, build_hir_units};
+use super::{ProgramAssembly, SourceUnit, UnitHir, build_hir_units};
+
+/// Optional Salsa-backed unit builder (set by `beskid_queries` during assembly).
+pub type UnitMaterializer =
+    std::sync::Arc<dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync>;
 
 #[derive(Debug, Error)]
 pub enum AssemblyError {
@@ -66,6 +66,18 @@ pub fn assemble_program(
     entry_path: &Path,
     entry_source: Option<&str>,
     options: &AssemblyOptions,
+) -> Result<ProgramAssembly, AssemblyError> {
+    assemble_program_with_materializer(plan, workspace, entry_path, entry_source, options, None)
+}
+
+/// Like [`assemble_program`], using an optional Salsa unit materializer when provided.
+pub fn assemble_program_with_materializer(
+    plan: &CompilePlan,
+    workspace: Option<&PreparedProjectWorkspace>,
+    entry_path: &Path,
+    entry_source: Option<&str>,
+    options: &AssemblyOptions,
+    materializer: Option<UnitMaterializer>,
 ) -> Result<ProgramAssembly, AssemblyError> {
     let roots = effective_roots_for_plan(plan, workspace);
     let module_roots: Vec<PathBuf> = super::roots::module_roots_from_effective(&roots);
@@ -191,7 +203,6 @@ pub fn assemble_program(
     }
 
     let project_root = plan.project_root.clone();
-    let _ = ensure_manifest(&project_root);
     let cache_hits = std::sync::atomic::AtomicUsize::new(0);
     let cache_misses = std::sync::atomic::AtomicUsize::new(0);
     let entry_key = entry_canonical.canonicalize().unwrap_or(entry_canonical.clone());
@@ -253,16 +264,11 @@ pub fn assemble_program(
                 .par_iter()
                 .enumerate()
                 .map(|(discovered_index, input)| {
-                    let fingerprint = unit_fingerprint(&input.path, &input.source);
-                    if let Some(record) = read_cached_unit(&fingerprint, &project_root)
-                        && record.source == input.source
-                    {
-                        cache_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let unit = unit_cache::source_unit_from_record(&record);
-                        let hir = hir_from_cached_record(&record);
+                    if let Some(ref build) = materializer {
+                        cache_misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let (unit, hir) = build(&input.path, &input.source)?;
                         return Ok((discovered_index, input.is_entry, unit, hir));
                     }
-                    cache_misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                     let logical_name = input.path.display().to_string();
                     let program = match parse_program_with_source_name(&logical_name, &input.source)
@@ -285,15 +291,6 @@ pub fn assemble_program(
                             });
                         }
                     };
-
-                    let record = CachedUnitRecord {
-                        fingerprint: fingerprint.clone(),
-                        logical_name: logical_name.clone(),
-                        path: input.path.clone(),
-                        source: input.source.clone(),
-                        imports: unit_cache::import_paths_from_source(&input.source),
-                    };
-                    let _ = write_cached_unit(&project_root, &record);
 
                     let unit = SourceUnit {
                         logical_name,

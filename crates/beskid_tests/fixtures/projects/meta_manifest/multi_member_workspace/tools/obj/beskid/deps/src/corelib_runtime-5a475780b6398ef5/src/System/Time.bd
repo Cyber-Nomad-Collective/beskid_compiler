@@ -1,0 +1,31 @@
+/// Time types for instants and durations.
+/// @par(ticks) Monotonic or wall-clock tick payload for `Instant` (host-defined scale).
+/// @par(milliseconds) Signed millisecond span for `Duration`.
+pub type Instant {
+    /// Tick value for the represented instant.
+    i64 ticks,
+}
+
+pub type Duration {
+    /// Duration length in milliseconds.
+    i64 milliseconds,
+}
+
+/// Returns current UTC instant.
+/// @returns Placeholder instant with `ticks = 0` until host clocks are wired.
+pub Instant NowUtc() {
+    return Instant { ticks: 0 };
+}
+
+/// Returns current monotonic instant.
+/// @returns Placeholder instant with `ticks = 0` until host clocks are wired.
+pub Instant MonotonicNow() {
+    return Instant { ticks: 0 };
+}
+
+/// Constructs duration from millisecond value.
+/// @arg(ms) Signed span in milliseconds.
+/// @returns `Duration` carrying the same millisecond count.
+pub Duration FromMilliseconds(i64 ms) {
+    return Duration { milliseconds: ms };
+}

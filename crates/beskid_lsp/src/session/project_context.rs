@@ -64,6 +64,7 @@ pub async fn cached_compilation_context(
 pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
     let mut write = state.write().await;
     write.compilation_context_cache.clear();
+    write.compilation_db = std::sync::Mutex::new(beskid_queries::BeskidDatabase::default());
     for doc in write.docs.values_mut() {
         doc.analysis_cache_version =
             super::lifecycle::ANALYSIS_CACHE_VERSION.saturating_sub(1);

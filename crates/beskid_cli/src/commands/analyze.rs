@@ -35,7 +35,6 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
         args.lockfile.locked,
         args.plain,
     )?;
-    pipeline_ui.show_build_graph(&resolved);
     let prepare_options = PrepareOptions {
         mode: PrepareMode::DiagnosticsOnly,
         front_end: FrontEndOptions {
@@ -44,7 +43,7 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
         },
     };
     let diagnostics = if resolved.compile_plan.is_some() {
-        let (_, diagnostics) = services::prepare_compilation_diagnostics(
+        let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
             &resolved,
             prepare_options,
             Some(pipeline_ui.as_ref()),

@@ -1,0 +1,4 @@
+# Project.lock v1
+root_manifest=/Users/mikserek/Projects/beskid/compiler/corelib/packages/compiler-sdk/Project.proj
+project_name=corelib_compiler_sdk
+dependencies:

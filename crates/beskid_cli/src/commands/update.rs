@@ -27,7 +27,6 @@ pub fn execute(args: UpdateArgs) -> Result<()> {
         args.progress.plain,
         UnresolvedDependencyPolicy::Warn,
     )?;
-    pipeline_ui.show_project_graph(&resolved);
     pipeline_ui.finish_session("Workspace updated");
     println!("Dependency lock and materialized workspace updated.");
     Ok(())

@@ -1,9 +1,20 @@
 use tower_lsp_server::ls_types::{Hover, HoverContents, MarkupContent, MarkupKind, Uri};
 
+use crate::commands::symbol_documentation::documentation_uri_for_document;
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::{offset_in_range, offset_range_to_lsp, symbol_location_to_lsp_range};
 use crate::session::store::Document;
 use crate::workspace_scan::uri_to_path;
+
+fn append_docs_link(markdown: String, doc: &Document, offset: usize) -> String {
+    let Some(url) = documentation_uri_for_document(doc, offset) else {
+        return markdown;
+    };
+    if markdown.contains("View documentation") {
+        return markdown;
+    }
+    format!("{markdown}\n\n[View documentation]({url})")
+}
 
 /// Markdown hover for symbols, types, or manifest tokens at `offset`.
 pub fn handle_hover(uri: &Uri, doc: &Document, offset: usize) -> Option<Hover> {
@@ -28,14 +39,15 @@ pub fn handle_hover(uri: &Uri, doc: &Document, offset: usize) -> Option<Hover> {
         .iter()
         .find(|symbol| offset_in_range(offset, symbol.selection_start, symbol.selection_end))
     {
+        let value = format!(
+            "**{}** `{}`",
+            beskid_analysis::services::symbol_kind_name(symbol.kind),
+            symbol.name
+        );
         return Some(Hover {
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: format!(
-                    "**{}** `{}`",
-                    beskid_analysis::services::symbol_kind_name(symbol.kind),
-                    symbol.name
-                ),
+                value: append_docs_link(value, doc, offset),
             }),
             range: Some(offset_range_to_lsp(
                 &doc.text,
@@ -50,7 +62,7 @@ pub fn handle_hover(uri: &Uri, doc: &Document, offset: usize) -> Option<Hover> {
     Some(Hover {
         contents: HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
-            value: hover.markdown,
+            value: append_docs_link(hover.markdown, doc, offset),
         }),
         range: Some(symbol_location_to_lsp_range(
             &hover.location,

@@ -28,6 +28,10 @@ impl ModuleIndex {
         }
     }
 
+    pub fn module_graph(&self) -> &ModuleGraph {
+        &self.module_graph
+    }
+
     /// Collect symbols from all units except `entry_index`.
     pub fn build(
         units: &[SourceUnit],

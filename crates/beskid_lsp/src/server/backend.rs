@@ -10,7 +10,7 @@ use tower_lsp_server::{Client, LanguageServer};
 
 use crate::commands::{
     PckgRegistryState, focused_project_from_configuration, focused_project_from_value,
-    handle_execute_command,
+    handle_project_explorer_command, pckg_registry, symbol_documentation,
 };
 use crate::features::{
     code_actions, completion, definition, document_symbols, formatting, hover, inlay_hints,
@@ -369,14 +369,40 @@ impl LanguageServer for Backend {
             self.refresh_workspace_scan().await;
             return Ok(None);
         }
+        if params.command == symbol_documentation::CMD_GET_DOCUMENTATION_URI {
+            let args = params.arguments;
+            let uri = symbol_documentation::uri_from_command_args(&Some(args.clone()))?;
+            let state = self.state.read().await;
+            let doc = state.docs.get(&uri);
+            return symbol_documentation::handle_symbol_documentation_command(
+                &params.command,
+                Some(args),
+                doc,
+                &uri,
+            );
+        }
         let roots = self.workspace_roots.read().await.clone();
-        handle_execute_command(
+        if let Some(result) = pckg_registry::handle_pckg_registry_command(
             &params.command,
-            Some(params.arguments),
+            Some(params.arguments.clone()),
             &roots,
             &self.pckg_registry,
         )
-        .await
+        .await?
+        {
+            return Ok(Some(result));
+        }
+        let explorer_result = {
+            let state = self.state.read().await;
+            let mut db = state.compilation_db.lock().expect("compilation db");
+            handle_project_explorer_command(
+                &params.command,
+                Some(params.arguments),
+                &roots,
+                Some(&mut *db),
+            )?
+        };
+        Ok(explorer_result.map(Into::into))
     }
 
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {

@@ -2,6 +2,7 @@
 
 pub mod pckg_registry;
 pub mod project_explorer;
+pub mod symbol_documentation;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,6 +24,7 @@ pub async fn handle_execute_command(
     arguments: Option<Vec<Value>>,
     workspace_roots: &[PathBuf],
     pckg_registry: &Arc<RwLock<PckgRegistryState>>,
+    compilation_db: Option<&mut beskid_queries::BeskidDatabase>,
 ) -> Result<Option<LSPAny>> {
     if let Some(result) = pckg_registry::handle_pckg_registry_command(
         command,
@@ -34,5 +36,5 @@ pub async fn handle_execute_command(
     {
         return Ok(Some(result));
     }
-    handle_project_explorer_command(command, arguments, workspace_roots)
+    handle_project_explorer_command(command, arguments, workspace_roots, compilation_db)
 }

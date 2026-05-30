@@ -1,0 +1,64 @@
+/// Forward-slash separator used by the v1 stub helpers.
+/// Tier 2 (Supported) — stable signature; the value is constant for POSIX targets.
+/// @tier(supported)
+/// @returns Literal `"/"`.
+pub string Separator() {
+    return "/";
+}
+
+/// Joins two path segments with the platform separator.
+/// @tier(supported)
+/// @arg(left) Leading segment; may be empty to yield `right` only.
+/// @arg(right) Trailing segment; may be empty to yield `left` only.
+/// @returns Segments joined with `/`.
+pub string Combine(string left, string right) {
+    if left === "" {
+        return right;
+    }
+    if right === "" {
+        return left;
+    }
+    return left + "/" + right;
+}
+
+/// Returns the file name component.
+/// Tier 3 until a full segmenter is wired; signature stays stable.
+/// @tier(unstable)
+/// @arg(path) Full or relative path input.
+/// @returns Identity placeholder until parsing is implemented.
+pub string FileName(string path) {
+    return path;
+}
+
+/// Returns the extension component.
+/// Tier 3 until a full segmenter is wired; signature stays stable.
+/// @tier(unstable)
+/// @arg(path) Full or relative path input.
+/// @returns Identity placeholder until parsing is implemented.
+pub string Extension(string path) {
+    return path;
+}
+
+/// Returns true when the path is the POSIX root (`/`).
+/// Full prefix detection is Tier 3 until string slicing builtins ship; this v1 helper covers the
+/// degenerate root case so `Combine("/", x)` consumers can short-circuit safely.
+/// @tier(unstable)
+/// @arg(path) Candidate path string.
+/// @returns `true` when `path` equals `/` exactly; `false` for everything else.
+pub bool IsAbsolute(string path) {
+    if path == "" {
+        return false;
+    }
+    if path == "/" {
+        return true;
+    }
+    return false;
+}
+
+/// Reports whether the path is empty.
+/// @tier(supported)
+/// @arg(path) Candidate path string.
+/// @returns `true` when `path` is the empty string.
+pub bool IsEmpty(string path) {
+    return path == "";
+}

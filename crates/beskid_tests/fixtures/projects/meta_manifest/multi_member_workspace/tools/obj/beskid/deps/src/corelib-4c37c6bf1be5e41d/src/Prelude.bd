@@ -1,0 +1,40 @@
+/// Core library prelude that re-exports core modules for dependents.
+/// Re-exports result and error carrier types.
+pub mod Core.Results;
+/// Re-exports structured error metadata.
+pub mod Core.ErrorHandling;
+/// Re-exports string helper functions.
+pub mod Core.String;
+/// Re-exports assertion-related contracts.
+pub mod Testing.Contracts;
+/// Re-exports assertion helper functions.
+pub mod Testing.Assertions;
+
+/// Re-exports syscall facade helpers.
+pub mod System.Syscall;
+/// Re-exports stream descriptor variants.
+pub mod System.Syscall.StandardStream;
+/// Re-exports typed descriptor selectors.
+pub mod System.Syscall.Descriptor;
+/// Re-exports typed read-limit selectors.
+pub mod System.Syscall.ReadLimit;
+/// Re-exports syscall error variants.
+pub mod System.Syscall.SyscallError;
+/// Re-exports write request payload type.
+pub mod System.Syscall.WriteRequest;
+/// Re-exports read request payload type.
+pub mod System.Syscall.ReadRequest;
+/// Re-exports standard input helpers.
+pub mod System.Input;
+/// Re-exports standard output helpers.
+pub mod System.Output;
+/// Re-exports standard error helpers.
+pub mod System.Error;
+/// Re-exports terminal console facade and ANSI helpers.
+pub mod Console;
+/// Re-exports slice array length and iteration helpers.
+pub mod Collections.Array;
+
+/// Minimal host base type for native DI launch declarations.
+host ConsoleHost() {
+}

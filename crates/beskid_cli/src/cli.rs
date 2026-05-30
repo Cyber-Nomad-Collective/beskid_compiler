@@ -8,6 +8,7 @@ use crate::commands::corelib::CorelibArgs;
 use crate::commands::doc::DocArgs;
 use crate::commands::fetch::FetchArgs;
 use crate::commands::format::FormatArgs;
+use crate::commands::graph::GraphArgs;
 use crate::commands::import::ImportArgs;
 use crate::commands::lock::LockArgs;
 use crate::commands::lsp::LspArgs;
@@ -18,7 +19,7 @@ use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::{
-    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, import, lock, lsp, new,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, import, lock, lsp, new,
     parse, run, test, tree, update,
 };
 use crate::corelib_runtime;
@@ -104,6 +105,9 @@ pub enum Commands {
     /// Package-manager operations backed by the pckg service
     Pckg(PckgArgs),
 
+    /// Visualize project/workspace graphs (Mermaid) in the terminal or as raw output
+    Graph(GraphArgs),
+
     /// Run the Beskid language server on stdio, or install a release binary (`beskid lsp install`)
     Lsp(LspArgs),
 }
@@ -137,6 +141,7 @@ pub fn run() -> miette::Result<()> {
         Commands::Pckg(args) => maybe_generate_docs_for_pack(&args)
             .and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into)),
         Commands::Lsp(args) => lsp::execute(args),
+        Commands::Graph(args) => graph::execute(args),
     };
 
     result.map_err(anyhow_to_miette)

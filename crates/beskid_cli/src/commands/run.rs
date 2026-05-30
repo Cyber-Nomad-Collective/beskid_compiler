@@ -39,10 +39,9 @@ pub fn execute(args: RunArgs) -> Result<()> {
         args.plain,
         PipelineProgressKind::PrepareAndRun,
     )?;
-    pipeline_ui.show_build_graph(&resolved);
     pipeline_ui.halt_progress_bars_for_output();
 
-    let (_, gate_diagnostics) = beskid_analysis::services::prepare_compilation_diagnostics(
+    let (_, gate_diagnostics) = beskid_queries::prepare_compilation_diagnostics(
         &resolved,
         beskid_analysis::services::PrepareOptions {
             mode: beskid_analysis::services::PrepareMode::DiagnosticsOnly,

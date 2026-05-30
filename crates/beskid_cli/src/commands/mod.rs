@@ -8,6 +8,7 @@ pub mod corelib;
 pub mod doc;
 pub mod fetch;
 pub mod format;
+pub mod graph;
 pub mod import;
 pub mod lock;
 pub mod lsp;

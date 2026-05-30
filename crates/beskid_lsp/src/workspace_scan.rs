@@ -13,7 +13,7 @@ use tower_lsp_server::ls_types::Uri;
 use url::Url;
 use walkdir::WalkDir;
 
-use crate::diagnostics::analyze_document;
+use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::protocol::status::{idle_status, send_beskid_status, workspace_scan_status};
 use crate::session::lifecycle::{
     build_document, rebuild_open_document_analysis, set_disk_snapshot,
@@ -155,12 +155,14 @@ pub async fn scan_workspace(
         } else {
             None
         };
-        let diagnostics = analyze_document(
+        let diagnostics = analyze_document_for_state(
+            state,
             &uri,
             &doc.text,
             doc.analysis.as_ref(),
             compilation_context.as_ref(),
-        );
+        )
+        .await;
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;
     }
@@ -312,12 +314,14 @@ pub async fn refresh_after_disk_change(
         } else {
             None
         };
-        let diagnostics = analyze_document(
+        let diagnostics = analyze_document_for_state(
+            state,
             &uri,
             &doc.text,
             doc.analysis.as_ref(),
             compilation_context.as_ref(),
-        );
+        )
+        .await;
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;
     }
@@ -345,12 +349,14 @@ pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, ur
     } else {
         None
     };
-    let diagnostics = analyze_document(
+    let diagnostics = analyze_document_for_state(
+        state,
         uri,
         &doc.text,
         doc.analysis.as_ref(),
         compilation_context.as_ref(),
-    );
+    )
+    .await;
     set_disk_snapshot(state, uri.clone(), doc).await;
     client
         .publish_diagnostics(uri.clone(), diagnostics, Some(0))

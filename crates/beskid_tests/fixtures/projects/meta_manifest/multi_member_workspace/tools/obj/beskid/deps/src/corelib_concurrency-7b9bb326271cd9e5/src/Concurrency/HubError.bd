@@ -1,0 +1,9 @@
+/// Errors from `Hub.WaitReceive`.
+/// @variant(Limit) Registration cap exceeded (256 in v1).
+/// @variant(Cancelled) Waiting fiber was cancelled.
+/// @variant(Closed) All registered channels are closed.
+pub enum HubError {
+    Limit(),
+    Cancelled(),
+    Closed(),
+}

@@ -1,10 +1,7 @@
-//! Process-scoped compilation session cache for CLI and LSP reuse.
+//! Process-scoped compilation session metadata (Salsa owns memoization).
 
-use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use crate::projects::ProgramAssembly;
 use crate::services::front_end::FrontEndTypedResult;
@@ -33,10 +30,15 @@ impl SessionFingerprint {
 }
 
 fn lockfile_digest_for_plan(plan: &crate::projects::CompilePlan) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
     plan.project_root.hash(&mut hasher);
     plan.target.entry.hash(&mut hasher);
     plan.target.name.hash(&mut hasher);
+    if let Ok(bytes) = std::fs::read(plan.project_root.join("Project.lock")) {
+        bytes.hash(&mut hasher);
+    }
     hasher.finish()
 }
 
@@ -73,65 +75,36 @@ impl SemanticSnapshot {
     }
 }
 
-static SESSIONS: OnceLock<Mutex<HashMap<SessionFingerprint, Arc<CompilationSession>>>> =
-    OnceLock::new();
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
-fn sessions() -> &'static Mutex<HashMap<SessionFingerprint, Arc<CompilationSession>>> {
-    SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Return a cached session when fingerprint matches, otherwise store `assembly`.
+/// Wrap assembly for the prepare spine; memoization lives in `beskid_queries::BeskidDatabase`.
 pub fn session_for_assembly(
     fingerprint: SessionFingerprint,
     assembly: ProgramAssembly,
 ) -> Arc<CompilationSession> {
-    let mut guard = sessions().lock().expect("compilation session lock");
-    if let Some(existing) = guard.get(&fingerprint) {
-        return Arc::clone(existing);
-    }
-    let session = Arc::new(CompilationSession {
-        fingerprint: fingerprint.clone(),
+    Arc::new(CompilationSession {
+        fingerprint,
         assembly: Arc::new(assembly),
         prepared_executable: None,
         semantic_snapshot: None,
-    });
-    guard.insert(fingerprint, Arc::clone(&session));
-    session
+    })
 }
 
 /// Store optional executable front-end and semantic snapshot on an existing session.
 pub fn store_executable_on_session(
-    fingerprint: &SessionFingerprint,
-    executable: Option<FrontEndTypedResult>,
-    snapshot: SemanticSnapshot,
+    _fingerprint: &SessionFingerprint,
+    _executable: Option<FrontEndTypedResult>,
+    _snapshot: SemanticSnapshot,
 ) {
-    let mut guard = sessions().lock().expect("compilation session lock");
-    let Some(existing) = guard.get(fingerprint) else {
-        return;
-    };
-    let updated = Arc::new(CompilationSession {
-        fingerprint: existing.fingerprint.clone(),
-        assembly: Arc::clone(&existing.assembly),
-        prepared_executable: executable
-            .map(Arc::new)
-            .or_else(|| existing.prepared_executable.clone()),
-        semantic_snapshot: Some(snapshot),
-    });
-    guard.insert(fingerprint.clone(), updated);
 }
 
 /// Lookup cached executable front-end for an entry fingerprint.
-pub fn cached_executable(fingerprint: &SessionFingerprint) -> Option<Arc<FrontEndTypedResult>> {
-    let guard = sessions().lock().expect("compilation session lock");
-    guard
-        .get(fingerprint)
-        .and_then(|session| session.prepared_executable.as_ref().map(Arc::clone))
+pub fn cached_executable(_fingerprint: &SessionFingerprint) -> Option<Arc<FrontEndTypedResult>> {
+    None
 }
 
 /// Lookup cached semantic snapshot for an entry fingerprint.
-pub fn cached_semantic_snapshot(fingerprint: &SessionFingerprint) -> Option<SemanticSnapshot> {
-    let guard = sessions().lock().expect("compilation session lock");
-    guard
-        .get(fingerprint)
-        .and_then(|session| session.semantic_snapshot.clone())
+pub fn cached_semantic_snapshot(_fingerprint: &SessionFingerprint) -> Option<SemanticSnapshot> {
+    None
 }

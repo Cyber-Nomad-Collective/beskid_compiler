@@ -12,23 +12,25 @@ use tower_lsp_server::ls_types::LSPAny;
 use crate::commands::pckg_registry::{
     CMD_GET_CONNECTION_STATUS, CMD_SET_REGISTRY, CMD_VALIDATE_CONNECTION,
 };
+use crate::commands::symbol_documentation::CMD_GET_DOCUMENTATION_URI;
 use crate::protocol::execute_args::{missing_args, required_uri_arg};
 use crate::workspace_scan::path_from_uri_string;
 
 const CMD_LIST_WORKSPACES: &str = "beskid.listWorkspaces";
 const CMD_GET_WORKSPACE_SUMMARY: &str = "beskid.getWorkspaceSummary";
-const CMD_GET_PROJECT_GRAPH: &str = "beskid.getProjectGraph";
+const CMD_GET_GRAPH: &str = "beskid.getGraph";
 const CMD_GET_PROJECT_DEPENDENCIES: &str = "beskid.getProjectDependencies";
 
 pub const PROJECT_EXPLORER_COMMANDS: &[&str] = &[
     "beskid.refreshWorkspace",
     CMD_LIST_WORKSPACES,
     CMD_GET_WORKSPACE_SUMMARY,
-    CMD_GET_PROJECT_GRAPH,
+    CMD_GET_GRAPH,
     CMD_GET_PROJECT_DEPENDENCIES,
     CMD_GET_CONNECTION_STATUS,
     CMD_SET_REGISTRY,
     CMD_VALIDATE_CONNECTION,
+    CMD_GET_DOCUMENTATION_URI,
 ];
 
 /// Parse `focusedProjectUri` from LSP initialization options or workspace settings JSON.
@@ -59,6 +61,7 @@ pub fn handle_project_explorer_command(
     command: &str,
     arguments: Option<Vec<Value>>,
     workspace_roots: &[PathBuf],
+    compilation_db: Option<&mut beskid_queries::BeskidDatabase>,
 ) -> Result<Option<LSPAny>> {
     match command {
         CMD_LIST_WORKSPACES => Ok(Some(workspaces::list_workspaces(workspace_roots)?.into())),
@@ -66,9 +69,15 @@ pub fn handle_project_explorer_command(
             let uri = required_uri_arg(&arguments, "workspaceUri")?;
             Ok(Some(workspaces::get_workspace_summary(&uri)?.into()))
         }
-        CMD_GET_PROJECT_GRAPH => {
+        CMD_GET_GRAPH => {
             let uri = required_uri_arg(&arguments, "projectUri")?;
-            Ok(Some(graph::get_project_graph(&uri)?.into()))
+            let kind = graph::graph_kind_from_args(arguments.as_deref());
+            let entry_uri = graph::optional_uri_arg(arguments.as_deref(), "entryUri");
+            let workspace_uri = graph::optional_uri_arg(arguments.as_deref(), "workspaceUri");
+            Ok(Some(
+                graph::get_graph(&uri, kind, entry_uri.as_deref(), workspace_uri.as_deref(), compilation_db)?
+                    .into(),
+            ))
         }
         CMD_GET_PROJECT_DEPENDENCIES => {
             let uri = required_uri_arg(&arguments, "projectUri")?;
@@ -188,16 +197,16 @@ dependencies:
     }
 
     #[test]
-    fn get_project_graph_has_nodes_and_edges() {
+    fn get_graph_returns_mermaid_and_metadata() {
         let (_temp, root) = workspace_fixture();
         let project = root.join("apps/demo/Project.proj");
         let uri = path_to_uri_string(&project);
-        let value = graph::get_project_graph(&uri).expect("graph");
-        let nodes = value["nodes"].as_array().expect("nodes");
-        assert!(nodes.len() >= 2);
-        let edges = value["edges"].as_array().expect("edges");
-        assert!(!edges.is_empty());
-        assert!(value["unresolved"].as_array().is_some());
+        let value = graph::get_graph(&uri, beskid_graph::GraphKind::ProjectDeps, None, None, None)
+            .expect("graph");
+        let nodes = value["metadata"]["nodes"].as_array().expect("nodes");
+        assert!(!nodes.is_empty());
+        assert!(value.get("mermaid").and_then(|v| v.as_str()).is_some());
+        assert_eq!(value["kind"], "projectDeps");
     }
 
     #[test]
@@ -218,14 +227,14 @@ dependencies:
     fn handle_unknown_command_returns_none() {
         let (_temp, root) = workspace_fixture();
         let result =
-            handle_project_explorer_command("beskid.unknown", None, &[root]).expect("ok");
+            handle_project_explorer_command("beskid.unknown", None, &[root], None).expect("ok");
         assert!(result.is_none());
     }
 
     #[test]
     fn handle_list_workspaces_via_command_router() {
         let (_temp, root) = workspace_fixture();
-        let result = handle_project_explorer_command(CMD_LIST_WORKSPACES, None, &[root])
+        let result = handle_project_explorer_command(CMD_LIST_WORKSPACES, None, &[root], None)
             .expect("ok")
             .expect("payload");
         let value = serde_json::to_value(&result).expect("json");
@@ -235,7 +244,7 @@ dependencies:
     #[test]
     fn handle_get_workspace_summary_requires_uri() {
         let (_temp, root) = workspace_fixture();
-        let err = handle_project_explorer_command(CMD_GET_WORKSPACE_SUMMARY, None, &[root])
+        let err = handle_project_explorer_command(CMD_GET_WORKSPACE_SUMMARY, None, &[root], None)
             .expect_err("missing args");
         assert!(format!("{err}").contains("missing"));
     }

@@ -11,6 +11,10 @@ pub fn execute_all_targets(mut args: TestArgs) -> Result<()> {
     let manifest = load_manifest_from_path(&manifest_path)
         .map_err(|err| anyhow!("failed to load {}: {err}", manifest_path.display()))?;
 
+    if let Some(parent) = manifest_path.parent() {
+        beskid_queries::configure_db_for_project(parent);
+    }
+
     let test_targets: Vec<String> = manifest
         .targets
         .iter()

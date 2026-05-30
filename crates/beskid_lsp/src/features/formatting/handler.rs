@@ -38,7 +38,6 @@ mod tests {
         Document {
             version: 1,
             text: text.to_string(),
-            text_hash: 0,
             analysis_cache_version: 0,
             analysis: None,
         }

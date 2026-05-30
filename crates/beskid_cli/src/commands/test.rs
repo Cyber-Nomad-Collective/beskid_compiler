@@ -99,10 +99,9 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
         args.plain,
         PipelineProgressKind::PrepareAndRun,
     )?;
-    pipeline_ui.show_build_graph(&resolved);
     pipeline_ui.halt_progress_bars_for_output();
 
-    let (prepared, gate_diagnostics) = services::prepare_compilation_diagnostics(
+    let (prepared, gate_diagnostics) = beskid_queries::prepare_compilation_diagnostics(
         &resolved,
         services::PrepareOptions {
             mode: services::PrepareMode::DiagnosticsOnly,
@@ -134,7 +133,7 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
     }
 
     let resolved_with_assembly = resolved.with_assembly(prepared.assembly.clone());
-    let front = services::prepare_compilation(
+    let front = beskid_queries::prepare_compilation(
         &resolved_with_assembly,
         services::PrepareOptions {
             mode: services::PrepareMode::Executable,

@@ -1,0 +1,159 @@
+/// Contract-shaped SGR fluent builder with color-model downgrade.
+use Ansi.Escape;
+use Console.Capabilities;
+use Console.Capabilities.ColorModel;
+
+pub type SgrBuilder {
+    string openArgs,
+}
+
+/// Starts a new SGR chain.
+pub SgrBuilder Start() {
+    return SgrBuilder { openArgs: "" };
+}
+
+pub SgrBuilder Bold(SgrBuilder self) {
+    return SgrBuilder { openArgs: Escape.JoinArgs(self.openArgs, "1") };
+}
+
+pub SgrBuilder Dim(SgrBuilder self) {
+    return SgrBuilder { openArgs: Escape.JoinArgs(self.openArgs, "2") };
+}
+
+pub SgrBuilder Italic(SgrBuilder self) {
+    return SgrBuilder { openArgs: Escape.JoinArgs(self.openArgs, "3") };
+}
+
+pub SgrBuilder Underline(SgrBuilder self) {
+    return SgrBuilder { openArgs: Escape.JoinArgs(self.openArgs, "4") };
+}
+
+pub SgrBuilder Inverse(SgrBuilder self) {
+    return SgrBuilder { openArgs: Escape.JoinArgs(self.openArgs, "7") };
+}
+
+pub SgrBuilder Strike(SgrBuilder self) {
+    return SgrBuilder { openArgs: Escape.JoinArgs(self.openArgs, "9") };
+}
+
+pub SgrBuilder FgBasic(SgrBuilder self, i64 code) {
+    return SgrBuilder { openArgs: Escape.JoinArgs(self.openArgs, "${code}") };
+}
+
+pub SgrBuilder BgBasic(SgrBuilder self, i64 code) {
+    return SgrBuilder { openArgs: Escape.JoinArgs(self.openArgs, "${code}") };
+}
+
+pub SgrBuilder Fg256(SgrBuilder self, i64 index) {
+    string inner = Escape.JoinArgs("38", Escape.JoinArgs("5", "${index}"));
+    return SgrBuilder { openArgs: Escape.JoinArgs(self.openArgs, inner) };
+}
+
+pub SgrBuilder Bg256(SgrBuilder self, i64 index) {
+    string inner = Escape.JoinArgs("48", Escape.JoinArgs("5", "${index}"));
+    return SgrBuilder { openArgs: Escape.JoinArgs(self.openArgs, inner) };
+}
+
+pub SgrBuilder FgRgb(SgrBuilder self, i64 r, i64 g, i64 b) {
+    return SgrBuilder {
+        openArgs: Escape.JoinArgs(self.openArgs, ForegroundColorArgs(r, g, b)),
+    };
+}
+
+pub SgrBuilder BgRgb(SgrBuilder self, i64 r, i64 g, i64 b) {
+    return SgrBuilder {
+        openArgs: Escape.JoinArgs(self.openArgs, BackgroundColorArgs(r, g, b)),
+    };
+}
+
+pub string ForegroundColorArgs(i64 r, i64 g, i64 b) {
+    Capabilities caps = Capabilities.ProbeStdout();
+    ColorModel model = Capabilities.EffectiveColorModel(caps);
+    if model == ColorModel::TrueColor() {
+        return "38;2;${r};${g};${b}";
+    }
+    if model == ColorModel::Indexed256() {
+        return "38;5;${RgbTo256Index(r, g, b)}";
+    }
+    return "${RgbToBasicForeground(r, g, b)}";
+}
+
+pub string BackgroundColorArgs(i64 r, i64 g, i64 b) {
+    Capabilities caps = Capabilities.ProbeStdout();
+    ColorModel model = Capabilities.EffectiveColorModel(caps);
+    if model == ColorModel::TrueColor() {
+        return "48;2;${r};${g};${b}";
+    }
+    if model == ColorModel::Indexed256() {
+        return "48;5;${RgbTo256Index(r, g, b)}";
+    }
+    return "${RgbToBasicBackground(r, g, b)}";
+}
+
+pub string IntoPrefix(SgrBuilder self) {
+    if self.openArgs == "" {
+        return "";
+    }
+    return Escape.EmitCsi(self.openArgs, "m");
+}
+
+pub string ApplyTo(SgrBuilder self, string text) {
+    if !Capabilities.ShouldEmitAnsi() {
+        return text;
+    }
+    string prefix = IntoPrefix(self);
+    if prefix == "" {
+        return text;
+    }
+    string reset = Escape.EmitCsi("0", "m");
+    return "${prefix}${text}${reset}";
+}
+
+pub i64 RgbTo256Index(i64 r, i64 g, i64 b) {
+    i64 ri = ClampChannelBucket(r);
+    i64 gi = ClampChannelBucket(g);
+    i64 bi = ClampChannelBucket(b);
+    if ri == gi && gi == bi {
+        if ri < 8 {
+            return 16;
+        }
+        if ri > 248 {
+            return 231;
+        }
+        return 232 + ri / 10;
+    }
+    return 16 + 36 * ri + 6 * gi + bi;
+}
+
+pub i64 RgbToBasicForeground(i64 r, i64 g, i64 b) {
+    i64 index = DominantChannelIndex(r, g, b);
+    return 30 + index;
+}
+
+pub i64 RgbToBasicBackground(i64 r, i64 g, i64 b) {
+    i64 index = DominantChannelIndex(r, g, b);
+    return 40 + index;
+}
+
+pub i64 ClampChannelBucket(i64 channel) {
+    if channel < 0 {
+        return 0;
+    }
+    if channel > 255 {
+        return 5;
+    }
+    return channel / 51;
+}
+
+pub i64 DominantChannelIndex(i64 r, i64 g, i64 b) {
+    if r >= g && r >= b {
+        return 1;
+    }
+    if g >= r && g >= b {
+        return 2;
+    }
+    if b >= r && b >= g {
+        return 4;
+    }
+    return 7;
+}

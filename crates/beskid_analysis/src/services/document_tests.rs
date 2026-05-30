@@ -161,9 +161,13 @@ mod tests {
     }
 
     #[test]
-    fn corelib_mvp_completion_after_io_dot_includes_printline() {
+    fn corelib_mvp_completion_after_output_dot_includes_writeline() {
         let (snapshot, fixture, _) = snapshot_with_manual_assembly();
-        let offset = fixture.source.find("Output.WriteLine").expect("Output.WriteLine") + "Output.".len();
+        let offset = fixture
+            .source
+            .find("    Output.")
+            .expect("main Output.")
+            + "    Output.".len();
         let candidates = completion_candidates(&snapshot, &fixture.source, offset);
         assert!(
             candidates.iter().any(|c| c.label == "WriteLine"),
@@ -208,6 +212,22 @@ mod tests {
                 .iter()
                 .map(|r| r.location.path.display())
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn corelib_mvp_lifecycle_completion_after_output_dot_includes_writeline() {
+        let (snapshot, fixture) = snapshot_via_lifecycle_context();
+        let offset = fixture
+            .source
+            .find("    Output.")
+            .expect("main Output.")
+            + "    Output.".len();
+        let candidates = completion_candidates(&snapshot, &fixture.source, offset);
+        assert!(
+            candidates.iter().any(|c| c.label == "WriteLine"),
+            "expected WriteLine member completion after Output., got {:?}",
+            candidates.iter().map(|c| &c.label).collect::<Vec<_>>()
         );
     }
 
