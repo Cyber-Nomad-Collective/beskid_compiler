@@ -7,8 +7,23 @@ use beskid_aot::{
 use beskid_aot::object_module::BeskidObjectModule;
 use beskid_codegen::CodegenArtifact;
 
+fn host_target_triple() -> &'static str {
+    if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
+        "aarch64-apple-darwin"
+    } else if cfg!(all(target_arch = "x86_64", target_os = "linux")) {
+        "x86_64-unknown-linux-gnu"
+    } else if cfg!(all(target_arch = "aarch64", target_os = "linux")) {
+        "aarch64-unknown-linux-gnu"
+    } else if cfg!(all(target_arch = "x86_64", target_os = "windows")) {
+        "x86_64-pc-windows-msvc"
+    } else {
+        panic!("unsupported mod_artifact test host");
+    }
+}
+
 #[test]
 fn build_mod_artifact_writes_object_and_descriptor_under_workspace_cache() {
+    let host_triple = host_target_triple();
     let temp = tempfile::tempdir().expect("tempdir");
     let workspace_root = temp.path().join("workspace");
     let project_root = workspace_root.join("mods/compiler_sdk_test_mod");
@@ -42,7 +57,7 @@ project {
         lockfile_path: Some(lockfile_path),
         package_id: "compiler_sdk_test_mod".to_owned(),
         package_version: Some("0.0.0-local".to_owned()),
-        target_triple: "aarch64-apple-darwin".to_owned(),
+        target_triple: host_triple.to_owned(),
         compiler_version: "0.2.0-dev".to_owned(),
         registrations: Vec::<ContractRegistration>::new(),
     })
@@ -51,7 +66,7 @@ project {
     let expected_key = compute_mod_artifact_key(
         &descriptor.lock_hash,
         &descriptor.mod_source_hash,
-        "aarch64-apple-darwin",
+        host_triple,
         "0.2.0-dev",
     );
     assert_eq!(descriptor.artifact_key, expected_key);
@@ -60,7 +75,7 @@ project {
         workspace_root
             .join(".beskid/obj/mods/compiler_sdk_test_mod")
             .join(&expected_key)
-            .join("aarch64-apple-darwin")
+            .join(host_triple)
     );
     assert_eq!(descriptor.object_file, "mod.o");
     assert!(descriptor.artifact_dir.join("mod.o").is_file());
@@ -81,7 +96,7 @@ project {
     assert_eq!(sidecar.package_version.as_deref(), Some("0.0.0-local"));
     assert_eq!(sidecar.mod_source_hash, descriptor.mod_source_hash);
     assert_eq!(sidecar.lock_hash, descriptor.lock_hash);
-    assert_eq!(sidecar.target_triple, "aarch64-apple-darwin");
+    assert_eq!(sidecar.target_triple, host_triple);
     assert_eq!(sidecar.compiler_version, "0.2.0-dev");
     assert_eq!(sidecar.object_file, "mod.o");
     assert!(sidecar.registrations.is_empty());
