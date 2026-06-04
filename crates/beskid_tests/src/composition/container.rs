@@ -134,7 +134,7 @@ fn two_scopes_plural_inject_reverse_dispose() {
     // binding order, that's guaranteed.
     let scope1_disposes: Vec<&String> = entries
         .iter()
-        .take_while(|line| line.as_str() != "init:rootA" || true)
+        .take_while(|line| line.as_str() != "init:rootA")
         .filter(|line| matches!(line.as_str(), "dispose:handler1" | "dispose:handler2" | "dispose:consumer"))
         .collect();
     let consumer_pos = scope1_disposes
