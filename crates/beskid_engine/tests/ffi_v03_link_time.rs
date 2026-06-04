@@ -49,8 +49,9 @@ pub i64 main() { return Libc.getpid(); }
     let binary = result
         .final_path
         .expect("linked executable path");
-    let status = Command::new(&binary).status()?;
-    let expected = (std::process::id() & 0xFF) as i32;
+    let mut child = Command::new(&binary).spawn()?;
+    let expected = (child.id() & 0xFF) as i32;
+    let status = child.wait()?;
     assert_eq!(status.code(), Some(expected));
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
