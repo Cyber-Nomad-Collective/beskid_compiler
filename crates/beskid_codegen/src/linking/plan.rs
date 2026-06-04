@@ -216,7 +216,7 @@ impl LinkPlan {
         for symbol in self.callees.iter().chain(self.entries.iter()) {
             match symbol {
                 LinkSymbol::Function {
-                    item,
+                    item: _,
                     mangled: Some(name),
                 } => {
                     names.insert(name.clone());

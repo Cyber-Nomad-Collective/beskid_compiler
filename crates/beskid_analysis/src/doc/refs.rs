@@ -1,6 +1,5 @@
 //! Shared `@ref(...)` resolution for doc rendering and validation.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::resolve::{ItemInfo, Resolution};
@@ -62,15 +61,14 @@ fn package_for_item(target: &ItemInfo, ctx: &DocRefLinkContext) -> String {
                 }
             }
         }
-        if let Some((_, dep_pkg)) = best {
-            if ctx
+        if let Some((_, dep_pkg)) = best
+            && ctx
                 .publishing_package
                 .as_ref()
                 .is_none_or(|pub_pkg| pub_pkg != &dep_pkg)
             {
                 return format!("{dep_pkg}@{ver}");
             }
-        }
     }
     ctx.package_with_version.trim().to_string()
 }
@@ -98,11 +96,10 @@ fn find_resolved_item_id(path: &str, resolution: &Resolution) -> Option<usize> {
     }
     let suffix = format!("::{path}");
     for item in &resolution.items {
-        if let Some(qn) = qnames.get(&item.id.0) {
-            if qn == path || qn.ends_with(&suffix) {
+        if let Some(qn) = qnames.get(&item.id.0)
+            && (qn == path || qn.ends_with(&suffix)) {
                 return Some(item.id.0);
             }
-        }
     }
     None
 }

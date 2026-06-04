@@ -26,7 +26,3 @@ pub struct GrammarRevision {
     #[returns(ref)]
     pub rev: String,
 }
-
-pub fn default_grammar_revision() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
-}

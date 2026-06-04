@@ -17,7 +17,7 @@ pub struct UpdateArgs {
 
 /// Resolve with update semantics (non-frozen) and rematerialize dependencies.
 pub fn execute(args: UpdateArgs) -> Result<()> {
-    let (pipeline_ui, resolved) = resolve_project_with_cli_pipeline(
+    let (pipeline_ui, _resolved) = resolve_project_with_cli_pipeline(
         None,
         args.project.project.as_ref(),
         args.project.target.as_deref(),

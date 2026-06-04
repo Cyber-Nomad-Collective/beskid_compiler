@@ -16,7 +16,10 @@ mod project;
 mod queries;
 mod render;
 mod semantic;
+mod entry_session;
 mod session;
+#[cfg(test)]
+mod session_tests;
 
 pub use composition::{
     composition_diagnostics_for_program, composition_result_to_diagnostics,
@@ -52,9 +55,16 @@ pub use queries::{
     assemble_program_query, assemble_unit, invalidate_dependents, module_index_query,
     resolve_entry, type_dep_signatures, type_entry, type_entry_gate,
 };
+pub use entry_session::{
+    composition_fingerprint, current_syntax_generation_id, get_or_insert_assembly,
+    invalidate_all as invalidate_entry_sessions,
+    invalidate_project as invalidate_entry_sessions_for_project, next_syntax_generation_id,
+    update_semantic_snapshot,
+};
 pub use session::{
-    CompilationSession, SemanticSnapshot, SessionFingerprint, cached_executable,
-    session_for_assembly, store_executable_on_session,
+    cached_compilation_session, cached_executable, cached_semantic_snapshot, CompilationSession,
+    SemanticSnapshot, SessionFingerprint, SEMANTIC_SNAPSHOT_VERSION, session_for_assembly,
+    store_executable_on_session,
 };
 pub use input::{
     AnalyzeInProjectOptions, ResolvedInput, resolve_input, resolve_input_with_pipeline,

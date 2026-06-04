@@ -372,7 +372,7 @@ fn depends_on_corelib_aggregate(
         return false;
     };
     let corelib_manifest =
-        normalize_existing_path(&PathBuf::from(corelib_root).join("Project.proj"));
+        normalize_existing_path(&corelib_root.join("Project.proj"));
     consumer_manifest.dependencies.iter().any(|dependency| {
         if dependency.source != DependencySource::Path {
             return false;

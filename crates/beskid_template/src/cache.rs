@@ -31,11 +31,10 @@ pub enum InstallSource {
 }
 
 pub fn beskid_config_root() -> PathBuf {
-    if let Ok(dir) = std::env::var("BESKID_CONFIG_DIR") {
-        if !dir.trim().is_empty() {
+    if let Ok(dir) = std::env::var("BESKID_CONFIG_DIR")
+        && !dir.trim().is_empty() {
             return PathBuf::from(dir);
         }
-    }
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("beskid")

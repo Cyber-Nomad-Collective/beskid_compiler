@@ -36,7 +36,7 @@ async fn build_document_analysis(
     let mut compilation_context = cached_compilation_context(state, &path).await;
 
     if let Some(path) = uri_to_path(uri) {
-        let mut write = state.write().await;
+        let write = state.write().await;
         write
             .compilation_db
             .lock()

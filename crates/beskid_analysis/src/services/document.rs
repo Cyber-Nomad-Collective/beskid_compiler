@@ -148,7 +148,7 @@ pub fn assemble_for_api_documentation(
 pub fn resolve_assembly_for_api_documentation(
     entry_program: &Spanned<Program>,
     assembly: &ProgramAssembly,
-    entry_path: &Path,
+    _entry_path: &Path,
 ) -> Option<Resolution> {
     let entry_hir = lower_normalize_hir(entry_program)?;
     assembly

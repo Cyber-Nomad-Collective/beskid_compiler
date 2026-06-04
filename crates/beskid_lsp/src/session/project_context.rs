@@ -62,6 +62,22 @@ pub async fn cached_compilation_context(
 
 /// Clear cached [`CompilationContext`] entries (e.g. after manifest or workspace graph changes).
 pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
+    let project_roots: Vec<std::path::PathBuf> = {
+        let read = state.read().await;
+        read.compilation_context_cache
+            .keys()
+            .filter_map(|(manifest, _)| manifest.parent().map(std::path::Path::to_path_buf))
+            .collect()
+    };
+    for root in &project_roots {
+        beskid_queries::invalidate_entry_sessions(root);
+    }
+    if project_roots.is_empty()
+        && let Some(focused) = state.read().await.focused_project.as_ref()
+        && let Some(root) = focused.parent()
+    {
+        beskid_queries::invalidate_entry_sessions(root);
+    }
     let mut write = state.write().await;
     write.compilation_context_cache.clear();
     write.compilation_db = std::sync::Mutex::new(beskid_queries::BeskidDatabase::default());

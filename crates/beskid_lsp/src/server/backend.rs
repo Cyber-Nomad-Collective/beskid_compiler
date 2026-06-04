@@ -402,7 +402,7 @@ impl LanguageServer for Backend {
                 Some(&mut *db),
             )?
         };
-        Ok(explorer_result.map(Into::into))
+        Ok(explorer_result)
     }
 
     async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {

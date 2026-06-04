@@ -90,8 +90,8 @@ fn serialize_lock_entry(entry: &ProjectLockDependencyEntry) -> Value {
         "project": entry.project(),
         "sourceRoot": entry.source_root(),
         "materializedRoot": entry.materialized_root(),
-        "resolvedVersion": entry.resolved_version().as_deref(),
-        "registry": entry.registry().as_deref(),
+        "resolvedVersion": entry.resolved_version(),
+        "registry": entry.registry(),
     })
 }
 

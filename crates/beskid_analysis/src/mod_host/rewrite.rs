@@ -42,11 +42,7 @@ pub(crate) fn run_rewriters(
         // calls every Rewriter once and expects deterministic completion.
         let _analyzer_count = analyzed.outcomes.len();
 
-        Ok(RewriteResult {
-            program,
-            registrations,
-            outcomes,
-        })
+        Ok(RewriteResult { program, outcomes })
     })
 }
 

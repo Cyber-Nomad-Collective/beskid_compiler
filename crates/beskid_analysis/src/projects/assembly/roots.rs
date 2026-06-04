@@ -150,8 +150,3 @@ pub fn module_roots_from_effective(roots: &EffectiveCompilationRoots) -> Vec<Pat
     );
     out
 }
-
-/// Legacy helper: plan-only roots (no materialization). Prefer [`effective_roots_for_plan`].
-pub fn module_roots_for_plan(plan: &CompilePlan) -> Vec<PathBuf> {
-    module_roots_from_effective(&effective_roots_from_plan_and_workspace(plan, None))
-}

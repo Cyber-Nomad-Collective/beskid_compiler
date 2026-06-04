@@ -18,7 +18,7 @@ pub fn unit_materializer_for(
         let mut guard = db.lock().expect("beskid database lock");
         guard.ensure_file_text(path.to_path_buf(), source.to_string());
         let unit = parse_and_expand_unit(&*guard, session, path.to_path_buf());
-        let hir = build_hir_units(&[unit.clone()])
+        let hir = build_hir_units(std::slice::from_ref(&unit))
             .into_iter()
             .next()
             .expect("unit hir");

@@ -119,10 +119,13 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
         HOST_SOURCE,
         AnalysisOptions::default(),
     );
+    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+        .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
         Some(&invoker),
+        Some(&snapshot),
         Some(pipeline.as_ref()),
     )?;
     assert_eq!(analyze.analyzer_outcomes.len(), 1);

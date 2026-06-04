@@ -450,7 +450,7 @@ fn lower_function_with_name_body(
         let type_id = signature_types
             .and_then(|sig| sig.params.get(index).copied())
             .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))
-            .map(|tid| substitute(tid))
+            .map(&substitute)
             .ok_or(CodegenError::UnsupportedNode {
                 span: param.span,
                 node: "function parameter type",
@@ -470,7 +470,7 @@ fn lower_function_with_name_body(
                 .as_ref()
                 .and_then(|ty| type_id_for_type(resolution, type_result, ty))
         })
-        .map(|tid| substitute(tid));
+        .map(&substitute);
     if let Some(type_id) = return_type_id
         && let Some(clif_ty) = map_type_id_to_clif(type_result, type_id)
     {
@@ -515,7 +515,7 @@ fn lower_function_with_name_body(
             .copied()
             .or_else(|| signature_types.and_then(|sig| sig.params.get(index).copied()))
             .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))
-            .map(|tid| substitute(tid))
+            .map(&substitute)
             .ok_or(CodegenError::MissingLocalType {
                 span: param.node.name.span,
             })?;

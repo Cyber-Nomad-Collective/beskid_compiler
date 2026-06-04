@@ -39,7 +39,7 @@ pub fn instantiate(
     let substitution = build_substitution_map(manifest, &values)?;
     let output_kind = manifest.output_kind();
 
-    let output_root = resolve_output_root(output_kind, &options, manifest)?;
+    let output_root = resolve_output_root(output_kind, options, manifest)?;
 
     if output_root.exists() {
         let non_empty = fs::read_dir(&output_root)
@@ -55,7 +55,7 @@ pub fn instantiate(
         fs::create_dir_all(&output_root)?;
     }
 
-    validate_item_template(output_kind, &output_root, &options)?;
+    validate_item_template(output_kind, &output_root, options)?;
 
     let mut guids_map = std::collections::HashMap::new();
     let plans = plan_source_writes(
@@ -67,7 +67,7 @@ pub fn instantiate(
     )?;
 
     if output_kind == TemplateOutputKind::Item {
-        validate_item_outputs(&plans, &output_root, &options)?;
+        validate_item_outputs(&plans, &output_root, options)?;
     }
 
     apply_write_plans(&output_root, &plans, options.force)?;

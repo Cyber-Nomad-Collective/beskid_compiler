@@ -16,11 +16,13 @@ mod unit;
 
 pub use db::{BeskidDatabase, Db, UnitArtifactCache};
 pub use entry::{
+    cached_semantic_snapshot_for_key, fingerprint_key, invalidate_entry_sessions,
     prepare_compilation_diagnostics_with_db, prepare_compilation_with_db, semantic_gate_diagnostics,
     semantic_snapshot, typed_entry_bundle,
 };
 pub use session::{
-    configure_db_for_project, prepare_compilation, prepare_compilation_diagnostics, with_db,
+    compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,
+    prepare_compilation_diagnostics, with_db,
 };
 pub use graph::{assemble_program_query, discovered_units, module_index_fingerprint, program_assembly, reverse_dependents};
 pub use graph_viz::{

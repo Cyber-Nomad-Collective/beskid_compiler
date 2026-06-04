@@ -89,24 +89,24 @@ fn unit_for_item<'a>(
         .map(|(_, unit)| *unit)
 }
 
-fn find_function_by_span<'a>(
-    program: &'a Spanned<HirProgram>,
+fn find_function_by_span(
+    program: &Spanned<HirProgram>,
     span: SpanInfo,
-) -> Option<&'a Spanned<HirFunctionDefinition>> {
+) -> Option<&Spanned<HirFunctionDefinition>> {
     find_function_in_items(&program.node.items, span)
 }
 
-fn find_method_by_span<'a>(
-    program: &'a Spanned<HirProgram>,
+fn find_method_by_span(
+    program: &Spanned<HirProgram>,
     span: SpanInfo,
-) -> Option<&'a Spanned<HirMethodDefinition>> {
+) -> Option<&Spanned<HirMethodDefinition>> {
     find_method_in_items(&program.node.items, span)
 }
 
-fn find_function_in_items<'a>(
-    items: &'a [Spanned<HirItem>],
+fn find_function_in_items(
+    items: &[Spanned<HirItem>],
     span: SpanInfo,
-) -> Option<&'a Spanned<HirFunctionDefinition>> {
+) -> Option<&Spanned<HirFunctionDefinition>> {
     find_function_in_items_inner(items, span, &mut HashSet::new())
 }
 
@@ -124,22 +124,21 @@ fn find_function_in_items_inner<'a>(
         }
         if let HirItem::InlineModule(module) = &item.node {
             let ptr = module.node.items.as_ptr() as usize;
-            if modules.insert(ptr) {
-                if let Some(def) =
+            if modules.insert(ptr)
+                && let Some(def) =
                     find_function_in_items_inner(&module.node.items, span, modules)
                 {
                     return Some(def);
                 }
-            }
         }
     }
     None
 }
 
-fn find_method_in_items<'a>(
-    items: &'a [Spanned<HirItem>],
+fn find_method_in_items(
+    items: &[Spanned<HirItem>],
     span: SpanInfo,
-) -> Option<&'a Spanned<HirMethodDefinition>> {
+) -> Option<&Spanned<HirMethodDefinition>> {
     find_method_in_items_inner(items, span, &mut HashSet::new())
 }
 
@@ -157,11 +156,10 @@ fn find_method_in_items_inner<'a>(
         }
         if let HirItem::InlineModule(module) = &item.node {
             let ptr = module.node.items.as_ptr() as usize;
-            if modules.insert(ptr) {
-                if let Some(def) = find_method_in_items_inner(&module.node.items, span, modules) {
+            if modules.insert(ptr)
+                && let Some(def) = find_method_in_items_inner(&module.node.items, span, modules) {
                     return Some(def);
                 }
-            }
         }
     }
     None

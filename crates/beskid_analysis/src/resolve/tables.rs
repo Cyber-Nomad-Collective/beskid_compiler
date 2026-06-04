@@ -78,17 +78,16 @@ impl ResolutionTables {
             return Some(value);
         }
 
-        let flat = self.resolved_values.get(&span).copied();
-        flat
+        
+        self.resolved_values.get(&span).copied()
     }
 
     fn scoped_value_at(&self, path: &PathBuf, span: SpanInfo) -> Option<ResolvedValue> {
         for (scoped_path, values) in &self.scoped_resolved_values {
-            if same_file_opt(Some(scoped_path), Some(path)) {
-                if let Some(value) = values.get(&span) {
+            if same_file_opt(Some(scoped_path), Some(path))
+                && let Some(value) = values.get(&span) {
                     return Some(*value);
                 }
-            }
         }
         None
     }
@@ -127,11 +126,10 @@ impl ResolutionTables {
 
     fn scoped_type_at(&self, path: &PathBuf, span: SpanInfo) -> Option<ResolvedType> {
         for (scoped_path, types) in &self.scoped_resolved_types {
-            if same_file_opt(Some(scoped_path), Some(path)) {
-                if let Some(resolved_type) = types.get(&span) {
+            if same_file_opt(Some(scoped_path), Some(path))
+                && let Some(resolved_type) = types.get(&span) {
                     return Some(resolved_type.clone());
                 }
-            }
         }
         None
     }

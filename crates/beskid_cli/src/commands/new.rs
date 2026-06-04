@@ -230,11 +230,10 @@ fn execute_instantiate(short_name: Option<String>, flags: InstantiateFlags) -> R
         .clone()
         .ok_or_else(|| anyhow!("`-o` / `--output` is required"))?;
 
-    if stdin_is_interactive() && output.exists() && !flags.force {
-        if !confirm_overwrite(&output)? {
+    if stdin_is_interactive() && output.exists() && !flags.force
+        && !confirm_overwrite(&output)? {
             anyhow::bail!("cancelled");
         }
-    }
 
     let (template_root, manifest, registry_meta) = resolve_template_for_instantiate(
         short_name.as_deref(),

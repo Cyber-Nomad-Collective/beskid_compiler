@@ -276,3 +276,89 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
         );
     });
 }
+
+#[test]
+fn parallel_unit_build_matches_serial_assembly_order() {
+    use crate::projects::std_dependency_env_lock;
+
+    let _guard = std_dependency_env_lock();
+    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../beskid_e2e_tests/fixtures/corelib_mvp");
+        let resolved = resolve_input(
+            Some(&fixture.join("Src/Main.bd")),
+            Some(&fixture),
+            None,
+            None,
+            false,
+            false,
+        )
+        .expect("resolve corelib_mvp");
+        let plan = resolved.compile_plan.expect("compile plan");
+        let options = AssemblyOptions {
+            discovery: AssemblyDiscovery::ImportClosure,
+            ..Default::default()
+        };
+
+        let serial = assemble_with_thread_cap(
+            &plan,
+            resolved.prepared_workspace.as_ref(),
+            &resolved.source_path,
+            &resolved.source,
+            &options,
+            1,
+        );
+        let parallel = assemble_with_thread_cap(
+            &plan,
+            resolved.prepared_workspace.as_ref(),
+            &resolved.source_path,
+            &resolved.source,
+            &options,
+            4,
+        );
+
+        let serial_paths: Vec<_> = serial
+            .units
+            .iter()
+            .map(|unit| unit.path.display().to_string())
+            .collect();
+        let parallel_paths: Vec<_> = parallel
+            .units
+            .iter()
+            .map(|unit| unit.path.display().to_string())
+            .collect();
+
+        assert_eq!(
+            serial_paths, parallel_paths,
+            "parallel assembly must preserve deterministic unit order"
+        );
+        assert_eq!(serial.entry_index, parallel.entry_index);
+        assert_eq!(
+            serial.units.len(),
+            parallel.units.len(),
+            "unit count must match between serial and parallel builds"
+        );
+    });
+}
+
+fn assemble_with_thread_cap(
+    plan: &beskid_analysis::projects::CompilePlan,
+    workspace: Option<&beskid_analysis::projects::PreparedProjectWorkspace>,
+    entry_path: &std::path::Path,
+    entry_source: &str,
+    options: &AssemblyOptions,
+    threads: usize,
+) -> beskid_analysis::projects::ProgramAssembly {
+    // SAFETY: test runs single-threaded under `std_dependency_env_lock`.
+    unsafe {
+        std::env::set_var("BESKID_ASSEMBLY_THREADS", threads.to_string());
+    }
+    assemble_program(
+        plan,
+        workspace,
+        entry_path,
+        Some(entry_source),
+        options,
+    )
+    .expect("assemble with thread cap")
+}

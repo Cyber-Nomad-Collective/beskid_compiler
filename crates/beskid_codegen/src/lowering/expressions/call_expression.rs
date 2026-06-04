@@ -1,7 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility;
 use crate::lowering::function::{
-    lower_function, lower_function_with_name, mangle_function_name, mangle_method_name,
+    lower_function_with_name, mangle_function_name, mangle_method_name,
 };
 use crate::lowering::locals::{local_id_for_span, resolved_value_at};
 use crate::lowering::lowerable::{Lowerable, lower_node};

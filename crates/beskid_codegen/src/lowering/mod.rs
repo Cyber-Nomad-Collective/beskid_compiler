@@ -19,7 +19,6 @@ pub use expressions::mapping::shape_id_for_item;
 pub use expressions::serialize::{
     DYNAMIC_TYPE_NAME, mapping_pair_eligible, require_mapping_eligible,
 };
-pub(crate) use function::{mangle_function_name, mangle_method_name};
 pub use lowerable::{
     Lowerable, lower_node, lower_program, lower_program_with_assembly,
     lower_program_with_assembly_for_entrypoint,

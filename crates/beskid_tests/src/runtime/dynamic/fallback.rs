@@ -56,7 +56,7 @@ fn dynamic_fallback_returns_deterministic_incompatible_error() {
     let cell = DynamicCell {
         shape_id: SRC_SHAPE,
         flags: 0,
-        payload: 0x1 as *mut u8,
+        payload: std::ptr::dangling_mut::<u8>(),
     };
     let mut out = Payload { value: 0 };
 

@@ -42,14 +42,14 @@ pub async fn handle_pckg_registry_command(
 ) -> Result<Option<LSPAny>> {
     match command {
         CMD_GET_CONNECTION_STATUS => {
-            Ok(Some(get_connection_status(arguments, workspace_roots, state).await?.into()))
+            Ok(Some(get_connection_status(arguments, workspace_roots, state).await?))
         }
         CMD_SET_REGISTRY => {
             set_registry(arguments, state).await?;
             Ok(None)
         }
         CMD_VALIDATE_CONNECTION => {
-            Ok(Some(validate_connection(arguments, workspace_roots, state).await?.into()))
+            Ok(Some(validate_connection(arguments, workspace_roots, state).await?))
         }
         _ => Ok(None),
     }
@@ -221,19 +221,16 @@ fn resolve_workspace_default_registry(
     workspace_uri: Option<&str>,
     workspace_roots: &[PathBuf],
 ) -> (Option<String>, Option<String>) {
-    if let Some(uri) = workspace_uri {
-        if let Some(path) = path_from_uri_string(uri) {
-            if let Some(pair) = default_from_workspace_manifest(&path) {
+    if let Some(uri) = workspace_uri
+        && let Some(path) = path_from_uri_string(uri)
+            && let Some(pair) = default_from_workspace_manifest(&path) {
                 return pair;
             }
-        }
-    }
     for manifest in discover_workspace_manifest_paths(workspace_roots) {
-        if let Some(pair) = default_from_workspace_manifest(&manifest) {
-            if pair.0.is_some() {
+        if let Some(pair) = default_from_workspace_manifest(&manifest)
+            && pair.0.is_some() {
                 return pair;
             }
-        }
     }
     (None, None)
 }

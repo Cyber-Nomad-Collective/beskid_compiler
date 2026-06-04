@@ -5,7 +5,9 @@ use mermaid_builder::prelude::Direction as MermaidDirection;
 
 /// Discriminator for graph domains exposed to CLI/LSP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum GraphKind {
+    #[default]
     ProjectDeps,
     Workspace,
     ModuleTree,
@@ -43,11 +45,6 @@ pub enum GraphDirection {
     TopDown,
 }
 
-impl Default for GraphKind {
-    fn default() -> Self {
-        Self::ProjectDeps
-    }
-}
 
 impl GraphDirection {
     pub fn to_mermaid(self) -> MermaidDirection {

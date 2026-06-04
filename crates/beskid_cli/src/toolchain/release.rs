@@ -133,6 +133,12 @@ pub fn install_lsp(args: &LspInstallArgs) -> Result<LspInstallResult> {
     })
 }
 
+pub fn managed_lsp_exists() -> bool {
+    managed_lsp_path()
+        .ok()
+        .is_some_and(|path| path.is_file())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,10 +180,4 @@ mod tests {
         assert!(path.to_string_lossy().contains(".beskid"));
         assert!(path.to_string_lossy().contains("beskid_lsp"));
     }
-}
-
-pub fn managed_lsp_exists() -> bool {
-    managed_lsp_path()
-        .ok()
-        .is_some_and(|path| path.is_file())
 }

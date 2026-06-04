@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
-use beskid_analysis::services::{PrepareOptions, PreparedCompilation, ResolvedInput};
+use beskid_analysis::services::{
+    FrontEndOptions, FrontEndTypedResult, PrepareMode, PrepareOptions, PreparedCompilation,
+    ResolvedInput,
+};
 use beskid_pipeline::PipelineObserver;
 
 use crate::db::BeskidDatabase;
@@ -15,7 +18,7 @@ use crate::entry::{
 
 thread_local! {
     static COMPILATION_DB: RefCell<BeskidDatabase> = RefCell::new(BeskidDatabase::default());
-    static CONFIGURED_ROOT: RefCell<Option<PathBuf>> = RefCell::new(None);
+    static CONFIGURED_ROOT: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
 
 /// Access the shared compilation database for this thread.
@@ -72,4 +75,21 @@ pub fn prepare_compilation(
         ensure_db_for_resolved(db, resolved);
         prepare_compilation_with_db(db, resolved, options, pipeline)
     })
+}
+
+/// Build typed HIR from a resolved input using the shared DB + entry session registry (CLI / codegen).
+pub fn compile_front_end_from_resolved_input(
+    resolved: &ResolvedInput,
+    options: FrontEndOptions,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<FrontEndTypedResult> {
+    let prepared = prepare_compilation(
+        resolved,
+        PrepareOptions {
+            mode: PrepareMode::Executable,
+            front_end: options,
+        },
+        pipeline,
+    )?;
+    prepared.into_executable()
 }

@@ -1,7 +1,7 @@
 //! `beskid lsp` — run or install the Beskid language server.
 
 use crate::toolchain::release::{LspInstallArgs, install_lsp, managed_lsp_exists, managed_lsp_path};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Args, Subcommand};
 use std::process::Command;
 

@@ -20,7 +20,7 @@ pub struct FetchArgs {
 
 /// Resolve with unresolved-deps warnings and materialize the workspace (see `Project.lock`).
 pub fn execute(args: FetchArgs) -> Result<()> {
-    let (pipeline_ui, resolved) = resolve_project_with_cli_pipeline(
+    let (pipeline_ui, _resolved) = resolve_project_with_cli_pipeline(
         None,
         args.project.project.as_ref(),
         args.project.target.as_deref(),

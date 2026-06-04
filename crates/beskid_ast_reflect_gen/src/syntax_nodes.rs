@@ -803,14 +803,14 @@ pub string SyntaxFacadeVersion() {
         helpers
             .helper_emit_order
             .iter()
-            .cloned()
-            .filter(|h| h != "NodeList"),
+            .filter(|&h| h != "NodeList")
+            .cloned(),
     );
     expected_bd.extend(
         decls
             .keys()
-            .cloned()
-            .filter(|k| !crate::syntax_traversal::is_host_only_type(k)),
+            .filter(|&k| !crate::syntax_traversal::is_host_only_type(k))
+            .cloned(),
     );
     for entry in fs::read_dir(&nodes_dir)? {
         let entry = entry?;

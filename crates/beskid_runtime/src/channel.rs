@@ -371,6 +371,26 @@ pub fn channel_close(id: ChannelId) {
     }
 }
 
+/// Remove `waiter` from every channel wait list and wake it if it was parked on a channel.
+pub fn channel_cancel_waiter(waiter: FiberKey) {
+    let mut guard = channels();
+    let Some(map) = guard.as_mut() else {
+        return;
+    };
+    let mut removed = false;
+    for ch in map.values_mut() {
+        let before_senders = ch.wait_senders.len();
+        ch.wait_senders.retain(|f| *f != waiter);
+        let before_receivers = ch.wait_receivers.len();
+        ch.wait_receivers.retain(|f| *f != waiter);
+        removed |= ch.wait_senders.len() != before_senders;
+        removed |= ch.wait_receivers.len() != before_receivers;
+    }
+    if removed {
+        scheduler::wake_fiber(waiter);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,25 +453,5 @@ mod tests {
         // After draining, sending should succeed again.
         assert_eq!(channel_try_send(ch, 20), STATUS_OK);
         channel_close(ch);
-    }
-}
-
-/// Remove `waiter` from every channel wait list and wake it if it was parked on a channel.
-pub fn channel_cancel_waiter(waiter: FiberKey) {
-    let mut guard = channels();
-    let Some(map) = guard.as_mut() else {
-        return;
-    };
-    let mut removed = false;
-    for ch in map.values_mut() {
-        let before_senders = ch.wait_senders.len();
-        ch.wait_senders.retain(|f| *f != waiter);
-        let before_receivers = ch.wait_receivers.len();
-        ch.wait_receivers.retain(|f| *f != waiter);
-        removed |= ch.wait_senders.len() != before_senders;
-        removed |= ch.wait_receivers.len() != before_receivers;
-    }
-    if removed {
-        scheduler::wake_fiber(waiter);
     }
 }

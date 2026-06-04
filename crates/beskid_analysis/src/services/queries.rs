@@ -18,7 +18,7 @@ use crate::types::TypeResult;
 
 /// Query: assemble one unit's HIR from source (invalidated by content hash).
 pub fn assemble_unit(source_unit: &SourceUnit) -> UnitHir {
-    build_hir_units(&[source_unit.clone()])
+    build_hir_units(std::slice::from_ref(source_unit))
         .into_iter()
         .next()
         .expect("single unit hir")

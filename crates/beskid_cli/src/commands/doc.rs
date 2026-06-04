@@ -90,13 +90,11 @@ fn location_for_item(
     entry_source: &str,
     entry_path: &str,
 ) -> LocationJson {
-    if let Some(asm) = assembly {
-        if let Some(path) = &item.source_path {
-            if let Some(unit) = asm.units.iter().find(|u| u.path == *path) {
+    if let Some(asm) = assembly
+        && let Some(path) = &item.source_path
+            && let Some(unit) = asm.units.iter().find(|u| u.path == *path) {
                 return location_for_span(&unit.source, &path.to_string_lossy(), &item.span);
             }
-        }
-    }
     location_for_span(entry_source, entry_path, &item.span)
 }
 

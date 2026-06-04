@@ -4,8 +4,7 @@ use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{parse_manifest, parse_workspace_manifest};
 use beskid_analysis::services::{
-    self, DocumentAnalysisSnapshot, FrontEndOptions, PrepareMode, PrepareOptions,
-    ResolvedInput, resolved_input_from_plan,
+    self, DocumentAnalysisSnapshot, FrontEndOptions, PrepareMode, PrepareOptions, resolved_input_from_plan,
 };
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity};

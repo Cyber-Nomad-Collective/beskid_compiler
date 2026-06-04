@@ -5,27 +5,82 @@ use std::sync::Arc;
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{
-    FrontEndOptions, FrontEndTypedResult, PrepareMode, PrepareOptions, PreparedCompilation,
-    ResolvedInput,
+    FrontEndOptions, PrepareMode, PrepareOptions, PreparedCompilation, ResolvedInput,
+    SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot, invalidate_entry_sessions_for_project,
 };
 use beskid_pipeline::{PipelineObserver, observe_phase, phases};
 
 use crate::db::BeskidDatabase;
 use crate::graph::program_assembly;
 use crate::output::SharedFrontEnd;
-use crate::stats::{emit_salsa_stats, record_query_miss};
+use crate::stats::{emit_salsa_stats, record_query_hit, record_query_miss, record_revision_bump};
 
-/// Semantic gate diagnostics for an entry (query boundary marker).
+fn session_fingerprint(resolved: &ResolvedInput) -> Option<SessionFingerprint> {
+    let plan = resolved.compile_plan.as_ref()?;
+    Some(SessionFingerprint::for_entry(plan, &resolved.source_path))
+}
+
+/// Semantic gate diagnostics fingerprint for an entry (reads entry session registry).
 pub fn semantic_gate_diagnostics(_db: &dyn crate::db::Db, fingerprint: &str) -> u64 {
-    let _ = fingerprint;
+    let fp = decode_fingerprint_key(fingerprint);
+    if let Some(snapshot) = cached_semantic_snapshot(&fp) {
+        record_query_hit();
+        return snapshot.diagnostic_fingerprint;
+    }
     record_query_miss();
     0
 }
 
-/// Semantic snapshot fingerprint after gate (query boundary marker).
-pub fn semantic_snapshot(_db: &dyn crate::db::Db, diagnostic_count: u64) -> u64 {
+/// Semantic snapshot diagnostic count after gate (reads entry session registry).
+pub fn semantic_snapshot(_db: &dyn crate::db::Db, fingerprint: &str) -> u64 {
+    let fp = decode_fingerprint_key(fingerprint);
+    if let Some(snapshot) = cached_semantic_snapshot(&fp) {
+        record_query_hit();
+        return snapshot.diagnostic_count as u64;
+    }
     record_query_miss();
-    diagnostic_count
+    0
+}
+
+/// Registry lookup for tooling/tests.
+pub fn cached_semantic_snapshot_for_key(fingerprint: &str) -> Option<SemanticSnapshot> {
+    cached_semantic_snapshot(&decode_fingerprint_key(fingerprint))
+}
+
+fn decode_fingerprint_key(key: &str) -> SessionFingerprint {
+    let mut parts = key.splitn(3, '\0');
+    let project_root = parts
+        .next()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let entry_canonical = parts
+        .next()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let lockfile_digest = parts
+        .next()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    SessionFingerprint {
+        project_root,
+        entry_canonical,
+        lockfile_digest,
+    }
+}
+
+pub fn fingerprint_key(fingerprint: &SessionFingerprint) -> String {
+    format!(
+        "{}\0{}\0{}",
+        fingerprint.project_root.display(),
+        fingerprint.entry_canonical.display(),
+        fingerprint.lockfile_digest
+    )
+}
+
+fn touch_from_prepare(resolved: &ResolvedInput) {
+    if session_fingerprint(resolved).is_some() {
+        record_revision_bump();
+    }
 }
 
 /// Full prepare spine via Salsa-backed assembly + existing analysis phases.
@@ -39,6 +94,7 @@ pub fn prepare_compilation_with_db(
     let resolved = enrich_resolved_with_assembly(db, resolved, &options)?;
     db.set_file_text(resolved.source_path.clone(), resolved.source.clone());
     let result = beskid_analysis::services::prepare_compilation(&resolved, options, pipeline)?;
+    touch_from_prepare(&resolved);
     emit_salsa_stats(pipeline);
     Ok(result)
 }
@@ -54,8 +110,11 @@ pub fn prepare_compilation_diagnostics_with_db(
     db.set_file_text(resolved.source_path.clone(), resolved.source.clone());
     let result =
         beskid_analysis::services::prepare_compilation_diagnostics(&resolved, options, pipeline)?;
-    let _ = semantic_snapshot(db, result.1.len() as u64);
+    if let Some(fp) = session_fingerprint(&resolved) {
+        let _ = semantic_snapshot(db, &fingerprint_key(&fp));
+    }
     observe_phase(pipeline, phases::SEMANTIC_SNAPSHOT, || {});
+    touch_from_prepare(&resolved);
     emit_salsa_stats(pipeline);
     Ok(result)
 }
@@ -91,8 +150,10 @@ fn enrich_resolved_with_assembly(
     let Some(plan) = resolved.compile_plan.as_ref() else {
         return Ok(clone_resolved(resolved));
     };
-    let mut assembly_options = beskid_analysis::projects::model::AssemblyOptions::default();
-    assembly_options.discovery = options.front_end.assembly_discovery;
+    let assembly_options = beskid_analysis::projects::model::AssemblyOptions {
+        discovery: options.front_end.assembly_discovery,
+        ..Default::default()
+    };
     let assembly = program_assembly(
         db,
         plan,
@@ -114,4 +175,9 @@ fn clone_resolved(resolved: &ResolvedInput) -> ResolvedInput {
         workspace_summary: resolved.workspace_summary.clone(),
         assembly: resolved.assembly.clone(),
     }
+}
+
+/// Clear entry-session registry slices for a project root (LSP / workspace invalidation).
+pub fn invalidate_entry_sessions(project_root: &std::path::Path) {
+    invalidate_entry_sessions_for_project(project_root);
 }

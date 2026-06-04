@@ -200,7 +200,7 @@ fn pointer_channel_cross_thread_with_phase_b_mutators() {
                 }
                 assert!(!out.is_null(), "received pointer should be non-null");
                 received_count_consumer.fetch_add(1, Ordering::SeqCst);
-                if received_count_consumer.load(Ordering::Relaxed) % 8 == 0 {
+                if received_count_consumer.load(Ordering::Relaxed).is_multiple_of(8) {
                     let _ = gc_collect();
                 }
             }

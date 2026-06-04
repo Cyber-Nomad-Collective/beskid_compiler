@@ -13,9 +13,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
-use beskid_analysis::projects::{
-    CompilePlan, UnresolvedDependencyPolicy, WorkspaceResolutionSummary,
-};
+use beskid_analysis::projects::UnresolvedDependencyPolicy;
 use beskid_analysis::services::{ResolvedInput, ResolvedProject};
 use beskid_pipeline::{
     PipelineEvent, PipelineObserver,

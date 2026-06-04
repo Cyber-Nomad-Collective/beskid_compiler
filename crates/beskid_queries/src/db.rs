@@ -11,6 +11,8 @@ use salsa::Setter;
 use crate::inputs::{FileText, ProjectSession};
 use crate::stats::record_revision_bump;
 
+type ProjectRegistry = HashMap<(PathBuf, PathBuf, String), ProjectSession>;
+
 /// Cached heavy artifacts keyed by content fingerprint (invalidated via Salsa inputs).
 #[derive(Default)]
 pub struct UnitArtifactCache {
@@ -22,7 +24,7 @@ pub struct UnitArtifactCache {
 #[salsa::db]
 pub trait Db: salsa::Database {
     fn file_registry(&self) -> &Mutex<HashMap<PathBuf, FileText>>;
-    fn project_registry(&self) -> &Mutex<HashMap<(PathBuf, PathBuf, String), ProjectSession>>;
+    fn project_registry(&self) -> &Mutex<ProjectRegistry>;
     fn unit_cache(&self) -> &Mutex<UnitArtifactCache>;
 }
 
@@ -32,7 +34,7 @@ pub trait Db: salsa::Database {
 pub struct BeskidDatabase {
     storage: salsa::Storage<Self>,
     file_registry: Arc<Mutex<HashMap<PathBuf, FileText>>>,
-    project_registry: Arc<Mutex<HashMap<(PathBuf, PathBuf, String), ProjectSession>>>,
+    project_registry: Arc<Mutex<ProjectRegistry>>,
     unit_cache: Arc<Mutex<UnitArtifactCache>>,
     persistence_root: Option<PathBuf>,
 }

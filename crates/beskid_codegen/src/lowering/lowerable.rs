@@ -269,11 +269,10 @@ fn find_test_by_item<'a>(
 ) -> Option<&'a Spanned<HirTestDefinition>> {
     let info = resolution.items.get(item.0)?;
     for item_node in &entry.node.items {
-        if item_node.span == info.span {
-            if let HirItem::TestDefinition(def) = &item_node.node {
+        if item_node.span == info.span
+            && let HirItem::TestDefinition(def) = &item_node.node {
                 return Some(def);
             }
-        }
     }
     None
 }

@@ -115,15 +115,14 @@ fn resolve_package_for_item<'a>(
     ctx: &'a ApiDocLinkContext,
     item: &ApiDocItem,
 ) -> &'a ApiDocPackageRoots {
-    if let Some(declaring) = item.declaring_package.as_deref() {
-        if let Some(pkg) = ctx
+    if let Some(declaring) = item.declaring_package.as_deref()
+        && let Some(pkg) = ctx
             .packages
             .iter()
             .find(|pkg| pkg.package == declaring)
         {
             return pkg;
         }
-    }
     ctx.packages
         .iter()
         .find(|pkg| pkg.package == ctx.publishing_package)
@@ -155,7 +154,7 @@ fn strip_match_root(path: &str, match_root: &Path) -> Option<String> {
     Path::new(path)
         .strip_prefix(match_root)
         .ok()
-        .map(|rel| forward_slashes_path(rel))
+        .map(forward_slashes_path)
 }
 
 fn join_artifact_prefix(prefix: &str, relative: &str) -> String {
@@ -197,13 +196,11 @@ pub fn path_looks_absolute(path: &str) -> bool {
         return true;
     }
     let mut chars = trimmed.chars();
-    if let Some(first) = chars.next() {
-        if first.is_ascii_alphabetic() {
-            if matches!(chars.next(), Some(':')) {
+    if let Some(first) = chars.next()
+        && first.is_ascii_alphabetic()
+            && matches!(chars.next(), Some(':')) {
                 return true;
             }
-        }
-    }
     false
 }
 

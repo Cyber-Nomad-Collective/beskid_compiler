@@ -64,10 +64,10 @@ pub fn handle_project_explorer_command(
     compilation_db: Option<&mut beskid_queries::BeskidDatabase>,
 ) -> Result<Option<LSPAny>> {
     match command {
-        CMD_LIST_WORKSPACES => Ok(Some(workspaces::list_workspaces(workspace_roots)?.into())),
+        CMD_LIST_WORKSPACES => Ok(Some(workspaces::list_workspaces(workspace_roots)?)),
         CMD_GET_WORKSPACE_SUMMARY => {
             let uri = required_uri_arg(&arguments, "workspaceUri")?;
-            Ok(Some(workspaces::get_workspace_summary(&uri)?.into()))
+            Ok(Some(workspaces::get_workspace_summary(&uri)?))
         }
         CMD_GET_GRAPH => {
             let uri = required_uri_arg(&arguments, "projectUri")?;
@@ -75,13 +75,12 @@ pub fn handle_project_explorer_command(
             let entry_uri = graph::optional_uri_arg(arguments.as_deref(), "entryUri");
             let workspace_uri = graph::optional_uri_arg(arguments.as_deref(), "workspaceUri");
             Ok(Some(
-                graph::get_graph(&uri, kind, entry_uri.as_deref(), workspace_uri.as_deref(), compilation_db)?
-                    .into(),
+                graph::get_graph(&uri, kind, entry_uri.as_deref(), workspace_uri.as_deref(), compilation_db)?,
             ))
         }
         CMD_GET_PROJECT_DEPENDENCIES => {
             let uri = required_uri_arg(&arguments, "projectUri")?;
-            Ok(Some(graph::get_project_dependencies(&uri)?.into()))
+            Ok(Some(graph::get_project_dependencies(&uri)?))
         }
         _ => Ok(None),
     }

@@ -9,8 +9,9 @@ use crate::analysis::SemanticDiagnostic;
 use crate::compilation_context::CompilationContext;
 use crate::projects::CompilePlan;
 
+use super::composition::composition_diagnostics_for_program;
 use super::document::resolve_program_with_assembly;
-use super::input::{AnalyzeInProjectOptions, ResolvedInput};
+use super::input::AnalyzeInProjectOptions;
 use super::parse::parse_program_with_source_name;
 use super::prepare::{PrepareMode, PrepareOptions, prepare_compilation_diagnostics, resolved_input_from_plan};
 use super::front_end::FrontEndOptions;
@@ -68,12 +69,19 @@ fn analyze_program_with_options_and_plan(
     if compile_plan.is_none() {
         let source_name = path.display().to_string();
         let program = parse_program_with_source_name(&source_name, source)?;
-        return Ok(super::semantic::semantic_rule_diagnostics_for_program(
+        let mut diagnostics = super::semantic::semantic_rule_diagnostics_for_program(
             &program.node,
-            source_name,
+            source_name.clone(),
             source,
             crate::AnalysisOptions::default(),
-        ));
+        );
+        diagnostics.extend(composition_diagnostics_for_program(
+            &program,
+            None,
+            &source_name,
+            source,
+        )?);
+        return Ok(diagnostics);
     }
 
     let plan = compile_plan.expect("checked above");
@@ -201,20 +209,4 @@ fn is_non_entry_project_file(path: &Path, plan: Option<&CompilePlan>) -> bool {
         (Ok(path), Ok(entry)) => path != entry,
         _ => path != entry_path,
     }
-}
-
-/// Build a [`ResolvedInput`] from compilation context for shared prepare spine callers.
-pub fn resolved_input_from_context(
-    path: &Path,
-    source: &str,
-    ctx: &CompilationContext,
-) -> Option<ResolvedInput> {
-    let plan = ctx.compile_plan.clone()?;
-    Some(resolved_input_from_plan(
-        path.to_path_buf(),
-        source.to_string(),
-        plan,
-        ctx.prepared_workspace.clone(),
-        ctx.assembly.clone(),
-    ))
 }

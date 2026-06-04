@@ -109,8 +109,8 @@ fn validate_artifact(artifact: &LoadedModArtifact, issues: &mut Vec<ModHostIssue
         }
     }
 
-    if let Some(mod_section) = artifact.discovered.mod_section.as_ref() {
-        if let Some(capabilities) = mod_section.capabilities.as_ref() {
+    if let Some(mod_section) = artifact.discovered.mod_section.as_ref()
+        && let Some(capabilities) = mod_section.capabilities.as_ref() {
             if registrations_imply_required_contracts(artifact) && artifact.registrations.is_empty()
             {
                 issues.push(ModHostIssue::EmptyRegistrationsForRequiredMod {
@@ -120,7 +120,6 @@ fn validate_artifact(artifact: &LoadedModArtifact, issues: &mut Vec<ModHostIssue
             }
             let _ = capabilities; // capability mismatches are reported in `capabilities::enforce_capabilities`.
         }
-    }
 }
 
 fn registrations_imply_required_contracts(artifact: &LoadedModArtifact) -> bool {

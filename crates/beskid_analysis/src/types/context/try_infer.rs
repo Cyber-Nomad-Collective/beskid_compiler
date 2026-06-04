@@ -99,11 +99,10 @@ fn collect_invalid_try_targets_in_block(
             );
         } else if let HirStatementNode::LetStatement(let_stmt) = &statement.node {
             collect_invalid_try_targets_in_expression(resolution, programs, &let_stmt.node.value, spans);
-        } else if let HirStatementNode::ReturnStatement(return_stmt) = &statement.node {
-            if let Some(value) = &return_stmt.node.value {
+        } else if let HirStatementNode::ReturnStatement(return_stmt) = &statement.node
+            && let Some(value) = &return_stmt.node.value {
                 collect_invalid_try_targets_in_expression(resolution, programs, value, spans);
             }
-        }
     }
 }
 
@@ -113,11 +112,10 @@ fn collect_invalid_try_targets_in_expression(
     expr: &Spanned<HirExpressionNode>,
     spans: &mut Vec<SpanInfo>,
 ) {
-    if let HirExpressionNode::TryExpression(try_expr) = &expr.node {
-        if try_desugar_target_for_operand(resolution, programs, &try_expr.node.expr).is_none() {
+    if let HirExpressionNode::TryExpression(try_expr) = &expr.node
+        && try_desugar_target_for_operand(resolution, programs, &try_expr.node.expr).is_none() {
             spans.push(expr.span);
         }
-    }
     match &expr.node {
         HirExpressionNode::BinaryExpression(binary) => {
             collect_invalid_try_targets_in_expression(resolution, programs, &binary.node.left, spans);
@@ -209,11 +207,10 @@ fn collect_try_targets_in_block(
             collect_try_targets_in_expression(resolution, programs, &expr_stmt.node.expression, map);
         } else if let HirStatementNode::LetStatement(let_stmt) = &statement.node {
             collect_try_targets_in_expression(resolution, programs, &let_stmt.node.value, map);
-        } else if let HirStatementNode::ReturnStatement(return_stmt) = &statement.node {
-            if let Some(value) = &return_stmt.node.value {
+        } else if let HirStatementNode::ReturnStatement(return_stmt) = &statement.node
+            && let Some(value) = &return_stmt.node.value {
                 collect_try_targets_in_expression(resolution, programs, value, map);
             }
-        }
     }
 }
 
@@ -223,13 +220,12 @@ fn collect_try_targets_in_expression(
     expr: &Spanned<HirExpressionNode>,
     map: &mut HashMap<SpanInfo, TryDesugarTarget>,
 ) {
-    if let HirExpressionNode::TryExpression(try_expr) = &expr.node {
-        if let Some(target) =
+    if let HirExpressionNode::TryExpression(try_expr) = &expr.node
+        && let Some(target) =
             try_desugar_target_for_operand(resolution, programs, &try_expr.node.expr)
         {
             map.insert(expr.span, target);
         }
-    }
     match &expr.node {
         HirExpressionNode::BinaryExpression(binary) => {
             collect_try_targets_in_expression(resolution, programs, &binary.node.left, map);

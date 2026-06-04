@@ -14,6 +14,7 @@ use super::merge::merge_generated_syntax;
 use super::reparse::reparse_if_needed;
 use super::rewrite::run_rewriters;
 use super::types::{ModHostAnalyzeResult, ModHostGenerateResult, ModHostInput, ModHostSession};
+use crate::services::{SessionFingerprint, cached_semantic_snapshot};
 use super::validate::validate_registrations;
 
 pub fn run_through_generate(
@@ -87,7 +88,24 @@ pub fn run_analyze_rewrite(
     session: &ModHostSession,
     pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
 ) -> Result<Spanned<Program>> {
-    Ok(run_analyze_rewrite_with_invoker(program, session, None, pipeline)?.program)
+    Ok(run_analyze_rewrite_with_invoker(program, session, None, None, pipeline)?.program)
+}
+
+/// Run `mod.analyze` then `mod.rewrite` after semantic snapshot and composition (prepare spine).
+pub fn run_analyze_rewrite_after_composition(
+    program: Spanned<Program>,
+    session: &ModHostSession,
+    fingerprint: &SessionFingerprint,
+    invoker: Option<&dyn ContractInvoker>,
+    pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
+) -> Result<ModHostAnalyzeResult> {
+    run_analyze_rewrite_with_invoker(
+        program,
+        session,
+        invoker,
+        cached_semantic_snapshot(fingerprint).as_ref(),
+        pipeline,
+    )
 }
 
 /// Like [`run_analyze_rewrite`] but exposes per-contract outcomes for engine and tests
@@ -96,6 +114,7 @@ pub fn run_analyze_rewrite_with_invoker(
     program: Spanned<Program>,
     session: &ModHostSession,
     invoker: Option<&dyn ContractInvoker>,
+    snapshot: Option<&crate::services::SemanticSnapshot>,
     pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
 ) -> Result<ModHostAnalyzeResult> {
     if session.is_empty() {
@@ -112,7 +131,7 @@ pub fn run_analyze_rewrite_with_invoker(
         None => &default_invoker,
     };
 
-    let analyzed = super::analyze::run_analyzers(session, invoker, pipeline)?;
+    let analyzed = super::analyze::run_analyzers(session, invoker, snapshot, pipeline)?;
     let analyzer_outcomes = analyzed.outcomes.clone();
     let rewrite = run_rewriters(program, session, &analyzed, invoker, pipeline)?;
 
@@ -264,10 +283,14 @@ project {
         assert_eq!(generated.collector_outcomes.len(), 1);
         assert_eq!(generated.generator_outcomes.len(), 1);
 
+        let composition_snapshot = generated.session.composition_snapshot_or_default();
+        let semantic_snapshot = crate::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+            .with_composition(&composition_snapshot);
         let analyze = run_analyze_rewrite_with_invoker(
             generated.program,
             &generated.session,
             Some(&invoker),
+            Some(&semantic_snapshot),
             Some(pipeline.as_ref()),
         )
         .expect("analyze rewrite");

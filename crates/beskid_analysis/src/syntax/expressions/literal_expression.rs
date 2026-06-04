@@ -46,15 +46,13 @@ fn try_desugar_interpolated_string(
 
     let mut parts = Vec::new();
     let bytes = source.as_bytes();
-    let content_start = literal_span.start + 1;
-    let content_end = literal_span.end.saturating_sub(1);
+    let content_start = 1;
+    let content_end = source.len().saturating_sub(1);
     let mut cursor = content_start;
     let mut text_start = content_start;
 
     while cursor < content_end {
-        let relative = cursor - literal_span.start;
-
-        if bytes.get(relative) == Some(&b'\\') {
+        if bytes.get(cursor) == Some(&b'\\') {
             cursor = cursor.saturating_add(1);
             if cursor < content_end {
                 cursor = cursor.saturating_add(1);
@@ -62,11 +60,14 @@ fn try_desugar_interpolated_string(
             continue;
         }
 
-        if bytes.get(relative) == Some(&b'$') && bytes.get(relative + 1) == Some(&b'{') {
+        if bytes.get(cursor) == Some(&b'$') && bytes.get(cursor + 1) == Some(&b'{') {
             if text_start < cursor {
-                let text =
-                    source.get(text_start - literal_span.start..cursor - literal_span.start)?;
-                let span = span_from_bounds(input, text_start, cursor)?;
+                let text = source.get(text_start..cursor)?;
+                let span = span_from_bounds(
+                    input,
+                    literal_span.start + text_start,
+                    literal_span.start + cursor,
+                )?;
                 parts.push(InterpolationPart::Text {
                     text: text.to_string(),
                     span,
@@ -74,20 +75,21 @@ fn try_desugar_interpolated_string(
             }
 
             let expr_start = cursor + 2;
-            let expr_end =
-                find_interpolation_end(bytes, literal_span.start, expr_start, content_end)?;
+            let expr_end = find_interpolation_end(bytes, expr_start, content_end)?;
 
-            let expr_text =
-                source.get(expr_start - literal_span.start..expr_end - literal_span.start)?;
-            let trim_start = expr_text.len().saturating_sub(expr_text.trim_start().len());
-            let trim_end = expr_text.len().saturating_sub(expr_text.trim_end().len());
+            let expr_text = source.get(expr_start..expr_end)?;
             let expr_trimmed = expr_text.trim();
             if expr_trimmed.is_empty() {
                 return None;
             }
 
-            let expr_span_start = expr_start + trim_start;
-            let expr_span_end = expr_start + trim_end;
+            let leading_trim =
+                expr_text.len().saturating_sub(expr_text.trim_start().len());
+            let trailing_trim =
+                expr_text.len().saturating_sub(expr_text.trim_end().len());
+            let expr_span_start = literal_span.start + expr_start + leading_trim;
+            let expr_span_end =
+                literal_span.start + expr_start + expr_text.len() - trailing_trim;
             let expression_span = span_from_bounds(input, expr_span_start, expr_span_end)?;
             let expression = parse_interpolation_expression(input, expression_span)?;
             parts.push(InterpolationPart::Expr(expression));
@@ -105,8 +107,12 @@ fn try_desugar_interpolated_string(
     }
 
     if text_start < content_end {
-        let text = source.get(text_start - literal_span.start..content_end - literal_span.start)?;
-        let span = span_from_bounds(input, text_start, content_end)?;
+        let text = source.get(text_start..content_end)?;
+        let span = span_from_bounds(
+            input,
+            literal_span.start + text_start,
+            literal_span.start + content_end,
+        )?;
         parts.push(InterpolationPart::Text {
             text: text.to_string(),
             span,
@@ -387,12 +393,7 @@ fn remap_statement_spans(
     }
 }
 
-fn find_interpolation_end(
-    bytes: &[u8],
-    literal_start: usize,
-    expr_start: usize,
-    content_end: usize,
-) -> Option<usize> {
+fn find_interpolation_end(bytes: &[u8], expr_start: usize, content_end: usize) -> Option<usize> {
     let mut cursor = expr_start;
     let mut brace_depth = 0usize;
     let mut in_string = false;
@@ -400,8 +401,7 @@ fn find_interpolation_end(
     let mut escaped = false;
 
     while cursor < content_end {
-        let rel = cursor - literal_start;
-        let byte = *bytes.get(rel)?;
+        let byte = *bytes.get(cursor)?;
 
         if escaped {
             escaped = false;
@@ -453,4 +453,25 @@ fn find_interpolation_end(
 enum InterpolationPart {
     Text { text: String, span: SpanInfo },
     Expr(Spanned<Expression>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::BeskidParser;
+    use crate::parsing::parsable::Parsable;
+    use pest::Parser;
+
+    #[test]
+    fn desugars_string_interpolation_to_binary_add() {
+        let input = "\"hi ${name}\"";
+        let mut pairs = BeskidParser::parse(Rule::Expression, input).expect("parse expression");
+        let pair = pairs.next().expect("expression pair");
+        let expr = Expression::parse(pair).expect("expression ast");
+        assert!(
+            matches!(expr.node, Expression::Binary(_)),
+            "expected desugared binary expression, got {:?}",
+            expr.node
+        );
+    }
 }

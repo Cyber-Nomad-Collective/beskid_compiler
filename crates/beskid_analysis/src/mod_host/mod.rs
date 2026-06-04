@@ -21,8 +21,8 @@ mod types;
 mod validate;
 
 pub use api::{
-    extract_mod_host_diagnostics, run_analyze_rewrite, run_analyze_rewrite_with_invoker,
-    run_through_generate,
+    extract_mod_host_diagnostics, run_analyze_rewrite, run_analyze_rewrite_after_composition,
+    run_analyze_rewrite_with_invoker, run_through_generate,
 };
 pub use diagnostics::{ModHostDiagnostics, ModHostIssue};
 pub use invoker::{

@@ -155,7 +155,7 @@ fn two_scopes_plural_inject_reverse_dispose() {
         let max_handler = h1.max(h2);
         if c != usize::MAX {
             assert!(
-                c < max_handler || c > max_handler,
+                c != max_handler,
                 "deterministic ordering only matters within instance_order: {scope1_disposes:?}"
             );
         }

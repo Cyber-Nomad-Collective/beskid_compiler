@@ -18,12 +18,11 @@ pub fn build_substitution_map(
     }
 
     for (form_name, form) in &manifest.forms {
-        if let Some(input_id) = form_name.strip_suffix("::input").or(Some(form_name.as_str())) {
-            if let Some(input) = raw_values.get(input_id) {
+        if let Some(input_id) = form_name.strip_suffix("::input").or(Some(form_name.as_str()))
+            && let Some(input) = raw_values.get(input_id) {
                 let out = apply_form(&form.form_id, input)?;
                 resolved.insert(form_name.clone(), out);
             }
-        }
     }
 
     Ok(resolved)

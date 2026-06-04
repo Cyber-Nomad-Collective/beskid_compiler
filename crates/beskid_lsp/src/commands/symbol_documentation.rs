@@ -27,7 +27,7 @@ pub fn handle_symbol_documentation_command(
         return Ok(None);
     }
     let Some(document) = doc else {
-        return Ok(Some(json!({}).into()));
+        return Ok(Some(json!({})));
     };
     let args = first_arg_object(&arguments).ok_or_else(missing_args)?;
     let offset = args
@@ -35,7 +35,7 @@ pub fn handle_symbol_documentation_command(
         .and_then(Value::as_u64)
         .ok_or_else(missing_args)? as usize;
     let url = documentation_uri_for_offset(document, offset);
-    Ok(Some(json!({ "url": url }).into()))
+    Ok(Some(json!({ "url": url })))
 }
 
 pub fn documentation_uri_for_document(document: &Document, offset: usize) -> Option<String> {
@@ -72,14 +72,13 @@ fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<St
 
 fn extract_symbol_name(markdown: &str) -> Option<String> {
     for line in markdown.lines() {
-        if let Some(rest) = line.strip_prefix("**") {
-            if let Some((name, _)) = rest.split_once("**") {
+        if let Some(rest) = line.strip_prefix("**")
+            && let Some((name, _)) = rest.split_once("**") {
                 let trimmed = name.trim();
                 if !trimmed.is_empty() && trimmed != "local" {
                     return Some(trimmed.to_string());
                 }
             }
-        }
     }
     None
 }

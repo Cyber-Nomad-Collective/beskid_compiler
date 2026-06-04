@@ -346,18 +346,15 @@ pub struct VersionActionArgs {
 
 /// `beskid pckg pack --package-kind` override (platform-spec packageKind tool, D-TOOL-PCKG-0004).
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum PackArgsPackageKind {
     /// Detect from `Project.proj` (library or template; the historical default).
+    #[default]
     Auto,
     /// Pack a tool package: omits `documentation.apiJson`, strips `.beskid/docs/**`.
     Tool,
 }
 
-impl Default for PackArgsPackageKind {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 impl PackArgsPackageKind {
     fn as_override(self) -> PackProfileOverride {

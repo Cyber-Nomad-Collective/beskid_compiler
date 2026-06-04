@@ -158,14 +158,12 @@ impl GeneratedSyntax {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct AnalyzedContracts {
-    pub(crate) registrations: Vec<ContractRegistration>,
     pub(crate) outcomes: Vec<AnalyzerOutcome>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct RewriteResult {
     pub(crate) program: crate::syntax::Spanned<crate::syntax::Program>,
-    pub(crate) registrations: Vec<ContractRegistration>,
     pub(crate) outcomes: Vec<RewriterOutcome>,
 }
 

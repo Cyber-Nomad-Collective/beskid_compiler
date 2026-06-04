@@ -6,28 +6,29 @@ use anyhow::Result;
 use beskid_pipeline::{
     PipelineObserver, observe_phase, observe_phase_result,
     phases::{
-        COMPOSITION_RESOLVE, LOWER, LOWER_READY, MOD_REWRITE, PARSE, PROGRAM_ASSEMBLE, SEMANTIC,
-        SEMANTIC_SNAPSHOT,
+        COMPOSITION_RESOLVE, LOWER, LOWER_READY, PARSE, PROGRAM_ASSEMBLE,
+        SEMANTIC, SEMANTIC_SNAPSHOT,
     },
 };
 
 use crate::analysis::SemanticDiagnostic;
 use crate::projects::{
-    AssemblyDiscovery, AssemblyOptions, CompilePlan, PreparedProjectWorkspace, ProgramAssembly,
+    AssemblyOptions, CompilePlan, PreparedProjectWorkspace, ProgramAssembly,
     assemble_program,
 };
 use crate::syntax::Spanned;
 use crate::AnalysisOptions;
-use crate::mod_host::{ModHostInput, run_analyze_rewrite, run_through_generate};
+use crate::mod_host::{ModHostInput, run_analyze_rewrite_after_composition, run_through_generate};
 
 use super::composition::{composition_result_to_diagnostics, resolve_program_composition};
 use super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::input::ResolvedInput;
 use super::lower::lower_normalize_resolve_type_spanned_with_assembly;
 use super::semantic::{require_no_semantic_errors, semantic_rule_diagnostics_for_program};
-use super::session::{
-    SemanticSnapshot, SessionFingerprint, session_for_assembly, store_executable_on_session,
+use super::entry_session::{
+    current_syntax_generation_id, update_semantic_snapshot,
 };
+use super::session::{SemanticSnapshot, SessionFingerprint, session_for_assembly};
 
 /// Whether prepare stops after diagnostics or continues through typed HIR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,7 +151,8 @@ fn run_prepare_spine(
     let session_fingerprint = SessionFingerprint::for_entry(plan, entry_path);
 
     let assembly = if let Some(cached) = cached_assembly {
-        cached.clone()
+        let session = session_for_assembly(session_fingerprint.clone(), cached.clone());
+        (*session.assembly).clone()
     } else {
         observe_phase_result(pipeline, PROGRAM_ASSEMBLE, || {
             let assembled = assemble_program(
@@ -183,10 +185,7 @@ fn run_prepare_spine(
     program = generated.program;
 
     let mut collected_diagnostics = generated.macro_diagnostics;
-
-    program = observe_phase_result(pipeline, MOD_REWRITE, || {
-        run_analyze_rewrite(program, &generated.session, pipeline)
-    })?;
+    let syntax_generation_id = current_syntax_generation_id(&session_fingerprint);
 
     let mut rule_options = AnalysisOptions::default();
     rule_options.module_level_meta_items_allowed = options.front_end.module_level_meta_items_allowed;
@@ -214,10 +213,13 @@ fn run_prepare_spine(
             semantic.as_slice()
         };
         observe_phase(pipeline, SEMANTIC_SNAPSHOT, || {
-            store_executable_on_session(
+            update_semantic_snapshot(
                 &session_fingerprint,
-                None,
-                SemanticSnapshot::from_diagnostics(snapshot_diagnostics),
+                SemanticSnapshot::from_diagnostics(
+                    snapshot_diagnostics,
+                    syntax_generation_id,
+                    "semantic",
+                ),
             );
         });
     }
@@ -225,6 +227,23 @@ fn run_prepare_spine(
     let composition_result = observe_phase_result(pipeline, COMPOSITION_RESOLVE, || {
         Ok::<_, anyhow::Error>(resolve_program_composition(&program, Some(plan)))
     })?;
+
+    if (options.front_end.with_semantic_diagnostics || collect_diagnostics)
+        && let Some(mut snapshot) =
+            super::session::cached_semantic_snapshot(&session_fingerprint)
+    {
+        snapshot = snapshot.with_composition(&composition_result.snapshot);
+        update_semantic_snapshot(&session_fingerprint, snapshot);
+    }
+
+    let mod_rewrite = run_analyze_rewrite_after_composition(
+        program.clone(),
+        &generated.session,
+        &session_fingerprint,
+        None,
+        pipeline,
+    )?;
+    program = mod_rewrite.program;
 
     if options.front_end.with_semantic_diagnostics && !collect_diagnostics {
         let composition_diagnostics = composition_result_to_diagnostics(
@@ -260,7 +279,9 @@ fn run_prepare_spine(
                 .map_err(anyhow::Error::from)
         })?;
 
-        Some(FrontEndTypedResult {
+        let resolution_fingerprint = typed_fingerprint(&resolution);
+        let types_fingerprint = typed_fingerprint_types(&typed);
+        let typed_result = FrontEndTypedResult {
             assembly: assembly.clone(),
             program: program.clone(),
             hir,
@@ -268,7 +289,18 @@ fn run_prepare_spine(
             typed,
             binding_plan: binding_plan.clone(),
             composition_snapshot: composition_snapshot.clone(),
-        })
+        };
+        let executable_snapshot = super::session::cached_semantic_snapshot(&session_fingerprint)
+            .map(|snap| {
+                snap.with_typed_resolution(resolution_fingerprint, types_fingerprint)
+            })
+            .unwrap_or_else(|| {
+                SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
+                    .with_composition(&composition_snapshot)
+                    .with_typed_resolution(resolution_fingerprint, types_fingerprint)
+            });
+        update_semantic_snapshot(&session_fingerprint, executable_snapshot);
+        Some(typed_result)
     } else {
         None
     };
@@ -301,4 +333,22 @@ pub fn resolved_input_from_plan(
         workspace_summary: None,
         assembly,
     }
+}
+
+fn typed_fingerprint(resolution: &crate::resolve::Resolution) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    resolution.items.len().hash(&mut hasher);
+    resolution.tables.resolved_values.len().hash(&mut hasher);
+    hasher.finish()
+}
+
+fn typed_fingerprint_types(typed: &crate::types::TypeResult) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    typed.expr_types.len().hash(&mut hasher);
+    typed.cast_intents.len().hash(&mut hasher);
+    hasher.finish()
 }

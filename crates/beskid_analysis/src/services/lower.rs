@@ -71,7 +71,7 @@ pub fn typed_hir_from_lowered_with_module_index(
 
 /// Typed HIR spine for semantic gate: dependency signature prefetch only (no dep body typing).
 pub fn typed_hir_from_lowered_gate_with_assembly(
-    mut hir: Spanned<HirProgram>,
+    hir: Spanned<HirProgram>,
     assembly: Option<&ProgramAssembly>,
 ) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
     typed_hir_from_lowered_with_assembly_options(hir, assembly, false)

@@ -78,10 +78,13 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
     assert!(generator_type_ids.contains(&"SampleMod.SampleGenerate"));
     assert!(generator_type_ids.contains(&"SampleMod.SampleAttribute"));
 
+    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+        .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
         Some(&invoker),
+        Some(&snapshot),
         Some(&pipeline),
     )
     .expect("mod host analyze rewrite");
@@ -172,10 +175,13 @@ fn scripted_invoker_surfaces_analyzer_diagnostics_to_outcomes() {
         "scripted generator contribution should be propagated to outcome"
     );
 
+    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+        .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
         Some(&invoker),
+        Some(&snapshot),
         Some(&pipeline),
     )
     .expect("mod host analyze rewrite");

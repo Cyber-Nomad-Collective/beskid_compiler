@@ -2,9 +2,15 @@
 
 use std::path::PathBuf;
 
+use beskid_analysis::services::{
+    get_or_insert_assembly, invalidate_entry_sessions, update_semantic_snapshot,
+};
+use beskid_analysis::services::{
+    SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot,
+};
 use beskid_queries::{
-    parse_and_expand_unit, reset, snapshot, unit_content_fingerprint, unit_hir, unit_imports,
-    BeskidDatabase, ProjectSession,
+    fingerprint_key, parse_and_expand_unit, record_query_hit, reset, semantic_snapshot, snapshot,
+    unit_content_fingerprint, unit_hir, unit_imports, BeskidDatabase, ProjectSession,
 };
 
 fn fixture_source() -> String {
@@ -13,6 +19,44 @@ fn fixture_source() -> String {
 
 fn fixture_path() -> PathBuf {
     PathBuf::from("/tmp/beskid_salsa_test_main.bd")
+}
+
+#[test]
+fn semantic_snapshot_query_hits_registry() {
+    invalidate_entry_sessions();
+    let fp = SessionFingerprint {
+        project_root: PathBuf::from("/tmp/project"),
+        entry_canonical: PathBuf::from("/tmp/project/Main.bd"),
+        lockfile_digest: 42,
+    };
+    get_or_insert_assembly(
+        fp.clone(),
+        beskid_analysis::projects::ProgramAssembly {
+            roots: beskid_analysis::projects::EffectiveCompilationRoots {
+                host: beskid_analysis::projects::RootEntry {
+                    dependency_name: None,
+                    source_root: PathBuf::from("/tmp/project/src"),
+                },
+                dependencies: Vec::new(),
+            },
+            units: std::sync::Arc::new(Vec::new()),
+            hir_units: std::sync::Arc::new(Vec::new()),
+            entry_index: 0,
+            discovery: beskid_analysis::projects::AssemblyDiscovery::ImportClosure,
+            module_index: std::sync::Arc::new(beskid_analysis::projects::ModuleIndex::empty()),
+            has_std_dependency: false,
+        },
+    );
+    update_semantic_snapshot(
+        &fp,
+        SemanticSnapshot::from_diagnostics(&[], 1, "semantic"),
+    );
+    let db = BeskidDatabase::default();
+    reset();
+    record_query_hit();
+    let key = fingerprint_key(&fp);
+    assert_eq!(semantic_snapshot(&db, &key), 0);
+    assert!(cached_semantic_snapshot(&fp).is_some());
 }
 
 #[test]
@@ -32,7 +76,7 @@ fn second_parse_hits_unit_cache() {
     db.ensure_file_text(path.clone(), source);
 
     let session = ProjectSession::new(
-        &mut db,
+        &db,
         PathBuf::from("/tmp/project"),
         path.clone(),
         "App".to_string(),
@@ -54,7 +98,7 @@ fn file_edit_invalidates_unit_cache() {
     db.ensure_file_text(path.clone(), fixture_source());
 
     let session = ProjectSession::new(
-        &mut db,
+        &db,
         PathBuf::from("/tmp/project"),
         path.clone(),
         "App".to_string(),
@@ -75,7 +119,7 @@ fn unit_imports_tracks_use_paths() {
     let path = fixture_path();
     db.ensure_file_text(path.clone(), fixture_source());
     let session = ProjectSession::new(
-        &mut db,
+        &db,
         PathBuf::from("/tmp/project"),
         path.clone(),
         "App".to_string(),

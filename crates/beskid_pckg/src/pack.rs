@@ -60,16 +60,13 @@ impl PackProfile {
 /// `Project.proj`, which keeps `beskid pckg pack --package-kind tool` usable for CLI-only
 /// tool packages that ship without a normative project manifest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum PackProfileOverride {
+    #[default]
     Auto,
     Tool,
 }
 
-impl Default for PackProfileOverride {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 /// Resolve pack profile from `Project.proj` when present; otherwise library.
 pub fn detect_pack_profile(source_root: &Path) -> Result<PackProfile, PckgError> {

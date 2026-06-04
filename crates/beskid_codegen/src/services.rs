@@ -3,14 +3,15 @@ use std::path::Path;
 use anyhow::Result;
 use beskid_analysis::hir::HirProgram;
 use beskid_analysis::resolve::Resolution;
-use beskid_analysis::services::{FrontEndOptions, compile_front_end_from_resolved_input};
+use beskid_analysis::services::FrontEndOptions;
+use beskid_queries::compile_front_end_from_resolved_input;
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeResult;
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::CODEGEN_CLIF};
 
 use crate::{
     CodegenArtifact, codegen_errors_to_diagnostics,
-    lowering::{lower_program, lower_program_with_assembly, lower_program_with_assembly_for_entrypoint},
+    lowering::{lower_program, lower_program_with_assembly_for_entrypoint},
 };
 use beskid_analysis::services::{ResolvedInput, SemanticDiagnosticsError};
 
@@ -35,7 +36,7 @@ pub fn lower_source_with_pipeline(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    let options = FrontEndOptions {
+    let _options = FrontEndOptions {
         with_semantic_diagnostics: with_diagnostics,
         ..Default::default()
     };

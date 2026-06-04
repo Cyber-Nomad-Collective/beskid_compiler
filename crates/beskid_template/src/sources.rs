@@ -8,7 +8,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use walkdir::WalkDir;
 
 use crate::error::{TemplateError, TemplateResult};
-use crate::guids::{replace_guids_in_text, verify_guids_replaced};
+use crate::guids::{replace_guids_in_text, scan_leftover_guid_patterns, verify_guids_replaced};
 use crate::manifest::{TemplateManifest, TEMPLATE_MANIFEST_REL};
 use crate::substitute::{
     apply_source_name, ensure_no_placeholders_remain, substitute_path_component, substitute_text,
@@ -18,7 +18,6 @@ use crate::substitute::{
 pub struct SourceWritePlan {
     pub relative_output: PathBuf,
     pub bytes: Vec<u8>,
-    pub is_binary: bool,
 }
 
 pub fn plan_source_writes(
@@ -65,7 +64,7 @@ pub fn plan_source_writes(
             }
 
             let mut target_rel =
-                substitute_path_component(&block.target.trim_start_matches("./"), values);
+                substitute_path_component(block.target.trim_start_matches("./"), values);
             if target_rel == "." || target_rel.is_empty() {
                 target_rel = String::new();
             }
@@ -84,15 +83,15 @@ pub fn plan_source_writes(
             let process_text = !copy_only.is_match(&rel_str) && is_probably_text(&bytes);
             let content = if process_text {
                 let mut text = String::from_utf8_lossy(&bytes).into_owned();
-                if let Some(source_name) = &manifest.source_name {
-                    if let Some(primary) = values.get(manifest.primary_name_symbol_id()) {
+                if let Some(source_name) = &manifest.source_name
+                    && let Some(primary) = values.get(manifest.primary_name_symbol_id()) {
                         text = apply_source_name(&text, source_name, primary);
                     }
-                }
                 text = substitute_text(&text, values);
                 text = replace_guids_in_text(&text, &manifest.guids, guids_map)?;
                 ensure_no_placeholders_remain(&text)?;
                 verify_guids_replaced(&text, &manifest.guids)?;
+                scan_leftover_guid_patterns(&text, &manifest.guids)?;
                 text.into_bytes()
             } else {
                 bytes
@@ -101,7 +100,6 @@ pub fn plan_source_writes(
             plans.push(SourceWritePlan {
                 relative_output: rel_for_plan,
                 bytes: content,
-                is_binary: !process_text,
             });
         }
     }
@@ -135,7 +133,7 @@ fn build_glob_set(patterns: &[String]) -> TemplateResult<GlobSet> {
         })?;
         builder.add(glob);
     }
-    Ok(builder.build().map_err(|e| TemplateError::Internal(e.to_string()))?)
+    builder.build().map_err(|e| TemplateError::Internal(e.to_string()))
 }
 
 fn is_probably_text(bytes: &[u8]) -> bool {

@@ -103,7 +103,7 @@ fn traversal_entry_from_item(item: &Item, source_rel_path: &str) -> Option<Trave
                 match &v.fields {
                     Fields::Named(nf) => {
                         for f in &nf.named {
-                            if let Some(slot) = field_to_slot(f, &format!("{vname}::{}", f.ident.as_ref()?.to_string())) {
+                            if let Some(slot) = field_to_slot(f, &format!("{vname}::{}", f.ident.as_ref()?)) {
                                 slots.push(slot);
                             }
                         }

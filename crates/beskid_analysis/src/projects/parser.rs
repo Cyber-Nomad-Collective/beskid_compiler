@@ -781,7 +781,7 @@ fn parse_link_block_contents(
                 None,
             ));
         }
-        if !LINK_FIELDS.iter().any(|known| *known == key) {
+        if !LINK_FIELDS.contains(&key) {
             return Err(ProjectError::meta_contract(
                 "E1891",
                 format!(

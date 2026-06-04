@@ -45,7 +45,7 @@ pub fn from_workspace(
             Some("lib"),
             NodeMetadata {
                 uri: graph.root_manifest_path.to_str().and_then(|s| {
-                    Path::new(s).parent().and_then(|p| super::super::compose::path_to_uri(p))
+                    Path::new(s).parent().and_then(super::super::compose::path_to_uri)
                 }),
                 project_name: Some(member_name.clone()),
                 ..Default::default()

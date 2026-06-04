@@ -16,7 +16,7 @@ pub async fn analyze_document_for_state(
     cached: Option<&DocumentAnalysisSnapshot>,
     compilation_context: Option<&CompilationContext>,
 ) -> Vec<tower_lsp_server::ls_types::Diagnostic> {
-    let mut write = state.write().await;
+    let write = state.write().await;
     if let Some(ctx) = compilation_context
         && let Some(plan) = ctx.compile_plan.as_ref()
     {

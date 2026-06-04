@@ -86,6 +86,7 @@ pub trait ContractInvoker: Send + Sync {
     fn invoke_analyzer(
         &self,
         registration: &ContractRegistration,
+        snapshot: Option<&crate::services::SemanticSnapshot>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError>;
 
     fn invoke_rewriter(
@@ -139,6 +140,8 @@ pub enum InvocationKind {
         contract_id: String,
         type_id: String,
         entry_symbol: String,
+        snapshot_version: Option<u32>,
+        snapshot_staged_through: Option<String>,
     },
     Rewriter {
         contract_id: String,
@@ -216,11 +219,14 @@ impl ContractInvoker for StubContractInvoker {
     fn invoke_analyzer(
         &self,
         registration: &ContractRegistration,
+        snapshot: Option<&crate::services::SemanticSnapshot>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError> {
         self.record(InvocationKind::Analyzer {
             contract_id: registration.contract_id.clone(),
             type_id: registration.type_id.clone(),
             entry_symbol: registration.entry_symbol.clone(),
+            snapshot_version: snapshot.map(|snap| snap.version),
+            snapshot_staged_through: snapshot.map(|snap| snap.staged_through.to_owned()),
         });
         Ok(AnalyzerOutcome {
             type_id: registration.type_id.clone(),
@@ -315,8 +321,9 @@ impl ContractInvoker for ScriptedContractInvoker {
     fn invoke_analyzer(
         &self,
         registration: &ContractRegistration,
+        snapshot: Option<&crate::services::SemanticSnapshot>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError> {
-        let mut outcome = self.recorded.invoke_analyzer(registration)?;
+        let mut outcome = self.recorded.invoke_analyzer(registration, snapshot)?;
         let scripted = self
             .analyzer_diagnostics
             .lock()
@@ -359,7 +366,7 @@ mod tests {
             .invoke_generator(&r("Beskid.Compiler.Collect.Generator", "T2", "g"))
             .unwrap();
         invoker
-            .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "T3", "a"))
+            .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "T3", "a"), None)
             .unwrap();
         invoker
             .invoke_rewriter(&r("Beskid.Compiler.Collect.Rewriter", "T4", "r"))
@@ -395,7 +402,7 @@ mod tests {
             }],
         );
         let outcome = invoker
-            .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "TA", "a"))
+            .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "TA", "a"), None)
             .unwrap();
         assert_eq!(outcome.diagnostics.len(), 1);
         assert_eq!(outcome.diagnostics[0].code, "ModA0001");

@@ -16,6 +16,10 @@ use crate::syntax::{Program, Spanned};
 use super::discovery::resolve_module_file;
 use super::module_index::ModuleIndex;
 use super::roots::effective_roots_for_plan;
+use super::unit_cache::{
+    self, CachedUnitRecord, ensure_manifest, hir_from_cached_record, read_cached_unit,
+    source_unit_from_record, unit_fingerprint, write_cached_unit,
+};
 use super::{ProgramAssembly, SourceUnit, UnitHir, build_hir_units};
 
 /// Optional Salsa-backed unit builder (set by `beskid_queries` during assembly).
@@ -203,6 +207,12 @@ pub fn assemble_program_with_materializer(
     }
 
     let project_root = plan.project_root.clone();
+    if let Err(err) = ensure_manifest(&project_root) {
+        log::warn!(
+            "unit cache manifest skipped for {}: {err}",
+            project_root.display()
+        );
+    }
     let cache_hits = std::sync::atomic::AtomicUsize::new(0);
     let cache_misses = std::sync::atomic::AtomicUsize::new(0);
     let entry_key = entry_canonical.canonicalize().unwrap_or(entry_canonical.clone());
@@ -218,8 +228,8 @@ pub fn assemble_program_with_materializer(
         .filter_map(|path| {
             let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
             let is_entry = path_key == entry_key;
-            let source = if is_entry && entry_source.is_some() {
-                entry_source.expect("entry source when is_entry").to_string()
+            let source = if is_entry {
+                entry_source.map(str::to_string).unwrap_or_default()
             } else {
                 match fs::read_to_string(path) {
                     Ok(text) => text,
@@ -258,6 +268,7 @@ pub fn assemble_program_with_materializer(
             message: err.to_string(),
         })?;
 
+    let project_root_for_pool = project_root.clone();
     let built_units: Result<Vec<(usize, bool, SourceUnit, super::UnitHir)>, AssemblyError> =
         pool.install(|| {
             build_inputs
@@ -269,6 +280,19 @@ pub fn assemble_program_with_materializer(
                         let (unit, hir) = build(&input.path, &input.source)?;
                         return Ok((discovered_index, input.is_entry, unit, hir));
                     }
+
+                    let fingerprint = unit_fingerprint(&input.path, &input.source);
+                    if let Some(record) =
+                        read_cached_unit(&fingerprint, &project_root_for_pool)
+                        && record.source == input.source
+                        && record.path == input.path
+                    {
+                        cache_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let unit = source_unit_from_record(&record);
+                        let hir = hir_from_cached_record(&record);
+                        return Ok((discovered_index, input.is_entry, unit, hir));
+                    }
+                    cache_misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                     let logical_name = input.path.display().to_string();
                     let program = match parse_program_with_source_name(&logical_name, &input.source)
@@ -298,10 +322,25 @@ pub fn assemble_program_with_materializer(
                         source: input.source.clone(),
                         program,
                     };
-                    let hir = build_hir_units(&[unit.clone()])
+                    let hir = build_hir_units(std::slice::from_ref(&unit))
                         .into_iter()
                         .next()
                         .expect("unit hir");
+
+                    let record = CachedUnitRecord {
+                        fingerprint: unit_fingerprint(&unit.path, &unit.source),
+                        logical_name: unit.logical_name.clone(),
+                        path: unit.path.clone(),
+                        source: unit.source.clone(),
+                        imports: unit_cache::import_paths_from_source(&unit.source),
+                    };
+                    if let Err(err) = write_cached_unit(&project_root_for_pool, &record) {
+                        log::warn!(
+                            "failed to write unit cache for {}: {err}",
+                            unit.path.display()
+                        );
+                    }
+
                     Ok((discovered_index, input.is_entry, unit, hir))
                 })
                 .filter(|result| {

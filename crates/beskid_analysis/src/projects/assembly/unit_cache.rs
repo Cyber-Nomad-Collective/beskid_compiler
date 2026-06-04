@@ -100,7 +100,7 @@ pub fn source_unit_from_record(record: &CachedUnitRecord) -> SourceUnit {
 
 pub fn hir_from_cached_record(record: &CachedUnitRecord) -> UnitHir {
     let unit = source_unit_from_record(record);
-    build_hir_units(&[unit])
+    build_hir_units(std::slice::from_ref(&unit))
         .into_iter()
         .next()
         .expect("cached unit hir")
