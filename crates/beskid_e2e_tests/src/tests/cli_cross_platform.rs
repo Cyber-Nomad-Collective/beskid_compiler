@@ -62,10 +62,14 @@ fn parse_succeeds_on_valid_source() {
 #[test]
 fn test_command_runs_and_filters_test_items() {
     let workspace = E2eWorkspace::from_fixture("test_harness");
+    let project_root = workspace.join(".");
     let source = workspace.join("Src/Harness.bd");
     let cli = BeskidCliInvoker::new();
 
-    let output = cli.run(["test", source.to_str().expect("source path str")]);
+    let output = cli.run_in(
+        &project_root,
+        ["test", source.to_str().expect("source path str")],
+    );
     assert_success(&output, "run test harness fixture");
     assert_output_contains(&output, "PASS Passes", "run test harness fixture");
     assert_output_contains(
@@ -81,14 +85,17 @@ fn test_command_runs_and_filters_test_items() {
         "run test harness fixture",
     );
 
-    let filtered = cli.run([
-        "test",
-        source.to_str().expect("source path str"),
-        "--include-tag",
-        "fast",
-        "--group",
-        "parser",
-    ]);
+    let filtered = cli.run_in(
+        &project_root,
+        [
+            "test",
+            source.to_str().expect("source path str"),
+            "--include-tag",
+            "fast",
+            "--group",
+            "parser",
+        ],
+    );
     assert_success(&filtered, "run filtered test harness fixture");
     assert_output_contains(
         &filtered,

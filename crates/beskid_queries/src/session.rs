@@ -23,25 +23,30 @@ pub fn with_db<T>(f: impl FnOnce(&mut BeskidDatabase) -> T) -> T {
     COMPILATION_DB.with(|db| f(&mut db.borrow_mut()))
 }
 
-/// Configure on-disk persistence when the project root changes.
-pub fn configure_db_for_project(project_root: &Path) {
+fn configure_db_in_place(db: &mut BeskidDatabase, project_root: &Path) {
     let canonical = project_root
         .canonicalize()
         .unwrap_or_else(|_| project_root.to_path_buf());
+    let already_configured = CONFIGURED_ROOT.with(|configured| {
+        configured.borrow().as_ref() == Some(&canonical)
+    });
+    if already_configured {
+        return;
+    }
+    *db = BeskidDatabase::with_persistence(&canonical);
     CONFIGURED_ROOT.with(|configured| {
-        if configured.borrow().as_ref() == Some(&canonical) {
-            return;
-        }
-        COMPILATION_DB.with(|db| {
-            *db.borrow_mut() = BeskidDatabase::with_persistence(&canonical);
-        });
         *configured.borrow_mut() = Some(canonical);
     });
 }
 
-fn ensure_db_for_resolved(resolved: &ResolvedInput) {
+/// Configure on-disk persistence when the project root changes.
+pub fn configure_db_for_project(project_root: &Path) {
+    with_db(|db| configure_db_in_place(db, project_root));
+}
+
+fn ensure_db_for_resolved(db: &mut BeskidDatabase, resolved: &ResolvedInput) {
     if let Some(plan) = resolved.compile_plan.as_ref() {
-        configure_db_for_project(&plan.project_root);
+        configure_db_in_place(db, &plan.project_root);
     }
 }
 
@@ -52,7 +57,7 @@ pub fn prepare_compilation_diagnostics(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>)> {
     with_db(|db| {
-        ensure_db_for_resolved(resolved);
+        ensure_db_for_resolved(db, resolved);
         prepare_compilation_diagnostics_with_db(db, resolved, options, pipeline)
     })
 }
@@ -64,7 +69,7 @@ pub fn prepare_compilation(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<PreparedCompilation> {
     with_db(|db| {
-        ensure_db_for_resolved(resolved);
+        ensure_db_for_resolved(db, resolved);
         prepare_compilation_with_db(db, resolved, options, pipeline)
     })
 }

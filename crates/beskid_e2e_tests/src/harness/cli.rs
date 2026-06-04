@@ -25,17 +25,37 @@ impl BeskidCliInvoker {
         }
     }
 
-    pub fn command<I, S>(&self, args: I) -> Command
+    pub fn command_in<I, S>(&self, working_dir: &Path, args: I) -> Command
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
         let mut command = Command::new(&self.binary);
-        command.env("BESKID_CORELIB_ROOT", &self.corelib_root);
+        command
+            .current_dir(working_dir)
+            .env("BESKID_CORELIB_ROOT", &self.corelib_root);
         for argument in args {
             command.arg(argument.as_ref());
         }
         command
+    }
+
+    pub fn command<I, S>(&self, args: I) -> Command
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.command_in(Path::new("."), args)
+    }
+
+    pub fn run_in<I, S>(&self, working_dir: &Path, args: I) -> Output
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.command_in(working_dir, args)
+            .output()
+            .expect("run Beskid CLI command")
     }
 
     pub fn run<I, S>(&self, args: I) -> Output
@@ -43,7 +63,7 @@ impl BeskidCliInvoker {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.command(args).output().expect("run Beskid CLI command")
+        self.run_in(Path::new("."), args)
     }
 }
 
