@@ -23,7 +23,11 @@ fn copy_fields(src: *const u8, dst: *mut u8, steps: &[FieldStep]) {
 }
 
 /// Map a [`DynamicCell`] payload to `dst_shape`, writing into `dst_out` (caller-sized buffer).
-pub fn map_dynamic_fallback(cell: &DynamicCell, dst_shape: u32, dst_out: *mut u8) -> i32 {
+///
+/// # Safety
+///
+/// `dst_out` must point to at least `shape_object_size(dst_shape)` writable bytes.
+pub unsafe fn map_dynamic_fallback(cell: &DynamicCell, dst_shape: u32, dst_out: *mut u8) -> i32 {
     if cell.payload.is_null() {
         return DYNAMIC_ERR_NULL_PAYLOAD;
     }
@@ -48,7 +52,11 @@ pub fn map_dynamic_fallback(cell: &DynamicCell, dst_shape: u32, dst_out: *mut u8
 }
 
 /// AOT/static path: map between two known shapes using the same table (no `DynamicCell` wrapper).
-pub fn map_objects_aot(
+///
+/// # Safety
+///
+/// `src_ptr` and `dst_out` must point to valid buffers of the registered shape sizes.
+pub unsafe fn map_objects_aot(
     src_shape: u32,
     dst_shape: u32,
     src_ptr: *const u8,

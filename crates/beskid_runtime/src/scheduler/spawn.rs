@@ -53,10 +53,8 @@ pub(super) fn apply_pending_cancels(s: &mut Scheduler) {
             }
             match f.state {
                 FiberState::Parked => super::state::wake_fiber_immediate(s, key),
-                FiberState::Runnable => {
-                    if !s.run_queue.contains(&key) {
-                        s.run_queue.push_back(key);
-                    }
+                FiberState::Runnable if !s.run_queue.contains(&key) => {
+                    s.run_queue.push_back(key);
                 }
                 _ => {}
             }

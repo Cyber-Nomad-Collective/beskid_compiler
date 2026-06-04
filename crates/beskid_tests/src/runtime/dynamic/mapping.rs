@@ -50,12 +50,14 @@ fn dynamic_aot_mapping_copies_fields_in_declaration_order() {
     };
     let mut dst = TargetShape { id: 0, flags: 0 };
 
-    let status = map_objects_aot(
-        SRC_SHAPE,
-        DST_SHAPE,
-        (&raw const src) as *const u8,
-        (&raw mut dst) as *mut u8,
-    );
+    let status = unsafe {
+        map_objects_aot(
+            SRC_SHAPE,
+            DST_SHAPE,
+            (&raw const src) as *const u8,
+            (&raw mut dst) as *mut u8,
+        )
+    };
     assert_eq!(status, DYNAMIC_OK);
     assert_eq!(dst.id, 99);
     assert_eq!(dst.flags, 7);

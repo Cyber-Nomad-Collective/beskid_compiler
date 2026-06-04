@@ -55,7 +55,7 @@ pub extern "C-unwind" fn dynamic_map_aot(
     src_ptr: *const u8,
     dst_out: *mut u8,
 ) -> i32 {
-    map_objects_aot(src_shape, dst_shape, src_ptr, dst_out)
+    unsafe { map_objects_aot(src_shape, dst_shape, src_ptr, dst_out) }
 }
 
 /// Runtime fallback mapping from a dynamic cell to `dst_shape`.
@@ -69,7 +69,7 @@ pub extern "C-unwind" fn dynamic_map_fallback(
         return DYNAMIC_ERR_NULL_PAYLOAD;
     }
     let cell = unsafe { &*cell };
-    map_dynamic_fallback(cell, dst_shape, dst_out)
+    unsafe { map_dynamic_fallback(cell, dst_shape, dst_out) }
 }
 
 /// Allocate a zeroed object of `size` bytes through the runtime arena (mapping targets).

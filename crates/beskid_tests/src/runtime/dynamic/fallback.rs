@@ -40,7 +40,8 @@ fn dynamic_fallback_mapping_succeeds_for_registered_shapes() {
         let cell = unsafe { &*cell_ptr };
 
         let mut out = Payload { value: 0 };
-        let status = map_dynamic_fallback(cell, DST_SHAPE, (&raw mut out) as *mut u8);
+        let status =
+            unsafe { map_dynamic_fallback(cell, DST_SHAPE, (&raw mut out) as *mut u8) };
         assert_eq!(status, DYNAMIC_OK);
         assert_eq!(out.value, 42);
     });
@@ -59,7 +60,8 @@ fn dynamic_fallback_returns_deterministic_incompatible_error() {
     };
     let mut out = Payload { value: 0 };
 
-    let status = map_dynamic_fallback(&cell, DST_SHAPE, (&raw mut out) as *mut u8);
+    let status =
+        unsafe { map_dynamic_fallback(&cell, DST_SHAPE, (&raw mut out) as *mut u8) };
     assert_eq!(
         status,
         DYNAMIC_ERR_INCOMPATIBLE,

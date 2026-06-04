@@ -18,14 +18,16 @@ pub struct ShapeEntry {
     pub object_size: usize,
 }
 
+type ShapeMappingTable = HashMap<(u32, u32), Vec<FieldStep>>;
+
 static SHAPES: OnceLock<Mutex<HashMap<u32, ShapeEntry>>> = OnceLock::new();
-static MAPPINGS: OnceLock<Mutex<HashMap<(u32, u32), Vec<FieldStep>>>> = OnceLock::new();
+static MAPPINGS: OnceLock<Mutex<ShapeMappingTable>> = OnceLock::new();
 
 fn shapes() -> &'static Mutex<HashMap<u32, ShapeEntry>> {
     SHAPES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn mappings() -> &'static Mutex<HashMap<(u32, u32), Vec<FieldStep>>> {
+fn mappings() -> &'static Mutex<ShapeMappingTable> {
     MAPPINGS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
