@@ -4,9 +4,10 @@ use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::{HirBinaryExpression, HirBinaryOp, HirPrimitiveType};
-use beskid_analysis::syntax::Spanned;
+use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{TypeId, TypeInfo};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
+use cranelift_codegen::ir::types as clif_types;
 use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, Signature, Value};
 use cranelift_codegen::isa::CallConv;
 
@@ -29,6 +30,38 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
 
         let left_type = ctx.require_expr_type_for_node(&node.node.left)?;
         let right_type = ctx.require_expr_type_for_node(&node.node.right)?;
+
+        if node.node.op.node == HirBinaryOp::Add {
+            let left_is_string = is_string_type(ctx, left_type);
+            let right_is_string = is_string_type(ctx, right_type);
+            if left_is_string || right_is_string {
+                if left_is_string && !right_is_string {
+                    right = coerce_operand_to_string(
+                        node.node.right.span,
+                        right,
+                        right_type,
+                        left_type,
+                        ctx,
+                    )?;
+                } else if right_is_string && !left_is_string {
+                    left = coerce_operand_to_string(
+                        node.node.left.span,
+                        left,
+                        left_type,
+                        right_type,
+                        ctx,
+                    )?;
+                } else if !left_is_string {
+                    return Err(CodegenError::TypeMismatch {
+                        span: node.span,
+                        expected: left_type,
+                        actual: right_type,
+                    });
+                }
+                return lower_string_concat(node, left, right, ctx);
+            }
+        }
+
         let operand_type = if left_type == right_type {
             left_type
         } else if is_numeric_type(ctx.type_result.types.get(left_type))
@@ -248,6 +281,73 @@ fn lower_string_concat(
             node: "string concat result",
         })?;
     Ok(Some(result))
+}
+
+fn is_string_type(ctx: &NodeLoweringContext<'_, '_>, type_id: TypeId) -> bool {
+    matches!(
+        ctx.type_result.types.get(type_id),
+        Some(TypeInfo::Primitive(HirPrimitiveType::String))
+    )
+}
+
+fn coerce_operand_to_string(
+    span: SpanInfo,
+    value: Value,
+    type_id: TypeId,
+    string_type: TypeId,
+    ctx: &mut NodeLoweringContext<'_, '_>,
+) -> Result<Value, CodegenError> {
+    if is_string_type(ctx, type_id) {
+        return Ok(value);
+    }
+    match ctx.type_result.types.get(type_id) {
+        Some(TypeInfo::Primitive(HirPrimitiveType::I64)) => lower_str_from_i64(value, span, ctx),
+        Some(TypeInfo::Primitive(HirPrimitiveType::I32)) => {
+            let extended = ctx
+                .builder
+                .ins()
+                .sextend(clif_types::I64, value);
+            lower_str_from_i64(extended, span, ctx)
+        }
+        Some(TypeInfo::Primitive(HirPrimitiveType::U8)) => {
+            let extended = ctx.builder.ins().uextend(clif_types::I64, value);
+            lower_str_from_i64(extended, span, ctx)
+        }
+        _ => Err(CodegenError::TypeMismatch {
+            span,
+            expected: string_type,
+            actual: type_id,
+        }),
+    }
+}
+
+fn lower_str_from_i64(
+    value: Value,
+    span: SpanInfo,
+    ctx: &mut NodeLoweringContext<'_, '_>,
+) -> Result<Value, CodegenError> {
+    let mut signature = Signature::new(CallConv::SystemV);
+    signature.params.push(AbiParam::new(clif_types::I64));
+    signature.returns.push(AbiParam::new(pointer_type()));
+    let sig_ref = ctx.builder.func.import_signature(signature);
+    let func_ref = ctx
+        .builder
+        .func
+        .import_function(cranelift_codegen::ir::ExtFuncData {
+            name: ExternalName::testcase("str_from_i64"),
+            signature: sig_ref,
+            colocated: false,
+            patchable: false,
+        });
+    let call = ctx.builder.ins().call(func_ref, &[value]);
+    ctx.builder
+        .inst_results(call)
+        .first()
+        .copied()
+        .ok_or(CodegenError::UnsupportedNode {
+            span,
+            node: "str_from_i64 result",
+        })
 }
 
 fn is_numeric_type(info: Option<&TypeInfo>) -> bool {

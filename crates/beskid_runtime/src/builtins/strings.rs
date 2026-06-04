@@ -83,6 +83,21 @@ pub extern "C-unwind" fn str_concat(
     str_new(buffer.cast::<u8>(), total_len)
 }
 
+/// Format a signed integer as decimal UTF-8 in a newly allocated `BeskidStr`.
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn str_from_i64(value: i64) -> *mut BeskidStr {
+    let formatted = value.to_string();
+    let len = formatted.len();
+    let buffer = alloc(len, std::ptr::null()).cast::<u8>();
+    if buffer.is_null() {
+        panic!("str_from_i64 allocation failed");
+    }
+    unsafe {
+        std::ptr::copy_nonoverlapping(formatted.as_ptr(), buffer, len);
+    }
+    str_new(buffer, len)
+}
+
 /// Copy a UTF-8 substring into a newly allocated `BeskidStr`.
 ///
 /// `start` is a byte offset; `count` is the number of bytes to copy. Out-of-range

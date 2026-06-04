@@ -1,40 +1,59 @@
 //! Entry session registry and semantic snapshot tests.
 
-use std::path::Path;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
-use crate::projects::{CompilePlan, Target, TargetKind};
+use crate::projects::{
+    AssemblyDiscovery, CompilePlan, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly,
+    RootEntry, Target, TargetKind,
+};
 use crate::services::entry_session::{
-    get_or_insert_assembly, invalidate_all, invalidate_project, update_semantic_snapshot,
+    get_or_insert_assembly, invalidate_project, update_semantic_snapshot,
 };
 use crate::services::session::{
-    SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot, cached_compilation_session,
-};
-use crate::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry,
+    SemanticSnapshot, SessionFingerprint, cached_compilation_session, cached_semantic_snapshot,
 };
 
-fn test_plan(entry: &str, lock_bytes: Option<&[u8]>) -> (CompilePlan, SessionFingerprint) {
-    let root = std::env::temp_dir().join("beskid_session_test");
-    let _ = std::fs::create_dir_all(&root);
-    if let Some(bytes) = lock_bytes {
-        std::fs::write(root.join("Project.lock"), bytes).expect("lock");
+static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
+static REGISTRY_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn test_plan(lock_bytes: Option<&[u8]>) -> (CompilePlan, SessionFingerprint, PathBuf, PathBuf) {
+    let id = TEST_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!("beskid_session_test_{id}"));
+    let src_root = root.join("src");
+    std::fs::create_dir_all(&src_root).expect("src root");
+    let entry_path = src_root.join(format!("Entry_{id}.bd"));
+    std::fs::write(&entry_path, "fn main() { return; }").expect("entry source");
+
+    let lock_path = root.join("Project.lock");
+    match lock_bytes {
+        Some(bytes) => std::fs::write(&lock_path, bytes).expect("lock"),
+        None => {
+            let _ = std::fs::remove_file(&lock_path);
+        }
     }
+
     let plan = CompilePlan {
         project_root: root.clone(),
         manifest_path: root.join("Project.proj"),
         project_name: "App".to_string(),
-        source_root: root.join("src"),
+        source_root: src_root,
         target: Target {
             name: "main".to_string(),
             kind: TargetKind::App,
-            entry: entry.to_string(),
+            entry: entry_path
+                .strip_prefix(&root)
+                .expect("entry under root")
+                .to_string_lossy()
+                .into_owned(),
         },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
         has_std_dependency: false,
     };
-    let fp = SessionFingerprint::for_entry(&plan, Path::new(entry));
-    (plan, fp)
+    let fp = SessionFingerprint::for_entry(&plan, &entry_path);
+    (plan, fp, root, entry_path)
 }
 
 fn empty_assembly(plan: &CompilePlan) -> ProgramAssembly {
@@ -57,8 +76,8 @@ fn empty_assembly(plan: &CompilePlan) -> ProgramAssembly {
 
 #[test]
 fn store_and_retrieve_semantic_snapshot() {
-    invalidate_all();
-    let (plan, fp) = test_plan("Main.bd", None);
+    let _guard = REGISTRY_TEST_LOCK.lock().expect("registry test lock");
+    let (plan, fp, root, _entry_path) = test_plan(None);
     get_or_insert_assembly(fp.clone(), empty_assembly(&plan));
     let snap = SemanticSnapshot::from_diagnostics(&[], 1, "semantic");
     update_semantic_snapshot(&fp, snap.clone());
@@ -66,12 +85,13 @@ fn store_and_retrieve_semantic_snapshot() {
     assert_eq!(loaded.staged_through, "semantic");
     assert_eq!(loaded.syntax_generation_id, 1);
     assert!(cached_compilation_session(&fp).is_some());
+    invalidate_project(&root);
 }
 
 #[test]
 fn registry_invalidates_on_lockfile_change() {
-    invalidate_all();
-    let (plan_a, fp_a) = test_plan("Main.bd", Some(b"lock-a"));
+    let _guard = REGISTRY_TEST_LOCK.lock().expect("registry test lock");
+    let (plan_a, fp_a, root, entry_path) = test_plan(Some(b"lock-a"));
     get_or_insert_assembly(fp_a.clone(), empty_assembly(&plan_a));
     update_semantic_snapshot(
         &fp_a,
@@ -79,26 +99,12 @@ fn registry_invalidates_on_lockfile_change() {
     );
     assert!(cached_semantic_snapshot(&fp_a).is_some());
 
-    let plan_b = CompilePlan {
-        project_root: plan_a.project_root.clone(),
-        manifest_path: plan_a.manifest_path.clone(),
-        project_name: plan_a.project_name.clone(),
-        source_root: plan_a.source_root.clone(),
-        target: plan_a.target.clone(),
-        dependency_projects: plan_a.dependency_projects.clone(),
-        unresolved_dependencies: plan_a.unresolved_dependencies.clone(),
-        has_std_dependency: plan_a.has_std_dependency,
-    };
-    std::fs::write(
-        plan_a.project_root.join("Project.lock"),
-        b"lock-b",
-    )
-    .expect("rewrite lock");
-    let fp_b = SessionFingerprint::for_entry(&plan_b, Path::new("Main.bd"));
+    std::fs::write(root.join("Project.lock"), b"lock-b").expect("rewrite lock");
+    let fp_b = SessionFingerprint::for_entry(&plan_a, &entry_path);
     assert_ne!(fp_a, fp_b);
     assert!(cached_semantic_snapshot(&fp_b).is_none());
     assert!(cached_semantic_snapshot(&fp_a).is_some());
 
-    invalidate_project(&plan_a.project_root);
+    invalidate_project(&root);
     assert!(cached_semantic_snapshot(&fp_a).is_none());
 }

@@ -1205,6 +1205,16 @@ impl<'a> TypeContext<'a> {
     ) -> Option<TypeId> {
         let left = self.type_expression(&binary.node.left);
         let right = self.type_expression(&binary.node.right);
+
+        if matches!(binary.node.op.node, HirBinaryOp::Add) {
+            let string_add = left
+                .is_some_and(|type_id| self.is_string(type_id))
+                || right.is_some_and(|type_id| self.is_string(type_id));
+            if string_add {
+                return self.primitive_type_id(HirPrimitiveType::String);
+            }
+        }
+
         let (left, right) = match (left, right) {
             (Some(left), Some(right)) => self.promote_binary_numeric_operands(left, right),
             _ => return None,

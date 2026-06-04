@@ -393,6 +393,13 @@ impl<'a> TypeContext<'a> {
         )
     }
 
+    pub(super) fn is_string(&self, type_id: TypeId) -> bool {
+        matches!(
+            self.type_table.get(type_id),
+            Some(TypeInfo::Primitive(HirPrimitiveType::String))
+        )
+    }
+
     pub(super) fn is_never(&self, type_id: TypeId) -> bool {
         matches!(
             self.type_table.get(type_id),

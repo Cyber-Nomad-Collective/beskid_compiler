@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use beskid_analysis::hir::{HirCallExpression, HirExpressionNode, HirLiteral, HirPrimitiveType};
+use beskid_analysis::hir::{
+    HirBinaryOp, HirCallExpression, HirExpressionNode, HirLiteral, HirPrimitiveType,
+};
 use beskid_analysis::resolve::{LocalId, Resolution, ResolvedValue};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{CallLoweringKind, TypeId, TypeInfo, TypeResult};
@@ -71,9 +73,23 @@ pub(crate) fn infer_expr_type(
             _ => None,
         }),
         HirExpressionNode::BinaryExpression(binary) => {
-            infer_expr_type(resolution, type_result, &binary.node.left, source_path)?;
-            infer_expr_type(resolution, type_result, &binary.node.right, source_path)?;
-            primitive_type_id(type_result, HirPrimitiveType::Bool)
+            let left = infer_expr_type(resolution, type_result, &binary.node.left, source_path)?;
+            let right = infer_expr_type(resolution, type_result, &binary.node.right, source_path)?;
+            match binary.node.op.node {
+                HirBinaryOp::Add => {
+                    if type_is_string(type_result, left) || type_is_string(type_result, right) {
+                        return primitive_type_id(type_result, HirPrimitiveType::String)
+                            .or(Some(left));
+                    }
+                    Some(left)
+                }
+                HirBinaryOp::And | HirBinaryOp::Or | HirBinaryOp::Eq | HirBinaryOp::NotEq
+                | HirBinaryOp::Lt | HirBinaryOp::Lte | HirBinaryOp::Gt | HirBinaryOp::Gte
+                | HirBinaryOp::IdentityEq | HirBinaryOp::IdentityNotEq => {
+                    primitive_type_id(type_result, HirPrimitiveType::Bool)
+                }
+                HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div => Some(left),
+            }
         }
         HirExpressionNode::GroupedExpression(grouped) => {
             infer_expr_type(resolution, type_result, &grouped.node.expr, source_path)
@@ -83,6 +99,13 @@ pub(crate) fn infer_expr_type(
         }
         _ => None,
     }
+}
+
+fn type_is_string(type_result: &TypeResult, type_id: TypeId) -> bool {
+    matches!(
+        type_result.types.get(type_id),
+        Some(TypeInfo::Primitive(HirPrimitiveType::String))
+    )
 }
 
 fn infer_call_expr_type(
