@@ -164,7 +164,7 @@ impl GcHeader {
 
     pub fn reset_white(&self) {
         self.header_word
-            .fetch_and(!COLOR_MASK as usize, Ordering::Release);
+            .fetch_and(!COLOR_MASK, Ordering::Release);
     }
 
     #[allow(dead_code)]

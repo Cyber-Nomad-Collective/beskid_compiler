@@ -42,23 +42,24 @@ impl Engine {
         artifact: &CodegenArtifact,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> Result<(), JitError> {
+        let runtime_externs = beskid_codegen::referenced_extern_imports(artifact);
+
         #[cfg(feature = "extern_dlopen")]
-        let extras = resolve_extern_symbols(&artifact.extern_imports)
+        let extras = resolve_extern_symbols(&runtime_externs)
             .map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?;
 
         #[cfg(all(not(feature = "extern_dlopen"), unix))]
-        let extras = if artifact.extern_imports.is_empty() {
+        let extras = if runtime_externs.is_empty() {
             Vec::new()
         } else {
-            resolve_process_extern_symbols(&artifact.extern_imports)
+            resolve_process_extern_symbols(&runtime_externs)
                 .map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?
         };
 
         #[cfg(all(not(feature = "extern_dlopen"), not(unix)))]
         let extras: Vec<(String, *const u8)> = {
-            if !artifact.extern_imports.is_empty() {
-                let list = artifact
-                    .extern_imports
+            if !runtime_externs.is_empty() {
+                let list = runtime_externs
                     .iter()
                     .map(|e| e.symbol.clone())
                     .collect::<Vec<_>>()

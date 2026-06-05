@@ -40,10 +40,10 @@ fn extern_resolution_via_process_symbols_without_feature() -> Result<()> {
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C {
-    i64 write(i64 fd, ref u8 buf, i64 len);
+    i64 getpid();
 }
 
-pub i64 main() { return 0; }
+pub i64 main() { return C.getpid(); }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
@@ -62,7 +62,7 @@ pub contract C {
     i64 no_such_symbol();
 }
 
-pub i64 main() { return 0; }
+pub i64 main() { return C.no_such_symbol(); }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
@@ -106,7 +106,7 @@ pub contract C {
     i64 no_such_symbol();
 }
 
-pub i64 main() { return 0; }
+pub i64 main() { return C.no_such_symbol(); }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
@@ -127,7 +127,7 @@ pub contract C {
     i64 getpid();
 }
 
-pub i64 main() { return 0; }
+pub i64 main() { return C.getpid(); }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
