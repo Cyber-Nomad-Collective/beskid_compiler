@@ -98,6 +98,7 @@ mod dynamic_mapping_tests {
             scoped_expr_types: Default::default(),
             local_types: Default::default(),
             function_signatures: Default::default(),
+            method_function_signatures: Default::default(),
             struct_fields_ordered: Default::default(),
             struct_event_fields: Default::default(),
             enum_variants_ordered: Default::default(),
@@ -116,6 +117,7 @@ mod dynamic_mapping_tests {
             builder: &mut builder,
             state: &mut state,
             expected_return_type: None,
+            receiver_type: None,
         };
 
         let src_ptr = ctx.builder.ins().iconst(pointer_type(), 0);

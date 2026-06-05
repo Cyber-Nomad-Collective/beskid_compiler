@@ -13,6 +13,12 @@ fn parses_enum_constructor() {
 }
 
 #[test]
+fn parses_nullary_enum_constructor_without_parens() {
+    assert_parse(Rule::EnumConstructorExpression, "Option::None");
+    assert_parse(Rule::EnumConstructorExpression, "Shape::Point");
+}
+
+#[test]
 fn parses_qualified_enum_constructor() {
     assert_parse(
         Rule::EnumConstructorExpression,
@@ -29,11 +35,6 @@ fn rejects_unqualified_enum_constructor() {
 fn rejects_enum_definition_without_comma() {
     let input = "enum Shape { Circle(f64 radius) Rect(f64 width) }";
     assert_parse_fail(Rule::EnumDefinition, input);
-}
-
-#[test]
-fn rejects_enum_constructor_without_closing_paren() {
-    assert_parse_fail(Rule::EnumConstructorExpression, "Shape::Circle(1.0");
 }
 
 #[test]

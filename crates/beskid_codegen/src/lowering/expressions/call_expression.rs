@@ -239,7 +239,7 @@ fn lower_event_invoke_call(
                 span: arg.span,
                 node: "unit-valued event argument",
             })?;
-            let actual = ctx.require_expr_type(arg.span)?;
+            let actual = ctx.require_expr_type_for_node(arg)?;
             ensure_type_compatibility(
                 arg.span,
                 *expected,
@@ -431,6 +431,7 @@ fn lower_lambda_to_symbol(
         builder: &mut builder,
         state: &mut state,
         expected_return_type: Some(return_type),
+        receiver_type: None,
     };
 
     let lowered = lower_node(&lambda.node.body, &mut lambda_ctx)?;
@@ -627,7 +628,7 @@ fn lower_indirect_function_call_with_signature(
                 span: arg.span,
                 node: "unit-valued call argument",
             })?;
-            let actual = ctx.require_expr_type(arg.span)?;
+            let actual = ctx.require_expr_type_for_node(arg)?;
             ensure_type_compatibility(
                 arg.span,
                 *expected,
@@ -728,7 +729,7 @@ fn lower_contract_dispatch_call(
                     span: arg.span,
                     node: "unit-valued call argument",
                 })?;
-                let actual = ctx.require_expr_type(arg.span)?;
+                let actual = ctx.require_expr_type_for_node(arg)?;
                 ensure_type_compatibility(
                     arg.span,
                     *expected,
@@ -896,7 +897,7 @@ fn lower_contract_dispatch_call(
                 span: arg.span,
                 node: "unit-valued call argument",
             })?;
-            let actual = ctx.require_expr_type(arg.span)?;
+            let actual = ctx.require_expr_type_for_node(arg)?;
             ensure_type_compatibility(
                 arg.span,
                 *expected,
@@ -1025,7 +1026,7 @@ fn lower_local_lambda_call(
             span: arg_expr.span,
             node: "unit-valued lambda argument",
         })?;
-        let actual_type = ctx.require_expr_type(arg_expr.span)?;
+        let actual_type = ctx.require_expr_type_for_node(arg_expr)?;
         let arg_value = ensure_type_compatibility(
             arg_expr.span,
             expected_type,
@@ -1169,7 +1170,7 @@ fn lower_method_dispatch_call(
                 span: arg.span,
                 node: "unit-valued call argument",
             })?;
-            let actual = ctx.require_expr_type(arg.span)?;
+            let actual = ctx.require_expr_type_for_node(arg)?;
             ensure_type_compatibility(
                 arg.span,
                 *expected,
@@ -1237,10 +1238,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let call_kind = ctx
-            .type_result
-            .call_kind_at(node.span, ctx.codegen.current_source_path.as_ref())
-            .map(|kind| canonicalize_call_kind(ctx.resolution, kind));
+        let call_kind = crate::lowering::locals::call_kind_at(
+            ctx.type_result,
+            node.span,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .map(|kind| canonicalize_call_kind(ctx.resolution, kind));
         if let Some(CallLoweringKind::MethodDispatch {
             method_item_id,
             receiver_source,

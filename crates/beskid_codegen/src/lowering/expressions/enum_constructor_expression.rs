@@ -2,6 +2,7 @@ use crate::errors::CodegenError;
 use crate::lowering::descriptor::{
     enum_payload_start, enum_variant_field_offsets, is_pointer_like_type,
 };
+use crate::lowering::locals::{expr_type_at, resolve_type_path_item_id_for_codegen, type_id_for_item};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -21,29 +22,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirEnumConstructorExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let type_id = ctx
-            .expr_type(node.span)
-            .or_else(|| {
-                let segments: Vec<String> = node
-                    .node
-                    .path
-                    .node
-                    .type_path
-                    .node
-                    .segments
-                    .iter()
-                    .map(|segment| segment.node.name.node.name.clone())
-                    .collect();
-                crate::lowering::locals::resolve_type_path_item_id_for_codegen(
-                    ctx.resolution,
-                    ctx.type_result,
-                    &segments,
-                )
-                .and_then(|item_id| {
-                    crate::lowering::locals::type_id_for_item(ctx.type_result, item_id)
-                })
-            })
-            .ok_or(CodegenError::MissingExpressionType { span: node.span })?;
+        let type_id = expr_type_at(
+            ctx.type_result,
+            node.span,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .or_else(|| enum_constructor_type_from_context(ctx, node))
+        .ok_or(CodegenError::MissingExpressionType { span: node.span })?;
         let item_id = match ctx.type_result.types.get(type_id) {
             Some(TypeInfo::Named(item_id)) => *item_id,
             Some(TypeInfo::Applied { base, .. }) => *base,
@@ -189,6 +174,32 @@ fn emit_alloc(
                 node: "alloc result",
             })?;
     Ok(result)
+}
+
+fn enum_constructor_type_from_context(
+    ctx: &NodeLoweringContext<'_, '_>,
+    node: &Spanned<HirEnumConstructorExpression>,
+) -> Option<beskid_analysis::types::TypeId> {
+    let segments: Vec<String> = node
+        .node
+        .path
+        .node
+        .type_path
+        .node
+        .segments
+        .iter()
+        .map(|segment| segment.node.name.node.name.clone())
+        .collect();
+    let base_item_id =
+        resolve_type_path_item_id_for_codegen(ctx.resolution, ctx.type_result, &segments)?;
+    if let Some(expected) = ctx.expected_return_type {
+        match ctx.type_result.types.get(expected) {
+            Some(TypeInfo::Applied { base, .. }) if *base == base_item_id => return Some(expected),
+            Some(TypeInfo::Named(item_id)) if *item_id == base_item_id => return Some(expected),
+            _ => {}
+        }
+    }
+    type_id_for_item(ctx.type_result, base_item_id)
 }
 
 fn emit_write_barrier(

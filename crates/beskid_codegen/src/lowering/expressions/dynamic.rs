@@ -169,6 +169,7 @@ mod dynamic_clif_tests {
             scoped_expr_types: HashMap::new(),
             local_types: HashMap::new(),
             function_signatures: HashMap::new(),
+            method_function_signatures: HashMap::new(),
             struct_fields_ordered: HashMap::new(),
             struct_event_fields: HashMap::new(),
             enum_variants_ordered: HashMap::new(),
@@ -221,6 +222,7 @@ mod dynamic_clif_tests {
                 builder: &mut builder,
                 state: &mut state,
                 expected_return_type: None,
+                receiver_type: None,
             };
             let _cell = emit_dynamic_cell_create(&mut ctx, 7, null_payload);
             ctx.builder.ins().return_(&[null_payload]);

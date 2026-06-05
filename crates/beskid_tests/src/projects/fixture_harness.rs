@@ -87,6 +87,57 @@ pub fn resolve_fixture_with_assembly(
 
 static CORELIB_MVP_ASSEMBLY: OnceLock<Arc<ProgramAssembly>> = OnceLock::new();
 
+pub fn corelib_tests_project_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corelib/beskid_corelib/tests/corelib_tests")
+}
+
+/// Resolve a `corelib_tests` entry through the analysis spine (no assembly yet).
+pub fn resolve_corelib_tests_entry(entry_relative: &str) -> ResolvedInput {
+    let root = corelib_tests_project_root();
+    let entry_path = root.join("src").join(entry_relative);
+    resolve_input(
+        Some(&entry_path),
+        Some(&root),
+        None,
+        None,
+        false,
+        false,
+    )
+    .unwrap_or_else(|err| panic!("resolve corelib_tests entry {entry_relative}: {err}"))
+}
+
+/// Resolve and assemble a `corelib_tests` entry via Salsa [`program_assembly`].
+pub fn resolve_corelib_tests_entry_with_assembly(entry_relative: &str) -> ResolvedInput {
+    let mut resolved = resolve_corelib_tests_entry(entry_relative);
+    let plan = resolved.compile_plan.clone().expect("compile plan");
+    let assembly = with_db(|db| {
+        program_assembly(
+            db,
+            &plan,
+            resolved.prepared_workspace.as_ref(),
+            &resolved.source_path,
+            Some(&resolved.source),
+            &Default::default(),
+        )
+    })
+    .expect("program_assembly");
+    resolved.assembly = Some(assembly);
+    resolved
+}
+
+pub fn compile_corelib_tests_front_end(
+    entry_relative: &str,
+) -> beskid_analysis::services::FrontEndTypedResult {
+    prepare_executable(&resolve_corelib_tests_entry_with_assembly(entry_relative))
+        .into_executable()
+        .expect("executable")
+}
+
+pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
+    let _ = compile_corelib_tests_front_end(entry_relative);
+}
+
 pub fn shared_corelib_mvp_assembly() -> Arc<ProgramAssembly> {
     CORELIB_MVP_ASSEMBLY
         .get_or_init(|| {

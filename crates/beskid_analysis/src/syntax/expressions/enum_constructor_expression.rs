@@ -20,7 +20,11 @@ pub(crate) fn parse_enum_constructor_expression(
     pair: Pair<Rule>,
 ) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
-    let mut inner = pair.into_inner();
+    let variant = pair
+        .into_inner()
+        .next()
+        .ok_or(ParseError::missing(Rule::EnumConstructorExpression))?;
+    let mut inner = variant.into_inner();
     let path = EnumPath::parse(inner.next().ok_or(ParseError::missing(Rule::EnumPath))?)?;
     let args = if let Some(arg_list) = inner.next() {
         arg_list

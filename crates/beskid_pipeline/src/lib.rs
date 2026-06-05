@@ -9,6 +9,7 @@
 
 pub mod grammar;
 pub mod phases;
+pub mod timing;
 
 pub use grammar::GRAMMAR_REVISION;
 
@@ -16,6 +17,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 pub use phases::*;
+pub use timing::TimedPipelineObserver;
 
 /// A single pipeline observation (phase boundaries or fine-grained work units).
 #[derive(Debug, Clone)]

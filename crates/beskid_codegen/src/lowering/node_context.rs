@@ -18,6 +18,7 @@ pub(crate) struct NodeLoweringContext<'a, 'b> {
     pub(crate) builder: &'a mut FunctionBuilder<'b>,
     pub(crate) state: &'a mut FunctionLoweringState,
     pub(crate) expected_return_type: Option<TypeId>,
+    pub(crate) receiver_type: Option<TypeId>,
 }
 
 impl NodeLoweringContext<'_, '_> {
@@ -54,15 +55,18 @@ impl NodeLoweringContext<'_, '_> {
         &self,
         node: &Spanned<HirExpressionNode>,
     ) -> Result<TypeId, CodegenError> {
-        if let Some(type_id) = self.expr_type(node.span) {
-            return Ok(type_id);
-        }
-        infer_expr_type(
+        if let Some(type_id) = infer_expr_type(
             self.resolution,
             self.type_result,
             node,
             self.codegen.current_source_path.as_ref(),
-        )
-        .ok_or(CodegenError::MissingExpressionType { span: node.span })
+            self.receiver_type,
+        ) {
+            return Ok(type_id);
+        }
+        if let Some(type_id) = self.expr_type(node.span) {
+            return Ok(type_id);
+        }
+        Err(CodegenError::MissingExpressionType { span: node.span })
     }
 }

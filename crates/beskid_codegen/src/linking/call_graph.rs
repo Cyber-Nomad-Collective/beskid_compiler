@@ -201,14 +201,17 @@ fn resolve_call(
     type_result: &TypeResult,
     source_path: Option<&PathBuf>,
 ) -> Option<ResolvedCall> {
-    let kind = if let Some(kind) = type_result
+    let kind = if let Some(item_id) = resolve_item_call_id(call, resolution, source_path) {
+        CallLoweringKind::ItemCall {
+            item_id: canonical_item_id(resolution, item_id),
+        }
+    } else if let Some(kind) = type_result
         .call_kind_at(call.span, source_path)
         .map(|kind| crate::lowering::locals::canonicalize_call_kind(resolution, kind))
     {
         kind
     } else {
-        let item_id = resolve_item_call_id(call, resolution, source_path)?;
-        CallLoweringKind::ItemCall { item_id }
+        return None;
     };
     match kind {
         CallLoweringKind::ItemCall { item_id } => {

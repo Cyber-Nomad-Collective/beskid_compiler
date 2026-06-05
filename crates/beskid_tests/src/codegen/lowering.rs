@@ -126,6 +126,30 @@ fn codegen_lowers_generic_iterable_for_loop() {
 }
 
 #[test]
+fn codegen_lowers_nullary_enum_constructor_without_parens() {
+    let source = "
+        enum Option { Some(i64 value), None }
+        i64 main() {
+            Option value = Option::None;
+            return 0;
+        }
+    ";
+    let (hir, resolution, typed) = lower_resolve_type(source);
+    let artifact = lower_program(&hir, &resolution, &typed)
+        .expect("expected nullary enum constructor lowering");
+    let main = artifact
+        .functions
+        .iter()
+        .find(|f| f.name == "main")
+        .expect("expected main function");
+    let clif = main.function.to_string();
+    assert!(
+        clif.contains("store"),
+        "expected enum tag store in CLIF: {clif}"
+    );
+}
+
+#[test]
 fn codegen_lowers_while_with_break_and_continue() {
     let source = "i32 main() { i32 mut i = 0; i32 mut sum = 0; while i < 5 { i = i + 1; if i == 2 { continue; } if i == 4 { break; } sum = sum + i; } return sum; }";
     let (hir, resolution, typed) = lower_resolve_type(source);

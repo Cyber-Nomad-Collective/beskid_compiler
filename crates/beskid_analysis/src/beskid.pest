@@ -298,7 +298,9 @@ MacroMetavariable = { "$" ~ Identifier }
 
 PrimaryExpression = { MacroInvocation | MacroMetavariable | Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | ArrayLiteralExpression | Path }
 
-EnumConstructorExpression = { EnumPath ~ "(" ~ ArgumentList? ~ ")" }
+EnumConstructorExpression = { enum_constructor_nullary | enum_constructor_with_args }
+enum_constructor_nullary = { EnumPath ~ !"(" }
+enum_constructor_with_args = { EnumPath ~ "(" ~ ArgumentList? ~ ")" }
 
 StructLiteralExpression = { Path ~ "{" ~ FieldValueList? ~ "}" }
 FieldValueList = { FieldValue ~ ("," ~ FieldValue)* ~ ","? }

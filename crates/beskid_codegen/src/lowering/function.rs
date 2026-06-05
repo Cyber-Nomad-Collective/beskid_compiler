@@ -85,7 +85,10 @@ fn lower_method_body(
     ctx: &mut CodegenContext,
     item_id: ItemId,
 ) -> CodegenResult<()> {
-    let signature_types = type_result.function_signatures.get(&item_id);
+    let signature_types = type_result
+        .function_signatures
+        .get(&item_id)
+        .or_else(|| type_result.method_function_signatures.get(&item_id));
 
     let receiver_type_id = method_receiver_type_id(
         resolution,
@@ -211,6 +214,7 @@ fn lower_method_body(
         builder: &mut builder,
         state: &mut state,
         expected_return_type: return_type_id,
+        receiver_type: Some(receiver_type_id),
     };
 
     for statement in &def.node.body.node.statements {
@@ -335,6 +339,7 @@ fn lower_test_body(
         builder: &mut builder,
         state: &mut state,
         expected_return_type,
+        receiver_type: None,
     };
 
     for statement in &def.node.body.node.statements {
@@ -551,6 +556,7 @@ fn lower_function_with_name_body(
         builder: &mut builder,
         state: &mut state,
         expected_return_type,
+        receiver_type: None,
     };
 
     for statement in &def.node.body.node.statements {

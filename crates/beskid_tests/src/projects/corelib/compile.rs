@@ -1,9 +1,12 @@
 use std::fs;
 
 use beskid_analysis::Severity;
+use beskid_analysis::compilation_context::CompilationContext;
 use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::lower_normalize_resolve_type_spanned_with_assembly;
-use beskid_analysis::services::{analyze_file_in_project, parse_program, resolve_input};
+use beskid_analysis::services::{
+    analyze_file_in_project, analyze_source_with_compilation_context, parse_program, resolve_input,
+};
 use beskid_codegen::lower_source;
 
 use crate::projects::fixture_harness::{
@@ -78,10 +81,18 @@ fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_posit
 fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let root = corelib_workspace_root();
+        let seed = root.join("packages/foundation/src/Prelude.bd");
+        let seed_source = fs::read_to_string(&seed).expect("read prelude");
+        let mut ctx = CompilationContext::try_for_analysis_path(&seed, None)
+            .expect("corelib workspace compilation context");
+        let _ = ctx.assembly_for_entry(&seed, &seed_source);
 
         for relative in expected_corelib_workspace_sources() {
             let path = root.join(relative);
-            let diagnostics = analyze_file_in_project(&path)
+            let source = fs::read_to_string(&path)
+                .unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
+            ctx.assembly = None;
+            let diagnostics = analyze_source_with_compilation_context(&path, &source, &mut ctx)
                 .unwrap_or_else(|_| panic!("analyze {}", path.display()));
             let errors: Vec<_> = diagnostics
                 .into_iter()

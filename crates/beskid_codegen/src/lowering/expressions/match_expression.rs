@@ -46,7 +46,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
                 span: node.node.scrutinee.span,
                 node: "unit-valued match scrutinee",
             })?;
-        let scrutinee_type = ctx.require_expr_type(node.node.scrutinee.span)?;
+        let scrutinee_type = ctx.require_expr_type_for_node(&node.node.scrutinee)?;
         if matches!(
             ctx.type_result.types.get(scrutinee_type),
             Some(TypeInfo::Primitive(_))

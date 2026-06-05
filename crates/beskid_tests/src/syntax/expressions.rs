@@ -169,6 +169,22 @@ fn parses_enum_constructor_without_args_ast() {
 }
 
 #[test]
+fn parses_nullary_enum_constructor_without_parens_ast() {
+    let expr = parse_expression_ast("Option::None");
+    match &expr.node {
+        Expression::EnumConstructor(constructor) => {
+            assert_eq!(
+                constructor.node.path.node.type_path.node.segments[0].node.name.node.name,
+                "Option"
+            );
+            assert_eq!(constructor.node.path.node.variant.node.name, "None");
+            assert!(constructor.node.args.is_empty());
+        }
+        _ => panic!("expected enum constructor"),
+    }
+}
+
+#[test]
 fn parses_match_expression_ast() {
     let expr = parse_expression_ast("match x { Foo::Bar when x > 0 => 1, _ => 0, }");
     match &expr.node {

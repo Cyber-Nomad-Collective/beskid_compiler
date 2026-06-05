@@ -13,7 +13,7 @@ mod std_env_lock;
 pub(crate) use std_env_lock::std_dependency_env_lock;
 
 #[cfg(test)]
-mod fixture_harness;
+pub(crate) mod fixture_harness;
 
 #[cfg(test)]
 mod assembly;

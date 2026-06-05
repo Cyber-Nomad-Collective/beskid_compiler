@@ -1,5 +1,6 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility;
+use crate::lowering::locals::struct_literal_type_id;
 use crate::lowering::descriptor::{is_pointer_like_type, struct_field_offsets};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
@@ -20,7 +21,14 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let type_id = ctx.require_expr_type(node.span)?;
+        let type_id = struct_literal_type_id(
+            ctx.resolution,
+            ctx.type_result,
+            &node.node.path,
+            node.span,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .ok_or(CodegenError::MissingExpressionType { span: node.span })?;
         let item_id = match ctx.type_result.types.get(type_id) {
             Some(TypeInfo::Named(item_id)) => *item_id,
             _ => {
@@ -77,7 +85,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
                     span: field.node.value.span,
                     node: "unit-valued struct field",
                 })?;
-            let actual = ctx.require_expr_type(field.node.value.span)?;
+            let actual = ctx
+                .require_expr_type_for_node(&field.node.value)
+                .unwrap_or(field_type);
             let value = ensure_type_compatibility(
                 field.node.value.span,
                 field_type,

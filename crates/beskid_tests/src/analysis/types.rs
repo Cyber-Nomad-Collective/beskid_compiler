@@ -632,6 +632,31 @@ fn typing_reports_enum_constructor_arity_mismatch() {
 }
 
 #[test]
+fn typing_accepts_nullary_enum_constructor_without_parens() {
+    let result = resolve_and_type(
+        "enum Choice { Some(i64 value), None } unit main() { Choice x = Choice::None; }",
+    );
+    assert!(
+        result.is_ok(),
+        "expected nullary enum constructor without parens to type-check, got: {result:?}"
+    );
+}
+
+#[test]
+fn typing_reports_bare_enum_constructor_arity_mismatch_for_payload_variant() {
+    let result = resolve_and_type(
+        "enum Choice { Some(i64 value), None } unit main() { Choice x = Choice::Some; }",
+    );
+    let errors = result.expect_err("expected enum constructor mismatch for payload variant");
+    assert!(
+        errors
+            .iter()
+            .any(|error| matches!(error, TypeError::EnumConstructorMismatch { .. })),
+        "expected EnumConstructorMismatch error, got: {errors:?}"
+    );
+}
+
+#[test]
 fn typing_reports_unknown_struct_field() {
     let result = resolve_and_type(
         "type User { i64 id, string name } unit main() { User u = User { id: 1, name: \"a\" }; i64 x = u.age; }",

@@ -1,6 +1,7 @@
 //! Semantic analysis, lowering, HIR, types, and pipeline rule tests.
 
 mod analyze_program;
+mod analysis_perf;
 mod composition;
 mod diagnostics;
 mod macros;

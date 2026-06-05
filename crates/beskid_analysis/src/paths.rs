@@ -13,9 +13,19 @@ pub fn same_file(left: &Path, right: &Path) -> bool {
         return true;
     }
     match (left.canonicalize(), right.canonicalize()) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => false,
+        (Ok(a), Ok(b)) if a == b => return true,
+        _ => {}
     }
+    logical_source_suffix(left).is_some_and(|left_suffix| {
+        logical_source_suffix(right).is_some_and(|right_suffix| left_suffix == right_suffix)
+    })
+}
+
+/// Suffix from the final `/src/` segment (stable across materialized `obj/` copies).
+fn logical_source_suffix(path: &Path) -> Option<PathBuf> {
+    let path_str = path.to_string_lossy();
+    let idx = path_str.rfind("/src/")?;
+    Some(PathBuf::from(&path_str[idx + 1..]))
 }
 
 /// Optional-path variant of [`same_file`].
