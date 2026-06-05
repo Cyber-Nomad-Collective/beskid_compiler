@@ -71,11 +71,96 @@ pub(crate) fn ensure_type_compatibility(
         return Ok(value);
     }
 
+    if is_string_primitive(expected_info) && is_numeric_type(actual_info) {
+        return coerce_numeric_to_string(span, value, actual_info, builder);
+    }
+
     Err(CodegenError::TypeMismatch {
         span,
         expected,
         actual,
     })
+}
+
+pub(crate) fn retry_call_argument_compatibility(
+    span: SpanInfo,
+    expected: TypeId,
+    value: Value,
+    type_result: &TypeResult,
+    resolution: &Resolution,
+    builder: &mut FunctionBuilder,
+) -> CodegenResult<Value> {
+    let expected_info = type_result.types.get(expected);
+    let value_ty = builder.func.dfg.value_type(value);
+    if is_string_primitive(expected_info) && value_ty.is_int() {
+        return coerce_numeric_to_string(span, value, None, builder);
+    }
+    ensure_type_compatibility(
+        span,
+        expected,
+        expected,
+        type_result,
+        resolution,
+        builder,
+        value,
+    )
+}
+
+fn is_string_primitive(info: Option<&TypeInfo>) -> bool {
+    matches!(
+        info,
+        Some(TypeInfo::Primitive(HirPrimitiveType::String))
+    )
+}
+
+fn coerce_numeric_to_string(
+    span: SpanInfo,
+    value: Value,
+    actual_info: Option<&TypeInfo>,
+    builder: &mut FunctionBuilder,
+) -> CodegenResult<Value> {
+    let i64_ty = crate::lowering::types::map_primitive_to_clif(HirPrimitiveType::I64)
+        .expect("i64 clif");
+    let value = match actual_info {
+        Some(TypeInfo::Primitive(HirPrimitiveType::I64)) => value,
+        Some(TypeInfo::Primitive(HirPrimitiveType::I32)) | None => {
+            let value_ty = builder.func.dfg.value_type(value);
+            if value_ty.is_int() && value_ty.bits() < i64_ty.bits() {
+                builder.ins().sextend(i64_ty, value)
+            } else {
+                value
+            }
+        }
+        Some(TypeInfo::Primitive(HirPrimitiveType::U8)) => {
+            builder.ins().uextend(i64_ty, value)
+        }
+        _ => {
+            return Err(CodegenError::UnsupportedNode {
+                span,
+                node: "numeric to string coercion",
+            });
+        }
+    };
+
+    let mut signature = Signature::new(CallConv::SystemV);
+    signature.params.push(AbiParam::new(crate::lowering::types::map_primitive_to_clif(HirPrimitiveType::I64).expect("i64 clif")));
+    signature.returns.push(AbiParam::new(pointer_type()));
+    let sig_ref = builder.func.import_signature(signature);
+    let func_ref = builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
+        name: ExternalName::testcase("str_from_i64"),
+        signature: sig_ref,
+        colocated: false,
+        patchable: false,
+    });
+    let call = builder.ins().call(func_ref, &[value]);
+    builder
+        .inst_results(call)
+        .first()
+        .copied()
+        .ok_or(CodegenError::UnsupportedNode {
+            span,
+            node: "str_from_i64 result",
+        })
 }
 
 fn lower_contract_compatibility(

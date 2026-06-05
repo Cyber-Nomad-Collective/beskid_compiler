@@ -145,6 +145,14 @@ impl<'a> TypeContext<'a> {
             {
                 return Some(*item_id);
             }
+            // Homonymous leaf module (`System.Syscall.SyscallError`, `Concurrency.Channel`, …).
+            if let Some(item_name) = segments.last()
+                && let Some(module_id) = self.resolution.module_graph.module_id(&segments)
+                && let Some(module) = self.resolution.module_graph.module(module_id)
+                && let Some(item_id) = module.scope.get(item_name)
+            {
+                return Some(*item_id);
+            }
         }
         if segments.len() == 1 {
             let name = &segments[0];

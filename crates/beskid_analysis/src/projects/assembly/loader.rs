@@ -150,8 +150,8 @@ pub fn assemble_program_with_materializer(
             for seed in prelude_seeds {
                 queue.push_back(seed);
             }
-            for module_path in prelude_reexport_paths {
-                if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
+            for module_path in &prelude_reexport_paths {
+                if let Some(dep_file) = resolve_module_file(module_path, &roots) {
                     queue.push_back(dep_file);
                 }
             }
@@ -362,12 +362,17 @@ pub fn assemble_program_with_materializer(
     let _ = beskid_artifacts::ArtifactStore::new(&project_root).refresh_manifest();
 
     let hir_units = Arc::new(hir_units_vec);
+    let prelude_module_paths: Vec<Vec<String>> = prelude_reexport_paths
+        .iter()
+        .map(|path| path.split('.').map(String::from).collect())
+        .collect();
     let module_index = Arc::new(ModuleIndex::build(
         &units,
         hir_units.as_ref(),
         entry_index,
         &roots,
         plan,
+        prelude_module_paths,
     ));
 
     Ok(ProgramAssembly {

@@ -411,6 +411,11 @@ impl Resolver {
         self.import_public_items_from_module(&module_path);
     }
 
+    /// Bring public items from a prelude or `use` module into the current module scope.
+    pub(crate) fn apply_prelude_imports(&mut self, module_path: &[String]) {
+        self.import_public_items_from_module(module_path);
+    }
+
     /// Bring public items from a used module into the current module scope (types, enums, functions).
     fn import_public_items_from_module(&mut self, module_path: &[String]) {
         let Some(target_module_id) = self.module_graph.module_id(module_path) else {

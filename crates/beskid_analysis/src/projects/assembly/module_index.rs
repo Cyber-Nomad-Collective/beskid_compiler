@@ -23,6 +23,8 @@ pub struct ModuleIndex {
     by_symbol: HashMap<SymbolId, ItemId>,
     entry_project_name: String,
     dependency_packages: HashMap<String, String>,
+    /// Logical module paths re-exported from dependency preludes (`Core.Results`, etc.).
+    prelude_module_paths: Vec<Vec<String>>,
 }
 
 impl ModuleIndex {
@@ -35,6 +37,7 @@ impl ModuleIndex {
             by_symbol: HashMap::new(),
             entry_project_name: String::new(),
             dependency_packages: HashMap::new(),
+            prelude_module_paths: Vec::new(),
         }
     }
 
@@ -49,6 +52,7 @@ impl ModuleIndex {
         entry_index: usize,
         roots: &EffectiveCompilationRoots,
         plan: &CompilePlan,
+        prelude_module_paths: Vec<Vec<String>>,
     ) -> Self {
         let mut resolver = Resolver::new();
         resolver.collect_builtins();
@@ -96,6 +100,7 @@ impl ModuleIndex {
             by_symbol,
             entry_project_name: plan.project_name.clone(),
             dependency_packages,
+            prelude_module_paths,
         }
     }
 
@@ -132,6 +137,9 @@ impl ModuleIndex {
         resolver.set_declaring_package(self.entry_project_name.clone());
         resolver.set_current_source_path(entry_source_path.cloned());
         resolver.collect_program(entry_hir);
+        for module_path in &self.prelude_module_paths {
+            resolver.apply_prelude_imports(module_path);
+        }
         resolver.resolve_collected_program(entry_hir)
     }
 
@@ -223,6 +231,11 @@ impl ModuleIndex {
                 &self.dependency_packages,
             ));
             unit_resolver.set_current_source_path(Some(unit_hir.path.clone()));
+            if let Some(ref path) = module_path {
+                unit_resolver.collect_program_in_module(&unit_hir.hir, path, Some(&unit.path));
+            } else {
+                unit_resolver.collect_program(&unit_hir.hir);
+            }
             let unit_resolution = unit_resolver.resolve_collected_program_for_api_documentation(
                 &unit_hir.hir,
                 module_path.as_deref(),

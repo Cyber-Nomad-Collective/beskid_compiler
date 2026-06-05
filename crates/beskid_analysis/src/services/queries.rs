@@ -70,7 +70,7 @@ pub fn module_index_query(
     roots: &crate::projects::assembly::EffectiveCompilationRoots,
     plan: &CompilePlan,
 ) -> ModuleIndex {
-    ModuleIndex::build(units, hir_units, entry_index, roots, plan)
+    ModuleIndex::build(units, hir_units, entry_index, roots, plan, Vec::new())
 }
 
 /// Invalidate dependent units when imports change (BFS over import edges).

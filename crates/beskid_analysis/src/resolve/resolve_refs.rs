@@ -474,7 +474,7 @@ impl Resolver {
             return;
         }
         let lookup_segments = self.expand_import_alias(&segments);
-        match self.resolve_item_in_module_path(&lookup_segments) {
+        match self.resolve_item_in_module_path(&segments, &lookup_segments) {
             ModulePathLookup::Found(item) => {
                 self.tables
                     .insert_value(path.span, ResolvedValue::Item(item));
@@ -539,7 +539,7 @@ impl Resolver {
             return;
         }
         let lookup_segments = self.expand_import_alias(&segments);
-        match self.resolve_item_in_module_path(&lookup_segments) {
+        match self.resolve_item_in_module_path(&segments, &lookup_segments) {
             ModulePathLookup::Found(item) => {
                 self.tables.insert_type(path.span, ResolvedType::Item(item));
             }
@@ -568,6 +568,14 @@ impl Resolver {
 
     fn resolve_enum_path(&mut self, path: &Spanned<HirEnumPath>) {
         self.resolve_type_path(&path.node.type_path);
+        if let Some(resolved) = self
+            .tables
+            .resolved_types
+            .get(&path.node.type_path.span)
+            .cloned()
+        {
+            self.tables.insert_type(path.span, resolved);
+        }
     }
 
     fn insert_generic(&mut self, name: &str) {
@@ -618,11 +626,60 @@ impl Resolver {
         expanded
     }
 
-    fn resolve_item_in_module_path(&self, segments: &[String]) -> ModulePathLookup {
-        if segments.len() < 2 {
+    fn resolve_item_in_module_path(
+        &self,
+        original_segments: &[String],
+        lookup_segments: &[String],
+    ) -> ModulePathLookup {
+        if lookup_segments.len() < 2 {
             return ModulePathLookup::ModuleMissing;
         }
+        let primary = self.lookup_item_in_parent_module(lookup_segments);
+        if matches!(primary, ModulePathLookup::Found(_)) {
+            return primary;
+        }
+
+        // `use Console.Controls.ProgressBar; ProgressBar.ProgressBar.New()` — member in aliased module.
+        if original_segments.len() >= 3 {
+            if let Some(base_module) = self.module_imports.get(&original_segments[0]) {
+                let member = &original_segments[original_segments.len() - 1];
+                if let ModulePathLookup::Found(item) =
+                    self.lookup_named_item_in_module(base_module, member)
+                {
+                    return ModulePathLookup::Found(item);
+                }
+            }
+        }
+
+        // `Console.Controls.Panel.Panel.Render` — skip homonymous type segment in fully qualified paths.
+        if original_segments.len() >= 4 {
+            let member = &original_segments[original_segments.len() - 1];
+            let module_path: Vec<String> = original_segments[..original_segments.len() - 2].to_vec();
+            if let ModulePathLookup::Found(item) =
+                self.lookup_named_item_in_module(&module_path, member)
+            {
+                return ModulePathLookup::Found(item);
+            }
+        }
+
+        // `Concurrency.Channel`, `Ansi.StyleChain` — homonymous type in leaf module path.
+        if let ModulePathLookup::Found(item) = self.lookup_homonymous_module_item(lookup_segments) {
+            return ModulePathLookup::Found(item);
+        }
+
+        primary
+    }
+
+    fn lookup_item_in_parent_module(&self, segments: &[String]) -> ModulePathLookup {
         let (module_path, tail) = segments.split_at(segments.len() - 1);
+        self.lookup_named_item_in_module(module_path, &tail[0])
+    }
+
+    fn lookup_named_item_in_module(
+        &self,
+        module_path: &[String],
+        name: &str,
+    ) -> ModulePathLookup {
         let Some(module_id) = self.module_graph.module_id(module_path) else {
             return ModulePathLookup::ModuleMissing;
         };
@@ -631,7 +688,7 @@ impl Resolver {
         };
 
         let module_path_string = module_path.join("::");
-        if let Some(item) = module.scope.get(&tail[0]).copied() {
+        if let Some(item) = module.scope.get(name).copied() {
             if !module_path.is_empty()
                 && self
                     .items
@@ -640,7 +697,7 @@ impl Resolver {
             {
                 ModulePathLookup::NotVisible {
                     module_path: module_path_string,
-                    name: tail[0].clone(),
+                    name: name.to_string(),
                 }
             } else {
                 ModulePathLookup::Found(item)
@@ -648,9 +705,18 @@ impl Resolver {
         } else {
             ModulePathLookup::NameMissing {
                 module_path: module_path_string,
-                name: tail[0].clone(),
+                name: name.to_string(),
             }
         }
+    }
+
+    /// When `Foo.Bar` names module `Foo.Bar` and public item `Bar` inside it.
+    fn lookup_homonymous_module_item(&self, segments: &[String]) -> ModulePathLookup {
+        if segments.len() < 2 {
+            return ModulePathLookup::ModuleMissing;
+        }
+        let item_name = segments[segments.len() - 1].clone();
+        self.lookup_named_item_in_module(segments, &item_name)
     }
 
     fn insert_local(&mut self, name: &str, span: syntax::SpanInfo) {

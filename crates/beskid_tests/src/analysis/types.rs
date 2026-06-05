@@ -435,6 +435,16 @@ fn typing_string_interpolation_with_variable_succeeds() {
 }
 
 #[test]
+fn typing_lone_numeric_string_interpolation_succeeds() {
+    let result =
+        resolve_and_type("unit main() { i64 code = 31; string msg = \"${code}\"; }");
+    if let Err(errors) = &result {
+        panic!("expected lone numeric interpolation typing to succeed, got errors: {errors:?}");
+    }
+    assert!(result.is_ok());
+}
+
+#[test]
 fn typing_string_interpolation_with_full_expression_succeeds() {
     let result = resolve_and_type(
         "unit main() { string name = \"Ada\"; string suffix = \"!\"; string msg = \"hi ${name + suffix}\"; }",

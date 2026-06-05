@@ -123,6 +123,23 @@ fn try_desugar_interpolated_string(
 }
 
 fn build_interpolated_expression(parts: Vec<InterpolationPart>) -> Option<Spanned<Expression>> {
+    let parts = match parts.len() {
+        1 => match parts.into_iter().next()? {
+            InterpolationPart::Expr(expression) => {
+                let span = expression.span;
+                vec![
+                    InterpolationPart::Text {
+                        text: String::new(),
+                        span,
+                    },
+                    InterpolationPart::Expr(expression),
+                ]
+            }
+            other => vec![other],
+        },
+        _ => parts,
+    };
+
     let mut iter = parts.into_iter().map(part_to_expression);
     let mut acc = iter.next()?;
     for next in iter {
@@ -481,6 +498,18 @@ mod tests {
             matches!(expr.node, Expression::Binary(_)),
             "expected desugared binary expression, got {:?}",
             expr.node
+        );
+    }
+
+    #[test]
+    fn desugars_single_interpolation_expr_to_empty_string_concat() {
+        let input = "\"${code}\"";
+        let mut pairs = BeskidParser::parse(Rule::Expression, input).expect("parse expression");
+        let pair = pairs.next().expect("expression pair");
+        let expr = Expression::parse(pair).expect("expression ast");
+        assert!(
+            matches!(expr.node, Expression::Binary(_)),
+            "expected lone interpolation to desugar to empty-string concat"
         );
     }
 }

@@ -1509,15 +1509,16 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                             value,
                         ) {
                             Ok(value) => value,
-                            Err(CodegenError::TypeMismatch { .. }) => ensure_type_compatibility(
-                                arg.span,
-                                *expected,
-                                *expected,
-                                ctx.type_result,
-                                ctx.resolution,
-                                ctx.builder,
-                                value,
-                            )?,
+                            Err(CodegenError::TypeMismatch { .. }) => {
+                                crate::lowering::cast_intent::retry_call_argument_compatibility(
+                                    arg.span,
+                                    *expected,
+                                    value,
+                                    ctx.type_result,
+                                    ctx.resolution,
+                                    ctx.builder,
+                                )?
+                            }
                             Err(err) => return Err(err),
                         }
                     };
