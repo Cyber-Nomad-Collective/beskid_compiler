@@ -18,7 +18,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirUnaryExpression {
             span: node.node.expr.span,
             node: "unit-valued unary operand",
         })?;
-        let type_id = ctx.require_expr_type(node.node.expr.span)?;
+        let type_id = ctx.require_expr_type_for_node(&node.node.expr)?;
         let type_info = ctx.type_result.types.get(type_id);
         let clif_ty =
             map_type_id_to_clif(ctx.type_result, type_id).ok_or(CodegenError::UnsupportedNode {

@@ -7,6 +7,8 @@ use beskid_analysis::services::{
     compile_front_end_from_resolved_input, resolve_input, FrontEndOptions, ResolvedInput,
 };
 
+use crate::projects::with_cwd_at_workspace_root;
+
 fn compiler_workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -29,18 +31,17 @@ fn core_results_tests_front_end_typechecks() {
         .to_path_buf();
     let source = fs::read_to_string(&entry).expect("read ResultsTests.bd");
 
-    let previous = std::env::current_dir().expect("cwd");
-    std::env::set_current_dir(&root).expect("chdir");
-    let resolved = resolve_input(
-        Some(&entry),
-        Some(&project_root),
-        None,
-        None,
-        false,
-        false,
-    )
-    .expect("resolve");
-    std::env::set_current_dir(previous).expect("restore cwd");
+    let resolved = with_cwd_at_workspace_root(&root, || {
+        resolve_input(
+            Some(&entry),
+            Some(&project_root),
+            None,
+            None,
+            false,
+            false,
+        )
+        .expect("resolve")
+    });
 
     let plan = resolved.compile_plan.expect("compile plan");
     let resolved_input = ResolvedInput {

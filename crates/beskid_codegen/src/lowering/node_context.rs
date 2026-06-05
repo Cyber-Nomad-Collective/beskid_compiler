@@ -54,6 +54,9 @@ impl NodeLoweringContext<'_, '_> {
         &self,
         node: &Spanned<HirExpressionNode>,
     ) -> Result<TypeId, CodegenError> {
+        if let Some(type_id) = self.expr_type(node.span) {
+            return Ok(type_id);
+        }
         infer_expr_type(
             self.resolution,
             self.type_result,

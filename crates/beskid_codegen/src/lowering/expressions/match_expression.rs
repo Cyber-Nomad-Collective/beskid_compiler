@@ -8,7 +8,7 @@ use beskid_analysis::hir::{HirMatchExpression, HirPattern};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeInfo;
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::{InstBuilder, MemFlags, Value};
+use cranelift_codegen::ir::{InstBuilder, MemFlags, TrapCode, Value};
 
 enum MatchArmOutcome {
     Value(Value),
@@ -71,6 +71,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
         let result_clif = result_type.and_then(|ty| map_type_id_to_clif(ctx.type_result, ty));
         let result_var = result_clif.map(|clif_ty| ctx.builder.declare_var(clif_ty));
         let merge_block = ctx.builder.create_block();
+        let mut merge_reachable = false;
 
         if ctx.builder.current_block().is_none() {
             return Err(CodegenError::UnsupportedNode {
@@ -131,26 +132,28 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
                 }
             }
             ctx.builder.switch_to_block(arm_block);
-            ctx.builder.seal_block(arm_block);
             let saved_locals = ctx.state.locals.clone();
             let prior_terminated = ctx.state.block_terminated;
             ctx.state.block_terminated = false;
             bind_match_pattern(ctx, scrutinee, item_id, variants, arm)?;
 
-            if arm.node.guard.is_some() {
-                let guard_block = ctx.builder.create_block();
+            let value_block = if arm.node.guard.is_some() {
                 let guard_val = lower_node(arm.node.guard.as_ref().unwrap(), ctx)?.ok_or(
                     CodegenError::UnsupportedNode {
                         span: arm.node.guard.as_ref().unwrap().span,
                         node: "unit-valued match guard",
                     },
                 )?;
+                let guard_block = ctx.builder.create_block();
                 ctx.builder
                     .ins()
                     .brif(guard_val, guard_block, &[], next_block, &[]);
+                ctx.builder.seal_block(arm_block);
                 ctx.builder.switch_to_block(guard_block);
-                ctx.builder.seal_block(guard_block);
-            }
+                guard_block
+            } else {
+                arm_block
+            };
 
             let arm_outcome = match_arm_outcome(
                 lower_node(&arm.node.value, ctx)?,
@@ -164,7 +167,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
             }
             if !ctx.state.block_terminated {
                 ctx.builder.ins().jump(merge_block, &[]);
+                merge_reachable = true;
             }
+            ctx.builder.seal_block(value_block);
             ctx.state.locals = saved_locals;
             ctx.state.block_terminated = prior_terminated;
 
@@ -172,6 +177,16 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
                 ctx.builder.seal_block(next_block);
                 ctx.builder.switch_to_block(next_block);
             }
+        }
+
+        if !merge_reachable {
+            // Exhaustive enum matches can still list merge as a brif target even when every
+            // arm terminates (for example via `return`). Seal it so verification succeeds.
+            ctx.builder.seal_block(merge_block);
+            ctx.builder.switch_to_block(merge_block);
+            ctx.builder.ins().trap(TrapCode::unwrap_user(1));
+            ctx.state.block_terminated = true;
+            return Ok(None);
         }
 
         ctx.builder.seal_block(merge_block);

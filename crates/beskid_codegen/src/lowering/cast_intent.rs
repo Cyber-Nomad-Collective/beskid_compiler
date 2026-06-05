@@ -3,7 +3,7 @@ use crate::lowering::context::CodegenResult;
 use crate::lowering::function::mangle_method_name;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::HirPrimitiveType;
-use beskid_analysis::resolve::{ItemKind, Resolution};
+use beskid_analysis::resolve::{canonical_item_id, ItemKind, Resolution};
 use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, MemFlags, Signature, Value};
@@ -20,7 +20,21 @@ pub(crate) fn ensure_type_compatibility(
     builder: &mut FunctionBuilder,
     mut value: Value,
 ) -> CodegenResult<Value> {
-    if expected == actual {
+    let value_clif = builder.func.dfg.value_type(value);
+    if expected == actual || types_structurally_equal(type_result, resolution, expected, actual) {
+        if let Some(expected_clif) = map_type_id_to_clif(type_result, expected) {
+            if expected_clif == value_clif {
+                return Ok(value);
+            }
+            if expected_clif.is_int() && value_clif.is_int() {
+                return Ok(coerce_int_clif(
+                    builder,
+                    value,
+                    value_clif,
+                    expected_clif,
+                ));
+            }
+        }
         return Ok(value);
     }
 
@@ -201,6 +215,48 @@ fn named_item_id(
     }
 }
 
+fn types_structurally_equal(
+    type_result: &TypeResult,
+    resolution: &Resolution,
+    expected: TypeId,
+    actual: TypeId,
+) -> bool {
+    match (
+        type_result.types.get(expected),
+        type_result.types.get(actual),
+    ) {
+        (Some(TypeInfo::Primitive(e)), Some(TypeInfo::Primitive(a))) => e == a,
+        (Some(TypeInfo::Named(expected_item)), Some(TypeInfo::Named(actual_item))) => {
+            canonical_item_id(resolution, *expected_item)
+                == canonical_item_id(resolution, *actual_item)
+        }
+        (
+            Some(TypeInfo::Applied {
+                base: expected_base,
+                args: expected_args,
+            }),
+            Some(TypeInfo::Applied {
+                base: actual_base,
+                args: actual_args,
+            }),
+        ) => {
+            canonical_item_id(resolution, *expected_base)
+                == canonical_item_id(resolution, *actual_base)
+                && expected_args.len() == actual_args.len()
+                && expected_args.iter().zip(actual_args.iter()).all(|(left, right)| {
+                    types_structurally_equal(type_result, resolution, *left, *right)
+                })
+        }
+        (Some(TypeInfo::Applied { base, .. }), Some(TypeInfo::Named(actual_base))) => {
+            canonical_item_id(resolution, *base) == canonical_item_id(resolution, *actual_base)
+        }
+        (Some(TypeInfo::Named(expected_base)), Some(TypeInfo::Applied { base, .. })) => {
+            canonical_item_id(resolution, *expected_base) == canonical_item_id(resolution, *base)
+        }
+        _ => false,
+    }
+}
+
 pub(crate) fn validate_cast_intents(type_result: &TypeResult) -> Vec<CodegenError> {
     let mut errors = Vec::new();
     let mut seen = HashSet::new();
@@ -239,6 +295,24 @@ pub(crate) fn validate_cast_intents(type_result: &TypeResult) -> Vec<CodegenErro
     }
 
     errors
+}
+
+fn coerce_int_clif(
+    builder: &mut FunctionBuilder,
+    value: Value,
+    from: cranelift_codegen::ir::Type,
+    to: cranelift_codegen::ir::Type,
+) -> Value {
+    if from == to {
+        return value;
+    }
+    let from_bits = from.bits();
+    let to_bits = to.bits();
+    if to_bits > from_bits {
+        builder.ins().sextend(to, value)
+    } else {
+        builder.ins().ireduce(to, value)
+    }
 }
 
 fn is_numeric_type(info: Option<&TypeInfo>) -> bool {

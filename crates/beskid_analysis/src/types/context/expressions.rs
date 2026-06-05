@@ -1154,15 +1154,8 @@ impl<'a> TypeContext<'a> {
         self.contextual_expected_type = previous_expected;
         if let Some(actual) = arm_type {
             if let Some(expected_type) = *expected {
-                if expected_type != actual
-                    && !self.is_never(expected_type)
-                    && !self.is_never(actual)
-                {
-                    self.errors.push(TypeError::MatchArmTypeMismatch {
-                        span: arm.span,
-                        expected: expected_type,
-                        actual,
-                    });
+                if !self.is_never(expected_type) && !self.is_never(actual) {
+                    self.require_same_type(arm.node.value.span, expected_type, actual);
                 }
             } else {
                 *expected = Some(actual);
@@ -1194,7 +1187,11 @@ impl<'a> TypeContext<'a> {
                     {
                         let variant_name = enum_pattern.node.path.node.variant.node.name.as_str();
                         if let Some(fields) = variants.get(variant_name).cloned() {
-                            let mapping = self.generic_mapping_for_type_id(enum_type);
+                            let mapping_source = match self.type_table.get(scrutinee_type) {
+                                Some(crate::types::TypeInfo::Applied { .. }) => scrutinee_type,
+                                _ => enum_type,
+                            };
+                            let mapping = self.generic_mapping_for_type_id(mapping_source);
                             let fields = if mapping.is_empty() {
                                 fields
                             } else {

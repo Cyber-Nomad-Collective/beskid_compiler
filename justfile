@@ -1,6 +1,6 @@
 # Compiler workspace — common test tasks.
 #
-#   just corelib    Run corelib_tests via beskid_cli
+#   just corelib    Run corelib_tests via release beskid_cli
 #   just compiler   Run cargo test for the workspace
 #   just tests      Run compiler and corelib tests
 
@@ -13,12 +13,12 @@ corelib_tests_project := "corelib/beskid_corelib/tests/corelib_tests"
 default:
     @just --list
 
-# Run every corelib_tests target via beskid_cli (shared Salsa session).
+# Run every corelib_tests target via release beskid_cli (shared Salsa session).
 corelib:
-    cargo run -p beskid_cli --quiet -- test \
+    cargo build -p beskid_cli --release --quiet
+    "{{root}}/target/release/beskid_cli" test \
         --project "{{corelib_tests_project}}" \
-        --all-targets \
-        --plain
+        --all-targets
 
 # Run the full compiler workspace test suite.
 compiler:

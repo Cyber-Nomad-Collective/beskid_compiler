@@ -1,15 +1,31 @@
 use beskid_analysis::analysis::diagnostics::{SemanticDiagnostic, Severity, make_diagnostic};
+use beskid_analysis::resolve::Resolution;
 use beskid_analysis::syntax::SpanInfo;
+use beskid_analysis::types::{TypeId, TypeResult, format_type_id};
 
 use crate::errors::CodegenError;
 
 const CODEGEN_ERROR_PREFIX: &str = "E20";
+
+fn format_types(
+    type_result: &TypeResult,
+    resolution: &Resolution,
+    expected: TypeId,
+    actual: TypeId,
+) -> (String, String) {
+    (
+        format_type_id(type_result, Some(resolution), expected),
+        format_type_id(type_result, Some(resolution), actual),
+    )
+}
 
 /// Map a single [`CodegenError`] to a semantic diagnostic with stable `E20xx` codes.
 pub fn codegen_error_to_diagnostic(
     source_name: &str,
     source: &str,
     error: &CodegenError,
+    type_result: &TypeResult,
+    resolution: &Resolution,
 ) -> SemanticDiagnostic {
     match error {
         CodegenError::UnsupportedNode { span, node } => make_diagnostic(
@@ -86,18 +102,22 @@ pub fn codegen_error_to_diagnostic(
             span,
             expected,
             actual,
-        } => make_diagnostic(
-            source_name,
-            source,
-            *span,
-            format!(
-                "missing cast intent for numeric mismatch (expected {expected:?}, actual {actual:?})"
-            ),
-            "missing cast intent",
-            None,
-            Some(format!("{CODEGEN_ERROR_PREFIX}08")),
-            Severity::Error,
-        ),
+        } => {
+            let (expected_name, actual_name) =
+                format_types(type_result, resolution, *expected, *actual);
+            make_diagnostic(
+                source_name,
+                source,
+                *span,
+                format!(
+                    "missing cast intent for numeric mismatch (expected {expected_name}, actual {actual_name})"
+                ),
+                "missing cast intent",
+                None,
+                Some(format!("{CODEGEN_ERROR_PREFIX}08")),
+                Severity::Error,
+            )
+        }
         CodegenError::InvalidCastIntent { span, message } => make_diagnostic(
             source_name,
             source,
@@ -112,16 +132,22 @@ pub fn codegen_error_to_diagnostic(
             span,
             expected,
             actual,
-        } => make_diagnostic(
-            source_name,
-            source,
-            *span,
-            format!("type mismatch during codegen (expected {expected:?}, actual {actual:?})"),
-            "type mismatch",
-            None,
-            Some(format!("{CODEGEN_ERROR_PREFIX}10")),
-            Severity::Error,
-        ),
+        } => {
+            let (expected_name, actual_name) =
+                format_types(type_result, resolution, *expected, *actual);
+            make_diagnostic(
+                source_name,
+                source,
+                *span,
+                format!(
+                    "type mismatch during codegen (expected {expected_name}, actual {actual_name})"
+                ),
+                "type mismatch",
+                None,
+                Some(format!("{CODEGEN_ERROR_PREFIX}10")),
+                Severity::Error,
+            )
+        }
         CodegenError::VerificationFailed { function, message } => make_diagnostic(
             source_name,
             source,
@@ -166,10 +192,14 @@ pub fn codegen_errors_to_diagnostics(
     source_name: &str,
     source: &str,
     errors: &[CodegenError],
+    type_result: &TypeResult,
+    resolution: &Resolution,
 ) -> Vec<SemanticDiagnostic> {
     errors
         .iter()
-        .map(|error| codegen_error_to_diagnostic(source_name, source, error))
+        .map(|error| {
+            codegen_error_to_diagnostic(source_name, source, error, type_result, resolution)
+        })
         .collect()
 }
 

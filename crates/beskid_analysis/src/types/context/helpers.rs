@@ -307,6 +307,12 @@ impl<'a> TypeContext<'a> {
         if self.is_never(expected) || self.is_never(actual) {
             return;
         }
+        if let (Some(TypeInfo::Primitive(e)), Some(TypeInfo::Primitive(a))) =
+            (self.type_table.get(expected), self.type_table.get(actual))
+            && e == a
+        {
+            return;
+        }
         if let (Some(TypeInfo::Array(e1)), Some(TypeInfo::Array(e2))) =
             (self.type_table.get(expected), self.type_table.get(actual))
             && e1 == e2

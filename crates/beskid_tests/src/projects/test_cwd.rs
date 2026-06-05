@@ -7,15 +7,19 @@ use std::sync::Mutex;
 /// so tests do not pick up a polluted `compiler/` tree. Serialized because `set_current_dir` is process-global.
 pub(crate) static PROJECT_TEST_CWD_LOCK: Mutex<()> = Mutex::new(());
 
-pub(crate) fn with_cwd_at_workspace_root<R>(root: &Path, f: impl FnOnce() -> R) -> R {
+pub(crate) fn with_cwd<R>(dir: &Path, f: impl FnOnce() -> R) -> R {
     let _guard = PROJECT_TEST_CWD_LOCK
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let previous = std::env::current_dir().expect("cwd");
-    std::env::set_current_dir(root).expect("chdir to temp workspace");
+    std::env::set_current_dir(dir).expect("chdir");
     let out = f();
     std::env::set_current_dir(previous).expect("restore cwd");
     out
+}
+
+pub(crate) fn with_cwd_at_workspace_root<R>(root: &Path, f: impl FnOnce() -> R) -> R {
+    with_cwd(root, f)
 }
 
 /// `compiler/crates/beskid_tests` → compiler workspace root (`compiler/`), where `corelib/beskid_corelib` exists for implicit `Std`.

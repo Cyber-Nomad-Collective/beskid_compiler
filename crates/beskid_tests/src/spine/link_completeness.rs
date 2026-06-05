@@ -16,7 +16,7 @@ use beskid_codegen::lowering::{
 };
 use beskid_codegen::validate_artifact;
 
-use crate::projects::with_cwd_at_workspace_root;
+use crate::projects::{with_cwd, with_cwd_at_workspace_root};
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
 
 fn compiler_workspace_root() -> PathBuf {
@@ -59,64 +59,63 @@ i32 main() {
     let entry = src_dir.join("Main.bd");
     fs::write(&entry, source).expect("write source");
 
-    let previous_cwd = std::env::current_dir().expect("cwd");
-    std::env::set_current_dir(&root).expect("chdir to isolated project");
+    with_cwd(&root, || {
+        let ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
+        let plan = ctx.compile_plan.clone().expect("plan");
+        let resolved = resolved_input_from_plan(
+            entry.clone(),
+            source.to_string(),
+            plan.clone(),
+            ctx.prepared_workspace.clone(),
+            None,
+        );
+        configure_db_for_project(&root);
+        let assembly = with_db(|db| {
+            program_assembly(
+                db,
+                &plan,
+                resolved.prepared_workspace.as_ref(),
+                &entry,
+                Some(source),
+                &AssemblyOptions {
+                    discovery: AssemblyDiscovery::ImportClosure,
+                    include_std_prelude: false,
+                    ..Default::default()
+                },
+            )
+        })
+        .expect("assemble");
 
-    let ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
-    let plan = ctx.compile_plan.clone().expect("plan");
-    let resolved = resolved_input_from_plan(
-        entry.clone(),
-        source.to_string(),
-        plan.clone(),
-        ctx.prepared_workspace.clone(),
-        None,
-    );
-    configure_db_for_project(&root);
-    let assembly = with_db(|db| {
-        program_assembly(
-            db,
-            &plan,
-            resolved.prepared_workspace.as_ref(),
-            &entry,
-            Some(source),
-            &AssemblyOptions {
-                discovery: AssemblyDiscovery::ImportClosure,
-                include_std_prelude: false,
-                ..Default::default()
-            },
+        let front =
+            compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+                .expect("front end");
+
+        let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
+        let link_plan = LinkPlan::build_for_entrypoint(
+            &front.hir,
+            "main",
+            Some(&resolved.source_path),
+            &front.resolution,
+            &front.typed,
+            &def_index,
+        );
+        assert!(
+            !link_plan.entries.is_empty(),
+            "temp project should expose a main entry"
+        );
+
+        let artifact = lower_program_with_assembly_for_entrypoint(
+            &front.hir,
+            &front.resolution,
+            &front.typed,
+            Some(&assembly),
+            Some("main"),
         )
-    })
-    .expect("assemble");
+        .expect("lower");
 
-    let front = compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
-        .expect("front end");
+        validate_artifact(&artifact).expect("link plan symbols must be present in artifact");
+    });
 
-    let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
-    let link_plan = LinkPlan::build_for_entrypoint(
-        &front.hir,
-        "main",
-        Some(&resolved.source_path),
-        &front.resolution,
-        &front.typed,
-        &def_index,
-    );
-    assert!(
-        !link_plan.entries.is_empty(),
-        "temp project should expose a main entry"
-    );
-
-    let artifact = lower_program_with_assembly_for_entrypoint(
-        &front.hir,
-        &front.resolution,
-        &front.typed,
-        Some(&assembly),
-        Some("main"),
-    )
-    .expect("lower");
-
-    validate_artifact(&artifact).expect("link plan symbols must be present in artifact");
-
-    std::env::set_current_dir(previous_cwd).expect("restore cwd");
     let _ = fs::remove_dir_all(root);
 }
 

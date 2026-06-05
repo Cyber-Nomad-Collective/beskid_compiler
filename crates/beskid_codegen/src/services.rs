@@ -105,7 +105,8 @@ fn lower_single_unit_without_project(
     })?;
     let artifact = observe_phase_result(pipeline, CODEGEN_CLIF, || {
         lower_program(&hir, &resolution, &typed).map_err(|errors| {
-            let diagnostics = codegen_errors_to_diagnostics(&source_name, source, &errors);
+            let diagnostics =
+                codegen_errors_to_diagnostics(&source_name, source, &errors, &typed, &resolution);
             anyhow::Error::new(SemanticDiagnosticsError::from_diagnostics(diagnostics))
         })
     })?;
@@ -175,7 +176,13 @@ pub fn entrypoint_artifact_from_front_end(
             Some(entrypoint),
         )
         .map_err(|errors| {
-            let diagnostics = codegen_errors_to_diagnostics(source_name, source, &errors);
+            let diagnostics = codegen_errors_to_diagnostics(
+                source_name,
+                source,
+                &errors,
+                front.typed,
+                front.resolution,
+            );
             anyhow::Error::new(SemanticDiagnosticsError::from_diagnostics(diagnostics))
         })
     })
@@ -198,7 +205,13 @@ pub fn lower_from_front_end(
             link_entrypoint,
         )
         .map_err(|errors| {
-            let diagnostics = codegen_errors_to_diagnostics(source_name, source, &errors);
+            let diagnostics = codegen_errors_to_diagnostics(
+                source_name,
+                source,
+                &errors,
+                &front.typed,
+                &front.resolution,
+            );
             anyhow::Error::new(SemanticDiagnosticsError::from_diagnostics(diagnostics))
         })
     })?;

@@ -1,7 +1,7 @@
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::diagnostics::Severity;
 use crate::analysis::rules::RuleContext;
-use crate::types::{TypeError, TypeInfo, TypeResult};
+use crate::types::{TypeError, TypeResult, format_type_id};
 
 pub(crate) fn emit_type_error(
     ctx: &mut RuleContext,
@@ -255,70 +255,9 @@ fn render_type(result: Option<&TypeResult>, type_id: crate::types::TypeId) -> St
     let Some(result) = result else {
         return format!("type#{}", type_id.0);
     };
-    render_type_from_result(result, type_id)
-}
-
-fn primitive_type_name(primitive: crate::hir::HirPrimitiveType) -> &'static str {
-    match primitive {
-        crate::hir::HirPrimitiveType::Bool => "bool",
-        crate::hir::HirPrimitiveType::I32 => "i32",
-        crate::hir::HirPrimitiveType::I64 => "i64",
-        crate::hir::HirPrimitiveType::U8 => "u8",
-        crate::hir::HirPrimitiveType::F64 => "f64",
-        crate::hir::HirPrimitiveType::Char => "char",
-        crate::hir::HirPrimitiveType::String => "string",
-        crate::hir::HirPrimitiveType::Unit => "unit",
-        crate::hir::HirPrimitiveType::Never => "never",
-    }
+    format_type_id(result, None, type_id)
 }
 
 fn render_type_from_result(result: &TypeResult, type_id: crate::types::TypeId) -> String {
-    let Some(info) = result.types.get(type_id) else {
-        return format!("type#{}", type_id.0);
-    };
-    match info {
-        TypeInfo::Primitive(primitive) => primitive_type_name(*primitive).to_string(),
-        TypeInfo::Named(item_id) => result
-            .named_type_names
-            .get(item_id)
-            .cloned()
-            .unwrap_or_else(|| format!("type#{}", item_id.0)),
-        TypeInfo::GenericParam(name) => name.clone(),
-        TypeInfo::Applied { base, args } => {
-            let base_name = result
-                .named_type_names
-                .get(base)
-                .cloned()
-                .unwrap_or_else(|| format!("type#{}", base.0));
-            if args.is_empty() {
-                return base_name;
-            }
-            let args = args
-                .iter()
-                .map(|arg| render_type_from_result(result, *arg))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{base_name}<{args}>")
-        }
-        TypeInfo::Function {
-            params,
-            return_type,
-        } => {
-            let params = params
-                .iter()
-                .map(|param| render_type_from_result(result, *param))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let return_name = render_type_from_result(result, *return_type);
-            format!("{return_name}({params})")
-        }
-        TypeInfo::Array(element) => {
-            let inner = render_type_from_result(result, *element);
-            format!("{inner}[]")
-        }
-        TypeInfo::Fiber(payload) => {
-            let inner = render_type_from_result(result, *payload);
-            format!("Fiber<{inner}>")
-        }
-    }
+    format_type_id(result, None, type_id)
 }

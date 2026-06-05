@@ -10,7 +10,7 @@ use beskid_analysis::hir::{
     HirProgram, HirTestDefinition,
 };
 use beskid_analysis::projects::assembly::ProgramAssembly;
-use beskid_analysis::resolve::{ItemId, Resolution};
+use beskid_analysis::resolve::{ItemId, ItemKind, Resolution};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use std::collections::{HashMap, HashSet};
@@ -117,7 +117,15 @@ pub fn lower_program_with_assembly_for_entrypoint(
             string_literals: ctx.string_literals,
             extern_imports: {
                 let mut v = Vec::new();
-                collect_extern_imports(&program.node.items, None, &mut v);
+                if let Some(assembly) = assembly {
+                    for unit in assembly.hir_units.iter() {
+                        collect_extern_imports(&unit.hir.node.items, None, &mut v);
+                    }
+                } else {
+                    collect_extern_imports(&program.node.items, None, &mut v);
+                }
+                v.sort_by(|left, right| left.symbol.cmp(&right.symbol));
+                v.dedup_by(|left, right| left.symbol == right.symbol);
                 v
             },
             exports: collect_exports(&program.node.items),
@@ -223,24 +231,44 @@ fn emit_link_symbol(
 ) {
     match symbol {
         LinkSymbol::Function { item, mangled } => {
-            emit_function_item(
-                *item,
-                mangled.clone(),
-                resolution,
-                type_result,
-                function_defs,
-                def_index,
-                ctx,
-                errors,
-            );
+            if resolution
+                .items
+                .get(item.0)
+                .is_some_and(|info| info.kind == ItemKind::Method)
+            {
+                let Some(def) = def_index.method(*item) else {
+                    return;
+                };
+                ctx.current_source_path = effective_source_path(*item, def_index, resolution);
+                if let Err(error) =
+                    lower_method(def, resolution, type_result, function_defs, ctx, *item)
+                {
+                    errors.push(error);
+                }
+                ctx.current_source_path = None;
+            } else {
+                emit_function_item(
+                    *item,
+                    mangled.clone(),
+                    resolution,
+                    type_result,
+                    function_defs,
+                    def_index,
+                    ctx,
+                    errors,
+                );
+            }
         }
         LinkSymbol::Method { item, mangled: _ } => {
             let Some(def) = def_index.method(*item) else {
                 return;
             };
-            if let Err(error) = lower_method(def, resolution, type_result, function_defs, ctx, *item) {
+            ctx.current_source_path = effective_source_path(*item, def_index, resolution);
+            if let Err(error) = lower_method(def, resolution, type_result, function_defs, ctx, *item)
+            {
                 errors.push(error);
             }
+            ctx.current_source_path = None;
         }
         LinkSymbol::Test { item, name: _ } => {
             let Some(def) = find_test_by_item(entry, *item, resolution) else {

@@ -4,7 +4,7 @@
 mod test_cwd;
 
 #[cfg(test)]
-pub(crate) use test_cwd::with_cwd_at_workspace_root;
+pub(crate) use test_cwd::{with_cwd, with_cwd_at_workspace_root};
 
 #[cfg(test)]
 mod std_env_lock;

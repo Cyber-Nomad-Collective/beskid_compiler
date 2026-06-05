@@ -21,9 +21,32 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirEnumConstructorExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let type_id = ctx.require_expr_type(node.span)?;
+        let type_id = ctx
+            .expr_type(node.span)
+            .or_else(|| {
+                let segments: Vec<String> = node
+                    .node
+                    .path
+                    .node
+                    .type_path
+                    .node
+                    .segments
+                    .iter()
+                    .map(|segment| segment.node.name.node.name.clone())
+                    .collect();
+                crate::lowering::locals::resolve_type_path_item_id_for_codegen(
+                    ctx.resolution,
+                    ctx.type_result,
+                    &segments,
+                )
+                .and_then(|item_id| {
+                    crate::lowering::locals::type_id_for_item(ctx.type_result, item_id)
+                })
+            })
+            .ok_or(CodegenError::MissingExpressionType { span: node.span })?;
         let item_id = match ctx.type_result.types.get(type_id) {
             Some(TypeInfo::Named(item_id)) => *item_id,
+            Some(TypeInfo::Applied { base, .. }) => *base,
             _ => {
                 return Err(CodegenError::UnsupportedNode {
                     span: node.span,

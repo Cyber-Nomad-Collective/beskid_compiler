@@ -55,11 +55,16 @@ impl<'a> TypeContext<'a> {
                 }
             },
             HirStatementNode::ReturnStatement(return_stmt) => {
+                let previous_contextual = self.contextual_expected_type;
+                if let Some(expected) = self.current_return_type {
+                    self.contextual_expected_type = Some(expected);
+                }
                 let actual = return_stmt
                     .node
                     .value
                     .as_ref()
                     .and_then(|expr| self.type_expression(expr));
+                self.contextual_expected_type = previous_contextual;
                 if let Some(expected) = self.current_return_type {
                     match actual {
                         Some(actual) => self.require_same_type(return_stmt.span, expected, actual),

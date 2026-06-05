@@ -5,11 +5,12 @@ use std::path::PathBuf;
 use beskid_analysis::hir::{
     HirBinaryOp, HirCallExpression, HirExpressionNode, HirLiteral, HirPrimitiveType, HirUnaryOp,
 };
-use beskid_analysis::resolve::{canonical_item_id, LocalId, Resolution, ResolvedValue};
+use beskid_analysis::resolve::{canonical_item_id, ItemKind, LocalId, Resolution, ResolvedValue};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{CallLoweringKind, TypeId, TypeInfo, TypeResult};
 
 use crate::errors::CodegenError;
+use crate::linking::{resolve_item_call_id, resolve_path_item_id};
 
 pub(crate) fn expr_type_at(
     type_result: &TypeResult,
@@ -72,15 +73,20 @@ pub(crate) fn infer_expr_type(
             HirLiteral::Char(_) => primitive_type_id(type_result, HirPrimitiveType::Char),
             _ => None,
         },
-        HirExpressionNode::PathExpression(path) => resolved_value_at(
-            resolution,
-            path.node.path.span,
-            source_path,
-        )
-        .and_then(|resolved| match resolved {
-            ResolvedValue::Local(local_id) => type_result.local_types.get(&local_id).copied(),
-            _ => None,
-        }),
+        HirExpressionNode::PathExpression(path) => {
+            if let Some(resolved) = resolved_value_at(
+                resolution,
+                path.node.path.span,
+                source_path,
+            ) && let ResolvedValue::Local(local_id) = resolved
+            {
+                return type_result.local_types.get(&local_id).copied();
+            }
+            resolution
+                .tables
+                .local_id_for_span(path.node.path.span, source_path)
+                .and_then(|local_id| type_result.local_types.get(&local_id).copied())
+        }
         HirExpressionNode::BinaryExpression(binary) => {
             let left = infer_expr_type(resolution, type_result, &binary.node.left, source_path)?;
             let right = infer_expr_type(resolution, type_result, &binary.node.right, source_path)?;
@@ -112,8 +118,62 @@ pub(crate) fn infer_expr_type(
                 infer_expr_type(resolution, type_result, &unary.node.expr, source_path)
             }
         },
+        HirExpressionNode::EnumConstructorExpression(constructor) => {
+            let segments: Vec<String> = constructor
+                .node
+                .path
+                .node
+                .type_path
+                .node
+                .segments
+                .iter()
+                .map(|segment| segment.node.name.node.name.clone())
+                .collect();
+            resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
+                .and_then(|item_id| type_id_for_item(type_result, item_id))
+        }
         _ => None,
     }
+}
+
+pub(crate) fn type_id_for_item(type_result: &TypeResult, item_id: beskid_analysis::resolve::ItemId) -> Option<TypeId> {
+    let mut index = 0usize;
+    loop {
+        let type_id = TypeId(index);
+        let Some(info) = type_result.types.get(type_id) else {
+            return None;
+        };
+        if matches!(info, TypeInfo::Named(id) if *id == item_id) {
+            return Some(type_id);
+        }
+        index += 1;
+    }
+}
+
+pub(crate) fn resolve_type_path_item_id_for_codegen(
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    segments: &[String],
+) -> Option<beskid_analysis::resolve::ItemId> {
+    if let Some(item_id) = resolve_path_item_id(resolution, segments) {
+        return Some(item_id);
+    }
+    let name = segments.last()?;
+    for (item_id, type_name) in &type_result.named_type_names {
+        if (type_name.as_str() == name.as_str() || type_name.ends_with(&format!("::{name}")))
+            && type_result.enum_variants_ordered.contains_key(item_id)
+        {
+            return Some(*item_id);
+        }
+    }
+    resolution
+        .items
+        .iter()
+        .find(|info| {
+            info.kind == ItemKind::Enum
+                && (info.name.as_str() == name.as_str() || info.name.ends_with(&format!("::{name}")))
+        })
+        .map(|info| info.id)
 }
 
 fn type_is_string(type_result: &TypeResult, type_id: TypeId) -> bool {
@@ -135,6 +195,13 @@ fn infer_call_expr_type(
         .map(|kind| canonicalize_call_kind(resolution, kind))
     {
         return infer_call_kind_return_type(resolution, type_result, &kind);
+    }
+
+    if let Some(item_id) = resolve_item_call_id(call, resolution, source_path) {
+        return type_result
+            .function_signatures
+            .get(&item_id)
+            .map(|signature| signature.return_type);
     }
 
     match &call.node.callee.node {

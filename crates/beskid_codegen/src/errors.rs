@@ -1,7 +1,9 @@
 use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::types::TypeId;
 
-/// Recoverable lowering or CLIF verification failure; map with [`crate::codegen_error_to_diagnostic`].
+/// Recoverable lowering or CLIF verification failure; map with
+/// [`crate::codegen_error_to_diagnostic`] (pass [`beskid_analysis::types::TypeResult`] and
+/// [`beskid_analysis::resolve::Resolution`] for readable type names).
 #[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
     #[error("unsupported node for kickoff lowering: {node}")]

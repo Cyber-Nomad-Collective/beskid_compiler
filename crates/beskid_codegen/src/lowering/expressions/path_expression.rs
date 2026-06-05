@@ -1,4 +1,5 @@
 use crate::errors::CodegenError;
+use crate::linking::resolve_path_item_id;
 use crate::lowering::locals::resolved_value_at;
 use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
 use crate::lowering::lowerable::Lowerable;
@@ -29,6 +30,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
             node.node.path.span,
             ctx.codegen.current_source_path.as_ref(),
         )
+        .or_else(|| {
+            let segments: Vec<String> = segments
+                .iter()
+                .map(|segment| segment.node.name.node.name.clone())
+                .collect();
+            resolve_path_item_id(ctx.resolution, &segments).map(ResolvedValue::Item)
+        })
         .ok_or(CodegenError::MissingResolvedValue {
             span: node.node.path.span,
         })?;
