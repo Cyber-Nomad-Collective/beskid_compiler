@@ -182,17 +182,20 @@ pub extern "C-unwind" fn syscall_read(fd: i64, max_bytes: i64) -> *mut BeskidStr
     string_handle_from_bytes(bytes)
 }
 
-/// Abort after decoding UTF-8 from `value` (falls back to a placeholder on invalid UTF-8).
+/// Print assertion failure and exit with code 1 (test-friendly; does not abort via panic unwind).
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn panic_str(value: *const BeskidStr) -> ! {
     if value.is_null() {
-        panic!("null string handle");
+        eprintln!("beskid panic: null string handle");
+        std::process::exit(1);
     }
     let (ptr, len) = unsafe { ((*value).ptr, (*value).len) };
     if ptr.is_null() {
-        panic!("null string data");
+        eprintln!("beskid panic: null string data");
+        std::process::exit(1);
     }
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
     let text = std::str::from_utf8(bytes).unwrap_or("<invalid utf8>");
-    panic!("{text}");
+    eprintln!("beskid assertion failed: {text}");
+    std::process::exit(1);
 }

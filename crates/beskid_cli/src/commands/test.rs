@@ -251,13 +251,18 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
                 } else {
                     errors::format_report(&errors::report_from_anyhow(&error)).to_string()
                 };
-                if !args.json {
-                    if !test_ui.is_plain() {
-                        eprint!("{reason}");
-                        let _ = std::io::stderr().flush();
-                    }
-                    test_ui.finish_row(row_index, TestRowState::Failed, duration, None)?;
+                // Always print failure details so users see what went wrong
+                let detail = format!(
+                    "\n  FAIL {name}: {reason}",
+                    name = test.qualified_name,
+                    reason = reason.trim()
+                );
+                if !test_ui.is_plain() {
+                    eprint!("{reason}");
+                    let _ = std::io::stderr().flush();
                 }
+                eprintln!("{detail}");
+                test_ui.finish_row(row_index, TestRowState::Failed, duration, None)?;
                 executions.push(TestExecution {
                     name: test.name.to_string(),
                     qualified_name: test.qualified_name.clone(),
