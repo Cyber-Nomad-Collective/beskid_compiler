@@ -46,6 +46,7 @@ pub SyntaxPipeline InsertBefore(SyntaxPipeline pipeline, Beskid.Syntax.Nodes.Nod
 pub SyntaxPipeline InsertAfter(SyntaxPipeline pipeline, Beskid.Syntax.Nodes.NodeRef anchor, Beskid.Syntax.Nodes.NodeRef node);
 pub Beskid.Syntax.Nodes.NodeRef Apply(SyntaxPipeline pipeline);
 
+pub Option<ArrayLiteralExpression> AsArrayLiteralExpression(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<AssignExpression> AsAssignExpression(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<Attribute> AsAttribute(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<AttributeArgument> AsAttributeArgument(Beskid.Syntax.Nodes.NodeRef node);
@@ -79,6 +80,7 @@ pub Option<HostBodyItem> AsHostBodyItem(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<HostDefinition> AsHostDefinition(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<Identifier> AsIdentifier(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<IfStatement> AsIfStatement(Beskid.Syntax.Nodes.NodeRef node);
+pub Option<IndexExpression> AsIndexExpression(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<InjectQualifier> AsInjectQualifier(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<InlineModule> AsInlineModule(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<LambdaExpression> AsLambdaExpression(Beskid.Syntax.Nodes.NodeRef node);

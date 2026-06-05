@@ -12,6 +12,7 @@ pub type TraversalManifestEntry {
 
 pub TraversalManifestEntry[] TraversalManifestRows() {
     return [
+        TraversalManifestEntry { typeName: "ArrayLiteralExpression", sourceRelPath: "syntax/expressions/array_literal_expression.rs", rustField: "elements", beskidField: "elements", beskidType: "Vec<Expression>", role: "children" },
         TraversalManifestEntry { typeName: "AssignExpression", sourceRelPath: "syntax/expressions/assign_expression.rs", rustField: "target", beskidField: "target", beskidType: "Box", role: "child" },
         TraversalManifestEntry { typeName: "AssignExpression", sourceRelPath: "syntax/expressions/assign_expression.rs", rustField: "value", beskidField: "value", beskidType: "Box", role: "child" },
         TraversalManifestEntry { typeName: "Attribute", sourceRelPath: "syntax/items/attribute.rs", rustField: "name", beskidField: "name", beskidType: "Identifier", role: "child" },
@@ -47,7 +48,7 @@ pub TraversalManifestEntry[] TraversalManifestRows() {
         TraversalManifestEntry { typeName: "EnumDefinition", sourceRelPath: "syntax/items/enum_definition.rs", rustField: "name", beskidField: "name", beskidType: "Identifier", role: "child" },
         TraversalManifestEntry { typeName: "EnumDefinition", sourceRelPath: "syntax/items/enum_definition.rs", rustField: "generics", beskidField: "generics", beskidType: "Vec<Identifier>", role: "children" },
         TraversalManifestEntry { typeName: "EnumDefinition", sourceRelPath: "syntax/items/enum_definition.rs", rustField: "variants", beskidField: "variants", beskidType: "Vec<EnumVariant>", role: "children" },
-        TraversalManifestEntry { typeName: "EnumPath", sourceRelPath: "syntax/types/enum_path.rs", rustField: "type_name", beskidField: "typeName", beskidType: "Identifier", role: "child" },
+        TraversalManifestEntry { typeName: "EnumPath", sourceRelPath: "syntax/types/enum_path.rs", rustField: "type_path", beskidField: "typePath", beskidType: "Path", role: "child" },
         TraversalManifestEntry { typeName: "EnumPath", sourceRelPath: "syntax/types/enum_path.rs", rustField: "variant", beskidField: "variant", beskidType: "Identifier", role: "child" },
         TraversalManifestEntry { typeName: "EnumPattern", sourceRelPath: "syntax/expressions/pattern.rs", rustField: "path", beskidField: "path", beskidType: "EnumPath", role: "child" },
         TraversalManifestEntry { typeName: "EnumPattern", sourceRelPath: "syntax/expressions/pattern.rs", rustField: "items", beskidField: "items", beskidType: "Vec<Pattern>", role: "children" },
@@ -62,6 +63,7 @@ pub TraversalManifestEntry[] TraversalManifestRows() {
         TraversalManifestEntry { typeName: "ForStatement", sourceRelPath: "syntax/statements/for_statement.rs", rustField: "iterator", beskidField: "iterator", beskidType: "Identifier", role: "child" },
         TraversalManifestEntry { typeName: "ForStatement", sourceRelPath: "syntax/statements/for_statement.rs", rustField: "iterable", beskidField: "iterable", beskidType: "Expression", role: "child" },
         TraversalManifestEntry { typeName: "ForStatement", sourceRelPath: "syntax/statements/for_statement.rs", rustField: "body", beskidField: "body", beskidType: "Block", role: "child" },
+        TraversalManifestEntry { typeName: "FunctionDefinition", sourceRelPath: "syntax/items/function_definition.rs", rustField: "attributes", beskidField: "attributes", beskidType: "Vec<Attribute>", role: "children" },
         TraversalManifestEntry { typeName: "FunctionDefinition", sourceRelPath: "syntax/items/function_definition.rs", rustField: "visibility", beskidField: "visibility", beskidType: "Visibility", role: "child" },
         TraversalManifestEntry { typeName: "FunctionDefinition", sourceRelPath: "syntax/items/function_definition.rs", rustField: "name", beskidField: "name", beskidType: "Identifier", role: "child" },
         TraversalManifestEntry { typeName: "FunctionDefinition", sourceRelPath: "syntax/items/function_definition.rs", rustField: "generics", beskidField: "generics", beskidType: "Vec<Identifier>", role: "children" },
@@ -76,6 +78,8 @@ pub TraversalManifestEntry[] TraversalManifestRows() {
         TraversalManifestEntry { typeName: "IfStatement", sourceRelPath: "syntax/statements/if_statement.rs", rustField: "condition", beskidField: "condition", beskidType: "Expression", role: "child" },
         TraversalManifestEntry { typeName: "IfStatement", sourceRelPath: "syntax/statements/if_statement.rs", rustField: "then_block", beskidField: "thenBlock", beskidType: "Block", role: "child" },
         TraversalManifestEntry { typeName: "IfStatement", sourceRelPath: "syntax/statements/if_statement.rs", rustField: "else_block", beskidField: "elseBlock", beskidType: "Option<Block>", role: "child" },
+        TraversalManifestEntry { typeName: "IndexExpression", sourceRelPath: "syntax/expressions/index_expression.rs", rustField: "target", beskidField: "target", beskidType: "Box", role: "child" },
+        TraversalManifestEntry { typeName: "IndexExpression", sourceRelPath: "syntax/expressions/index_expression.rs", rustField: "index", beskidField: "index", beskidType: "Box", role: "child" },
         TraversalManifestEntry { typeName: "InlineModule", sourceRelPath: "syntax/items/inline_module.rs", rustField: "attributes", beskidField: "attributes", beskidType: "Vec<Attribute>", role: "children" },
         TraversalManifestEntry { typeName: "InlineModule", sourceRelPath: "syntax/items/inline_module.rs", rustField: "visibility", beskidField: "visibility", beskidType: "Visibility", role: "child" },
         TraversalManifestEntry { typeName: "InlineModule", sourceRelPath: "syntax/items/inline_module.rs", rustField: "name", beskidField: "name", beskidType: "Identifier", role: "child" },

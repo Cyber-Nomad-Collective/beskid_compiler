@@ -1,3 +1,4 @@
+ArrayLiteralExpression
 AssignExpression
 AssignOp
 Attribute
@@ -33,6 +34,7 @@ HostBodyItem
 HostDefinition
 Identifier
 IfStatement
+IndexExpression
 InjectQualifier
 InlineModule
 LambdaExpression
