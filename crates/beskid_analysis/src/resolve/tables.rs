@@ -78,16 +78,16 @@ impl ResolutionTables {
             return Some(value);
         }
 
-        
         self.resolved_values.get(&span).copied()
     }
 
     fn scoped_value_at(&self, path: &PathBuf, span: SpanInfo) -> Option<ResolvedValue> {
         for (scoped_path, values) in &self.scoped_resolved_values {
             if same_file_opt(Some(scoped_path), Some(path))
-                && let Some(value) = values.get(&span) {
-                    return Some(*value);
-                }
+                && let Some(value) = values.get(&span)
+            {
+                return Some(*value);
+            }
         }
         None
     }
@@ -127,9 +127,10 @@ impl ResolutionTables {
     fn scoped_type_at(&self, path: &PathBuf, span: SpanInfo) -> Option<ResolvedType> {
         for (scoped_path, types) in &self.scoped_resolved_types {
             if same_file_opt(Some(scoped_path), Some(path))
-                && let Some(resolved_type) = types.get(&span) {
-                    return Some(resolved_type.clone());
-                }
+                && let Some(resolved_type) = types.get(&span)
+            {
+                return Some(resolved_type.clone());
+            }
         }
         None
     }
@@ -210,9 +211,7 @@ impl ResolutionTables {
         let scoped_types = self
             .scoped_resolved_types
             .entry(
-                unit_source_path
-                    .canonicalize()
-                    .unwrap_or_else(|_| unit_source_path.clone()),
+                crate::paths::unit_path_key(&unit_source_path),
             )
             .or_default();
         scoped_types.extend(
@@ -225,9 +224,7 @@ impl ResolutionTables {
         let scoped_values = self
             .scoped_resolved_values
             .entry(
-                unit_source_path
-                    .canonicalize()
-                    .unwrap_or(unit_source_path),
+                crate::paths::unit_path_key(&unit_source_path),
             )
             .or_default();
         for (span, value) in &other.resolved_values {

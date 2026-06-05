@@ -1,0 +1,60 @@
+/// Homogeneous multichannel wait (round-robin fairness in runtime).
+use Concurrency.Channel;
+use Concurrency.Channel.SendOk;
+use Concurrency.HubError;
+use Concurrency.HubReceiveResult;
+use Concurrency.Status;
+
+/// Multiplexes `Channel<T>` members with `WaitReceive`.
+pub type Hub<T> {
+    i64 handle,
+}
+
+pub Hub<T> Create<T>() {
+    i64 handle = __hub_create();
+    return Hub<T> { handle: handle };
+}
+
+/// Registers `channel` at `index` (max 256 members in v1).
+pub Core.Results.Result<SendOk, HubError> Register<T>(
+    Hub<T> self,
+    i64 index,
+    Channel<T> channel
+) {
+    i64 status = __hub_register(self.handle, index, Channel.Handle(channel));
+    if status == Status.Ok() {
+        return Result::Ok(SendOk { });
+    }
+    if status == Status.HubLimit() {
+        return Result::Error(HubError::Limit());
+    }
+    if status == Status.HubNotFound() {
+        return Result::Error(HubError::Closed());
+    }
+    return Result::Error(HubError::Closed());
+}
+
+pub unit Unregister<T>(Hub<T> self, i64 index) {
+    __hub_unregister(self.handle, index);
+    return;
+}
+
+/// Blocks until a member can satisfy `Receive` (round-robin among ready channels).
+pub Core.Results.Result<HubReceiveResult<T>, HubError> WaitReceive<T>(Hub<T> self) {
+    i64 status = __hub_wait_receive(self.handle);
+    if status == Status.Ok() {
+        i64 index = __hub_wait_receive_index(self.handle);
+        T value = __hub_wait_receive_value(self.handle);
+        return Result::Ok(HubReceiveResult<T> { index: index, value: value });
+    }
+    if status == Status.Cancelled() {
+        return Result::Error(HubError::Cancelled());
+    }
+    if status == Status.HubEmpty() {
+        return Result::Error(HubError::Closed());
+    }
+    if status == Status.HubNotFound() {
+        return Result::Error(HubError::Closed());
+    }
+    return Result::Error(HubError::Closed());
+}

@@ -8,7 +8,7 @@ use crate::syntax::{EnumPath, Expression, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Enum variant construction `Type.Variant(args...)`.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EnumConstructorExpression {
     #[ast(child)]
     pub path: Spanned<EnumPath>,

@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use crate::resolve::symbol::symbol_key;
 use crate::resolve::{ItemInfo, Resolution};
 
 use super::qualified_names::{lookup_type_ref_id, qualified_names_for_items, type_ref_lookup_index};
@@ -10,7 +11,7 @@ use super::qualified_names::{lookup_type_ref_id, qualified_names_for_items, type
 ///
 /// `package_with_version` is the raw `{{package}}@{{version}}` segment used by pckg
 /// (`/docs/{{PackageWithVersion}}/api/...`), before per-segment percent-encoding.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct DocRefLinkContext {
     pub package_with_version: String,
     /// Publishing package id (same package as `package_with_version` prefix).
@@ -77,6 +78,14 @@ fn find_resolved_item_id(path: &str, resolution: &Resolution) -> Option<usize> {
     let path = path.trim();
     if path.is_empty() {
         return None;
+    }
+    for item in &resolution.items {
+        if let Some(symbol) = item.symbol
+            && let Some(key) = symbol_key(&resolution.symbols, symbol)
+            && key == path
+        {
+            return Some(item.id.0);
+        }
     }
     let qnames = qualified_names_for_items(resolution);
     if qnames.values().any(|qn| qn == path) {
@@ -151,7 +160,10 @@ mod tests {
     use crate::hir::HirVisibility;
     use std::collections::HashMap;
 
-    use crate::resolve::{ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables};
+    use crate::resolve::{
+        ExportKind, ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables,
+        SymbolQualifier, SymbolRegistry, SymbolShape,
+    };
     use crate::syntax::SpanInfo;
 
     fn item(id: usize, name: &str, kind: ItemKind, parent_id: Option<ItemId>) -> ItemInfo {
@@ -163,6 +175,7 @@ mod tests {
             visibility: HirVisibility::Public,
             span: SpanInfo::from_byte_range_in_source("", 0, 1),
             source_path: None,
+            symbol: None,
         }
     }
 
@@ -178,6 +191,8 @@ mod tests {
             warnings: Vec::new(),
             builtin_items: HashMap::new(),
             module_imports: HashMap::new(),
+            symbols: Default::default(),
+            by_symbol: HashMap::new(),
         }
     }
 
@@ -201,6 +216,42 @@ mod tests {
         let resolution = sample_resolution();
         let md = resolve_ref_markdown("main", &resolution, None);
         assert_eq!(md, "`main`");
+    }
+
+    #[test]
+    fn ref_resolves_by_registry_symbol_key() {
+        let mut registry = SymbolRegistry::default();
+        let symbol = registry.intern(SymbolQualifier {
+            package: "demo".into(),
+            shape: SymbolShape::ModuleItem {
+                module_path: vec!["Root".into()],
+                name: "Widget".into(),
+                kind: ExportKind::Type,
+            },
+        });
+        let item_id = ItemId(0);
+        let resolution = Resolution {
+            items: vec![ItemInfo {
+                id: item_id,
+                parent_id: None,
+                name: "Widget".into(),
+                kind: ItemKind::Type,
+                visibility: HirVisibility::Public,
+                span: SpanInfo::from_byte_range_in_source("", 0, 1),
+                source_path: None,
+                symbol: Some(symbol),
+            }],
+            module_graph: ModuleGraph::new_root(),
+            tables: ResolutionTables::new(),
+            warnings: vec![],
+            builtin_items: HashMap::new(),
+            module_imports: HashMap::new(),
+            symbols: registry,
+            by_symbol: HashMap::from([(symbol, item_id)]),
+        };
+        assert!(ref_path_resolves("demo::Root::Widget", &resolution));
+        let md = resolve_ref_markdown("demo::Root::Widget", &resolution, None);
+        assert_eq!(md, "`demo::Root::Widget`");
     }
 
     #[test]

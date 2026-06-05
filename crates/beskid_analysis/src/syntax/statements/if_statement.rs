@@ -8,7 +8,7 @@ use crate::syntax::{Block, Expression, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Conditional with mandatory then-block and optional `else` block.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct IfStatement {
     #[ast(child)]
     pub condition: Spanned<Expression>,

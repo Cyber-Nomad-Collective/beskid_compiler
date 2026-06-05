@@ -1,13 +1,12 @@
 use crate::errors::CodegenError;
 use crate::lowering::locals::resolved_value_at;
-use crate::lowering::descriptor::struct_field_offsets;
+use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
 use crate::lowering::lowerable::Lowerable;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::HirPathExpression;
 use beskid_analysis::resolve::ResolvedValue;
 use beskid_analysis::syntax::Spanned;
-use beskid_analysis::types::TypeInfo;
 use cranelift_codegen::ir::{InstBuilder, MemFlags, Value};
 
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
@@ -51,15 +50,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                     },
                 )?;
                 for segment in segments.iter().skip(1) {
-                    let item_id = match ctx.type_result.types.get(current_type) {
-                        Some(TypeInfo::Named(item_id)) => *item_id,
-                        _ => {
-                            return Err(CodegenError::UnsupportedNode {
-                                span: segment.span,
-                                node: "member target type",
-                            });
-                        }
-                    };
+                    let item_id = struct_item_id(ctx.type_result, current_type).ok_or(
+                        CodegenError::UnsupportedNode {
+                            span: segment.span,
+                            node: "member target type",
+                        },
+                    )?;
                     let offsets = struct_field_offsets(ctx.type_result, item_id).ok_or(
                         CodegenError::UnsupportedNode {
                             span: segment.span,

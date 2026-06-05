@@ -99,11 +99,62 @@ pub struct ApiLocation {
     pub end_column: usize,
 }
 
+/// Stable package-prefixed symbol identity for `api.json` (`symbolKey` field).
+///
+/// Encoding matches [`crate::resolve::symbol_to_string`] / registry-backed
+/// [`crate::resolve::qualified_name`] output (`package::Module::Item`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ApiSymbolKey(String);
+
+impl ApiSymbolKey {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for ApiSymbolKey {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for ApiSymbolKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<String> for ApiSymbolKey {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<ApiSymbolKey> for String {
+    fn from(value: ApiSymbolKey) -> Self {
+        value.0
+    }
+}
+
+impl From<&ApiSymbolKey> for String {
+    fn from(value: &ApiSymbolKey) -> Self {
+        value.0.clone()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiDocItem {
     pub id: Option<usize>,
     pub qualified_name: String,
+    /// Stable package-prefixed symbol key when collected from [`SymbolRegistry`](crate::resolve::SymbolRegistry).
+    #[serde(default, rename = "symbolKey", skip_serializing_if = "Option::is_none")]
+    pub symbol_key: Option<ApiSymbolKey>,
     pub name: String,
     pub kind: String,
     pub visibility: Option<String>,
@@ -163,5 +214,62 @@ impl ApiDocRoot {
 
     pub fn from_json_str(s: &str) -> serde_json::Result<Self> {
         serde_json::from_str(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ApiDocItem, ApiLocation, ApiSymbolKey};
+
+    #[test]
+    fn api_symbol_key_serializes_as_json_string() {
+        let key = ApiSymbolKey::new("corelib::Std::Console::Esc");
+        let json = serde_json::to_string(&key).expect("serialize");
+        assert_eq!(json, "\"corelib::Std::Console::Esc\"");
+    }
+
+    #[test]
+    fn api_symbol_key_deserializes_from_json_string() {
+        let key: ApiSymbolKey =
+            serde_json::from_str("\"corelib::Std::Console::Esc\"").expect("deserialize");
+        assert_eq!(key.as_str(), "corelib::Std::Console::Esc");
+    }
+
+    #[test]
+    fn api_doc_item_emits_symbol_key_field() {
+        let item = ApiDocItem {
+            id: Some(1),
+            qualified_name: "Esc".into(),
+            symbol_key: Some(ApiSymbolKey::new("corelib::Std::Console::Esc")),
+            name: "Esc".into(),
+            kind: "function".into(),
+            visibility: None,
+            location: ApiLocation {
+                file: "Console.bd".into(),
+                start_line: 1,
+                start_column: 1,
+                end_line: 1,
+                end_column: 10,
+            },
+            parent_id: None,
+            member_ids: vec![],
+            display_name: None,
+            module_path: vec![],
+            signature: None,
+            field_type: None,
+            return_type: None,
+            parameters: vec![],
+            generic_parameters: vec![],
+            doc_markdown: None,
+            doc: None,
+            declaring_package: None,
+            controls: vec![],
+            tier: None,
+        };
+        let value = serde_json::to_value(&item).expect("serialize item");
+        assert_eq!(
+            value.get("symbolKey").and_then(|v| v.as_str()),
+            Some("corelib::Std::Console::Esc")
+        );
     }
 }

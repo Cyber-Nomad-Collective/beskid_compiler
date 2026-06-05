@@ -9,6 +9,10 @@ use super::items::{ItemInfo, ItemKind};
 use super::member_items;
 use super::module_graph::ModuleGraph;
 use super::resolver::{self, Resolver};
+use super::symbol::{
+    symbol_shape_for_item, symbol_to_string, BUILTIN_PACKAGE, SymbolId, SymbolQualifier,
+    SymbolShape,
+};
 use crate::builtins::builtin_specs;
 
 pub(super) fn type_name_for_method_receiver(receiver_type: &Spanned<HirType>) -> String {
@@ -54,20 +58,79 @@ pub(super) fn use_imported_name(use_decl: &HirUseDeclaration) -> String {
 
 impl Resolver {
     pub(crate) fn set_current_source_path(&mut self, source_path: Option<PathBuf>) {
-        self.current_source_path = source_path;
+        self.current_source_path = source_path.map(|path| crate::paths::unit_path_key(&path));
+    }
+
+    pub(crate) fn set_declaring_package(&mut self, package: String) {
+        self.declaring_package = package;
     }
 
     pub fn with_module_prefetch(
         items: Vec<ItemInfo>,
         module_graph: ModuleGraph,
         builtin_items: std::collections::HashMap<ItemId, usize>,
+        symbols: super::symbol::SymbolRegistry,
+        by_symbol: std::collections::HashMap<SymbolId, ItemId>,
     ) -> Self {
         Self {
             items,
             module_graph,
             builtin_items,
+            symbols,
+            by_symbol,
             ..Self::default()
         }
+    }
+
+    fn current_module_path(&self) -> Vec<String> {
+        self.module_graph
+            .module(self.current_module)
+            .map(|module| module.path.clone())
+            .unwrap_or_default()
+    }
+
+    fn try_register_symbol(
+        &mut self,
+        item_id: ItemId,
+        kind: ItemKind,
+        name: &str,
+        module_path: &[String],
+        method_receiver: Option<&str>,
+        parent_symbol: Option<SymbolId>,
+        member_name: Option<&str>,
+        span: syntax::SpanInfo,
+    ) -> Option<SymbolId> {
+        let shape = symbol_shape_for_item(
+            kind,
+            module_path,
+            name,
+            method_receiver,
+            parent_symbol,
+            member_name,
+        )?;
+        let qualifier = SymbolQualifier {
+            package: self.declaring_package.clone(),
+            shape,
+        };
+        if let Some(existing) = self.symbols.lookup(&qualifier) {
+            if self.by_symbol.get(&existing) != Some(&item_id) {
+                let previous = self
+                    .by_symbol
+                    .get(&existing)
+                    .and_then(|prev| self.items.get(prev.0))
+                    .map(|info| info.span)
+                    .unwrap_or(span);
+                self.errors.push(ResolveError::DuplicateSymbol {
+                    symbol: symbol_to_string(&self.symbols, &qualifier),
+                    span,
+                    previous,
+                });
+            }
+            return Some(existing);
+        }
+        let symbol_id = self.symbols.intern(qualifier);
+        self.by_symbol.insert(symbol_id, item_id);
+        Some(symbol_id)
     }
 
     pub fn collect_program_in_module(
@@ -76,7 +139,7 @@ impl Resolver {
         module_path: &[String],
         source_path: Option<&PathBuf>,
     ) {
-        self.current_source_path = source_path.cloned();
+        self.current_source_path = source_path.map(|path| crate::paths::unit_path_key(&path));
         if resolver::file_scoped_module_index(program).is_some() {
             self.collect_program(program);
             return;
@@ -102,6 +165,8 @@ impl Resolver {
     }
 
     pub(crate) fn collect_builtins(&mut self) {
+        let saved_package = self.declaring_package.clone();
+        self.declaring_package = BUILTIN_PACKAGE.to_string();
         for (index, spec) in builtin_specs().iter().enumerate() {
             let module_path: Vec<String> = spec
                 .beskid_path
@@ -125,20 +190,34 @@ impl Resolver {
                 });
                 continue;
             }
-            self.items.push(self.item_info(
+            let path: Vec<String> = spec
+                .beskid_path
+                .iter()
+                .map(|segment| (*segment).to_string())
+                .collect();
+            let qualifier = SymbolQualifier {
+                package: BUILTIN_PACKAGE.to_string(),
+                shape: SymbolShape::Builtin { path },
+            };
+            let symbol_id = self.symbols.intern(qualifier);
+            self.by_symbol.insert(symbol_id, id);
+            self.items.push(ItemInfo {
                 id,
-                None,
+                parent_id: None,
                 name,
-                ItemKind::Function,
-                HirVisibility::Public,
-                builtin_span(),
-            ));
+                kind: ItemKind::Function,
+                visibility: HirVisibility::Public,
+                span: builtin_span(),
+                source_path: self.current_source_path.clone(),
+                symbol: Some(symbol_id),
+            });
             self.builtin_items.insert(id, index);
         }
+        self.declaring_package = saved_package;
     }
 
     fn collect_item(&mut self, item: &Spanned<HirItem>) {
-        let (name, kind, visibility) = match &item.node {
+        let (name, kind, visibility, method_receiver) = match &item.node {
             HirItem::HostDefinition(_) => {
                 return;
             }
@@ -146,32 +225,32 @@ impl Resolver {
                 def.node.name.node.name.clone(),
                 ItemKind::Function,
                 def.node.visibility.node,
+                None,
             ),
-            HirItem::MethodDefinition(def) => (
-                format!(
-                    "{}::{}",
-                    type_name_for_method_receiver(&def.node.receiver_type),
-                    def.node.name.node.name
-                ),
-                ItemKind::Method,
-                def.node.visibility.node,
-            ),
+            HirItem::MethodDefinition(def) => {
+                let receiver = type_name_for_method_receiver(&def.node.receiver_type);
+                (
+                    format!("{}::{}", receiver, def.node.name.node.name),
+                    ItemKind::Method,
+                    def.node.visibility.node,
+                    Some(receiver),
+                )
+            }
             HirItem::ExtendTypeDefinition(def) => {
                 for method in &def.node.methods {
-                    let method_name = format!(
-                        "{}::{}",
-                        type_name_for_method_receiver(&method.node.receiver_type),
-                        method.node.name.node.name
-                    );
-                    let method_id = ItemId(self.items.len());
-                    self.items.push(self.item_info(
-                        method_id,
+                    let receiver = type_name_for_method_receiver(&method.node.receiver_type);
+                    let method_name = format!("{}::{}", receiver, method.node.name.node.name);
+                    self.push_item(
+                        ItemId(self.items.len()),
                         None,
                         method_name,
                         ItemKind::Method,
                         method.node.visibility.node,
                         method.span,
-                    ));
+                        Some(receiver),
+                        self.current_module_path(),
+                    );
+                    let method_id = ItemId(self.items.len() - 1);
                     self.collect_member_items_for_method(method, method_id);
                 }
                 return;
@@ -180,31 +259,37 @@ impl Resolver {
                 def.node.name.node.name.clone(),
                 ItemKind::Test,
                 def.node.visibility.node,
+                None,
             ),
             HirItem::TypeDefinition(def) => (
                 def.node.name.node.name.clone(),
                 ItemKind::Type,
                 def.node.visibility.node,
+                None,
             ),
             HirItem::EnumDefinition(def) => (
                 def.node.name.node.name.clone(),
                 ItemKind::Enum,
                 def.node.visibility.node,
+                None,
             ),
             HirItem::ContractDefinition(def) => (
                 def.node.name.node.name.clone(),
                 ItemKind::Contract,
                 def.node.visibility.node,
+                None,
             ),
             HirItem::ModuleDeclaration(def) => (
                 path_tail(&def.node.path),
                 ItemKind::Module,
                 def.node.visibility.node,
+                None,
             ),
             HirItem::InlineModule(def) => (
                 def.node.name.node.name.clone(),
                 ItemKind::Module,
                 def.node.visibility.node,
+                None,
             ),
             HirItem::UseDeclaration(def) => {
                 self.collect_use_declaration(item, def);
@@ -243,7 +328,32 @@ impl Resolver {
             });
             return;
         }
-        self.items.push(self.item_info(id, None, name, kind, visibility, item.span));
+        let push_module_path = match &item.node {
+            HirItem::ModuleDeclaration(def) => {
+                let segments: Vec<String> = def
+                    .node
+                    .path
+                    .node
+                    .segments
+                    .iter()
+                    .map(|segment| segment.node.name.node.name.clone())
+                    .collect();
+                let mut path = self.current_module_path();
+                path.extend_from_slice(&segments[..segments.len().saturating_sub(1)]);
+                path
+            }
+            _ => self.current_module_path(),
+        };
+        self.push_item(
+            id,
+            None,
+            name,
+            kind,
+            visibility,
+            item.span,
+            method_receiver,
+            push_module_path,
+        );
 
         self.collect_member_items(item, id);
 
@@ -343,20 +453,32 @@ impl Resolver {
         parent_id: ItemId,
     ) {
         let id = ItemId(self.items.len());
-        self.items
-            .push(self.item_info(id, Some(parent_id), name, kind, visibility, span));
+        self.push_item(id, Some(parent_id), name, kind, visibility, span, None, self.current_module_path());
     }
 
-    fn item_info(
-        &self,
+    fn push_item(
+        &mut self,
         id: ItemId,
         parent_id: Option<ItemId>,
         name: String,
         kind: ItemKind,
         visibility: HirVisibility,
         span: syntax::SpanInfo,
-    ) -> ItemInfo {
-        ItemInfo {
+        method_receiver: Option<String>,
+        module_path: Vec<String>,
+    ) {
+        let parent_symbol = parent_id.and_then(|parent| self.items.get(parent.0).and_then(|info| info.symbol));
+        let symbol = self.try_register_symbol(
+            id,
+            kind,
+            &name,
+            &module_path,
+            method_receiver.as_deref(),
+            parent_symbol,
+            Some(name.as_str()),
+            span,
+        );
+        self.items.push(ItemInfo {
             id,
             parent_id,
             name,
@@ -364,7 +486,8 @@ impl Resolver {
             visibility,
             span,
             source_path: self.current_source_path.clone(),
-        }
+            symbol,
+        });
     }
 
     fn collect_member_items(&mut self, item: &Spanned<HirItem>, parent_id: ItemId) {

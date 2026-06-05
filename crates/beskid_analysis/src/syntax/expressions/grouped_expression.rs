@@ -8,7 +8,7 @@ use crate::syntax::{Expression, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Parenthesized subexpression (grouping / precedence).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GroupedExpression {
     #[ast(child)]
     pub expr: Box<Spanned<Expression>>,

@@ -8,6 +8,7 @@ use super::errors::{ResolveError, ResolveWarning};
 use super::ids::{ItemId, ModuleId};
 use super::items::ItemInfo;
 use super::module_graph::ModuleGraph;
+use super::symbol::{SymbolId, SymbolRegistry};
 use super::tables::ResolutionTables;
 
 #[derive(Debug, Default)]
@@ -23,6 +24,9 @@ pub struct Resolver {
     pub(crate) builtin_items: HashMap<ItemId, usize>,
     pub(crate) module_imports: HashMap<String, Vec<String>>,
     pub(crate) current_source_path: Option<PathBuf>,
+    pub(crate) symbols: SymbolRegistry,
+    pub(crate) by_symbol: HashMap<SymbolId, ItemId>,
+    pub(crate) declaring_package: String,
 }
 
 impl Resolver {
@@ -64,4 +68,6 @@ pub struct Resolution {
     pub warnings: Vec<ResolveWarning>,
     pub builtin_items: HashMap<ItemId, usize>,
     pub module_imports: HashMap<String, Vec<String>>,
+    pub symbols: SymbolRegistry,
+    pub by_symbol: HashMap<SymbolId, ItemId>,
 }

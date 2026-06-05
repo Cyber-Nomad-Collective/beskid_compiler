@@ -57,7 +57,18 @@ pub(super) fn desugar_try_expression(
                     HirEnumPattern {
                         path: Spanned::new(
                             HirEnumPath {
-                                type_name: hir_identifier(type_name, ok_pattern_span),
+                                type_path: Spanned::new(
+                                    HirPath {
+                                        segments: vec![Spanned::new(
+                                            HirPathSegment {
+                                                name: hir_identifier(type_name, ok_pattern_span),
+                                                type_args: Vec::new(),
+                                            },
+                                            ok_pattern_span,
+                                        )],
+                                    },
+                                    ok_pattern_span,
+                                ),
                                 variant: hir_identifier(ok_variant, ok_pattern_span),
                             },
                             ok_pattern_span,

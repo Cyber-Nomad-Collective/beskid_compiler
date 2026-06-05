@@ -138,11 +138,13 @@ fn build_assembly_graph(
                 request.entry_source.as_deref(),
                 &AssemblyOptions::default(),
             )?;
+            let grammar = db.grammar_revision();
             let units = assembly
                 .units
                 .iter()
                 .map(|unit| {
-                    let imports = crate::unit::unit_imports(db, session, unit.path.clone());
+                    let imports =
+                        crate::unit::unit_imports(db, session, grammar, unit.path.clone());
                     (unit.path.clone(), imports)
                 })
                 .collect::<Vec<_>>();

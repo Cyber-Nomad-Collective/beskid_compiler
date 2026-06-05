@@ -38,8 +38,9 @@ pub fn reverse_dependents(
     let mut queue = vec![changed_path];
     while let Some(current) = queue.pop() {
         let current_key = current.display().to_string();
+        let grammar = db.grammar_revision_input();
         for path in &candidate_paths {
-            let imports = unit_imports(db, project, path.clone());
+            let imports = unit_imports(db, project, grammar, path.clone());
             if imports.iter().any(|dep| dep == &current_key || dep.ends_with(&current_key))
                 && !invalidated.iter().any(|p| p == path)
             {
@@ -53,6 +54,26 @@ pub fn reverse_dependents(
     invalidated
 }
 
+/// Salsa memoization boundary for assembly (fingerprint of inputs; heavy `ProgramAssembly` is ephemeral).
+#[salsa::tracked]
+pub fn program_assembly_tracked(
+    db: &dyn Db,
+    project: ProjectSession,
+    grammar: crate::inputs::GrammarRevision,
+    entry_path: PathBuf,
+    lockfile_digest: String,
+    options_fingerprint: String,
+) -> String {
+    let _ = (db, project, grammar);
+    record_query_miss();
+    format!(
+        "{}:{}:{}",
+        entry_path.display(),
+        lockfile_digest,
+        options_fingerprint
+    )
+}
+
 /// Assembled program for an entry (Salsa-backed unit materialization).
 pub fn program_assembly(
     db: &mut BeskidDatabase,
@@ -63,14 +84,24 @@ pub fn program_assembly(
     options: &AssemblyOptions,
 ) -> Result<ProgramAssembly, AssemblyError> {
     let lockfile_digest = lockfile_digest_for_plan(plan);
-    let session = db.ensure_project_session(plan, entry_path, lockfile_digest);
+    let session = db.ensure_project_session(plan, entry_path, lockfile_digest.clone());
+    let grammar = db.grammar_revision();
+    let options_fp = assembly_options_fingerprint(options);
+    let _ = program_assembly_tracked(
+        db,
+        session,
+        grammar,
+        entry_path.to_path_buf(),
+        lockfile_digest,
+        options_fp,
+    );
 
     if let Some(source) = entry_source {
-        db.set_file_text(entry_path.to_path_buf(), source.to_string());
+        db.ensure_file_text(entry_path.to_path_buf(), source.to_string());
     }
 
     let db_arc = Arc::new(Mutex::new(db.clone()));
-    let materializer = unit_materializer_for(Arc::clone(&db_arc), session);
+    let materializer = unit_materializer_for(db_arc, session);
 
     let assembly = assemble_program_with_materializer(
         plan,
@@ -84,12 +115,23 @@ pub fn program_assembly(
     let _ = discovered_units(db, session, entry_path.to_path_buf());
     let _ = module_index_fingerprint(db, session, assembly.units.len() as u64);
 
+    let grammar = db.grammar_revision();
     for unit in assembly.units.iter() {
         seed_file_from_disk(db, unit.path.clone());
-        let _ = unit_imports(db, session, unit.path.clone());
+        let _ = unit_imports(db, session, grammar, unit.path.clone());
     }
 
     Ok(assembly)
+}
+
+fn assembly_options_fingerprint(options: &AssemblyOptions) -> String {
+    format!(
+        "discovery={:?}:skip_parse={}:max_units={:?}:prelude={}",
+        options.discovery,
+        options.skip_parse_errors,
+        options.max_units,
+        options.include_std_prelude
+    )
 }
 
 fn lockfile_digest_for_plan(plan: &CompilePlan) -> String {

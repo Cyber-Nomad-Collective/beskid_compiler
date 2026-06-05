@@ -3,7 +3,7 @@ use crate::syntax::{Identifier, Spanned, Type};
 use beskid_ast_derive::AstNode;
 
 /// One segment of a dotted path, with optional generic type arguments.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PathSegment {
     #[ast(child)]
     pub name: Spanned<Identifier>,
@@ -12,7 +12,7 @@ pub struct PathSegment {
 }
 
 /// Qualified name path (`a.b.C`) used in types and expressions.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Path {
     #[ast(children)]
     pub segments: Vec<Spanned<PathSegment>>,

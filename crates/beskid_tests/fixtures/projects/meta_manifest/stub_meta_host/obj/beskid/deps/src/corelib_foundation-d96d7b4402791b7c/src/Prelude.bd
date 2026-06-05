@@ -11,6 +11,8 @@ pub mod Testing.Contracts;
 pub mod Testing.Assertions;
 /// Re-exports query operator state and combinators (imports `Query.Contracts` internally).
 pub mod Query.Operators;
+/// Re-exports query contracts (Option type).
+pub mod Query.Contracts;
 /// Re-exports query execution helpers.
 pub mod Query.Execution;
 /// Re-exports growable array surface.

@@ -14,7 +14,7 @@ criterion = "0.5"
 
 [features]
 metrics = []
-arrays_backing = []
+arrays_backing = [] # No-op since 2026-06-05: backing store is always allocated unconditionally.
 sched = []
 
 [[bench]]

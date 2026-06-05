@@ -1,5 +1,5 @@
 use crate::errors::CodegenError;
-use crate::lowering::descriptor::struct_field_offsets;
+use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -21,15 +21,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMemberExpression {
                 node: "unit-valued member target",
             })?;
         let target_type = ctx.require_expr_type(node.node.target.span)?;
-        let item_id = match ctx.type_result.types.get(target_type) {
-            Some(TypeInfo::Named(item_id)) => *item_id,
-            _ => {
-                return Err(CodegenError::UnsupportedNode {
-                    span: node.node.target.span,
-                    node: "member target type",
-                });
-            }
-        };
+        let item_id = struct_item_id(ctx.type_result, target_type).ok_or(
+            CodegenError::UnsupportedNode {
+                span: node.node.target.span,
+                node: "member target type",
+            },
+        )?;
         let offsets = struct_field_offsets(ctx.type_result, item_id).ok_or(
             CodegenError::UnsupportedNode {
                 span: node.span,

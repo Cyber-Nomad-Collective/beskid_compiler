@@ -13,7 +13,7 @@ use crate::syntax::{
 use beskid_ast_derive::AstNode;
 
 /// Inner module item: function, type, enum, contract, test, module, use, etc.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Node {
     #[ast(child)]
     HostDefinition(Spanned<HostDefinition>),

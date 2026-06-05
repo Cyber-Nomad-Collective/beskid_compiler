@@ -4,13 +4,14 @@ use crate::lowering::locals::resolved_value_at;
 use crate::lowering::descriptor::struct_field_offsets;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
-use crate::lowering::types::pointer_type;
-use beskid_analysis::hir::{HirAssignExpression, HirAssignOp, HirExpressionNode};
+use crate::lowering::types::{map_type_id_to_clif, pointer_type};
+use beskid_analysis::hir::{HirAssignExpression, HirAssignOp, HirExpressionNode, HirPrimitiveType};
 use beskid_analysis::resolve::ResolvedValue;
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo};
+use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::Value;
-use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, MemFlags, Signature};
+use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, MemFlags, Signature, TrapCode};
 use cranelift_codegen::isa::CallConv;
 
 const DEFAULT_EVENT_CAPACITY: i64 = 8;
@@ -50,6 +51,14 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
                         .store(MemFlags::new(), value, field_addr, 0);
                     value
                 }
+                AssignTargetKind::IndexElement {
+                    array_handle,
+                    index,
+                    elem_type,
+                } => {
+                    store_at_index(node.span, array_handle, index, elem_type, value, ctx)?;
+                    value
+                }
             },
             HirAssignOp::AddAssign | HirAssignOp::SubAssign => {
                 if let AssignTargetKind::EventMember {
@@ -74,30 +83,78 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
                     }
                 }
 
+                // Compound assignment for IndexElement: load current, apply op, store back
+                if let AssignTargetKind::IndexElement {
+                    array_handle,
+                    index,
+                    elem_type,
+                } = target.kind
+                {
+                    let current = load_at_index(node.span, array_handle, index, elem_type, ctx)?;
+                    let current_type = elem_type;
+                    let is_string =
+                        matches!(ctx.type_result.types.get(current_type),
+                            Some(TypeInfo::Primitive(HirPrimitiveType::String)));
+                    let is_float =
+                        matches!(ctx.type_result.types.get(current_type),
+                            Some(TypeInfo::Primitive(HirPrimitiveType::F64)));
+                    let is_numeric = matches!(
+                        ctx.type_result.types.get(current_type),
+                        Some(TypeInfo::Primitive(
+                            HirPrimitiveType::I32
+                                | HirPrimitiveType::I64
+                                | HirPrimitiveType::U8
+                                | HirPrimitiveType::F64
+                        ))
+                    );
+
+                    let new_value = if node.node.op.node == HirAssignOp::AddAssign && is_string {
+                        lower_string_concat(current, value, ctx, node.span)?
+                    } else if !is_numeric {
+                        return Err(CodegenError::UnsupportedNode {
+                            span: node.span,
+                            node: "compound assignment type for array index",
+                        });
+                    } else if is_float {
+                        match node.node.op.node {
+                            HirAssignOp::AddAssign => ctx.builder.ins().fadd(current, value),
+                            HirAssignOp::SubAssign => ctx.builder.ins().fsub(current, value),
+                            HirAssignOp::Assign => unreachable!("handled above"),
+                        }
+                    } else {
+                        match node.node.op.node {
+                            HirAssignOp::AddAssign => ctx.builder.ins().iadd(current, value),
+                            HirAssignOp::SubAssign => ctx.builder.ins().isub(current, value),
+                            HirAssignOp::Assign => unreachable!("handled above"),
+                        }
+                    };
+
+                    store_at_index(node.span, array_handle, index, elem_type, new_value, ctx)?;
+                    return Ok(Some(new_value));
+                }
+
                 let var = match target.kind {
                     AssignTargetKind::Local { var } => var,
-                    AssignTargetKind::EventMember { .. } => unreachable!("handled above"),
+                    AssignTargetKind::EventMember { .. } | AssignTargetKind::IndexElement { .. } => {
+                        unreachable!("handled above")
+                    }
                 };
                 let current = ctx.builder.use_var(var);
                 let is_string = matches!(
                     ctx.type_result.types.get(expected_type),
-                    Some(TypeInfo::Primitive(
-                        beskid_analysis::hir::HirPrimitiveType::String
-                    ))
+                    Some(TypeInfo::Primitive(HirPrimitiveType::String))
                 );
                 let is_float = matches!(
                     ctx.type_result.types.get(expected_type),
-                    Some(TypeInfo::Primitive(
-                        beskid_analysis::hir::HirPrimitiveType::F64
-                    ))
+                    Some(TypeInfo::Primitive(HirPrimitiveType::F64))
                 );
                 let is_numeric = matches!(
                     ctx.type_result.types.get(expected_type),
                     Some(TypeInfo::Primitive(
-                        beskid_analysis::hir::HirPrimitiveType::I32
-                            | beskid_analysis::hir::HirPrimitiveType::I64
-                            | beskid_analysis::hir::HirPrimitiveType::U8
-                            | beskid_analysis::hir::HirPrimitiveType::F64
+                        HirPrimitiveType::I32
+                            | HirPrimitiveType::I64
+                            | HirPrimitiveType::U8
+                            | HirPrimitiveType::F64
                     ))
                 );
 
@@ -139,6 +196,11 @@ enum AssignTargetKind {
     EventMember {
         field_addr: Value,
         capacity: Option<i64>,
+    },
+    IndexElement {
+        array_handle: Value,
+        index: Value,
+        elem_type: TypeId,
     },
 }
 
@@ -236,6 +298,58 @@ fn resolve_assign_target(
                 ctx,
             )
         }
+        HirExpressionNode::IndexExpression(index_expr) => {
+            // arr[i] = value  →  resolve the array handle, index, and element type
+            let array_handle = lower_node(&index_expr.node.target, ctx)?.ok_or(
+                CodegenError::UnsupportedNode {
+                    span: index_expr.node.target.span,
+                    node: "unit-valued index target",
+                },
+            )?;
+            let index = lower_node(&index_expr.node.index, ctx)?.ok_or(
+                CodegenError::UnsupportedNode {
+                    span: index_expr.node.index.span,
+                    node: "unit-valued index",
+                },
+            )?;
+            let target_type = ctx.require_expr_type(index_expr.node.target.span)?;
+            let elem_type = match ctx.type_result.types.get(target_type) {
+                Some(TypeInfo::Array(elem)) => *elem,
+                Some(TypeInfo::Primitive(HirPrimitiveType::String)) => {
+                    // String byte write: element type is U8
+                    // Find the U8 type id
+                    let mut t = 0usize;
+                    loop {
+                        let tid = TypeId(t);
+                        let Some(info) = ctx.type_result.types.get(tid) else {
+                            return Err(CodegenError::UnsupportedNode {
+                                span: node.span,
+                                node: "U8 type not found for string byte write",
+                            });
+                        };
+                        if matches!(info, TypeInfo::Primitive(HirPrimitiveType::U8)) {
+                            break tid;
+                        }
+                        t += 1;
+                    }
+                }
+                _ => {
+                    return Err(CodegenError::UnsupportedNode {
+                        span: node.node.target.span,
+                        node: "assignment index target type (expected array or string)",
+                    });
+                }
+            };
+
+            Ok(AssignTarget {
+                kind: AssignTargetKind::IndexElement {
+                    array_handle,
+                    index,
+                    elem_type,
+                },
+                expected_type: elem_type,
+            })
+        }
         _ => Err(CodegenError::UnsupportedNode {
             span: node.node.target.span,
             node: "unsupported assignment target",
@@ -304,6 +418,118 @@ fn resolve_event_member_target(
     })
 }
 
+/// Load a value from an array at the given index (with bounds check), used for both read and
+/// compound-assignment current-value reading.
+fn load_at_index(
+    span: beskid_analysis::syntax::SpanInfo,
+    array_handle: Value,
+    index: Value,
+    elem_type: TypeId,
+    ctx: &mut NodeLoweringContext<'_, '_>,
+) -> Result<Value, CodegenError> {
+    let ptr = ctx
+        .builder
+        .ins()
+        .load(pointer_type(), MemFlags::new(), array_handle, 0);
+    let len = ctx
+        .builder
+        .ins()
+        .load(pointer_type(), MemFlags::new(), array_handle, 8);
+
+    // Bounds check
+    let out_of_bounds = ctx
+        .builder
+        .ins()
+        .icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
+    ctx.builder
+        .ins()
+        .trapnz(out_of_bounds, TrapCode::unwrap_user(2));
+
+    // Compute element size
+    let layout = ctx
+        .codegen
+        .type_layout(ctx.type_result, elem_type)
+        .ok_or(CodegenError::UnsupportedNode {
+            span,
+            node: "array element layout for index write",
+        })?;
+    let elem_size_val = ctx
+        .builder
+        .ins()
+        .iconst(pointer_type(), layout.size as i64);
+
+    let offset = ctx.builder.ins().imul(index, elem_size_val);
+    let addr = ctx.builder.ins().iadd(ptr, offset);
+
+    let clif_ty = map_type_id_to_clif(ctx.type_result, elem_type).ok_or(
+        CodegenError::UnsupportedNode {
+            span,
+            node: "array element clif type for index write",
+        },
+    )?;
+    let value = ctx
+        .builder
+        .ins()
+        .load(clif_ty, MemFlags::new(), addr, 0);
+
+    Ok(value)
+}
+
+/// Store a value into an array at the given index (with bounds check).
+fn store_at_index(
+    span: beskid_analysis::syntax::SpanInfo,
+    array_handle: Value,
+    index: Value,
+    elem_type: TypeId,
+    value: Value,
+    ctx: &mut NodeLoweringContext<'_, '_>,
+) -> Result<(), CodegenError> {
+    let ptr = ctx
+        .builder
+        .ins()
+        .load(pointer_type(), MemFlags::new(), array_handle, 0);
+    let len = ctx
+        .builder
+        .ins()
+        .load(pointer_type(), MemFlags::new(), array_handle, 8);
+
+    // Bounds check
+    let out_of_bounds = ctx
+        .builder
+        .ins()
+        .icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
+    ctx.builder
+        .ins()
+        .trapnz(out_of_bounds, TrapCode::unwrap_user(2));
+
+    // Compute element size
+    let layout = ctx
+        .codegen
+        .type_layout(ctx.type_result, elem_type)
+        .ok_or(CodegenError::UnsupportedNode {
+            span,
+            node: "array element layout for index store",
+        })?;
+    let elem_size_val = ctx
+        .builder
+        .ins()
+        .iconst(pointer_type(), layout.size as i64);
+
+    let offset = ctx.builder.ins().imul(index, elem_size_val);
+    let addr = ctx.builder.ins().iadd(ptr, offset);
+
+    // GC write barrier for pointer-like element types
+    if crate::lowering::descriptor::is_pointer_like_type(ctx.type_result, elem_type) {
+        call_write_barrier(ctx, array_handle, value);
+    }
+
+    ctx.builder
+        .ins()
+        .store(MemFlags::new(), value, addr, 0);
+
+    Ok(())
+}
+
 fn call_event_subscribe(
     ctx: &mut NodeLoweringContext<'_, '_>,
     field_addr: Value,
@@ -353,6 +579,28 @@ fn call_event_unsubscribe(
         });
     // Inst result unused: instruction is already inserted into the block.
     let _ = ctx.builder.ins().call(func_ref, &[field_addr, handler]);
+}
+
+/// Emit a GC write barrier call for array index stores with pointer-like elements.
+fn call_write_barrier(
+    ctx: &mut NodeLoweringContext<'_, '_>,
+    dst_obj: Value,
+    value_ptr: Value,
+) {
+    let mut signature = Signature::new(CallConv::SystemV);
+    signature.params.push(AbiParam::new(pointer_type()));
+    signature.params.push(AbiParam::new(pointer_type()));
+    let sig_ref = ctx.builder.func.import_signature(signature);
+    let func_ref = ctx
+        .builder
+        .func
+        .import_function(cranelift_codegen::ir::ExtFuncData {
+            name: ExternalName::testcase("gc_write_barrier"),
+            signature: sig_ref,
+            colocated: false,
+            patchable: false,
+        });
+    ctx.builder.ins().call(func_ref, &[dst_obj, value_ptr]);
 }
 
 fn lower_string_concat(

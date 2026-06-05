@@ -62,3 +62,25 @@ pub ArrayIter<T> Advance<T>(ArrayIter<T> it) {
 pub i64 Index<T>(ArrayIter<T> it) {
     return it.index;
 }
+
+/// Returns the element at the given zero-based index.
+/// @tier(standard)
+/// @par(T) Element type of the array.
+/// @arg(values) Array to read from.
+/// @arg(index) Zero-based element index.
+/// @returns Element at `index`.
+pub T Get<T>(T[] values, i64 index) {
+    return values[index];
+}
+
+/// Sets the element at the given zero-based index and returns the array.
+/// @tier(standard)
+/// @par(T) Element type of the array.
+/// @arg(values) Array to modify.
+/// @arg(index) Zero-based element index.
+/// @arg(value) Value to store.
+/// @returns The same array handle (for chaining).
+pub T[] Set<T>(T[] values, i64 index, T value) {
+    values[index] = value;
+    return values;
+}

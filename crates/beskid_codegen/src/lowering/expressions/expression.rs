@@ -49,6 +49,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionNode {
                 span: node.span,
                 node: "macro metavariable expression",
             }),
+            HirExpressionNode::IndexExpression(inner) => lower_node(inner, ctx),
+            HirExpressionNode::ArrayLiteralExpression(inner) => lower_node(inner, ctx),
         }
     }
 }

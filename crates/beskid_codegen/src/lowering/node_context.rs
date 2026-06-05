@@ -42,9 +42,11 @@ impl NodeLoweringContext<'_, '_> {
             return Ok(*type_id);
         }
         require_expr_type(
+            self.resolution,
             self.type_result,
             span,
             self.codegen.current_source_path.as_ref(),
+            None,
         )
     }
 

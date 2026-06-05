@@ -10,7 +10,7 @@ use crate::syntax::{Field, Identifier, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Single enum variant and its field list.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EnumVariant {
     #[ast(child)]
     pub name: Spanned<Identifier>,

@@ -3,8 +3,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use beskid_analysis::projects::{assemble_program, AssemblyDiscovery, AssemblyOptions};
 use beskid_analysis::services::resolve_input;
+use beskid_queries::{
+    configure_db_for_project, prepare_compilation_with_db, program_assembly, with_db,
+};
 
 fn compiler_workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -47,17 +49,17 @@ fn ansi_escape_resolves_under_corelib_test_assembly() {
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let plan = resolved.compile_plan.expect("compile plan");
-
-    let assembly = assemble_program(
-        &plan,
-        resolved.prepared_workspace.as_ref(),
-        &entry,
-        Some(&source),
-        &AssemblyOptions {
-            discovery: AssemblyDiscovery::ImportClosure,
-            ..Default::default()
-        },
-    )
+    configure_db_for_project(&project_root);
+    let assembly = with_db(|db| {
+        program_assembly(
+            db,
+            &plan,
+            resolved.prepared_workspace.as_ref(),
+            &entry,
+            Some(&source),
+            &Default::default(),
+        )
+    })
     .expect("assemble");
 
     assert!(

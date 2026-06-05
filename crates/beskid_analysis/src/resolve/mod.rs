@@ -8,6 +8,8 @@ pub mod member_items;
 pub mod module_graph;
 pub mod resolve_refs;
 pub mod resolver;
+pub mod symbol;
+pub mod symbol_lookup;
 pub mod tables;
 
 pub use errors::{ResolveError, ResolveResult, ResolveWarning};
@@ -15,4 +17,12 @@ pub use ids::{ItemId, LocalId, ModuleId};
 pub use items::{ItemInfo, ItemKind};
 pub use module_graph::{ModuleGraph, ModuleInfo};
 pub use resolver::{Resolution, Resolver};
+pub use symbol::{
+    symbol_key, symbol_shape_for_item, symbol_to_string, BUILTIN_PACKAGE, ExportKind, MemberKind,
+    SymbolId, SymbolQualifier, SymbolRegistry, SymbolShape,
+};
+pub use symbol_lookup::{
+    canonical_item_id, item_id_for_qualifier, item_id_for_symbol, qualified_name,
+    qualified_name_from_symbol, symbol_for_item, symbol_string,
+};
 pub use tables::{LocalInfo, ResolutionTables, ResolvedType, ResolvedValue};

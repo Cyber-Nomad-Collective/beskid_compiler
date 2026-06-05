@@ -11,7 +11,7 @@ use crate::syntax::{MethodDefinition, SpanInfo, Spanned, Type};
 use beskid_ast_derive::AstNode;
 
 /// `extend type T { ... }` block preserving source grouping for extension semantics.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ExtendTypeDefinition {
     #[ast(child)]
     pub target_type: Spanned<Type>,

@@ -3,7 +3,7 @@
 use beskid_ast_derive::AstNode;
 
 /// Literal token; numeric and text forms keep raw source text where precision matters.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Literal {
     #[ast(skip)]
     Integer(String),

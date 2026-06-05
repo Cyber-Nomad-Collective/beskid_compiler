@@ -46,6 +46,19 @@ fn codegen_lowers_desugared_try_match() {
 }
 
 #[test]
+fn codegen_lowers_string_equality_via_str_eq() {
+    let (hir, resolution, typed) =
+        lower_resolve_type("bool main() { return \"a\" == \"a\"; }");
+    let artifact =
+        lower_program(&hir, &resolution, &typed).expect("expected string equality lowering");
+    let clif = artifact.functions[0].function.to_string();
+    assert!(
+        clif.contains("str_eq"),
+        "expected content-based string equality via str_eq, got: {clif}"
+    );
+}
+
+#[test]
 fn codegen_lowers_numeric_cast_intent_via_sextend_or_ireduce() {
     let (hir, resolution, typed) = lower_resolve_type("i32 main() { i64 x = 1; return x; }");
     let artifact = lower_program(&hir, &resolution, &typed)

@@ -1,0 +1,94 @@
+/// String scanning helpers for markup parsing (`__str_slice` + length checks).
+use Core.String;
+
+pub i64 Len(string text) {
+    return Core.String.Len(text);
+}
+
+pub string Slice(string text, i64 start, i64 count) {
+    if count < 1 {
+        return "";
+    }
+    if start < 0 {
+        return "";
+    }
+    return __str_slice(text, start, count);
+}
+
+pub string Drop(string text, i64 count) {
+    i64 total = Len(text);
+    if count < 1 {
+        return text;
+    }
+    if !(count < total) {
+        return "";
+    }
+    return Slice(text, count, total - count);
+}
+
+pub bool StartsWith(string text, string prefix) {
+    i64 plen = Len(prefix);
+    if plen == 0 {
+        return true;
+    }
+    i64 tlen = Len(text);
+    if plen > tlen {
+        return false;
+    }
+    string head = Slice(text, 0, plen);
+    return head == prefix;
+}
+
+pub i64 IndexOfFrom(string haystack, i64 start, string needle) {
+    i64 hlen = Len(haystack);
+    i64 nlen = Len(needle);
+    if nlen == 0 {
+        return start;
+    }
+    if start < 0 {
+        start = 0;
+    }
+    i64 i = start;
+    while !(i + nlen > hlen) {
+        string part = Slice(haystack, i, nlen);
+        if part == needle {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+pub bool ContainsSubstring(string haystack, string needle) {
+    return !(IndexOfFrom(haystack, 0, needle) < 0);
+}
+
+pub string TrimLeft(string text) {
+    i64 n = Len(text);
+    i64 i = 0;
+    while i < n {
+        string c = Slice(text, i, 1);
+        if c != " " {
+            return Slice(text, i, n - i);
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+pub string Trim(string text) {
+    return TrimRight(TrimLeft(text));
+}
+
+pub string TrimRight(string text) {
+    i64 n = Len(text);
+    i64 end = n;
+    while end > 0 {
+        string c = Slice(text, end - 1, 1);
+        if c != " " {
+            return Slice(text, 0, end);
+        }
+        end = end - 1;
+    }
+    return "";
+}

@@ -3,12 +3,12 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use beskid_analysis::paths::same_file;
+use beskid_analysis::paths::{same_file, unit_path_key};
 use beskid_analysis::hir::{
     HirFunctionDefinition, HirItem, HirMethodDefinition, HirProgram,
 };
 use beskid_analysis::projects::assembly::UnitHir;
-use beskid_analysis::resolve::{ItemId, ItemInfo, ItemKind, Resolution};
+use beskid_analysis::resolve::{ItemId, ItemInfo, ItemKind, Resolution, SymbolId};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 
 /// Index of lowerable function/method bodies keyed by [`ItemId`].
@@ -16,25 +16,34 @@ pub struct FunctionDefIndex<'a> {
     functions: HashMap<ItemId, &'a Spanned<HirFunctionDefinition>>,
     methods: HashMap<ItemId, &'a Spanned<HirMethodDefinition>>,
     source_paths: HashMap<ItemId, PathBuf>,
+    by_symbol: HashMap<SymbolId, ItemId>,
 }
 
 impl<'a> FunctionDefIndex<'a> {
     pub fn build(resolution: &Resolution, hir_units: &'a [UnitHir]) -> Self {
         let mut by_path: HashMap<PathBuf, &'a UnitHir> = HashMap::new();
         for unit in hir_units {
-            let key = unit.path.canonicalize().unwrap_or_else(|_| unit.path.clone());
+            let key = unit_path_key(&unit.path);
             by_path.insert(key, unit);
         }
 
         let mut functions = HashMap::new();
         let mut methods = HashMap::new();
         let mut source_paths = HashMap::new();
+        let by_symbol = resolution.by_symbol.clone();
 
         for info in &resolution.items {
-            let Some(unit) = unit_for_item(info, &by_path) else {
+            let unit = unit_for_item(info, &by_path).or_else(|| {
+                hir_units.iter().find(|unit| match info.kind {
+                    ItemKind::Function => find_function_by_span(&unit.hir, info.span).is_some(),
+                    ItemKind::Method => find_method_by_span(&unit.hir, info.span).is_some(),
+                    _ => false,
+                })
+            });
+            let Some(unit) = unit else {
                 continue;
             };
-            source_paths.insert(info.id, unit.path.canonicalize().unwrap_or_else(|_| unit.path.clone()));
+            source_paths.insert(info.id, unit_path_key(&unit.path));
             match info.kind {
                 ItemKind::Function => {
                     if let Some(def) = find_function_by_span(&unit.hir, info.span) {
@@ -54,7 +63,12 @@ impl<'a> FunctionDefIndex<'a> {
             functions,
             methods,
             source_paths,
+            by_symbol,
         }
+    }
+
+    pub fn item_for_symbol(&self, symbol: SymbolId) -> Option<ItemId> {
+        self.by_symbol.get(&symbol).copied()
     }
 
     pub fn functions(&self) -> &HashMap<ItemId, &'a Spanned<HirFunctionDefinition>> {
@@ -75,6 +89,10 @@ impl<'a> FunctionDefIndex<'a> {
 
     pub fn source_path(&self, item: ItemId) -> Option<&PathBuf> {
         self.source_paths.get(&item)
+    }
+
+    pub fn by_symbol(&self) -> &HashMap<SymbolId, ItemId> {
+        &self.by_symbol
     }
 }
 
@@ -116,7 +134,7 @@ fn find_function_in_items_inner<'a>(
     modules: &mut HashSet<usize>,
 ) -> Option<&'a Spanned<HirFunctionDefinition>> {
     for item in items {
-        if item.span == span {
+        if spans_match(item.span, span) {
             if let HirItem::FunctionDefinition(def) = &item.node {
                 return Some(def);
             }
@@ -142,13 +160,17 @@ fn find_method_in_items(
     find_method_in_items_inner(items, span, &mut HashSet::new())
 }
 
+fn spans_match(stored: SpanInfo, target: SpanInfo) -> bool {
+    stored == target || stored.start == target.start
+}
+
 fn find_method_in_items_inner<'a>(
     items: &'a [Spanned<HirItem>],
     span: SpanInfo,
     modules: &mut HashSet<usize>,
 ) -> Option<&'a Spanned<HirMethodDefinition>> {
     for item in items {
-        if item.span == span {
+        if spans_match(item.span, span) {
             if let HirItem::MethodDefinition(def) = &item.node {
                 return Some(def);
             }

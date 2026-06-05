@@ -84,13 +84,27 @@ impl Resolver {
             warnings: std::mem::take(&mut self.warnings),
             builtin_items: std::mem::take(&mut self.builtin_items),
             module_imports: std::mem::take(&mut self.module_imports),
+            symbols: std::mem::take(&mut self.symbols),
+            by_symbol: std::mem::take(&mut self.by_symbol),
         }
     }
 
     pub(crate) fn into_prefetch_parts(
         self,
-    ) -> (Vec<super::items::ItemInfo>, ModuleGraph, HashMap<ItemId, usize>) {
-        (self.items, self.module_graph, self.builtin_items)
+    ) -> (
+        Vec<super::items::ItemInfo>,
+        ModuleGraph,
+        HashMap<ItemId, usize>,
+        super::symbol::SymbolRegistry,
+        HashMap<super::symbol::SymbolId, ItemId>,
+    ) {
+        (
+            self.items,
+            self.module_graph,
+            self.builtin_items,
+            self.symbols,
+            self.by_symbol,
+        )
     }
 
     fn resolve_item(&mut self, item: &Spanned<HirItem>) {
@@ -367,6 +381,15 @@ impl Resolver {
             HirExpressionNode::SpawnExpression(spawn_expr) => {
                 self.resolve_expression(&spawn_expr.node.callee);
             }
+            HirExpressionNode::IndexExpression(index_expr) => {
+                self.resolve_expression(&index_expr.node.target);
+                self.resolve_expression(&index_expr.node.index);
+            }
+            HirExpressionNode::ArrayLiteralExpression(lit) => {
+                for element in &lit.node.elements {
+                    self.resolve_expression(element);
+                }
+            }
             HirExpressionNode::MacroInvocation(_) | HirExpressionNode::MacroMetavariable(_) => {}
         }
     }
@@ -544,20 +567,7 @@ impl Resolver {
     }
 
     fn resolve_enum_path(&mut self, path: &Spanned<HirEnumPath>) {
-        let type_name = path.node.type_name.node.name.clone();
-        if self.is_generic(&type_name) {
-            self.tables
-                .insert_type(path.span, ResolvedType::Generic(type_name));
-            return;
-        }
-        if let Some(item) = self.resolve_item_in_scope(&type_name) {
-            self.tables.insert_type(path.span, ResolvedType::Item(item));
-            return;
-        }
-        self.errors.push(ResolveError::UnknownType {
-            name: type_name,
-            span: path.span,
-        });
+        self.resolve_type_path(&path.node.type_path);
     }
 
     fn insert_generic(&mut self, name: &str) {

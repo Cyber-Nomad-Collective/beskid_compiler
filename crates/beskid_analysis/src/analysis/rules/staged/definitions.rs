@@ -61,7 +61,7 @@ impl SemanticPipelineRule {
                 if self.is_file_scoped_module_declaration(hir, definition) {
                     ("<file-scope>".to_string(), definition.path.span)
                 } else {
-                    (self.path_tail(&definition.path), definition.path.span)
+                    (self.path_dotted(&definition.path), definition.path.span)
                 }
             },
         );
@@ -513,6 +513,15 @@ impl SemanticPipelineRule {
             .last()
             .map(|segment| segment.node.name.node.name.clone())
             .unwrap_or_default()
+    }
+
+    fn path_dotted(&self, path: &Spanned<HirPath>) -> String {
+        path.node
+            .segments
+            .iter()
+            .map(|segment| segment.node.name.node.name.as_str())
+            .collect::<Vec<_>>()
+            .join(".")
     }
 
     fn check_duplicate_definition_names(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {

@@ -8,7 +8,7 @@ use crate::syntax::{Block, Expression, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// `while` loop: condition evaluated before each iteration.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WhileStatement {
     #[ast(child)]
     pub condition: Spanned<Expression>,

@@ -1,5 +1,5 @@
 use crate::hir::{HirExpressionNode, HirPrimitiveType};
-use crate::resolve::{ItemId, ItemKind, ResolvedType, ResolvedValue};
+use crate::resolve::{canonical_item_id, ItemId, ItemKind, ResolvedType, ResolvedValue};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::{TypeId, TypeInfo};
 
@@ -8,9 +8,16 @@ use std::collections::HashMap;
 
 impl<'a> TypeContext<'a> {
     pub(super) fn resolved_value_at(&self, span: SpanInfo) -> Option<ResolvedValue> {
-        self.resolution
+        let value = self
+            .resolution
             .tables
-            .resolved_value_at(span, self.current_source_path.as_ref())
+            .resolved_value_at(span, self.current_source_path.as_ref())?;
+        Some(match value {
+            ResolvedValue::Item(item_id) => {
+                ResolvedValue::Item(canonical_item_id(self.resolution, item_id))
+            }
+            other => other,
+        })
     }
 
     pub(super) fn resolved_type_at(&self, span: SpanInfo) -> Option<ResolvedType> {
@@ -73,7 +80,7 @@ impl<'a> TypeContext<'a> {
 
     pub(super) fn record_call_kind(&mut self, span: SpanInfo, kind: super::context::CallLoweringKind) {
         if let Some(path) = &self.current_source_path {
-            let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+            let key = crate::paths::unit_path_key(path);
             self.scoped_call_kinds
                 .entry(key)
                 .or_default()
@@ -85,7 +92,7 @@ impl<'a> TypeContext<'a> {
 
     pub(super) fn record_expr_type(&mut self, span: SpanInfo, type_id: TypeId) {
         if let Some(path) = &self.current_source_path {
-            let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+            let key = crate::paths::unit_path_key(path);
             self.scoped_expr_types
                 .entry(key)
                 .or_default()
@@ -100,7 +107,7 @@ impl<'a> TypeContext<'a> {
         let Some(path) = self.current_source_path.clone() else {
             return;
         };
-        let key = path.canonicalize().unwrap_or(path);
+        let key = crate::paths::unit_path_key(&path);
         if !self.expr_types.is_empty() {
             self.scoped_expr_types
                 .entry(key.clone())
@@ -130,11 +137,29 @@ impl<'a> TypeContext<'a> {
     }
 
     pub(super) fn item_id_for_span(&self, span: SpanInfo) -> Option<crate::resolve::ItemId> {
-        self.resolution
+        if let Some(path) = &self.current_source_path {
+            if let Some(info) = self.resolution.items.iter().find(|info| {
+                info.span == span
+                    && info
+                        .source_path
+                        .as_ref()
+                        .is_some_and(|source| crate::paths::same_file(source, path))
+            }) {
+                return Some(info.id);
+            }
+        }
+
+        let matches: Vec<_> = self
+            .resolution
             .items
             .iter()
-            .find(|info| info.span == span)
-            .map(|info| info.id)
+            .filter(|info| info.span == span)
+            .collect();
+        match matches.as_slice() {
+            [] => None,
+            [single] => Some(single.id),
+            _ => None,
+        }
     }
 
     pub(super) fn item_id_for_name(&self, name: &str, kind: ItemKind) -> Option<ItemId> {
@@ -148,6 +173,15 @@ impl<'a> TypeContext<'a> {
             [] => None,
             [single] => Some(single.id),
             many => {
+                if let Some(path) = &self.current_source_path {
+                    if let Some(info) = many.iter().rev().find(|info| {
+                        info.source_path
+                            .as_ref()
+                            .is_some_and(|source| crate::paths::same_file(source, path))
+                    }) {
+                        return Some(info.id);
+                    }
+                }
                 // Entry-unit symbols are collected after dependency prefetch; prefer the last match.
                 many.last().map(|info| info.id)
             }
@@ -179,6 +213,7 @@ impl<'a> TypeContext<'a> {
         self.methods_by_receiver
             .get(&(receiver_item, method_name.to_string()))
             .copied()
+            .map(|item| canonical_item_id(self.resolution, item))
     }
 
     pub(super) fn generic_mapping_for_type_id(&self, type_id: TypeId) -> HashMap<String, TypeId> {

@@ -1,0 +1,5 @@
+/// Language macro smoke definitions for compiler-sdk (dogfood `macro.expand`).
+macro identity (expression value)
+{
+    $value;
+}

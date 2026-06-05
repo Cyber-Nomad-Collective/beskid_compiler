@@ -8,7 +8,7 @@ use crate::syntax::{Expression, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Statement that evaluates an expression for side effects (typically terminated with `;`).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ExpressionStatement {
     #[ast(child)]
     pub expression: Spanned<Expression>,

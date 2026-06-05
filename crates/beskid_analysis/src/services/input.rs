@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use beskid_pipeline::PipelineObserver;
 
 use crate::projects::{
-    AssemblyDiscovery, AssemblyOptions, CompilePlan, PROJECT_FILE_NAME, PreparedProjectWorkspace,
-    ProgramAssembly, UnresolvedDependencyPolicy, WorkspaceResolutionSummary, assemble_program,
+    CompilePlan, PROJECT_FILE_NAME, PreparedProjectWorkspace, ProgramAssembly,
+    UnresolvedDependencyPolicy, WorkspaceResolutionSummary,
 };
 
 use super::project::{infer_manifest_from_input, resolve_project_with_policy};
@@ -135,26 +135,13 @@ pub fn resolve_input_with_policy(
     let source = fs::read_to_string(&source_path)
         .with_context(|| format!("Failed to read file: {}", source_path.display()))?;
 
-    let mut assembly_options = AssemblyOptions::default();
-    assembly_options.discovery = AssemblyDiscovery::ImportClosure;
-    let assembly = if let Some(plan) = compile_plan.as_ref() {
-        Some(assemble_program(
-            plan,
-            prepared_workspace.as_ref(),
-            &source_path,
-            Some(&source),
-            &assembly_options,
-        )?)
-    } else {
-        None
-    };
-
+    // Assembly is populated once by `beskid_queries::prepare_compilation_with_db` (Salsa path).
     Ok(ResolvedInput {
         source_path,
         source,
         compile_plan,
         prepared_workspace,
         workspace_summary,
-        assembly,
+        assembly: None,
     })
 }

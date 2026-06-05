@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use beskid_analysis::hir::{
     HirBlock, HirCallExpression, HirExpressionNode, HirStatementNode,
 };
-use beskid_analysis::resolve::{ItemId, Resolution};
+use beskid_analysis::resolve::{ItemId, ItemKind, ResolvedValue, Resolution, canonical_item_id};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{CallLoweringKind, TypeId, TypeInfo, TypeResult};
 
@@ -167,29 +167,186 @@ fn resolve_call(
     type_result: &TypeResult,
     source_path: Option<&PathBuf>,
 ) -> Option<ResolvedCall> {
-    let kind = type_result.call_kind_at(call.span, source_path)?;
+    let kind = if let Some(kind) = type_result
+        .call_kind_at(call.span, source_path)
+        .map(|kind| crate::lowering::locals::canonicalize_call_kind(resolution, kind))
+    {
+        kind
+    } else {
+        let callee_span = match &call.node.callee.node {
+            HirExpressionNode::PathExpression(path) => path.node.path.span,
+            _ => call.node.callee.span,
+        };
+        let item_id = if let Some(ResolvedValue::Item(item_id)) =
+            resolution.tables.resolved_value_at(callee_span, source_path)
+        {
+            item_id
+        } else {
+            item_id_for_call_path(resolution, call, source_path)?
+        };
+        CallLoweringKind::ItemCall { item_id }
+    };
     match kind {
         CallLoweringKind::ItemCall { item_id } => {
+            let item_id = canonical_item_id(resolution, item_id);
             let generic_args = generic_type_args_for_call(call, resolution, type_result);
             let mangled = build_function_mangled(item_id, &generic_args, resolution);
-            Some(ResolvedCall { item_id, mangled })
+            Some(ResolvedCall {
+                item_id,
+                symbol: symbol_for_call(resolution, item_id),
+                mangled,
+            })
         }
         CallLoweringKind::MethodDispatch {
             method_item_id,
             receiver_type,
             ..
         } => {
+            let method_item_id = canonical_item_id(resolution, method_item_id);
             let mangled =
                 method_mangled_from_receiver(method_item_id, receiver_type, resolution, type_result);
             Some(ResolvedCall {
                 item_id: method_item_id,
+                symbol: symbol_for_call(resolution, method_item_id),
                 mangled,
             })
         }
-        CallLoweringKind::ContractDispatch { .. }
-        | CallLoweringKind::EventInvoke { .. }
-        | CallLoweringKind::CallableValueCall => None,
+        CallLoweringKind::ContractDispatch {
+            contract_item_id,
+            receiver_type,
+            ..
+        } => resolve_contract_dispatch_call(
+            call,
+            contract_item_id,
+            receiver_type,
+            resolution,
+            type_result,
+        ),
+        CallLoweringKind::EventInvoke { .. } | CallLoweringKind::CallableValueCall => None,
     }
+}
+
+fn symbol_for_call(resolution: &Resolution, item_id: ItemId) -> Option<beskid_analysis::resolve::SymbolId> {
+    resolution.items.get(item_id.0).and_then(|info| info.symbol)
+}
+
+fn path_segments_from_call(call: &Spanned<HirCallExpression>) -> Option<Vec<String>> {
+    let HirExpressionNode::PathExpression(path) = &call.node.callee.node else {
+        return None;
+    };
+    Some(
+        path.node
+            .path
+            .node
+            .segments
+            .iter()
+            .map(|segment| segment.node.name.node.name.clone())
+            .collect(),
+    )
+}
+
+fn item_id_for_call_path(
+    resolution: &Resolution,
+    call: &Spanned<HirCallExpression>,
+    source_path: Option<&PathBuf>,
+) -> Option<ItemId> {
+    let segments = path_segments_from_call(call)?;
+    let name = segments.last()?;
+    let module_suffix = if segments.len() > 1 {
+        segments[..segments.len() - 1].join("::")
+    } else {
+        String::new()
+    };
+    let mut matches = Vec::new();
+    for &item_id in resolution.by_symbol.values() {
+        let Some(info) = resolution.items.get(item_id.0) else {
+            continue;
+        };
+        if !matches!(info.kind, ItemKind::Function | ItemKind::Method) {
+            continue;
+        }
+        let display = info.name.rsplit("::").next().unwrap_or(info.name.as_str());
+        if display != name.as_str() {
+            continue;
+        }
+        let Some(qn) = beskid_analysis::resolve::qualified_name(resolution, item_id) else {
+            continue;
+        };
+        if !module_suffix.is_empty()
+            && !qn.contains(&module_suffix)
+            && !info.name.contains(&format!("::{module_suffix}::"))
+        {
+            continue;
+        }
+        matches.push(item_id);
+    }
+    match matches.as_slice() {
+        [] => None,
+        [single] => Some(*single),
+        many => {
+            if let Some(path) = source_path {
+                if let Some(item) = many.iter().find(|item| {
+                    resolution.items.get(item.0).is_some_and(|info| {
+                        info.source_path
+                            .as_ref()
+                            .is_some_and(|source| beskid_analysis::paths::same_file(source, path))
+                    })
+                }) {
+                    return Some(*item);
+                }
+            }
+            many.last().copied()
+        }
+    }
+}
+
+fn contract_method_name(call: &Spanned<HirCallExpression>) -> Option<String> {
+    match &call.node.callee.node {
+        HirExpressionNode::PathExpression(path_expr) => path_expr
+            .node
+            .path
+            .node
+            .segments
+            .last()
+            .map(|segment| segment.node.name.node.name.clone()),
+        HirExpressionNode::MemberExpression(member_expr) => {
+            Some(member_expr.node.member.node.name.clone())
+        }
+        _ => None,
+    }
+}
+
+fn resolve_contract_dispatch_call(
+    call: &Spanned<HirCallExpression>,
+    contract_item_id: ItemId,
+    receiver_type: TypeId,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+) -> Option<ResolvedCall> {
+    let method_name = contract_method_name(call)?;
+    let receiver_item = match type_result.types.get(receiver_type) {
+        Some(TypeInfo::Named(item_id)) => *item_id,
+        Some(TypeInfo::Applied { base, .. }) => *base,
+        _ => contract_item_id,
+    };
+    let receiver_name = resolution.items.get(receiver_item.0)?.name.as_str();
+    let expected = format!("{receiver_name}::{method_name}");
+    let method_item_id = resolution
+        .items
+        .iter()
+        .find(|info| info.kind == ItemKind::Method && info.name == expected)
+        .or_else(|| {
+            resolution.items.iter().find(|info| {
+                info.kind == ItemKind::Method && info.name.ends_with(&format!("::{method_name}"))
+            })
+        })
+        .map(|info| info.id)?;
+    let method_item_id = canonical_item_id(resolution, method_item_id);
+    Some(ResolvedCall {
+        item_id: method_item_id,
+        symbol: symbol_for_call(resolution, method_item_id),
+        mangled: method_mangled_from_receiver(method_item_id, receiver_type, resolution, type_result),
+    })
 }
 
 fn generic_type_args_for_call(

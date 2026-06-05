@@ -4,10 +4,11 @@ use std::path::{Path, PathBuf};
 
 use crate::projects::{
     AssemblyDiscovery, AssemblyOptions, CompilePlan, PreparedProjectWorkspace, ProgramAssembly,
-    ProjectGraphBuildOptions, ProjectKind, UnresolvedDependencyPolicy, WorkspacePrepareOptions,
-    assemble_program, build_compile_plan_with_policy_and_graph, discover_workspace_file,
-    effective_roots_for_plan, load_manifest_from_path, module_roots_from_effective,
-    prepare_project_workspace_with_options, resolve_project_manifest_for_source_path,
+    PROJECT_LOCK_FILE_NAME, ProjectGraphBuildOptions, ProjectKind, UnresolvedDependencyPolicy,
+    WorkspacePrepareOptions, assemble_program, build_compile_plan_with_policy_and_graph,
+    discover_workspace_file, effective_roots_for_plan, load_manifest_from_path,
+    module_roots_from_effective, prepare_project_workspace_with_options,
+    resolve_project_manifest_for_source_path,
 };
 
 /// Workspace-aware compilation slice: selected `Project.proj`, optional [`CompilePlan`] for
@@ -95,22 +96,34 @@ impl CompilationContext {
             return self.assembly.as_ref();
         }
         let plan = self.compile_plan.as_ref()?;
+
+        // Std shard modules (e.g. System/Output) resolve from materialized dependency roots.
+        // IDE context starts without a prepared workspace; materialize lazily on first assembly.
         if self.prepared_workspace.is_none() {
-            self.prepared_workspace = prepare_project_workspace_with_options(
-                plan,
-                WorkspacePrepareOptions {
-                    frozen: false,
-                    locked: true,
-                },
-            )
-            .ok();
-            if let Some(workspace) = self.prepared_workspace.as_ref() {
-                self.module_roots =
-                    module_roots_from_effective(&effective_roots_for_plan(plan, Some(workspace)));
+            let lockfile = plan.manifest_path.with_file_name(PROJECT_LOCK_FILE_NAME);
+            let prepare_options = WorkspacePrepareOptions {
+                frozen: false,
+                locked: lockfile.is_file(),
+            };
+            if let Ok(workspace) =
+                prepare_project_workspace_with_options(plan, prepare_options)
+            {
+                self.prepared_workspace = Some(workspace);
+                self.module_roots = module_roots_from_effective(&effective_roots_for_plan(
+                    plan,
+                    self.prepared_workspace.as_ref(),
+                ));
             }
         }
+
         let mut options = AssemblyOptions::default();
         options.discovery = AssemblyDiscovery::ImportClosure;
+        if entry_path
+            .file_name()
+            .is_some_and(|name| name == "Prelude.bd")
+        {
+            options.include_std_prelude = false;
+        }
         self.assembly = assemble_program(
             plan,
             self.prepared_workspace.as_ref(),

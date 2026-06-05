@@ -8,7 +8,7 @@ use crate::resolve::Resolution;
 use super::api_snapshot::{ApiDocItem, ApiLocation};
 
 /// Per-package roots for doc linking: absolute `match_root` for analysis, artifact prefix for packed paths.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ApiDocPackageRoots {
     pub package: String,
     /// Absolute path prefix of compilation units (materialized or plan source root).
@@ -18,7 +18,7 @@ pub struct ApiDocPackageRoots {
 }
 
 /// Package roots for `declaringPackage` assignment and artifact-relative path emission.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ApiDocLinkContext {
     pub publishing_package: String,
     pub packages: Vec<ApiDocPackageRoots>,
@@ -173,6 +173,7 @@ pub fn link_api_doc_library_tree(items: &mut Vec<ApiDocItem>, _resolution: &Reso
         items.push(ApiDocItem {
             id: Some(id),
             qualified_name: qualified_name.clone(),
+            symbol_key: None,
             name,
             kind: KIND_MODULE.to_string(),
             visibility: Some("public".to_string()),
@@ -252,6 +253,8 @@ mod tests {
             warnings: vec![],
             builtin_items: HashMap::new(),
             module_imports: HashMap::new(),
+            symbols: Default::default(),
+            by_symbol: HashMap::new(),
         }
     }
 
@@ -261,6 +264,7 @@ mod tests {
             ApiDocItem {
                 id: Some(1),
                 qualified_name: "App".into(),
+                symbol_key: None,
                 name: "App".into(),
                 kind: KIND_MODULE.into(),
                 visibility: Some("public".into()),
@@ -283,6 +287,7 @@ mod tests {
             ApiDocItem {
                 id: Some(2),
                 qualified_name: "App::Widgets".into(),
+                symbol_key: None,
                 name: "Widgets".into(),
                 kind: KIND_MODULE.into(),
                 visibility: Some("public".into()),
@@ -305,6 +310,7 @@ mod tests {
             ApiDocItem {
                 id: Some(3),
                 qualified_name: "App::Widgets::Button".into(),
+                symbol_key: None,
                 name: "Button".into(),
                 kind: "type".into(),
                 visibility: Some("public".into()),

@@ -1,7 +1,7 @@
 use beskid_ast_derive::AstNode;
 
 /// Unqualified identifier as parsed from source (name text only).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Identifier {
     pub name: String,
 }

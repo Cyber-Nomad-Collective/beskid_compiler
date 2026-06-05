@@ -28,7 +28,8 @@ pub use expression::{
     ExpressionNode, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBinaryOp,
     HirBlockExpression, HirCallExpression, HirEnumConstructorExpression, HirGroupedExpression,
     HirLambdaExpression, HirLambdaParameter, HirLiteralExpression, HirMatchExpression,
-    HirMemberExpression, HirPathExpression, HirSpawnExpression, HirStructLiteralExpression,
+    HirMemberExpression, HirPathExpression, HirArrayLiteralExpression, HirIndexExpression,
+    HirSpawnExpression, HirStructLiteralExpression,
     HirTryExpression, HirUnaryExpression, HirUnaryOp,
 };
 pub use item::{

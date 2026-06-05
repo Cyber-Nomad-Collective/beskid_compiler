@@ -190,6 +190,9 @@ pub fn analyze_source_in_project_with_options(
 }
 
 pub fn compile_plan_for_input_path(path: &Path) -> Option<CompilePlan> {
+    if !path.is_file() {
+        return None;
+    }
     CompilationContext::try_for_analysis_path(path, None).and_then(|c| c.compile_plan)
 }
 
@@ -197,6 +200,9 @@ pub fn compile_plan_for_input_path_with_member(
     path: &Path,
     workspace_member: Option<&str>,
 ) -> Option<CompilePlan> {
+    if !path.is_file() {
+        return None;
+    }
     CompilationContext::try_for_analysis_path(path, workspace_member).and_then(|c| c.compile_plan)
 }
 

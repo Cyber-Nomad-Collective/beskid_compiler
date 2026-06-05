@@ -8,7 +8,7 @@ use crate::syntax::{SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// `continue` to the next iteration of the nearest enclosing loop.
-#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContinueStatement;
 
 impl Parsable for ContinueStatement {

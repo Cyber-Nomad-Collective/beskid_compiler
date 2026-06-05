@@ -8,7 +8,7 @@ use crate::syntax::{Expression, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// `return` with an optional value expression.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ReturnStatement {
     #[ast(child)]
     pub value: Option<Spanned<Expression>>,

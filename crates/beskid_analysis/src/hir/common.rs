@@ -34,7 +34,7 @@ pub struct HirPath {
 #[ast(kind = "EnumPath")]
 pub struct HirEnumPath {
     #[ast(child)]
-    pub type_name: Spanned<HirIdentifier>,
+    pub type_path: Spanned<HirPath>,
     #[ast(child)]
     pub variant: Spanned<HirIdentifier>,
 }

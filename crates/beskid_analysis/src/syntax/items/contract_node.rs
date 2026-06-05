@@ -8,7 +8,7 @@ use crate::syntax::{ContractEmbedding, ContractMethodSignature, SpanInfo, Spanne
 use beskid_ast_derive::AstNode;
 
 /// Member of a contract: method signature or embedding.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ContractNode {
     #[ast(child)]
     MethodSignature(Spanned<ContractMethodSignature>),

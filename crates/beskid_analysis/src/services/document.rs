@@ -11,7 +11,10 @@ use crate::projects::assembly::{AssemblyError, ProgramAssembly};
 use crate::projects::{
     AssemblyDiscovery, AssemblyOptions, CompilePlan, PreparedProjectWorkspace, assemble_program,
 };
-use crate::resolve::{ItemKind, Resolution, ResolvedValue, Resolver};
+use crate::resolve::{
+    canonical_item_id, symbol_for_item, ItemId, ItemKind, LocalId, Resolution, ResolvedValue,
+    Resolver, SymbolId,
+};
 use crate::syntax::{Expression, Literal, Node, Program, Spanned, TestDefinition};
 
 #[derive(Debug, Clone)]
@@ -186,6 +189,49 @@ fn resolved_value_at_offset(resolution: &Resolution, offset: usize) -> Option<&R
         .filter(|(span, _)| span.start <= offset && offset <= span.end)
         .min_by_key(|(span, _)| span.end.saturating_sub(span.start))
         .map(|(_, resolved)| resolved)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReferenceTarget {
+    Local(LocalId),
+    Symbol(SymbolId),
+    Item(ItemId),
+}
+
+fn reference_target(resolution: &Resolution, resolved: &ResolvedValue) -> ReferenceTarget {
+    match resolved {
+        ResolvedValue::Local(local_id) => ReferenceTarget::Local(*local_id),
+        ResolvedValue::Item(item_id) => {
+            if let Some(symbol) = symbol_for_item(resolution, *item_id) {
+                ReferenceTarget::Symbol(symbol)
+            } else {
+                ReferenceTarget::Item(*item_id)
+            }
+        }
+    }
+}
+
+fn reference_targets_match(
+    entry_resolution: &Resolution,
+    target: ReferenceTarget,
+    unit_resolution: &Resolution,
+    candidate: &ResolvedValue,
+) -> bool {
+    match (target, candidate) {
+        (ReferenceTarget::Local(target_local), ResolvedValue::Local(candidate_local)) => {
+            target_local == *candidate_local
+        }
+        (ReferenceTarget::Symbol(target_symbol), ResolvedValue::Item(candidate_item)) => {
+            symbol_for_item(unit_resolution, *candidate_item) == Some(target_symbol)
+        }
+        (ReferenceTarget::Item(target_item), ResolvedValue::Item(candidate_item)) => {
+            target_item == *candidate_item
+        }
+        (ReferenceTarget::Symbol(target_symbol), _) => {
+            reference_target(entry_resolution, candidate) == ReferenceTarget::Symbol(target_symbol)
+        }
+        _ => false,
+    }
 }
 
 fn analysis_symbol_kind_from_item_kind(kind: ItemKind) -> Option<AnalysisSymbolKind> {
@@ -684,6 +730,7 @@ pub fn definition_at_offset(
     let resolved = resolved_value_at_offset(resolution, offset)?;
     match resolved {
         ResolvedValue::Item(item_id) => {
+            let item_id = canonical_item_id(resolution, *item_id);
             let item = resolution.items.get(item_id.0)?;
             Some(DefinitionInfo {
                 location: symbol_location_for_item(item, &snapshot.source_path),
@@ -711,16 +758,17 @@ pub fn references_at_offset(
         return Vec::new();
     };
 
-    let Some(target) = resolved_value_at_offset(resolution, offset).copied() else {
+    let Some(target_resolved) = resolved_value_at_offset(resolution, offset).copied() else {
         return Vec::new();
     };
+    let target = reference_target(resolution, &target_resolved);
 
     let mut references: Vec<ReferenceInfo> = resolution
         .tables
         .resolved_values
         .iter()
         .filter_map(|(span, resolved)| {
-            if *resolved == target {
+            if reference_targets_match(resolution, target, resolution, resolved) {
                 Some(ReferenceInfo {
                     location: symbol_location_for_span(
                         &snapshot.source_path,
@@ -735,8 +783,9 @@ pub fn references_at_offset(
         .collect();
 
     if include_declaration {
-        match target {
+        match target_resolved {
             ResolvedValue::Item(item_id) => {
+                let item_id = canonical_item_id(resolution, item_id);
                 if let Some(item) = resolution.items.get(item_id.0) {
                     references.push(ReferenceInfo {
                         location: symbol_location_for_item(item, &snapshot.source_path),
@@ -781,10 +830,10 @@ pub fn references_at_offset_workspace(
         Some(r) => r,
         None => return references,
     };
-    let target = match resolved_value_at_offset(resolution, offset) {
-        Some(t) => *t,
-        None => return references,
+    let Some(target_resolved) = resolved_value_at_offset(resolution, offset).copied() else {
+        return references;
     };
+    let target = reference_target(resolution, &target_resolved);
 
     for (index, unit) in assembly.units.iter().enumerate() {
         if index == assembly.entry_index {
@@ -800,7 +849,7 @@ pub fn references_at_offset_workspace(
             continue;
         };
         for (span, resolved) in &unit_resolution.tables.resolved_values {
-            if *resolved != target {
+            if !reference_targets_match(resolution, target, &unit_resolution, resolved) {
                 continue;
             }
             references.push(ReferenceInfo {
@@ -810,7 +859,8 @@ pub fn references_at_offset_workspace(
     }
 
     if include_declaration
-        && let ResolvedValue::Item(item_id) = target
+        && let ResolvedValue::Item(item_id) = target_resolved
+        && let item_id = canonical_item_id(resolution, item_id)
         && let Some(item) = resolution.items.get(item_id.0)
         && item
             .source_path
@@ -1043,4 +1093,107 @@ pub fn completion_candidates(
     candidates.sort_by(|left, right| left.label.cmp(&right.label));
     candidates.dedup_by(|left, right| left.label == right.label && left.kind == right.kind);
     candidates
+}
+
+#[cfg(test)]
+mod reference_target_tests {
+    use std::collections::HashMap;
+
+    use crate::hir::HirVisibility;
+    use crate::resolve::{
+        ExportKind, ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables,
+        ResolvedValue, SymbolId, SymbolQualifier, SymbolRegistry, SymbolShape,
+    };
+    use crate::syntax::SpanInfo;
+
+    use super::{reference_target, reference_targets_match, ReferenceTarget};
+
+    fn span(start: usize, end: usize) -> SpanInfo {
+        SpanInfo::from_byte_range_in_source("", start, end)
+    }
+
+    fn item_with_symbol(id: usize, symbol: SymbolId) -> ItemInfo {
+        ItemInfo {
+            id: ItemId(id),
+            parent_id: None,
+            name: "SharedFn".into(),
+            kind: ItemKind::Function,
+            visibility: HirVisibility::Public,
+            span: span(0, 8),
+            source_path: None,
+            symbol: Some(symbol),
+        }
+    }
+
+    #[test]
+    fn reference_targets_match_same_symbol_different_item_ids() {
+        let mut registry = SymbolRegistry::default();
+        let symbol = registry.intern(SymbolQualifier {
+            package: "demo".into(),
+            shape: SymbolShape::ModuleItem {
+                module_path: vec!["Root".into()],
+                name: "SharedFn".into(),
+                kind: ExportKind::Function,
+            },
+        });
+
+        let entry_item_id = ItemId(0);
+        let unit_item_id = ItemId(1);
+        let entry_resolution = Resolution {
+            items: vec![item_with_symbol(0, symbol)],
+            module_graph: ModuleGraph::new_root(),
+            tables: ResolutionTables::new(),
+            warnings: vec![],
+            builtin_items: HashMap::new(),
+            module_imports: HashMap::new(),
+            symbols: registry.clone(),
+            by_symbol: HashMap::from([(symbol, entry_item_id)]),
+        };
+        let unit_resolution = Resolution {
+            items: vec![
+                ItemInfo {
+                    id: ItemId(0),
+                    parent_id: None,
+                    name: "Other".into(),
+                    kind: ItemKind::Function,
+                    visibility: HirVisibility::Public,
+                    span: span(0, 4),
+                    source_path: None,
+                    symbol: None,
+                },
+                item_with_symbol(1, symbol),
+            ],
+            module_graph: ModuleGraph::new_root(),
+            tables: ResolutionTables::new(),
+            warnings: vec![],
+            builtin_items: HashMap::new(),
+            module_imports: HashMap::new(),
+            symbols: registry,
+            by_symbol: HashMap::from([(symbol, unit_item_id)]),
+        };
+
+        let target = reference_target(
+            &entry_resolution,
+            &ResolvedValue::Item(entry_item_id),
+        );
+        assert_eq!(target, ReferenceTarget::Symbol(symbol));
+
+        assert!(
+            reference_targets_match(
+                &entry_resolution,
+                target,
+                &unit_resolution,
+                &ResolvedValue::Item(unit_item_id),
+            ),
+            "same SymbolId must match across units even when ItemId differs"
+        );
+        assert!(
+            !reference_targets_match(
+                &entry_resolution,
+                target,
+                &unit_resolution,
+                &ResolvedValue::Item(ItemId(99)),
+            )
+        );
+    }
 }

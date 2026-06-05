@@ -12,6 +12,7 @@ beskid_pckg = { path = "../beskid_pckg", optional = true }
 beskid_aot = { path = "../beskid_aot" }
 beskid_abi = { path = "../beskid_abi" }
 beskid_analysis = { path = "../beskid_analysis" }
+beskid_queries = { path = "../beskid_queries" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_engine = { path = "../beskid_engine" }
 beskid_lsp = { path = "../beskid_lsp" }

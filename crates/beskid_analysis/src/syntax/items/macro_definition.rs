@@ -10,7 +10,7 @@ use crate::syntax::{Identifier, SpanInfo, Spanned, Visibility};
 use beskid_ast_derive::AstNode;
 
 /// Fragment kind for a macro parameter (`block`, `expression`, …).
-#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MacroFragmentKind {
     Block,
     Expression,
@@ -43,7 +43,7 @@ impl MacroFragmentKind {
 }
 
 /// One formal parameter in a `macro` definition.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MacroParameter {
     #[ast(child)]
     pub kind: Spanned<MacroFragmentKind>,
@@ -52,7 +52,7 @@ pub struct MacroParameter {
 }
 
 /// `macro name (kind param, ...) { body }` module item.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MacroDefinition {
     #[ast(child)]
     pub visibility: Spanned<Visibility>,

@@ -3,7 +3,7 @@ use crate::syntax::{Path, PrimitiveType, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Beskid type expression: primitives, paths, arrays, references, and function types.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Type {
     #[ast(child)]
     Primitive(Spanned<PrimitiveType>),

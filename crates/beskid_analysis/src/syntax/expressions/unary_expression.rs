@@ -9,7 +9,7 @@ use crate::syntax::{Expression, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Unary prefix operator applied to an operand.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct UnaryExpression {
     #[ast(child)]
     pub op: Spanned<UnaryOp>,
@@ -18,7 +18,7 @@ pub struct UnaryExpression {
 }
 
 /// Supported unary operators (`-`, `!`).
-#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum UnaryOp {
     Neg,
     Not,

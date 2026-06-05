@@ -37,6 +37,7 @@ pub fn reset() {
 /// Emit current Salsa counters to a pipeline observer.
 pub fn emit_salsa_stats<O: PipelineObserver + ?Sized>(obs: Option<&O>) {
     let (hits, misses, bumps) = snapshot();
+    let disk = beskid_analysis::projects::assembly::disk_cache_stats();
     emit_work_unit(
         obs,
         phases::SALSA_QUERY_HIT,
@@ -57,5 +58,19 @@ pub fn emit_salsa_stats<O: PipelineObserver + ?Sized>(obs: Option<&O>) {
         bumps,
         bumps.max(1),
         "Salsa revision bumps",
+    );
+    emit_work_unit(
+        obs,
+        phases::SALSA_ARTIFACT_DISK_HIT,
+        disk.hits as u64,
+        (disk.hits + disk.misses).max(1) as u64,
+        "Salsa artifact disk hits",
+    );
+    emit_work_unit(
+        obs,
+        phases::SALSA_ARTIFACT_DISK_MISS,
+        disk.misses as u64,
+        (disk.hits + disk.misses).max(1) as u64,
+        "Salsa artifact disk misses",
     );
 }

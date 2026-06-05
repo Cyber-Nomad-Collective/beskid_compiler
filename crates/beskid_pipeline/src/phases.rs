@@ -58,6 +58,10 @@ pub const SALSA_QUERY_HIT: &str = "salsa.query_hit";
 pub const SALSA_QUERY_MISS: &str = "salsa.query_miss";
 /// Salsa input revision bump.
 pub const SALSA_REVISION_BUMP: &str = "salsa.revision_bump";
+/// On-disk unit artifact cache hit (`obj/beskid/cache/salsa/units/`).
+pub const SALSA_ARTIFACT_DISK_HIT: &str = "salsa.artifact_disk_hit";
+/// On-disk unit artifact cache miss (cold parse/HIR path).
+pub const SALSA_ARTIFACT_DISK_MISS: &str = "salsa.artifact_disk_miss";
 
 /// Suggested coarse order for a full CLI `beskid build` (for documentation and tests).
 ///

@@ -1,9 +1,10 @@
 use crate::hir::{
-    HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBlockExpression, HirCallExpression,
-    HirEnumConstructorExpression, HirEnumPattern, HirExpressionNode, HirGroupedExpression,
-    HirLambdaExpression, HirLambdaParameter, HirLiteral, HirLiteralExpression, HirMatchArm,
-    HirMatchExpression, HirMemberExpression, HirPathExpression, HirPattern, HirSpawnExpression,
-    HirStructLiteralExpression, HirStructLiteralField, HirTryExpression, HirUnaryExpression,
+    HirArrayLiteralExpression, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBlockExpression,
+    HirCallExpression, HirEnumConstructorExpression, HirEnumPattern, HirExpressionNode,
+    HirGroupedExpression, HirIndexExpression, HirLambdaExpression, HirLambdaParameter, HirLiteral,
+    HirLiteralExpression, HirMatchArm, HirMatchExpression, HirMemberExpression, HirPathExpression,
+    HirPattern, HirSpawnExpression, HirStructLiteralExpression, HirStructLiteralField,
+    HirTryExpression, HirUnaryExpression,
 };
 use crate::syntax::{self, Spanned};
 
@@ -63,6 +64,19 @@ impl Lowerable for Spanned<syntax::Expression> {
             syntax::Expression::MacroMetavariable(m) => {
                 HirExpressionNode::MacroMetavariable(m.clone())
             }
+            syntax::Expression::Index(node) => {
+                let hir = HirIndexExpression {
+                    target: Box::new(node.node.target.lower()),
+                    index: Box::new(node.node.index.lower()),
+                };
+                HirExpressionNode::IndexExpression(Spanned::new(hir, node.span))
+            }
+            syntax::Expression::ArrayLiteral(node) => {
+                let hir = HirArrayLiteralExpression {
+                    elements: node.node.elements.iter().map(Lowerable::lower).collect(),
+                };
+                HirExpressionNode::ArrayLiteralExpression(Spanned::new(hir, node.span))
+            }
         };
         Spanned::new(node, self.span)
     }
@@ -75,6 +89,33 @@ impl Lowerable for Spanned<syntax::SpawnExpression> {
         Spanned::new(
             HirSpawnExpression {
                 callee: Box::new(self.node.callee.lower()),
+            },
+            self.span,
+        )
+    }
+}
+
+impl Lowerable for Spanned<syntax::IndexExpression> {
+    type Output = Spanned<HirIndexExpression>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirIndexExpression {
+                target: Box::new(self.node.target.lower()),
+                index: Box::new(self.node.index.lower()),
+            },
+            self.span,
+        )
+    }
+}
+
+impl Lowerable for Spanned<syntax::ArrayLiteralExpression> {
+    type Output = Spanned<HirArrayLiteralExpression>;
+
+    fn lower(&self) -> Self::Output {
+        Spanned::new(
+            HirArrayLiteralExpression {
+                elements: self.node.elements.iter().map(Lowerable::lower).collect(),
             },
             self.span,
         )

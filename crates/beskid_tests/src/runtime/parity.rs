@@ -390,7 +390,7 @@ fn parity_try_expression_err_path_compiles_for_both_backends() {
         enum Result { Ok(i64 value), Error(string error) }
         i64 main() {
             Result failed = Result::Error(\"boom\");
-            i32 value = failed?;
+            i64 value = failed?;
             return value;
         }
     ";

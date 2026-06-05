@@ -13,6 +13,7 @@
 //! compile plans), and re-exports for queries, diagnostics, and formatting.
 
 pub mod analysis;
+pub mod artifacts;
 pub mod builtins;
 pub mod composition;
 pub mod compilation_context;

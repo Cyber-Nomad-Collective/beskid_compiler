@@ -11,12 +11,12 @@ pub mod types;
 
 pub use common::{HasSpan, Identifier, SpanInfo, Spanned, Visibility};
 pub use expressions::{
-    AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression, CallExpression,
-    EnumConstructorExpression, EnumPattern, Expression, GroupedExpression, LambdaExpression,
-    MacroInvocation, MacroMetavariable,
-    LambdaParameter, Literal, LiteralExpression, MatchArm, MatchExpression, MemberExpression,
-    PathExpression, Pattern, SpawnExpression, StructLiteralExpression, StructLiteralField,
-    TryExpression, UnaryExpression, UnaryOp,
+    ArrayLiteralExpression, AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression,
+    CallExpression, EnumConstructorExpression, EnumPattern, Expression, GroupedExpression,
+    IndexExpression, LambdaExpression, MacroInvocation, MacroMetavariable, LambdaParameter, Literal,
+    LiteralExpression, MatchArm, MatchExpression, MemberExpression, PathExpression, Pattern,
+    SpawnExpression, StructLiteralExpression, StructLiteralField, TryExpression, UnaryExpression,
+    UnaryOp,
 };
 pub use items::{
     Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,

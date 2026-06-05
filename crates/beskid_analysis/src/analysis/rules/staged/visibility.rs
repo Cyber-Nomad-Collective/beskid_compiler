@@ -370,16 +370,9 @@ impl SemanticPipelineRule {
                 used.insert(member_expression.node.member.node.name.clone());
             }
             HirExpressionNode::EnumConstructorExpression(constructor_expression) => {
-                used.insert(
-                    constructor_expression
-                        .node
-                        .path
-                        .node
-                        .type_name
-                        .node
-                        .name
-                        .clone(),
-                );
+                for segment in &constructor_expression.node.path.node.type_path.node.segments {
+                    used.insert(segment.node.name.node.name.clone());
+                }
                 used.insert(
                     constructor_expression
                         .node

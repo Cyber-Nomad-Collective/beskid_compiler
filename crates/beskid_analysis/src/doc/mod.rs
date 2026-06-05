@@ -21,7 +21,7 @@ pub use api_snapshot::{
     API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
     API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, API_JSON_SCHEMA_VERSION_GRAPH_V3, ApiDocItem,
     ApiDocRoot, ApiDocumentationPointer, ApiGenericParameterDoc, ApiItemSignature, ApiLocation,
-    ApiParameterDoc, ApiTypeAnnotation, ItemDocArgument, ItemDocStructured,
+    ApiParameterDoc, ApiSymbolKey, ApiTypeAnnotation, ItemDocArgument, ItemDocStructured,
 };
 pub use api_tier::{
     TIER_STANDARD, TIER_SUPPORTED, TIER_UNSTABLE, parse_tier_directive, resolve_item_tiers,
@@ -49,7 +49,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// Raw `///` block extracted by the main grammar (normalized body text + source span).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LeadingDocComment {
     pub span: SpanInfo,
     pub normalized_source: String,

@@ -6,11 +6,13 @@ use crate::syntax::{SpanInfo, Spanned};
 use pest::iterators::Pair;
 
 use super::assign_expression::AssignExpression;
+use super::array_literal_expression::parse_array_literal_expression;
 use super::binary_expression::{BinaryExpression, parse_binary_expression};
 use super::block_expression::parse_block_expression;
 use super::call_expression::parse_call_expression;
 use super::enum_constructor_expression::parse_enum_constructor_expression;
 use super::grouped_expression::parse_grouped_expression;
+use super::index_expression::parse_index_expression;
 use super::lambda_expression::parse_lambda_expression;
 use super::literal_expression::parse_literal_expression;
 use super::macro_invocation::MacroInvocation;
@@ -26,7 +28,7 @@ use super::unary_expression::{UnaryExpression, parse_prefix_unary_expression};
 use beskid_ast_derive::AstNode;
 
 /// Top-level expression shape after parsing (postfix chains, operators, literals, etc.).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Expression {
     #[ast(child)]
     Match(Spanned<super::match_expression::MatchExpression>),
@@ -62,6 +64,10 @@ pub enum Expression {
     MacroInvocation(Spanned<MacroInvocation>),
     #[ast(child)]
     MacroMetavariable(Spanned<MacroMetavariable>),
+    #[ast(child)]
+    Index(Spanned<super::index_expression::IndexExpression>),
+    #[ast(child)]
+    ArrayLiteral(Spanned<super::array_literal_expression::ArrayLiteralExpression>),
 }
 
 impl Parsable for Expression {
@@ -113,6 +119,7 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
         Rule::BlockExpression => parse_block_expression(pair),
         Rule::EnumConstructorExpression => parse_enum_constructor_expression(pair),
         Rule::StructLiteralExpression => parse_struct_literal_expression(pair),
+        Rule::ArrayLiteralExpression => parse_array_literal_expression(pair),
         Rule::Literal => parse_literal_expression(pair),
         Rule::MacroInvocation => {
             let node = MacroInvocation::parse(pair)?;
@@ -154,6 +161,7 @@ pub(crate) fn parse_postfix_expression(
         expr = match operator.as_rule() {
             Rule::CallOperator => parse_call_expression(expr, operator)?,
             Rule::MemberAccess => parse_member_expression(expr, operator)?,
+            Rule::SubscriptOperator => parse_index_expression(expr, operator)?,
             Rule::TryOperator => {
                 let expr_span = expr.span;
                 let try_node = TryExpression {

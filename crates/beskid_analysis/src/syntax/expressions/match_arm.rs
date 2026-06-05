@@ -8,7 +8,7 @@ use crate::syntax::{Expression, Pattern, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// One `pattern [if guard] => expr` arm in a [`MatchExpression`](super::MatchExpression).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MatchArm {
     #[ast(child)]
     pub pattern: Spanned<Pattern>,

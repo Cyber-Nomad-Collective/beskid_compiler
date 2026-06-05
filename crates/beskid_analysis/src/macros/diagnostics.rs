@@ -245,5 +245,14 @@ fn scan_expression_residuals(
             }
         }
         Expression::Literal(_) | Expression::Path(_) => {}
+        Expression::Index(i) => {
+            scan_expression_residuals(source_name, source, i.node.target.as_ref(), out);
+            scan_expression_residuals(source_name, source, i.node.index.as_ref(), out);
+        }
+        Expression::ArrayLiteral(a) => {
+            for elem in &a.node.elements {
+                scan_expression_residuals(source_name, source, elem, out);
+            }
+        }
     }
 }

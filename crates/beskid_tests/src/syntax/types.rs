@@ -77,7 +77,10 @@ fn parses_ref_of_complex_type_ast() {
 fn parses_enum_path_ast() {
     let pair = parse_pair(Rule::EnumPath, "Option::Some");
     let enum_path = EnumPath::parse(pair).expect("expected enum path");
-    assert_eq!(enum_path.node.type_name.node.name, "Option");
+    assert_eq!(
+        enum_path.node.type_path.node.segments[0].node.name.node.name,
+        "Option"
+    );
     assert_eq!(enum_path.node.variant.node.name, "Some");
 }
 

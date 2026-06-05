@@ -154,7 +154,7 @@ impl Lowerable for Spanned<syntax::EnumPath> {
     fn lower(&self) -> Self::Output {
         Spanned::new(
             HirEnumPath {
-                type_name: self.node.type_name.lower(),
+                type_path: self.node.type_path.lower(),
                 variant: self.node.variant.lower(),
             },
             self.span,

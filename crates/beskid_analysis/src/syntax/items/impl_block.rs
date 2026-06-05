@@ -9,7 +9,7 @@ use crate::syntax::items::parse_helpers::parse_doc_attached_with;
 use crate::syntax::{MethodDefinition, SpanInfo, Spanned, Type};
 
 /// `impl` block for a concrete receiver type and its methods (with per-method leading docs).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ImplBlock {
     pub receiver_type: Spanned<Type>,
     pub methods: Vec<Spanned<MethodDefinition>>,

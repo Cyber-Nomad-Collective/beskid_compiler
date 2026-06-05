@@ -7,7 +7,10 @@
 //! Canonical phase orders: [`phases::FULL_BUILD_PHASE_ORDER`] (host build),
 //! [`phases::MOD_BUILD_PHASE_ORDER`] (mod artifact rebuild), [`phases::JIT_RUN_PHASE_ORDER`] (run/test).
 
+pub mod grammar;
 pub mod phases;
+
+pub use grammar::GRAMMAR_REVISION;
 
 use std::borrow::Cow;
 use std::sync::Arc;

@@ -1,10 +1,10 @@
 //! Phase-parameterized AST vs HIR: [`Phase`] maps each syntactic slot to either syntax or HIR types.
 
 use crate::syntax::{
-    AssignExpression, AttributeDeclaration, BinaryExpression, BlockExpression, BreakStatement,
-    CallExpression, ContinueStatement, ContractDefinition, EnumConstructorExpression,
+    ArrayLiteralExpression, AssignExpression, AttributeDeclaration, BinaryExpression, BlockExpression,
+    BreakStatement, CallExpression, ContinueStatement, ContractDefinition, EnumConstructorExpression,
     EnumDefinition, ExpressionStatement, ExtendTypeDefinition, ForStatement, FunctionDefinition,
-    GroupedExpression, HostDefinition, IfStatement, InlineModule, LambdaExpression,
+    GroupedExpression, HostDefinition, IfStatement, IndexExpression, InlineModule, LambdaExpression,
     LaunchStatement, LetStatement, LiteralExpression, MacroDefinition, MacroInvocation,
     MacroMetavariable, MatchExpression, MemberExpression, MethodDefinition, ModuleDeclaration,
     PathExpression, ReturnStatement, SpawnExpression, StructLiteralExpression, TestDefinition,
@@ -12,11 +12,11 @@ use crate::syntax::{
 };
 
 use super::{
-    HirAssignExpression, HirBinaryExpression, HirBlockExpression, HirBreakStatement,
-    HirCallExpression, HirContinueStatement, HirContractDefinition, HirEnumConstructorExpression,
-    HirEnumDefinition, HirExpressionStatement, HirExtendTypeDefinition, HirForStatement,
-    HirFunctionDefinition, HirGroupedExpression, HirIfStatement, HirInlineModule,
-    HirLambdaExpression, HirLetStatement, HirLiteralExpression, HirMatchExpression,
+    HirArrayLiteralExpression, HirAssignExpression, HirBinaryExpression, HirBlockExpression,
+    HirBreakStatement, HirCallExpression, HirContinueStatement, HirContractDefinition,
+    HirEnumConstructorExpression, HirEnumDefinition, HirExpressionStatement, HirExtendTypeDefinition,
+    HirForStatement, HirFunctionDefinition, HirGroupedExpression, HirIfStatement, HirIndexExpression,
+    HirInlineModule, HirLambdaExpression, HirLetStatement, HirLiteralExpression, HirMatchExpression,
     HirMemberExpression, HirMethodDefinition, HirModuleDeclaration, HirPathExpression,
     HirReturnStatement, HirSpawnExpression, HirStructLiteralExpression, HirTestDefinition,
     HirTryExpression, HirTypeDefinition, HirUnaryExpression, HirUseDeclaration, HirWhileStatement,
@@ -59,6 +59,8 @@ pub trait Phase {
     type LiteralExpression;
     type PathExpression;
     type StructLiteralExpression;
+    type IndexExpression;
+    type ArrayLiteralExpression;
     type EnumConstructorExpression;
     type BlockExpression;
     type GroupedExpression;
@@ -112,6 +114,8 @@ impl Phase for AstPhase {
     type LiteralExpression = LiteralExpression;
     type PathExpression = PathExpression;
     type StructLiteralExpression = StructLiteralExpression;
+    type IndexExpression = IndexExpression;
+    type ArrayLiteralExpression = ArrayLiteralExpression;
     type EnumConstructorExpression = EnumConstructorExpression;
     type BlockExpression = BlockExpression;
     type GroupedExpression = GroupedExpression;
@@ -157,6 +161,8 @@ impl Phase for HirPhase {
     type LiteralExpression = HirLiteralExpression;
     type PathExpression = HirPathExpression;
     type StructLiteralExpression = HirStructLiteralExpression;
+    type IndexExpression = HirIndexExpression;
+    type ArrayLiteralExpression = HirArrayLiteralExpression;
     type EnumConstructorExpression = HirEnumConstructorExpression;
     type BlockExpression = HirBlockExpression;
     type GroupedExpression = HirGroupedExpression;

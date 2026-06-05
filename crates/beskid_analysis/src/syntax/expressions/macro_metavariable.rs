@@ -8,7 +8,7 @@ use crate::syntax::{Identifier, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// `$name` reference inside a macro definition body.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MacroMetavariable {
     #[ast(child)]
     pub name: Spanned<Identifier>,

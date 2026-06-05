@@ -34,6 +34,10 @@ pub mod System.Error;
 pub mod Console;
 /// Re-exports slice array length and iteration helpers.
 pub mod Collections.Array;
+/// Re-exports Option type and Query contracts.
+pub mod Query.Contracts;
+/// Re-exports concurrency primitives (Channel, Mutex, WaitGroup, Fiber, Hub).
+pub mod Concurrency;
 
 /// Minimal host base type for native DI launch declarations.
 host ConsoleHost() {

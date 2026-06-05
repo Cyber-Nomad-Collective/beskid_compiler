@@ -13,7 +13,7 @@ use crate::syntax::{Attribute, Block, Identifier, Parameter, SpanInfo, Spanned, 
 use beskid_ast_derive::AstNode;
 
 /// Top-level or nested function: visibility, signature, and body block.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FunctionDefinition {
     #[ast(children)]
     pub attributes: Vec<Spanned<Attribute>>,

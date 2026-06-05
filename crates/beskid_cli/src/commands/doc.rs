@@ -209,9 +209,12 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 .and_then(|names| names.get(&item.id.0).cloned())
                 .unwrap_or_else(|| item.name.clone());
             let display_name = display_name_for_item(item);
+            let symbol_key = beskid_analysis::resolve::qualified_name(res, item.id)
+                .map(beskid_analysis::doc::ApiSymbolKey::new);
             let mut api_item = ApiDocItem {
                 id: Some(item.id.0),
                 qualified_name: qualified_name.clone(),
+                symbol_key,
                 name: item.name.clone(),
                 display_name: Some(display_name),
                 kind: item.kind.as_stable_doc_kind().to_string(),
@@ -267,6 +270,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
             api_items.push(ApiDocItem {
                 id: None,
                 qualified_name: symbol.name.clone(),
+                symbol_key: None,
                 name: symbol.name.clone(),
                 display_name: None,
                 kind: services::symbol_kind_name(symbol.kind).to_string(),

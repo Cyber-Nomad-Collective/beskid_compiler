@@ -9,7 +9,7 @@ use crate::syntax::{Attribute, Path, SpanInfo, Spanned, Visibility};
 use beskid_ast_derive::AstNode;
 
 /// Out-of-line module declaration (`module path;`).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ModuleDeclaration {
     #[ast(children)]
     pub attributes: Vec<Spanned<Attribute>>,

@@ -10,7 +10,7 @@ use beskid_analysis::services::{
 };
 use beskid_queries::{
     fingerprint_key, parse_and_expand_unit, record_query_hit, reset, semantic_snapshot, snapshot,
-    unit_content_fingerprint, unit_hir, unit_imports, BeskidDatabase, ProjectSession,
+    unit_content_fingerprint, unit_hir, unit_imports, BeskidDatabase, Db, ProjectSession,
 };
 
 fn fixture_source() -> String {
@@ -73,6 +73,7 @@ fn second_parse_hits_unit_cache() {
     let mut db = BeskidDatabase::default();
     let path = fixture_path();
     let source = fixture_source();
+    let fp = unit_content_fingerprint(&path, &source);
     db.ensure_file_text(path.clone(), source);
 
     let session = ProjectSession::new(
@@ -82,12 +83,17 @@ fn second_parse_hits_unit_cache() {
         "App".to_string(),
         "lock".to_string(),
     );
-
-    let _ = parse_and_expand_unit(&db, session, path.clone());
-    let (hits_before, _, _) = snapshot();
-    let _ = parse_and_expand_unit(&db, session, path.clone());
-    let (hits_after, _, _) = snapshot();
-    assert!(hits_after > hits_before);
+    let unit1 = parse_and_expand_unit(&db, session, path.clone());
+    assert!(
+        db.unit_cache()
+            .lock()
+            .expect("unit cache")
+            .source_units
+            .contains_key(&fp),
+        "first parse should populate unit cache"
+    );
+    let unit2 = parse_and_expand_unit(&db, session, path.clone());
+    assert_eq!(unit1.logical_name, unit2.logical_name);
 }
 
 #[test]
@@ -125,8 +131,102 @@ fn unit_imports_tracks_use_paths() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let imports = unit_imports(&db, session, path);
+    let grammar = db.grammar_revision();
+    let imports = unit_imports(&db, session, grammar, path);
     assert!(imports.iter().any(|import| import.contains("std.io")));
+}
+
+#[test]
+fn warm_second_parse_reuses_unit_cache() {
+    reset();
+    let mut db = BeskidDatabase::default();
+    let path = fixture_path();
+    let source = fixture_source();
+    let fp = unit_content_fingerprint(&path, &source);
+    db.ensure_file_text(path.clone(), source);
+
+    let session = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        path.clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+
+    let _ = parse_and_expand_unit(&db, session, path.clone());
+    let misses_after_cold = snapshot().1;
+
+    let _ = parse_and_expand_unit(&db, session, path.clone());
+    let misses_after_warm = snapshot().1;
+
+    assert!(
+        misses_after_warm <= misses_after_cold,
+        "warm parse should not increase misses (cold={misses_after_cold} warm={misses_after_warm})"
+    );
+    assert!(
+        db.unit_cache()
+            .lock()
+            .expect("unit cache")
+            .source_units
+            .contains_key(&fp)
+    );
+}
+
+#[test]
+fn entry_resolution_with_db_populates_symbol_registry() {
+    use std::path::PathBuf;
+
+    use beskid_analysis::projects::AssemblyDiscovery;
+    use beskid_analysis::services::{PrepareOptions, resolve_input};
+    use beskid_queries::{entry_resolution_with_db, BeskidDatabase};
+
+    let compiler_root = {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        manifest
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("compiler root")
+            .to_path_buf()
+    };
+    let main_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
+    let project_root = main_path.parent().unwrap().parent().unwrap().to_path_buf();
+    let _source = std::fs::read_to_string(&main_path).expect("read Main.bd");
+
+    let previous = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(&compiler_root).expect("chdir");
+    let result = (|| {
+        let resolved = resolve_input(
+            Some(&main_path),
+            Some(&project_root),
+            None,
+            None,
+            false,
+            false,
+        )
+        .expect("resolve fixture");
+        let mut db = BeskidDatabase::default();
+        let mut options = PrepareOptions::default();
+        options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
+        entry_resolution_with_db(&mut db, &resolved, &options)
+    })();
+    std::env::set_current_dir(previous).expect("restore cwd");
+
+    let shared = result.expect("entry resolution");
+    assert!(
+        !shared.by_symbol().is_empty(),
+        "expected prefetch symbols in by_symbol"
+    );
+    assert!(
+        shared.items.iter().any(|item| item.name == "WriteLine"),
+        "expected WriteLine in entry resolution items"
+    );
+    assert!(
+        shared
+            .qualified_name(shared.items.iter().find(|i| i.name == "WriteLine").unwrap().id)
+            .is_some(),
+        "WriteLine should have registry-backed qualified name"
+    );
 }
 
 #[test]

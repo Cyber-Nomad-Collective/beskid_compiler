@@ -191,6 +191,8 @@ mod dynamic_clif_tests {
             warnings: Vec::new(),
             builtin_items: HashMap::new(),
             module_imports: HashMap::new(),
+            symbols: Default::default(),
+            by_symbol: HashMap::new(),
         };
         let function_defs = HashMap::new();
         let mut sig = Signature::new(CallConv::SystemV);

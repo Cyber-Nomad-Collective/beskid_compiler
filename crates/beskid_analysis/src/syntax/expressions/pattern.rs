@@ -8,7 +8,7 @@ use crate::syntax::{EnumPath, Identifier, Literal, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Match pattern: wildcard, binding, literal, or enum destructure.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Pattern {
     #[ast(skip)]
     Wildcard,
@@ -21,7 +21,7 @@ pub enum Pattern {
 }
 
 /// Enum variant pattern with optional nested sub-patterns.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EnumPattern {
     #[ast(child)]
     pub path: Spanned<EnumPath>,

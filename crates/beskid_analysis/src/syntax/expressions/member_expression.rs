@@ -8,7 +8,7 @@ use crate::syntax::{Expression, Identifier, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Field or member access (`expr.member`).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MemberExpression {
     #[ast(child)]
     pub target: Box<Spanned<Expression>>,

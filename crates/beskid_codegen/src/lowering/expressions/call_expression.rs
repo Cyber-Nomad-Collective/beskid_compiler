@@ -3,7 +3,7 @@ use crate::lowering::cast_intent::ensure_type_compatibility;
 use crate::lowering::function::{
     lower_function_with_name, mangle_function_name, mangle_method_name,
 };
-use crate::lowering::locals::{local_id_for_span, resolved_value_at};
+use crate::lowering::locals::{canonicalize_call_kind, local_id_for_span, resolved_value_at};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -11,7 +11,7 @@ use beskid_analysis::builtins::{BuiltinType, builtin_specs};
 use beskid_analysis::hir::{
     HirCallExpression, HirExpressionNode, HirLambdaExpression, HirPrimitiveType,
 };
-use beskid_analysis::resolve::ResolvedValue;
+use beskid_analysis::resolve::{canonical_item_id, ResolvedValue};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{CallLoweringKind, MethodReceiverSource, TypeId, TypeInfo};
 use cranelift_codegen::ir::condcodes::IntCC;
@@ -1093,6 +1093,7 @@ fn lower_method_dispatch_call(
     receiver_type: TypeId,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<Value>, CodegenError> {
+    let method_item_id = canonical_item_id(ctx.resolution, method_item_id);
     let signature = ctx
         .type_result
         .function_signatures
@@ -1210,7 +1211,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
     ) -> Result<Self::Output, CodegenError> {
         let call_kind = ctx
             .type_result
-            .call_kind_at(node.span, ctx.codegen.current_source_path.as_ref());
+            .call_kind_at(node.span, ctx.codegen.current_source_path.as_ref())
+            .map(|kind| canonicalize_call_kind(ctx.resolution, kind));
         if let Some(CallLoweringKind::MethodDispatch {
             method_item_id,
             receiver_source,
@@ -1353,6 +1355,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                 }
             }
         };
+        let item_id = canonical_item_id(ctx.resolution, item_id);
 
         let mut generic_args: Vec<TypeId> = Vec::new();
         if let Some(last_segment) = path_expr.node.path.node.segments.last() {
@@ -1570,6 +1573,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                         ctx.codegen,
                         Some(mangled.clone()),
                         Some(mapping.clone()),
+                        Some(item_id),
                     )?;
                     ctx.codegen
                         .monomorphized_functions

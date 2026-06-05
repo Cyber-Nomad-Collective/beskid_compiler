@@ -11,7 +11,7 @@ use crate::syntax::{Expression, Literal, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Expression consisting of a single [`Literal`]; string literals may desugar to concatenation.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LiteralExpression {
     #[ast(child)]
     pub literal: Spanned<Literal>,
@@ -248,8 +248,7 @@ fn remap_expression_spans(expression: &mut Spanned<Expression>, offset: usize, s
         Expression::EnumConstructor(constructor) => {
             constructor.span = remap_span(constructor.span, offset, source);
             constructor.node.path.span = remap_span(constructor.node.path.span, offset, source);
-            constructor.node.path.node.type_name.span =
-                remap_span(constructor.node.path.node.type_name.span, offset, source);
+            remap_path_spans(&mut constructor.node.path.node.type_path, offset, source);
             constructor.node.path.node.variant.span =
                 remap_span(constructor.node.path.node.variant.span, offset, source);
             for arg in &mut constructor.node.args {
@@ -271,6 +270,17 @@ fn remap_expression_spans(expression: &mut Spanned<Expression>, offset: usize, s
         Expression::Spawn(spawn) => {
             spawn.span = remap_span(spawn.span, offset, source);
             remap_expression_spans(spawn.node.callee.as_mut(), offset, source);
+        }
+        Expression::Index(index) => {
+            index.span = remap_span(index.span, offset, source);
+            remap_expression_spans(index.node.target.as_mut(), offset, source);
+            remap_expression_spans(index.node.index.as_mut(), offset, source);
+        }
+        Expression::ArrayLiteral(literal) => {
+            literal.span = remap_span(literal.span, offset, source);
+            for element in &mut literal.node.elements {
+                remap_expression_spans(element, offset, source);
+            }
         }
         Expression::MacroInvocation(_) | Expression::MacroMetavariable(_) => {}
     }
@@ -320,8 +330,7 @@ fn remap_pattern_spans(pattern: &mut Spanned<crate::syntax::Pattern>, offset: us
         crate::syntax::Pattern::Enum(enum_pattern) => {
             enum_pattern.span = remap_span(enum_pattern.span, offset, source);
             enum_pattern.node.path.span = remap_span(enum_pattern.node.path.span, offset, source);
-            enum_pattern.node.path.node.type_name.span =
-                remap_span(enum_pattern.node.path.node.type_name.span, offset, source);
+            remap_path_spans(&mut enum_pattern.node.path.node.type_path, offset, source);
             enum_pattern.node.path.node.variant.span =
                 remap_span(enum_pattern.node.path.node.variant.span, offset, source);
             for item in &mut enum_pattern.node.items {

@@ -9,7 +9,7 @@ use crate::syntax::{Identifier, Path, SpanInfo, Spanned, Visibility};
 use beskid_ast_derive::AstNode;
 
 /// `use` import: path with optional alias.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct UseDeclaration {
     #[ast(child)]
     pub visibility: Spanned<Visibility>,

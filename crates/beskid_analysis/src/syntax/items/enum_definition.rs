@@ -12,7 +12,7 @@ use crate::syntax::{EnumVariant, Identifier, SpanInfo, Spanned, Visibility};
 use beskid_ast_derive::AstNode;
 
 /// `enum` definition with variants and optional generic parameters.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EnumDefinition {
     #[ast(child)]
     pub visibility: Spanned<Visibility>,

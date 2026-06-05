@@ -3,7 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::hir::HirProgram;
-use crate::resolve::{ItemId, ItemInfo, ModuleGraph, Resolution, ResolveResult, Resolver};
+use crate::resolve::{
+    ItemId, ItemInfo, ModuleGraph, Resolution, ResolveResult, Resolver, SymbolId, SymbolRegistry,
+};
 use crate::syntax::{Program, Spanned};
 
 use super::SourceUnit;
@@ -17,6 +19,10 @@ pub struct ModuleIndex {
     items: Vec<ItemInfo>,
     module_graph: ModuleGraph,
     builtin_items: HashMap<ItemId, usize>,
+    symbols: SymbolRegistry,
+    by_symbol: HashMap<SymbolId, ItemId>,
+    entry_project_name: String,
+    dependency_packages: HashMap<String, String>,
 }
 
 impl ModuleIndex {
@@ -25,6 +31,10 @@ impl ModuleIndex {
             items: Vec::new(),
             module_graph: ModuleGraph::new_root(),
             builtin_items: HashMap::new(),
+            symbols: SymbolRegistry::default(),
+            by_symbol: HashMap::new(),
+            entry_project_name: String::new(),
+            dependency_packages: HashMap::new(),
         }
     }
 
@@ -51,6 +61,17 @@ impl ModuleIndex {
                 continue;
             };
             let hir = &unit_hir.hir;
+            let dep_packages: HashMap<String, String> = plan
+                .dependency_projects
+                .iter()
+                .map(|dep| (dep.dependency_name.clone(), dep.project_name.clone()))
+                .collect();
+            resolver.set_declaring_package(package_for_unit(
+                unit,
+                roots,
+                &plan.project_name,
+                &dep_packages,
+            ));
             if let Some(module_path) =
                 infer_logical_module_path(unit, roots, plan.has_std_dependency)
             {
@@ -61,11 +82,20 @@ impl ModuleIndex {
             }
         }
 
-        let (items, module_graph, builtin_items) = resolver.into_prefetch_parts();
+        let dependency_packages = plan
+            .dependency_projects
+            .iter()
+            .map(|dep| (dep.dependency_name.clone(), dep.project_name.clone()))
+            .collect();
+        let (items, module_graph, builtin_items, symbols, by_symbol) = resolver.into_prefetch_parts();
         Self {
             items,
             module_graph,
             builtin_items,
+            symbols,
+            by_symbol,
+            entry_project_name: plan.project_name.clone(),
+            dependency_packages,
         }
     }
 
@@ -96,7 +126,10 @@ impl ModuleIndex {
             self.items.clone(),
             self.module_graph.clone(),
             self.builtin_items.clone(),
+            self.symbols.clone(),
+            self.by_symbol.clone(),
         );
+        resolver.set_declaring_package(self.entry_project_name.clone());
         resolver.set_current_source_path(entry_source_path.cloned());
         resolver.collect_program(entry_hir);
         resolver.resolve_collected_program(entry_hir)
@@ -112,6 +145,8 @@ impl ModuleIndex {
             self.items.clone(),
             self.module_graph.clone(),
             self.builtin_items.clone(),
+            self.symbols.clone(),
+            self.by_symbol.clone(),
         );
         resolver.set_current_source_path(Some(unit_source_path.to_path_buf()));
         resolver.resolve_collected_program(unit_hir)
@@ -127,6 +162,8 @@ impl ModuleIndex {
             self.items.clone(),
             self.module_graph.clone(),
             self.builtin_items.clone(),
+            self.symbols.clone(),
+            self.by_symbol.clone(),
         );
         resolver.set_current_source_path(Some(unit_source_path.to_path_buf()));
         resolver.resolve_collected_program_for_api_documentation(unit_hir, None)
@@ -149,7 +186,10 @@ impl ModuleIndex {
             self.items.clone(),
             self.module_graph.clone(),
             self.builtin_items.clone(),
+            self.symbols.clone(),
+            self.by_symbol.clone(),
         );
+        resolver.set_declaring_package(self.entry_project_name.clone());
         resolver.set_current_source_path(Some(entry_source_path.clone()));
         resolver.collect_program(entry_hir);
         let mut resolution = resolver.resolve_collected_program_for_api_documentation(
@@ -173,7 +213,15 @@ impl ModuleIndex {
                 self.items.clone(),
                 self.module_graph.clone(),
                 self.builtin_items.clone(),
+                self.symbols.clone(),
+                self.by_symbol.clone(),
             );
+            unit_resolver.set_declaring_package(package_for_unit(
+                unit,
+                &assembly.roots,
+                &self.entry_project_name,
+                &self.dependency_packages,
+            ));
             unit_resolver.set_current_source_path(Some(unit_hir.path.clone()));
             let unit_resolution = unit_resolver.resolve_collected_program_for_api_documentation(
                 &unit_hir.hir,
@@ -184,6 +232,30 @@ impl ModuleIndex {
 
         Some(resolution)
     }
+}
+
+/// Declaring package name for symbols collected from a compilation unit.
+pub fn package_for_unit(
+    unit: &SourceUnit,
+    roots: &EffectiveCompilationRoots,
+    host_project_name: &str,
+    dependency_packages: &HashMap<String, String>,
+) -> String {
+    let path = &unit.path;
+    if path.starts_with(&roots.host.source_root) {
+        return host_project_name.to_string();
+    }
+    for dep in &roots.dependencies {
+        if path.starts_with(&dep.source_root) {
+            if let Some(dep_name) = &dep.dependency_name {
+                if let Some(project_name) = dependency_packages.get(dep_name) {
+                    return project_name.clone();
+                }
+                return dep_name.clone();
+            }
+        }
+    }
+    host_project_name.to_string()
 }
 
 pub fn infer_logical_module_path(

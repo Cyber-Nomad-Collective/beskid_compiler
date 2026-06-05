@@ -276,6 +276,7 @@ mod tests {
             items: vec![ApiDocItem {
                 id: Some(1),
                 qualified_name: "T".into(),
+                symbol_key: None,
                 name: "T".into(),
                 kind: "type".into(),
                 visibility: None,

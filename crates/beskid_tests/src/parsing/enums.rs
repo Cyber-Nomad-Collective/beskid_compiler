@@ -13,6 +13,14 @@ fn parses_enum_constructor() {
 }
 
 #[test]
+fn parses_qualified_enum_constructor() {
+    assert_parse(
+        Rule::EnumConstructorExpression,
+        "Capabilities.ColorModel::Indexed256()",
+    );
+}
+
+#[test]
 fn rejects_unqualified_enum_constructor() {
     assert_parse_fail(Rule::EnumConstructorExpression, "Circle(1.0)");
 }

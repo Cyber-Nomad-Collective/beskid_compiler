@@ -88,6 +88,8 @@ mod dynamic_mapping_tests {
             module_imports: Default::default(),
             warnings: Vec::new(),
             builtin_items: Default::default(),
+            symbols: Default::default(),
+            by_symbol: Default::default(),
         };
         let type_result = beskid_analysis::types::TypeResult {
             types: Default::default(),

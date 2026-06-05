@@ -28,9 +28,11 @@ impl<'a> TypeContext<'a> {
                         (Some(_), _) | (None, _) => self.type_expression(&let_stmt.node.value),
                     };
                     self.contextual_expected_type = previous_contextual;
-                    if let (Some(expected), Some(actual)) = (expected, actual) {
-                        self.record_expr_type(let_stmt.node.value.span, actual);
-                        self.require_same_type(let_stmt.node.name.span, expected, actual);
+                    if let Some(expected) = expected {
+                        if let Some(actual) = actual {
+                            self.record_expr_type(let_stmt.node.value.span, actual);
+                            self.require_same_type(let_stmt.node.name.span, expected, actual);
+                        }
                         self.insert_local_type(let_stmt.node.name.span, expected);
                     } else if let Some(actual) = actual {
                         self.record_expr_type(let_stmt.node.value.span, actual);

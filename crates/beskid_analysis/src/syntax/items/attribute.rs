@@ -10,7 +10,7 @@ use super::parse_helpers::parse_visibility_or_default;
 use beskid_ast_derive::AstNode;
 
 /// Attribute instance with optional named arguments (`Name(arg = value, ...)`).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Attribute {
     #[ast(child)]
     pub name: Spanned<Identifier>,
@@ -19,7 +19,7 @@ pub struct Attribute {
 }
 
 /// Declaration of a reusable attribute kind (targets and parameters).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AttributeDeclaration {
     #[ast(child)]
     pub visibility: Spanned<Visibility>,
@@ -32,14 +32,14 @@ pub struct AttributeDeclaration {
 }
 
 /// Syntactic placement target for an attribute (`fn`, `type`, ...).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AttributeTarget {
     #[ast(child)]
     pub name: Spanned<Identifier>,
 }
 
 /// Parameter slot on an attribute declaration (name, type, optional default).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AttributeParameter {
     #[ast(child)]
     pub name: Spanned<Identifier>,
@@ -50,7 +50,7 @@ pub struct AttributeParameter {
 }
 
 /// Named argument supplied when applying an attribute.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AttributeArgument {
     #[ast(child)]
     pub name: Spanned<Identifier>,

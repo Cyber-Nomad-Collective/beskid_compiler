@@ -4,7 +4,8 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use beskid_analysis::hir::{HirItem, HirMethodDefinition, HirProgram};
-use beskid_analysis::resolve::{ItemId, Resolution};
+use beskid_analysis::paths::unit_path_key;
+use beskid_analysis::resolve::{ItemId, ItemInfo, ItemKind, Resolution};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeInfo, TypeResult};
 
@@ -49,6 +50,7 @@ struct CalleeKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedCall {
     pub item_id: ItemId,
+    pub symbol: Option<beskid_analysis::resolve::SymbolId>,
     pub mangled: Option<String>,
 }
 
@@ -68,7 +70,7 @@ impl LinkPlan {
             let HirItem::TestDefinition(test) = &item.node else {
                 return;
             };
-            let Some(info) = resolution.items.iter().find(|i| i.span == item.span) else {
+            let Some(info) = item_info_for_span(resolution, item.span, None) else {
                 return;
             };
             entries.push(LinkSymbol::Test {
@@ -87,9 +89,6 @@ impl LinkPlan {
             }
         });
 
-        // Stack walk records callers before callees; emit dependencies first.
-        callees.reverse();
-
         Self { callees, entries }
     }
 
@@ -97,6 +96,7 @@ impl LinkPlan {
     pub fn build_for_entrypoint(
         entry: &Spanned<HirProgram>,
         entrypoint: &str,
+        entry_source_path: Option<&PathBuf>,
         resolution: &Resolution,
         type_result: &TypeResult,
         def_index: &FunctionDefIndex<'_>,
@@ -110,7 +110,7 @@ impl LinkPlan {
             if !entrypoint_matches(entrypoint, qualified, short) {
                 return;
             }
-            let Some(info) = resolution.items.iter().find(|i| i.span == item.span) else {
+            let Some(info) = item_info_for_span(resolution, item.span, entry_source_path) else {
                 return;
             };
             match &item.node {
@@ -119,7 +119,12 @@ impl LinkPlan {
                         item: info.id,
                         name: short.to_string(),
                     });
-                    for call in collect_calls_in_body(&test.node.body, resolution, type_result, None) {
+                    for call in collect_calls_in_body(
+                        &test.node.body,
+                        resolution,
+                        type_result,
+                        entry_source_path,
+                    ) {
                         visit_callee(
                             call,
                             resolution,
@@ -135,7 +140,12 @@ impl LinkPlan {
                         item: info.id,
                         mangled: None,
                     });
-                    for call in collect_calls_in_body(&def.node.body, resolution, type_result, None) {
+                    for call in collect_calls_in_body(
+                        &def.node.body,
+                        resolution,
+                        type_result,
+                        entry_source_path,
+                    ) {
                         visit_callee(
                             call,
                             resolution,
@@ -150,7 +160,6 @@ impl LinkPlan {
             }
         });
 
-        callees.reverse();
         Self { callees, entries }
     }
 
@@ -181,14 +190,18 @@ impl LinkPlan {
             let LinkSymbol::Function { item, .. } = symbol else {
                 continue;
             };
-            let Some(path) = resolution
-                .items
-                .get(item.0)
-                .and_then(|info| info.source_path.as_ref())
-            else {
+            let path = def_index
+                .source_path(*item)
+                .or_else(|| {
+                    resolution
+                        .items
+                        .get(item.0)
+                        .and_then(|info| info.source_path.as_ref())
+                });
+            let Some(path) = path else {
                 continue;
             };
-            unit_paths.insert(path.canonicalize().unwrap_or_else(|_| path.clone()));
+            unit_paths.insert(unit_path_key(path));
         }
 
         let mut items: Vec<ItemId> = def_index
@@ -203,8 +216,7 @@ impl LinkPlan {
                 else {
                     return false;
                 };
-                let key = path.canonicalize().unwrap_or_else(|_| path.clone());
-                unit_paths.contains(&key)
+                unit_paths.contains(&unit_path_key(path))
             })
             .collect();
         items.sort_by_key(|item| item.0);
@@ -291,50 +303,73 @@ fn visit_callee(
     visited: &mut HashSet<CalleeKey>,
     callees: &mut Vec<LinkSymbol>,
 ) {
-    let mut stack = vec![call];
-    while let Some(call) = stack.pop() {
-        let key = CalleeKey {
+    let key = CalleeKey {
+        item: call.item_id,
+        mangled: call.mangled.clone(),
+    };
+    if !visited.insert(key) {
+        return;
+    }
+    if resolution.builtin_items.contains_key(&call.item_id) {
+        return;
+    }
+
+    if let Some(def) = def_index.function(call.item_id) {
+        let callee_path = def_index.source_path(call.item_id);
+        for inner in collect_calls_in_body(&def.node.body, resolution, type_result, callee_path) {
+            visit_callee(
+                inner,
+                resolution,
+                type_result,
+                def_index,
+                visited,
+                callees,
+            );
+        }
+        callees.push(LinkSymbol::Function {
             item: call.item_id,
-            mangled: call.mangled.clone(),
-        };
-        if !visited.insert(key) {
-            continue;
-        }
-        if resolution.builtin_items.contains_key(&call.item_id) {
-            continue;
-        }
+            mangled: call.mangled,
+        });
+        return;
+    }
 
-        if let Some(def) = def_index.function(call.item_id) {
-            let callee_path = def_index.source_path(call.item_id);
-            let inners = collect_calls_in_body(&def.node.body, resolution, type_result, callee_path);
-            stack.extend(inners);
-            callees.push(LinkSymbol::Function {
-                item: call.item_id,
-                mangled: call.mangled,
+    if let Some(def) = def_index.method(call.item_id) {
+        let mangled = call
+            .mangled
+            .clone()
+            .or_else(|| method_mangled_name(resolution, type_result, def))
+            .unwrap_or_else(|| {
+                resolution
+                    .items
+                    .get(call.item_id.0)
+                    .map(|i| i.name.clone())
+                    .unwrap_or_default()
             });
-            continue;
+        let callee_path = def_index.source_path(call.item_id);
+        for inner in collect_calls_in_body(&def.node.body, resolution, type_result, callee_path) {
+            visit_callee(
+                inner,
+                resolution,
+                type_result,
+                def_index,
+                visited,
+                callees,
+            );
         }
+        callees.push(LinkSymbol::Method {
+            item: call.item_id,
+            mangled,
+        });
+        return;
+    }
 
-        if let Some(def) = def_index.method(call.item_id) {
-            let mangled = call
-                .mangled
-                .clone()
-                .or_else(|| method_mangled_name(resolution, type_result, def))
-                .unwrap_or_else(|| {
-                    resolution
-                        .items
-                        .get(call.item_id.0)
-                        .map(|i| i.name.clone())
-                        .unwrap_or_default()
-                });
-            let callee_path = def_index.source_path(call.item_id);
-            let inners = collect_calls_in_body(&def.node.body, resolution, type_result, callee_path);
-            stack.extend(inners);
-            callees.push(LinkSymbol::Method {
-                item: call.item_id,
-                mangled,
-            });
-        }
+    if let Some(info) = resolution.items.get(call.item_id.0)
+        && matches!(info.kind, ItemKind::Function | ItemKind::Method)
+    {
+        callees.push(LinkSymbol::Function {
+            item: call.item_id,
+            mangled: call.mangled,
+        });
     }
 }
 
@@ -358,4 +393,33 @@ fn method_mangled_name(
         receiver_name,
         &def.node.name.node.name,
     ))
+}
+
+fn item_info_for_span<'a>(
+    resolution: &'a Resolution,
+    span: beskid_analysis::syntax::SpanInfo,
+    source_path: Option<&PathBuf>,
+) -> Option<&'a ItemInfo> {
+    if let Some(path) = source_path {
+        if let Some(info) = resolution.items.iter().find(|info| {
+            info.span == span
+                && info
+                    .source_path
+                    .as_ref()
+                    .is_some_and(|source| beskid_analysis::paths::same_file(source, path))
+        }) {
+            return Some(info);
+        }
+    }
+
+    let matches: Vec<_> = resolution
+        .items
+        .iter()
+        .filter(|info| info.span == span)
+        .collect();
+    match matches.as_slice() {
+        [] => None,
+        [single] => Some(single),
+        _ => None,
+    }
 }

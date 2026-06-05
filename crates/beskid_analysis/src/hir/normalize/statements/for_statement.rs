@@ -1,11 +1,12 @@
 use crate::hir::{
     ExpressionNode, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBinaryOp, HirBlock,
     HirBlockExpression, HirBreakStatement, HirCallExpression, HirEnumPath, HirEnumPattern,
-    HirExpressionStatement, HirForStatement, HirGroupedExpression, HirIdentifier, HirLetStatement,
-    HirLiteral, HirLiteralExpression, HirMatchArm, HirMatchExpression, HirMemberExpression,
-    HirPath, HirPathExpression, HirPathSegment, HirPattern, HirStatementNode, HirWhileStatement,
-    StatementNode,
+    HirExpressionStatement, HirForStatement, HirGroupedExpression, HirIdentifier, HirIndexExpression,
+    HirLetStatement, HirLiteral, HirLiteralExpression, HirMatchArm, HirMatchExpression,
+    HirMemberExpression, HirPath, HirPathExpression, HirPathSegment, HirPattern, HirStatementNode,
+    HirWhileStatement, StatementNode,
 };
+use crate::hir::normalize::builders::hir_path_expr;
 use crate::syntax::Spanned;
 
 use crate::hir::normalize::core::Normalizer;
@@ -20,6 +21,10 @@ impl Normalize for Spanned<HirForStatement> {
 
         if extract_range_iterable(&self.node.iterable) {
             return normalize_range_fast_path(self);
+        }
+
+        if normalizer.is_array_for_span(self.span) {
+            return normalize_array_fast_path(self);
         }
 
         normalize_generic_iterable(self)
@@ -128,6 +133,177 @@ fn normalize_range_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<
     vec![init_iterator, init_end, while_stmt]
 }
 
+fn normalize_array_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<HirStatementNode>> {
+    let span = for_stmt.span;
+    let (iterator, iterable, body) = (
+        for_stmt.node.iterator,
+        for_stmt.node.iterable,
+        for_stmt.node.body,
+    );
+    let array_span = shifted_span(span, 1);
+    let index_span = shifted_span(span, 2);
+    let len_span = shifted_span(span, 3);
+    let array_len_call_span = shifted_span(span, 4);
+
+    let array_name = Spanned::new(
+        HirIdentifier {
+            name: format!("__iter_array_{}", span.start),
+        },
+        array_span,
+    );
+    let init_array = Spanned::new(
+        StatementNode::LetStatement(Spanned::new(
+            HirLetStatement {
+                mutable: false,
+                name: array_name.clone(),
+                type_annotation: None,
+                value: iterable,
+            },
+            span,
+        )),
+        span,
+    );
+
+    let index_name = Spanned::new(
+        HirIdentifier {
+            name: format!("__iter_index_{}", span.start),
+        },
+        index_span,
+    );
+    let len_name = Spanned::new(
+        HirIdentifier {
+            name: format!("__iter_len_{}", span.start),
+        },
+        len_span,
+    );
+
+    let init_index = Spanned::new(
+        StatementNode::LetStatement(Spanned::new(
+            HirLetStatement {
+                mutable: true,
+                name: index_name.clone(),
+                type_annotation: None,
+                value: int_literal("0", index_span),
+            },
+            span,
+        )),
+        span,
+    );
+
+    let array_len_expr = Spanned::new(
+        ExpressionNode::CallExpression(Spanned::new(
+            HirCallExpression {
+                callee: Box::new(path_expr_str("__array_len", array_len_call_span)),
+                args: vec![path_expr(&array_name)],
+            },
+            array_len_call_span,
+        )),
+        array_len_call_span,
+    );
+    let init_len = Spanned::new(
+        StatementNode::LetStatement(Spanned::new(
+            HirLetStatement {
+                mutable: false,
+                name: len_name.clone(),
+                type_annotation: None,
+                value: array_len_expr,
+            },
+            span,
+        )),
+        span,
+    );
+
+    let condition = Spanned::new(
+        ExpressionNode::BinaryExpression(Spanned::new(
+            HirBinaryExpression {
+                left: Box::new(path_expr(&index_name)),
+                op: Spanned::new(HirBinaryOp::Lt, index_span),
+                right: Box::new(path_expr(&len_name)),
+            },
+            index_span,
+        )),
+        index_span,
+    );
+
+    let element_expr = Spanned::new(
+        ExpressionNode::IndexExpression(Spanned::new(
+            HirIndexExpression {
+                target: Box::new(path_expr(&array_name)),
+                index: Box::new(path_expr(&index_name)),
+            },
+            index_span,
+        )),
+        index_span,
+    );
+
+    let item_binding = Spanned::new(
+        StatementNode::LetStatement(Spanned::new(
+            HirLetStatement {
+                mutable: false,
+                name: iterator.clone(),
+                type_annotation: None,
+                value: element_expr,
+            },
+            span,
+        )),
+        span,
+    );
+
+    let increment = Spanned::new(
+        StatementNode::ExpressionStatement(Spanned::new(
+            HirExpressionStatement {
+                expression: Spanned::new(
+                    ExpressionNode::AssignExpression(Spanned::new(
+                        HirAssignExpression {
+                            target: Box::new(path_expr(&index_name)),
+                            op: Spanned::new(HirAssignOp::Assign, index_name.span),
+                            value: Box::new(Spanned::new(
+                                ExpressionNode::BinaryExpression(Spanned::new(
+                                    HirBinaryExpression {
+                                        left: Box::new(path_expr(&index_name)),
+                                        op: Spanned::new(HirBinaryOp::Add, index_name.span),
+                                        right: Box::new(int_literal("1", index_name.span)),
+                                    },
+                                    index_name.span,
+                                )),
+                                index_name.span,
+                            )),
+                        },
+                        index_name.span,
+                    )),
+                    index_name.span,
+                ),
+            },
+            span,
+        )),
+        span,
+    );
+
+    let mut while_body = Spanned::new(
+        HirBlock {
+            statements: vec![item_binding],
+        },
+        span,
+    );
+    for stmt in body.node.statements {
+        while_body.node.statements.push(stmt);
+    }
+    while_body.node.statements.push(increment);
+
+    let while_stmt = Spanned::new(
+        StatementNode::WhileStatement(Spanned::new(
+            HirWhileStatement {
+                condition,
+                body: while_body,
+            },
+            span,
+        )),
+        span,
+    );
+
+    vec![init_array, init_index, init_len, while_stmt]
+}
+
 fn normalize_generic_iterable(
     for_stmt: Spanned<HirForStatement>,
 ) -> Vec<Spanned<HirStatementNode>> {
@@ -215,9 +391,20 @@ fn normalize_generic_iterable(
                     HirEnumPattern {
                         path: Spanned::new(
                             HirEnumPath {
-                                type_name: Spanned::new(
-                                    HirIdentifier {
-                                        name: "Option".to_string(),
+                                type_path: Spanned::new(
+                                    HirPath {
+                                        segments: vec![Spanned::new(
+                                            HirPathSegment {
+                                                name: Spanned::new(
+                                                    HirIdentifier {
+                                                        name: "Option".to_string(),
+                                                    },
+                                                    some_arm_span,
+                                                ),
+                                                type_args: Vec::new(),
+                                            },
+                                            some_arm_span,
+                                        )],
                                     },
                                     some_arm_span,
                                 ),
@@ -252,9 +439,20 @@ fn normalize_generic_iterable(
                     HirEnumPattern {
                         path: Spanned::new(
                             HirEnumPath {
-                                type_name: Spanned::new(
-                                    HirIdentifier {
-                                        name: "Option".to_string(),
+                                type_path: Spanned::new(
+                                    HirPath {
+                                        segments: vec![Spanned::new(
+                                            HirPathSegment {
+                                                name: Spanned::new(
+                                                    HirIdentifier {
+                                                        name: "Option".to_string(),
+                                                    },
+                                                    none_arm_span,
+                                                ),
+                                                type_args: Vec::new(),
+                                            },
+                                            none_arm_span,
+                                        )],
                                     },
                                     none_arm_span,
                                 ),
@@ -360,6 +558,14 @@ fn into_range_bounds(
         }
         _ => panic!("range fast path expected call expression"),
     }
+}
+
+fn path_expr_str(
+    name: &str,
+    span: crate::syntax::SpanInfo,
+) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
+    let ident = Spanned::new(HirIdentifier { name: name.to_string() }, span);
+    path_expr(&ident)
 }
 
 fn path_expr(name: &Spanned<HirIdentifier>) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {

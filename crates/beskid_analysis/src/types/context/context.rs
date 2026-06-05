@@ -460,7 +460,6 @@ impl TypeResult {
                     {
                         return Some(*type_id);
                     }
-                    return self.expr_types.get(&span).copied();
                 }
             }
         }
@@ -489,7 +488,11 @@ impl TypeResult {
                     if let Some(kind) = kinds.get(&span) {
                         return Some(*kind);
                     }
-                    return self.call_kinds.get(&span).copied();
+                    if let Some((_, kind)) =
+                        kinds.iter().find(|(stored, _)| stored.start == span.start)
+                    {
+                        return Some(*kind);
+                    }
                 }
             }
         }
@@ -674,8 +677,9 @@ impl<'a> TypeContext<'a> {
         for (index, dependency) in dependency_programs.iter().enumerate() {
             self.current_source_path = dependency_source_paths
                 .and_then(|paths| paths.get(index))
-                .cloned();
+                .map(|path| crate::paths::unit_path_key(path));
             self.seed_enum_definitions(dependency);
+            self.seed_struct_definitions(dependency);
             for item in &dependency.node.items {
                 let (span, generics) = match &item.node {
                     HirItem::FunctionDefinition(def) => (item.span, &def.node.generics),
@@ -693,32 +697,24 @@ impl<'a> TypeContext<'a> {
             }
             let errors_before = self.errors.len();
             let cast_intents_before = self.cast_intents.len();
+            self.seed_contract_signatures(dependency);
+            self.errors.truncate(errors_before);
+            self.cast_intents.truncate(cast_intents_before);
             self.register_foreign_function_signatures(dependency);
             // Dependency units are prefetched for symbols only; incomplete generic surfaces
             // (for example `Core.Results.Result<,>`) must not block entry/test typing.
             self.errors.truncate(errors_before);
             self.cast_intents.truncate(cast_intents_before);
             if type_dependency_bodies {
-                for item in &dependency.node.items {
-                    let item_errors_before = self.errors.len();
-                    let item_cast_intents_before = self.cast_intents.len();
-                    match &item.node {
-                        HirItem::FunctionDefinition(_) | HirItem::MethodDefinition(_) => {
-                            self.type_item(item);
-                        }
-                        _ => {}
-                    }
-                    // Best-effort typing for cross-unit codegen; incomplete dependency surfaces
-                    // must not block entry/test typing.
-                    self.errors.truncate(item_errors_before);
-                    self.cast_intents.truncate(item_cast_intents_before);
-                    self.flush_scoped_type_maps_for_current_path();
-                }
+                self.type_dependency_function_items(&dependency.node.items);
             }
         }
         self.errors.truncate(dependency_errors_before);
         self.cast_intents.truncate(dependency_cast_intents_before);
-        self.current_source_path = entry_source_path;
+        self.current_source_path = entry_source_path
+            .as_ref()
+            .map(|path| crate::paths::unit_path_key(path));
+        self.seed_struct_definitions(program);
         for item in &program.node.items {
             let (span, generics) = match &item.node {
                 HirItem::FunctionDefinition(def) => (item.span, &def.node.generics),

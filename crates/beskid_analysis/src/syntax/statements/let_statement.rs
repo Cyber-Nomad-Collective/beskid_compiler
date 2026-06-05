@@ -8,7 +8,7 @@ use crate::syntax::{Expression, Identifier, SpanInfo, Spanned, Type};
 use beskid_ast_derive::AstNode;
 
 /// Local binding with optional type annotation and mandatory initializer.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LetStatement {
     #[ast(skip)]
     pub mutable: bool,

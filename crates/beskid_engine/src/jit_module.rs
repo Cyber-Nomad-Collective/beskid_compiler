@@ -17,7 +17,8 @@ use beskid_abi::{
     SYM_HUB_UNREGISTER, SYM_HUB_WAIT_RECEIVE, SYM_HUB_WAIT_RECEIVE_INDEX,
     SYM_HUB_WAIT_RECEIVE_VALUE, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
     SYM_INTEROP_DISPATCH_USIZE, SYM_MUTEX_CREATE, SYM_MUTEX_LOCK, SYM_MUTEX_TRY_LOCK,
-    SYM_MUTEX_UNLOCK, SYM_PANIC, SYM_PANIC_STR, SYM_STR_CONCAT, SYM_STR_LEN, SYM_STR_NEW,
+    SYM_MUTEX_UNLOCK, SYM_PANIC, SYM_PANIC_STR, SYM_STR_CONCAT, SYM_STR_EQ, SYM_STR_LEN,
+    SYM_STR_NEW,
     SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR,
     SYM_WAIT_GROUP_ADD, SYM_WAIT_GROUP_CREATE, SYM_WAIT_GROUP_DONE, SYM_WAIT_GROUP_WAIT,
 };
@@ -44,8 +45,8 @@ use beskid_runtime::{
     gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier, hub_create,
     hub_register, hub_unregister, hub_wait_receive_index, hub_wait_receive_status,
     hub_wait_receive_value, interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize,
-    mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, panic, panic_str, str_concat, str_len,
-    str_new, syscall_read, syscall_write, test_bytes_len, test_bytes_ptr, wait_group_add,
+    mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, panic, panic_str, str_concat, str_eq,
+    str_len, str_new, syscall_read, syscall_write, test_bytes_len, test_bytes_ptr, wait_group_add,
     wait_group_create, wait_group_done, wait_group_wait,
 };
 use cranelift_codegen::settings;
@@ -229,6 +230,7 @@ fn register_runtime_symbols(builder: &mut JITBuilder) {
     builder.symbol(SYM_ALLOC, alloc as *const u8);
     builder.symbol(SYM_STR_NEW, str_new as *const u8);
     builder.symbol(SYM_STR_CONCAT, str_concat as *const u8);
+    builder.symbol(SYM_STR_EQ, str_eq as *const u8);
     builder.symbol(SYM_ARRAY_NEW, array_new as *const u8);
     builder.symbol(SYM_ARRAY_LEN, array_len as *const u8);
     builder.symbol(SYM_PANIC, panic as *const u8);

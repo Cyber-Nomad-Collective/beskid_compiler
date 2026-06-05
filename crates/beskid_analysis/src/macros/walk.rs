@@ -106,6 +106,22 @@ pub fn map_expression(
             n.node.callee = Box::new(map_expression(*s.node.callee, f));
             Expression::Spawn(n)
         }
+        Expression::Index(i) => {
+            let mut n = i.clone();
+            n.node.target = Box::new(map_expression(*i.node.target, f));
+            n.node.index = Box::new(map_expression(*i.node.index, f));
+            Expression::Index(n)
+        }
+        Expression::ArrayLiteral(a) => {
+            let mut n = a.clone();
+            n.node.elements = a
+                .node
+                .elements
+                .iter()
+                .map(|e| map_expression(e.clone(), f))
+                .collect();
+            Expression::ArrayLiteral(n)
+        }
     };
     f(Spanned::new(mapped, span))
 }

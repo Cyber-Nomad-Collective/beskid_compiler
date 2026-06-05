@@ -8,7 +8,7 @@ use crate::syntax::{Identifier, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Contract member that embeds another contract by name.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContractEmbedding {
     #[ast(child)]
     pub name: Spanned<Identifier>,

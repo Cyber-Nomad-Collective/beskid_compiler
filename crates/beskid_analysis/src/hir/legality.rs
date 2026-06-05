@@ -470,6 +470,17 @@ impl<'a> HirLegalityValidator<'a> {
                 self.check_span(spawn_expr.span, "spawn_expression");
                 self.validate_expression(&spawn_expr.node.callee);
             }
+            HirExpressionNode::IndexExpression(index_expr) => {
+                self.check_span(index_expr.span, "index_expression");
+                self.validate_expression(&index_expr.node.target);
+                self.validate_expression(&index_expr.node.index);
+            }
+            HirExpressionNode::ArrayLiteralExpression(lit) => {
+                self.check_span(lit.span, "array_literal_expression");
+                for element in &lit.node.elements {
+                    self.validate_expression(element);
+                }
+            }
             HirExpressionNode::MacroInvocation(expr) => {
                 self.check_span(expr.span, "macro_invocation");
             }

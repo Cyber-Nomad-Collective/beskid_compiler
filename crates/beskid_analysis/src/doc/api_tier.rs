@@ -117,6 +117,7 @@ mod tests {
         ApiDocItem {
             id: Some(id),
             qualified_name: format!("item{id}"),
+            symbol_key: None,
             name: format!("item{id}"),
             kind: "function".to_string(),
             visibility: Some("public".to_string()),

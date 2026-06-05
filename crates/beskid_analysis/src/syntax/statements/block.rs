@@ -8,7 +8,7 @@ use crate::syntax::{SpanInfo, Spanned, Statement};
 use beskid_ast_derive::AstNode;
 
 /// Braced sequence of statements.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Block {
     #[ast(children)]
     pub statements: Vec<Spanned<Statement>>,

@@ -1,5 +1,9 @@
 use std::path::PathBuf;
 
+use crate::projects::fixture_harness::{
+    corelib_mvp_fixture, resolve_fixture_with_assembly, shared_corelib_mvp_assembly,
+    with_project_test_env,
+};
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 use beskid_analysis::projects::{
     AssemblyDiscovery, AssemblyOptions, assemble_program, effective_roots_for_plan,
@@ -51,33 +55,8 @@ fn effective_roots_prefers_materialized_corelib_mvp_fixture() {
 
 #[test]
 fn assembly_closure_loads_std_units_for_corelib_mvp() {
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
-        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../beskid_e2e_tests/fixtures/corelib_mvp");
-        let resolved = resolve_input(
-            Some(&fixture.join("Src/Main.bd")),
-            Some(&fixture),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve corelib_mvp");
-        let plan = resolved.compile_plan.expect("compile plan");
-        let options = AssemblyOptions {
-            discovery: AssemblyDiscovery::ImportClosure,
-            ..Default::default()
-        };
-
-        let assembly = assemble_program(
-            &plan,
-            resolved.prepared_workspace.as_ref(),
-            &resolved.source_path,
-            Some(&resolved.source),
-            &options,
-        )
-        .expect("assemble corelib_mvp");
-
+    with_project_test_env(&corelib_mvp_fixture(), || {
+        let assembly = shared_corelib_mvp_assembly();
         let loaded: Vec<String> = assembly
             .units
             .iter()
@@ -128,33 +107,8 @@ fn workspace_scan_respects_max_units() {
 
 #[test]
 fn module_index_known_paths_include_std_io_for_corelib_mvp() {
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
-        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../beskid_e2e_tests/fixtures/corelib_mvp");
-        let resolved = resolve_input(
-            Some(&fixture.join("Src/Main.bd")),
-            Some(&fixture),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve corelib_mvp");
-        let plan = resolved.compile_plan.expect("compile plan");
-        let options = AssemblyOptions {
-            discovery: AssemblyDiscovery::ImportClosure,
-            ..Default::default()
-        };
-
-        let assembly = assemble_program(
-            &plan,
-            resolved.prepared_workspace.as_ref(),
-            &resolved.source_path,
-            Some(&resolved.source),
-            &options,
-        )
-        .expect("assemble");
-
+    with_project_test_env(&corelib_mvp_fixture(), || {
+        let assembly = shared_corelib_mvp_assembly();
         let paths = assembly.module_index.known_module_path_strings();
         assert!(
             paths.contains("Std::System::Output"),
@@ -165,33 +119,8 @@ fn module_index_known_paths_include_std_io_for_corelib_mvp() {
 
 #[test]
 fn module_index_resolve_entry_succeeds_for_corelib_mvp_main() {
-    with_cwd_at_workspace_root(&compiler_workspace_root(), || {
-        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../beskid_e2e_tests/fixtures/corelib_mvp");
-        let resolved = resolve_input(
-            Some(&fixture.join("Src/Main.bd")),
-            Some(&fixture),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve corelib_mvp");
-        let plan = resolved.compile_plan.expect("compile plan");
-        let options = AssemblyOptions {
-            discovery: AssemblyDiscovery::ImportClosure,
-            ..Default::default()
-        };
-
-        let assembly = assemble_program(
-            &plan,
-            resolved.prepared_workspace.as_ref(),
-            &resolved.source_path,
-            Some(&resolved.source),
-            &options,
-        )
-        .expect("assemble");
-
+    with_project_test_env(&corelib_mvp_fixture(), || {
+        let assembly = shared_corelib_mvp_assembly();
         let resolution = assembly
             .module_index
             .resolve_entry(&assembly.entry_unit().program)

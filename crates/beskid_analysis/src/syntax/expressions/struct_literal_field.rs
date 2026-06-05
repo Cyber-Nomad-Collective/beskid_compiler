@@ -8,7 +8,7 @@ use crate::syntax::{Expression, Identifier, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Single `name: value` field in a struct literal.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StructLiteralField {
     #[ast(child)]
     pub name: Spanned<Identifier>,

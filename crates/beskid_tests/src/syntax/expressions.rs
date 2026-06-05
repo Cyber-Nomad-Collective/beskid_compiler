@@ -140,7 +140,10 @@ fn parses_enum_constructor_expression_ast() {
     let expr = parse_expression_ast("Option::Some(1)");
     match &expr.node {
         Expression::EnumConstructor(constructor) => {
-            assert_eq!(constructor.node.path.node.type_name.node.name, "Option");
+            assert_eq!(
+                constructor.node.path.node.type_path.node.segments[0].node.name.node.name,
+                "Option"
+            );
             assert_eq!(constructor.node.path.node.variant.node.name, "Some");
             assert_eq!(constructor.node.args.len(), 1);
             assert_expression_integer(&constructor.node.args[0], "1");
@@ -154,7 +157,10 @@ fn parses_enum_constructor_without_args_ast() {
     let expr = parse_expression_ast("Option::None()");
     match &expr.node {
         Expression::EnumConstructor(constructor) => {
-            assert_eq!(constructor.node.path.node.type_name.node.name, "Option");
+            assert_eq!(
+                constructor.node.path.node.type_path.node.segments[0].node.name.node.name,
+                "Option"
+            );
             assert_eq!(constructor.node.path.node.variant.node.name, "None");
             assert!(constructor.node.args.is_empty());
         }
@@ -175,7 +181,10 @@ fn parses_match_expression_ast() {
             let first = &match_expr.node.arms[0];
             match &first.node.pattern.node {
                 Pattern::Enum(pattern) => {
-                    assert_eq!(pattern.node.path.node.type_name.node.name, "Foo");
+                    assert_eq!(
+                        pattern.node.path.node.type_path.node.segments[0].node.name.node.name,
+                        "Foo"
+                    );
                     assert_eq!(pattern.node.path.node.variant.node.name, "Bar");
                 }
                 _ => panic!("expected enum pattern"),

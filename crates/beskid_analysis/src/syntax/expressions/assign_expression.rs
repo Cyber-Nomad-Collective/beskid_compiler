@@ -8,7 +8,7 @@ use crate::syntax::{Expression, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Compound or simple assignment operator token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AssignOp {
     Assign,
     AddAssign,
@@ -16,7 +16,7 @@ pub enum AssignOp {
 }
 
 /// Assignment or compound assignment (`=`, `+=`, `-=`).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AssignExpression {
     #[ast(child)]
     pub target: Box<Spanned<Expression>>,

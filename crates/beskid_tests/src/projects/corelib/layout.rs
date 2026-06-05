@@ -277,6 +277,7 @@ fn checked_in_corelib_tier_metadata_round_trips_through_api_json() {
         ApiDocItem {
             id: Some(id),
             qualified_name: format!("Sample::item{id}"),
+            symbol_key: None,
             name: format!("item{id}"),
             kind: "function".to_string(),
             visibility: Some("public".to_string()),

@@ -4,10 +4,16 @@
 mod test_cwd;
 
 #[cfg(test)]
+pub(crate) use test_cwd::with_cwd_at_workspace_root;
+
+#[cfg(test)]
 mod std_env_lock;
 
 #[cfg(test)]
 pub(crate) use std_env_lock::std_dependency_env_lock;
+
+#[cfg(test)]
+mod fixture_harness;
 
 #[cfg(test)]
 mod assembly;

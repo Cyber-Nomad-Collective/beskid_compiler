@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use crate::hir::{HirBlock, HirExpressionNode, HirProgram};
 use crate::resolve::Resolution;
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::context::try_infer::{TryDesugarTarget, try_desugar_targets_for_program};
+use crate::types::context::try_infer::{TryDesugarTarget, collect_array_for_spans, try_desugar_targets_for_program};
 
 use super::normalizable::Normalize;
 use super::{builders, builders::desugar_try_expression};
@@ -35,7 +35,13 @@ pub fn normalize_program_with_resolution(
     let try_targets = resolution.map(|resolution| {
         try_desugar_targets_for_program(resolution, program, dependency_programs)
     });
-    let mut normalizer = Normalizer::new(try_targets);
+    let array_for_spans = match resolution {
+        Some(resolution) => {
+            collect_array_for_spans(resolution, program, dependency_programs)
+        }
+        None => HashSet::new(),
+    };
+    let mut normalizer = Normalizer::new(try_targets, array_for_spans);
     normalizer.visit_program(program);
     if normalizer.errors.is_empty() {
         Ok(())
@@ -48,14 +54,23 @@ pub fn normalize_program_with_resolution(
 pub struct Normalizer {
     pub(crate) errors: Vec<HirNormalizeError>,
     try_targets: HashMap<SpanInfo, TryDesugarTarget>,
+    pub(crate) array_for_spans: HashSet<SpanInfo>,
 }
 
 impl Normalizer {
-    fn new(try_targets: Option<HashMap<SpanInfo, TryDesugarTarget>>) -> Self {
+    fn new(
+        try_targets: Option<HashMap<SpanInfo, TryDesugarTarget>>,
+        array_for_spans: HashSet<SpanInfo>,
+    ) -> Self {
         Self {
             errors: Vec::new(),
             try_targets: try_targets.unwrap_or_default(),
+            array_for_spans,
         }
+    }
+
+    pub(crate) fn is_array_for_span(&self, span: SpanInfo) -> bool {
+        self.array_for_spans.contains(&span)
     }
 
     fn visit_program(&mut self, program: &mut Spanned<HirProgram>) {
@@ -162,6 +177,15 @@ impl Normalizer {
             HirExpressionNode::TryExpression(_) => unreachable!("try desugared before traversal"),
             HirExpressionNode::SpawnExpression(spawn_expr) => {
                 self.visit_expression(&mut spawn_expr.node.callee);
+            }
+            HirExpressionNode::IndexExpression(index_expr) => {
+                self.visit_expression(&mut index_expr.node.target);
+                self.visit_expression(&mut index_expr.node.index);
+            }
+            HirExpressionNode::ArrayLiteralExpression(lit) => {
+                for element in &mut lit.node.elements {
+                    self.visit_expression(element);
+                }
             }
             HirExpressionNode::MacroInvocation(_) | HirExpressionNode::MacroMetavariable(_) => {}
         }

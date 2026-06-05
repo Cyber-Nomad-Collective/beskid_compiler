@@ -4,6 +4,7 @@ use crate::hir::HirVisibility;
 use crate::syntax::SpanInfo;
 
 use super::ids::ItemId;
+use super::symbol::SymbolId;
 
 /// Classification of each [`ItemInfo`] row (used for docs, queries, and stable API snapshots).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,4 +61,6 @@ pub struct ItemInfo {
     pub span: SpanInfo,
     /// Declaring source file when known (assembly prefetch or entry unit).
     pub source_path: Option<PathBuf>,
+    /// Canonical package-prefixed symbol when this row is exportable.
+    pub symbol: Option<SymbolId>,
 }

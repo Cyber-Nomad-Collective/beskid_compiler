@@ -12,7 +12,7 @@ use crate::syntax::{Field, Identifier, Path, SpanInfo, Spanned, Visibility};
 use beskid_ast_derive::AstNode;
 
 /// `type` definition: name, generics, optional conformances, and fields.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeDefinition {
     #[ast(child)]
     pub visibility: Spanned<Visibility>,

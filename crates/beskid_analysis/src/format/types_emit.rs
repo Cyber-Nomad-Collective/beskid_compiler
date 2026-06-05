@@ -234,7 +234,7 @@ impl Emit for Spanned<Field> {
 
 impl Emit for EnumPath {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.type_name.emit(w, cx)?;
+        self.type_path.emit(w, cx)?;
         cx.token(w, "::")?;
         self.variant.emit(w, cx)
     }

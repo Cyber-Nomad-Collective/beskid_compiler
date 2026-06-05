@@ -9,7 +9,7 @@ use crate::syntax::{Expression, Identifier, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// `name!(args)` / `name! { block }` macro invocation expression.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MacroInvocation {
     #[ast(child)]
     pub name: Spanned<Identifier>,

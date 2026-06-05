@@ -13,7 +13,8 @@ use beskid_analysis::projects::assembly::ProgramAssembly;
 use beskid_analysis::resolve::{ItemId, Resolution};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 /// HIR (or sub-) node that can be lowered with a specific context type `Ctx`.
 pub trait Lowerable<Ctx>: Sized {
@@ -74,10 +75,12 @@ pub fn lower_program_with_assembly_for_entrypoint(
 
     if let Some(assembly) = assembly {
         let def_index = FunctionDefIndex::build(resolution, &assembly.hir_units);
+        let entry_source_path = assembly.entry_unit().path.clone();
         let plan = if let Some(entrypoint) = link_entrypoint {
             LinkPlan::build_for_entrypoint(
                 program,
                 entrypoint,
+                Some(&entry_source_path),
                 resolution,
                 type_result,
                 &def_index,
@@ -124,6 +127,17 @@ pub fn lower_program_with_assembly_for_entrypoint(
     }
 }
 
+fn effective_source_path(
+    item: ItemId,
+    def_index: &FunctionDefIndex<'_>,
+    resolution: &Resolution,
+) -> Option<PathBuf> {
+    def_index
+        .source_path(item)
+        .cloned()
+        .or_else(|| resolution.items.get(item.0).and_then(|info| info.source_path.clone()))
+}
+
 fn emit_link_plan(
     entry: &Spanned<HirProgram>,
     plan: &LinkPlan,
@@ -134,18 +148,6 @@ fn emit_link_plan(
     errors: &mut Vec<crate::errors::CodegenError>,
 ) {
     let function_defs = def_index.functions();
-    for item in plan.function_item_ids() {
-        emit_function_item(
-            item,
-            None,
-            resolution,
-            type_result,
-            function_defs,
-            def_index,
-            ctx,
-            errors,
-        );
-    }
     for symbol in &plan.callees {
         emit_link_symbol(
             symbol,
@@ -192,28 +194,17 @@ fn emit_function_item(
     if ctx.symbol_emitted(&symbol_name) {
         return;
     }
-    ctx.current_source_path = def_index
-        .source_path(item)
-        .cloned()
-        .or_else(|| {
-            resolution
-                .items
-                .get(item.0)
-                .and_then(|info| info.source_path.clone())
-        });
-    let result = if let Some(name) = mangled {
-        lower_function_with_name(
-            def,
-            resolution,
-            type_result,
-            function_defs,
-            ctx,
-            Some(name),
-            None,
-        )
-    } else {
-        lower_function(def, resolution, type_result, function_defs, ctx)
-    };
+    ctx.current_source_path = effective_source_path(item, def_index, resolution);
+    let result = lower_function_with_name(
+        def,
+        resolution,
+        type_result,
+        function_defs,
+        ctx,
+        mangled,
+        None,
+        Some(item),
+    );
     if let Err(error) = result {
         errors.push(error);
     }
@@ -247,7 +238,7 @@ fn emit_link_symbol(
             let Some(def) = def_index.method(*item) else {
                 return;
             };
-            if let Err(error) = lower_method(def, resolution, type_result, function_defs, ctx) {
+            if let Err(error) = lower_method(def, resolution, type_result, function_defs, ctx, *item) {
                 errors.push(error);
             }
         }
@@ -321,7 +312,15 @@ fn lower_function_items(
                 }
             }
             HirItem::MethodDefinition(def) => {
-                if let Err(error) = lower_method(def, resolution, type_result, function_defs, ctx) {
+                if let Some(item_id) =
+                    crate::lowering::function::item_id_for_item_span(
+                        resolution,
+                        item.span,
+                        ctx.current_source_path.as_ref(),
+                    )
+                    && let Err(error) =
+                        lower_method(def, resolution, type_result, function_defs, ctx, item_id)
+                {
                     errors.push(error);
                 }
             }

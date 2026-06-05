@@ -29,3 +29,13 @@ pub bool Contains(string text, string needle) {
     }
     return false;
 }
+
+/// Returns the byte at the given zero-based index in the UTF-8 representation.
+/// Out-of-bounds access triggers a runtime error.
+/// @tier(standard)
+/// @arg(text) Source string.
+/// @arg(index) Zero-based byte offset.
+/// @returns Byte value as u8.
+pub u8 ByteAt(string text, i64 index) {
+    return text[index];
+}

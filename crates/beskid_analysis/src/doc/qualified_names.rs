@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
+use crate::resolve::symbol::symbol_key;
 use crate::resolve::items::{ItemInfo, ItemKind};
+use crate::resolve::symbol_lookup::qualified_name;
 use crate::resolve::{ModuleGraph, Resolution};
 
 /// Short label for UI (last `::` segment of the resolver name).
@@ -34,32 +36,33 @@ fn join_path_segments(segments: &[String]) -> String {
     segments.join("::")
 }
 
+fn legacy_qualified_name(item: &ItemInfo, resolution: &Resolution, cache: &HashMap<usize, String>) -> String {
+    if let Some(parent_id) = item.parent_id {
+        let parent_qn = cache
+            .get(&parent_id.0)
+            .cloned()
+            .unwrap_or_else(|| resolution.items[parent_id.0].name.clone());
+        return format!("{}::{}", parent_qn, display_name_for_item(item));
+    }
+    let module_path = module_path_for_item(item, &resolution.module_graph);
+    if module_path.is_empty() {
+        item.name.clone()
+    } else {
+        format!(
+            "{}::{}",
+            join_path_segments(&module_path),
+            display_name_for_item(item)
+        )
+    }
+}
+
 /// Build qualified names for all items in emission order.
 pub fn qualified_names_for_items(resolution: &Resolution) -> HashMap<usize, String> {
     let mut out = HashMap::new();
     for item in &resolution.items {
-        let qn = if let Some(parent_id) = item.parent_id {
-            let parent_qn = out
-                .get(&parent_id.0)
-                .cloned()
-                .unwrap_or_else(|| resolution.items[parent_id.0].name.clone());
-            format!(
-                "{}::{}",
-                parent_qn,
-                display_name_for_item(item)
-            )
-        } else {
-            let module_path = module_path_for_item(item, &resolution.module_graph);
-            if module_path.is_empty() {
-                item.name.clone()
-            } else {
-                format!(
-                    "{}::{}",
-                    join_path_segments(&module_path),
-                    display_name_for_item(item)
-                )
-            }
-        };
+        let qn = qualified_name(resolution, item.id).unwrap_or_else(|| {
+            legacy_qualified_name(item, resolution, &out)
+        });
         out.insert(item.id.0, qn);
     }
     out
@@ -91,6 +94,11 @@ pub fn type_ref_lookup_index(resolution: &Resolution) -> HashMap<String, usize> 
                 idx.entry(dotted).or_insert(id);
             }
         }
+        if let Some(symbol) = item.symbol {
+            if let Some(key) = symbol_key(&resolution.symbols, symbol) {
+                idx.entry(key).or_insert(id);
+            }
+        }
         idx.entry(item.name.clone()).or_insert(id);
     }
     idx
@@ -114,4 +122,56 @@ pub fn lookup_type_ref_id(path: &str, index: &HashMap<String, usize>) -> Option<
         .iter()
         .find(|(key, _)| key.ends_with(&suffix) || key.as_str() == path)
         .map(|(_, id)| *id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hir::HirVisibility;
+    use std::collections::HashMap;
+
+    use crate::resolve::{
+        ExportKind, ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables,
+        SymbolQualifier, SymbolRegistry, SymbolShape,
+    };
+    use crate::syntax::SpanInfo;
+
+    #[test]
+    fn type_ref_lookup_index_includes_registry_symbol_key() {
+        let mut registry = SymbolRegistry::default();
+        let symbol = registry.intern(SymbolQualifier {
+            package: "demo".into(),
+            shape: SymbolShape::ModuleItem {
+                module_path: vec!["Root".into()],
+                name: "Widget".into(),
+                kind: ExportKind::Type,
+            },
+        });
+        let item_id = ItemId(0);
+        let resolution = Resolution {
+            items: vec![ItemInfo {
+                id: item_id,
+                parent_id: None,
+                name: "Widget".into(),
+                kind: ItemKind::Type,
+                visibility: HirVisibility::Public,
+                span: SpanInfo::from_byte_range_in_source("", 0, 1),
+                source_path: None,
+                symbol: Some(symbol),
+            }],
+            module_graph: ModuleGraph::new_root(),
+            tables: ResolutionTables::new(),
+            warnings: vec![],
+            builtin_items: HashMap::new(),
+            module_imports: HashMap::new(),
+            symbols: registry,
+            by_symbol: HashMap::from([(symbol, item_id)]),
+        };
+        let index = type_ref_lookup_index(&resolution);
+        assert_eq!(
+            lookup_type_ref_id("demo::Root::Widget", &index),
+            Some(0),
+            "symbolKey must be indexed for @ref / refItemId lookup"
+        );
+    }
 }

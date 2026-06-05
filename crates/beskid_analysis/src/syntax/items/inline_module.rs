@@ -11,7 +11,7 @@ use crate::syntax::{Attribute, Identifier, Node, SpanInfo, Spanned, Visibility};
 use beskid_ast_derive::AstNode;
 
 /// Inline `module Name { ... }` with nested items and optional leading docs per item.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InlineModule {
     #[ast(children)]
     pub attributes: Vec<Spanned<Attribute>>,

@@ -1,10 +1,10 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
-    AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression, CallExpression,
-    EnumConstructorExpression, EnumPattern, Expression, GroupedExpression, LambdaExpression,
-    LambdaParameter, Literal, LiteralExpression, MatchArm, MatchExpression, MemberExpression,
-    PathExpression, Pattern, Spanned, StructLiteralExpression, StructLiteralField, TryExpression,
-    UnaryExpression, UnaryOp,
+    ArrayLiteralExpression, AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression,
+    CallExpression, EnumConstructorExpression, EnumPattern, Expression, GroupedExpression,
+    IndexExpression, LambdaExpression, LambdaParameter, Literal, LiteralExpression, MatchArm,
+    MatchExpression, MemberExpression, PathExpression, Pattern, Spanned, StructLiteralExpression,
+    StructLiteralField, TryExpression, UnaryExpression, UnaryOp,
 };
 use std::fmt::Write;
 
@@ -437,6 +437,42 @@ impl Emit for Spanned<EnumConstructorExpression> {
     }
 }
 
+impl Emit for IndexExpression {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.target.emit(w, cx)?;
+        w.write_char('[')?;
+        self.index.emit(w, cx)?;
+        w.write_char(']')?;
+        Ok(())
+    }
+}
+
+impl Emit for Spanned<IndexExpression> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.node.emit(w, cx)
+    }
+}
+
+impl Emit for ArrayLiteralExpression {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        w.write_char('[')?;
+        for (i, e) in self.elements.iter().enumerate() {
+            if i > 0 {
+                cx.token(w, ", ")?;
+            }
+            e.emit(w, cx)?;
+        }
+        w.write_char(']')?;
+        Ok(())
+    }
+}
+
+impl Emit for Spanned<ArrayLiteralExpression> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.node.emit(w, cx)
+    }
+}
+
 impl Emit for Expression {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         match self {
@@ -457,6 +493,8 @@ impl Emit for Expression {
             Expression::Spawn(s) => s.emit(w, cx),
             Expression::MacroInvocation(m) => m.emit(w, cx),
             Expression::MacroMetavariable(m) => m.emit(w, cx),
+            Expression::Index(i) => i.emit(w, cx),
+            Expression::ArrayLiteral(a) => a.emit(w, cx),
         }
     }
 }

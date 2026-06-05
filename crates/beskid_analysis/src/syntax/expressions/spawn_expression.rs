@@ -7,7 +7,7 @@ use crate::syntax::{Expression, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// `spawn` prefix expression: starts a new fiber from a callable operand.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SpawnExpression {
     #[ast(child)]
     pub callee: Box<Spanned<Expression>>,

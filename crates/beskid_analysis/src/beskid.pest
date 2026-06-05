@@ -150,7 +150,7 @@ UseDeclaration = { Visibility? ~ "use" ~ Path ~ ("as" ~ Identifier)? ~ ";" }
 PathSegment = { Identifier ~ GenericArguments? }
 Path = { PathSegment ~ ("." ~ PathSegment)* }
 PathList = { Path ~ ("," ~ Path)* }
-EnumPath = { Identifier ~ "::" ~ Identifier }
+EnumPath = { Path ~ "::" ~ Identifier }
 
 ////////////////////////////////////////////////////////////
 // 3) TYPES
@@ -281,10 +281,11 @@ UnaryExpression = _{ SpawnUnary | PrefixUnary }
 SpawnUnary = { SpawnKeyword ~ PostfixExpression }
 PrefixUnary = { ("-" | "!")* ~ PostfixExpression }
 PostfixExpression = { PrimaryExpression ~ PostfixOperator* }
-PostfixOperator = { CallOperator | MemberAccess | TryOperator }
+PostfixOperator = { CallOperator | MemberAccess | SubscriptOperator | TryOperator }
 
 CallOperator = { "(" ~ ArgumentList? ~ ")" }
 MemberAccess = { "." ~ Identifier }
+SubscriptOperator = { "[" ~ Expression ~ "]" }
 TryOperator = { "?" }
 
 MacroInvocation = { Identifier ~ "!" ~ "(" ~ MacroArgumentList? ~ ")"? ~ MacroInvocationBlock? }
@@ -292,7 +293,7 @@ MacroArgumentList = { Expression ~ ("," ~ Expression)* }
 MacroInvocationBlock = { Block }
 MacroMetavariable = { "$" ~ Identifier }
 
-PrimaryExpression = { MacroInvocation | MacroMetavariable | Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | Path }
+PrimaryExpression = { MacroInvocation | MacroMetavariable | Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | ArrayLiteralExpression | Path }
 
 EnumConstructorExpression = { EnumPath ~ "(" ~ ArgumentList? ~ ")" }
 
@@ -300,8 +301,11 @@ StructLiteralExpression = { Path ~ "{" ~ FieldValueList? ~ "}" }
 FieldValueList = { FieldValue ~ ("," ~ FieldValue)* ~ ","? }
 FieldValue = { Identifier ~ ":" ~ Expression }
 
+ArrayLiteralExpression = { "[" ~ ExpressionList? ~ "]" }
+
 CallExpression = { Identifier ~ "(" ~ ArgumentList? ~ ")" }
 ArgumentList = { Expression ~ ("," ~ Expression)* }
+ExpressionList = { Expression ~ ("," ~ Expression)* }
 
 MatchExpression = { "match" ~ Expression ~ "{" ~ (MatchArm ~ ("," ~ MatchArm?)*)? ~ "}" }
 MatchArm = { Pattern ~ MatchGuard? ~ "=>" ~ Expression }

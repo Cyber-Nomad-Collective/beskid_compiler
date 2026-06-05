@@ -9,7 +9,7 @@ use crate::resolve::items::ItemKind;
 use crate::syntax::{Program, SpanInfo};
 
 /// Text edit to insert or replace a leading doc block (IDE quick-fix shape).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DocCommentEdit {
     Insert {
         at: usize,

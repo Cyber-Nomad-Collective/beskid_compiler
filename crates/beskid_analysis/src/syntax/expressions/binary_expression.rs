@@ -8,7 +8,7 @@ use pest::iterators::Pair;
 use beskid_ast_derive::AstNode;
 
 /// Binary operator expression with left and right operands.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BinaryExpression {
     #[ast(child)]
     pub left: Box<Spanned<Expression>>,
@@ -19,7 +19,7 @@ pub struct BinaryExpression {
 }
 
 /// Supported binary operators (logical, comparison, arithmetic).
-#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BinaryOp {
     Or,
     And,

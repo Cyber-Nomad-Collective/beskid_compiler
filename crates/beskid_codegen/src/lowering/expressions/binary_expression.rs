@@ -65,6 +65,33 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
 
         let operand_type = if left_type == right_type {
             left_type
+        } else if matches!(node.node.op.node, HirBinaryOp::Eq | HirBinaryOp::NotEq)
+            && (is_string_type(ctx, left_type) || is_string_type(ctx, right_type))
+        {
+            let string_type = if is_string_type(ctx, left_type) {
+                left_type
+            } else {
+                right_type
+            };
+            if !is_string_type(ctx, left_type) {
+                left = coerce_operand_to_string(
+                    node.node.left.span,
+                    left,
+                    left_type,
+                    string_type,
+                    ctx,
+                )?;
+            }
+            if !is_string_type(ctx, right_type) {
+                right = coerce_operand_to_string(
+                    node.node.right.span,
+                    right,
+                    right_type,
+                    string_type,
+                    ctx,
+                )?;
+            }
+            string_type
         } else if is_numeric_type(ctx.type_result.types.get(left_type))
             && is_numeric_type(ctx.type_result.types.get(right_type))
         {
@@ -259,6 +286,14 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     });
                 }
 
+                if matches!(
+                    operand_info,
+                    Some(TypeInfo::Primitive(HirPrimitiveType::String))
+                ) && matches!(node.node.op.node, HirBinaryOp::Eq | HirBinaryOp::NotEq)
+                {
+                    return lower_string_eq(node, left, right, ctx);
+                }
+
                 if operand_clif_ty.is_float() {
                     let cond = match node.node.op.node {
                         HirBinaryOp::Eq => FloatCC::Equal,
@@ -292,6 +327,48 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
 
         Ok(Some(value))
     }
+}
+
+fn lower_string_eq(
+    node: &Spanned<HirBinaryExpression>,
+    left: Value,
+    right: Value,
+    ctx: &mut NodeLoweringContext<'_, '_>,
+) -> Result<Option<Value>, CodegenError> {
+    let mut signature = Signature::new(CallConv::SystemV);
+    signature.params.push(AbiParam::new(pointer_type()));
+    signature.params.push(AbiParam::new(pointer_type()));
+    signature.returns.push(AbiParam::new(clif_types::I64));
+    let sig_ref = ctx.builder.func.import_signature(signature);
+    let func_ref = ctx
+        .builder
+        .func
+        .import_function(cranelift_codegen::ir::ExtFuncData {
+            name: ExternalName::testcase("str_eq"),
+            signature: sig_ref,
+            colocated: false,
+            patchable: false,
+        });
+
+    let call = ctx.builder.ins().call(func_ref, &[left, right]);
+    let eq_flag = *ctx
+        .builder
+        .inst_results(call)
+        .first()
+        .ok_or(CodegenError::UnsupportedNode {
+            span: node.span,
+            node: "string eq result",
+        })?;
+    let zero = ctx.builder.ins().iconst(clif_types::I64, 0);
+    let value = match node.node.op.node {
+        HirBinaryOp::Eq => ctx
+            .builder
+            .ins()
+            .icmp(IntCC::NotEqual, eq_flag, zero),
+        HirBinaryOp::NotEq => ctx.builder.ins().icmp(IntCC::Equal, eq_flag, zero),
+        _ => unreachable!("checked operator"),
+    };
+    Ok(Some(value))
 }
 
 fn lower_string_concat(

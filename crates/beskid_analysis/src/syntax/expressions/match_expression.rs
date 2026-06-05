@@ -8,7 +8,7 @@ use crate::syntax::{Expression, MatchArm, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// `match` expression: scrutinee and ordered arms.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MatchExpression {
     #[ast(child)]
     pub scrutinee: Box<Spanned<Expression>>,

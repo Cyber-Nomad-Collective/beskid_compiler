@@ -1,10 +1,11 @@
-//! Infer enum metadata for `?` desugaring before full program type-check.
+//! Infer enum metadata for `?` desugaring and array for-loop detection before full program type-check.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::hir::{HirExpressionNode, HirItem, HirProgram, HirStatementNode};
 use crate::resolve::Resolution;
 use crate::syntax::{SpanInfo, Spanned};
+use crate::types::TypeInfo;
 
 use super::context::TypeContext;
 
@@ -258,4 +259,186 @@ fn collect_try_targets_in_expression(
         }
         _ => {}
     }
+}
+
+/// Map for-statement span → true when the iterable type is `T[]` (computed before normalization).
+pub fn collect_array_for_spans(
+    resolution: &Resolution,
+    entry: &Spanned<HirProgram>,
+    dependency_programs: &[&Spanned<HirProgram>],
+) -> HashSet<SpanInfo> {
+    let mut programs: Vec<&Spanned<HirProgram>> = dependency_programs.to_vec();
+    programs.push(entry);
+    let mut set = HashSet::new();
+    collect_array_fors(resolution, &programs, entry, &mut set);
+    set
+}
+
+fn collect_array_fors(
+    resolution: &Resolution,
+    programs: &[&Spanned<HirProgram>],
+    program: &Spanned<HirProgram>,
+    set: &mut HashSet<SpanInfo>,
+) {
+    for item in &program.node.items {
+        collect_array_fors_item(resolution, programs, item, set);
+    }
+}
+
+fn collect_array_fors_item(
+    resolution: &Resolution,
+    programs: &[&Spanned<HirProgram>],
+    item: &Spanned<HirItem>,
+    set: &mut HashSet<SpanInfo>,
+) {
+    match &item.node {
+        HirItem::FunctionDefinition(def) => {
+            collect_array_fors_in_block(resolution, programs, &def.node.body, set);
+        }
+        HirItem::MethodDefinition(def) => {
+            collect_array_fors_in_block(resolution, programs, &def.node.body, set);
+        }
+        HirItem::InlineModule(inline) => {
+            for nested in &inline.node.items {
+                collect_array_fors_item(resolution, programs, nested, set);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_array_fors_in_block(
+    resolution: &Resolution,
+    programs: &[&Spanned<HirProgram>],
+    block: &Spanned<crate::hir::HirBlock>,
+    set: &mut HashSet<SpanInfo>,
+) {
+    for statement in &block.node.statements {
+        if let HirStatementNode::ForStatement(for_stmt) = &statement.node
+            && is_array_iterable(resolution, programs, &for_stmt.node.iterable)
+        {
+            set.insert(statement.span);
+        }
+        collect_array_fors_in_statement(resolution, programs, statement, set);
+    }
+}
+
+fn collect_array_fors_in_statement(
+    resolution: &Resolution,
+    programs: &[&Spanned<HirProgram>],
+    statement: &Spanned<HirStatementNode>,
+    set: &mut HashSet<SpanInfo>,
+) {
+    match &statement.node {
+        HirStatementNode::LetStatement(let_stmt) => {
+            collect_array_fors_in_expression(resolution, programs, &let_stmt.node.value, set);
+        }
+        HirStatementNode::ReturnStatement(ret) => {
+            if let Some(value) = &ret.node.value {
+                collect_array_fors_in_expression(resolution, programs, value, set);
+            }
+        }
+        HirStatementNode::WhileStatement(while_stmt) => {
+            collect_array_fors_in_expression(resolution, programs, &while_stmt.node.condition, set);
+            collect_array_fors_in_block(resolution, programs, &while_stmt.node.body, set);
+        }
+        HirStatementNode::IfStatement(if_stmt) => {
+            collect_array_fors_in_expression(resolution, programs, &if_stmt.node.condition, set);
+            collect_array_fors_in_block(resolution, programs, &if_stmt.node.then_block, set);
+            if let Some(else_block) = &if_stmt.node.else_block {
+                collect_array_fors_in_block(resolution, programs, else_block, set);
+            }
+        }
+        HirStatementNode::ExpressionStatement(expr_stmt) => {
+            collect_array_fors_in_expression(
+                resolution,
+                programs,
+                &expr_stmt.node.expression,
+                set,
+            );
+        }
+        HirStatementNode::ForStatement(_) => {}
+        _ => {}
+    }
+}
+
+fn collect_array_fors_in_expression(
+    resolution: &Resolution,
+    programs: &[&Spanned<HirProgram>],
+    expr: &Spanned<HirExpressionNode>,
+    set: &mut HashSet<SpanInfo>,
+) {
+    match &expr.node {
+        HirExpressionNode::BinaryExpression(binary) => {
+            collect_array_fors_in_expression(resolution, programs, &binary.node.left, set);
+            collect_array_fors_in_expression(resolution, programs, &binary.node.right, set);
+        }
+        HirExpressionNode::UnaryExpression(unary) => {
+            collect_array_fors_in_expression(resolution, programs, &unary.node.expr, set);
+        }
+        HirExpressionNode::CallExpression(call) => {
+            collect_array_fors_in_expression(resolution, programs, &call.node.callee, set);
+            for arg in &call.node.args {
+                collect_array_fors_in_expression(resolution, programs, arg, set);
+            }
+        }
+        HirExpressionNode::MemberExpression(member) => {
+            collect_array_fors_in_expression(resolution, programs, &member.node.target, set);
+        }
+        HirExpressionNode::MatchExpression(match_expr) => {
+            collect_array_fors_in_expression(resolution, programs, &match_expr.node.scrutinee, set);
+            for arm in &match_expr.node.arms {
+                collect_array_fors_in_expression(resolution, programs, &arm.node.value, set);
+            }
+        }
+        HirExpressionNode::BlockExpression(block_expr) => {
+            collect_array_fors_in_block(resolution, programs, &block_expr.node.block, set);
+        }
+        HirExpressionNode::GroupedExpression(grouped) => {
+            collect_array_fors_in_expression(resolution, programs, &grouped.node.expr, set);
+        }
+        HirExpressionNode::AssignExpression(assign) => {
+            collect_array_fors_in_expression(resolution, programs, &assign.node.target, set);
+            collect_array_fors_in_expression(resolution, programs, &assign.node.value, set);
+        }
+        HirExpressionNode::IndexExpression(index_expr) => {
+            collect_array_fors_in_expression(resolution, programs, &index_expr.node.target, set);
+            collect_array_fors_in_expression(resolution, programs, &index_expr.node.index, set);
+        }
+        HirExpressionNode::ArrayLiteralExpression(lit) => {
+            for element in &lit.node.elements {
+                collect_array_fors_in_expression(resolution, programs, element, set);
+            }
+        }
+        HirExpressionNode::EnumConstructorExpression(constructor) => {
+            for arg in &constructor.node.args {
+                collect_array_fors_in_expression(resolution, programs, arg, set);
+            }
+        }
+        HirExpressionNode::StructLiteralExpression(struct_lit) => {
+            for field in &struct_lit.node.fields {
+                collect_array_fors_in_expression(resolution, programs, &field.node.value, set);
+            }
+        }
+        HirExpressionNode::LambdaExpression(lambda) => {
+            collect_array_fors_in_expression(resolution, programs, &lambda.node.body, set);
+        }
+        _ => {}
+    }
+}
+
+fn is_array_iterable(
+    resolution: &Resolution,
+    programs: &[&Spanned<HirProgram>],
+    iterable: &Spanned<HirExpressionNode>,
+) -> bool {
+    let mut ctx = TypeContext::new(resolution);
+    ctx.seed_types();
+    for program in programs {
+        ctx.seed_enum_definitions(program);
+    }
+    let Some(target_type) = ctx.type_expression(iterable) else {
+        return false;
+    };
+    matches!(ctx.type_table.get(target_type), Some(TypeInfo::Array(_)))
 }

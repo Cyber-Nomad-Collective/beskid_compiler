@@ -8,7 +8,9 @@ use crate::lowering::types::{map_type_id_to_clif, type_id_for_type};
 use beskid_analysis::hir::{
     HirFunctionDefinition, HirLambdaExpression, HirMethodDefinition, HirTestDefinition,
 };
-use beskid_analysis::resolve::{ItemId, LocalId, Resolution};
+use beskid_analysis::resolve::{canonical_item_id, ItemId, LocalId, Resolution};
+use beskid_analysis::paths::same_file_opt;
+use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeInfo, TypeResult};
 use cranelift_codegen::ir::{AbiParam, Block, Function, InstBuilder, Signature};
@@ -26,13 +28,23 @@ pub(crate) fn lower_function(
     ctx: &mut CodegenContext,
 ) -> CodegenResult<()> {
     let saved_source_path = ctx.current_source_path.clone();
-    ctx.current_source_path = resolution
-        .items
-        .iter()
-        .find(|info| info.span == def.span)
-        .and_then(|info| info.source_path.clone())
-        .or(saved_source_path.clone());
-    let result = lower_function_with_name(def, resolution, type_result, function_defs, ctx, None, None);
+    if ctx.current_source_path.is_none() {
+        ctx.current_source_path = resolution
+            .items
+            .iter()
+            .find(|info| info.span == def.span)
+            .and_then(|info| info.source_path.clone());
+    }
+    let result = lower_function_with_name(
+        def,
+        resolution,
+        type_result,
+        function_defs,
+        ctx,
+        None,
+        None,
+        None,
+    );
     ctx.current_source_path = saved_source_path;
     result
 }
@@ -43,18 +55,15 @@ pub(crate) fn lower_method(
     type_result: &TypeResult,
     function_defs: &HashMap<ItemId, &Spanned<HirFunctionDefinition>>,
     ctx: &mut CodegenContext,
+    known_item_id: ItemId,
 ) -> CodegenResult<()> {
-    let item_id = resolution
-        .items
-        .iter()
-        .find(|info| info.span == def.span)
-        .map(|info| info.id)
-        .ok_or(CodegenError::MissingSymbol("method item"))?;
-    ctx.current_source_path = resolution
-        .items
-        .iter()
-        .find(|info| info.span == def.span)
-        .and_then(|info| info.source_path.clone());
+    let item_id = canonical_item_id(resolution, known_item_id);
+    if ctx.current_source_path.is_none() {
+        ctx.current_source_path = resolution
+            .items
+            .get(item_id.0)
+            .and_then(|info| info.source_path.clone());
+    }
     ctx.emitting_items.insert(item_id);
     let result = lower_method_body(
         def,
@@ -394,13 +403,12 @@ pub(crate) fn lower_function_with_name(
     ctx: &mut CodegenContext,
     name_override: Option<String>,
     generic_args: Option<HashMap<String, beskid_analysis::types::TypeId>>,
+    known_item_id: Option<ItemId>,
 ) -> CodegenResult<()> {
     let generic_args = generic_args.unwrap_or_default();
-    let item_id = resolution
-        .items
-        .iter()
-        .find(|info| info.span == def.span)
-        .map(|info| info.id);
+    let item_id = known_item_id
+        .or_else(|| item_id_for_item_span(resolution, def.span, ctx.current_source_path.as_ref()))
+        .map(|id| canonical_item_id(resolution, id));
     if let Some(id) = item_id {
         ctx.emitting_items.insert(id);
     }
@@ -509,11 +517,9 @@ fn lower_function_with_name_body(
         .ok_or(CodegenError::InvalidLocalBinding {
             span: param.node.name.span,
         })?;
-        let type_id = type_result
-            .local_types
-            .get(&local_id)
-            .copied()
-            .or_else(|| signature_types.and_then(|sig| sig.params.get(index).copied()))
+        let type_id = signature_types
+            .and_then(|sig| sig.params.get(index).copied())
+            .or_else(|| type_result.local_types.get(&local_id).copied())
             .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))
             .map(&substitute)
             .ok_or(CodegenError::MissingLocalType {
@@ -596,4 +602,29 @@ pub(crate) struct LoopControl {
 
 fn signature_has_return(signature: &Signature) -> bool {
     !signature.returns.is_empty()
+}
+
+pub(crate) fn item_id_for_item_span(
+    resolution: &Resolution,
+    span: SpanInfo,
+    source_path: Option<&std::path::PathBuf>,
+) -> Option<ItemId> {
+    if let Some(path) = source_path {
+        if let Some(info) = resolution.items.iter().find(|info| {
+            info.span == span && same_file_opt(info.source_path.as_ref(), Some(path))
+        }) {
+            return Some(info.id);
+        }
+    }
+
+    let matches: Vec<_> = resolution
+        .items
+        .iter()
+        .filter(|info| info.span == span)
+        .collect();
+    match matches.as_slice() {
+        [] => None,
+        [single] => Some(single.id),
+        _ => None,
+    }
 }

@@ -6,7 +6,7 @@ use crate::syntax::{
     PrimitiveType, Program, Spanned, Type,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CallableSignatures {
     pub param_names: Vec<String>,
     pub returns_unit: bool,

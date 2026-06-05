@@ -5,7 +5,7 @@ use crate::syntax::{
 use beskid_ast_derive::AstNode;
 
 /// Distinguishes ordinary value fields from event/signal-style fields.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum FieldKind {
     Value,
     Event,
@@ -13,7 +13,7 @@ pub enum FieldKind {
 }
 
 /// Struct or enum variant field with name and type (and optional event capacity).
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Field {
     #[ast(child)]
     pub visibility: Spanned<Visibility>,

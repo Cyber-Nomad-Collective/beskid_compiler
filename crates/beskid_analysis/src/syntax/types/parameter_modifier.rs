@@ -3,7 +3,7 @@
 use beskid_ast_derive::AstNode;
 
 /// `ref` or `out` parameter modifier.
-#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ParameterModifier {
     Ref,
     Out,

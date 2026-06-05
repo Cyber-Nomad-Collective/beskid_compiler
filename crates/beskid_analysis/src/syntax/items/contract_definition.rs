@@ -12,7 +12,7 @@ use crate::syntax::{Attribute, ContractNode, Identifier, SpanInfo, Spanned, Visi
 use beskid_ast_derive::AstNode;
 
 /// `contract` interface: members (method signatures and embeddings) with per-item docs.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContractDefinition {
     #[ast(children)]
     pub attributes: Vec<Spanned<Attribute>>,

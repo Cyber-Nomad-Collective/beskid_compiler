@@ -2,6 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
+/// Stable key for per-unit scoped tables (canonical when the path exists on disk).
+pub fn unit_path_key(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// Whether two paths refer to the same on-disk file (equality or matching canonical paths).
 pub fn same_file(left: &Path, right: &Path) -> bool {
     if left == right {

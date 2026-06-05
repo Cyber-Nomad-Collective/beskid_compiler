@@ -51,6 +51,10 @@ pub enum ExpressionNode<P: Phase> {
     MacroInvocation(Spanned<P::MacroInvocation>),
     #[phase(from = "MacroMetavariable")]
     MacroMetavariable(Spanned<P::MacroMetavariable>),
+    #[phase(from = "Index")]
+    IndexExpression(Spanned<P::IndexExpression>),
+    #[phase(from = "ArrayLiteral")]
+    ArrayLiteralExpression(Spanned<P::ArrayLiteralExpression>),
 }
 
 #[derive(beskid_ast_derive::HirNode)]
@@ -93,6 +97,8 @@ impl HirNode for ExpressionNode<HirPhase> {
             ExpressionNode::GroupedExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::TryExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::SpawnExpression(expr) => push(HirNodeRef(&expr.node)),
+            ExpressionNode::IndexExpression(expr) => push(HirNodeRef(&expr.node)),
+            ExpressionNode::ArrayLiteralExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::MacroInvocation(_) | ExpressionNode::MacroMetavariable(_) => {}
         }
     }
@@ -251,4 +257,20 @@ pub struct HirTryExpression {
 pub struct HirSpawnExpression {
     #[ast(child)]
     pub callee: Box<Spanned<ExpressionNode<HirPhase>>>,
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "IndexExpression")]
+pub struct HirIndexExpression {
+    #[ast(child)]
+    pub target: Box<Spanned<ExpressionNode<HirPhase>>>,
+    #[ast(child)]
+    pub index: Box<Spanned<ExpressionNode<HirPhase>>>,
+}
+
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "ArrayLiteralExpression")]
+pub struct HirArrayLiteralExpression {
+    #[ast(children)]
+    pub elements: Vec<Spanned<ExpressionNode<HirPhase>>>,
 }

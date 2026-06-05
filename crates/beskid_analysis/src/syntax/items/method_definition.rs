@@ -14,7 +14,7 @@ use crate::syntax::{
 use beskid_ast_derive::AstNode;
 
 /// Method inside an `impl` block: receiver type, parameters, return type, and body.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MethodDefinition {
     #[ast(child)]
     pub visibility: Spanned<Visibility>,

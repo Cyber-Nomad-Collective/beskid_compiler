@@ -1,7 +1,7 @@
 use beskid_ast_derive::AstNode;
 
 /// Visibility applied to a module item or attribute declaration.
-#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Visibility {
     Public,
     Private,

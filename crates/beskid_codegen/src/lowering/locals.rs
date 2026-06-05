@@ -3,9 +3,9 @@
 use std::path::PathBuf;
 
 use beskid_analysis::hir::{
-    HirBinaryOp, HirCallExpression, HirExpressionNode, HirLiteral, HirPrimitiveType,
+    HirBinaryOp, HirCallExpression, HirExpressionNode, HirLiteral, HirPrimitiveType, HirUnaryOp,
 };
-use beskid_analysis::resolve::{LocalId, Resolution, ResolvedValue};
+use beskid_analysis::resolve::{canonical_item_id, LocalId, Resolution, ResolvedValue};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{CallLoweringKind, TypeId, TypeInfo, TypeResult};
 
@@ -20,12 +20,21 @@ pub(crate) fn expr_type_at(
 }
 
 pub(crate) fn require_expr_type(
+    resolution: &Resolution,
     type_result: &TypeResult,
     span: SpanInfo,
     source_path: Option<&PathBuf>,
+    node: Option<&Spanned<HirExpressionNode>>,
 ) -> Result<TypeId, CodegenError> {
-    expr_type_at(type_result, span, source_path)
-        .ok_or(CodegenError::MissingExpressionType { span })
+    if let Some(type_id) = expr_type_at(type_result, span, source_path) {
+        return Ok(type_id);
+    }
+    if let Some(node) = node
+        && let Some(type_id) = infer_expr_type(resolution, type_result, node, source_path)
+    {
+        return Ok(type_id);
+    }
+    Err(CodegenError::MissingExpressionType { span })
 }
 
 pub(crate) fn primitive_type_id(
@@ -97,6 +106,12 @@ pub(crate) fn infer_expr_type(
         HirExpressionNode::CallExpression(call) => {
             infer_call_expr_type(resolution, type_result, node, call, source_path)
         }
+        HirExpressionNode::UnaryExpression(unary) => match unary.node.op.node {
+            HirUnaryOp::Not => primitive_type_id(type_result, HirPrimitiveType::Bool),
+            HirUnaryOp::Neg => {
+                infer_expr_type(resolution, type_result, &unary.node.expr, source_path)
+            }
+        },
         _ => None,
     }
 }
@@ -115,8 +130,11 @@ fn infer_call_expr_type(
     call: &Spanned<HirCallExpression>,
     source_path: Option<&PathBuf>,
 ) -> Option<TypeId> {
-    if let Some(kind) = type_result.call_kind_at(node.span, source_path) {
-        return infer_call_kind_return_type(type_result, &kind);
+    if let Some(kind) = type_result
+        .call_kind_at(node.span, source_path)
+        .map(|kind| canonicalize_call_kind(resolution, kind))
+    {
+        return infer_call_kind_return_type(resolution, type_result, &kind);
     }
 
     match &call.node.callee.node {
@@ -129,6 +147,7 @@ fn infer_call_expr_type(
             else {
                 return None;
             };
+            let item_id = canonical_item_id(resolution, item_id);
             type_result
                 .function_signatures
                 .get(&item_id)
@@ -139,18 +158,25 @@ fn infer_call_expr_type(
 }
 
 fn infer_call_kind_return_type(
+    resolution: &Resolution,
     type_result: &TypeResult,
     kind: &CallLoweringKind,
 ) -> Option<TypeId> {
     match kind {
-        CallLoweringKind::ItemCall { item_id } => type_result
-            .function_signatures
-            .get(item_id)
-            .map(|signature| signature.return_type),
-        CallLoweringKind::MethodDispatch { method_item_id, .. } => type_result
-            .function_signatures
-            .get(method_item_id)
-            .map(|signature| signature.return_type),
+        CallLoweringKind::ItemCall { item_id } => {
+            let item_id = canonical_item_id(resolution, *item_id);
+            type_result
+                .function_signatures
+                .get(&item_id)
+                .map(|signature| signature.return_type)
+        }
+        CallLoweringKind::MethodDispatch { method_item_id, .. } => {
+            let item_id = canonical_item_id(resolution, *method_item_id);
+            type_result
+                .function_signatures
+                .get(&item_id)
+                .map(|signature| signature.return_type)
+        }
         CallLoweringKind::EventInvoke { .. } => {
             primitive_type_id(type_result, HirPrimitiveType::Unit)
         }
@@ -163,7 +189,41 @@ pub(crate) fn resolved_value_at(
     span: SpanInfo,
     source_path: Option<&PathBuf>,
 ) -> Option<ResolvedValue> {
-    resolution.tables.resolved_value_at(span, source_path)
+    let value = resolution.tables.resolved_value_at(span, source_path)?;
+    Some(match value {
+        ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(resolution, item_id)),
+        other => other,
+    })
+}
+
+pub(crate) fn canonicalize_call_kind(
+    resolution: &Resolution,
+    kind: CallLoweringKind,
+) -> CallLoweringKind {
+    match kind {
+        CallLoweringKind::ItemCall { item_id } => CallLoweringKind::ItemCall {
+            item_id: canonical_item_id(resolution, item_id),
+        },
+        CallLoweringKind::MethodDispatch {
+            method_item_id,
+            receiver_source,
+            receiver_type,
+        } => CallLoweringKind::MethodDispatch {
+            method_item_id: canonical_item_id(resolution, method_item_id),
+            receiver_source,
+            receiver_type,
+        },
+        CallLoweringKind::ContractDispatch {
+            contract_item_id,
+            receiver_source,
+            receiver_type,
+        } => CallLoweringKind::ContractDispatch {
+            contract_item_id: canonical_item_id(resolution, contract_item_id),
+            receiver_source,
+            receiver_type,
+        },
+        other => other,
+    }
 }
 
 pub(crate) fn local_id_for_span(

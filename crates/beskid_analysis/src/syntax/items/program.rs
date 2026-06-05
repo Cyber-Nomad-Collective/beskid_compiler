@@ -10,7 +10,7 @@ use crate::syntax::{Node, SpanInfo, Spanned};
 use beskid_ast_derive::AstNode;
 
 /// Parsed compilation unit: top-level items with optional leading doc comments per item.
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Program {
     #[ast(children)]
     pub items: Vec<Spanned<Node>>,

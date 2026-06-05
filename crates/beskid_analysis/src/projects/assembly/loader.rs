@@ -10,17 +10,13 @@ use thiserror::Error;
 
 use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
-use crate::services::parse_program_with_source_name;
 use crate::syntax::{Program, Spanned};
-
 use super::discovery::resolve_module_file;
 use super::module_index::ModuleIndex;
 use super::roots::effective_roots_for_plan;
-use super::unit_cache::{
-    self, CachedUnitRecord, ensure_manifest, hir_from_cached_record, read_cached_unit,
-    source_unit_from_record, unit_fingerprint, write_cached_unit,
-};
-use super::{ProgramAssembly, SourceUnit, UnitHir, build_hir_units};
+use super::unit_builder::UnitBuilder;
+use super::unit_cache::{disk_cache_stats, ensure_manifest};
+use super::{ProgramAssembly, SourceUnit, UnitHir};
 
 /// Optional Salsa-backed unit builder (set by `beskid_queries` during assembly).
 pub type UnitMaterializer =
@@ -91,6 +87,7 @@ pub fn assemble_program_with_materializer(
         .unwrap_or_else(|_| entry_path.to_path_buf());
 
     let mut discovered: Vec<PathBuf> = Vec::new();
+    let mut discovered_sources: Vec<(PathBuf, String)> = Vec::new();
     let mut seen = HashSet::new();
 
     let enqueue = |path: PathBuf, discovered: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>| {
@@ -106,9 +103,13 @@ pub fn assemble_program_with_materializer(
         });
     }
 
+    let entry_is_prelude = entry_canonical
+        .file_name()
+        .is_some_and(|name| name == "Prelude.bd");
+
     let mut prelude_seeds = Vec::new();
     let mut prelude_reexport_paths = Vec::new();
-    if options.include_std_prelude {
+    if options.include_std_prelude && !entry_is_prelude {
         for root in &module_roots {
             if is_compiler_mod_sdk_source_root(root) {
                 continue;
@@ -139,6 +140,7 @@ pub fn assemble_program_with_materializer(
     }
 
     discovered.clear();
+    discovered_sources.clear();
     seen.clear();
 
     match options.discovery {
@@ -148,12 +150,6 @@ pub fn assemble_program_with_materializer(
             for seed in prelude_seeds {
                 queue.push_back(seed);
             }
-            for root in &module_roots {
-                let prelude = root.join("Prelude.bd");
-                if prelude.is_file() {
-                    queue.push_back(prelude);
-                }
-            }
             for module_path in prelude_reexport_paths {
                 if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
                     queue.push_back(dep_file);
@@ -161,7 +157,7 @@ pub fn assemble_program_with_materializer(
             }
 
             while let Some(path) = queue.pop_front() {
-                if discovered.len() >= options.max_units {
+                if discovered_sources.len() >= options.max_units {
                     return Err(AssemblyError::MaxUnits {
                         max: options.max_units,
                     });
@@ -170,12 +166,25 @@ pub fn assemble_program_with_materializer(
                 if !seen.insert(key) {
                     continue;
                 }
-                discovered.push(path.clone());
 
-                let source = fs::read_to_string(&path).map_err(|source| AssemblyError::Read {
-                    path: path.clone(),
-                    source,
-                })?;
+                let source = if path == entry_canonical {
+                    if let Some(entry_text) = entry_source {
+                        entry_text.to_string()
+                    } else {
+                        fs::read_to_string(&path).map_err(|source| AssemblyError::Read {
+                            path: path.clone(),
+                            source,
+                        })?
+                    }
+                } else {
+                    fs::read_to_string(&path).map_err(|source| AssemblyError::Read {
+                        path: path.clone(),
+                        source,
+                    })?
+                };
+
+                discovered.push(path.clone());
+                discovered_sources.push((path.clone(), source.clone()));
 
                 for import_path in import_paths_from_source_full(&source) {
                     if let Some(dep_file) = resolve_module_file(&import_path, &roots) {
@@ -213,8 +222,6 @@ pub fn assemble_program_with_materializer(
             project_root.display()
         );
     }
-    let cache_hits = std::sync::atomic::AtomicUsize::new(0);
-    let cache_misses = std::sync::atomic::AtomicUsize::new(0);
     let entry_key = entry_canonical.canonicalize().unwrap_or(entry_canonical.clone());
 
     struct UnitBuildInput {
@@ -223,43 +230,65 @@ pub fn assemble_program_with_materializer(
         source: String,
     }
 
-    let build_inputs: Vec<UnitBuildInput> = discovered
-        .iter()
-        .filter_map(|path| {
-            let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
-            let is_entry = path_key == entry_key;
-            let source = if is_entry {
-                entry_source.map(str::to_string).unwrap_or_default()
-            } else {
-                match fs::read_to_string(path) {
-                    Ok(text) => text,
-                    Err(source) if options.skip_parse_errors && !is_entry => {
-                        log::warn!(
-                            "skipping unreadable unit {} ({source})",
-                            path.display()
-                        );
-                        return None;
+    let build_inputs: Vec<UnitBuildInput> = if !discovered_sources.is_empty() {
+        discovered_sources
+            .iter()
+            .map(|(path, source)| {
+                let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
+                Ok(UnitBuildInput {
+                    path: path.clone(),
+                    is_entry: path_key == entry_key,
+                    source: source.clone(),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        discovered
+            .iter()
+            .filter_map(|path| {
+                let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
+                let is_entry = path_key == entry_key;
+                let source = if is_entry {
+                    entry_source.map(str::to_string).unwrap_or_default()
+                } else {
+                    match fs::read_to_string(path) {
+                        Ok(text) => text,
+                        Err(source) if options.skip_parse_errors && !is_entry => {
+                            log::warn!(
+                                "skipping unreadable unit {} ({source})",
+                                path.display()
+                            );
+                            return None;
+                        }
+                        Err(source) => {
+                            return Some(Err(AssemblyError::Read {
+                                path: path.clone(),
+                                source,
+                            }));
+                        }
                     }
-                    Err(source) => {
-                        return Some(Err(AssemblyError::Read {
-                            path: path.clone(),
-                            source,
-                        }));
-                    }
-                }
-            };
-            Some(Ok(UnitBuildInput {
-                path: path.clone(),
-                is_entry,
-                source,
-            }))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+                };
+                Some(Ok(UnitBuildInput {
+                    path: path.clone(),
+                    is_entry,
+                    source,
+                }))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
 
+    let default_threads = if materializer.is_some() {
+        // Salsa materializer serializes on a shared DB mutex; extra rayon threads add overhead only.
+        1
+    } else {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+    };
     let thread_cap = std::env::var("BESKID_ASSEMBLY_THREADS")
         .ok()
         .and_then(|value| value.parse().ok())
-        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4));
+        .unwrap_or(default_threads);
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(thread_cap.max(1))
         .build()
@@ -269,79 +298,32 @@ pub fn assemble_program_with_materializer(
         })?;
 
     let project_root_for_pool = project_root.clone();
+    let salsa_build = materializer.as_ref().map(|build| build.as_ref() as _);
     let built_units: Result<Vec<(usize, bool, SourceUnit, super::UnitHir)>, AssemblyError> =
         pool.install(|| {
             build_inputs
                 .par_iter()
                 .enumerate()
                 .map(|(discovered_index, input)| {
-                    if let Some(ref build) = materializer {
-                        cache_misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let (unit, hir) = build(&input.path, &input.source)?;
-                        return Ok((discovered_index, input.is_entry, unit, hir));
-                    }
-
-                    let fingerprint = unit_fingerprint(&input.path, &input.source);
-                    if let Some(record) =
-                        read_cached_unit(&fingerprint, &project_root_for_pool)
-                        && record.source == input.source
-                        && record.path == input.path
-                    {
-                        cache_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let unit = source_unit_from_record(&record);
-                        let hir = hir_from_cached_record(&record);
-                        return Ok((discovered_index, input.is_entry, unit, hir));
-                    }
-                    cache_misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-                    let logical_name = input.path.display().to_string();
-                    let program = match parse_program_with_source_name(&logical_name, &input.source)
-                    {
-                        Ok(program) => expand_syntax_for_assembly(program),
-                        Err(err) if options.skip_parse_errors && !input.is_entry => {
-                            log::warn!(
-                                "skipping unparseable unit {} ({err})",
-                                input.path.display()
-                            );
-                            return Err(AssemblyError::Parse {
-                                path: input.path.clone(),
+                    let builder = UnitBuilder::new(&project_root_for_pool);
+                    let builder = if let Some(build) = salsa_build {
+                        builder.with_salsa_build(build)
+                    } else {
+                        builder
+                    };
+                    match builder.build_unit(&input.path, &input.source) {
+                        Ok((unit, hir)) => Ok((discovered_index, input.is_entry, unit, hir)),
+                        Err(AssemblyError::Parse { path, message })
+                            if options.skip_parse_errors && !input.is_entry =>
+                        {
+                            log::warn!("skipping unparseable unit {} ({message})", path.display());
+                            Err(AssemblyError::Parse {
+                                path,
                                 message: "skipped".to_string(),
-                            });
+                            })
                         }
-                        Err(err) => {
-                            return Err(AssemblyError::Parse {
-                                path: input.path.clone(),
-                                message: err.to_string(),
-                            });
-                        }
-                    };
-
-                    let unit = SourceUnit {
-                        logical_name,
-                        path: input.path.clone(),
-                        source: input.source.clone(),
-                        program,
-                    };
-                    let hir = build_hir_units(std::slice::from_ref(&unit))
-                        .into_iter()
-                        .next()
-                        .expect("unit hir");
-
-                    let record = CachedUnitRecord {
-                        fingerprint: unit_fingerprint(&unit.path, &unit.source),
-                        logical_name: unit.logical_name.clone(),
-                        path: unit.path.clone(),
-                        source: unit.source.clone(),
-                        imports: unit_cache::import_paths_from_source(&unit.source),
-                    };
-                    if let Err(err) = write_cached_unit(&project_root_for_pool, &record) {
-                        log::warn!(
-                            "failed to write unit cache for {}: {err}",
-                            unit.path.display()
-                        );
+                        Err(err) => Err(err),
                     }
-
-                    Ok((discovered_index, input.is_entry, unit, hir))
                 })
                 .filter(|result| {
                     !matches!(
@@ -371,11 +353,13 @@ pub fn assemble_program_with_materializer(
         });
     }
 
+    let disk_stats = disk_cache_stats();
     log::debug!(
-        "assembly cache hits={} misses={}",
-        cache_hits.load(std::sync::atomic::Ordering::Relaxed),
-        cache_misses.load(std::sync::atomic::Ordering::Relaxed)
+        "assembly artifact cache hits={} misses={}",
+        disk_stats.hits,
+        disk_stats.misses
     );
+    let _ = beskid_artifacts::ArtifactStore::new(&project_root).refresh_manifest();
 
     let hir_units = Arc::new(hir_units_vec);
     let module_index = Arc::new(ModuleIndex::build(

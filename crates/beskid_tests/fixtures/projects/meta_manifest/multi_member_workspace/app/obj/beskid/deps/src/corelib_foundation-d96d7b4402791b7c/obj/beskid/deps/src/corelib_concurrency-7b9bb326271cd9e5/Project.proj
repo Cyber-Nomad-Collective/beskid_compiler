@@ -1,0 +1,16 @@
+project {
+  name = "corelib_concurrency"
+  version = "0.1.0"
+  root = "src"
+  readme = "README.md"
+}
+
+dependency "corelib_foundation" {
+  source = "path"
+  path = "../foundation"
+}
+
+target "ConcurrencyLib" {
+  kind = Lib
+  entry = "Prelude.bd"
+}

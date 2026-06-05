@@ -19,6 +19,11 @@ pub enum ResolveError {
         span: SpanInfo,
         previous: SpanInfo,
     },
+    DuplicateSymbol {
+        symbol: String,
+        span: SpanInfo,
+        previous: SpanInfo,
+    },
     DuplicateLocal {
         name: String,
         span: SpanInfo,
@@ -77,6 +82,16 @@ impl fmt::Display for ResolveError {
             } => write!(
                 f,
                 "duplicate local `{name}` at {} (previous at {})",
+                span_loc(*span),
+                span_loc(*previous)
+            ),
+            ResolveError::DuplicateSymbol {
+                symbol,
+                span,
+                previous,
+            } => write!(
+                f,
+                "duplicate symbol `{symbol}` at {} (previous at {})",
                 span_loc(*span),
                 span_loc(*previous)
             ),

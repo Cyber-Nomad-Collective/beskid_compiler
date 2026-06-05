@@ -7,7 +7,7 @@ use crate::syntax::{Block, Identifier, Parameter, Path, SpanInfo, Spanned, Type}
 
 use beskid_ast_derive::AstNode;
 
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HostDefinition {
     #[ast(child)]
     pub name: Spanned<Identifier>,
@@ -19,7 +19,7 @@ pub struct HostDefinition {
     pub body: Vec<Spanned<HostBodyItem>>,
 }
 
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum HostBodyItem {
     #[ast(child)]
     Registry(Spanned<RegistryBlock>),
@@ -32,13 +32,13 @@ pub enum HostBodyItem {
     Hook(Spanned<ScopeHook>),
 }
 
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RegistryBlock {
     #[ast(children)]
     pub entries: Vec<Spanned<RegistryEntry>>,
 }
 
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RegistryEntry {
     #[ast(skip)]
     pub lifetime: Option<RegistrationLifetime>,
@@ -48,13 +48,13 @@ pub struct RegistryEntry {
     pub target: Option<Spanned<Path>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RegistrationLifetime {
     Single,
     Transient,
 }
 
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScopeDefinition {
     #[ast(child)]
     pub name: Spanned<Identifier>,
@@ -64,14 +64,14 @@ pub struct ScopeDefinition {
     pub body: Vec<Spanned<HostBodyItem>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ScopeHookKind {
     Init,
     Dispose,
     Startup,
 }
 
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScopeHook {
     #[ast(skip)]
     pub kind: ScopeHookKind,
@@ -81,7 +81,7 @@ pub struct ScopeHook {
     pub body: Spanned<Block>,
 }
 
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WithStatement {
     #[ast(child)]
     pub scope_name: Spanned<Identifier>,
@@ -91,7 +91,7 @@ pub struct WithStatement {
     pub body: Spanned<Block>,
 }
 
-#[derive(AstNode, Debug, Clone, PartialEq, Eq)]
+#[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LaunchStatement {
     #[ast(child)]
     pub host_path: Spanned<Path>,
@@ -99,7 +99,7 @@ pub struct LaunchStatement {
     pub arguments: Vec<Spanned<crate::syntax::Expression>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum InjectQualifier {
     Global,
     Parent,

@@ -14,6 +14,19 @@ pub(crate) fn emit_resolve_error(ctx: &mut RuleContext, error: ResolveError) {
                 SemanticIssueKind::ResolveDuplicateItem { name, previous },
             );
         }
+        ResolveError::DuplicateSymbol {
+            symbol,
+            span,
+            previous,
+        } => {
+            ctx.emit_issue(
+                span,
+                SemanticIssueKind::ResolveDuplicateItem {
+                    name: symbol,
+                    previous,
+                },
+            );
+        }
         ResolveError::DuplicateLocal {
             name,
             span,

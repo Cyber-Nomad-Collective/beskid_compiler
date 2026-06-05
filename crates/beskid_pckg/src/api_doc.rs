@@ -90,6 +90,7 @@ pub fn validate_packed_api_doc(root: &ApiDocRoot) -> Result<(), String> {
             validate_library_tree_row(item)?;
         }
 
+        validate_symbol_keys(root)?;
         validate_library_tree_aggregate(root)?;
     } else if root.schema_version > API_JSON_SCHEMA_VERSION_BEFORE_GRAPH {
         return Err(format!(
@@ -125,6 +126,64 @@ fn validate_library_tree_row(item: &beskid_analysis::doc::ApiDocItem) -> Result<
                 "item id {id} (\"{}\") kind \"{}\" at module scope requires parentId to its module",
                 item.qualified_name, item.kind
             ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_symbol_keys(root: &ApiDocRoot) -> Result<(), String> {
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for item in &root.items {
+        let Some(ref key) = item.symbol_key else {
+            continue;
+        };
+        let key_str = key.as_str();
+        if key_str.trim().is_empty() {
+            let label = item
+                .id
+                .map(|id| format!("id {id}"))
+                .unwrap_or_else(|| item.qualified_name.clone());
+            return Err(format!("api.json item \"{label}\" has empty symbolKey"));
+        }
+        if !key_str.contains("::") {
+            let label = item
+                .id
+                .map(|id| format!("id {id} (\"{}\")", item.qualified_name))
+                .unwrap_or_else(|| item.qualified_name.clone());
+            return Err(format!(
+                "api.json item {label} symbolKey must be package-prefixed (contain \"::\"), got \"{key_str}\""
+            ));
+        }
+        if let Some(&previous_id) = seen.get(key_str) {
+            let id = item.id.unwrap_or(0);
+            return Err(format!(
+                "duplicate symbolKey \"{key_str}\" on item id {id} and id {previous_id}"
+            ));
+        }
+        if let Some(id) = item.id {
+            seen.insert(key_str.to_string(), id);
+        }
+        if let Some((package, rest)) = key_str.split_once("::")
+            && !package.is_empty()
+            && !rest.is_empty()
+            && !item.qualified_name.is_empty()
+        {
+            let qn_leaf = item
+                .qualified_name
+                .rsplit("::")
+                .next()
+                .unwrap_or(item.qualified_name.as_str());
+            let key_leaf = rest.rsplit("::").next().unwrap_or(rest);
+            if qn_leaf != key_leaf
+                && !item.qualified_name.ends_with(&format!("::{key_leaf}"))
+                && !rest.ends_with(&format!("::{qn_leaf}"))
+            {
+                return Err(format!(
+                    "item id {} (\"{}\") symbolKey leaf \"{key_leaf}\" contradicts qualifiedName leaf \"{qn_leaf}\"",
+                    item.id.unwrap_or(0),
+                    item.qualified_name
+                ));
+            }
         }
     }
     Ok(())
@@ -167,9 +226,21 @@ mod tests {
         parent_id: Option<usize>,
         member_ids: Vec<usize>,
     ) -> ApiDocItem {
+        minimal_item_with_symbol_key(id, name, kind, parent_id, member_ids, None)
+    }
+
+    fn minimal_item_with_symbol_key(
+        id: usize,
+        name: &str,
+        kind: &str,
+        parent_id: Option<usize>,
+        member_ids: Vec<usize>,
+        symbol_key: Option<beskid_analysis::doc::ApiSymbolKey>,
+    ) -> ApiDocItem {
         ApiDocItem {
             id: Some(id),
             qualified_name: name.into(),
+            symbol_key,
             name: name.into(),
             display_name: None,
             kind: kind.into(),
@@ -243,5 +314,104 @@ mod tests {
             ],
         };
         validate_packed_api_doc(&root).expect("valid graph");
+    }
+
+    #[test]
+    fn accepts_v4_graph_with_distinct_symbol_keys() {
+        let root = ApiDocRoot {
+            schema_version: API_JSON_SCHEMA_VERSION,
+            navigation_model: Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1.into()),
+            generator: "test".into(),
+            source: "t.bd".into(),
+            items: vec![
+                minimal_item_with_symbol_key(
+                    1,
+                    "Root",
+                    "module",
+                    None,
+                    vec![],
+                    Some(beskid_analysis::doc::ApiSymbolKey::new("demo::Root")),
+                ),
+                minimal_item_with_symbol_key(
+                    2,
+                    "Root::fn",
+                    "function",
+                    Some(1),
+                    vec![],
+                    Some(beskid_analysis::doc::ApiSymbolKey::new("demo::Root::fn")),
+                ),
+            ],
+        };
+        validate_packed_api_doc(&root).expect("valid symbol keys");
+    }
+
+    #[test]
+    fn rejects_duplicate_symbol_key() {
+        let root = ApiDocRoot {
+            schema_version: API_JSON_SCHEMA_VERSION,
+            navigation_model: Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1.into()),
+            generator: "test".into(),
+            source: "t.bd".into(),
+            items: vec![
+                minimal_item_with_symbol_key(
+                    1,
+                    "Mod",
+                    "module",
+                    None,
+                    vec![2, 3],
+                    Some(beskid_analysis::doc::ApiSymbolKey::new("demo::Mod")),
+                ),
+                minimal_item_with_symbol_key(
+                    2,
+                    "Shared",
+                    "type",
+                    Some(1),
+                    vec![],
+                    Some(beskid_analysis::doc::ApiSymbolKey::new("demo::Shared")),
+                ),
+                minimal_item_with_symbol_key(
+                    3,
+                    "Shared",
+                    "enum",
+                    Some(1),
+                    vec![],
+                    Some(beskid_analysis::doc::ApiSymbolKey::new("demo::Shared")),
+                ),
+            ],
+        };
+        let err = validate_packed_api_doc(&root).expect_err("expected error");
+        assert!(err.contains("duplicate symbolKey"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_symbol_key_without_package_prefix() {
+        let root = ApiDocRoot {
+            schema_version: API_JSON_SCHEMA_VERSION,
+            navigation_model: Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1.into()),
+            generator: "test".into(),
+            source: "t.bd".into(),
+            items: vec![minimal_item_with_symbol_key(
+                1,
+                "Root",
+                "module",
+                None,
+                vec![],
+                Some(beskid_analysis::doc::ApiSymbolKey::new("RootOnly")),
+            )],
+        };
+        let err = validate_packed_api_doc(&root).expect_err("expected error");
+        assert!(err.contains("package-prefixed"));
+    }
+
+    #[test]
+    fn accepts_items_without_symbol_key() {
+        let root = ApiDocRoot {
+            schema_version: API_JSON_SCHEMA_VERSION,
+            navigation_model: Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1.into()),
+            generator: "test".into(),
+            source: "t.bd".into(),
+            items: vec![minimal_item(1, "Root", "module", None, vec![])],
+        };
+        validate_packed_api_doc(&root).expect("symbolKey remains optional");
     }
 }

@@ -1,7 +1,10 @@
 use std::fs;
 use std::sync::Mutex;
 
-use beskid_analysis::mod_host::{ModHostInput, run_analyze_rewrite, run_through_generate};
+use beskid_analysis::mod_host::{
+    ModHostInput, run_analyze_rewrite_with_invoker, run_through_generate,
+};
+use beskid_analysis::services::SemanticSnapshot;
 use beskid_analysis::projects::{
     CompilePlan, PROJECT_FILE_NAME, ResolvedDependencyProject, Target, TargetKind,
 };
@@ -114,8 +117,19 @@ project {
     .expect("mod host generate");
     assert_eq!(generated.session.loaded_descriptor_count(), 1);
 
-    let _program = run_analyze_rewrite(generated.program, &generated.session, Some(&pipeline))
-        .expect("mod host analyze/rewrite");
+    let composition_snapshot = generated.session.composition_snapshot_or_default();
+    let semantic_snapshot = SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+        .with_composition(&composition_snapshot);
+
+    let _program = run_analyze_rewrite_with_invoker(
+        generated.program,
+        &generated.session,
+        None,
+        Some(&semantic_snapshot),
+        Some(&pipeline),
+    )
+    .expect("mod host analyze/rewrite")
+    .program;
 
     let events = pipeline.phase_starts();
     assert_subsequence(

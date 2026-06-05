@@ -2,7 +2,7 @@ use beskid_abi::BeskidArray;
 
 use super::alloc::alloc;
 
-/// Allocate a [`BeskidArray`] header; backing element storage is only allocated when `arrays_backing` is enabled.
+/// Allocate a [`BeskidArray`] header with zero-filled element backing storage.
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn array_new(elem_size: usize, len: usize) -> *mut BeskidArray {
     let size = std::mem::size_of::<BeskidArray>();
@@ -12,21 +12,20 @@ pub extern "C-unwind" fn array_new(elem_size: usize, len: usize) -> *mut BeskidA
     }
     let target = allocation.cast::<BeskidArray>();
 
-    // Avoid unused warnings when backing storage is disabled.
-    let _ = elem_size;
-
-    #[cfg(feature = "arrays_backing")]
     let data_ptr = {
         let bytes = elem_size.saturating_mul(len);
-        let ptr = alloc(bytes, std::ptr::null());
-        if ptr.is_null() && bytes > 0 {
-            panic!("array backing allocation failed");
+        if bytes == 0 {
+            // Non-null sentinel for zero-length arrays (same pattern as str_slice).
+            static Z: [u8; 1] = [0];
+            Z.as_ptr() as *mut u8
+        } else {
+            let ptr = alloc(bytes, std::ptr::null());
+            if ptr.is_null() {
+                panic!("array backing allocation failed");
+            }
+            ptr // alloc zero-fills
         }
-        ptr
     };
-
-    #[cfg(not(feature = "arrays_backing"))]
-    let data_ptr = std::ptr::null_mut();
 
     unsafe {
         target.write(BeskidArray {

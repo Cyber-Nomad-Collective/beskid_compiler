@@ -5,6 +5,7 @@ mod hir_units;
 mod loader;
 mod module_index;
 mod roots;
+mod unit_builder;
 mod unit_cache;
 
 pub use discovery::{
@@ -13,8 +14,10 @@ pub use discovery::{
 pub use hir_units::{UnitHir, build_hir_units};
 pub use loader::{AssemblyError, UnitMaterializer, assemble_program, assemble_program_with_materializer};
 pub use module_index::{ModuleIndex, infer_logical_module_path};
+pub use unit_builder::UnitBuilder;
 pub use unit_cache::{
-    CachedUnitRecord, UnitCacheStats, cache_root_for_project, ensure_manifest, unit_fingerprint,
+    UnitCacheStats, cache_root_for_project, disk_cache_stats, ensure_manifest, unit_content_fingerprint,
+    unit_fingerprint,
 };
 pub use roots::{
     EffectiveCompilationRoots, RootEntry, effective_roots_for_plan, effective_roots_from_lockfile,

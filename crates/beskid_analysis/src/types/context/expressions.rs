@@ -1,9 +1,9 @@
 use crate::builtins::{BuiltinType, builtin_specs};
 use crate::hir::{
-    HirBinaryExpression, HirBinaryOp, HirCallExpression, HirEnumConstructorExpression,
-    HirExpressionNode, HirLambdaExpression, HirLiteral, HirMatchArm, HirMatchExpression,
-    HirMemberExpression, HirPath, HirPathExpression, HirPattern, HirPrimitiveType,
-    HirStructLiteralExpression, HirUnaryExpression, HirUnaryOp,
+    HirArrayLiteralExpression, HirBinaryExpression, HirBinaryOp, HirCallExpression,
+    HirEnumConstructorExpression, HirExpressionNode, HirIndexExpression, HirLambdaExpression,
+    HirLiteral, HirMatchArm, HirMatchExpression, HirMemberExpression, HirPath, HirPathExpression,
+    HirPattern, HirPrimitiveType, HirStructLiteralExpression, HirUnaryExpression, HirUnaryOp,
 };
 use crate::resolve::{ItemKind, ResolvedType, ResolvedValue};
 use crate::syntax::Spanned;
@@ -111,12 +111,64 @@ impl<'a> TypeContext<'a> {
             HirExpressionNode::MacroInvocation(_) | HirExpressionNode::MacroMetavariable(_) => {
                 self.primitive_type_id(HirPrimitiveType::Unit)
             }
+            HirExpressionNode::IndexExpression(index_expr) => {
+                self.type_index_expression(index_expr)
+            }
+            HirExpressionNode::ArrayLiteralExpression(lit) => {
+                self.type_array_literal_expression(lit)
+            }
         };
 
         if let Some(type_id) = type_id {
             self.record_expr_type(expression.span, type_id);
         }
         type_id
+    }
+
+    fn type_index_expression(
+        &mut self,
+        index_expr: &Spanned<HirIndexExpression>,
+    ) -> Option<TypeId> {
+        let target_type = self.type_expression(&index_expr.node.target)?;
+        let _index_type = self.type_expression(&index_expr.node.index);
+
+        match self.type_table.get(target_type).cloned() {
+            Some(TypeInfo::Array(element_type_id)) => {
+                Some(element_type_id)
+            }
+            Some(TypeInfo::Primitive(HirPrimitiveType::String)) => {
+                self.primitive_type_id(HirPrimitiveType::U8)
+            }
+            _ => {
+                self.errors
+                    .push(TypeError::UnsupportedExpression { span: index_expr.span });
+                None
+            }
+        }
+    }
+
+    fn type_array_literal_expression(
+        &mut self,
+        lit: &Spanned<HirArrayLiteralExpression>,
+    ) -> Option<TypeId> {
+        if lit.node.elements.is_empty() {
+            return None;
+        }
+
+        let first_type = self.type_expression(&lit.node.elements[0])?;
+
+        for elem in &lit.node.elements[1..] {
+            let elem_type = self.type_expression(elem);
+            if let Some(elem_type) = elem_type {
+                if elem_type != first_type {
+                    self.errors
+                        .push(TypeError::UnsupportedExpression { span: lit.span });
+                    return None;
+                }
+            }
+        }
+
+        Some(self.type_table.intern(TypeInfo::Array(first_type)))
     }
 
     fn type_try_expression(
@@ -821,9 +873,17 @@ impl<'a> TypeContext<'a> {
         let mut type_id =
             self.type_id_for_enum_path(constructor.node.path.span, &constructor.node.path);
         if type_id.is_none() {
-            let type_name = constructor.node.path.node.type_name.node.name.as_str();
-            let fallback = self
-                .item_id_for_name(type_name, ItemKind::Enum)
+            let type_name = constructor
+                .node
+                .path
+                .node
+                .type_path
+                .node
+                .segments
+                .last()
+                .map(|segment| segment.node.name.node.name.as_str());
+            let fallback = type_name
+                .and_then(|name| self.item_id_for_name(name, ItemKind::Enum))
                 .and_then(|item_id| self.named_types.get(&item_id).copied());
             type_id = fallback;
         }
@@ -1414,14 +1474,21 @@ impl<'a> TypeContext<'a> {
 
     pub(super) fn type_id_for_enum_path(
         &mut self,
-        span: crate::syntax::SpanInfo,
+        _span: crate::syntax::SpanInfo,
         path: &Spanned<crate::hir::HirEnumPath>,
     ) -> Option<TypeId> {
-        match self.resolved_type_at(span) {
+        let type_span = path.node.type_path.span;
+        match self.resolved_type_at(type_span) {
             Some(ResolvedType::Item(item_id)) => self.named_types.get(&item_id).copied(),
             Some(ResolvedType::Generic(name)) => self.generic_params.get(&name).copied(),
             None => {
-                let type_name = path.node.type_name.node.name.as_str();
+                let type_name = path
+                    .node
+                    .type_path
+                    .node
+                    .segments
+                    .last()
+                    .map(|segment| segment.node.name.node.name.as_str())?;
                 self.item_id_for_name(type_name, ItemKind::Enum)
                     .and_then(|item_id| self.named_types.get(&item_id).copied())
             }

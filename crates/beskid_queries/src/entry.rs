@@ -12,7 +12,7 @@ use beskid_pipeline::{PipelineObserver, observe_phase, phases};
 
 use crate::db::BeskidDatabase;
 use crate::graph::program_assembly;
-use crate::output::SharedFrontEnd;
+use crate::output::{SharedFrontEnd, SharedResolution};
 use crate::stats::{emit_salsa_stats, record_query_hit, record_query_miss, record_revision_bump};
 
 fn session_fingerprint(resolved: &ResolvedInput) -> Option<SessionFingerprint> {
@@ -92,7 +92,7 @@ pub fn prepare_compilation_with_db(
 ) -> Result<PreparedCompilation> {
     record_query_miss();
     let resolved = enrich_resolved_with_assembly(db, resolved, &options)?;
-    db.set_file_text(resolved.source_path.clone(), resolved.source.clone());
+    db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
     let result = beskid_analysis::services::prepare_compilation(&resolved, options, pipeline)?;
     touch_from_prepare(&resolved);
     emit_salsa_stats(pipeline);
@@ -107,7 +107,7 @@ pub fn prepare_compilation_diagnostics_with_db(
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>)> {
     record_query_miss();
     let resolved = enrich_resolved_with_assembly(db, resolved, &options)?;
-    db.set_file_text(resolved.source_path.clone(), resolved.source.clone());
+    db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
     let result =
         beskid_analysis::services::prepare_compilation_diagnostics(&resolved, options, pipeline)?;
     if let Some(fp) = session_fingerprint(&resolved) {
@@ -137,6 +137,28 @@ pub fn typed_entry_bundle(
         pipeline,
     )?;
     Ok(SharedFrontEnd(Arc::new(prepared.into_executable()?)))
+}
+
+/// Entry resolution only (assembly + module index resolve, no typecheck).
+pub fn entry_resolution_with_db(
+    db: &mut BeskidDatabase,
+    resolved: &ResolvedInput,
+    options: &PrepareOptions,
+) -> Result<SharedResolution> {
+    record_query_miss();
+    let resolved = enrich_resolved_with_assembly(db, resolved, options)?;
+    db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
+    let assembly = resolved
+        .assembly
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("entry resolution requires assembled program"))?;
+    let resolution = beskid_analysis::services::resolve_entry(
+        assembly.entry_hir(),
+        &assembly.module_index,
+        Some(resolved.source_path.as_path()),
+    )
+    .map_err(|err| anyhow::anyhow!("{err}"))?;
+    Ok(SharedResolution::from_resolution(resolution))
 }
 
 fn enrich_resolved_with_assembly(

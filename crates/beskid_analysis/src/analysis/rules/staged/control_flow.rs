@@ -107,7 +107,16 @@ impl SemanticPipelineRule {
             match &arm.node.pattern.node {
                 HirPattern::Wildcard => wildcard_seen = true,
                 HirPattern::Enum(enum_pattern) => {
-                    let current_enum = enum_pattern.node.path.node.type_name.node.name.clone();
+                    let current_enum = enum_pattern
+                        .node
+                        .path
+                        .node
+                        .type_path
+                        .node
+                        .segments
+                        .last()
+                        .map(|segment| segment.node.name.node.name.clone())
+                        .unwrap_or_default();
                     let current_variant = enum_pattern.node.path.node.variant.node.name.clone();
                     covered_variants.insert(current_variant);
                     if let Some(existing) = &enum_name {
@@ -201,7 +210,16 @@ impl SemanticPipelineRule {
                 );
             }
             HirPattern::Enum(enum_pattern) => {
-                let enum_name = enum_pattern.node.path.node.type_name.node.name.clone();
+                let enum_name = enum_pattern
+                    .node
+                    .path
+                    .node
+                    .type_path
+                    .node
+                    .segments
+                    .last()
+                    .map(|segment| segment.node.name.node.name.clone())
+                    .unwrap_or_default();
                 let variant_name = enum_pattern.node.path.node.variant.node.name.clone();
                 let Some(variants) = enum_variants.get(&enum_name) else {
                     ctx.emit_issue(
@@ -338,10 +356,12 @@ impl<'a> ControlFlowVisitor<'a> {
             .node
             .path
             .node
-            .type_name
+            .type_path
             .node
-            .name
-            .clone();
+            .segments
+            .last()
+            .map(|segment| segment.node.name.node.name.clone())
+            .unwrap_or_default();
         let variant_name = constructor_expression
             .node
             .path

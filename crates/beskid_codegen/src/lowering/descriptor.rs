@@ -177,6 +177,15 @@ fn align_to(value: usize, align: usize) -> usize {
     (value + align - 1) & !(align - 1)
 }
 
+/// Resolve a struct-like [`ItemId`] from a value type (named struct or applied alias).
+pub(crate) fn struct_item_id(type_result: &TypeResult, type_id: TypeId) -> Option<ItemId> {
+    match type_result.types.get(type_id) {
+        Some(TypeInfo::Named(item_id)) => Some(*item_id),
+        Some(TypeInfo::Applied { base, .. }) => Some(*base),
+        _ => None,
+    }
+}
+
 pub(crate) fn struct_field_offsets(
     type_result: &TypeResult,
     item_id: ItemId,
