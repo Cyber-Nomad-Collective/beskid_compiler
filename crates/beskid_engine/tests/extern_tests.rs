@@ -36,7 +36,7 @@ pub i64 main() { return 0; }
 
 #[test]
 #[cfg(not(feature = "extern_dlopen"))]
-fn extern_resolution_fails_without_feature() -> Result<()> {
+fn extern_resolution_via_process_symbols_without_feature() -> Result<()> {
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C {
@@ -47,11 +47,30 @@ pub i64 main() { return 0; }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
+    engine
+        .compile_artifact(&lowered.artifact)
+        .expect("compile via process-linked libc symbols");
+    Ok(())
+}
+
+#[test]
+#[cfg(not(feature = "extern_dlopen"))]
+fn extern_missing_symbol_errors_without_feature() -> Result<()> {
+    let src = r#"
+[Extern(Abi:"C", Library:"libc.so.6")]
+pub contract C {
+    i64 no_such_symbol();
+}
+
+pub i64 main() { return 0; }
+"#;
+    let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
+    let mut engine = Engine::new();
     let err = engine
         .compile_artifact(&lowered.artifact)
-        .expect_err("should fail without feature");
+        .expect_err("missing symbol should error");
     let msg = format!("{:?}", err);
-    assert!(msg.contains("extern_dlopen feature disabled"));
+    assert!(msg.contains("dlsym("));
     Ok(())
 }
 

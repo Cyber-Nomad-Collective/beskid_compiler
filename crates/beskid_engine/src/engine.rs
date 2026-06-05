@@ -1,7 +1,5 @@
 use abfall::Heap;
-use beskid_codegen::CodegenArtifact;
-#[cfg(feature = "extern_dlopen")]
-use beskid_codegen::ExternImport;
+use beskid_codegen::{CodegenArtifact, ExternImport};
 use beskid_pipeline::PipelineObserver;
 use beskid_runtime::{
     GcSnapshot, RuntimeRoot, beskid_heap_options_for_engine, clear_current_heap,
@@ -48,7 +46,15 @@ impl Engine {
         let extras = resolve_extern_symbols(&artifact.extern_imports)
             .map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?;
 
-        #[cfg(not(feature = "extern_dlopen"))]
+        #[cfg(all(not(feature = "extern_dlopen"), unix))]
+        let extras = if artifact.extern_imports.is_empty() {
+            Vec::new()
+        } else {
+            resolve_process_extern_symbols(&artifact.extern_imports)
+                .map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?
+        };
+
+        #[cfg(all(not(feature = "extern_dlopen"), not(unix)))]
         let extras: Vec<(String, *const u8)> = {
             if !artifact.extern_imports.is_empty() {
                 let list = artifact
@@ -58,7 +64,7 @@ impl Engine {
                     .collect::<Vec<_>>()
                     .join(", ");
                 return Err(JitError::Isa(format!(
-                    "extern_dlopen feature disabled but extern imports present: {}",
+                    "extern imports present but JIT extern resolution is unsupported on this host: {}",
                     list
                 )));
             }
@@ -154,6 +160,41 @@ impl Default for Engine {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Resolve extern symbols from libraries already mapped into this process (libc, pthread, …).
+///
+/// Used for JIT runs on Unix hosts where the dynamic linker has already loaded standard libraries.
+#[cfg(all(not(feature = "extern_dlopen"), unix))]
+fn resolve_process_extern_symbols(
+    imports: &[ExternImport],
+) -> Result<Vec<(String, *const u8)>, String> {
+    use std::ffi::{CStr, CString};
+    use std::os::raw::{c_char, c_void};
+
+    const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
+
+    unsafe extern "C" {
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+        fn dlerror() -> *const c_char;
+    }
+
+    let mut result = Vec::with_capacity(imports.len());
+    for imp in imports {
+        let c_sym =
+            CString::new(imp.symbol.as_str()).map_err(|_| format!("bad symbol: {}", imp.symbol))?;
+        let addr = unsafe { dlsym(RTLD_DEFAULT, c_sym.as_ptr()) };
+        if addr.is_null() {
+            let err = unsafe { CStr::from_ptr(dlerror()) };
+            return Err(format!(
+                "dlsym({}): {}",
+                imp.symbol,
+                err.to_string_lossy()
+            ));
+        }
+        result.push((imp.symbol.clone(), addr as *const u8));
+    }
+    Ok(result)
 }
 
 #[cfg(feature = "extern_dlopen")]
