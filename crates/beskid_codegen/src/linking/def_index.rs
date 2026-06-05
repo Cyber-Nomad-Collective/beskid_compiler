@@ -170,6 +170,20 @@ fn find_method_in_items_inner<'a>(
     modules: &mut HashSet<usize>,
 ) -> Option<&'a Spanned<HirMethodDefinition>> {
     for item in items {
+        if let HirItem::ExtendTypeDefinition(def) = &item.node {
+            for method in &def.node.methods {
+                if spans_match(method.span, span) {
+                    return Some(method);
+                }
+            }
+        }
+        if let HirItem::TypeDefinition(def) = &item.node {
+            for method in &def.node.methods {
+                if spans_match(method.span, span) {
+                    return Some(method);
+                }
+            }
+        }
         if spans_match(item.span, span) {
             if let HirItem::MethodDefinition(def) = &item.node {
                 return Some(def);

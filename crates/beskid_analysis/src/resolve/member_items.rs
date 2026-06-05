@@ -43,6 +43,25 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
                     span: field.span,
                 });
             }
+            for method in &def.node.methods {
+                out.push(MemberItemSpec {
+                    name: format!("{}::{}", parent_name, method.node.name.node.name),
+                    kind: ItemKind::Method,
+                    span: method.span,
+                });
+                for parameter in &method.node.parameters {
+                    out.push(MemberItemSpec {
+                        name: format!(
+                            "{}::{}::{}",
+                            parent_name,
+                            method.node.name.node.name,
+                            parameter.node.name.node.name
+                        ),
+                        kind: ItemKind::Parameter,
+                        span: parameter.span,
+                    });
+                }
+            }
         }
         HirItem::EnumDefinition(def) => {
             for variant in &def.node.variants {

@@ -357,6 +357,47 @@ impl Resolver {
 
         self.collect_member_items(item, id);
 
+        if let HirItem::TypeDefinition(def) = &item.node {
+            let type_name = def.node.name.node.name.clone();
+            let field_names: std::collections::HashSet<_> = def
+                .node
+                .fields
+                .iter()
+                .map(|field| field.node.name.node.name.as_str())
+                .collect();
+            for method in &def.node.methods {
+                let method_name = method.node.name.node.name.as_str();
+                if field_names.contains(method_name) {
+                    self.errors.push(ResolveError::DuplicateItem {
+                        name: format!("{}::{}", type_name, method_name),
+                        span: method.span,
+                        previous: def
+                            .node
+                            .fields
+                            .iter()
+                            .find(|field| field.node.name.node.name == method_name)
+                            .map(|field| field.span)
+                            .unwrap_or(method.span),
+                    });
+                    continue;
+                }
+                let receiver = type_name_for_method_receiver(&method.node.receiver_type);
+                let qualified = format!("{}::{}", receiver, method_name);
+                self.push_item(
+                    ItemId(self.items.len()),
+                    None,
+                    qualified,
+                    ItemKind::Method,
+                    method.node.visibility.node,
+                    method.span,
+                    Some(receiver),
+                    self.current_module_path(),
+                );
+                let method_id = ItemId(self.items.len() - 1);
+                self.collect_member_items_for_method(method, method_id);
+            }
+        }
+
         if let HirItem::ModuleDeclaration(def) = &item.node {
             let module_path = def
                 .node

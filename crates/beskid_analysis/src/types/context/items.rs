@@ -148,15 +148,30 @@ impl<'a> TypeContext<'a> {
                     .as_ref()
                     .and_then(|ty| self.type_id_for_type_in_generic_scope(ty))
                     .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
+                let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
                 let mut params = Vec::new();
                 for param in &def.node.parameters {
-                    if let Some(type_id) = self.type_id_for_type_in_generic_scope(&param.node.ty) {
+                    let type_id = self
+                        .type_id_for_type_in_generic_scope(&param.node.ty)
+                        .or(placeholder_param);
+                    if let Some(type_id) = type_id {
                         params.push(type_id);
                     }
                 }
-                self.record_signature(item.span, params, return_type);
+                self.record_signature(item.span, params.clone(), return_type);
+                self.register_self_parameter_method(item.span, &def.node, &params, return_type);
                 for name in inserted {
                     self.generic_params.remove(&name);
+                }
+            }
+            HirItem::ExtendTypeDefinition(def) => {
+                for method in &def.node.methods {
+                    self.register_foreign_method_signature(method.span, method);
+                }
+            }
+            HirItem::TypeDefinition(def) => {
+                for method in &def.node.methods {
+                    self.register_foreign_method_signature(method.span, method);
                 }
             }
             HirItem::InlineModule(def) => {
@@ -171,7 +186,10 @@ impl<'a> TypeContext<'a> {
     pub(super) fn type_dependency_function_items(&mut self, items: &[Spanned<HirItem>]) {
         for item in items {
             match &item.node {
-                HirItem::FunctionDefinition(_) | HirItem::MethodDefinition(_) => {
+                HirItem::FunctionDefinition(_)
+                | HirItem::MethodDefinition(_)
+                | HirItem::ExtendTypeDefinition(_)
+                | HirItem::TypeDefinition(_) => {
                     let item_errors_before = self.errors.len();
                     let item_cast_intents_before = self.cast_intents.len();
                     self.type_item(item);
@@ -256,6 +274,9 @@ impl<'a> TypeContext<'a> {
                     inserted.push(name);
                 }
                 self.register_struct_definition_fields(item.span, &def.node, true);
+                for method in &def.node.methods {
+                    self.type_method_definition(method.span, method);
+                }
                 for name in inserted {
                     self.generic_params.remove(&name);
                 }
@@ -364,8 +385,91 @@ impl<'a> TypeContext<'a> {
                 self.insert_local_type(param.node.name.span, type_id);
             }
         }
-        self.record_signature(item_span, params, return_type);
+        self.record_signature(item_span, params.clone(), return_type);
+        if let (Some(method_item_id), Some(return_type)) = (
+            self.canonical_item_id_for_span(item_span),
+            return_type,
+        ) {
+            self.method_function_signatures.insert(
+                method_item_id,
+                FunctionSignature {
+                    params,
+                    return_type,
+                },
+            );
+        }
         self.type_block(&def.node.body);
         self.current_receiver_item_id = previous_receiver;
+    }
+
+    pub(super) fn register_foreign_method_signature(
+        &mut self,
+        item_span: crate::syntax::SpanInfo,
+        def: &Spanned<crate::hir::HirMethodDefinition>,
+    ) {
+        let return_type = def
+            .node
+            .return_type
+            .as_ref()
+            .and_then(|ty| self.type_id_for_type_in_generic_scope(ty))
+            .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
+        let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
+        let mut params = Vec::new();
+        for param in &def.node.parameters {
+            let type_id = self
+                .type_id_for_type_in_generic_scope(&param.node.ty)
+                .or(placeholder_param);
+            if let Some(type_id) = type_id {
+                params.push(type_id);
+            }
+        }
+        self.record_signature(item_span, params.clone(), return_type);
+        if let Some(method_item_id) = self.canonical_item_id_for_span(item_span) {
+            self.method_function_signatures.insert(
+                method_item_id,
+                FunctionSignature {
+                    params: params.clone(),
+                    return_type: return_type.expect("method return type"),
+                },
+            );
+        }
+    }
+
+    fn register_self_parameter_method(
+        &mut self,
+        item_span: crate::syntax::SpanInfo,
+        def: &crate::hir::HirFunctionDefinition,
+        params: &[TypeId],
+        return_type: Option<TypeId>,
+    ) {
+        let Some(first) = def.parameters.first() else {
+            return;
+        };
+        if first.node.name.node.name != "self" {
+            return;
+        }
+        let Some(return_type) = return_type else {
+            return;
+        };
+        let Some(method_item_id) = self.canonical_item_id_for_span(item_span) else {
+            return;
+        };
+        let Some(receiver_type_id) = self.type_id_for_type_in_generic_scope(&first.node.ty) else {
+            return;
+        };
+        let Some(receiver_item) = self.named_item_id(receiver_type_id) else {
+            return;
+        };
+        self.methods_by_receiver.insert(
+            (receiver_item, def.name.node.name.clone()),
+            method_item_id,
+        );
+        self.method_function_signatures.insert(
+            method_item_id,
+            FunctionSignature {
+                params: params.iter().skip(1).copied().collect(),
+                return_type,
+            },
+        );
     }
 }

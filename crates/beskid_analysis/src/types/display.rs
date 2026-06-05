@@ -100,6 +100,7 @@ mod tests {
             scoped_expr_types: HashMap::new(),
             local_types: HashMap::new(),
             function_signatures: HashMap::new(),
+            method_function_signatures: HashMap::new(),
             struct_fields_ordered: HashMap::new(),
             struct_event_fields: HashMap::new(),
             enum_variants_ordered: HashMap::new(),

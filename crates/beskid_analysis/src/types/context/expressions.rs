@@ -99,7 +99,14 @@ impl<'a> TypeContext<'a> {
                 self.type_block(&block_expr.node.block);
                 self.primitive_type_id(HirPrimitiveType::Unit)
             }
-            HirExpressionNode::CallExpression(call) => self.type_call_expression(call),
+            HirExpressionNode::CallExpression(call) => {
+                let type_id = self.type_call_expression(call);
+                if let Some(type_id) = type_id {
+                    // Inner call span is what codegen uses for method dispatch metadata.
+                    self.record_expr_type(call.span, type_id);
+                }
+                type_id
+            }
             HirExpressionNode::MemberExpression(member) => self.type_member_expression(member),
             HirExpressionNode::MatchExpression(match_expr) => {
                 self.type_match_expression(match_expr)
@@ -395,24 +402,26 @@ impl<'a> TypeContext<'a> {
                 if let Some(method_item_id) =
                     self.method_item_for_receiver(receiver_type, method_name)
                 {
-                    let Some(signature) = self.function_signatures.get(&method_item_id).cloned()
+                    let Some(signature) =
+                        self.method_dispatch_signature(method_item_id, receiver_type)
                     else {
                         self.errors.push(TypeError::UnknownCallTarget {
                             span: call.node.callee.span,
                         });
                         return None;
                     };
+                    let param_types = &signature.params;
 
-                    if call.node.args.len() != signature.params.len() {
+                    if call.node.args.len() != param_types.len() {
                         self.errors.push(TypeError::CallArityMismatch {
                             span: call.span,
-                            expected: signature.params.len(),
+                            expected: param_types.len(),
                             actual: call.node.args.len(),
                         });
                         return Some(signature.return_type);
                     }
 
-                    for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+                    for (arg, expected) in call.node.args.iter().zip(param_types.iter()) {
                         if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
                             self.require_same_type(arg.span, *expected, actual);
                         }
@@ -550,7 +559,8 @@ impl<'a> TypeContext<'a> {
             let target_type = self.type_expression(&member.node.target)?;
             let method_name = member.node.member.node.name.as_str();
             if let Some(method_item_id) = self.method_item_for_receiver(target_type, method_name) {
-                let Some(signature) = self.function_signatures.get(&method_item_id).cloned() else {
+                let Some(signature) = self.method_dispatch_signature(method_item_id, target_type)
+                else {
                     self.errors.push(TypeError::UnknownCallTarget {
                         span: call.node.callee.span,
                     });
@@ -653,7 +663,8 @@ impl<'a> TypeContext<'a> {
         let signature = match &call.node.callee.node {
             HirExpressionNode::PathExpression(path_expr) => {
                 let span = path_expr.node.path.span;
-                if let Some(last_segment) = path_expr.node.path.node.segments.last()
+                let segments = &path_expr.node.path.node.segments;
+                if let Some(last_segment) = segments.last()
                     && !last_segment.node.type_args.is_empty()
                 {
                     let mut args = Vec::with_capacity(last_segment.node.type_args.len());
@@ -661,6 +672,8 @@ impl<'a> TypeContext<'a> {
                         args.push(self.type_id_for_type(arg)?);
                     }
                     generic_args = Some(args);
+                } else if generic_args.is_none() {
+                    generic_args = self.infer_generic_args_from_qualified_type_path(segments);
                 }
                 match self.resolved_value_at(span) {
                     Some(ResolvedValue::Item(item_id)) => {
@@ -1396,6 +1409,23 @@ impl<'a> TypeContext<'a> {
         span: crate::syntax::SpanInfo,
         path: &Spanned<HirPath>,
     ) -> Option<TypeId> {
+        if path.node.segments.len() == 1 {
+            let field_name = path.node.segments[0].node.name.node.name.as_str();
+            if let Some(ResolvedValue::Local(local_id)) = self.resolved_value_at(span)
+                && let Some(receiver_item) = self.current_receiver_item_id
+                && self
+                    .local_types
+                    .get(&local_id)
+                    .and_then(|type_id| self.named_item_id(*type_id))
+                    == Some(receiver_item)
+                && let Some(field_type) = self
+                    .struct_fields
+                    .get(&receiver_item)
+                    .and_then(|fields| fields.get(field_name))
+            {
+                return Some(*field_type);
+            }
+        }
         if path.node.segments.len() > 1 {
             return self.type_struct_field_path(span, path);
         }

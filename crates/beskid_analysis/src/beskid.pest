@@ -33,7 +33,7 @@ ReturnKeyword = { "return" }
 BreakKeyword = { "break" }
 ContinueKeyword = { "continue" }
 LetKeyword = { "let" }
-MutKeyword = { "mut" }
+MutKeyword = @{ "mut" ~ !(ASCII_ALPHANUMERIC | "_") }
 ModKeyword = { "mod" }
 UseKeyword = { "use" }
 PubKeyword = { "pub" }
@@ -189,7 +189,7 @@ ParameterModifier = { "ref" | "out" }
 
 FieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 FieldWithDocs = { (DocRun ~ Field) | Field }
-ValueField = { BeskidType ~ Identifier }
+ValueField = { BeskidType ~ Identifier ~ !"(" }
 EventCapacity = { "{" ~ IntegerLiteral ~ "}" }
 EventField = { "event" ~ EventCapacity? ~ Identifier ~ "(" ~ ParameterList? ~ ")" }
 InjectQualifier = { ("global" | "parent") ~ "::" }
@@ -197,7 +197,10 @@ InjectField = { "inject" ~ InjectQualifier? ~ BeskidType ~ Identifier }
 Field = { Visibility? ~ (InjectField | EventField | ValueField) }
 
 TypeConformanceList = { ":" ~ PathList }
-TypeDefinition = { Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ FieldList? ~ "}" }
+// Fields are comma-separated; inline methods follow (commas inside method types must not split members).
+TypeFieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
+TypeBody = { TypeFieldList? ~ ImplMethodWithDocs* }
+TypeDefinition = { Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ TypeBody? ~ "}" }
 
 EnumDefinition = { Visibility? ~ "enum" ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }
 EnumVariantList = { EnumVariantWithDocs ~ ("," ~ DocGap* ~ EnumVariantWithDocs)* ~ ","? }

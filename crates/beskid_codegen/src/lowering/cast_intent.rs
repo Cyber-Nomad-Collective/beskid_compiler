@@ -63,9 +63,10 @@ pub(crate) fn ensure_type_compatibility(
         let target_ty = crate::lowering::types::map_primitive_to_clif(*expected_prim)
             .expect("expected clif type for numeric cast");
 
-        if expected_width > actual_width {
+        let value_ty = builder.func.dfg.value_type(value);
+        if expected_width > actual_width && value_ty != target_ty {
             value = builder.ins().sextend(target_ty, value);
-        } else if expected_width < actual_width {
+        } else if expected_width < actual_width && value_ty != target_ty {
             value = builder.ins().ireduce(target_ty, value);
         }
         return Ok(value);

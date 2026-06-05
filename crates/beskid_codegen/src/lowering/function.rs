@@ -4,7 +4,7 @@ use crate::lowering::expressions::export::{export_linker_name, validate_export_f
 use crate::lowering::locals::local_id_for_span;
 use crate::lowering::lowerable::lower_node;
 use crate::lowering::node_context::NodeLoweringContext;
-use crate::lowering::types::{map_type_id_to_clif, type_id_for_type};
+use crate::lowering::types::{map_type_id_to_clif, method_receiver_type_id, type_id_for_type};
 use beskid_analysis::hir::{
     HirFunctionDefinition, HirLambdaExpression, HirMethodDefinition, HirTestDefinition,
 };
@@ -12,7 +12,7 @@ use beskid_analysis::resolve::{canonical_item_id, ItemId, LocalId, Resolution};
 use beskid_analysis::paths::same_file_opt;
 use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::syntax::Spanned;
-use beskid_analysis::types::{TypeInfo, TypeResult};
+use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use cranelift_codegen::ir::{AbiParam, Block, Function, InstBuilder, Signature};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
@@ -87,11 +87,16 @@ fn lower_method_body(
 ) -> CodegenResult<()> {
     let signature_types = type_result.function_signatures.get(&item_id);
 
-    let receiver_type_id = type_id_for_type(resolution, type_result, &def.node.receiver_type)
-        .ok_or(CodegenError::UnsupportedNode {
-            span: def.node.receiver_type.span,
-            node: "method receiver type",
-        })?;
+    let receiver_type_id = method_receiver_type_id(
+        resolution,
+        type_result,
+        &def.node.receiver_type,
+        item_id,
+    )
+    .ok_or(CodegenError::UnsupportedNode {
+        span: def.node.receiver_type.span,
+        node: "method receiver type",
+    })?;
     let receiver_clif_ty = map_type_id_to_clif(type_result, receiver_type_id).ok_or(
         CodegenError::UnsupportedNode {
             span: def.node.receiver_type.span,
@@ -160,6 +165,9 @@ fn lower_method_body(
     let this_var = builder.declare_var(receiver_clif_ty);
     builder.def_var(this_var, param_values[0]);
     state.locals.insert(this_local_id, this_var);
+    state
+        .local_type_overrides
+        .insert(this_local_id, receiver_type_id);
 
     for (index, (param, value)) in def
         .node
@@ -587,6 +595,7 @@ fn lower_function_with_name_body(
 #[derive(Default)]
 pub(crate) struct FunctionLoweringState {
     pub(crate) locals: HashMap<LocalId, Variable>,
+    pub(crate) local_type_overrides: HashMap<LocalId, TypeId>,
     pub(crate) local_lambdas: HashMap<LocalId, *const Spanned<HirLambdaExpression>>,
     pub(crate) emitted_lambda_symbols: HashMap<*const Spanned<HirLambdaExpression>, String>,
     pub(crate) return_emitted: bool,

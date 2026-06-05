@@ -1087,6 +1087,27 @@ fn receiver_and_method_name(
     Ok((receiver.to_string(), method.to_string()))
 }
 
+fn infer_generic_args_from_call(
+    type_result: &beskid_analysis::types::TypeResult,
+    item_id: beskid_analysis::resolve::ItemId,
+    args: &[Spanned<HirExpressionNode>],
+    ctx: &NodeLoweringContext<'_, '_>,
+) -> Option<Vec<TypeId>> {
+    let expected_len = type_result.generic_items.get(&item_id)?.len();
+    if expected_len == 0 {
+        return Some(Vec::new());
+    }
+    for arg in args {
+        let actual = ctx.require_expr_type_for_node(arg).ok()?;
+        if let Some(TypeInfo::Applied { args, .. }) = type_result.types.get(actual)
+            && args.len() == expected_len
+        {
+            return Some(args.clone());
+        }
+    }
+    None
+}
+
 fn lower_method_dispatch_call(
     node: &Spanned<HirCallExpression>,
     method_item_id: beskid_analysis::resolve::ItemId,
@@ -1097,8 +1118,9 @@ fn lower_method_dispatch_call(
     let method_item_id = canonical_item_id(ctx.resolution, method_item_id);
     let signature = ctx
         .type_result
-        .function_signatures
+        .method_function_signatures
         .get(&method_item_id)
+        .or_else(|| ctx.type_result.function_signatures.get(&method_item_id))
         .ok_or(CodegenError::MissingSymbol("method signature"))?;
 
     if signature.params.len() != node.node.args.len() {
@@ -1162,12 +1184,17 @@ fn lower_method_dispatch_call(
     }
 
     let mut signature_ir = Signature::new(CallConv::SystemV);
-    let receiver_clif_ty = map_type_id_to_clif(ctx.type_result, receiver_type).ok_or(
-        CodegenError::UnsupportedNode {
+    let receiver_clif_ty = map_type_id_to_clif(ctx.type_result, receiver_type)
+        .or_else(|| {
+            match ctx.type_result.types.get(receiver_type) {
+                Some(TypeInfo::Named(_) | TypeInfo::Applied { .. }) => Some(pointer_type()),
+                _ => None,
+            }
+        })
+        .ok_or(CodegenError::UnsupportedNode {
             span: node.node.callee.span,
             node: "method receiver type",
-        },
-    )?;
+        })?;
     signature_ir.params.push(AbiParam::new(receiver_clif_ty));
     for param in &signature.params {
         let clif_ty =
@@ -1391,10 +1418,23 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             .unwrap_or(0);
 
         if expected_generics != generic_args.len() {
-            return Err(CodegenError::UnsupportedNode {
-                span: node.span,
-                node: "generic argument mismatch",
-            });
+            if generic_args.is_empty() && expected_generics > 0 {
+                generic_args = infer_generic_args_from_call(
+                    ctx.type_result,
+                    item_id,
+                    &node.node.args,
+                    ctx,
+                )
+                .ok_or(CodegenError::UnsupportedNode {
+                    span: node.span,
+                    node: "generic argument mismatch",
+                })?;
+            } else {
+                return Err(CodegenError::UnsupportedNode {
+                    span: node.span,
+                    node: "generic argument mismatch",
+                });
+            }
         }
 
         let signature = ctx
@@ -1489,7 +1529,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                             map_type_id_to_clif(ctx.type_result, *expected)
                         {
                             let value_ty = ctx.builder.func.dfg.value_type(value);
-                            if value_ty.is_int() && expected_clif.is_int() {
+                            if value_ty.is_int() && expected_clif.is_int() && value_ty != expected_clif
+                            {
                                 if value_ty.bits() < expected_clif.bits() {
                                     value = ctx.builder.ins().sextend(expected_clif, value);
                                     actual = *expected;

@@ -256,6 +256,7 @@ impl Lowerable for Spanned<syntax::TypeDefinition> {
                     .map(Lowerable::lower)
                     .collect(),
                 fields: self.node.fields.iter().map(Lowerable::lower).collect(),
+                methods: self.node.methods.iter().map(Lowerable::lower).collect(),
             },
             self.span,
         )

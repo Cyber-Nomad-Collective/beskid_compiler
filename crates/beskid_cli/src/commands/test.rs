@@ -2,7 +2,8 @@
 
 use anyhow::{Result, anyhow};
 use beskid_analysis::services;
-use beskid_engine::services::run_entrypoint_from_front_end_with_pipeline;
+use beskid_engine::Engine;
+use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use clap::Args;
 use serde::Serialize;
 use std::io::Write;
@@ -187,6 +188,7 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
 
     let mut executions = Vec::new();
     let mut summary = TestSummary::default();
+    let mut engine = Engine::new();
     for (test, row_index, initial) in planned {
         if initial == TestRowState::FilteredOut {
             executions.push(TestExecution {
@@ -223,7 +225,8 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
             test_ui.start_running(row_index)?;
         }
         let started = Instant::now();
-        match run_entrypoint_from_front_end_with_pipeline(
+        match run_entrypoint_from_front_end_with_engine(
+            &mut engine,
             &front,
             &source_name,
             &resolved.source,

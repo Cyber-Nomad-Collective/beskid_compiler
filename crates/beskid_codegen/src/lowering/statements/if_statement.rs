@@ -4,6 +4,8 @@ use crate::lowering::node_context::NodeLoweringContext;
 use beskid_analysis::hir::{HirIfStatement, HirPrimitiveType};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeInfo;
+use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::InstBuilder;
 
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirIfStatement {
@@ -13,17 +15,23 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirIfStatement {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let condition =
+        let mut condition =
             lower_node(&node.node.condition, ctx)?.ok_or(CodegenError::UnsupportedNode {
                 span: node.node.condition.span,
                 node: "unit-valued if condition",
             })?;
         let condition_type = ctx.require_expr_type_for_node(&node.node.condition)?;
-        let is_bool = matches!(
+        let value_ty = ctx.builder.func.dfg.value_type(condition);
+        let analysis_bool = matches!(
             ctx.type_result.types.get(condition_type),
             Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
         );
-        if !is_bool {
+        if analysis_bool || value_ty == types::I8 {
+            // Comparison and logical lowering produce i8 booleans; analysis may lag.
+        } else if value_ty.is_int() {
+            let zero = ctx.builder.ins().iconst(value_ty, 0);
+            condition = ctx.builder.ins().icmp(IntCC::NotEqual, condition, zero);
+        } else {
             return Err(CodegenError::UnsupportedNode {
                 span: node.node.condition.span,
                 node: "non-bool if condition",

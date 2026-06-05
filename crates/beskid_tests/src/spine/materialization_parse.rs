@@ -2,9 +2,11 @@
 
 use std::path::PathBuf;
 
+use beskid_analysis::projects::AssemblyDiscovery;
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_analysis::services::resolve_input;
-use beskid_analysis::projects::AssemblyDiscovery;
+
+use crate::projects::with_cwd_at_workspace_root;
 
 fn compiler_workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -33,18 +35,17 @@ fn concurrency_source_and_materialized_parse_equally() {
         .to_path_buf();
     let entry_source = std::fs::read_to_string(&entry).expect("read test entry");
 
-    let previous = std::env::current_dir().expect("cwd");
-    std::env::set_current_dir(&root).expect("chdir");
-    let resolved = resolve_input(
-        Some(&entry),
-        Some(&project_root),
-        None,
-        None,
-        false,
-        false,
-    )
-    .expect("resolve with materialization");
-    std::env::set_current_dir(previous).expect("restore cwd");
+    let resolved = with_cwd_at_workspace_root(&root, || {
+        resolve_input(
+            Some(&entry),
+            Some(&project_root),
+            None,
+            None,
+            false,
+            false,
+        )
+        .expect("resolve with materialization")
+    });
 
     let materialized = resolved
         .prepared_workspace

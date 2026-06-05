@@ -12,6 +12,18 @@ use beskid_analysis::types::{CallLoweringKind, TypeId, TypeInfo, TypeResult};
 use crate::errors::CodegenError;
 use crate::linking::{resolve_item_call_id, resolve_path_item_id};
 
+pub(crate) fn local_type_id(
+    type_result: &TypeResult,
+    state: &crate::lowering::function::FunctionLoweringState,
+    local_id: LocalId,
+) -> Option<TypeId> {
+    state
+        .local_type_overrides
+        .get(&local_id)
+        .copied()
+        .or_else(|| type_result.local_types.get(&local_id).copied())
+}
+
 pub(crate) fn expr_type_at(
     type_result: &TypeResult,
     span: SpanInfo,
@@ -240,8 +252,9 @@ fn infer_call_kind_return_type(
         CallLoweringKind::MethodDispatch { method_item_id, .. } => {
             let item_id = canonical_item_id(resolution, *method_item_id);
             type_result
-                .function_signatures
+                .method_function_signatures
                 .get(&item_id)
+                .or_else(|| type_result.function_signatures.get(&item_id))
                 .map(|signature| signature.return_type)
         }
         CallLoweringKind::EventInvoke { .. } => {

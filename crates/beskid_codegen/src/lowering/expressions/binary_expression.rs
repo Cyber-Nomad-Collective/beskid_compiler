@@ -424,11 +424,13 @@ fn coerce_operand_to_string(
     match ctx.type_result.types.get(type_id) {
         Some(TypeInfo::Primitive(HirPrimitiveType::I64)) => lower_str_from_i64(value, span, ctx),
         Some(TypeInfo::Primitive(HirPrimitiveType::I32)) => {
-            let extended = ctx
-                .builder
-                .ins()
-                .sextend(clif_types::I64, value);
-            lower_str_from_i64(extended, span, ctx)
+            let value_ty = ctx.builder.func.dfg.value_type(value);
+            if value_ty.is_int() && value_ty.bits() < clif_types::I64.bits() {
+                let extended = ctx.builder.ins().sextend(clif_types::I64, value);
+                lower_str_from_i64(extended, span, ctx)
+            } else {
+                lower_str_from_i64(value, span, ctx)
+            }
         }
         Some(TypeInfo::Primitive(HirPrimitiveType::U8)) => {
             let extended = ctx.builder.ins().uextend(clif_types::I64, value);

@@ -1,12 +1,13 @@
 use crate::errors::CodegenError;
+use crate::lowering::cast_intent::ensure_type_compatibility;
 use crate::lowering::descriptor::{enum_payload_start, enum_variant_field_offsets};
 use crate::lowering::locals::local_id_for_span;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
-use beskid_analysis::hir::{HirMatchExpression, HirPattern};
+use beskid_analysis::hir::{HirLiteral, HirMatchExpression, HirPattern, HirPrimitiveType};
 use beskid_analysis::syntax::Spanned;
-use beskid_analysis::types::TypeInfo;
+use beskid_analysis::types::{TypeId, TypeInfo};
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{InstBuilder, MemFlags, TrapCode, Value};
 
@@ -18,12 +19,13 @@ enum MatchArmOutcome {
 fn match_arm_outcome(
     arm_value: Option<Value>,
     block_terminated: bool,
+    produces_value: bool,
     span: beskid_analysis::syntax::SpanInfo,
 ) -> Result<MatchArmOutcome, CodegenError> {
     if let Some(value) = arm_value {
         return Ok(MatchArmOutcome::Value(value));
     }
-    if block_terminated {
+    if block_terminated || !produces_value {
         return Ok(MatchArmOutcome::Terminated);
     }
     Err(CodegenError::UnsupportedNode {
@@ -45,6 +47,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
                 node: "unit-valued match scrutinee",
             })?;
         let scrutinee_type = ctx.require_expr_type(node.node.scrutinee.span)?;
+        if matches!(
+            ctx.type_result.types.get(scrutinee_type),
+            Some(TypeInfo::Primitive(_))
+        ) {
+            return lower_primitive_match(node, ctx, scrutinee, scrutinee_type);
+        }
         let item_id = match ctx.type_result.types.get(scrutinee_type) {
             Some(TypeInfo::Named(item_id)) => *item_id,
             Some(TypeInfo::Applied { base, .. }) => *base,
@@ -69,6 +77,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
 
         let result_type = ctx.expr_type(node.span);
         let result_clif = result_type.and_then(|ty| map_type_id_to_clif(ctx.type_result, ty));
+        let produces_value = result_clif.is_some();
         let result_var = result_clif.map(|clif_ty| ctx.builder.declare_var(clif_ty));
         let merge_block = ctx.builder.create_block();
         let mut merge_reachable = false;
@@ -158,6 +167,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
             let arm_outcome = match_arm_outcome(
                 lower_node(&arm.node.value, ctx)?,
                 ctx.state.block_terminated,
+                produces_value,
                 arm.node.value.span,
             )?;
             if let Some(var) = result_var
@@ -196,6 +206,158 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
         } else {
             Ok(None)
         }
+    }
+}
+
+fn lower_primitive_match(
+    node: &Spanned<HirMatchExpression>,
+    ctx: &mut NodeLoweringContext<'_, '_>,
+    scrutinee: Value,
+    scrutinee_type: TypeId,
+) -> Result<Option<Value>, CodegenError> {
+    let clif_ty = map_type_id_to_clif(ctx.type_result, scrutinee_type).ok_or(
+        CodegenError::UnsupportedNode {
+            span: node.node.scrutinee.span,
+            node: "match scrutinee clif type",
+        },
+    )?;
+    let result_type = ctx.expr_type(node.span);
+    let result_clif = result_type.and_then(|ty| map_type_id_to_clif(ctx.type_result, ty));
+    let produces_value = result_clif.is_some();
+    let result_var = result_clif.map(|ty| ctx.builder.declare_var(ty));
+    let merge_block = ctx.builder.create_block();
+    let mut merge_reachable = false;
+
+    for (index, arm) in node.node.arms.iter().enumerate() {
+        let is_last = index + 1 == node.node.arms.len();
+        let arm_block = ctx.builder.create_block();
+        let next_block = if is_last {
+            merge_block
+        } else {
+            ctx.builder.create_block()
+        };
+
+        match &arm.node.pattern.node {
+            HirPattern::Wildcard | HirPattern::Identifier(_) => {
+                ctx.builder.ins().jump(arm_block, &[]);
+            }
+            HirPattern::Literal(literal) => {
+                let expected = literal_value(clif_ty, literal, ctx)?;
+                let cond = ctx.builder.ins().icmp(IntCC::Equal, scrutinee, expected);
+                ctx.builder
+                    .ins()
+                    .brif(cond, arm_block, &[], next_block, &[]);
+            }
+            _ => {
+                return Err(CodegenError::UnsupportedNode {
+                    span: arm.node.pattern.span,
+                    node: "match pattern",
+                });
+            }
+        }
+
+        ctx.builder.switch_to_block(arm_block);
+        let saved_locals = ctx.state.locals.clone();
+        let prior_terminated = ctx.state.block_terminated;
+        ctx.state.block_terminated = false;
+        bind_primitive_match_pattern(ctx, arm, scrutinee)?;
+
+        let value_block = if arm.node.guard.is_some() {
+            let guard_val = lower_node(arm.node.guard.as_ref().unwrap(), ctx)?.ok_or(
+                CodegenError::UnsupportedNode {
+                    span: arm.node.guard.as_ref().unwrap().span,
+                    node: "unit-valued match guard",
+                },
+            )?;
+            let guard_block = ctx.builder.create_block();
+            ctx.builder
+                .ins()
+                .brif(guard_val, guard_block, &[], next_block, &[]);
+            ctx.builder.seal_block(arm_block);
+            ctx.builder.switch_to_block(guard_block);
+            guard_block
+        } else {
+            arm_block
+        };
+
+        let arm_outcome = match_arm_outcome(
+            lower_node(&arm.node.value, ctx)?,
+            ctx.state.block_terminated,
+            produces_value,
+            arm.node.value.span,
+        )?;
+        if let Some(var) = result_var
+            && let MatchArmOutcome::Value(value) = arm_outcome
+        {
+            ctx.builder.def_var(var, value);
+        }
+        if !ctx.state.block_terminated {
+            ctx.builder.ins().jump(merge_block, &[]);
+            merge_reachable = true;
+        }
+        ctx.builder.seal_block(value_block);
+        ctx.state.locals = saved_locals;
+        ctx.state.block_terminated = prior_terminated;
+
+        if !is_last {
+            ctx.builder.seal_block(next_block);
+            ctx.builder.switch_to_block(next_block);
+        }
+    }
+
+    if !merge_reachable {
+        ctx.builder.seal_block(merge_block);
+        ctx.builder.switch_to_block(merge_block);
+        ctx.builder.ins().trap(TrapCode::unwrap_user(1));
+        ctx.state.block_terminated = true;
+        return Ok(None);
+    }
+
+    ctx.builder.seal_block(merge_block);
+    ctx.builder.switch_to_block(merge_block);
+    if let Some(var) = result_var {
+        Ok(Some(ctx.builder.use_var(var)))
+    } else {
+        Ok(None)
+    }
+}
+
+fn literal_value(
+    clif_ty: cranelift_codegen::ir::Type,
+    literal: &Spanned<HirLiteral>,
+    ctx: &mut NodeLoweringContext<'_, '_>,
+) -> Result<Value, CodegenError> {
+    match &literal.node {
+        HirLiteral::Integer(raw) => {
+            let value: i64 = raw.parse().map_err(|_| CodegenError::UnsupportedNode {
+                span: literal.span,
+                node: "match literal integer",
+            })?;
+            Ok(ctx.builder.ins().iconst(clif_ty, value))
+        }
+        HirLiteral::Bool(value) => Ok(ctx
+            .builder
+            .ins()
+            .iconst(clif_ty, if *value { 1 } else { 0 })),
+        _ => Err(CodegenError::UnsupportedNode {
+            span: literal.span,
+            node: "match literal pattern",
+        }),
+    }
+}
+
+fn bind_primitive_match_pattern(
+    ctx: &mut NodeLoweringContext<'_, '_>,
+    arm: &Spanned<beskid_analysis::hir::HirMatchArm>,
+    scrutinee: Value,
+) -> Result<(), CodegenError> {
+    match &arm.node.pattern.node {
+        HirPattern::Identifier(identifier) => bind_local(ctx, identifier.span, scrutinee),
+        HirPattern::Wildcard | HirPattern::Literal(_) => Ok(()),
+        _ => Err(CodegenError::UnsupportedNode {
+            span: arm.node.pattern.span,
+            node: "match pattern",
+        }),
     }
 }
 

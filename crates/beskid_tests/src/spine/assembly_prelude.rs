@@ -8,6 +8,8 @@ use beskid_queries::{
     configure_db_for_project, prepare_compilation_with_db, program_assembly, with_db,
 };
 
+use crate::projects::with_cwd_at_workspace_root;
+
 fn compiler_workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -35,18 +37,17 @@ fn ansi_escape_resolves_under_corelib_test_assembly() {
         .to_path_buf();
     let source = fs::read_to_string(&entry).expect("read AnsiEscapeTests.bd");
 
-    let previous = std::env::current_dir().expect("cwd");
-    std::env::set_current_dir(&root).expect("chdir");
-    let resolved = resolve_input(
-        Some(&entry),
-        Some(&project_root),
-        None,
-        None,
-        false,
-        false,
-    )
-    .expect("resolve");
-    std::env::set_current_dir(previous).expect("restore cwd");
+    let resolved = with_cwd_at_workspace_root(&root, || {
+        resolve_input(
+            Some(&entry),
+            Some(&project_root),
+            None,
+            None,
+            false,
+            false,
+        )
+        .expect("resolve")
+    });
 
     let plan = resolved.compile_plan.expect("compile plan");
     configure_db_for_project(&project_root);

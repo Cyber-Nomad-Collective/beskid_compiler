@@ -16,9 +16,9 @@ fn codegen_lowers_basic_function_to_clif() {
 #[test]
 fn codegen_rejects_unsupported_expression_nodes_with_span() {
     let (hir, resolution, typed) =
-        lower_resolve_type("i64 main() { return match 1 { 1 => 2, _ => 3, }; }");
+        lower_resolve_type("i64 main() { spawn { return 1; }; return 0; }");
     let errors = lower_program(&hir, &resolution, &typed)
-        .expect_err("expected unsupported match node to fail codegen");
+        .expect_err("expected unsupported spawn node to fail codegen");
     assert!(
         errors
             .iter()

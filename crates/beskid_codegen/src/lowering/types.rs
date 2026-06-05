@@ -1,5 +1,5 @@
 use beskid_analysis::hir::{HirPrimitiveType, HirType};
-use beskid_analysis::resolve::{Resolution, ResolvedType};
+use beskid_analysis::resolve::{ItemId, ItemKind, Resolution, ResolvedType};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use cranelift_codegen::ir::types;
@@ -156,4 +156,33 @@ fn find_named_type_id(
         }
         index += 1;
     }
+}
+
+pub(crate) fn method_receiver_type_id(
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    def: &Spanned<HirType>,
+    method_item_id: ItemId,
+) -> Option<TypeId> {
+    if let Some(type_id) = type_id_for_type(resolution, type_result, def) {
+        return Some(type_id);
+    }
+    if let HirType::Complex(path) = &def.node {
+        if let Some(segment) = path.node.segments.last() {
+            let name = &segment.node.name.node.name;
+            if let Some(item) = resolution
+                .items
+                .iter()
+                .find(|info| info.name == *name && info.kind == ItemKind::Type)
+            {
+                return find_named_type_id(type_result, item.id);
+            }
+        }
+    }
+    let info = resolution.items.get(method_item_id.0)?;
+    let (receiver_name, _) = info.name.split_once("::")?;
+    let receiver_item = resolution.items.iter().find(|item| {
+        item.name == receiver_name && item.kind == ItemKind::Type
+    })?;
+    find_named_type_id(type_result, receiver_item.id)
 }

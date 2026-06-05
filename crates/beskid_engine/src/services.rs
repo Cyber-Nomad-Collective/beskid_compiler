@@ -44,6 +44,26 @@ pub fn run_entrypoint_from_front_end_with_pipeline(
     entrypoint: &str,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
+    let mut engine = Engine::new();
+    run_entrypoint_from_front_end_with_engine(
+        &mut engine,
+        front,
+        source_name,
+        source,
+        entrypoint,
+        pipeline,
+    )
+}
+
+/// Like [`run_entrypoint_from_front_end_with_pipeline`] but reuses an existing [`Engine`].
+pub fn run_entrypoint_from_front_end_with_engine(
+    engine: &mut Engine,
+    front: &beskid_analysis::services::FrontEndTypedResult,
+    source_name: &str,
+    source: &str,
+    entrypoint: &str,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<String> {
     let artifact = beskid_codegen::entrypoint_artifact_from_front_end(
         front.as_lower_input(),
         source_name,
@@ -52,7 +72,14 @@ pub fn run_entrypoint_from_front_end_with_pipeline(
         pipeline,
     )?;
 
-    run_jitted_entrypoint(&front.resolution, &front.typed, &artifact, entrypoint, pipeline)
+    run_jitted_entrypoint(
+        engine,
+        &front.resolution,
+        &front.typed,
+        &artifact,
+        entrypoint,
+        pipeline,
+    )
 }
 
 /// JIT-compile and run using a fully resolved project input (same assembly path as `beskid build`).
@@ -87,7 +114,9 @@ fn run_resolved_entrypoint_with_pipeline_inner(
             pipeline,
         )?;
 
+    let mut engine = Engine::new();
     run_jitted_entrypoint(
+        &mut engine,
         &lowered.resolution,
         &lowered.typed,
         &lowered.artifact,
@@ -97,13 +126,13 @@ fn run_resolved_entrypoint_with_pipeline_inner(
 }
 
 fn run_jitted_entrypoint(
+    engine: &mut Engine,
     resolution: &beskid_analysis::resolve::Resolution,
     typed: &beskid_analysis::types::TypeResult,
     artifact: &beskid_codegen::CodegenArtifact,
     entrypoint: &str,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
-    let mut engine = Engine::new();
     engine
         .compile_artifact_with_pipeline(artifact, pipeline)
         .map_err(|err| anyhow::anyhow!("JIT compile failed: {err}"))?;
@@ -153,7 +182,9 @@ fn run_lowered_entrypoint(
     entrypoint: &str,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
+    let mut engine = Engine::new();
     run_jitted_entrypoint(
+        &mut engine,
         &lowered.resolution,
         &lowered.typed,
         &lowered.artifact,

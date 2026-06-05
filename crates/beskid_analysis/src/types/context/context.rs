@@ -408,6 +408,8 @@ pub struct TypeResult {
     pub scoped_expr_types: HashMap<std::path::PathBuf, HashMap<SpanInfo, TypeId>>,
     pub local_types: HashMap<LocalId, TypeId>,
     pub function_signatures: HashMap<ItemId, FunctionSignature>,
+    /// Method dispatch signatures for free functions with a leading `self` parameter (params exclude `self`).
+    pub method_function_signatures: HashMap<ItemId, FunctionSignature>,
     pub struct_fields_ordered: HashMap<ItemId, Vec<(String, TypeId)>>,
     pub struct_event_fields: HashMap<ItemId, HashMap<String, Option<usize>>>,
     pub enum_variants_ordered: HashMap<ItemId, Vec<(String, Vec<TypeId>)>>,
@@ -555,6 +557,7 @@ pub struct TypeContext<'a> {
     pub(super) contextual_expected_type: Option<TypeId>,
     pub(super) local_types: HashMap<LocalId, TypeId>,
     pub(super) function_signatures: HashMap<ItemId, FunctionSignature>,
+    pub(super) method_function_signatures: HashMap<ItemId, FunctionSignature>,
     pub(super) cast_intents: Vec<CastIntent>,
     pub(super) errors: Vec<TypeError>,
     pub(super) current_return_type: Option<TypeId>,
@@ -591,6 +594,7 @@ impl<'a> TypeContext<'a> {
             contextual_expected_type: None,
             local_types: HashMap::new(),
             function_signatures: HashMap::new(),
+            method_function_signatures: HashMap::new(),
             cast_intents: Vec::new(),
             errors: Vec::new(),
             current_return_type: None,
@@ -705,6 +709,18 @@ impl<'a> TypeContext<'a> {
             // (for example `Core.Results.Result<,>`) must not block entry/test typing.
             self.errors.truncate(errors_before);
             self.cast_intents.truncate(cast_intents_before);
+            for item in &dependency.node.items {
+                if let HirItem::ExtendTypeDefinition(def) = &item.node {
+                    for method in &def.node.methods {
+                        self.seed_method_receiver(method.span, method);
+                    }
+                }
+                if let HirItem::TypeDefinition(def) = &item.node {
+                    for method in &def.node.methods {
+                        self.seed_method_receiver(method.span, method);
+                    }
+                }
+            }
             if type_dependency_bodies {
                 self.type_dependency_function_items(&dependency.node.items);
             }
@@ -737,6 +753,11 @@ impl<'a> TypeContext<'a> {
                     self.seed_method_receiver(item.span, def);
                 }
                 HirItem::ExtendTypeDefinition(def) => {
+                    for method in &def.node.methods {
+                        self.seed_method_receiver(method.span, method);
+                    }
+                }
+                HirItem::TypeDefinition(def) => {
                     for method in &def.node.methods {
                         self.seed_method_receiver(method.span, method);
                     }
@@ -778,6 +799,7 @@ impl<'a> TypeContext<'a> {
             scoped_expr_types: self.scoped_expr_types,
             local_types: self.local_types,
             function_signatures: self.function_signatures,
+            method_function_signatures: self.method_function_signatures,
             struct_fields_ordered: self.struct_fields_ordered,
             struct_event_fields: self.struct_event_fields,
             enum_variants_ordered: self.enum_variants_ordered,

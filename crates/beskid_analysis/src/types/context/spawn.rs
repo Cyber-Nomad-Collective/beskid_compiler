@@ -33,7 +33,9 @@ impl<'a> TypeContext<'a> {
             return None;
         };
 
-        let fiber_type = self.type_table.intern(TypeInfo::Fiber(return_type));
+        let fiber_type = self
+            .fiber_handle_type_for_payload(return_type)
+            .unwrap_or_else(|| self.type_table.intern(TypeInfo::Fiber(return_type)));
         self.fiber_handle_scopes.insert(spawn.span, child_scope);
         Some(fiber_type)
     }

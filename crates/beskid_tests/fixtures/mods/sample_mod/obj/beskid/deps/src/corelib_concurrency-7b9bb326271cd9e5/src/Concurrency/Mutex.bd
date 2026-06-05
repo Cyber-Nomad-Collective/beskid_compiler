@@ -8,30 +8,32 @@ pub type Mutex {
     i64 handle,
 }
 
+extend type Mutex {
+    /// Parks until the mutex is acquired or the fiber is cancelled.
+    pub Core.Results.Result<MutexGuard, MutexError> Lock() {
+        i64 status = __mutex_lock(handle);
+        if status == Status.Ok() {
+            return Result::Ok(MutexGuard { mutexHandle: handle });
+        }
+        if status == Status.Cancelled() {
+            return Result::Error(MutexError::Cancelled());
+        }
+        return Result::Error(MutexError::Cancelled());
+    }
+
+    /// Returns `None` when the mutex would block.
+    pub Option<MutexGuard> TryLock() {
+        i64 status = __mutex_try_lock(handle);
+        if status == Status.Ok() {
+            return Option::Some(MutexGuard { mutexHandle: handle });
+        }
+        return Option::None();
+    }
+}
+
 pub Mutex Create() {
     i64 handle = __mutex_create();
     return Mutex { handle: handle };
-}
-
-/// Parks until the mutex is acquired or the fiber is cancelled.
-pub Core.Results.Result<MutexGuard, MutexError> Lock(Mutex self) {
-    i64 status = __mutex_lock(self.handle);
-    if status == Status.Ok() {
-        return Result::Ok(MutexGuard { mutexHandle: self.handle });
-    }
-    if status == Status.Cancelled() {
-        return Result::Error(MutexError::Cancelled());
-    }
-    return Result::Error(MutexError::Cancelled());
-}
-
-/// Returns `None` when the mutex would block.
-pub Option<MutexGuard> TryLock(Mutex self) {
-    i64 status = __mutex_try_lock(self.handle);
-    if status == Status.Ok() {
-        return Option::Some(MutexGuard { mutexHandle: self.handle });
-    }
-    return Option::None();
 }
 
 pub unit Unlock(MutexGuard guard) {

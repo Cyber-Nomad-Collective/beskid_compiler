@@ -1,4 +1,5 @@
 use crate::errors::CodegenError;
+use crate::lowering::cast_intent::ensure_type_compatibility;
 use crate::lowering::descriptor::{is_pointer_like_type, struct_field_offsets};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
@@ -76,6 +77,16 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
                     span: field.node.value.span,
                     node: "unit-valued struct field",
                 })?;
+            let actual = ctx.require_expr_type(field.node.value.span)?;
+            let value = ensure_type_compatibility(
+                field.node.value.span,
+                field_type,
+                actual,
+                ctx.type_result,
+                ctx.resolution,
+                ctx.builder,
+                value,
+            )?;
             let offset_val = ctx.builder.ins().iconst(pointer_type(), offset as i64);
             let field_addr = ctx.builder.ins().iadd(alloc_ptr, offset_val);
             if is_pointer_like_type(ctx.type_result, field_type) {

@@ -78,6 +78,66 @@ impl<'a> TypeContext<'a> {
         None
     }
 
+    pub(super) fn infer_generic_args_from_qualified_type_path(
+        &mut self,
+        segments: &[Spanned<crate::hir::HirPathSegment>],
+    ) -> Option<Vec<TypeId>> {
+        if segments.len() < 2 {
+            return None;
+        }
+        let type_segment = &segments[segments.len() - 2];
+        if type_segment.node.type_args.is_empty() {
+            return None;
+        }
+        let mut args = Vec::with_capacity(type_segment.node.type_args.len());
+        for arg in &type_segment.node.type_args {
+            args.push(self.type_id_for_type(arg)?);
+        }
+        Some(args)
+    }
+
+    pub(super) fn method_dispatch_signature(
+        &mut self,
+        method_item_id: crate::resolve::ItemId,
+        receiver_type: TypeId,
+    ) -> Option<super::context::FunctionSignature> {
+        let signature = self
+            .method_function_signatures
+            .get(&method_item_id)
+            .or_else(|| self.function_signatures.get(&method_item_id))?
+            .clone();
+        let mapping = self.generic_mapping_for_type_id(receiver_type);
+        if mapping.is_empty() {
+            return Some(signature);
+        }
+        Some(super::context::FunctionSignature {
+            params: signature
+                .params
+                .iter()
+                .map(|param| self.substitute_type_id(*param, &mapping))
+                .collect(),
+            return_type: self.substitute_type_id(signature.return_type, &mapping),
+        })
+    }
+
+    pub(super) fn fiber_handle_type_for_payload(&self, payload: TypeId) -> Option<TypeId> {
+        if let Some(expected) = self.contextual_expected_type {
+            if let Some(TypeInfo::Applied { base, args }) = self.type_table.get(expected) {
+                if args.len() == 1
+                    && args[0] == payload
+                    && self
+                        .resolution
+                        .items
+                        .get(base.0)
+                        .is_some_and(|info| info.name == "Fiber" || info.name.ends_with("::Fiber"))
+                {
+                    return Some(expected);
+                }
+            }
+        }
+        None
+    }
+
     pub(super) fn record_call_kind(&mut self, span: SpanInfo, kind: super::context::CallLoweringKind) {
         if let Some(path) = &self.current_source_path {
             let key = crate::paths::unit_path_key(path);
@@ -324,6 +384,20 @@ impl<'a> TypeContext<'a> {
             && p1 == p2
         {
             return;
+        }
+        if let Some(TypeInfo::Fiber(payload)) = self.type_table.get(actual) {
+            if let Some(TypeInfo::Applied { base, args }) = self.type_table.get(expected) {
+                if args.len() == 1
+                    && args[0] == *payload
+                    && self
+                        .resolution
+                        .items
+                        .get(base.0)
+                        .is_some_and(|info| info.name == "Fiber" || info.name.ends_with("::Fiber"))
+                {
+                    return;
+                }
+            }
         }
         if self.named_item_id(expected).is_some()
             && self.named_item_id(expected) == self.named_item_id(actual)

@@ -27,6 +27,8 @@ pub struct Resolver {
     pub(crate) symbols: SymbolRegistry,
     pub(crate) by_symbol: HashMap<SymbolId, ItemId>,
     pub(crate) declaring_package: String,
+    /// When resolving method bodies, the extended/receiver type for bare field access (`handle` → `this.handle`).
+    pub(crate) current_receiver_item_id: Option<super::ids::ItemId>,
 }
 
 impl Resolver {

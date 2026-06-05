@@ -130,6 +130,8 @@ impl Resolver {
             HirItem::MethodDefinition(def) => {
                 self.push_scope();
                 self.resolve_type(&def.node.receiver_type);
+                let previous_receiver = self.current_receiver_item_id;
+                self.current_receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
                 self.insert_local("this", def.node.receiver_type.span);
                 for param in &def.node.parameters {
                     self.resolve_type(&param.node.ty);
@@ -139,6 +141,7 @@ impl Resolver {
                     self.resolve_type(return_type);
                 }
                 self.resolve_block(&def.node.body);
+                self.current_receiver_item_id = previous_receiver;
                 self.pop_scope();
             }
             HirItem::ExtendTypeDefinition(def) => {
@@ -146,6 +149,9 @@ impl Resolver {
                 for method in &def.node.methods {
                     self.push_scope();
                     self.resolve_type(&method.node.receiver_type);
+                    let previous_receiver = self.current_receiver_item_id;
+                    self.current_receiver_item_id =
+                        self.receiver_item_id_for_type(&method.node.receiver_type);
                     self.insert_local("this", method.node.receiver_type.span);
                     for param in &method.node.parameters {
                         self.resolve_type(&param.node.ty);
@@ -155,6 +161,7 @@ impl Resolver {
                         self.resolve_type(return_type);
                     }
                     self.resolve_block(&method.node.body);
+                    self.current_receiver_item_id = previous_receiver;
                     self.pop_scope();
                 }
             }
@@ -226,6 +233,24 @@ impl Resolver {
                 for field in &def.node.fields {
                     self.resolve_type(&field.node.ty);
                 }
+                for method in &def.node.methods {
+                    self.push_scope();
+                    self.resolve_type(&method.node.receiver_type);
+                    let previous_receiver = self.current_receiver_item_id;
+                    self.current_receiver_item_id =
+                        self.receiver_item_id_for_type(&method.node.receiver_type);
+                    self.insert_local("this", method.node.receiver_type.span);
+                    for param in &method.node.parameters {
+                        self.resolve_type(&param.node.ty);
+                        self.insert_local(&param.node.name.node.name, param.node.name.span);
+                    }
+                    if let Some(return_type) = &method.node.return_type {
+                        self.resolve_type(return_type);
+                    }
+                    self.resolve_block(&method.node.body);
+                    self.current_receiver_item_id = previous_receiver;
+                    self.pop_scope();
+                }
                 self.pop_generic_scope();
             }
             HirItem::EnumDefinition(def) => {
@@ -275,8 +300,8 @@ impl Resolver {
                 if let Some(type_annotation) = &let_stmt.node.type_annotation {
                     self.resolve_type(type_annotation);
                 }
-                self.resolve_expression(&let_stmt.node.value);
                 self.insert_local(&let_stmt.node.name.node.name, let_stmt.node.name.span);
+                self.resolve_expression(&let_stmt.node.value);
             }
             HirStatementNode::ReturnStatement(return_stmt) => {
                 if let Some(value) = &return_stmt.node.value {
@@ -457,6 +482,13 @@ impl Resolver {
                     .insert_value(path.span, ResolvedValue::Local(local));
                 return;
             }
+            if self.receiver_has_field(name)
+                && let Some(this_local) = self.resolve_local("this")
+            {
+                self.tables
+                    .insert_value(path.span, ResolvedValue::Local(this_local));
+                return;
+            }
             if let Some(item) = self.resolve_item_in_scope(name) {
                 self.tables
                     .insert_value(path.span, ResolvedValue::Item(item));
@@ -468,10 +500,22 @@ impl Resolver {
             });
             return;
         }
-        if let Some(local) = self.resolve_local(&segments[0]) {
-            self.tables
-                .insert_value(path.span, ResolvedValue::Local(local));
-            return;
+        if segments.len() >= 2 {
+            if let Some(local) = self.resolve_local(&segments[0]) {
+                self.tables
+                    .insert_value(path.span, ResolvedValue::Local(local));
+                return;
+            }
+            if self.resolve_item_in_scope(&segments[0]).is_none()
+                && self.module_graph.module_id(std::slice::from_ref(&segments[0])).is_none()
+                && self.module_imports.get(&segments[0]).is_none()
+            {
+                self.errors.push(ResolveError::UnknownValue {
+                    name: segments[0].clone(),
+                    span: path.span,
+                });
+                return;
+            }
         }
         let lookup_segments = self.expand_import_alias(&segments);
         match self.resolve_item_in_module_path(&segments, &lookup_segments) {
@@ -480,7 +524,10 @@ impl Resolver {
                     .insert_value(path.span, ResolvedValue::Item(item));
             }
             ModulePathLookup::ModuleMissing => {
-                if let Some(item) = self.resolve_item_in_scope(&segments[0])
+                if let Some(local) = self.resolve_local(&segments[0]) {
+                    self.tables
+                        .insert_value(path.span, ResolvedValue::Local(local));
+                } else if let Some(item) = self.resolve_item_in_scope(&segments[0])
                     && self
                         .items
                         .get(item.0)
@@ -717,6 +764,26 @@ impl Resolver {
         }
         let item_name = segments[segments.len() - 1].clone();
         self.lookup_named_item_in_module(segments, &item_name)
+    }
+
+    fn receiver_item_id_for_type(&self, receiver_type: &Spanned<HirType>) -> Option<ItemId> {
+        match self.tables.resolved_types.get(&receiver_type.span) {
+            Some(ResolvedType::Item(item_id)) => Some(*item_id),
+            _ => None,
+        }
+    }
+
+    fn receiver_has_field(&self, field_name: &str) -> bool {
+        let Some(receiver_item_id) = self.current_receiver_item_id else {
+            return false;
+        };
+        let Some(receiver) = self.items.get(receiver_item_id.0) else {
+            return false;
+        };
+        let member_name = format!("{}::{}", receiver.name, field_name);
+        self.items.iter().any(|info| {
+            info.kind == ItemKind::Field && info.name == member_name
+        })
     }
 
     fn insert_local(&mut self, name: &str, span: syntax::SpanInfo) {

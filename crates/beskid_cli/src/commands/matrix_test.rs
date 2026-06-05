@@ -3,6 +3,7 @@
 
 use anyhow::{Result, anyhow};
 use beskid_analysis::projects::{TargetKind, load_manifest_from_path};
+use std::env;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -17,12 +18,13 @@ pub fn execute_all_targets(mut args: TestArgs) -> Result<()> {
         beskid_queries::configure_db_for_project(parent);
     }
 
-    let test_targets: Vec<String> = manifest
+    let mut test_targets: Vec<String> = manifest
         .targets
         .iter()
         .filter(|target| target.kind == TargetKind::Test || target.kind == TargetKind::Lib)
         .map(|target| target.name.clone())
         .collect();
+    test_targets = filter_targets_by_env(test_targets)?;
 
     if test_targets.is_empty() {
         return Err(anyhow!(
@@ -68,6 +70,40 @@ pub fn execute_all_targets(mut args: TestArgs) -> Result<()> {
             "matrix run failed for {failed}/{total} target(s)"
         ))
     }
+}
+
+fn filter_targets_by_env(targets: Vec<String>) -> Result<Vec<String>> {
+    let raw = env::var("BESKID_CORELIB_TEST_TARGETS").unwrap_or_default();
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(targets);
+    }
+    let wanted: std::collections::HashSet<String> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if wanted.is_empty() {
+        return Ok(targets);
+    }
+    let available: std::collections::HashSet<&str> =
+        targets.iter().map(String::as_str).collect();
+    let missing: Vec<String> = wanted
+        .iter()
+        .filter(|name| !available.contains(name.as_str()))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        return Err(anyhow!(
+            "BESKID_CORELIB_TEST_TARGETS unknown targets: {}",
+            missing.join(", ")
+        ));
+    }
+    Ok(targets
+        .into_iter()
+        .filter(|name| wanted.contains(name))
+        .collect())
 }
 
 fn resolve_manifest_path(args: &TestArgs) -> Result<PathBuf> {

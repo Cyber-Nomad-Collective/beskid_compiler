@@ -189,6 +189,8 @@ pub struct HirTypeDefinition {
     pub conformances: Vec<Spanned<HirPath>>,
     #[ast(children)]
     pub fields: Vec<Spanned<HirField>>,
+    #[ast(children)]
+    pub methods: Vec<Spanned<HirMethodDefinition>>,
 }
 
 #[derive(beskid_ast_derive::HirNode)]
