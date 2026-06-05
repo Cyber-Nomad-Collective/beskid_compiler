@@ -469,13 +469,12 @@ impl Heap {
     }
 
     pub fn force_collect(&self) -> usize {
-        if !self.try_mark_full() {
-            // Already marking or sweeping
-            // TODO: wait and start new cycle?
-            return self.bytes_allocated();
+        loop {
+            if self.try_mark_full() {
+                return self.sweep_and_finish();
+            }
+            std::thread::yield_now();
         }
-
-        self.sweep_and_finish()
     }
 
     /// Test hook: start a marking cycle without sweeping.
@@ -621,7 +620,7 @@ impl Heap {
             unsafe {
                 let header = &*ptr;
                 (header.vtable.trace)(ptr, tracer);
-                header.color.mark_black();
+                header.mark_black();
             }
 
             work_done += 1;
@@ -716,7 +715,7 @@ impl Heap {
                     current = next;
                 } else {
                     // Reset color for next cycle
-                    header.color.reset_white();
+                    header.reset_white();
 
                     // Move both forward
                     prev_next = &header.next;

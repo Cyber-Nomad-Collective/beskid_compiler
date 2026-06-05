@@ -4,6 +4,7 @@ pub const SYM_ABI_VERSION: &str = "beskid_runtime_abi_version";
 pub const SYM_ALLOC: &str = "alloc";
 pub const SYM_STR_NEW: &str = "str_new";
 pub const SYM_STR_CONCAT: &str = "str_concat";
+pub const SYM_STR_EQ: &str = "str_eq";
 pub const SYM_STR_FROM_I64: &str = "str_from_i64";
 pub const SYM_ARRAY_NEW: &str = "array_new";
 pub const SYM_ARRAY_LEN: &str = "array_len";
@@ -115,6 +116,7 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_ALLOC,
     SYM_STR_NEW,
     SYM_STR_CONCAT,
+    SYM_STR_EQ,
     SYM_STR_FROM_I64,
     SYM_STR_LEN,
     SYM_ARRAY_NEW,

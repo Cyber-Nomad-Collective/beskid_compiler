@@ -219,3 +219,192 @@ project {
 
     let _ = fs::remove_dir_all(root);
 }
+
+// --- Conformance evidence: manifest goldens — edge cases (E1803, E1805, E1872, E1873, E1875) ---
+
+#[test]
+fn rejects_max_generator_rounds_zero_with_e1803() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    maxGeneratorRounds = 0
+  }
+}
+"#;
+    let err = parse_manifest(src).expect_err("maxGeneratorRounds = 0");
+    assert_eq!(err.code(), "E1803");
+}
+
+#[test]
+fn accepts_max_generator_rounds_one() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    maxGeneratorRounds = 1
+  }
+}
+"#;
+    let m = parse_manifest(src).expect("maxGeneratorRounds = 1 is valid");
+    let mod_section = m.project.mod_section.expect("mod section");
+    assert_eq!(mod_section.resolved_max_generator_rounds(), 1);
+}
+
+#[test]
+fn rejects_unknown_artifact_policy_with_e1805() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    artifactPolicy = "never"
+  }
+}
+"#;
+    let err = parse_manifest(src).expect_err("unknown artifactPolicy should fail");
+    assert_eq!(err.code(), "E1805");
+}
+
+#[test]
+fn parses_artifact_policy_rebuild() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    artifactPolicy = "rebuild"
+  }
+}
+"#;
+    let m = parse_manifest(src).expect("artifactPolicy = rebuild");
+    let mod_section = m.project.mod_section.expect("mod section");
+    assert_eq!(mod_section.artifact_policy.as_deref(), Some("rebuild"));
+}
+
+#[test]
+fn parses_artifact_policy_clean_rebuild() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    artifactPolicy = "clean_rebuild"
+  }
+}
+"#;
+    let m = parse_manifest(src).expect("artifactPolicy = clean_rebuild");
+    let mod_section = m.project.mod_section.expect("mod section");
+    assert_eq!(mod_section.artifact_policy.as_deref(), Some("clean_rebuild"));
+}
+
+#[test]
+fn parses_artifact_policy_reuse_default() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    artifactPolicy = "reuse"
+  }
+}
+"#;
+    let m = parse_manifest(src).expect("artifactPolicy = reuse");
+    let mod_section = m.project.mod_section.expect("mod section");
+    assert_eq!(mod_section.artifact_policy.as_deref(), Some("reuse"));
+}
+
+#[test]
+fn normalizes_single_quoted_capability_to_one_element_list() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    capabilities = "emit_syntax"
+  }
+}
+"#;
+    let m = parse_manifest(src).expect("single quoted capability is valid");
+    let mod_section = m.project.mod_section.expect("mod section");
+    let caps = mod_section.capabilities.expect("capabilities");
+    assert_eq!(caps, vec!["emit_syntax"]);
+}
+
+#[test]
+fn normalizes_single_bare_capability_to_one_element_list() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    capabilities = emit_syntax
+  }
+}
+"#;
+    let m = parse_manifest(src).expect("single bare capability is valid");
+    let mod_section = m.project.mod_section.expect("mod section");
+    let caps = mod_section.capabilities.expect("capabilities");
+    assert_eq!(caps, vec!["emit_syntax"]);
+}
+
+#[test]
+fn rejects_non_numeric_max_generator_rounds_at_parse_level() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    maxGeneratorRounds = "three"
+  }
+}
+"#;
+    let err = parse_manifest(src).expect_err("string maxGeneratorRounds should fail");
+    assert_eq!(err.code(), "E3003");
+}
+
+#[test]
+fn rejects_artifact_policy_as_list_at_parse_level() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    artifactPolicy = [reuse, rebuild]
+  }
+}
+"#;
+    let err = parse_manifest(src).expect_err("list artifactPolicy should fail");
+    assert_eq!(err.code(), "E3003");
+}
+
+#[test]
+fn parses_multiple_capabilities() {
+    let src = r#"
+project {
+  name = "m"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    capabilities = [emit_syntax, read_project_sources, query_semantic_snapshot]
+  }
+}
+"#;
+    let m = parse_manifest(src).expect("multiple capabilities");
+    let mod_section = m.project.mod_section.expect("mod section");
+    let caps = mod_section.capabilities.expect("capabilities");
+    assert_eq!(caps.len(), 3);
+    assert!(MOD_CAPABILITY_NAMES.contains(&"emit_syntax"));
+}

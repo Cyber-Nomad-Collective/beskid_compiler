@@ -359,8 +359,11 @@ impl SemanticPipelineRule {
     ) {
         match expression {
             HirExpressionNode::PathExpression(path_expression) => {
-                if let Some(last) = path_expression.node.path.node.segments.last() {
-                    used.insert(last.node.name.node.name.clone());
+                for segment in &path_expression.node.path.node.segments {
+                    let name = segment.node.name.node.name.clone();
+                    if !name.is_empty() {
+                        used.insert(name);
+                    }
                 }
             }
             HirExpressionNode::MemberExpression(member_expression) => {

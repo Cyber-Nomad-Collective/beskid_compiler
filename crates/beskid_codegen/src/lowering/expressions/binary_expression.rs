@@ -1,5 +1,6 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility;
+use crate::lowering::descriptor::enum_payload_start;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -8,7 +9,7 @@ use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{TypeId, TypeInfo};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::types as clif_types;
-use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, Signature, Value};
+use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, MemFlags, Signature, Value};
 use cranelift_codegen::isa::CallConv;
 
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
@@ -175,14 +176,57 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 }
             }
             HirBinaryOp::IdentityEq | HirBinaryOp::IdentityNotEq => {
-                if !(operand_clif_ty.is_int() || operand_clif_ty.is_float()) {
+                let enum_item_id = match operand_info {
+                    Some(TypeInfo::Named(id)) => ctx
+                        .type_result
+                        .enum_variants_ordered
+                        .contains_key(id)
+                        .then_some(*id),
+                    Some(TypeInfo::Applied { base, .. }) => ctx
+                        .type_result
+                        .enum_variants_ordered
+                        .contains_key(base)
+                        .then_some(*base),
+                    _ => None,
+                };
+                if let Some(item_id) = enum_item_id {
+                    let payload_start =
+                        enum_payload_start(ctx.type_result, item_id).ok_or(
+                            CodegenError::UnsupportedNode {
+                                span: node.span,
+                                node: "enum payload start",
+                            },
+                        )?;
+                    let tag_offset = ctx
+                        .builder
+                        .ins()
+                        .iconst(pointer_type(), payload_start as i64);
+                    let left_tag_addr = ctx.builder.ins().iadd(left, tag_offset);
+                    let right_tag_addr = ctx.builder.ins().iadd(right, tag_offset);
+                    let left_tag = ctx.builder.ins().load(
+                        cranelift_codegen::ir::types::I32,
+                        MemFlags::new(),
+                        left_tag_addr,
+                        0,
+                    );
+                    let right_tag = ctx.builder.ins().load(
+                        cranelift_codegen::ir::types::I32,
+                        MemFlags::new(),
+                        right_tag_addr,
+                        0,
+                    );
+                    let cond = match node.node.op.node {
+                        HirBinaryOp::IdentityEq => IntCC::Equal,
+                        HirBinaryOp::IdentityNotEq => IntCC::NotEqual,
+                        _ => unreachable!("checked operator"),
+                    };
+                    ctx.builder.ins().icmp(cond, left_tag, right_tag)
+                } else if !(operand_clif_ty.is_int() || operand_clif_ty.is_float()) {
                     return Err(CodegenError::UnsupportedNode {
                         span: node.span,
                         node: "binary identity comparison type",
                     });
-                }
-
-                if operand_clif_ty.is_float() {
+                } else if operand_clif_ty.is_float() {
                     let cond = match node.node.op.node {
                         HirBinaryOp::IdentityEq => FloatCC::Equal,
                         HirBinaryOp::IdentityNotEq => FloatCC::NotEqual,

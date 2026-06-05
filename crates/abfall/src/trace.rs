@@ -63,7 +63,7 @@ impl Tracer {
             let header = &*header_ptr;
             if T::NO_TRACE {
                 // Immediately mark black if no tracing is needed
-                header.color.mark_black();
+                header.mark_black();
             } else {
                 self.mark_header(header);
             }
@@ -71,7 +71,7 @@ impl Tracer {
     }
 
     pub(crate) fn mark_header(&self, header: &GcHeader) {
-        if header.color.mark_white_to_gray() {
+        if header.mark_white_to_gray() {
             // Enqueue for scanning
             unsafe { &mut *self.0.get() }.push(header);
         }

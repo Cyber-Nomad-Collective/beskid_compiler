@@ -63,7 +63,7 @@ pub use hub::{
 pub use metrics::*;
 pub use mutex::{mutex_create, mutex_lock, mutex_try_lock, mutex_unlock};
 pub use panic_io::{panic, panic_str, syscall_read, syscall_write};
-pub use strings::{str_concat, str_from_i64, str_len, str_new};
+pub use strings::{str_concat, str_eq, str_from_i64, str_len, str_new};
 pub use test_helpers::{test_bytes_len, test_bytes_ptr};
 pub use version::beskid_runtime_abi_version;
 pub use wait_group::{wait_group_add, wait_group_create, wait_group_done, wait_group_wait};

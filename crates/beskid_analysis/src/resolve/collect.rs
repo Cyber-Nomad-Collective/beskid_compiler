@@ -327,15 +327,9 @@ impl Resolver {
             })
             .collect();
         for (name, item_id) in imports {
-            if let Some(prev) = self.module_graph.insert_item(self.current_module, name, item_id) {
-                let prev_span = self.items.get(prev.0).map(|info| info.span);
-                if let Some(previous) = prev_span {
-                    self.errors.push(ResolveError::DuplicateItem {
-                        name: self.items[item_id.0].name.clone(),
-                        span: self.items[item_id.0].span,
-                        previous,
-                    });
-                }
+            if let Some(_prev) = self.module_graph.insert_item(self.current_module, name, item_id) {
+                // Import collides with an existing local declaration — silently skip
+                continue;
             }
         }
     }

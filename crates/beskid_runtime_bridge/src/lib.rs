@@ -17,7 +17,7 @@ use beskid_runtime::{
     hub_register, hub_unregister, hub_wait_receive, hub_wait_receive_index,
     hub_wait_receive_status, hub_wait_receive_value, interop_dispatch_ptr, interop_dispatch_unit,
     interop_dispatch_usize, mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, panic,
-    panic_str, str_concat, str_len, str_new, syscall_read, syscall_write, test_bytes_len,
+    panic_str, str_concat, str_from_i64, str_len, str_new, syscall_read, syscall_write, test_bytes_len,
     test_bytes_ptr, wait_group_add, wait_group_create, wait_group_done, wait_group_wait,
 };
 
@@ -27,6 +27,7 @@ pub extern "C" fn beskid_runtime_link_anchor() {
     let _ = alloc as usize;
     let _ = str_new as usize;
     let _ = str_concat as usize;
+    let _ = str_from_i64 as usize;
     let _ = array_new as usize;
     let _ = array_len as usize;
     let _ = panic as usize;

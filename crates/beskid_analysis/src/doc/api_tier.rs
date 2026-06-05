@@ -104,7 +104,7 @@ pub fn resolve_item_tiers(items: &mut [ApiDocItem]) {
         }
     }
 
-    for (item, tier) in items.iter_mut().zip(resolved.into_iter()) {
+    for (item, tier) in items.iter_mut().zip(resolved) {
         item.tier = tier;
     }
 }

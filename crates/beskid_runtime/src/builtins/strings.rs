@@ -83,6 +83,43 @@ pub extern "C-unwind" fn str_concat(
     str_new(buffer.cast::<u8>(), total_len)
 }
 
+/// Content equality comparison for two `BeskidStr` values.
+///
+/// Returns 1 if both strings have the same byte length and identical content;
+/// returns 0 otherwise. Null-ptr data is treated as empty content.
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn str_eq(
+    left: *const BeskidStr,
+    right: *const BeskidStr,
+) -> usize {
+    if left.is_null() || right.is_null() {
+        panic!("null string handle");
+    }
+
+    let (left_ptr, left_len) = unsafe { ((*left).ptr, (*left).len) };
+    let (right_ptr, right_len) = unsafe { ((*right).ptr, (*right).len) };
+
+    // Same pointer + length → trivially equal (also covers empty-empty null-ptr case).
+    if left_ptr == right_ptr && left_len == right_len {
+        return 1;
+    }
+
+    // Equal length → compare content byte-wise.
+    if left_len == right_len {
+        if left_ptr.is_null() || right_ptr.is_null() {
+            // One is null-data while the other is non-null; only equal if both have len 0.
+            return usize::from(left_len == 0);
+        }
+        let equal = unsafe {
+            std::slice::from_raw_parts(left_ptr, left_len)
+                == std::slice::from_raw_parts(right_ptr, right_len)
+        };
+        return usize::from(equal);
+    }
+
+    0
+}
+
 /// Format a signed integer as decimal UTF-8 in a newly allocated `BeskidStr`.
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn str_from_i64(value: i64) -> *mut BeskidStr {

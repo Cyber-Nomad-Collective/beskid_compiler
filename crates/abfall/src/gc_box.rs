@@ -3,11 +3,22 @@
 //! This module defines the internal structure of garbage-collected objects,
 //! including the header, vtable, and container.
 
-use crate::color::{AtomicColor, Color};
+use crate::color::Color;
 use crate::trace::{Trace, Tracer};
 use std::alloc::Layout;
 use std::ptr::{NonNull, null_mut};
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+
+// Bit layout for GcHeader::header_word (single AtomicUsize):
+//   bits 0-1  : tri-color mark  (White=0, Gray=1, Black=2)
+//   bits 2+   : root count       (one unit = 1 << 2)
+const COLOR_MASK: usize = 0b11;
+const ROOT_COUNT_SHIFT: usize = 2;
+const ROOT_COUNT_ONE: usize = 1 << ROOT_COUNT_SHIFT;
+
+const WHITE_BITS: usize = Color::White as usize;
+const GRAY_BITS: usize = Color::Gray as usize;
+const BLACK_BITS: usize = Color::Black as usize;
 
 /// Type-erased virtual table for GC operations
 ///
@@ -74,11 +85,12 @@ impl GcVTable {
 ///
 /// This header is shared by all `GcBox<T>` instances and allows
 /// uniform handling of objects in the allocation list.
+///
+/// Color and root-count are packed into a single `AtomicUsize`:
+/// bits 0-1 carry the tri-color state, bits 2+ carry the root count.
+/// This saves one word (8 bytes on 64-bit) versus separate atomics.
 pub struct GcHeader {
-    /// Current color in the tri-color marking algorithm
-    pub color: AtomicColor,
-    /// Reference count for root pointers (0 = not a root)
-    pub root_count: AtomicUsize,
+    header_word: AtomicUsize,
     /// Next pointer in the intrusive linked list
     pub next: AtomicPtr<GcHeader>,
     /// Static vtable reference for type-erased operations
@@ -86,33 +98,78 @@ pub struct GcHeader {
 }
 
 impl GcHeader {
-    // TODO: Combine `color` and `root_count` by using bit-patterns or avoid having a seperate `root_count` at all.
     #[inline]
     fn new(vtable: &'static GcVTable, rooted: bool) -> Self {
+        let word = if rooted { ROOT_COUNT_ONE } else { 0 };
         Self {
-            color: AtomicColor::new(Color::White),
-            root_count: AtomicUsize::new(if rooted { 1 } else { 0 }),
+            header_word: AtomicUsize::new(word),
             next: AtomicPtr::new(null_mut()),
             vtable,
         }
     }
 
     pub fn inc_root(&self) {
-        self.root_count.fetch_add(1, Ordering::Relaxed);
+        self.header_word
+            .fetch_add(ROOT_COUNT_ONE, Ordering::Relaxed);
     }
 
     pub fn dec_root(&self) {
-        self.root_count.fetch_sub(1, Ordering::Relaxed);
+        self.header_word
+            .fetch_sub(ROOT_COUNT_ONE, Ordering::Relaxed);
     }
 
     pub fn is_root(&self) -> bool {
-        self.root_count.load(Ordering::Relaxed) > 0
+        self.header_word.load(Ordering::Relaxed) >> ROOT_COUNT_SHIFT > 0
     }
 
-    /// Check if the object is collectable after all reachable objects have been transitioned from white & gray to black:
-    /// (White and not a root)
     pub fn is_white(&self) -> bool {
-        self.color.is_white() && !self.is_root()
+        let word = self.header_word.load(Ordering::Acquire);
+        (word & COLOR_MASK) == WHITE_BITS && (word >> ROOT_COUNT_SHIFT) == 0
+    }
+
+    pub fn mark_white_to_gray(&self) -> bool {
+        let mut current = self.header_word.load(Ordering::Acquire);
+        loop {
+            if (current & COLOR_MASK) != WHITE_BITS {
+                return false;
+            }
+            let new = (current & !COLOR_MASK) | GRAY_BITS;
+            match self.header_word.compare_exchange_weak(
+                current,
+                new,
+                Ordering::SeqCst,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => current = actual,
+            }
+        }
+    }
+
+    pub fn mark_black(&self) {
+        let mut current = self.header_word.load(Ordering::Acquire);
+        loop {
+            let new = (current & !COLOR_MASK) | BLACK_BITS;
+            match self.header_word.compare_exchange_weak(
+                current,
+                new,
+                Ordering::Release,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(actual) => current = actual,
+            }
+        }
+    }
+
+    pub fn reset_white(&self) {
+        self.header_word
+            .fetch_and(!COLOR_MASK as usize, Ordering::Release);
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn raw_word(&self) -> usize {
+        self.header_word.load(Ordering::Relaxed)
     }
 }
 

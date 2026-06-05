@@ -87,10 +87,22 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirEnumConstructorExpression {
             .zip(field_types.iter())
             .zip(offsets.into_iter())
         {
-            let value = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
+            let mut value = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
                 span: arg.span,
                 node: "unit-valued enum argument",
             })?;
+            let value_ty = ctx.builder.func.dfg.value_type(value);
+            let store_ty = map_type_id_to_clif(ctx.type_result, *field_type).ok_or(
+                CodegenError::UnsupportedNode {
+                    span: arg.span,
+                    node: "enum field clif type",
+                },
+            )?;
+            if value_ty.is_int() && store_ty.is_int() && value_ty.bits() < store_ty.bits() {
+                value = ctx.builder.ins().sextend(store_ty, value);
+            } else if value_ty.is_int() && store_ty.is_int() && value_ty.bits() > store_ty.bits() {
+                value = ctx.builder.ins().ireduce(store_ty, value);
+            }
             let offset_val = ctx.builder.ins().iconst(pointer_type(), offset as i64);
             let field_addr = ctx.builder.ins().iadd(alloc_ptr, offset_val);
             if is_pointer_like_type(ctx.type_result, *field_type) {

@@ -44,8 +44,9 @@ impl<T: ?Sized> GcPtr<T> {
     #[inline]
     pub unsafe fn root(self) -> GcRoot<T> {
         unsafe {
-            // TODO: replace root counter with list/stack in GcContext
-            //   (GcRoot) should borrow a lifetime from GcContext
+            // Root-counting on the object header is intentional: it
+            // supports shared-heap scenarios where multiple GcContext
+            // instances (potentially across threads) root the same object.
             self.0.as_ref().header.inc_root();
             GcRoot(self)
         }

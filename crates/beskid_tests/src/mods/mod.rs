@@ -7,6 +7,8 @@
 //! to assert dispatch order, registration counts, and diagnostic codes per the
 //! platform-spec compiler-mods hub.
 
+mod analyzer_coverage;
 mod conflicts;
 mod contract_dispatch;
 mod fixture;
+mod incremental_replay;

@@ -50,7 +50,7 @@ pub use builtins::{
     gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier, hub_create,
     hub_register, hub_unregister, hub_wait_receive, hub_wait_receive_index,
     hub_wait_receive_status, hub_wait_receive_value, mutex_create, mutex_lock, mutex_try_lock,
-    mutex_unlock, panic, panic_str, str_concat, str_from_i64, str_len, str_new, syscall_read,
+    mutex_unlock, panic, panic_str, str_concat, str_eq, str_from_i64, str_len, str_new, syscall_read,
     syscall_write, test_bytes_len, test_bytes_ptr, wait_group_add, wait_group_create, wait_group_done,
     wait_group_wait, CallbackTableEntry, install_callback_trampoline, registered_callbacks,
 };
