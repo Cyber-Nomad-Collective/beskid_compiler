@@ -1,0 +1,946 @@
+[manifest]
+abi_version = 4
+
+[profiles.minimal]
+owners = ["language"]
+
+[profiles.std]
+owners = ["language", "host"]
+
+[[kernel]]
+symbol = "alloc"
+name = "Alloc"
+params = ["usize", "ptr"]
+returns = "ptr"
+injected = true
+beskid_path = ["__alloc"]
+
+[[kernel]]
+symbol = "beskid_register_callbacks"
+name = "BeskidRegisterCallbacks"
+params = ["i64", "ptr", "i64"]
+returns = "i32"
+injected = false
+
+[[kernel]]
+symbol = "beskid_register_handlers"
+name = "BeskidRegisterHandlers"
+params = ["u64", "ptr", "u64"]
+returns = "i32"
+injected = true
+beskid_path = ["__beskid_register_handlers"]
+
+[[kernel]]
+symbol = "beskid_runtime_abi_version"
+name = "BeskidRuntimeAbiVersion"
+params = []
+returns = "i64"
+injected = false
+
+[[kernel]]
+symbol = "composition_bind_plural"
+name = "CompositionBindPlural"
+params = ["ptr", "i64", "ptr", "i64"]
+returns = "i32"
+injected = false
+
+[[kernel]]
+symbol = "composition_container_create"
+name = "CompositionContainerCreate"
+params = []
+returns = "ptr"
+injected = false
+
+[[kernel]]
+symbol = "composition_container_drop"
+name = "CompositionContainerDrop"
+params = ["ptr"]
+returns = "unit"
+injected = false
+
+[[kernel]]
+symbol = "composition_launch"
+name = "CompositionLaunch"
+params = ["ptr"]
+returns = "i32"
+injected = false
+
+[[kernel]]
+symbol = "composition_register"
+name = "CompositionRegister"
+params = ["ptr", "i64", "i64", "i64"]
+returns = "i32"
+injected = false
+
+[[kernel]]
+symbol = "composition_resolve"
+name = "CompositionResolve"
+params = ["ptr", "i64"]
+returns = "ptr"
+injected = false
+
+[[kernel]]
+symbol = "composition_resolve_plural"
+name = "CompositionResolvePlural"
+params = ["ptr", "i64", "ptr", "i64"]
+returns = "i64"
+injected = false
+
+[[kernel]]
+symbol = "composition_scope_depth"
+name = "CompositionScopeDepth"
+params = ["ptr"]
+returns = "i64"
+injected = false
+
+[[kernel]]
+symbol = "composition_scope_enter"
+name = "CompositionScopeEnter"
+params = ["ptr", "i64"]
+returns = "i32"
+injected = false
+
+[[kernel]]
+symbol = "composition_scope_leave"
+name = "CompositionScopeLeave"
+params = ["ptr", "i64"]
+returns = "i32"
+injected = false
+
+[[kernel]]
+symbol = "composition_shutdown"
+name = "CompositionShutdown"
+params = ["ptr"]
+returns = "i32"
+injected = false
+
+[[kernel]]
+symbol = "dynamic_cast_checked"
+name = "DynamicCastChecked"
+params = ["ptr", "i64"]
+returns = "i32"
+injected = false
+
+[[kernel]]
+symbol = "dynamic_cell_create"
+name = "DynamicCellCreate"
+params = ["i64", "ptr"]
+returns = "ptr"
+injected = false
+
+[[kernel]]
+symbol = "dynamic_cell_wrap"
+name = "DynamicCellWrap"
+params = ["i64", "ptr"]
+returns = "ptr"
+injected = false
+
+[[kernel]]
+symbol = "dynamic_map_aot"
+name = "DynamicMapAot"
+params = ["i64", "i64", "ptr", "ptr"]
+returns = "i32"
+injected = false
+
+[[kernel]]
+symbol = "dynamic_map_fallback"
+name = "DynamicMapFallback"
+params = ["ptr", "i64", "ptr"]
+returns = "i32"
+injected = false
+
+[[kernel]]
+symbol = "dynamic_object_alloc"
+name = "DynamicObjectAlloc"
+params = ["ptr"]
+returns = "ptr"
+injected = false
+
+[[kernel]]
+symbol = "fiber_yield"
+name = "FiberYield"
+params = []
+returns = "unit"
+injected = true
+beskid_path = ["__fiber_yield"]
+
+[[kernel]]
+symbol = "gc_register_root"
+name = "GcRegisterRoot"
+params = ["ptr"]
+returns = "unit"
+injected = true
+beskid_path = ["__gc_register_root"]
+
+[[kernel]]
+symbol = "gc_root_handle"
+name = "GcRootHandle"
+params = ["ptr"]
+returns = "i64"
+injected = true
+beskid_path = ["__gc_root_handle"]
+
+[[kernel]]
+symbol = "gc_unregister_root"
+name = "GcUnregisterRoot"
+params = ["ptr"]
+returns = "unit"
+injected = true
+beskid_path = ["__gc_unregister_root"]
+
+[[kernel]]
+symbol = "gc_unroot_handle"
+name = "GcUnrootHandle"
+params = ["u64"]
+returns = "unit"
+injected = true
+beskid_path = ["__gc_unroot_handle"]
+
+[[kernel]]
+symbol = "gc_write_barrier"
+name = "GcWriteBarrier"
+params = ["ptr", "ptr"]
+returns = "unit"
+injected = true
+beskid_path = ["__gc_write_barrier"]
+
+[[kernel]]
+symbol = "interop_dispatch_ptr"
+name = "InteropDispatchPtr"
+params = ["ptr"]
+returns = "ptr"
+injected = true
+beskid_path = ["__interop_dispatch_ptr"]
+
+[[kernel]]
+symbol = "interop_dispatch_unit"
+name = "InteropDispatchUnit"
+params = ["ptr"]
+returns = "unit"
+injected = true
+beskid_path = ["__interop_dispatch_unit"]
+
+[[kernel]]
+symbol = "interop_dispatch_usize"
+name = "InteropDispatchUsize"
+params = ["ptr"]
+returns = "i64"
+injected = true
+beskid_path = ["__interop_dispatch_usize"]
+
+[[kernel]]
+symbol = "panic"
+name = "Panic"
+params = ["ptr", "ptr"]
+returns = "never"
+injected = false
+
+[[kernel]]
+symbol = "panic_str"
+name = "PanicStr"
+params = ["string"]
+returns = "never"
+injected = true
+beskid_path = ["__panic_str"]
+
+[[kernel]]
+symbol = "runtime_preempt_check"
+name = "RuntimePreemptCheck"
+params = []
+returns = "unit"
+injected = false
+
+[[dispatch.usize]]
+tag = 0
+legacy_symbol = "array_len"
+name = "ArrayLen"
+params = ["ptr"]
+returns = "usize"
+injected = true
+beskid_path = ["__array_len"]
+
+[[dispatch.usize]]
+tag = 1
+owner = "host"
+legacy_symbol = "fs_write_text"
+name = "FsWriteText"
+params = ["string", "string"]
+returns = "usize"
+injected = true
+beskid_path = ["__fs_write_text"]
+
+[[dispatch.usize]]
+tag = 2
+legacy_symbol = "str_len"
+name = "StrLen"
+params = ["string"]
+returns = "usize"
+injected = true
+beskid_path = ["__str_len"]
+
+[[dispatch.usize]]
+tag = 3
+legacy_symbol = "syscall_write"
+name = "SyscallWrite"
+params = ["u64", "string"]
+returns = "usize"
+injected = true
+beskid_path = ["__syscall_write"]
+
+[[dispatch.usize]]
+tag = 4
+legacy_symbol = "syscall_write_bytes"
+name = "SyscallWriteBytes"
+params = ["u64", "ptr"]
+returns = "usize"
+injected = true
+beskid_path = ["__syscall_write_bytes"]
+
+[[dispatch.ptr]]
+tag = 0
+legacy_symbol = "array_new"
+name = "ArrayNew"
+params = ["usize", "usize"]
+returns = "ptr"
+injected = true
+beskid_path = ["__array_new"]
+
+[[dispatch.ptr]]
+tag = 1
+legacy_symbol = "bytes_from_str"
+name = "BytesFromStr"
+params = ["string"]
+returns = "ptr"
+injected = true
+beskid_path = ["__bytes_from_str"]
+
+[[dispatch.ptr]]
+tag = 2
+legacy_symbol = "bytes_set"
+name = "BytesSet"
+params = ["ptr", "u64", "u64"]
+returns = "ptr"
+injected = true
+beskid_path = ["__bytes_set"]
+
+[[dispatch.ptr]]
+tag = 3
+owner = "host"
+legacy_symbol = "env_get"
+name = "EnvGet"
+params = ["string"]
+returns = "string"
+injected = true
+beskid_path = ["__env_get"]
+
+[[dispatch.ptr]]
+tag = 4
+owner = "host"
+legacy_symbol = "env_getcwd"
+name = "EnvGetcwd"
+params = []
+returns = "string"
+injected = true
+beskid_path = ["__env_getcwd"]
+
+[[dispatch.ptr]]
+tag = 5
+owner = "host"
+legacy_symbol = "fs_read_text"
+name = "FsReadText"
+params = ["string"]
+returns = "string"
+injected = true
+beskid_path = ["__fs_read_text"]
+
+[[dispatch.ptr]]
+tag = 6
+legacy_symbol = "str_concat"
+name = "StrConcat"
+params = ["ptr", "ptr"]
+returns = "ptr"
+injected = true
+
+[[dispatch.ptr]]
+tag = 7
+legacy_symbol = "str_from_bytes_utf8"
+name = "StrFromBytesUtf8"
+params = ["ptr"]
+returns = "string"
+injected = true
+beskid_path = ["__str_from_bytes_utf8"]
+
+[[dispatch.ptr]]
+tag = 8
+legacy_symbol = "str_from_i64"
+name = "StrFromI64"
+params = ["u64"]
+returns = "ptr"
+injected = true
+
+[[dispatch.ptr]]
+tag = 9
+legacy_symbol = "str_new"
+name = "StrNew"
+params = ["ptr", "usize"]
+returns = "ptr"
+injected = true
+beskid_path = ["__str_new"]
+
+[[dispatch.ptr]]
+tag = 10
+legacy_symbol = "str_slice"
+name = "StrSlice"
+params = ["string", "u64", "u64"]
+returns = "string"
+injected = true
+beskid_path = ["__str_slice"]
+
+[[dispatch.ptr]]
+tag = 11
+legacy_symbol = "syscall_read"
+name = "SyscallRead"
+params = ["u64", "u64"]
+returns = "string"
+injected = true
+beskid_path = ["__syscall_read"]
+
+[[dispatch.ptr]]
+tag = 12
+legacy_symbol = "syscall_read_bytes"
+name = "SyscallReadBytes"
+params = ["u64", "u64"]
+returns = "ptr"
+injected = true
+beskid_path = ["__syscall_read_bytes"]
+
+[[dispatch.unit]]
+tag = 0
+legacy_symbol = "bytes_copy"
+name = "BytesCopy"
+params = ["ptr", "u64", "ptr", "u64", "u64"]
+returns = "unit"
+injected = true
+beskid_path = ["__bytes_copy"]
+
+[[dispatch.unit]]
+tag = 1
+legacy_symbol = "channel_close"
+name = "ChannelClose"
+params = ["u64"]
+returns = "unit"
+injected = true
+beskid_path = ["__channel_close"]
+
+[[dispatch.unit]]
+tag = 2
+legacy_symbol = "fiber_cancel"
+name = "FiberCancel"
+params = ["u64"]
+returns = "unit"
+injected = true
+beskid_path = ["__fiber_cancel"]
+
+[[dispatch.unit]]
+tag = 3
+legacy_symbol = "fiber_detach"
+name = "FiberDetach"
+params = ["u64"]
+returns = "unit"
+injected = true
+beskid_path = ["__fiber_detach"]
+
+[[dispatch.unit]]
+tag = 4
+legacy_symbol = "mutex_unlock"
+name = "MutexUnlock"
+params = ["u64"]
+returns = "unit"
+injected = true
+beskid_path = ["__mutex_unlock"]
+
+[[dispatch.unit]]
+tag = 5
+legacy_symbol = "wait_group_add"
+name = "WaitGroupAdd"
+params = ["u64", "u64"]
+returns = "unit"
+injected = true
+beskid_path = ["__wait_group_add"]
+
+[[dispatch.unit]]
+tag = 6
+legacy_symbol = "wait_group_done"
+name = "WaitGroupDone"
+params = ["u64"]
+returns = "unit"
+injected = true
+beskid_path = ["__wait_group_done"]
+
+[[dispatch.i64]]
+tag = 0
+legacy_symbol = "bytes_compare"
+name = "BytesCompare"
+params = ["ptr", "ptr"]
+returns = "u64"
+injected = true
+beskid_path = ["__bytes_compare"]
+
+[[dispatch.i64]]
+tag = 1
+legacy_symbol = "bytes_get"
+name = "BytesGet"
+params = ["ptr", "u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__bytes_get"]
+
+[[dispatch.i64]]
+tag = 2
+legacy_symbol = "channel_create"
+name = "ChannelCreate"
+params = ["u64", "u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__channel_create"]
+
+[[dispatch.i64]]
+tag = 3
+legacy_symbol = "channel_receive_ptr"
+name = "ChannelReceivePtr"
+params = ["u64", "ptr"]
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 4
+legacy_symbol = "channel_receive_status"
+name = "ChannelReceiveStatus"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__channel_receive"]
+
+[[dispatch.i64]]
+tag = 5
+legacy_symbol = "channel_receive_value"
+name = "ChannelReceiveValue"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__channel_receive_value"]
+
+[[dispatch.i64]]
+tag = 6
+legacy_symbol = "channel_send"
+name = "ChannelSend"
+params = ["u64", "u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__channel_send"]
+
+[[dispatch.i64]]
+tag = 7
+legacy_symbol = "channel_send_ptr"
+name = "ChannelSendPtr"
+params = ["u64", "ptr"]
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 8
+legacy_symbol = "channel_try_receive"
+name = "ChannelTryReceive"
+params = ["u64", "ptr"]
+returns = "u64"
+injected = true
+beskid_path = ["__channel_try_receive"]
+
+[[dispatch.i64]]
+tag = 9
+legacy_symbol = "channel_try_receive_ptr"
+name = "ChannelTryReceivePtr"
+params = ["u64", "ptr"]
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 10
+legacy_symbol = "channel_try_send"
+name = "ChannelTrySend"
+params = ["u64", "u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__channel_try_send"]
+
+[[dispatch.i64]]
+tag = 11
+legacy_symbol = "channel_try_send_ptr"
+name = "ChannelTrySendPtr"
+params = ["u64", "ptr"]
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 12
+legacy_symbol = "clock_monotonic_nanos"
+name = "ClockMonotonicNanos"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__clock_monotonic_nanos"]
+
+[[dispatch.i64]]
+tag = 13
+legacy_symbol = "clock_realtime_nanos"
+name = "ClockRealtimeNanos"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__clock_realtime_nanos"]
+
+[[dispatch.i64]]
+tag = 14
+owner = "host"
+legacy_symbol = "env_set"
+name = "EnvSet"
+params = ["string", "string"]
+returns = "u64"
+injected = true
+beskid_path = ["__env_set"]
+
+[[dispatch.i64]]
+tag = 15
+legacy_symbol = "fiber_current_id"
+name = "FiberCurrentId"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__fiber_current_id"]
+
+[[dispatch.i64]]
+tag = 16
+legacy_symbol = "fiber_join_status"
+name = "FiberJoinStatus"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__fiber_join"]
+
+[[dispatch.i64]]
+tag = 17
+legacy_symbol = "fiber_join_value"
+name = "FiberJoinValue"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__fiber_join_value"]
+
+[[dispatch.i64]]
+tag = 18
+legacy_symbol = "fiber_now_millis"
+name = "FiberNowMillis"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__fiber_now_millis"]
+
+[[dispatch.i64]]
+tag = 19
+legacy_symbol = "fiber_processor_count"
+name = "FiberProcessorCount"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__fiber_processor_count"]
+
+[[dispatch.i64]]
+tag = 20
+legacy_symbol = "fiber_spawn"
+name = "FiberSpawn"
+params = ["ptr", "ptr"]
+returns = "u64"
+injected = true
+beskid_path = ["__fiber_spawn"]
+
+[[dispatch.i64]]
+tag = 21
+legacy_symbol = "fiber_spawn_with_cancel_slot"
+name = "FiberSpawnWithCancelSlot"
+params = ["ptr", "ptr", "ptr"]
+returns = "u64"
+injected = true
+beskid_path = ["__fiber_spawn_with_cancel_slot"]
+
+[[dispatch.i64]]
+tag = 22
+owner = "host"
+legacy_symbol = "fs_delete"
+name = "FsDelete"
+params = ["string"]
+returns = "u64"
+injected = true
+beskid_path = ["__fs_delete"]
+
+[[dispatch.i64]]
+tag = 23
+owner = "host"
+legacy_symbol = "fs_exists"
+name = "FsExists"
+params = ["string"]
+returns = "u64"
+injected = true
+beskid_path = ["__fs_exists"]
+
+[[dispatch.i64]]
+tag = 24
+owner = "host"
+legacy_symbol = "fs_mkdir"
+name = "FsMkdir"
+params = ["string"]
+returns = "u64"
+injected = true
+beskid_path = ["__fs_mkdir"]
+
+[[dispatch.i64]]
+tag = 25
+legacy_symbol = "gc_bytes_allocated"
+name = "GcBytesAllocated"
+params = []
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 26
+legacy_symbol = "gc_collect"
+name = "GcCollect"
+params = []
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 27
+legacy_symbol = "gc_collect_if_needed"
+name = "GcCollectIfNeeded"
+params = []
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 28
+legacy_symbol = "gc_external_root_count"
+name = "GcExternalRootCount"
+params = []
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 29
+legacy_symbol = "gc_object_count"
+name = "GcObjectCount"
+params = []
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 30
+legacy_symbol = "gc_phase"
+name = "GcPhase"
+params = []
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 31
+legacy_symbol = "hub_create"
+name = "HubCreate"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__hub_create"]
+
+[[dispatch.i64]]
+tag = 32
+legacy_symbol = "hub_register"
+name = "HubRegister"
+params = ["u64", "u64", "u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__hub_register"]
+
+[[dispatch.i64]]
+tag = 33
+legacy_symbol = "hub_unregister"
+name = "HubUnregister"
+params = ["u64", "u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__hub_unregister"]
+
+[[dispatch.i64]]
+tag = 34
+legacy_symbol = "hub_wait_receive_index"
+name = "HubWaitReceiveIndex"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__hub_wait_receive_index"]
+
+[[dispatch.i64]]
+tag = 35
+legacy_symbol = "hub_wait_receive_status"
+name = "HubWaitReceiveStatus"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__hub_wait_receive"]
+
+[[dispatch.i64]]
+tag = 36
+legacy_symbol = "hub_wait_receive_value"
+name = "HubWaitReceiveValue"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__hub_wait_receive_value"]
+
+[[dispatch.i64]]
+tag = 37
+legacy_symbol = "mutex_create"
+name = "MutexCreate"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__mutex_create"]
+
+[[dispatch.i64]]
+tag = 38
+legacy_symbol = "mutex_lock"
+name = "MutexLock"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__mutex_lock"]
+
+[[dispatch.i64]]
+tag = 39
+legacy_symbol = "mutex_try_lock"
+name = "MutexTryLock"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__mutex_try_lock"]
+
+[[dispatch.i64]]
+tag = 40
+owner = "host"
+legacy_symbol = "process_exit"
+name = "ProcessExit"
+params = ["u64"]
+returns = "never"
+injected = true
+beskid_path = ["__process_exit"]
+
+[[dispatch.i64]]
+tag = 41
+owner = "host"
+legacy_symbol = "process_getpid"
+name = "ProcessGetpid"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__process_getpid"]
+
+[[dispatch.i64]]
+tag = 42
+legacy_symbol = "str_eq"
+name = "StrEq"
+params = ["ptr", "ptr"]
+returns = "u64"
+injected = true
+
+[[dispatch.i64]]
+tag = 43
+legacy_symbol = "test_bytes_len"
+name = "TestBytesLen"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__test_bytes_len"]
+
+[[dispatch.i64]]
+tag = 44
+legacy_symbol = "test_bytes_ptr"
+name = "TestBytesPtr"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__test_bytes_ptr"]
+
+[[dispatch.i64]]
+tag = 45
+owner = "host"
+legacy_symbol = "tty_winsize"
+name = "TtyWinsize"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__tty_winsize"]
+
+[[dispatch.i64]]
+tag = 46
+legacy_symbol = "wait_group_create"
+name = "WaitGroupCreate"
+params = []
+returns = "u64"
+injected = true
+beskid_path = ["__wait_group_create"]
+
+[[dispatch.i64]]
+tag = 47
+legacy_symbol = "wait_group_wait"
+name = "WaitGroupWait"
+params = ["u64"]
+returns = "u64"
+injected = true
+beskid_path = ["__wait_group_wait"]
+
+[[dispatch.i64]]
+tag = 48
+legacy_symbol = "event_subscribe"
+name = "EventSubscribe"
+params = ["ptr", "ptr"]
+returns = "u64"
+injected = false
+
+[[dispatch.i64]]
+tag = 49
+legacy_symbol = "event_unsubscribe_first"
+name = "EventUnsubscribeFirst"
+params = ["ptr", "ptr"]
+returns = "u64"
+injected = false
+
+[[dispatch.i64]]
+tag = 50
+legacy_symbol = "event_len"
+name = "EventLen"
+params = ["ptr"]
+returns = "u64"
+injected = false
+
+[[dispatch.i64]]
+tag = 51
+legacy_symbol = "event_get_handler"
+name = "EventGetHandler"
+params = ["ptr", "u64"]
+returns = "u64"
+injected = false
+
+[[intrinsic]]
+path = ["range"]
+params = ["u64", "u64"]
+returns = "unit"
+injected = false
+symbol = "range"
+

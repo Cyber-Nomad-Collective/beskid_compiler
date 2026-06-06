@@ -1,6 +1,8 @@
 //! `beskid lsp` — run or install the Beskid language server.
 
-use crate::toolchain::release::{LspInstallArgs, install_lsp, managed_lsp_exists, managed_lsp_path};
+use beskid_tools::toolchain::release::{
+    InstallLspOptions, install_lsp, managed_lsp_exists, managed_lsp_path,
+};
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use std::process::Command;
@@ -17,11 +19,20 @@ pub enum LspCommand {
     Install(LspInstallArgs),
 }
 
+#[derive(Args, Debug)]
+pub struct LspInstallArgs {
+    /// GitHub release tag (default rolling `lsp-latest`; pin with `lsp-vX.Y.Z`).
+    #[arg(long, default_value = "lsp-latest")]
+    pub release_tag: String,
+}
+
 /// Start the LSP server on stdin/stdout, or run an install subcommand.
 pub fn execute(args: LspArgs) -> Result<()> {
     match args.command {
         Some(LspCommand::Install(install)) => {
-            install_lsp(&install)?;
+            install_lsp(&InstallLspOptions {
+                release_tag: install.release_tag,
+            })?;
             Ok(())
         }
         None => run_stdio_server(),

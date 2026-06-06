@@ -9,6 +9,7 @@ mod instantiate;
 mod manifest;
 mod post_actions;
 mod registry;
+mod service;
 mod sources;
 mod substitute;
 mod symbols;
@@ -35,4 +36,10 @@ pub use substitute::{apply_source_name, build_substitution_map, substitute_text}
 pub use symbols::{
     collect_symbol_values, parse_symbol_flag, stdin_is_interactive, SymbolCollectOptions,
     SymbolValues,
+};
+pub use service::{
+    count_selectors, instantiate_template, install_template, list_templates, parse_kind_filter,
+    uninstall_template, InstantiateTemplateRequest, InstallTemplateOutput, InstallTemplateRequest,
+    InstalledTemplateRow, ListTemplatesOutput, ListTemplatesRequest, RegistryTemplateRow,
+    TemplateSelector, UninstallTemplateOutput, UninstallTemplateRequest,
 };

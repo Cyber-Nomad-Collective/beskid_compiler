@@ -15,7 +15,7 @@ fn main() {
         .find(|p| p.join("Workspace.proj").is_file() && p.join("beskid_corelib").is_dir())
         .unwrap_or_else(|| {
             panic!(
-                "beskid_cli: corelib workspace not found. Expected `../../corelib` with \
+                "beskid_tools: corelib workspace not found. Expected `../../corelib` with \
                  `Workspace.proj` plus `beskid_corelib/` (init the `compiler/corelib` submodule). \
                  Set {} to an absolute path to the **workspace** directory (parent of \
                  `beskid_corelib/`) to override. Hint: `git submodule update --init --recursive` \

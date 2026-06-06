@@ -1,6 +1,6 @@
 //! `beskid lock` — synchronize `Project.lock` for the selected project/workspace.
 
-use crate::pipeline_ui::resolve_project_with_cli_pipeline;
+use beskid_tools::pipeline::resolve_project_with_cli_pipeline;
 use crate::project_args::{PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;

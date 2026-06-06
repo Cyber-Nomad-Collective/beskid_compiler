@@ -1,0 +1,6 @@
+/// Process-start registration is owned by `beskid_host` (`beskid_host_register_all` at link time).
+/// This hook remains for compatibility and performs no handler registration.
+
+pub i64 RegisterHandlers() {
+    return 0;
+}

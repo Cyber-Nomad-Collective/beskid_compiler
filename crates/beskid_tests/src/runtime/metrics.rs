@@ -1,4 +1,4 @@
-use beskid_engine::Engine;
+use crate::support::runtime::with_runtime_scope;
 use beskid_runtime::{
     alloc, event_get_handler, event_subscribe, event_unsubscribe_first, rt_metrics_alloc_bytes,
     rt_metrics_alloc_calls, rt_metrics_event_get_handler_calls, rt_metrics_event_subscribe_calls,
@@ -9,8 +9,7 @@ use beskid_runtime::{
 
 #[test]
 fn runtime_metrics_snapshot_counters_increase_for_typical_flow() {
-    let mut engine = Engine::new();
-    engine.with_runtime(|_, _| {
+    with_runtime_scope(|_, _| {
         static Z: [u8; 1] = [0];
         let _ = alloc(16, std::ptr::null());
         let _ = alloc(8, std::ptr::null());

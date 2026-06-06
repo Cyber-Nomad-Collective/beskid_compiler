@@ -14,15 +14,15 @@ use crate::commands::lock::LockArgs;
 use crate::commands::lsp::LspArgs;
 use crate::commands::new::NewArgs;
 use crate::commands::parse::ParseArgs;
+use crate::commands::repl::ReplArgs;
 use crate::commands::run::RunArgs;
 use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::{
     analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, import, lock, lsp, new,
-    parse, run, test, tree, update,
+    parse, repl, run, test, tree, update,
 };
-use crate::corelib_runtime;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_pckg::PckgArgs;
 use beskid_pckg::cli::PckgCommand;
@@ -72,11 +72,14 @@ pub enum Commands {
     /// Lower a Beskid file into CLIF and print the resulting IR
     Clif(ClifArgs),
 
-    /// JIT-compile and execute a Beskid file
+    /// AOT-compile and execute a Beskid file in a subprocess
     Run(RunArgs),
 
     /// Discover and run Beskid `test` items
     Test(TestArgs),
+
+    /// Evaluate expression/statement snippets in an interactive JIT REPL
+    Repl(ReplArgs),
 
     /// AOT-compile and link a Beskid file into object/library/executable outputs
     Build(BuildArgs),
@@ -118,7 +121,7 @@ pub fn run() -> miette::Result<()> {
     let all_args =
         argfile::expand_args_from(os_args, argfile::parse_fromfile, argfile::PREFIX).unwrap();
     let cli = Cli::parse_from(all_args);
-    crate::logging::init(cli.log_cranelift);
+    beskid_tools::logging::init(cli.log_cranelift);
     ensure_corelib_ready().map_err(anyhow_to_miette)?;
 
     let result = match cli.command {
@@ -130,6 +133,7 @@ pub fn run() -> miette::Result<()> {
         Commands::Clif(args) => clif::execute(args),
         Commands::Run(args) => run::execute(args),
         Commands::Test(args) => test::execute(args),
+        Commands::Repl(args) => repl::execute(args),
         Commands::Build(args) => build::execute(args),
         Commands::Mod(args) => compiler_mod::execute(args),
         Commands::Import(args) => import::execute(args),
@@ -148,7 +152,7 @@ pub fn run() -> miette::Result<()> {
 }
 
 fn ensure_corelib_ready() -> anyhow::Result<()> {
-    let provisioned = corelib_runtime::ensure_bundled_corelib()?;
+    let provisioned = beskid_tools::ensure_bundled_corelib()?;
     if provisioned.updated {
         println!(
             "corelib: updated to {} at {}",
@@ -162,7 +166,7 @@ fn ensure_corelib_ready() -> anyhow::Result<()> {
 fn anyhow_to_miette(error: anyhow::Error) -> Report {
     match error.downcast::<Report>() {
         Ok(report) => report,
-        Err(error) => crate::errors::report_from_anyhow(&error),
+        Err(error) => beskid_tools::diagnostics::report_from_anyhow(&error),
     }
 }
 

@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use cranelift_codegen::ir::ExternalName;
 
-use beskid_abi::BUILTIN_SPECS;
+use beskid_abi::{is_dispatch_symbol, BUILTIN_SPECS};
 
 use crate::{CodegenArtifact, ExternImport};
 
@@ -92,16 +92,7 @@ fn collect_referenced_testcase_symbols(artifact: &CodegenArtifact) -> HashSet<St
 }
 
 fn is_runtime_builtin(symbol: &str) -> bool {
-    BUILTIN_SPECS
-        .iter()
-        .any(|spec| spec.symbol == symbol)
-        || matches!(
-            symbol,
-            "event_len"
-                | "event_subscribe"
-                | "event_unsubscribe_first"
-                | "event_get_handler"
-        )
+    BUILTIN_SPECS.iter().any(|spec| spec.symbol == symbol) || is_dispatch_symbol(symbol)
 }
 
 #[cfg(test)]

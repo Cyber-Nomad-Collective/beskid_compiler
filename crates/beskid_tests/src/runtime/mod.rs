@@ -20,7 +20,7 @@ mod guard;
 mod gc;
 
 #[cfg(test)]
-mod jit;
+mod execution;
 
 #[cfg(test)]
 mod jit_callable;

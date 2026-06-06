@@ -54,6 +54,12 @@ pub enum AotError {
 
     #[error("[E4050] unresolved extern library `{library}` for symbol `{symbol}`")]
     UnresolvedExternLibrary { library: String, symbol: String },
+
+    #[error("[E4060] Failed to run executable at `{path}`: {message}")]
+    RunFailed { path: PathBuf, message: String },
+
+    #[error("[E4061] Executable timed out after {seconds}s: `{path}`")]
+    RunTimedOut { path: PathBuf, seconds: u64 },
 }
 
 impl From<cranelift_module::ModuleError> for AotError {

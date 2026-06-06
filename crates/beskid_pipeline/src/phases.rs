@@ -137,6 +137,30 @@ pub const JIT_RUN_PHASE_ORDER: &[&str] = &[
     JIT_FINALIZE,
 ];
 
+/// Phases observed for `beskid run` after resolution when using the AOT subprocess path.
+///
+/// Same mod-enabled front-end prefix as [`JIT_RUN_PHASE_ORDER`], then object emission, runtime
+/// archive resolution, and host link instead of in-process JIT finalize.
+pub const RUN_AOT_PHASE_ORDER: &[&str] = &[
+    PARSE,
+    MACRO_EXPAND,
+    MOD_LOAD,
+    MOD_COLLECT,
+    MOD_GENERATE,
+    SYNTAX_GENERATION,
+    SEMANTIC,
+    SEMANTIC_SNAPSHOT,
+    COMPOSITION_RESOLVE,
+    MOD_ANALYZE,
+    MOD_REWRITE,
+    LOWER_READY,
+    LOWER,
+    CODEGEN_CLIF,
+    AOT_EMIT_OBJECT,
+    AOT_RUNTIME,
+    AOT_LINK,
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,5 +211,18 @@ mod tests {
         assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, LOWER_READY).unwrap());
         assert!(pos(o, LOWER_READY).unwrap() < pos(o, LOWER).unwrap());
         assert!(pos(o, LOWER).unwrap() < pos(o, CODEGEN_CLIF).unwrap());
+    }
+
+    #[test]
+    fn run_aot_orders_aot_tail_after_codegen_clif() {
+        let o = RUN_AOT_PHASE_ORDER;
+        assert!(pos(o, PARSE).unwrap() < pos(o, MOD_LOAD).unwrap());
+        assert!(pos(o, MOD_REWRITE).unwrap() < pos(o, LOWER_READY).unwrap());
+        assert!(pos(o, LOWER).unwrap() < pos(o, CODEGEN_CLIF).unwrap());
+        assert!(pos(o, CODEGEN_CLIF).unwrap() < pos(o, AOT_EMIT_OBJECT).unwrap());
+        assert!(pos(o, AOT_EMIT_OBJECT).unwrap() < pos(o, AOT_RUNTIME).unwrap());
+        assert!(pos(o, AOT_RUNTIME).unwrap() < pos(o, AOT_LINK).unwrap());
+        assert!(pos(o, JIT_EMIT).is_none());
+        assert!(pos(o, JIT_FINALIZE).is_none());
     }
 }

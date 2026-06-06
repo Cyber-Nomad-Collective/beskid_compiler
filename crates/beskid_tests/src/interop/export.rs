@@ -27,6 +27,7 @@ pub unit plugin_init() { return; }
         lower_source(Path::new("<memory>"), src, false).expect("lower export fixture");
     let table = ExportTable::from_artifact(&lowered.artifact);
     assert_eq!(table.entries().len(), 1);
+    assert_eq!(table.entries()[0].symbol_id, 1);
     assert_eq!(table.linker_symbols(), vec!["beskid_plugin_init".to_string()]);
 }
 

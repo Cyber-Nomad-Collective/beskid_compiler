@@ -125,6 +125,7 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<ModArtifact
         export_policy: ExportPolicy::AllDefined,
         link_mode: LinkMode::Auto,
         runtime: crate::api::RuntimeStrategy::Standalone,
+        runtime_link_profile: crate::api::RuntimeLinkProfile::Std,
         verbose_link: false,
         external_libraries: Vec::new(),
         library_search_paths: Vec::new(),

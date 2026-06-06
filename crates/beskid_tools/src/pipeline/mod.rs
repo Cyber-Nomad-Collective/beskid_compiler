@@ -1,5 +1,7 @@
 //! CLI [`beskid_pipeline::PipelineObserver`] with plain lines or an interactive build TUI.
 
+pub mod frontend;
+
 mod labels;
 pub mod tui;
 
@@ -202,7 +204,7 @@ impl CliPipeline {
             return counts;
         }
         for diagnostic in diagnostics {
-            let rendered = crate::errors::format_diagnostic(diagnostic);
+            let rendered = crate::diagnostics::format_diagnostic(diagnostic);
             eprint!("{rendered}");
         }
         let _ = stderr().flush();
@@ -382,7 +384,7 @@ pub fn resolve_input_with_cli_pipeline_kind(
         use_cli_spinner(plain),
         progress_kind,
     ));
-    let resolved = crate::frontend::resolve_input_with_pipeline(
+    let resolved = frontend::resolve_input_with_pipeline(
         input,
         project,
         target,
@@ -409,7 +411,7 @@ pub fn resolve_project_with_cli_pipeline(
         use_cli_spinner(plain),
         PipelineProgressKind::FullBuild,
     ));
-    let resolved = crate::frontend::resolve_project_with_pipeline(
+    let resolved = frontend::resolve_project_with_pipeline(
         input,
         project,
         target,

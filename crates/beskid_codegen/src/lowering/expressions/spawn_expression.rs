@@ -1,15 +1,15 @@
 use crate::errors::CodegenError;
+use crate::lowering::dispatch::lower_dispatch_builtin_call;
 use crate::lowering::expressions::call_expression::lower_lambda_function_value;
 use crate::lowering::lowerable::Lowerable;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::pointer_type;
-use beskid_abi::SYM_FIBER_SPAWN_WITH_CANCEL_SLOT;
+use beskid_abi::{DispatchReturnGroup, DispatchRoute, TAG_FIBER_SPAWN_WITH_CANCEL_SLOT};
 use beskid_analysis::hir::{HirExpressionNode, HirSpawnExpression};
 use beskid_analysis::resolve::ResolvedValue;
 use beskid_analysis::syntax::Spanned;
 use cranelift_codegen::ir::{
     AbiParam, ExtFuncData, ExternalName, InstBuilder, Signature, StackSlotData, StackSlotKind,
-    types,
 };
 use cranelift_codegen::isa::CallConv;
 
@@ -41,30 +41,20 @@ fn lower_spawn_expression(
         .ins()
         .stack_addr(pointer_type(), on_cancelled_slot, 0);
 
-    let mut sig = Signature::new(CallConv::SystemV);
-    sig.params.push(AbiParam::new(pointer_type()));
-    sig.params.push(AbiParam::new(pointer_type()));
-    sig.params.push(AbiParam::new(pointer_type()));
-    sig.returns.push(AbiParam::new(types::I64));
-    let sig_ref = ctx.builder.func.import_signature(sig);
-    let func_ref = ctx.builder.func.import_function(ExtFuncData {
-        name: ExternalName::testcase(SYM_FIBER_SPAWN_WITH_CANCEL_SLOT),
-        signature: sig_ref,
-        colocated: false,
-        patchable: false,
-    });
-    let call = ctx
-        .builder
-        .ins()
-        .call(func_ref, &[entry_ptr, env, on_cancelled_slot_addr]);
-    let handle = *ctx
-        .builder
-        .inst_results(call)
-        .first()
-        .ok_or(CodegenError::UnsupportedNode {
-            span: spawn.span,
-            node: "fiber_spawn_with_cancel_slot result",
-        })?;
+    let handle = lower_dispatch_builtin_call(
+        spawn.span,
+        DispatchRoute {
+            tag: TAG_FIBER_SPAWN_WITH_CANCEL_SLOT,
+            group: DispatchReturnGroup::I64,
+        },
+        &[entry_ptr, env, on_cancelled_slot_addr],
+        true,
+        ctx,
+    )?
+    .ok_or(CodegenError::UnsupportedNode {
+        span: spawn.span,
+        node: "fiber_spawn_with_cancel_slot result",
+    })?;
     Ok(Some(handle))
 }
 

@@ -9,24 +9,19 @@ slow = []
 pckg = ["dep:beskid_pckg"]
 
 [dependencies]
+abfall = { path = "../abfall" }
 beskid_pckg = { path = "../beskid_pckg", optional = true }
 beskid_aot = { path = "../beskid_aot" }
 beskid_abi = { path = "../beskid_abi" }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_queries = { path = "../beskid_queries" }
 beskid_codegen = { path = "../beskid_codegen" }
-beskid_engine = { path = "../beskid_engine" }
 beskid_lsp = { path = "../beskid_lsp" }
 beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_template = { path = "../beskid_template" }
 tempfile = "3"
 serde_json = "1"
 beskid_runtime = { path = "../beskid_runtime", features = ["metrics", "sched"] }
-cranelift-codegen = { workspace = true }
-cranelift-frontend = { workspace = true }
-cranelift-jit = { workspace = true }
-cranelift-module = { workspace = true }
-cranelift-native = { workspace = true }
 pest = { workspace = true }
 object = "0.37.3"
 tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "sync"] }

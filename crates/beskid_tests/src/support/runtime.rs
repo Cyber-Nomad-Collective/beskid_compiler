@@ -1,73 +1,81 @@
-//! JIT compile and execute helpers shared by runtime integration tests.
+//! AOT compile and execute helpers shared by runtime integration tests.
 
-use std::panic::{self, AssertUnwindSafe};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use beskid_codegen::lowering::lower_program;
-use beskid_engine::Engine;
+use abfall::Heap;
+use beskid_aot::{AotRunRequest, BuildProfile, RuntimeStrategy, build_and_run, default_runtime_strategy};
+use beskid_codegen::lower_source;
+use beskid_runtime::{
+    RuntimeRoot, clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope,
+    scheduler_init, set_current_heap, set_current_root,
+};
 
-use super::pipeline::typecheck_hir;
+use crate::test_harness::temp_case_dir;
+
+const TEST_SOURCE_PATH: &str = "<beskid_tests>";
 
 pub fn compile_artifact(source: &str) -> beskid_codegen::CodegenArtifact {
-    let (hir, resolution, typed) = typecheck_hir(source);
-    lower_program(&hir, &resolution, &typed).expect("expected codegen lowering to succeed")
+    let lowered = lower_source(Path::new(TEST_SOURCE_PATH), source, false)
+        .expect("expected codegen lowering to succeed");
+    lowered.artifact
 }
 
-pub fn compile_jit(source: &str) -> Engine {
+pub fn validate_lowered(source: &str) {
     let artifact = compile_artifact(source);
-    let func_names: Vec<String> = artifact
-        .functions
-        .iter()
-        .map(|func| func.name.clone())
-        .collect();
+    beskid_codegen::validate_artifact(&artifact).expect("expected artifact validation to succeed");
+}
 
-    let mut engine = Engine::new();
-    let compile_result = panic::catch_unwind(AssertUnwindSafe(|| {
-        engine
-            .compile_artifact(&artifact)
-            .expect("expected JIT compile to succeed");
-    }));
+pub fn build_aot_exe(source: &str, case_name: &str) -> (PathBuf, beskid_aot::AotRunResult) {
+    let artifact = compile_artifact(source);
+    let output_dir = temp_case_dir(case_name);
+    let runtime = default_runtime_strategy(BuildProfile::Debug, None)
+        .unwrap_or(RuntimeStrategy::Standalone);
+    let result = build_and_run(AotRunRequest {
+        artifact,
+        entrypoint: "main".to_owned(),
+        output_dir: output_dir.clone(),
+        runtime,
+    })
+    .expect("expected AOT build and run to succeed");
+    (output_dir, result)
+}
 
-    if let Err(payload) = compile_result {
-        eprintln!("JIT compile panicked for source: {source}");
-        eprintln!("JIT artifact functions: {func_names:?}");
-        panic::resume_unwind(payload);
+pub fn aot_run_main_i64(source: &str) -> i64 {
+    let (dir, result) = build_aot_exe(source, "aot_run_main_i64");
+    let value = i64::from(result.exit_code);
+    let _ = std::fs::remove_dir_all(dir);
+    value
+}
+
+pub fn aot_run_main_i32(source: &str) -> i32 {
+    let (dir, result) = build_aot_exe(source, "aot_run_main_i32");
+    let value = i32::from(result.exit_code);
+    let _ = std::fs::remove_dir_all(dir);
+    value
+}
+
+pub fn aot_compile_only(source: &str) {
+    validate_lowered(source);
+}
+
+/// Run `f` with TLS pointing at a fresh heap session and runtime root (no JIT).
+pub fn with_runtime_scope<R>(f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R {
+    scheduler_init();
+    let heap = Arc::new(Heap::off());
+    let mut root = RuntimeRoot::new(Arc::clone(&heap));
+
+    enter_runtime_scope();
+    set_current_heap(&heap);
+    set_current_root(&mut root as *mut _);
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            clear_current_heap();
+            clear_current_root();
+            leave_runtime_scope();
+        }
     }
-
-    engine
+    let _guard = Guard;
+    f(&heap, &mut root)
 }
-
-pub unsafe fn run_main_i64(engine: &mut Engine) -> i64 {
-    run_entrypoint0!(engine, "main", i64)
-}
-
-pub unsafe fn run_main_i32(engine: &mut Engine) -> i32 {
-    run_entrypoint0!(engine, "main", i32)
-}
-
-pub fn jit_run_main_i64(source: &str) -> i64 {
-    let mut engine = compile_jit(source);
-    unsafe { run_main_i64(&mut engine) }
-}
-
-pub fn jit_run_main_i32(source: &str) -> i32 {
-    let mut engine = compile_jit(source);
-    unsafe { run_main_i32(&mut engine) }
-}
-
-pub fn jit_compile_only(source: &str) {
-    let _engine = compile_jit(source);
-}
-
-macro_rules! run_entrypoint0 {
-    ($engine:expr, $entrypoint:expr, $ret:ty) => {{
-        let ptr = unsafe { $engine.entrypoint_ptr($entrypoint) }
-            .expect("expected entrypoint pointer");
-        assert!(!ptr.is_null(), "expected non-null entrypoint pointer");
-        $engine.with_runtime(|_, _| unsafe {
-            let callable: extern "C" fn() -> $ret = std::mem::transmute(ptr);
-            callable()
-        })
-    }};
-}
-
-pub(crate) use run_entrypoint0;

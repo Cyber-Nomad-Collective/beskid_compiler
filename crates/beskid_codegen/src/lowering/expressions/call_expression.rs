@@ -1,6 +1,7 @@
 use crate::errors::CodegenError;
 use crate::linking::resolve_item_call_id;
 use crate::lowering::cast_intent::ensure_type_compatibility;
+use crate::lowering::dispatch::lower_dispatch_builtin_call;
 use crate::lowering::function::{
     lower_function_with_name, mangle_function_name, mangle_method_name,
 };
@@ -17,6 +18,10 @@ use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{
     first_field_segment_name, method_name_from_path_callee, CallLoweringKind,
     MethodReceiverSource, TypeId, TypeInfo,
+};
+use beskid_abi::{
+    dispatch_route_for_symbol, DispatchReturnGroup, DispatchRoute, TAG_EVENT_GET_HANDLER,
+    TAG_EVENT_LEN,
 };
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
@@ -253,29 +258,6 @@ fn lower_event_invoke_call(
         lowered_args.push(value);
     }
 
-    let mut len_sig = Signature::new(CallConv::SystemV);
-    len_sig.params.push(AbiParam::new(pointer_type()));
-    len_sig.returns.push(AbiParam::new(pointer_type()));
-    let len_sig_ref = ctx.builder.func.import_signature(len_sig);
-    let len_ref = ctx.builder.func.import_function(ExtFuncData {
-        name: ExternalName::testcase("event_len"),
-        signature: len_sig_ref,
-        colocated: false,
-        patchable: false,
-    });
-
-    let mut get_sig = Signature::new(CallConv::SystemV);
-    get_sig.params.push(AbiParam::new(pointer_type()));
-    get_sig.params.push(AbiParam::new(pointer_type()));
-    get_sig.returns.push(AbiParam::new(pointer_type()));
-    let get_sig_ref = ctx.builder.func.import_signature(get_sig);
-    let get_ref = ctx.builder.func.import_function(ExtFuncData {
-        name: ExternalName::testcase("event_get_handler"),
-        signature: get_sig_ref,
-        colocated: false,
-        patchable: false,
-    });
-
     let zero = ctx.builder.ins().iconst(pointer_type(), 0);
     let state_is_null = ctx.builder.ins().icmp(IntCC::Equal, event_state, zero);
     let loop_header = ctx.builder.create_block();
@@ -288,15 +270,20 @@ fn lower_event_invoke_call(
         .brif(state_is_null, loop_exit, &[], loop_header, &[]);
 
     ctx.builder.switch_to_block(loop_header);
-    let len_call = ctx.builder.ins().call(len_ref, &[event_state]);
-    let count =
-        *ctx.builder
-            .inst_results(len_call)
-            .first()
-            .ok_or(CodegenError::UnsupportedNode {
-                span: node.span,
-                node: "event len result",
-            })?;
+    let count = lower_dispatch_builtin_call(
+        node.span,
+        DispatchRoute {
+            tag: TAG_EVENT_LEN,
+            group: DispatchReturnGroup::I64,
+        },
+        &[event_state],
+        true,
+        ctx,
+    )?
+    .ok_or(CodegenError::UnsupportedNode {
+        span: node.span,
+        node: "event len result",
+    })?;
     let idx = ctx.builder.use_var(idx_var);
     let done = ctx
         .builder
@@ -305,15 +292,20 @@ fn lower_event_invoke_call(
     ctx.builder.ins().brif(done, loop_exit, &[], loop_body, &[]);
 
     ctx.builder.switch_to_block(loop_body);
-    let get_call = ctx.builder.ins().call(get_ref, &[event_state, idx]);
-    let handler_ptr =
-        *ctx.builder
-            .inst_results(get_call)
-            .first()
-            .ok_or(CodegenError::UnsupportedNode {
-                span: node.span,
-                node: "event handler result",
-            })?;
+    let handler_ptr = lower_dispatch_builtin_call(
+        node.span,
+        DispatchRoute {
+            tag: TAG_EVENT_GET_HANDLER,
+            group: DispatchReturnGroup::I64,
+        },
+        &[event_state, idx],
+        true,
+        ctx,
+    )?
+    .ok_or(CodegenError::UnsupportedNode {
+        span: node.span,
+        node: "event handler result",
+    })?;
 
     let mut handler_sig = Signature::new(CallConv::SystemV);
     for param in &params {
@@ -1674,6 +1666,29 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             }
             symbol_name
         };
+
+        if is_builtin {
+            if name == "range" {
+                return Ok(None);
+            }
+            if name == "str_len" && !args.is_empty() {
+                let handle = args[0];
+                let len_offset = ctx.builder.ins().iconst(pointer_type(), 8);
+                let len_addr = ctx.builder.ins().iadd(handle, len_offset);
+                let len = ctx
+                    .builder
+                    .ins()
+                    .load(types::I64, MemFlags::new(), len_addr, 0);
+                return Ok(Some(len));
+            }
+        }
+
+        if is_builtin
+            && let Some(route) = dispatch_route_for_symbol(&name)
+        {
+            return lower_dispatch_builtin_call(node.span, route, &args, returns_value, ctx);
+        }
+
         let sig_ref = ctx.builder.func.import_signature(signature_ir);
         let func_ref = ctx.builder.func.import_function(ExtFuncData {
             name: ExternalName::testcase(name),

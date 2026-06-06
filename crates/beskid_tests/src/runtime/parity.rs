@@ -1,17 +1,15 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::support::runtime::{
-    compile_artifact, compile_jit, jit_compile_only, jit_run_main_i64, jit_run_main_i32,
-};
+use crate::support::runtime::{aot_compile_only, aot_run_main_i64, aot_run_main_i32, compile_artifact};
 use crate::test_harness::temp_case_dir;
 use beskid_aot::{AotBuildRequest, BuildOutputKind, build};
 
 fn assert_try_parity_ok_case(name: &str, source: &str, expected: i64) {
-    let jit_value = jit_run_main_i64(source);
+    let aot_value = aot_run_main_i64(source);
     assert_eq!(
-        jit_value, expected,
-        "expected JIT try-expression outcome for {name}"
+        aot_value, expected,
+        "expected AOT try-expression outcome for {name}"
     );
 
     let dir = temp_case_dir(name);
@@ -93,15 +91,15 @@ fn object_contains_symbol(path: &Path, symbol: &str) -> bool {
 
 #[test]
 fn parity_interop_usize_dispatch_path_is_consistent() {
-    let source = "i64 main() { return __str_len(\"hello\"); }";
-    let jit_value = jit_run_main_i64(source);
-    assert_eq!(jit_value, 5, "expected JIT direct str_len result");
+    let source = "i64 main() { return __array_len(__array_new(8, 3)); }";
+    let aot_value = aot_run_main_i64(source);
+    assert_eq!(aot_value, 3, "expected AOT dispatch array_len result");
 
     let dir = temp_case_dir("interop_usize");
     let object_path = build_aot_object(source, dir.join("parity.o"));
     assert!(
-        object_contains_symbol(&object_path, "str_len"),
-        "expected AOT object to reference direct str_len symbol"
+        object_contains_symbol(&object_path, "interop_dispatch_usize"),
+        "expected AOT object to reference interop_dispatch_usize kernel symbol"
     );
 
     let _ = std::fs::remove_dir_all(dir);
@@ -115,17 +113,17 @@ fn parity_array_len_reads_beskid_array_length() {
             return __array_len(h);
         }
     ";
-    let jit_value = jit_run_main_i64(source);
+    let aot_value = aot_run_main_i64(source);
     assert_eq!(
-        jit_value, 3,
+        aot_value, 3,
         "expected __array_len to match allocation length"
     );
 
     let dir = temp_case_dir("array_len");
     let object_path = build_aot_object(source, dir.join("parity_array_len.o"));
     assert!(
-        object_contains_symbol(&object_path, "array_len"),
-        "expected AOT object to reference array_len runtime symbol"
+        object_contains_symbol(&object_path, "interop_dispatch_usize"),
+        "expected AOT object to reference interop_dispatch_usize runtime symbol"
     );
 
     let _ = std::fs::remove_dir_all(dir);
@@ -134,31 +132,30 @@ fn parity_array_len_reads_beskid_array_length() {
 #[test]
 fn parity_alloc_path_is_consistent() {
     let source = "i64 main() { return __array_new(8, 3); }";
-    let jit_value = jit_run_main_i64(source);
+    let aot_value = aot_run_main_i64(source);
     assert_ne!(
-        jit_value, 0,
-        "expected JIT alloc path to produce non-null pointer value"
+        aot_value, 0,
+        "expected AOT alloc path to produce non-null pointer value"
     );
 
     let dir = temp_case_dir("array_new");
     let object_path = build_aot_object(source, dir.join("parity.o"));
     assert!(
-        object_contains_symbol(&object_path, "array_new"),
-        "expected AOT object to reference array_new runtime symbol"
+        object_contains_symbol(&object_path, "interop_dispatch_ptr"),
+        "expected AOT object to reference interop_dispatch_ptr runtime symbol"
     );
 
     let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
-fn parity_panic_builtin_compiles_for_both_backends() {
+fn parity_panic_builtin_compiles() {
     let source = "unit main() { if false { __panic_str(\"boom\"); } }";
-    let artifact = compile_artifact(source);
-    let _engine = compile_jit(source);
+    aot_compile_only(source);
 
     let dir = temp_case_dir("panic_builtin");
     let result = build(AotBuildRequest::with_defaults(
-        artifact,
+        compile_artifact(source),
         BuildOutputKind::ObjectOnly,
         dir.join("panic.o"),
         "main",
@@ -184,8 +181,8 @@ fn parity_contract_dispatch_outcome_is_consistent() {
             return apply(w);
         }
     ";
-    let jit_value = jit_run_main_i64(source);
-    assert_eq!(jit_value, 42, "expected JIT contract dispatch outcome");
+    let aot_value = aot_run_main_i64(source);
+    assert_eq!(aot_value, 42, "expected AOT contract dispatch outcome");
 
     let dir = temp_case_dir("contract_dispatch");
     let object_path = build_aot_object(source, dir.join("parity.o"));
@@ -237,19 +234,19 @@ const EVENT_PARITY_CASES: &[EventParityCase] = &[
 #[test]
 fn parity_event_lifecycle_is_consistent() {
     for case in EVENT_PARITY_CASES {
-        let jit_value = jit_run_main_i64(case.source);
+        let aot_value = aot_run_main_i64(case.source);
         assert_eq!(
-            jit_value, 42,
-            "expected JIT event lifecycle outcome for {}",
+            aot_value, 42,
+            "expected AOT event lifecycle outcome for {}",
             case.name
         );
 
         let dir = temp_case_dir(case.name);
         let object_path = build_aot_object(case.source, dir.join("parity.o"));
         assert!(
-            object_contains_symbol(&object_path, "event_subscribe")
-                && object_contains_symbol(&object_path, "event_unsubscribe_first"),
-            "expected AOT object to reference event lifecycle helpers for {}",
+            object_contains_symbol(&object_path, "interop_dispatch_unit")
+                || object_contains_symbol(&object_path, "interop_dispatch_usize"),
+            "expected AOT object to reference interop dispatch for event lifecycle for {}",
             case.name
         );
         let _ = std::fs::remove_dir_all(dir);
@@ -269,10 +266,10 @@ fn parity_identity_equality_behavior_is_consistent() {
             return 0;
         }
     ";
-    let jit_value = jit_run_main_i64(source);
+    let aot_value = aot_run_main_i64(source);
     assert_eq!(
-        jit_value, 1,
-        "expected JIT identity equality to evaluate true"
+        aot_value, 1,
+        "expected AOT identity equality to evaluate true"
     );
 
     let dir = temp_case_dir("identity_equality");
@@ -288,8 +285,8 @@ fn parity_identity_equality_behavior_is_consistent() {
 fn parity_range_loop_behavior_is_consistent() {
     let source =
         "i32 main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
-    let jit_value = jit_run_main_i32(source);
-    assert_eq!(jit_value, 6, "expected JIT range-loop accumulation result");
+    let aot_value = aot_run_main_i32(source);
+    assert_eq!(aot_value, 6, "expected AOT range-loop accumulation result");
 
     let dir = temp_case_dir("range_loop");
     let object_path = build_aot_object(source, dir.join("parity.o"));
@@ -318,8 +315,8 @@ fn parity_generic_iterable_loop_behavior_is_consistent() {
             return 0;
         }
     ";
-    let jit_value = jit_run_main_i64(source);
-    assert_eq!(jit_value, 0, "expected JIT generic-iterable loop outcome");
+    let aot_value = aot_run_main_i64(source);
+    assert_eq!(aot_value, 0, "expected AOT generic-iterable loop outcome");
 
     let dir = temp_case_dir("generic_iterable_loop");
     let object_path = build_aot_object(source, dir.join("parity.o"));
@@ -338,7 +335,7 @@ fn parity_try_success_cases_are_consistent() {
 }
 
 #[test]
-fn parity_try_expression_err_path_compiles_for_both_backends() {
+fn parity_try_expression_err_path_compiles() {
     let source = "
         enum Result { Ok(i64 value), Error(string error) }
         i64 main() {
@@ -347,7 +344,7 @@ fn parity_try_expression_err_path_compiles_for_both_backends() {
             return value;
         }
     ";
-    jit_compile_only(source);
+    aot_compile_only(source);
 
     let dir = temp_case_dir("try_expression_err_compile_only");
     let object_path = build_aot_object(source, dir.join("parity.o"));

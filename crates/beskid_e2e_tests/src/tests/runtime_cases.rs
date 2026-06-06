@@ -1,25 +1,32 @@
-use crate::harness::assertions::{assert_file_exists, assert_output_contains, assert_success};
+use crate::harness::assertions::{
+    assert_exit_code, assert_file_exists, assert_output_contains, assert_success,
+};
 use crate::harness::cli::BeskidCliInvoker;
 use crate::harness::process::nm_contains_symbol;
 use crate::harness::workspace::E2eWorkspace;
 
 #[test]
-fn runtime_calls_fixture_jit_runs_and_aot_contains_runtime_symbols() {
+fn runtime_calls_fixture_aot_runs_and_object_contains_runtime_symbols() {
     let workspace = E2eWorkspace::from_fixture("runtime_calls");
     let manifest = workspace.join("Project.proj");
     let output_binary = workspace.join("out/runtime_calls");
     let object_output = workspace.join("out/runtime_calls.o");
     let cli = BeskidCliInvoker::new();
 
-    let jit_run = cli.run([
+    let aot_run = cli.run([
         "run",
         "--project",
         manifest.to_str().expect("manifest path str"),
         "--target",
         "App",
     ]);
-    assert_success(&jit_run, "run runtime-calls fixture through JIT");
-    assert_output_contains(&jit_run, "0", "run runtime-calls fixture through JIT");
+    assert_success(&aot_run, "run runtime-calls fixture through AOT subprocess");
+    assert_exit_code(&aot_run, 0, "run runtime-calls fixture through AOT subprocess");
+    assert_output_contains(
+        &aot_run,
+        "ok",
+        "run runtime-calls fixture through AOT subprocess",
+    );
 
     let build = cli.run([
         "build",
@@ -51,22 +58,22 @@ fn runtime_calls_fixture_jit_runs_and_aot_contains_runtime_symbols() {
 }
 
 #[test]
-fn event_unsubscribe_fixture_jit_runs_and_aot_contains_event_symbols() {
+fn event_unsubscribe_fixture_aot_runs_and_object_contains_event_symbols() {
     let workspace = E2eWorkspace::from_fixture("event_unsubscribe");
     let manifest = workspace.join("Project.proj");
     let output_binary = workspace.join("out/event_unsubscribe");
     let object_output = workspace.join("out/event_unsubscribe.o");
     let cli = BeskidCliInvoker::new();
 
-    let jit_run = cli.run([
+    let aot_run = cli.run([
         "run",
         "--project",
         manifest.to_str().expect("manifest path str"),
         "--target",
         "App",
     ]);
-    assert_success(&jit_run, "run event-unsubscribe fixture through JIT");
-    assert_output_contains(&jit_run, "0", "run event-unsubscribe fixture through JIT");
+    assert_success(&aot_run, "run event-unsubscribe fixture through AOT subprocess");
+    assert_exit_code(&aot_run, 0, "run event-unsubscribe fixture through AOT subprocess");
 
     let build = cli.run([
         "build",
@@ -100,14 +107,15 @@ fn smoke_fixture_build_graph_includes_corelib_dependency() {
     let object_output = workspace.join("out/corelib_graph.o");
     let cli = BeskidCliInvoker::new();
 
-    let jit_run = cli.run([
+    let aot_run = cli.run([
         "run",
         "--project",
         manifest.to_str().expect("manifest path str"),
         "--target",
         "App",
     ]);
-    assert_success(&jit_run, "run smoke fixture through JIT");
+    assert_success(&aot_run, "run smoke fixture through AOT subprocess");
+    assert_exit_code(&aot_run, 0, "run smoke fixture through AOT subprocess");
 
     let build = cli.run([
         "build",

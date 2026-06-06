@@ -244,8 +244,8 @@ fn codegen_lowers_event_subscribe_unsubscribe_and_invoke() {
         .expect("expected main function");
     let main_clif = main_fn.function.to_string();
     assert!(
-        main_clif.contains("event_subscribe") && main_clif.contains("event_unsubscribe_first"),
-        "expected event subscribe/unsubscribe helper calls in main: {main_clif}"
+        main_clif.contains("interop_dispatch"),
+        "expected event subscribe/unsubscribe via interop dispatch in main: {main_clif}"
     );
 
     let emit_fn = artifact
@@ -255,10 +255,9 @@ fn codegen_lowers_event_subscribe_unsubscribe_and_invoke() {
         .expect("expected Emit method function");
     let emit_clif = emit_fn.function.to_string();
     assert!(
-        emit_clif.contains("event_len")
-            && emit_clif.contains("event_get_handler")
+        emit_clif.contains("interop_dispatch")
             && emit_clif.contains("call_indirect"),
-        "expected event invoke lowering via helper iteration and indirect calls: {emit_clif}"
+        "expected event invoke lowering via dispatch iteration and indirect calls: {emit_clif}"
     );
 }
 
@@ -289,8 +288,8 @@ fn codegen_lowers_event_lifecycle_for_default_capacity_form() {
         .expect("expected main function");
     let main_clif = main_fn.function.to_string();
     assert!(
-        main_clif.contains("event_subscribe") && main_clif.contains("event_unsubscribe_first"),
-        "expected event subscribe/unsubscribe helper calls in main: {main_clif}"
+        main_clif.contains("interop_dispatch"),
+        "expected event subscribe/unsubscribe via interop dispatch in main: {main_clif}"
     );
 
     let emit_fn = artifact
@@ -300,9 +299,8 @@ fn codegen_lowers_event_lifecycle_for_default_capacity_form() {
         .expect("expected Emit method function");
     let emit_clif = emit_fn.function.to_string();
     assert!(
-        emit_clif.contains("event_len")
-            && emit_clif.contains("event_get_handler")
+        emit_clif.contains("interop_dispatch")
             && emit_clif.contains("call_indirect"),
-        "expected event invoke lowering via helper iteration and indirect calls: {emit_clif}"
+        "expected event invoke lowering via dispatch iteration and indirect calls: {emit_clif}"
     );
 }

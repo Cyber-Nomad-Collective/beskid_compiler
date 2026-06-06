@@ -1,7 +1,6 @@
 //! Download prebuilt CLI/LSP binaries from `beskid_compiler` GitHub releases.
 
 use anyhow::{Context, Result, bail};
-use clap::Args;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -72,10 +71,9 @@ fn fetch_text(url: &str) -> Result<String> {
     String::from_utf8(bytes).with_context(|| format!("decode UTF-8 from {url}"))
 }
 
-#[derive(Args, Debug)]
-pub struct LspInstallArgs {
-    /// GitHub release tag (default rolling `lsp-latest`; pin with `lsp-vX.Y.Z`).
-    #[arg(long, default_value = "lsp-latest")]
+/// Options for [`install_lsp`].
+#[derive(Debug, Clone)]
+pub struct InstallLspOptions {
     pub release_tag: String,
 }
 
@@ -85,8 +83,8 @@ pub struct LspInstallResult {
     pub release_tag: String,
 }
 
-pub fn install_lsp(args: &LspInstallArgs) -> Result<LspInstallResult> {
-    let tag = args.release_tag.trim();
+pub fn install_lsp(options: &InstallLspOptions) -> Result<LspInstallResult> {
+    let tag = options.release_tag.trim();
     if tag.is_empty() {
         bail!("release tag must not be empty");
     }

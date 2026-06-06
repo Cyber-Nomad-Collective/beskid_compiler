@@ -9,6 +9,9 @@ abfall = { path = "../abfall" }
 slotmap = { workspace = true }
 corosensei = { version = "0.3.3", default-features = true }
 
+[build-dependencies]
+beskid_manifest = { path = "../beskid_manifest" }
+
 [dev-dependencies]
 criterion = "0.5"
 

@@ -15,6 +15,7 @@ pub mod lsp;
 pub mod matrix_test;
 pub mod new;
 pub mod parse;
+pub mod repl;
 pub mod run;
 pub mod test;
 pub mod tree;

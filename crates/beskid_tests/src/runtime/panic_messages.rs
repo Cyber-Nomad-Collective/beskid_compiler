@@ -1,4 +1,4 @@
-use beskid_engine::Engine;
+use crate::support::runtime::with_runtime_scope;
 use beskid_runtime::{event_subscribe, str_len, str_new};
 
 fn panic_text(result: Result<(), Box<dyn std::any::Any + Send>>) -> String {
@@ -25,8 +25,7 @@ fn runtime_panic_message_for_null_string_handle_is_stable() {
 
 #[test]
 fn runtime_panic_message_for_invalid_utf8_is_stable() {
-    let mut engine = Engine::new();
-    let message = engine.with_runtime(|_, _| {
+    let message = with_runtime_scope(|_, _| {
         panic_text(std::panic::catch_unwind(|| {
             let invalid = [0xffu8];
             let _ = str_new(invalid.as_ptr(), invalid.len());
@@ -41,8 +40,7 @@ fn runtime_panic_message_for_invalid_utf8_is_stable() {
 
 #[test]
 fn runtime_panic_message_for_event_capacity_is_stable() {
-    let mut engine = Engine::new();
-    let message = engine.with_runtime(|_, _| {
+    let message = with_runtime_scope(|_, _| {
         let mut slot = std::ptr::null_mut();
         let _ = event_subscribe(&mut slot, std::ptr::dangling_mut::<u8>(), 1);
 

@@ -20,21 +20,22 @@ pub struct CallbackTableEntry {
 unsafe impl Send for CallbackTableEntry {}
 unsafe impl Sync for CallbackTableEntry {}
 
-#[derive(Clone, Copy)]
-struct TrampolinePtr(*const u8);
-
-unsafe impl Send for TrampolinePtr {}
-unsafe impl Sync for TrampolinePtr {}
-
 static CALLBACK_TABLE: OnceLock<Mutex<Vec<CallbackTableEntry>>> = OnceLock::new();
-static TRAMPOLINE_TABLE: OnceLock<Mutex<HashMap<usize, TrampolinePtr>>> = OnceLock::new();
+
+#[derive(Clone, Copy)]
+struct TrampolineTarget(*const u8);
+
+unsafe impl Send for TrampolineTarget {}
+unsafe impl Sync for TrampolineTarget {}
+
+static TRAMPOLINE_TARGETS: OnceLock<Mutex<HashMap<u32, TrampolineTarget>>> = OnceLock::new();
 
 fn callback_table() -> &'static Mutex<Vec<CallbackTableEntry>> {
     CALLBACK_TABLE.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-fn trampoline_table() -> &'static Mutex<HashMap<usize, TrampolinePtr>> {
-    TRAMPOLINE_TABLE.get_or_init(|| Mutex::new(HashMap::new()))
+fn trampoline_targets() -> &'static Mutex<HashMap<u32, TrampolineTarget>> {
+    TRAMPOLINE_TARGETS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Register host callbacks for the current process.
@@ -60,15 +61,15 @@ pub extern "C-unwind" fn beskid_register_callbacks(
 
 /// Returns a stable trampoline pointer for a Beskid export that enters runtime scope before
 /// executing Beskid code. Re-entrant safe: each trampoline call acquires a nested runtime scope.
-pub fn install_callback_trampoline(beskid_fn_ptr: *const u8) -> *const u8 {
-    let key = beskid_fn_ptr as usize;
-    let mut table = trampoline_table().lock().expect("trampoline table");
-    if let Some(existing) = table.get(&key) {
-        return existing.0;
-    }
-    let trampoline = TrampolinePtr(trampoline_for_i64_fn as *const u8);
-    table.insert(key, trampoline);
-    trampoline.0
+///
+/// `symbol_id` is stored alongside `beskid_fn_ptr` so the shared trampoline can resolve the
+/// concrete target from [`CallbackTableEntry`] rows registered via [`beskid_register_callbacks`].
+pub fn install_callback_trampoline(beskid_fn_ptr: *const u8, symbol_id: u32) -> *const u8 {
+    trampoline_targets()
+        .lock()
+        .expect("trampoline targets")
+        .insert(symbol_id, TrampolineTarget(beskid_fn_ptr));
+    trampoline_for_i64_fn as *const u8
 }
 
 extern "C-unwind" fn trampoline_for_i64_fn() -> i64 {
@@ -80,9 +81,30 @@ extern "C-unwind" fn trampoline_for_i64_fn() -> i64 {
         }
     }
     let _guard = Guard;
-    // Phase A: host invokes through a typed export; the concrete target is resolved by symbol_id
-    // in future dispatch wiring. For registration tests the trampoline only establishes scope.
-    0
+
+    let trampoline_ptr = trampoline_for_i64_fn as *const u8;
+    let table = callback_table().lock().expect("callback table");
+    let entry = table
+        .iter()
+        .find(|entry| entry.fn_ptr == trampoline_ptr)
+        .or_else(|| table.first());
+    let Some(entry) = entry else {
+        return 0;
+    };
+
+    let target = trampoline_targets()
+        .lock()
+        .expect("trampoline targets")
+        .get(&entry.symbol_id)
+        .map(|target| target.0)
+        .unwrap_or(entry.fn_ptr);
+
+    if target.is_null() {
+        return 0;
+    }
+
+    let callable: extern "C" fn() -> i64 = unsafe { std::mem::transmute(target) };
+    callable()
 }
 
 /// Snapshot of the registered callback table (test / diagnostics).

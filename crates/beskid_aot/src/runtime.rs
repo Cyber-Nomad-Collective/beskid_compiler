@@ -11,10 +11,11 @@ use object::{Object, ObjectSymbol};
 use crate::api::RuntimeStrategy;
 use crate::error::{AotError, AotResult};
 
-/// Optional path to a `.a`/`.lib` to pass the linker, plus symbols re-exported for tests/tooling.
+/// Optional paths to runtime/host static libraries for the linker, plus re-exported symbols.
 #[derive(Debug, Clone)]
 pub struct RuntimeArtifact {
     pub staticlib_path: Option<PathBuf>,
+    pub host_staticlib_path: Option<PathBuf>,
     pub exported_symbols: Vec<String>,
 }
 
@@ -103,6 +104,7 @@ pub fn prepare_runtime(req: &RuntimeBuildRequest) -> AotResult<RuntimeArtifact> 
     match &req.strategy {
         RuntimeStrategy::Standalone => Ok(RuntimeArtifact {
             staticlib_path: None,
+            host_staticlib_path: None,
             exported_symbols: Vec::new(),
         }),
         RuntimeStrategy::UsePrebuilt { path, abi_version } => {
@@ -118,6 +120,7 @@ pub fn prepare_runtime(req: &RuntimeBuildRequest) -> AotResult<RuntimeArtifact> 
             ensure_runtime_symbols_present(path, RUNTIME_EXPORT_SYMBOLS)?;
             Ok(RuntimeArtifact {
                 staticlib_path: Some(path.clone()),
+                host_staticlib_path: None,
                 exported_symbols: runtime_symbols(),
             })
         }

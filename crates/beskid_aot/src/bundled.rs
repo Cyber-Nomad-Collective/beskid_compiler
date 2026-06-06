@@ -1,4 +1,7 @@
 //! Resolve prebuilt Beskid runtime static libraries shipped with the toolchain.
+//!
+//! Prebuilt archives are laid out under `lib/beskid-runtime/abi-{version}/` where
+//! `{version}` matches [`beskid_abi::BESKID_RUNTIME_ABI_VERSION`] (currently **4**).
 
 use std::path::{Path, PathBuf};
 
@@ -20,6 +23,49 @@ pub fn default_runtime_strategy(
         path,
         abi_version: BESKID_RUNTIME_ABI_VERSION,
     })
+}
+
+/// Locate a prebuilt `beskid_host` static library (std profile only).
+pub fn resolve_bundled_host_archive(
+    profile: BuildProfile,
+    target_triple: Option<&str>,
+) -> AotResult<PathBuf> {
+    if let Some(path) = workspace_dev_host_archive(profile) {
+        return Ok(path);
+    }
+
+    let target = detect_target(target_triple)?;
+    Err(AotError::RuntimeBuild {
+        message: format!(
+            "prebuilt Beskid host archive not found for target `{}` and profile `{:?}`. \
+             Run `cargo build -p beskid_host` in the compiler workspace.",
+            target.triple, profile
+        ),
+    })
+}
+
+fn workspace_dev_host_archive(profile: BuildProfile) -> Option<PathBuf> {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lib_name = if cfg!(target_os = "windows") {
+        "beskid_host.lib"
+    } else {
+        "libbeskid_host.a"
+    };
+    let profile_dir = profile_dir_name(profile);
+    let target_root = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace.join("target"));
+
+    let mut candidates = vec![target_root.join(profile_dir).join(lib_name)];
+    if let Ok(host_triple) = std::env::var("HOST") {
+        candidates.push(
+            target_root
+                .join(host_triple)
+                .join(profile_dir)
+                .join(lib_name),
+        );
+    }
+    candidates.into_iter().find(|path| path.is_file())
 }
 
 /// Locate a prebuilt `beskid_runtime_bridge` static library.

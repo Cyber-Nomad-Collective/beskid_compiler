@@ -1,12 +1,11 @@
-use beskid_engine::Engine;
+use crate::support::runtime::with_runtime_scope;
 use beskid_runtime::{
     dynamic::DynamicCell, dynamic_cell_create, gc_object_count,
 };
 
 #[test]
 fn dynamic_cell_create_allocates_through_runtime_arena() {
-    let mut engine = Engine::new();
-    engine.with_runtime(|heap, root| {
+    with_runtime_scope(|heap, root| {
         let before = gc_object_count();
         let payload = heap.allocate_beskid(8, std::ptr::null());
         root.runtime_state.allocation_counter += 1;

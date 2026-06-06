@@ -9,17 +9,17 @@ Integration tests for the Beskid compiler workspace (`cargo test -p beskid_tests
 | Surface | `surface/` | Pest rules plus AST shape (merged parsing + syntax) |
 | Analysis | `analysis/` | Resolve, types, legality, lowering, pipeline rules |
 | Codegen | `codegen/` | HIR lowering, descriptors, dynamic types |
-| Runtime | `runtime/` | JIT execution, JIT vs AOT parity |
+| Runtime | `runtime/` | AOT execution, runtime API checks, AOT symbol parity |
 | Projects | `projects/` | Manifests, corelib layout, compile plans |
 | Spine | `spine/` | Prepare → front-end → link-plan → lower conformance |
-| Support | `support/` | Shared pipeline (`parse` → `resolve` → `typecheck`) and JIT helpers |
+| Support | `support/` | Shared pipeline (`parse` → `resolve` → `typecheck`) and AOT helpers |
 
 Add **pest-only** tests for malformed input and keyword rejection. Add **integration** tests when behavior spans resolve, types, or codegen.
 
 ## Shared harness
 
 - `support::pipeline` — `parse_program`, `resolve`, `typecheck`, `typecheck_hir`, `lower_resolve`
-- `support::runtime` — `compile_jit`, `jit_run_main_i64`, `compile_artifact`
+- `support::runtime` — `compile_artifact`, `aot_run_main_i64`, `build_aot_exe`, `with_runtime_scope`
 - `projects::with_cwd` — mutex-guarded `set_current_dir` for project/corelib discovery
 
 ## Slow tests

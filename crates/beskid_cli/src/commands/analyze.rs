@@ -5,7 +5,7 @@ use beskid_analysis::services::{self, PrepareMode, PrepareOptions, FrontEndOptio
 use clap::Args;
 use std::path::PathBuf;
 
-use crate::pipeline_ui::{resolve_input_with_cli_pipeline, tui::format_severity_summary};
+use beskid_tools::pipeline::{resolve_input_with_cli_pipeline, tui::format_severity_summary};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
 #[derive(Args, Debug)]

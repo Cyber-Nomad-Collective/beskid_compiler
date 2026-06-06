@@ -2,14 +2,13 @@ use crate::errors::CodegenError;
 use crate::lowering::context::CodegenContext;
 use crate::lowering::context::CodegenResult;
 use crate::lowering::locals::expr_type_at;
+use crate::lowering::dispatch::emit_dispatch_call;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
+use beskid_abi::{DispatchReturnGroup, DispatchRoute, TAG_STR_NEW};
 use beskid_analysis::hir::{HirLiteral, HirPrimitiveType};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
-use cranelift_codegen::ir::{
-    AbiParam, ExternalName, GlobalValueData, InstBuilder, Signature, Value,
-};
-use cranelift_codegen::isa::CallConv;
+use cranelift_codegen::ir::{ExternalName, GlobalValueData, InstBuilder, Value};
 use cranelift_frontend::FunctionBuilder;
 
 pub(crate) fn lower_literal(
@@ -78,26 +77,23 @@ pub(crate) fn lower_literal(
             });
             let str_ptr = builder.ins().global_value(pointer_type(), string_gv);
             let len_val = builder.ins().iconst(pointer_type(), len as i64);
-            let mut signature = Signature::new(CallConv::SystemV);
-            signature.params.push(AbiParam::new(pointer_type()));
-            signature.params.push(AbiParam::new(pointer_type()));
-            signature.returns.push(AbiParam::new(pointer_type()));
-            let sig_ref = builder.func.import_signature(signature);
-            let func_ref = builder
-                .func
-                .import_function(cranelift_codegen::ir::ExtFuncData {
-                    name: ExternalName::testcase("str_new"),
-                    signature: sig_ref,
-                    colocated: false,
-                    patchable: false,
-                });
-            let call = builder.ins().call(func_ref, &[str_ptr, len_val]);
-            let result = builder.inst_results(call).first().copied().ok_or(
-                CodegenError::UnsupportedNode {
-                    span: literal.span,
-                    node: "string literal result",
+            let result = emit_dispatch_call(
+                builder,
+                DispatchRoute {
+                    tag: TAG_STR_NEW,
+                    group: DispatchReturnGroup::Ptr,
                 },
-            )?;
+                &[str_ptr, len_val],
+                true,
+            )
+            .map_err(|node| CodegenError::UnsupportedNode {
+                span: literal.span,
+                node,
+            })?
+            .ok_or(CodegenError::UnsupportedNode {
+                span: literal.span,
+                node: "string literal result",
+            })?;
             Ok(result)
         }
         _ => Err(CodegenError::UnsupportedNode {

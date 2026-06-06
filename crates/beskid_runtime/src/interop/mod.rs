@@ -4,6 +4,7 @@
 use crate::interop_layout::enum_tag;
 
 pub mod dispatch_table;
+pub mod register;
 
 /// Unit-returning interop dispatch; panics when the tag is unknown or the handler returns false.
 #[unsafe(no_mangle)]
@@ -15,12 +16,15 @@ pub extern "C" fn interop_dispatch_unit(enum_ptr: *const u8) {
     panic!("invalid interop tag for unit dispatch");
 }
 
-/// `usize`-returning interop dispatch (e.g. string length); panics on unknown tag or missing handler.
+/// Scalar-returning interop dispatch; panics on unknown tag or missing handler.
 #[unsafe(no_mangle)]
 pub extern "C" fn interop_dispatch_usize(enum_ptr: *const u8) -> usize {
     let tag = enum_tag(enum_ptr);
     if let Some(value) = unsafe { dispatch_table::dispatch_usize(tag, enum_ptr) } {
         return value;
+    }
+    if let Some(value) = unsafe { dispatch_table::dispatch_i64(tag, enum_ptr) } {
+        return value as usize;
     }
     panic!("invalid interop tag for usize dispatch");
 }
@@ -34,3 +38,4 @@ pub extern "C" fn interop_dispatch_ptr(enum_ptr: *const u8) -> *mut u8 {
     }
     panic!("invalid interop tag for ptr dispatch");
 }
+

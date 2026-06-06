@@ -8,7 +8,7 @@ use beskid_analysis::services::{self, ResolvedProject};
 use beskid_analysis::syntax::{Program, Spanned};
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::SEMANTIC};
 
-use crate::pipeline_ui::CliPipeline;
+use super::CliPipeline;
 
 /// Resolve `input` / `project` / lockfile flags the same way as most CLI subcommands.
 pub fn resolve_input(

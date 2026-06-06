@@ -22,6 +22,7 @@ pub mod channel;
 pub mod composition;
 pub mod dynamic;
 pub mod fiber;
+mod generated;
 pub mod gc;
 pub mod hub;
 pub mod interop;
@@ -34,7 +35,8 @@ pub mod status;
 pub mod wait_group;
 
 pub use builtins::{
-    alloc, array_len, array_new, beskid_register_callbacks, beskid_runtime_abi_version,
+    alloc, array_len, array_new, beskid_register_callbacks, beskid_register_handlers,
+    beskid_runtime_abi_version,
     channel_close, channel_create,
     channel_receive, channel_receive_status, channel_receive_value, channel_send,
     channel_try_receive, channel_try_send, composition_bind_plural, composition_container_create,
@@ -52,7 +54,8 @@ pub use builtins::{
     hub_wait_receive_status, hub_wait_receive_value, mutex_create, mutex_lock, mutex_try_lock,
     mutex_unlock, panic, panic_str, str_concat, str_eq, str_from_i64, str_len, str_new, syscall_read,
     syscall_write, test_bytes_len, test_bytes_ptr, wait_group_add, wait_group_create, wait_group_done,
-    wait_group_wait, CallbackTableEntry, install_callback_trampoline, registered_callbacks,
+    wait_group_wait, CallbackTableEntry, HandlerTableEntry, install_callback_trampoline,
+    registered_callbacks,
 };
 
 #[cfg(feature = "metrics")]
@@ -74,11 +77,12 @@ pub use dynamic::{
 pub use gc::{
     MutatorAttachGuard, RuntimePhase, RuntimeRoot, RuntimeState, assert_mutator_allowed,
     attach_phase_b_mutator, beskid_heap_options_for_engine, clear_current_heap,
-    clear_current_root, enter_runtime_scope, in_runtime_scope, is_syscall_pool_worker,
-    leave_runtime_scope, preemption_enabled, runtime_phase, runtime_preempt_check,
-    set_current_heap, set_current_root, set_preemption_enabled, set_runtime_phase,
-    set_syscall_pool_worker, with_current_heap, with_current_root,
+    clear_current_root, enable_aot_main_bootstrap, enter_runtime_scope, in_runtime_scope,
+    is_syscall_pool_worker, leave_runtime_scope, preemption_enabled, runtime_phase,
+    runtime_preempt_check, set_current_heap, set_current_root, set_preemption_enabled,
+    set_runtime_phase, set_syscall_pool_worker, with_current_heap, with_current_root,
 };
 pub use interop::{interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize};
+pub use interop::register::bootstrap_dispatch_handlers;
 pub use runtime::{GcSnapshot, collect_if_needed, force_collect, snapshot_gc};
 pub use scheduler::{init as scheduler_init, run_closure_as_main, run_main_fiber};

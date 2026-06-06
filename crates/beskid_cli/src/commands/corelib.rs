@@ -5,8 +5,6 @@ use clap::Args;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::corelib_runtime;
-
 #[derive(Args, Debug)]
 pub struct CorelibArgs {
     /// Destination directory for the materialized corelib **workspace** tree
@@ -21,7 +19,7 @@ pub fn execute(args: CorelibArgs) -> Result<()> {
 }
 
 fn generate_corelib_project(output: &Path) -> Result<()> {
-    let provisioned = corelib_runtime::ensure_bundled_corelib()?;
+    let provisioned = beskid_tools::ensure_bundled_corelib()?;
     let template_root = provisioned.root;
     validate_template_layout(&template_root)?;
 

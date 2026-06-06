@@ -8,3 +8,11 @@ crate-type = ["staticlib"]
 
 [dependencies]
 beskid_runtime = { path = "../beskid_runtime" }
+beskid_host = { path = "../beskid_host", optional = true }
+
+[features]
+default = ["host"]
+host = ["dep:beskid_host"]
+
+[build-dependencies]
+beskid_manifest = { path = "../beskid_manifest" }

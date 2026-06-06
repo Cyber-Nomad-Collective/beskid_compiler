@@ -2,35 +2,23 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use beskid_abi::{
-    BESKID_RUNTIME_ABI_VERSION, BUILTIN_SPECS, BeskidArray, BeskidStr, RUNTIME_EXPORT_SYMBOLS,
-    SYM_ABI_VERSION, SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_CHANNEL_CLOSE, SYM_CHANNEL_CREATE,
-    SYM_CHANNEL_RECEIVE, SYM_CHANNEL_RECEIVE_PTR, SYM_CHANNEL_RECEIVE_VALUE, SYM_CHANNEL_SEND,
-    SYM_CHANNEL_SEND_PTR, SYM_CHANNEL_TRY_RECEIVE, SYM_CHANNEL_TRY_RECEIVE_PTR,
-    SYM_CHANNEL_TRY_SEND, SYM_CHANNEL_TRY_SEND_PTR, SYM_COMPOSITION_BIND_PLURAL,
-    SYM_COMPOSITION_CONTAINER_CREATE, SYM_COMPOSITION_CONTAINER_DROP, SYM_COMPOSITION_LAUNCH,
-    SYM_COMPOSITION_REGISTER, SYM_COMPOSITION_RESOLVE, SYM_COMPOSITION_RESOLVE_PLURAL,
-    SYM_COMPOSITION_SCOPE_DEPTH, SYM_COMPOSITION_SCOPE_ENTER, SYM_COMPOSITION_SCOPE_LEAVE,
-    SYM_COMPOSITION_SHUTDOWN, SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE,
-    SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_GC_BYTES_ALLOCATED, SYM_GC_COLLECT, SYM_GC_COLLECT_IF_NEEDED,
-    SYM_GC_EXTERNAL_ROOT_COUNT, SYM_GC_OBJECT_COUNT, SYM_GC_PHASE, SYM_GC_REGISTER_ROOT,
+    BESKID_RUNTIME_ABI_VERSION, BUILTIN_SPECS, BeskidArray, BeskidStr, DispatchReturnGroup,
+    RUNTIME_EXPORT_SYMBOLS, SYM_ABI_VERSION, SYM_ALLOC, SYM_BESKID_REGISTER_CALLBACKS,
+    SYM_BESKID_REGISTER_HANDLERS, SYM_COMPOSITION_BIND_PLURAL, SYM_COMPOSITION_CONTAINER_CREATE,
+    SYM_COMPOSITION_CONTAINER_DROP, SYM_COMPOSITION_LAUNCH, SYM_COMPOSITION_REGISTER,
+    SYM_COMPOSITION_RESOLVE, SYM_COMPOSITION_RESOLVE_PLURAL, SYM_COMPOSITION_SCOPE_DEPTH,
+    SYM_COMPOSITION_SCOPE_ENTER, SYM_COMPOSITION_SCOPE_LEAVE, SYM_COMPOSITION_SHUTDOWN,
+    SYM_DYNAMIC_CAST_CHECKED, SYM_DYNAMIC_CELL_CREATE, SYM_DYNAMIC_CELL_WRAP, SYM_DYNAMIC_MAP_AOT,
+    SYM_DYNAMIC_MAP_FALLBACK, SYM_DYNAMIC_OBJECT_ALLOC, SYM_FIBER_YIELD, SYM_GC_REGISTER_ROOT,
     SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER,
-    SYM_HUB_CREATE, SYM_HUB_REGISTER, SYM_HUB_UNREGISTER, SYM_HUB_WAIT_RECEIVE,
-    SYM_HUB_WAIT_RECEIVE_INDEX, SYM_HUB_WAIT_RECEIVE_VALUE, SYM_INTEROP_DISPATCH_PTR,
-    SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_MUTEX_CREATE, SYM_MUTEX_LOCK,
-    SYM_MUTEX_TRY_LOCK, SYM_MUTEX_UNLOCK, SYM_PANIC, SYM_PANIC_STR, SYM_RUNTIME_PREEMPT_CHECK,
-    SYM_BYTES_COMPARE, SYM_BYTES_COPY, SYM_BYTES_FROM_STR, SYM_BYTES_GET, SYM_BYTES_SET,
-    SYM_CLOCK_MONOTONIC_NANOS,
-    SYM_CLOCK_REALTIME_NANOS, SYM_ENV_GET, SYM_ENV_GETCWD, SYM_ENV_SET, SYM_FS_DELETE,
-    SYM_FS_EXISTS, SYM_FS_MKDIR, SYM_FS_READ_TEXT, SYM_FS_WRITE_TEXT, SYM_PROCESS_EXIT,
-    SYM_PROCESS_GETPID, SYM_STR_CONCAT, SYM_STR_EQ, SYM_STR_FROM_BYTES_UTF8, SYM_STR_FROM_I64,
-    SYM_STR_LEN, SYM_STR_NEW, SYM_STR_SLICE, SYM_SYSCALL_READ, SYM_SYSCALL_READ_BYTES,
-    SYM_SYSCALL_WRITE, SYM_SYSCALL_WRITE_BYTES, SYM_TTY_WINSIZE,
-    SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR, SYM_WAIT_GROUP_ADD, SYM_WAIT_GROUP_CREATE,
-    SYM_WAIT_GROUP_DONE, SYM_WAIT_GROUP_WAIT,
+    SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC,
+    SYM_PANIC_STR, SYM_RUNTIME_PREEMPT_CHECK, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, SYM_STR_LEN,
+    TAG_FIBER_PROCESSOR_COUNT, TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, dispatch_route_for_symbol,
+    is_dispatch_symbol,
 };
 use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
 use beskid_aot::{AotError, RuntimeStrategy};
-use beskid_engine::Engine;
+use crate::support::runtime::with_runtime_scope;
 use beskid_pipeline::phases::{
     MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE,
     SEMANTIC_SNAPSHOT, SYNTAX_GENERATION,
@@ -63,6 +51,11 @@ fn corelib_i64_constant(source: &str, name: &str) -> i64 {
         .trim()
         .parse::<i64>()
         .unwrap_or_else(|err| panic!("invalid value for corelib i64 constant `{name}`: {err}"))
+}
+
+#[test]
+fn abi_version_is_v4() {
+    assert_eq!(BESKID_RUNTIME_ABI_VERSION, 4);
 }
 
 #[test]
@@ -132,136 +125,65 @@ fn concurrency_corelib_status_codes_match_runtime_contract() {
 }
 
 #[test]
-fn fiber_abi_symbols_cover_processor_count_and_cancel_slot_spawn() {
-    let builtin_symbols: HashSet<&'static str> =
-        BUILTIN_SPECS.iter().map(|spec| spec.symbol).collect();
+fn fiber_dispatch_tags_cover_processor_count_and_cancel_slot_spawn() {
+    let processor = dispatch_route_for_symbol("fiber_processor_count")
+        .expect("fiber_processor_count should be a dispatch symbol");
+    assert_eq!(processor.tag, TAG_FIBER_PROCESSOR_COUNT);
+    assert_eq!(processor.group, DispatchReturnGroup::I64);
 
-    for symbol in ["fiber_processor_count", "fiber_spawn_with_cancel_slot"] {
-        assert!(
-            builtin_symbols.contains(symbol),
-            "BUILTIN_SPECS should include `{symbol}`"
-        );
-        assert!(
-            RUNTIME_EXPORT_SYMBOLS.contains(&symbol),
-            "RUNTIME_EXPORT_SYMBOLS should include `{symbol}`"
-        );
-    }
+    let cancel_slot = dispatch_route_for_symbol("fiber_spawn_with_cancel_slot")
+        .expect("fiber_spawn_with_cancel_slot should be a dispatch symbol");
+    assert_eq!(cancel_slot.tag, TAG_FIBER_SPAWN_WITH_CANCEL_SLOT);
+    assert_eq!(cancel_slot.group, DispatchReturnGroup::I64);
+
+    assert!(
+        !RUNTIME_EXPORT_SYMBOLS.contains(&"fiber_processor_count"),
+        "soft fiber ops must not be kernel exports in ABI v4"
+    );
 }
 
 #[test]
-fn runtime_export_symbols_match_frozen_allowlist_snapshot() {
+fn runtime_export_symbols_match_frozen_kernel_allowlist_v4() {
     let expected = vec![
         SYM_ABI_VERSION,
         SYM_ALLOC,
-        SYM_STR_NEW,
-        SYM_STR_CONCAT,
-        SYM_STR_EQ,
-        SYM_STR_FROM_I64,
-        SYM_STR_LEN,
-        SYM_ARRAY_NEW,
-        SYM_ARRAY_LEN,
-        SYM_PANIC,
-        SYM_PANIC_STR,
-        SYM_SYSCALL_WRITE,
-        SYM_SYSCALL_READ,
-        SYM_SYSCALL_WRITE_BYTES,
-        SYM_SYSCALL_READ_BYTES,
-        SYM_STR_SLICE,
-        SYM_BYTES_FROM_STR,
-        SYM_STR_FROM_BYTES_UTF8,
-        SYM_BYTES_COPY,
-        SYM_BYTES_GET,
-        SYM_BYTES_SET,
-        SYM_BYTES_COMPARE,
-        SYM_FS_READ_TEXT,
-        SYM_FS_WRITE_TEXT,
-        SYM_FS_EXISTS,
-        SYM_FS_DELETE,
-        SYM_FS_MKDIR,
-        SYM_ENV_GET,
-        SYM_ENV_SET,
-        SYM_ENV_GETCWD,
-        SYM_PROCESS_GETPID,
-        SYM_PROCESS_EXIT,
-        SYM_CLOCK_REALTIME_NANOS,
-        SYM_CLOCK_MONOTONIC_NANOS,
-        SYM_TTY_WINSIZE,
-        SYM_GC_BYTES_ALLOCATED,
-        SYM_GC_OBJECT_COUNT,
-        SYM_GC_PHASE,
-        SYM_GC_COLLECT,
-        SYM_GC_COLLECT_IF_NEEDED,
-        SYM_GC_EXTERNAL_ROOT_COUNT,
-        SYM_GC_WRITE_BARRIER,
-        SYM_GC_ROOT_HANDLE,
-        SYM_GC_UNROOT_HANDLE,
-        SYM_GC_REGISTER_ROOT,
-        SYM_GC_UNREGISTER_ROOT,
-        SYM_EVENT_SUBSCRIBE,
-        SYM_EVENT_UNSUBSCRIBE_FIRST,
-        SYM_EVENT_LEN,
-        SYM_EVENT_GET_HANDLER,
-        SYM_INTEROP_DISPATCH_UNIT,
-        SYM_INTEROP_DISPATCH_PTR,
-        SYM_INTEROP_DISPATCH_USIZE,
-        SYM_TEST_BYTES_PTR,
-        SYM_TEST_BYTES_LEN,
-        beskid_abi::SYM_FIBER_SPAWN,
-        beskid_abi::SYM_FIBER_SPAWN_WITH_CANCEL_SLOT,
-        beskid_abi::SYM_FIBER_JOIN,
-        beskid_abi::SYM_FIBER_JOIN_VALUE,
-        beskid_abi::SYM_FIBER_DETACH,
-        beskid_abi::SYM_FIBER_CANCEL,
-        beskid_abi::SYM_FIBER_YIELD,
-        beskid_abi::SYM_FIBER_NOW_MILLIS,
-        beskid_abi::SYM_FIBER_CURRENT_ID,
-        beskid_abi::SYM_FIBER_PROCESSOR_COUNT,
-        SYM_CHANNEL_CREATE,
-        SYM_CHANNEL_SEND,
-        SYM_CHANNEL_RECEIVE,
-        SYM_CHANNEL_RECEIVE_VALUE,
-        SYM_CHANNEL_TRY_SEND,
-        SYM_CHANNEL_TRY_RECEIVE,
-        SYM_CHANNEL_CLOSE,
-        SYM_CHANNEL_SEND_PTR,
-        SYM_CHANNEL_TRY_SEND_PTR,
-        SYM_CHANNEL_RECEIVE_PTR,
-        SYM_CHANNEL_TRY_RECEIVE_PTR,
-        SYM_RUNTIME_PREEMPT_CHECK,
-        SYM_HUB_CREATE,
-        SYM_HUB_REGISTER,
-        SYM_HUB_UNREGISTER,
-        SYM_HUB_WAIT_RECEIVE,
-        SYM_HUB_WAIT_RECEIVE_INDEX,
-        SYM_HUB_WAIT_RECEIVE_VALUE,
-        SYM_MUTEX_CREATE,
-        SYM_MUTEX_LOCK,
-        SYM_MUTEX_TRY_LOCK,
-        SYM_MUTEX_UNLOCK,
-        SYM_WAIT_GROUP_CREATE,
-        SYM_WAIT_GROUP_ADD,
-        SYM_WAIT_GROUP_DONE,
-        SYM_WAIT_GROUP_WAIT,
+        SYM_BESKID_REGISTER_CALLBACKS,
+        SYM_BESKID_REGISTER_HANDLERS,
+        SYM_COMPOSITION_BIND_PLURAL,
         SYM_COMPOSITION_CONTAINER_CREATE,
         SYM_COMPOSITION_CONTAINER_DROP,
-        SYM_COMPOSITION_REGISTER,
-        SYM_COMPOSITION_BIND_PLURAL,
         SYM_COMPOSITION_LAUNCH,
-        SYM_COMPOSITION_SHUTDOWN,
-        SYM_COMPOSITION_SCOPE_ENTER,
-        SYM_COMPOSITION_SCOPE_LEAVE,
+        SYM_COMPOSITION_REGISTER,
         SYM_COMPOSITION_RESOLVE,
         SYM_COMPOSITION_RESOLVE_PLURAL,
         SYM_COMPOSITION_SCOPE_DEPTH,
-        beskid_abi::SYM_BESKID_REGISTER_CALLBACKS,
-        beskid_abi::SYM_DYNAMIC_CAST_CHECKED,
-        beskid_abi::SYM_DYNAMIC_CELL_CREATE,
-        beskid_abi::SYM_DYNAMIC_CELL_WRAP,
-        beskid_abi::SYM_DYNAMIC_MAP_AOT,
-        beskid_abi::SYM_DYNAMIC_MAP_FALLBACK,
-        beskid_abi::SYM_DYNAMIC_OBJECT_ALLOC,
+        SYM_COMPOSITION_SCOPE_ENTER,
+        SYM_COMPOSITION_SCOPE_LEAVE,
+        SYM_COMPOSITION_SHUTDOWN,
+        SYM_DYNAMIC_CAST_CHECKED,
+        SYM_DYNAMIC_CELL_CREATE,
+        SYM_DYNAMIC_CELL_WRAP,
+        SYM_DYNAMIC_MAP_AOT,
+        SYM_DYNAMIC_MAP_FALLBACK,
+        SYM_DYNAMIC_OBJECT_ALLOC,
+        SYM_FIBER_YIELD,
+        SYM_GC_REGISTER_ROOT,
+        SYM_GC_ROOT_HANDLE,
+        SYM_GC_UNREGISTER_ROOT,
+        SYM_GC_UNROOT_HANDLE,
+        SYM_GC_WRITE_BARRIER,
+        SYM_INTEROP_DISPATCH_PTR,
+        SYM_INTEROP_DISPATCH_UNIT,
+        SYM_INTEROP_DISPATCH_USIZE,
+        SYM_PANIC,
+        SYM_PANIC_STR,
+        SYM_RUNTIME_PREEMPT_CHECK,
     ];
-    assert_eq!(RUNTIME_EXPORT_SYMBOLS, expected);
+    let mut expected_sorted = expected;
+    let mut actual: Vec<_> = RUNTIME_EXPORT_SYMBOLS.iter().copied().collect();
+    expected_sorted.sort();
+    actual.sort();
+    assert_eq!(actual, expected_sorted);
 }
 
 #[test]
@@ -271,14 +193,27 @@ fn runtime_export_symbols_are_unique() {
 }
 
 #[test]
-fn runtime_exports_cover_mvp_corelib_symbols() {
-    let required = [SYM_STR_LEN, SYM_SYSCALL_WRITE, SYM_SYSCALL_READ];
-    for symbol in required {
-        assert!(
-            RUNTIME_EXPORT_SYMBOLS.contains(&symbol),
-            "runtime exports should include MVP corelib symbol `{symbol}`"
-        );
-    }
+fn mvp_corelib_ops_route_through_dispatch_or_kernel() {
+    assert!(
+        is_dispatch_symbol(SYM_STR_LEN),
+        "`str_len` should be a dispatch symbol in ABI v4"
+    );
+    assert!(
+        is_dispatch_symbol(SYM_SYSCALL_WRITE),
+        "`syscall_write` should be a dispatch symbol in ABI v4"
+    );
+    assert!(
+        is_dispatch_symbol(SYM_SYSCALL_READ),
+        "`syscall_read` should be a dispatch symbol in ABI v4"
+    );
+    assert!(
+        RUNTIME_EXPORT_SYMBOLS.contains(&SYM_INTEROP_DISPATCH_USIZE),
+        "kernel must export usize dispatch entrypoint"
+    );
+    assert!(
+        RUNTIME_EXPORT_SYMBOLS.contains(&SYM_INTEROP_DISPATCH_PTR),
+        "kernel must export ptr dispatch entrypoint"
+    );
 }
 
 #[test]
@@ -316,9 +251,25 @@ fn prebuilt_runtime_missing_archive_fails() {
 }
 
 #[test]
+fn host_ops_are_not_kernel_exports_v4() {
+    for symbol in [
+        "fs_write_text",
+        "fs_read_text",
+        "env_get",
+        "env_set",
+        "process_getpid",
+        "tty_winsize",
+    ] {
+        assert!(
+            !RUNTIME_EXPORT_SYMBOLS.contains(&symbol),
+            "host op `{symbol}` must not be a kernel export in ABI v4"
+        );
+    }
+}
+
+#[test]
 fn runtime_array_len_matches_array_new_length() {
-    let mut engine = Engine::new();
-    engine.with_runtime(|_, _| {
+    with_runtime_scope(|_, _| {
         let ptr = array_new(8, 3);
         assert!(!ptr.is_null(), "array_new should return a non-null handle");
         assert_eq!(

@@ -22,7 +22,7 @@ use beskid_pipeline::{
 use clap::{Args, Subcommand};
 use walkdir::WalkDir;
 
-use crate::pipeline_ui::{CliPipeline, PipelineProgressKind, use_cli_spinner};
+use beskid_tools::pipeline::{CliPipeline, PipelineProgressKind, use_cli_spinner};
 use crate::project_args::LockfilePolicyArgs;
 
 #[derive(Args, Debug)]

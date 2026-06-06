@@ -1,0 +1,41 @@
+/// ABI v4 dispatch tags and runtime status codes (mirrors `runtime_manifest.toml`).
+
+pub i64 TAG_ARRAY_LEN() {
+    return 0;
+}
+
+pub i64 TAG_STR_LEN() {
+    return 2;
+}
+
+pub i64 STATUS_OK() {
+    return 0;
+}
+
+pub i64 STATUS_CLOSED() {
+    return 1;
+}
+
+pub i64 STATUS_CANCELLED() {
+    return 2;
+}
+
+pub i64 STATUS_WOULD_BLOCK() {
+    return 3;
+}
+
+pub i64 FIBER_JOIN_OK() {
+    return 0;
+}
+
+pub i64 FIBER_JOIN_CANCELLED() {
+    return 1;
+}
+
+pub i64 MUTEX_OK() {
+    return 0;
+}
+
+pub i64 MUTEX_WOULD_BLOCK() {
+    return 1;
+}

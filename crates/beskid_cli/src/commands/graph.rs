@@ -10,7 +10,7 @@ use beskid_queries::{get_graph_document, get_graph_document_simple, GraphFetchRe
 use clap::Args;
 use graphs_tui::{RenderOptions, render_mermaid_to_tui};
 
-use crate::frontend::resolve_input_with_pipeline;
+use beskid_tools::pipeline::frontend::resolve_input_with_pipeline;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
 #[derive(Args, Debug)]

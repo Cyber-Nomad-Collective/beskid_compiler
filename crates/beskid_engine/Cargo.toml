@@ -16,7 +16,11 @@ beskid_aot = { path = "../beskid_aot" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_runtime = { path = "../beskid_runtime" }
+beskid_host = { path = "../beskid_host" }
 anyhow = "1"
+
+[build-dependencies]
+beskid_manifest = { path = "../beskid_manifest" }
 
 [features]
 extern_dlopen = []

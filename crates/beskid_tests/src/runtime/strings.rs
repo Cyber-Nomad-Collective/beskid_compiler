@@ -1,10 +1,9 @@
-use beskid_engine::Engine;
+use crate::support::runtime::with_runtime_scope;
 use beskid_runtime::{str_concat, str_len, str_new};
 
 #[test]
 fn runtime_string_concat_empty_and_ascii() {
-    let mut engine = Engine::new();
-    engine.with_runtime(|_, _| {
+    with_runtime_scope(|_, _| {
         // Non-null pointer for empty: point at a 1-byte static buffer, len 0
         static Z: [u8; 1] = [0];
         let empty = str_new(Z.as_ptr(), 0);
@@ -21,8 +20,7 @@ fn runtime_string_concat_empty_and_ascii() {
 
 #[test]
 fn runtime_string_concat_utf8_multibyte() {
-    let mut engine = Engine::new();
-    engine.with_runtime(|_, _| {
+    with_runtime_scope(|_, _| {
         let a = "\u{2713}".as_bytes(); // 3 bytes
         let b = "\u{1F916}".as_bytes(); // 4 bytes (🤖)
         let sa = str_new(a.as_ptr(), a.len());
@@ -35,8 +33,7 @@ fn runtime_string_concat_utf8_multibyte() {
 
 #[test]
 fn runtime_string_new_rejects_invalid_utf8() {
-    let mut engine = Engine::new();
-    engine.with_runtime(|_, _| {
+    with_runtime_scope(|_, _| {
         let invalid = [0xffu8];
         let result = std::panic::catch_unwind(|| {
             let _ = str_new(invalid.as_ptr(), invalid.len());
@@ -47,8 +44,7 @@ fn runtime_string_new_rejects_invalid_utf8() {
 
 #[test]
 fn runtime_string_new_rejects_null_ptr() {
-    let mut engine = Engine::new();
-    engine.with_runtime(|_, _| {
+    with_runtime_scope(|_, _| {
         let result = std::panic::catch_unwind(|| {
             let _ = str_new(std::ptr::null(), 0);
         });

@@ -3,8 +3,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::pipeline_ui::resolve_input_with_cli_pipeline;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
+use crate::runtime_profile::CliRuntimeProfile;
+use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
+use beskid_tools::PipelineProgressKind;
 use anyhow::Result;
 use beskid_analysis::projects::TargetKind;
 use beskid_aot::{
@@ -93,37 +95,35 @@ pub struct BuildArgs {
     /// Disable animated progress and graph output
     #[arg(long)]
     pub plain: bool,
+
+    /// Runtime link profile: `std` links `beskid_host`; `minimal` is language runtime only
+    #[arg(long, value_enum, default_value_t = CliRuntimeProfile::Std)]
+    pub runtime_profile: CliRuntimeProfile,
 }
 
 /// Resolve, lower, emit CLIF, and run the AOT/link pipeline according to `args`.
 pub fn execute(args: BuildArgs) -> Result<()> {
-    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline(
-        args.input.as_ref(),
-        args.project.project.as_ref(),
-        args.project.target.as_deref(),
-        args.project.workspace_member.as_deref(),
-        args.lockfile.frozen,
-        args.lockfile.locked,
+    let resolve_args = ResolveInputArgs {
+        input: args.input.as_ref(),
+        project: args.project.project.as_ref(),
+        target: args.project.target.as_deref(),
+        workspace_member: args.project.workspace_member.as_deref(),
+        frozen: args.lockfile.frozen,
+        locked: args.lockfile.locked,
+    };
+    let (session, resolved) = CommandSession::open_and_resolve(
         args.plain,
+        PipelineProgressKind::FullBuild,
+        &resolve_args,
     )?;
-    let obs: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
-
-    pipeline_ui.halt_progress_bars_for_output();
-
-    let (_, gate_diagnostics) = beskid_queries::prepare_compilation_diagnostics(
+    session.semantic_gate(
         &resolved,
-        beskid_analysis::services::PrepareOptions {
-            mode: beskid_analysis::services::PrepareMode::DiagnosticsOnly,
-            front_end: beskid_analysis::services::FrontEndOptions {
-                with_semantic_diagnostics: true,
-                ..Default::default()
-            },
+        SemanticGateOptions {
+            finish_prepare_ui: false,
+            prepare_message: "Analysis complete",
         },
-        Some(pipeline_ui.as_ref()),
     )?;
-    pipeline_ui.report_semantic_diagnostics(&gate_diagnostics);
-    beskid_analysis::services::require_no_semantic_errors(&gate_diagnostics)
-        .map_err(anyhow::Error::from)?;
+    let obs: Option<&dyn PipelineObserver> = Some(session.observer());
 
     let input_path = resolved.source_path.clone();
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
@@ -204,7 +204,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     };
 
     let link_inputs = link_libraries_for_artifact(&artifact, resolved.compile_plan.as_ref());
-    let pipeline_arc: Arc<dyn PipelineObserver> = pipeline_ui.clone();
+    let pipeline_arc: Arc<dyn PipelineObserver> = session.pipeline_arc();
     let mut build_request = AotBuildRequest {
         artifact,
         output_kind,
@@ -216,6 +216,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         export_policy,
         link_mode,
         runtime,
+        runtime_link_profile: args.runtime_profile.into(),
         verbose_link: args.verbose_link,
         external_libraries: Vec::new(),
         library_search_paths: Vec::new(),
@@ -223,7 +224,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     };
     apply_link_libraries(&mut build_request, link_inputs);
     let result = build(build_request)?;
-    pipeline_ui.finish_build("Build complete");
+    session.pipeline().finish_build("Build complete");
 
     if args.plain
         && let Some(plan) = resolved.compile_plan.as_ref()

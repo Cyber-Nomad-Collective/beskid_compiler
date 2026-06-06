@@ -1,27 +1,5 @@
 use std::collections::HashMap;
 
-use beskid_abi::{
-    SYM_ALLOC, SYM_ARRAY_LEN, SYM_ARRAY_NEW, SYM_CHANNEL_CLOSE, SYM_CHANNEL_CREATE,
-    SYM_CHANNEL_RECEIVE, SYM_CHANNEL_RECEIVE_VALUE, SYM_CHANNEL_SEND, SYM_CHANNEL_TRY_RECEIVE,
-    SYM_CHANNEL_TRY_SEND, SYM_COMPOSITION_BIND_PLURAL, SYM_COMPOSITION_CONTAINER_CREATE,
-    SYM_COMPOSITION_CONTAINER_DROP, SYM_COMPOSITION_LAUNCH, SYM_COMPOSITION_REGISTER,
-    SYM_COMPOSITION_RESOLVE, SYM_COMPOSITION_RESOLVE_PLURAL, SYM_COMPOSITION_SCOPE_DEPTH,
-    SYM_COMPOSITION_SCOPE_ENTER, SYM_COMPOSITION_SCOPE_LEAVE, SYM_COMPOSITION_SHUTDOWN,
-    SYM_EVENT_GET_HANDLER, SYM_EVENT_LEN, SYM_EVENT_SUBSCRIBE,
-    SYM_EVENT_UNSUBSCRIBE_FIRST, SYM_FIBER_CANCEL, SYM_FIBER_CURRENT_ID, SYM_FIBER_DETACH,
-    SYM_FIBER_JOIN, SYM_FIBER_JOIN_VALUE, SYM_FIBER_NOW_MILLIS, SYM_FIBER_PROCESSOR_COUNT,
-    SYM_FIBER_SPAWN, SYM_FIBER_SPAWN_WITH_CANCEL_SLOT, SYM_FIBER_YIELD, SYM_GC_BYTES_ALLOCATED,
-    SYM_GC_COLLECT, SYM_GC_COLLECT_IF_NEEDED, SYM_GC_EXTERNAL_ROOT_COUNT, SYM_GC_OBJECT_COUNT,
-    SYM_GC_PHASE, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT,
-    SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_HUB_CREATE, SYM_HUB_REGISTER,
-    SYM_HUB_UNREGISTER, SYM_HUB_WAIT_RECEIVE, SYM_HUB_WAIT_RECEIVE_INDEX,
-    SYM_HUB_WAIT_RECEIVE_VALUE, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
-    SYM_INTEROP_DISPATCH_USIZE, SYM_MUTEX_CREATE, SYM_MUTEX_LOCK, SYM_MUTEX_TRY_LOCK,
-    SYM_MUTEX_UNLOCK,     SYM_PANIC, SYM_PANIC_STR, SYM_STR_CONCAT, SYM_STR_EQ, SYM_STR_FROM_I64, SYM_STR_LEN,
-    SYM_STR_NEW,
-    SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR,
-    SYM_WAIT_GROUP_ADD, SYM_WAIT_GROUP_CREATE, SYM_WAIT_GROUP_DONE, SYM_WAIT_GROUP_WAIT,
-};
 use beskid_codegen::cranelift_host::{
     ExternDeclarationError, HostError, declare_builtin_imports, declare_user_functions,
     declare_validated_extern_imports, remap_testcase_externals,
@@ -31,25 +9,7 @@ use beskid_pipeline::{
     PipelineObserver, emit_work_unit, observe_phase_result,
     phases::{JIT_EMIT, JIT_FINALIZE},
 };
-use beskid_runtime::{
-    alloc, array_len, array_new, channel_close, channel_create, channel_receive_status,
-    channel_receive_value, channel_send, channel_try_receive, channel_try_send,
-    composition_bind_plural, composition_container_create, composition_container_drop,
-    composition_launch, composition_register, composition_resolve, composition_resolve_plural,
-    composition_scope_depth, composition_scope_enter, composition_scope_leave,
-    composition_shutdown, event_get_handler,
-    event_len, event_subscribe, event_unsubscribe_first, fiber_cancel, fiber_current_id,
-    fiber_detach, fiber_join_status, fiber_join_value, fiber_now_millis, fiber_processor_count,
-    fiber_spawn, fiber_spawn_with_cancel_slot, fiber_yield, gc_bytes_allocated, gc_collect,
-    gc_collect_if_needed, gc_external_root_count, gc_object_count, gc_phase, gc_register_root,
-    gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier, hub_create,
-    hub_register, hub_unregister, hub_wait_receive_index, hub_wait_receive_status,
-    hub_wait_receive_value, interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize,
-    mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, panic, panic_str, str_concat, str_eq,
-    str_from_i64, str_len, str_new, syscall_read, syscall_write, test_bytes_len, test_bytes_ptr,
-    wait_group_add,
-    wait_group_create, wait_group_done, wait_group_wait,
-};
+use crate::generated::kernel_registration::register_kernel_exports;
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleError, default_libcall_names};
@@ -220,125 +180,9 @@ fn new_builder(extras: &[(String, *const u8)]) -> Result<JITBuilder, JitError> {
         .finish(settings::Flags::new(settings::builder()))
         .map_err(|err| JitError::Isa(err.to_string()))?;
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
-    register_runtime_symbols(&mut builder);
+    register_kernel_exports(&mut builder);
     for (sym, addr) in extras {
         builder.symbol(sym, *addr);
     }
     Ok(builder)
-}
-
-fn register_runtime_symbols(builder: &mut JITBuilder) {
-    builder.symbol(SYM_ALLOC, alloc as *const u8);
-    builder.symbol(SYM_STR_NEW, str_new as *const u8);
-    builder.symbol(SYM_STR_CONCAT, str_concat as *const u8);
-    builder.symbol(SYM_STR_FROM_I64, str_from_i64 as *const u8);
-    builder.symbol(SYM_STR_EQ, str_eq as *const u8);
-    builder.symbol(SYM_ARRAY_NEW, array_new as *const u8);
-    builder.symbol(SYM_ARRAY_LEN, array_len as *const u8);
-    builder.symbol(SYM_PANIC, panic as *const u8);
-    builder.symbol(SYM_PANIC_STR, panic_str as *const u8);
-    builder.symbol(SYM_SYSCALL_WRITE, syscall_write as *const u8);
-    builder.symbol(SYM_SYSCALL_READ, syscall_read as *const u8);
-    builder.symbol(SYM_STR_LEN, str_len as *const u8);
-    builder.symbol(
-        SYM_INTEROP_DISPATCH_UNIT,
-        interop_dispatch_unit as *const u8,
-    );
-    builder.symbol(SYM_INTEROP_DISPATCH_PTR, interop_dispatch_ptr as *const u8);
-    builder.symbol(
-        SYM_INTEROP_DISPATCH_USIZE,
-        interop_dispatch_usize as *const u8,
-    );
-    builder.symbol(SYM_GC_WRITE_BARRIER, gc_write_barrier as *const u8);
-    builder.symbol(SYM_GC_BYTES_ALLOCATED, gc_bytes_allocated as *const u8);
-    builder.symbol(SYM_GC_OBJECT_COUNT, gc_object_count as *const u8);
-    builder.symbol(SYM_GC_PHASE, gc_phase as *const u8);
-    builder.symbol(SYM_GC_COLLECT, gc_collect as *const u8);
-    builder.symbol(SYM_GC_COLLECT_IF_NEEDED, gc_collect_if_needed as *const u8);
-    builder.symbol(
-        SYM_GC_EXTERNAL_ROOT_COUNT,
-        gc_external_root_count as *const u8,
-    );
-    builder.symbol(SYM_GC_ROOT_HANDLE, gc_root_handle as *const u8);
-    builder.symbol(SYM_GC_UNROOT_HANDLE, gc_unroot_handle as *const u8);
-    builder.symbol(SYM_GC_REGISTER_ROOT, gc_register_root as *const u8);
-    builder.symbol(SYM_GC_UNREGISTER_ROOT, gc_unregister_root as *const u8);
-    builder.symbol(SYM_EVENT_SUBSCRIBE, event_subscribe as *const u8);
-    builder.symbol(
-        SYM_EVENT_UNSUBSCRIBE_FIRST,
-        event_unsubscribe_first as *const u8,
-    );
-    builder.symbol(SYM_EVENT_LEN, event_len as *const u8);
-    builder.symbol(SYM_EVENT_GET_HANDLER, event_get_handler as *const u8);
-    builder.symbol(SYM_TEST_BYTES_PTR, test_bytes_ptr as *const u8);
-    builder.symbol(SYM_TEST_BYTES_LEN, test_bytes_len as *const u8);
-    builder.symbol(SYM_FIBER_SPAWN, fiber_spawn as *const u8);
-    builder.symbol(
-        SYM_FIBER_SPAWN_WITH_CANCEL_SLOT,
-        fiber_spawn_with_cancel_slot as *const u8,
-    );
-    builder.symbol(SYM_FIBER_JOIN, fiber_join_status as *const u8);
-    builder.symbol(SYM_FIBER_JOIN_VALUE, fiber_join_value as *const u8);
-    builder.symbol(SYM_FIBER_DETACH, fiber_detach as *const u8);
-    builder.symbol(SYM_FIBER_CANCEL, fiber_cancel as *const u8);
-    builder.symbol(SYM_FIBER_YIELD, fiber_yield as *const u8);
-    builder.symbol(SYM_FIBER_NOW_MILLIS, fiber_now_millis as *const u8);
-    builder.symbol(SYM_FIBER_CURRENT_ID, fiber_current_id as *const u8);
-    builder.symbol(
-        SYM_FIBER_PROCESSOR_COUNT,
-        fiber_processor_count as *const u8,
-    );
-    builder.symbol(SYM_CHANNEL_CREATE, channel_create as *const u8);
-    builder.symbol(SYM_CHANNEL_SEND, channel_send as *const u8);
-    builder.symbol(SYM_CHANNEL_RECEIVE, channel_receive_status as *const u8);
-    builder.symbol(
-        SYM_CHANNEL_RECEIVE_VALUE,
-        channel_receive_value as *const u8,
-    );
-    builder.symbol(SYM_CHANNEL_TRY_SEND, channel_try_send as *const u8);
-    builder.symbol(SYM_CHANNEL_TRY_RECEIVE, channel_try_receive as *const u8);
-    builder.symbol(SYM_CHANNEL_CLOSE, channel_close as *const u8);
-    builder.symbol(
-        SYM_COMPOSITION_CONTAINER_CREATE,
-        composition_container_create as *const u8,
-    );
-    builder.symbol(
-        SYM_COMPOSITION_CONTAINER_DROP,
-        composition_container_drop as *const u8,
-    );
-    builder.symbol(SYM_COMPOSITION_REGISTER, composition_register as *const u8);
-    builder.symbol(
-        SYM_COMPOSITION_BIND_PLURAL,
-        composition_bind_plural as *const u8,
-    );
-    builder.symbol(SYM_COMPOSITION_LAUNCH, composition_launch as *const u8);
-    builder.symbol(SYM_COMPOSITION_SHUTDOWN, composition_shutdown as *const u8);
-    builder.symbol(SYM_COMPOSITION_SCOPE_ENTER, composition_scope_enter as *const u8);
-    builder.symbol(SYM_COMPOSITION_SCOPE_LEAVE, composition_scope_leave as *const u8);
-    builder.symbol(SYM_COMPOSITION_RESOLVE, composition_resolve as *const u8);
-    builder.symbol(
-        SYM_COMPOSITION_RESOLVE_PLURAL,
-        composition_resolve_plural as *const u8,
-    );
-    builder.symbol(SYM_COMPOSITION_SCOPE_DEPTH, composition_scope_depth as *const u8);
-    builder.symbol(SYM_HUB_CREATE, hub_create as *const u8);
-    builder.symbol(SYM_HUB_REGISTER, hub_register as *const u8);
-    builder.symbol(SYM_HUB_UNREGISTER, hub_unregister as *const u8);
-    builder.symbol(SYM_HUB_WAIT_RECEIVE, hub_wait_receive_status as *const u8);
-    builder.symbol(
-        SYM_HUB_WAIT_RECEIVE_INDEX,
-        hub_wait_receive_index as *const u8,
-    );
-    builder.symbol(
-        SYM_HUB_WAIT_RECEIVE_VALUE,
-        hub_wait_receive_value as *const u8,
-    );
-    builder.symbol(SYM_MUTEX_CREATE, mutex_create as *const u8);
-    builder.symbol(SYM_MUTEX_LOCK, mutex_lock as *const u8);
-    builder.symbol(SYM_MUTEX_TRY_LOCK, mutex_try_lock as *const u8);
-    builder.symbol(SYM_MUTEX_UNLOCK, mutex_unlock as *const u8);
-    builder.symbol(SYM_WAIT_GROUP_CREATE, wait_group_create as *const u8);
-    builder.symbol(SYM_WAIT_GROUP_ADD, wait_group_add as *const u8);
-    builder.symbol(SYM_WAIT_GROUP_DONE, wait_group_done as *const u8);
-    builder.symbol(SYM_WAIT_GROUP_WAIT, wait_group_wait as *const u8);
 }

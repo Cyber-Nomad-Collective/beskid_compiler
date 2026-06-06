@@ -41,6 +41,16 @@ pub enum BuildProfile {
     Release,
 }
 
+/// Which runtime/host artifacts to link for AOT and JIT startup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RuntimeLinkProfile {
+    /// Language runtime only (`beskid_runtime`); host dispatch tags trap.
+    Minimal,
+    /// Language runtime plus `beskid_host` (default).
+    #[default]
+    Std,
+}
+
 /// Hint for shared-library link lines (`-Wl,-Bstatic` / `-Wl,-Bdynamic`); ignored for other kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkMode {
@@ -77,6 +87,7 @@ pub struct AotBuildRequest {
     pub export_policy: ExportPolicy,
     pub link_mode: LinkMode,
     pub runtime: RuntimeStrategy,
+    pub runtime_link_profile: RuntimeLinkProfile,
     pub verbose_link: bool,
     /// Logical library names (for example `"c"`, `"m"`) passed as `-l<name>` to the host linker.
     pub external_libraries: Vec<String>,
@@ -98,6 +109,7 @@ impl std::fmt::Debug for AotBuildRequest {
             .field("export_policy", &self.export_policy)
             .field("link_mode", &self.link_mode)
             .field("runtime", &self.runtime)
+            .field("runtime_link_profile", &self.runtime_link_profile)
             .field("verbose_link", &self.verbose_link)
             .field("pipeline", &self.pipeline.is_some())
             .finish_non_exhaustive()
@@ -136,6 +148,7 @@ impl AotBuildRequest {
             export_policy: ExportPolicy::PublicOnly,
             link_mode: LinkMode::Auto,
             runtime,
+            runtime_link_profile: RuntimeLinkProfile::Std,
             verbose_link: false,
             external_libraries: Vec::new(),
             library_search_paths: Vec::new(),
@@ -210,7 +223,7 @@ pub fn build(req: AotBuildRequest) -> AotResult<AotBuildResult> {
         ensure_entrypoint_exported(&req, &object_stage.exported_symbols)?;
     }
     let runtime = prepare_runtime_stage(&req)?;
-    let link_result = link_stage(&req, &object_stage, runtime.staticlib_path)?;
+    let link_result = link_stage(&req, &object_stage, &runtime)?;
 
     Ok(AotBuildResult {
         object_path: object_stage.object_path,
@@ -258,18 +271,31 @@ fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]
 
 fn prepare_runtime_stage(req: &AotBuildRequest) -> AotResult<crate::runtime::RuntimeArtifact> {
     let obs = req.pipeline.as_deref();
+    let link_profile = req.runtime_link_profile;
     observe_phase_result(obs, AOT_RUNTIME, || {
-        prepare_runtime(&RuntimeBuildRequest {
+        let mut artifact = prepare_runtime(&RuntimeBuildRequest {
             strategy: req.runtime.clone(),
-        })
+        })?;
+        if link_profile == crate::api::RuntimeLinkProfile::Std {
+            artifact.host_staticlib_path = crate::bundled::resolve_bundled_host_archive(
+                req.profile,
+                req.target_triple.as_deref(),
+            )
+            .ok();
+        }
+        Ok(artifact)
     })
 }
 
 fn link_stage(
     req: &AotBuildRequest,
     object_stage: &ObjectStageResult,
-    runtime_staticlib: Option<PathBuf>,
+    runtime: &crate::runtime::RuntimeArtifact,
 ) -> AotResult<crate::linker::LinkResult> {
+    let host_staticlib = match req.runtime_link_profile {
+        crate::api::RuntimeLinkProfile::Minimal => None,
+        crate::api::RuntimeLinkProfile::Std => runtime.host_staticlib_path.clone(),
+    };
     let obs = req.pipeline.as_deref();
     observe_phase_result(obs, AOT_LINK, || {
         link(&LinkRequest {
@@ -277,7 +303,8 @@ fn link_stage(
             output_kind: req.output_kind,
             output_path: req.output_path.clone(),
             object_path: object_stage.object_path.clone(),
-            runtime_staticlib,
+            runtime_staticlib: runtime.staticlib_path.clone(),
+            host_staticlib,
             entrypoint_symbol: req.entrypoint.clone(),
             exported_symbols: object_stage.exported_symbols.clone(),
             link_mode: req.link_mode,

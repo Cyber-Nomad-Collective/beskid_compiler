@@ -5,7 +5,8 @@
 //! `beskid_engine`) depend on this leaf crate only.
 //!
 //! Canonical phase orders: [`phases::FULL_BUILD_PHASE_ORDER`] (host build),
-//! [`phases::MOD_BUILD_PHASE_ORDER`] (mod artifact rebuild), [`phases::JIT_RUN_PHASE_ORDER`] (run/test).
+//! [`phases::MOD_BUILD_PHASE_ORDER`] (mod artifact rebuild), [`phases::JIT_RUN_PHASE_ORDER`]
+//! (interim run/test JIT), [`phases::RUN_AOT_PHASE_ORDER`] (AOT subprocess run).
 
 pub mod grammar;
 pub mod phases;

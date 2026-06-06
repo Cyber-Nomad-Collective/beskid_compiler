@@ -1,4 +1,4 @@
-use beskid_engine::Engine;
+use crate::support::runtime::with_runtime_scope;
 use beskid_runtime::dynamic::{
     DynamicCell, DYNAMIC_ERR_INCOMPATIBLE, DYNAMIC_OK, FieldStep, map_dynamic_fallback,
     register_mapping, register_shape, reset_tables_for_test,
@@ -28,8 +28,7 @@ fn dynamic_fallback_mapping_succeeds_for_registered_shapes() {
         }],
     );
 
-    let mut engine = Engine::new();
-    engine.with_runtime(|heap, root| {
+    with_runtime_scope(|heap, root| {
         let payload = heap.allocate_beskid(std::mem::size_of::<Payload>(), std::ptr::null());
         root.runtime_state.allocation_counter += 1;
         unsafe {

@@ -1,6 +1,11 @@
-//! JIT execution host: compile a [`beskid_codegen::CodegenArtifact`] with Cranelift-JIT and run entrypoints under the GC arena.
+//! JIT execution host for interactive snippet evaluation and the interim `beskid test` runner.
+//!
+//! Production `beskid run` and integration tests use AOT via [`beskid_aot`]. This crate keeps
+//! Cranelift-JIT for low-latency REPL sessions ([`beskid_repl`]) and in-process test discovery
+//! until a multi-entrypoint AOT test runner lands in phase 2.
 
 mod engine;
+mod generated;
 mod jit_callable;
 mod jit_module;
 pub mod link_libraries;

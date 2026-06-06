@@ -22,3 +22,6 @@ postcard = { workspace = true }
 beskid_artifacts = { path = "../beskid_artifacts" }
 rayon = "1.10"
 zip = "2"
+
+[build-dependencies]
+beskid_manifest = { path = "../beskid_manifest" }

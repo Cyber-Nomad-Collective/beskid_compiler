@@ -14,6 +14,7 @@ pub struct LinkRequest {
     pub output_path: PathBuf,
     pub object_path: PathBuf,
     pub runtime_staticlib: Option<PathBuf>,
+    pub host_staticlib: Option<PathBuf>,
     pub entrypoint_symbol: String,
     pub exported_symbols: Vec<String>,
     pub link_mode: LinkMode,
@@ -91,7 +92,18 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
     let mut cmd = Command::new(&compiler);
     cmd.arg(&req.object_path);
     if let Some(runtime_staticlib) = &req.runtime_staticlib {
-        cmd.arg(runtime_staticlib);
+        if target.contains("darwin") || target.contains("macos") {
+            cmd.arg("-Wl,-force_load").arg(runtime_staticlib);
+        } else {
+            cmd.arg(runtime_staticlib);
+        }
+    }
+    if let Some(host_staticlib) = &req.host_staticlib {
+        if target.contains("darwin") || target.contains("macos") {
+            cmd.arg("-Wl,-force_load").arg(host_staticlib);
+        } else {
+            cmd.arg(host_staticlib);
+        }
     }
     cmd.arg("-o").arg(&req.output_path);
     append_library_search_paths(req, &target, &mut cmd)?;

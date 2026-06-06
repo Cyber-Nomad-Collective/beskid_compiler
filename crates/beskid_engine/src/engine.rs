@@ -1,8 +1,10 @@
 use abfall::Heap;
 use beskid_codegen::{CodegenArtifact, ExternImport};
 use beskid_pipeline::PipelineObserver;
+use beskid_aot::RuntimeLinkProfile;
 use beskid_runtime::{
-    GcSnapshot, RuntimeRoot, beskid_heap_options_for_engine, clear_current_heap,
+    GcSnapshot, RuntimeRoot, beskid_heap_options_for_engine, bootstrap_dispatch_handlers,
+    clear_current_heap,
     clear_current_root, enter_runtime_scope, leave_runtime_scope, run_closure_as_main,
     scheduler_init, set_current_heap, set_current_root, snapshot_gc,
 };
@@ -18,9 +20,18 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Build an engine with a fresh runtime root and empty JIT module.
+    /// Build an engine with a fresh runtime root and empty JIT module (std host profile).
     pub fn new() -> Self {
+        Self::with_link_profile(RuntimeLinkProfile::Std)
+    }
+
+    /// Build an engine; registers host handlers when `profile` is [`RuntimeLinkProfile::Std`].
+    pub fn with_link_profile(profile: RuntimeLinkProfile) -> Self {
         scheduler_init();
+        bootstrap_dispatch_handlers();
+        if profile == RuntimeLinkProfile::Std {
+            let _ = beskid_host::beskid_host_register_all();
+        }
         let heap = Heap::with_options(beskid_heap_options_for_engine());
         let runtime_root = RuntimeRoot::new(Arc::clone(&heap));
         let jit = BeskidJitModule::new().expect("failed to initialize JIT module");

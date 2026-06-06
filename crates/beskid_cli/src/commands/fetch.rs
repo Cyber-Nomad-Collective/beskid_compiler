@@ -1,6 +1,6 @@
 //! `beskid fetch` — resolve the project graph and materialize dependencies on disk.
 
-use crate::pipeline_ui::resolve_project_with_cli_pipeline;
+use beskid_tools::pipeline::resolve_project_with_cli_pipeline;
 use crate::project_args::{LockfilePolicyArgs, PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;

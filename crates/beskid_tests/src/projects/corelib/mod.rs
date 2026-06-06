@@ -105,6 +105,8 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/runtime/src/System/Syscall/SyscallError.bd",
         "packages/runtime/src/System/Syscall/WriteRequest.bd",
         "packages/runtime/src/System/Time.bd",
+        "packages/runtime/src/Runtime/Abi.bd",
+        "packages/runtime/src/Runtime/Init.bd",
         "packages/compiler-sdk/src/Prelude.bd",
         "packages/compiler-sdk/src/Beskid/Syntax.bd",
         "packages/compiler-sdk/src/Beskid/Syntax/Nodes.bd",

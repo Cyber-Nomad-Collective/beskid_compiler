@@ -65,6 +65,8 @@ thread_local! {
     static RUNTIME_SCOPE_DEPTH: Cell<usize> = const { Cell::new(0) };
     /// `true` on threads owned by the syscall worker pool.
     static IS_SYSCALL_POOL_WORKER: Cell<bool> = const { Cell::new(false) };
+    /// Process-lifetime mutator for AOT executables (no in-process JIT host).
+    static AOT_MAIN_MUTATOR: RefCell<Option<(Arc<Heap>, RuntimeRoot)>> = const { RefCell::new(None) };
 }
 
 /// Concurrency phase exposed by the runtime; defaults to [`RuntimePhase::PhaseA`] (single mutator
@@ -90,6 +92,19 @@ impl From<u8> for RuntimePhase {
 
 static RUNTIME_PHASE: AtomicU8 = AtomicU8::new(RuntimePhase::PhaseA as u8);
 static RUNTIME_PREEMPT_ENABLED: AtomicBool = AtomicBool::new(false);
+static AOT_MAIN_BOOTSTRAP_ENABLED: AtomicBool = AtomicBool::new(false);
+
+const AOT_MAIN_ENV: &str = "BESKID_AOT_MAIN";
+
+/// Called from the AOT runtime bridge when a linked executable starts.
+pub fn enable_aot_main_bootstrap() {
+    AOT_MAIN_BOOTSTRAP_ENABLED.store(true, Ordering::Relaxed);
+}
+
+fn aot_main_bootstrap_enabled() -> bool {
+    AOT_MAIN_BOOTSTRAP_ENABLED.load(Ordering::Relaxed)
+        || std::env::var_os(AOT_MAIN_ENV).is_some_and(|value| !value.is_empty())
+}
 
 /// Current runtime phase. Honors `BESKID_RUNTIME_PHASE_B=1` when first read.
 pub fn runtime_phase() -> RuntimePhase {
@@ -200,14 +215,42 @@ pub fn clear_current_root() {
     CURRENT_ROOT.with(|cell| cell.set(std::ptr::null_mut()));
 }
 
+/// Install a default heap/root on the main thread for linked AOT executables.
+fn attach_default_aot_mutator_if_needed() {
+    if !aot_main_bootstrap_enabled() {
+        return;
+    }
+    CURRENT_ROOT.with(|root_cell| {
+        if !root_cell.get().is_null() {
+            return;
+        }
+        AOT_MAIN_MUTATOR.with(|slot| {
+            let mut guard = slot.borrow_mut();
+            if guard.is_none() {
+                crate::scheduler::init();
+                if !in_runtime_scope() {
+                    enter_runtime_scope();
+                }
+                let heap = Heap::with_options(beskid_heap_options_for_engine());
+                let root = RuntimeRoot::new(Arc::clone(&heap));
+                set_current_heap(&heap);
+                *guard = Some((heap, root));
+            }
+            let (_, root) = guard.as_mut().expect("aot main mutator");
+            root_cell.set(root as *mut RuntimeRoot);
+        });
+    });
+}
+
 pub fn with_current_root<R>(f: impl FnOnce(&mut RuntimeRoot) -> R) -> R {
     assert_mutator_allowed();
+    attach_default_aot_mutator_if_needed();
     CURRENT_ROOT.with(|cell| {
         let ptr = cell.get();
         if ptr.is_null() {
             panic!("no active runtime root");
         }
-        // SAFETY: pointer is installed by `Engine::with_runtime` for this thread.
+        // SAFETY: pointer is installed by `Engine::with_runtime` or AOT main-thread bootstrap.
         let root = unsafe { &mut *ptr };
         f(root)
     })

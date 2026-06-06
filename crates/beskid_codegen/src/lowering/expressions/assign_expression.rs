@@ -72,11 +72,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
                                 .builder
                                 .ins()
                                 .iconst(pointer_type(), capacity.unwrap_or(DEFAULT_EVENT_CAPACITY));
-                            call_event_subscribe(ctx, field_addr, value, cap_value);
+                            call_event_subscribe(ctx, node.span, field_addr, value, cap_value);
                             return Ok(Some(value));
                         }
                         HirAssignOp::SubAssign => {
-                            call_event_unsubscribe(ctx, field_addr, value);
+                            call_event_unsubscribe(ctx, node.span, field_addr, value);
                             return Ok(Some(value));
                         }
                         HirAssignOp::Assign => unreachable!("handled above"),
@@ -604,53 +604,39 @@ fn store_at_index(
 
 fn call_event_subscribe(
     ctx: &mut NodeLoweringContext<'_, '_>,
+    span: beskid_analysis::syntax::SpanInfo,
     field_addr: Value,
     handler: Value,
     capacity: Value,
 ) {
-    let mut signature = Signature::new(CallConv::SystemV);
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.returns.push(AbiParam::new(pointer_type()));
-    let sig_ref = ctx.builder.func.import_signature(signature);
-    let func_ref = ctx
-        .builder
-        .func
-        .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("event_subscribe"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
-    // Inst result unused: instruction is already inserted into the block.
-    let _ = ctx
-        .builder
-        .ins()
-        .call(func_ref, &[field_addr, handler, capacity]);
+    let _ = crate::lowering::dispatch::lower_dispatch_builtin_call(
+        span,
+        beskid_abi::DispatchRoute {
+            tag: beskid_abi::TAG_EVENT_SUBSCRIBE,
+            group: beskid_abi::DispatchReturnGroup::I64,
+        },
+        &[field_addr, handler, capacity],
+        false,
+        ctx,
+    );
 }
 
 fn call_event_unsubscribe(
     ctx: &mut NodeLoweringContext<'_, '_>,
+    span: beskid_analysis::syntax::SpanInfo,
     field_addr: Value,
     handler: Value,
 ) {
-    let mut signature = Signature::new(CallConv::SystemV);
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.returns.push(AbiParam::new(pointer_type()));
-    let sig_ref = ctx.builder.func.import_signature(signature);
-    let func_ref = ctx
-        .builder
-        .func
-        .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("event_unsubscribe_first"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
-    // Inst result unused: instruction is already inserted into the block.
-    let _ = ctx.builder.ins().call(func_ref, &[field_addr, handler]);
+    let _ = crate::lowering::dispatch::lower_dispatch_builtin_call(
+        span,
+        beskid_abi::DispatchRoute {
+            tag: beskid_abi::TAG_EVENT_UNSUBSCRIBE_FIRST,
+            group: beskid_abi::DispatchReturnGroup::I64,
+        },
+        &[field_addr, handler],
+        false,
+        ctx,
+    );
 }
 
 /// Emit a GC write barrier call for array index stores with pointer-like elements.

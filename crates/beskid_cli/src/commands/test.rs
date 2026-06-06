@@ -10,11 +10,12 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::errors;
-use crate::pipeline_ui::{
-    PipelineProgressKind, resolve_input_with_cli_pipeline_kind, tui::FileLineLink,
-    tui::TestRowState, tui::TestRunUi, use_cli_spinner,
+use beskid_tools::diagnostics;
+use beskid_tools::pipeline::{
+    tui::FileLineLink, tui::TestRowState, tui::TestRunUi, use_cli_spinner,
 };
+use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
+use beskid_tools::PipelineProgressKind;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
 #[derive(Args, Debug, Clone)]
@@ -90,32 +91,20 @@ pub fn execute(args: TestArgs) -> Result<()> {
 }
 
 pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
-    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline_kind(
-        args.input.as_ref(),
-        args.project.project.as_ref(),
-        args.project.target.as_deref(),
-        args.project.workspace_member.as_deref(),
-        args.lockfile.frozen,
-        args.lockfile.locked,
+    let resolve_args = ResolveInputArgs {
+        input: args.input.as_ref(),
+        project: args.project.project.as_ref(),
+        target: args.project.target.as_deref(),
+        workspace_member: args.project.workspace_member.as_deref(),
+        frozen: args.lockfile.frozen,
+        locked: args.lockfile.locked,
+    };
+    let (session, resolved) = CommandSession::open_and_resolve(
         args.plain,
         PipelineProgressKind::PrepareAndRun,
+        &resolve_args,
     )?;
-    pipeline_ui.halt_progress_bars_for_output();
-
-    let (prepared, gate_diagnostics) = beskid_queries::prepare_compilation_diagnostics(
-        &resolved,
-        services::PrepareOptions {
-            mode: services::PrepareMode::DiagnosticsOnly,
-            front_end: services::FrontEndOptions {
-                with_semantic_diagnostics: true,
-                ..Default::default()
-            },
-        },
-        Some(pipeline_ui.as_ref()),
-    )?;
-    pipeline_ui.report_semantic_diagnostics(&gate_diagnostics);
-    services::require_no_semantic_errors(&gate_diagnostics).map_err(anyhow::Error::from)?;
-    pipeline_ui.finish_prepare_ui("Analysis complete");
+    let prepared = session.semantic_gate_prepared(&resolved, SemanticGateOptions::default())?;
 
     let tests = services::collect_test_cases(&prepared.program);
     if tests.is_empty() {
@@ -143,7 +132,7 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
                 ..Default::default()
             },
         },
-        Some(pipeline_ui.as_ref()),
+        Some(session.observer()),
     )?
     .into_executable()?;
 
@@ -231,7 +220,7 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
             &source_name,
             &resolved.source,
             &test.qualified_name,
-            Some(pipeline_ui.as_ref()),
+            Some(session.observer()),
         ) {
             Ok(output) => {
                 let duration = started.elapsed();
@@ -252,7 +241,7 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
                 let reason = if args.json {
                     error.to_string()
                 } else {
-                    errors::format_report(&errors::report_from_anyhow(&error)).to_string()
+                    diagnostics::format_report(&diagnostics::report_from_anyhow(&error)).to_string()
                 };
                 // Always print failure details so users see what went wrong
                 let detail = format!(
@@ -296,10 +285,10 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
     }
 
     if summary.failed > 0 {
-        pipeline_ui.finish_session("Tests failed");
+        session.pipeline().finish_session("Tests failed");
         return Err(anyhow!("{} test(s) failed", summary.failed));
     }
-    pipeline_ui.finish_session("Tests complete");
+    session.pipeline().finish_session("Tests complete");
     Ok(())
 }
 

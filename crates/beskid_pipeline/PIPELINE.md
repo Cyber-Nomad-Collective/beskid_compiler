@@ -34,15 +34,24 @@ artifacts only (no host `mod.*` orchestration or `aot.runtime`).
 
 **JIT run** — `JIT_RUN_PHASE_ORDER` uses the same mod + syntax + semantic snapshot + `composition.resolve` + `mod.analyze` /
 `mod.rewrite` + `lower.ready` prefix after `parse`, then `lower`, `codegen_clif`, `jit.emit`,
-`jit.finalize`.
+`jit.finalize`. Used by interim `beskid test` and `beskid repl` (JIT snippet eval).
+
+**AOT run** — `RUN_AOT_PHASE_ORDER` shares the same mod-enabled front-end prefix as `JIT_RUN_PHASE_ORDER`,
+then `lower`, `codegen_clif`, `aot.emit_object`, `aot.runtime`, and `aot.link`. Target path for
+`beskid run` (subprocess execution after link).
 
 Hosts **must** emit `lower.ready` even when no mods ran so observers see a uniform ordering before
 `lower`.
 
-`beskid run` and `beskid test` compile with the in-process JIT instead of emitting an object and
-linking. After front-end phases (`parse` … `codegen_clif`), the engine reports `jit.emit` work units
-(one per lowered function) and a `jit.finalize` phase around Cranelift `finalize_definitions`. AOT
-steps (`aot.emit_object`, `aot.runtime`, `aot.link`) are skipped on that path.
+`beskid test` still compiles with the in-process JIT instead of emitting an object and linking.
+After front-end phases (`parse` … `codegen_clif`), the engine reports `jit.emit` work units (one per
+lowered function) and a `jit.finalize` phase around Cranelift `finalize_definitions`. AOT steps
+(`aot.emit_object`, `aot.runtime`, `aot.link`) are skipped on that path.
+
+Future `beskid test` AOT migration is phase 2; interim test runs still use the JIT path above.
+
+`beskid run` uses `RUN_AOT_PHASE_ORDER`: build a linked executable via `beskid_aot::build`
+(or `build_and_run`) and execute it in a subprocess. JIT phases are not observed on that path.
 
 Emitters (`beskid_analysis`, `beskid_codegen`, `beskid_aot`, `beskid_engine`) report `PipelineEvent`
 values; the CLI implements `PipelineObserver` and maps them to terminal UX.

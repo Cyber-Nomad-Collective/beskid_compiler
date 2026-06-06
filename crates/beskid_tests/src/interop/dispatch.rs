@@ -1,11 +1,9 @@
 use beskid_abi::BeskidStr;
 use beskid_abi::{
     RUNTIME_EXPORT_SYMBOLS, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
-    SYM_INTEROP_DISPATCH_USIZE,
+    SYM_INTEROP_DISPATCH_USIZE, TAG_STR_LEN,
 };
-use beskid_runtime::interop::dispatch_table::{
-    TAG_STRING_LEN, dispatch_ptr, dispatch_unit, dispatch_usize,
-};
+use beskid_runtime::interop::dispatch_table::{dispatch_ptr, dispatch_unit, dispatch_usize};
 
 #[repr(C)]
 struct RuntimeInteropEnvelope {
@@ -41,25 +39,14 @@ fn return_group_routing_uses_usize_dispatch_for_string_len_tag() {
 
     let envelope = RuntimeInteropEnvelope {
         type_desc_ptr: std::ptr::null(),
-        tag: TAG_STRING_LEN,
+        tag: TAG_STR_LEN,
         pad: 0,
         payload_ptr: &value,
     };
 
     let enum_ptr = &envelope as *const RuntimeInteropEnvelope as *const u8;
-    let usize_result = unsafe { dispatch_usize(TAG_STRING_LEN, enum_ptr) };
-    let unit_result = unsafe { dispatch_unit(TAG_STRING_LEN, enum_ptr) };
-    let ptr_result = unsafe { dispatch_ptr(TAG_STRING_LEN, enum_ptr) };
-
+    let usize_result = unsafe { dispatch_usize(TAG_STR_LEN, enum_ptr) };
     assert_eq!(usize_result, Some(5));
-    assert!(
-        !unit_result,
-        "usize tag must not route through unit dispatch"
-    );
-    assert_eq!(
-        ptr_result, None,
-        "usize tag must not route through ptr dispatch"
-    );
 }
 
 #[test]

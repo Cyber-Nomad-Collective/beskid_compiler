@@ -20,7 +20,7 @@ pub Console.ConsoleSize Winsize() {
     }
     i64 packed = __tty_winsize(1);
     if packed == 0 {
-        return Console.ConsoleSize { columns: 0, rows: 0 };
+        return Console.ConsoleSize { columns: 80, rows: 24 };
     }
     i32 columns = packed / 65536;
     i32 rows = packed % 65536;

@@ -4,6 +4,7 @@ pub mod composition;
 pub mod composition_policy;
 mod cast_intent;
 mod context;
+pub(crate) mod dispatch;
 pub(crate) mod locals;
 pub(crate) mod descriptor;
 pub mod expressions;

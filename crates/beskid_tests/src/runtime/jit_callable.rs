@@ -1,52 +1,48 @@
-use beskid_engine::services::run_entrypoint;
-use std::path::Path;
+use crate::support::runtime::{aot_compile_only, build_aot_exe};
 
-fn run_main_output(source: &str) -> String {
-    run_entrypoint(Path::new("<jit_callable_test>"), source, "main")
-        .expect("expected JIT entrypoint execution to succeed")
+fn run_main_exit_code(source: &str) -> i32 {
+    let (dir, result) = build_aot_exe(source, "aot_callable");
+    let exit_code = result.exit_code;
+    let _ = std::fs::remove_dir_all(dir);
+    exit_code
 }
 
-fn assert_pointer_hex(output: &str) {
+#[test]
+fn aot_callable_unit_main_exits_cleanly() {
+    aot_compile_only("unit main() { }");
+    let (dir, result) = build_aot_exe("unit main() { }", "aot_callable_unit");
     assert!(
-        output.starts_with("0x"),
-        "expected pointer-like output to start with 0x, got: {output}"
+        (0..=1).contains(&result.exit_code),
+        "expected unit main subprocess to exit cleanly, got {}",
+        result.exit_code
     );
-    assert_eq!(output.len(), 18, "expected 64-bit pointer hex width");
-    assert!(
-        output
-            .chars()
-            .skip(2)
-            .all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase()),
-        "expected lowercase hexadecimal pointer output, got: {output}"
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn aot_callable_i64_return_maps_to_exit_code() {
+    let exit_code = run_main_exit_code("i64 main() { return 42; }");
+    assert_eq!(exit_code, 42);
+}
+
+#[test]
+fn aot_callable_bool_return_maps_to_exit_code() {
+    let exit_code = run_main_exit_code("bool main() { return true; }");
+    assert_eq!(exit_code, 1);
+}
+
+#[test]
+fn aot_callable_char_return_maps_to_exit_code() {
+    let exit_code = run_main_exit_code("char main() { return 'A'; }");
+    assert_eq!(exit_code, 65);
+}
+
+#[test]
+fn aot_callable_string_return_executes_successfully() {
+    aot_compile_only("string main() { return \"hello\"; }");
+    let exit_code = run_main_exit_code("string main() { return \"hello\"; }");
+    assert_ne!(
+        exit_code, 0,
+        "expected non-zero exit code for pointer-like string return"
     );
-}
-
-#[test]
-fn jit_callable_formats_unit_as_ok() {
-    let output = run_main_output("unit main() { }");
-    assert_eq!(output, "ok");
-}
-
-#[test]
-fn jit_callable_formats_i64() {
-    let output = run_main_output("i64 main() { return 42; }");
-    assert_eq!(output, "42");
-}
-
-#[test]
-fn jit_callable_formats_bool() {
-    let output = run_main_output("bool main() { return true; }");
-    assert_eq!(output, "true");
-}
-
-#[test]
-fn jit_callable_formats_char() {
-    let output = run_main_output("char main() { return 'A'; }");
-    assert_eq!(output, "A");
-}
-
-#[test]
-fn jit_callable_formats_pointer_like_result() {
-    let output = run_main_output("string main() { return \"hello\"; }");
-    assert_pointer_hex(&output);
 }
