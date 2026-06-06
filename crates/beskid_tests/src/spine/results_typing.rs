@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use beskid_analysis::services::{
-    compile_front_end_from_resolved_input, resolve_input, FrontEndOptions, ResolvedInput,
+    FrontEndOptions, ResolvedInput, compile_front_end_from_resolved_input, resolve_input,
 };
 
 use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
@@ -24,15 +24,7 @@ fn core_results_tests_front_end_typechecks() {
     let source = fs::read_to_string(&entry).expect("read ResultsTests.bd");
 
     let resolved = with_cwd_at_workspace_root(&root, || {
-        resolve_input(
-            Some(&entry),
-            Some(&project_root),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve")
+        resolve_input(Some(&entry), Some(&project_root), None, None, false, false).expect("resolve")
     });
 
     let plan = resolved.compile_plan.expect("compile plan");

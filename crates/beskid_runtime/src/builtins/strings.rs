@@ -88,10 +88,7 @@ pub extern "C-unwind" fn str_concat(
 /// Returns 1 if both strings have the same byte length and identical content;
 /// returns 0 otherwise. Null-ptr data is treated as empty content.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn str_eq(
-    left: *const BeskidStr,
-    right: *const BeskidStr,
-) -> usize {
+pub extern "C-unwind" fn str_eq(left: *const BeskidStr, right: *const BeskidStr) -> usize {
     if left.is_null() || right.is_null() {
         panic!("null string handle");
     }

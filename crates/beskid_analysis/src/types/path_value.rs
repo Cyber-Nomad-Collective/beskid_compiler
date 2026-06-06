@@ -36,17 +36,13 @@ pub fn resolve_path_base_local(
     first_segment: &str,
     source_path: Option<&PathBuf>,
 ) -> Option<LocalId> {
-    if let Some(ResolvedValue::Local(local_id)) = resolution
-        .tables
-        .resolved_value_at(path_span, source_path)
+    if let Some(ResolvedValue::Local(local_id)) =
+        resolution.tables.resolved_value_at(path_span, source_path)
     {
         return Some(local_id);
     }
 
-    if let Some(local_id) = resolution
-        .tables
-        .local_id_for_span(path_span, source_path)
-    {
+    if let Some(local_id) = resolution.tables.local_id_for_span(path_span, source_path) {
         return Some(local_id);
     }
 
@@ -93,7 +89,10 @@ pub fn generic_mapping_for_type_id(
     names.iter().cloned().zip(args.iter().copied()).collect()
 }
 
-fn find_matching_type_id(env: &PathTypeEnv<'_>, matches: impl Fn(&TypeInfo) -> bool) -> Option<TypeId> {
+fn find_matching_type_id(
+    env: &PathTypeEnv<'_>,
+    matches: impl Fn(&TypeInfo) -> bool,
+) -> Option<TypeId> {
     let mut index = 0usize;
     loop {
         let candidate = TypeId(index);
@@ -139,9 +138,10 @@ fn substitute_type_id_readonly(
             if substituted == *element {
                 return type_id;
             }
-            find_matching_type_id(env, |info| {
-                matches!(info, TypeInfo::Array(existing) if *existing == substituted)
-            })
+            find_matching_type_id(
+                env,
+                |info| matches!(info, TypeInfo::Array(existing) if *existing == substituted),
+            )
             .unwrap_or(type_id)
         }
         _ => type_id,
@@ -286,9 +286,7 @@ pub fn receiver_type_for_path_callee(
 }
 
 /// First field segment on a path rooted at a local (`local.eventField` → `"eventField"`).
-pub fn first_field_segment_name(
-    segments: &[Spanned<crate::hir::HirPathSegment>],
-) -> Option<&str> {
+pub fn first_field_segment_name(segments: &[Spanned<crate::hir::HirPathSegment>]) -> Option<&str> {
     segments
         .get(1)
         .map(|segment| segment.node.name.node.name.as_str())

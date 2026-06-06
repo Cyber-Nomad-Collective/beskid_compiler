@@ -2,15 +2,13 @@
 
 use std::path::PathBuf;
 
+use beskid_analysis::services::{SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot};
 use beskid_analysis::services::{
     get_or_insert_assembly, invalidate_entry_sessions, update_semantic_snapshot,
 };
-use beskid_analysis::services::{
-    SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot,
-};
 use beskid_queries::{
-    fingerprint_key, parse_and_expand_unit, record_query_hit, reset, semantic_snapshot, snapshot,
-    unit_content_fingerprint, unit_hir, unit_imports, BeskidDatabase, Db, ProjectSession,
+    BeskidDatabase, Db, ProjectSession, fingerprint_key, parse_and_expand_unit, record_query_hit,
+    reset, semantic_snapshot, snapshot, unit_content_fingerprint, unit_hir, unit_imports,
 };
 
 fn fixture_source() -> String {
@@ -47,10 +45,7 @@ fn semantic_snapshot_query_hits_registry() {
             has_std_dependency: false,
         },
     );
-    update_semantic_snapshot(
-        &fp,
-        SemanticSnapshot::from_diagnostics(&[], 1, "semantic"),
-    );
+    update_semantic_snapshot(&fp, SemanticSnapshot::from_diagnostics(&[], 1, "semantic"));
     let db = BeskidDatabase::default();
     reset();
     record_query_hit();
@@ -178,7 +173,7 @@ fn entry_resolution_with_db_populates_symbol_registry() {
 
     use beskid_analysis::projects::AssemblyDiscovery;
     use beskid_analysis::services::{PrepareOptions, resolve_input};
-    use beskid_queries::{entry_resolution_with_db, BeskidDatabase};
+    use beskid_queries::{BeskidDatabase, entry_resolution_with_db};
 
     let compiler_root = {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -223,7 +218,14 @@ fn entry_resolution_with_db_populates_symbol_registry() {
     );
     assert!(
         shared
-            .qualified_name(shared.items.iter().find(|i| i.name == "WriteLine").unwrap().id)
+            .qualified_name(
+                shared
+                    .items
+                    .iter()
+                    .find(|i| i.name == "WriteLine")
+                    .unwrap()
+                    .id
+            )
             .is_some(),
         "WriteLine should have registry-backed qualified name"
     );

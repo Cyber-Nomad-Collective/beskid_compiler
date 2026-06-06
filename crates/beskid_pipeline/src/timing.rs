@@ -86,7 +86,11 @@ mod tests {
         observe_phase(Some(&observer), "semantic", || {
             std::thread::sleep(Duration::from_millis(5));
         });
-        let millis = observer.phase_millis().get("semantic").copied().unwrap_or(0);
+        let millis = observer
+            .phase_millis()
+            .get("semantic")
+            .copied()
+            .unwrap_or(0);
         assert!(millis >= 4, "expected at least 4ms, got {millis}");
     }
 }

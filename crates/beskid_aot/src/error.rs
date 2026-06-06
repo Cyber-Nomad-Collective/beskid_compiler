@@ -31,8 +31,12 @@ pub enum AotError {
     #[error("[E4020] Linker tool not available")]
     LinkerUnavailable,
 
-    #[error("[E4021] Link step failed (exit {status}): {command}")]
-    LinkFailed { status: i32, command: String },
+    #[error("[E4021] Link step failed (exit {status}): {command}{detail}")]
+    LinkFailed {
+        status: i32,
+        command: String,
+        detail: String,
+    },
 
     #[error("[E4022] Unsupported output kind for target {target}: {kind:?}")]
     UnsupportedOutputKind {

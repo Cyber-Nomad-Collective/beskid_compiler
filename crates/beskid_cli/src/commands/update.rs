@@ -1,9 +1,9 @@
 //! `beskid update` — refresh dependency resolution and the materialized workspace tree.
 
-use beskid_tools::pipeline::resolve_project_with_cli_pipeline;
 use crate::project_args::{PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;
+use beskid_tools::pipeline::resolve_project_with_cli_pipeline;
 use clap::Args;
 
 #[derive(Args, Debug)]

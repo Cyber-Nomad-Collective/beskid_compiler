@@ -44,9 +44,7 @@ impl<'a> TypeContext<'a> {
             if field.node.kind == crate::hir::HirFieldKind::Event {
                 if matches!(field.node.event_capacity, Some(0)) {
                     self.errors
-                        .push(super::context::TypeError::InvalidEventCapacity {
-                            span: field.span,
-                        });
+                        .push(super::context::TypeError::InvalidEventCapacity { span: field.span });
                 }
                 event_fields.insert(field.node.name.node.name.clone(), field.node.event_capacity);
             }
@@ -96,7 +94,9 @@ impl<'a> TypeContext<'a> {
                 for variant in &def.node.variants {
                     let mut fields = Vec::new();
                     for field in &variant.node.fields {
-                        if let Some(type_id) = self.type_id_for_type_in_generic_scope(&field.node.ty) {
+                        if let Some(type_id) =
+                            self.type_id_for_type_in_generic_scope(&field.node.ty)
+                        {
                             fields.push(type_id);
                         }
                     }
@@ -296,7 +296,9 @@ impl<'a> TypeContext<'a> {
                 for variant in &def.node.variants {
                     let mut fields = Vec::new();
                     for field in &variant.node.fields {
-                        if let Some(type_id) = self.type_id_for_type_in_generic_scope(&field.node.ty) {
+                        if let Some(type_id) =
+                            self.type_id_for_type_in_generic_scope(&field.node.ty)
+                        {
                             fields.push(type_id);
                         }
                     }
@@ -351,7 +353,11 @@ impl<'a> TypeContext<'a> {
 
     fn canonical_item_id_for_span(&self, span: crate::syntax::SpanInfo) -> Option<ItemId> {
         let item_id = self.item_id_for_span(span)?;
-        let symbol = self.resolution.items.get(item_id.0).and_then(|info| info.symbol)?;
+        let symbol = self
+            .resolution
+            .items
+            .get(item_id.0)
+            .and_then(|info| info.symbol)?;
         self.resolution
             .by_symbol
             .get(&symbol)
@@ -386,10 +392,9 @@ impl<'a> TypeContext<'a> {
             }
         }
         self.record_signature(item_span, params.clone(), return_type);
-        if let (Some(method_item_id), Some(return_type)) = (
-            self.canonical_item_id_for_span(item_span),
-            return_type,
-        ) {
+        if let (Some(method_item_id), Some(return_type)) =
+            (self.canonical_item_id_for_span(item_span), return_type)
+        {
             self.method_function_signatures.insert(
                 method_item_id,
                 FunctionSignature {
@@ -460,10 +465,8 @@ impl<'a> TypeContext<'a> {
         let Some(receiver_item) = self.named_item_id(receiver_type_id) else {
             return;
         };
-        self.methods_by_receiver.insert(
-            (receiver_item, def.name.node.name.clone()),
-            method_item_id,
-        );
+        self.methods_by_receiver
+            .insert((receiver_item, def.name.node.name.clone()), method_item_id);
         self.method_function_signatures.insert(
             method_item_id,
             FunctionSignature {

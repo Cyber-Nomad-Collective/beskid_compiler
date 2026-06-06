@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use crate::support::runtime::with_runtime_scope;
 use beskid_abi::{
     BESKID_RUNTIME_ABI_VERSION, BUILTIN_SPECS, BeskidArray, BeskidStr, DispatchReturnGroup,
     RUNTIME_EXPORT_SYMBOLS, SYM_ABI_VERSION, SYM_ALLOC, SYM_BESKID_REGISTER_CALLBACKS,
@@ -12,16 +13,15 @@ use beskid_abi::{
     SYM_DYNAMIC_MAP_FALLBACK, SYM_DYNAMIC_OBJECT_ALLOC, SYM_FIBER_YIELD, SYM_GC_REGISTER_ROOT,
     SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER,
     SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC,
-    SYM_PANIC_STR, SYM_RUNTIME_PREEMPT_CHECK, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, SYM_STR_LEN,
-    TAG_FIBER_PROCESSOR_COUNT, TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, dispatch_route_for_symbol,
-    is_dispatch_symbol,
+    SYM_PANIC_STR, SYM_RUNTIME_PREEMPT_CHECK, SYM_STR_LEN, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE,
+    TAG_FIBER_PROCESSOR_COUNT, TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, TAG_FS_WRITE_TEXT,
+    dispatch_route_for_symbol, is_dispatch_symbol,
 };
 use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
 use beskid_aot::{AotError, RuntimeStrategy};
-use crate::support::runtime::with_runtime_scope;
 use beskid_pipeline::phases::{
-    MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE,
-    SEMANTIC_SNAPSHOT, SYNTAX_GENERATION,
+    MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE, SEMANTIC_SNAPSHOT,
+    SYNTAX_GENERATION,
 };
 use beskid_runtime::{array_len, array_new};
 
@@ -265,6 +265,38 @@ fn host_ops_are_not_kernel_exports_v4() {
             "host op `{symbol}` must not be a kernel export in ABI v4"
         );
     }
+}
+
+#[test]
+fn host_manifest_entries_match_generated_registration_table() {
+    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest = std::fs::read_to_string(crate_dir.join("../../runtime_manifest.toml"))
+        .expect("runtime manifest should be readable");
+    let host_handlers =
+        std::fs::read_to_string(crate_dir.join("../beskid_host/src/generated/host_handlers.rs"))
+            .expect("generated host handler table should be readable");
+
+    let manifest_host_count = manifest.matches("owner = \"host\"").count();
+    let registration_count = host_handlers.matches("HandlerTableEntry {").count();
+
+    assert_eq!(
+        registration_count, manifest_host_count,
+        "every host-owned dispatch tag must have a generated registration entry"
+    );
+}
+
+#[test]
+#[should_panic(expected = "host dispatch handler not registered")]
+fn minimal_profile_host_tag_traps_without_registration() {
+    let _ = beskid_runtime::beskid_register_handlers(
+        u64::from(BESKID_RUNTIME_ABI_VERSION),
+        std::ptr::null(),
+        0,
+    );
+    let mut envelope = [0u8; 16];
+    envelope[8..12].copy_from_slice(&(TAG_FS_WRITE_TEXT as i32).to_le_bytes());
+
+    let _ = beskid_runtime::interop_dispatch_usize(envelope.as_ptr());
 }
 
 #[test]

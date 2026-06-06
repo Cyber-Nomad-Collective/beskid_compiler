@@ -117,9 +117,7 @@ impl Lowerable for Spanned<syntax::ElseBranch> {
 
     fn lower(&self) -> Self::Output {
         let node = match &self.node {
-            syntax::ElseBranch::If(if_stmt) => {
-                HirElseBranch::If(Box::new(if_stmt.lower()))
-            }
+            syntax::ElseBranch::If(if_stmt) => HirElseBranch::If(Box::new(if_stmt.lower())),
             syntax::ElseBranch::Block(block) => HirElseBranch::Block(block.lower()),
         };
         Spanned::new(node, self.span)

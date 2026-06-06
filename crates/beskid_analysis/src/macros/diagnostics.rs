@@ -1,8 +1,8 @@
 //! Map macro expansion failures to semantic diagnostics (E1901–E1905, E1907–E1908).
 
-use crate::analysis::diagnostic_kinds::SemanticIssueKind;
-use crate::analysis::diagnostics::{make_diagnostic, Severity};
 use crate::analysis::SemanticDiagnostic;
+use crate::analysis::diagnostic_kinds::SemanticIssueKind;
+use crate::analysis::diagnostics::{Severity, make_diagnostic};
 use crate::syntax::{SpanInfo, Spanned};
 
 use super::match_args::MatchError;

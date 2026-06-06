@@ -12,16 +12,18 @@ pub use discovery::{
     module_path_exists_on_disk, module_path_to_relative_path, resolve_module_file,
 };
 pub use hir_units::{UnitHir, build_hir_units};
-pub use loader::{AssemblyError, UnitMaterializer, assemble_program, assemble_program_with_materializer};
-pub use module_index::{ModuleIndex, infer_logical_module_path};
-pub use unit_builder::UnitBuilder;
-pub use unit_cache::{
-    UnitCacheStats, cache_root_for_project, disk_cache_stats, ensure_manifest, unit_content_fingerprint,
-    unit_fingerprint,
+pub use loader::{
+    AssemblyError, UnitMaterializer, assemble_program, assemble_program_with_materializer,
 };
+pub use module_index::{ModuleIndex, infer_logical_module_path};
 pub use roots::{
     EffectiveCompilationRoots, RootEntry, effective_roots_for_plan, effective_roots_from_lockfile,
     effective_roots_from_plan_and_workspace, module_roots_from_effective,
+};
+pub use unit_builder::UnitBuilder;
+pub use unit_cache::{
+    UnitCacheStats, cache_root_for_project, disk_cache_stats, ensure_manifest,
+    unit_content_fingerprint, unit_fingerprint,
 };
 
 use std::path::PathBuf;

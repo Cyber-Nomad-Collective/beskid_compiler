@@ -242,9 +242,7 @@ fn validate_and_convert(raw: RawManifest) -> TemplateResult<TemplateManifest> {
         .forms
         .into_iter()
         .map(|(name, form)| {
-            let form_id = form
-                .form_id
-                .unwrap_or_else(|| name.clone());
+            let form_id = form.form_id.unwrap_or_else(|| name.clone());
             Ok((name, TemplateForm { form_id }))
         })
         .collect::<TemplateResult<BTreeMap<_, _>>>()?;

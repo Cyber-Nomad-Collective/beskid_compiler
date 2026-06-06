@@ -4,7 +4,7 @@ use std::path::{Component, Path};
 
 use crate::projects::assembly::effective_roots_for_plan;
 use crate::projects::model::{CompilePlan, PreparedProjectWorkspace};
-use crate::projects::{load_manifest_from_path, ResolvedDependencyProject};
+use crate::projects::{ResolvedDependencyProject, load_manifest_from_path};
 
 use super::api_snapshot::{ApiDocItem, ApiDocRoot};
 use super::graph_link::{ApiDocLinkContext, ApiDocPackageRoots};
@@ -116,13 +116,10 @@ fn resolve_package_for_item<'a>(
     item: &ApiDocItem,
 ) -> &'a ApiDocPackageRoots {
     if let Some(declaring) = item.declaring_package.as_deref()
-        && let Some(pkg) = ctx
-            .packages
-            .iter()
-            .find(|pkg| pkg.package == declaring)
-        {
-            return pkg;
-        }
+        && let Some(pkg) = ctx.packages.iter().find(|pkg| pkg.package == declaring)
+    {
+        return pkg;
+    }
     ctx.packages
         .iter()
         .find(|pkg| pkg.package == ctx.publishing_package)
@@ -198,9 +195,10 @@ pub fn path_looks_absolute(path: &str) -> bool {
     let mut chars = trimmed.chars();
     if let Some(first) = chars.next()
         && first.is_ascii_alphabetic()
-            && matches!(chars.next(), Some(':')) {
-                return true;
-            }
+        && matches!(chars.next(), Some(':'))
+    {
+        return true;
+    }
     false
 }
 
@@ -228,11 +226,7 @@ fn forward_slashes_path(path: &Path) -> String {
             _ => {}
         }
     }
-    if out.is_empty() {
-        ".".to_string()
-    } else {
-        out
-    }
+    if out.is_empty() { ".".to_string() } else { out }
 }
 
 #[cfg(test)]
@@ -243,7 +237,11 @@ mod tests {
     use crate::doc::api_snapshot::{ApiDocItem, ApiLocation};
     use crate::doc::graph_link::{ApiDocLinkContext, ApiDocPackageRoots};
 
-    fn ctx(host_match: &str, host_prefix: &str, dep: Option<(&str, &str, &str)>) -> ApiDocLinkContext {
+    fn ctx(
+        host_match: &str,
+        host_prefix: &str,
+        dep: Option<(&str, &str, &str)>,
+    ) -> ApiDocLinkContext {
         let mut packages = vec![ApiDocPackageRoots {
             package: "host_pkg".into(),
             match_root: PathBuf::from(host_match),

@@ -86,9 +86,7 @@ pub fn mapping_pair_eligible(
     src_fields
         .iter()
         .zip(dst_fields.iter())
-        .all(|((src_name, src_ty), (dst_name, dst_ty))| {
-            src_name == dst_name && src_ty == dst_ty
-        })
+        .all(|((src_name, src_ty), (dst_name, dst_ty))| src_name == dst_name && src_ty == dst_ty)
 }
 
 /// Fail with a structured codegen diagnostic when mapping is not mod-eligible.

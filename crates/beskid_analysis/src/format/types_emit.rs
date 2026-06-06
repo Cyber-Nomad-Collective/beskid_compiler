@@ -1,7 +1,7 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
-    EnumPath, Field, FieldKind, Identifier, Parameter, Path, PathSegment,
-    PrimitiveType, Spanned, Type, Visibility,
+    EnumPath, Field, FieldKind, Identifier, Parameter, Path, PathSegment, PrimitiveType, Spanned,
+    Type, Visibility,
 };
 use std::fmt::Write;
 

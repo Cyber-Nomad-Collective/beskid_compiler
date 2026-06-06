@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::support::runtime::{aot_compile_only, aot_run_main_i64, aot_run_main_i32, compile_artifact};
+use crate::support::runtime::{
+    aot_compile_only, aot_run_main_i32, aot_run_main_i64, compile_artifact,
+};
 use crate::test_harness::temp_case_dir;
 use beskid_aot::{AotBuildRequest, BuildOutputKind, build};
 

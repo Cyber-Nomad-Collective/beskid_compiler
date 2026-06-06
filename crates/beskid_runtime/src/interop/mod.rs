@@ -8,7 +8,7 @@ pub mod register;
 
 /// Unit-returning interop dispatch; panics when the tag is unknown or the handler returns false.
 #[unsafe(no_mangle)]
-pub extern "C" fn interop_dispatch_unit(enum_ptr: *const u8) {
+pub extern "C-unwind" fn interop_dispatch_unit(enum_ptr: *const u8) {
     let tag = enum_tag(enum_ptr);
     if unsafe { dispatch_table::dispatch_unit(tag, enum_ptr) } {
         return;
@@ -18,7 +18,7 @@ pub extern "C" fn interop_dispatch_unit(enum_ptr: *const u8) {
 
 /// Scalar-returning interop dispatch; panics on unknown tag or missing handler.
 #[unsafe(no_mangle)]
-pub extern "C" fn interop_dispatch_usize(enum_ptr: *const u8) -> usize {
+pub extern "C-unwind" fn interop_dispatch_usize(enum_ptr: *const u8) -> usize {
     let tag = enum_tag(enum_ptr);
     if let Some(value) = unsafe { dispatch_table::dispatch_usize(tag, enum_ptr) } {
         return value;
@@ -31,11 +31,10 @@ pub extern "C" fn interop_dispatch_usize(enum_ptr: *const u8) -> usize {
 
 /// Pointer-returning interop dispatch; panics on unknown tag or missing handler.
 #[unsafe(no_mangle)]
-pub extern "C" fn interop_dispatch_ptr(enum_ptr: *const u8) -> *mut u8 {
+pub extern "C-unwind" fn interop_dispatch_ptr(enum_ptr: *const u8) -> *mut u8 {
     let tag = enum_tag(enum_ptr);
     if let Some(value) = unsafe { dispatch_table::dispatch_ptr(tag, enum_ptr) } {
         return value;
     }
     panic!("invalid interop tag for ptr dispatch");
 }
-

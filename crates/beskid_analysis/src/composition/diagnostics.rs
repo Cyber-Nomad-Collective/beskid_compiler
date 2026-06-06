@@ -90,9 +90,7 @@ pub fn to_semantic_issue(issue: &CompositionIssue) -> Option<(SpanInfo, Semantic
             first_span,
             second_span,
         } => Some((
-            (*second_span)
-                .or(*first_span)
-                .unwrap_or_default(),
+            (*second_span).or(*first_span).unwrap_or_default(),
             SemanticIssueKind::CompositionMultipleLaunchHosts,
         )),
         CompositionIssue::UnknownLaunchHost { host_name, span } => Some((
@@ -107,20 +105,28 @@ pub fn to_semantic_issue(issue: &CompositionIssue) -> Option<(SpanInfo, Semantic
                 host_name: host_name.clone(),
             },
         )),
-        CompositionIssue::DuplicateScopeName { scope_name, span, .. } => Some((
+        CompositionIssue::DuplicateScopeName {
+            scope_name, span, ..
+        } => Some((
             *span,
             SemanticIssueKind::CompositionDuplicateScopeName {
                 scope_name: scope_name.clone(),
             },
         )),
-        CompositionIssue::UnknownParentScope { scope_name, span, .. } => Some((
+        CompositionIssue::UnknownParentScope {
+            scope_name, span, ..
+        } => Some((
             *span,
             SemanticIssueKind::CompositionChildScopeWithoutParent {
                 scope_name: scope_name.clone(),
             },
         )),
         CompositionIssue::UnknownRegistrationId { .. } => None,
-        CompositionIssue::DependencyCycle { from_id, to_id, span } => Some((
+        CompositionIssue::DependencyCycle {
+            from_id,
+            to_id,
+            span,
+        } => Some((
             span.unwrap_or_default(),
             SemanticIssueKind::CompositionDependencyCycle {
                 from_id: *from_id,
@@ -160,10 +166,9 @@ pub fn to_semantic_issue(issue: &CompositionIssue) -> Option<(SpanInfo, Semantic
                 scope_name: scope_name.clone(),
             },
         )),
-        CompositionIssue::ScopedOutsideWith { span } => Some((
-            *span,
-            SemanticIssueKind::CompositionScopedOutsideWith,
-        )),
+        CompositionIssue::ScopedOutsideWith { span } => {
+            Some((*span, SemanticIssueKind::CompositionScopedOutsideWith))
+        }
         CompositionIssue::ChildScopeWithoutParent { scope_name, span } => Some((
             *span,
             SemanticIssueKind::CompositionChildScopeWithoutParent {
@@ -176,23 +181,18 @@ pub fn to_semantic_issue(issue: &CompositionIssue) -> Option<(SpanInfo, Semantic
                 qualifier: qualifier.clone(),
             },
         )),
-        CompositionIssue::OverrideLifetimeMismatch {
-            binding,
-            span,
-        } => Some((
+        CompositionIssue::OverrideLifetimeMismatch { binding, span } => Some((
             *span,
             SemanticIssueKind::CompositionOverrideLifetimeMismatch {
                 binding: binding.clone(),
             },
         )),
-        CompositionIssue::InjectOnConstructor { span } => Some((
-            *span,
-            SemanticIssueKind::CompositionInjectOnConstructor,
-        )),
-        CompositionIssue::HostInModProject { span } => Some((
-            *span,
-            SemanticIssueKind::CompositionHostInModProject,
-        )),
+        CompositionIssue::InjectOnConstructor { span } => {
+            Some((*span, SemanticIssueKind::CompositionInjectOnConstructor))
+        }
+        CompositionIssue::HostInModProject { span } => {
+            Some((*span, SemanticIssueKind::CompositionHostInModProject))
+        }
     }
 }
 

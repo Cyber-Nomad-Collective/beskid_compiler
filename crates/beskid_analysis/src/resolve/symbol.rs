@@ -133,9 +133,7 @@ impl SymbolRegistry {
 pub fn symbol_to_string(registry: &SymbolRegistry, qualifier: &SymbolQualifier) -> String {
     match &qualifier.shape {
         SymbolShape::ModuleItem {
-            module_path,
-            name,
-            ..
+            module_path, name, ..
         } => {
             if module_path.is_empty() {
                 format!("{}::{}", qualifier.package, name)
@@ -170,9 +168,7 @@ pub fn symbol_to_string(registry: &SymbolRegistry, qualifier: &SymbolQualifier) 
 
 /// Stable string key for `api.json` (`symbolKey` field).
 pub fn symbol_key(registry: &SymbolRegistry, id: SymbolId) -> Option<String> {
-    registry
-        .resolve(id)
-        .map(|q| symbol_to_string(registry, q))
+    registry.resolve(id).map(|q| symbol_to_string(registry, q))
 }
 
 /// Map a collected item to its symbol shape when exportable.
@@ -188,11 +184,7 @@ pub fn symbol_shape_for_item(
         if kind == ItemKind::Method {
             return Some(SymbolShape::Method {
                 receiver: receiver.to_string(),
-                name: name
-                    .rsplit("::")
-                    .next()
-                    .unwrap_or(name)
-                    .to_string(),
+                name: name.rsplit("::").next().unwrap_or(name).to_string(),
             });
         }
     }

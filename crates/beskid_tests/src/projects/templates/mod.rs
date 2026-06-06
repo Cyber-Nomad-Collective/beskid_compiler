@@ -27,7 +27,11 @@ project {
     let m = parse_manifest(src).expect("parse");
     assert_eq!(m.project.kind, ProjectKind::Template);
     assert!(m.targets.is_empty());
-    let template = m.project.template_section.as_ref().expect("template section");
+    let template = m
+        .project
+        .template_section
+        .as_ref()
+        .expect("template section");
     assert_eq!(template.short_name.as_deref(), Some("console"));
     assert_eq!(
         template.identity.as_deref(),
@@ -202,10 +206,10 @@ project {
 
 #[test]
 fn instantiated_project_analyzes_cleanly() {
-    use beskid_analysis::services::{self, PrepareMode, PrepareOptions, FrontEndOptions};
+    use beskid_analysis::services::{self, FrontEndOptions, PrepareMode, PrepareOptions};
     use beskid_template::{
-        instantiate, load_manifest_from_template_root, InstantiateOptions, SymbolCollectOptions,
-        TEMPLATE_MANIFEST_REL, TEMPLATE_SCHEMA,
+        InstantiateOptions, SymbolCollectOptions, TEMPLATE_MANIFEST_REL, TEMPLATE_SCHEMA,
+        instantiate, load_manifest_from_template_root,
     };
 
     fn write_inline_fixture(root: &std::path::Path) -> std::path::PathBuf {
@@ -244,11 +248,7 @@ target "app" {
 "#,
         )
         .unwrap();
-        fs::write(
-            template_dir.join("content/Src/Main.bd"),
-            "unit main() {}\n",
-        )
-        .unwrap();
+        fs::write(template_dir.join("content/Src/Main.bd"), "unit main() {}\n").unwrap();
         template_dir
     }
 
@@ -276,7 +276,11 @@ target "app" {
     instantiate(&manifest, &options).expect("instantiate");
 
     let entry = output.join("Src/Main.bd");
-    assert!(entry.is_file(), "expected entry source at {}", entry.display());
+    assert!(
+        entry.is_file(),
+        "expected entry source at {}",
+        entry.display()
+    );
 
     let resolved = services::resolve_input(
         Some(&entry),

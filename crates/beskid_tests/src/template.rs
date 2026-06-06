@@ -4,14 +4,13 @@ use std::fs;
 use std::path::PathBuf;
 
 use beskid_template::{
-    instantiate, parse_manifest_bytes, substitute_text, InstantiateOptions, SymbolCollectOptions,
-    TEMPLATE_MANIFEST_REL, TEMPLATE_SCHEMA,
+    InstantiateOptions, SymbolCollectOptions, TEMPLATE_MANIFEST_REL, TEMPLATE_SCHEMA, instantiate,
+    parse_manifest_bytes, substitute_text,
 };
 
 fn workspace_template_packages_root() -> Option<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let candidate = manifest_dir
-        .join("../../beskid_templates/packages");
+    let candidate = manifest_dir.join("../../beskid_templates/packages");
     if candidate.is_dir() {
         Some(candidate)
     } else {
@@ -144,7 +143,9 @@ fn instantiates_packaged_template_when_present() {
             beskid_exe: None,
         };
         instantiate(&manifest, &options).expect("instantiate packaged template");
-        assert!(output.join("Project.proj").is_file() || output.read_dir().unwrap().next().is_some());
+        assert!(
+            output.join("Project.proj").is_file() || output.read_dir().unwrap().next().is_some()
+        );
         return;
     }
 }

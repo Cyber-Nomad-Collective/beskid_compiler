@@ -48,9 +48,7 @@ pub fn resolve_lsp_platform_asset() -> Option<PlatformAsset> {
 }
 
 fn release_download_url(tag: &str, asset: &str) -> String {
-    format!(
-        "https://github.com/{GITHUB_REPO}/releases/download/{tag}/{asset}"
-    )
+    format!("https://github.com/{GITHUB_REPO}/releases/download/{tag}/{asset}")
 }
 
 fn download_bytes(url: &str) -> Result<Vec<u8>> {
@@ -110,8 +108,8 @@ pub fn install_lsp(options: &InstallLspOptions) -> Result<LspInstallResult> {
     println!("Downloading {download_url}");
     let bytes = download_bytes(&download_url)?;
     fs::create_dir_all(&install_dir).with_context(|| install_dir.display().to_string())?;
-    let mut file = fs::File::create(&install_path)
-        .with_context(|| install_path.display().to_string())?;
+    let mut file =
+        fs::File::create(&install_path).with_context(|| install_path.display().to_string())?;
     file.write_all(&bytes)
         .with_context(|| install_path.display().to_string())?;
 
@@ -123,7 +121,10 @@ pub fn install_lsp(options: &InstallLspOptions) -> Result<LspInstallResult> {
         fs::set_permissions(&install_path, perms)?;
     }
 
-    println!("Installed Beskid LSP {version} ({tag}) → {}", install_path.display());
+    println!(
+        "Installed Beskid LSP {version} ({tag}) → {}",
+        install_path.display()
+    );
     Ok(LspInstallResult {
         path: install_path,
         version,
@@ -132,9 +133,7 @@ pub fn install_lsp(options: &InstallLspOptions) -> Result<LspInstallResult> {
 }
 
 pub fn managed_lsp_exists() -> bool {
-    managed_lsp_path()
-        .ok()
-        .is_some_and(|path| path.is_file())
+    managed_lsp_path().ok().is_some_and(|path| path.is_file())
 }
 
 #[cfg(test)]

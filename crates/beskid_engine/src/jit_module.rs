@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::generated::kernel_registration::register_kernel_exports;
 use beskid_codegen::cranelift_host::{
     ExternDeclarationError, HostError, declare_builtin_imports, declare_user_functions,
     declare_validated_extern_imports, remap_testcase_externals,
@@ -9,7 +10,6 @@ use beskid_pipeline::{
     PipelineObserver, emit_work_unit, observe_phase_result,
     phases::{JIT_EMIT, JIT_FINALIZE},
 };
-use crate::generated::kernel_registration::register_kernel_exports;
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleError, default_libcall_names};

@@ -66,9 +66,7 @@ pub fn execute_all_targets(mut args: TestArgs) -> Result<()> {
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(anyhow!(
-            "matrix run failed for {failed}/{total} target(s)"
-        ))
+        Err(anyhow!("matrix run failed for {failed}/{total} target(s)"))
     }
 }
 
@@ -87,8 +85,7 @@ fn filter_targets_by_env(targets: Vec<String>) -> Result<Vec<String>> {
     if wanted.is_empty() {
         return Ok(targets);
     }
-    let available: std::collections::HashSet<&str> =
-        targets.iter().map(String::as_str).collect();
+    let available: std::collections::HashSet<&str> = targets.iter().map(String::as_str).collect();
     let missing: Vec<String> = wanted
         .iter()
         .filter(|name| !available.contains(name.as_str()))

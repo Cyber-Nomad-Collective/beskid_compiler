@@ -293,7 +293,11 @@ link {
         let outcome =
             merge_resolution_into_manifest_source(source, Some(&existing), &libc_resolution());
         assert!(outcome.had_existing_block);
-        assert!(outcome.updated_source.contains("libraries = [pthread, libc]"));
+        assert!(
+            outcome
+                .updated_source
+                .contains("libraries = [pthread, libc]")
+        );
         assert_eq!(outcome.added_libraries, vec!["libc"]);
     }
 
@@ -321,7 +325,11 @@ link {
             search_paths: vec![PathBuf::from("/usr/lib")],
         };
         let outcome = merge_resolution_into_manifest_source(source, None, &resolution);
-        assert!(outcome.updated_source.contains("searchPaths = [\"/usr/lib\"]"));
+        assert!(
+            outcome
+                .updated_source
+                .contains("searchPaths = [\"/usr/lib\"]")
+        );
         assert_eq!(outcome.added_search_paths, vec![PathBuf::from("/usr/lib")]);
     }
 

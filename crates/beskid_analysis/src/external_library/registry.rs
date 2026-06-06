@@ -55,12 +55,12 @@ impl ExternalLibraryRegistry {
         host_key: &str,
         logical: &str,
     ) -> Result<LibraryResolution, LibraryResolveError> {
-        let provider = self.find(provider_id).ok_or_else(|| {
-            LibraryResolveError::UnknownProvider {
-                provider: provider_id.to_string(),
-                known: self.provider_ids().join(", "),
-            }
-        })?;
+        let provider =
+            self.find(provider_id)
+                .ok_or_else(|| LibraryResolveError::UnknownProvider {
+                    provider: provider_id.to_string(),
+                    known: self.provider_ids().join(", "),
+                })?;
 
         if !host_matches(provider.host_key(), host_key) {
             return Err(LibraryResolveError::HostUnsupported {

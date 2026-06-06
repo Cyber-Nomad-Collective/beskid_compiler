@@ -130,8 +130,12 @@ impl AotBuildRequest {
         entrypoint: impl Into<String>,
     ) -> Self {
         let profile = BuildProfile::Debug;
-        let runtime = crate::bundled::default_runtime_strategy(profile, None).unwrap_or_else(
-            |err| {
+        let runtime = crate::bundled::default_runtime_strategy(
+            profile,
+            None,
+            RuntimeLinkProfile::Std,
+        )
+        .unwrap_or_else(|err| {
                 panic!(
                     "with_defaults requires a prebuilt runtime archive (build beskid_runtime_bridge): {err}"
                 )
@@ -271,19 +275,10 @@ fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]
 
 fn prepare_runtime_stage(req: &AotBuildRequest) -> AotResult<crate::runtime::RuntimeArtifact> {
     let obs = req.pipeline.as_deref();
-    let link_profile = req.runtime_link_profile;
     observe_phase_result(obs, AOT_RUNTIME, || {
-        let mut artifact = prepare_runtime(&RuntimeBuildRequest {
+        prepare_runtime(&RuntimeBuildRequest {
             strategy: req.runtime.clone(),
-        })?;
-        if link_profile == crate::api::RuntimeLinkProfile::Std {
-            artifact.host_staticlib_path = crate::bundled::resolve_bundled_host_archive(
-                req.profile,
-                req.target_triple.as_deref(),
-            )
-            .ok();
-        }
-        Ok(artifact)
+        })
     })
 }
 
@@ -292,10 +287,6 @@ fn link_stage(
     object_stage: &ObjectStageResult,
     runtime: &crate::runtime::RuntimeArtifact,
 ) -> AotResult<crate::linker::LinkResult> {
-    let host_staticlib = match req.runtime_link_profile {
-        crate::api::RuntimeLinkProfile::Minimal => None,
-        crate::api::RuntimeLinkProfile::Std => runtime.host_staticlib_path.clone(),
-    };
     let obs = req.pipeline.as_deref();
     observe_phase_result(obs, AOT_LINK, || {
         link(&LinkRequest {
@@ -304,7 +295,7 @@ fn link_stage(
             output_path: req.output_path.clone(),
             object_path: object_stage.object_path.clone(),
             runtime_staticlib: runtime.staticlib_path.clone(),
-            host_staticlib,
+            host_staticlib: None,
             entrypoint_symbol: req.entrypoint.clone(),
             exported_symbols: object_stage.exported_symbols.clone(),
             link_mode: req.link_mode,

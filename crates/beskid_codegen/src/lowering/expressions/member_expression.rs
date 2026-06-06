@@ -21,12 +21,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMemberExpression {
                 node: "unit-valued member target",
             })?;
         let target_type = ctx.require_expr_type(node.node.target.span)?;
-        let item_id = struct_item_id(ctx.type_result, target_type).ok_or(
-            CodegenError::UnsupportedNode {
+        let item_id =
+            struct_item_id(ctx.type_result, target_type).ok_or(CodegenError::UnsupportedNode {
                 span: node.node.target.span,
                 node: "member target type",
-            },
-        )?;
+            })?;
         let offsets = struct_field_offsets(ctx.type_result, item_id).ok_or(
             CodegenError::UnsupportedNode {
                 span: node.span,

@@ -6,7 +6,7 @@ use beskid_analysis::hir::{
     HirBlock, HirCallExpression, HirElseBranch, HirExpressionNode, HirStatementNode,
 };
 use beskid_analysis::paths::same_file;
-use beskid_analysis::resolve::{ItemId, ItemKind, ResolvedValue, Resolution, canonical_item_id};
+use beskid_analysis::resolve::{ItemId, ItemKind, Resolution, ResolvedValue, canonical_item_id};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{CallLoweringKind, TypeId, TypeInfo, TypeResult};
 
@@ -47,9 +47,21 @@ fn collect_calls_in_else_branch(
                 source_path,
                 out,
             );
-            collect_calls_in_block(&nested.node.then_block, resolution, type_result, source_path, out);
+            collect_calls_in_block(
+                &nested.node.then_block,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
             if let Some(nested_else) = &nested.node.else_branch {
-                collect_calls_in_else_branch(nested_else, resolution, type_result, source_path, out);
+                collect_calls_in_else_branch(
+                    nested_else,
+                    resolution,
+                    type_result,
+                    source_path,
+                    out,
+                );
             }
         }
     }
@@ -80,7 +92,13 @@ fn collect_calls_in_statement(
                 source_path,
                 out,
             );
-            collect_calls_in_block(&if_stmt.node.then_block, resolution, type_result, source_path, out);
+            collect_calls_in_block(
+                &if_stmt.node.then_block,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
             if let Some(else_branch) = &if_stmt.node.else_branch {
                 collect_calls_in_else_branch(
                     else_branch,
@@ -99,7 +117,13 @@ fn collect_calls_in_statement(
                 source_path,
                 out,
             );
-            collect_calls_in_block(&while_stmt.node.body, resolution, type_result, source_path, out);
+            collect_calls_in_block(
+                &while_stmt.node.body,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
         }
         HirStatementNode::ForStatement(for_stmt) => {
             collect_calls_in_expression(
@@ -109,7 +133,13 @@ fn collect_calls_in_statement(
                 source_path,
                 out,
             );
-            collect_calls_in_block(&for_stmt.node.body, resolution, type_result, source_path, out);
+            collect_calls_in_block(
+                &for_stmt.node.body,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
         }
         HirStatementNode::ReturnStatement(ret) => {
             if let Some(value) = &ret.node.value {
@@ -117,7 +147,13 @@ fn collect_calls_in_statement(
             }
         }
         HirStatementNode::LetStatement(let_stmt) => {
-            collect_calls_in_expression(&let_stmt.node.value, resolution, type_result, source_path, out);
+            collect_calls_in_expression(
+                &let_stmt.node.value,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
         }
         _ => {}
     }
@@ -152,21 +188,63 @@ fn collect_calls_in_expression(
             }
         }
         HirExpressionNode::BinaryExpression(binary) => {
-            collect_calls_in_expression(&binary.node.left, resolution, type_result, source_path, out);
-            collect_calls_in_expression(&binary.node.right, resolution, type_result, source_path, out);
+            collect_calls_in_expression(
+                &binary.node.left,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
+            collect_calls_in_expression(
+                &binary.node.right,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
         }
         HirExpressionNode::UnaryExpression(unary) => {
-            collect_calls_in_expression(&unary.node.expr, resolution, type_result, source_path, out);
+            collect_calls_in_expression(
+                &unary.node.expr,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
         }
         HirExpressionNode::AssignExpression(assign) => {
-            collect_calls_in_expression(&assign.node.target, resolution, type_result, source_path, out);
-            collect_calls_in_expression(&assign.node.value, resolution, type_result, source_path, out);
+            collect_calls_in_expression(
+                &assign.node.target,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
+            collect_calls_in_expression(
+                &assign.node.value,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
         }
         HirExpressionNode::GroupedExpression(grouped) => {
-            collect_calls_in_expression(&grouped.node.expr, resolution, type_result, source_path, out);
+            collect_calls_in_expression(
+                &grouped.node.expr,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
         }
         HirExpressionNode::BlockExpression(block_expr) => {
-            collect_calls_in_block(&block_expr.node.block, resolution, type_result, source_path, out);
+            collect_calls_in_block(
+                &block_expr.node.block,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
         }
         HirExpressionNode::MatchExpression(match_expr) => {
             collect_calls_in_expression(
@@ -180,25 +258,40 @@ fn collect_calls_in_expression(
                 if let Some(guard) = &arm.node.guard {
                     collect_calls_in_expression(guard, resolution, type_result, source_path, out);
                 }
-                collect_calls_in_expression(&arm.node.value, resolution, type_result, source_path, out);
+                collect_calls_in_expression(
+                    &arm.node.value,
+                    resolution,
+                    type_result,
+                    source_path,
+                    out,
+                );
             }
         }
         HirExpressionNode::StructLiteralExpression(lit) => {
             for field in &lit.node.fields {
-                collect_calls_in_expression(&field.node.value, resolution, type_result, source_path, out);
+                collect_calls_in_expression(
+                    &field.node.value,
+                    resolution,
+                    type_result,
+                    source_path,
+                    out,
+                );
             }
         }
         HirExpressionNode::TryExpression(try_expr) => {
-            collect_calls_in_expression(&try_expr.node.expr, resolution, type_result, source_path, out);
+            collect_calls_in_expression(
+                &try_expr.node.expr,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
         }
         _ => {}
     }
 }
 
-pub fn resolve_path_item_id(
-    resolution: &Resolution,
-    segments: &[String],
-) -> Option<ItemId> {
+pub fn resolve_path_item_id(resolution: &Resolution, segments: &[String]) -> Option<ItemId> {
     item_id_from_module_graph(resolution, segments)
         .map(|item_id| canonical_item_id(resolution, item_id))
 }
@@ -218,8 +311,9 @@ pub(crate) fn resolve_item_call_id(
         HirExpressionNode::PathExpression(path) => path.node.path.span,
         _ => call.node.callee.span,
     };
-    let item_id = if let Some(ResolvedValue::Item(item_id)) =
-        resolution.tables.resolved_value_at(callee_span, source_path)
+    let item_id = if let Some(ResolvedValue::Item(item_id)) = resolution
+        .tables
+        .resolved_value_at(callee_span, source_path)
     {
         item_id
     } else {
@@ -263,8 +357,12 @@ fn resolve_call(
             ..
         } => {
             let method_item_id = canonical_item_id(resolution, method_item_id);
-            let mangled =
-                method_mangled_from_receiver(method_item_id, receiver_type, resolution, type_result);
+            let mangled = method_mangled_from_receiver(
+                method_item_id,
+                receiver_type,
+                resolution,
+                type_result,
+            );
             Some(ResolvedCall {
                 item_id: method_item_id,
                 symbol: symbol_for_call(resolution, method_item_id),
@@ -286,7 +384,10 @@ fn resolve_call(
     }
 }
 
-fn symbol_for_call(resolution: &Resolution, item_id: ItemId) -> Option<beskid_analysis::resolve::SymbolId> {
+fn symbol_for_call(
+    resolution: &Resolution,
+    item_id: ItemId,
+) -> Option<beskid_analysis::resolve::SymbolId> {
     resolution.items.get(item_id.0).and_then(|info| info.symbol)
 }
 
@@ -315,10 +416,7 @@ fn callee_path_segments(callee: &Spanned<HirExpressionNode>) -> Option<Vec<Strin
     }
 }
 
-fn item_id_from_module_graph(
-    resolution: &Resolution,
-    segments: &[String],
-) -> Option<ItemId> {
+fn item_id_from_module_graph(resolution: &Resolution, segments: &[String]) -> Option<ItemId> {
     if segments.is_empty() {
         return None;
     }
@@ -477,7 +575,12 @@ fn resolve_contract_dispatch_call(
     Some(ResolvedCall {
         item_id: method_item_id,
         symbol: symbol_for_call(resolution, method_item_id),
-        mangled: method_mangled_from_receiver(method_item_id, receiver_type, resolution, type_result),
+        mangled: method_mangled_from_receiver(
+            method_item_id,
+            receiver_type,
+            resolution,
+            type_result,
+        ),
     })
 }
 

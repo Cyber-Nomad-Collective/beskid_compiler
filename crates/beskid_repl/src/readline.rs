@@ -1,7 +1,7 @@
 use std::io::{self, BufRead, IsTerminal, Write};
 
-use crate::session::ReplSession;
 use crate::eval::EvalOutcome;
+use crate::session::ReplSession;
 
 /// Input source for the REPL (stdin in production, buffers in tests).
 pub trait ReplInput {
@@ -120,7 +120,9 @@ fn handle_line(session: &mut ReplSession, line: &str) -> LineAction {
     match session.eval(line) {
         EvalOutcome::Value(value) => LineAction::Print(value),
         EvalOutcome::Unit => LineAction::Print("ok".to_string()),
-        EvalOutcome::Type(_) => LineAction::PrintError(":type is a command, not an expression".into()),
+        EvalOutcome::Type(_) => {
+            LineAction::PrintError(":type is a command, not an expression".into())
+        }
         EvalOutcome::Error(error) => LineAction::PrintError(error),
     }
 }
@@ -147,9 +149,9 @@ fn handle_command(session: &mut ReplSession, command: &str) -> LineAction {
                 other => LineAction::PrintError(format!("unexpected outcome: {other:?}")),
             }
         }
-        "help" | "h" | "?" => LineAction::Print(
-            "commands: :quit, :reset, :type <snippet>".to_string(),
-        ),
+        "help" | "h" | "?" => {
+            LineAction::Print("commands: :quit, :reset, :type <snippet>".to_string())
+        }
         other => LineAction::PrintError(format!("unknown command `{other}`")),
     }
 }
@@ -178,15 +180,12 @@ mod tests {
     #[test]
     fn reset_command_clears_session() {
         let mut session = ReplSession::new();
-        assert_eq!(
-            session.eval("1 + 1"),
-            EvalOutcome::Value("2".to_string())
-        );
-        assert!(matches!(handle_line(&mut session, ":reset"), LineAction::Print(_)));
-        assert_eq!(
-            session.eval("3 + 4"),
-            EvalOutcome::Value("7".to_string())
-        );
+        assert_eq!(session.eval("1 + 1"), EvalOutcome::Value("2".to_string()));
+        assert!(matches!(
+            handle_line(&mut session, ":reset"),
+            LineAction::Print(_)
+        ));
+        assert_eq!(session.eval("3 + 4"), EvalOutcome::Value("7".to_string()));
     }
 
     #[test]

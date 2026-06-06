@@ -8,9 +8,7 @@ use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{self, PreparedCompilation, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
 
-use crate::pipeline::{
-    CliPipeline, PipelineProgressKind, frontend, use_cli_spinner,
-};
+use crate::pipeline::{CliPipeline, PipelineProgressKind, frontend, use_cli_spinner};
 
 /// Project / lockfile inputs for [`CommandSession::resolve_input`].
 #[derive(Debug, Clone, Copy)]
@@ -134,13 +132,11 @@ impl CommandSession {
         gate_diagnostics: &[SemanticDiagnostic],
         options: SemanticGateOptions,
     ) -> Result<()> {
-        self.pipeline
-            .report_semantic_diagnostics(gate_diagnostics);
+        self.pipeline.report_semantic_diagnostics(gate_diagnostics);
         services::require_no_semantic_errors(gate_diagnostics).map_err(anyhow::Error::from)?;
 
         if options.finish_prepare_ui {
-            self.pipeline
-                .finish_prepare_ui(options.prepare_message);
+            self.pipeline.finish_prepare_ui(options.prepare_message);
         }
 
         Ok(())

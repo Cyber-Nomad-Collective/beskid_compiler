@@ -1,10 +1,10 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
-    ArrayLiteralExpression, AssignExpression, AssignOp, BinaryExpression, BinaryOp, BlockExpression,
-    CallExpression, EnumConstructorExpression, EnumPattern, Expression, GroupedExpression,
-    IndexExpression, LambdaExpression, LambdaParameter, Literal, LiteralExpression, MatchArm,
-    MatchExpression, MemberExpression, PathExpression, Pattern, Spanned, StructLiteralExpression,
-    StructLiteralField, TryExpression, UnaryExpression, UnaryOp,
+    ArrayLiteralExpression, AssignExpression, AssignOp, BinaryExpression, BinaryOp,
+    BlockExpression, CallExpression, EnumConstructorExpression, EnumPattern, Expression,
+    GroupedExpression, IndexExpression, LambdaExpression, LambdaParameter, Literal,
+    LiteralExpression, MatchArm, MatchExpression, MemberExpression, PathExpression, Pattern,
+    Spanned, StructLiteralExpression, StructLiteralField, TryExpression, UnaryExpression, UnaryOp,
 };
 use std::fmt::Write;
 

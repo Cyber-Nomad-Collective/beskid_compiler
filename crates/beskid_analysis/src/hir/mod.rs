@@ -25,21 +25,20 @@ pub use attribute_target_kind::AttributeTargetKind;
 pub use block::HirBlock;
 pub use common::{HirEnumPath, HirIdentifier, HirPath, HirPathSegment, HirVisibility};
 pub use expression::{
-    ExpressionNode, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBinaryOp,
-    HirBlockExpression, HirCallExpression, HirEnumConstructorExpression, HirGroupedExpression,
-    HirLambdaExpression, HirLambdaParameter, HirLiteralExpression, HirMatchExpression,
-    HirMemberExpression, HirPathExpression, HirArrayLiteralExpression, HirIndexExpression,
-    HirSpawnExpression, HirStructLiteralExpression,
-    HirTryExpression, HirUnaryExpression, HirUnaryOp,
+    ExpressionNode, HirArrayLiteralExpression, HirAssignExpression, HirAssignOp,
+    HirBinaryExpression, HirBinaryOp, HirBlockExpression, HirCallExpression,
+    HirEnumConstructorExpression, HirGroupedExpression, HirIndexExpression, HirLambdaExpression,
+    HirLambdaParameter, HirLiteralExpression, HirMatchExpression, HirMemberExpression,
+    HirPathExpression, HirSpawnExpression, HirStructLiteralExpression, HirTryExpression,
+    HirUnaryExpression, HirUnaryOp,
 };
 pub use item::{
     HirAttribute, HirAttributeDeclaration, HirAttributeParameter, HirAttributeTarget,
     HirContractDefinition, HirContractEmbedding, HirContractMethodSignature, HirContractNode,
-    HirEnumDefinition, HirEnumVariant, HirExtendTypeDefinition, HirExportInterface,
-    HirExternInterface,
-    HirFunctionDefinition, HirInlineModule, HirMethodDefinition, HirModuleDeclaration,
-    HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry, HirTestSkipEntry,
-    HirTestSkipSection, HirTypeDefinition, HirUseDeclaration, Item,
+    HirEnumDefinition, HirEnumVariant, HirExportInterface, HirExtendTypeDefinition,
+    HirExternInterface, HirFunctionDefinition, HirInlineModule, HirMethodDefinition,
+    HirModuleDeclaration, HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry,
+    HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition, HirUseDeclaration, Item,
 };
 pub use legality::{HirLegalityError, validate_hir_program};
 pub use literal::HirLiteral;
@@ -52,8 +51,8 @@ pub use phase::{AstPhase, HirPhase, Phase};
 pub use program::Program;
 pub use range_expression::HirRangeExpression;
 pub use statement::{
-    HirBreakStatement, HirContinueStatement, HirExpressionStatement, HirForStatement,
-    HirElseBranch, HirIfStatement, HirLetStatement, HirReturnStatement, HirWhileStatement,
+    HirBreakStatement, HirContinueStatement, HirElseBranch, HirExpressionStatement,
+    HirForStatement, HirIfStatement, HirLetStatement, HirReturnStatement, HirWhileStatement,
     StatementNode,
 };
 pub use struct_literal_field::HirStructLiteralField;

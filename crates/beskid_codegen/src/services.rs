@@ -4,10 +4,10 @@ use anyhow::Result;
 use beskid_analysis::hir::HirProgram;
 use beskid_analysis::resolve::Resolution;
 use beskid_analysis::services::FrontEndOptions;
-use beskid_queries::compile_front_end_from_resolved_input;
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeResult;
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::CODEGEN_CLIF};
+use beskid_queries::compile_front_end_from_resolved_input;
 
 use crate::{
     CodegenArtifact, codegen_errors_to_diagnostics,

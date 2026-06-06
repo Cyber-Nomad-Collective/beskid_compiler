@@ -1,12 +1,12 @@
+use crate::hir::normalize::builders::hir_path_expr;
 use crate::hir::{
     ExpressionNode, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBinaryOp, HirBlock,
     HirBlockExpression, HirBreakStatement, HirCallExpression, HirEnumPath, HirEnumPattern,
-    HirExpressionStatement, HirForStatement, HirGroupedExpression, HirIdentifier, HirIndexExpression,
-    HirLetStatement, HirLiteral, HirLiteralExpression, HirMatchArm, HirMatchExpression,
-    HirMemberExpression, HirPath, HirPathExpression, HirPathSegment, HirPattern, HirStatementNode,
-    HirWhileStatement, StatementNode,
+    HirExpressionStatement, HirForStatement, HirGroupedExpression, HirIdentifier,
+    HirIndexExpression, HirLetStatement, HirLiteral, HirLiteralExpression, HirMatchArm,
+    HirMatchExpression, HirMemberExpression, HirPath, HirPathExpression, HirPathSegment,
+    HirPattern, HirStatementNode, HirWhileStatement, StatementNode,
 };
-use crate::hir::normalize::builders::hir_path_expr;
 use crate::syntax::Spanned;
 
 use crate::hir::normalize::core::Normalizer;
@@ -564,7 +564,12 @@ fn path_expr_str(
     name: &str,
     span: crate::syntax::SpanInfo,
 ) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
-    let ident = Spanned::new(HirIdentifier { name: name.to_string() }, span);
+    let ident = Spanned::new(
+        HirIdentifier {
+            name: name.to_string(),
+        },
+        span,
+    );
     path_expr(&ident)
 }
 

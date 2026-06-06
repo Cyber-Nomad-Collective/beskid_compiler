@@ -14,8 +14,8 @@ use beskid_aot::{
 use beskid_codegen::lower_resolved_entrypoint_with_pipeline;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
-use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use beskid_tools::PipelineProgressKind;
+use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use clap::Args;
 
 #[derive(Args, Debug)]
@@ -76,7 +76,10 @@ pub fn execute(args: RunArgs) -> Result<()> {
             .unwrap_or(0)
     ));
     std::fs::create_dir_all(&temp_dir).map_err(|err| {
-        anyhow::anyhow!("failed to create run output directory {}: {err}", temp_dir.display())
+        anyhow::anyhow!(
+            "failed to create run output directory {}: {err}",
+            temp_dir.display()
+        )
     })?;
 
     let target = beskid_aot::target::detect_target(None)?;
@@ -86,8 +89,12 @@ pub fn execute(args: RunArgs) -> Result<()> {
         &target,
     ));
 
-    let runtime = default_runtime_strategy(BuildProfile::Debug, None)
-        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    let runtime = default_runtime_strategy(
+        BuildProfile::Debug,
+        None,
+        args.runtime_profile.into(),
+    )
+    .map_err(|err| anyhow::anyhow!("{err}"))?;
 
     let link_inputs = link_libraries_for_artifact(&artifact, resolved.compile_plan.as_ref());
     let pipeline_arc: Arc<dyn PipelineObserver> = session.pipeline_arc();

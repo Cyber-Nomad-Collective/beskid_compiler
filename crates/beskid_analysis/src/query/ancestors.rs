@@ -1,7 +1,7 @@
 //! Iterator over ancestors from a node toward the snapshot root.
 
-use crate::query::syntax_snapshot::SyntaxSnapshot;
 use crate::query::DynNodeRef;
+use crate::query::syntax_snapshot::SyntaxSnapshot;
 
 /// Root-to-parent chain toward (but not including) the start node; order is immediate parent first.
 pub struct Ancestors<'a> {

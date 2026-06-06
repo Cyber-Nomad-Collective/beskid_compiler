@@ -17,8 +17,8 @@ use crate::projects::std_dependency_env_lock;
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 use super::{
-    compiler_sdk_src, corelib_root, corelib_workspace_root, stratified_corelib_analyze_sources,
-    stratified_corelib_parse_samples, foundation_src, runtime_src,
+    compiler_sdk_src, corelib_root, corelib_workspace_root, foundation_src, runtime_src,
+    stratified_corelib_analyze_sources, stratified_corelib_parse_samples,
 };
 
 /// Linux CI runners use a smaller default thread stack than macOS; corelib lowering needs more headroom.
@@ -384,15 +384,12 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
         .expect("read Beskid.Compiler.Query");
     let syntax = fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax.bd"))
         .expect("read Beskid.Syntax");
-    let node_contract =
-        fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/Node.bd"))
-            .expect("read Beskid.Syntax.Nodes.Node");
-    let node_span =
-        fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/NodeSpan.bd"))
-            .expect("read Beskid.Syntax.Nodes.NodeSpan");
-    let node_list =
-        fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/NodeList.bd"))
-            .expect("read Beskid.Syntax.Nodes.NodeList");
+    let node_contract = fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/Node.bd"))
+        .expect("read Beskid.Syntax.Nodes.Node");
+    let node_span = fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/NodeSpan.bd"))
+        .expect("read Beskid.Syntax.Nodes.NodeSpan");
+    let node_list = fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/NodeList.bd"))
+        .expect("read Beskid.Syntax.Nodes.NodeList");
 
     assert!(
         query.contains(r#"return "0.4.0";"#),
@@ -442,10 +439,7 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
         "pub Beskid.Syntax.Nodes.NodeRef Apply(",
         "pub Option<FunctionDefinition> AsFunctionDefinition(",
     ] {
-        assert!(
-            query.contains(api),
-            "Query facade missing API: {api}"
-        );
+        assert!(query.contains(api), "Query facade missing API: {api}");
     }
 }
 

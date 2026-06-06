@@ -48,9 +48,11 @@ pub fn build_and_run(request: AotRunRequest) -> AotResult<AotRunResult> {
     })?;
 
     let target = detect_target(None)?;
-    let exe_path = request
-        .output_dir
-        .join(output_filename(RUN_EXE_BASENAME, BuildOutputKind::Exe, &target));
+    let exe_path = request.output_dir.join(output_filename(
+        RUN_EXE_BASENAME,
+        BuildOutputKind::Exe,
+        &target,
+    ));
 
     let build_result = build(AotBuildRequest {
         artifact: request.artifact,
@@ -124,10 +126,12 @@ fn run_executable(path: &Path, timeout: Duration) -> AotResult<(i32, Vec<u8>, Ve
             message: err.to_string(),
         })? {
             Some(_) => {
-                let output = child.wait_with_output().map_err(|err| AotError::RunFailed {
-                    path: path.to_path_buf(),
-                    message: err.to_string(),
-                })?;
+                let output = child
+                    .wait_with_output()
+                    .map_err(|err| AotError::RunFailed {
+                        path: path.to_path_buf(),
+                        message: err.to_string(),
+                    })?;
                 let exit_code = output.status.code().unwrap_or(-1);
                 return Ok((exit_code, output.stdout, output.stderr));
             }

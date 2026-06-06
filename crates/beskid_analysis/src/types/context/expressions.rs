@@ -144,15 +144,14 @@ impl<'a> TypeContext<'a> {
         let _index_type = self.type_expression(&index_expr.node.index);
 
         match self.type_table.get(target_type).cloned() {
-            Some(TypeInfo::Array(element_type_id)) => {
-                Some(element_type_id)
-            }
+            Some(TypeInfo::Array(element_type_id)) => Some(element_type_id),
             Some(TypeInfo::Primitive(HirPrimitiveType::String)) => {
                 self.primitive_type_id(HirPrimitiveType::U8)
             }
             _ => {
-                self.errors
-                    .push(TypeError::UnsupportedExpression { span: index_expr.span });
+                self.errors.push(TypeError::UnsupportedExpression {
+                    span: index_expr.span,
+                });
                 None
             }
         }
@@ -526,7 +525,8 @@ impl<'a> TypeContext<'a> {
         if let HirExpressionNode::MemberExpression(member) = &call.node.callee.node {
             // Special-case: contract-as-namespace calls like `C.getpid()` where `C` is a contract item.
             if let HirExpressionNode::PathExpression(path_expr) = &member.node.target.node
-                && let Some(super::super::super::resolve::ResolvedValue::Item(item_id)) = self.resolved_value_at(path_expr.node.path.span)
+                && let Some(super::super::super::resolve::ResolvedValue::Item(item_id)) =
+                    self.resolved_value_at(path_expr.node.path.span)
             {
                 let method_name = member.node.member.node.name.as_str().to_string();
                 if let Some(signature) = self
@@ -728,10 +728,9 @@ impl<'a> TypeContext<'a> {
                 }
                 None => {
                     if expected != 0 {
-                        if let Some(inferred) = self.infer_generic_args_from_call(
-                            callee_item_id,
-                            &call.node.args,
-                        ) {
+                        if let Some(inferred) =
+                            self.infer_generic_args_from_call(callee_item_id, &call.node.args)
+                        {
                             generic_args = Some(inferred);
                         } else {
                             self.errors
@@ -1316,8 +1315,7 @@ impl<'a> TypeContext<'a> {
         let right = self.type_expression(&binary.node.right);
 
         if matches!(binary.node.op.node, HirBinaryOp::Add) {
-            let string_add = left
-                .is_some_and(|type_id| self.is_string(type_id))
+            let string_add = left.is_some_and(|type_id| self.is_string(type_id))
                 || right.is_some_and(|type_id| self.is_string(type_id));
             if string_add {
                 return self.primitive_type_id(HirPrimitiveType::String);
@@ -1494,12 +1492,9 @@ impl<'a> TypeContext<'a> {
         let segments = &path.node.segments;
         let source_path = self.current_source_path.as_ref();
         let first_name = segments.first()?.node.name.node.name.as_str();
-        let Some(local_id) = resolve_path_base_local(
-            self.resolution,
-            span,
-            first_name,
-            source_path,
-        ) else {
+        let Some(local_id) =
+            resolve_path_base_local(self.resolution, span, first_name, source_path)
+        else {
             self.errors.push(TypeError::UnknownValueType { span });
             return None;
         };

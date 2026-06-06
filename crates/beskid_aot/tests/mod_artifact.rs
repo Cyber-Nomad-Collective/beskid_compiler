@@ -1,10 +1,10 @@
 use std::fs;
 
+use beskid_aot::object_module::BeskidObjectModule;
 use beskid_aot::{
     ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, build_mod_artifact,
     compute_mod_artifact_key,
 };
-use beskid_aot::object_module::BeskidObjectModule;
 use beskid_codegen::CodegenArtifact;
 
 fn host_target_triple() -> &'static str {
@@ -119,8 +119,7 @@ i32 main() {
 "#;
     fs::write(&source_path, source).expect("write source");
 
-    let lowered =
-        beskid_codegen::lower_source(&source_path, source, false).expect("lower fixture");
+    let lowered = beskid_codegen::lower_source(&source_path, source, false).expect("lower fixture");
     beskid_codegen::validate_artifact(&lowered.artifact).expect("validate link plan");
 
     let mut object = BeskidObjectModule::new(None).expect("object module");

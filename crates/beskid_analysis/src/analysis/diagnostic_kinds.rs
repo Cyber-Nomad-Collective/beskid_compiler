@@ -4,7 +4,6 @@ use crate::syntax::SpanInfo;
 #[derive(Debug, Clone)]
 pub enum SemanticIssueKind {
     // ── Definition / duplicate-name diagnostics ──
-
     DuplicateDefinitionName {
         name: String,
         previous: SpanInfo,
@@ -30,7 +29,6 @@ pub enum SemanticIssueKind {
     },
 
     // ── Import / visibility / naming diagnostics ──
-
     AmbiguousImport {
         name: String,
         previous: SpanInfo,
@@ -92,7 +90,6 @@ pub enum SemanticIssueKind {
     },
 
     // ── Contract conformance diagnostics ──
-
     ContractMethodNotFound {
         method_name: String,
         receiver_name: String,
@@ -113,7 +110,6 @@ pub enum SemanticIssueKind {
     },
 
     // ── Pattern / match / control-flow diagnostics ──
-
     MatchGuardMustBeBoolean,
     MatchArmTypeMismatch {
         expected: String,
@@ -146,7 +142,6 @@ pub enum SemanticIssueKind {
     UnreachableCode,
 
     // ── Resolution diagnostics ──
-
     ResolveDuplicateItem {
         name: String,
         previous: SpanInfo,
@@ -185,7 +180,6 @@ pub enum SemanticIssueKind {
     },
 
     // ── Type-checking diagnostics ──
-
     TypeUnknownType {
         name: String,
     },
@@ -246,7 +240,6 @@ pub enum SemanticIssueKind {
     AwaitKeywordReserved,
 
     // ── Control-flow / match diagnostics ──
-
     TypeReturnMismatch {
         expected_name: String,
         actual_name: String,
@@ -267,7 +260,6 @@ pub enum SemanticIssueKind {
     },
 
     // ── Macro diagnostics ──
-
     MacroUnknown {
         name: String,
     },
@@ -303,7 +295,6 @@ pub enum SemanticIssueKind {
     QueryPipelineStaleGeneration,
 
     // ── Documentation diagnostics ──
-
     /// `@arg(name)` does not match a parameter on the documented callable.
     DocUnknownArgName {
         name: String,
@@ -346,7 +337,6 @@ pub enum SemanticIssueKind {
     },
 
     // ── Composition diagnostics ──
-
     CompositionMissingLaunchHost,
     CompositionMultipleLaunchHosts,
     CompositionDependencyCycle {
@@ -659,8 +649,12 @@ impl SemanticIssueKind {
             Self::MacroUnknown { .. } => "unknown macro".to_string(),
             Self::MacroArgumentArityMismatch { .. } => "macro argument count mismatch".to_string(),
             Self::MacroArgumentKindMismatch { .. } => "macro argument kind mismatch".to_string(),
-            Self::MacroMetavariableOutsideBody { .. } => "macro metavariable outside body".to_string(),
-            Self::MacroExpansionDepthExceeded { .. } => "macro expansion depth exceeded".to_string(),
+            Self::MacroMetavariableOutsideBody { .. } => {
+                "macro metavariable outside body".to_string()
+            }
+            Self::MacroExpansionDepthExceeded { .. } => {
+                "macro expansion depth exceeded".to_string()
+            }
             Self::MacroAmbiguousName { .. } => "ambiguous macro name".to_string(),
             Self::MacroDuplicateParameter { .. } => "duplicate macro parameter".to_string(),
             Self::QueryBoundsExceeded { .. } => "query bounds exceeded".to_string(),
@@ -681,21 +675,15 @@ impl SemanticIssueKind {
             Self::CompositionLaunchTargetNotHost { .. } => {
                 "launch target is not a host".to_string()
             }
-            Self::CompositionHostInheritanceCycle { .. } => {
-                "host inheritance cycle".to_string()
-            }
-            Self::CompositionDuplicateScopeName { .. } => {
-                "duplicate scope name".to_string()
-            }
+            Self::CompositionHostInheritanceCycle { .. } => "host inheritance cycle".to_string(),
+            Self::CompositionDuplicateScopeName { .. } => "duplicate scope name".to_string(),
             Self::CompositionHostInModProject => "host in mod project".to_string(),
             Self::CompositionLaunchInLibProject => "launch in lib project".to_string(),
             Self::CompositionInjectOnConstructor => "inject on constructor".to_string(),
             Self::CompositionOverrideLifetimeMismatch { .. } => {
                 "override lifetime mismatch".to_string()
             }
-            Self::CompositionInvalidScopeQualifier { .. } => {
-                "invalid scope qualifier".to_string()
-            }
+            Self::CompositionInvalidScopeQualifier { .. } => "invalid scope qualifier".to_string(),
 
             Self::TypeReturnMismatch { .. } => "return type mismatch".to_string(),
             Self::TypeNonIterableForTarget => "non-iterable for target".to_string(),

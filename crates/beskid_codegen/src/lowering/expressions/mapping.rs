@@ -32,11 +32,7 @@ pub fn lower_aot_object_mapping(
     let src_shape = shape_id_for_item(src_item);
     let dst_shape = shape_id_for_item(dst_item);
     Ok(emit_dynamic_map_aot(
-        ctx,
-        src_shape,
-        dst_shape,
-        src_ptr,
-        dst_out,
+        ctx, src_shape, dst_shape, src_ptr, dst_out,
     ))
 }
 

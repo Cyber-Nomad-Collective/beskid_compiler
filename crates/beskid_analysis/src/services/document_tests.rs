@@ -48,15 +48,8 @@ mod tests {
         source: &str,
         project_root: &PathBuf,
     ) -> ProgramAssembly {
-        let resolved = resolve_input(
-            Some(path),
-            Some(project_root),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve corelib_mvp");
+        let resolved = resolve_input(Some(path), Some(project_root), None, None, false, false)
+            .expect("resolve corelib_mvp");
         let plan = resolved.compile_plan.expect("compile plan");
         assemble_program(
             &plan,
@@ -79,14 +72,13 @@ mod tests {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
-            let program =
-                parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
-                    .expect("parse Main.bd");
-            let assembly = assemble_corelib_mvp(
-                &fixture.main_path,
+            let program = parse_program_with_source_name(
+                &fixture.main_path.to_string_lossy(),
                 &fixture.source,
-                &fixture.project_root,
-            );
+            )
+            .expect("parse Main.bd");
+            let assembly =
+                assemble_corelib_mvp(&fixture.main_path, &fixture.source, &fixture.project_root);
             let mut ctx = CompilationContext::try_for_analysis_path(&fixture.main_path, None)
                 .expect("project context");
             ctx.assembly = Some(assembly.clone());
@@ -102,16 +94,16 @@ mod tests {
         })
     }
 
-    fn snapshot_via_lifecycle_context() -> (
-        crate::services::DocumentAnalysisSnapshot,
-        CorelibMvpFixture,
-    ) {
+    fn snapshot_via_lifecycle_context()
+    -> (crate::services::DocumentAnalysisSnapshot, CorelibMvpFixture) {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
-            let program =
-                parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
-                    .expect("parse Main.bd");
+            let program = parse_program_with_source_name(
+                &fixture.main_path.to_string_lossy(),
+                &fixture.source,
+            )
+            .expect("parse Main.bd");
             let mut ctx = CompilationContext::try_for_analysis_path(&fixture.main_path, None)
                 .expect("project context");
             let snapshot = build_document_analysis_with_context(
@@ -159,11 +151,8 @@ mod tests {
     #[test]
     fn corelib_mvp_completion_after_output_dot_includes_writeline() {
         let (snapshot, fixture, _) = snapshot_with_manual_assembly();
-        let offset = fixture
-            .source
-            .find("    Output.")
-            .expect("main Output.")
-            + "    Output.".len();
+        let offset =
+            fixture.source.find("    Output.").expect("main Output.") + "    Output.".len();
         let candidates = completion_candidates(&snapshot, &fixture.source, offset);
         assert!(
             candidates.iter().any(|c| c.label == "WriteLine"),
@@ -179,7 +168,9 @@ mod tests {
         let candidates = completion_candidates(&snapshot, &fixture.source, offset);
         let labels: Vec<_> = candidates.iter().map(|c| c.label.as_str()).collect();
         assert!(
-            labels.iter().any(|label| *label == "System" || label.contains("System")),
+            labels
+                .iter()
+                .any(|label| *label == "System" || label.contains("System")),
             "expected System segment after use Std., got {labels:?}"
         );
     }
@@ -188,21 +179,12 @@ mod tests {
     fn corelib_mvp_workspace_references_include_io_definition() {
         let (snapshot, fixture, assembly) = snapshot_with_manual_assembly();
         let offset = fixture.source.find("WriteLine").expect("WriteLine usage");
-        let references = references_at_offset_workspace(
-            &snapshot,
-            &assembly,
-            &fixture.main_path,
-            offset,
-            true,
-        );
+        let references =
+            references_at_offset_workspace(&snapshot, &assembly, &fixture.main_path, offset, true);
         assert!(
-            references.iter().any(|reference| {
-                reference
-                    .location
-                    .path
-                    .to_string_lossy()
-                    .contains("Output")
-            }),
+            references
+                .iter()
+                .any(|reference| { reference.location.path.to_string_lossy().contains("Output") }),
             "expected a reference in Output.bd, got {:?}",
             references
                 .iter()
@@ -214,11 +196,8 @@ mod tests {
     #[test]
     fn corelib_mvp_lifecycle_completion_after_output_dot_includes_writeline() {
         let (snapshot, fixture) = snapshot_via_lifecycle_context();
-        let offset = fixture
-            .source
-            .find("    Output.")
-            .expect("main Output.")
-            + "    Output.".len();
+        let offset =
+            fixture.source.find("    Output.").expect("main Output.") + "    Output.".len();
         let candidates = completion_candidates(&snapshot, &fixture.source, offset);
         assert!(
             candidates.iter().any(|c| c.label == "WriteLine"),
@@ -255,9 +234,11 @@ mod tests {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
-            let program =
-                parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
-                    .expect("parse");
+            let program = parse_program_with_source_name(
+                &fixture.main_path.to_string_lossy(),
+                &fixture.source,
+            )
+            .expect("parse");
             let snapshot = build_document_analysis_with_context(
                 &program,
                 fixture.main_path.to_string_lossy(),

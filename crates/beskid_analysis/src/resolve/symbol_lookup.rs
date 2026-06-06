@@ -2,7 +2,7 @@
 
 use super::ids::ItemId;
 use super::resolver::Resolution;
-use super::symbol::{symbol_key, symbol_to_string, SymbolId, SymbolQualifier, SymbolRegistry};
+use super::symbol::{SymbolId, SymbolQualifier, SymbolRegistry, symbol_key, symbol_to_string};
 
 pub fn symbol_for_item(resolution: &Resolution, item: ItemId) -> Option<SymbolId> {
     resolution.items.get(item.0).and_then(|info| info.symbol)
@@ -19,7 +19,10 @@ pub fn canonical_item_id(resolution: &Resolution, item: ItemId) -> ItemId {
         .unwrap_or(item)
 }
 
-pub fn item_id_for_qualifier(resolution: &Resolution, qualifier: &SymbolQualifier) -> Option<ItemId> {
+pub fn item_id_for_qualifier(
+    resolution: &Resolution,
+    qualifier: &SymbolQualifier,
+) -> Option<ItemId> {
     resolution
         .symbols
         .lookup(qualifier)
@@ -31,10 +34,7 @@ pub fn qualified_name(resolution: &Resolution, item: ItemId) -> Option<String> {
     symbol_key(&resolution.symbols, symbol)
 }
 
-pub fn qualified_name_from_symbol(
-    registry: &SymbolRegistry,
-    symbol: SymbolId,
-) -> Option<String> {
+pub fn qualified_name_from_symbol(registry: &SymbolRegistry, symbol: SymbolId) -> Option<String> {
     symbol_key(registry, symbol)
 }
 

@@ -424,8 +424,7 @@ impl LanguageServer for Backend {
                 changed
             };
             if changed {
-                crate::session::project_context::invalidate_compilation_cache(&self.state)
-                    .await;
+                crate::session::project_context::invalidate_compilation_cache(&self.state).await;
             }
         }
     }

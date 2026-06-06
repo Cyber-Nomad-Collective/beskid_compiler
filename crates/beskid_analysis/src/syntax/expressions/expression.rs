@@ -5,8 +5,8 @@ use crate::syntax::expressions::span::span_from_bounds;
 use crate::syntax::{SpanInfo, Spanned};
 use pest::iterators::Pair;
 
-use super::assign_expression::AssignExpression;
 use super::array_literal_expression::parse_array_literal_expression;
+use super::assign_expression::AssignExpression;
 use super::binary_expression::{BinaryExpression, parse_binary_expression};
 use super::block_expression::parse_block_expression;
 use super::call_expression::parse_call_expression;

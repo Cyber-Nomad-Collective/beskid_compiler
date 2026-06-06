@@ -4,7 +4,10 @@ use crate::model::{GraphDocument, GraphSpec, fingerprint_spec};
 
 pub type GraphError = mermaid_builder::Error;
 
-pub fn render_document(spec: GraphSpec, focused_project_uri: Option<String>) -> Result<GraphDocument, GraphError> {
+pub fn render_document(
+    spec: GraphSpec,
+    focused_project_uri: Option<String>,
+) -> Result<GraphDocument, GraphError> {
     let mermaid = render_flowchart(&spec)?;
     let revision = fingerprint_spec(&spec);
     let metadata = spec.metadata(focused_project_uri);

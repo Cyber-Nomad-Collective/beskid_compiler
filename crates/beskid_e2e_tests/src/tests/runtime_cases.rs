@@ -21,7 +21,11 @@ fn runtime_calls_fixture_aot_runs_and_object_contains_runtime_symbols() {
         "App",
     ]);
     assert_success(&aot_run, "run runtime-calls fixture through AOT subprocess");
-    assert_exit_code(&aot_run, 0, "run runtime-calls fixture through AOT subprocess");
+    assert_exit_code(
+        &aot_run,
+        0,
+        "run runtime-calls fixture through AOT subprocess",
+    );
     assert_output_contains(
         &aot_run,
         "ok",
@@ -72,8 +76,15 @@ fn event_unsubscribe_fixture_aot_runs_and_object_contains_event_symbols() {
         "--target",
         "App",
     ]);
-    assert_success(&aot_run, "run event-unsubscribe fixture through AOT subprocess");
-    assert_exit_code(&aot_run, 0, "run event-unsubscribe fixture through AOT subprocess");
+    assert_success(
+        &aot_run,
+        "run event-unsubscribe fixture through AOT subprocess",
+    );
+    assert_exit_code(
+        &aot_run,
+        0,
+        "run event-unsubscribe fixture through AOT subprocess",
+    );
 
     let build = cli.run([
         "build",

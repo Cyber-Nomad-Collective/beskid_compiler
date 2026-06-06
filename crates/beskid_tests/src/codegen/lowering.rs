@@ -42,8 +42,7 @@ fn codegen_lowers_desugared_try_match() {
 
 #[test]
 fn codegen_lowers_string_equality_via_str_eq() {
-    let (hir, resolution, typed) =
-        lower_resolve_type("bool main() { return \"a\" == \"a\"; }");
+    let (hir, resolution, typed) = lower_resolve_type("bool main() { return \"a\" == \"a\"; }");
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected string equality lowering");
     let clif = artifact.functions[0].function.to_string();
@@ -255,8 +254,7 @@ fn codegen_lowers_event_subscribe_unsubscribe_and_invoke() {
         .expect("expected Emit method function");
     let emit_clif = emit_fn.function.to_string();
     assert!(
-        emit_clif.contains("interop_dispatch")
-            && emit_clif.contains("call_indirect"),
+        emit_clif.contains("interop_dispatch") && emit_clif.contains("call_indirect"),
         "expected event invoke lowering via dispatch iteration and indirect calls: {emit_clif}"
     );
 }
@@ -299,8 +297,7 @@ fn codegen_lowers_event_lifecycle_for_default_capacity_form() {
         .expect("expected Emit method function");
     let emit_clif = emit_fn.function.to_string();
     assert!(
-        emit_clif.contains("interop_dispatch")
-            && emit_clif.contains("call_indirect"),
+        emit_clif.contains("interop_dispatch") && emit_clif.contains("call_indirect"),
         "expected event invoke lowering via dispatch iteration and indirect calls: {emit_clif}"
     );
 }

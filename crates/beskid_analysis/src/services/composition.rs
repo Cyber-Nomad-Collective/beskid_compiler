@@ -1,6 +1,6 @@
+use crate::analysis::SemanticDiagnostic;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::diagnostics::make_diagnostic;
-use crate::analysis::SemanticDiagnostic;
 use crate::composition::baseline::lib_project_rejects_launch;
 use crate::composition::{CompositionInput, CompositionIssue, CompositionResult};
 use crate::mod_host::{ModHostGenerateResult, ModHostInput, run_through_generate};
@@ -48,7 +48,8 @@ pub fn composition_diagnostics_for_program(
     source_name: &str,
     source: &str,
 ) -> anyhow::Result<Vec<SemanticDiagnostic>> {
-    let generated = prepare_program_for_composition(program.clone(), compile_plan, source_name, source)?;
+    let generated =
+        prepare_program_for_composition(program.clone(), compile_plan, source_name, source)?;
     let composition_result = resolve_program_composition(&generated.program, compile_plan);
     Ok(composition_result_to_diagnostics(
         &composition_result,
@@ -73,9 +74,9 @@ pub fn composition_result_to_diagnostics(
         .collect::<Vec<_>>();
 
     if plan.is_some_and(|compile_plan| {
-        lib_project_rejects_launch(compile_plan.target.kind) && !composition.snapshot.launched_host.is_empty()
-    })
-    {
+        lib_project_rejects_launch(compile_plan.target.kind)
+            && !composition.snapshot.launched_host.is_empty()
+    }) {
         let kind = SemanticIssueKind::CompositionLaunchInLibProject;
         diagnostics.push(make_diagnostic(
             source_name,

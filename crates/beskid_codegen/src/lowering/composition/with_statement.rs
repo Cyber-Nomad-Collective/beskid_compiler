@@ -33,21 +33,11 @@ pub(crate) fn lower_with_statement(
     // enclosing `launch` will swap this for the real container handle.
     let container = ctx.builder.ins().iconst(pointer_type(), 0);
 
-    emit_scope(
-        ctx,
-        SYM_COMPOSITION_SCOPE_ENTER,
-        container,
-        scope_id,
-    );
+    emit_scope(ctx, SYM_COMPOSITION_SCOPE_ENTER, container, scope_id);
     // body lowering: WithStatement body is still a syntax::Block (no HIR yet), so we
     // intentionally emit only the bracket; analysis-driven inject sites are emitted by a
     // sibling pass that consumes the composition snapshot.
-    emit_scope(
-        ctx,
-        SYM_COMPOSITION_SCOPE_LEAVE,
-        container,
-        scope_id,
-    );
+    emit_scope(ctx, SYM_COMPOSITION_SCOPE_LEAVE, container, scope_id);
     Ok(())
 }
 

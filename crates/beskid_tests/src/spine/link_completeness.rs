@@ -3,18 +3,18 @@
 use std::fs;
 use std::path::PathBuf;
 
+use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions};
 use beskid_analysis::services::{
-    compile_front_end_from_resolved_input, resolve_input, resolved_input_from_plan,
-    FrontEndOptions, ResolvedInput,
+    FrontEndOptions, ResolvedInput, compile_front_end_from_resolved_input, resolve_input,
+    resolved_input_from_plan,
 };
-use beskid_queries::{configure_db_for_project, program_assembly, with_db};
-use beskid_analysis::CompilationContext;
 use beskid_codegen::linking::{FunctionDefIndex, LinkPlan, LinkSymbol};
 use beskid_codegen::lowering::{
     lower_program_with_assembly, lower_program_with_assembly_for_entrypoint,
 };
 use beskid_codegen::validate_artifact;
+use beskid_queries::{configure_db_for_project, program_assembly, with_db};
 
 use crate::projects::{compiler_workspace_root, with_cwd, with_cwd_at_workspace_root};
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
@@ -129,15 +129,8 @@ fn corelib_assert_equal_i64_link_plan_validates() {
             .to_path_buf();
         let source = fs::read_to_string(&entry).expect("read ArrayTests.bd");
 
-        let resolved = resolve_input(
-            Some(&entry),
-            Some(&project_root),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve");
+        let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
+            .expect("resolve");
 
         let plan = resolved.compile_plan.expect("compile plan");
         configure_db_for_project(&project_root);
@@ -209,9 +202,8 @@ fn corelib_assert_equal_i64_link_plan_validates() {
 fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home() {
     let root = compiler_workspace_root();
     with_cwd_at_workspace_root(&root, || {
-        let entry = root.join(
-            "corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd",
-        );
+        let entry =
+            root.join("corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd");
         let project_root: PathBuf = entry
             .parent()
             .unwrap()
@@ -222,15 +214,8 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
             .to_path_buf();
         let source = fs::read_to_string(&entry).expect("read AnsiEscapeTests.bd");
 
-        let resolved = resolve_input(
-            Some(&entry),
-            Some(&project_root),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve");
+        let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
+            .expect("resolve");
 
         let plan = resolved.compile_plan.expect("compile plan");
         configure_db_for_project(&project_root);
@@ -311,7 +296,10 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
                 .resolution
                 .items
                 .iter()
-                .filter(|info| info.name.contains(needle) && info.kind == beskid_analysis::resolve::ItemKind::Function)
+                .filter(|info| {
+                    info.name.contains(needle)
+                        && info.kind == beskid_analysis::resolve::ItemKind::Function
+                })
                 .collect();
             assert!(
                 !items.is_empty(),
@@ -368,9 +356,8 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
 fn ansi_csi_bold_red_link_plan_validates() {
     let root = compiler_workspace_root();
     with_cwd_at_workspace_root(&root, || {
-        let entry = root.join(
-            "corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd",
-        );
+        let entry =
+            root.join("corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd");
         let project_root: PathBuf = entry
             .parent()
             .unwrap()
@@ -381,15 +368,8 @@ fn ansi_csi_bold_red_link_plan_validates() {
             .to_path_buf();
         let source = fs::read_to_string(&entry).expect("read AnsiEscapeTests.bd");
 
-        let resolved = resolve_input(
-            Some(&entry),
-            Some(&project_root),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve");
+        let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
+            .expect("resolve");
 
         let plan = resolved.compile_plan.expect("compile plan");
         configure_db_for_project(&project_root);

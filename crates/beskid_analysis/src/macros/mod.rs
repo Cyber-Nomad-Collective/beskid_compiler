@@ -8,14 +8,14 @@ mod substitute;
 mod walk;
 
 use anyhow::Result;
-use beskid_pipeline::{observe_phase_result, phases::MACRO_EXPAND, PipelineObserver};
+use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::MACRO_EXPAND};
 
 use crate::syntax::{Program, Spanned};
 
-pub use expand::{expand_program, DEFAULT_MAX_MACRO_EXPANSION_DEPTH};
-pub use match_args::{fragment_kind_keyword, FragmentBinding, MatchError};
-pub use substitute::Bindings;
+pub use expand::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
+pub use match_args::{FragmentBinding, MatchError, fragment_kind_keyword};
 pub use registry::MacroRegistry;
+pub use substitute::Bindings;
 
 #[derive(Debug, Clone)]
 pub struct MacroExpansionOutcome {
@@ -73,7 +73,9 @@ mod tests {
     fn duplicate_macro_name_emits_e1907() {
         let source = "macro dup (expression x) { $x; }\nmacro dup (expression y) { $y; }\n";
         let registry = MacroRegistry::from_program(
-            &parse_program_with_source_name("M.bd", source).expect("parse").node,
+            &parse_program_with_source_name("M.bd", source)
+                .expect("parse")
+                .node,
         );
         assert!(registry.registry_issues.iter().any(|(_, k)| matches!(
             k,
@@ -90,7 +92,12 @@ mod tests {
             "Main.bd",
             source,
         );
-        assert!(outcome.diagnostics.iter().any(|d| d.code.as_deref() == Some("E1901")));
+        assert!(
+            outcome
+                .diagnostics
+                .iter()
+                .any(|d| d.code.as_deref() == Some("E1901"))
+        );
     }
 
     #[test]
@@ -109,7 +116,8 @@ unit main() { let x = twice!(1); return; }
             .iter()
             .find_map(|i| match &i.node {
                 crate::syntax::items::Node::Function(f) => {
-                    if let crate::syntax::Statement::Let(ls) = &f.node.body.node.statements[0].node {
+                    if let crate::syntax::Statement::Let(ls) = &f.node.body.node.statements[0].node
+                    {
                         Some(ls.node.value.clone())
                     } else {
                         None
@@ -141,7 +149,10 @@ unit main() { let x = twice!(1); return; }
         );
         let param = Spanned::new(
             MacroParameter {
-                kind: Spanned::new(MacroFragmentKind::Expression, crate::syntax::SpanInfo::default()),
+                kind: Spanned::new(
+                    MacroFragmentKind::Expression,
+                    crate::syntax::SpanInfo::default(),
+                ),
                 name: Spanned::new(
                     Identifier {
                         name: "value".to_string(),
@@ -158,7 +169,8 @@ unit main() { let x = twice!(1); return; }
             .iter()
             .find_map(|item| match &item.node {
                 crate::syntax::items::Node::Function(f) => {
-                    if let crate::syntax::Statement::Let(ls) = &f.node.body.node.statements[0].node {
+                    if let crate::syntax::Statement::Let(ls) = &f.node.body.node.statements[0].node
+                    {
                         Some(ls.node.value.clone())
                     } else {
                         None

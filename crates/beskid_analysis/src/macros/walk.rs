@@ -1,8 +1,8 @@
 //! Shared AST walks for macro expansion and substitution.
 
+use crate::syntax::Spanned;
 use crate::syntax::expressions::Expression;
 use crate::syntax::statements::{Block, ElseBranch, ExpressionStatement, IfStatement, Statement};
-use crate::syntax::Spanned;
 
 /// Map an expression bottom-up: children are transformed first, then `f` is applied to the result.
 pub fn map_expression(

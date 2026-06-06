@@ -68,10 +68,7 @@ pub enum ModHostIssue {
     },
     /// E1855 — Catch-all scheduling-stage conflict / failure when no narrower code
     /// from the **E1851–E1870** band applies.
-    SchedulingFailure {
-        package_id: String,
-        message: String,
-    },
+    SchedulingFailure { package_id: String, message: String },
 }
 
 impl ModHostIssue {

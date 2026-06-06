@@ -36,9 +36,7 @@ impl Parsable for ElseBranch {
             .next()
             .filter(|item| item.as_rule() == Rule::ElseKeyword)
             .ok_or(ParseError::missing(Rule::ElseKeyword))?;
-        let branch = inner
-            .next()
-            .ok_or(ParseError::missing(Rule::IfStatement))?;
+        let branch = inner.next().ok_or(ParseError::missing(Rule::IfStatement))?;
         let node = match branch.as_rule() {
             Rule::IfStatement => Self::If(Box::new(IfStatement::parse(branch)?)),
             Rule::Block => Self::Block(Block::parse(branch)?),
@@ -55,10 +53,7 @@ impl Parsable for IfStatement {
         let condition =
             Expression::parse(inner.next().ok_or(ParseError::missing(Rule::Expression))?)?;
         let then_block = Block::parse(inner.next().ok_or(ParseError::missing(Rule::Block))?)?;
-        let else_branch = inner
-            .next()
-            .map(ElseBranch::parse)
-            .transpose()?;
+        let else_branch = inner.next().map(ElseBranch::parse).transpose()?;
 
         Ok(Spanned::new(
             Self {

@@ -52,11 +52,7 @@ impl crate::parsing::parsable::Parsable for Parameter {
         let name = crate::syntax::Identifier::parse(name_pair)?;
 
         Ok(crate::syntax::Spanned::new(
-            Self {
-                mutable,
-                name,
-                ty,
-            },
+            Self { mutable, name, ty },
             span,
         ))
     }

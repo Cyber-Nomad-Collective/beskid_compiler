@@ -16,9 +16,9 @@ mod expression_rules;
 #[cfg(test)]
 mod expressions;
 #[cfg(test)]
-mod items;
-#[cfg(test)]
 mod item_rules;
+#[cfg(test)]
+mod items;
 #[cfg(test)]
 mod lexical;
 #[cfg(test)]

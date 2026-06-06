@@ -66,28 +66,32 @@ impl LinkPlan {
         let mut visited: HashSet<CalleeKey> = HashSet::new();
         let mut module_path = Vec::new();
 
-        walk_hir_items(&entry.node.items, &mut module_path, &mut |item, _qualified, _short| {
-            let HirItem::TestDefinition(test) = &item.node else {
-                return;
-            };
-            let Some(info) = item_info_for_span(resolution, item.span, None) else {
-                return;
-            };
-            entries.push(LinkSymbol::Test {
-                item: info.id,
-                name: test.node.name.node.name.clone(),
-            });
-            for call in collect_calls_in_body(&test.node.body, resolution, type_result, None) {
-                visit_callee(
-                    call,
-                    resolution,
-                    type_result,
-                    def_index,
-                    &mut visited,
-                    &mut callees,
-                );
-            }
-        });
+        walk_hir_items(
+            &entry.node.items,
+            &mut module_path,
+            &mut |item, _qualified, _short| {
+                let HirItem::TestDefinition(test) = &item.node else {
+                    return;
+                };
+                let Some(info) = item_info_for_span(resolution, item.span, None) else {
+                    return;
+                };
+                entries.push(LinkSymbol::Test {
+                    item: info.id,
+                    name: test.node.name.node.name.clone(),
+                });
+                for call in collect_calls_in_body(&test.node.body, resolution, type_result, None) {
+                    visit_callee(
+                        call,
+                        resolution,
+                        type_result,
+                        def_index,
+                        &mut visited,
+                        &mut callees,
+                    );
+                }
+            },
+        );
 
         Self { callees, entries }
     }
@@ -106,59 +110,64 @@ impl LinkPlan {
         let mut visited: HashSet<CalleeKey> = HashSet::new();
         let mut module_path = Vec::new();
 
-        walk_hir_items(&entry.node.items, &mut module_path, &mut |item, qualified, short| {
-            if !entrypoint_matches(entrypoint, qualified, short) {
-                return;
-            }
-            let Some(info) = item_info_for_span(resolution, item.span, entry_source_path) else {
-                return;
-            };
-            match &item.node {
-                HirItem::TestDefinition(test) => {
-                    entries.push(LinkSymbol::Test {
-                        item: info.id,
-                        name: short.to_string(),
-                    });
-                    for call in collect_calls_in_body(
-                        &test.node.body,
-                        resolution,
-                        type_result,
-                        entry_source_path,
-                    ) {
-                        visit_callee(
-                            call,
+        walk_hir_items(
+            &entry.node.items,
+            &mut module_path,
+            &mut |item, qualified, short| {
+                if !entrypoint_matches(entrypoint, qualified, short) {
+                    return;
+                }
+                let Some(info) = item_info_for_span(resolution, item.span, entry_source_path)
+                else {
+                    return;
+                };
+                match &item.node {
+                    HirItem::TestDefinition(test) => {
+                        entries.push(LinkSymbol::Test {
+                            item: info.id,
+                            name: short.to_string(),
+                        });
+                        for call in collect_calls_in_body(
+                            &test.node.body,
                             resolution,
                             type_result,
-                            def_index,
-                            &mut visited,
-                            &mut callees,
-                        );
+                            entry_source_path,
+                        ) {
+                            visit_callee(
+                                call,
+                                resolution,
+                                type_result,
+                                def_index,
+                                &mut visited,
+                                &mut callees,
+                            );
+                        }
                     }
-                }
-                HirItem::FunctionDefinition(def) => {
-                    entries.push(LinkSymbol::Function {
-                        item: info.id,
-                        mangled: None,
-                    });
-                    for call in collect_calls_in_body(
-                        &def.node.body,
-                        resolution,
-                        type_result,
-                        entry_source_path,
-                    ) {
-                        visit_callee(
-                            call,
+                    HirItem::FunctionDefinition(def) => {
+                        entries.push(LinkSymbol::Function {
+                            item: info.id,
+                            mangled: None,
+                        });
+                        for call in collect_calls_in_body(
+                            &def.node.body,
                             resolution,
                             type_result,
-                            def_index,
-                            &mut visited,
-                            &mut callees,
-                        );
+                            entry_source_path,
+                        ) {
+                            visit_callee(
+                                call,
+                                resolution,
+                                type_result,
+                                def_index,
+                                &mut visited,
+                                &mut callees,
+                            );
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
-            }
-        });
+            },
+        );
 
         Self { callees, entries }
     }
@@ -190,14 +199,12 @@ impl LinkPlan {
             let LinkSymbol::Function { item, .. } = symbol else {
                 continue;
             };
-            let path = def_index
-                .source_path(*item)
-                .or_else(|| {
-                    resolution
-                        .items
-                        .get(item.0)
-                        .and_then(|info| info.source_path.as_ref())
-                });
+            let path = def_index.source_path(*item).or_else(|| {
+                resolution
+                    .items
+                    .get(item.0)
+                    .and_then(|info| info.source_path.as_ref())
+            });
             let Some(path) = path else {
                 continue;
             };
@@ -261,8 +268,7 @@ fn walk_hir_items<'a, F>(
     items: &'a [Spanned<HirItem>],
     module_path: &mut Vec<String>,
     visit: &mut F,
-)
-where
+) where
     F: FnMut(&'a Spanned<HirItem>, &str, &str),
 {
     for item in items {
@@ -317,14 +323,7 @@ fn visit_callee(
     if let Some(def) = def_index.function(call.item_id) {
         let callee_path = def_index.source_path(call.item_id);
         for inner in collect_calls_in_body(&def.node.body, resolution, type_result, callee_path) {
-            visit_callee(
-                inner,
-                resolution,
-                type_result,
-                def_index,
-                visited,
-                callees,
-            );
+            visit_callee(inner, resolution, type_result, def_index, visited, callees);
         }
         callees.push(LinkSymbol::Function {
             item: call.item_id,
@@ -347,14 +346,7 @@ fn visit_callee(
             });
         let callee_path = def_index.source_path(call.item_id);
         for inner in collect_calls_in_body(&def.node.body, resolution, type_result, callee_path) {
-            visit_callee(
-                inner,
-                resolution,
-                type_result,
-                def_index,
-                visited,
-                callees,
-            );
+            visit_callee(inner, resolution, type_result, def_index, visited, callees);
         }
         callees.push(LinkSymbol::Method {
             item: call.item_id,
@@ -389,10 +381,7 @@ fn method_mangled_name(
         .iter()
         .find(|info| info.id == receiver_item)
         .map(|info| info.name.as_str())?;
-    Some(mangle_method_name(
-        receiver_name,
-        &def.node.name.node.name,
-    ))
+    Some(mangle_method_name(receiver_name, &def.node.name.node.name))
 }
 
 fn item_info_for_span<'a>(

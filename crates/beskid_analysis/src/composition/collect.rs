@@ -3,8 +3,7 @@ use std::collections::HashMap;
 use crate::hir::{HirItem, HirProgram, HirStatementNode};
 use crate::syntax::{
     HostBodyItem, HostDefinition, InjectQualifier, RegistrationLifetime, RegistryBlock,
-    RegistryEntry,
-    ScopeDefinition, ScopeHookKind, Spanned,
+    RegistryEntry, ScopeDefinition, ScopeHookKind, Spanned,
 };
 
 use super::model::{
@@ -162,7 +161,11 @@ fn collect_launch_and_with_statements(
     for statement in statements {
         match &statement.node {
             HirStatementNode::WithStatement(with_stmt) => {
-                record_with_site(collected, &with_stmt.node.scope_name.node.name, with_stmt.span);
+                record_with_site(
+                    collected,
+                    &with_stmt.node.scope_name.node.name,
+                    with_stmt.span,
+                );
                 collect_launch_and_with_statements_from_syntax(
                     &with_stmt.node.body.node.statements,
                     collected,
@@ -172,13 +175,19 @@ fn collect_launch_and_with_statements(
                 record_launch_site(collected, &launch_stmt.node.host_path, launch_stmt.span);
             }
             HirStatementNode::IfStatement(if_stmt) => {
-                collect_launch_and_with_statements(&if_stmt.node.then_block.node.statements, collected);
+                collect_launch_and_with_statements(
+                    &if_stmt.node.then_block.node.statements,
+                    collected,
+                );
                 if let Some(else_branch) = &if_stmt.node.else_branch {
                     collect_hir_else_branch(else_branch, collected);
                 }
             }
             HirStatementNode::WhileStatement(while_stmt) => {
-                collect_launch_and_with_statements(&while_stmt.node.body.node.statements, collected);
+                collect_launch_and_with_statements(
+                    &while_stmt.node.body.node.statements,
+                    collected,
+                );
             }
             HirStatementNode::ForStatement(for_stmt) => {
                 collect_launch_and_with_statements(&for_stmt.node.body.node.statements, collected);
@@ -195,7 +204,11 @@ fn collect_launch_and_with_statements_from_syntax(
     for statement in statements {
         match &statement.node {
             crate::syntax::Statement::With(with_stmt) => {
-                record_with_site(collected, &with_stmt.node.scope_name.node.name, with_stmt.span);
+                record_with_site(
+                    collected,
+                    &with_stmt.node.scope_name.node.name,
+                    with_stmt.span,
+                );
                 collect_launch_and_with_statements_from_syntax(
                     &with_stmt.node.body.node.statements,
                     collected,
@@ -230,7 +243,11 @@ fn collect_launch_and_with_statements_from_syntax(
     }
 }
 
-fn record_with_site(collected: &mut CollectedComposition, scope_name: &str, span: crate::syntax::SpanInfo) {
+fn record_with_site(
+    collected: &mut CollectedComposition,
+    scope_name: &str,
+    span: crate::syntax::SpanInfo,
+) {
     collected.with_sites.push(WithSite {
         scope_name: scope_name.to_string(),
         span,
@@ -300,7 +317,9 @@ fn collect_host(
         }
     }
 
-    collected.host_registries.insert(host_name.clone(), host_regs);
+    collected
+        .host_registries
+        .insert(host_name.clone(), host_regs);
     collected.host_scopes.insert(host_name, host_scopes);
 }
 
@@ -324,10 +343,18 @@ fn collect_scope(
     for item in &scope.node.body {
         match &item.node {
             HostBodyItem::Registry(registry) => {
-                regs.extend(registrations_from_block(scope_id, registry, next_registration_id));
+                regs.extend(registrations_from_block(
+                    scope_id,
+                    registry,
+                    next_registration_id,
+                ));
             }
             HostBodyItem::Registration(entry) => {
-                regs.push(registration_from_entry(scope_id, entry, next_registration_id));
+                regs.push(registration_from_entry(
+                    scope_id,
+                    entry,
+                    next_registration_id,
+                ));
             }
             HostBodyItem::Scope(child_scope) => {
                 collect_scope(

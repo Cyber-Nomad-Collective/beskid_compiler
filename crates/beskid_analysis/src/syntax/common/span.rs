@@ -3,7 +3,9 @@
 use pest::Span;
 
 /// Source span: UTF-8 byte range and 1-based line/column endpoints (inclusive-style reporting).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 pub struct SpanInfo {
     pub start: usize,
     pub end: usize,

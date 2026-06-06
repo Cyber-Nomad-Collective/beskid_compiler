@@ -83,13 +83,10 @@ fn try_desugar_interpolated_string(
                 return None;
             }
 
-            let leading_trim =
-                expr_text.len().saturating_sub(expr_text.trim_start().len());
-            let trailing_trim =
-                expr_text.len().saturating_sub(expr_text.trim_end().len());
+            let leading_trim = expr_text.len().saturating_sub(expr_text.trim_start().len());
+            let trailing_trim = expr_text.len().saturating_sub(expr_text.trim_end().len());
             let expr_span_start = literal_span.start + expr_start + leading_trim;
-            let expr_span_end =
-                literal_span.start + expr_start + expr_text.len() - trailing_trim;
+            let expr_span_end = literal_span.start + expr_start + expr_text.len() - trailing_trim;
             let expression_span = span_from_bounds(input, expr_span_start, expr_span_end)?;
             let expression = parse_interpolation_expression(input, expression_span)?;
             parts.push(InterpolationPart::Expr(expression));

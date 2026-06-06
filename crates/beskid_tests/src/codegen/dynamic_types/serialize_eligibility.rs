@@ -17,12 +17,7 @@ fn dynamic_identity_mapping_eligible_for_matching_structs() {
     let (_, resolution, typed) = lower_resolve_type(source);
     let ids = struct_item_ids(&resolution);
     assert_eq!(ids.len(), 2, "expected two struct types");
-    assert!(mapping_pair_eligible(
-        &resolution,
-        &typed,
-        ids[0],
-        ids[1]
-    ));
+    assert!(mapping_pair_eligible(&resolution, &typed, ids[0], ids[1]));
 }
 
 #[test]
@@ -30,12 +25,7 @@ fn dynamic_mapping_rejects_mismatched_field_types() {
     let source = "type Source { i64 id } type Target { i32 id } i64 main() { return 0; }";
     let (_, resolution, typed) = lower_resolve_type(source);
     let ids = struct_item_ids(&resolution);
-    assert!(!mapping_pair_eligible(
-        &resolution,
-        &typed,
-        ids[0],
-        ids[1]
-    ));
+    assert!(!mapping_pair_eligible(&resolution, &typed, ids[0], ids[1]));
 }
 
 #[test]

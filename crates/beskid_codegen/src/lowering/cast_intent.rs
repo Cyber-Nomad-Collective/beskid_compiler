@@ -3,7 +3,7 @@ use crate::lowering::context::CodegenResult;
 use crate::lowering::function::mangle_method_name;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::HirPrimitiveType;
-use beskid_analysis::resolve::{canonical_item_id, ItemKind, Resolution};
+use beskid_analysis::resolve::{ItemKind, Resolution, canonical_item_id};
 use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, MemFlags, Signature, Value};
@@ -27,12 +27,7 @@ pub(crate) fn ensure_type_compatibility(
                 return Ok(value);
             }
             if expected_clif.is_int() && value_clif.is_int() {
-                return Ok(coerce_int_clif(
-                    builder,
-                    value,
-                    value_clif,
-                    expected_clif,
-                ));
+                return Ok(coerce_int_clif(builder, value, value_clif, expected_clif));
             }
         }
         return Ok(value);
@@ -108,10 +103,7 @@ pub(crate) fn retry_call_argument_compatibility(
 }
 
 fn is_string_primitive(info: Option<&TypeInfo>) -> bool {
-    matches!(
-        info,
-        Some(TypeInfo::Primitive(HirPrimitiveType::String))
-    )
+    matches!(info, Some(TypeInfo::Primitive(HirPrimitiveType::String)))
 }
 
 fn coerce_numeric_to_string(
@@ -120,8 +112,8 @@ fn coerce_numeric_to_string(
     actual_info: Option<&TypeInfo>,
     builder: &mut FunctionBuilder,
 ) -> CodegenResult<Value> {
-    let i64_ty = crate::lowering::types::map_primitive_to_clif(HirPrimitiveType::I64)
-        .expect("i64 clif");
+    let i64_ty =
+        crate::lowering::types::map_primitive_to_clif(HirPrimitiveType::I64).expect("i64 clif");
     let value = match actual_info {
         Some(TypeInfo::Primitive(HirPrimitiveType::I64)) => value,
         Some(TypeInfo::Primitive(HirPrimitiveType::I32)) | None => {
@@ -132,9 +124,7 @@ fn coerce_numeric_to_string(
                 value
             }
         }
-        Some(TypeInfo::Primitive(HirPrimitiveType::U8)) => {
-            builder.ins().uextend(i64_ty, value)
-        }
+        Some(TypeInfo::Primitive(HirPrimitiveType::U8)) => builder.ins().uextend(i64_ty, value),
         _ => {
             return Err(CodegenError::UnsupportedNode {
                 span,
@@ -144,15 +134,19 @@ fn coerce_numeric_to_string(
     };
 
     let mut signature = Signature::new(CallConv::SystemV);
-    signature.params.push(AbiParam::new(crate::lowering::types::map_primitive_to_clif(HirPrimitiveType::I64).expect("i64 clif")));
+    signature.params.push(AbiParam::new(
+        crate::lowering::types::map_primitive_to_clif(HirPrimitiveType::I64).expect("i64 clif"),
+    ));
     signature.returns.push(AbiParam::new(pointer_type()));
     let sig_ref = builder.func.import_signature(signature);
-    let func_ref = builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
-        name: ExternalName::testcase("str_from_i64"),
-        signature: sig_ref,
-        colocated: false,
-        patchable: false,
-    });
+    let func_ref = builder
+        .func
+        .import_function(cranelift_codegen::ir::ExtFuncData {
+            name: ExternalName::testcase("str_from_i64"),
+            signature: sig_ref,
+            colocated: false,
+            patchable: false,
+        });
     let call = builder.ins().call(func_ref, &[value]);
     builder
         .inst_results(call)
@@ -329,9 +323,12 @@ fn types_structurally_equal(
             canonical_item_id(resolution, *expected_base)
                 == canonical_item_id(resolution, *actual_base)
                 && expected_args.len() == actual_args.len()
-                && expected_args.iter().zip(actual_args.iter()).all(|(left, right)| {
-                    types_structurally_equal(type_result, resolution, *left, *right)
-                })
+                && expected_args
+                    .iter()
+                    .zip(actual_args.iter())
+                    .all(|(left, right)| {
+                        types_structurally_equal(type_result, resolution, *left, *right)
+                    })
         }
         (Some(TypeInfo::Applied { base, .. }), Some(TypeInfo::Named(actual_base))) => {
             canonical_item_id(resolution, *base) == canonical_item_id(resolution, *actual_base)

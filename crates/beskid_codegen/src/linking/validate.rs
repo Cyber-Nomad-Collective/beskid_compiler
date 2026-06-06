@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use cranelift_codegen::ir::ExternalName;
 
-use beskid_abi::{is_dispatch_symbol, BUILTIN_SPECS};
+use beskid_abi::{BUILTIN_SPECS, is_dispatch_symbol};
 
 use crate::{CodegenArtifact, ExternImport};
 
@@ -19,11 +19,7 @@ pub struct MissingSymbol {
 /// The full [`CodegenArtifact::extern_imports`] list may include contract symbols from every
 /// assembly unit (for link-plan completeness); JIT/AOT runtime resolution only needs this subset.
 pub fn referenced_extern_imports(artifact: &CodegenArtifact) -> Vec<ExternImport> {
-    let defined: HashSet<String> = artifact
-        .functions
-        .iter()
-        .map(|f| f.name.clone())
-        .collect();
+    let defined: HashSet<String> = artifact.functions.iter().map(|f| f.name.clone()).collect();
     let extern_by_symbol: std::collections::HashMap<&str, &ExternImport> = artifact
         .extern_imports
         .iter()
@@ -46,11 +42,7 @@ pub fn referenced_extern_imports(artifact: &CodegenArtifact) -> Vec<ExternImport
 /// Scan all lowered functions for `ExternalName::TestCase` references and ensure each name is defined
 /// in `artifact.functions` or is a known builtin/extern import.
 pub fn validate_artifact(artifact: &CodegenArtifact) -> Result<(), Vec<MissingSymbol>> {
-    let defined: HashSet<String> = artifact
-        .functions
-        .iter()
-        .map(|f| f.name.clone())
-        .collect();
+    let defined: HashSet<String> = artifact.functions.iter().map(|f| f.name.clone()).collect();
     let extern_syms: HashSet<String> = artifact
         .extern_imports
         .iter()

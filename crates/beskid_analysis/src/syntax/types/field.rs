@@ -162,9 +162,11 @@ impl crate::parsing::parsable::Parsable for Field {
                 (event_capacity, None, name, ty)
             }
             FieldKind::Injected => {
-                let first = inner.next().ok_or(
-                    crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType),
-                )?;
+                let first = inner
+                    .next()
+                    .ok_or(crate::parsing::error::ParseError::missing(
+                        crate::parser::Rule::BeskidType,
+                    ))?;
                 let (inject_qualifier, ty_pair) =
                     if first.as_rule() == crate::parser::Rule::InjectQualifier {
                         let qualifier = match first.as_str().strip_suffix("::") {
@@ -179,9 +181,11 @@ impl crate::parsing::parsable::Parsable for Field {
                         };
                         (
                             qualifier,
-                            inner.next().ok_or(crate::parsing::error::ParseError::missing(
-                                crate::parser::Rule::BeskidType,
-                            ))?,
+                            inner
+                                .next()
+                                .ok_or(crate::parsing::error::ParseError::missing(
+                                    crate::parser::Rule::BeskidType,
+                                ))?,
                         )
                     } else {
                         (None, first)

@@ -53,9 +53,7 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
                     out.push(MemberItemSpec {
                         name: format!(
                             "{}::{}::{}",
-                            parent_name,
-                            method.node.name.node.name,
-                            parameter.node.name.node.name
+                            parent_name, method.node.name.node.name, parameter.node.name.node.name
                         ),
                         kind: ItemKind::Parameter,
                         span: parameter.span,

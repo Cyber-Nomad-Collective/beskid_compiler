@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use abfall::Heap;
-use beskid_aot::{AotRunRequest, BuildProfile, RuntimeStrategy, build_and_run, default_runtime_strategy};
+use beskid_aot::{
+    AotRunRequest, BuildProfile, RuntimeLinkProfile, RuntimeStrategy, build_and_run,
+    default_runtime_strategy,
+};
 use beskid_codegen::lower_source;
 use beskid_runtime::{
     RuntimeRoot, clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope,
@@ -29,8 +32,12 @@ pub fn validate_lowered(source: &str) {
 pub fn build_aot_exe(source: &str, case_name: &str) -> (PathBuf, beskid_aot::AotRunResult) {
     let artifact = compile_artifact(source);
     let output_dir = temp_case_dir(case_name);
-    let runtime = default_runtime_strategy(BuildProfile::Debug, None)
-        .unwrap_or(RuntimeStrategy::Standalone);
+    let runtime = default_runtime_strategy(
+        BuildProfile::Debug,
+        None,
+        RuntimeLinkProfile::Std,
+    )
+    .unwrap_or(RuntimeStrategy::Standalone);
     let result = build_and_run(AotRunRequest {
         artifact,
         entrypoint: "main".to_owned(),

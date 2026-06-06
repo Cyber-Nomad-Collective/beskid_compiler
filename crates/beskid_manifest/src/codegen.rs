@@ -19,12 +19,7 @@ pub fn render_abi_builtins(manifest: &ManifestRoot) -> String {
     .unwrap();
     writeln!(&mut out, "use crate::generated::symbols::{{").unwrap();
     for entry in &manifest.kernel {
-        writeln!(
-            &mut out,
-            "    SYM_{},",
-            symbol_const_suffix(&entry.symbol)
-        )
-        .unwrap();
+        writeln!(&mut out, "    SYM_{},", symbol_const_suffix(&entry.symbol)).unwrap();
     }
     writeln!(&mut out, "}};").unwrap();
     writeln!(&mut out).unwrap();
@@ -37,11 +32,7 @@ pub fn render_abi_builtins(manifest: &ManifestRoot) -> String {
         let params = manifest_param_kinds(&entry.params);
         let name = param_array_name(&params, &mut param_arrays, &mut next_id);
         let returns = manifest_return_abi(&entry.returns);
-        specs.push((
-            symbol_const_suffix(&entry.symbol),
-            name,
-            returns,
-        ));
+        specs.push((symbol_const_suffix(&entry.symbol), name, returns));
     }
 
     for (params, name) in param_arrays.iter() {
@@ -117,7 +108,11 @@ pub fn render_abi_symbols(manifest: &ManifestRoot) -> String {
         if let Some(doc) = dispatch_doc(manifest, symbol) {
             writeln!(&mut out, "/// {doc}").unwrap();
         }
-        writeln!(&mut out, "pub const SYM_{const_suffix}: &str = \"{symbol}\";").unwrap();
+        writeln!(
+            &mut out,
+            "pub const SYM_{const_suffix}: &str = \"{symbol}\";"
+        )
+        .unwrap();
     }
 
     writeln!(&mut out).unwrap();
@@ -126,11 +121,7 @@ pub fn render_abi_symbols(manifest: &ManifestRoot) -> String {
         "/// User-facing FFI layout band for callback registration tables (independent of"
     )
     .unwrap();
-    writeln!(
-        &mut out,
-        "/// [`crate::BESKID_RUNTIME_ABI_VERSION`])."
-    )
-    .unwrap();
+    writeln!(&mut out, "/// [`crate::BESKID_RUNTIME_ABI_VERSION`]).").unwrap();
     writeln!(&mut out, "pub const BESKID_USER_FFI_LAYOUT_BAND: u32 = 1;").unwrap();
     writeln!(&mut out).unwrap();
 
@@ -142,12 +133,7 @@ pub fn render_abi_symbols(manifest: &ManifestRoot) -> String {
     .unwrap();
     writeln!(&mut out, "pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[").unwrap();
     for entry in &manifest.kernel {
-        writeln!(
-            &mut out,
-            "    SYM_{},",
-            symbol_const_suffix(&entry.symbol)
-        )
-        .unwrap();
+        writeln!(&mut out, "    SYM_{},", symbol_const_suffix(&entry.symbol)).unwrap();
     }
     writeln!(&mut out, "];").unwrap();
     out
@@ -213,7 +199,11 @@ pub fn render_dispatch_lookup(manifest: &ManifestRoot) -> String {
         "/// v3 [`RuntimeInteropEnvelope`](https://beskid-lang.org/platform-spec/language-meta/interop/interop-contracts/adr/0004-dispatch-envelope-layout/) header size in bytes."
     )
     .unwrap();
-    writeln!(&mut out, "pub const DISPATCH_ENVELOPE_HEADER_SIZE: i32 = 16;").unwrap();
+    writeln!(
+        &mut out,
+        "pub const DISPATCH_ENVELOPE_HEADER_SIZE: i32 = 16;"
+    )
+    .unwrap();
     writeln!(&mut out, "pub const DISPATCH_TYPE_DESC_OFFSET: i32 = 0;").unwrap();
     writeln!(&mut out, "pub const DISPATCH_TAG_OFFSET: i32 = 8;").unwrap();
     writeln!(&mut out, "pub const DISPATCH_PAD_OFFSET: i32 = 12;").unwrap();
@@ -271,11 +261,7 @@ pub fn render_dispatch_lookup(manifest: &ManifestRoot) -> String {
         "pub fn is_dispatch_symbol(symbol: &str) -> bool {{"
     )
     .unwrap();
-    writeln!(
-        &mut out,
-        "    dispatch_route_for_symbol(symbol).is_some()"
-    )
-    .unwrap();
+    writeln!(&mut out, "    dispatch_route_for_symbol(symbol).is_some()").unwrap();
     writeln!(&mut out, "}}").unwrap();
     out
 }
@@ -288,18 +274,9 @@ pub fn render_jit_kernel_registration(manifest: &ManifestRoot) -> String {
     )
     .unwrap();
     writeln!(&mut out).unwrap();
-    writeln!(
-        &mut out,
-        "use beskid_abi::generated::symbols::{{"
-    )
-    .unwrap();
+    writeln!(&mut out, "use beskid_abi::generated::symbols::{{").unwrap();
     for entry in &manifest.kernel {
-        writeln!(
-            &mut out,
-            "    SYM_{},",
-            symbol_const_suffix(&entry.symbol)
-        )
-        .unwrap();
+        writeln!(&mut out, "    SYM_{},", symbol_const_suffix(&entry.symbol)).unwrap();
     }
     writeln!(&mut out, "}};").unwrap();
     writeln!(&mut out, "use cranelift_jit::JITBuilder;").unwrap();
@@ -379,7 +356,13 @@ fn render_dispatch_group(out: &mut String, group: &str, entries: &[DispatchEntry
         "/// Number of `{group}` dispatch handlers declared in the manifest."
     )
     .unwrap();
-    writeln!(out, "pub const DISPATCH_{}_COUNT: usize = {};", group.to_uppercase(), entries.len()).unwrap();
+    writeln!(
+        out,
+        "pub const DISPATCH_{}_COUNT: usize = {};",
+        group.to_uppercase(),
+        entries.len()
+    )
+    .unwrap();
     for entry in entries {
         writeln!(
             out,
@@ -595,9 +578,7 @@ fn param_array_name(
     }
     let name = if params.is_empty() {
         "EMPTY".to_string()
-    } else if params.len() == 2
-        && params[0] == AbiParamKind::Ptr
-        && params[1] == AbiParamKind::Ptr
+    } else if params.len() == 2 && params[0] == AbiParamKind::Ptr && params[1] == AbiParamKind::Ptr
     {
         "PTR_PTR".to_string()
     } else if params.len() == 1 && params[0] == AbiParamKind::Ptr {
@@ -737,16 +718,14 @@ fn dispatch_tag_imports(manifest: &ManifestRoot) -> String {
 }
 
 fn valid_tags_bitmap(entries: &[DispatchEntry]) -> u64 {
-    entries.iter().fold(0u64, |bits, entry| bits | (1u64 << entry.tag))
+    entries
+        .iter()
+        .fold(0u64, |bits, entry| bits | (1u64 << entry.tag))
 }
 
 fn render_valid_tag_fn(out: &mut String, group: &str, entries: &[DispatchEntry]) {
     let upper = group.to_uppercase();
-    writeln!(
-        out,
-        "fn is_valid_{group}_tag(tag: i32) -> bool {{"
-    )
-    .unwrap();
+    writeln!(out, "fn is_valid_{group}_tag(tag: i32) -> bool {{").unwrap();
     writeln!(
         out,
         "    tag >= 0 && tag < 64 && (VALID_TAGS_{upper} & (1u64 << tag as u32)) != 0"
@@ -780,11 +759,7 @@ fn render_dispatch_fn<F>(
         "pub unsafe fn {fn_name}(tag: i32, enum_ptr: *const u8) -> {return_type} {{"
     )
     .unwrap();
-    writeln!(
-        out,
-        "    if !is_valid_{group}_tag(tag) {{"
-    )
-    .unwrap();
+    writeln!(out, "    if !is_valid_{group}_tag(tag) {{").unwrap();
     match return_type {
         "bool" => writeln!(out, "        return false;").unwrap(),
         _ => writeln!(out, "        return None;").unwrap(),
@@ -928,22 +903,14 @@ pub fn render_host_handler_table(manifest: &ManifestRoot) -> String {
         "pub extern \"C-unwind\" fn beskid_host_register_all() -> i32 {{"
     )
     .unwrap();
-    writeln!(
-        &mut out,
-        "    beskid_runtime::beskid_register_handlers("
-    )
-    .unwrap();
+    writeln!(&mut out, "    beskid_runtime::beskid_register_handlers(").unwrap();
     writeln!(
         &mut out,
         "        u64::from(beskid_abi::BESKID_RUNTIME_ABI_VERSION),"
     )
     .unwrap();
     writeln!(&mut out, "        HOST_HANDLERS.as_ptr(),").unwrap();
-    writeln!(
-        &mut out,
-        "        HOST_HANDLERS.len() as u64,"
-    )
-    .unwrap();
+    writeln!(&mut out, "        HOST_HANDLERS.len() as u64,").unwrap();
     writeln!(&mut out, "    )").unwrap();
     writeln!(&mut out, "}}").unwrap();
     out
@@ -988,7 +955,9 @@ fn render_dispatch_arm_body(entry: &DispatchEntry, callee: DispatchCallee) -> St
         .params
         .iter()
         .enumerate()
-        .map(|(index, param)| cast_call_arg(&entry.legacy_symbol, param, &format!("p{index}"), index))
+        .map(|(index, param)| {
+            cast_call_arg(&entry.legacy_symbol, param, &format!("p{index}"), index)
+        })
         .collect::<Vec<_>>()
         .join(", ");
     let callee = dispatch_callee_path(&entry.legacy_symbol, callee);
@@ -1003,7 +972,9 @@ fn dispatch_callee_path(legacy_symbol: &str, callee: DispatchCallee) -> String {
     match callee {
         DispatchCallee::Host => format!("crate::{legacy_symbol}"),
         DispatchCallee::Runtime => match legacy_symbol {
-            "channel_receive_ptr" | "channel_send_ptr" | "channel_try_receive_ptr"
+            "channel_receive_ptr"
+            | "channel_send_ptr"
+            | "channel_try_receive_ptr"
             | "channel_try_send_ptr" => format!("crate::{legacy_symbol}"),
             other => format!("crate::builtins::{other}"),
         },
@@ -1130,8 +1101,11 @@ fn numeric_arg_cast(legacy_symbol: &str, param: &str, var: &str, index: usize) -
     match (legacy_symbol, index) {
         ("str_slice", 1) | ("str_slice", 2) => format!("{var} as usize"),
         ("bytes_set", 1) | ("bytes_set", 2) => format!("{var} as i64"),
-        ("dynamic_map_aot", 0) | ("dynamic_map_aot", 1) | ("dynamic_cast_checked", 1)
-        | ("dynamic_cell_create", 0) | ("dynamic_cell_wrap", 0) => format!("{var} as u32"),
+        ("dynamic_map_aot", 0)
+        | ("dynamic_map_aot", 1)
+        | ("dynamic_cast_checked", 1)
+        | ("dynamic_cell_create", 0)
+        | ("dynamic_cell_wrap", 0) => format!("{var} as u32"),
         _ => match param {
             "u64" if legacy_symbol == "str_slice" && (index == 1 || index == 2) => {
                 format!("{var} as usize")
@@ -1150,20 +1124,30 @@ fn ptr_arg_cast(legacy_symbol: &str, var: &str, index: usize) -> String {
         ("bytes_from_str", 0) | ("str_from_bytes_utf8", 0) => {
             format!("{var} as *const beskid_abi::BeskidArray")
         }
-        ("bytes_compare", 0) | ("bytes_compare", 1) | ("bytes_copy", 0) | ("bytes_copy", 2)
-        | ("bytes_get", 0) | ("bytes_set", 0) | ("syscall_write_bytes", 1) => {
+        ("bytes_compare", 0)
+        | ("bytes_compare", 1)
+        | ("bytes_copy", 0)
+        | ("bytes_copy", 2)
+        | ("bytes_get", 0)
+        | ("bytes_set", 0)
+        | ("syscall_write_bytes", 1) => {
             format!("{var} as *const beskid_abi::BeskidArray")
         }
         ("str_new", 0) => format!("{var} as *const u8"),
         ("str_concat", 0) | ("str_concat", 1) | ("str_eq", 0) | ("str_eq", 1) => {
             format!("{var} as *const BeskidStr")
         }
-        ("dynamic_cell_create", 1) | ("dynamic_cell_wrap", 1) | ("dynamic_map_aot", 2)
-        | ("dynamic_map_aot", 3) | ("dynamic_map_fallback", 0) | ("dynamic_map_fallback", 2)
+        ("dynamic_cell_create", 1)
+        | ("dynamic_cell_wrap", 1)
+        | ("dynamic_map_aot", 2)
+        | ("dynamic_map_aot", 3)
+        | ("dynamic_map_fallback", 0)
+        | ("dynamic_map_fallback", 2)
         | ("dynamic_object_alloc", 0) => format!("{var} as *mut u8"),
         ("dynamic_cast_checked", 0) => format!("{var} as *mut crate::dynamic::DynamicCell"),
         ("channel_receive", 1) | ("channel_try_receive", 1) => format!("{var} as *mut i64"),
-        ("fiber_spawn", 1) | ("fiber_spawn_with_cancel_slot", 1)
+        ("fiber_spawn", 1)
+        | ("fiber_spawn_with_cancel_slot", 1)
         | ("fiber_spawn_with_cancel_slot", 2) => format!("{var} as *mut u8"),
         ("event_subscribe", 0) => {
             format!("{var} as *mut *mut crate::builtins::EventState")
@@ -1200,7 +1184,8 @@ mod tests {
 
     #[test]
     fn manifest_loads_and_generates() {
-        let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime_manifest.toml");
+        let manifest_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime_manifest.toml");
         let manifest = crate::load_manifest(&manifest_path).expect("manifest parse");
         assert_eq!(manifest.manifest.abi_version, 4);
         assert!(!manifest.kernel.is_empty());

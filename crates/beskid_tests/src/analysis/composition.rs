@@ -36,7 +36,10 @@ i32 main() {
 }
 "#;
     let codes = composition_codes(source);
-    assert_eq!(codes_in_e17xx_range(&codes), HashSet::from(["E1701".to_string()]));
+    assert_eq!(
+        codes_in_e17xx_range(&codes),
+        HashSet::from(["E1701".to_string()])
+    );
     let diags = analyze_composition(source);
     let e1701 = diags
         .iter()
@@ -63,7 +66,10 @@ i32 main() {
 }
 "#;
     let codes = composition_codes(source);
-    assert_eq!(codes_in_e17xx_range(&codes), HashSet::from(["E1709".to_string()]));
+    assert_eq!(
+        codes_in_e17xx_range(&codes),
+        HashSet::from(["E1709".to_string()])
+    );
     let diags = analyze_composition(source);
     let e1709 = diags
         .iter()
@@ -135,7 +141,10 @@ i32 main() {
 }
 "#;
     let codes = composition_codes(source);
-    assert_eq!(codes_in_e17xx_range(&codes), HashSet::from(["E1704".to_string()]));
+    assert_eq!(
+        codes_in_e17xx_range(&codes),
+        HashSet::from(["E1704".to_string()])
+    );
 }
 
 #[test]

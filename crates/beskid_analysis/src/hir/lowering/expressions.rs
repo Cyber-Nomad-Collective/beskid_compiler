@@ -1,10 +1,10 @@
 use crate::hir::{
-    HirArrayLiteralExpression, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBlockExpression,
-    HirCallExpression, HirEnumConstructorExpression, HirEnumPattern, HirExpressionNode,
-    HirGroupedExpression, HirIndexExpression, HirLambdaExpression, HirLambdaParameter, HirLiteral,
-    HirLiteralExpression, HirMatchArm, HirMatchExpression, HirMemberExpression, HirPathExpression,
-    HirPattern, HirSpawnExpression, HirStructLiteralExpression, HirStructLiteralField,
-    HirTryExpression, HirUnaryExpression,
+    HirArrayLiteralExpression, HirAssignExpression, HirAssignOp, HirBinaryExpression,
+    HirBlockExpression, HirCallExpression, HirEnumConstructorExpression, HirEnumPattern,
+    HirExpressionNode, HirGroupedExpression, HirIndexExpression, HirLambdaExpression,
+    HirLambdaParameter, HirLiteral, HirLiteralExpression, HirMatchArm, HirMatchExpression,
+    HirMemberExpression, HirPathExpression, HirPattern, HirSpawnExpression,
+    HirStructLiteralExpression, HirStructLiteralField, HirTryExpression, HirUnaryExpression,
 };
 use crate::syntax::{self, Spanned};
 
@@ -58,9 +58,7 @@ impl Lowerable for Spanned<syntax::Expression> {
             syntax::Expression::Spawn(spawn_expr) => {
                 HirExpressionNode::SpawnExpression(spawn_expr.lower())
             }
-            syntax::Expression::MacroInvocation(m) => {
-                HirExpressionNode::MacroInvocation(m.clone())
-            }
+            syntax::Expression::MacroInvocation(m) => HirExpressionNode::MacroInvocation(m.clone()),
             syntax::Expression::MacroMetavariable(m) => {
                 HirExpressionNode::MacroMetavariable(m.clone())
             }

@@ -91,7 +91,8 @@ impl ModuleIndex {
             .iter()
             .map(|dep| (dep.dependency_name.clone(), dep.project_name.clone()))
             .collect();
-        let (items, module_graph, builtin_items, symbols, by_symbol) = resolver.into_prefetch_parts();
+        let (items, module_graph, builtin_items, symbols, by_symbol) =
+            resolver.into_prefetch_parts();
         Self {
             items,
             module_graph,
@@ -212,11 +213,8 @@ impl ModuleIndex {
             let Some(unit) = assembly.units.get(index) else {
                 continue;
             };
-            let module_path = infer_logical_module_path(
-                unit,
-                &assembly.roots,
-                assembly.has_std_dependency,
-            );
+            let module_path =
+                infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency);
             let mut unit_resolver = Resolver::with_module_prefetch(
                 self.items.clone(),
                 self.module_graph.clone(),
@@ -240,7 +238,9 @@ impl ModuleIndex {
                 &unit_hir.hir,
                 module_path.as_deref(),
             );
-            resolution.tables.merge_from(&unit_resolution.tables, unit_hir.path.clone());
+            resolution
+                .tables
+                .merge_from(&unit_resolution.tables, unit_hir.path.clone());
         }
 
         Some(resolution)
@@ -313,7 +313,10 @@ fn collapse_homonymous_module_segment(segments: &mut Vec<String>) {
     }
 }
 
-fn module_path_from_src_suffix(path: &std::path::Path, has_std_dependency: bool) -> Option<Vec<String>> {
+fn module_path_from_src_suffix(
+    path: &std::path::Path,
+    has_std_dependency: bool,
+) -> Option<Vec<String>> {
     let path_str = path.to_string_lossy();
     let marker = "/src/";
     let idx = path_str.find(marker)?;

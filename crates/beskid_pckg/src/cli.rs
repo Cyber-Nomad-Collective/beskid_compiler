@@ -345,8 +345,7 @@ pub struct VersionActionArgs {
 }
 
 /// `beskid pckg pack --package-kind` override (platform-spec packageKind tool, D-TOOL-PCKG-0004).
-#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PackArgsPackageKind {
     /// Detect from `Project.proj` (library or template; the historical default).
     #[default]
@@ -354,7 +353,6 @@ pub enum PackArgsPackageKind {
     /// Pack a tool package: omits `documentation.apiJson`, strips `.beskid/docs/**`.
     Tool,
 }
-
 
 impl PackArgsPackageKind {
     fn as_override(self) -> PackProfileOverride {
@@ -509,9 +507,7 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
                 let root = crate::api_doc::ApiDocRoot::from_json_slice(bytes).map_err(|e| {
                     PckgError::Api {
                         status: reqwest::StatusCode::BAD_REQUEST,
-                        message: format!(
-                            "invalid `.beskid/docs/api.json` in package sources: {e}"
-                        ),
+                        message: format!("invalid `.beskid/docs/api.json` in package sources: {e}"),
                         body: None,
                     }
                 })?;

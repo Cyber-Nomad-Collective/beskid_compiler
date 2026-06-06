@@ -5,7 +5,11 @@ pub use beskid_analysis::doc::{
     API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocRoot, path_looks_absolute,
 };
 
-fn validate_type_ref(target: Option<usize>, root: &ApiDocRoot, item_label: &str) -> Result<(), String> {
+fn validate_type_ref(
+    target: Option<usize>,
+    root: &ApiDocRoot,
+    item_label: &str,
+) -> Result<(), String> {
     let Some(ref_id) = target else {
         return Ok(());
     };
@@ -119,8 +123,7 @@ fn validate_library_tree_row(item: &beskid_analysis::doc::ApiDocItem) -> Result<
         }
     }
     if MODULE_LEVEL_KINDS.contains(&item.kind.as_str()) && item.parent_id.is_none() {
-        let has_module_path = !item.module_path.is_empty()
-            || item.qualified_name.contains("::");
+        let has_module_path = !item.module_path.is_empty() || item.qualified_name.contains("::");
         if has_module_path {
             return Err(format!(
                 "item id {id} (\"{}\") kind \"{}\" at module scope requires parentId to its module",
@@ -191,11 +194,7 @@ fn validate_symbol_keys(root: &ApiDocRoot) -> Result<(), String> {
 
 fn validate_library_tree_aggregate(root: &ApiDocRoot) -> Result<(), String> {
     const MAX_GRAPH_ROOTS: usize = 128;
-    let roots = root
-        .items
-        .iter()
-        .filter(|i| i.parent_id.is_none())
-        .count();
+    let roots = root.items.iter().filter(|i| i.parent_id.is_none()).count();
     if roots > MAX_GRAPH_ROOTS {
         return Err(format!(
             "api.json has {roots} graph roots (max {MAX_GRAPH_ROOTS}); re-run beskid doc with a current CLI to link the module library tree"

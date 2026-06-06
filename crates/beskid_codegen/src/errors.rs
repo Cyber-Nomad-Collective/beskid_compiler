@@ -7,10 +7,7 @@ use beskid_analysis::types::TypeId;
 #[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
     #[error("unsupported node for kickoff lowering: {node}")]
-    UnsupportedNode {
-        span: SpanInfo,
-        node: &'static str,
-    },
+    UnsupportedNode { span: SpanInfo, node: &'static str },
     #[error("unsupported feature: {_0}")]
     UnsupportedFeature(&'static str),
     #[error("missing symbol: {_0}")]

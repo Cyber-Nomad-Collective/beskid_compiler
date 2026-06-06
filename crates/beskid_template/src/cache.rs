@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::error::{TemplateError, TemplateResult};
-use crate::manifest::{load_manifest_from_template_root, TEMPLATE_MANIFEST_REL};
+use crate::manifest::{TEMPLATE_MANIFEST_REL, load_manifest_from_template_root};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,9 +32,10 @@ pub enum InstallSource {
 
 pub fn beskid_config_root() -> PathBuf {
     if let Ok(dir) = std::env::var("BESKID_CONFIG_DIR")
-        && !dir.trim().is_empty() {
-            return PathBuf::from(dir);
-        }
+        && !dir.trim().is_empty()
+    {
+        return PathBuf::from(dir);
+    }
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("beskid")
@@ -112,7 +113,9 @@ pub fn uninstall_by_short_name(short_name: &str) -> TemplateResult<bool> {
     Ok(false)
 }
 
-pub fn find_installed_by_short_name(short_name: &str) -> TemplateResult<Option<(InstallSnapshot, PathBuf)>> {
+pub fn find_installed_by_short_name(
+    short_name: &str,
+) -> TemplateResult<Option<(InstallSnapshot, PathBuf)>> {
     Ok(list_installed()?
         .into_iter()
         .find(|(s, _)| s.short_name == short_name))
@@ -146,7 +149,12 @@ pub fn checksum_dir(root: &Path) -> TemplateResult<String> {
         if file.ends_with("manifest.snapshot.json") {
             continue;
         }
-        hasher.update(file.strip_prefix(root).unwrap_or(&file).to_string_lossy().as_bytes());
+        hasher.update(
+            file.strip_prefix(root)
+                .unwrap_or(&file)
+                .to_string_lossy()
+                .as_bytes(),
+        );
         hasher.update(&fs::read(&file)?);
     }
     Ok(format!("{:x}", hasher.finalize()))

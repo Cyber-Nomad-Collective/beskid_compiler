@@ -895,7 +895,8 @@ impl<'a> TypeContext<'a> {
         let Some(method_item_id) = self.item_id_for_span(method_span) else {
             return;
         };
-        let Some(ResolvedType::Item(receiver_item_id)) = self.resolved_type_at(def.node.receiver_type.span)
+        let Some(ResolvedType::Item(receiver_item_id)) =
+            self.resolved_type_at(def.node.receiver_type.span)
         else {
             return;
         };

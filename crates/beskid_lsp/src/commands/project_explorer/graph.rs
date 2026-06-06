@@ -1,10 +1,10 @@
 //! Project graph and dependency execute-command payloads.
 
 use beskid_analysis::projects::{
-    load_project_lock_dependencies, parse_manifest, DependencySource, ProjectLockDependencyEntry,
+    DependencySource, ProjectLockDependencyEntry, load_project_lock_dependencies, parse_manifest,
 };
-use beskid_graph::{graph_tooling_payload, GraphKind};
-use beskid_queries::{get_graph_document, get_graph_document_simple, GraphFetchRequest};
+use beskid_graph::{GraphKind, graph_tooling_payload};
+use beskid_queries::{GraphFetchRequest, get_graph_document, get_graph_document_simple};
 use serde_json::{Value, json};
 use tower_lsp_server::jsonrpc::Result;
 
@@ -21,16 +21,13 @@ pub(crate) fn get_graph(
     let request = GraphFetchRequest {
         kind,
         manifest_path: manifest_path.clone(),
-        workspace_manifest: workspace_uri.map(super::manifest_path_from_uri).transpose()?,
+        workspace_manifest: workspace_uri
+            .map(super::manifest_path_from_uri)
+            .transpose()?,
         compile_plan: None,
         entry_path: entry_uri.and_then(|uri| {
-            crate::workspace_scan::path_from_uri_string(uri).map(|p| {
-                if p.is_file() {
-                    p
-                } else {
-                    p.join("Main.bd")
-                }
-            })
+            crate::workspace_scan::path_from_uri_string(uri)
+                .map(|p| if p.is_file() { p } else { p.join("Main.bd") })
         }),
         entry_source: None,
     };
@@ -104,7 +101,10 @@ fn dependency_source_str(source: DependencySource) -> &'static str {
 }
 
 pub(crate) fn graph_kind_from_args(arguments: Option<&[Value]>) -> GraphKind {
-    let Some(obj) = arguments.and_then(|args| args.first()).and_then(Value::as_object) else {
+    let Some(obj) = arguments
+        .and_then(|args| args.first())
+        .and_then(Value::as_object)
+    else {
         return GraphKind::ProjectDeps;
     };
     obj.get("kind")

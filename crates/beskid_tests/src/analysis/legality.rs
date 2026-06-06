@@ -1,5 +1,6 @@
 use beskid_analysis::hir::{
-    HirExpressionNode, HirItem, HirLegalityError, HirProgram, HirStatementNode, validate_hir_program,
+    HirExpressionNode, HirItem, HirLegalityError, HirProgram, HirStatementNode,
+    validate_hir_program,
 };
 use beskid_analysis::syntax::Spanned;
 

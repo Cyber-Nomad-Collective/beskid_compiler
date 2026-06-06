@@ -34,8 +34,8 @@ pub fn typed_hir_from_lowered_after_resolution(
     let resolution = Resolver::new()
         .resolve_program(&hir)
         .map_err(LowerResolveTypeError::Resolve)?;
-    let (typed, type_errors) =
-        TypeContext::new(&resolution).type_program_with_errors_and_dependencies(&hir, &[], None, None, true);
+    let (typed, type_errors) = TypeContext::new(&resolution)
+        .type_program_with_errors_and_dependencies(&hir, &[], None, None, true);
     if !type_errors.is_empty() {
         return Err(LowerResolveTypeError::Type(type_errors));
     }
@@ -62,7 +62,13 @@ pub fn typed_hir_from_lowered_with_module_index(
         .resolve_entry_hir(&hir, entry_source_path.as_ref())
         .map_err(LowerResolveTypeError::Resolve)?;
     let (typed, type_errors) = TypeContext::new(&resolution)
-        .type_program_with_errors_and_dependencies(&hir, &dependency_hir_refs, None, entry_source_path, true);
+        .type_program_with_errors_and_dependencies(
+            &hir,
+            &dependency_hir_refs,
+            None,
+            entry_source_path,
+            true,
+        );
     if !type_errors.is_empty() {
         return Err(LowerResolveTypeError::Type(type_errors));
     }
@@ -163,5 +169,9 @@ pub enum LowerResolveTypeError {
 }
 
 fn format_errors<E: std::fmt::Display>(errors: &[E]) -> String {
-    errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n")
+    errors
+        .iter()
+        .map(|e| format!("  - {e}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

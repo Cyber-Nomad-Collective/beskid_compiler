@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 beskid_analysis = { path = "../beskid_analysis" }
+beskid_aot = { path = "../beskid_aot" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_engine = { path = "../beskid_engine" }
 beskid_pipeline = { path = "../beskid_pipeline" }

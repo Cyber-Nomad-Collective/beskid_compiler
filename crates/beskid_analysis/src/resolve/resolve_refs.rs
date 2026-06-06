@@ -131,7 +131,8 @@ impl Resolver {
                 self.push_scope();
                 self.resolve_type(&def.node.receiver_type);
                 let previous_receiver = self.current_receiver_item_id;
-                self.current_receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
+                self.current_receiver_item_id =
+                    self.receiver_item_id_for_type(&def.node.receiver_type);
                 self.insert_local("this", def.node.receiver_type.span);
                 for param in &def.node.parameters {
                     self.resolve_type(&param.node.ty);
@@ -514,7 +515,10 @@ impl Resolver {
                 return;
             }
             if self.resolve_item_in_scope(&segments[0]).is_none()
-                && self.module_graph.module_id(std::slice::from_ref(&segments[0])).is_none()
+                && self
+                    .module_graph
+                    .module_id(std::slice::from_ref(&segments[0]))
+                    .is_none()
                 && self.module_imports.get(&segments[0]).is_none()
             {
                 self.errors.push(ResolveError::UnknownValue {
@@ -708,7 +712,8 @@ impl Resolver {
         // `Console.Controls.Panel.Panel.Render` — skip homonymous type segment in fully qualified paths.
         if original_segments.len() >= 4 {
             let member = &original_segments[original_segments.len() - 1];
-            let module_path: Vec<String> = original_segments[..original_segments.len() - 2].to_vec();
+            let module_path: Vec<String> =
+                original_segments[..original_segments.len() - 2].to_vec();
             if let ModulePathLookup::Found(item) =
                 self.lookup_named_item_in_module(&module_path, member)
             {
@@ -729,11 +734,7 @@ impl Resolver {
         self.lookup_named_item_in_module(module_path, &tail[0])
     }
 
-    fn lookup_named_item_in_module(
-        &self,
-        module_path: &[String],
-        name: &str,
-    ) -> ModulePathLookup {
+    fn lookup_named_item_in_module(&self, module_path: &[String], name: &str) -> ModulePathLookup {
         let Some(module_id) = self.module_graph.module_id(module_path) else {
             return ModulePathLookup::ModuleMissing;
         };
@@ -788,9 +789,9 @@ impl Resolver {
             return false;
         };
         let member_name = format!("{}::{}", receiver.name, field_name);
-        self.items.iter().any(|info| {
-            info.kind == ItemKind::Field && info.name == member_name
-        })
+        self.items
+            .iter()
+            .any(|info| info.kind == ItemKind::Field && info.name == member_name)
     }
 
     fn insert_local(&mut self, name: &str, span: syntax::SpanInfo) {

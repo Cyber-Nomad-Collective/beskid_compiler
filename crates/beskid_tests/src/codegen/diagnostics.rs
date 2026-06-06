@@ -39,7 +39,12 @@ fn empty_type_context() -> (TypeResult, Resolution) {
     (type_result, resolution)
 }
 
-fn type_result_with_i32_i64() -> (TypeResult, Resolution, beskid_analysis::types::TypeId, beskid_analysis::types::TypeId) {
+fn type_result_with_i32_i64() -> (
+    TypeResult,
+    Resolution,
+    beskid_analysis::types::TypeId,
+    beskid_analysis::types::TypeId,
+) {
     let (mut type_result, resolution) = empty_type_context();
     let i32 = type_result
         .types
@@ -64,8 +69,7 @@ fn maps_missing_cast_intent_to_stable_code() {
         expected,
         actual,
     };
-    let diagnostic =
-        codegen_error_to_diagnostic("test.bd", "x", &error, &type_result, &resolution);
+    let diagnostic = codegen_error_to_diagnostic("test.bd", "x", &error, &type_result, &resolution);
 
     assert_eq!(diagnostic.code.as_deref(), Some("E2008"));
     assert!(diagnostic.message.contains("missing cast intent"));
@@ -96,8 +100,7 @@ fn maps_type_mismatch_to_readable_type_names() {
         expected: string,
         actual: i32,
     };
-    let diagnostic =
-        codegen_error_to_diagnostic("test.bd", "x", &error, &type_result, &resolution);
+    let diagnostic = codegen_error_to_diagnostic("test.bd", "x", &error, &type_result, &resolution);
 
     assert_eq!(diagnostic.code.as_deref(), Some("E2010"));
     assert!(diagnostic.message.contains("expected string, actual i32"));
@@ -116,8 +119,7 @@ fn maps_unsupported_node_to_stable_code() {
         span,
         node: "expression kind",
     };
-    let diagnostic =
-        codegen_error_to_diagnostic("test.bd", "x", &error, &type_result, &resolution);
+    let diagnostic = codegen_error_to_diagnostic("test.bd", "x", &error, &type_result, &resolution);
 
     assert_eq!(diagnostic.code.as_deref(), Some("E2001"));
     assert!(diagnostic.message.contains("unsupported node"));

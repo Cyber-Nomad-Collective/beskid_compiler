@@ -7,7 +7,7 @@ use beskid_analysis::hir::HirArrayLiteralExpression;
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeInfo;
 use cranelift_codegen::ir::{
-    AbiParam, ExternalName, ExtFuncData, InstBuilder, MemFlags, Signature, Value,
+    AbiParam, ExtFuncData, ExternalName, InstBuilder, MemFlags, Signature, Value,
 };
 use cranelift_codegen::isa::CallConv;
 
@@ -30,13 +30,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirArrayLiteralExpression {
         };
 
         // Compute element size
-        let layout = ctx
-            .codegen
-            .type_layout(ctx.type_result, elem_type)
-            .ok_or(CodegenError::UnsupportedNode {
+        let layout = ctx.codegen.type_layout(ctx.type_result, elem_type).ok_or(
+            CodegenError::UnsupportedNode {
                 span: node.span,
                 node: "array element layout",
-            })?;
+            },
+        )?;
         let elem_size = layout.size;
         let count = node.node.elements.len();
 
@@ -74,9 +73,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirArrayLiteralExpression {
                 emit_write_barrier(ctx, array_ptr, value)?;
             }
 
-            ctx.builder
-                .ins()
-                .store(MemFlags::new(), value, addr, 0);
+            ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
         }
 
         Ok(Some(array_ptr))
@@ -95,32 +92,29 @@ fn emit_array_new(
     signature.params.push(AbiParam::new(pointer_type()));
     signature.returns.push(AbiParam::new(pointer_type()));
     let sig_ref = ctx.builder.func.import_signature(signature);
-    let func_ref = ctx
-        .builder
-        .func
-        .import_function(ExtFuncData {
-            name: ExternalName::testcase("array_new"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
+    let func_ref = ctx.builder.func.import_function(ExtFuncData {
+        name: ExternalName::testcase("array_new"),
+        signature: sig_ref,
+        colocated: false,
+        patchable: false,
+    });
 
-    let elem_size_val = ctx
-        .builder
-        .ins()
-        .iconst(pointer_type(), elem_size as i64);
+    let elem_size_val = ctx.builder.ins().iconst(pointer_type(), elem_size as i64);
     let count_val = ctx.builder.ins().iconst(pointer_type(), count as i64);
 
     let call = ctx
         .builder
         .ins()
         .call(func_ref, &[elem_size_val, count_val]);
-    let result = ctx.builder.inst_results(call).first().copied().ok_or(
-        CodegenError::UnsupportedNode {
-            span,
-            node: "array_new result",
-        },
-    )?;
+    let result =
+        ctx.builder
+            .inst_results(call)
+            .first()
+            .copied()
+            .ok_or(CodegenError::UnsupportedNode {
+                span,
+                node: "array_new result",
+            })?;
     Ok(result)
 }
 
@@ -134,15 +128,12 @@ fn emit_write_barrier(
     signature.params.push(AbiParam::new(pointer_type()));
     signature.params.push(AbiParam::new(pointer_type()));
     let sig_ref = ctx.builder.func.import_signature(signature);
-    let func_ref = ctx
-        .builder
-        .func
-        .import_function(ExtFuncData {
-            name: ExternalName::testcase("gc_write_barrier"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
+    let func_ref = ctx.builder.func.import_function(ExtFuncData {
+        name: ExternalName::testcase("gc_write_barrier"),
+        signature: sig_ref,
+        colocated: false,
+        patchable: false,
+    });
     ctx.builder.ins().call(func_ref, &[dst_obj, value_ptr]);
     Ok(())
 }

@@ -221,12 +221,7 @@ fn corelib_collections_sources_carry_api_shape_tier_directives() {
     let collections_root = super::foundation_src().join("Collections");
     let mut missing: Vec<String> = Vec::new();
     for file in [
-        "Array.bd",
-        "List.bd",
-        "Map.bd",
-        "Set.bd",
-        "Queue.bd",
-        "Stack.bd",
+        "Array.bd", "List.bd", "Map.bd", "Set.bd", "Queue.bd", "Stack.bd",
     ] {
         let path = collections_root.join(file);
         let text = std::fs::read_to_string(&path)
@@ -269,8 +264,7 @@ fn corelib_system_streams_carry_api_shape_tier_directives() {
 #[test]
 fn checked_in_corelib_tier_metadata_round_trips_through_api_json() {
     use beskid_analysis::doc::{
-        ApiDocItem, ApiLocation, TIER_STANDARD, TIER_SUPPORTED, TIER_UNSTABLE,
-        resolve_item_tiers,
+        ApiDocItem, ApiLocation, TIER_STANDARD, TIER_SUPPORTED, TIER_UNSTABLE, resolve_item_tiers,
     };
 
     fn item(id: usize, parent: Option<usize>, doc: &str) -> ApiDocItem {

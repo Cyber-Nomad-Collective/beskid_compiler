@@ -75,7 +75,11 @@ fn enum_path_parses_and_builds_ast() {
     let pair = parse_pair(Rule::EnumPath, "Option::Some");
     let enum_path = EnumPath::parse(pair).expect("expected enum path");
     assert_eq!(
-        enum_path.node.type_path.node.segments[0].node.name.node.name,
+        enum_path.node.type_path.node.segments[0]
+            .node
+            .name
+            .node
+            .name,
         "Option"
     );
     assert_eq!(enum_path.node.variant.node.name, "Some");
@@ -160,10 +164,7 @@ fn parses_event_field_with_capacity() {
 
 #[test]
 fn rejects_legacy_ref_parameter_modifier() {
-    assert_parse_fail(
-        Rule::ContractDefinition,
-        "contract C { i64 f(ref i64 p); }",
-    );
+    assert_parse_fail(Rule::ContractDefinition, "contract C { i64 f(ref i64 p); }");
 }
 
 #[test]

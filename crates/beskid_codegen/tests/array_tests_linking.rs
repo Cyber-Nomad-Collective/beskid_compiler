@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions, assemble_program};
 use beskid_analysis::services::{
-    compile_front_end_from_resolved_input, resolve_input, FrontEndOptions, ResolvedInput,
+    FrontEndOptions, ResolvedInput, compile_front_end_from_resolved_input, resolve_input,
 };
 use beskid_codegen::linking::{FunctionDefIndex, LinkPlan};
 use beskid_codegen::lowering::lower_program_with_assembly;
@@ -22,7 +22,8 @@ fn compiler_workspace_root() -> PathBuf {
 #[test]
 fn assemble_array_tests_workspace() {
     let root = compiler_workspace_root();
-    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/collections/ArrayTests.bd");
+    let entry =
+        root.join("corelib/beskid_corelib/tests/corelib_tests/src/collections/ArrayTests.bd");
     let project_root: PathBuf = entry
         .parent()
         .unwrap()
@@ -34,15 +35,8 @@ fn assemble_array_tests_workspace() {
     let source = std::fs::read_to_string(&entry).expect("read ArrayTests.bd");
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(&root).expect("chdir");
-    let resolved = resolve_input(
-        Some(&entry),
-        Some(&project_root),
-        None,
-        None,
-        false,
-        false,
-    )
-    .expect("resolve");
+    let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
+        .expect("resolve");
     std::env::set_current_dir(previous).expect("restore cwd");
     let plan = resolved.compile_plan.expect("compile plan");
     let assembly = assemble_program(
@@ -62,7 +56,8 @@ fn assemble_array_tests_workspace() {
 #[test]
 fn front_end_array_tests() {
     let root = compiler_workspace_root();
-    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/collections/ArrayTests.bd");
+    let entry =
+        root.join("corelib/beskid_corelib/tests/corelib_tests/src/collections/ArrayTests.bd");
     let project_root: PathBuf = entry
         .parent()
         .unwrap()
@@ -74,15 +69,8 @@ fn front_end_array_tests() {
     let source = std::fs::read_to_string(&entry).expect("read ArrayTests.bd");
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(&root).expect("chdir");
-    let resolved = resolve_input(
-        Some(&entry),
-        Some(&project_root),
-        None,
-        None,
-        false,
-        false,
-    )
-    .expect("resolve");
+    let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
+        .expect("resolve");
     std::env::set_current_dir(previous).expect("restore cwd");
     let plan = resolved.compile_plan.expect("compile plan");
     let assembly = assemble_program(
@@ -118,7 +106,8 @@ fn front_end_array_tests() {
 #[test]
 fn lower_collections_array_tests_artifact_without_jit() {
     let root = compiler_workspace_root();
-    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/collections/ArrayTests.bd");
+    let entry =
+        root.join("corelib/beskid_corelib/tests/corelib_tests/src/collections/ArrayTests.bd");
     let project_root: PathBuf = entry
         .parent()
         .unwrap()
@@ -131,15 +120,8 @@ fn lower_collections_array_tests_artifact_without_jit() {
 
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(&root).expect("chdir workspace");
-    let resolved = resolve_input(
-        Some(&entry),
-        Some(&project_root),
-        None,
-        None,
-        false,
-        false,
-    )
-    .expect("resolve");
+    let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
+        .expect("resolve");
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let plan = resolved.compile_plan.expect("compile plan");
@@ -189,7 +171,8 @@ fn lower_collections_array_tests_artifact_without_jit() {
 #[test]
 fn lower_collections_array_tests_artifact_validates() {
     let root = compiler_workspace_root();
-    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/collections/ArrayTests.bd");
+    let entry =
+        root.join("corelib/beskid_corelib/tests/corelib_tests/src/collections/ArrayTests.bd");
     let project_root: PathBuf = entry
         .parent()
         .unwrap()
@@ -202,15 +185,8 @@ fn lower_collections_array_tests_artifact_validates() {
 
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(&root).expect("chdir workspace");
-    let resolved = resolve_input(
-        Some(&entry),
-        Some(&project_root),
-        None,
-        None,
-        false,
-        false,
-    )
-    .expect("resolve");
+    let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
+        .expect("resolve");
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let plan = resolved.compile_plan.expect("compile plan");

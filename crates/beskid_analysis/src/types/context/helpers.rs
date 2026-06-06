@@ -1,5 +1,5 @@
 use crate::hir::{HirExpressionNode, HirPrimitiveType};
-use crate::resolve::{canonical_item_id, ItemId, ItemKind, ResolvedType, ResolvedValue};
+use crate::resolve::{ItemId, ItemKind, ResolvedType, ResolvedValue, canonical_item_id};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::path_value::PathTypeEnv;
 use crate::types::{TypeId, TypeInfo};
@@ -148,7 +148,11 @@ impl<'a> TypeContext<'a> {
         None
     }
 
-    pub(super) fn record_call_kind(&mut self, span: SpanInfo, kind: super::context::CallLoweringKind) {
+    pub(super) fn record_call_kind(
+        &mut self,
+        span: SpanInfo,
+        kind: super::context::CallLoweringKind,
+    ) {
         if let Some(path) = &self.current_source_path {
             let key = crate::paths::unit_path_key(path);
             self.scoped_call_kinds
@@ -340,7 +344,7 @@ impl<'a> TypeContext<'a> {
         }
     }
 
-  /// Widen `i32` to `i64` when paired with `i64` so integer literals compare with syscall counts.
+    /// Widen `i32` to `i64` when paired with `i64` so integer literals compare with syscall counts.
     pub(super) fn promote_binary_numeric_operands(
         &self,
         left: TypeId,
@@ -349,20 +353,14 @@ impl<'a> TypeContext<'a> {
         let Some(i64_id) = self.primitive_type_id(HirPrimitiveType::I64) else {
             return (left, right);
         };
-        let left_prim = self
-            .type_table
-            .get(left)
-            .and_then(|info| match info {
-                TypeInfo::Primitive(primitive) => Some(*primitive),
-                _ => None,
-            });
-        let right_prim = self
-            .type_table
-            .get(right)
-            .and_then(|info| match info {
-                TypeInfo::Primitive(primitive) => Some(*primitive),
-                _ => None,
-            });
+        let left_prim = self.type_table.get(left).and_then(|info| match info {
+            TypeInfo::Primitive(primitive) => Some(*primitive),
+            _ => None,
+        });
+        let right_prim = self.type_table.get(right).and_then(|info| match info {
+            TypeInfo::Primitive(primitive) => Some(*primitive),
+            _ => None,
+        });
         match (left_prim, right_prim) {
             (Some(HirPrimitiveType::I64), Some(HirPrimitiveType::I32)) => (left, i64_id),
             (Some(HirPrimitiveType::I32), Some(HirPrimitiveType::I64)) => (i64_id, right),

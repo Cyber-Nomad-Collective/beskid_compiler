@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use crate::resolve::symbol::symbol_key;
 use crate::resolve::{ItemInfo, Resolution};
 
-use super::qualified_names::{lookup_type_ref_id, qualified_names_for_items, type_ref_lookup_index};
+use super::qualified_names::{
+    lookup_type_ref_id, qualified_names_for_items, type_ref_lookup_index,
+};
 
 /// Registry documentation route context for turning resolved `@ref` paths into markdown links.
 ///
@@ -67,9 +69,9 @@ fn package_for_item(target: &ItemInfo, ctx: &DocRefLinkContext) -> String {
                 .publishing_package
                 .as_ref()
                 .is_none_or(|pub_pkg| pub_pkg != &dep_pkg)
-            {
-                return format!("{dep_pkg}@{ver}");
-            }
+        {
+            return format!("{dep_pkg}@{ver}");
+        }
     }
     ctx.package_with_version.trim().to_string()
 }
@@ -89,10 +91,7 @@ fn find_resolved_item_id(path: &str, resolution: &Resolution) -> Option<usize> {
     }
     let qnames = qualified_names_for_items(resolution);
     if qnames.values().any(|qn| qn == path) {
-        return qnames
-            .iter()
-            .find(|(_, qn)| *qn == path)
-            .map(|(id, _)| *id);
+        return qnames.iter().find(|(_, qn)| *qn == path).map(|(id, _)| *id);
     }
     let index = type_ref_lookup_index(resolution);
     if let Some(id) = lookup_type_ref_id(path, &index) {
@@ -106,19 +105,23 @@ fn find_resolved_item_id(path: &str, resolution: &Resolution) -> Option<usize> {
     let suffix = format!("::{path}");
     for item in &resolution.items {
         if let Some(qn) = qnames.get(&item.id.0)
-            && (qn == path || qn.ends_with(&suffix)) {
-                return Some(item.id.0);
-            }
+            && (qn == path || qn.ends_with(&suffix))
+        {
+            return Some(item.id.0);
+        }
     }
     None
 }
 
 fn qualified_name_for_id(id: usize, resolution: &Resolution) -> String {
     let qnames = qualified_names_for_items(resolution);
-    qnames
-        .get(&id)
-        .cloned()
-        .unwrap_or_else(|| resolution.items.get(id).map(|i| i.name.clone()).unwrap_or_default())
+    qnames.get(&id).cloned().unwrap_or_else(|| {
+        resolution
+            .items
+            .get(id)
+            .map(|i| i.name.clone())
+            .unwrap_or_default()
+    })
 }
 
 /// Resolve a `@ref` path to a Markdown fragment (markdown link when [DocRefLinkContext] is set, else backticks).

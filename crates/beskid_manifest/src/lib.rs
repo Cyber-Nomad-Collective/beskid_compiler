@@ -105,7 +105,10 @@ pub fn generate_link_anchor(manifest: &Manifest, out_dir: &Path) -> Result<(), S
 }
 
 /// Convenience: load manifest and write JIT kernel registration helper.
-pub fn generate_jit_registration_from_path(manifest_path: &Path, out_dir: &Path) -> Result<(), String> {
+pub fn generate_jit_registration_from_path(
+    manifest_path: &Path,
+    out_dir: &Path,
+) -> Result<(), String> {
     let manifest = load_manifest(manifest_path)?;
     generate_jit_registration(&manifest, out_dir)
 }

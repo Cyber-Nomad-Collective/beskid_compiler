@@ -8,8 +8,9 @@ use beskid_pipeline::phases::{FULL_BUILD_PHASE_ORDER, MACRO_EXPAND, PARSE};
 
 use super::macros_support::{
     assert_no_macro_invocations_in_block, assert_no_macro_invocations_in_expr,
-    block_contains_macro_invocation_named, count_macro_invocations, expression_contains_binary_with_literal,
-    find_function_body, parse_expand, parse_expand_with_depth,
+    block_contains_macro_invocation_named, count_macro_invocations,
+    expression_contains_binary_with_literal, find_function_body, parse_expand,
+    parse_expand_with_depth,
 };
 
 #[test]
@@ -129,12 +130,8 @@ unit main() {
 }
 "#;
     let program = parse_program_with_source_name("Main.bd", source).expect("parse");
-    let outcome = beskid_analysis::macros::expand_program_with_diagnostics(
-        program,
-        2,
-        "Main.bd",
-        source,
-    );
+    let outcome =
+        beskid_analysis::macros::expand_program_with_diagnostics(program, 2, "Main.bd", source);
     assert!(
         outcome
             .diagnostics
@@ -177,11 +174,7 @@ unit main() {
 "#;
     let expanded = parse_expand(source);
     let body = find_function_body(&expanded.node, "main");
-    let if_stmt = body
-        .node
-        .statements
-        .first()
-        .expect("if statement");
+    let if_stmt = body.node.statements.first().expect("if statement");
     let then_block = match &if_stmt.node {
         beskid_analysis::syntax::Statement::If(i) => &i.node.then_block,
         other => panic!("expected if, got {other:?}"),
@@ -344,9 +337,11 @@ fn corelib_compiler_sdk_identity_macro_expands() {
         .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let program = parse_program_with_source_name("Macros.bd", &source).expect("parse");
     let expanded = expand_program(program, DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
-    let has_macro_def = expanded.node.items.iter().any(|item| {
-        matches!(&item.node, Node::MacroDefinition(_))
-    });
+    let has_macro_def = expanded
+        .node
+        .items
+        .iter()
+        .any(|item| matches!(&item.node, Node::MacroDefinition(_)));
     assert!(has_macro_def, "macro definition should remain in the unit");
 }
 
@@ -467,7 +462,10 @@ fn fragment_kind_matrix_invalid_invocations_parse() {
 #[test]
 fn fragment_kind_matrix_valid_expansion_behavior() {
     for case in fragment_kind_cases() {
-        if matches!(case.kind, "statement" | "node" | "pattern" | "type" | "identifier" | "literal" | "path" | "item") {
+        if matches!(
+            case.kind,
+            "statement" | "node" | "pattern" | "type" | "identifier" | "literal" | "path" | "item"
+        ) {
             continue;
         }
         let source = format!(

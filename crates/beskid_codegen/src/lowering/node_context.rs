@@ -1,10 +1,12 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::CodegenContext;
 use crate::lowering::function::FunctionLoweringState;
-use crate::lowering::locals::{expr_type_at, infer_expr_type, require_expr_type, resolved_value_at};
+use crate::lowering::locals::{
+    expr_type_at, infer_expr_type, require_expr_type, resolved_value_at,
+};
 use beskid_analysis::hir::{HirExpressionNode, HirFunctionDefinition};
-use beskid_analysis::resolve::{ItemId, ResolvedValue};
 use beskid_analysis::resolve::Resolution;
+use beskid_analysis::resolve::{ItemId, ResolvedValue};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{TypeId, TypeResult};
 use cranelift_frontend::FunctionBuilder;

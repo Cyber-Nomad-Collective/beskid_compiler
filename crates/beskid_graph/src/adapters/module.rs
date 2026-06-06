@@ -6,7 +6,9 @@ use crate::compose::{SpecBuilder, style_module};
 use crate::model::{GraphDocument, GraphKind, GraphNodeKind, NodeMetadata};
 use crate::render::render_document;
 
-pub fn from_module_graph(module_graph: &ModuleGraph) -> Result<GraphDocument, crate::render::GraphError> {
+pub fn from_module_graph(
+    module_graph: &ModuleGraph,
+) -> Result<GraphDocument, crate::render::GraphError> {
     let mut builder = SpecBuilder::new(GraphKind::ModuleTree);
     let mut id_by_module = HashMap::new();
 

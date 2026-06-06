@@ -135,9 +135,7 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
     let launched_host = host_chain
         .last()
         .map(|host| host.name.clone())
-        .unwrap_or_else(|| {
-            resolve_host_key(&collected.hosts, &launch_host).unwrap_or(launch_host)
-        });
+        .unwrap_or_else(|| resolve_host_key(&collected.hosts, &launch_host).unwrap_or(launch_host));
 
     let scope_names = merged_scopes
         .iter()

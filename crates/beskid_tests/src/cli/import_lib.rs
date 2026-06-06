@@ -102,11 +102,8 @@ fn import_lib_merges_into_existing_link_block() {
 
     let before = fs::read_to_string(&manifest_path).expect("read before");
     let parsed_before = parse_project_manifest(&before).expect("parse before");
-    let outcome = merge_resolution_into_manifest_source(
-        &before,
-        parsed_before.link.as_ref(),
-        &resolution,
-    );
+    let outcome =
+        merge_resolution_into_manifest_source(&before, parsed_before.link.as_ref(), &resolution);
     fs::write(&manifest_path, &outcome.updated_source).expect("write merged");
 
     let after = fs::read_to_string(&manifest_path).expect("read after");

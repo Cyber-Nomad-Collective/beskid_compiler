@@ -7,7 +7,9 @@ use beskid_codegen::cranelift_host::{
     declare_builtin_imports, declare_user_functions, declare_validated_extern_imports,
     remap_testcase_externals,
 };
-use beskid_codegen::{validate_artifact, CodegenArtifact, emit_string_literals, emit_type_descriptors};
+use beskid_codegen::{
+    CodegenArtifact, emit_string_literals, emit_type_descriptors, validate_artifact,
+};
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;
 use cranelift_module::{DataId, FuncId, Linkage, Module, default_libcall_names};

@@ -371,8 +371,7 @@ fn depends_on_corelib_aggregate(
     let Some(corelib_root) = default_corelib_dependency_path().map(PathBuf::from) else {
         return false;
     };
-    let corelib_manifest =
-        normalize_existing_path(&corelib_root.join("Project.proj"));
+    let corelib_manifest = normalize_existing_path(&corelib_root.join("Project.proj"));
     consumer_manifest.dependencies.iter().any(|dependency| {
         if dependency.source != DependencySource::Path {
             return false;

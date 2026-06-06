@@ -6,28 +6,25 @@ use anyhow::Result;
 use beskid_pipeline::{
     PipelineObserver, observe_phase, observe_phase_result,
     phases::{
-        COMPOSITION_RESOLVE, LOWER, LOWER_READY, PARSE, PROGRAM_ASSEMBLE,
-        SEMANTIC, SEMANTIC_SNAPSHOT,
+        COMPOSITION_RESOLVE, LOWER, LOWER_READY, PARSE, PROGRAM_ASSEMBLE, SEMANTIC,
+        SEMANTIC_SNAPSHOT,
     },
 };
 
+use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
+use crate::mod_host::{ModHostInput, run_analyze_rewrite_after_composition, run_through_generate};
 use crate::projects::{
-    AssemblyOptions, CompilePlan, PreparedProjectWorkspace, ProgramAssembly,
-    assemble_program,
+    AssemblyOptions, CompilePlan, PreparedProjectWorkspace, ProgramAssembly, assemble_program,
 };
 use crate::syntax::Spanned;
-use crate::AnalysisOptions;
-use crate::mod_host::{ModHostInput, run_analyze_rewrite_after_composition, run_through_generate};
 
 use super::composition::{composition_result_to_diagnostics, resolve_program_composition};
+use super::entry_session::{current_syntax_generation_id, update_semantic_snapshot};
 use super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::input::ResolvedInput;
 use super::lower::lower_normalize_resolve_type_spanned_with_assembly;
 use super::semantic::{require_no_semantic_errors, semantic_rule_diagnostics_for_program};
-use super::entry_session::{
-    current_syntax_generation_id, update_semantic_snapshot,
-};
 use super::session::{SemanticSnapshot, SessionFingerprint, session_for_assembly};
 
 /// Whether prepare stops after diagnostics or continues through typed HIR.
@@ -68,13 +65,17 @@ impl PreparedCompilation {
     /// Typed HIR bundle for codegen; panics if prepare ran in diagnostics-only mode.
     pub fn into_executable(self) -> Result<FrontEndTypedResult> {
         self.typed.ok_or_else(|| {
-            anyhow::anyhow!("prepare_compilation ran in DiagnosticsOnly mode; no typed HIR available")
+            anyhow::anyhow!(
+                "prepare_compilation ran in DiagnosticsOnly mode; no typed HIR available"
+            )
         })
     }
 
     pub fn executable(&self) -> Result<&FrontEndTypedResult> {
         self.typed.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("prepare_compilation ran in DiagnosticsOnly mode; no typed HIR available")
+            anyhow::anyhow!(
+                "prepare_compilation ran in DiagnosticsOnly mode; no typed HIR available"
+            )
         })
     }
 }
@@ -85,10 +86,9 @@ pub fn prepare_compilation(
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<PreparedCompilation> {
-    let plan = resolved
-        .compile_plan
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)"))?;
+    let plan = resolved.compile_plan.as_ref().ok_or_else(|| {
+        anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)")
+    })?;
 
     let spine = run_prepare_spine(
         &resolved.source_path,
@@ -110,10 +110,9 @@ pub fn prepare_compilation_diagnostics(
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>)> {
-    let plan = resolved
-        .compile_plan
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)"))?;
+    let plan = resolved.compile_plan.as_ref().ok_or_else(|| {
+        anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)")
+    })?;
 
     let mut diagnostics = Vec::new();
     let spine = run_prepare_spine(
@@ -188,7 +187,8 @@ fn run_prepare_spine(
     let syntax_generation_id = current_syntax_generation_id(&session_fingerprint);
 
     let mut rule_options = AnalysisOptions::default();
-    rule_options.module_level_meta_items_allowed = options.front_end.module_level_meta_items_allowed;
+    rule_options.module_level_meta_items_allowed =
+        options.front_end.module_level_meta_items_allowed;
     rule_options.known_assembly_module_paths =
         Some(assembly.module_index.known_module_path_strings());
     rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
@@ -229,8 +229,7 @@ fn run_prepare_spine(
     })?;
 
     if (options.front_end.with_semantic_diagnostics || collect_diagnostics)
-        && let Some(mut snapshot) =
-            super::session::cached_semantic_snapshot(&session_fingerprint)
+        && let Some(mut snapshot) = super::session::cached_semantic_snapshot(&session_fingerprint)
     {
         snapshot = snapshot.with_composition(&composition_result.snapshot);
         update_semantic_snapshot(&session_fingerprint, snapshot);
@@ -291,9 +290,7 @@ fn run_prepare_spine(
             composition_snapshot: composition_snapshot.clone(),
         };
         let executable_snapshot = super::session::cached_semantic_snapshot(&session_fingerprint)
-            .map(|snap| {
-                snap.with_typed_resolution(resolution_fingerprint, types_fingerprint)
-            })
+            .map(|snap| snap.with_typed_resolution(resolution_fingerprint, types_fingerprint))
             .unwrap_or_else(|| {
                 SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
                     .with_composition(&composition_snapshot)

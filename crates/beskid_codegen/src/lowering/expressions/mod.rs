@@ -1,13 +1,13 @@
 mod array_literal_expression;
 mod assign_expression;
-pub mod export;
-mod extern_call;
 mod binary_expression;
 mod block_expression;
 mod call_expression;
 pub mod dynamic;
 mod enum_constructor_expression;
+pub mod export;
 mod expression;
+mod extern_call;
 mod grouped_expression;
 mod index_expression;
 mod literal;

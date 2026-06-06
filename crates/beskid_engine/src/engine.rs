@@ -1,12 +1,11 @@
 use abfall::Heap;
+use beskid_aot::RuntimeLinkProfile;
 use beskid_codegen::{CodegenArtifact, ExternImport};
 use beskid_pipeline::PipelineObserver;
-use beskid_aot::RuntimeLinkProfile;
 use beskid_runtime::{
     GcSnapshot, RuntimeRoot, beskid_heap_options_for_engine, bootstrap_dispatch_handlers,
-    clear_current_heap,
-    clear_current_root, enter_runtime_scope, leave_runtime_scope, run_closure_as_main,
-    scheduler_init, set_current_heap, set_current_root, snapshot_gc,
+    clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope,
+    run_closure_as_main, scheduler_init, set_current_heap, set_current_root, snapshot_gc,
 };
 use std::sync::Arc;
 
@@ -198,11 +197,7 @@ fn resolve_process_extern_symbols(
         let addr = unsafe { dlsym(RTLD_DEFAULT, c_sym.as_ptr()) };
         if addr.is_null() {
             let err = unsafe { CStr::from_ptr(dlerror()) };
-            return Err(format!(
-                "dlsym({}): {}",
-                imp.symbol,
-                err.to_string_lossy()
-            ));
+            return Err(format!("dlsym({}): {}", imp.symbol, err.to_string_lossy()));
         }
         result.push((imp.symbol.clone(), addr as *const u8));
     }

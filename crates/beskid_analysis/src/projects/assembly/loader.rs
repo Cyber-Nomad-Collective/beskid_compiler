@@ -8,19 +8,20 @@ use std::sync::Arc;
 use rayon::prelude::*;
 use thiserror::Error;
 
-use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
-use crate::projects::{CompilePlan, PreparedProjectWorkspace};
-use crate::syntax::{Program, Spanned};
 use super::discovery::resolve_module_file;
 use super::module_index::ModuleIndex;
 use super::roots::effective_roots_for_plan;
 use super::unit_builder::UnitBuilder;
 use super::unit_cache::{disk_cache_stats, ensure_manifest};
 use super::{ProgramAssembly, SourceUnit, UnitHir};
+use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
+use crate::projects::{CompilePlan, PreparedProjectWorkspace};
+use crate::syntax::{Program, Spanned};
 
 /// Optional Salsa-backed unit builder (set by `beskid_queries` during assembly).
-pub type UnitMaterializer =
-    std::sync::Arc<dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync>;
+pub type UnitMaterializer = std::sync::Arc<
+    dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync,
+>;
 
 #[derive(Debug, Error)]
 pub enum AssemblyError {
@@ -222,7 +223,9 @@ pub fn assemble_program_with_materializer(
             project_root.display()
         );
     }
-    let entry_key = entry_canonical.canonicalize().unwrap_or(entry_canonical.clone());
+    let entry_key = entry_canonical
+        .canonicalize()
+        .unwrap_or(entry_canonical.clone());
 
     struct UnitBuildInput {
         path: PathBuf,
@@ -254,10 +257,7 @@ pub fn assemble_program_with_materializer(
                     match fs::read_to_string(path) {
                         Ok(text) => text,
                         Err(source) if options.skip_parse_errors && !is_entry => {
-                            log::warn!(
-                                "skipping unreadable unit {} ({source})",
-                                path.display()
-                            );
+                            log::warn!("skipping unreadable unit {} ({source})", path.display());
                             return None;
                         }
                         Err(source) => {
@@ -299,8 +299,8 @@ pub fn assemble_program_with_materializer(
 
     let project_root_for_pool = project_root.clone();
     let salsa_build = materializer.as_ref().map(|build| build.as_ref() as _);
-    let built_units: Result<Vec<(usize, bool, SourceUnit, super::UnitHir)>, AssemblyError> =
-        pool.install(|| {
+    let built_units: Result<Vec<(usize, bool, SourceUnit, super::UnitHir)>, AssemblyError> = pool
+        .install(|| {
             build_inputs
                 .par_iter()
                 .enumerate()
@@ -428,4 +428,3 @@ fn is_compiler_mod_sdk_source_root(root: &Path) -> bool {
     let root_str = root.to_string_lossy();
     root_str.contains("compiler_sdk") || root_str.contains("compiler-sdk")
 }
-

@@ -109,12 +109,7 @@ fn is_likely_statement(snippet: &str) -> bool {
 }
 
 fn lower_wrapped(source: &str) -> Result<beskid_codegen::services::LoweredProgram, String> {
-    lower_source(
-        Path::new(REPL_SOURCE_PATH),
-        source,
-        true,
-    )
-    .map_err(format_lower_error)
+    lower_source(Path::new(REPL_SOURCE_PATH), source, true).map_err(format_lower_error)
 }
 
 fn run_wrapped(

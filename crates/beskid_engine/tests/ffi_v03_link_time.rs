@@ -8,7 +8,7 @@ use anyhow::Result;
 use beskid_abi::BESKID_USER_FFI_LAYOUT_BAND;
 use beskid_aot::{AotBuildRequest, BuildOutputKind, build};
 use beskid_codegen::services::lower_source;
-use beskid_runtime::{beskid_register_callbacks, CallbackTableEntry};
+use beskid_runtime::{CallbackTableEntry, beskid_register_callbacks};
 
 fn temp_case_dir(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -39,16 +39,9 @@ pub i64 main() { return Libc.getpid(); }
     let output = dir.join("getpid_test");
     let result = build(AotBuildRequest {
         external_libraries: vec!["c".into()],
-        ..AotBuildRequest::with_defaults(
-            lowered.artifact,
-            BuildOutputKind::Exe,
-            output,
-            "main",
-        )
+        ..AotBuildRequest::with_defaults(lowered.artifact, BuildOutputKind::Exe, output, "main")
     })?;
-    let binary = result
-        .final_path
-        .expect("linked executable path");
+    let binary = result.final_path.expect("linked executable path");
     let mut child = Command::new(&binary).spawn()?;
     let expected = (child.id() & 0xFF) as i32;
     let status = child.wait()?;
@@ -80,14 +73,17 @@ pub unit plugin_init() { return; }
         "plugin_init",
     ))?;
     let shared = result.final_path.expect("shared library path");
-    let nm = Command::new("nm")
-        .arg("-D")
-        .arg(&shared)
-        .output()?;
-    assert!(nm.status.success(), "nm failed: {}", String::from_utf8_lossy(&nm.stderr));
+    let nm = Command::new("nm").arg("-D").arg(&shared).output()?;
+    assert!(
+        nm.status.success(),
+        "nm failed: {}",
+        String::from_utf8_lossy(&nm.stderr)
+    );
     let stdout = String::from_utf8_lossy(&nm.stdout);
     assert!(
-        stdout.lines().any(|line| line.contains("beskid_plugin_init")),
+        stdout
+            .lines()
+            .any(|line| line.contains("beskid_plugin_init")),
         "expected exported symbol in nm output:\n{stdout}"
     );
     let _ = std::fs::remove_dir_all(dir);
@@ -102,16 +98,14 @@ fn host_registers_callbacks_with_layout_band() -> Result<()> {
         userdata: std::ptr::null_mut(),
     }];
     assert_eq!(
-        unsafe { beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND, table.as_ptr(), table.len()) },
+        unsafe {
+            beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND, table.as_ptr(), table.len())
+        },
         0
     );
     assert_eq!(
         unsafe {
-            beskid_register_callbacks(
-                BESKID_USER_FFI_LAYOUT_BAND - 1,
-                table.as_ptr(),
-                table.len(),
-            )
+            beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND - 1, table.as_ptr(), table.len())
         },
         1
     );

@@ -3,11 +3,11 @@
 use std::path::{Path, PathBuf};
 
 use crate::projects::{
-    AssemblyDiscovery, AssemblyOptions, CompilePlan, PreparedProjectWorkspace, ProgramAssembly,
-    PROJECT_LOCK_FILE_NAME, ProjectGraphBuildOptions, ProjectKind, UnresolvedDependencyPolicy,
-    WorkspacePrepareOptions, assemble_program, build_compile_plan_with_policy_and_graph,
-    discover_workspace_file, effective_roots_for_plan, load_manifest_from_path,
-    module_roots_from_effective, prepare_project_workspace_with_options,
+    AssemblyDiscovery, AssemblyOptions, CompilePlan, PROJECT_LOCK_FILE_NAME,
+    PreparedProjectWorkspace, ProgramAssembly, ProjectGraphBuildOptions, ProjectKind,
+    UnresolvedDependencyPolicy, WorkspacePrepareOptions, assemble_program,
+    build_compile_plan_with_policy_and_graph, discover_workspace_file, effective_roots_for_plan,
+    load_manifest_from_path, module_roots_from_effective, prepare_project_workspace_with_options,
     resolve_project_manifest_for_source_path,
 };
 
@@ -105,9 +105,7 @@ impl CompilationContext {
                 frozen: false,
                 locked: lockfile.is_file(),
             };
-            if let Ok(workspace) =
-                prepare_project_workspace_with_options(plan, prepare_options)
-            {
+            if let Ok(workspace) = prepare_project_workspace_with_options(plan, prepare_options) {
                 self.prepared_workspace = Some(workspace);
                 self.module_roots = module_roots_from_effective(&effective_roots_for_plan(
                     plan,

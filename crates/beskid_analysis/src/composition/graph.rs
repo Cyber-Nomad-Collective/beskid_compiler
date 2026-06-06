@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use daggy::petgraph::visit::IntoNeighborsDirected;
 use daggy::petgraph::Direction;
+use daggy::petgraph::visit::IntoNeighborsDirected;
 use daggy::petgraph::visit::Topo;
 use daggy::{Dag, NodeIndex};
 

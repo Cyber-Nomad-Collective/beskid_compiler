@@ -6,7 +6,8 @@ use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{
     FrontEndOptions, PrepareMode, PrepareOptions, PreparedCompilation, ResolvedInput,
-    SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot, invalidate_entry_sessions_for_project,
+    SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot,
+    invalidate_entry_sessions_for_project,
 };
 use beskid_pipeline::{PipelineObserver, observe_phase, phases};
 

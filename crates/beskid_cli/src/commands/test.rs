@@ -10,13 +10,14 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
+use crate::runtime_profile::CliRuntimeProfile;
+use beskid_tools::PipelineProgressKind;
 use beskid_tools::diagnostics;
 use beskid_tools::pipeline::{
     tui::FileLineLink, tui::TestRowState, tui::TestRunUi, use_cli_spinner,
 };
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
-use beskid_tools::PipelineProgressKind;
-use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 
 #[derive(Args, Debug, Clone)]
 pub struct TestArgs {
@@ -48,6 +49,10 @@ pub struct TestArgs {
     /// Disable animated progress and graph output
     #[arg(long)]
     pub plain: bool,
+
+    /// Runtime link profile: `std` links `beskid_host`; `minimal` is language runtime only
+    #[arg(long, value_enum, default_value_t = CliRuntimeProfile::Std)]
+    pub runtime_profile: CliRuntimeProfile,
 
     /// Run every Test target in the project manifest in one process (shared session).
     #[arg(long)]
@@ -177,7 +182,7 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
 
     let mut executions = Vec::new();
     let mut summary = TestSummary::default();
-    let mut engine = Engine::new();
+    let mut engine = Engine::with_link_profile(args.runtime_profile.into());
     for (test, row_index, initial) in planned {
         if initial == TestRowState::FilteredOut {
             executions.push(TestExecution {

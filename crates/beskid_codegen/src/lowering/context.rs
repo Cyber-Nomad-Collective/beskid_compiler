@@ -1,11 +1,11 @@
 use crate::errors::CodegenError;
 use crate::lowering::descriptor::{TypeDescriptorData, TypeLayout};
 use beskid_analysis::resolve::ItemId;
-use std::collections::HashSet;
-use std::path::PathBuf;
 use beskid_analysis::types::TypeId;
 use cranelift_codegen::ir::Function;
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 /// Result of lowering a single node or expression.
 pub type CodegenResult<T> = Result<T, CodegenError>;

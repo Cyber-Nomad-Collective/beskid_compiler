@@ -70,9 +70,6 @@ pub i64 main() { return 0; }
         .err()
         .expect("parse should fail for removed ref parameter modifier");
     let msg = format!("{err:#}");
-    assert!(
-        msg.contains("parse error"),
-        "unexpected message: {msg}"
-    );
+    assert!(msg.contains("parse error"), "unexpected message: {msg}");
     Ok(())
 }

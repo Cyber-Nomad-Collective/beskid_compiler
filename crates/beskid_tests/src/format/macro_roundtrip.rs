@@ -75,7 +75,10 @@ unit main() {
     let after = parse_format_reparse(source);
     let def_after = first_macro_definition(&after.node);
 
-    assert_eq!(def_before.node.name.node.name, def_after.node.name.node.name);
+    assert_eq!(
+        def_before.node.name.node.name,
+        def_after.node.name.node.name
+    );
     assert_eq!(
         def_before.node.parameters.len(),
         def_after.node.parameters.len(),
@@ -103,7 +106,10 @@ fn macro_definition_roundtrip_preserves_macro_name() {
     let def_before = first_macro_definition(&before.node);
     let after = parse_format_reparse(source);
     let def_after = first_macro_definition(&after.node);
-    assert_eq!(def_before.node.name.node.name, def_after.node.name.node.name);
+    assert_eq!(
+        def_before.node.name.node.name,
+        def_after.node.name.node.name
+    );
 }
 
 #[test]
@@ -130,7 +136,10 @@ unit main() {
         inv_before.node.block.is_some(),
         inv_after.node.block.is_some()
     );
-    assert_eq!(inv_before.node.name.node.name, inv_after.node.name.node.name);
+    assert_eq!(
+        inv_before.node.name.node.name,
+        inv_after.node.name.node.name
+    );
 }
 
 #[test]

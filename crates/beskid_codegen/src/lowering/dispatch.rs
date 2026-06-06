@@ -4,9 +4,9 @@ use crate::errors::CodegenError;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::pointer_type;
 use beskid_abi::{
-    DispatchReturnGroup, DispatchRoute, DISPATCH_PAD_OFFSET, DISPATCH_PAYLOAD_OFFSET,
-    DISPATCH_TAG_OFFSET, DISPATCH_TYPE_DESC_OFFSET, SYM_INTEROP_DISPATCH_PTR,
-    SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE,
+    DISPATCH_PAD_OFFSET, DISPATCH_PAYLOAD_OFFSET, DISPATCH_TAG_OFFSET, DISPATCH_TYPE_DESC_OFFSET,
+    DispatchReturnGroup, DispatchRoute, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
+    SYM_INTEROP_DISPATCH_USIZE,
 };
 use beskid_analysis::syntax::SpanInfo;
 use cranelift_codegen::ir::{
@@ -23,12 +23,8 @@ pub(crate) fn lower_dispatch_builtin_call(
     returns_value: bool,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<Value>, CodegenError> {
-    emit_dispatch_call(ctx.builder, route, args, returns_value).map_err(|node| {
-        CodegenError::UnsupportedNode {
-            span,
-            node,
-        }
-    })
+    emit_dispatch_call(ctx.builder, route, args, returns_value)
+        .map_err(|node| CodegenError::UnsupportedNode { span, node })
 }
 
 pub(crate) fn emit_dispatch_call(

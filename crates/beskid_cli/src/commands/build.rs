@@ -5,8 +5,6 @@ use std::sync::Arc;
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use crate::runtime_profile::CliRuntimeProfile;
-use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
-use beskid_tools::PipelineProgressKind;
 use anyhow::Result;
 use beskid_analysis::projects::TargetKind;
 use beskid_aot::{
@@ -17,6 +15,8 @@ use beskid_aot::{
 use beskid_codegen::lower_resolved_entrypoint_with_pipeline;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
+use beskid_tools::PipelineProgressKind;
+use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use clap::{Args, ValueEnum};
 
 /// CLI-selected output artifact shape for [`BuildArgs::kind`].
@@ -133,12 +133,8 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         .map(|plan| plan.target.name.clone());
 
     let entrypoint = resolve_entrypoint(args.entrypoint.clone())?;
-    let lowered = lower_resolved_entrypoint_with_pipeline(
-        &resolved,
-        Some(&entrypoint),
-        false,
-        obs,
-    )?;
+    let lowered =
+        lower_resolved_entrypoint_with_pipeline(&resolved, Some(&entrypoint), false, obs)?;
     let artifact = lowered.artifact;
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
@@ -182,8 +178,12 @@ pub fn execute(args: BuildArgs) -> Result<()> {
                 .unwrap_or(BESKID_RUNTIME_ABI_VERSION),
         }
     } else {
-        default_runtime_strategy(profile, args.target_triple.as_deref())
-            .map_err(|err| anyhow::anyhow!("{err}"))?
+        default_runtime_strategy(
+            profile,
+            args.target_triple.as_deref(),
+            args.runtime_profile.into(),
+        )
+        .map_err(|err| anyhow::anyhow!("{err}"))?
     };
 
     let link_mode = match (args.prefer_static, args.prefer_dynamic) {

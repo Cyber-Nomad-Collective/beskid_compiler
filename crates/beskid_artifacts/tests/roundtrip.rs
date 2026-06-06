@@ -1,6 +1,6 @@
 use beskid_artifacts::{
-    AstUnitSnapshot, UnitArtifactMeta, ARTIFACT_SCHEMA_VERSION, content_fingerprint, encode_ast,
-    decode_ast, grammar_revision, ArtifactStore,
+    ARTIFACT_SCHEMA_VERSION, ArtifactStore, AstUnitSnapshot, UnitArtifactMeta, content_fingerprint,
+    decode_ast, encode_ast, grammar_revision,
 };
 
 #[test]

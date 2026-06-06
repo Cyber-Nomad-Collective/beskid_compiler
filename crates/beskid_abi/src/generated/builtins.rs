@@ -38,17 +38,17 @@ use crate::generated::symbols::{
     SYM_RUNTIME_PREEMPT_CHECK,
 };
 
-const I64_ONLY: [AbiParamKind; 1] = [AbiParamKind::I64];
+const PTR_ONLY: [AbiParamKind; 1] = [AbiParamKind::Ptr];
 const PARAMS_4: [AbiParamKind; 2] = [AbiParamKind::Ptr, AbiParamKind::I64];
+const PARAMS_0: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::Ptr];
 const EMPTY: [AbiParamKind; 0] = [];
+const PARAMS_1: [AbiParamKind; 3] = [AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64];
 const PARAMS_3: [AbiParamKind; 4] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::I64];
 const PARAMS_5: [AbiParamKind; 4] = [AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::Ptr];
+const I64_ONLY: [AbiParamKind; 1] = [AbiParamKind::I64];
 const PARAMS_6: [AbiParamKind; 3] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::Ptr];
-const PARAMS_2: [AbiParamKind; 4] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64];
-const PTR_ONLY: [AbiParamKind; 1] = [AbiParamKind::Ptr];
-const PARAMS_1: [AbiParamKind; 3] = [AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64];
 const PTR_PTR: [AbiParamKind; 2] = [AbiParamKind::Ptr, AbiParamKind::Ptr];
-const PARAMS_0: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::Ptr];
+const PARAMS_2: [AbiParamKind; 4] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64];
 
 /// Kernel direct imports and interop dispatch entrypoints (ABI v4).
 pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[

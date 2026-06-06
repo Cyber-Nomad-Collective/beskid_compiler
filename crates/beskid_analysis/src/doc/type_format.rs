@@ -45,10 +45,7 @@ pub fn format_hir_type(ty: &Spanned<HirType>) -> String {
 }
 
 fn type_kind_links_to_item(kind: ItemKind) -> bool {
-    matches!(
-        kind,
-        ItemKind::Type | ItemKind::Enum | ItemKind::Contract
-    )
+    matches!(kind, ItemKind::Type | ItemKind::Enum | ItemKind::Contract)
 }
 
 /// Build a type annotation with optional cross-link to a resolved type item.
@@ -58,16 +55,18 @@ pub fn type_annotation_for_type(
 ) -> ApiTypeAnnotation {
     let display = format_hir_type(ty);
     let ref_item_id = resolution.and_then(|res| {
-        let from_span = res.tables.resolved_types.get(&ty.span).and_then(|resolved| {
-            match resolved {
-                ResolvedType::Item(item_id) => res
-                    .items
-                    .get(item_id.0)
-                    .filter(|item| type_kind_links_to_item(item.kind))
-                    .map(|item| item.id.0),
-                ResolvedType::Generic(_) => None,
-            }
-        });
+        let from_span =
+            res.tables
+                .resolved_types
+                .get(&ty.span)
+                .and_then(|resolved| match resolved {
+                    ResolvedType::Item(item_id) => res
+                        .items
+                        .get(item_id.0)
+                        .filter(|item| type_kind_links_to_item(item.kind))
+                        .map(|item| item.id.0),
+                    ResolvedType::Generic(_) => None,
+                });
         if from_span.is_some() {
             return from_span;
         }

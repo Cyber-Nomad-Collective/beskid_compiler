@@ -1,7 +1,7 @@
 use crate::errors::CodegenError;
 use crate::linking::resolve_path_item_id;
-use crate::lowering::locals::{local_type_id, resolved_value_at};
 use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
+use crate::lowering::locals::{local_type_id, resolved_value_at};
 use crate::lowering::lowerable::Lowerable;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};

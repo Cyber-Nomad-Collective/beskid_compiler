@@ -61,7 +61,10 @@ fn path_display_name(path: &Spanned<HirPath>) -> String {
 
 impl<'a> TypeContext<'a> {
     /// Resolve a type AST node while generic parameters from the enclosing item are in scope.
-    pub(super) fn type_id_for_type_in_generic_scope(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
+    pub(super) fn type_id_for_type_in_generic_scope(
+        &mut self,
+        ty: &Spanned<HirType>,
+    ) -> Option<TypeId> {
         if let HirType::Complex(path) = &ty.node
             && path.node.segments.len() == 1
             && path.node.segments[0].node.type_args.is_empty()
@@ -161,14 +164,16 @@ impl<'a> TypeContext<'a> {
         None
     }
 
-    fn base_item_id_for_applied_path(&self, path: &Spanned<HirPath>) -> Option<crate::resolve::ItemId> {
-        self.item_id_for_type_path(path)
-            .or_else(|| {
-                let last_segment = path.node.segments.last()?;
-                let name = last_segment.node.name.node.name.as_str();
-                self.item_id_for_name(name, ItemKind::Enum)
-                    .or_else(|| self.item_id_for_name(name, ItemKind::Type))
-            })
+    fn base_item_id_for_applied_path(
+        &self,
+        path: &Spanned<HirPath>,
+    ) -> Option<crate::resolve::ItemId> {
+        self.item_id_for_type_path(path).or_else(|| {
+            let last_segment = path.node.segments.last()?;
+            let name = last_segment.node.name.node.name.as_str();
+            self.item_id_for_name(name, ItemKind::Enum)
+                .or_else(|| self.item_id_for_name(name, ItemKind::Type))
+        })
     }
 
     pub(super) fn type_id_for_path_with_args(&mut self, path: &Spanned<HirPath>) -> Option<TypeId> {
@@ -202,16 +207,14 @@ impl<'a> TypeContext<'a> {
         self.type_id_for_type_path(path)
     }
 
-    pub(super) fn type_id_for_type_path(
-        &mut self,
-        path: &Spanned<HirPath>,
-    ) -> Option<TypeId> {
+    pub(super) fn type_id_for_type_path(&mut self, path: &Spanned<HirPath>) -> Option<TypeId> {
         match self.resolved_type_at(path.span) {
             Some(ResolvedType::Item(item)) => {
                 if let Some(expected) = self.generic_items.get(&item)
                     && !expected.is_empty()
                 {
-                    self.errors.push(TypeError::MissingTypeArguments { span: path.span });
+                    self.errors
+                        .push(TypeError::MissingTypeArguments { span: path.span });
                     return None;
                 }
                 self.named_types.get(&item).copied()
@@ -230,7 +233,8 @@ impl<'a> TypeContext<'a> {
                     if let Some(expected) = self.generic_items.get(&item_id)
                         && !expected.is_empty()
                     {
-                        self.errors.push(TypeError::MissingTypeArguments { span: path.span });
+                        self.errors
+                            .push(TypeError::MissingTypeArguments { span: path.span });
                         return None;
                     }
                     return self.named_types.get(&item_id).copied();

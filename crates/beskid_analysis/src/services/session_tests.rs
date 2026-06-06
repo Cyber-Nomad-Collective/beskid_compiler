@@ -1,8 +1,8 @@
 //! Entry session registry and semantic snapshot tests.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::projects::{
     AssemblyDiscovery, CompilePlan, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly,

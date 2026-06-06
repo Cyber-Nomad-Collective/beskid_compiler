@@ -1,12 +1,12 @@
 //! `beskid analyze` — run builtin semantic rules and print diagnostics.
 
 use anyhow::Result;
-use beskid_analysis::services::{self, PrepareMode, PrepareOptions, FrontEndOptions};
+use beskid_analysis::services::{self, FrontEndOptions, PrepareMode, PrepareOptions};
 use clap::Args;
 use std::path::PathBuf;
 
-use beskid_tools::pipeline::{resolve_input_with_cli_pipeline, tui::format_severity_summary};
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
+use beskid_tools::pipeline::{resolve_input_with_cli_pipeline, tui::format_severity_summary};
 
 #[derive(Args, Debug)]
 pub struct AnalyzeArgs {

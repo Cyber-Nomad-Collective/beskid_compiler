@@ -11,13 +11,12 @@ use std::time::Duration;
 
 use abfall::{GcOptions, Heap};
 use beskid_runtime::{
-    MutatorAttachGuard, RuntimePhase, RuntimeRoot, alloc, attach_phase_b_mutator,
-    channel_close, channel_create, channel_receive_ptr, channel_send_ptr, clear_current_heap,
-    clear_current_root, enter_runtime_scope, gc_collect, gc_register_root, gc_unregister_root,
-    in_runtime_scope, is_syscall_pool_worker, leave_runtime_scope, preemption_enabled,
-    runtime_phase, runtime_preempt_check, set_current_heap, set_current_root,
-    set_preemption_enabled, set_runtime_phase, set_syscall_pool_worker,
-    status::STATUS_OK,
+    MutatorAttachGuard, RuntimePhase, RuntimeRoot, alloc, attach_phase_b_mutator, channel_close,
+    channel_create, channel_receive_ptr, channel_send_ptr, clear_current_heap, clear_current_root,
+    enter_runtime_scope, gc_collect, gc_register_root, gc_unregister_root, in_runtime_scope,
+    is_syscall_pool_worker, leave_runtime_scope, preemption_enabled, runtime_phase,
+    runtime_preempt_check, set_current_heap, set_current_root, set_preemption_enabled,
+    set_runtime_phase, set_syscall_pool_worker, status::STATUS_OK,
 };
 
 /// Helper: run a closure inside a freshly attached runtime scope pinned to `heap`.
@@ -86,7 +85,11 @@ fn syscall_pool_worker_without_scope_blocks_alloc() {
         let msg = payload
             .downcast_ref::<String>()
             .cloned()
-            .or_else(|| payload.downcast_ref::<&'static str>().map(|s| s.to_string()))
+            .or_else(|| {
+                payload
+                    .downcast_ref::<&'static str>()
+                    .map(|s| s.to_string())
+            })
             .unwrap_or_default();
         assert!(
             msg.contains("syscall pool worker") || msg.contains("Phase B safety guard"),
@@ -200,7 +203,10 @@ fn pointer_channel_cross_thread_with_phase_b_mutators() {
                 }
                 assert!(!out.is_null(), "received pointer should be non-null");
                 received_count_consumer.fetch_add(1, Ordering::SeqCst);
-                if received_count_consumer.load(Ordering::Relaxed).is_multiple_of(8) {
+                if received_count_consumer
+                    .load(Ordering::Relaxed)
+                    .is_multiple_of(8)
+                {
                     let _ = gc_collect();
                 }
             }

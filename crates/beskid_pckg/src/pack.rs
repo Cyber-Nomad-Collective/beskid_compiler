@@ -59,14 +59,12 @@ impl PackProfile {
 /// (D-TOOL-PCKG-0004). `Tool` forces the tool profile even when the source tree omits
 /// `Project.proj`, which keeps `beskid pckg pack --package-kind tool` usable for CLI-only
 /// tool packages that ship without a normative project manifest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PackProfileOverride {
     #[default]
     Auto,
     Tool,
 }
-
 
 /// Resolve pack profile from `Project.proj` when present; otherwise library.
 pub fn detect_pack_profile(source_root: &Path) -> Result<PackProfile, PckgError> {
@@ -389,10 +387,8 @@ mod tests {
 
     #[test]
     fn load_template_package_summary_requires_v1_schema() {
-        let dir = std::env::temp_dir().join(format!(
-            "beskid_pckg_template_test_{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("beskid_pckg_template_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join(".beskid")).expect("mkdir");
         fs::write(
@@ -400,8 +396,8 @@ mod tests {
             r#"{"schema":"beskid.template.v0","shortName":"x"}"#,
         )
         .expect("write");
-        let err = load_template_package_summary(&dir.join(TEMPLATE_JSON_REL))
-            .expect_err("wrong schema");
+        let err =
+            load_template_package_summary(&dir.join(TEMPLATE_JSON_REL)).expect_err("wrong schema");
         assert!(err.to_string().contains("beskid.template.v1"));
         let _ = fs::remove_dir_all(&dir);
     }

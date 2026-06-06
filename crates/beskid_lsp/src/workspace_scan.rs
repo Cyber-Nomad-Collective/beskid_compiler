@@ -13,8 +13,8 @@ use tower_lsp_server::ls_types::Uri;
 use url::Url;
 use walkdir::WalkDir;
 
-use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::protocol::status::{idle_status, send_beskid_status, workspace_scan_status};
+use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::lifecycle::{
     build_document, rebuild_open_document_analysis, set_disk_snapshot,
 };
@@ -35,7 +35,6 @@ pub(crate) fn should_skip_dir_for_scan(name: &str) -> bool {
         ".git" | "target" | "node_modules" | ".beskid" | "out" | "bin" | "obj" | ".vs"
     )
 }
-
 
 async fn maybe_emit_scan_progress(
     client: &Client,

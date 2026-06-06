@@ -99,11 +99,17 @@ fn collect_invalid_try_targets_in_block(
                 spans,
             );
         } else if let HirStatementNode::LetStatement(let_stmt) = &statement.node {
-            collect_invalid_try_targets_in_expression(resolution, programs, &let_stmt.node.value, spans);
+            collect_invalid_try_targets_in_expression(
+                resolution,
+                programs,
+                &let_stmt.node.value,
+                spans,
+            );
         } else if let HirStatementNode::ReturnStatement(return_stmt) = &statement.node
-            && let Some(value) = &return_stmt.node.value {
-                collect_invalid_try_targets_in_expression(resolution, programs, value, spans);
-            }
+            && let Some(value) = &return_stmt.node.value
+        {
+            collect_invalid_try_targets_in_expression(resolution, programs, value, spans);
+        }
     }
 }
 
@@ -114,38 +120,89 @@ fn collect_invalid_try_targets_in_expression(
     spans: &mut Vec<SpanInfo>,
 ) {
     if let HirExpressionNode::TryExpression(try_expr) = &expr.node
-        && try_desugar_target_for_operand(resolution, programs, &try_expr.node.expr).is_none() {
-            spans.push(expr.span);
-        }
+        && try_desugar_target_for_operand(resolution, programs, &try_expr.node.expr).is_none()
+    {
+        spans.push(expr.span);
+    }
     match &expr.node {
         HirExpressionNode::BinaryExpression(binary) => {
-            collect_invalid_try_targets_in_expression(resolution, programs, &binary.node.left, spans);
-            collect_invalid_try_targets_in_expression(resolution, programs, &binary.node.right, spans);
+            collect_invalid_try_targets_in_expression(
+                resolution,
+                programs,
+                &binary.node.left,
+                spans,
+            );
+            collect_invalid_try_targets_in_expression(
+                resolution,
+                programs,
+                &binary.node.right,
+                spans,
+            );
         }
         HirExpressionNode::UnaryExpression(unary) => {
-            collect_invalid_try_targets_in_expression(resolution, programs, &unary.node.expr, spans);
+            collect_invalid_try_targets_in_expression(
+                resolution,
+                programs,
+                &unary.node.expr,
+                spans,
+            );
         }
         HirExpressionNode::CallExpression(call) => {
-            collect_invalid_try_targets_in_expression(resolution, programs, &call.node.callee, spans);
+            collect_invalid_try_targets_in_expression(
+                resolution,
+                programs,
+                &call.node.callee,
+                spans,
+            );
             for arg in &call.node.args {
                 collect_invalid_try_targets_in_expression(resolution, programs, arg, spans);
             }
         }
         HirExpressionNode::MatchExpression(match_expr) => {
-            collect_invalid_try_targets_in_expression(resolution, programs, &match_expr.node.scrutinee, spans);
+            collect_invalid_try_targets_in_expression(
+                resolution,
+                programs,
+                &match_expr.node.scrutinee,
+                spans,
+            );
             for arm in &match_expr.node.arms {
-                collect_invalid_try_targets_in_expression(resolution, programs, &arm.node.value, spans);
+                collect_invalid_try_targets_in_expression(
+                    resolution,
+                    programs,
+                    &arm.node.value,
+                    spans,
+                );
             }
         }
         HirExpressionNode::BlockExpression(block_expr) => {
-            collect_invalid_try_targets_in_block(resolution, programs, &block_expr.node.block, spans);
+            collect_invalid_try_targets_in_block(
+                resolution,
+                programs,
+                &block_expr.node.block,
+                spans,
+            );
         }
         HirExpressionNode::GroupedExpression(grouped) => {
-            collect_invalid_try_targets_in_expression(resolution, programs, &grouped.node.expr, spans);
+            collect_invalid_try_targets_in_expression(
+                resolution,
+                programs,
+                &grouped.node.expr,
+                spans,
+            );
         }
         HirExpressionNode::AssignExpression(assign) => {
-            collect_invalid_try_targets_in_expression(resolution, programs, &assign.node.target, spans);
-            collect_invalid_try_targets_in_expression(resolution, programs, &assign.node.value, spans);
+            collect_invalid_try_targets_in_expression(
+                resolution,
+                programs,
+                &assign.node.target,
+                spans,
+            );
+            collect_invalid_try_targets_in_expression(
+                resolution,
+                programs,
+                &assign.node.value,
+                spans,
+            );
         }
         _ => {}
     }
@@ -205,13 +262,19 @@ fn collect_try_targets_in_block(
 ) {
     for statement in &block.node.statements {
         if let HirStatementNode::ExpressionStatement(expr_stmt) = &statement.node {
-            collect_try_targets_in_expression(resolution, programs, &expr_stmt.node.expression, map);
+            collect_try_targets_in_expression(
+                resolution,
+                programs,
+                &expr_stmt.node.expression,
+                map,
+            );
         } else if let HirStatementNode::LetStatement(let_stmt) = &statement.node {
             collect_try_targets_in_expression(resolution, programs, &let_stmt.node.value, map);
         } else if let HirStatementNode::ReturnStatement(return_stmt) = &statement.node
-            && let Some(value) = &return_stmt.node.value {
-                collect_try_targets_in_expression(resolution, programs, value, map);
-            }
+            && let Some(value) = &return_stmt.node.value
+        {
+            collect_try_targets_in_expression(resolution, programs, value, map);
+        }
     }
 }
 
@@ -224,9 +287,9 @@ fn collect_try_targets_in_expression(
     if let HirExpressionNode::TryExpression(try_expr) = &expr.node
         && let Some(target) =
             try_desugar_target_for_operand(resolution, programs, &try_expr.node.expr)
-        {
-            map.insert(expr.span, target);
-        }
+    {
+        map.insert(expr.span, target);
+    }
     match &expr.node {
         HirExpressionNode::BinaryExpression(binary) => {
             collect_try_targets_in_expression(resolution, programs, &binary.node.left, map);
@@ -242,7 +305,12 @@ fn collect_try_targets_in_expression(
             }
         }
         HirExpressionNode::MatchExpression(match_expr) => {
-            collect_try_targets_in_expression(resolution, programs, &match_expr.node.scrutinee, map);
+            collect_try_targets_in_expression(
+                resolution,
+                programs,
+                &match_expr.node.scrutinee,
+                map,
+            );
             for arm in &match_expr.node.arms {
                 collect_try_targets_in_expression(resolution, programs, &arm.node.value, map);
             }
@@ -370,12 +438,7 @@ fn collect_array_fors_in_statement(
             }
         }
         HirStatementNode::ExpressionStatement(expr_stmt) => {
-            collect_array_fors_in_expression(
-                resolution,
-                programs,
-                &expr_stmt.node.expression,
-                set,
-            );
+            collect_array_fors_in_expression(resolution, programs, &expr_stmt.node.expression, set);
         }
         HirStatementNode::ForStatement(_) => {}
         _ => {}

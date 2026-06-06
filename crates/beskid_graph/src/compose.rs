@@ -71,11 +71,7 @@ impl SpecBuilder {
         });
     }
 
-    pub fn add_subgraph(
-        &mut self,
-        label: impl Into<String>,
-        node_ids: Vec<String>,
-    ) -> String {
+    pub fn add_subgraph(&mut self, label: impl Into<String>, node_ids: Vec<String>) -> String {
         let label = label.into();
         let id = sanitize_id(&label);
         self.subgraphs.push(GraphSubgraph {

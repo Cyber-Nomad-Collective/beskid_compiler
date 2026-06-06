@@ -4,7 +4,9 @@ use std::fmt;
 use crate::hir::{HirBlock, HirExpressionNode, HirProgram};
 use crate::resolve::Resolution;
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::context::try_infer::{TryDesugarTarget, collect_array_for_spans, try_desugar_targets_for_program};
+use crate::types::context::try_infer::{
+    TryDesugarTarget, collect_array_for_spans, try_desugar_targets_for_program,
+};
 
 use super::normalizable::Normalize;
 use super::{builders, builders::desugar_try_expression};
@@ -36,9 +38,7 @@ pub fn normalize_program_with_resolution(
         try_desugar_targets_for_program(resolution, program, dependency_programs)
     });
     let array_for_spans = match resolution {
-        Some(resolution) => {
-            collect_array_for_spans(resolution, program, dependency_programs)
-        }
+        Some(resolution) => collect_array_for_spans(resolution, program, dependency_programs),
         None => HashSet::new(),
     };
     let mut normalizer = Normalizer::new(try_targets, array_for_spans);

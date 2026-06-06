@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use beskid_analysis::external_library::{
-    ExternalLibraryRegistry, LibraryResolveError, LibraryResolution, current_host_key,
+    ExternalLibraryRegistry, LibraryResolution, LibraryResolveError, current_host_key,
     default_registry, merge_resolution_into_manifest_source,
 };
 use beskid_analysis::projects::{
@@ -96,8 +96,7 @@ pub fn execute_lib(args: LibArgs) -> Result<()> {
         })?
         .link;
 
-    let outcome =
-        merge_resolution_into_manifest_source(&source, existing.as_ref(), &resolution);
+    let outcome = merge_resolution_into_manifest_source(&source, existing.as_ref(), &resolution);
 
     if outcome.updated_source != source {
         fs::write(&manifest_path, &outcome.updated_source).with_context(|| {
@@ -106,10 +105,7 @@ pub fn execute_lib(args: LibArgs) -> Result<()> {
                 manifest_path.display()
             )
         })?;
-        println!(
-            "import: updated link block in {}",
-            manifest_path.display()
-        );
+        println!("import: updated link block in {}", manifest_path.display());
         if !outcome.added_libraries.is_empty() {
             println!(
                 "import: added libraries: {}",

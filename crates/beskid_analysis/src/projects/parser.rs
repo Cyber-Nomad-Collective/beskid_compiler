@@ -223,9 +223,7 @@ fn reject_corelib_opt_out_assignment(ctx: &LineCtx<'_>) -> Result<(), ProjectErr
     }
     if key == "useCorelib" {
         let rhs = right.trim();
-        let disables = rhs.eq_ignore_ascii_case("false")
-            || rhs == "\"false\""
-            || rhs == "'false'";
+        let disables = rhs.eq_ignore_ascii_case("false") || rhs == "\"false\"" || rhs == "'false'";
         if disables {
             return Err(ProjectError::meta_contract(
                 "E1876",
@@ -1001,7 +999,11 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
 fn build_link_section(parsed: &ParsedLinkBlock) -> ProjectLinkSection {
     ProjectLinkSection {
         libraries: parsed.fields.get("libraries").cloned().unwrap_or_default(),
-        search_paths: parsed.fields.get("searchPaths").cloned().unwrap_or_default(),
+        search_paths: parsed
+            .fields
+            .get("searchPaths")
+            .cloned()
+            .unwrap_or_default(),
         extra_args: parsed.fields.get("extraArgs").cloned().unwrap_or_default(),
     }
 }

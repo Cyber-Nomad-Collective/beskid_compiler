@@ -8,8 +8,7 @@ fn export_metadata_populates_codegen_artifact() {
 [Export(Abi:"C", Symbol:"beskid_plugin_init")]
 pub unit plugin_init() { return; }
 "#;
-    let lowered =
-        lower_source(Path::new("<memory>"), src, false).expect("lower export fixture");
+    let lowered = lower_source(Path::new("<memory>"), src, false).expect("lower export fixture");
     assert_eq!(lowered.artifact.exports.len(), 1);
     let entry = &lowered.artifact.exports[0];
     assert_eq!(entry.exported_symbol, "beskid_plugin_init");
@@ -23,12 +22,14 @@ fn export_table_from_artifact_matches_codegen_exports() {
 [Export(Abi:"C", Symbol:"beskid_plugin_init")]
 pub unit plugin_init() { return; }
 "#;
-    let lowered =
-        lower_source(Path::new("<memory>"), src, false).expect("lower export fixture");
+    let lowered = lower_source(Path::new("<memory>"), src, false).expect("lower export fixture");
     let table = ExportTable::from_artifact(&lowered.artifact);
     assert_eq!(table.entries().len(), 1);
     assert_eq!(table.entries()[0].symbol_id, 1);
-    assert_eq!(table.linker_symbols(), vec!["beskid_plugin_init".to_string()]);
+    assert_eq!(
+        table.linker_symbols(),
+        vec!["beskid_plugin_init".to_string()]
+    );
 }
 
 #[test]

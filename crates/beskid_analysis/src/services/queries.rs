@@ -6,7 +6,9 @@
 use std::path::Path;
 
 use crate::hir::HirProgram;
-use crate::projects::assembly::{ModuleIndex, ProgramAssembly, SourceUnit, UnitHir, build_hir_units};
+use crate::projects::assembly::{
+    ModuleIndex, ProgramAssembly, SourceUnit, UnitHir, build_hir_units,
+};
 use crate::projects::{AssemblyOptions, CompilePlan, PreparedProjectWorkspace};
 use crate::resolve::Resolution;
 use crate::services::lower::{
@@ -55,7 +57,9 @@ pub fn type_entry_gate(
 }
 
 /// Query: prefetch dependency signatures without typing dependency bodies.
-pub fn type_dep_signatures(assembly: &ProgramAssembly) -> Result<TypeResult, LowerResolveTypeError> {
+pub fn type_dep_signatures(
+    assembly: &ProgramAssembly,
+) -> Result<TypeResult, LowerResolveTypeError> {
     let entry_unit = assembly.entry_unit().clone();
     let entry_hir = assemble_unit(&entry_unit).hir;
     let (_, _, typed) = typed_hir_from_lowered_gate_with_assembly(entry_hir, Some(assembly))?;

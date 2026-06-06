@@ -24,9 +24,10 @@ pub fn required_uri_arg(arguments: &Option<Vec<Value>>, key: &str) -> Result<Str
         return Ok(uri.to_string());
     }
     if let Some(obj) = args[0].as_object()
-        && let Some(uri) = obj.get(key).and_then(Value::as_str) {
-            return Ok(uri.to_string());
-        }
+        && let Some(uri) = obj.get(key).and_then(Value::as_str)
+    {
+        return Ok(uri.to_string());
+    }
     Err(missing_args())
 }
 

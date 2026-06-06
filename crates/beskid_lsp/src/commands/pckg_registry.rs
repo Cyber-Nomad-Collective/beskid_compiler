@@ -41,16 +41,16 @@ pub async fn handle_pckg_registry_command(
     state: &Arc<RwLock<PckgRegistryState>>,
 ) -> Result<Option<LSPAny>> {
     match command {
-        CMD_GET_CONNECTION_STATUS => {
-            Ok(Some(get_connection_status(arguments, workspace_roots, state).await?))
-        }
+        CMD_GET_CONNECTION_STATUS => Ok(Some(
+            get_connection_status(arguments, workspace_roots, state).await?,
+        )),
         CMD_SET_REGISTRY => {
             set_registry(arguments, state).await?;
             Ok(None)
         }
-        CMD_VALIDATE_CONNECTION => {
-            Ok(Some(validate_connection(arguments, workspace_roots, state).await?))
-        }
+        CMD_VALIDATE_CONNECTION => Ok(Some(
+            validate_connection(arguments, workspace_roots, state).await?,
+        )),
         _ => Ok(None),
     }
 }
@@ -103,7 +103,10 @@ async fn get_connection_status(
     }))
 }
 
-async fn set_registry(arguments: Option<Vec<Value>>, state: &Arc<RwLock<PckgRegistryState>>) -> Result<()> {
+async fn set_registry(
+    arguments: Option<Vec<Value>>,
+    state: &Arc<RwLock<PckgRegistryState>>,
+) -> Result<()> {
     let args = first_arg_object(&arguments).ok_or_else(missing_args)?;
     let base_url = non_empty_str_arg(args, "baseUrl").ok_or_else(missing_args)?;
     let registry_name = non_empty_str_arg(args, "registryName").map(str::to_string);
@@ -187,10 +190,7 @@ fn probe_registry(base_url: &str, api_key: Option<&str>) -> std::result::Result<
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
-    let url = format!(
-        "{}/api/search",
-        base_url.trim_end_matches('/')
-    );
+    let url = format!("{}/api/search", base_url.trim_end_matches('/'));
     let mut request = client
         .get(&url)
         .query(&[("limit", "1")])
@@ -198,8 +198,8 @@ fn probe_registry(base_url: &str, api_key: Option<&str>) -> std::result::Result<
 
     if let Some(key) = api_key {
         let value = format!("Bearer {key}");
-        let header = HeaderValue::from_str(&value)
-            .map_err(|_| "Invalid API key format.".to_string())?;
+        let header =
+            HeaderValue::from_str(&value).map_err(|_| "Invalid API key format.".to_string())?;
         request = request.header(AUTHORIZATION, header);
     }
 
@@ -223,19 +223,23 @@ fn resolve_workspace_default_registry(
 ) -> (Option<String>, Option<String>) {
     if let Some(uri) = workspace_uri
         && let Some(path) = path_from_uri_string(uri)
-            && let Some(pair) = default_from_workspace_manifest(&path) {
-                return pair;
-            }
+        && let Some(pair) = default_from_workspace_manifest(&path)
+    {
+        return pair;
+    }
     for manifest in discover_workspace_manifest_paths(workspace_roots) {
         if let Some(pair) = default_from_workspace_manifest(&manifest)
-            && pair.0.is_some() {
-                return pair;
-            }
+            && pair.0.is_some()
+        {
+            return pair;
+        }
     }
     (None, None)
 }
 
-fn default_from_workspace_manifest(manifest_path: &Path) -> Option<(Option<String>, Option<String>)> {
+fn default_from_workspace_manifest(
+    manifest_path: &Path,
+) -> Option<(Option<String>, Option<String>)> {
     let text = std::fs::read_to_string(manifest_path).ok()?;
     let manifest = parse_workspace_manifest(&text).ok()?;
     let pick = manifest
@@ -281,13 +285,10 @@ mod tests {
     #[tokio::test]
     async fn get_connection_status_response_has_no_secrets() {
         let state = Arc::new(RwLock::new(PckgRegistryState::default()));
-        let value = get_connection_status(
-            Some(vec![json!({ "authConfigured": true })]),
-            &[],
-            &state,
-        )
-        .await
-        .expect("status");
+        let value =
+            get_connection_status(Some(vec![json!({ "authConfigured": true })]), &[], &state)
+                .await
+                .expect("status");
         assert!(value.get("apiKey").is_none());
         assert!(find_forbidden_secret_keys(&value).is_empty());
         assert!(value.get("baseUrl").is_some());
@@ -298,7 +299,9 @@ mod tests {
     async fn validate_connection_response_has_no_secrets() {
         let state = Arc::new(RwLock::new(PckgRegistryState::default()));
         let value = validate_connection(
-            Some(vec![json!({ "apiKey": "super-secret", "baseUrl": "http://127.0.0.1:1" })]),
+            Some(vec![
+                json!({ "apiKey": "super-secret", "baseUrl": "http://127.0.0.1:1" }),
+            ]),
             &[],
             &state,
         )
@@ -310,7 +313,10 @@ mod tests {
 
     #[test]
     fn normalize_base_url_strips_trailing_slash() {
-        assert_eq!(normalize_base_url("https://pckg.test/"), "https://pckg.test");
+        assert_eq!(
+            normalize_base_url("https://pckg.test/"),
+            "https://pckg.test"
+        );
     }
 
     #[test]

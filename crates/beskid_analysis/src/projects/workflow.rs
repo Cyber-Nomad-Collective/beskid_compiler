@@ -489,10 +489,11 @@ fn file_contents_equal(source: &Path, destination: &Path) -> Result<bool, Projec
         path: source.to_path_buf(),
         source: err,
     })?;
-    let destination_bytes = fs::read(destination).map_err(|err| ProjectError::MaterializationMetadata {
-        path: destination.to_path_buf(),
-        source: err,
-    })?;
+    let destination_bytes =
+        fs::read(destination).map_err(|err| ProjectError::MaterializationMetadata {
+            path: destination.to_path_buf(),
+            source: err,
+        })?;
     Ok(source_bytes == destination_bytes)
 }
 

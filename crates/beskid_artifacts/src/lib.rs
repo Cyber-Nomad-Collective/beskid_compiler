@@ -7,7 +7,7 @@ pub mod persistence;
 pub mod snapshot;
 
 pub use fingerprint::{content_fingerprint, grammar_revision};
-pub use manifest::{ArtifactManifest, UnitArtifactMeta, ARTIFACT_SCHEMA_VERSION};
+pub use manifest::{ARTIFACT_SCHEMA_VERSION, ArtifactManifest, UnitArtifactMeta};
 pub use persistence::{ArtifactStore, UnitArtifactPaths};
 pub use snapshot::{
     AstUnitSnapshot, HirUnitSnapshot, UnitArtifactRecord, decode_ast, decode_hir, encode_ast,

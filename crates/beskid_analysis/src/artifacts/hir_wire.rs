@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::hir::HirProgram;
-use crate::projects::assembly::{build_hir_units, SourceUnit};
+use crate::projects::assembly::{SourceUnit, build_hir_units};
 use crate::syntax::Spanned;
 
 /// Marker written to `hir.bin`; lowering is deterministic from `ast.bin`.

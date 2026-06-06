@@ -22,12 +22,7 @@ pub fn graph_tooling_payload(
         })
         .collect();
 
-    let metadata_nodes: Vec<Value> = doc
-        .metadata
-        .nodes
-        .iter()
-        .map(node_summary_json)
-        .collect();
+    let metadata_nodes: Vec<Value> = doc.metadata.nodes.iter().map(node_summary_json).collect();
 
     json!({
         "kind": kind.as_str(),

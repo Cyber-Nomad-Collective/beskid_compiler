@@ -182,7 +182,11 @@ impl ResolutionTables {
             return Some(id);
         }
 
-        let matches: Vec<&LocalInfo> = self.locals.iter().filter(|info| info.span == span).collect();
+        let matches: Vec<&LocalInfo> = self
+            .locals
+            .iter()
+            .filter(|info| info.span == span)
+            .collect();
         if matches.len() == 1 {
             return Some(matches[0].id);
         }
@@ -217,32 +221,20 @@ impl ResolutionTables {
                 local_remap.insert(local.id, existing);
                 continue;
             }
-            let new_id = self.intern_local(
-                local.name.clone(),
-                local.span,
-                local.source_path.clone(),
-            );
+            let new_id =
+                self.intern_local(local.name.clone(), local.span, local.source_path.clone());
             local_remap.insert(local.id, new_id);
         }
 
         let scoped_types = self
             .scoped_resolved_types
-            .entry(
-                crate::paths::unit_path_key(&unit_source_path),
-            )
+            .entry(crate::paths::unit_path_key(&unit_source_path))
             .or_default();
-        scoped_types.extend(
-            other
-                .resolved_types
-                .iter()
-                .map(|(k, v)| (*k, v.clone())),
-        );
+        scoped_types.extend(other.resolved_types.iter().map(|(k, v)| (*k, v.clone())));
 
         let scoped_values = self
             .scoped_resolved_values
-            .entry(
-                crate::paths::unit_path_key(&unit_source_path),
-            )
+            .entry(crate::paths::unit_path_key(&unit_source_path))
             .or_default();
         for (span, value) in &other.resolved_values {
             let remapped = match value {
@@ -264,4 +256,3 @@ impl ResolutionTables {
         }
     }
 }
-

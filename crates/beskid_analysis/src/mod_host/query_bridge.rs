@@ -73,16 +73,9 @@ pub struct SdkSyntaxPipeline<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PipelineValidationError {
-    StaleGeneration {
-        expected: u64,
-        actual: u64,
-    },
-    MissingNode {
-        node: SdkNodeRef,
-    },
-    Conflict {
-        target: SdkNodeRef,
-    },
+    StaleGeneration { expected: u64, actual: u64 },
+    MissingNode { node: SdkNodeRef },
+    Conflict { target: SdkNodeRef },
 }
 
 impl SdkNodeRef {
@@ -197,11 +190,7 @@ impl<'a> SdkSyntaxQuery<'a> {
             return Vec::new();
         };
         Ancestors::new(self.snapshot, start)
-            .filter_map(|n| {
-                self.snapshot
-                    .stable_id(n)
-                    .map(SdkNodeRef::from_stable)
-            })
+            .filter_map(|n| self.snapshot.stable_id(n).map(SdkNodeRef::from_stable))
             .collect()
     }
 
@@ -231,10 +220,7 @@ impl<'a> SdkSyntaxQuery<'a> {
             if node.of::<T>().is_none() {
                 continue;
             }
-            return self
-                .snapshot
-                .stable_id(node)
-                .map(SdkNodeRef::from_stable);
+            return self.snapshot.stable_id(node).map(SdkNodeRef::from_stable);
         }
         None
     }
@@ -254,11 +240,7 @@ impl<'a> SdkSyntaxQuery<'a> {
         }
     }
 
-    pub fn where_kind(
-        &self,
-        selection: SdkSyntaxSelection,
-        kind: NodeKind,
-    ) -> SdkSyntaxSelection {
+    pub fn where_kind(&self, selection: SdkSyntaxSelection, kind: NodeKind) -> SdkSyntaxSelection {
         let nodes = selection
             .nodes
             .into_iter()
@@ -426,8 +408,7 @@ mod tests {
         };
         let q = SdkSyntaxQuery::at_program(&snap, &program);
         assert!(q.parent(func_ref).is_some());
-        let typed = query_at(&snap, func_ref)
-            .find_first::<crate::syntax::FunctionDefinition>();
+        let typed = query_at(&snap, func_ref).find_first::<crate::syntax::FunctionDefinition>();
         assert!(typed.is_some());
     }
 

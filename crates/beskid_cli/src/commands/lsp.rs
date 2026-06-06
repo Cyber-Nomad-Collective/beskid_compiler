@@ -1,9 +1,9 @@
 //! `beskid lsp` — run or install the Beskid language server.
 
+use anyhow::Result;
 use beskid_tools::toolchain::release::{
     InstallLspOptions, install_lsp, managed_lsp_exists, managed_lsp_path,
 };
-use anyhow::Result;
 use clap::{Args, Subcommand};
 use std::process::Command;
 
@@ -42,9 +42,7 @@ pub fn execute(args: LspArgs) -> Result<()> {
 fn run_stdio_server() -> Result<()> {
     if managed_lsp_exists() {
         let path = managed_lsp_path()?;
-        let status = Command::new(&path)
-            .status()
-            .with_context_spawn(&path)?;
+        let status = Command::new(&path).status().with_context_spawn(&path)?;
         if !status.success() {
             anyhow::bail!(
                 "managed language server exited with {}",

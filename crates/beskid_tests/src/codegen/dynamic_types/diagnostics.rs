@@ -52,8 +52,7 @@ fn dynamic_ineligible_mapping_maps_to_e2013() {
         src_name: "Source".to_string(),
         dst_name: "Target".to_string(),
     };
-    let diagnostic =
-        codegen_error_to_diagnostic("test.bd", "x", &error, &type_result, &resolution);
+    let diagnostic = codegen_error_to_diagnostic("test.bd", "x", &error, &type_result, &resolution);
 
     assert_eq!(diagnostic.code.as_deref(), Some("E2013"));
     assert!(diagnostic.message.contains("Source"));

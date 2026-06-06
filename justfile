@@ -3,6 +3,7 @@
 #   just corelib    Run corelib_tests via release beskid_cli
 #   just compiler   Run cargo test for the workspace
 #   just tests      Run compiler and corelib tests
+#   just replace    Build release CLI and overwrite installed `beskid`
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
@@ -26,3 +27,18 @@ compiler:
 
 # Run compiler and corelib tests.
 tests: compiler corelib
+
+# Build release beskid_cli and replace the installed `beskid` binary.
+replace:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    cargo build -p beskid_cli --release
+    built="{{root}}/target/release/beskid_cli"
+    dest="$(command -v beskid 2>/dev/null || true)"
+    if [[ -z "${dest}" ]]; then
+      dest="${HOME}/.beskid/bin/beskid"
+    fi
+    mkdir -p "$(dirname "${dest}")"
+    install -m 0755 "${built}" "${dest}"
+    echo "Replaced ${dest}"

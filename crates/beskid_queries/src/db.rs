@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use beskid_analysis::projects::assembly::{SourceUnit, UnitHir};
 use beskid_analysis::projects::CompilePlan;
+use beskid_analysis::projects::assembly::{SourceUnit, UnitHir};
 use salsa::Setter;
 
 use crate::inputs::{FileText, GrammarRevision, ProjectSession};

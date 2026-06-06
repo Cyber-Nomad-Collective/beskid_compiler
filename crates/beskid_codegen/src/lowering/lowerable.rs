@@ -4,7 +4,9 @@ use crate::linking::{FunctionDefIndex, LinkPlan, LinkSymbol};
 use crate::lowering::cast_intent::validate_cast_intents;
 use crate::lowering::context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport};
 use crate::lowering::expressions::export::{collect_exports, export_linker_name};
-use crate::lowering::function::{lower_function, lower_function_with_name, lower_method, lower_test};
+use crate::lowering::function::{
+    lower_function, lower_function_with_name, lower_method, lower_test,
+};
 use beskid_analysis::hir::{
     HirContractDefinition, HirContractNode, HirFunctionDefinition, HirInlineModule, HirItem,
     HirProgram, HirTestDefinition,
@@ -140,10 +142,12 @@ fn effective_source_path(
     def_index: &FunctionDefIndex<'_>,
     resolution: &Resolution,
 ) -> Option<PathBuf> {
-    def_index
-        .source_path(item)
-        .cloned()
-        .or_else(|| resolution.items.get(item.0).and_then(|info| info.source_path.clone()))
+    def_index.source_path(item).cloned().or_else(|| {
+        resolution
+            .items
+            .get(item.0)
+            .and_then(|info| info.source_path.clone())
+    })
 }
 
 fn emit_link_plan(
@@ -264,7 +268,8 @@ fn emit_link_symbol(
                 return;
             };
             ctx.current_source_path = effective_source_path(*item, def_index, resolution);
-            if let Err(error) = lower_method(def, resolution, type_result, function_defs, ctx, *item)
+            if let Err(error) =
+                lower_method(def, resolution, type_result, function_defs, ctx, *item)
             {
                 errors.push(error);
             }
@@ -289,9 +294,10 @@ fn find_test_by_item<'a>(
     let info = resolution.items.get(item.0)?;
     for item_node in &entry.node.items {
         if item_node.span == info.span
-            && let HirItem::TestDefinition(def) = &item_node.node {
-                return Some(def);
-            }
+            && let HirItem::TestDefinition(def) = &item_node.node
+        {
+            return Some(def);
+        }
     }
     None
 }
@@ -340,14 +346,12 @@ fn lower_function_items(
                 }
             }
             HirItem::MethodDefinition(def) => {
-                if let Some(item_id) =
-                    crate::lowering::function::item_id_for_item_span(
-                        resolution,
-                        item.span,
-                        ctx.current_source_path.as_ref(),
-                    )
-                    && let Err(error) =
-                        lower_method(def, resolution, type_result, function_defs, ctx, item_id)
+                if let Some(item_id) = crate::lowering::function::item_id_for_item_span(
+                    resolution,
+                    item.span,
+                    ctx.current_source_path.as_ref(),
+                ) && let Err(error) =
+                    lower_method(def, resolution, type_result, function_defs, ctx, item_id)
                 {
                     errors.push(error);
                 }

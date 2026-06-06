@@ -25,8 +25,9 @@ impl<'a> TypeContext<'a> {
                         (Some(expected), HirExpressionNode::LambdaExpression(lambda)) => {
                             self.type_lambda_expression_with_expected(lambda, Some(expected))
                         }
-                        (Some(expected), HirExpressionNode::MatchExpression(match_expr)) => self
-                            .type_match_expression_with_expected(match_expr, Some(expected)),
+                        (Some(expected), HirExpressionNode::MatchExpression(match_expr)) => {
+                            self.type_match_expression_with_expected(match_expr, Some(expected))
+                        }
                         (Some(_), _) | (None, _) => self.type_expression(&let_stmt.node.value),
                     };
                     self.contextual_expected_type = previous_contextual;

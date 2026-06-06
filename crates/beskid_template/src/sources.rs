@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 
 use crate::error::{TemplateError, TemplateResult};
 use crate::guids::{replace_guids_in_text, scan_leftover_guid_patterns, verify_guids_replaced};
-use crate::manifest::{TemplateManifest, TEMPLATE_MANIFEST_REL};
+use crate::manifest::{TEMPLATE_MANIFEST_REL, TemplateManifest};
 use crate::substitute::{
     apply_source_name, ensure_no_placeholders_remain, substitute_path_component, substitute_text,
 };
@@ -45,7 +45,10 @@ pub fn plan_source_writes(
         let exclude = build_glob_set(&block.exclude)?;
         let copy_only = build_glob_set(&block.copy_only)?;
 
-        for entry in WalkDir::new(&source_root).into_iter().filter_map(Result::ok) {
+        for entry in WalkDir::new(&source_root)
+            .into_iter()
+            .filter_map(Result::ok)
+        {
             let path = entry.path();
             if !path.is_file() {
                 continue;
@@ -84,9 +87,10 @@ pub fn plan_source_writes(
             let content = if process_text {
                 let mut text = String::from_utf8_lossy(&bytes).into_owned();
                 if let Some(source_name) = &manifest.source_name
-                    && let Some(primary) = values.get(manifest.primary_name_symbol_id()) {
-                        text = apply_source_name(&text, source_name, primary);
-                    }
+                    && let Some(primary) = values.get(manifest.primary_name_symbol_id())
+                {
+                    text = apply_source_name(&text, source_name, primary);
+                }
                 text = substitute_text(&text, values);
                 text = replace_guids_in_text(&text, &manifest.guids, guids_map)?;
                 ensure_no_placeholders_remain(&text)?;
@@ -133,7 +137,9 @@ fn build_glob_set(patterns: &[String]) -> TemplateResult<GlobSet> {
         })?;
         builder.add(glob);
     }
-    builder.build().map_err(|e| TemplateError::Internal(e.to_string()))
+    builder
+        .build()
+        .map_err(|e| TemplateError::Internal(e.to_string()))
 }
 
 fn is_probably_text(bytes: &[u8]) -> bool {

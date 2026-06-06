@@ -163,8 +163,7 @@ fn host_with_two_scopes_plural_inject_reverse_dispose() {
         .expect("handler dispose recorded");
     assert!(metrics_pos < auth_pos);
     assert!(
-        handler_pos > metrics_pos.max(auth_pos)
-            || handler_pos < metrics_pos.min(auth_pos),
+        handler_pos > metrics_pos.max(auth_pos) || handler_pos < metrics_pos.min(auth_pos),
         "Handler ordering should be deterministic relative to plural targets: {entries:?}"
     );
 

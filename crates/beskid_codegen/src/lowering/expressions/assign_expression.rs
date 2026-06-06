@@ -1,7 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility;
-use crate::lowering::locals::resolved_value_at;
 use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
+use crate::lowering::locals::resolved_value_at;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -9,8 +9,8 @@ use beskid_analysis::hir::{HirAssignExpression, HirAssignOp, HirExpressionNode, 
 use beskid_analysis::resolve::ResolvedValue;
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo};
-use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::Value;
+use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, MemFlags, Signature, TrapCode};
 use cranelift_codegen::isa::CallConv;
 
@@ -92,12 +92,14 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
                 {
                     let current = load_at_index(node.span, array_handle, index, elem_type, ctx)?;
                     let current_type = elem_type;
-                    let is_string =
-                        matches!(ctx.type_result.types.get(current_type),
-                            Some(TypeInfo::Primitive(HirPrimitiveType::String)));
-                    let is_float =
-                        matches!(ctx.type_result.types.get(current_type),
-                            Some(TypeInfo::Primitive(HirPrimitiveType::F64)));
+                    let is_string = matches!(
+                        ctx.type_result.types.get(current_type),
+                        Some(TypeInfo::Primitive(HirPrimitiveType::String))
+                    );
+                    let is_float = matches!(
+                        ctx.type_result.types.get(current_type),
+                        Some(TypeInfo::Primitive(HirPrimitiveType::F64))
+                    );
                     let is_numeric = matches!(
                         ctx.type_result.types.get(current_type),
                         Some(TypeInfo::Primitive(
@@ -135,7 +137,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
 
                 let var = match target.kind {
                     AssignTargetKind::Local { var } => var,
-                    AssignTargetKind::EventMember { .. } | AssignTargetKind::IndexElement { .. } => {
+                    AssignTargetKind::EventMember { .. }
+                    | AssignTargetKind::IndexElement { .. } => {
                         unreachable!("handled above")
                     }
                 };
@@ -282,12 +285,7 @@ fn resolve_assign_target(
                 let (receiver_ptr, receiver_type) = if middle.is_empty() {
                     (receiver_ptr, receiver_type)
                 } else {
-                    load_path_field_chain(
-                        ctx,
-                        receiver_ptr,
-                        receiver_type,
-                        middle,
-                    )?
+                    load_path_field_chain(ctx, receiver_ptr, receiver_type, middle)?
                 };
                 return resolve_event_member_target(
                     node.span,
@@ -321,18 +319,16 @@ fn resolve_assign_target(
         }
         HirExpressionNode::IndexExpression(index_expr) => {
             // arr[i] = value  →  resolve the array handle, index, and element type
-            let array_handle = lower_node(&index_expr.node.target, ctx)?.ok_or(
-                CodegenError::UnsupportedNode {
+            let array_handle =
+                lower_node(&index_expr.node.target, ctx)?.ok_or(CodegenError::UnsupportedNode {
                     span: index_expr.node.target.span,
                     node: "unit-valued index target",
-                },
-            )?;
-            let index = lower_node(&index_expr.node.index, ctx)?.ok_or(
-                CodegenError::UnsupportedNode {
+                })?;
+            let index =
+                lower_node(&index_expr.node.index, ctx)?.ok_or(CodegenError::UnsupportedNode {
                     span: index_expr.node.index.span,
                     node: "unit-valued index",
-                },
-            )?;
+                })?;
             let target_type = ctx.require_expr_type(index_expr.node.target.span)?;
             let elem_type = match ctx.type_result.types.get(target_type) {
                 Some(TypeInfo::Array(elem)) => *elem,
@@ -385,12 +381,11 @@ fn load_path_field_chain(
     segments: &[Spanned<beskid_analysis::hir::HirPathSegment>],
 ) -> Result<(Value, TypeId), CodegenError> {
     for segment in segments {
-        let item_id = struct_item_id(ctx.type_result, current_type).ok_or(
-            CodegenError::UnsupportedNode {
+        let item_id =
+            struct_item_id(ctx.type_result, current_type).ok_or(CodegenError::UnsupportedNode {
                 span: segment.span,
                 node: "member target type",
-            },
-        )?;
+            })?;
         let offsets = struct_field_offsets(ctx.type_result, item_id).ok_or(
             CodegenError::UnsupportedNode {
                 span: segment.span,
@@ -518,31 +513,23 @@ fn load_at_index(
         .trapnz(out_of_bounds, TrapCode::unwrap_user(2));
 
     // Compute element size
-    let layout = ctx
-        .codegen
-        .type_layout(ctx.type_result, elem_type)
-        .ok_or(CodegenError::UnsupportedNode {
+    let layout = ctx.codegen.type_layout(ctx.type_result, elem_type).ok_or(
+        CodegenError::UnsupportedNode {
             span,
             node: "array element layout for index write",
-        })?;
-    let elem_size_val = ctx
-        .builder
-        .ins()
-        .iconst(pointer_type(), layout.size as i64);
+        },
+    )?;
+    let elem_size_val = ctx.builder.ins().iconst(pointer_type(), layout.size as i64);
 
     let offset = ctx.builder.ins().imul(index, elem_size_val);
     let addr = ctx.builder.ins().iadd(ptr, offset);
 
-    let clif_ty = map_type_id_to_clif(ctx.type_result, elem_type).ok_or(
-        CodegenError::UnsupportedNode {
+    let clif_ty =
+        map_type_id_to_clif(ctx.type_result, elem_type).ok_or(CodegenError::UnsupportedNode {
             span,
             node: "array element clif type for index write",
-        },
-    )?;
-    let value = ctx
-        .builder
-        .ins()
-        .load(clif_ty, MemFlags::new(), addr, 0);
+        })?;
+    let value = ctx.builder.ins().load(clif_ty, MemFlags::new(), addr, 0);
 
     Ok(value)
 }
@@ -575,17 +562,13 @@ fn store_at_index(
         .trapnz(out_of_bounds, TrapCode::unwrap_user(2));
 
     // Compute element size
-    let layout = ctx
-        .codegen
-        .type_layout(ctx.type_result, elem_type)
-        .ok_or(CodegenError::UnsupportedNode {
+    let layout = ctx.codegen.type_layout(ctx.type_result, elem_type).ok_or(
+        CodegenError::UnsupportedNode {
             span,
             node: "array element layout for index store",
-        })?;
-    let elem_size_val = ctx
-        .builder
-        .ins()
-        .iconst(pointer_type(), layout.size as i64);
+        },
+    )?;
+    let elem_size_val = ctx.builder.ins().iconst(pointer_type(), layout.size as i64);
 
     let offset = ctx.builder.ins().imul(index, elem_size_val);
     let addr = ctx.builder.ins().iadd(ptr, offset);
@@ -595,9 +578,7 @@ fn store_at_index(
         call_write_barrier(ctx, array_handle, value);
     }
 
-    ctx.builder
-        .ins()
-        .store(MemFlags::new(), value, addr, 0);
+    ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
 
     Ok(())
 }
@@ -640,11 +621,7 @@ fn call_event_unsubscribe(
 }
 
 /// Emit a GC write barrier call for array index stores with pointer-like elements.
-fn call_write_barrier(
-    ctx: &mut NodeLoweringContext<'_, '_>,
-    dst_obj: Value,
-    value_ptr: Value,
-) {
+fn call_write_barrier(ctx: &mut NodeLoweringContext<'_, '_>, dst_obj: Value, value_ptr: Value) {
     let mut signature = Signature::new(CallConv::SystemV);
     signature.params.push(AbiParam::new(pointer_type()));
     signature.params.push(AbiParam::new(pointer_type()));

@@ -5,13 +5,11 @@ use std::sync::Arc;
 
 use beskid_analysis::projects::graph::build_project_graph_with_options;
 use beskid_analysis::projects::model::AssemblyOptions;
-use beskid_analysis::projects::{
-    parse_workspace_manifest, CompilePlan, ProjectGraphBuildOptions,
-};
+use beskid_analysis::projects::{CompilePlan, ProjectGraphBuildOptions, parse_workspace_manifest};
 use beskid_analysis::services::{parse_program_with_source_name, resolve_program_composition};
 use beskid_graph::{
-    from_composition, from_import_closure, from_module_graph, from_project_graph, from_workspace,
-    GraphDocument, GraphKind,
+    GraphDocument, GraphKind, from_composition, from_import_closure, from_module_graph,
+    from_project_graph, from_workspace,
 };
 use thiserror::Error;
 
@@ -64,7 +62,9 @@ pub fn get_graph_document(
         }
         GraphKind::Workspace => {
             let workspace = request.workspace_manifest.as_ref().ok_or_else(|| {
-                GraphQueryError::Message("workspace manifest required for workspace graph".to_owned())
+                GraphQueryError::Message(
+                    "workspace manifest required for workspace graph".to_owned(),
+                )
             })?;
             let session = minimal_session(db, &request.manifest_path);
             let manifest_gen = ensure_manifest_generation(db, workspace);
@@ -83,7 +83,9 @@ pub fn get_graph_document(
 }
 
 /// Fetch without requiring `BeskidDatabase` (project/workspace only).
-pub fn get_graph_document_simple(request: &GraphFetchRequest) -> Result<GraphDocument, GraphQueryError> {
+pub fn get_graph_document_simple(
+    request: &GraphFetchRequest,
+) -> Result<GraphDocument, GraphQueryError> {
     match request.kind {
         GraphKind::ProjectDeps => {
             let graph = build_project_graph_with_options(
@@ -125,11 +127,8 @@ fn build_assembly_graph(
             from_module_graph(assembly.module_index.module_graph()).map_err(GraphQueryError::from)
         }
         GraphKind::ImportClosure => {
-            let session = db.ensure_project_session(
-                plan,
-                entry,
-                manifest_digest(&request.manifest_path),
-            );
+            let session =
+                db.ensure_project_session(plan, entry, manifest_digest(&request.manifest_path));
             let assembly = program_assembly(
                 db,
                 plan,
@@ -151,11 +150,13 @@ fn build_assembly_graph(
             from_import_closure(&units).map_err(GraphQueryError::from)
         }
         GraphKind::HostComposition => {
-            let source = request.entry_source.clone().or_else(|| {
-                std::fs::read_to_string(entry).ok()
-            }).ok_or_else(|| {
-                GraphQueryError::Message("entry source required for host graph".to_owned())
-            })?;
+            let source = request
+                .entry_source
+                .clone()
+                .or_else(|| std::fs::read_to_string(entry).ok())
+                .ok_or_else(|| {
+                    GraphQueryError::Message("entry source required for host graph".to_owned())
+                })?;
             let program = parse_program_with_source_name(&entry.display().to_string(), &source)
                 .map_err(|e| GraphQueryError::Parse(e.to_string()))?;
             let composition = resolve_program_composition(&program, Some(plan));
@@ -171,11 +172,14 @@ fn build_assembly_graph(
 }
 
 fn workspace_graph(request: &GraphFetchRequest) -> Result<GraphDocument, GraphQueryError> {
-    let workspace = request.workspace_manifest.as_ref().ok_or_else(|| {
-        GraphQueryError::Message("workspace manifest required".to_owned())
-    })?;
-    let text = std::fs::read_to_string(workspace).map_err(|e| GraphQueryError::Message(e.to_string()))?;
-    let manifest = parse_workspace_manifest(&text).map_err(|e| GraphQueryError::Message(e.to_string()))?;
+    let workspace = request
+        .workspace_manifest
+        .as_ref()
+        .ok_or_else(|| GraphQueryError::Message("workspace manifest required".to_owned()))?;
+    let text =
+        std::fs::read_to_string(workspace).map_err(|e| GraphQueryError::Message(e.to_string()))?;
+    let manifest =
+        parse_workspace_manifest(&text).map_err(|e| GraphQueryError::Message(e.to_string()))?;
     let workspace_dir = workspace
         .parent()
         .ok_or_else(|| GraphQueryError::Message("workspace dir missing".to_owned()))?;
@@ -185,7 +189,10 @@ fn workspace_graph(request: &GraphFetchRequest) -> Result<GraphDocument, GraphQu
         if !member_manifest.is_file() {
             continue;
         }
-        let graph = build_project_graph_with_options(&member_manifest, ProjectGraphBuildOptions::default())?;
+        let graph = build_project_graph_with_options(
+            &member_manifest,
+            ProjectGraphBuildOptions::default(),
+        )?;
         members.push((member.name.clone(), graph));
     }
     from_workspace(&manifest.workspace.name, &members).map_err(GraphQueryError::from)
@@ -239,14 +246,18 @@ pub fn graph_mermaid_workspace(
         if !member_manifest.is_file() {
             continue;
         }
-        let graph = build_project_graph_with_options(&member_manifest, ProjectGraphBuildOptions::default())
-            .expect("member graph");
+        let graph =
+            build_project_graph_with_options(&member_manifest, ProjectGraphBuildOptions::default())
+                .expect("member graph");
         members.push((member.name.clone(), graph));
     }
     Arc::new(from_workspace(&manifest.workspace.name, &members).expect("workspace mermaid"))
 }
 
-pub fn ensure_manifest_generation(db: &mut BeskidDatabase, manifest_path: &Path) -> ManifestGenerationId {
+pub fn ensure_manifest_generation(
+    db: &mut BeskidDatabase,
+    manifest_path: &Path,
+) -> ManifestGenerationId {
     ManifestGenerationId::new(db, manifest_digest(manifest_path))
 }
 

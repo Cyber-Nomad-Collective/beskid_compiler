@@ -9,7 +9,7 @@ use crate::manifest::{TemplateManifest, TemplateOutputKind};
 use crate::post_actions::{PostActionContext, run_post_actions};
 use crate::sources::{apply_write_plans, normalize_output_path, plan_source_writes};
 use crate::substitute::build_substitution_map;
-use crate::symbols::{collect_symbol_values, SymbolCollectOptions};
+use crate::symbols::{SymbolCollectOptions, collect_symbol_values};
 
 #[derive(Debug, Clone)]
 pub struct InstantiateOptions {
@@ -75,9 +75,7 @@ pub fn instantiate(
     ensure_no_corelib_opt_out(&output_root)?;
 
     let mut post_actions = manifest.post_actions.clone();
-    if !options.skip_default_lock
-        && !post_actions.iter().any(|a| a.action_id == "beskidLock")
-    {
+    if !options.skip_default_lock && !post_actions.iter().any(|a| a.action_id == "beskidLock") {
         post_actions.push(crate::manifest::TemplatePostAction {
             action_id: "beskidLock".to_string(),
             args: serde_json::json!({}),
@@ -209,14 +207,11 @@ fn ensure_no_corelib_opt_out(output_root: &Path) -> TemplateResult<()> {
     Ok(())
 }
 
-pub fn fixture_manifest(
-    short_name: &str,
-    template_type: TemplateOutputKind,
-) -> TemplateManifest {
+pub fn fixture_manifest(short_name: &str, template_type: TemplateOutputKind) -> TemplateManifest {
+    use crate::manifest::{SymbolType, TEMPLATE_SCHEMA};
     use crate::manifest::{
         TemplateManifest, TemplatePostAction, TemplateSource, TemplateSymbol, TemplateTags,
     };
-    use crate::manifest::{SymbolType, TEMPLATE_SCHEMA};
 
     TemplateManifest {
         schema: TEMPLATE_SCHEMA.to_string(),

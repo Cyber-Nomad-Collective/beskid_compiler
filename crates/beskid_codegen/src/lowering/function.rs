@@ -8,8 +8,8 @@ use crate::lowering::types::{map_type_id_to_clif, method_receiver_type_id, type_
 use beskid_analysis::hir::{
     HirFunctionDefinition, HirLambdaExpression, HirMethodDefinition, HirTestDefinition,
 };
-use beskid_analysis::resolve::{canonical_item_id, ItemId, LocalId, Resolution};
 use beskid_analysis::paths::same_file_opt;
+use beskid_analysis::resolve::{ItemId, LocalId, Resolution, canonical_item_id};
 use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
@@ -65,14 +65,7 @@ pub(crate) fn lower_method(
             .and_then(|info| info.source_path.clone());
     }
     ctx.emitting_items.insert(item_id);
-    let result = lower_method_body(
-        def,
-        resolution,
-        type_result,
-        function_defs,
-        ctx,
-        item_id,
-    );
+    let result = lower_method_body(def, resolution, type_result, function_defs, ctx, item_id);
     finish_emitting(ctx, Some(item_id));
     result
 }
@@ -90,16 +83,13 @@ fn lower_method_body(
         .get(&item_id)
         .or_else(|| type_result.method_function_signatures.get(&item_id));
 
-    let receiver_type_id = method_receiver_type_id(
-        resolution,
-        type_result,
-        &def.node.receiver_type,
-        item_id,
-    )
-    .ok_or(CodegenError::UnsupportedNode {
-        span: def.node.receiver_type.span,
-        node: "method receiver type",
-    })?;
+    let receiver_type_id =
+        method_receiver_type_id(resolution, type_result, &def.node.receiver_type, item_id).ok_or(
+            CodegenError::UnsupportedNode {
+                span: def.node.receiver_type.span,
+                node: "method receiver type",
+            },
+        )?;
     let receiver_clif_ty = map_type_id_to_clif(type_result, receiver_type_id).ok_or(
         CodegenError::UnsupportedNode {
             span: def.node.receiver_type.span,
@@ -282,14 +272,7 @@ pub(crate) fn lower_test(
         .and_then(|id| resolution.items.get(id.0))
         .and_then(|info| info.source_path.clone())
         .or(saved_source_path.clone());
-    let result = lower_test_body(
-        def,
-        resolution,
-        type_result,
-        function_defs,
-        ctx,
-        item_id,
-    );
+    let result = lower_test_body(def, resolution, type_result, function_defs, ctx, item_id);
     ctx.current_source_path = saved_source_path;
     result
 }
@@ -613,9 +596,11 @@ pub(crate) fn item_id_for_item_span(
     source_path: Option<&std::path::PathBuf>,
 ) -> Option<ItemId> {
     if let Some(path) = source_path {
-        if let Some(info) = resolution.items.iter().find(|info| {
-            info.span == span && same_file_opt(info.source_path.as_ref(), Some(path))
-        }) {
+        if let Some(info) = resolution
+            .items
+            .iter()
+            .find(|info| info.span == span && same_file_opt(info.source_path.as_ref(), Some(path)))
+        {
             return Some(info.id);
         }
     }

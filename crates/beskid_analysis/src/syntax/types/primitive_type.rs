@@ -3,7 +3,9 @@
 use beskid_ast_derive::AstNode;
 
 /// Core primitive types supported in the surface language.
-#[derive(AstNode, Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    AstNode, Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum PrimitiveType {
     Bool,
     I32,

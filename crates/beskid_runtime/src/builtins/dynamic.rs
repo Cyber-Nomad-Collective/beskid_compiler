@@ -2,7 +2,7 @@
 
 use crate::builtins::alloc;
 use crate::dynamic::{
-    DynamicCell, DYNAMIC_ERR_INCOMPATIBLE, DYNAMIC_ERR_NULL_PAYLOAD, DYNAMIC_OK,
+    DYNAMIC_ERR_INCOMPATIBLE, DYNAMIC_ERR_NULL_PAYLOAD, DYNAMIC_OK, DynamicCell,
     map_dynamic_fallback, map_objects_aot,
 };
 use crate::gc::with_current_heap_and_root;

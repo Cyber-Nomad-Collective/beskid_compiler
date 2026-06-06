@@ -72,11 +72,7 @@ pub fn unit_hir_tracked(
 }
 
 /// Parsed source unit (public facade over tracked query + unit cache).
-pub fn parse_and_expand_unit(
-    db: &dyn Db,
-    project: ProjectSession,
-    path: PathBuf,
-) -> SourceUnit {
+pub fn parse_and_expand_unit(db: &dyn Db, project: ProjectSession, path: PathBuf) -> SourceUnit {
     let grammar = grammar_for(db);
     let content_fp = unit_source_fingerprint(db, &path);
     if db
@@ -107,7 +103,13 @@ pub fn parse_and_expand_unit_with_source(
     text: &str,
 ) -> SourceUnit {
     let content_fp = fingerprint(&path, text);
-    if let Some(cached) = db.unit_cache().lock().expect("unit cache").source_units.get(&content_fp) {
+    if let Some(cached) = db
+        .unit_cache()
+        .lock()
+        .expect("unit cache")
+        .source_units
+        .get(&content_fp)
+    {
         record_query_hit();
         return (**cached).clone();
     }
@@ -119,7 +121,13 @@ pub fn parse_and_expand_unit_with_source(
 pub fn unit_hir(db: &dyn Db, project: ProjectSession, path: PathBuf) -> Arc<UnitHir> {
     let grammar = grammar_for(db);
     let content_fp = unit_source_fingerprint(db, &path);
-    if db.unit_cache().lock().expect("unit cache").unit_hir.contains_key(&content_fp) {
+    if db
+        .unit_cache()
+        .lock()
+        .expect("unit cache")
+        .unit_hir
+        .contains_key(&content_fp)
+    {
         record_query_hit();
     }
     let _ = unit_hir_tracked(db, project, grammar, path.clone(), content_fp.clone());
@@ -142,7 +150,13 @@ pub fn unit_hir_with_source(
 ) -> Arc<UnitHir> {
     let _ = project;
     let content_fp = fingerprint(&path, text);
-    if let Some(cached) = db.unit_cache().lock().expect("unit cache").unit_hir.get(&content_fp) {
+    if let Some(cached) = db
+        .unit_cache()
+        .lock()
+        .expect("unit cache")
+        .unit_hir
+        .get(&content_fp)
+    {
         record_query_hit();
         return Arc::clone(cached);
     }
@@ -236,7 +250,12 @@ fn grammar_for(db: &dyn Db) -> GrammarRevision {
 
 fn resolve_unit_text(db: &dyn Db, path: &std::path::Path) -> String {
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if let Some(file) = db.file_registry().lock().expect("file registry").get(&canonical) {
+    if let Some(file) = db
+        .file_registry()
+        .lock()
+        .expect("file registry")
+        .get(&canonical)
+    {
         record_query_hit();
         return file.text(db).clone();
     }
@@ -255,7 +274,12 @@ fn import_paths_from_source(source: &str) -> Vec<String> {
             continue;
         }
         if let Some(rest) = trimmed.strip_prefix("use ") {
-            let without_comment = rest.split("//").next().unwrap_or(rest).trim_end_matches(';').trim();
+            let without_comment = rest
+                .split("//")
+                .next()
+                .unwrap_or(rest)
+                .trim_end_matches(';')
+                .trim();
             let import_path = without_comment
                 .split_once(" as ")
                 .map(|(path, _)| path.trim())

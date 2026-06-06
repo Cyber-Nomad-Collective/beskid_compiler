@@ -17,15 +17,8 @@ fn analysis_perf_ansi_style_chain_tests() {
     }
 
     with_project_test_env(&root, || {
-        let resolved = resolve_input(
-            Some(&entry),
-            Some(&root),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve");
+        let resolved =
+            resolve_input(Some(&entry), Some(&root), None, None, false, false).expect("resolve");
 
         let timer = TimedPipelineObserver::new();
         beskid_queries::with_db(|db| {
@@ -41,8 +34,16 @@ fn analysis_perf_ansi_style_chain_tests() {
         })
         .expect("prepare");
 
-        let semantic = timer.phase_millis().get(phases::SEMANTIC).copied().unwrap_or(0);
-        let lower = timer.phase_millis().get(phases::LOWER).copied().unwrap_or(0);
+        let semantic = timer
+            .phase_millis()
+            .get(phases::SEMANTIC)
+            .copied()
+            .unwrap_or(0);
+        let lower = timer
+            .phase_millis()
+            .get(phases::LOWER)
+            .copied()
+            .unwrap_or(0);
         let assemble = timer
             .phase_millis()
             .get(phases::PROGRAM_ASSEMBLE)

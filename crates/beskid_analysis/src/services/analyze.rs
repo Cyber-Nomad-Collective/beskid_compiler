@@ -11,10 +11,12 @@ use crate::projects::CompilePlan;
 
 use super::composition::composition_diagnostics_for_program;
 use super::document::resolve_program_with_assembly;
+use super::front_end::FrontEndOptions;
 use super::input::AnalyzeInProjectOptions;
 use super::parse::parse_program_with_source_name;
-use super::prepare::{PrepareMode, PrepareOptions, prepare_compilation_diagnostics, resolved_input_from_plan};
-use super::front_end::FrontEndOptions;
+use super::prepare::{
+    PrepareMode, PrepareOptions, prepare_compilation_diagnostics, resolved_input_from_plan,
+};
 
 pub fn analyze_program(path: &Path, source: &str) -> Result<Vec<SemanticDiagnostic>> {
     analyze_program_with_options(path, source, crate::AnalysisOptions::default())
@@ -153,9 +155,8 @@ pub fn analyze_source_with_compilation_context(
         if let Ok(program) = parse_program_with_source_name(&source_name, source)
             && resolve_program_with_assembly(&program, assembly, path).is_some()
         {
-            diagnostics.retain(|diag| {
-                !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))
-            });
+            diagnostics
+                .retain(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108")));
         }
     }
 

@@ -5,14 +5,14 @@ use beskid_analysis::doc::{
     API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
     API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocLinkContext, ApiDocRoot, ApiLocation,
     DocRefLinkContext, apply_signature_to_item, assign_declaring_packages,
-    build_item_signature, display_name_for_item, fill_member_ids_from_parents,
-    hir_programs_by_path,     build_api_doc_link_context, link_api_doc_library_tree, qualified_names_for_items,
-    relativize_api_doc_paths, resolve_item_tiers,
+    build_api_doc_link_context, build_item_signature, display_name_for_item,
+    fill_member_ids_from_parents, hir_programs_by_path, link_api_doc_library_tree,
+    qualified_names_for_items, relativize_api_doc_paths, resolve_item_tiers,
 };
-use beskid_analysis::projects::assembly::ProgramAssembly;
-use beskid_analysis::resolve::ItemInfo;
 use beskid_analysis::hir::HirVisibility;
+use beskid_analysis::projects::assembly::ProgramAssembly;
 use beskid_analysis::projects::load_manifest_from_path;
+use beskid_analysis::resolve::ItemInfo;
 use beskid_analysis::services;
 use beskid_analysis::syntax::SpanInfo;
 use clap::Args;
@@ -92,9 +92,10 @@ fn location_for_item(
 ) -> LocationJson {
     if let Some(asm) = assembly
         && let Some(path) = &item.source_path
-            && let Some(unit) = asm.units.iter().find(|u| u.path == *path) {
-                return location_for_span(&unit.source, &path.to_string_lossy(), &item.span);
-            }
+        && let Some(unit) = asm.units.iter().find(|u| u.path == *path)
+    {
+        return location_for_span(&unit.source, &path.to_string_lossy(), &item.span);
+    }
     location_for_span(entry_source, entry_path, &item.span)
 }
 
@@ -182,10 +183,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
     let entry_hir = hir_by_path
         .get(&resolved.source_path)
         .or_else(|| hir_by_path.values().next());
-    let qualified_names = snap
-        .resolution
-        .as_ref()
-        .map(qualified_names_for_items);
+    let qualified_names = snap.resolution.as_ref().map(qualified_names_for_items);
 
     fs::create_dir_all(&args.out).with_context(|| format!("create {}", args.out.display()))?;
 
@@ -198,12 +196,8 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 .map(|d| d.markdown.clone())
                 .filter(|s| !s.trim().is_empty());
             let doc = slot.and_then(|d| d.structured.clone());
-            let loc = location_for_item(
-                item,
-                assembly.as_ref(),
-                &resolved.source,
-                &source_path_str,
-            );
+            let loc =
+                location_for_item(item, assembly.as_ref(), &resolved.source, &source_path_str);
             let qualified_name = qualified_names
                 .as_ref()
                 .and_then(|names| names.get(&item.id.0).cloned())
@@ -240,12 +234,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 controls: vec![],
                 tier: None,
             };
-            let sig = build_item_signature(
-                item,
-                Some(res),
-                &hir_by_path,
-                entry_hir,
-            );
+            let sig = build_item_signature(item, Some(res), &hir_by_path, entry_hir);
             apply_signature_to_item(&mut api_item, sig);
             entries.push(DocEntry {
                 qualified_name,
@@ -311,8 +300,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
 
     let had_resolution = snap.resolution.is_some();
     if had_resolution {
-        if let (Some(res), Some(ctx)) =
-            (snap.resolution.as_ref(), api_doc_link_context(&resolved))
+        if let (Some(res), Some(ctx)) = (snap.resolution.as_ref(), api_doc_link_context(&resolved))
         {
             link_api_doc_library_tree(&mut api_items, res);
             assign_declaring_packages(&mut api_items, &ctx);

@@ -1,8 +1,8 @@
 //! Build `AotBuildRequest` linker inputs from extern imports and project `link` metadata.
 
-use std::collections::HashSet;
-use beskid_analysis::projects::{load_manifest_from_path, CompilePlan};
+use beskid_analysis::projects::{CompilePlan, load_manifest_from_path};
 use beskid_codegen::CodegenArtifact;
+use std::collections::HashSet;
 
 /// Resolved linker inputs for an AOT build.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -31,7 +31,10 @@ pub fn link_libraries_for_artifact(
     for import in &artifact.extern_imports {
         if let Some(library) = import.library.as_deref() {
             let canon = canonical_logical_name(library);
-            if !libraries.iter().any(|name| canonical_logical_name(name) == canon) {
+            if !libraries
+                .iter()
+                .any(|name| canonical_logical_name(name) == canon)
+            {
                 libraries.push(canon);
             }
         }
@@ -44,11 +47,9 @@ pub fn link_libraries_for_artifact(
 }
 
 /// Apply [`LinkLibraryInputs`] to an [`beskid_aot::AotBuildRequest`] (manifest libraries first).
-pub fn apply_link_libraries(
-    request: &mut beskid_aot::AotBuildRequest,
-    inputs: LinkLibraryInputs,
-) {
-    request.external_libraries = merge_libraries(&request.external_libraries, &inputs.external_libraries);
+pub fn apply_link_libraries(request: &mut beskid_aot::AotBuildRequest, inputs: LinkLibraryInputs) {
+    request.external_libraries =
+        merge_libraries(&request.external_libraries, &inputs.external_libraries);
     request.library_search_paths =
         merge_search_paths(&request.library_search_paths, &inputs.library_search_paths);
 }

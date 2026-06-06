@@ -68,7 +68,10 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
 
     assert_eq!(generated.session.loaded_descriptor_count(), 1);
     assert_eq!(generated.collector_outcomes.len(), 1);
-    assert_eq!(generated.collector_outcomes[0].type_id, "SampleMod.SampleCollect");
+    assert_eq!(
+        generated.collector_outcomes[0].type_id,
+        "SampleMod.SampleCollect"
+    );
     assert_eq!(generated.generator_outcomes.len(), 2);
     let generator_type_ids: Vec<&str> = generated
         .generator_outcomes
@@ -78,8 +81,9 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
     assert!(generator_type_ids.contains(&"SampleMod.SampleGenerate"));
     assert!(generator_type_ids.contains(&"SampleMod.SampleAttribute"));
 
-    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-        .with_composition(&generated.session.composition_snapshot_or_default());
+    let snapshot =
+        beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+            .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
@@ -90,9 +94,15 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
     .expect("mod host analyze rewrite");
 
     assert_eq!(analyze.analyzer_outcomes.len(), 1);
-    assert_eq!(analyze.analyzer_outcomes[0].type_id, "SampleMod.SampleAnalyze");
+    assert_eq!(
+        analyze.analyzer_outcomes[0].type_id,
+        "SampleMod.SampleAnalyze"
+    );
     assert_eq!(analyze.rewriter_outcomes.len(), 1);
-    assert_eq!(analyze.rewriter_outcomes[0].type_id, "SampleMod.SampleRewrite");
+    assert_eq!(
+        analyze.rewriter_outcomes[0].type_id,
+        "SampleMod.SampleRewrite"
+    );
 
     let invocations = invoker.invocations();
     assert_eq!(
@@ -111,7 +121,13 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
         .collect();
     assert_eq!(
         kinds,
-        vec!["collector", "generator", "generator", "analyzer", "rewriter"],
+        vec![
+            "collector",
+            "generator",
+            "generator",
+            "analyzer",
+            "rewriter"
+        ],
         "host must dispatch contracts in canonical order"
     );
 
@@ -175,8 +191,9 @@ fn scripted_invoker_surfaces_analyzer_diagnostics_to_outcomes() {
         "scripted generator contribution should be propagated to outcome"
     );
 
-    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-        .with_composition(&generated.session.composition_snapshot_or_default());
+    let snapshot =
+        beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+            .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,

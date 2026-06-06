@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use beskid_analysis::compilation_context::CompilationContext;
     use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions, assemble_program};
     use beskid_analysis::services::{
         build_document_analysis_with_context, parse_program_with_source_name, resolve_input,
     };
+    use std::path::PathBuf;
     use tower_lsp_server::ls_types::{GotoDefinitionResponse, Hover, Uri};
 
     use crate::features::{definition, hover, references};
@@ -59,9 +59,11 @@ mod tests {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
-            let program =
-                parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
-                    .expect("parse");
+            let program = parse_program_with_source_name(
+                &fixture.main_path.to_string_lossy(),
+                &fixture.source,
+            )
+            .expect("parse");
             let resolved = resolve_input(
                 Some(&fixture.main_path),
                 Some(&fixture.project_root),
@@ -83,8 +85,8 @@ mod tests {
                 },
             )
             .expect("assemble");
-            let mut ctx = CompilationContext::try_for_analysis_path(&fixture.main_path, None)
-                .expect("ctx");
+            let mut ctx =
+                CompilationContext::try_for_analysis_path(&fixture.main_path, None).expect("ctx");
             ctx.assembly = Some(assembly);
             let analysis = build_document_analysis_with_context(
                 &program,
@@ -108,15 +110,14 @@ mod tests {
     fn completion_after_output_dot_lists_writeline() {
         let (_uri, doc, fixture) = corelib_mvp_document_with_assembly();
         let analysis = doc.analysis.as_ref().expect("analysis");
-        let offset = fixture
-            .source
-            .find("    Output.")
-            .expect("main Output.")
-            + "    Output.".len();
+        let offset =
+            fixture.source.find("    Output.").expect("main Output.") + "    Output.".len();
         let candidates =
             beskid_analysis::services::completion_candidates(analysis, &fixture.source, offset);
         assert!(
-            candidates.iter().any(|candidate| candidate.label == "WriteLine"),
+            candidates
+                .iter()
+                .any(|candidate| candidate.label == "WriteLine"),
             "expected WriteLine member completion after Output., got {:?}",
             candidates.iter().map(|c| &c.label).collect::<Vec<_>>()
         );
@@ -148,7 +149,9 @@ mod tests {
         });
         let state = tokio::sync::RwLock::new(State::default());
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
-        let analysis = doc.analysis.expect("analysis from lifecycle build_document");
+        let analysis = doc
+            .analysis
+            .expect("analysis from lifecycle build_document");
         let resolution = analysis
             .resolution
             .as_ref()
@@ -164,8 +167,7 @@ mod tests {
     fn references_on_printline_includes_dependency() {
         let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
-        let ctx =
-            CompilationContext::try_for_analysis_path(&fixture.main_path, None).expect("ctx");
+        let ctx = CompilationContext::try_for_analysis_path(&fixture.main_path, None).expect("ctx");
         let locations = references::handler::handle_references(
             &uri,
             &doc,
@@ -179,7 +181,10 @@ mod tests {
                 .iter()
                 .any(|location| location.uri.to_string().contains("Output")),
             "expected Output dependency reference, got {:?}",
-            locations.iter().map(|l| l.uri.to_string()).collect::<Vec<_>>()
+            locations
+                .iter()
+                .map(|l| l.uri.to_string())
+                .collect::<Vec<_>>()
         );
     }
 
@@ -191,7 +196,8 @@ mod tests {
         let Hover { range, .. } = hover;
         let range = range.expect("hover range");
         let analysis = doc.analysis.as_ref().expect("analysis");
-        let hover_info = beskid_analysis::services::hover_at_offset(analysis, offset).expect("hover info");
+        let hover_info =
+            beskid_analysis::services::hover_at_offset(analysis, offset).expect("hover info");
         assert!(
             hover_info
                 .location
@@ -204,7 +210,10 @@ mod tests {
             std::fs::read_to_string(&hover_info.location.path).expect("read dependency source");
         let start = position_to_offset(&dependency_source, range.start);
         let end = position_to_offset(&dependency_source, range.end);
-        assert!(start < end, "hover range should be non-empty in dependency file");
+        assert!(
+            start < end,
+            "hover range should be non-empty in dependency file"
+        );
         let snippet = &dependency_source[start..end];
         assert!(
             snippet.contains("WriteLine"),

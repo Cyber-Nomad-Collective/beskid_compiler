@@ -4,10 +4,10 @@ use std::sync::Mutex;
 use beskid_analysis::mod_host::{
     ModHostInput, run_analyze_rewrite_with_invoker, run_through_generate,
 };
-use beskid_analysis::services::SemanticSnapshot;
 use beskid_analysis::projects::{
     CompilePlan, PROJECT_FILE_NAME, ResolvedDependencyProject, Target, TargetKind,
 };
+use beskid_analysis::services::SemanticSnapshot;
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_pipeline::phases::{
     COMPOSITION_RESOLVE, FULL_BUILD_PHASE_ORDER, MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT,

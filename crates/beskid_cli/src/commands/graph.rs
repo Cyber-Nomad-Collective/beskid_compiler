@@ -6,12 +6,12 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use beskid_graph::GraphKind;
-use beskid_queries::{get_graph_document, get_graph_document_simple, GraphFetchRequest, with_db};
+use beskid_queries::{GraphFetchRequest, get_graph_document, get_graph_document_simple, with_db};
 use clap::Args;
 use graphs_tui::{RenderOptions, render_mermaid_to_tui};
 
-use beskid_tools::pipeline::frontend::resolve_input_with_pipeline;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
+use beskid_tools::pipeline::frontend::resolve_input_with_pipeline;
 
 #[derive(Args, Debug)]
 pub struct GraphArgs {
@@ -47,7 +47,10 @@ pub struct GraphArgs {
 
 pub fn execute(args: GraphArgs) -> Result<()> {
     let kind = GraphKind::parse(&args.kind).ok_or_else(|| {
-        anyhow::anyhow!("unknown graph kind `{}` (use project|workspace|module|imports|host)", args.kind)
+        anyhow::anyhow!(
+            "unknown graph kind `{}` (use project|workspace|module|imports|host)",
+            args.kind
+        )
     })?;
 
     let resolved = resolve_input_with_pipeline(
@@ -85,7 +88,11 @@ pub fn execute(args: GraphArgs) -> Result<()> {
         .or_else(|_| get_graph_document_simple(&request))?;
 
     for warning in &doc.spec.warnings {
-        eprintln!("warning [{}]: {}", warning_code(warning.code), warning.message);
+        eprintln!(
+            "warning [{}]: {}",
+            warning_code(warning.code),
+            warning.message
+        );
     }
 
     let use_tui = (args.tui || stdout().is_terminal()) && !args.mermaid && args.out.is_none();

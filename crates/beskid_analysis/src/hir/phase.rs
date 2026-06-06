@@ -1,26 +1,27 @@
 //! Phase-parameterized AST vs HIR: [`Phase`] maps each syntactic slot to either syntax or HIR types.
 
 use crate::syntax::{
-    ArrayLiteralExpression, AssignExpression, AttributeDeclaration, BinaryExpression, BlockExpression,
-    BreakStatement, CallExpression, ContinueStatement, ContractDefinition, EnumConstructorExpression,
-    EnumDefinition, ExpressionStatement, ExtendTypeDefinition, ForStatement, FunctionDefinition,
-    GroupedExpression, HostDefinition, IfStatement, IndexExpression, InlineModule, LambdaExpression,
-    LaunchStatement, LetStatement, LiteralExpression, MacroDefinition, MacroInvocation,
-    MacroMetavariable, MatchExpression, MemberExpression, MethodDefinition, ModuleDeclaration,
-    PathExpression, ReturnStatement, SpawnExpression, StructLiteralExpression, TestDefinition,
-    TryExpression, TypeDefinition, UnaryExpression, UseDeclaration, WhileStatement, WithStatement,
+    ArrayLiteralExpression, AssignExpression, AttributeDeclaration, BinaryExpression,
+    BlockExpression, BreakStatement, CallExpression, ContinueStatement, ContractDefinition,
+    EnumConstructorExpression, EnumDefinition, ExpressionStatement, ExtendTypeDefinition,
+    ForStatement, FunctionDefinition, GroupedExpression, HostDefinition, IfStatement,
+    IndexExpression, InlineModule, LambdaExpression, LaunchStatement, LetStatement,
+    LiteralExpression, MacroDefinition, MacroInvocation, MacroMetavariable, MatchExpression,
+    MemberExpression, MethodDefinition, ModuleDeclaration, PathExpression, ReturnStatement,
+    SpawnExpression, StructLiteralExpression, TestDefinition, TryExpression, TypeDefinition,
+    UnaryExpression, UseDeclaration, WhileStatement, WithStatement,
 };
 
 use super::{
     HirArrayLiteralExpression, HirAssignExpression, HirBinaryExpression, HirBlockExpression,
     HirBreakStatement, HirCallExpression, HirContinueStatement, HirContractDefinition,
-    HirEnumConstructorExpression, HirEnumDefinition, HirExpressionStatement, HirExtendTypeDefinition,
-    HirForStatement, HirFunctionDefinition, HirGroupedExpression, HirIfStatement, HirIndexExpression,
-    HirInlineModule, HirLambdaExpression, HirLetStatement, HirLiteralExpression, HirMatchExpression,
-    HirMemberExpression, HirMethodDefinition, HirModuleDeclaration, HirPathExpression,
-    HirReturnStatement, HirSpawnExpression, HirStructLiteralExpression, HirTestDefinition,
-    HirTryExpression, HirTypeDefinition, HirUnaryExpression, HirUseDeclaration, HirWhileStatement,
-    item::HirAttributeDeclaration,
+    HirEnumConstructorExpression, HirEnumDefinition, HirExpressionStatement,
+    HirExtendTypeDefinition, HirForStatement, HirFunctionDefinition, HirGroupedExpression,
+    HirIfStatement, HirIndexExpression, HirInlineModule, HirLambdaExpression, HirLetStatement,
+    HirLiteralExpression, HirMatchExpression, HirMemberExpression, HirMethodDefinition,
+    HirModuleDeclaration, HirPathExpression, HirReturnStatement, HirSpawnExpression,
+    HirStructLiteralExpression, HirTestDefinition, HirTryExpression, HirTypeDefinition,
+    HirUnaryExpression, HirUseDeclaration, HirWhileStatement, item::HirAttributeDeclaration,
 };
 
 /// Type-level association between one program shape (AST or HIR) and the concrete types of items and statements.

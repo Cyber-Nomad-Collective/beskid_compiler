@@ -1,16 +1,16 @@
 //! Macro expansion driver: fixed-point `name!` substitution with diagnostics.
 
 use crate::analysis::SemanticDiagnostic;
+use crate::syntax::Spanned;
 use crate::syntax::expressions::{Expression, MacroInvocation};
 use crate::syntax::items::{Node, Program};
 use crate::syntax::statements::{Block, Statement};
-use crate::syntax::Spanned;
 
 use super::diagnostics::{
     collect_residual_macro_diagnostics, diagnostic_from_kind, diagnostic_from_match_error,
 };
-use super::match_args::{match_arguments, MatchError};
-use super::registry::{macro_name_key, MacroRegistry};
+use super::match_args::{MatchError, match_arguments};
+use super::registry::{MacroRegistry, macro_name_key};
 use super::substitute::{bindings_from_pairs, block_body_as_expression, substitute_block};
 use super::walk::{map_expression, map_statement};
 
@@ -32,7 +32,16 @@ pub fn expand_once(
         .node
         .items
         .iter()
-        .flat_map(|item| expand_node(item, registry, source_name, source, &mut changed, &mut diagnostics))
+        .flat_map(|item| {
+            expand_node(
+                item,
+                registry,
+                source_name,
+                source,
+                &mut changed,
+                &mut diagnostics,
+            )
+        })
         .collect();
     (
         Spanned::new(
@@ -70,7 +79,14 @@ fn expand_node(
     match &item.node {
         Node::Function(f) => {
             let mut n = f.clone();
-            n.node.body = expand_block(&f.node.body, registry, source_name, source, changed, diagnostics);
+            n.node.body = expand_block(
+                &f.node.body,
+                registry,
+                source_name,
+                source,
+                changed,
+                diagnostics,
+            );
             vec![Spanned::new(Node::Function(n), item.span)]
         }
         Node::InlineModule(m) => {
@@ -99,29 +115,28 @@ fn expand_block(
     for stmt in &block.node.statements {
         if let Statement::Expression(es) = &stmt.node
             && let Expression::MacroInvocation(inv) = &es.node.expression.node
-                && inv.node.block.is_some() {
-                    match try_expand_block_invocation(inv, registry) {
-                        Ok(spliced) => {
-                            *changed = true;
-                            for s in spliced {
-                                statements.push(expand_statement_in_block(
-                                    s,
-                                    registry,
-                                    source_name,
-                                    source,
-                                    changed,
-                                    diagnostics,
-                                ));
-                            }
-                            continue;
-                        }
-                        Err(err) => {
-                            diagnostics.push(diagnostic_from_match_error(
-                                source_name, source, &err,
-                            ));
-                        }
+            && inv.node.block.is_some()
+        {
+            match try_expand_block_invocation(inv, registry) {
+                Ok(spliced) => {
+                    *changed = true;
+                    for s in spliced {
+                        statements.push(expand_statement_in_block(
+                            s,
+                            registry,
+                            source_name,
+                            source,
+                            changed,
+                            diagnostics,
+                        ));
                     }
+                    continue;
                 }
+                Err(err) => {
+                    diagnostics.push(diagnostic_from_match_error(source_name, source, &err));
+                }
+            }
+        }
         statements.push(expand_statement_in_block(
             stmt.clone(),
             registry,
@@ -162,7 +177,9 @@ fn expand_expression(
                     *changed = true;
                     return expanded;
                 }
-                Err(err) => diagnostics.push(diagnostic_from_match_error(source_name, source, &err)),
+                Err(err) => {
+                    diagnostics.push(diagnostic_from_match_error(source_name, source, &err))
+                }
             }
         }
         mapped
@@ -174,10 +191,12 @@ fn try_expand_block_invocation(
     registry: &MacroRegistry,
 ) -> Result<Vec<Spanned<Statement>>, MatchError> {
     let name = macro_name_key(&inv.node.name);
-    let def = registry.get(&name).ok_or_else(|| MatchError::UnknownMacro {
-        name: name.clone(),
-        span: inv.span,
-    })?;
+    let def = registry
+        .get(&name)
+        .ok_or_else(|| MatchError::UnknownMacro {
+            name: name.clone(),
+            span: inv.span,
+        })?;
     let bindings = bindings_from_pairs(match_arguments(
         &inv.node.name,
         &def.node.parameters,
@@ -191,9 +210,10 @@ fn try_expand_block_invocation(
 fn flatten_block_splice_statements(statements: Vec<Spanned<Statement>>) -> Vec<Spanned<Statement>> {
     if statements.len() == 1
         && let Statement::Expression(es) = &statements[0].node
-            && let Expression::Block(b) = &es.node.expression.node {
-                return b.node.block.node.statements.clone();
-            }
+        && let Expression::Block(b) = &es.node.expression.node
+    {
+        return b.node.block.node.statements.clone();
+    }
     statements
 }
 
@@ -202,17 +222,23 @@ fn expand_invocation(
     registry: &MacroRegistry,
 ) -> Result<Spanned<Expression>, MatchError> {
     let name = macro_name_key(&inv.node.name);
-    let def = registry.get(&name).ok_or_else(|| MatchError::UnknownMacro {
-        name: name.clone(),
-        span: inv.span,
-    })?;
+    let def = registry
+        .get(&name)
+        .ok_or_else(|| MatchError::UnknownMacro {
+            name: name.clone(),
+            span: inv.span,
+        })?;
     let bindings = bindings_from_pairs(match_arguments(
         &inv.node.name,
         &def.node.parameters,
         &inv.node.arguments,
         inv.node.block.as_ref(),
     )?);
-    Ok(block_body_as_expression(&def.node.body, &bindings, inv.span))
+    Ok(block_body_as_expression(
+        &def.node.body,
+        &bindings,
+        inv.span,
+    ))
 }
 
 pub(crate) fn expand_program_with_diagnostics_impl(
@@ -231,7 +257,11 @@ pub(crate) fn expand_program_with_diagnostics_impl(
         diagnostics.extend(round);
         current = next;
         if !changed {
-            diagnostics.extend(collect_residual_macro_diagnostics(source_name, source, &current));
+            diagnostics.extend(collect_residual_macro_diagnostics(
+                source_name,
+                source,
+                &current,
+            ));
             return (current, diagnostics);
         }
     }
@@ -250,6 +280,10 @@ pub(crate) fn expand_program_with_diagnostics_impl(
             },
         ));
     }
-    diagnostics.extend(collect_residual_macro_diagnostics(source_name, source, &current));
+    diagnostics.extend(collect_residual_macro_diagnostics(
+        source_name,
+        source,
+        &current,
+    ));
     (current, diagnostics)
 }

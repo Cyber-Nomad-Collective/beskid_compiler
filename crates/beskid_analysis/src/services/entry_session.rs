@@ -40,7 +40,11 @@ pub fn next_syntax_generation_id(fingerprint: &SessionFingerprint) -> u64 {
 /// Current syntax generation without bumping.
 pub fn current_syntax_generation_id(fingerprint: &SessionFingerprint) -> u64 {
     let guard = registry().lock().expect("entry session registry");
-    guard.syntax_generation.get(fingerprint).copied().unwrap_or(1)
+    guard
+        .syntax_generation
+        .get(fingerprint)
+        .copied()
+        .unwrap_or(1)
 }
 
 pub fn get_or_insert_assembly(
@@ -61,9 +65,7 @@ pub fn get_or_insert_assembly(
         prepared_executable: None,
         semantic_snapshot: None,
     });
-    guard
-        .sessions
-        .insert(fingerprint, Arc::clone(&session));
+    guard.sessions.insert(fingerprint, Arc::clone(&session));
     session
 }
 
@@ -115,8 +117,7 @@ pub fn cached_executable(fingerprint: &SessionFingerprint) -> Option<Arc<FrontEn
 }
 
 fn canonical_path(path: &Path) -> std::path::PathBuf {
-    path.canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf())
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 pub fn invalidate_project(project_root: &Path) {

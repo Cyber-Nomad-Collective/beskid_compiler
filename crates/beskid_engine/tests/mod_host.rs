@@ -119,8 +119,9 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
         HOST_SOURCE,
         AnalysisOptions::default(),
     );
-    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-        .with_composition(&generated.session.composition_snapshot_or_default());
+    let snapshot =
+        beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+            .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
@@ -132,8 +133,8 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
     assert_eq!(analyze.rewriter_outcomes.len(), 1);
 
     observe_phase(Some(pipeline.as_ref()), LOWER_READY, || {});
-    let (hir, resolution, typed) = lower_normalize_resolve_type_spanned(&analyze.program)
-        .expect("lower mod-host program");
+    let (hir, resolution, typed) =
+        lower_normalize_resolve_type_spanned(&analyze.program).expect("lower mod-host program");
     let artifact = lower_program(&hir, &resolution, &typed)
         .map_err(|errors| anyhow::anyhow!("codegen failed: {errors:?}"))?;
 
@@ -154,7 +155,13 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
         .collect();
     assert_eq!(
         kinds,
-        vec!["collector", "generator", "generator", "analyzer", "rewriter"],
+        vec![
+            "collector",
+            "generator",
+            "generator",
+            "analyzer",
+            "rewriter"
+        ],
         "engine integration must see all four contract kinds dispatched in canonical order"
     );
 

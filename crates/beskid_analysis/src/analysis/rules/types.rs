@@ -238,9 +238,7 @@ pub(crate) fn emit_type_error(
 
 pub(crate) fn emit_cast_intent_warnings(ctx: &mut RuleContext, result: &TypeResult) {
     let entry_source_path = ctx.options.entry_source_path.as_ref();
-    let intents: Vec<_> = result
-        .cast_intents_for_entry(entry_source_path)
-        .collect();
+    let intents: Vec<_> = result.cast_intents_for_entry(entry_source_path).collect();
     for intent in intents {
         let from = render_type_from_result(result, intent.from);
         let to = render_type_from_result(result, intent.to);

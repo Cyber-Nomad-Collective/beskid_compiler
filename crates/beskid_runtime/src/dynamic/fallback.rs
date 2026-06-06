@@ -1,7 +1,7 @@
 //! Runtime fallback mapper when static AOT shape information is unavailable at compile time.
 
 use super::cell::DynamicCell;
-use super::table::{mapping_steps, shape_object_size, FieldStep};
+use super::table::{FieldStep, mapping_steps, shape_object_size};
 
 /// Stable ABI status codes surfaced to generated code and tests.
 pub const DYNAMIC_OK: i32 = 0;

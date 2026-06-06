@@ -1,8 +1,8 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::CodegenContext;
 use crate::lowering::context::CodegenResult;
-use crate::lowering::locals::expr_type_at;
 use crate::lowering::dispatch::emit_dispatch_call;
+use crate::lowering::locals::expr_type_at;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_abi::{DispatchReturnGroup, DispatchRoute, TAG_STR_NEW};
 use beskid_analysis::hir::{HirLiteral, HirPrimitiveType};
@@ -23,18 +23,18 @@ pub(crate) fn lower_literal(
         expression_span,
         codegen.current_source_path.as_ref(),
     )
-        .or_else(|| match &literal.node {
-            HirLiteral::Integer(_) => find_literal_type(type_result, HirPrimitiveType::I32),
-            HirLiteral::Float(_) => find_literal_type(type_result, HirPrimitiveType::F64),
-            HirLiteral::Bool(_) => find_literal_type(type_result, HirPrimitiveType::Bool),
-            HirLiteral::String(_) => find_literal_type(type_result, HirPrimitiveType::String),
-            HirLiteral::Char(_) => find_literal_type(type_result, HirPrimitiveType::Char),
-            _ => None,
-        })
-        .ok_or(CodegenError::UnsupportedNode {
-            span: expression_span,
-            node: "literal type",
-        })?;
+    .or_else(|| match &literal.node {
+        HirLiteral::Integer(_) => find_literal_type(type_result, HirPrimitiveType::I32),
+        HirLiteral::Float(_) => find_literal_type(type_result, HirPrimitiveType::F64),
+        HirLiteral::Bool(_) => find_literal_type(type_result, HirPrimitiveType::Bool),
+        HirLiteral::String(_) => find_literal_type(type_result, HirPrimitiveType::String),
+        HirLiteral::Char(_) => find_literal_type(type_result, HirPrimitiveType::Char),
+        _ => None,
+    })
+    .ok_or(CodegenError::UnsupportedNode {
+        span: expression_span,
+        node: "literal type",
+    })?;
     let clif_ty =
         map_type_id_to_clif(type_result, type_id).ok_or(CodegenError::UnsupportedNode {
             span: expression_span,

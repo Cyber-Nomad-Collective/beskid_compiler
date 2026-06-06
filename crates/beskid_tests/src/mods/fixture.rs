@@ -13,8 +13,7 @@ use beskid_analysis::projects::{
 
 use crate::test_harness::temp_case_dir;
 
-const SAMPLE_MOD_PROJECT: &str =
-    include_str!("../../fixtures/mods/sample_mod/Project.proj");
+const SAMPLE_MOD_PROJECT: &str = include_str!("../../fixtures/mods/sample_mod/Project.proj");
 const SAMPLE_MOD_SOURCE: &str = include_str!("../../fixtures/mods/sample_mod/Src/Mod.bd");
 
 /// One per-test workspace materialized under `temp_case_dir(prefix)`.

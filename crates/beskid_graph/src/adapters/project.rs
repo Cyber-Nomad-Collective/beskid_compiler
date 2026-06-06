@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 
-use daggy::petgraph::visit::EdgeRef;
 use daggy::NodeIndex;
+use daggy::petgraph::visit::EdgeRef;
 
-use beskid_analysis::projects::graph::project_graph::ProjectGraphNode;
 use beskid_analysis::projects::ProjectGraph;
+use beskid_analysis::projects::graph::project_graph::ProjectGraphNode;
 
 use crate::compose::{SpecBuilder, path_to_uri, style_class_for_project_kind, style_unresolved};
 use crate::model::{GraphDocument, GraphKind, GraphNodeKind, NodeMetadata};
 use crate::render::render_document;
 
-pub fn from_project_graph(graph: &ProjectGraph) -> Result<GraphDocument, crate::render::GraphError> {
+pub fn from_project_graph(
+    graph: &ProjectGraph,
+) -> Result<GraphDocument, crate::render::GraphError> {
     let mut builder = SpecBuilder::new(GraphKind::ProjectDeps);
     let mut index_to_id: HashMap<NodeIndex, String> = HashMap::new();
 
@@ -70,9 +72,7 @@ pub fn from_project_graph(graph: &ProjectGraph) -> Result<GraphDocument, crate::
     render_document(builder.build(), focused)
 }
 
-fn node_props(
-    node: &ProjectGraphNode,
-) -> (String, GraphNodeKind, &'static str, NodeMetadata) {
+fn node_props(node: &ProjectGraphNode) -> (String, GraphNodeKind, &'static str, NodeMetadata) {
     match node {
         ProjectGraphNode::RootProject {
             manifest_path,
@@ -106,7 +106,9 @@ fn node_props(
                 ..Default::default()
             },
         ),
-        ProjectGraphNode::UnresolvedGitDependency { dependency_name, .. } => (
+        ProjectGraphNode::UnresolvedGitDependency {
+            dependency_name, ..
+        } => (
             format!("{dependency_name} (git)"),
             GraphNodeKind::GitDependency,
             style_unresolved(),
@@ -116,7 +118,9 @@ fn node_props(
                 ..Default::default()
             },
         ),
-        ProjectGraphNode::UnresolvedRegistryDependency { dependency_name, .. } => (
+        ProjectGraphNode::UnresolvedRegistryDependency {
+            dependency_name, ..
+        } => (
             format!("{dependency_name} (registry)"),
             GraphNodeKind::RegistryDependency,
             style_unresolved(),

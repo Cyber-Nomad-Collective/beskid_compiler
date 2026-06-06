@@ -59,7 +59,12 @@ async fn build_document_analysis(
 }
 
 /// Build a [`Document`] for `uri`, attaching a fresh analysis snapshot when possible.
-pub async fn build_document(state: &RwLock<State>, uri: &Uri, version: i32, text: String) -> Document {
+pub async fn build_document(
+    state: &RwLock<State>,
+    uri: &Uri,
+    version: i32,
+    text: String,
+) -> Document {
     let analysis = build_document_analysis(state, uri, &text).await;
     Document {
         version,

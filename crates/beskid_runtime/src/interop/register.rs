@@ -149,7 +149,8 @@ static HANDLER_BOOTSTRAP: Once = Once::new();
 /// Idempotent process bootstrap: accept kernel-only dispatch until host registers overrides.
 pub fn bootstrap_dispatch_handlers() {
     HANDLER_BOOTSTRAP.call_once(|| {
-        let _ = beskid_register_handlers(u64::from(BESKID_RUNTIME_ABI_VERSION), std::ptr::null(), 0);
+        let _ =
+            beskid_register_handlers(u64::from(BESKID_RUNTIME_ABI_VERSION), std::ptr::null(), 0);
     });
 }
 

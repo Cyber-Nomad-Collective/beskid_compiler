@@ -81,15 +81,16 @@ mod tests {
             .expect_err("semantic-only snapshot");
         assert!(err.message.contains("composition"));
 
-        let composition = semantic_only.with_composition(&crate::composition::CompositionSnapshot::default());
-        ensure_snapshot_for_analyzer(Some(&composition), &registration).expect("composition snapshot");
+        let composition =
+            semantic_only.with_composition(&crate::composition::CompositionSnapshot::default());
+        ensure_snapshot_for_analyzer(Some(&composition), &registration)
+            .expect("composition snapshot");
     }
 
     #[test]
     fn analyzer_errors_when_snapshot_missing() {
         let registration = analyzer_registration();
-        let err =
-            ensure_snapshot_for_analyzer(None, &registration).expect_err("missing snapshot");
+        let err = ensure_snapshot_for_analyzer(None, &registration).expect_err("missing snapshot");
         assert!(err.message.contains("not available"));
     }
 }

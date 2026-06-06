@@ -91,12 +91,17 @@ fn two_scopes_plural_inject_reverse_dispose() {
         log.clone(),
         "consumer",
     ));
-    container.bind_plural(RegistrationId(20), vec![RegistrationId(10), RegistrationId(11)]);
+    container.bind_plural(
+        RegistrationId(20),
+        vec![RegistrationId(10), RegistrationId(11)],
+    );
 
     container.launch().expect("launch global scope");
 
     // Two nested scope activations
-    container.enter_scope(request_scope).expect("enter req scope #1");
+    container
+        .enter_scope(request_scope)
+        .expect("enter req scope #1");
     let plural = container
         .resolve_plural(RegistrationId(20))
         .expect("resolve plural");
@@ -105,11 +110,17 @@ fn two_scopes_plural_inject_reverse_dispose() {
         .leave_scope(request_scope)
         .expect("leave req scope #1");
 
-    container.enter_scope(request_scope).expect("enter req scope #2");
+    container
+        .enter_scope(request_scope)
+        .expect("enter req scope #2");
     let plural2 = container
         .resolve_plural(RegistrationId(20))
         .expect("resolve plural again");
-    assert_eq!(plural2.len(), 2, "plural inject should resolve two handlers");
+    assert_eq!(
+        plural2.len(),
+        2,
+        "plural inject should resolve two handlers"
+    );
     container
         .leave_scope(request_scope)
         .expect("leave req scope #2");
@@ -119,13 +130,20 @@ fn two_scopes_plural_inject_reverse_dispose() {
     let entries = log.borrow().clone();
     // Spec contract: reverse-order dispose within each scope, and global singletons dispose
     // only at shutdown.
-    let dispose_only: Vec<&String> = entries.iter().filter(|line| line.starts_with("dispose:")).collect();
+    let dispose_only: Vec<&String> = entries
+        .iter()
+        .filter(|line| line.starts_with("dispose:"))
+        .collect();
     assert!(
-        dispose_only.iter().any(|line| line.as_str() == "dispose:handler1"),
+        dispose_only
+            .iter()
+            .any(|line| line.as_str() == "dispose:handler1"),
         "handler1 should dispose on scope leave: {entries:?}"
     );
     assert!(
-        dispose_only.iter().any(|line| line.as_str() == "dispose:handler2"),
+        dispose_only
+            .iter()
+            .any(|line| line.as_str() == "dispose:handler2"),
         "handler2 should dispose on scope leave: {entries:?}"
     );
 
@@ -135,7 +153,12 @@ fn two_scopes_plural_inject_reverse_dispose() {
     let scope1_disposes: Vec<&String> = entries
         .iter()
         .take_while(|line| line.as_str() != "init:rootA")
-        .filter(|line| matches!(line.as_str(), "dispose:handler1" | "dispose:handler2" | "dispose:consumer"))
+        .filter(|line| {
+            matches!(
+                line.as_str(),
+                "dispose:handler1" | "dispose:handler2" | "dispose:consumer"
+            )
+        })
         .collect();
     let consumer_pos = scope1_disposes
         .iter()
@@ -199,17 +222,27 @@ fn nested_scopes_dispose_in_lifo_order() {
 
     container.launch().expect("launch");
     container.enter_scope(outer).expect("enter outer");
-    container.resolve(RegistrationId(100)).expect("resolve outer");
+    container
+        .resolve(RegistrationId(100))
+        .expect("resolve outer");
     container.enter_scope(inner).expect("enter inner");
-    container.resolve(RegistrationId(200)).expect("resolve inner");
+    container
+        .resolve(RegistrationId(200))
+        .expect("resolve inner");
     container.leave_scope(inner).expect("leave inner");
     container.leave_scope(outer).expect("leave outer");
     container.shutdown().expect("shutdown");
 
     let entries = log.borrow().clone();
     // Each scope must dispose its own instance before the outer scope tears down its own.
-    let inner_pos = entries.iter().position(|l| l == "dispose:innerSvc").unwrap();
-    let outer_pos = entries.iter().position(|l| l == "dispose:outerSvc").unwrap();
+    let inner_pos = entries
+        .iter()
+        .position(|l| l == "dispose:innerSvc")
+        .unwrap();
+    let outer_pos = entries
+        .iter()
+        .position(|l| l == "dispose:outerSvc")
+        .unwrap();
     assert!(
         inner_pos < outer_pos,
         "inner scope must dispose before outer scope leaves: {entries:?}"
@@ -238,7 +271,10 @@ fn resolve_returns_distinct_pointers_for_transients() {
         .iter()
         .filter(|l| l.as_str() == "factory:trans")
         .count();
-    assert_eq!(factory_calls, 2, "transient should re-invoke factory: {entries:?}");
+    assert_eq!(
+        factory_calls, 2,
+        "transient should re-invoke factory: {entries:?}"
+    );
     container.shutdown().expect("shutdown");
 }
 
@@ -289,7 +325,11 @@ fn extern_c_abi_roundtrip_through_builtins() {
 
     let rc = composition_launch(container);
     assert_eq!(rc, 0, "composition_launch returned {rc}");
-    assert_eq!(composition_scope_depth(container), 1, "global frame present after launch");
+    assert_eq!(
+        composition_scope_depth(container),
+        1,
+        "global frame present after launch"
+    );
 
     let rc = composition_scope_enter(container, 101);
     assert_eq!(rc, 0);

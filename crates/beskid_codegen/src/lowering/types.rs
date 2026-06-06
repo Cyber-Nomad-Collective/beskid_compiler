@@ -180,8 +180,9 @@ pub(crate) fn method_receiver_type_id(
     }
     let info = resolution.items.get(method_item_id.0)?;
     let (receiver_name, _) = info.name.split_once("::")?;
-    let receiver_item = resolution.items.iter().find(|item| {
-        item.name == receiver_name && item.kind == ItemKind::Type
-    })?;
+    let receiver_item = resolution
+        .items
+        .iter()
+        .find(|item| item.name == receiver_name && item.kind == ItemKind::Type)?;
     find_named_type_id(type_result, receiver_item.id)
 }

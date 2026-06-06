@@ -38,11 +38,7 @@ pub fn mod_generate_fingerprint(
 ) -> String {
     let _ = (project, syntax_gen, manifest_gen);
     record_query_miss();
-    format!(
-        "{}:{}",
-        entry.path(db).display(),
-        entry.text(db).len()
-    )
+    format!("{}:{}", entry.path(db).display(), entry.text(db).len())
 }
 
 /// Run mod generate when fingerprint changes; returns source length as cheap tracked output.

@@ -10,8 +10,8 @@ use beskid_analysis::projects::{
     discover_project_manifest_from_input_or_cwd, load_manifest_from_path,
     prepare_project_workspace_with_options, resolve_workspace_candidate_path,
 };
-use beskid_aot::{ModArtifactBuildRequest, build_mod_artifact};
 use beskid_analysis::services::resolved_input_from_plan;
+use beskid_aot::{ModArtifactBuildRequest, build_mod_artifact};
 use beskid_codegen::lower_resolved_input_with_pipeline;
 use beskid_pipeline::{
     PipelineObserver, observe_phase, observe_phase_result,
@@ -22,8 +22,8 @@ use beskid_pipeline::{
 use clap::{Args, Subcommand};
 use walkdir::WalkDir;
 
-use beskid_tools::pipeline::{CliPipeline, PipelineProgressKind, use_cli_spinner};
 use crate::project_args::LockfilePolicyArgs;
+use beskid_tools::pipeline::{CliPipeline, PipelineProgressKind, use_cli_spinner};
 
 #[derive(Args, Debug)]
 pub struct ModArgs {
@@ -139,8 +139,10 @@ fn clean(args: ModCleanArgs) -> Result<()> {
     let pipeline: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
     let _resolved = resolve_mod_project(args.project.as_ref(), pipeline)?;
 
-    let removed =
-        remove_mod_cache_dir(&_resolved.plan.project_root, &_resolved.manifest.project.name)?;
+    let removed = remove_mod_cache_dir(
+        &_resolved.plan.project_root,
+        &_resolved.manifest.project.name,
+    )?;
     pipeline_ui.finish_session("Mod clean complete");
     if removed {
         println!(

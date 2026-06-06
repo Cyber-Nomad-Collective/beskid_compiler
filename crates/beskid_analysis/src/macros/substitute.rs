@@ -16,12 +16,16 @@ pub fn bindings_from_pairs(pairs: Vec<(String, FragmentBinding)>) -> Bindings {
 }
 
 #[allow(dead_code)]
-pub fn substitute_expression(expr: &Spanned<Expression>, bindings: &Bindings) -> Spanned<Expression> {
+pub fn substitute_expression(
+    expr: &Spanned<Expression>,
+    bindings: &Bindings,
+) -> Spanned<Expression> {
     map_expression(expr.clone(), &mut |mapped| {
         if let Expression::MacroMetavariable(mv) = &mapped.node
-            && let Some(binding) = bindings.get(&mv.node.name.node.name) {
-                return binding_to_expression(binding, mv.span);
-            }
+            && let Some(binding) = bindings.get(&mv.node.name.node.name)
+        {
+            return binding_to_expression(binding, mv.span);
+        }
         mapped
     })
 }
@@ -29,14 +33,18 @@ pub fn substitute_expression(expr: &Spanned<Expression>, bindings: &Bindings) ->
 pub fn substitute_block(block: &Spanned<Block>, bindings: &Bindings) -> Spanned<Block> {
     map_block(block.clone(), &mut |mapped| {
         if let Expression::MacroMetavariable(mv) = &mapped.node
-            && let Some(binding) = bindings.get(&mv.node.name.node.name) {
-                return binding_to_expression(binding, mv.span);
-            }
+            && let Some(binding) = bindings.get(&mv.node.name.node.name)
+        {
+            return binding_to_expression(binding, mv.span);
+        }
         mapped
     })
 }
 
-fn binding_to_expression(binding: &FragmentBinding, fallback_span: SpanInfo) -> Spanned<Expression> {
+fn binding_to_expression(
+    binding: &FragmentBinding,
+    fallback_span: SpanInfo,
+) -> Spanned<Expression> {
     match binding {
         FragmentBinding::Expression(e) => e.clone(),
         FragmentBinding::Block(b) => Spanned::new(
@@ -48,7 +56,12 @@ fn binding_to_expression(binding: &FragmentBinding, fallback_span: SpanInfo) -> 
             _ => Spanned::new(
                 Expression::Block(Spanned::new(
                     BlockExpression {
-                        block: Spanned::new(Block { statements: vec![s.clone()] }, s.span),
+                        block: Spanned::new(
+                            Block {
+                                statements: vec![s.clone()],
+                            },
+                            s.span,
+                        ),
                     },
                     s.span,
                 )),
@@ -56,11 +69,19 @@ fn binding_to_expression(binding: &FragmentBinding, fallback_span: SpanInfo) -> 
             ),
         },
         FragmentBinding::Literal(lit) => Spanned::new(
-            Expression::Literal(Spanned::new(LiteralExpression { literal: lit.clone() }, lit.span)),
+            Expression::Literal(Spanned::new(
+                LiteralExpression {
+                    literal: lit.clone(),
+                },
+                lit.span,
+            )),
             fallback_span,
         ),
         FragmentBinding::Path(path) => Spanned::new(
-            Expression::Path(Spanned::new(PathExpression { path: path.clone() }, path.span)),
+            Expression::Path(Spanned::new(
+                PathExpression { path: path.clone() },
+                path.span,
+            )),
             fallback_span,
         ),
         FragmentBinding::Identifier(id) => Spanned::new(
@@ -85,13 +106,21 @@ fn binding_to_expression(binding: &FragmentBinding, fallback_span: SpanInfo) -> 
         ),
         FragmentBinding::Type(ty) => match &ty.node {
             crate::syntax::Type::Complex(path) => Spanned::new(
-                Expression::Path(Spanned::new(PathExpression { path: path.clone() }, path.span)),
+                Expression::Path(Spanned::new(
+                    PathExpression { path: path.clone() },
+                    path.span,
+                )),
                 fallback_span,
             ),
             _ => Spanned::new(
                 Expression::Path(Spanned::new(
                     PathExpression {
-                        path: Spanned::new(crate::syntax::Path { segments: Vec::new() }, fallback_span),
+                        path: Spanned::new(
+                            crate::syntax::Path {
+                                segments: Vec::new(),
+                            },
+                            fallback_span,
+                        ),
                     },
                     fallback_span,
                 )),
@@ -99,7 +128,9 @@ fn binding_to_expression(binding: &FragmentBinding, fallback_span: SpanInfo) -> 
             ),
         },
         FragmentBinding::Node(e) => e.clone(),
-        FragmentBinding::Pattern(_) | FragmentBinding::Item(_) => mapped_metavariable_placeholder(fallback_span),
+        FragmentBinding::Pattern(_) | FragmentBinding::Item(_) => {
+            mapped_metavariable_placeholder(fallback_span)
+        }
     }
 }
 
@@ -128,9 +159,10 @@ pub fn block_body_as_expression(
 ) -> Spanned<Expression> {
     let block = substitute_block(body, bindings);
     if block.node.statements.len() == 1
-        && let Statement::Expression(es) = &block.node.statements[0].node {
-            return es.node.expression.clone();
-        }
+        && let Statement::Expression(es) = &block.node.statements[0].node
+    {
+        return es.node.expression.clone();
+    }
     Spanned::new(
         Expression::Block(Spanned::new(BlockExpression { block }, fallback_span)),
         fallback_span,

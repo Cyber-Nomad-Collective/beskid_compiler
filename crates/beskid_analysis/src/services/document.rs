@@ -12,8 +12,8 @@ use crate::projects::{
     AssemblyDiscovery, AssemblyOptions, CompilePlan, PreparedProjectWorkspace, assemble_program,
 };
 use crate::resolve::{
-    canonical_item_id, symbol_for_item, ItemId, ItemKind, LocalId, Resolution, ResolvedValue,
-    Resolver, SymbolId,
+    ItemId, ItemKind, LocalId, Resolution, ResolvedValue, Resolver, SymbolId, canonical_item_id,
+    symbol_for_item,
 };
 use crate::syntax::{Expression, Literal, Node, Program, Spanned, TestDefinition};
 
@@ -386,22 +386,16 @@ pub fn build_document_analysis_for_resolved(
     let doc_diagnostics = resolution
         .as_ref()
         .map(|r| {
-            crate::doc::collect_doc_diagnostics(
-                &program.node,
-                r,
-                source_name.as_ref(),
-                source_text,
-            )
+            crate::doc::collect_doc_diagnostics(&program.node, r, source_name.as_ref(), source_text)
         })
         .unwrap_or_default();
-    let composition_diagnostics =
-        super::composition::composition_diagnostics_for_program(
-            program,
-            None,
-            source_name.as_ref(),
-            source_text,
-        )
-        .unwrap_or_default();
+    let composition_diagnostics = super::composition::composition_diagnostics_for_program(
+        program,
+        None,
+        source_name.as_ref(),
+        source_text,
+    )
+    .unwrap_or_default();
 
     DocumentAnalysisSnapshot {
         program: program.clone(),
@@ -425,14 +419,13 @@ pub fn build_document_analysis_with_context(
     let (resolution, assembly_module_paths, composition_diagnostics) = match ctx {
         Some(ctx) => {
             let compile_plan = ctx.compile_plan.as_ref();
-            let composition_diagnostics =
-                super::composition::composition_diagnostics_for_program(
-                    program,
-                    compile_plan,
-                    source_name.as_ref(),
-                    source_text,
-                )
-                .unwrap_or_default();
+            let composition_diagnostics = super::composition::composition_diagnostics_for_program(
+                program,
+                compile_plan,
+                source_name.as_ref(),
+                source_text,
+            )
+            .unwrap_or_default();
             let (resolution, assembly_module_paths) =
                 if let Some(assembly) = ctx.assembly_for_entry(path, source_text) {
                     resolve_program_with_assembly(program, assembly, path)
@@ -441,21 +434,16 @@ pub fn build_document_analysis_with_context(
                 } else {
                     (resolve_program(program), HashSet::new())
                 };
-            (
-                resolution,
-                assembly_module_paths,
-                composition_diagnostics,
-            )
+            (resolution, assembly_module_paths, composition_diagnostics)
         }
         None => {
-            let composition_diagnostics =
-                super::composition::composition_diagnostics_for_program(
-                    program,
-                    None,
-                    source_name.as_ref(),
-                    source_text,
-                )
-                .unwrap_or_default();
+            let composition_diagnostics = super::composition::composition_diagnostics_for_program(
+                program,
+                None,
+                source_name.as_ref(),
+                source_text,
+            )
+            .unwrap_or_default();
             (
                 resolve_program(program),
                 HashSet::new(),
@@ -770,11 +758,7 @@ pub fn references_at_offset(
         .filter_map(|(span, resolved)| {
             if reference_targets_match(resolution, target, resolution, resolved) {
                 Some(ReferenceInfo {
-                    location: symbol_location_for_span(
-                        &snapshot.source_path,
-                        span.start,
-                        span.end,
-                    ),
+                    location: symbol_location_for_span(&snapshot.source_path, span.start, span.end),
                 })
             } else {
                 None
@@ -842,10 +826,7 @@ pub fn references_at_offset_workspace(
         let Some(hir) = lower_normalize_hir(&unit.program) else {
             continue;
         };
-        let Ok(unit_resolution) = assembly
-            .module_index
-            .resolve_unit_hir(&hir, &unit.path)
-        else {
+        let Ok(unit_resolution) = assembly.module_index.resolve_unit_hir(&hir, &unit.path) else {
             continue;
         };
         for (span, resolved) in &unit_resolution.tables.resolved_values {
@@ -898,7 +879,9 @@ fn member_access_prefix(source_text: &str, offset: usize) -> Option<(String, Str
         if ch == b'.' {
             let alias_start = alias_end;
             let alias = prefix.get(alias_start..offset)?.to_string();
-            if alias.is_empty() || !alias.as_bytes()[0].is_ascii_alphabetic() && alias.as_bytes()[0] != b'_' {
+            if alias.is_empty()
+                || !alias.as_bytes()[0].is_ascii_alphabetic() && alias.as_bytes()[0] != b'_'
+            {
                 return None;
             }
             let partial_start = index + 1;
@@ -911,7 +894,10 @@ fn member_access_prefix(source_text: &str, offset: usize) -> Option<(String, Str
 }
 
 fn use_path_prefix(source_text: &str, offset: usize) -> Option<String> {
-    let line_start = source_text[..offset].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let line_start = source_text[..offset]
+        .rfind('\n')
+        .map(|i| i + 1)
+        .unwrap_or(0);
     let line = source_text.get(line_start..offset)?;
     let trimmed = line.trim_start();
     if !trimmed.starts_with("use ") {
@@ -1106,7 +1092,7 @@ mod reference_target_tests {
     };
     use crate::syntax::SpanInfo;
 
-    use super::{reference_target, reference_targets_match, ReferenceTarget};
+    use super::{ReferenceTarget, reference_target, reference_targets_match};
 
     fn span(start: usize, end: usize) -> SpanInfo {
         SpanInfo::from_byte_range_in_source("", start, end)
@@ -1172,10 +1158,7 @@ mod reference_target_tests {
             by_symbol: HashMap::from([(symbol, unit_item_id)]),
         };
 
-        let target = reference_target(
-            &entry_resolution,
-            &ResolvedValue::Item(entry_item_id),
-        );
+        let target = reference_target(&entry_resolution, &ResolvedValue::Item(entry_item_id));
         assert_eq!(target, ReferenceTarget::Symbol(symbol));
 
         assert!(
@@ -1187,13 +1170,11 @@ mod reference_target_tests {
             ),
             "same SymbolId must match across units even when ItemId differs"
         );
-        assert!(
-            !reference_targets_match(
-                &entry_resolution,
-                target,
-                &unit_resolution,
-                &ResolvedValue::Item(ItemId(99)),
-            )
-        );
+        assert!(!reference_targets_match(
+            &entry_resolution,
+            target,
+            &unit_resolution,
+            &ResolvedValue::Item(ItemId(99)),
+        ));
     }
 }

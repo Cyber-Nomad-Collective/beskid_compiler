@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use beskid_analysis::projects::assembly::{build_hir_units, UnitMaterializer};
+use beskid_analysis::projects::assembly::{UnitMaterializer, build_hir_units};
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_artifacts::content_fingerprint;
 
@@ -67,14 +67,17 @@ fn insert_cache(
 ) {
     let guard = db.lock().expect("beskid database lock");
     let mut cache = guard.unit_cache().lock().expect("unit cache");
-    cache.source_units.insert(fp.clone(), Arc::new(unit.clone()));
+    cache
+        .source_units
+        .insert(fp.clone(), Arc::new(unit.clone()));
     cache.unit_hir.insert(fp, Arc::new(hir));
 }
 
 fn parse_unit(
     path: PathBuf,
     source: &str,
-) -> Result<beskid_analysis::projects::assembly::SourceUnit, beskid_analysis::projects::AssemblyError> {
+) -> Result<beskid_analysis::projects::assembly::SourceUnit, beskid_analysis::projects::AssemblyError>
+{
     let logical_name = path.display().to_string();
     let program = parse_program_with_source_name(&logical_name, source)
         .map(expand_syntax_for_assembly)

@@ -16,7 +16,8 @@ fn concurrency_source_and_materialized_parse_equally() {
     parse_program_with_source_name(&source_path.display().to_string(), &source)
         .expect("source Concurrency.bd must parse");
 
-    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/concurrency/MutexTryLockTests.bd");
+    let entry = root
+        .join("corelib/beskid_corelib/tests/corelib_tests/src/concurrency/MutexTryLockTests.bd");
     let project_root = entry
         .parent()
         .unwrap()
@@ -28,15 +29,8 @@ fn concurrency_source_and_materialized_parse_equally() {
     let entry_source = std::fs::read_to_string(&entry).expect("read test entry");
 
     let resolved = with_cwd_at_workspace_root(&root, || {
-        resolve_input(
-            Some(&entry),
-            Some(&project_root),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve with materialization")
+        resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
+            .expect("resolve with materialization")
     });
 
     let materialized = resolved

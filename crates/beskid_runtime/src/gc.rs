@@ -350,16 +350,28 @@ mod tests {
 
     #[test]
     fn test_enter_leave_runtime_scope() {
-        assert!(!in_runtime_scope(), "no scope should be active at test start");
+        assert!(
+            !in_runtime_scope(),
+            "no scope should be active at test start"
+        );
         enter_runtime_scope();
         assert!(in_runtime_scope(), "scope should be active after enter");
         // Nested scopes stack.
         enter_runtime_scope();
-        assert!(in_runtime_scope(), "scope should remain active after nested enter");
+        assert!(
+            in_runtime_scope(),
+            "scope should remain active after nested enter"
+        );
         leave_runtime_scope();
-        assert!(in_runtime_scope(), "scope should still be active after one leave (nested)");
+        assert!(
+            in_runtime_scope(),
+            "scope should still be active after one leave (nested)"
+        );
         leave_runtime_scope();
-        assert!(!in_runtime_scope(), "scope should be inactive after balanced leave");
+        assert!(
+            !in_runtime_scope(),
+            "scope should be inactive after balanced leave"
+        );
     }
 
     #[test]

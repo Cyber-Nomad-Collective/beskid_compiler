@@ -2,10 +2,10 @@ use beskid_analysis::artifacts::{
     decode_hir_program, decode_syntax_program, encode_syntax_program, hir_unit_snapshot,
     source_unit_snapshot,
 };
-use beskid_artifacts::encode_ast;
 use beskid_analysis::macros::expand_program_with_diagnostics;
 use beskid_analysis::projects::assembly::build_hir_units;
 use beskid_analysis::services::parse_program_with_source_name;
+use beskid_artifacts::encode_ast;
 
 #[test]
 fn syntax_program_snapshot_roundtrips() {
@@ -51,18 +51,11 @@ fn unit_artifact_snapshots_roundtrip() {
         .next()
         .expect("hir");
     let ast = source_unit_snapshot(&unit, &[]).expect("ast snap");
-    let hir_snap = hir_unit_snapshot(
-        &beskid_artifacts::content_fingerprint(source),
-        &hir,
-    )
-    .expect("hir snap");
+    let hir_snap =
+        hir_unit_snapshot(&beskid_artifacts::content_fingerprint(source), &hir).expect("hir snap");
     let ast_wire = encode_ast(&ast).expect("encode ast");
     assert!(!ast_wire.is_empty());
     assert!(!hir_snap.hir_wire.is_empty());
-    let _ = decode_hir_program(
-        &hir_snap.hir_wire,
-        &unit,
-        &hir_snap.content_fingerprint,
-    )
-    .expect("hir marker decode");
+    let _ = decode_hir_program(&hir_snap.hir_wire, &unit, &hir_snap.content_fingerprint)
+        .expect("hir marker decode");
 }

@@ -4,7 +4,8 @@ use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{parse_manifest, parse_workspace_manifest};
 use beskid_analysis::services::{
-    self, DocumentAnalysisSnapshot, FrontEndOptions, PrepareMode, PrepareOptions, resolved_input_from_plan,
+    self, DocumentAnalysisSnapshot, FrontEndOptions, PrepareMode, PrepareOptions,
+    resolved_input_from_plan,
 };
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity};
@@ -242,7 +243,10 @@ i32 main() {
             })
             .collect::<Vec<_>>();
         assert_eq!(
-            codes.iter().filter(|code| code.starts_with("E17")).collect::<Vec<_>>(),
+            codes
+                .iter()
+                .filter(|code| code.starts_with("E17"))
+                .collect::<Vec<_>>(),
             vec!["E1709"],
             "warm snapshot path should surface only expected composition code"
         );

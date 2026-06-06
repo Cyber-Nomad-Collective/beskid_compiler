@@ -1,7 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility;
-use crate::lowering::locals::struct_literal_type_id;
 use crate::lowering::descriptor::{is_pointer_like_type, struct_field_offsets};
+use crate::lowering::locals::struct_literal_type_id;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};

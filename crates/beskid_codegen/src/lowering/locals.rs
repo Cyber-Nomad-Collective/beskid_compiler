@@ -6,12 +6,12 @@ use beskid_analysis::hir::{
     HirBinaryOp, HirCallExpression, HirExpressionNode, HirLiteral, HirMatchExpression,
     HirPrimitiveType, HirUnaryOp,
 };
-use beskid_analysis::resolve::{canonical_item_id, ItemKind, LocalId, Resolution, ResolvedValue};
+use beskid_analysis::resolve::{ItemKind, LocalId, Resolution, ResolvedValue, canonical_item_id};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{
-    field_type_for_value_path, field_type_on_receiver, method_name_from_path_callee,
-    receiver_type_for_path_callee, resolve_path_base_local, CallLoweringKind, TypeId, TypeInfo,
-    TypeResult,
+    CallLoweringKind, TypeId, TypeInfo, TypeResult, field_type_for_value_path,
+    field_type_on_receiver, method_name_from_path_callee, receiver_type_for_path_callee,
+    resolve_path_base_local,
 };
 
 use crate::errors::CodegenError;
@@ -164,8 +164,20 @@ pub(crate) fn infer_expr_type(
             expr_type_at(type_result, node.span, source_path)
         }
         HirExpressionNode::BinaryExpression(binary) => {
-            let left = infer_expr_type(resolution, type_result, &binary.node.left, source_path, receiver_type)?;
-            let right = infer_expr_type(resolution, type_result, &binary.node.right, source_path, receiver_type)?;
+            let left = infer_expr_type(
+                resolution,
+                type_result,
+                &binary.node.left,
+                source_path,
+                receiver_type,
+            )?;
+            let right = infer_expr_type(
+                resolution,
+                type_result,
+                &binary.node.right,
+                source_path,
+                receiver_type,
+            )?;
             match binary.node.op.node {
                 HirBinaryOp::Add => {
                     if type_is_string(type_result, left) || type_is_string(type_result, right) {
@@ -174,9 +186,16 @@ pub(crate) fn infer_expr_type(
                     }
                     Some(left)
                 }
-                HirBinaryOp::And | HirBinaryOp::Or | HirBinaryOp::Eq | HirBinaryOp::NotEq
-                | HirBinaryOp::Lt | HirBinaryOp::Lte | HirBinaryOp::Gt | HirBinaryOp::Gte
-                | HirBinaryOp::IdentityEq | HirBinaryOp::IdentityNotEq => {
+                HirBinaryOp::And
+                | HirBinaryOp::Or
+                | HirBinaryOp::Eq
+                | HirBinaryOp::NotEq
+                | HirBinaryOp::Lt
+                | HirBinaryOp::Lte
+                | HirBinaryOp::Gt
+                | HirBinaryOp::Gte
+                | HirBinaryOp::IdentityEq
+                | HirBinaryOp::IdentityNotEq => {
                     primitive_type_id(type_result, HirPrimitiveType::Bool)
                 }
                 HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div | HirBinaryOp::Mod => {
@@ -184,17 +203,30 @@ pub(crate) fn infer_expr_type(
                 }
             }
         }
-        HirExpressionNode::GroupedExpression(grouped) => {
-            infer_expr_type(resolution, type_result, &grouped.node.expr, source_path, receiver_type)
-        }
-        HirExpressionNode::CallExpression(call) => {
-            infer_call_expr_type(resolution, type_result, node, call, source_path, receiver_type)
-        }
+        HirExpressionNode::GroupedExpression(grouped) => infer_expr_type(
+            resolution,
+            type_result,
+            &grouped.node.expr,
+            source_path,
+            receiver_type,
+        ),
+        HirExpressionNode::CallExpression(call) => infer_call_expr_type(
+            resolution,
+            type_result,
+            node,
+            call,
+            source_path,
+            receiver_type,
+        ),
         HirExpressionNode::UnaryExpression(unary) => match unary.node.op.node {
             HirUnaryOp::Not => primitive_type_id(type_result, HirPrimitiveType::Bool),
-            HirUnaryOp::Neg => {
-                infer_expr_type(resolution, type_result, &unary.node.expr, source_path, receiver_type)
-            }
+            HirUnaryOp::Neg => infer_expr_type(
+                resolution,
+                type_result,
+                &unary.node.expr,
+                source_path,
+                receiver_type,
+            ),
         },
         HirExpressionNode::EnumConstructorExpression(constructor) => {
             let segments: Vec<String> = constructor
@@ -210,9 +242,13 @@ pub(crate) fn infer_expr_type(
             resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
                 .and_then(|item_id| type_id_for_item(type_result, item_id))
         }
-        HirExpressionNode::MatchExpression(match_expr) => {
-            infer_match_expr_type(resolution, type_result, match_expr, source_path, receiver_type)
-        }
+        HirExpressionNode::MatchExpression(match_expr) => infer_match_expr_type(
+            resolution,
+            type_result,
+            match_expr,
+            source_path,
+            receiver_type,
+        ),
         HirExpressionNode::StructLiteralExpression(lit) => struct_literal_type_id(
             resolution,
             type_result,
@@ -231,11 +267,22 @@ fn infer_match_expr_type(
     source_path: Option<&PathBuf>,
     receiver_type: Option<TypeId>,
 ) -> Option<TypeId> {
-    let _scrutinee =
-        infer_expr_type(resolution, type_result, &match_expr.node.scrutinee, source_path, receiver_type)?;
+    let _scrutinee = infer_expr_type(
+        resolution,
+        type_result,
+        &match_expr.node.scrutinee,
+        source_path,
+        receiver_type,
+    )?;
     let mut expected: Option<TypeId> = None;
     for arm in &match_expr.node.arms {
-        let arm_type = infer_expr_type(resolution, type_result, &arm.node.value, source_path, receiver_type);
+        let arm_type = infer_expr_type(
+            resolution,
+            type_result,
+            &arm.node.value,
+            source_path,
+            receiver_type,
+        );
         if let Some(actual) = arm_type {
             if let Some(expected_type) = expected {
                 if actual != expected_type {
@@ -249,7 +296,10 @@ fn infer_match_expr_type(
     expected
 }
 
-pub(crate) fn type_id_for_item(type_result: &TypeResult, item_id: beskid_analysis::resolve::ItemId) -> Option<TypeId> {
+pub(crate) fn type_id_for_item(
+    type_result: &TypeResult,
+    item_id: beskid_analysis::resolve::ItemId,
+) -> Option<TypeId> {
     let mut index = 0usize;
     loop {
         let type_id = TypeId(index);
@@ -307,7 +357,8 @@ pub(crate) fn resolve_type_path_item_id_for_codegen(
         .iter()
         .find(|info| {
             matches!(info.kind, ItemKind::Type | ItemKind::Enum)
-                && (info.name.as_str() == name.as_str() || info.name.ends_with(&format!("::{name}")))
+                && (info.name.as_str() == name.as_str()
+                    || info.name.ends_with(&format!("::{name}")))
         })
         .map(|info| info.id)
 }
@@ -336,12 +387,9 @@ fn infer_call_expr_type(
             source_path,
             receiver_type,
         )?;
-        if let Some(return_type) = method_return_type_for_receiver(
-            resolution,
-            type_result,
-            receiver_type,
-            method_name,
-        ) {
+        if let Some(return_type) =
+            method_return_type_for_receiver(resolution, type_result, receiver_type, method_name)
+        {
             return Some(return_type);
         }
     }
@@ -381,11 +429,8 @@ fn infer_call_expr_type(
             {
                 return Some(return_type);
             }
-            let ResolvedValue::Item(item_id) = resolved_value_at(
-                resolution,
-                path.node.path.span,
-                source_path,
-            )?
+            let ResolvedValue::Item(item_id) =
+                resolved_value_at(resolution, path.node.path.span, source_path)?
             else {
                 return None;
             };
@@ -493,10 +538,15 @@ pub(crate) fn resolved_value_at(
     span: SpanInfo,
     source_path: Option<&PathBuf>,
 ) -> Option<ResolvedValue> {
-    resolution.tables.resolved_value_at(span, source_path).map(|value| match value {
-        ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(resolution, item_id)),
-        other => other,
-    })
+    resolution
+        .tables
+        .resolved_value_at(span, source_path)
+        .map(|value| match value {
+            ResolvedValue::Item(item_id) => {
+                ResolvedValue::Item(canonical_item_id(resolution, item_id))
+            }
+            other => other,
+        })
 }
 
 pub(crate) fn canonicalize_call_kind(

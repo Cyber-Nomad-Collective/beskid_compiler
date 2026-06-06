@@ -16,5 +16,5 @@ pub use model::{
     GraphSubgraph, GraphWarning, GraphWarningCode, NodeMetadata,
 };
 pub use payload::graph_tooling_payload;
-pub use render::{render_document, render_flowchart, GraphError};
+pub use render::{GraphError, render_document, render_flowchart};
 pub use validate::validate_mermaid;

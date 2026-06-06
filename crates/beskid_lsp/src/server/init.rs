@@ -1,5 +1,5 @@
-use crate::features::semantic_tokens::encoder::semantic_token_legend;
 use crate::commands::PROJECT_EXPLORER_COMMANDS;
+use crate::features::semantic_tokens::encoder::semantic_token_legend;
 use tower_lsp_server::ls_types::*;
 
 pub fn initialize_result() -> InitializeResult {

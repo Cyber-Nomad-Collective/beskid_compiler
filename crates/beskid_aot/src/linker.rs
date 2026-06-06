@@ -38,6 +38,64 @@ fn detect_c_compiler() -> String {
     }
 }
 
+fn append_static_archive(
+    cmd: &mut Command,
+    target: &str,
+    archive: &std::path::Path,
+) {
+    if target.contains("darwin") || target.contains("macos") {
+        cmd.arg("-Wl,-force_load").arg(archive);
+    } else {
+        cmd.arg(archive);
+    }
+}
+
+fn format_link_command(
+    compiler: &str,
+    req: &LinkRequest,
+    target: &str,
+) -> String {
+    let mut command_line = format!("{} {}", compiler, req.object_path.display());
+    if let Some(runtime_staticlib) = &req.runtime_staticlib {
+        if target.contains("darwin") || target.contains("macos") {
+            command_line.push_str(" -Wl,-force_load ");
+        } else {
+            command_line.push(' ');
+        }
+        command_line.push_str(&runtime_staticlib.display().to_string());
+    }
+    if let Some(host_staticlib) = &req.host_staticlib {
+        if target.contains("darwin") || target.contains("macos") {
+            command_line.push_str(" -Wl,-force_load ");
+        } else {
+            command_line.push(' ');
+        }
+        command_line.push_str(&host_staticlib.display().to_string());
+    }
+    command_line.push_str(" -o ");
+    command_line.push_str(&req.output_path.display().to_string());
+    if req.output_kind == BuildOutputKind::SharedLib {
+        command_line.push_str(" -shared");
+    }
+    command_line
+}
+
+fn format_link_detail(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if stderr.trim().is_empty() && stdout.trim().is_empty() {
+        return String::new();
+    }
+    let mut detail = String::from("\nlinker output:\n");
+    if !stderr.trim().is_empty() {
+        detail.push_str(&stderr);
+    }
+    if !stdout.trim().is_empty() {
+        detail.push_str(&stdout);
+    }
+    detail
+}
+
 /// Successful link or archive merge: output path, echoed command line, and export list carried through.
 #[derive(Debug, Clone)]
 pub struct LinkResult {
@@ -92,18 +150,10 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
     let mut cmd = Command::new(&compiler);
     cmd.arg(&req.object_path);
     if let Some(runtime_staticlib) = &req.runtime_staticlib {
-        if target.contains("darwin") || target.contains("macos") {
-            cmd.arg("-Wl,-force_load").arg(runtime_staticlib);
-        } else {
-            cmd.arg(runtime_staticlib);
-        }
+        append_static_archive(&mut cmd, &target, runtime_staticlib);
     }
     if let Some(host_staticlib) = &req.host_staticlib {
-        if target.contains("darwin") || target.contains("macos") {
-            cmd.arg("-Wl,-force_load").arg(host_staticlib);
-        } else {
-            cmd.arg(host_staticlib);
-        }
+        append_static_archive(&mut cmd, &target, host_staticlib);
     }
     cmd.arg("-o").arg(&req.output_path);
     append_library_search_paths(req, &target, &mut cmd)?;
@@ -127,34 +177,16 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
     let output = cmd.output().map_err(|_| AotError::LinkerUnavailable)?;
 
     if !output.status.success() {
-        let mut command_line = format!("{} {}", compiler, req.object_path.display());
-        if let Some(runtime_staticlib) = &req.runtime_staticlib {
-            command_line.push(' ');
-            command_line.push_str(&runtime_staticlib.display().to_string());
-        }
-        command_line.push_str(" -o ");
-        command_line.push_str(&req.output_path.display().to_string());
-        if req.output_kind == BuildOutputKind::SharedLib {
-            command_line.push_str(" -shared");
-        }
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
-            command: command_line,
+            command: format_link_command(&compiler, req, &target),
+            detail: format_link_detail(&output),
         });
     }
 
     Ok(LinkResult {
         output_path: req.output_path.clone(),
-        command_line: {
-            let mut line = format!("{} {}", compiler, req.object_path.display());
-            if let Some(runtime_staticlib) = &req.runtime_staticlib {
-                line.push(' ');
-                line.push_str(&runtime_staticlib.display().to_string());
-            }
-            line.push_str(" -o ");
-            line.push_str(&req.output_path.display().to_string());
-            line
-        },
+        command_line: format_link_command(&compiler, req, &target),
         exported_symbols: req.exported_symbols.clone(),
     })
 }
@@ -217,6 +249,7 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
             command: format!("ar -M < {}", script_path.display()),
+            detail: format_link_detail(&output),
         });
     }
 
@@ -228,6 +261,7 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
         return Err(AotError::LinkFailed {
             status: ranlib_out.status.code().unwrap_or(-1),
             command: format!("ranlib {}", req.output_path.display()),
+            detail: format_link_detail(&ranlib_out),
         });
     }
 
@@ -271,6 +305,7 @@ fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
                 runtime_lib.display(),
                 req.object_path.display()
             ),
+            detail: format_link_detail(&output),
         });
     }
 
@@ -282,6 +317,7 @@ fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
         return Err(AotError::LinkFailed {
             status: ranlib_out.status.code().unwrap_or(-1),
             command: format!("ranlib {}", req.output_path.display()),
+            detail: format_link_detail(&ranlib_out),
         });
     }
 

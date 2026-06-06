@@ -106,13 +106,12 @@ fn run_resolved_entrypoint_with_pipeline_inner(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
-    let lowered =
-        beskid_codegen::lower_resolved_entrypoint_with_pipeline(
-            resolved,
-            Some(entrypoint),
-            with_diagnostics,
-            pipeline,
-        )?;
+    let lowered = beskid_codegen::lower_resolved_entrypoint_with_pipeline(
+        resolved,
+        Some(entrypoint),
+        with_diagnostics,
+        pipeline,
+    )?;
 
     let mut engine = Engine::new();
     run_jitted_entrypoint(

@@ -15,10 +15,10 @@
 pub mod analysis;
 pub mod artifacts;
 pub mod builtins;
-pub mod composition;
 pub mod compilation_context;
 #[doc(hidden)]
 pub mod compiler_sdk_reflect;
+pub mod composition;
 pub mod doc;
 pub mod doc_comment_parser;
 pub mod external_library;
@@ -26,9 +26,9 @@ pub mod format;
 pub mod hir;
 pub mod macros;
 pub mod mod_host;
-pub mod paths;
 pub mod parser;
 pub mod parsing;
+pub mod paths;
 pub mod projects;
 pub mod query;
 pub mod resolve;

@@ -2,11 +2,11 @@
 
 use std::fs;
 
-use beskid_analysis::services::{
-    PrepareMode, PrepareOptions, analyze_source_with_compilation_context, prepare_compilation_diagnostics,
-    resolved_input_from_plan, FrontEndOptions,
-};
 use beskid_analysis::CompilationContext;
+use beskid_analysis::services::{
+    FrontEndOptions, PrepareMode, PrepareOptions, analyze_source_with_compilation_context,
+    prepare_compilation_diagnostics, resolved_input_from_plan,
+};
 
 use crate::projects::with_cwd;
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};

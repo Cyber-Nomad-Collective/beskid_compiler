@@ -109,11 +109,7 @@ impl Parsable for HostDefinition {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
-        let name = Identifier::parse(
-            inner
-                .next()
-                .ok_or(ParseError::missing(Rule::Identifier))?,
-        )?;
+        let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
 
         let mut parameters = Vec::new();
         let mut base_host = None;
@@ -201,11 +197,7 @@ impl Parsable for ScopeDefinition {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
-        let name = Identifier::parse(
-            inner
-                .next()
-                .ok_or(ParseError::missing(Rule::Identifier))?,
-        )?;
+        let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
 
         let mut parameters = Vec::new();
         let mut body = Vec::new();
@@ -214,7 +206,10 @@ impl Parsable for ScopeDefinition {
                 Rule::ParameterList => {
                     parameters = parse_parameter_list(item)?;
                 }
-                Rule::RegistryBlock | Rule::ScopeDefinition | Rule::ScopeHook | Rule::RegistryEntry => {
+                Rule::RegistryBlock
+                | Rule::ScopeDefinition
+                | Rule::ScopeHook
+                | Rule::RegistryEntry => {
                     body.push(parse_body_item_from_inner(item)?);
                 }
                 _ => return Err(ParseError::unexpected_rule(item, None)),
@@ -243,10 +238,7 @@ impl Parsable for ScopeHook {
             "dispose" => ScopeHookKind::Dispose,
             "startup" => ScopeHookKind::Startup,
             _ => {
-                return Err(ParseError::unexpected_rule(
-                    name,
-                    Some(Rule::ScopeHookName),
-                ));
+                return Err(ParseError::unexpected_rule(name, Some(Rule::ScopeHookName)));
             }
         };
 
@@ -275,11 +267,8 @@ impl Parsable for WithStatement {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
-        let scope_name = Identifier::parse(
-            inner
-                .next()
-                .ok_or(ParseError::missing(Rule::Identifier))?,
-        )?;
+        let scope_name =
+            Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
         let mut arguments = Vec::new();
         let mut body = None;
         for item in inner {
@@ -333,7 +322,10 @@ fn parse_lifetime(pair: Pair<Rule>) -> Result<RegistrationLifetime, ParseError> 
     match pair.as_str() {
         "single" => Ok(RegistrationLifetime::Single),
         "transient" => Ok(RegistrationLifetime::Transient),
-        _ => Err(ParseError::unexpected_rule(pair, Some(Rule::RegistrationLifetime))),
+        _ => Err(ParseError::unexpected_rule(
+            pair,
+            Some(Rule::RegistrationLifetime),
+        )),
     }
 }
 
@@ -352,7 +344,10 @@ fn parse_body_item_from_inner(inner: Pair<Rule>) -> Result<Spanned<HostBodyItem>
             HostBodyItem::Scope(ScopeDefinition::parse(inner)?),
             span,
         )),
-        Rule::ScopeHook => Ok(Spanned::new(HostBodyItem::Hook(ScopeHook::parse(inner)?), span)),
+        Rule::ScopeHook => Ok(Spanned::new(
+            HostBodyItem::Hook(ScopeHook::parse(inner)?),
+            span,
+        )),
         _ => Err(ParseError::unexpected_rule(inner, None)),
     }
 }
@@ -403,11 +398,6 @@ pub fn parse_field_inject_parts(
         (None, first)
     };
     let ty = Type::parse(ty_pair)?;
-    let name = Identifier::parse(
-        inner
-            .next()
-            .ok_or(ParseError::missing(Rule::Identifier))?,
-    )?;
+    let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
     Ok((qualifier, ty, name))
 }
-

@@ -233,13 +233,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     _ => None,
                 };
                 if let Some(item_id) = enum_item_id {
-                    let payload_start =
-                        enum_payload_start(ctx.type_result, item_id).ok_or(
-                            CodegenError::UnsupportedNode {
-                                span: node.span,
-                                node: "enum payload start",
-                            },
-                        )?;
+                    let payload_start = enum_payload_start(ctx.type_result, item_id).ok_or(
+                        CodegenError::UnsupportedNode {
+                            span: node.span,
+                            node: "enum payload start",
+                        },
+                    )?;
                     let tag_offset = ctx
                         .builder
                         .ins()
@@ -377,10 +376,7 @@ fn lower_string_eq(
         })?;
     let zero = ctx.builder.ins().iconst(clif_types::I64, 0);
     let value = match node.node.op.node {
-        HirBinaryOp::Eq => ctx
-            .builder
-            .ins()
-            .icmp(IntCC::NotEqual, eq_flag, zero),
+        HirBinaryOp::Eq => ctx.builder.ins().icmp(IntCC::NotEqual, eq_flag, zero),
         HirBinaryOp::NotEq => ctx.builder.ins().icmp(IntCC::Equal, eq_flag, zero),
         _ => unreachable!("checked operator"),
     };

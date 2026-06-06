@@ -57,7 +57,10 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
 
     // Generator contributions are captured in outcomes.
     assert_eq!(generated.generator_outcomes.len(), 1);
-    assert_eq!(generated.generator_outcomes[0].type_id, "SampleMod.SampleGenerate");
+    assert_eq!(
+        generated.generator_outcomes[0].type_id,
+        "SampleMod.SampleGenerate"
+    );
     let gen_contributions = &generated.generator_outcomes[0].contributions;
     assert_eq!(gen_contributions.len(), 1);
     assert!(
@@ -67,8 +70,9 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
     );
 
     // Proceed through the semantic gate to analyze/rewrite.
-    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-        .with_composition(&generated.session.composition_snapshot_or_default());
+    let snapshot =
+        beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+            .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
@@ -80,7 +84,8 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
 
     // Analyzer dispatched with correct type_id and surface diagnostics.
     assert_eq!(
-        analyze.analyzer_outcomes.len(), 1,
+        analyze.analyzer_outcomes.len(),
+        1,
         "expected exactly one analyzer outcome"
     );
     assert_eq!(
@@ -88,7 +93,8 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
         "analyzer type_id must match registration"
     );
     assert_eq!(
-        analyze.analyzer_outcomes[0].diagnostics.len(), 1,
+        analyze.analyzer_outcomes[0].diagnostics.len(),
+        1,
         "scripted analyzer diagnostic must surface"
     );
     assert_eq!(
@@ -98,7 +104,8 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
 
     // Rewriter dispatched after analyzer.
     assert_eq!(
-        analyze.rewriter_outcomes.len(), 1,
+        analyze.rewriter_outcomes.len(),
+        1,
         "expected exactly one rewriter outcome"
     );
     assert_eq!(
@@ -123,8 +130,14 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
     let plan = workspace.compile_plan();
 
     let invoker = ScriptedContractInvoker::new()
-        .with_generator_contribution("SampleMod.GenOne", vec!["pub fn from_gen_one() { return 1; }".to_owned()])
-        .with_generator_contribution("SampleMod.GenTwo", vec!["pub fn from_gen_two() { return 2; }".to_owned()])
+        .with_generator_contribution(
+            "SampleMod.GenOne",
+            vec!["pub fn from_gen_one() { return 1; }".to_owned()],
+        )
+        .with_generator_contribution(
+            "SampleMod.GenTwo",
+            vec!["pub fn from_gen_two() { return 2; }".to_owned()],
+        )
         .with_analyzer_diagnostic(
             "SampleMod.CheckOne",
             vec![AnalyzerDiagnostic {
@@ -182,8 +195,9 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
     assert!(gen_two.contributions[0].contains("from_gen_two"));
 
     // Proceed through the semantic gate to analyze.
-    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-        .with_composition(&generated.session.composition_snapshot_or_default());
+    let snapshot =
+        beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+            .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,

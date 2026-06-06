@@ -3,8 +3,8 @@
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_codegen::{lower_resolved_entrypoint_with_pipeline, render_clif};
-use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use beskid_tools::PipelineProgressKind;
+use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use clap::Args;
 use std::path::PathBuf;
 

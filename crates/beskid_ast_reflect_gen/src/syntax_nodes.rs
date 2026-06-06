@@ -1056,11 +1056,8 @@ mod tests {
             .into_iter()
             .collect();
         let kinds = reflect_sdk_node_kind_names(&reflect_rs).expect("reflect parse");
-        let kinds_needing_shapes: BTreeSet<_> = kinds
-            .iter()
-            .filter(|k| *k != "Node")
-            .cloned()
-            .collect();
+        let kinds_needing_shapes: BTreeSet<_> =
+            kinds.iter().filter(|k| *k != "Node").cloned().collect();
         assert!(
             kinds_needing_shapes.is_subset(&inv),
             "every ReflectSdkNodeKind (except contract-only Node) must have a generated shape file; missing: {:?}",

@@ -48,7 +48,9 @@ pub fn collect_symbol_values(
 
         if needs_prompt {
             if options.no_interactive || !options.interactive {
-                return Err(TemplateError::RequiredSymbol { symbol_id: id.clone() });
+                return Err(TemplateError::RequiredSymbol {
+                    symbol_id: id.clone(),
+                });
             }
             let value = prompt_symbol(id, symbol)?;
             validate_symbol_value(id, symbol, &value)?;
@@ -92,10 +94,7 @@ fn validate_symbol_value(id: &str, symbol: &TemplateSymbol, value: &str) -> Temp
 fn prompt_symbol(id: &str, symbol: &TemplateSymbol) -> TemplateResult<String> {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
-    let prompt = symbol
-        .description
-        .as_deref()
-        .unwrap_or(id);
+    let prompt = symbol.description.as_deref().unwrap_or(id);
     match symbol.symbol_type {
         SymbolType::Choice => {
             let choices = symbol.choices.as_deref().unwrap_or(&[]);

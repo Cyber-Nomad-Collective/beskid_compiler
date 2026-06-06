@@ -13,9 +13,8 @@ use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
 #[test]
 fn ansi_escape_resolves_under_corelib_test_assembly() {
     let root = compiler_workspace_root();
-    let entry = root.join(
-        "corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd",
-    );
+    let entry =
+        root.join("corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd");
     if !entry.is_file() {
         return;
     }
@@ -30,15 +29,7 @@ fn ansi_escape_resolves_under_corelib_test_assembly() {
     let source = fs::read_to_string(&entry).expect("read AnsiEscapeTests.bd");
 
     let resolved = with_cwd_at_workspace_root(&root, || {
-        resolve_input(
-            Some(&entry),
-            Some(&project_root),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve")
+        resolve_input(Some(&entry), Some(&project_root), None, None, false, false).expect("resolve")
     });
 
     let plan = resolved.compile_plan.expect("compile plan");
@@ -57,9 +48,7 @@ fn ansi_escape_resolves_under_corelib_test_assembly() {
 
     assert!(
         assembly.units.iter().any(|unit| {
-            unit.path
-                .to_string_lossy()
-                .contains("Ansi")
+            unit.path.to_string_lossy().contains("Ansi")
                 && unit.path.to_string_lossy().contains("Escape")
         }),
         "assembly must include Ansi.Escape from prelude seeding, got {} units",

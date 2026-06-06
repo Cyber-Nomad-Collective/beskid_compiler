@@ -4,8 +4,7 @@ use std::hash::{Hash, Hasher};
 use mermaid_builder::prelude::Direction as MermaidDirection;
 
 /// Discriminator for graph domains exposed to CLI/LSP.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GraphKind {
     #[default]
     ProjectDeps,
@@ -44,7 +43,6 @@ pub enum GraphDirection {
     LeftRight,
     TopDown,
 }
-
 
 impl GraphDirection {
     pub fn to_mermaid(self) -> MermaidDirection {

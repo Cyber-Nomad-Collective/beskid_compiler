@@ -49,20 +49,18 @@ fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<St
     let source_path = hover.location.path.as_path();
 
     if let Some((package, version)) = package_from_materialized_path(source_path) {
-        let base = std::env::var("BESKID_PCKG_BASE_URL")
-            .unwrap_or_else(|_| DEFAULT_PCKG_BASE.to_string());
+        let base =
+            std::env::var("BESKID_PCKG_BASE_URL").unwrap_or_else(|_| DEFAULT_PCKG_BASE.to_string());
         let base = base.trim_end_matches('/');
         let fragment = symbol_name
             .as_deref()
             .map(|s| format!("#{}", urlencoding_encode(s)))
             .unwrap_or_default();
-        return Some(format!(
-            "{base}/docs/{package}@{version}{fragment}"
-        ));
+        return Some(format!("{base}/docs/{package}@{version}{fragment}"));
     }
 
-    let book_base = std::env::var("BESKID_BOOK_BASE_URL")
-        .unwrap_or_else(|_| DEFAULT_BOOK_BASE.to_string());
+    let book_base =
+        std::env::var("BESKID_BOOK_BASE_URL").unwrap_or_else(|_| DEFAULT_BOOK_BASE.to_string());
     let book_base = book_base.trim_end_matches('/');
     if let Some(name) = symbol_name {
         return Some(format!("{book_base}/book/?q={}", urlencoding_encode(&name)));
@@ -73,12 +71,13 @@ fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<St
 fn extract_symbol_name(markdown: &str) -> Option<String> {
     for line in markdown.lines() {
         if let Some(rest) = line.strip_prefix("**")
-            && let Some((name, _)) = rest.split_once("**") {
-                let trimmed = name.trim();
-                if !trimmed.is_empty() && trimmed != "local" {
-                    return Some(trimmed.to_string());
-                }
+            && let Some((name, _)) = rest.split_once("**")
+        {
+            let trimmed = name.trim();
+            if !trimmed.is_empty() && trimmed != "local" {
+                return Some(trimmed.to_string());
             }
+        }
     }
     None
 }

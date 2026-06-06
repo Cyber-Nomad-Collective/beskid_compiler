@@ -28,6 +28,6 @@ pub use pipeline::{
 };
 pub use registry::{
     RegistryConnectConfig, build_pckg_client, is_network_error, latest_non_yanked,
-    parse_package_selector, pick_version, pckg_to_anyhow, tokio_runtime,
+    parse_package_selector, pckg_to_anyhow, pick_version, tokio_runtime,
 };
 pub use session::{CommandSession, ResolveInputArgs, SemanticGateOptions};

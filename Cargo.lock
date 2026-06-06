@@ -455,6 +455,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "beskid_analysis",
+ "beskid_aot",
  "beskid_codegen",
  "beskid_engine",
  "beskid_pipeline",

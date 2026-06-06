@@ -7,23 +7,26 @@ use semver::Version;
 
 use beskid_tools::prompt::{confirm_overwrite, confirm_yanked};
 use beskid_tools::registry::{
-    RegistryConnectConfig, build_pckg_client, is_network_error, latest_non_yanked,
-    pick_version, pckg_to_anyhow, tokio_runtime,
+    RegistryConnectConfig, build_pckg_client, is_network_error, latest_non_yanked, pckg_to_anyhow,
+    pick_version, tokio_runtime,
 };
 
 use crate::{
+    GitTemplateRef, InstallSnapshot, InstallSource, InstantiateOptions, InstantiateResult,
+    RegistryIndexEntry, SymbolCollectOptions, TemplateManifest, TemplateOutputKind,
     clone_or_update, collect_symbol_values, extract_bpk_to_dir, find_installed_by_short_name,
     install_from_tree, list_installed, load_manifest_from_template_root, load_registry_index,
     resolve_package_id, save_registry_index, stdin_is_interactive, uninstall_by_short_name,
-    GitTemplateRef, InstallSnapshot, InstallSource, InstantiateOptions, InstantiateResult,
-    RegistryIndexEntry, SymbolCollectOptions, TemplateManifest, TemplateOutputKind,
 };
 
 /// How a template is selected for install or instantiate.
 #[derive(Debug, Clone)]
 pub enum TemplateSelector {
     ShortName(String),
-    Package { id: String, version: Option<String> },
+    Package {
+        id: String,
+        version: Option<String>,
+    },
     Path(PathBuf),
     Git {
         url: String,
@@ -180,10 +183,13 @@ pub fn uninstall_template(request: UninstallTemplateRequest) -> Result<Uninstall
 
 /// Instantiate a template into an output directory.
 pub fn instantiate_template(request: InstantiateTemplateRequest) -> Result<InstantiateResult> {
-    if stdin_is_interactive() && request.output.exists() && !request.force
-        && !confirm_overwrite(&request.output)? {
-            anyhow::bail!("cancelled");
-        }
+    if stdin_is_interactive()
+        && request.output.exists()
+        && !request.force
+        && !confirm_overwrite(&request.output)?
+    {
+        anyhow::bail!("cancelled");
+    }
 
     let (template_root, manifest, registry_meta) =
         resolve_template_for_instantiate(&request.selector, &request.registry)?;
@@ -225,7 +231,8 @@ fn resolve_install_source(request: &InstallTemplateRequest) -> Result<(PathBuf, 
     let installed_at = chrono_lite_now();
 
     if let Some(path) = &request.path {
-        let path = std::fs::canonicalize(path).with_context(|| format!("path {}", path.display()))?;
+        let path =
+            std::fs::canonicalize(path).with_context(|| format!("path {}", path.display()))?;
         let manifest = load_manifest_from_template_root(&path).map_err(|e| anyhow!("{e}"))?;
         let snapshot = InstallSnapshot {
             identity: manifest.identity.clone(),
@@ -265,8 +272,7 @@ fn resolve_install_source(request: &InstallTemplateRequest) -> Result<(PathBuf, 
     }
 
     let package_id = resolve_install_package_id(&request.package_or_short)?;
-    let (root, version, yanked) =
-        fetch_registry_template(&request.registry, &package_id, None)?;
+    let (root, version, yanked) = fetch_registry_template(&request.registry, &package_id, None)?;
     let manifest = load_manifest_from_template_root(&root).map_err(|e| anyhow!("{e}"))?;
     let snapshot = InstallSnapshot {
         identity: manifest.identity.clone(),
@@ -319,7 +325,8 @@ fn resolve_template_for_instantiate(
             if let Some((snap, path)) =
                 find_installed_by_short_name(short).map_err(|e| anyhow!("{e}"))?
             {
-                let manifest = load_manifest_from_template_root(&path).map_err(|e| anyhow!("{e}"))?;
+                let manifest =
+                    load_manifest_from_template_root(&path).map_err(|e| anyhow!("{e}"))?;
                 let meta = snap
                     .package_id
                     .clone()
@@ -393,9 +400,7 @@ fn check_registry_version(
     yanked: bool,
 ) -> Result<()> {
     if yanked {
-        eprintln!(
-            "warning: template package `{package_id}@{current_version}` is yanked"
-        );
+        eprintln!("warning: template package `{package_id}@{current_version}` is yanked");
         if !request.allow_yanked {
             if stdin_is_interactive() {
                 if !confirm_yanked(package_id, current_version)? {

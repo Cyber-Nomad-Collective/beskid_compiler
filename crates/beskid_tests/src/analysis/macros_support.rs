@@ -1,6 +1,6 @@
 //! Shared helpers for language macro expansion tests.
 
-use beskid_analysis::macros::{expand_program, DEFAULT_MAX_MACRO_EXPANSION_DEPTH};
+use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_analysis::syntax::expressions::{Expression, Literal};
 use beskid_analysis::syntax::items::Node;

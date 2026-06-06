@@ -1,6 +1,5 @@
 use beskid_runtime::dynamic::{
-    FieldStep, DYNAMIC_OK, map_objects_aot, register_mapping, register_shape,
-    reset_tables_for_test,
+    DYNAMIC_OK, FieldStep, map_objects_aot, register_mapping, register_shape, reset_tables_for_test,
 };
 
 #[repr(C)]
@@ -44,10 +43,7 @@ fn dynamic_aot_mapping_copies_fields_in_declaration_order() {
     reset_tables_for_test();
     register_identity_mapping();
 
-    let src = SourceShape {
-        id: 99,
-        flags: 7,
-    };
+    let src = SourceShape { id: 99, flags: 7 };
     let mut dst = TargetShape { id: 0, flags: 0 };
 
     let status = unsafe {

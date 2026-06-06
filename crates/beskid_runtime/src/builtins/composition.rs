@@ -85,7 +85,11 @@ pub extern "C-unwind" fn composition_bind_plural(
     let Some(container) = container_from_ptr(container) else {
         return ContainerError::ABI_NOT_ACTIVE;
     };
-    let len = if targets_len < 0 { 0 } else { targets_len as usize };
+    let len = if targets_len < 0 {
+        0
+    } else {
+        targets_len as usize
+    };
     let slice: &[u32] = if len == 0 || targets.is_null() {
         &[]
     } else {
@@ -186,7 +190,11 @@ pub extern "C-unwind" fn composition_resolve_plural(
         Ok(values) => values,
         Err(_) => return -1,
     };
-    let capacity = if out_capacity < 0 { 0 } else { out_capacity as usize };
+    let capacity = if out_capacity < 0 {
+        0
+    } else {
+        out_capacity as usize
+    };
     if !out.is_null() && capacity > 0 {
         let to_copy = capacity.min(instances.len());
         // SAFETY: the caller guarantees `out` points to valid, aligned memory with room for

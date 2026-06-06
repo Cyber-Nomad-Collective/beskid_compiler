@@ -66,11 +66,7 @@ pub fn handle_references(
             let target_uri = path_to_uri(&reference.location.path)?;
             Some(Location {
                 uri: target_uri,
-                range: symbol_location_to_lsp_range(
-                    &reference.location,
-                    entry_path,
-                    &doc.text,
-                ),
+                range: symbol_location_to_lsp_range(&reference.location, entry_path, &doc.text),
             })
         })
         .collect()

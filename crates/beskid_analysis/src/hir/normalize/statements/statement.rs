@@ -56,10 +56,16 @@ impl Normalize for Spanned<HirStatementNode> {
                 )]
             }
             HirStatementNode::WithStatement(with_stmt) => {
-                vec![Spanned::new(HirStatementNode::WithStatement(with_stmt), span)]
+                vec![Spanned::new(
+                    HirStatementNode::WithStatement(with_stmt),
+                    span,
+                )]
             }
             HirStatementNode::LaunchStatement(launch_stmt) => {
-                vec![Spanned::new(HirStatementNode::LaunchStatement(launch_stmt), span)]
+                vec![Spanned::new(
+                    HirStatementNode::LaunchStatement(launch_stmt),
+                    span,
+                )]
             }
         }
     }

@@ -16,18 +16,14 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirIndexExpression {
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
         let target_type = ctx.require_expr_type(node.node.target.span)?;
-        let handle = lower_node(&node.node.target, ctx)?.ok_or(
-            CodegenError::UnsupportedNode {
-                span: node.node.target.span,
-                node: "unit-valued index target",
-            },
-        )?;
-        let index = lower_node(&node.node.index, ctx)?.ok_or(
-            CodegenError::UnsupportedNode {
-                span: node.node.index.span,
-                node: "unit-valued index",
-            },
-        )?;
+        let handle = lower_node(&node.node.target, ctx)?.ok_or(CodegenError::UnsupportedNode {
+            span: node.node.target.span,
+            node: "unit-valued index target",
+        })?;
+        let index = lower_node(&node.node.index, ctx)?.ok_or(CodegenError::UnsupportedNode {
+            span: node.node.index.span,
+            node: "unit-valued index",
+        })?;
 
         match ctx.type_result.types.get(target_type) {
             Some(TypeInfo::Array(elem_type)) => {
@@ -72,33 +68,25 @@ fn lower_array_read(
         .trapnz(out_of_bounds, TrapCode::unwrap_user(2));
 
     // Compute element size
-    let layout = ctx
-        .codegen
-        .type_layout(ctx.type_result, elem_type)
-        .ok_or(CodegenError::UnsupportedNode {
+    let layout = ctx.codegen.type_layout(ctx.type_result, elem_type).ok_or(
+        CodegenError::UnsupportedNode {
             span,
             node: "array element layout",
-        })?;
-    let elem_size_val = ctx
-        .builder
-        .ins()
-        .iconst(pointer_type(), layout.size as i64);
+        },
+    )?;
+    let elem_size_val = ctx.builder.ins().iconst(pointer_type(), layout.size as i64);
 
     // Compute address: ptr + index * elem_size
     let offset = ctx.builder.ins().imul(index, elem_size_val);
     let addr = ctx.builder.ins().iadd(ptr, offset);
 
     // Load element value at address
-    let clif_ty = map_type_id_to_clif(ctx.type_result, elem_type).ok_or(
-        CodegenError::UnsupportedNode {
+    let clif_ty =
+        map_type_id_to_clif(ctx.type_result, elem_type).ok_or(CodegenError::UnsupportedNode {
             span,
             node: "array element clif type",
-        },
-    )?;
-    let value = ctx
-        .builder
-        .ins()
-        .load(clif_ty, MemFlags::new(), addr, 0);
+        })?;
+    let value = ctx.builder.ins().load(clif_ty, MemFlags::new(), addr, 0);
 
     Ok(Some(value))
 }

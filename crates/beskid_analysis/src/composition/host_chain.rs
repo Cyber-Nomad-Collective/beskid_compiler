@@ -4,7 +4,10 @@ use super::diagnostics::CompositionIssue;
 use super::model::{CompositionHost, Registration, ScopeId};
 use crate::syntax::SpanInfo;
 
-pub fn resolve_host_key(hosts: &HashMap<String, CompositionHost>, launch_name: &str) -> Option<String> {
+pub fn resolve_host_key(
+    hosts: &HashMap<String, CompositionHost>,
+    launch_name: &str,
+) -> Option<String> {
     if hosts.contains_key(launch_name) {
         return Some(launch_name.to_string());
     }
@@ -37,19 +40,18 @@ pub fn build_host_chain<'a>(
 
     loop {
         if !seen.insert(cursor.clone()) {
-            let span = hosts
-                .get(&cursor)
-                .map(|host| host.span)
-                .unwrap_or_default();
+            let span = hosts.get(&cursor).map(|host| host.span).unwrap_or_default();
             return Err(CompositionIssue::HostInheritanceCycle {
                 host_name: cursor,
                 span,
             });
         }
-        let host = hosts.get(&cursor).ok_or_else(|| CompositionIssue::UnknownLaunchHost {
-            host_name: cursor.clone(),
-            span: launch_span,
-        })?;
+        let host = hosts
+            .get(&cursor)
+            .ok_or_else(|| CompositionIssue::UnknownLaunchHost {
+                host_name: cursor.clone(),
+                span: launch_span,
+            })?;
         ordered.push(host);
         if let Some(base) = &host.base_host {
             let base_key = resolve_host_key(hosts, base).unwrap_or_else(|| base.clone());
@@ -103,9 +105,10 @@ pub fn merge_host_registries(
                 reg.scope_id = *unified;
             }
 
-            if let Some(existing_index) = merged.iter().position(|existing| {
-                existing.scope_id == reg.scope_id && existing.key == reg.key
-            }) {
+            if let Some(existing_index) = merged
+                .iter()
+                .position(|existing| existing.scope_id == reg.scope_id && existing.key == reg.key)
+            {
                 let existing = &merged[existing_index];
                 if existing.lifetime != reg.lifetime {
                     issues.push(CompositionIssue::OverrideLifetimeMismatch {

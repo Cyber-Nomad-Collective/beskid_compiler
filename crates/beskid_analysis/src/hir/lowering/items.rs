@@ -1,11 +1,11 @@
 use crate::hir::{
     AstItem, AstProgram, HirAttribute, HirAttributeDeclaration, HirAttributeParameter,
     HirAttributeTarget, HirContractDefinition, HirContractEmbedding, HirContractMethodSignature,
-    HirContractNode, HirEnumDefinition, HirEnumVariant, HirExtendTypeDefinition,
-    HirExportInterface, HirExternInterface, HirFunctionDefinition, HirInlineModule, HirItem,
-    HirMethodDefinition,
-    HirModuleDeclaration, HirProgram, HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry,
-    HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition, HirUseDeclaration,
+    HirContractNode, HirEnumDefinition, HirEnumVariant, HirExportInterface,
+    HirExtendTypeDefinition, HirExternInterface, HirFunctionDefinition, HirInlineModule, HirItem,
+    HirMethodDefinition, HirModuleDeclaration, HirProgram, HirTestDefinition, HirTestMetaSection,
+    HirTestMetadataEntry, HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition,
+    HirUseDeclaration,
 };
 use crate::syntax::{self, Spanned};
 

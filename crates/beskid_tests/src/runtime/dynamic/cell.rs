@@ -1,7 +1,5 @@
 use crate::support::runtime::with_runtime_scope;
-use beskid_runtime::{
-    dynamic::DynamicCell, dynamic_cell_create, gc_object_count,
-};
+use beskid_runtime::{dynamic::DynamicCell, dynamic_cell_create, gc_object_count};
 
 #[test]
 fn dynamic_cell_create_allocates_through_runtime_arena() {

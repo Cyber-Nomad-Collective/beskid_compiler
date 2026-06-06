@@ -1,7 +1,7 @@
 //! Shared `--runtime-profile` flag for AOT/JIT commands.
 
-use clap::ValueEnum;
 use beskid_aot::RuntimeLinkProfile;
+use clap::ValueEnum;
 
 /// Which runtime/host artifacts to link at build and startup time.
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]

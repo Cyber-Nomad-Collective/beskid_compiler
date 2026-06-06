@@ -9,19 +9,19 @@ use crate::lowering::locals::{canonicalize_call_kind, local_id_for_span, resolve
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
+use beskid_abi::{
+    DispatchReturnGroup, DispatchRoute, TAG_EVENT_GET_HANDLER, TAG_EVENT_LEN,
+    dispatch_route_for_symbol,
+};
 use beskid_analysis::builtins::{BuiltinType, builtin_specs};
 use beskid_analysis::hir::{
     HirCallExpression, HirExpressionNode, HirLambdaExpression, HirPrimitiveType,
 };
-use beskid_analysis::resolve::{canonical_item_id, ItemKind, ResolvedValue};
+use beskid_analysis::resolve::{ItemKind, ResolvedValue, canonical_item_id};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{
-    first_field_segment_name, method_name_from_path_callee, CallLoweringKind,
-    MethodReceiverSource, TypeId, TypeInfo,
-};
-use beskid_abi::{
-    dispatch_route_for_symbol, DispatchReturnGroup, DispatchRoute, TAG_EVENT_GET_HANDLER,
-    TAG_EVENT_LEN,
+    CallLoweringKind, MethodReceiverSource, TypeId, TypeInfo, first_field_segment_name,
+    method_name_from_path_callee,
 };
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
@@ -112,10 +112,9 @@ fn lambda_signature_type_ids(
 
 fn event_field_name(callee: &Spanned<HirExpressionNode>) -> Option<String> {
     match &callee.node {
-        HirExpressionNode::PathExpression(path_expr) => first_field_segment_name(
-            &path_expr.node.path.node.segments,
-        )
-        .map(str::to_string),
+        HirExpressionNode::PathExpression(path_expr) => {
+            first_field_segment_name(&path_expr.node.path.node.segments).map(str::to_string)
+        }
         HirExpressionNode::MemberExpression(member_expr) => {
             Some(member_expr.node.member.node.name.clone())
         }
@@ -644,10 +643,9 @@ fn lower_indirect_function_call_with_signature(
 
 fn contract_method_name(callee: &Spanned<HirExpressionNode>) -> Option<String> {
     match &callee.node {
-        HirExpressionNode::PathExpression(path_expr) => method_name_from_path_callee(
-            &path_expr.node.path.node.segments,
-        )
-        .map(str::to_string),
+        HirExpressionNode::PathExpression(path_expr) => {
+            method_name_from_path_callee(&path_expr.node.path.node.segments).map(str::to_string)
+        }
         HirExpressionNode::MemberExpression(member_expr) => {
             Some(member_expr.node.member.node.name.clone())
         }
@@ -1175,11 +1173,9 @@ fn lower_method_dispatch_call(
 
     let mut signature_ir = Signature::new(CallConv::SystemV);
     let receiver_clif_ty = map_type_id_to_clif(ctx.type_result, receiver_type)
-        .or_else(|| {
-            match ctx.type_result.types.get(receiver_type) {
-                Some(TypeInfo::Named(_) | TypeInfo::Applied { .. }) => Some(pointer_type()),
-                _ => None,
-            }
+        .or_else(|| match ctx.type_result.types.get(receiver_type) {
+            Some(TypeInfo::Named(_) | TypeInfo::Applied { .. }) => Some(pointer_type()),
+            _ => None,
         })
         .ok_or(CodegenError::UnsupportedNode {
             span: node.node.callee.span,
@@ -1411,16 +1407,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
 
         if expected_generics != generic_args.len() {
             if generic_args.is_empty() && expected_generics > 0 {
-                generic_args = infer_generic_args_from_call(
-                    ctx.type_result,
-                    item_id,
-                    &node.node.args,
-                    ctx,
-                )
-                .ok_or(CodegenError::UnsupportedNode {
-                    span: node.span,
-                    node: "generic argument mismatch",
-                })?;
+                generic_args =
+                    infer_generic_args_from_call(ctx.type_result, item_id, &node.node.args, ctx)
+                        .ok_or(CodegenError::UnsupportedNode {
+                            span: node.span,
+                            node: "generic argument mismatch",
+                        })?;
             } else {
                 return Err(CodegenError::UnsupportedNode {
                     span: node.span,
@@ -1508,53 +1500,52 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             }
         } else {
             for (arg, expected) in node.node.args.iter().zip(substituted_params.iter()) {
-                let value =
-                    if let Some(fn_value) = lower_function_typed_argument(arg, *expected, ctx)? {
-                        fn_value
-                    } else {
-                        let mut value = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
-                            span: arg.span,
-                            node: "unit-valued call argument",
-                        })?;
-                        let mut actual = ctx.require_expr_type_for_node(arg).unwrap_or(*expected);
-                        if let Some(expected_clif) =
-                            map_type_id_to_clif(ctx.type_result, *expected)
+                let value = if let Some(fn_value) =
+                    lower_function_typed_argument(arg, *expected, ctx)?
+                {
+                    fn_value
+                } else {
+                    let mut value = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                        span: arg.span,
+                        node: "unit-valued call argument",
+                    })?;
+                    let mut actual = ctx.require_expr_type_for_node(arg).unwrap_or(*expected);
+                    if let Some(expected_clif) = map_type_id_to_clif(ctx.type_result, *expected) {
+                        let value_ty = ctx.builder.func.dfg.value_type(value);
+                        if value_ty.is_int() && expected_clif.is_int() && value_ty != expected_clif
                         {
-                            let value_ty = ctx.builder.func.dfg.value_type(value);
-                            if value_ty.is_int() && expected_clif.is_int() && value_ty != expected_clif
-                            {
-                                if value_ty.bits() < expected_clif.bits() {
-                                    value = ctx.builder.ins().sextend(expected_clif, value);
-                                    actual = *expected;
-                                } else if value_ty.bits() > expected_clif.bits() {
-                                    value = ctx.builder.ins().ireduce(expected_clif, value);
-                                    actual = *expected;
-                                }
+                            if value_ty.bits() < expected_clif.bits() {
+                                value = ctx.builder.ins().sextend(expected_clif, value);
+                                actual = *expected;
+                            } else if value_ty.bits() > expected_clif.bits() {
+                                value = ctx.builder.ins().ireduce(expected_clif, value);
+                                actual = *expected;
                             }
                         }
-                        match ensure_type_compatibility(
-                            arg.span,
-                            *expected,
-                            actual,
-                            ctx.type_result,
-                            ctx.resolution,
-                            ctx.builder,
-                            value,
-                        ) {
-                            Ok(value) => value,
-                            Err(CodegenError::TypeMismatch { .. }) => {
-                                crate::lowering::cast_intent::retry_call_argument_compatibility(
-                                    arg.span,
-                                    *expected,
-                                    value,
-                                    ctx.type_result,
-                                    ctx.resolution,
-                                    ctx.builder,
-                                )?
-                            }
-                            Err(err) => return Err(err),
+                    }
+                    match ensure_type_compatibility(
+                        arg.span,
+                        *expected,
+                        actual,
+                        ctx.type_result,
+                        ctx.resolution,
+                        ctx.builder,
+                        value,
+                    ) {
+                        Ok(value) => value,
+                        Err(CodegenError::TypeMismatch { .. }) => {
+                            crate::lowering::cast_intent::retry_call_argument_compatibility(
+                                arg.span,
+                                *expected,
+                                value,
+                                ctx.type_result,
+                                ctx.resolution,
+                                ctx.builder,
+                            )?
                         }
-                    };
+                        Err(err) => return Err(err),
+                    }
+                };
                 args.push(value);
             }
         }
@@ -1621,9 +1612,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                 .get(item_id.0)
                 .ok_or(CodegenError::MissingSymbol("function item"))?;
             let symbol_name = if item_info.kind == ItemKind::Method {
-                let (receiver, method) = item_info.name.split_once("::").ok_or(
-                    CodegenError::MissingSymbol("method item name"),
-                )?;
+                let (receiver, method) = item_info
+                    .name
+                    .split_once("::")
+                    .ok_or(CodegenError::MissingSymbol("method item name"))?;
                 mangle_method_name(receiver, method)
             } else if generic_args.is_empty() {
                 item_info.name.clone()
@@ -1683,9 +1675,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             }
         }
 
-        if is_builtin
-            && let Some(route) = dispatch_route_for_symbol(&name)
-        {
+        if is_builtin && let Some(route) = dispatch_route_for_symbol(&name) {
             return lower_dispatch_builtin_call(node.span, route, &args, returns_value, ctx);
         }
 

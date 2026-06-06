@@ -27,7 +27,10 @@ pub async fn cached_compilation_context(
     path: &Path,
 ) -> Option<CompilationContext> {
     let focused = { state.read().await.focused_project.clone() };
-    let (manifest, _) = match resolve_project_manifest_for_source_path(path, None).ok().flatten() {
+    let (manifest, _) = match resolve_project_manifest_for_source_path(path, None)
+        .ok()
+        .flatten()
+    {
         Some(resolved) => resolved,
         None => {
             let focused_manifest = focused.as_ref()?;
@@ -82,7 +85,6 @@ pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
     write.compilation_context_cache.clear();
     write.compilation_db = std::sync::Mutex::new(beskid_queries::BeskidDatabase::default());
     for doc in write.docs.values_mut() {
-        doc.analysis_cache_version =
-            super::lifecycle::ANALYSIS_CACHE_VERSION.saturating_sub(1);
+        doc.analysis_cache_version = super::lifecycle::ANALYSIS_CACHE_VERSION.saturating_sub(1);
     }
 }

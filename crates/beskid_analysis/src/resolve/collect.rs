@@ -10,8 +10,8 @@ use super::member_items;
 use super::module_graph::ModuleGraph;
 use super::resolver::{self, Resolver};
 use super::symbol::{
-    symbol_shape_for_item, symbol_to_string, BUILTIN_PACKAGE, SymbolId, SymbolQualifier,
-    SymbolShape,
+    BUILTIN_PACKAGE, SymbolId, SymbolQualifier, SymbolShape, symbol_shape_for_item,
+    symbol_to_string,
 };
 use crate::builtins::builtin_specs;
 
@@ -473,16 +473,18 @@ impl Resolver {
                     return None;
                 }
                 match info.kind {
-                    ItemKind::Function
-                    | ItemKind::Enum
-                    | ItemKind::Type
-                    | ItemKind::Contract => Some((name.clone(), *item_id)),
+                    ItemKind::Function | ItemKind::Enum | ItemKind::Type | ItemKind::Contract => {
+                        Some((name.clone(), *item_id))
+                    }
                     _ => None,
                 }
             })
             .collect();
         for (name, item_id) in imports {
-            if let Some(_prev) = self.module_graph.insert_item(self.current_module, name, item_id) {
+            if let Some(_prev) = self
+                .module_graph
+                .insert_item(self.current_module, name, item_id)
+            {
                 // Import collides with an existing local declaration — silently skip
                 continue;
             }
@@ -498,7 +500,16 @@ impl Resolver {
         parent_id: ItemId,
     ) {
         let id = ItemId(self.items.len());
-        self.push_item(id, Some(parent_id), name, kind, visibility, span, None, self.current_module_path());
+        self.push_item(
+            id,
+            Some(parent_id),
+            name,
+            kind,
+            visibility,
+            span,
+            None,
+            self.current_module_path(),
+        );
     }
 
     fn push_item(
@@ -512,7 +523,8 @@ impl Resolver {
         method_receiver: Option<String>,
         module_path: Vec<String>,
     ) {
-        let parent_symbol = parent_id.and_then(|parent| self.items.get(parent.0).and_then(|info| info.symbol));
+        let parent_symbol =
+            parent_id.and_then(|parent| self.items.get(parent.0).and_then(|info| info.symbol));
         let symbol = self.try_register_symbol(
             id,
             kind,

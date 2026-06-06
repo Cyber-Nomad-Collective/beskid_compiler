@@ -7,7 +7,7 @@ use std::path::Path;
 use syn::{Attribute, Fields, Item, Meta};
 
 use crate::syntax_helpers::SYNTAX_NODES_MODULE_PREFIX;
-use crate::syntax_nodes::{reflect_sdk_node_kind_names, BANNER};
+use crate::syntax_nodes::{BANNER, reflect_sdk_node_kind_names};
 
 /// Rust item enum in `syntax/items/node.rs` — host-only; Mod SDK uses `Node` contract + `NodeRef`.
 pub const HOST_ONLY_SDK_TYPE_NAMES: &[&str] = &["Node"];
@@ -65,7 +65,9 @@ fn field_has_ast_skip(attrs: &[Attribute]) -> bool {
 }
 
 /// Load `#[ast]` child slots from Rust syntax sources (authoritative over shape-only mirrors).
-pub fn collect_traversal_entries(analysis_src: &Path) -> Result<Vec<TraversalTypeEntry>, std::io::Error> {
+pub fn collect_traversal_entries(
+    analysis_src: &Path,
+) -> Result<Vec<TraversalTypeEntry>, std::io::Error> {
     let files = crate::syntax_helpers::load_syntax_files(analysis_src)?;
     let mut out = Vec::new();
     for (rel, file) in &files {
@@ -103,7 +105,9 @@ fn traversal_entry_from_item(item: &Item, source_rel_path: &str) -> Option<Trave
                 match &v.fields {
                     Fields::Named(nf) => {
                         for f in &nf.named {
-                            if let Some(slot) = field_to_slot(f, &format!("{vname}::{}", f.ident.as_ref()?)) {
+                            if let Some(slot) =
+                                field_to_slot(f, &format!("{vname}::{}", f.ident.as_ref()?))
+                            {
                                 slots.push(slot);
                             }
                         }
@@ -195,7 +199,8 @@ pub fn emit_node_kind_bd(reflect_rs: &Path) -> Result<String, std::io::Error> {
     let kinds = reflect_sdk_node_kind_names(reflect_rs)?;
     let mut lines = vec![
         format!("{BANNER}"),
-        "/// Classification tokens for syntax query (mirrors `beskid_analysis::query::NodeKind`).".into(),
+        "/// Classification tokens for syntax query (mirrors `beskid_analysis::query::NodeKind`)."
+            .into(),
         format!("pub enum NodeKind"),
         "{".into(),
     ];
@@ -364,7 +369,10 @@ pub fn emit_traversal_sdk(
         nodes_dir.join("TraversalManifest.bd"),
         emit_traversal_manifest_bd(&entries),
     )?;
-    fs::write(nodes_dir.join("Descendants.bd"), emit_descendants_contract_bd())?;
+    fs::write(
+        nodes_dir.join("Descendants.bd"),
+        emit_descendants_contract_bd(),
+    )?;
     fs::write(nodes_dir.join("Visit.bd"), emit_visit_contract_bd())?;
 
     Ok(names)

@@ -2,15 +2,15 @@
 
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::{Args, Subcommand};
 
 use beskid_template::{
-    count_selectors, instantiate_template, install_template, list_templates, parse_kind_filter,
-    parse_symbol_flag, uninstall_template, InstantiateTemplateRequest, InstallTemplateRequest,
-    ListTemplatesRequest, TemplateSelector, UninstallTemplateRequest,
+    InstallTemplateRequest, InstantiateTemplateRequest, ListTemplatesRequest, TemplateSelector,
+    UninstallTemplateRequest, count_selectors, install_template, instantiate_template,
+    list_templates, parse_kind_filter, parse_symbol_flag, uninstall_template,
 };
-use beskid_tools::registry::{parse_package_selector, RegistryConnectConfig};
+use beskid_tools::registry::{RegistryConnectConfig, parse_package_selector};
 
 #[derive(Args, Debug)]
 pub struct NewArgs {
@@ -169,11 +169,7 @@ pub fn execute(args: NewArgs) -> Result<()> {
 }
 
 fn execute_list(args: ListArgs) -> Result<()> {
-    let kind_filter = args
-        .kind
-        .as_deref()
-        .map(parse_kind_filter)
-        .transpose()?;
+    let kind_filter = args.kind.as_deref().map(parse_kind_filter).transpose()?;
 
     let output = list_templates(ListTemplatesRequest {
         kind_filter,
@@ -189,10 +185,7 @@ fn execute_list(args: ListArgs) -> Result<()> {
             .as_deref()
             .map(|v| format!("@{v}"))
             .unwrap_or_default();
-        let package = row
-            .package_id
-            .as_deref()
-            .unwrap_or("—");
+        let package = row.package_id.as_deref().unwrap_or("—");
         println!(
             "  {} — {} ({:?}){} [{:?}] {}{}",
             row.short_name, row.name, row.kind, yanked, row.source, package, version
@@ -233,7 +226,10 @@ fn execute_uninstall(args: UninstallArgs) -> Result<()> {
     if result.removed {
         println!("Uninstalled template `{}`.", args.short_name);
     } else {
-        println!("No installed template with short name `{}`.", args.short_name);
+        println!(
+            "No installed template with short name `{}`.",
+            args.short_name
+        );
     }
     Ok(())
 }
@@ -279,7 +275,10 @@ fn execute_instantiate(short_name: Option<String>, flags: InstantiateFlags) -> R
     Ok(())
 }
 
-fn build_selector(short_name: Option<String>, flags: &InstantiateFlags) -> Result<TemplateSelector> {
+fn build_selector(
+    short_name: Option<String>,
+    flags: &InstantiateFlags,
+) -> Result<TemplateSelector> {
     if let Some(path) = &flags.path {
         return Ok(TemplateSelector::Path(path.clone()));
     }

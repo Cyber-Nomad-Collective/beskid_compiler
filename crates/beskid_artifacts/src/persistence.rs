@@ -7,7 +7,7 @@ use std::sync::Mutex;
 static ARTIFACT_STORE_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 use crate::fingerprint::grammar_revision;
-use crate::manifest::{ArtifactManifest, ARTIFACT_SCHEMA_VERSION};
+use crate::manifest::{ARTIFACT_SCHEMA_VERSION, ArtifactManifest};
 use crate::snapshot::{
     AstUnitSnapshot, HirUnitSnapshot, decode_ast, decode_hir, encode_ast, encode_hir,
 };
@@ -58,8 +58,7 @@ impl ArtifactStore {
     pub fn is_manifest_current(&self) -> bool {
         self.manifest()
             .map(|m| {
-                m.grammar_rev == grammar_revision()
-                    && m.schema_version == ARTIFACT_SCHEMA_VERSION
+                m.grammar_rev == grammar_revision() && m.schema_version == ARTIFACT_SCHEMA_VERSION
             })
             .unwrap_or(false)
     }
@@ -102,11 +101,7 @@ impl ArtifactStore {
         Some(snapshot)
     }
 
-    pub fn write_unit(
-        &self,
-        ast: &AstUnitSnapshot,
-        hir: &HirUnitSnapshot,
-    ) -> std::io::Result<()> {
+    pub fn write_unit(&self, ast: &AstUnitSnapshot, hir: &HirUnitSnapshot) -> std::io::Result<()> {
         let _guard = ARTIFACT_STORE_WRITE_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -114,7 +109,10 @@ impl ArtifactStore {
         let fp = &ast.meta.content_fingerprint;
         let paths = self.unit_paths(fp);
         fs::create_dir_all(&paths.unit_dir)?;
-        write_atomically(&paths.meta, serde_json::to_string_pretty(&ast.meta)?.as_bytes())?;
+        write_atomically(
+            &paths.meta,
+            serde_json::to_string_pretty(&ast.meta)?.as_bytes(),
+        )?;
         write_atomically(&paths.ast, &encode_ast(ast).map_err(io_err)?)?;
         write_atomically(&paths.hir, &encode_hir(hir).map_err(io_err)?)?;
         Ok(())

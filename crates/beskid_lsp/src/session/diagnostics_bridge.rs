@@ -23,11 +23,5 @@ pub async fn analyze_document_for_state(
         write.configure_db_for_project(&plan.project_root);
     }
     let mut db = write.compilation_db.lock().expect("compilation db lock");
-    analyze_document(
-        Some(&mut db),
-        uri,
-        source,
-        cached,
-        compilation_context,
-    )
+    analyze_document(Some(&mut db), uri, source, cached, compilation_context)
 }

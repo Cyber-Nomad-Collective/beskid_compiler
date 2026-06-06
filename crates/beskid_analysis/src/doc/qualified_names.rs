@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use crate::resolve::symbol::symbol_key;
 use crate::resolve::items::{ItemInfo, ItemKind};
+use crate::resolve::symbol::symbol_key;
 use crate::resolve::symbol_lookup::qualified_name;
 use crate::resolve::{ModuleGraph, Resolution};
 
@@ -36,7 +36,11 @@ fn join_path_segments(segments: &[String]) -> String {
     segments.join("::")
 }
 
-fn legacy_qualified_name(item: &ItemInfo, resolution: &Resolution, cache: &HashMap<usize, String>) -> String {
+fn legacy_qualified_name(
+    item: &ItemInfo,
+    resolution: &Resolution,
+    cache: &HashMap<usize, String>,
+) -> String {
     if let Some(parent_id) = item.parent_id {
         let parent_qn = cache
             .get(&parent_id.0)
@@ -60,19 +64,15 @@ fn legacy_qualified_name(item: &ItemInfo, resolution: &Resolution, cache: &HashM
 pub fn qualified_names_for_items(resolution: &Resolution) -> HashMap<usize, String> {
     let mut out = HashMap::new();
     for item in &resolution.items {
-        let qn = qualified_name(resolution, item.id).unwrap_or_else(|| {
-            legacy_qualified_name(item, resolution, &out)
-        });
+        let qn = qualified_name(resolution, item.id)
+            .unwrap_or_else(|| legacy_qualified_name(item, resolution, &out));
         out.insert(item.id.0, qn);
     }
     out
 }
 
 fn type_kind_links_to_item(kind: ItemKind) -> bool {
-    matches!(
-        kind,
-        ItemKind::Type | ItemKind::Enum | ItemKind::Contract
-    )
+    matches!(kind, ItemKind::Type | ItemKind::Enum | ItemKind::Contract)
 }
 
 /// Lookup keys for resolving `refItemId` and `@ref` targets (`qualifiedName` first).

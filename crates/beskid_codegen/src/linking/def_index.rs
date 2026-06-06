@@ -3,10 +3,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use beskid_analysis::hir::{HirFunctionDefinition, HirItem, HirMethodDefinition, HirProgram};
 use beskid_analysis::paths::{same_file, unit_path_key};
-use beskid_analysis::hir::{
-    HirFunctionDefinition, HirItem, HirMethodDefinition, HirProgram,
-};
 use beskid_analysis::projects::assembly::UnitHir;
 use beskid_analysis::resolve::{ItemId, ItemInfo, ItemKind, Resolution, SymbolId};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
@@ -143,11 +141,10 @@ fn find_function_in_items_inner<'a>(
         if let HirItem::InlineModule(module) = &item.node {
             let ptr = module.node.items.as_ptr() as usize;
             if modules.insert(ptr)
-                && let Some(def) =
-                    find_function_in_items_inner(&module.node.items, span, modules)
-                {
-                    return Some(def);
-                }
+                && let Some(def) = find_function_in_items_inner(&module.node.items, span, modules)
+            {
+                return Some(def);
+            }
         }
     }
     None
@@ -193,9 +190,10 @@ fn find_method_in_items_inner<'a>(
         if let HirItem::InlineModule(module) = &item.node {
             let ptr = module.node.items.as_ptr() as usize;
             if modules.insert(ptr)
-                && let Some(def) = find_method_in_items_inner(&module.node.items, span, modules) {
-                    return Some(def);
-                }
+                && let Some(def) = find_method_in_items_inner(&module.node.items, span, modules)
+            {
+                return Some(def);
+            }
         }
     }
     None

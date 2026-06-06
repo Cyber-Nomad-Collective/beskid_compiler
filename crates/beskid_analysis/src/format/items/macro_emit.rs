@@ -1,13 +1,12 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::items::{MacroFragmentKind, MacroParameter};
-use crate::syntax::{
-    MacroDefinition, MacroInvocation, MacroMetavariable, Spanned,
-};
+use crate::syntax::{MacroDefinition, MacroInvocation, MacroMetavariable, Spanned};
 use std::fmt::Write;
 
 impl Emit for MacroFragmentKind {
     fn emit<W: Write>(&self, w: &mut W, _cx: &mut EmitCtx) -> Result<(), EmitError> {
-        w.write_str(crate::macros::fragment_kind_keyword(*self)).map_err(EmitError)
+        w.write_str(crate::macros::fragment_kind_keyword(*self))
+            .map_err(EmitError)
     }
 }
 

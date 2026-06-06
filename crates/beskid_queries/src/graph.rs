@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use beskid_analysis::projects::assembly::ProgramAssembly;
 use beskid_analysis::projects::model::AssemblyOptions;
-use beskid_analysis::projects::{assemble_program_with_materializer, AssemblyError};
+use beskid_analysis::projects::{AssemblyError, assemble_program_with_materializer};
 use beskid_analysis::projects::{CompilePlan, PreparedProjectWorkspace};
 
 use crate::db::{BeskidDatabase, Db};
@@ -15,7 +15,11 @@ use crate::stats::record_query_miss;
 use crate::unit::{seed_file_from_disk, unit_imports};
 
 /// Discovered unit paths for an entry (query boundary marker).
-pub fn discovered_units(_db: &dyn Db, _project: ProjectSession, _entry_path: PathBuf) -> Vec<String> {
+pub fn discovered_units(
+    _db: &dyn Db,
+    _project: ProjectSession,
+    _entry_path: PathBuf,
+) -> Vec<String> {
     record_query_miss();
     Vec::new()
 }
@@ -41,7 +45,9 @@ pub fn reverse_dependents(
         let grammar = db.grammar_revision_input();
         for path in &candidate_paths {
             let imports = unit_imports(db, project, grammar, path.clone());
-            if imports.iter().any(|dep| dep == &current_key || dep.ends_with(&current_key))
+            if imports
+                .iter()
+                .any(|dep| dep == &current_key || dep.ends_with(&current_key))
                 && !invalidated.iter().any(|p| p == path)
             {
                 invalidated.push(path.clone());

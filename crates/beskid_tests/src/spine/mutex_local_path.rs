@@ -4,8 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use beskid_analysis::services::{
-    compile_front_end_from_resolved_input, parse_program_with_source_name, resolve_input,
-    FrontEndOptions, ResolvedInput,
+    FrontEndOptions, ResolvedInput, compile_front_end_from_resolved_input,
+    parse_program_with_source_name, resolve_input,
 };
 use beskid_analysis::syntax::{Node, Statement};
 
@@ -13,11 +13,9 @@ use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 #[test]
 fn typed_let_mutex_name_is_not_split_on_mut_keyword() {
-    let program = parse_program_with_source_name(
-        "test.bd",
-        "test t { Mutex mutex = Mutex.Create(); }",
-    )
-    .expect("parse typed let with mutex name");
+    let program =
+        parse_program_with_source_name("test.bd", "test t { Mutex mutex = Mutex.Create(); }")
+            .expect("parse typed let with mutex name");
     let Node::TestDefinition(test) = &program.node.items[0].node else {
         panic!("expected test item");
     };
@@ -27,9 +25,8 @@ fn typed_let_mutex_name_is_not_split_on_mut_keyword() {
     assert_eq!(let_stmt.node.name.node.name, "mutex");
 
     let root = compiler_workspace_root();
-    let entry = root.join(
-        "corelib/beskid_corelib/tests/corelib_tests/src/concurrency/MutexTryLockTests.bd",
-    );
+    let entry = root
+        .join("corelib/beskid_corelib/tests/corelib_tests/src/concurrency/MutexTryLockTests.bd");
     if entry.is_file() {
         let source = fs::read_to_string(&entry).expect("read file");
         let program = parse_program_with_source_name(&entry.display().to_string(), &source)
@@ -55,9 +52,8 @@ fn typed_let_mutex_name_is_not_split_on_mut_keyword() {
 #[test]
 fn mutex_try_lock_tests_front_end_typechecks() {
     let root = compiler_workspace_root();
-    let entry = root.join(
-        "corelib/beskid_corelib/tests/corelib_tests/src/concurrency/MutexTryLockTests.bd",
-    );
+    let entry = root
+        .join("corelib/beskid_corelib/tests/corelib_tests/src/concurrency/MutexTryLockTests.bd");
     if !entry.is_file() {
         return;
     }
@@ -72,15 +68,7 @@ fn mutex_try_lock_tests_front_end_typechecks() {
     let source = fs::read_to_string(&entry).expect("read MutexTryLockTests.bd");
 
     let resolved = with_cwd_at_workspace_root(&root, || {
-        resolve_input(
-            Some(&entry),
-            Some(&project_root),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve")
+        resolve_input(Some(&entry), Some(&project_root), None, None, false, false).expect("resolve")
     });
 
     let plan = resolved.compile_plan.expect("compile plan");

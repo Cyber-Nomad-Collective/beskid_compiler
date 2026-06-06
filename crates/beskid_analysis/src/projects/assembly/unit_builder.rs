@@ -10,15 +10,17 @@ use crate::artifacts::{
 };
 use crate::projects::assembly::loader::import_paths_from_source_full;
 
+use super::loader::AssemblyError;
 use super::loader::expand_syntax_for_assembly;
 use super::{SourceUnit, UnitHir, build_hir_units};
-use super::loader::AssemblyError;
 
 /// Builds `(SourceUnit, UnitHir)` with artifact persistence and optional Salsa delegate.
 pub struct UnitBuilder<'a> {
     project_root: PathBuf,
     store: ArtifactStore,
-    salsa_build: Option<&'a (dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync)>,
+    salsa_build: Option<
+        &'a (dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync),
+    >,
 }
 
 impl<'a> UnitBuilder<'a> {
@@ -32,15 +34,23 @@ impl<'a> UnitBuilder<'a> {
 
     pub fn with_salsa_build(
         mut self,
-        build: &'a (dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync),
+        build: &'a (
+                dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync
+            ),
     ) -> Self {
         self.salsa_build = Some(build);
         self
     }
 
-    pub fn build_unit(&self, path: &Path, source: &str) -> Result<(SourceUnit, UnitHir), AssemblyError> {
+    pub fn build_unit(
+        &self,
+        path: &Path,
+        source: &str,
+    ) -> Result<(SourceUnit, UnitHir), AssemblyError> {
         let fp = content_fingerprint(source);
-        if let (Some(ast_snap), Some(hir_snap)) = (self.store.read_ast(&fp), self.store.read_hir(&fp)) {
+        if let (Some(ast_snap), Some(hir_snap)) =
+            (self.store.read_ast(&fp), self.store.read_hir(&fp))
+        {
             if ast_snap.meta.source_len == source.len()
                 && let Ok(unit) = source_unit_from_ast_snapshot(&ast_snap, source)
                 && let Ok(hir) = unit_hir_from_hir_snapshot(path.to_path_buf(), &unit, &hir_snap)

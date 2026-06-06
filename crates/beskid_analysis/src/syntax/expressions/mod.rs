@@ -1,7 +1,7 @@
 //! Expression AST: operators, calls, control-flow expressions, literals, and patterns.
 
-pub mod assign_expression;
 pub mod array_literal_expression;
+pub mod assign_expression;
 pub mod binary_expression;
 pub mod block_expression;
 pub mod call_expression;
@@ -27,7 +27,6 @@ pub mod try_expression;
 pub mod unary_expression;
 
 pub use array_literal_expression::ArrayLiteralExpression;
-pub use index_expression::IndexExpression;
 pub use assign_expression::{AssignExpression, AssignOp};
 pub use binary_expression::{BinaryExpression, BinaryOp};
 pub use block_expression::BlockExpression;
@@ -35,6 +34,7 @@ pub use call_expression::CallExpression;
 pub use enum_constructor_expression::EnumConstructorExpression;
 pub use expression::Expression;
 pub use grouped_expression::GroupedExpression;
+pub use index_expression::IndexExpression;
 pub use lambda_expression::{LambdaExpression, LambdaParameter};
 pub use literal::Literal;
 pub use literal_expression::LiteralExpression;

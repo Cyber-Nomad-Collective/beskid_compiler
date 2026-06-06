@@ -134,10 +134,9 @@ fn module_index_resolve_entry_succeeds_for_corelib_mvp_main() {
             "expected WriteLine in resolution items"
         );
 
-        let use_io = resolution
-            .items
-            .iter()
-            .find(|item| item.kind == beskid_analysis::resolve::ItemKind::Use && item.name == "Output");
+        let use_io = resolution.items.iter().find(|item| {
+            item.kind == beskid_analysis::resolve::ItemKind::Use && item.name == "Output"
+        });
         assert!(
             use_io.is_none(),
             "use aliases should not remain as callable scope items"
@@ -198,9 +197,10 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
             .resolve_entry(&assembly.entry_unit().program)
             .expect("resolve syscall tests entry");
         assert!(
-            resolution.items.iter().any(|item| {
-                item.name == "AssertTrue" && item.kind == ItemKind::Function
-            }),
+            resolution
+                .items
+                .iter()
+                .any(|item| { item.name == "AssertTrue" && item.kind == ItemKind::Function }),
             "expected AssertTrue in merged resolution"
         );
     });
@@ -282,12 +282,6 @@ fn assemble_with_thread_cap(
     unsafe {
         std::env::set_var("BESKID_ASSEMBLY_THREADS", threads.to_string());
     }
-    assemble_program(
-        plan,
-        workspace,
-        entry_path,
-        Some(entry_source),
-        options,
-    )
-    .expect("assemble with thread cap")
+    assemble_program(plan, workspace, entry_path, Some(entry_source), options)
+        .expect("assemble with thread cap")
 }

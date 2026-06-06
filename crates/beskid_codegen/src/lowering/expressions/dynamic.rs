@@ -45,10 +45,7 @@ pub fn emit_dynamic_cell_create(
         &[types::I64, pointer_type()],
         Some(pointer_type()),
     );
-    let shape_val = ctx
-        .builder
-        .ins()
-        .iconst(types::I64, i64::from(shape_id));
+    let shape_val = ctx.builder.ins().iconst(types::I64, i64::from(shape_id));
     let call = ctx.builder.ins().call(func_ref, &[shape_val, payload]);
     ctx.builder.inst_results(call)[0]
 }
@@ -65,14 +62,8 @@ pub fn emit_dynamic_cell_wrap(
         &[types::I64, pointer_type()],
         Some(pointer_type()),
     );
-    let shape_val = ctx
-        .builder
-        .ins()
-        .iconst(types::I64, i64::from(shape_id));
-    let call = ctx
-        .builder
-        .ins()
-        .call(func_ref, &[shape_val, static_ptr]);
+    let shape_val = ctx.builder.ins().iconst(types::I64, i64::from(shape_id));
+    let call = ctx.builder.ins().call(func_ref, &[shape_val, static_ptr]);
     ctx.builder.inst_results(call)[0]
 }
 
@@ -110,18 +101,12 @@ pub fn emit_dynamic_map_aot(
         &[types::I64, types::I64, pointer_type(), pointer_type()],
         Some(types::I32),
     );
-    let src_shape_val = ctx
+    let src_shape_val = ctx.builder.ins().iconst(types::I64, i64::from(src_shape));
+    let dst_shape_val = ctx.builder.ins().iconst(types::I64, i64::from(dst_shape));
+    let call = ctx
         .builder
         .ins()
-        .iconst(types::I64, i64::from(src_shape));
-    let dst_shape_val = ctx
-        .builder
-        .ins()
-        .iconst(types::I64, i64::from(dst_shape));
-    let call = ctx.builder.ins().call(
-        func_ref,
-        &[src_shape_val, dst_shape_val, src_ptr, dst_out],
-    );
+        .call(func_ref, &[src_shape_val, dst_shape_val, src_ptr, dst_out]);
     ctx.builder.inst_results(call)[0]
 }
 
@@ -138,10 +123,7 @@ pub fn emit_dynamic_map_fallback(
         &[pointer_type(), types::I64, pointer_type()],
         Some(types::I32),
     );
-    let dst_shape_val = ctx
-        .builder
-        .ins()
-        .iconst(types::I64, i64::from(dst_shape));
+    let dst_shape_val = ctx.builder.ins().iconst(types::I64, i64::from(dst_shape));
     let call = ctx
         .builder
         .ins()
@@ -152,11 +134,11 @@ pub fn emit_dynamic_map_fallback(
 #[cfg(test)]
 mod dynamic_clif_tests {
     use super::*;
-    use crate::lowering::node_context::NodeLoweringContext;
     use crate::lowering::context::CodegenContext;
     use crate::lowering::function::FunctionLoweringState;
-    use beskid_analysis::resolve::module_graph::ModuleGraph;
+    use crate::lowering::node_context::NodeLoweringContext;
     use beskid_analysis::resolve::Resolution;
+    use beskid_analysis::resolve::module_graph::ModuleGraph;
     use beskid_analysis::types::{TypeResult, TypeTable};
     use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
     use std::collections::HashMap;

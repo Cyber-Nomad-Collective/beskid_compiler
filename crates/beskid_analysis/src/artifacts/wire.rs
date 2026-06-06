@@ -1,12 +1,13 @@
 //! Postcard encode/decode for `SourceUnit` and `UnitHir` snapshots.
 
 use beskid_artifacts::{
-    AstUnitSnapshot, HirUnitSnapshot, UnitArtifactMeta, content_fingerprint,
-    grammar_revision,
+    AstUnitSnapshot, HirUnitSnapshot, UnitArtifactMeta, content_fingerprint, grammar_revision,
 };
-use postcard::{Error as PostcardError};
+use postcard::Error as PostcardError;
 
-use crate::artifacts::hir_wire::{decode_hir_program as decode_hir_marker, encode_hir_program as encode_hir_marker};
+use crate::artifacts::hir_wire::{
+    decode_hir_program as decode_hir_marker, encode_hir_program as encode_hir_marker,
+};
 use crate::projects::assembly::{SourceUnit, UnitHir};
 use crate::syntax::{Program, Spanned};
 
@@ -18,7 +19,10 @@ pub fn decode_syntax_program(bytes: &[u8]) -> Result<Spanned<Program>, PostcardE
     postcard::from_bytes(bytes)
 }
 
-pub fn source_unit_snapshot(unit: &SourceUnit, imports: &[String]) -> Result<AstUnitSnapshot, PostcardError> {
+pub fn source_unit_snapshot(
+    unit: &SourceUnit,
+    imports: &[String],
+) -> Result<AstUnitSnapshot, PostcardError> {
     let fp = content_fingerprint(&unit.source);
     let program_wire = encode_syntax_program(&unit.program)?;
     Ok(AstUnitSnapshot::new(

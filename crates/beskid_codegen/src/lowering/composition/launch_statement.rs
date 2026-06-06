@@ -23,9 +23,7 @@ use beskid_abi::{
     SYM_COMPOSITION_SHUTDOWN,
 };
 use beskid_analysis::syntax::{LaunchStatement, Spanned};
-use cranelift_codegen::ir::{
-    AbiParam, ExtFuncData, ExternalName, InstBuilder, Signature, types,
-};
+use cranelift_codegen::ir::{AbiParam, ExtFuncData, ExternalName, InstBuilder, Signature, types};
 use cranelift_codegen::isa::CallConv;
 
 pub(crate) fn lower_launch_statement(
@@ -41,9 +39,7 @@ pub(crate) fn lower_launch_statement(
     Ok(())
 }
 
-fn emit_container_create(
-    ctx: &mut NodeLoweringContext<'_, '_>,
-) -> cranelift_codegen::ir::Value {
+fn emit_container_create(ctx: &mut NodeLoweringContext<'_, '_>) -> cranelift_codegen::ir::Value {
     let mut sig = Signature::new(CallConv::SystemV);
     sig.returns.push(AbiParam::new(pointer_type()));
     let sig_ref = ctx.builder.func.import_signature(sig);

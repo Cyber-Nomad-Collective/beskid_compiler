@@ -302,7 +302,10 @@ project {
 "#;
     let m = parse_manifest(src).expect("artifactPolicy = clean_rebuild");
     let mod_section = m.project.mod_section.expect("mod section");
-    assert_eq!(mod_section.artifact_policy.as_deref(), Some("clean_rebuild"));
+    assert_eq!(
+        mod_section.artifact_policy.as_deref(),
+        Some("clean_rebuild")
+    );
 }
 
 #[test]

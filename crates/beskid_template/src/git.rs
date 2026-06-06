@@ -19,10 +19,7 @@ pub fn git_cache_dir(key: &str) -> PathBuf {
     beskid_config_root().join("templates").join("git").join(key)
 }
 
-pub fn clone_or_update(
-    spec: &GitTemplateRef,
-    install: bool,
-) -> TemplateResult<PathBuf> {
+pub fn clone_or_update(spec: &GitTemplateRef, install: bool) -> TemplateResult<PathBuf> {
     let key = cache_key(spec);
     let dest = git_cache_dir(&key);
     if dest.join(".beskid").join("template.json").is_file() && !install {

@@ -74,7 +74,7 @@ type Bad {
 
 #[test]
 fn duplicate_field_and_method_name_errors_on_resolve() {
-    use beskid_analysis::hir::{lower_program, normalize_program, AstProgram, HirProgram};
+    use beskid_analysis::hir::{AstProgram, HirProgram, lower_program, normalize_program};
     use beskid_analysis::resolve::{ResolveError, Resolver};
     use beskid_analysis::syntax::Spanned;
 
@@ -108,7 +108,7 @@ fn inline_method_call_typechecks() {
     use std::path::PathBuf;
 
     use beskid_analysis::services::{
-        compile_front_end_from_resolved_input, resolve_input, FrontEndOptions, ResolvedInput,
+        FrontEndOptions, ResolvedInput, compile_front_end_from_resolved_input, resolve_input,
     };
 
     use crate::projects::with_cwd_at_workspace_root;
@@ -118,9 +118,8 @@ fn inline_method_call_typechecks() {
         .and_then(|p| p.parent())
         .expect("compiler workspace root")
         .to_path_buf();
-    let entry = root.join(
-        "corelib/beskid_corelib/tests/corelib_tests/src/concurrency/MutexTryLockTests.bd",
-    );
+    let entry = root
+        .join("corelib/beskid_corelib/tests/corelib_tests/src/concurrency/MutexTryLockTests.bd");
     if !entry.is_file() {
         return;
     }
@@ -135,15 +134,7 @@ fn inline_method_call_typechecks() {
     let source = std::fs::read_to_string(&entry).expect("read MutexTryLockTests.bd");
 
     let resolved = with_cwd_at_workspace_root(&root, || {
-        resolve_input(
-            Some(&entry),
-            Some(&project_root),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve")
+        resolve_input(Some(&entry), Some(&project_root), None, None, false, false).expect("resolve")
     });
 
     let plan = resolved.compile_plan.expect("compile plan");

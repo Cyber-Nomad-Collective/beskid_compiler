@@ -6,35 +6,33 @@ mod api_tier;
 mod callable;
 mod edit;
 mod graph_link;
-mod path_rel;
 mod item_shape;
+mod path_rel;
 mod qualified_names;
 mod refs;
 mod render;
 mod type_format;
 mod validate;
 
-pub use api_signatures::{
-    apply_signature_to_item, build_item_signature, hir_programs_by_path,
-};
+pub use api_signatures::{apply_signature_to_item, build_item_signature, hir_programs_by_path};
 pub use api_snapshot::{
     API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
-    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, API_JSON_SCHEMA_VERSION_GRAPH_V3, ApiDocItem,
-    ApiDocRoot, ApiDocumentationPointer, ApiGenericParameterDoc, ApiItemSignature, ApiLocation,
+    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, API_JSON_SCHEMA_VERSION_GRAPH_V3, ApiDocItem, ApiDocRoot,
+    ApiDocumentationPointer, ApiGenericParameterDoc, ApiItemSignature, ApiLocation,
     ApiParameterDoc, ApiSymbolKey, ApiTypeAnnotation, ItemDocArgument, ItemDocStructured,
 };
 pub use api_tier::{
     TIER_STANDARD, TIER_SUPPORTED, TIER_UNSTABLE, parse_tier_directive, resolve_item_tiers,
 };
-pub use graph_link::{
-    ApiDocLinkContext, ApiDocPackageRoots, assign_declaring_packages,
-    fill_member_ids_from_parents, link_api_doc_library_tree,
-};
-pub use path_rel::{build_api_doc_link_context, path_looks_absolute, relativize_api_doc_paths};
-pub use qualified_names::{display_name_for_item, module_path_for_item, qualified_names_for_items};
 pub use callable::callable_signatures_for_span;
 pub use edit::{DocCommentEdit, doc_comment_edit_for_offset};
+pub use graph_link::{
+    ApiDocLinkContext, ApiDocPackageRoots, assign_declaring_packages, fill_member_ids_from_parents,
+    link_api_doc_library_tree,
+};
 pub use item_shape::{enum_variant_names_for_span, generic_param_names_for_span};
+pub use path_rel::{build_api_doc_link_context, path_looks_absolute, relativize_api_doc_paths};
+pub use qualified_names::{display_name_for_item, module_path_for_item, qualified_names_for_items};
 pub use refs::{DocRefLinkContext, ref_path_resolves, resolve_ref_markdown};
 pub use render::ResolvedDoc;
 pub use validate::collect_doc_diagnostics;
@@ -84,11 +82,8 @@ pub fn build_item_docs_markdown(
             continue;
         }
         let md = render_doc_body(&leading.normalized_source, resolution, item, docs_ref_links);
-        let structured = extract_structured_doc(
-            &leading.normalized_source,
-            Some(resolution),
-            docs_ref_links,
-        );
+        let structured =
+            extract_structured_doc(&leading.normalized_source, Some(resolution), docs_ref_links);
         out[item.id.0] = Some(ResolvedDoc {
             markdown: md,
             structured,
@@ -244,10 +239,8 @@ pub fn build_item_docs_for_resolution(
     programs: &[(&Path, &Program)],
     docs_ref_links: Option<&DocRefLinkContext>,
 ) -> Vec<Option<ResolvedDoc>> {
-    let mut caches: HashMap<
-        std::path::PathBuf,
-        HashMap<(usize, usize), LeadingDocComment>,
-    > = HashMap::new();
+    let mut caches: HashMap<std::path::PathBuf, HashMap<(usize, usize), LeadingDocComment>> =
+        HashMap::new();
     for (path, program) in programs {
         let mut by_span = HashMap::new();
         for (span, doc_opt) in flatten_leading_docs(program) {
@@ -277,17 +270,9 @@ pub fn build_item_docs_for_resolution(
         if leading.normalized_source.trim().is_empty() {
             continue;
         }
-        let md = render_doc_body(
-            &leading.normalized_source,
-            resolution,
-            item,
-            docs_ref_links,
-        );
-        let structured = extract_structured_doc(
-            &leading.normalized_source,
-            Some(resolution),
-            docs_ref_links,
-        );
+        let md = render_doc_body(&leading.normalized_source, resolution, item, docs_ref_links);
+        let structured =
+            extract_structured_doc(&leading.normalized_source, Some(resolution), docs_ref_links);
         out[item.id.0] = Some(ResolvedDoc {
             markdown: md,
             structured,
@@ -322,11 +307,7 @@ fn extract_structured_doc(
             DocSyntaxRule::RefInline => {
                 let inner = inner_text(&piece, DocSyntaxRule::inner);
                 if let Some(res) = resolution {
-                    summary.push_str(&resolve_ref_markdown(
-                        &inner,
-                        res,
-                        docs_ref_links,
-                    ));
+                    summary.push_str(&resolve_ref_markdown(&inner, res, docs_ref_links));
                 } else {
                     summary.push_str(piece.as_str());
                 }
@@ -575,7 +556,8 @@ mod structured_doc_tests {
 
     #[test]
     fn parses_arg_returns_and_variant_tags() {
-        let body = "Summary line.\n@arg(x) param docs\n@returns return text\n@variant(Blue) blue tone";
+        let body =
+            "Summary line.\n@arg(x) param docs\n@returns return text\n@variant(Blue) blue tone";
         let doc = extract_structured_doc(body, None, None).expect("structured doc");
         assert_eq!(doc.summary_markdown.as_deref(), Some("Summary line."));
         assert_eq!(doc.returns_markdown.as_deref(), Some("return text"));

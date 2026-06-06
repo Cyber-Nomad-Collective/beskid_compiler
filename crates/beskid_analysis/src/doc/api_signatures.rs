@@ -5,12 +5,12 @@ use std::path::PathBuf;
 
 use crate::hir::{
     AstProgram, HirContractMethodSignature, HirEnumDefinition, HirEnumVariant, HirField,
-    HirFunctionDefinition, HirItem, HirMethodDefinition, HirParameter,
-    HirProgram, HirTypeDefinition, lower_program as lower_hir_program, normalize_program,
+    HirFunctionDefinition, HirItem, HirMethodDefinition, HirParameter, HirProgram,
+    HirTypeDefinition, lower_program as lower_hir_program, normalize_program,
 };
 use crate::projects::assembly::SourceUnit;
-use crate::resolve::items::{ItemInfo, ItemKind};
 use crate::resolve::Resolution;
+use crate::resolve::items::{ItemInfo, ItemKind};
 use crate::syntax::{SpanInfo, Spanned};
 
 use super::api_snapshot::{
@@ -34,7 +34,10 @@ fn spans_equal(a: SpanInfo, b: SpanInfo) -> bool {
     a.start == b.start && a.end == b.end
 }
 
-fn find_decl_at_span<'a>(program: &'a Spanned<HirProgram>, span: SpanInfo) -> Option<HirDeclAtSpan<'a>> {
+fn find_decl_at_span<'a>(
+    program: &'a Spanned<HirProgram>,
+    span: SpanInfo,
+) -> Option<HirDeclAtSpan<'a>> {
     for item in &program.node.items {
         if let Some(found) = find_decl_in_item(item, span) {
             return Some(found);
@@ -53,9 +56,10 @@ fn find_decl_in_item<'a>(item: &'a Spanned<HirItem>, span: SpanInfo) -> Option<H
             HirItem::ContractDefinition(def) => {
                 for node in &def.node.items {
                     if let crate::hir::HirContractNode::MethodSignature(sig) = &node.node
-                        && spans_equal(node.span, span) {
-                            return Some(HirDeclAtSpan::ContractMethod(sig));
-                        }
+                        && spans_equal(node.span, span)
+                    {
+                        return Some(HirDeclAtSpan::ContractMethod(sig));
+                    }
                 }
                 None
             }
@@ -138,9 +142,7 @@ fn parameter_modifier(parameter: &HirParameter) -> Option<String> {
 fn generic_parameters_from_names(names: &[String]) -> Vec<ApiGenericParameterDoc> {
     names
         .iter()
-        .map(|name| ApiGenericParameterDoc {
-            name: name.clone(),
-        })
+        .map(|name| ApiGenericParameterDoc { name: name.clone() })
         .collect()
 }
 
@@ -201,13 +203,16 @@ fn build_from_decl(
                 .join(", ");
             sig.return_type = return_ty;
             sig.parameters = params;
-            sig.generic_parameters =
-                generic_parameters_from_names(&def.node.generics.iter().map(|g| g.node.name.clone()).collect::<Vec<_>>());
+            sig.generic_parameters = generic_parameters_from_names(
+                &def.node
+                    .generics
+                    .iter()
+                    .map(|g| g.node.name.clone())
+                    .collect::<Vec<_>>(),
+            );
             sig.signature = Some(format!(
                 "{} {}({})",
-                ret_display,
-                def.node.name.node.name,
-                param_display
+                ret_display, def.node.name.node.name, param_display
             ));
         }
         HirDeclAtSpan::Method(def) => {
@@ -233,9 +238,7 @@ fn build_from_decl(
             sig.parameters = params;
             sig.signature = Some(format!(
                 "{} {}({})",
-                ret_display,
-                def.node.name.node.name,
-                param_display
+                ret_display, def.node.name.node.name, param_display
             ));
         }
         HirDeclAtSpan::Type(def) => {
@@ -251,10 +254,7 @@ fn build_from_decl(
             } else {
                 format!("<{}>", generics.join(", "))
             };
-            sig.signature = Some(format!(
-                "type {}{}",
-                def.node.name.node.name, g
-            ));
+            sig.signature = Some(format!("type {}{}", def.node.name.node.name, g));
         }
         HirDeclAtSpan::Enum(def) => {
             let generics: Vec<_> = def
@@ -269,10 +269,7 @@ fn build_from_decl(
             } else {
                 format!("<{}>", generics.join(", "))
             };
-            sig.signature = Some(format!(
-                "enum {}{}",
-                def.node.name.node.name, g
-            ));
+            sig.signature = Some(format!("enum {}{}", def.node.name.node.name, g));
         }
         HirDeclAtSpan::EnumVariant(variant) => {
             sig.signature = Some(format!("enum variant {}", variant.node.name.node.name));
@@ -281,21 +278,13 @@ fn build_from_decl(
             let field_type = type_annotation_for_type(&field.node.ty, resolution);
             let display = field_type.display.clone();
             sig.field_type = Some(field_type);
-            sig.signature = Some(format!(
-                "{} {}",
-                display,
-                field.node.name.node.name
-            ));
+            sig.signature = Some(format!("{} {}", display, field.node.name.node.name));
         }
         HirDeclAtSpan::Parameter(parameter) => {
             let field_type = type_annotation_for_type(&parameter.node.ty, resolution);
             let display = field_type.display.clone();
             sig.field_type = Some(field_type);
-            sig.signature = Some(format!(
-                "{} {}",
-                display,
-                parameter.node.name.node.name
-            ));
+            sig.signature = Some(format!("{} {}", display, parameter.node.name.node.name));
         }
         HirDeclAtSpan::ContractMethod(method) => {
             let return_ty = return_annotation(method.node.return_type.as_ref(), resolution);
@@ -313,9 +302,7 @@ fn build_from_decl(
             sig.parameters = params;
             sig.signature = Some(format!(
                 "{} {}({})",
-                ret_display,
-                method.node.name.node.name,
-                param_display
+                ret_display, method.node.name.node.name, param_display
             ));
         }
     }
@@ -346,9 +333,10 @@ fn hir_for_item<'a>(
     fallback: Option<&'a Spanned<HirProgram>>,
 ) -> Option<&'a Spanned<HirProgram>> {
     if let Some(path) = item.source_path.as_ref()
-        && let Some(hir) = hir_by_path.get(path) {
-            return Some(hir);
-        }
+        && let Some(hir) = hir_by_path.get(path)
+    {
+        return Some(hir);
+    }
     fallback
 }
 
@@ -389,10 +377,7 @@ pub fn build_item_signature(
 }
 
 /// Apply [`ApiItemSignature`] fields onto an [`super::api_snapshot::ApiDocItem`].
-pub fn apply_signature_to_item(
-    item: &mut super::api_snapshot::ApiDocItem,
-    sig: ApiItemSignature,
-) {
+pub fn apply_signature_to_item(item: &mut super::api_snapshot::ApiDocItem, sig: ApiItemSignature) {
     item.display_name = sig.display_name;
     item.module_path = sig.module_path;
     item.signature = sig.signature;

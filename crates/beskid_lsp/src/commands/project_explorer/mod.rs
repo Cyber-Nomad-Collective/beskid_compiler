@@ -74,9 +74,13 @@ pub fn handle_project_explorer_command(
             let kind = graph::graph_kind_from_args(arguments.as_deref());
             let entry_uri = graph::optional_uri_arg(arguments.as_deref(), "entryUri");
             let workspace_uri = graph::optional_uri_arg(arguments.as_deref(), "workspaceUri");
-            Ok(Some(
-                graph::get_graph(&uri, kind, entry_uri.as_deref(), workspace_uri.as_deref(), compilation_db)?,
-            ))
+            Ok(Some(graph::get_graph(
+                &uri,
+                kind,
+                entry_uri.as_deref(),
+                workspace_uri.as_deref(),
+                compilation_db,
+            )?))
         }
         CMD_GET_PROJECT_DEPENDENCIES => {
             let uri = required_uri_arg(&arguments, "projectUri")?;
@@ -260,9 +264,12 @@ dependencies:
         let settings = serde_json::json!({ "beskid": { "focusedProjectUri": uri } });
         let focused = focused_project_from_configuration(&settings).expect("some");
         assert!(focused.is_some());
-        let settings_legacy = serde_json::json!({ "beskid": { "selectedProjectUri": uri.clone() } });
-        assert!(focused_project_from_configuration(&settings_legacy)
-            .expect("some")
-            .is_some());
+        let settings_legacy =
+            serde_json::json!({ "beskid": { "selectedProjectUri": uri.clone() } });
+        assert!(
+            focused_project_from_configuration(&settings_legacy)
+                .expect("some")
+                .is_some()
+        );
     }
 }

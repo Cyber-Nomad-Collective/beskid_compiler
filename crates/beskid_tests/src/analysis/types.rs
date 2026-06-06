@@ -32,7 +32,9 @@ fn assert_type_case(case: &TypeCase) {
 }
 
 fn matches_non_iterable_for_target(errors: &[TypeError]) -> bool {
-    errors.iter().any(|e| matches!(e, TypeError::NonIterableForTarget { .. }))
+    errors
+        .iter()
+        .any(|e| matches!(e, TypeError::NonIterableForTarget { .. }))
 }
 
 fn matches_iterable_next_not_option(errors: &[TypeError]) -> bool {
@@ -78,11 +80,15 @@ fn matches_enum_constructor_mismatch(errors: &[TypeError]) -> bool {
 }
 
 fn matches_type_mismatch(errors: &[TypeError]) -> bool {
-    errors.iter().any(|e| matches!(e, TypeError::TypeMismatch { .. }))
+    errors
+        .iter()
+        .any(|e| matches!(e, TypeError::TypeMismatch { .. }))
 }
 
 fn matches_invalid_binary_op(errors: &[TypeError]) -> bool {
-    errors.iter().any(|e| matches!(e, TypeError::InvalidBinaryOp { .. }))
+    errors
+        .iter()
+        .any(|e| matches!(e, TypeError::InvalidBinaryOp { .. }))
 }
 
 fn matches_unsupported_expression(errors: &[TypeError]) -> bool {
@@ -104,11 +110,15 @@ fn matches_invalid_event_invoke_scope(errors: &[TypeError]) -> bool {
 }
 
 fn matches_unknown_call_target(errors: &[TypeError]) -> bool {
-    errors.iter().any(|e| matches!(e, TypeError::UnknownCallTarget { .. }))
+    errors
+        .iter()
+        .any(|e| matches!(e, TypeError::UnknownCallTarget { .. }))
 }
 
 fn matches_non_bool_condition(errors: &[TypeError]) -> bool {
-    errors.iter().any(|e| matches!(e, TypeError::NonBoolCondition { .. }))
+    errors
+        .iter()
+        .any(|e| matches!(e, TypeError::NonBoolCondition { .. }))
 }
 
 fn matches_call_arity_mismatch(errors: &[TypeError]) -> bool {
@@ -136,7 +146,9 @@ fn matches_unknown_struct_field(errors: &[TypeError]) -> bool {
 }
 
 fn matches_invalid_try_target(errors: &[TypeError]) -> bool {
-    errors.iter().any(|e| matches!(e, TypeError::InvalidTryTarget { .. }))
+    errors
+        .iter()
+        .any(|e| matches!(e, TypeError::InvalidTryTarget { .. }))
 }
 
 struct CallKindCase {
@@ -146,10 +158,8 @@ struct CallKindCase {
 }
 
 fn assert_call_kind_case(case: &CallKindCase) {
-    let result = resolve_and_type(case.source).expect(&format!(
-        "{}: expected typing to succeed",
-        case.name
-    ));
+    let result =
+        resolve_and_type(case.source).expect(&format!("{}: expected typing to succeed", case.name));
     assert!(
         result.call_kinds.values().any(case.predicate),
         "{}: expected matching call kind, got {:?}",
@@ -439,10 +449,12 @@ fn typing_reports_return_mismatch() {
 
 #[test]
 fn typing_function_calls_succeeds() {
-    assert!(resolve_and_type(
-        "i64 add(i64 a, i64 b) { return a + b; } unit main() { i64 x = add(1, 2); }",
-    )
-    .is_ok());
+    assert!(
+        resolve_and_type(
+            "i64 add(i64 a, i64 b) { return a + b; } unit main() { i64 x = add(1, 2); }",
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -671,10 +683,12 @@ fn typing_enum_constructor_errors() {
 
 #[test]
 fn typing_accepts_nullary_enum_constructor_without_parens() {
-    assert!(resolve_and_type(
-        "enum Choice { Some(i64 value), None } unit main() { Choice x = Choice::None; }",
-    )
-    .is_ok());
+    assert!(
+        resolve_and_type(
+            "enum Choice { Some(i64 value), None } unit main() { Choice x = Choice::None; }",
+        )
+        .is_ok()
+    );
 }
 
 #[test]

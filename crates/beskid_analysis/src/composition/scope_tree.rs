@@ -23,9 +23,7 @@ pub fn merge_host_scopes(
                 if parent_id == ScopeId::GLOBAL {
                     None
                 } else {
-                    local
-                        .get(&parent_id)
-                        .map(|parent| parent.name.as_str())
+                    local.get(&parent_id).map(|parent| parent.name.as_str())
                 }
             });
 

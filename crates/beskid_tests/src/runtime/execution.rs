@@ -1,5 +1,5 @@
 use crate::support::runtime::{
-    aot_compile_only, aot_run_main_i64, aot_run_main_i32, build_aot_exe, validate_lowered,
+    aot_compile_only, aot_run_main_i32, aot_run_main_i64, build_aot_exe, validate_lowered,
 };
 
 #[test]

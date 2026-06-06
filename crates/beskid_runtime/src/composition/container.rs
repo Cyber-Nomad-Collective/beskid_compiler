@@ -185,7 +185,12 @@ impl RuntimeContainer {
             if !needs_eager {
                 continue;
             }
-            if self.registrations.get(&id).and_then(|r| r.factory.as_ref()).is_some() {
+            if self
+                .registrations
+                .get(&id)
+                .and_then(|r| r.factory.as_ref())
+                .is_some()
+            {
                 let ptr = self.create_instance(id)?;
                 singletons.push(ptr);
             }
@@ -330,7 +335,11 @@ impl RuntimeContainer {
                 Ok(ptr)
             }
             Lifetime::Scoped => {
-                let frame_idx = self.stack.depth().checked_sub(1).ok_or(ContainerError::NoActiveScope)?;
+                let frame_idx = self
+                    .stack
+                    .depth()
+                    .checked_sub(1)
+                    .ok_or(ContainerError::NoActiveScope)?;
                 let scope_key = self.active_scope_keys[frame_idx];
                 let key = (scope_key, id);
                 if let Some(ptr) = self.scoped_instances.get(&key) {
@@ -371,10 +380,7 @@ impl RuntimeContainer {
     }
 
     fn run_init(&mut self, id: RegistrationId, ptr: InstancePtr) {
-        let mut taken = self
-            .registrations
-            .get_mut(&id)
-            .and_then(|r| r.init.take());
+        let mut taken = self.registrations.get_mut(&id).and_then(|r| r.init.take());
         if let Some(init) = taken.as_mut() {
             init(ptr);
         }

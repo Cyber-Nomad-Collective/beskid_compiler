@@ -14,7 +14,10 @@ pub struct PostActionContext {
     pub strict: bool,
 }
 
-pub fn run_post_actions(actions: &[TemplatePostAction], ctx: &PostActionContext) -> TemplateResult<()> {
+pub fn run_post_actions(
+    actions: &[TemplatePostAction],
+    ctx: &PostActionContext,
+) -> TemplateResult<()> {
     for action in actions {
         run_one(action, ctx)?;
     }

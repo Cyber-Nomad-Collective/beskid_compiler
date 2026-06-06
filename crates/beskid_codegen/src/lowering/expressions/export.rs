@@ -19,14 +19,8 @@ pub struct ExportEntry {
 pub fn read_export_metadata(def: &Spanned<HirFunctionDefinition>) -> Option<ExportEntry> {
     let export = def.node.export_interface.as_ref()?;
     let beskid_name = def.node.name.node.name.clone();
-    let exported_symbol = export
-        .symbol
-        .clone()
-        .unwrap_or_else(|| beskid_name.clone());
-    let abi = export
-        .abi
-        .clone()
-        .unwrap_or_else(|| "C".to_string());
+    let exported_symbol = export.symbol.clone().unwrap_or_else(|| beskid_name.clone());
+    let abi = export.abi.clone().unwrap_or_else(|| "C".to_string());
     Some(ExportEntry {
         beskid_name,
         exported_symbol,
@@ -54,13 +48,19 @@ pub fn validate_export_function(
     if entry.abi != "C" {
         return Err(CodegenError::InvalidExport {
             span: def.span,
-            message: format!("unsupported export ABI `{}` (v0.3 supports `C` only)", entry.abi),
+            message: format!(
+                "unsupported export ABI `{}` (v0.3 supports `C` only)",
+                entry.abi
+            ),
         });
     }
 
     validate_ffi_signature(signature, pointer).map_err(|msg| CodegenError::InvalidExport {
         span: def.span,
-        message: format!("export signature not allowed for {}: {msg}", entry.exported_symbol),
+        message: format!(
+            "export signature not allowed for {}: {msg}",
+            entry.exported_symbol
+        ),
     })?;
 
     Ok(Some(entry))
@@ -77,7 +77,7 @@ fn collect_exports_from_items(
     items: &[Spanned<beskid_analysis::hir::HirItem>],
     out: &mut Vec<ExportEntry>,
 ) {
-    use beskid_analysis::hir::{HirItem, HirInlineModule};
+    use beskid_analysis::hir::{HirInlineModule, HirItem};
 
     for item in items {
         match &item.node {

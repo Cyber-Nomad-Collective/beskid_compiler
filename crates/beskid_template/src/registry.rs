@@ -7,7 +7,7 @@ use serde::Deserialize;
 use zip::ZipArchive;
 
 use crate::error::{TemplateError, TemplateResult};
-use crate::manifest::{load_manifest_from_template_root, TEMPLATE_MANIFEST_REL};
+use crate::manifest::{TEMPLATE_MANIFEST_REL, load_manifest_from_template_root};
 
 #[derive(Debug, Deserialize)]
 struct PackageJson {
@@ -26,7 +26,9 @@ pub fn extract_bpk_to_dir(bytes: &[u8], dest: &Path) -> TemplateResult<PathBuf> 
         .map_err(|e| TemplateError::Internal(format!("invalid .bpk zip: {e}")))?;
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| TemplateError::Internal(e.to_string()))?;
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| TemplateError::Internal(e.to_string()))?;
         let name = file.name().to_string();
         if name.ends_with('/') {
             continue;

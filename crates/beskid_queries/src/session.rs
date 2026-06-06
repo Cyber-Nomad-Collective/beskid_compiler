@@ -12,9 +12,7 @@ use beskid_analysis::services::{
 use beskid_pipeline::PipelineObserver;
 
 use crate::db::BeskidDatabase;
-use crate::entry::{
-    prepare_compilation_diagnostics_with_db, prepare_compilation_with_db,
-};
+use crate::entry::{prepare_compilation_diagnostics_with_db, prepare_compilation_with_db};
 
 thread_local! {
     static COMPILATION_DB: RefCell<BeskidDatabase> = RefCell::new(BeskidDatabase::default());
@@ -30,9 +28,8 @@ fn configure_db_in_place(db: &mut BeskidDatabase, project_root: &Path) {
     let canonical = project_root
         .canonicalize()
         .unwrap_or_else(|_| project_root.to_path_buf());
-    let already_configured = CONFIGURED_ROOT.with(|configured| {
-        configured.borrow().as_ref() == Some(&canonical)
-    });
+    let already_configured =
+        CONFIGURED_ROOT.with(|configured| configured.borrow().as_ref() == Some(&canonical));
     if already_configured {
         return;
     }

@@ -5,7 +5,9 @@ use std::sync::{Arc, OnceLock};
 
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::services::{PrepareMode, PrepareOptions, ResolvedInput, resolve_input};
-use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, program_assembly, with_db};
+use beskid_queries::{
+    configure_db_for_project, prepare_compilation_with_db, program_assembly, with_db,
+};
 
 use super::std_env_lock::std_dependency_env_lock;
 use super::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
@@ -44,11 +46,7 @@ pub fn with_project_test_env<F: FnOnce()>(project_root: &Path, f: F) {
 }
 
 /// Resolve a fixture through the analysis spine (no assembly yet).
-pub fn resolve_fixture(
-    fixture_root: &Path,
-    entry: &str,
-    target: &str,
-) -> ResolvedInput {
+pub fn resolve_fixture(fixture_root: &Path, entry: &str, target: &str) -> ResolvedInput {
     let root = fixture_root.to_path_buf();
     let entry_path = root.join(entry);
     resolve_input(
@@ -96,15 +94,8 @@ pub fn corelib_tests_project_root() -> PathBuf {
 pub fn resolve_corelib_tests_entry(entry_relative: &str) -> ResolvedInput {
     let root = corelib_tests_project_root();
     let entry_path = root.join("src").join(entry_relative);
-    resolve_input(
-        Some(&entry_path),
-        Some(&root),
-        None,
-        None,
-        false,
-        false,
-    )
-    .unwrap_or_else(|err| panic!("resolve corelib_tests entry {entry_relative}: {err}"))
+    resolve_input(Some(&entry_path), Some(&root), None, None, false, false)
+        .unwrap_or_else(|err| panic!("resolve corelib_tests entry {entry_relative}: {err}"))
 }
 
 /// Resolve and assemble a `corelib_tests` entry via Salsa [`program_assembly`].
@@ -153,15 +144,14 @@ pub fn shared_corelib_mvp_assembly() -> Arc<ProgramAssembly> {
 /// Like [`with_project_test_env`], but returns a value. Caller must already hold the cwd lock
 /// (e.g. via `with_project_test_env`); this helper must not re-enter `with_cwd_at_workspace_root`
 /// or tests deadlock on `PROJECT_TEST_CWD_LOCK`.
-fn with_project_test_env_return<T>(
-    project_root: &Path,
-    f: impl FnOnce(&Path) -> T,
-) -> T {
+fn with_project_test_env_return<T>(project_root: &Path, f: impl FnOnce(&Path) -> T) -> T {
     configure_db_for_project(project_root);
     f(project_root)
 }
 
-pub fn prepare_executable(resolved: &ResolvedInput) -> beskid_analysis::services::PreparedCompilation {
+pub fn prepare_executable(
+    resolved: &ResolvedInput,
+) -> beskid_analysis::services::PreparedCompilation {
     with_db(|db| {
         prepare_compilation_with_db(
             db,

@@ -14,8 +14,8 @@ use super::merge::merge_generated_syntax;
 use super::reparse::reparse_if_needed;
 use super::rewrite::run_rewriters;
 use super::types::{ModHostAnalyzeResult, ModHostGenerateResult, ModHostInput, ModHostSession};
-use crate::services::{SessionFingerprint, cached_semantic_snapshot};
 use super::validate::validate_registrations;
+use crate::services::{SessionFingerprint, cached_semantic_snapshot};
 
 pub fn run_through_generate(
     program: Spanned<Program>,
@@ -284,8 +284,9 @@ project {
         assert_eq!(generated.generator_outcomes.len(), 1);
 
         let composition_snapshot = generated.session.composition_snapshot_or_default();
-        let semantic_snapshot = crate::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-            .with_composition(&composition_snapshot);
+        let semantic_snapshot =
+            crate::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+                .with_composition(&composition_snapshot);
         let analyze = run_analyze_rewrite_with_invoker(
             generated.program,
             &generated.session,

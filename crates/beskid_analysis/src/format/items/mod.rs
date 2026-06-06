@@ -1,8 +1,8 @@
 mod attributes_emit;
 mod declarations_emit;
 mod functions_emit;
-mod macro_emit;
 mod helpers;
+mod macro_emit;
 mod root_emit;
 mod tests_emit;
 

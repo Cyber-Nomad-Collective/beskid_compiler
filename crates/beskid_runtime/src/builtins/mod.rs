@@ -4,9 +4,9 @@
 mod alloc;
 mod arrays;
 mod bytes;
-mod clocks;
 pub mod callback;
 mod channel;
+mod clocks;
 mod composition;
 mod dynamic;
 mod events;
@@ -23,20 +23,24 @@ mod test_helpers;
 mod version;
 mod wait_group;
 
-pub use alloc::alloc;
-pub use callback::{
-    CallbackTableEntry, beskid_register_callbacks, install_callback_trampoline, registered_callbacks,
+pub use crate::interop::register::{
+    HandlerTableEntry, beskid_register_handlers, bootstrap_dispatch_handlers,
 };
-pub use crate::interop::register::{HandlerTableEntry, beskid_register_handlers, bootstrap_dispatch_handlers};
+pub use alloc::alloc;
 pub use arrays::{array_len, array_new};
 pub use bytes::{
     bytes_compare, bytes_copy, bytes_from_str, bytes_get, bytes_set, str_from_bytes_utf8,
+};
+pub use callback::{
+    CallbackTableEntry, beskid_register_callbacks, install_callback_trampoline,
+    registered_callbacks,
 };
 pub use channel::{
     channel_close, channel_create, channel_receive, channel_receive_ptr, channel_receive_status,
     channel_receive_value, channel_send, channel_send_ptr, channel_try_receive,
     channel_try_receive_ptr, channel_try_send, channel_try_send_ptr,
 };
+pub use clocks::{clock_monotonic_nanos, clock_realtime_nanos};
 pub use composition::{
     composition_bind_plural, composition_container_create, composition_container_drop,
     composition_launch, composition_register, composition_resolve, composition_resolve_plural,
@@ -69,8 +73,9 @@ pub use hub::{
 #[cfg(feature = "metrics")]
 pub use metrics::*;
 pub use mutex::{mutex_create, mutex_lock, mutex_try_lock, mutex_unlock};
-pub use clocks::{clock_monotonic_nanos, clock_realtime_nanos};
-pub use panic_io::{panic, panic_str, syscall_read, syscall_read_bytes, syscall_write, syscall_write_bytes};
+pub use panic_io::{
+    panic, panic_str, syscall_read, syscall_read_bytes, syscall_write, syscall_write_bytes,
+};
 pub use strings::{str_concat, str_eq, str_from_i64, str_len, str_new, str_slice};
 pub use test_helpers::{test_bytes_len, test_bytes_ptr};
 pub use version::beskid_runtime_abi_version;

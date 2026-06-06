@@ -14,9 +14,7 @@ pub fn confirm_overwrite(path: &Path) -> Result<bool> {
 
 /// Ask whether to continue after a yanked package warning.
 pub fn confirm_yanked(package_id: &str, version: &str) -> Result<bool> {
-    print!(
-        "Package `{package_id}@{version}` is yanked. Continue? [y/N] "
-    );
+    print!("Package `{package_id}@{version}` is yanked. Continue? [y/N] ");
     io::stdout().flush()?;
     read_yes_no()
 }
@@ -24,5 +22,8 @@ pub fn confirm_yanked(package_id: &str, version: &str) -> Result<bool> {
 fn read_yes_no() -> Result<bool> {
     let mut line = String::new();
     io::stdin().read_line(&mut line)?;
-    Ok(matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
+    Ok(matches!(
+        line.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
 }

@@ -34,11 +34,7 @@ fn dynamic_named_alias_maps_to_cell_pointer_clif() {
     let dynamic_type_id = find_named_type_id_for_item(&typed, dynamic_item.id)
         .expect("expected named type id for dynamic alias");
 
-    assert!(is_dynamic_type_id(
-        &resolution,
-        &typed,
-        dynamic_type_id
-    ));
+    assert!(is_dynamic_type_id(&resolution, &typed, dynamic_type_id));
     assert_eq!(dynamic_clif_type(), pointer_type());
     assert_eq!(
         map_type_id_to_clif_with_dynamic(&resolution, &typed, dynamic_type_id),

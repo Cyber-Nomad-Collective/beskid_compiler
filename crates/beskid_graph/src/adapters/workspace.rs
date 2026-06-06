@@ -6,7 +6,7 @@ use beskid_analysis::projects::ProjectGraph;
 use crate::adapters::project::from_project_graph;
 use crate::compose::SpecBuilder;
 use crate::model::{GraphDocument, GraphKind, GraphNodeKind, NodeMetadata};
-use crate::render::{render_document, GraphError};
+use crate::render::{GraphError, render_document};
 
 /// Member project graphs keyed by member display name.
 pub fn from_workspace(
@@ -45,7 +45,9 @@ pub fn from_workspace(
             Some("lib"),
             NodeMetadata {
                 uri: graph.root_manifest_path.to_str().and_then(|s| {
-                    Path::new(s).parent().and_then(super::super::compose::path_to_uri)
+                    Path::new(s)
+                        .parent()
+                        .and_then(super::super::compose::path_to_uri)
                 }),
                 project_name: Some(member_name.clone()),
                 ..Default::default()
