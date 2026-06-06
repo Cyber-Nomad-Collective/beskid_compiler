@@ -37,8 +37,6 @@ MutKeyword = @{ "mut" ~ !(ASCII_ALPHANUMERIC | "_") }
 ModKeyword = { "mod" }
 UseKeyword = { "use" }
 PubKeyword = { "pub" }
-RefKeyword = { "ref" }
-OutKeyword = { "out" }
 TestKeyword = { "test" }
 SkipKeyword = { "skip" }
 SpawnKeyword = { "spawn" }
@@ -82,8 +80,6 @@ Keyword = {
       | ModKeyword
       | UseKeyword
       | PubKeyword
-      | RefKeyword
-      | OutKeyword
       | TestKeyword
       | SkipKeyword
       | SpawnKeyword
@@ -162,11 +158,10 @@ GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }
 
 TypeName = { PrimitiveType | Path }
 ArrayType = { TypeName ~ "[" ~ "]" }
-TypeReference = { "ref" ~ TypeName }
 FunctionType = { TypeName ~ "(" ~ BeskidTypeList? ~ ")" }
 ArrowFunctionType = { "(" ~ BeskidTypeList? ~ ")" ~ "=>" ~ BeskidType }
 BeskidTypeList = { BeskidType ~ ("," ~ BeskidType)* }
-BeskidType = { ArrowFunctionType | FunctionType | TypeReference | ArrayType | TypeName }
+BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeName }
 
 ////////////////////////////////////////////////////////////
 // 4) DEFINITIONS
@@ -184,8 +179,7 @@ ImplMethodWithDocs = { ((DocRun ~ ImplMethodDefinition) | ImplMethodDefinition) 
 ImplMethodDefinition = { Visibility? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ Block }
 ParameterList = { ParameterWithDocs ~ ("," ~ DocGap* ~ ParameterWithDocs)* }
 ParameterWithDocs = { (DocRun ~ Parameter) | Parameter }
-Parameter = { ParameterModifier? ~ BeskidType ~ MutKeyword? ~ Identifier }
-ParameterModifier = { "ref" | "out" }
+Parameter = { MutKeyword? ~ BeskidType ~ Identifier }
 
 FieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 FieldWithDocs = { (DocRun ~ Field) | Field }
@@ -244,15 +238,16 @@ LaunchStatement = { "launch" ~ Path ~ "(" ~ ArgumentList? ~ ")" ~ ";" }
 Statement = _{ LetStatement | ReturnStatement | BreakStatement | ContinueStatement | WhileStatement | ForStatement | IfStatement | WithStatement | LaunchStatement | ExpressionStatement }
 
 LetStatement = { TypedLetStatement | InferredLetStatement }
-TypedLetStatement = { BeskidType ~ MutKeyword? ~ Identifier ~ "=" ~ Expression ~ ";" }
-InferredLetStatement = { LetKeyword ~ Identifier ~ "=" ~ Expression ~ ";" }
+TypedLetStatement = { MutKeyword? ~ BeskidType ~ Identifier ~ "=" ~ Expression ~ ";" }
+InferredLetStatement = { LetKeyword ~ MutKeyword? ~ Identifier ~ "=" ~ Expression ~ ";" }
 TypeAnnotation = { ":" ~ BeskidType }
 
 ReturnStatement = { "return" ~ Expression? ~ ";" }
 BreakStatement = { "break" ~ ";" }
 ContinueStatement = { "continue" ~ ";" }
 
-IfStatement = { "if" ~ Expression ~ Block ~ ("else" ~ Block)? }
+IfStatement = { "if" ~ Expression ~ Block ~ ElsePart? }
+ElsePart = { ElseKeyword ~ (IfStatement | Block) }
 WhileStatement = { "while" ~ Expression ~ Block }
 ForStatement = { "for" ~ Identifier ~ "in" ~ Expression ~ Block }
 RangeExpression = { "range" ~ "(" ~ Expression ~ "," ~ Expression ~ ")" }
@@ -278,7 +273,7 @@ LogicalAndExpression = { EqualityExpression ~ ("&&" ~ EqualityExpression)* }
 EqualityExpression = { ComparisonExpression ~ (("===" | "!==" | "==" | "!=") ~ ComparisonExpression)* }
 ComparisonExpression = { AdditionExpression ~ (("<=" | ">=" | "<" | ">") ~ AdditionExpression)* }
 AdditionExpression = { MultiplicationExpression ~ (("+" | "-") ~ MultiplicationExpression)* }
-MultiplicationExpression = { UnaryExpression ~ (("*" | "/") ~ UnaryExpression)* }
+MultiplicationExpression = { UnaryExpression ~ (("*" | "/" | "%") ~ UnaryExpression)* }
 
 UnaryExpression = _{ SpawnUnary | PrefixUnary }
 SpawnUnary = { SpawnKeyword ~ PostfixExpression }

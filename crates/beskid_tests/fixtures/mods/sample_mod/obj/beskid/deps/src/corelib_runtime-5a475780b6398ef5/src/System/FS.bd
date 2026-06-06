@@ -1,84 +1,66 @@
-/// File system helper API.
-/// Tier 2 (Supported) — body wiring depends on the host-syscall path landing in `System.Syscall`.
-/// Signatures are stable for v0.3 so authors can call them today; bodies return deterministic
-/// errors until the runtime exposes filesystem syscalls beyond stdin/stdout/stderr.
+/// File system helper API backed by runtime `fs_*` builtins.
 /// @tier(supported)
 /// @ref(Core.Results.Result) envelopes for read/write helpers.
-/// @variant(NotFound) Requested path is missing in this v1 stub.
-/// @variant(PermissionDenied) Host denied access to the path.
-/// @variant(AlreadyExists) Target path already exists when an exclusive create was requested.
-/// @variant(InvalidPath) Input path is empty or otherwise rejected before reaching the host.
-/// @variant(Unknown) Catch-all for unimplemented or internal failures.
 pub enum FsError {
-    /// Path cannot be found.
     NotFound(string path),
-    /// Access rights are insufficient.
     PermissionDenied(string path),
-    /// Target path already exists.
     AlreadyExists(string path),
-    /// Input path was rejected by validation before the host syscall.
     InvalidPath(string path),
-    /// Uncategorized file system failure.
     Unknown(string message),
 }
 
-/// Reads full text content from a path.
-/// @tier(supported)
-/// @arg(path) Filesystem path to read.
-/// @returns File contents or an `FsError`. v1 returns `Unknown` for non-empty paths and
-/// `InvalidPath` for empty input.
 pub Core.Results.Result<string, FsError> ReadAllText(string path) {
     if path == "" {
         return Result::Error(FsError::InvalidPath(path));
     }
-    return Result::Error(FsError::Unknown("ReadAllText not implemented"));
+    string text = __fs_read_text(path);
+    if text == "" && !Exists(path) {
+        return Result::Error(FsError::NotFound(path));
+    }
+    return Result::Ok(text);
 }
 
-/// Writes full text content to a path.
-/// @tier(supported)
-/// @arg(path) Target filesystem path.
-/// @arg(text) Payload to persist.
-/// @returns `Ok(true)` for empty payloads on a non-empty path (no-op); otherwise `Unknown` until
-/// runtime support lands.
 pub Core.Results.Result<bool, FsError> WriteAllText(string path, string text) {
     if path == "" {
         return Result::Error(FsError::InvalidPath(path));
     }
     if text == "" {
+        i64 rc = __fs_write_text(path, "");
+        if rc == 0 {
+            return Result::Ok(true);
+        }
+        return Result::Error(FsError::Unknown("WriteAllText failed"));
+    }
+    i64 rc = __fs_write_text(path, text);
+    if rc == 0 {
         return Result::Ok(true);
     }
-    return Result::Error(FsError::Unknown("WriteAllText not implemented"));
+    return Result::Error(FsError::Unknown("WriteAllText failed"));
 }
 
-/// Removes a file or empty directory at a path.
-/// @tier(supported)
-/// @arg(path) Target filesystem path.
-/// @returns `Ok(true)` placeholder for the no-op (empty payload) case; otherwise `Unknown` until
-/// runtime support lands.
 pub Core.Results.Result<bool, FsError> Delete(string path) {
     if path == "" {
         return Result::Error(FsError::InvalidPath(path));
     }
-    return Result::Error(FsError::Unknown("Delete not implemented"));
+    if __fs_delete(path) == 0 {
+        return Result::Ok(true);
+    }
+    return Result::Error(FsError::Unknown("Delete failed"));
 }
 
-/// Creates a directory at `path` (parents are not created in v1).
-/// @tier(supported)
-/// @arg(path) Target directory path.
-/// @returns `Unknown` until runtime support lands; `InvalidPath` when input is empty.
 pub Core.Results.Result<bool, FsError> CreateDirectory(string path) {
     if path == "" {
         return Result::Error(FsError::InvalidPath(path));
     }
-    return Result::Error(FsError::Unknown("CreateDirectory not implemented"));
+    if __fs_mkdir(path) == 0 {
+        return Result::Ok(true);
+    }
+    return Result::Error(FsError::Unknown("CreateDirectory failed"));
 }
 
-/// Reports whether a path is considered to exist.
-/// Tier 2: returns `true` for any non-empty input until the runtime exposes a stat syscall;
-/// the contract is stable so authors can write conditional code today.
-/// @tier(supported)
-/// @arg(path) Candidate path string.
-/// @returns `true` when non-empty in this v1 heuristic stub; `false` for empty.
 pub bool Exists(string path) {
-    return path != "";
+    if path == "" {
+        return false;
+    }
+    return __fs_exists(path) == 1;
 }

@@ -3,14 +3,13 @@
 /// Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/type.rs` — `Type`.
 ///
 /// **Rust documentation** (from mirrored type):
-/// Beskid type expression: primitives, paths, arrays, references, and function types.
+/// Beskid type expression: primitives, paths, arrays, and function types.
 ///
 /// Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
 /// Implements `Node` via the host bridge; traverse with `Beskid.Compiler.Query` and `NodeRef`.
 /// @variant(Primitive) tuple (payload: Beskid.Syntax.Nodes.PrimitiveType)
 /// @variant(Complex) tuple (payload: Beskid.Syntax.Nodes.Path)
 /// @variant(Array) tuple (payload: Beskid.Syntax.Nodes.Type)
-/// @variant(Ref) tuple (payload: Beskid.Syntax.Nodes.Type)
 /// @variant(Function) struct { returnType: Beskid.Syntax.Nodes.Type, parameters: Beskid.Syntax.Nodes.TypeList }
 pub enum Type
 {
@@ -24,10 +23,6 @@ pub enum Type
     ),
     /// @variant(Array) tuple payload: payload (Beskid.Syntax.Nodes.Type).
     Array(
-        Beskid.Syntax.Nodes.Type payload,
-    ),
-    /// @variant(Ref) tuple payload: payload (Beskid.Syntax.Nodes.Type).
-    Ref(
         Beskid.Syntax.Nodes.Type payload,
     ),
     /// @variant(Function) struct payload: returnType: Beskid.Syntax.Nodes.Type, parameters: Beskid.Syntax.Nodes.TypeList.

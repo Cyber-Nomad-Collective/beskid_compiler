@@ -14,17 +14,12 @@ fn codegen_lowers_basic_function_to_clif() {
 }
 
 #[test]
-fn codegen_rejects_unsupported_expression_nodes_with_span() {
+fn codegen_lowers_spawn_expression() {
     let (hir, resolution, typed) =
-        lower_resolve_type("i64 main() { spawn { return 1; }; return 0; }");
-    let errors = lower_program(&hir, &resolution, &typed)
-        .expect_err("expected unsupported spawn node to fail codegen");
-    assert!(
-        errors
-            .iter()
-            .any(|error| matches!(error, CodegenError::UnsupportedNode { .. })),
-        "expected UnsupportedNode error, got: {errors:?}"
-    );
+        lower_resolve_type("i64 child() { return 42; } i64 main() { spawn child; return 0; }");
+    let artifact = lower_program(&hir, &resolution, &typed)
+        .expect("expected spawn expression lowering to succeed");
+    assert_eq!(artifact.functions.len(), 2);
 }
 
 #[test]
@@ -73,7 +68,7 @@ fn codegen_lowers_numeric_cast_intent_via_sextend_or_ireduce() {
 #[test]
 fn codegen_lowers_range_for_loop_with_assignment() {
     let source =
-        "i32 main() { i32 mut sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
+        "i32 main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected for loop lowering to succeed");
@@ -151,7 +146,7 @@ fn codegen_lowers_nullary_enum_constructor_without_parens() {
 
 #[test]
 fn codegen_lowers_while_with_break_and_continue() {
-    let source = "i32 main() { i32 mut i = 0; i32 mut sum = 0; while i < 5 { i = i + 1; if i == 2 { continue; } if i == 4 { break; } sum = sum + i; } return sum; }";
+    let source = "i32 main() { mut i32 i = 0; mut i32 sum = 0; while i < 5 { i = i + 1; if i == 2 { continue; } if i == 4 { break; } sum = sum + i; } return sum; }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact = lower_program(&hir, &resolution, &typed)
         .expect("expected while/break/continue lowering to succeed");
@@ -230,7 +225,7 @@ fn codegen_lowers_event_subscribe_unsubscribe_and_invoke() {
             unit Emit(string payload) { this.Created(payload); }
         }
         unit main() {
-            User mut u = User { };
+            mut User u = User { };
             unit(string) handler = (string payload) => { return; };
             u.Created += handler;
             u.Emit(\"hello\");
@@ -275,7 +270,7 @@ fn codegen_lowers_event_lifecycle_for_default_capacity_form() {
             unit Emit(string payload) { this.Created(payload); }
         }
         unit main() {
-            User mut u = User { };
+            mut User u = User { };
             unit(string) handler = (string payload) => { return; };
             u.Created += handler;
             u.Emit(\"hello\");

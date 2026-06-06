@@ -847,941 +847,8 @@
       - `Beskid::Compiler::Compilation` (`module`)
     - `Diagnostics`
       - `Beskid::Compiler::Diagnostics` (`module`)
-    - `Emit`
-      - `EmitFacadeVersion`
-        - `Beskid::Compiler::Emit::EmitFacadeVersion` (`function`)
-      - `ReflectSdkEmitContributionKind`
-        - `DiagnosticAttachment`
-          - `Beskid::Compiler::Emit::ReflectSdkEmitContributionKind::DiagnosticAttachment` (`enum_variant`)
-        - `LoweringDirective`
-          - `Beskid::Compiler::Emit::ReflectSdkEmitContributionKind::LoweringDirective` (`enum_variant`)
-        - `Metadata`
-          - `Beskid::Compiler::Emit::ReflectSdkEmitContributionKind::Metadata` (`enum_variant`)
-        - `Beskid::Compiler::Emit::ReflectSdkEmitContributionKind` (`enum`)
-      - `ReflectStub`
-        - `Beskid::Compiler::Emit::ReflectStub` (`type`)
-    - `Process`
-      - `ProcessFacadeVersion`
-        - `Beskid::Compiler::Process::ProcessFacadeVersion` (`function`)
-      - `ReflectSdkProcessHookKind`
-        - `CompilationScheduled`
-          - `Beskid::Compiler::Process::ReflectSdkProcessHookKind::CompilationScheduled` (`enum_variant`)
-        - `PhaseCompleted`
-          - `Beskid::Compiler::Process::ReflectSdkProcessHookKind::PhaseCompleted` (`enum_variant`)
-        - `PhaseEntered`
-          - `Beskid::Compiler::Process::ReflectSdkProcessHookKind::PhaseEntered` (`enum_variant`)
-        - `WorkspaceDiscovered`
-          - `Beskid::Compiler::Process::ReflectSdkProcessHookKind::WorkspaceDiscovered` (`enum_variant`)
-        - `Beskid::Compiler::Process::ReflectSdkProcessHookKind` (`enum`)
-      - `ReflectStub`
-        - `Beskid::Compiler::Process::ReflectStub` (`type`)
     - `Query`
       - `Beskid::Compiler::Query` (`module`)
-    - `Syntax`
-      - `Nodes`
-        - `AssignExpression`
-          - `AssignExpression`
-            - `target`
-              - `Beskid::Compiler::Syntax::Nodes::AssignExpression::AssignExpression::target` (`field`)
-            - `value`
-              - `Beskid::Compiler::Syntax::Nodes::AssignExpression::AssignExpression::value` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::AssignExpression::AssignExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::AssignExpression` (`module`)
-        - `AssignOp`
-          - `AssignOp`
-            - `AddAssign`
-              - `Beskid::Compiler::Syntax::Nodes::AssignOp::AssignOp::AddAssign` (`enum_variant`)
-            - `Assign`
-              - `Beskid::Compiler::Syntax::Nodes::AssignOp::AssignOp::Assign` (`enum_variant`)
-            - `SubAssign`
-              - `Beskid::Compiler::Syntax::Nodes::AssignOp::AssignOp::SubAssign` (`enum_variant`)
-            - `Beskid::Compiler::Syntax::Nodes::AssignOp::AssignOp` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::AssignOp` (`module`)
-        - `Attribute`
-          - `Attribute`
-            - `arguments`
-              - `Beskid::Compiler::Syntax::Nodes::Attribute::Attribute::arguments` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::Attribute::Attribute::name` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Attribute::Attribute` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::Attribute` (`module`)
-        - `AttributeArgument`
-          - `AttributeArgument`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::AttributeArgument::AttributeArgument::name` (`field`)
-            - `value`
-              - `Beskid::Compiler::Syntax::Nodes::AttributeArgument::AttributeArgument::value` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::AttributeArgument::AttributeArgument` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::AttributeArgument` (`module`)
-        - `AttributeArgumentList`
-          - `Beskid::Compiler::Syntax::Nodes::AttributeArgumentList` (`module`)
-        - `AttributeDeclaration`
-          - `AttributeDeclaration`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration::AttributeDeclaration::name` (`field`)
-            - `parameters`
-              - `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration::AttributeDeclaration::parameters` (`field`)
-            - `targets`
-              - `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration::AttributeDeclaration::targets` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration::AttributeDeclaration::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration::AttributeDeclaration` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration` (`module`)
-        - `AttributeList`
-          - `Beskid::Compiler::Syntax::Nodes::AttributeList` (`module`)
-        - `AttributeParameter`
-          - `AttributeParameter`
-            - `defaultValue`
-              - `Beskid::Compiler::Syntax::Nodes::AttributeParameter::AttributeParameter::defaultValue` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::AttributeParameter::AttributeParameter::name` (`field`)
-            - `ty`
-              - `Beskid::Compiler::Syntax::Nodes::AttributeParameter::AttributeParameter::ty` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::AttributeParameter::AttributeParameter` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::AttributeParameter` (`module`)
-        - `AttributeParameterList`
-          - `Beskid::Compiler::Syntax::Nodes::AttributeParameterList` (`module`)
-        - `AttributeTarget`
-          - `AttributeTarget`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::AttributeTarget::AttributeTarget::name` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::AttributeTarget::AttributeTarget` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::AttributeTarget` (`module`)
-        - `AttributeTargetList`
-          - `Beskid::Compiler::Syntax::Nodes::AttributeTargetList` (`module`)
-        - `BinaryExpression`
-          - `BinaryExpression`
-            - `left`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryExpression::BinaryExpression::left` (`field`)
-            - `op`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryExpression::BinaryExpression::op` (`field`)
-            - `right`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryExpression::BinaryExpression::right` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::BinaryExpression::BinaryExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::BinaryExpression` (`module`)
-        - `BinaryOp`
-          - `BinaryOp`
-            - `Add`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Add` (`enum_variant`)
-            - `And`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::And` (`enum_variant`)
-            - `Div`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Div` (`enum_variant`)
-            - `Eq`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Eq` (`enum_variant`)
-            - `Gt`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Gt` (`enum_variant`)
-            - `Gte`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Gte` (`enum_variant`)
-            - `IdentityEq`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::IdentityEq` (`enum_variant`)
-            - `IdentityNotEq`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::IdentityNotEq` (`enum_variant`)
-            - `Lt`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Lt` (`enum_variant`)
-            - `Lte`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Lte` (`enum_variant`)
-            - `Mul`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Mul` (`enum_variant`)
-            - `NotEq`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::NotEq` (`enum_variant`)
-            - `Or`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Or` (`enum_variant`)
-            - `Sub`
-              - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Sub` (`enum_variant`)
-            - `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::BinaryOp` (`module`)
-        - `Block`
-          - `Block`
-            - `statements`
-              - `Beskid::Compiler::Syntax::Nodes::Block::Block::statements` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Block::Block` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::Block` (`module`)
-        - `BlockExpression`
-          - `BlockExpression`
-            - `block`
-              - `Beskid::Compiler::Syntax::Nodes::BlockExpression::BlockExpression::block` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::BlockExpression::BlockExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::BlockExpression` (`module`)
-        - `BreakStatement`
-          - `BreakStatement`
-            - `Beskid::Compiler::Syntax::Nodes::BreakStatement::BreakStatement` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::BreakStatement` (`module`)
-        - `CallExpression`
-          - `CallExpression`
-            - `args`
-              - `Beskid::Compiler::Syntax::Nodes::CallExpression::CallExpression::args` (`field`)
-            - `callee`
-              - `Beskid::Compiler::Syntax::Nodes::CallExpression::CallExpression::callee` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::CallExpression::CallExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::CallExpression` (`module`)
-        - `ContinueStatement`
-          - `ContinueStatement`
-            - `Beskid::Compiler::Syntax::Nodes::ContinueStatement::ContinueStatement` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::ContinueStatement` (`module`)
-        - `ContractDefinition`
-          - `ContractDefinition`
-            - `attributes`
-              - `Beskid::Compiler::Syntax::Nodes::ContractDefinition::ContractDefinition::attributes` (`field`)
-            - `items`
-              - `Beskid::Compiler::Syntax::Nodes::ContractDefinition::ContractDefinition::items` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::ContractDefinition::ContractDefinition::name` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::ContractDefinition::ContractDefinition::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::ContractDefinition::ContractDefinition` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::ContractDefinition` (`module`)
-        - `ContractEmbedding`
-          - `ContractEmbedding`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::ContractEmbedding::ContractEmbedding::name` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::ContractEmbedding::ContractEmbedding` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::ContractEmbedding` (`module`)
-        - `ContractMethodSignature`
-          - `ContractMethodSignature`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::ContractMethodSignature::ContractMethodSignature::name` (`field`)
-            - `parameters`
-              - `Beskid::Compiler::Syntax::Nodes::ContractMethodSignature::ContractMethodSignature::parameters` (`field`)
-            - `returnType`
-              - `Beskid::Compiler::Syntax::Nodes::ContractMethodSignature::ContractMethodSignature::returnType` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::ContractMethodSignature::ContractMethodSignature` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::ContractMethodSignature` (`module`)
-        - `ContractNode`
-          - `ContractNode`
-            - `Embedding`
-              - `Beskid::Compiler::Syntax::Nodes::ContractNode::ContractNode::Embedding` (`enum_variant`)
-            - `MethodSignature`
-              - `Beskid::Compiler::Syntax::Nodes::ContractNode::ContractNode::MethodSignature` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::ContractNode::ContractNode::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::ContractNode::ContractNode::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::ContractNode::ContractNode` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::ContractNode` (`module`)
-        - `ContractNodeList`
-          - `Beskid::Compiler::Syntax::Nodes::ContractNodeList` (`module`)
-        - `EnumConstructorExpression`
-          - `EnumConstructorExpression`
-            - `args`
-              - `Beskid::Compiler::Syntax::Nodes::EnumConstructorExpression::EnumConstructorExpression::args` (`field`)
-            - `path`
-              - `Beskid::Compiler::Syntax::Nodes::EnumConstructorExpression::EnumConstructorExpression::path` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::EnumConstructorExpression::EnumConstructorExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::EnumConstructorExpression` (`module`)
-        - `EnumDefinition`
-          - `EnumDefinition`
-            - `generics`
-              - `Beskid::Compiler::Syntax::Nodes::EnumDefinition::EnumDefinition::generics` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::EnumDefinition::EnumDefinition::name` (`field`)
-            - `variants`
-              - `Beskid::Compiler::Syntax::Nodes::EnumDefinition::EnumDefinition::variants` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::EnumDefinition::EnumDefinition::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::EnumDefinition::EnumDefinition` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::EnumDefinition` (`module`)
-        - `EnumPath`
-          - `EnumPath`
-            - `typeName`
-              - `Beskid::Compiler::Syntax::Nodes::EnumPath::EnumPath::typeName` (`field`)
-            - `variant`
-              - `Beskid::Compiler::Syntax::Nodes::EnumPath::EnumPath::variant` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::EnumPath::EnumPath` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::EnumPath` (`module`)
-        - `EnumPattern`
-          - `EnumPattern`
-            - `items`
-              - `Beskid::Compiler::Syntax::Nodes::EnumPattern::EnumPattern::items` (`field`)
-            - `path`
-              - `Beskid::Compiler::Syntax::Nodes::EnumPattern::EnumPattern::path` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::EnumPattern::EnumPattern` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::EnumPattern` (`module`)
-        - `EnumVariant`
-          - `EnumVariant`
-            - `fields`
-              - `Beskid::Compiler::Syntax::Nodes::EnumVariant::EnumVariant::fields` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::EnumVariant::EnumVariant::name` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::EnumVariant::EnumVariant` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::EnumVariant` (`module`)
-        - `EnumVariantList`
-          - `Beskid::Compiler::Syntax::Nodes::EnumVariantList` (`module`)
-        - `Expression`
-          - `Expression`
-            - `Assign`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Assign` (`enum_variant`)
-            - `Binary`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Binary` (`enum_variant`)
-            - `Block`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Block` (`enum_variant`)
-            - `Call`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Call` (`enum_variant`)
-            - `EnumConstructor`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::EnumConstructor` (`enum_variant`)
-            - `Grouped`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Grouped` (`enum_variant`)
-            - `Lambda`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Lambda` (`enum_variant`)
-            - `Literal`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Literal` (`enum_variant`)
-            - `Match`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Match` (`enum_variant`)
-            - `Member`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Member` (`enum_variant`)
-            - `Path`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Path` (`enum_variant`)
-            - `StructLiteral`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::StructLiteral` (`enum_variant`)
-            - `Try`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Try` (`enum_variant`)
-            - `Unary`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Unary` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Expression::Expression` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::Expression` (`module`)
-        - `ExpressionList`
-          - `Beskid::Compiler::Syntax::Nodes::ExpressionList` (`module`)
-        - `ExpressionStatement`
-          - `ExpressionStatement`
-            - `expression`
-              - `Beskid::Compiler::Syntax::Nodes::ExpressionStatement::ExpressionStatement::expression` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::ExpressionStatement::ExpressionStatement` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::ExpressionStatement` (`module`)
-        - `Field`
-          - `Field`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::Field::Field::name` (`field`)
-            - `ty`
-              - `Beskid::Compiler::Syntax::Nodes::Field::Field::ty` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Field::Field` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::Field` (`module`)
-        - `FieldKind`
-          - `FieldKind`
-            - `Event`
-              - `Beskid::Compiler::Syntax::Nodes::FieldKind::FieldKind::Event` (`enum_variant`)
-            - `Value`
-              - `Beskid::Compiler::Syntax::Nodes::FieldKind::FieldKind::Value` (`enum_variant`)
-            - `Beskid::Compiler::Syntax::Nodes::FieldKind::FieldKind` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::FieldKind` (`module`)
-        - `FieldList`
-          - `Beskid::Compiler::Syntax::Nodes::FieldList` (`module`)
-        - `ForStatement`
-          - `ForStatement`
-            - `body`
-              - `Beskid::Compiler::Syntax::Nodes::ForStatement::ForStatement::body` (`field`)
-            - `iterable`
-              - `Beskid::Compiler::Syntax::Nodes::ForStatement::ForStatement::iterable` (`field`)
-            - `iterator`
-              - `Beskid::Compiler::Syntax::Nodes::ForStatement::ForStatement::iterator` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::ForStatement::ForStatement` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::ForStatement` (`module`)
-        - `FunctionDefinition`
-          - `FunctionDefinition`
-            - `body`
-              - `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::body` (`field`)
-            - `generics`
-              - `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::generics` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::name` (`field`)
-            - `parameters`
-              - `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::parameters` (`field`)
-            - `returnType`
-              - `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::returnType` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::FunctionDefinition` (`module`)
-        - `GroupedExpression`
-          - `GroupedExpression`
-            - `expr`
-              - `Beskid::Compiler::Syntax::Nodes::GroupedExpression::GroupedExpression::expr` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::GroupedExpression::GroupedExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::GroupedExpression` (`module`)
-        - `Identifier`
-          - `Identifier`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::Identifier::Identifier::name` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Identifier::Identifier` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::Identifier` (`module`)
-        - `IdentifierList`
-          - `Beskid::Compiler::Syntax::Nodes::IdentifierList` (`module`)
-        - `IfStatement`
-          - `IfStatement`
-            - `condition`
-              - `Beskid::Compiler::Syntax::Nodes::IfStatement::IfStatement::condition` (`field`)
-            - `elseBlock`
-              - `Beskid::Compiler::Syntax::Nodes::IfStatement::IfStatement::elseBlock` (`field`)
-            - `thenBlock`
-              - `Beskid::Compiler::Syntax::Nodes::IfStatement::IfStatement::thenBlock` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::IfStatement::IfStatement` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::IfStatement` (`module`)
-        - `InlineModule`
-          - `InlineModule`
-            - `attributes`
-              - `Beskid::Compiler::Syntax::Nodes::InlineModule::InlineModule::attributes` (`field`)
-            - `items`
-              - `Beskid::Compiler::Syntax::Nodes::InlineModule::InlineModule::items` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::InlineModule::InlineModule::name` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::InlineModule::InlineModule::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::InlineModule::InlineModule` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::InlineModule` (`module`)
-        - `LambdaExpression`
-          - `LambdaExpression`
-            - `body`
-              - `Beskid::Compiler::Syntax::Nodes::LambdaExpression::LambdaExpression::body` (`field`)
-            - `parameters`
-              - `Beskid::Compiler::Syntax::Nodes::LambdaExpression::LambdaExpression::parameters` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::LambdaExpression::LambdaExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::LambdaExpression` (`module`)
-        - `LambdaParameter`
-          - `LambdaParameter`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::LambdaParameter::LambdaParameter::name` (`field`)
-            - `ty`
-              - `Beskid::Compiler::Syntax::Nodes::LambdaParameter::LambdaParameter::ty` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::LambdaParameter::LambdaParameter` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::LambdaParameter` (`module`)
-        - `LambdaParameterList`
-          - `Beskid::Compiler::Syntax::Nodes::LambdaParameterList` (`module`)
-        - `LetStatement`
-          - `LetStatement`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::LetStatement::LetStatement::name` (`field`)
-            - `typeAnnotation`
-              - `Beskid::Compiler::Syntax::Nodes::LetStatement::LetStatement::typeAnnotation` (`field`)
-            - `value`
-              - `Beskid::Compiler::Syntax::Nodes::LetStatement::LetStatement::value` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::LetStatement::LetStatement` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::LetStatement` (`module`)
-        - `Literal`
-          - `Literal`
-            - `Bool`
-              - `Beskid::Compiler::Syntax::Nodes::Literal::Literal::Bool` (`enum_variant`)
-            - `Char`
-              - `Beskid::Compiler::Syntax::Nodes::Literal::Literal::Char` (`enum_variant`)
-            - `Float`
-              - `Beskid::Compiler::Syntax::Nodes::Literal::Literal::Float` (`enum_variant`)
-            - `Integer`
-              - `Beskid::Compiler::Syntax::Nodes::Literal::Literal::Integer` (`enum_variant`)
-            - `String`
-              - `Beskid::Compiler::Syntax::Nodes::Literal::Literal::String` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::Literal::Literal::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Literal::Literal::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Literal::Literal::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Literal::Literal::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Literal::Literal::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Literal::Literal` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::Literal` (`module`)
-        - `LiteralExpression`
-          - `LiteralExpression`
-            - `literal`
-              - `Beskid::Compiler::Syntax::Nodes::LiteralExpression::LiteralExpression::literal` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::LiteralExpression::LiteralExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::LiteralExpression` (`module`)
-        - `MatchArm`
-          - `MatchArm`
-            - `guard`
-              - `Beskid::Compiler::Syntax::Nodes::MatchArm::MatchArm::guard` (`field`)
-            - `pattern`
-              - `Beskid::Compiler::Syntax::Nodes::MatchArm::MatchArm::pattern` (`field`)
-            - `value`
-              - `Beskid::Compiler::Syntax::Nodes::MatchArm::MatchArm::value` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::MatchArm::MatchArm` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::MatchArm` (`module`)
-        - `MatchArmList`
-          - `Beskid::Compiler::Syntax::Nodes::MatchArmList` (`module`)
-        - `MatchExpression`
-          - `MatchExpression`
-            - `arms`
-              - `Beskid::Compiler::Syntax::Nodes::MatchExpression::MatchExpression::arms` (`field`)
-            - `scrutinee`
-              - `Beskid::Compiler::Syntax::Nodes::MatchExpression::MatchExpression::scrutinee` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::MatchExpression::MatchExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::MatchExpression` (`module`)
-        - `MemberExpression`
-          - `MemberExpression`
-            - `member`
-              - `Beskid::Compiler::Syntax::Nodes::MemberExpression::MemberExpression::member` (`field`)
-            - `target`
-              - `Beskid::Compiler::Syntax::Nodes::MemberExpression::MemberExpression::target` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::MemberExpression::MemberExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::MemberExpression` (`module`)
-        - `MetaDefinition`
-          - `MetaDefinition`
-            - `attributes`
-              - `Beskid::Compiler::Syntax::Nodes::MetaDefinition::MetaDefinition::attributes` (`field`)
-            - `entries`
-              - `Beskid::Compiler::Syntax::Nodes::MetaDefinition::MetaDefinition::entries` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::MetaDefinition::MetaDefinition::name` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::MetaDefinition::MetaDefinition::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::MetaDefinition::MetaDefinition` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::MetaDefinition` (`module`)
-        - `MethodDefinition`
-          - `MethodDefinition`
-            - `body`
-              - `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::body` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::name` (`field`)
-            - `parameters`
-              - `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::parameters` (`field`)
-            - `receiverType`
-              - `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::receiverType` (`field`)
-            - `returnType`
-              - `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::returnType` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::MethodDefinition` (`module`)
-        - `ModuleDeclaration`
-          - `ModuleDeclaration`
-            - `attributes`
-              - `Beskid::Compiler::Syntax::Nodes::ModuleDeclaration::ModuleDeclaration::attributes` (`field`)
-            - `path`
-              - `Beskid::Compiler::Syntax::Nodes::ModuleDeclaration::ModuleDeclaration::path` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::ModuleDeclaration::ModuleDeclaration::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::ModuleDeclaration::ModuleDeclaration` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::ModuleDeclaration` (`module`)
-        - `Node`
-          - `Node`
-            - `AttributeDeclaration`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::AttributeDeclaration` (`enum_variant`)
-            - `ContractDefinition`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::ContractDefinition` (`enum_variant`)
-            - `EnumDefinition`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::EnumDefinition` (`enum_variant`)
-            - `Function`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::Function` (`enum_variant`)
-            - `InlineModule`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::InlineModule` (`enum_variant`)
-            - `MetaDefinition`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::MetaDefinition` (`enum_variant`)
-            - `Method`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::Method` (`enum_variant`)
-            - `ModuleDeclaration`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::ModuleDeclaration` (`enum_variant`)
-            - `TestDefinition`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::TestDefinition` (`enum_variant`)
-            - `TypeDefinition`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::TypeDefinition` (`enum_variant`)
-            - `UseDeclaration`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::UseDeclaration` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Node::Node` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::Node` (`module`)
-        - `NodeList`
-          - `Beskid::Compiler::Syntax::Nodes::NodeList` (`module`)
-        - `OptionList`
-          - `Beskid::Compiler::Syntax::Nodes::OptionList` (`module`)
-        - `OptionalBlock`
-          - `OptionalBlock`
-            - `None`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalBlock::OptionalBlock::None` (`enum_variant`)
-            - `Some`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalBlock::OptionalBlock::Some` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalBlock::OptionalBlock::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::OptionalBlock::OptionalBlock` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::OptionalBlock` (`module`)
-        - `OptionalExpression`
-          - `OptionalExpression`
-            - `None`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalExpression::OptionalExpression::None` (`enum_variant`)
-            - `Some`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalExpression::OptionalExpression::Some` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalExpression::OptionalExpression::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::OptionalExpression::OptionalExpression` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::OptionalExpression` (`module`)
-        - `OptionalIdentifier`
-          - `OptionalIdentifier`
-            - `None`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalIdentifier::OptionalIdentifier::None` (`enum_variant`)
-            - `Some`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalIdentifier::OptionalIdentifier::Some` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalIdentifier::OptionalIdentifier::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::OptionalIdentifier::OptionalIdentifier` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::OptionalIdentifier` (`module`)
-        - `OptionalLeadingDocComment`
-          - `OptionalLeadingDocComment`
-            - `None`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalLeadingDocComment::OptionalLeadingDocComment::None` (`enum_variant`)
-            - `Some`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalLeadingDocComment::OptionalLeadingDocComment::Some` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalLeadingDocComment::OptionalLeadingDocComment::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::OptionalLeadingDocComment::OptionalLeadingDocComment` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::OptionalLeadingDocComment` (`module`)
-        - `OptionalParameterModifier`
-          - `OptionalParameterModifier`
-            - `None`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalParameterModifier::OptionalParameterModifier::None` (`enum_variant`)
-            - `Some`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalParameterModifier::OptionalParameterModifier::Some` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalParameterModifier::OptionalParameterModifier::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::OptionalParameterModifier::OptionalParameterModifier` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::OptionalParameterModifier` (`module`)
-        - `OptionalTestMetaSection`
-          - `OptionalTestMetaSection`
-            - `None`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalTestMetaSection::OptionalTestMetaSection::None` (`enum_variant`)
-            - `Some`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalTestMetaSection::OptionalTestMetaSection::Some` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalTestMetaSection::OptionalTestMetaSection::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::OptionalTestMetaSection::OptionalTestMetaSection` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::OptionalTestMetaSection` (`module`)
-        - `OptionalTestSkipSection`
-          - `OptionalTestSkipSection`
-            - `None`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalTestSkipSection::OptionalTestSkipSection::None` (`enum_variant`)
-            - `Some`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalTestSkipSection::OptionalTestSkipSection::Some` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalTestSkipSection::OptionalTestSkipSection::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::OptionalTestSkipSection::OptionalTestSkipSection` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::OptionalTestSkipSection` (`module`)
-        - `OptionalType`
-          - `OptionalType`
-            - `None`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalType::OptionalType::None` (`enum_variant`)
-            - `Some`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalType::OptionalType::Some` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::OptionalType::OptionalType::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::OptionalType::OptionalType` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::OptionalType` (`module`)
-        - `Optionalusize`
-          - `Optionalusize`
-            - `None`
-              - `Beskid::Compiler::Syntax::Nodes::Optionalusize::Optionalusize::None` (`enum_variant`)
-            - `Some`
-              - `Beskid::Compiler::Syntax::Nodes::Optionalusize::Optionalusize::Some` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::Optionalusize::Optionalusize::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Optionalusize::Optionalusize` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::Optionalusize` (`module`)
-        - `Parameter`
-          - `Parameter`
-            - `modifier`
-              - `Beskid::Compiler::Syntax::Nodes::Parameter::Parameter::modifier` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::Parameter::Parameter::name` (`field`)
-            - `ty`
-              - `Beskid::Compiler::Syntax::Nodes::Parameter::Parameter::ty` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Parameter::Parameter` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::Parameter` (`module`)
-        - `ParameterList`
-          - `Beskid::Compiler::Syntax::Nodes::ParameterList` (`module`)
-        - `ParameterModifier`
-          - `ParameterModifier`
-            - `Out`
-              - `Beskid::Compiler::Syntax::Nodes::ParameterModifier::ParameterModifier::Out` (`enum_variant`)
-            - `Ref`
-              - `Beskid::Compiler::Syntax::Nodes::ParameterModifier::ParameterModifier::Ref` (`enum_variant`)
-            - `Beskid::Compiler::Syntax::Nodes::ParameterModifier::ParameterModifier` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::ParameterModifier` (`module`)
-        - `Path`
-          - `Path`
-            - `segments`
-              - `Beskid::Compiler::Syntax::Nodes::Path::Path::segments` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Path::Path` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::Path` (`module`)
-        - `PathExpression`
-          - `PathExpression`
-            - `path`
-              - `Beskid::Compiler::Syntax::Nodes::PathExpression::PathExpression::path` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::PathExpression::PathExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::PathExpression` (`module`)
-        - `PathList`
-          - `Beskid::Compiler::Syntax::Nodes::PathList` (`module`)
-        - `PathSegment`
-          - `PathSegment`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::PathSegment::PathSegment::name` (`field`)
-            - `typeArgs`
-              - `Beskid::Compiler::Syntax::Nodes::PathSegment::PathSegment::typeArgs` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::PathSegment::PathSegment` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::PathSegment` (`module`)
-        - `PathSegmentList`
-          - `Beskid::Compiler::Syntax::Nodes::PathSegmentList` (`module`)
-        - `Pattern`
-          - `Pattern`
-            - `Enum`
-              - `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::Enum` (`enum_variant`)
-            - `Identifier`
-              - `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::Identifier` (`enum_variant`)
-            - `Literal`
-              - `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::Literal` (`enum_variant`)
-            - `Wildcard`
-              - `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::Wildcard` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::Pattern` (`module`)
-        - `PatternList`
-          - `Beskid::Compiler::Syntax::Nodes::PatternList` (`module`)
-        - `PrimitiveType`
-          - `PrimitiveType`
-            - `Bool`
-              - `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::Bool` (`enum_variant`)
-            - `Char`
-              - `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::Char` (`enum_variant`)
-            - `F64`
-              - `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::F64` (`enum_variant`)
-            - `I32`
-              - `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::I32` (`enum_variant`)
-            - `I64`
-              - `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::I64` (`enum_variant`)
-            - `String`
-              - `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::String` (`enum_variant`)
-            - `U8`
-              - `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::U8` (`enum_variant`)
-            - `Unit`
-              - `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::Unit` (`enum_variant`)
-            - `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::PrimitiveType` (`module`)
-        - `Program`
-          - `Program`
-            - `items`
-              - `Beskid::Compiler::Syntax::Nodes::Program::Program::items` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Program::Program` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::Program` (`module`)
-        - `RangeExpression`
-          - `RangeExpression`
-            - `end`
-              - `Beskid::Compiler::Syntax::Nodes::RangeExpression::RangeExpression::end` (`field`)
-            - `start`
-              - `Beskid::Compiler::Syntax::Nodes::RangeExpression::RangeExpression::start` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::RangeExpression::RangeExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::RangeExpression` (`module`)
-        - `ReturnStatement`
-          - `ReturnStatement`
-            - `value`
-              - `Beskid::Compiler::Syntax::Nodes::ReturnStatement::ReturnStatement::value` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::ReturnStatement::ReturnStatement` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::ReturnStatement` (`module`)
-        - `Statement`
-          - `Statement`
-            - `Break`
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::Break` (`enum_variant`)
-            - `Continue`
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::Continue` (`enum_variant`)
-            - `Expression`
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::Expression` (`enum_variant`)
-            - `For`
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::For` (`enum_variant`)
-            - `If`
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::If` (`enum_variant`)
-            - `Let`
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::Let` (`enum_variant`)
-            - `Return`
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::Return` (`enum_variant`)
-            - `While`
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::While` (`enum_variant`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Statement::Statement` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::Statement` (`module`)
-        - `StatementList`
-          - `Beskid::Compiler::Syntax::Nodes::StatementList` (`module`)
-        - `StructLiteralExpression`
-          - `StructLiteralExpression`
-            - `fields`
-              - `Beskid::Compiler::Syntax::Nodes::StructLiteralExpression::StructLiteralExpression::fields` (`field`)
-            - `path`
-              - `Beskid::Compiler::Syntax::Nodes::StructLiteralExpression::StructLiteralExpression::path` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::StructLiteralExpression::StructLiteralExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::StructLiteralExpression` (`module`)
-        - `StructLiteralField`
-          - `StructLiteralField`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::StructLiteralField::StructLiteralField::name` (`field`)
-            - `value`
-              - `Beskid::Compiler::Syntax::Nodes::StructLiteralField::StructLiteralField::value` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::StructLiteralField::StructLiteralField` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::StructLiteralField` (`module`)
-        - `StructLiteralFieldList`
-          - `Beskid::Compiler::Syntax::Nodes::StructLiteralFieldList` (`module`)
-        - `TestDefinition`
-          - `TestDefinition`
-            - `_meta`
-              - `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::_meta` (`field`)
-            - `_skip`
-              - `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::_skip` (`field`)
-            - `attributes`
-              - `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::attributes` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::name` (`field`)
-            - `statements`
-              - `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::statements` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::TestDefinition` (`module`)
-        - `TestMetaSection`
-          - `TestMetaSection`
-            - `entries`
-              - `Beskid::Compiler::Syntax::Nodes::TestMetaSection::TestMetaSection::entries` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::TestMetaSection::TestMetaSection` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::TestMetaSection` (`module`)
-        - `TestMetadataEntry`
-          - `TestMetadataEntry`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::TestMetadataEntry::TestMetadataEntry::name` (`field`)
-            - `value`
-              - `Beskid::Compiler::Syntax::Nodes::TestMetadataEntry::TestMetadataEntry::value` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::TestMetadataEntry::TestMetadataEntry` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::TestMetadataEntry` (`module`)
-        - `TestMetadataEntryList`
-          - `Beskid::Compiler::Syntax::Nodes::TestMetadataEntryList` (`module`)
-        - `TestSkipEntry`
-          - `TestSkipEntry`
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::TestSkipEntry::TestSkipEntry::name` (`field`)
-            - `value`
-              - `Beskid::Compiler::Syntax::Nodes::TestSkipEntry::TestSkipEntry::value` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::TestSkipEntry::TestSkipEntry` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::TestSkipEntry` (`module`)
-        - `TestSkipEntryList`
-          - `Beskid::Compiler::Syntax::Nodes::TestSkipEntryList` (`module`)
-        - `TestSkipSection`
-          - `TestSkipSection`
-            - `entries`
-              - `Beskid::Compiler::Syntax::Nodes::TestSkipSection::TestSkipSection::entries` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::TestSkipSection::TestSkipSection` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::TestSkipSection` (`module`)
-        - `TryExpression`
-          - `TryExpression`
-            - `expr`
-              - `Beskid::Compiler::Syntax::Nodes::TryExpression::TryExpression::expr` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::TryExpression::TryExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::TryExpression` (`module`)
-        - `Type`
-          - `Type`
-            - `Array`
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::Array` (`enum_variant`)
-            - `Complex`
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::Complex` (`enum_variant`)
-            - `Function`
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::Function` (`enum_variant`)
-            - `Primitive`
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::Primitive` (`enum_variant`)
-            - `Ref`
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::Ref` (`enum_variant`)
-            - `parameters`
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::parameters` (`field`)
-            - `payload`
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::payload` (`field`)
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::payload` (`field`)
-            - `returnType`
-              - `Beskid::Compiler::Syntax::Nodes::Type::Type::returnType` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::Type::Type` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::Type` (`module`)
-        - `TypeDefinition`
-          - `TypeDefinition`
-            - `conformances`
-              - `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition::conformances` (`field`)
-            - `fields`
-              - `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition::fields` (`field`)
-            - `generics`
-              - `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition::generics` (`field`)
-            - `name`
-              - `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition::name` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::TypeDefinition` (`module`)
-        - `TypeList`
-          - `Beskid::Compiler::Syntax::Nodes::TypeList` (`module`)
-        - `UnaryExpression`
-          - `UnaryExpression`
-            - `expr`
-              - `Beskid::Compiler::Syntax::Nodes::UnaryExpression::UnaryExpression::expr` (`field`)
-            - `op`
-              - `Beskid::Compiler::Syntax::Nodes::UnaryExpression::UnaryExpression::op` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::UnaryExpression::UnaryExpression` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::UnaryExpression` (`module`)
-        - `UnaryOp`
-          - `UnaryOp`
-            - `Neg`
-              - `Beskid::Compiler::Syntax::Nodes::UnaryOp::UnaryOp::Neg` (`enum_variant`)
-            - `Not`
-              - `Beskid::Compiler::Syntax::Nodes::UnaryOp::UnaryOp::Not` (`enum_variant`)
-            - `Beskid::Compiler::Syntax::Nodes::UnaryOp::UnaryOp` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::UnaryOp` (`module`)
-        - `UseDeclaration`
-          - `UseDeclaration`
-            - `alias`
-              - `Beskid::Compiler::Syntax::Nodes::UseDeclaration::UseDeclaration::alias` (`field`)
-            - `path`
-              - `Beskid::Compiler::Syntax::Nodes::UseDeclaration::UseDeclaration::path` (`field`)
-            - `visibility`
-              - `Beskid::Compiler::Syntax::Nodes::UseDeclaration::UseDeclaration::visibility` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::UseDeclaration::UseDeclaration` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::UseDeclaration` (`module`)
-        - `Visibility`
-          - `Visibility`
-            - `Private`
-              - `Beskid::Compiler::Syntax::Nodes::Visibility::Visibility::Private` (`enum_variant`)
-            - `Public`
-              - `Beskid::Compiler::Syntax::Nodes::Visibility::Visibility::Public` (`enum_variant`)
-            - `Beskid::Compiler::Syntax::Nodes::Visibility::Visibility` (`enum`)
-          - `Beskid::Compiler::Syntax::Nodes::Visibility` (`module`)
-        - `WhileStatement`
-          - `WhileStatement`
-            - `body`
-              - `Beskid::Compiler::Syntax::Nodes::WhileStatement::WhileStatement::body` (`field`)
-            - `condition`
-              - `Beskid::Compiler::Syntax::Nodes::WhileStatement::WhileStatement::condition` (`field`)
-            - `Beskid::Compiler::Syntax::Nodes::WhileStatement::WhileStatement` (`type`)
-          - `Beskid::Compiler::Syntax::Nodes::WhileStatement` (`module`)
-        - `Beskid::Compiler::Syntax::Nodes` (`module`)
-      - `SyntaxFacadeVersion`
-        - `Beskid::Compiler::Syntax::SyntaxFacadeVersion` (`function`)
     - `TypedEmitter`
       - `ReflectSdkEmitContributionKind`
         - `DiagnosticAttachment`
@@ -1796,6 +863,12 @@
       - `Beskid::Compiler::TypedEmitter` (`module`)
   - `Syntax`
     - `Nodes`
+      - `ArrayLiteralExpression`
+        - `ArrayLiteralExpression`
+          - `elements`
+            - `Beskid::Syntax::Nodes::ArrayLiteralExpression::ArrayLiteralExpression::elements` (`field`)
+          - `Beskid::Syntax::Nodes::ArrayLiteralExpression::ArrayLiteralExpression` (`type`)
+        - `Beskid::Syntax::Nodes::ArrayLiteralExpression` (`module`)
       - `AssignExpression`
         - `AssignExpression`
           - `target`
@@ -2007,8 +1080,8 @@
         - `Beskid::Syntax::Nodes::EnumDefinition` (`module`)
       - `EnumPath`
         - `EnumPath`
-          - `typeName`
-            - `Beskid::Syntax::Nodes::EnumPath::EnumPath::typeName` (`field`)
+          - `typePath`
+            - `Beskid::Syntax::Nodes::EnumPath::EnumPath::typePath` (`field`)
           - `variant`
             - `Beskid::Syntax::Nodes::EnumPath::EnumPath::variant` (`field`)
           - `Beskid::Syntax::Nodes::EnumPath::EnumPath` (`type`)
@@ -2033,6 +1106,8 @@
         - `Beskid::Syntax::Nodes::EnumVariantList` (`module`)
       - `Expression`
         - `Expression`
+          - `ArrayLiteral`
+            - `Beskid::Syntax::Nodes::Expression::Expression::ArrayLiteral` (`enum_variant`)
           - `Assign`
             - `Beskid::Syntax::Nodes::Expression::Expression::Assign` (`enum_variant`)
           - `Binary`
@@ -2045,6 +1120,8 @@
             - `Beskid::Syntax::Nodes::Expression::Expression::EnumConstructor` (`enum_variant`)
           - `Grouped`
             - `Beskid::Syntax::Nodes::Expression::Expression::Grouped` (`enum_variant`)
+          - `Index`
+            - `Beskid::Syntax::Nodes::Expression::Expression::Index` (`enum_variant`)
           - `Lambda`
             - `Beskid::Syntax::Nodes::Expression::Expression::Lambda` (`enum_variant`)
           - `Literal`
@@ -2068,6 +1145,8 @@
           - `Unary`
             - `Beskid::Syntax::Nodes::Expression::Expression::Unary` (`enum_variant`)
           - `payload`
+            - `Beskid::Syntax::Nodes::Expression::Expression::payload` (`field`)
+            - `Beskid::Syntax::Nodes::Expression::Expression::payload` (`field`)
             - `Beskid::Syntax::Nodes::Expression::Expression::payload` (`field`)
             - `Beskid::Syntax::Nodes::Expression::Expression::payload` (`field`)
             - `Beskid::Syntax::Nodes::Expression::Expression::payload` (`field`)
@@ -2137,6 +1216,8 @@
         - `Beskid::Syntax::Nodes::ForStatement` (`module`)
       - `FunctionDefinition`
         - `FunctionDefinition`
+          - `attributes`
+            - `Beskid::Syntax::Nodes::FunctionDefinition::FunctionDefinition::attributes` (`field`)
           - `body`
             - `Beskid::Syntax::Nodes::FunctionDefinition::FunctionDefinition::body` (`field`)
           - `generics`
@@ -2191,6 +1272,14 @@
             - `Beskid::Syntax::Nodes::IfStatement::IfStatement::thenBlock` (`field`)
           - `Beskid::Syntax::Nodes::IfStatement::IfStatement` (`type`)
         - `Beskid::Syntax::Nodes::IfStatement` (`module`)
+      - `IndexExpression`
+        - `IndexExpression`
+          - `index`
+            - `Beskid::Syntax::Nodes::IndexExpression::IndexExpression::index` (`field`)
+          - `target`
+            - `Beskid::Syntax::Nodes::IndexExpression::IndexExpression::target` (`field`)
+          - `Beskid::Syntax::Nodes::IndexExpression::IndexExpression` (`type`)
+        - `Beskid::Syntax::Nodes::IndexExpression` (`module`)
       - `InjectQualifier`
         - `InjectQualifier`
           - `Global`
@@ -3108,36 +2197,6 @@
     - `Beskid::Syntax` (`module`)
 - `Collections`
   - `Array`
-    - `Advance`
-      - `it`
-        - `Collections::Array::Advance::it` (`parameter`)
-      - `Collections::Array::Advance` (`function`)
-    - `ArrayIter`
-      - `index`
-        - `Collections::Array::ArrayIter::index` (`field`)
-      - `length`
-        - `Collections::Array::ArrayIter::length` (`field`)
-      - `Collections::Array::ArrayIter` (`type`)
-    - `HasNext`
-      - `it`
-        - `Collections::Array::HasNext::it` (`parameter`)
-      - `Collections::Array::HasNext` (`function`)
-    - `Index`
-      - `it`
-        - `Collections::Array::Index::it` (`parameter`)
-      - `Collections::Array::Index` (`function`)
-    - `IsEmpty`
-      - `values`
-        - `Collections::Array::IsEmpty::values` (`parameter`)
-      - `Collections::Array::IsEmpty` (`function`)
-    - `Iterate`
-      - `values`
-        - `Collections::Array::Iterate::values` (`parameter`)
-      - `Collections::Array::Iterate` (`function`)
-    - `Len`
-      - `values`
-        - `Collections::Array::Len::values` (`parameter`)
-      - `Collections::Array::Len` (`function`)
     - `Collections::Array` (`module`)
   - `List`
     - `Count`
@@ -3315,6 +2374,54 @@
     - `Collections::Stack` (`module`)
 - `Concurrency`
   - `Channel`
+    - `Channel`
+      - `handle`
+        - `Concurrency::Channel::Channel::handle` (`field`)
+      - `Concurrency::Channel::Channel` (`type`)
+    - `Close`
+      - `self`
+        - `Concurrency::Channel::Close::self` (`parameter`)
+      - `Concurrency::Channel::Close` (`function`)
+    - `Create`
+      - `Concurrency::Channel::Create` (`function`)
+    - `CreateWithOptions`
+      - `options`
+        - `Concurrency::Channel::CreateWithOptions::options` (`parameter`)
+      - `Concurrency::Channel::CreateWithOptions` (`function`)
+    - `Handle`
+      - `self`
+        - `Concurrency::Channel::Handle::self` (`parameter`)
+      - `Concurrency::Channel::Handle` (`function`)
+    - `MapReceiveError`
+      - `status`
+        - `Concurrency::Channel::MapReceiveError::status` (`parameter`)
+      - `Concurrency::Channel::MapReceiveError` (`function`)
+    - `MapSendStatus`
+      - `status`
+        - `Concurrency::Channel::MapSendStatus::status` (`parameter`)
+      - `Concurrency::Channel::MapSendStatus` (`function`)
+    - `Receive`
+      - `self`
+        - `Concurrency::Channel::Receive::self` (`parameter`)
+      - `Concurrency::Channel::Receive` (`function`)
+    - `Send`
+      - `self`
+        - `Concurrency::Channel::Send::self` (`parameter`)
+      - `value`
+        - `Concurrency::Channel::Send::value` (`parameter`)
+      - `Concurrency::Channel::Send` (`function`)
+    - `SendOk`
+      - `Concurrency::Channel::SendOk` (`type`)
+    - `TryReceive`
+      - `self`
+        - `Concurrency::Channel::TryReceive::self` (`parameter`)
+      - `Concurrency::Channel::TryReceive` (`function`)
+    - `TrySend`
+      - `self`
+        - `Concurrency::Channel::TrySend::self` (`parameter`)
+      - `value`
+        - `Concurrency::Channel::TrySend::value` (`parameter`)
+      - `Concurrency::Channel::TrySend` (`function`)
     - `Concurrency::Channel` (`module`)
   - `ChannelError`
     - `ChannelError`
@@ -3325,8 +2432,66 @@
       - `Concurrency::ChannelError::ChannelError` (`enum`)
     - `Concurrency::ChannelError` (`module`)
   - `ChannelOptions`
+    - `Bounded`
+      - `capacity`
+        - `Concurrency::ChannelOptions::Bounded::capacity` (`parameter`)
+      - `Concurrency::ChannelOptions::Bounded` (`function`)
+    - `ChannelCapacity`
+      - `Bounded`
+        - `Concurrency::ChannelOptions::ChannelCapacity::Bounded` (`enum_variant`)
+      - `Unbounded`
+        - `Concurrency::ChannelOptions::ChannelCapacity::Unbounded` (`enum_variant`)
+      - `capacity`
+        - `Concurrency::ChannelOptions::ChannelCapacity::capacity` (`field`)
+      - `Concurrency::ChannelOptions::ChannelCapacity` (`enum`)
+    - `ChannelOptions`
+      - `capacity`
+        - `Concurrency::ChannelOptions::ChannelOptions::capacity` (`field`)
+      - `singleReader`
+        - `Concurrency::ChannelOptions::ChannelOptions::singleReader` (`field`)
+      - `singleWriter`
+        - `Concurrency::ChannelOptions::ChannelOptions::singleWriter` (`field`)
+      - `Concurrency::ChannelOptions::ChannelOptions` (`type`)
+    - `Default`
+      - `Concurrency::ChannelOptions::Default` (`function`)
+    - `EncodeCapacity`
+      - `options`
+        - `Concurrency::ChannelOptions::EncodeCapacity::options` (`parameter`)
+      - `Concurrency::ChannelOptions::EncodeCapacity` (`function`)
+    - `EncodeFlags`
+      - `options`
+        - `Concurrency::ChannelOptions::EncodeFlags::options` (`parameter`)
+      - `Concurrency::ChannelOptions::EncodeFlags` (`function`)
+    - `SingleReader`
+      - `Concurrency::ChannelOptions::SingleReader` (`function`)
+    - `SingleWriter`
+      - `Concurrency::ChannelOptions::SingleWriter` (`function`)
+    - `Unbounded`
+      - `Concurrency::ChannelOptions::Unbounded` (`function`)
     - `Concurrency::ChannelOptions` (`module`)
   - `Fiber`
+    - `Cancel`
+      - `self`
+        - `Concurrency::Fiber::Cancel::self` (`parameter`)
+      - `Concurrency::Fiber::Cancel` (`function`)
+    - `Detach`
+      - `self`
+        - `Concurrency::Fiber::Detach::self` (`parameter`)
+      - `Concurrency::Fiber::Detach` (`function`)
+    - `Fiber`
+      - `OnCancelled`
+        - `Concurrency::Fiber::Fiber::OnCancelled` (`field`)
+      - `handle`
+        - `Concurrency::Fiber::Fiber::handle` (`field`)
+      - `Concurrency::Fiber::Fiber` (`type`)
+    - `Join`
+      - `self`
+        - `Concurrency::Fiber::Join::self` (`parameter`)
+      - `Concurrency::Fiber::Join` (`function`)
+    - `MapJoinError`
+      - `status`
+        - `Concurrency::Fiber::MapJoinError::status` (`parameter`)
+      - `Concurrency::Fiber::MapJoinError` (`function`)
     - `Concurrency::Fiber` (`module`)
   - `FiberError`
     - `FiberError`
@@ -3353,6 +2518,30 @@
       - `Concurrency::FiberJoinStatus::StackOverflow` (`function`)
     - `Concurrency::FiberJoinStatus` (`module`)
   - `Hub`
+    - `Create`
+      - `Concurrency::Hub::Create` (`function`)
+    - `Hub`
+      - `handle`
+        - `Concurrency::Hub::Hub::handle` (`field`)
+      - `Concurrency::Hub::Hub` (`type`)
+    - `Register`
+      - `channel`
+        - `Concurrency::Hub::Register::channel` (`parameter`)
+      - `index`
+        - `Concurrency::Hub::Register::index` (`parameter`)
+      - `self`
+        - `Concurrency::Hub::Register::self` (`parameter`)
+      - `Concurrency::Hub::Register` (`function`)
+    - `Unregister`
+      - `index`
+        - `Concurrency::Hub::Unregister::index` (`parameter`)
+      - `self`
+        - `Concurrency::Hub::Unregister::self` (`parameter`)
+      - `Concurrency::Hub::Unregister` (`function`)
+    - `WaitReceive`
+      - `self`
+        - `Concurrency::Hub::WaitReceive::self` (`parameter`)
+      - `Concurrency::Hub::WaitReceive` (`function`)
     - `Concurrency::Hub` (`module`)
   - `HubError`
     - `HubError`
@@ -3365,8 +2554,32 @@
       - `Concurrency::HubError::HubError` (`enum`)
     - `Concurrency::HubError` (`module`)
   - `HubReceiveResult`
+    - `HubReceiveResult`
+      - `index`
+        - `Concurrency::HubReceiveResult::HubReceiveResult::index` (`field`)
+      - `value`
+        - `Concurrency::HubReceiveResult::HubReceiveResult::value` (`field`)
+      - `Concurrency::HubReceiveResult::HubReceiveResult` (`type`)
     - `Concurrency::HubReceiveResult` (`module`)
   - `Mutex`
+    - `Create`
+      - `Concurrency::Mutex::Create` (`function`)
+    - `Lock`
+      - `self`
+        - `Concurrency::Mutex::Lock::self` (`parameter`)
+      - `Concurrency::Mutex::Lock` (`function`)
+    - `Mutex`
+      - `handle`
+        - `Concurrency::Mutex::Mutex::handle` (`field`)
+      - `Concurrency::Mutex::Mutex` (`type`)
+    - `TryLock`
+      - `self`
+        - `Concurrency::Mutex::TryLock::self` (`parameter`)
+      - `Concurrency::Mutex::TryLock` (`function`)
+    - `Unlock`
+      - `guard`
+        - `Concurrency::Mutex::Unlock::guard` (`parameter`)
+      - `Concurrency::Mutex::Unlock` (`function`)
     - `Concurrency::Mutex` (`module`)
   - `MutexError`
     - `MutexError`
@@ -3375,7 +2588,19 @@
       - `Concurrency::MutexError::MutexError` (`enum`)
     - `Concurrency::MutexError` (`module`)
   - `MutexGuard`
+    - `MutexGuard`
+      - `mutexHandle`
+        - `Concurrency::MutexGuard::MutexGuard::mutexHandle` (`field`)
+      - `Concurrency::MutexGuard::MutexGuard` (`type`)
     - `Concurrency::MutexGuard` (`module`)
+  - `NowMillis`
+    - `Concurrency::NowMillis` (`function`)
+  - `ProcessorCount`
+    - `Concurrency::ProcessorCount` (`function`)
+  - `SetProcessorCount`
+    - `count`
+      - `Concurrency::SetProcessorCount::count` (`parameter`)
+    - `Concurrency::SetProcessorCount` (`function`)
   - `Status`
     - `Cancelled`
       - `Concurrency::Status::Cancelled` (`function`)
@@ -3394,7 +2619,29 @@
     - `WouldBlock`
       - `Concurrency::Status::WouldBlock` (`function`)
   - `WaitGroup`
+    - `Add`
+      - `delta`
+        - `Concurrency::WaitGroup::Add::delta` (`parameter`)
+      - `self`
+        - `Concurrency::WaitGroup::Add::self` (`parameter`)
+      - `Concurrency::WaitGroup::Add` (`function`)
+    - `Create`
+      - `Concurrency::WaitGroup::Create` (`function`)
+    - `Done`
+      - `self`
+        - `Concurrency::WaitGroup::Done::self` (`parameter`)
+      - `Concurrency::WaitGroup::Done` (`function`)
+    - `Wait`
+      - `self`
+        - `Concurrency::WaitGroup::Wait::self` (`parameter`)
+      - `Concurrency::WaitGroup::Wait` (`function`)
+    - `WaitGroup`
+      - `handle`
+        - `Concurrency::WaitGroup::WaitGroup::handle` (`field`)
+      - `Concurrency::WaitGroup::WaitGroup` (`type`)
     - `Concurrency::WaitGroup` (`module`)
+  - `Yield`
+    - `Concurrency::Yield` (`function`)
   - `Concurrency` (`module`)
 - `Console`
   - `Capabilities`
@@ -3436,6 +2683,14 @@
       - `Console::Capabilities::ShouldStripColor` (`function`)
     - `Console::Capabilities` (`module`)
   - `ConsoleMessage`
+    - `ConsoleMessage`
+      - `Resize`
+        - `Console::ConsoleMessage::ConsoleMessage::Resize` (`enum_variant`)
+      - `Tick`
+        - `Console::ConsoleMessage::ConsoleMessage::Tick` (`enum_variant`)
+      - `size`
+        - `Console::ConsoleMessage::ConsoleMessage::size` (`field`)
+      - `Console::ConsoleMessage::ConsoleMessage` (`enum`)
     - `Console::ConsoleMessage` (`module`)
   - `ConsoleSize`
     - `columns`
@@ -3477,6 +2732,38 @@
         - `Console::Controls::Contracts::PaddingProvider` (`contract`)
       - `Console::Controls::Contracts` (`module`)
     - `Frame`
+      - `Ascii`
+        - `Console::Controls::Frame::Ascii` (`function`)
+      - `ForHost`
+        - `useUnicode`
+          - `Console::Controls::Frame::ForHost::useUnicode` (`parameter`)
+        - `Console::Controls::Frame::ForHost` (`function`)
+      - `FrameChars`
+        - `bottom`
+          - `Console::Controls::Frame::FrameChars::bottom` (`field`)
+        - `bottomLeft`
+          - `Console::Controls::Frame::FrameChars::bottomLeft` (`field`)
+        - `bottomRight`
+          - `Console::Controls::Frame::FrameChars::bottomRight` (`field`)
+        - `side`
+          - `Console::Controls::Frame::FrameChars::side` (`field`)
+        - `top`
+          - `Console::Controls::Frame::FrameChars::top` (`field`)
+        - `topLeft`
+          - `Console::Controls::Frame::FrameChars::topLeft` (`field`)
+        - `topRight`
+          - `Console::Controls::Frame::FrameChars::topRight` (`field`)
+        - `Console::Controls::Frame::FrameChars` (`type`)
+      - `PreferUnicodeFrame`
+        - `Console::Controls::Frame::PreferUnicodeFrame` (`function`)
+      - `Repeat`
+        - `count`
+          - `Console::Controls::Frame::Repeat::count` (`parameter`)
+        - `unit`
+          - `Console::Controls::Frame::Repeat::unit` (`parameter`)
+        - `Console::Controls::Frame::Repeat` (`function`)
+      - `Unicode`
+        - `Console::Controls::Frame::Unicode` (`function`)
       - `Console::Controls::Frame` (`module`)
     - `HorizontalStack`
       - `ChildCount`
@@ -3539,6 +2826,98 @@
         - `Console::Controls::LiveTick::RegisterProgressBar` (`function`)
       - `Console::Controls::LiveTick` (`module`)
     - `Panel`
+      - `BodyLine`
+        - `frame`
+          - `Console::Controls::Panel::BodyLine::frame` (`parameter`)
+        - `innerWidth`
+          - `Console::Controls::Panel::BodyLine::innerWidth` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::BodyLine::panel` (`parameter`)
+        - `Console::Controls::Panel::BodyLine` (`function`)
+      - `ContentWidth`
+        - `panel`
+          - `Console::Controls::Panel::ContentWidth::panel` (`parameter`)
+        - `Console::Controls::Panel::ContentWidth` (`function`)
+      - `Margin`
+        - `panel`
+          - `Console::Controls::Panel::Margin::panel` (`parameter`)
+        - `Console::Controls::Panel::Margin` (`function`)
+      - `Measure`
+        - `available`
+          - `Console::Controls::Panel::Measure::available` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::Measure::panel` (`parameter`)
+        - `Console::Controls::Panel::Measure` (`function`)
+      - `New`
+        - `body`
+          - `Console::Controls::Panel::New::body` (`parameter`)
+        - `Console::Controls::Panel::New` (`function`)
+      - `Padding`
+        - `panel`
+          - `Console::Controls::Panel::Padding::panel` (`parameter`)
+        - `Console::Controls::Panel::Padding` (`function`)
+      - `Panel`
+        - `align`
+          - `Console::Controls::Panel::Panel::align` (`field`)
+        - `body`
+          - `Console::Controls::Panel::Panel::body` (`field`)
+        - `forceAscii`
+          - `Console::Controls::Panel::Panel::forceAscii` (`field`)
+        - `margin`
+          - `Console::Controls::Panel::Panel::margin` (`field`)
+        - `padding`
+          - `Console::Controls::Panel::Panel::padding` (`field`)
+        - `title`
+          - `Console::Controls::Panel::Panel::title` (`field`)
+        - `Console::Controls::Panel::Panel` (`type`)
+      - `Render`
+        - `panel`
+          - `Console::Controls::Panel::Render::panel` (`parameter`)
+        - `size`
+          - `Console::Controls::Panel::Render::size` (`parameter`)
+        - `Console::Controls::Panel::Render` (`function`)
+      - `RenderWithContext`
+        - `ctx`
+          - `Console::Controls::Panel::RenderWithContext::ctx` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::RenderWithContext::panel` (`parameter`)
+        - `size`
+          - `Console::Controls::Panel::RenderWithContext::size` (`parameter`)
+        - `Console::Controls::Panel::RenderWithContext` (`function`)
+      - `TopBorder`
+        - `frame`
+          - `Console::Controls::Panel::TopBorder::frame` (`parameter`)
+        - `innerWidth`
+          - `Console::Controls::Panel::TopBorder::innerWidth` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::TopBorder::panel` (`parameter`)
+        - `Console::Controls::Panel::TopBorder` (`function`)
+      - `UseUnicodeFrame`
+        - `panel`
+          - `Console::Controls::Panel::UseUnicodeFrame::panel` (`parameter`)
+        - `Console::Controls::Panel::UseUnicodeFrame` (`function`)
+      - `WithAlignment`
+        - `align`
+          - `Console::Controls::Panel::WithAlignment::align` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::WithAlignment::panel` (`parameter`)
+        - `Console::Controls::Panel::WithAlignment` (`function`)
+      - `WithAsciiFrame`
+        - `panel`
+          - `Console::Controls::Panel::WithAsciiFrame::panel` (`parameter`)
+        - `Console::Controls::Panel::WithAsciiFrame` (`function`)
+      - `WithPadding`
+        - `padding`
+          - `Console::Controls::Panel::WithPadding::padding` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::WithPadding::panel` (`parameter`)
+        - `Console::Controls::Panel::WithPadding` (`function`)
+      - `WithTitle`
+        - `panel`
+          - `Console::Controls::Panel::WithTitle::panel` (`parameter`)
+        - `title`
+          - `Console::Controls::Panel::WithTitle::title` (`parameter`)
+        - `Console::Controls::Panel::WithTitle` (`function`)
       - `Console::Controls::Panel` (`module`)
     - `ProgressBar`
       - `BarBody`
@@ -3650,43 +3029,45 @@
           - `Console::Controls::RenderContext::WithoutIncremental::row` (`parameter`)
         - `Console::Controls::RenderContext::WithoutIncremental` (`function`)
       - `Console::Controls::RenderContext` (`module`)
-    - `Stack`
-      - `Horizontal`
-        - `childText`
-          - `Console::Controls::Stack::Horizontal::childText` (`parameter`)
-        - `Console::Controls::Stack::Horizontal` (`function`)
+    - `VerticalStack`
+      - `ChildCount`
+        - `stack`
+          - `Console::Controls::VerticalStack::ChildCount::stack` (`parameter`)
+        - `Console::Controls::VerticalStack::ChildCount` (`function`)
       - `Measure`
         - `available`
-          - `Console::Controls::Stack::Measure::available` (`parameter`)
+          - `Console::Controls::VerticalStack::Measure::available` (`parameter`)
         - `stack`
-          - `Console::Controls::Stack::Measure::stack` (`parameter`)
-        - `Console::Controls::Stack::Measure` (`function`)
+          - `Console::Controls::VerticalStack::Measure::stack` (`parameter`)
+        - `Console::Controls::VerticalStack::Measure` (`function`)
+      - `New`
+        - `Console::Controls::VerticalStack::New` (`function`)
       - `Render`
         - `size`
-          - `Console::Controls::Stack::Render::size` (`parameter`)
+          - `Console::Controls::VerticalStack::Render::size` (`parameter`)
         - `stack`
-          - `Console::Controls::Stack::Render::stack` (`parameter`)
-        - `Console::Controls::Stack::Render` (`function`)
-      - `Stack`
-        - `childText`
-          - `Console::Controls::Stack::Stack::childText` (`field`)
-        - `direction`
-          - `Console::Controls::Stack::Stack::direction` (`field`)
-        - `gap`
-          - `Console::Controls::Stack::Stack::gap` (`field`)
-        - `Console::Controls::Stack::Stack` (`type`)
-      - `StackDirection`
-        - `Horizontal`
-          - `Console::Controls::Stack::StackDirection::Horizontal` (`enum_variant`)
-        - `Vertical`
-          - `Console::Controls::Stack::StackDirection::Vertical` (`enum_variant`)
-        - `Console::Controls::Stack::StackDirection` (`enum`)
-      - `Vertical`
-        - `childText`
-          - `Console::Controls::Stack::Vertical::childText` (`parameter`)
-        - `Console::Controls::Stack::Vertical` (`function`)
-      - `Console::Controls::Stack` (`module`)
-    - `VerticalStack`
+          - `Console::Controls::VerticalStack::Render::stack` (`parameter`)
+        - `Console::Controls::VerticalStack::Render` (`function`)
+      - `RenderWithContext`
+        - `ctx`
+          - `Console::Controls::VerticalStack::RenderWithContext::ctx` (`parameter`)
+        - `size`
+          - `Console::Controls::VerticalStack::RenderWithContext::size` (`parameter`)
+        - `stack`
+          - `Console::Controls::VerticalStack::RenderWithContext::stack` (`parameter`)
+        - `Console::Controls::VerticalStack::RenderWithContext` (`function`)
+      - `VerticalStack`
+        - `childBodies`
+          - `Console::Controls::VerticalStack::VerticalStack::childBodies` (`field`)
+        - `childCount`
+          - `Console::Controls::VerticalStack::VerticalStack::childCount` (`field`)
+        - `Console::Controls::VerticalStack::VerticalStack` (`type`)
+      - `WithChild`
+        - `body`
+          - `Console::Controls::VerticalStack::WithChild::body` (`parameter`)
+        - `stack`
+          - `Console::Controls::VerticalStack::WithChild::stack` (`parameter`)
+        - `Console::Controls::VerticalStack::WithChild` (`function`)
       - `Console::Controls::VerticalStack` (`module`)
   - `Format`
     - `Attributes`
@@ -3878,6 +3259,72 @@
       - `Console::Start::hub` (`parameter`)
     - `Console::Start` (`function`)
   - `Style`
+    - `ClampWidth`
+      - `maxValue`
+        - `Console::Style::ClampWidth::maxValue` (`parameter`)
+      - `minValue`
+        - `Console::Style::ClampWidth::minValue` (`parameter`)
+      - `value`
+        - `Console::Style::ClampWidth::value` (`parameter`)
+      - `Console::Style::ClampWidth` (`function`)
+    - `Margin`
+      - `None`
+        - `Console::Style::Margin::None` (`enum_variant`)
+      - `Sized`
+        - `Console::Style::Margin::Sized` (`enum_variant`)
+      - `Value`
+        - `Console::Style::Margin::Value` (`enum_variant`)
+      - `size`
+        - `Console::Style::Margin::size` (`field`)
+      - `value`
+        - `Console::Style::Margin::value` (`field`)
+      - `Console::Style::Margin` (`enum`)
+    - `Padding`
+      - `None`
+        - `Console::Style::Padding::None` (`enum_variant`)
+      - `Sized`
+        - `Console::Style::Padding::Sized` (`enum_variant`)
+      - `Value`
+        - `Console::Style::Padding::Value` (`enum_variant`)
+      - `size`
+        - `Console::Style::Padding::size` (`field`)
+      - `value`
+        - `Console::Style::Padding::value` (`field`)
+      - `Console::Style::Padding` (`enum`)
+    - `ResolveMargin`
+      - `columns`
+        - `Console::Style::ResolveMargin::columns` (`parameter`)
+      - `margin`
+        - `Console::Style::ResolveMargin::margin` (`parameter`)
+      - `Console::Style::ResolveMargin` (`function`)
+    - `ResolvePadding`
+      - `columns`
+        - `Console::Style::ResolvePadding::columns` (`parameter`)
+      - `padding`
+        - `Console::Style::ResolvePadding::padding` (`parameter`)
+      - `Console::Style::ResolvePadding` (`function`)
+    - `ResolveSize`
+      - `columns`
+        - `Console::Style::ResolveSize::columns` (`parameter`)
+      - `size`
+        - `Console::Style::ResolveSize::size` (`parameter`)
+      - `Console::Style::ResolveSize` (`function`)
+    - `Size`
+      - `Large`
+        - `Console::Style::Size::Large` (`enum_variant`)
+      - `Medium`
+        - `Console::Style::Size::Medium` (`enum_variant`)
+      - `Small`
+        - `Console::Style::Size::Small` (`enum_variant`)
+      - `Console::Style::Size` (`enum`)
+    - `TitleAlignment`
+      - `Center`
+        - `Console::Style::TitleAlignment::Center` (`enum_variant`)
+      - `Left`
+        - `Console::Style::TitleAlignment::Left` (`enum_variant`)
+      - `Right`
+        - `Console::Style::TitleAlignment::Right` (`enum_variant`)
+      - `Console::Style::TitleAlignment` (`enum`)
     - `Console::Style` (`module`)
   - `SubscribeOnResize`
     - `handler`
@@ -3926,22 +3373,68 @@
       - `Core::Results::Result` (`enum`)
     - `Core::Results` (`module`)
   - `String`
-    - `Contains`
-      - `needle`
-        - `Core::String::Contains::needle` (`parameter`)
-      - `text`
-        - `Core::String::Contains::text` (`parameter`)
-      - `Core::String::Contains` (`function`)
-    - `IsEmpty`
-      - `text`
-        - `Core::String::IsEmpty::text` (`parameter`)
-      - `Core::String::IsEmpty` (`function`)
-    - `Len`
-      - `text`
-        - `Core::String::Len::text` (`parameter`)
-      - `Core::String::Len` (`function`)
     - `Core::String` (`module`)
 - `Platform`
+  - `Linux`
+    - `IsAtty`
+      - `fd`
+        - `Platform::Linux::IsAtty::fd` (`parameter`)
+      - `Platform::Linux::IsAtty` (`function`)
+    - `Libc`
+      - `arg`
+        - `Platform::Linux::Libc::arg` (`parameter`)
+      - `fd`
+        - `Platform::Linux::Libc::fd` (`parameter`)
+        - `Platform::Linux::Libc::fd` (`parameter`)
+      - `ioctl`
+        - `Platform::Linux::Libc::ioctl` (`contract_method`)
+      - `isatty`
+        - `Platform::Linux::Libc::isatty` (`contract_method`)
+      - `request`
+        - `Platform::Linux::Libc::request` (`parameter`)
+      - `Platform::Linux::Libc` (`contract`)
+    - `WinSize`
+      - `ws_col`
+        - `Platform::Linux::WinSize::ws_col` (`field`)
+      - `ws_row`
+        - `Platform::Linux::WinSize::ws_row` (`field`)
+      - `ws_xpixel`
+        - `Platform::Linux::WinSize::ws_xpixel` (`field`)
+      - `ws_ypixel`
+        - `Platform::Linux::WinSize::ws_ypixel` (`field`)
+      - `Platform::Linux::WinSize` (`type`)
+    - `Winsize`
+      - `Platform::Linux::Winsize` (`function`)
+  - `MacOS`
+    - `IsAtty`
+      - `fd`
+        - `Platform::MacOS::IsAtty::fd` (`parameter`)
+      - `Platform::MacOS::IsAtty` (`function`)
+    - `Libc`
+      - `arg`
+        - `Platform::MacOS::Libc::arg` (`parameter`)
+      - `fd`
+        - `Platform::MacOS::Libc::fd` (`parameter`)
+        - `Platform::MacOS::Libc::fd` (`parameter`)
+      - `ioctl`
+        - `Platform::MacOS::Libc::ioctl` (`contract_method`)
+      - `isatty`
+        - `Platform::MacOS::Libc::isatty` (`contract_method`)
+      - `request`
+        - `Platform::MacOS::Libc::request` (`parameter`)
+      - `Platform::MacOS::Libc` (`contract`)
+    - `WinSize`
+      - `ws_col`
+        - `Platform::MacOS::WinSize::ws_col` (`field`)
+      - `ws_row`
+        - `Platform::MacOS::WinSize::ws_row` (`field`)
+      - `ws_xpixel`
+        - `Platform::MacOS::WinSize::ws_xpixel` (`field`)
+      - `ws_ypixel`
+        - `Platform::MacOS::WinSize::ws_ypixel` (`field`)
+      - `Platform::MacOS::WinSize` (`type`)
+    - `Winsize`
+      - `Platform::MacOS::Winsize` (`function`)
   - `Terminal`
     - `EnsureInitialized`
       - `Platform::Terminal::EnsureInitialized` (`function`)
@@ -3990,6 +3483,31 @@
     - `QuerySize`
       - `Platform::Terminal::QuerySize` (`function`)
     - `Platform::Terminal` (`module`)
+  - `Windows`
+    - `IsAtty`
+      - `fd`
+        - `Platform::Windows::IsAtty::fd` (`parameter`)
+      - `Platform::Windows::IsAtty` (`function`)
+    - `Kernel32`
+      - `GetConsoleScreenBufferInfo`
+        - `Platform::Windows::Kernel32::GetConsoleScreenBufferInfo` (`contract_method`)
+      - `GetStdHandle`
+        - `Platform::Windows::Kernel32::GetStdHandle` (`contract_method`)
+      - `handle`
+        - `Platform::Windows::Kernel32::handle` (`parameter`)
+      - `infoOut`
+        - `Platform::Windows::Kernel32::infoOut` (`parameter`)
+      - `nStdHandle`
+        - `Platform::Windows::Kernel32::nStdHandle` (`parameter`)
+      - `Platform::Windows::Kernel32` (`contract`)
+    - `Ucrt`
+      - `_isatty`
+        - `Platform::Windows::Ucrt::_isatty` (`contract_method`)
+      - `fd`
+        - `Platform::Windows::Ucrt::fd` (`parameter`)
+      - `Platform::Windows::Ucrt` (`contract`)
+    - `Winsize`
+      - `Platform::Windows::Winsize` (`function`)
 - `Query`
   - `Contracts`
     - `HasValue`
@@ -4004,6 +3522,7 @@
       - `value`
         - `Query::Contracts::Option::value` (`field`)
       - `Query::Contracts::Option` (`enum`)
+    - `Query::Contracts` (`module`)
   - `Execution`
     - `IsDeferred`
       - `state`
@@ -4319,6 +3838,62 @@
     - `System::Syscall` (`module`)
   - `Threading`
     - `Thread`
+      - `DarwinPthread`
+        - `arg`
+          - `System::Threading::Thread::DarwinPthread::arg` (`parameter`)
+        - `attr`
+          - `System::Threading::Thread::DarwinPthread::attr` (`parameter`)
+        - `pthread_create`
+          - `System::Threading::Thread::DarwinPthread::pthread_create` (`contract_method`)
+        - `pthread_join`
+          - `System::Threading::Thread::DarwinPthread::pthread_join` (`contract_method`)
+        - `sched_yield`
+          - `System::Threading::Thread::DarwinPthread::sched_yield` (`contract_method`)
+        - `startRoutine`
+          - `System::Threading::Thread::DarwinPthread::startRoutine` (`parameter`)
+        - `thread`
+          - `System::Threading::Thread::DarwinPthread::thread` (`parameter`)
+        - `threadOut`
+          - `System::Threading::Thread::DarwinPthread::threadOut` (`parameter`)
+        - `valueOut`
+          - `System::Threading::Thread::DarwinPthread::valueOut` (`parameter`)
+        - `System::Threading::Thread::DarwinPthread` (`contract`)
+      - `Join`
+        - `self`
+          - `System::Threading::Thread::Join::self` (`parameter`)
+        - `System::Threading::Thread::Join` (`function`)
+      - `LinuxPthread`
+        - `arg`
+          - `System::Threading::Thread::LinuxPthread::arg` (`parameter`)
+        - `attr`
+          - `System::Threading::Thread::LinuxPthread::attr` (`parameter`)
+        - `pthread_create`
+          - `System::Threading::Thread::LinuxPthread::pthread_create` (`contract_method`)
+        - `pthread_join`
+          - `System::Threading::Thread::LinuxPthread::pthread_join` (`contract_method`)
+        - `sched_yield`
+          - `System::Threading::Thread::LinuxPthread::sched_yield` (`contract_method`)
+        - `startRoutine`
+          - `System::Threading::Thread::LinuxPthread::startRoutine` (`parameter`)
+        - `thread`
+          - `System::Threading::Thread::LinuxPthread::thread` (`parameter`)
+        - `threadOut`
+          - `System::Threading::Thread::LinuxPthread::threadOut` (`parameter`)
+        - `valueOut`
+          - `System::Threading::Thread::LinuxPthread::valueOut` (`parameter`)
+        - `System::Threading::Thread::LinuxPthread` (`contract`)
+      - `Spawn`
+        - `arg`
+          - `System::Threading::Thread::Spawn::arg` (`parameter`)
+        - `entryRoutine`
+          - `System::Threading::Thread::Spawn::entryRoutine` (`parameter`)
+        - `System::Threading::Thread::Spawn` (`function`)
+      - `Thread`
+        - `handle`
+          - `System::Threading::Thread::Thread::handle` (`field`)
+        - `System::Threading::Thread::Thread` (`type`)
+      - `Yield`
+        - `System::Threading::Thread::Yield` (`function`)
       - `System::Threading::Thread` (`module`)
     - `ThreadError`
       - `ThreadError`
@@ -4509,6 +4084,8 @@
   - `__wait_group_done` (`function`)
 - `__wait_group_wait`
   - `__wait_group_wait` (`function`)
+- `range`
+  - `range` (`function`)
 
 ## Items
 
@@ -7068,3847 +6645,7 @@ Typed replacement contract. TSourceNode and TTargetNode are SDK type parameters 
 
 ---
 
-### `Beskid::Compiler::Emit::EmitFacadeVersion` (`function`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Emit::ReflectSdkEmitContributionKind` (`enum`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Emit::ReflectSdkEmitContributionKind::DiagnosticAttachment` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Emit::ReflectSdkEmitContributionKind::LoweringDirective` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Emit::ReflectSdkEmitContributionKind::Metadata` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Emit::ReflectStub` (`type`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Process::ProcessFacadeVersion` (`function`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Process::ReflectSdkProcessHookKind` (`enum`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Process::ReflectSdkProcessHookKind::CompilationScheduled` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Process::ReflectSdkProcessHookKind::PhaseCompleted` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Process::ReflectSdkProcessHookKind::PhaseEntered` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Process::ReflectSdkProcessHookKind::WorkspaceDiscovered` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Process::ReflectStub` (`type`)
-
-*No documentation provided.*
-
----
-
 ### `Beskid::Compiler::Query` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AssignExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AssignExpression::AssignExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/assign_expression.rs` — `AssignExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `target`, `value`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AssignExpression::AssignExpression::target` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AssignExpression::AssignExpression::value` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AssignOp` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AssignOp::AssignOp` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/assign_expression.rs` — `AssignOp`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Assign`**
-unit (no payload)
-
-
-**Variant `AddAssign`**
-unit (no payload)
-
-
-**Variant `SubAssign`**
-unit (no payload)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AssignOp::AssignOp::AddAssign` (`enum_variant`)
-
-
-
-**Variant `AddAssign`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AssignOp::AssignOp::Assign` (`enum_variant`)
-
-
-
-**Variant `Assign`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AssignOp::AssignOp::SubAssign` (`enum_variant`)
-
-
-
-**Variant `SubAssign`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Attribute` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Attribute::Attribute` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/attribute.rs` — `Attribute`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `arguments`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Attribute::Attribute::arguments` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Attribute::Attribute::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeArgument` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeArgument::AttributeArgument` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/attribute.rs` — `AttributeArgument`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `value`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeArgument::AttributeArgument::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeArgument::AttributeArgument::value` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeArgumentList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration::AttributeDeclaration` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/attribute.rs` — `AttributeDeclaration`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `visibility`, `name`, `targets`, `parameters`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration::AttributeDeclaration::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration::AttributeDeclaration::parameters` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration::AttributeDeclaration::targets` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeDeclaration::AttributeDeclaration::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeParameter` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeParameter::AttributeParameter` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/attribute.rs` — `AttributeParameter`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `ty`, `defaultValue`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeParameter::AttributeParameter::defaultValue` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeParameter::AttributeParameter::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeParameter::AttributeParameter::ty` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeParameterList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeTarget` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeTarget::AttributeTarget` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/attribute.rs` — `AttributeTarget`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeTarget::AttributeTarget::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::AttributeTargetList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryExpression::BinaryExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/binary_expression.rs` — `BinaryExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `left`, `op`, `right`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryExpression::BinaryExpression::left` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryExpression::BinaryExpression::op` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryExpression::BinaryExpression::right` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/binary_expression.rs` — `BinaryOp`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Or`**
-unit (no payload)
-
-
-**Variant `And`**
-unit (no payload)
-
-
-**Variant `IdentityEq`**
-unit (no payload)
-
-
-**Variant `IdentityNotEq`**
-unit (no payload)
-
-
-**Variant `Eq`**
-unit (no payload)
-
-
-**Variant `NotEq`**
-unit (no payload)
-
-
-**Variant `Lt`**
-unit (no payload)
-
-
-**Variant `Lte`**
-unit (no payload)
-
-
-**Variant `Gt`**
-unit (no payload)
-
-
-**Variant `Gte`**
-unit (no payload)
-
-
-**Variant `Add`**
-unit (no payload)
-
-
-**Variant `Sub`**
-unit (no payload)
-
-
-**Variant `Mul`**
-unit (no payload)
-
-
-**Variant `Div`**
-unit (no payload)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Add` (`enum_variant`)
-
-
-
-**Variant `Add`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::And` (`enum_variant`)
-
-
-
-**Variant `And`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Div` (`enum_variant`)
-
-
-
-**Variant `Div`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Eq` (`enum_variant`)
-
-
-
-**Variant `Eq`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Gt` (`enum_variant`)
-
-
-
-**Variant `Gt`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Gte` (`enum_variant`)
-
-
-
-**Variant `Gte`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::IdentityEq` (`enum_variant`)
-
-
-
-**Variant `IdentityEq`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::IdentityNotEq` (`enum_variant`)
-
-
-
-**Variant `IdentityNotEq`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Lt` (`enum_variant`)
-
-
-
-**Variant `Lt`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Lte` (`enum_variant`)
-
-
-
-**Variant `Lte`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Mul` (`enum_variant`)
-
-
-
-**Variant `Mul`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::NotEq` (`enum_variant`)
-
-
-
-**Variant `NotEq`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Or` (`enum_variant`)
-
-
-
-**Variant `Or`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BinaryOp::BinaryOp::Sub` (`enum_variant`)
-
-
-
-**Variant `Sub`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Block` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Block::Block` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/block.rs` — `Block`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `statements`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Block::Block::statements` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BlockExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BlockExpression::BlockExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/block_expression.rs` — `BlockExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `block`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BlockExpression::BlockExpression::block` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BreakStatement` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::BreakStatement::BreakStatement` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/break_statement.rs` — `BreakStatement`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Marker struct with no fields.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::CallExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::CallExpression::CallExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/call_expression.rs` — `CallExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `callee`, `args`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::CallExpression::CallExpression::args` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::CallExpression::CallExpression::callee` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContinueStatement` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContinueStatement::ContinueStatement` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/continue_statement.rs` — `ContinueStatement`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Marker struct with no fields.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractDefinition` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractDefinition::ContractDefinition` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/contract_definition.rs` — `ContractDefinition`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `attributes`, `visibility`, `name`, `items`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractDefinition::ContractDefinition::attributes` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractDefinition::ContractDefinition::items` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractDefinition::ContractDefinition::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractDefinition::ContractDefinition::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractEmbedding` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractEmbedding::ContractEmbedding` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/contract_embedding.rs` — `ContractEmbedding`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractEmbedding::ContractEmbedding::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractMethodSignature` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractMethodSignature::ContractMethodSignature` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/contract_method_signature.rs` — `ContractMethodSignature`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `parameters`, `returnType`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractMethodSignature::ContractMethodSignature::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractMethodSignature::ContractMethodSignature::parameters` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractMethodSignature::ContractMethodSignature::returnType` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractNode` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractNode::ContractNode` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/contract_node.rs` — `ContractNode`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `MethodSignature`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.ContractMethodSignature)
-
-
-**Variant `Embedding`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.ContractEmbedding)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractNode::ContractNode::Embedding` (`enum_variant`)
-
-
-
-**Variant `Embedding`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.ContractEmbedding).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractNode::ContractNode::MethodSignature` (`enum_variant`)
-
-
-
-**Variant `MethodSignature`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.ContractMethodSignature).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractNode::ContractNode::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractNode::ContractNode::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ContractNodeList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumConstructorExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumConstructorExpression::EnumConstructorExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/enum_constructor_expression.rs` — `EnumConstructorExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `path`, `args`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumConstructorExpression::EnumConstructorExpression::args` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumConstructorExpression::EnumConstructorExpression::path` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumDefinition` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumDefinition::EnumDefinition` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/enum_definition.rs` — `EnumDefinition`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `visibility`, `name`, `generics`, `variants`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumDefinition::EnumDefinition::generics` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumDefinition::EnumDefinition::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumDefinition::EnumDefinition::variants` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumDefinition::EnumDefinition::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumPath` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumPath::EnumPath` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/enum_path.rs` — `EnumPath`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `typeName`, `variant`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumPath::EnumPath::typeName` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumPath::EnumPath::variant` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumPattern` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumPattern::EnumPattern` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/pattern.rs` — `EnumPattern`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `path`, `items`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumPattern::EnumPattern::items` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumPattern::EnumPattern::path` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumVariant` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumVariant::EnumVariant` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/enum_variant.rs` — `EnumVariant`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `fields`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumVariant::EnumVariant::fields` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumVariant::EnumVariant::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::EnumVariantList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/expression.rs` — `Expression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Match`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.MatchExpression)
-
-
-**Variant `Lambda`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.LambdaExpression)
-
-
-**Variant `Assign`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.AssignExpression)
-
-
-**Variant `Binary`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.BinaryExpression)
-
-
-**Variant `Unary`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.UnaryExpression)
-
-
-**Variant `Call`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.CallExpression)
-
-
-**Variant `Member`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.MemberExpression)
-
-
-**Variant `Literal`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.LiteralExpression)
-
-
-**Variant `Path`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.PathExpression)
-
-
-**Variant `StructLiteral`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.StructLiteralExpression)
-
-
-**Variant `EnumConstructor`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.EnumConstructorExpression)
-
-
-**Variant `Block`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.BlockExpression)
-
-
-**Variant `Grouped`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.GroupedExpression)
-
-
-**Variant `Try`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.TryExpression)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Assign` (`enum_variant`)
-
-
-
-**Variant `Assign`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.AssignExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Binary` (`enum_variant`)
-
-
-
-**Variant `Binary`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.BinaryExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Block` (`enum_variant`)
-
-
-
-**Variant `Block`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.BlockExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Call` (`enum_variant`)
-
-
-
-**Variant `Call`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.CallExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::EnumConstructor` (`enum_variant`)
-
-
-
-**Variant `EnumConstructor`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.EnumConstructorExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Grouped` (`enum_variant`)
-
-
-
-**Variant `Grouped`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.GroupedExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Lambda` (`enum_variant`)
-
-
-
-**Variant `Lambda`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.LambdaExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Literal` (`enum_variant`)
-
-
-
-**Variant `Literal`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.LiteralExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Match` (`enum_variant`)
-
-
-
-**Variant `Match`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.MatchExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Member` (`enum_variant`)
-
-
-
-**Variant `Member`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.MemberExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Path` (`enum_variant`)
-
-
-
-**Variant `Path`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.PathExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::StructLiteral` (`enum_variant`)
-
-
-
-**Variant `StructLiteral`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.StructLiteralExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Try` (`enum_variant`)
-
-
-
-**Variant `Try`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.TryExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::Unary` (`enum_variant`)
-
-
-
-**Variant `Unary`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.UnaryExpression).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Expression::Expression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ExpressionList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ExpressionStatement` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ExpressionStatement::ExpressionStatement` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/expression_statement.rs` — `ExpressionStatement`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `expression`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ExpressionStatement::ExpressionStatement::expression` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Field` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Field::Field` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/field.rs` — `Field`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `ty`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Field::Field::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Field::Field::ty` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FieldKind` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FieldKind::FieldKind` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/field.rs` — `FieldKind`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Value`**
-unit (no payload)
-
-
-**Variant `Event`**
-unit (no payload)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FieldKind::FieldKind::Event` (`enum_variant`)
-
-
-
-**Variant `Event`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FieldKind::FieldKind::Value` (`enum_variant`)
-
-
-
-**Variant `Value`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FieldList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ForStatement` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ForStatement::ForStatement` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/for_statement.rs` — `ForStatement`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `iterator`, `iterable`, `body`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ForStatement::ForStatement::body` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ForStatement::ForStatement::iterable` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ForStatement::ForStatement::iterator` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FunctionDefinition` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/function_definition.rs` — `FunctionDefinition`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `visibility`, `name`, `generics`, `parameters`, `returnType`, `body`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::body` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::generics` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::parameters` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::returnType` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::FunctionDefinition::FunctionDefinition::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::GroupedExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::GroupedExpression::GroupedExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/grouped_expression.rs` — `GroupedExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `expr`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::GroupedExpression::GroupedExpression::expr` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Identifier` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Identifier::Identifier` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/common/identifier.rs` — `Identifier`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Identifier::Identifier::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::IdentifierList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::IfStatement` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::IfStatement::IfStatement` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/if_statement.rs` — `IfStatement`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `condition`, `thenBlock`, `elseBlock`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::IfStatement::IfStatement::condition` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::IfStatement::IfStatement::elseBlock` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::IfStatement::IfStatement::thenBlock` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::InlineModule` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::InlineModule::InlineModule` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/inline_module.rs` — `InlineModule`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `attributes`, `visibility`, `name`, `items`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::InlineModule::InlineModule::attributes` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::InlineModule::InlineModule::items` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::InlineModule::InlineModule::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::InlineModule::InlineModule::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LambdaExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LambdaExpression::LambdaExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/lambda_expression.rs` — `LambdaExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `parameters`, `body`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LambdaExpression::LambdaExpression::body` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LambdaExpression::LambdaExpression::parameters` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LambdaParameter` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LambdaParameter::LambdaParameter` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/lambda_expression.rs` — `LambdaParameter`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `ty`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LambdaParameter::LambdaParameter::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LambdaParameter::LambdaParameter::ty` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LambdaParameterList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LetStatement` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LetStatement::LetStatement` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/let_statement.rs` — `LetStatement`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `typeAnnotation`, `value`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LetStatement::LetStatement::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LetStatement::LetStatement::typeAnnotation` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LetStatement::LetStatement::value` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/literal.rs` — `Literal`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Integer`**
-tuple (payload: string)
-
-
-**Variant `Float`**
-tuple (payload: string)
-
-
-**Variant `String`**
-tuple (payload: string)
-
-
-**Variant `Char`**
-tuple (payload: string)
-
-
-**Variant `Bool`**
-tuple (payload: bool)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal::Bool` (`enum_variant`)
-
-
-
-**Variant `Bool`**
-tuple payload: payload (bool).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal::Char` (`enum_variant`)
-
-
-
-**Variant `Char`**
-tuple payload: payload (string).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal::Float` (`enum_variant`)
-
-
-
-**Variant `Float`**
-tuple payload: payload (string).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal::Integer` (`enum_variant`)
-
-
-
-**Variant `Integer`**
-tuple payload: payload (string).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal::String` (`enum_variant`)
-
-
-
-**Variant `String`**
-tuple payload: payload (string).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Literal::Literal::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LiteralExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LiteralExpression::LiteralExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/literal_expression.rs` — `LiteralExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `literal`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::LiteralExpression::LiteralExpression::literal` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MatchArm` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MatchArm::MatchArm` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/match_arm.rs` — `MatchArm`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `pattern`, `guard`, `value`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MatchArm::MatchArm::guard` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MatchArm::MatchArm::pattern` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MatchArm::MatchArm::value` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MatchArmList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MatchExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MatchExpression::MatchExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/match_expression.rs` — `MatchExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `scrutinee`, `arms`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MatchExpression::MatchExpression::arms` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MatchExpression::MatchExpression::scrutinee` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MemberExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MemberExpression::MemberExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/member_expression.rs` — `MemberExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `target`, `member`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MemberExpression::MemberExpression::member` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MemberExpression::MemberExpression::target` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MetaDefinition` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MetaDefinition::MetaDefinition` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/meta_definition.rs` — `MetaDefinition`.
-
-**Rust documentation** (from mirrored type):
-Top-level `meta name { key = expr; ... }` item (language-meta surface for metaprogramming).
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `attributes`, `visibility`, `name`, `entries`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MetaDefinition::MetaDefinition::attributes` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MetaDefinition::MetaDefinition::entries` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MetaDefinition::MetaDefinition::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MetaDefinition::MetaDefinition::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MethodDefinition` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/method_definition.rs` — `MethodDefinition`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `visibility`, `receiverType`, `name`, `parameters`, `returnType`, `body`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::body` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::parameters` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::receiverType` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::returnType` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::MethodDefinition::MethodDefinition::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ModuleDeclaration` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ModuleDeclaration::ModuleDeclaration` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/module_declaration.rs` — `ModuleDeclaration`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `attributes`, `visibility`, `path`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ModuleDeclaration::ModuleDeclaration::attributes` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ModuleDeclaration::ModuleDeclaration::path` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ModuleDeclaration::ModuleDeclaration::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/node.rs` — `Node`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Function`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.FunctionDefinition)
-
-
-**Variant `Method`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.MethodDefinition)
-
-
-**Variant `TypeDefinition`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.TypeDefinition)
-
-
-**Variant `EnumDefinition`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.EnumDefinition)
-
-
-**Variant `ContractDefinition`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.ContractDefinition)
-
-
-**Variant `TestDefinition`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.TestDefinition)
-
-
-**Variant `MetaDefinition`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.MetaDefinition)
-
-
-**Variant `AttributeDeclaration`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.AttributeDeclaration)
-
-
-**Variant `ModuleDeclaration`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.ModuleDeclaration)
-
-
-**Variant `InlineModule`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.InlineModule)
-
-
-**Variant `UseDeclaration`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.UseDeclaration)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::AttributeDeclaration` (`enum_variant`)
-
-
-
-**Variant `AttributeDeclaration`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.AttributeDeclaration).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::ContractDefinition` (`enum_variant`)
-
-
-
-**Variant `ContractDefinition`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.ContractDefinition).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::EnumDefinition` (`enum_variant`)
-
-
-
-**Variant `EnumDefinition`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.EnumDefinition).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::Function` (`enum_variant`)
-
-
-
-**Variant `Function`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.FunctionDefinition).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::InlineModule` (`enum_variant`)
-
-
-
-**Variant `InlineModule`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.InlineModule).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::MetaDefinition` (`enum_variant`)
-
-
-
-**Variant `MetaDefinition`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.MetaDefinition).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::Method` (`enum_variant`)
-
-
-
-**Variant `Method`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.MethodDefinition).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::ModuleDeclaration` (`enum_variant`)
-
-
-
-**Variant `ModuleDeclaration`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.ModuleDeclaration).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::TestDefinition` (`enum_variant`)
-
-
-
-**Variant `TestDefinition`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.TestDefinition).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::TypeDefinition` (`enum_variant`)
-
-
-
-**Variant `TypeDefinition`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.TypeDefinition).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::UseDeclaration` (`enum_variant`)
-
-
-
-**Variant `UseDeclaration`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.UseDeclaration).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Node::Node::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::NodeList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalBlock` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalBlock::OptionalBlock` (`enum`)
-
-Rust `Option<…>` encoding where the inner type is `Beskid.Compiler.Syntax.Nodes.Block` (`beskid_doc.pest` `@variant`).
-
-**Variant `None`**
-Absent (`None` in Rust).
-
-
-**Variant `Some`**
-Present; `payload` holds the inner value (`Beskid.Compiler.Syntax.Nodes.Block`).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalBlock::OptionalBlock::None` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalBlock::OptionalBlock::Some` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalBlock::OptionalBlock::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalExpression::OptionalExpression` (`enum`)
-
-Rust `Option<…>` encoding where the inner type is `Beskid.Compiler.Syntax.Nodes.Expression` (`beskid_doc.pest` `@variant`).
-
-**Variant `None`**
-Absent (`None` in Rust).
-
-
-**Variant `Some`**
-Present; `payload` holds the inner value (`Beskid.Compiler.Syntax.Nodes.Expression`).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalExpression::OptionalExpression::None` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalExpression::OptionalExpression::Some` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalExpression::OptionalExpression::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalIdentifier` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalIdentifier::OptionalIdentifier` (`enum`)
-
-Rust `Option<…>` encoding where the inner type is `Beskid.Compiler.Syntax.Nodes.Identifier` (`beskid_doc.pest` `@variant`).
-
-**Variant `None`**
-Absent (`None` in Rust).
-
-
-**Variant `Some`**
-Present; `payload` holds the inner value (`Beskid.Compiler.Syntax.Nodes.Identifier`).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalIdentifier::OptionalIdentifier::None` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalIdentifier::OptionalIdentifier::Some` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalIdentifier::OptionalIdentifier::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalLeadingDocComment` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalLeadingDocComment::OptionalLeadingDocComment` (`enum`)
-
-Rust `Option<…>` encoding where the inner type is `Beskid.Compiler.Syntax.Nodes.LeadingDocComment` (`beskid_doc.pest` `@variant`).
-
-**Variant `None`**
-Absent (`None` in Rust).
-
-
-**Variant `Some`**
-Present; `payload` holds the inner value (`Beskid.Compiler.Syntax.Nodes.LeadingDocComment`).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalLeadingDocComment::OptionalLeadingDocComment::None` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalLeadingDocComment::OptionalLeadingDocComment::Some` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalLeadingDocComment::OptionalLeadingDocComment::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalParameterModifier` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalParameterModifier::OptionalParameterModifier` (`enum`)
-
-Rust `Option<…>` encoding where the inner type is `Beskid.Compiler.Syntax.Nodes.ParameterModifier` (`beskid_doc.pest` `@variant`).
-
-**Variant `None`**
-Absent (`None` in Rust).
-
-
-**Variant `Some`**
-Present; `payload` holds the inner value (`Beskid.Compiler.Syntax.Nodes.ParameterModifier`).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalParameterModifier::OptionalParameterModifier::None` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalParameterModifier::OptionalParameterModifier::Some` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalParameterModifier::OptionalParameterModifier::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalTestMetaSection` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalTestMetaSection::OptionalTestMetaSection` (`enum`)
-
-Rust `Option<…>` encoding where the inner type is `Beskid.Compiler.Syntax.Nodes.TestMetaSection` (`beskid_doc.pest` `@variant`).
-
-**Variant `None`**
-Absent (`None` in Rust).
-
-
-**Variant `Some`**
-Present; `payload` holds the inner value (`Beskid.Compiler.Syntax.Nodes.TestMetaSection`).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalTestMetaSection::OptionalTestMetaSection::None` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalTestMetaSection::OptionalTestMetaSection::Some` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalTestMetaSection::OptionalTestMetaSection::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalTestSkipSection` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalTestSkipSection::OptionalTestSkipSection` (`enum`)
-
-Rust `Option<…>` encoding where the inner type is `Beskid.Compiler.Syntax.Nodes.TestSkipSection` (`beskid_doc.pest` `@variant`).
-
-**Variant `None`**
-Absent (`None` in Rust).
-
-
-**Variant `Some`**
-Present; `payload` holds the inner value (`Beskid.Compiler.Syntax.Nodes.TestSkipSection`).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalTestSkipSection::OptionalTestSkipSection::None` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalTestSkipSection::OptionalTestSkipSection::Some` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalTestSkipSection::OptionalTestSkipSection::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalType` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalType::OptionalType` (`enum`)
-
-Rust `Option<…>` encoding where the inner type is `Beskid.Compiler.Syntax.Nodes.Type` (`beskid_doc.pest` `@variant`).
-
-**Variant `None`**
-Absent (`None` in Rust).
-
-
-**Variant `Some`**
-Present; `payload` holds the inner value (`Beskid.Compiler.Syntax.Nodes.Type`).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalType::OptionalType::None` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalType::OptionalType::Some` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::OptionalType::OptionalType::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Optionalusize` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Optionalusize::Optionalusize` (`enum`)
-
-Rust `Option<…>` encoding where the inner type is `Beskid.Compiler.Syntax.Nodes.usize` (`beskid_doc.pest` `@variant`).
-
-**Variant `None`**
-Absent (`None` in Rust).
-
-
-**Variant `Some`**
-Present; `payload` holds the inner value (`Beskid.Compiler.Syntax.Nodes.usize`).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Optionalusize::Optionalusize::None` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Optionalusize::Optionalusize::Some` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Optionalusize::Optionalusize::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Parameter` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Parameter::Parameter` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/parameter.rs` — `Parameter`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `modifier`, `name`, `ty`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Parameter::Parameter::modifier` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Parameter::Parameter::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Parameter::Parameter::ty` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ParameterList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ParameterModifier` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ParameterModifier::ParameterModifier` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/parameter_modifier.rs` — `ParameterModifier`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Ref`**
-unit (no payload)
-
-
-**Variant `Out`**
-unit (no payload)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ParameterModifier::ParameterModifier::Out` (`enum_variant`)
-
-
-
-**Variant `Out`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ParameterModifier::ParameterModifier::Ref` (`enum_variant`)
-
-
-
-**Variant `Ref`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Path` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Path::Path` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/path.rs` — `Path`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `segments`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Path::Path::segments` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PathExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PathExpression::PathExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/path_expression.rs` — `PathExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `path`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PathExpression::PathExpression::path` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PathList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PathSegment` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PathSegment::PathSegment` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/path.rs` — `PathSegment`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `typeArgs`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PathSegment::PathSegment::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PathSegment::PathSegment::typeArgs` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PathSegmentList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Pattern` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/pattern.rs` — `Pattern`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Wildcard`**
-unit (no payload)
-
-
-**Variant `Identifier`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.Identifier)
-
-
-**Variant `Literal`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.Literal)
-
-
-**Variant `Enum`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.EnumPattern)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::Enum` (`enum_variant`)
-
-
-
-**Variant `Enum`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.EnumPattern).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::Identifier` (`enum_variant`)
-
-
-
-**Variant `Identifier`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.Identifier).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::Literal` (`enum_variant`)
-
-
-
-**Variant `Literal`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.Literal).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::Wildcard` (`enum_variant`)
-
-
-
-**Variant `Wildcard`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Pattern::Pattern::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PatternList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PrimitiveType` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/primitive_type.rs` — `PrimitiveType`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Bool`**
-unit (no payload)
-
-
-**Variant `I32`**
-unit (no payload)
-
-
-**Variant `I64`**
-unit (no payload)
-
-
-**Variant `U8`**
-unit (no payload)
-
-
-**Variant `F64`**
-unit (no payload)
-
-
-**Variant `Char`**
-unit (no payload)
-
-
-**Variant `String`**
-unit (no payload)
-
-
-**Variant `Unit`**
-unit (no payload)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::Bool` (`enum_variant`)
-
-
-
-**Variant `Bool`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::Char` (`enum_variant`)
-
-
-
-**Variant `Char`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::F64` (`enum_variant`)
-
-
-
-**Variant `F64`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::I32` (`enum_variant`)
-
-
-
-**Variant `I32`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::I64` (`enum_variant`)
-
-
-
-**Variant `I64`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::String` (`enum_variant`)
-
-
-
-**Variant `String`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::U8` (`enum_variant`)
-
-
-
-**Variant `U8`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::PrimitiveType::PrimitiveType::Unit` (`enum_variant`)
-
-
-
-**Variant `Unit`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Program` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Program::Program` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/program.rs` — `Program`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `items`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Program::Program::items` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::RangeExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::RangeExpression::RangeExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/range_expression.rs` — `RangeExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `start`, `end`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::RangeExpression::RangeExpression::end` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::RangeExpression::RangeExpression::start` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ReturnStatement` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ReturnStatement::ReturnStatement` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/return_statement.rs` — `ReturnStatement`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `value`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::ReturnStatement::ReturnStatement::value` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/statement.rs` — `Statement`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Let`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.LetStatement)
-
-
-**Variant `Return`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.ReturnStatement)
-
-
-**Variant `Break`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.BreakStatement)
-
-
-**Variant `Continue`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.ContinueStatement)
-
-
-**Variant `While`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.WhileStatement)
-
-
-**Variant `For`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.ForStatement)
-
-
-**Variant `If`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.IfStatement)
-
-
-**Variant `Expression`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.ExpressionStatement)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::Break` (`enum_variant`)
-
-
-
-**Variant `Break`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.BreakStatement).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::Continue` (`enum_variant`)
-
-
-
-**Variant `Continue`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.ContinueStatement).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::Expression` (`enum_variant`)
-
-
-
-**Variant `Expression`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.ExpressionStatement).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::For` (`enum_variant`)
-
-
-
-**Variant `For`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.ForStatement).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::If` (`enum_variant`)
-
-
-
-**Variant `If`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.IfStatement).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::Let` (`enum_variant`)
-
-
-
-**Variant `Let`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.LetStatement).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::Return` (`enum_variant`)
-
-
-
-**Variant `Return`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.ReturnStatement).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::While` (`enum_variant`)
-
-
-
-**Variant `While`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.WhileStatement).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Statement::Statement::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::StatementList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::StructLiteralExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::StructLiteralExpression::StructLiteralExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/struct_literal_expression.rs` — `StructLiteralExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `path`, `fields`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::StructLiteralExpression::StructLiteralExpression::fields` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::StructLiteralExpression::StructLiteralExpression::path` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::StructLiteralField` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::StructLiteralField::StructLiteralField` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/struct_literal_field.rs` — `StructLiteralField`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `value`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::StructLiteralField::StructLiteralField::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::StructLiteralField::StructLiteralField::value` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::StructLiteralFieldList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestDefinition` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/test_definition.rs` — `TestDefinition`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `attributes`, `visibility`, `name`, `_meta`, `_skip`, `statements`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::_meta` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::_skip` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::attributes` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::statements` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestDefinition::TestDefinition::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestMetaSection` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestMetaSection::TestMetaSection` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/test_definition.rs` — `TestMetaSection`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `entries`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestMetaSection::TestMetaSection::entries` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestMetadataEntry` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestMetadataEntry::TestMetadataEntry` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/test_definition.rs` — `TestMetadataEntry`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `value`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestMetadataEntry::TestMetadataEntry::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestMetadataEntry::TestMetadataEntry::value` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestMetadataEntryList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestSkipEntry` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestSkipEntry::TestSkipEntry` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/test_definition.rs` — `TestSkipEntry`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `name`, `value`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestSkipEntry::TestSkipEntry::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestSkipEntry::TestSkipEntry::value` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestSkipEntryList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestSkipSection` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestSkipSection::TestSkipSection` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/test_definition.rs` — `TestSkipSection`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `entries`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TestSkipSection::TestSkipSection::entries` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TryExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TryExpression::TryExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/try_expression.rs` — `TryExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `expr`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TryExpression::TryExpression::expr` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/type.rs` — `Type`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Primitive`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.PrimitiveType)
-
-
-**Variant `Complex`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.Path)
-
-
-**Variant `Array`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.Type)
-
-
-**Variant `Ref`**
-tuple (payload: Beskid.Compiler.Syntax.Nodes.Type)
-
-
-**Variant `Function`**
-struct { returnType: Beskid.Compiler.Syntax.Nodes.Type, parameters: Beskid.Compiler.Syntax.Nodes.TypeList }
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::Array` (`enum_variant`)
-
-
-
-**Variant `Array`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.Type).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::Complex` (`enum_variant`)
-
-
-
-**Variant `Complex`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.Path).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::Function` (`enum_variant`)
-
-
-
-**Variant `Function`**
-struct payload: returnType: Beskid.Compiler.Syntax.Nodes.Type, parameters: Beskid.Compiler.Syntax.Nodes.TypeList.
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::Primitive` (`enum_variant`)
-
-
-
-**Variant `Primitive`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.PrimitiveType).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::Ref` (`enum_variant`)
-
-
-
-**Variant `Ref`**
-tuple payload: payload (Beskid.Compiler.Syntax.Nodes.Type).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::parameters` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::payload` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Type::Type::returnType` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TypeDefinition` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/type_definition.rs` — `TypeDefinition`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `visibility`, `name`, `generics`, `conformances`, `fields`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition::conformances` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition::fields` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition::generics` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition::name` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TypeDefinition::TypeDefinition::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::TypeList` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UnaryExpression` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UnaryExpression::UnaryExpression` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/unary_expression.rs` — `UnaryExpression`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `op`, `expr`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UnaryExpression::UnaryExpression::expr` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UnaryExpression::UnaryExpression::op` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UnaryOp` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UnaryOp::UnaryOp` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/unary_expression.rs` — `UnaryOp`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Neg`**
-unit (no payload)
-
-
-**Variant `Not`**
-unit (no payload)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UnaryOp::UnaryOp::Neg` (`enum_variant`)
-
-
-
-**Variant `Neg`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UnaryOp::UnaryOp::Not` (`enum_variant`)
-
-
-
-**Variant `Not`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UseDeclaration` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UseDeclaration::UseDeclaration` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/items/use_declaration.rs` — `UseDeclaration`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `visibility`, `path`, `alias`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UseDeclaration::UseDeclaration::alias` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UseDeclaration::UseDeclaration::path` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::UseDeclaration::UseDeclaration::visibility` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Visibility` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Visibility::Visibility` (`enum`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/common/visibility.rs` — `Visibility`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-
-**Variant `Public`**
-unit (no payload)
-
-
-**Variant `Private`**
-unit (no payload)
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Visibility::Visibility::Private` (`enum_variant`)
-
-
-
-**Variant `Private`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::Visibility::Visibility::Public` (`enum_variant`)
-
-
-
-**Variant `Public`**
-unit variant (no payload).
-
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::WhileStatement` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::WhileStatement::WhileStatement` (`type`)
-
-Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/while_statement.rs` — `WhileStatement`.
-
-Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
-Struct fields (see declaration): `condition`, `body`.
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::WhileStatement::WhileStatement::body` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::Nodes::WhileStatement::WhileStatement::condition` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Beskid::Compiler::Syntax::SyntaxFacadeVersion` (`function`)
 
 *No documentation provided.*
 
@@ -10957,6 +6694,31 @@ Struct fields (see declaration): `condition`, `body`.
 ---
 
 ### `Beskid::Syntax::Nodes` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Beskid::Syntax::Nodes::ArrayLiteralExpression` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Beskid::Syntax::Nodes::ArrayLiteralExpression::ArrayLiteralExpression` (`type`)
+
+Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/array_literal_expression.rs` — `ArrayLiteralExpression`.
+
+**Rust documentation** (from mirrored type):
+`[elem0, elem1, ...]` — array literal expression.
+
+Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
+Implements `Node` via the host bridge; traverse with `Beskid.Compiler.Query` and `NodeRef`.
+Struct fields (see declaration): `elements`.
+
+---
+
+### `Beskid::Syntax::Nodes::ArrayLiteralExpression::ArrayLiteralExpression::elements` (`field`)
 
 *No documentation provided.*
 
@@ -11892,15 +7654,15 @@ Struct fields (see declaration): `visibility`, `name`, `generics`, `variants`.
 Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/enum_path.rs` — `EnumPath`.
 
 **Rust documentation** (from mirrored type):
-Two-part path naming an enum variant (`TypeName.Variant`).
+Qualified path naming an enum variant (`Module.Type::Variant`).
 
 Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
 Implements `Node` via the host bridge; traverse with `Beskid.Compiler.Query` and `NodeRef`.
-Struct fields (see declaration): `typeName`, `variant`.
+Struct fields (see declaration): `typePath`, `variant`.
 
 ---
 
-### `Beskid::Syntax::Nodes::EnumPath::EnumPath::typeName` (`field`)
+### `Beskid::Syntax::Nodes::EnumPath::EnumPath::typePath` (`field`)
 
 *No documentation provided.*
 
@@ -12064,6 +7826,24 @@ tuple (payload: Beskid.Syntax.Nodes.MacroInvocation)
 tuple (payload: Beskid.Syntax.Nodes.MacroMetavariable)
 
 
+**Variant `Index`**
+tuple (payload: Beskid.Syntax.Nodes.IndexExpression)
+
+
+**Variant `ArrayLiteral`**
+tuple (payload: Beskid.Syntax.Nodes.ArrayLiteralExpression)
+
+
+---
+
+### `Beskid::Syntax::Nodes::Expression::Expression::ArrayLiteral` (`enum_variant`)
+
+
+
+**Variant `ArrayLiteral`**
+tuple payload: payload (Beskid.Syntax.Nodes.ArrayLiteralExpression).
+
+
 ---
 
 ### `Beskid::Syntax::Nodes::Expression::Expression::Assign` (`enum_variant`)
@@ -12122,6 +7902,16 @@ tuple payload: payload (Beskid.Syntax.Nodes.EnumConstructorExpression).
 
 **Variant `Grouped`**
 tuple payload: payload (Beskid.Syntax.Nodes.GroupedExpression).
+
+
+---
+
+### `Beskid::Syntax::Nodes::Expression::Expression::Index` (`enum_variant`)
+
+
+
+**Variant `Index`**
+tuple payload: payload (Beskid.Syntax.Nodes.IndexExpression).
 
 
 ---
@@ -12233,6 +8023,18 @@ tuple payload: payload (Beskid.Syntax.Nodes.TryExpression).
 **Variant `Unary`**
 tuple payload: payload (Beskid.Syntax.Nodes.UnaryExpression).
 
+
+---
+
+### `Beskid::Syntax::Nodes::Expression::Expression::payload` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Beskid::Syntax::Nodes::Expression::Expression::payload` (`field`)
+
+*No documentation provided.*
 
 ---
 
@@ -12555,7 +8357,13 @@ Top-level or nested function: visibility, signature, and body block.
 
 Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
 Implements `Node` via the host bridge; traverse with `Beskid.Compiler.Query` and `NodeRef`.
-Struct fields (see declaration): `visibility`, `name`, `generics`, `parameters`, `returnType`, `body`.
+Struct fields (see declaration): `attributes`, `visibility`, `name`, `generics`, `parameters`, `returnType`, `body`.
+
+---
+
+### `Beskid::Syntax::Nodes::FunctionDefinition::FunctionDefinition::attributes` (`field`)
+
+*No documentation provided.*
 
 ---
 
@@ -12735,6 +8543,37 @@ Struct fields (see declaration): `condition`, `thenBlock`, `elseBlock`.
 ---
 
 ### `Beskid::Syntax::Nodes::IfStatement::IfStatement::thenBlock` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Beskid::Syntax::Nodes::IndexExpression` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Beskid::Syntax::Nodes::IndexExpression::IndexExpression` (`type`)
+
+Generated syntax node mirror: `crates/beskid_analysis/src/syntax/expressions/index_expression.rs` — `IndexExpression`.
+
+**Rust documentation** (from mirrored type):
+`expr[index]` — array/string element access.
+
+Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
+Implements `Node` via the host bridge; traverse with `Beskid.Compiler.Query` and `NodeRef`.
+Struct fields (see declaration): `target`, `index`.
+
+---
+
+### `Beskid::Syntax::Nodes::IndexExpression::IndexExpression::index` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Beskid::Syntax::Nodes::IndexExpression::IndexExpression::target` (`field`)
 
 *No documentation provided.*
 
@@ -16403,186 +12242,6 @@ Re-exports growable array surface.
 
 ---
 
-### `Collections::Array::Advance` (`function`)
-
-Advance an iterator one element.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice (the iterator carries no payload in v1).
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-Iterator with `index` incremented by one.
-
-
----
-
-### `Collections::Array::Advance::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::ArrayIter` (`type`)
-
-Fixed-size array helper types and iteration primitives.
-Slice-like `T[]` values use the runtime `BeskidArray` layout; length is read via `__array_len`.
-@tier(standard)
-
-**Type parameter `T`**
-Element type for iterators.
-
-
----
-
-### `Collections::Array::ArrayIter::index` (`field`)
-
-Current traversal position.
-
----
-
-### `Collections::Array::ArrayIter::length` (`field`)
-
-Total number of readable elements.
-
----
-
-### `Collections::Array::HasNext` (`function`)
-
-Returns true when an iterator has remaining elements.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-`true` while `index < length`.
-
-
----
-
-### `Collections::Array::HasNext::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Index` (`function`)
-
-Returns the iterator's current zero-based index.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-`it.index`.
-
-
----
-
-### `Collections::Array::Index::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::IsEmpty` (`function`)
-
-Returns true when the array carries no readable elements.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `values`**
-Slice-like array handle.
-
-
-**Returns**
-
-`true` when `Len(values) == 0`.
-
-
----
-
-### `Collections::Array::IsEmpty::values` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Iterate` (`function`)
-
-Creates an iterator at the first element.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `values`**
-Source array.
-
-
-**Returns**
-
-Iterator positioned at index zero.
-
-
----
-
-### `Collections::Array::Iterate::values` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Len` (`function`)
-
-Returns array length (element count).
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice (length is independent of `T` in v1).
-
-
-**Parameter `values`**
-Slice-like array handle.
-
-
-**Returns**
-
-Element count from the runtime header.
-
-
----
-
-### `Collections::Array::Len::values` (`parameter`)
-
-*No documentation provided.*
-
----
-
 ### `Collections::List` (`module`)
 
 Re-exports list surface.
@@ -17501,6 +13160,150 @@ Concurrency package prelude: cooperative fibers, channels, and OS threading.
 
 ---
 
+### `Concurrency::Channel::Channel` (`type`)
+
+Opaque channel handle (move-only at language layer).
+
+---
+
+### `Concurrency::Channel::Channel::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Close` (`function`)
+
+Idempotent writer shutdown.
+
+---
+
+### `Concurrency::Channel::Close::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Create` (`function`)
+
+Creates an unbounded channel (default per platform spec).
+
+---
+
+### `Concurrency::Channel::CreateWithOptions` (`function`)
+
+Creates a channel with explicit options.
+
+---
+
+### `Concurrency::Channel::CreateWithOptions::options` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Handle` (`function`)
+
+Runtime queue id for `Hub.Register` and builtins.
+
+---
+
+### `Concurrency::Channel::Handle::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapReceiveError` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapReceiveError::status` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapSendStatus` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapSendStatus::status` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Receive` (`function`)
+
+Receives a value; parks when empty and open.
+
+---
+
+### `Concurrency::Channel::Receive::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Send` (`function`)
+
+Sends a value; parks the current fiber when the queue is full (bounded + wait mode).
+
+---
+
+### `Concurrency::Channel::Send::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Send::value` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::SendOk` (`type`)
+
+Success marker for [`Send`] / [`TrySend`] (`Result<SendOk, ChannelError>` per platform spec `Result<(), _>`).
+
+---
+
+### `Concurrency::Channel::TryReceive` (`function`)
+
+Non-blocking receive; `None` when the operation would block.
+
+---
+
+### `Concurrency::Channel::TryReceive::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::TrySend` (`function`)
+
+Non-blocking send; `None` when the operation would block.
+
+---
+
+### `Concurrency::Channel::TrySend::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::TrySend::value` (`parameter`)
+
+*No documentation provided.*
+
+---
+
 ### `Concurrency::ChannelError` (`module`)
 
 *No documentation provided.*
@@ -17539,7 +13342,182 @@ Owning fiber was cancelled.
 
 ---
 
+### `Concurrency::ChannelOptions::Bounded` (`function`)
+
+Bounded queue with `capacity > 0`; senders park when full.
+
+---
+
+### `Concurrency::ChannelOptions::Bounded::capacity` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity` (`enum`)
+
+Construction options for `Channel<T>.Create`.
+Capacity selector: default is unbounded.
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity::Bounded` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity::Unbounded` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity::capacity` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions` (`type`)
+
+Channel factory options (capacity plus v1 optimization hints).
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions::capacity` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions::singleReader` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions::singleWriter` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::Default` (`function`)
+
+Default options: unbounded queue, no single-reader/writer hints.
+
+---
+
+### `Concurrency::ChannelOptions::EncodeCapacity` (`function`)
+
+Encodes capacity for `__channel_create` (`0` = unbounded).
+
+---
+
+### `Concurrency::ChannelOptions::EncodeCapacity::options` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::EncodeFlags` (`function`)
+
+Encodes reader/writer hint flags for `__channel_create`.
+
+---
+
+### `Concurrency::ChannelOptions::EncodeFlags::options` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::SingleReader` (`function`)
+
+Unbounded queue optimized for a single reader.
+
+---
+
+### `Concurrency::ChannelOptions::SingleWriter` (`function`)
+
+Unbounded queue optimized for a single writer.
+
+---
+
+### `Concurrency::ChannelOptions::Unbounded` (`function`)
+
+Explicit unbounded queue (equivalent to default).
+
+---
+
 ### `Concurrency::Fiber` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Cancel` (`function`)
+
+Sets cancellation flag and raises `OnCancelled` on the child fiber.
+
+---
+
+### `Concurrency::Fiber::Cancel::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Detach` (`function`)
+
+Waives parent shutdown join; child panic still aborts the process in v1.
+
+---
+
+### `Concurrency::Fiber::Detach::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Fiber` (`type`)
+
+Runtime fiber handle; declares cancellation event on the handle only.
+
+---
+
+### `Concurrency::Fiber::Fiber::OnCancelled` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Fiber::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Join` (`function`)
+
+Waits for completion and returns the entry value or a `FiberError`.
+
+---
+
+### `Concurrency::Fiber::Join::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::MapJoinError` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::MapJoinError::status` (`parameter`)
 
 *No documentation provided.*
 
@@ -17635,6 +13613,78 @@ ABI status codes returned by `__fiber_join`.
 
 ---
 
+### `Concurrency::Hub::Create` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Hub` (`type`)
+
+Multiplexes `Channel<T>` members with `WaitReceive`.
+
+---
+
+### `Concurrency::Hub::Hub::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Register` (`function`)
+
+Registers `channel` at `index` (max 256 members in v1).
+
+---
+
+### `Concurrency::Hub::Register::channel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Register::index` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Register::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Unregister` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Unregister::index` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Unregister::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::WaitReceive` (`function`)
+
+Blocks until a member can satisfy `Receive` (round-robin among ready channels).
+
+---
+
+### `Concurrency::Hub::WaitReceive::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
 ### `Concurrency::HubError` (`module`)
 
 *No documentation provided.*
@@ -17683,7 +13733,79 @@ All registered channels are closed.
 
 ---
 
+### `Concurrency::HubReceiveResult::HubReceiveResult` (`type`)
+
+Successful `Hub.WaitReceive` payload.
+
+---
+
+### `Concurrency::HubReceiveResult::HubReceiveResult::index` (`field`)
+
+User registration index passed to `Hub.Register`.
+
+---
+
+### `Concurrency::HubReceiveResult::HubReceiveResult::value` (`field`)
+
+Message received from the selected member channel.
+
+---
+
 ### `Concurrency::Mutex` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Create` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Lock` (`function`)
+
+Parks until the mutex is acquired or the fiber is cancelled.
+
+---
+
+### `Concurrency::Mutex::Lock::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Mutex` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Mutex::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::TryLock` (`function`)
+
+Returns `None` when the mutex would block.
+
+---
+
+### `Concurrency::Mutex::TryLock::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Unlock` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Unlock::guard` (`parameter`)
 
 *No documentation provided.*
 
@@ -17712,6 +13834,43 @@ Waiting fiber was cancelled before acquire.
 ---
 
 ### `Concurrency::MutexGuard` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::MutexGuard::MutexGuard` (`type`)
+
+RAII guard acquired from `Mutex.Lock` or `Mutex.TryLock`.
+
+---
+
+### `Concurrency::MutexGuard::MutexGuard::mutexHandle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::NowMillis` (`function`)
+
+Monotonic milliseconds since an unspecified epoch (not wall clock).
+
+---
+
+### `Concurrency::ProcessorCount` (`function`)
+
+Active scheduler worker count (defaults to host logical CPUs at init).
+
+---
+
+### `Concurrency::SetProcessorCount` (`function`)
+
+Sets scheduler worker pool size (Go `GOMAXPROCS` analogue).
+v1 Phase A: no-op until runtime exposes dynamic resizing.
+
+---
+
+### `Concurrency::SetProcessorCount::count` (`parameter`)
 
 *No documentation provided.*
 
@@ -17768,6 +13927,73 @@ ABI status codes returned by channel, hub, mutex, and wait-group builtins.
 ### `Concurrency::WaitGroup` (`module`)
 
 *No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Add` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Add::delta` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Add::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Create` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Done` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Done::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Wait` (`function`)
+
+Parks until the counter reaches zero.
+
+---
+
+### `Concurrency::WaitGroup::Wait::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::WaitGroup` (`type`)
+
+Fork–join counter with `Add` / `Done` / `Wait` operations.
+
+---
+
+### `Concurrency::WaitGroup::WaitGroup::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Yield` (`function`)
+
+Scheduler entry points (`fiber_yield`, monotonic clock, worker pool sizing).
+Cooperative reschedule of the current fiber.
 
 ---
 
@@ -17897,6 +14123,31 @@ Console package prelude.
 
 ---
 
+### `Console::ConsoleMessage::ConsoleMessage` (`enum`)
+
+Cross-fiber terminal signals delivered via `Channel<ConsoleMessage>`.
+Multiplexed console events for UI fibers (`Receive` / `Hub.WaitReceive`).
+
+---
+
+### `Console::ConsoleMessage::ConsoleMessage::Resize` (`enum_variant`)
+
+Terminal size changed (character cells).
+
+---
+
+### `Console::ConsoleMessage::ConsoleMessage::Tick` (`enum_variant`)
+
+Tick pulse for live controls (`Console.RunTick`).
+
+---
+
+### `Console::ConsoleMessage::ConsoleMessage::size` (`field`)
+
+*No documentation provided.*
+
+---
+
 ### `Console::ConsoleSize` (`type`)
 
 Terminal dimensions in character cells.
@@ -17917,7 +14168,7 @@ Terminal dimensions in character cells.
 
 ### `Console::Controls::Contracts` (`module`)
 
-Console controls package root re-exports.
+*No documentation provided.*
 
 ---
 
@@ -18013,6 +14264,102 @@ Implementing types should declare `event onTick();` on the type.
 ---
 
 ### `Console::Controls::Frame` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::Ascii` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::ForHost` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::ForHost::useUnicode` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::bottom` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::bottomLeft` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::bottomRight` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::side` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::top` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::topLeft` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::topRight` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::PreferUnicodeFrame` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::Repeat` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::Repeat::count` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::Repeat::unit` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::Unicode` (`function`)
 
 *No documentation provided.*
 
@@ -18199,6 +14546,282 @@ Implementing types should declare `event onTick();` on the type.
 ---
 
 ### `Console::Controls::Panel` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::BodyLine` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::BodyLine::frame` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::BodyLine::innerWidth` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::BodyLine::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::ContentWidth` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::ContentWidth::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Margin` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Margin::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Measure` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Measure::available` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Measure::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::New` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::New::body` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Padding` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Padding::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::align` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::body` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::forceAscii` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::margin` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::padding` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::title` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Render` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Render::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Render::size` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::RenderWithContext` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::RenderWithContext::ctx` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::RenderWithContext::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::RenderWithContext::size` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::TopBorder` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::TopBorder::frame` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::TopBorder::innerWidth` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::TopBorder::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::UseUnicodeFrame` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::UseUnicodeFrame::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithAlignment` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithAlignment::align` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithAlignment::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithAsciiFrame` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithAsciiFrame::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithPadding` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithPadding::padding` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithPadding::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithTitle` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithTitle::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithTitle::title` (`parameter`)
 
 *No documentation provided.*
 
@@ -18534,115 +15157,121 @@ Implementing types should declare `event onTick();` on the type.
 
 ---
 
-### `Console::Controls::Stack` (`module`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Horizontal` (`function`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Horizontal::childText` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Measure` (`function`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Measure::available` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Measure::stack` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Render` (`function`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Render::size` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Render::stack` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Stack` (`type`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Stack::childText` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Stack::direction` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Stack::gap` (`field`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::StackDirection` (`enum`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::StackDirection::Horizontal` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::StackDirection::Vertical` (`enum_variant`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Vertical` (`function`)
-
-*No documentation provided.*
-
----
-
-### `Console::Controls::Stack::Vertical::childText` (`parameter`)
-
-*No documentation provided.*
-
----
-
 ### `Console::Controls::VerticalStack` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::ChildCount` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::ChildCount::stack` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Measure` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Measure::available` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Measure::stack` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::New` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Render` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Render::size` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Render::stack` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::RenderWithContext` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::RenderWithContext::ctx` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::RenderWithContext::size` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::RenderWithContext::stack` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::VerticalStack` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::VerticalStack::childBodies` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::VerticalStack::childCount` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::WithChild` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::WithChild::body` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::WithChild::stack` (`parameter`)
 
 *No documentation provided.*
 
@@ -19221,6 +15850,212 @@ Initializes platform terminal probes and seeds resize tracking on the hub.
 
 ---
 
+### `Console::Style::ClampWidth` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ClampWidth::maxValue` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ClampWidth::minValue` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ClampWidth::value` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin` (`enum`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin::None` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin::Sized` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin::Value` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin::size` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin::value` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding` (`enum`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding::None` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding::Sized` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding::Value` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding::size` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding::value` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolveMargin` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolveMargin::columns` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolveMargin::margin` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolvePadding` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolvePadding::columns` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolvePadding::padding` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolveSize` (`function`)
+
+Resolves `Size` to a character count for the given terminal width.
+
+**Parameter `size`**
+Logical size token.
+
+
+**Parameter `columns`**
+Terminal width in columns.
+
+
+---
+
+### `Console::Style::ResolveSize::columns` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolveSize::size` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Size` (`enum`)
+
+Shared layout/style enums for console controls.
+
+---
+
+### `Console::Style::Size::Large` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Size::Medium` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Size::Small` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::TitleAlignment` (`enum`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::TitleAlignment::Center` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::TitleAlignment::Left` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::TitleAlignment::Right` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
 ### `Console::SubscribeOnResize` (`function`)
 
 Subscribes to resize notifications and synchronously raises once with the current size.
@@ -19416,75 +16251,182 @@ Re-exports string helper functions.
 
 ---
 
-### `Core::String::Contains` (`function`)
-
-Returns true when needle is treated as present in text (prefix/suffix equality only in v1).
-
-**Parameter `text`**
-Haystack UTF-8 string.
-
-
-**Parameter `needle`**
-Needle UTF-8 string; empty needle is always considered found.
-
-
-**Returns**
-
-`true` when `needle` is empty, longer than `text`, or exactly equal to `text`.
-
-
----
-
-### `Core::String::Contains::needle` (`parameter`)
+### `Platform::Linux::IsAtty` (`function`)
 
 *No documentation provided.*
 
 ---
 
-### `Core::String::Contains::text` (`parameter`)
+### `Platform::Linux::IsAtty::fd` (`parameter`)
 
 *No documentation provided.*
 
 ---
 
-### `Core::String::IsEmpty` (`function`)
+### `Platform::Linux::Libc` (`contract`)
 
-Returns true when text is empty.
-
-**Parameter `text`**
-UTF-8 string handle.
-
-
-**Returns**
-
-`true` when `Len` is zero.
-
+Linux terminal probes via libc Extern (`isatty`, best-effort `ioctl` winsize).
 
 ---
 
-### `Core::String::IsEmpty::text` (`parameter`)
+### `Platform::Linux::Libc::arg` (`parameter`)
 
 *No documentation provided.*
 
 ---
 
-### `Core::String::Len` (`function`)
+### `Platform::Linux::Libc::fd` (`parameter`)
 
-UTF-8 string helpers backed by runtime string builtins (`__str_len`).
-Returns the number of UTF-8 code units in text.
-
-**Parameter `text`**
-UTF-8 string handle.
-
-
-**Returns**
-
-Code unit count as `i64`.
-
+*No documentation provided.*
 
 ---
 
-### `Core::String::Len::text` (`parameter`)
+### `Platform::Linux::Libc::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::Libc::ioctl` (`contract_method`)
+
+`TIOCGWINSZ` (0x5413); `arg` is `struct winsize*` when host linking is enabled.
+
+---
+
+### `Platform::Linux::Libc::isatty` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::Libc::request` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::WinSize` (`type`)
+
+Packed `struct winsize` layout for ioctl out-parameters (host ABI).
+
+---
+
+### `Platform::Linux::WinSize::ws_col` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::WinSize::ws_row` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::WinSize::ws_xpixel` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::WinSize::ws_ypixel` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::Winsize` (`function`)
+
+Returns terminal size from ioctl when available; otherwise zeroed columns for env fallback.
+`TIOCGWINSZ` on Linux; ioctl needs a live pointer at link/runtime (see platform spec).
+
+---
+
+### `Platform::MacOS::IsAtty` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::IsAtty::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Libc` (`contract`)
+
+macOS terminal probes via libc Extern (`isatty`, best-effort `ioctl` winsize).
+
+---
+
+### `Platform::MacOS::Libc::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Libc::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Libc::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Libc::ioctl` (`contract_method`)
+
+`TIOCGWINSZ` (0x40087468 on macOS); `arg` is `struct winsize*` when host linking is enabled.
+
+---
+
+### `Platform::MacOS::Libc::isatty` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Libc::request` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::WinSize` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::WinSize::ws_col` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::WinSize::ws_row` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::WinSize::ws_xpixel` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::WinSize::ws_ypixel` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Winsize` (`function`)
 
 *No documentation provided.*
 
@@ -19631,6 +16573,84 @@ In-fiber resize hub (event multicast on the owning fiber).
 ### `Platform::Terminal::QuerySize` (`function`)
 
 *No documentation provided.*
+
+---
+
+### `Platform::Windows::IsAtty` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::IsAtty::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32` (`contract`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32::GetConsoleScreenBufferInfo` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32::GetStdHandle` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32::handle` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32::infoOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32::nStdHandle` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Ucrt` (`contract`)
+
+Windows console probes (`_isatty`, best-effort `GetConsoleScreenBufferInfo`).
+
+---
+
+### `Platform::Windows::Ucrt::_isatty` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Ucrt::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Winsize` (`function`)
+
+Returns size from console buffer info when host linking supplies struct out-pointers; else zeroed.
+
+---
+
+### `Query::Contracts` (`module`)
+
+Re-exports query contracts (Option type).
 
 ---
 
@@ -21155,6 +18175,179 @@ Written byte count or a `SyscallError`.
 
 ---
 
+### `System::Threading::Thread::DarwinPthread` (`contract`)
+
+macOS libc pthread surface (v1).
+
+---
+
+### `System::Threading::Thread::DarwinPthread::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::attr` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::pthread_create` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::pthread_join` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::sched_yield` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::startRoutine` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::thread` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::threadOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::valueOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Join` (`function`)
+
+Waits for OS thread completion.
+
+---
+
+### `System::Threading::Thread::Join::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread` (`contract`)
+
+Linux libc pthread surface (v1).
+
+---
+
+### `System::Threading::Thread::LinuxPthread::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::attr` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::pthread_create` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::pthread_join` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::sched_yield` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::startRoutine` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::thread` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::threadOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::valueOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Spawn` (`function`)
+
+Starts an OS thread. Beskid entry attachment is enforced by the runtime before user code runs.
+
+**Returns**
+
+`Thread` handle or `ThreadError::SpawnFailed` when pthread creation fails.
+
+
+---
+
+### `System::Threading::Thread::Spawn::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Spawn::entryRoutine` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Thread` (`type`)
+
+Opaque pthread handle on Linux and macOS.
+
+---
+
+### `System::Threading::Thread::Thread::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Yield` (`function`)
+
+OS-level yield (not `Concurrency.Yield`).
+
+---
+
 ### `System::Threading::ThreadError` (`module`)
 
 *No documentation provided.*
@@ -21818,6 +19011,12 @@ Evaluates predicate pass/fail status.
 ---
 
 ### `__wait_group_wait` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `range` (`function`)
 
 *No documentation provided.*
 

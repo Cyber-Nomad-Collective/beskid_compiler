@@ -8,29 +8,13 @@ use Platform.MacOS;
 use Platform.Windows;
 
 pub bool EnvFlagSet(string name) {
-    Core.Results.Result<string, System.Environment.EnvironmentError> result =
-        System.Environment.Get(name);
-    match result {
-        Result::Ok(value) => {
-            return !Core.String.IsEmpty(value);
-        },
-        Result::Error(_) => {
-            return false;
-        },
-    };
+    string value = __env_get(name);
+    return !Core.String.IsEmpty(value);
 }
 
 pub bool EnvEquals(string name, string expected) {
-    Core.Results.Result<string, System.Environment.EnvironmentError> result =
-        System.Environment.Get(name);
-    match result {
-        Result::Ok(value) => {
-            return value == expected;
-        },
-        Result::Error(_) => {
-            return false;
-        },
-    };
+    string value = __env_get(name);
+    return value == expected;
 }
 
 pub i64 IsAtty(i64 fd) {
@@ -82,67 +66,45 @@ pub ColorModel ProbeColorModel() {
 pub Console.ConsoleSize EnvFallbackSize() {
     i32 columns = 80;
     i32 rows = 24;
-    Core.Results.Result<string, System.Environment.EnvironmentError> cols =
-        System.Environment.Get("COLUMNS");
-    match cols {
-        Result::Ok(value) => {
-            if !Core.String.IsEmpty(value) {
-                columns = ParseEnvColumns(value, columns);
-            }
-        },
-        Result::Error(_) => {
-        },
-    };
-    Core.Results.Result<string, System.Environment.EnvironmentError> lines =
-        System.Environment.Get("LINES");
-    match lines {
-        Result::Ok(value) => {
-            if !Core.String.IsEmpty(value) {
-                rows = ParseEnvRows(value, rows);
-            }
-        },
-        Result::Error(_) => {
-        },
-    };
+    string cols = __env_get("COLUMNS");
+    if !Core.String.IsEmpty(cols) {
+        columns = ParseEnvColumns(cols, columns);
+    }
+    string lines = __env_get("LINES");
+    if !Core.String.IsEmpty(lines) {
+        rows = ParseEnvRows(lines, rows);
+    }
     return Console.ConsoleSize { columns: columns, rows: rows };
 }
 
+pub i32 ParsePositiveInt(string value, i32 defaultValue) {
+    if Core.String.IsEmpty(value) {
+        return defaultValue;
+    }
+    i64 len = Core.String.Len(value);
+    i64 i = 0;
+    i64 acc = 0;
+    while i < len {
+        u8 b = Core.String.ByteAt(value, i);
+        if b < 48 || b > 57 {
+            return defaultValue;
+        }
+        acc = acc * 10 + (b - 48);
+        i = i + 1;
+    }
+    if acc < 1 || acc > 2147483647 {
+        return defaultValue;
+    }
+    i32 parsed = acc;
+    return parsed;
+}
+
 pub i32 ParseEnvColumns(string value, i32 defaultValue) {
-    if value == "80" {
-        return 80;
-    }
-    if value == "120" {
-        return 120;
-    }
-    if value == "132" {
-        return 132;
-    }
-    if value == "160" {
-        return 160;
-    }
-    if value == "200" {
-        return 200;
-    }
-    return defaultValue;
+    return ParsePositiveInt(value, defaultValue);
 }
 
 pub i32 ParseEnvRows(string value, i32 defaultValue) {
-    if value == "24" {
-        return 24;
-    }
-    if value == "30" {
-        return 30;
-    }
-    if value == "40" {
-        return 40;
-    }
-    if value == "50" {
-        return 50;
-    }
-    if value == "60" {
-        return 60;
-    }
-    return defaultValue;
+    return ParsePositiveInt(value, defaultValue);
 }
 
 pub Console.ConsoleSize QuerySize() {
@@ -166,7 +128,7 @@ pub unit EnsureInitialized() {
 }
 
 /// Publishes `ConsoleMessage::Resize` when terminal dimensions change.
-pub unit PollResize(Channel<ConsoleMessage> messages, Console.ConsoleSize mut lastSize) {
+pub unit PollResize(Channel<ConsoleMessage> messages, mut Console.ConsoleSize lastSize) {
     Console.ConsoleSize now = QuerySize();
     if now.columns != lastSize.columns || now.rows != lastSize.rows {
         lastSize = now;
@@ -179,7 +141,7 @@ pub unit PollResize(Channel<ConsoleMessage> messages, Console.ConsoleSize mut la
 }
 
 /// In-fiber resize hub (event multicast on the owning fiber).
-pub unit PollResizeHub(Console.OnResize mut hub) {
+pub unit PollResizeHub(mut Console.OnResize hub) {
     Console.ConsoleSize now = QuerySize();
     if now.columns != hub.lastSize.columns || now.rows != hub.lastSize.rows {
         hub.lastSize = now;

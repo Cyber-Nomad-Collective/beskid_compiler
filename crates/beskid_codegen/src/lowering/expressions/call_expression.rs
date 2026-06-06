@@ -14,7 +14,10 @@ use beskid_analysis::hir::{
 };
 use beskid_analysis::resolve::{canonical_item_id, ItemKind, ResolvedValue};
 use beskid_analysis::syntax::Spanned;
-use beskid_analysis::types::{CallLoweringKind, MethodReceiverSource, TypeId, TypeInfo};
+use beskid_analysis::types::{
+    first_field_segment_name, method_name_from_path_callee, CallLoweringKind,
+    MethodReceiverSource, TypeId, TypeInfo,
+};
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
     AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, MemFlags, Signature, TrapCode,
@@ -104,13 +107,10 @@ fn lambda_signature_type_ids(
 
 fn event_field_name(callee: &Spanned<HirExpressionNode>) -> Option<String> {
     match &callee.node {
-        HirExpressionNode::PathExpression(path_expr) => path_expr
-            .node
-            .path
-            .node
-            .segments
-            .get(1)
-            .map(|segment| segment.node.name.node.name.clone()),
+        HirExpressionNode::PathExpression(path_expr) => first_field_segment_name(
+            &path_expr.node.path.node.segments,
+        )
+        .map(str::to_string),
         HirExpressionNode::MemberExpression(member_expr) => {
             Some(member_expr.node.member.node.name.clone())
         }
@@ -652,13 +652,10 @@ fn lower_indirect_function_call_with_signature(
 
 fn contract_method_name(callee: &Spanned<HirExpressionNode>) -> Option<String> {
     match &callee.node {
-        HirExpressionNode::PathExpression(path_expr) => path_expr
-            .node
-            .path
-            .node
-            .segments
-            .get(1)
-            .map(|segment| segment.node.name.node.name.clone()),
+        HirExpressionNode::PathExpression(path_expr) => method_name_from_path_callee(
+            &path_expr.node.path.node.segments,
+        )
+        .map(str::to_string),
         HirExpressionNode::MemberExpression(member_expr) => {
             Some(member_expr.node.member.node.name.clone())
         }

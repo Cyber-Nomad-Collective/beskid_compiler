@@ -106,6 +106,17 @@ impl Normalizer {
         block.node.statements = new_statements;
     }
 
+    pub fn visit_if_statement(&mut self, if_stmt: &mut Spanned<crate::hir::HirIfStatement>) {
+        self.visit_expression(&mut if_stmt.node.condition);
+        self.visit_block(&mut if_stmt.node.then_block);
+        if let Some(else_branch) = &mut if_stmt.node.else_branch {
+            match &mut else_branch.node {
+                crate::hir::HirElseBranch::Block(block) => self.visit_block(block),
+                crate::hir::HirElseBranch::If(nested) => self.visit_if_statement(nested),
+            }
+        }
+    }
+
     pub fn visit_expression(&mut self, expr: &mut Spanned<HirExpressionNode>) {
         // Pipeline contract: syntax/HIR lowering may contain `TryExpression`; normalization
         // must desugar it so type/codegen backends only observe explicit control-flow.

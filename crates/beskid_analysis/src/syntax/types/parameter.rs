@@ -1,12 +1,10 @@
-use crate::syntax::{Identifier, ParameterModifier, Spanned, Type};
+use crate::syntax::{Identifier, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
-/// Function or method parameter: optional modifier, name, and type (`ty name` surface order).
+/// Function or method parameter: optional `mut`, type, and name.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Parameter {
-    #[ast(child)]
-    pub modifier: Option<Spanned<ParameterModifier>>,
     #[ast(skip)]
     pub mutable: bool,
     #[ast(child)]
@@ -34,40 +32,27 @@ impl crate::parsing::parsable::Parsable for Parameter {
                 crate::parser::Rule::BeskidType,
             ))?;
 
-        let (modifier, ty_pair) = if first.as_rule() == crate::parser::Rule::ParameterModifier {
-            let modifier = crate::syntax::ParameterModifier::parse(first)?;
+        let (mutable, ty_pair) = if first.as_rule() == crate::parser::Rule::MutKeyword {
             let ty_pair = inner
                 .next()
                 .ok_or(crate::parsing::error::ParseError::missing(
                     crate::parser::Rule::BeskidType,
                 ))?;
-            (Some(modifier), ty_pair)
+            (true, ty_pair)
         } else {
-            (None, first)
+            (false, first)
         };
 
         let ty = crate::syntax::Type::parse(ty_pair)?;
-        let (mutable, name_pair) = if let Some(next) = inner.next() {
-            if next.as_rule() == crate::parser::Rule::MutKeyword {
-                let name_pair = inner
-                    .next()
-                    .ok_or(crate::parsing::error::ParseError::missing(
-                        crate::parser::Rule::Identifier,
-                    ))?;
-                (true, name_pair)
-            } else {
-                (false, next)
-            }
-        } else {
-            return Err(crate::parsing::error::ParseError::missing(
+        let name_pair = inner
+            .next()
+            .ok_or(crate::parsing::error::ParseError::missing(
                 crate::parser::Rule::Identifier,
-            ));
-        };
+            ))?;
         let name = crate::syntax::Identifier::parse(name_pair)?;
 
         Ok(crate::syntax::Spanned::new(
             Self {
-                modifier,
                 mutable,
                 name,
                 ty,

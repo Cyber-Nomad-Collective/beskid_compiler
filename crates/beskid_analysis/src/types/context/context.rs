@@ -7,7 +7,7 @@ use crate::builtins::{BuiltinType, builtin_specs};
 use crate::hir::{HirContractNode, HirItem, HirPrimitiveType, HirProgram};
 use crate::resolve::{ItemId, ItemKind, LocalId, Resolution, ResolvedType};
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::{TypeId, TypeTable};
+use crate::types::{TypeId, TypeInfo, TypeTable};
 
 /// Type mismatch, missing annotation, invalid operation, or extern-surface violation at a span.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -468,15 +468,28 @@ impl TypeResult {
 
         let mut candidate = None;
         for types in self.scoped_expr_types.values() {
-            if let Some(type_id) = types.get(&span) {
-                if candidate.is_some() {
-                    candidate = None;
-                    break;
-                }
-                candidate = Some(*type_id);
+            let Some(type_id) = types.get(&span).copied().or_else(|| {
+                types
+                    .iter()
+                    .find(|(stored, _)| stored.start == span.start)
+                    .map(|(_, type_id)| *type_id)
+            }) else {
+                continue;
+            };
+            if candidate.is_some() {
+                candidate = None;
+                break;
             }
+            candidate = Some(type_id);
         }
-        candidate.or_else(|| self.expr_types.get(&span).copied())
+        candidate.or_else(|| {
+            self.expr_types.get(&span).copied().or_else(|| {
+                self.expr_types
+                    .iter()
+                    .find(|(stored, _)| stored.start == span.start)
+                    .map(|(_, type_id)| *type_id)
+            })
+        })
     }
 
     pub fn call_kind_at(
@@ -501,15 +514,28 @@ impl TypeResult {
 
         let mut candidate = None;
         for kinds in self.scoped_call_kinds.values() {
-            if let Some(kind) = kinds.get(&span) {
-                if candidate.is_some() {
-                    candidate = None;
-                    break;
-                }
-                candidate = Some(*kind);
+            let Some(kind) = kinds.get(&span).copied().or_else(|| {
+                kinds
+                    .iter()
+                    .find(|(stored, _)| stored.start == span.start)
+                    .map(|(_, kind)| *kind)
+            }) else {
+                continue;
+            };
+            if candidate.is_some() {
+                candidate = None;
+                break;
             }
+            candidate = Some(kind);
         }
-        candidate.or_else(|| self.call_kinds.get(&span).copied())
+        candidate.or_else(|| {
+            self.call_kinds.get(&span).copied().or_else(|| {
+                self.call_kinds
+                    .iter()
+                    .find(|(stored, _)| stored.start == span.start)
+                    .map(|(_, kind)| *kind)
+            })
+        })
     }
 }
 
@@ -624,11 +650,11 @@ impl<'a> TypeContext<'a> {
             };
             let mut params = Vec::with_capacity(spec.params.len());
             for param in spec.params {
-                if let Some(type_id) = self.builtin_type_id(*param) {
+                if let Some(type_id) = self.builtin_surface_type_id(spec, *param, false) {
                     params.push(type_id);
                 }
             }
-            let return_type = self.builtin_type_id(spec.returns);
+            let return_type = self.builtin_surface_type_id(spec, spec.returns, true);
             let Some(return_type) = return_type else {
                 continue;
             };
@@ -642,13 +668,60 @@ impl<'a> TypeContext<'a> {
         }
     }
 
+    pub(super) fn u8_array_type_id(&mut self) -> Option<TypeId> {
+        let u8_id = self.primitive_type_id(HirPrimitiveType::U8)?;
+        Some(
+            self.type_table
+                .find_array_of(u8_id)
+                .unwrap_or_else(|| self.type_table.intern(TypeInfo::Array(u8_id))),
+        )
+    }
+
+    fn builtin_surface_type_id(
+        &mut self,
+        spec: &crate::builtins::BuiltinSpec,
+        builtin: BuiltinType,
+        is_return: bool,
+    ) -> Option<TypeId> {
+        if builtin == BuiltinType::Ptr {
+            let path = spec.beskid_path;
+            if is_return {
+                if matches!(
+                    path,
+                    &["__bytes_from_str"]
+                        | &["__syscall_read_bytes"]
+                        | &["__bytes_set"]
+                        | &["__str_new"]
+                        | &["__str_slice"]
+                ) {
+                    if matches!(path, &["__str_new"] | &["__str_slice"]) {
+                        return self.primitive_type_id(HirPrimitiveType::String);
+                    }
+                    return self.u8_array_type_id();
+                }
+            }
+            if matches!(
+                path,
+                &["__bytes_copy"]
+                    | &["__bytes_get"]
+                    | &["__bytes_set"]
+                    | &["__bytes_compare"]
+                    | &["__syscall_write_bytes"]
+            ) {
+                return self.u8_array_type_id();
+            }
+            return self.primitive_type_id(HirPrimitiveType::I64);
+        }
+        self.builtin_type_id(builtin)
+    }
+
     fn builtin_type_id(&self, builtin: BuiltinType) -> Option<TypeId> {
         match builtin {
             BuiltinType::String => self.primitive_type_id(HirPrimitiveType::String),
             BuiltinType::Unit => self.primitive_type_id(HirPrimitiveType::Unit),
             BuiltinType::Never => self.primitive_type_id(HirPrimitiveType::Never),
             BuiltinType::Usize | BuiltinType::U64 => self.primitive_type_id(HirPrimitiveType::I64),
-            BuiltinType::Ptr => None,
+            BuiltinType::Ptr => self.primitive_type_id(HirPrimitiveType::I64),
         }
     }
 
@@ -1006,20 +1079,10 @@ impl<'a> TypeContext<'a> {
     }
 
     fn is_allowed_ffi_param(&self, param: &Spanned<crate::hir::HirParameter>) -> bool {
-        use crate::hir::{HirParameterModifier, HirPrimitiveType, HirType};
-        match &param.node.modifier {
-            Some(modif) if matches!(modif.node, HirParameterModifier::Ref) => {
-                // Only allow ref u8
-                match &param.node.ty.node {
-                    HirType::Primitive(p) => matches!(p.node, HirPrimitiveType::U8),
-                    _ => false,
-                }
-            }
-            Some(_) => false, // disallow other modifiers (e.g., out) in v0.1
-            None => match &param.node.ty.node {
-                HirType::Primitive(p) => Self::is_allowed_ffi_primitive(p.node),
-                _ => false,
-            },
+        use crate::hir::{HirPrimitiveType, HirType};
+        match &param.node.ty.node {
+            HirType::Primitive(p) => Self::is_allowed_ffi_primitive(p.node),
+            _ => false,
         }
     }
 

@@ -1,38 +1,23 @@
 /// Process metadata and control helpers.
-/// @ref(Core.Results.Result) for exit metadata helpers.
-/// @variant(InvalidCommand) Empty or otherwise unusable command line.
-/// @variant(SpawnFailed) Host could not spawn the requested process.
 pub enum ProcessError {
-    /// Command is empty or invalid.
     InvalidCommand(string command),
-    /// Process creation failed.
     SpawnFailed(string command),
 }
 
-/// Returns current process identifier.
-/// @returns Placeholder `0` until host integration lands.
 pub i32 Id() {
-    return 0;
+    return __process_getpid();
 }
 
-/// Terminates current process with a code.
-/// @arg(code) Exit status; non-zero values panic in v1 until runtime-backed exits exist.
 pub unit Exit(i32 code) {
-    if code != 0 {
-        __panic_str("Process.Exit with non-zero code is not yet runtime-backed");
-    }
+    __process_exit(code);
     return;
 }
 
-/// Returns current process exit code when available.
-/// @returns `Ok(0)` placeholder until host metadata is wired.
 pub Core.Results.Result<i64, ProcessError> ExitCode() {
     return Result::Ok(0);
 }
 
-/// Attempts to execute a command.
-/// @arg(command) Command line to spawn.
-/// @returns `SpawnFailed` for non-empty commands in this stub.
+/// Process spawn remains deferred; signatures stable for v1.
 pub Core.Results.Result<bool, ProcessError> Run(string command) {
     if command == "" {
         return Result::Error(ProcessError::InvalidCommand(command));

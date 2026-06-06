@@ -1,7 +1,0 @@
-/// Successful `Hub.WaitReceive` payload.
-pub type HubReceiveResult<T> {
-    /// User registration index passed to `Hub.Register`.
-    i64 index,
-    /// Message received from the selected member channel.
-    T value,
-}

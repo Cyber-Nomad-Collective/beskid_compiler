@@ -45,7 +45,8 @@ pub ColorModel EffectiveColorModel(Capabilities caps) {
 }
 
 pub Capabilities ProbeStdout() {
-    bool tty = Terminal.IsAtty(1) != 0;
+    i64 atty = Terminal.IsAtty(1);
+    bool tty = atty == 1;
     bool noColor = Terminal.EnvFlagSet("NO_COLOR");
     bool forceColor = Terminal.EnvFlagSet("FORCE_COLOR");
     ColorModel model = Terminal.ProbeColorModel();

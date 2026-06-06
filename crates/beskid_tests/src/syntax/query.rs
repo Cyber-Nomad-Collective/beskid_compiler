@@ -46,7 +46,7 @@ fn test_query_filter_typed() {
     let input = "
         unit main() {
             let x = 1;
-            i32 mut y = 2;
+            mut i32 y = 2;
         }
     ";
     let program = parse_program_ast(input);

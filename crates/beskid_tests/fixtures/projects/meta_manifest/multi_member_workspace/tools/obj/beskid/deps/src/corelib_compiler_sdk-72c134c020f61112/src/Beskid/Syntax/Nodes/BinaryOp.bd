@@ -21,6 +21,7 @@
 /// @variant(Sub) unit (no payload)
 /// @variant(Mul) unit (no payload)
 /// @variant(Div) unit (no payload)
+/// @variant(Mod) unit (no payload)
 pub enum BinaryOp
 {
     /// @variant(Or) unit variant (no payload).
@@ -51,4 +52,6 @@ pub enum BinaryOp
     Mul,
     /// @variant(Div) unit variant (no payload).
     Div,
+    /// @variant(Mod) unit variant (no payload).
+    Mod,
 }

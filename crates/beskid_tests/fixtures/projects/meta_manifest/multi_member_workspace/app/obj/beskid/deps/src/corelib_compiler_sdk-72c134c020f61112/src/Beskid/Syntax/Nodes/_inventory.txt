@@ -17,6 +17,7 @@ ContractDefinition
 ContractEmbedding
 ContractMethodSignature
 ContractNode
+ElseBranch
 EnumConstructorExpression
 EnumDefinition
 EnumPath
@@ -54,7 +55,6 @@ MemberExpression
 MethodDefinition
 ModuleDeclaration
 Parameter
-ParameterModifier
 Path
 PathExpression
 PathSegment

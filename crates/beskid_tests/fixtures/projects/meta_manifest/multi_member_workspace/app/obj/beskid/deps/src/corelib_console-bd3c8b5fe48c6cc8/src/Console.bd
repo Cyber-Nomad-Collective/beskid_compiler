@@ -48,7 +48,7 @@ pub Channel<ConsoleMessage> MessagesChannel() {
 }
 
 /// Subscribes to resize notifications and synchronously raises once with the current size.
-pub unit SubscribeOnResize(OnResize mut hub, unit(ConsoleSize) handler) {
+pub unit SubscribeOnResize(mut OnResize hub, unit(ConsoleSize) handler) {
     hub.OnResize += handler;
     ConsoleSize now = QuerySize();
     hub.lastSize = now;
@@ -57,7 +57,7 @@ pub unit SubscribeOnResize(OnResize mut hub, unit(ConsoleSize) handler) {
 }
 
 /// Polls terminal size and **Send**s `ConsoleMessage::Resize` when dimensions change.
-pub unit RunTick(Channel<ConsoleMessage> messages, ConsoleSize mut lastSize) {
+pub unit RunTick(Channel<ConsoleMessage> messages, mut ConsoleSize lastSize) {
     Platform.Terminal.PollResize(messages, lastSize);
     return;
 }
@@ -65,7 +65,7 @@ pub unit RunTick(Channel<ConsoleMessage> messages, ConsoleSize mut lastSize) {
 /// Polls resize, publishes tick to `messages`, and advances registered live controls.
 pub LiveTick.LiveTickState RunTickLive(
     Channel<ConsoleMessage> messages,
-    ConsoleSize mut lastSize,
+    mut ConsoleSize lastSize,
     LiveTick.LiveTickState live
 ) {
     Platform.Terminal.PollResize(messages, lastSize);
@@ -77,13 +77,13 @@ pub LiveTick.LiveTickState RunTickLive(
 }
 
 /// In-fiber resize multicast (same-fiber handlers only); prefer `MessagesChannel` across fibers.
-pub unit RunTickHub(OnResize mut hub) {
+pub unit RunTickHub(mut OnResize hub) {
     Platform.Terminal.PollResizeHub(hub);
     return;
 }
 
 /// Initializes platform terminal probes and seeds resize tracking on the hub.
-pub unit Start(OnResize mut hub) {
+pub unit Start(mut OnResize hub) {
     Platform.Terminal.EnsureInitialized();
     hub.lastSize = QuerySize();
     return;

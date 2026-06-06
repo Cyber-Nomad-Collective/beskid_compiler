@@ -294,6 +294,17 @@ impl Resolver {
         self.pop_scope();
     }
 
+    fn resolve_if_statement(&mut self, if_stmt: &Spanned<crate::hir::HirIfStatement>) {
+        self.resolve_expression(&if_stmt.node.condition);
+        self.resolve_block(&if_stmt.node.then_block);
+        if let Some(else_branch) = &if_stmt.node.else_branch {
+            match &else_branch.node {
+                crate::hir::HirElseBranch::Block(block) => self.resolve_block(block),
+                crate::hir::HirElseBranch::If(nested) => self.resolve_if_statement(nested),
+            }
+        }
+    }
+
     fn resolve_statement(&mut self, statement: &Spanned<HirStatementNode>) {
         match &statement.node {
             HirStatementNode::LetStatement(let_stmt) => {
@@ -326,11 +337,7 @@ impl Resolver {
                 self.pop_scope();
             }
             HirStatementNode::IfStatement(if_stmt) => {
-                self.resolve_expression(&if_stmt.node.condition);
-                self.resolve_block(&if_stmt.node.then_block);
-                if let Some(else_block) = &if_stmt.node.else_block {
-                    self.resolve_block(else_block);
-                }
+                self.resolve_if_statement(if_stmt);
             }
             HirStatementNode::ExpressionStatement(expr_stmt) => {
                 self.resolve_expression(&expr_stmt.node.expression);
@@ -453,7 +460,7 @@ impl Resolver {
         match &ty.node {
             HirType::Primitive(_) => {}
             HirType::Complex(path) => self.resolve_type_path(path),
-            HirType::Array(inner) | HirType::Ref(inner) => self.resolve_type(inner),
+            HirType::Array(inner) => self.resolve_type(inner),
             HirType::Function {
                 return_type,
                 parameters,

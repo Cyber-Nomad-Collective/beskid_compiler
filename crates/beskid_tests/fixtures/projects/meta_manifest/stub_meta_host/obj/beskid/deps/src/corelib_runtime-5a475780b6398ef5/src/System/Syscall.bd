@@ -8,7 +8,9 @@ use System.Syscall.Descriptor;
 use System.Syscall.StandardStream;
 use System.Syscall.ReadLimit;
 use System.Syscall.ReadRequest;
+use System.Syscall.ReadBytesRequest;
 use System.Syscall.WriteRequest;
+use System.Syscall.WriteBytesRequest;
 
 /// Returns descriptor for standard output.
 /// @returns POSIX-style stdout file descriptor constant (`1`).
@@ -102,4 +104,46 @@ pub Core.Results.Result<string, System.Syscall.SyscallError> ReadWith(ReadReques
         ResolveDescriptorFd(request.descriptor),
         ResolveReadLimit(request.limit)
     );
+}
+
+/// Reads up to max bytes from a descriptor into a `u8[]` (no UTF-8 validation).
+/// @arg(fd) Numeric host descriptor.
+/// @arg(maxBytes) Upper bound on returned buffer length.
+/// @returns Payload buffer or a `SyscallError`.
+pub Core.Results.Result<u8[], System.Syscall.SyscallError> ReadBytes(i64 fd, i64 maxBytes) {
+    if fd < 0 {
+        return Result::Error(SyscallError::InvalidFd(fd));
+    }
+    if maxBytes < 1 {
+        return Result::Error(SyscallError::InvalidReadLimit(maxBytes));
+    }
+    return Result::Ok(__syscall_read_bytes(fd, maxBytes));
+}
+
+/// Writes a `u8[]` payload to a descriptor.
+/// @arg(fd) Numeric host descriptor.
+/// @arg(data) Raw byte payload.
+/// @returns Written byte count or a `SyscallError`.
+pub Core.Results.Result<i64, System.Syscall.SyscallError> WriteBytes(i64 fd, u8[] data) {
+    if fd < 0 {
+        return Result::Error(SyscallError::InvalidFd(fd));
+    }
+    i64 written = __syscall_write_bytes(fd, data);
+    if written < 0 {
+        return Result::Error(SyscallError::IoFailure(written));
+    }
+    return Result::Ok(written);
+}
+
+/// Reads binary data based on a typed descriptor request.
+pub Core.Results.Result<i64, System.Syscall.SyscallError> ReadBytesWith(ReadBytesRequest request) {
+    return ReadBytes(
+        ResolveDescriptorFd(request.descriptor),
+        ResolveReadLimit(request.limit)
+    );
+}
+
+/// Writes binary data based on a typed descriptor request.
+pub Core.Results.Result<i64, System.Syscall.SyscallError> WriteBytesWith(WriteBytesRequest request) {
+    return WriteBytes(ResolveDescriptorFd(request.descriptor), request.data);
 }

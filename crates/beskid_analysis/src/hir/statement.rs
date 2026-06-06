@@ -109,6 +109,16 @@ pub struct HirForStatement {
     pub body: Spanned<HirBlock>,
 }
 
+/// `else` branch of an `if` statement: either another `if` chain or a block.
+#[derive(beskid_ast_derive::HirNode)]
+#[ast(kind = "ElseBranch")]
+pub enum HirElseBranch {
+    #[ast(child)]
+    If(Box<Spanned<HirIfStatement>>),
+    #[ast(child)]
+    Block(Spanned<HirBlock>),
+}
+
 #[derive(beskid_ast_derive::HirNode)]
 #[ast(kind = "IfStatement")]
 pub struct HirIfStatement {
@@ -117,7 +127,7 @@ pub struct HirIfStatement {
     #[ast(child)]
     pub then_block: Spanned<HirBlock>,
     #[ast(child)]
-    pub else_block: Option<Spanned<HirBlock>>,
+    pub else_branch: Option<Spanned<HirElseBranch>>,
 }
 
 #[derive(beskid_ast_derive::HirNode)]

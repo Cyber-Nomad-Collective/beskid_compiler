@@ -7,6 +7,10 @@ use crate::hir::{
 };
 use crate::resolve::{ItemKind, ResolvedType, ResolvedValue};
 use crate::syntax::Spanned;
+use crate::types::path_value::{
+    first_field_segment_name, method_name_from_path_callee, receiver_type_for_path_callee,
+    resolve_path_base_local,
+};
 use crate::types::{TypeId, TypeInfo};
 
 use super::context::{CallLoweringKind, MethodReceiverSource, TypeContext, TypeError};
@@ -393,12 +397,17 @@ impl<'a> TypeContext<'a> {
                 self.check_fiber_join_call(call.span, handle);
             }
             let segments = &path_expr.node.path.node.segments;
-            let resolved = self.resolved_value_at(path_expr.node.path.span);
+            let source_path = self.current_source_path.as_ref();
             if segments.len() >= 2
-                && let Some(ResolvedValue::Local(local_id)) = resolved
-                && let Some(receiver_type) = self.local_types.get(&local_id).copied()
+                && let Some(method_name) = method_name_from_path_callee(segments)
+                && let Some((local_id, receiver_type)) = receiver_type_for_path_callee(
+                    self.resolution,
+                    &self.path_env(),
+                    path_expr.node.path.span,
+                    segments,
+                    source_path,
+                )
             {
-                let method_name = segments[1].node.name.node.name.as_str();
                 if let Some(method_item_id) =
                     self.method_item_for_receiver(receiver_type, method_name)
                 {
@@ -469,10 +478,11 @@ impl<'a> TypeContext<'a> {
             }
 
             // Contract-as-namespace call using a dotted PathExpression: `C.getpid(...)`
+            let resolved = self.resolved_value_at(path_expr.node.path.span);
             if segments.len() >= 2
                 && let Some(ResolvedValue::Item(contract_item_id)) = resolved
+                && let Some(method_name) = method_name_from_path_callee(segments)
             {
-                let method_name = segments[1].node.name.node.name.as_str();
                 if let Some(signature) = self
                     .contract_signatures
                     .get(&(contract_item_id, method_name.to_string()))
@@ -800,7 +810,23 @@ impl<'a> TypeContext<'a> {
             }
         }
 
-        Some(substituted_return)
+        let mut return_type = substituted_return;
+        if let Some(item_id) = callee_item_id
+            && let Some(index) = self.resolution.builtin_items.get(&item_id)
+            && let Some(spec) = crate::builtins::builtin_specs().get(*index)
+            && spec.beskid_path == &["__array_new"]
+            && let Some(elem_size) = call
+                .node
+                .args
+                .first()
+                .and_then(|arg| integer_literal_value(&arg.node))
+            && elem_size == 1
+            && let Some(u8_arr) = self.u8_array_type_id()
+        {
+            return_type = u8_arr;
+        }
+
+        Some(return_type)
     }
 
     fn type_struct_literal_expression(
@@ -1041,16 +1067,21 @@ impl<'a> TypeContext<'a> {
 
     fn is_event_path_expression(&self, path_expr: &Spanned<HirPathExpression>) -> bool {
         let segments = &path_expr.node.path.node.segments;
-        if segments.len() < 2 {
+        let Some(field_name) = first_field_segment_name(segments) else {
             return false;
-        }
-        let field_name = segments[1].node.name.node.name.as_str();
-        let Some(local_id) = self.resolved_value_at(path_expr.node.path.span)
-            .and_then(|resolved| match resolved {
-                ResolvedValue::Local(local_id) => Some(local_id),
-                _ => None,
-            })
+        };
+        let Some(first_name) = segments
+            .first()
+            .map(|segment| segment.node.name.node.name.as_str())
         else {
+            return false;
+        };
+        let Some(local_id) = resolve_path_base_local(
+            self.resolution,
+            path_expr.node.path.span,
+            first_name,
+            self.current_source_path.as_ref(),
+        ) else {
             return false;
         };
         let Some(base_type) = self.local_types.get(&local_id).copied() else {
@@ -1096,15 +1127,23 @@ impl<'a> TypeContext<'a> {
             }
             HirExpressionNode::PathExpression(path_expr) => {
                 let segments = &path_expr.node.path.node.segments;
-                if segments.len() < 2 {
+                let Some(field_name) = first_field_segment_name(segments) else {
                     return None;
-                }
-                let field_name = segments[1].node.name.node.name.as_str();
-                let local_id = self.resolved_value_at(path_expr.node.path.span)
-                    .and_then(|resolved| match resolved {
-                        ResolvedValue::Local(local_id) => Some(local_id),
-                        _ => None,
-                    })?;
+                };
+                let Some(first_name) = segments
+                    .first()
+                    .map(|segment| segment.node.name.node.name.as_str())
+                else {
+                    return None;
+                };
+                let Some(local_id) = resolve_path_base_local(
+                    self.resolution,
+                    path_expr.node.path.span,
+                    first_name,
+                    self.current_source_path.as_ref(),
+                ) else {
+                    return None;
+                };
                 let receiver_type = *self.local_types.get(&local_id)?;
                 let receiver_item_id = self.named_item_id(receiver_type)?;
                 let is_event = self
@@ -1355,7 +1394,7 @@ impl<'a> TypeContext<'a> {
                     None
                 }
             }
-            HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div => {
+            HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div | HirBinaryOp::Mod => {
                 if self.is_numeric(left) {
                     Some(left)
                 } else {
@@ -1453,50 +1492,56 @@ impl<'a> TypeContext<'a> {
         path: &Spanned<HirPath>,
     ) -> Option<TypeId> {
         let segments = &path.node.segments;
-        let field_name = segments.get(1)?.node.name.node.name.clone();
-        let local_id = self.resolved_value_at(span)
-            .and_then(|resolved| match resolved {
-                ResolvedValue::Local(local_id) => Some(local_id),
-                _ => None,
-            });
-        let Some(local_id) = local_id else {
+        let source_path = self.current_source_path.as_ref();
+        let first_name = segments.first()?.node.name.node.name.as_str();
+        let Some(local_id) = resolve_path_base_local(
+            self.resolution,
+            span,
+            first_name,
+            source_path,
+        ) else {
             self.errors.push(TypeError::UnknownValueType { span });
             return None;
         };
-        let Some(base_type) = self.local_types.get(&local_id).copied() else {
+        let Some(mut current_type) = self.local_types.get(&local_id).copied() else {
             self.errors.push(TypeError::UnknownValueType { span });
             return None;
         };
-        let Some(item_id) = self.named_item_id(base_type) else {
-            self.errors.push(TypeError::InvalidMemberTarget { span });
-            return None;
-        };
-        let fields = self.struct_fields.get(&item_id).cloned().or_else(|| {
-            self.resolution
-                .items
-                .iter()
-                .find(|info| info.id == item_id)
-                .and_then(|info| self.item_id_for_name(&info.name, ItemKind::Type))
-                .and_then(|item_id| self.struct_fields.get(&item_id).cloned())
-        });
-        let Some(fields) = fields else {
-            self.errors.push(TypeError::UnknownStructType { span });
-            return None;
-        };
-        let Some(field_type) = fields.get(&field_name) else {
-            self.errors.push(TypeError::UnknownStructField {
-                span,
-                name: field_name,
+        for segment in segments.iter().skip(1) {
+            let field_name = segment.node.name.node.name.clone();
+            let Some(item_id) = self.named_item_id(current_type) else {
+                self.errors
+                    .push(TypeError::InvalidMemberTarget { span: segment.span });
+                return None;
+            };
+            let fields = self.struct_fields.get(&item_id).cloned().or_else(|| {
+                self.resolution
+                    .items
+                    .iter()
+                    .find(|info| info.id == item_id)
+                    .and_then(|info| self.item_id_for_name(&info.name, ItemKind::Type))
+                    .and_then(|item_id| self.struct_fields.get(&item_id).cloned())
             });
-            return None;
-        };
-        let mapping = self.generic_mapping_for_type_id(base_type);
-        let field_type = if mapping.is_empty() {
-            *field_type
-        } else {
-            self.substitute_type_id(*field_type, &mapping)
-        };
-        Some(field_type)
+            let Some(fields) = fields else {
+                self.errors
+                    .push(TypeError::UnknownStructType { span: segment.span });
+                return None;
+            };
+            let Some(field_type) = fields.get(&field_name) else {
+                self.errors.push(TypeError::UnknownStructField {
+                    span: segment.span,
+                    name: field_name,
+                });
+                return None;
+            };
+            let mapping = self.generic_mapping_for_type_id(current_type);
+            current_type = if mapping.is_empty() {
+                *field_type
+            } else {
+                self.substitute_type_id(*field_type, &mapping)
+            };
+        }
+        Some(current_type)
     }
 
     pub(super) fn type_id_for_enum_path(
@@ -1521,4 +1566,14 @@ impl<'a> TypeContext<'a> {
             }
         }
     }
+}
+
+fn integer_literal_value(expression: &HirExpressionNode) -> Option<i64> {
+    let HirExpressionNode::LiteralExpression(literal) = expression else {
+        return None;
+    };
+    let HirLiteral::Integer(text) = &literal.node.literal.node else {
+        return None;
+    };
+    text.parse().ok()
 }

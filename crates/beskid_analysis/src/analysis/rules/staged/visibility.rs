@@ -470,8 +470,29 @@ impl SemanticPipelineRule {
                         type_name,
                         locals,
                     );
-                    if let Some(else_block) = &if_statement.node.else_block {
-                        self.collect_block_locals_for_type(else_block, type_name, locals);
+                    if let Some(else_branch) = &if_statement.node.else_branch {
+                        match &else_branch.node {
+                            crate::hir::HirElseBranch::Block(block) => {
+                                self.collect_block_locals_for_type(block, type_name, locals);
+                            }
+                            crate::hir::HirElseBranch::If(nested) => {
+                                self.collect_block_locals_for_type(
+                                    &nested.node.then_block,
+                                    type_name,
+                                    locals,
+                                );
+                                if let Some(nested_else) = &nested.node.else_branch {
+                                    match &nested_else.node {
+                                        crate::hir::HirElseBranch::Block(block) => {
+                                            self.collect_block_locals_for_type(
+                                                block, type_name, locals,
+                                            );
+                                        }
+                                        crate::hir::HirElseBranch::If(_) => {}
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 _ => {}

@@ -33,15 +33,9 @@ fn codegen_lowers_member_expression() {
 }
 
 #[test]
-fn codegen_rejects_function_parameter_modifiers() {
-    let (hir, resolution, typed) = lower_resolve_type("i64 main(ref i64 x) { return x; }");
-    let errors = lower_program(&hir, &resolution, &typed)
-        .expect_err("expected function parameter modifier lowering to fail");
-    assert!(errors.iter().any(|error| matches!(
-        error,
-        CodegenError::UnsupportedNode {
-            node: "function parameter modifier",
-            ..
-        }
-    )));
+fn codegen_lowers_mut_parameter() {
+    let (hir, resolution, typed) = lower_resolve_type("i64 main(mut i64 x) { return x; }");
+    let artifact = lower_program(&hir, &resolution, &typed)
+        .expect("expected mut parameter lowering to succeed");
+    assert_eq!(artifact.functions.len(), 1);
 }

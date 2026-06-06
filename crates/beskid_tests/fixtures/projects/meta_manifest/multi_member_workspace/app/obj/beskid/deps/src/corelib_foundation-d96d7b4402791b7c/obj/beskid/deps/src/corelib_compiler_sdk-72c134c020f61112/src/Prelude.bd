@@ -1,7 +1,0 @@
-// Compile-time Mod SDK surface (typed facades; host bridge is Rust-implemented).
-pub mod Beskid.Syntax;
-pub mod Beskid.Compiler.Query;
-pub mod Beskid.Compiler.Diagnostics;
-pub mod Beskid.Compiler.TypedEmitter;
-pub mod Beskid.Compiler.Collect;
-pub mod Beskid.Compiler.Compilation;

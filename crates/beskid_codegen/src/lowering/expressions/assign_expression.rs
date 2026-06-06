@@ -1,7 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility;
 use crate::lowering::locals::resolved_value_at;
-use crate::lowering::descriptor::struct_field_offsets;
+use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -255,24 +255,45 @@ fn resolve_assign_target(
                 });
             }
 
-            if segments.len() == 2 {
+            if segments.len() >= 2 {
                 let receiver_var = ctx.state.locals.get(&local_id).copied().ok_or(
                     CodegenError::InvalidLocalBinding {
                         span: path_expr.node.path.span,
                     },
                 )?;
-                let receiver_ptr = ctx.builder.use_var(receiver_var);
                 let receiver_type = ctx.type_result.local_types.get(&local_id).copied().ok_or(
                     CodegenError::MissingLocalType {
                         span: path_expr.node.path.span,
                     },
                 )?;
-                let field_name = segments[1].node.name.node.name.clone();
+                let field_name = segments
+                    .last()
+                    .ok_or(CodegenError::UnsupportedNode {
+                        span: node.node.target.span,
+                        node: "empty assignment target path",
+                    })?
+                    .node
+                    .name
+                    .node
+                    .name
+                    .as_str();
+                let middle = &segments[1..segments.len() - 1];
+                let receiver_ptr = ctx.builder.use_var(receiver_var);
+                let (receiver_ptr, receiver_type) = if middle.is_empty() {
+                    (receiver_ptr, receiver_type)
+                } else {
+                    load_path_field_chain(
+                        ctx,
+                        receiver_ptr,
+                        receiver_type,
+                        middle,
+                    )?
+                };
                 return resolve_event_member_target(
                     node.span,
                     receiver_ptr,
                     receiver_type,
-                    field_name.as_str(),
+                    field_name,
                     ctx,
                 );
             }
@@ -355,6 +376,57 @@ fn resolve_assign_target(
             node: "unsupported assignment target",
         }),
     }
+}
+
+fn load_path_field_chain(
+    ctx: &mut NodeLoweringContext<'_, '_>,
+    mut value: Value,
+    mut current_type: TypeId,
+    segments: &[Spanned<beskid_analysis::hir::HirPathSegment>],
+) -> Result<(Value, TypeId), CodegenError> {
+    for segment in segments {
+        let item_id = struct_item_id(ctx.type_result, current_type).ok_or(
+            CodegenError::UnsupportedNode {
+                span: segment.span,
+                node: "member target type",
+            },
+        )?;
+        let offsets = struct_field_offsets(ctx.type_result, item_id).ok_or(
+            CodegenError::UnsupportedNode {
+                span: segment.span,
+                node: "member offsets",
+            },
+        )?;
+        let field_name = segment.node.name.node.name.as_str();
+        let offset = offsets
+            .get(field_name)
+            .copied()
+            .ok_or(CodegenError::UnsupportedNode {
+                span: segment.span,
+                node: "member offset",
+            })?;
+        let field_type = ctx
+            .type_result
+            .struct_fields_ordered
+            .get(&item_id)
+            .and_then(|fields| fields.iter().find(|(name, _)| name == field_name))
+            .map(|(_, ty)| *ty)
+            .ok_or(CodegenError::UnsupportedNode {
+                span: segment.span,
+                node: "member field type",
+            })?;
+        let clif_ty = map_type_id_to_clif(ctx.type_result, field_type).ok_or(
+            CodegenError::UnsupportedNode {
+                span: segment.span,
+                node: "member field clif type",
+            },
+        )?;
+        let offset_val = ctx.builder.ins().iconst(pointer_type(), offset as i64);
+        let addr = ctx.builder.ins().iadd(value, offset_val);
+        value = ctx.builder.ins().load(clif_ty, MemFlags::new(), addr, 0);
+        current_type = field_type;
+    }
+    Ok((value, current_type))
 }
 
 fn resolve_event_member_target(

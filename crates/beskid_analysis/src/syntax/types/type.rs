@@ -2,7 +2,7 @@ use crate::syntax::{Path, PrimitiveType, Spanned};
 
 use beskid_ast_derive::AstNode;
 
-/// Beskid type expression: primitives, paths, arrays, references, and function types.
+/// Beskid type expression: primitives, paths, arrays, and function types.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Type {
     #[ast(child)]
@@ -11,8 +11,6 @@ pub enum Type {
     Complex(Spanned<Path>),
     #[ast(child)]
     Array(Box<Spanned<Type>>),
-    #[ast(child)]
-    Ref(Box<Spanned<Type>>),
     #[ast(children)]
     Function {
         return_type: Box<Spanned<Type>>,
@@ -127,16 +125,6 @@ impl crate::parsing::parsable::Parsable for Type {
                     ))?;
                 let inner_type = Self::parse(type_name)?;
                 Self::Array(Box::new(inner_type))
-            }
-            crate::parser::Rule::TypeReference => {
-                let mut inner = pair.into_inner();
-                let type_name = inner
-                    .next()
-                    .ok_or(crate::parsing::error::ParseError::missing(
-                        crate::parser::Rule::TypeName,
-                    ))?;
-                let inner_type = Self::parse(type_name)?;
-                Self::Ref(Box::new(inner_type))
             }
             crate::parser::Rule::PrimitiveType => {
                 let primitive = crate::syntax::PrimitiveType::parse(pair)?;

@@ -1,5 +1,6 @@
-use beskid_abi::BeskidStr;
+use beskid_abi::{BeskidArray, BeskidStr};
 
+use super::bytes::array_from_vec;
 use super::{alloc::alloc, strings::str_new};
 use crate::scheduler::{self, run_blocking};
 
@@ -85,7 +86,22 @@ fn string_handle_from_bytes(bytes: Vec<u8>) -> *mut BeskidStr {
     unsafe {
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len());
     }
+    // Text read path validates UTF-8 per SC-007.
     str_new(buffer, bytes.len())
+}
+
+fn read_array_payload(value: *const BeskidArray) -> Vec<u8> {
+    if value.is_null() {
+        panic!("null array handle");
+    }
+    let (ptr, len) = unsafe { ((*value).ptr, (*value).len) };
+    if len == 0 {
+        return Vec::new();
+    }
+    if ptr.is_null() {
+        panic!("null array data");
+    }
+    unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec()
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -118,18 +134,37 @@ fn read_fd_bytes(fd: i64, max_bytes: i64) -> Vec<u8> {
 
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 fn read_fd_bytes(fd: i64, max_bytes: i64) -> Vec<u8> {
-    use std::io::Read;
-    if fd != 0 || max_bytes <= 0 {
+    use std::io::{Read, stdin};
+    if max_bytes <= 0 {
         return Vec::new();
     }
     let cap = max_bytes as usize;
     let mut buffer = vec![0u8; cap];
-    let read = std::io::stdin().read(&mut buffer).unwrap_or(0);
+    let read = match fd {
+        0 => stdin().read(&mut buffer).unwrap_or(0),
+        _ => {
+            // Best-effort shim: unsupported fds return empty (IO-ABI-003).
+            return Vec::new();
+        }
+    };
     if read == 0 {
         return Vec::new();
     }
     buffer.truncate(read);
     buffer
+}
+
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+fn write_fd_bytes_extended(fd: i64, bytes: &[u8]) -> i64 {
+    use std::io::{Write, stderr, stdout};
+    if bytes.is_empty() {
+        return 0;
+    }
+    match fd {
+        1 => stdout().write(bytes).map(|n| n as i64).unwrap_or(-1),
+        2 => stderr().write(bytes).map(|n| n as i64).unwrap_or(-1),
+        _ => -1,
+    }
 }
 
 /// Abort with a fixed message (payload is currently ignored).
@@ -180,6 +215,37 @@ pub extern "C-unwind" fn syscall_read(fd: i64, max_bytes: i64) -> *mut BeskidStr
         run()
     };
     string_handle_from_bytes(bytes)
+}
+
+/// Binary read from `fd` into a new `u8[]` (no UTF-8 validation).
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn syscall_read_bytes(fd: i64, max_bytes: i64) -> *mut BeskidArray {
+    let run = move || read_fd_bytes(fd, max_bytes);
+    let bytes = if let Some(fiber) = scheduler::current_fiber_key()
+        && scheduler::in_fiber_scheduler()
+    {
+        scheduler::run_blocking_value(fiber, run)
+    } else {
+        run()
+    };
+    array_from_vec(bytes)
+}
+
+/// Binary write of `u8[]` payload to `fd`.
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn syscall_write_bytes(fd: i64, value: *const BeskidArray) -> i64 {
+    let bytes = read_array_payload(value);
+    let fd_copy = fd;
+    maybe_park_blocking(move || {
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            write_fd_bytes(fd_copy, &bytes)
+        }
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        {
+            write_fd_bytes_extended(fd_copy, &bytes)
+        }
+    })
 }
 
 /// Print assertion failure and exit with code 1 (test-friendly; does not abort via panic unwind).

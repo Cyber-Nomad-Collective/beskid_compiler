@@ -33,11 +33,7 @@ impl Normalize for Spanned<HirStatementNode> {
             }
             HirStatementNode::ForStatement(for_stmt) => for_stmt.normalize(normalizer),
             HirStatementNode::IfStatement(mut if_stmt) => {
-                normalizer.visit_expression(&mut if_stmt.node.condition);
-                normalizer.visit_block(&mut if_stmt.node.then_block);
-                if let Some(else_block) = &mut if_stmt.node.else_block {
-                    normalizer.visit_block(else_block);
-                }
+                normalizer.visit_if_statement(&mut if_stmt);
                 vec![Spanned::new(HirStatementNode::IfStatement(if_stmt), span)]
             }
             HirStatementNode::ExpressionStatement(mut expr_stmt) => {

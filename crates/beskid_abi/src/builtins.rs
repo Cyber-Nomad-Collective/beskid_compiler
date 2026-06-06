@@ -21,9 +21,15 @@ use crate::symbols::{
     SYM_HUB_WAIT_RECEIVE_VALUE, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
     SYM_INTEROP_DISPATCH_USIZE, SYM_MUTEX_CREATE, SYM_MUTEX_LOCK, SYM_MUTEX_TRY_LOCK,
     SYM_MUTEX_UNLOCK,     SYM_PANIC, SYM_PANIC_STR, SYM_RUNTIME_PREEMPT_CHECK, SYM_STR_CONCAT, SYM_STR_EQ,
-    SYM_STR_FROM_I64, SYM_STR_LEN, SYM_STR_NEW, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, SYM_TEST_BYTES_LEN,
-    SYM_TEST_BYTES_PTR, SYM_WAIT_GROUP_ADD, SYM_WAIT_GROUP_CREATE, SYM_WAIT_GROUP_DONE,
-    SYM_WAIT_GROUP_WAIT,
+    SYM_STR_FROM_I64, SYM_STR_LEN, SYM_STR_NEW, SYM_STR_SLICE, SYM_BYTES_FROM_STR,
+    SYM_STR_FROM_BYTES_UTF8, SYM_BYTES_COPY, SYM_BYTES_GET, SYM_BYTES_SET, SYM_BYTES_COMPARE,
+    SYM_SYSCALL_READ,
+    SYM_SYSCALL_WRITE, SYM_SYSCALL_READ_BYTES, SYM_SYSCALL_WRITE_BYTES, SYM_FS_READ_TEXT,
+    SYM_FS_WRITE_TEXT, SYM_FS_EXISTS, SYM_FS_DELETE, SYM_FS_MKDIR, SYM_ENV_GET, SYM_ENV_SET,
+    SYM_ENV_GETCWD, SYM_PROCESS_GETPID, SYM_PROCESS_EXIT, SYM_CLOCK_REALTIME_NANOS,
+    SYM_CLOCK_MONOTONIC_NANOS, SYM_TTY_WINSIZE, SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR,
+    SYM_WAIT_GROUP_ADD,
+    SYM_WAIT_GROUP_CREATE, SYM_WAIT_GROUP_DONE, SYM_WAIT_GROUP_WAIT,
 };
 
 /// Scalar kinds used when building Cranelift signatures for builtins (`Ptr` vs fixed `I64`).
@@ -56,9 +62,21 @@ const PTR_ONLY: [AbiParamKind; 1] = [AbiParamKind::Ptr];
 const I64_ONLY: [AbiParamKind; 1] = [AbiParamKind::I64];
 const I64_PTR: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::Ptr];
 const I64_I64: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::I64];
+const PTR_I64_PTR_I64_I64: [AbiParamKind; 5] = [
+    AbiParamKind::Ptr,
+    AbiParamKind::I64,
+    AbiParamKind::Ptr,
+    AbiParamKind::I64,
+    AbiParamKind::I64,
+];
 const I64_I64_I64: [AbiParamKind; 3] = [AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::I64];
 const PTR_PTR_PTR: [AbiParamKind; 3] = [AbiParamKind::Ptr, AbiParamKind::Ptr, AbiParamKind::Ptr];
 const PTR_I64: [AbiParamKind; 2] = [AbiParamKind::Ptr, AbiParamKind::I64];
+const PTR_I64_I64: [AbiParamKind; 3] = [
+    AbiParamKind::Ptr,
+    AbiParamKind::I64,
+    AbiParamKind::I64,
+];
 const PTR_I64_I64_I64: [AbiParamKind; 4] = [
     AbiParamKind::Ptr,
     AbiParamKind::I64,
@@ -139,6 +157,116 @@ pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
         symbol: SYM_SYSCALL_READ,
         params: &I64_I64,
         returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_SYSCALL_READ_BYTES,
+        params: &I64_I64,
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_SYSCALL_WRITE_BYTES,
+        params: &I64_PTR,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_STR_SLICE,
+        params: &PTR_I64_I64,
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_BYTES_FROM_STR,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_STR_FROM_BYTES_UTF8,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_BYTES_COPY,
+        params: &PTR_I64_PTR_I64_I64,
+        returns: AbiReturnKind::Void,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_BYTES_GET,
+        params: &PTR_I64,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_BYTES_SET,
+        params: &PTR_I64_I64,
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_BYTES_COMPARE,
+        params: &PTR_PTR,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FS_READ_TEXT,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FS_WRITE_TEXT,
+        params: &PTR_PTR,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FS_EXISTS,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FS_DELETE,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_FS_MKDIR,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_ENV_GET,
+        params: &PTR_ONLY,
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_ENV_SET,
+        params: &PTR_PTR,
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_ENV_GETCWD,
+        params: &[],
+        returns: AbiReturnKind::Ptr,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_PROCESS_GETPID,
+        params: &[],
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_PROCESS_EXIT,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::Never,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_CLOCK_REALTIME_NANOS,
+        params: &[],
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_CLOCK_MONOTONIC_NANOS,
+        params: &[],
+        returns: AbiReturnKind::I64,
+    },
+    BuiltinFnSpec {
+        symbol: SYM_TTY_WINSIZE,
+        params: &I64_ONLY,
+        returns: AbiReturnKind::I64,
     },
     BuiltinFnSpec {
         symbol: SYM_STR_LEN,

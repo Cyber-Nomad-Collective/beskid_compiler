@@ -156,7 +156,7 @@ fn typing_allows_identity_equality_on_named_values() {
 
 #[test]
 fn typing_rejects_compound_assign_on_non_numeric_non_string() {
-    let result = resolve_and_type("unit main() { bool mut flag = true; flag += false; }");
+    let result = resolve_and_type("unit main() { mut bool flag = true; flag += false; }");
     let errors = result.expect_err("expected invalid compound assignment on bool");
     assert!(
         errors
@@ -168,7 +168,7 @@ fn typing_rejects_compound_assign_on_non_numeric_non_string() {
 
 #[test]
 fn typing_allows_string_compound_add_assign() {
-    let result = resolve_and_type("unit main() { string mut s = \"a\"; s += \"b\"; }");
+    let result = resolve_and_type("unit main() { mut string s = \"a\"; s += \"b\"; }");
     if let Err(errors) = &result {
         panic!("expected string += typing to succeed, got errors: {errors:?}");
     }
@@ -178,7 +178,7 @@ fn typing_allows_string_compound_add_assign() {
 #[test]
 fn typing_allows_event_member_subscribe_and_unsubscribe() {
     let result = resolve_and_type(
-        "type User { event{4} Created(string payload) } unit main() { User mut u = User { }; unit(string) handler = (string payload) => { return; }; u.Created += handler; u.Created -= handler; }",
+        "type User { event{4} Created(string payload) } unit main() { mut User u = User { }; unit(string) handler = (string payload) => { return; }; u.Created += handler; u.Created -= handler; }",
     );
     if let Err(errors) = &result {
         panic!("expected event +=/-= typing to succeed, got errors: {errors:?}");
@@ -189,7 +189,7 @@ fn typing_allows_event_member_subscribe_and_unsubscribe() {
 #[test]
 fn typing_rejects_add_assign_handler_on_non_event_target() {
     let result = resolve_and_type(
-        "type User { i64 count } unit main() { User mut u = User { count: 0 }; unit(string) handler = (string payload) => { return; }; u.count += handler; }",
+        "type User { i64 count } unit main() { mut User u = User { count: 0 }; unit(string) handler = (string payload) => { return; }; u.count += handler; }",
     );
     let errors = result.expect_err("expected non-event += handler rejection");
     assert!(
@@ -203,7 +203,7 @@ fn typing_rejects_add_assign_handler_on_non_event_target() {
 #[test]
 fn typing_rejects_sub_assign_handler_on_non_event_target() {
     let result = resolve_and_type(
-        "type User { i64 count } unit main() { User mut u = User { count: 0 }; unit(string) handler = (string payload) => { return; }; u.count -= handler; }",
+        "type User { i64 count } unit main() { mut User u = User { count: 0 }; unit(string) handler = (string payload) => { return; }; u.count -= handler; }",
     );
     let errors = result.expect_err("expected non-event -= handler rejection");
     assert!(
@@ -230,7 +230,7 @@ fn typing_rejects_zero_event_capacity() {
 #[test]
 fn typing_allows_owner_event_invoke() {
     let result = resolve_and_type(
-        "type User { event{4} Created(string payload) } impl User { unit Emit(string payload) { this.Created(payload); } } unit main() { User mut u = User { }; u.Emit(\"ok\"); }",
+        "type User { event{4} Created(string payload) } impl User { unit Emit(string payload) { this.Created(payload); } } unit main() { mut User u = User { }; u.Emit(\"ok\"); }",
     );
     if let Err(errors) = &result {
         panic!("expected owner event invoke typing to succeed, got errors: {errors:?}");
@@ -244,7 +244,7 @@ fn typing_allows_owner_event_invoke() {
 #[test]
 fn typing_rejects_non_owner_event_invoke() {
     let result = resolve_and_type(
-        "type User { event{4} Created(string payload) } unit main() { User mut u = User { }; u.Created(\"x\"); }",
+        "type User { event{4} Created(string payload) } unit main() { mut User u = User { }; u.Created(\"x\"); }",
     );
     let errors = result.expect_err("expected non-owner event invoke rejection");
     assert!(
@@ -394,6 +394,32 @@ fn typing_struct_literal_and_member_access() {
         panic!("expected struct literal/member typing to succeed, got errors: {errors:?}");
     }
     assert!(result.is_ok(), "unexpected typing failure");
+}
+
+#[test]
+fn typing_path_expression_field_chain_resolves_nested_type() {
+    let result = resolve_and_type(
+        "type Inner { i64 value } type Outer { Inner inner } unit main() { Outer o = Outer { inner: Inner { value: 7 } }; i64 x = o.inner.value; }",
+    );
+    if let Err(errors) = &result {
+        panic!(
+            "expected nested path expression typing to succeed, got errors: {errors:?}"
+        );
+    }
+    assert!(result.is_ok(), "unexpected nested path typing failure");
+}
+
+#[test]
+fn typing_path_expression_method_dispatch_on_nested_receiver() {
+    let result = resolve_and_type(
+        "type Inner { i64 value } impl Inner { i64 Get() { return this.value; } } type Outer { Inner inner } i64 main() { Outer o = Outer { inner: Inner { value: 9 } }; return o.inner.Get(); }",
+    );
+    if let Err(errors) = &result {
+        panic!(
+            "expected nested path method dispatch typing to succeed, got errors: {errors:?}"
+        );
+    }
+    assert!(result.is_ok(), "unexpected nested path method typing failure");
 }
 
 #[test]
@@ -681,7 +707,7 @@ fn typing_for_loop_infers_iterator_type_from_iterable_contract() {
         }
         unit main() {
             Iter iter = Iter { seed: 0 };
-            i64 mut sum = 0;
+            mut i64 sum = 0;
             for i in iter { sum += i; }
         }
         ",

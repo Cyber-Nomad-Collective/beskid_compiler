@@ -3,6 +3,7 @@
 /// Classification tokens for syntax query (mirrors `beskid_analysis::query::NodeKind`).
 pub enum NodeKind
 {
+    ArrayLiteralExpression,
     AssignExpression,
     Attribute,
     AttributeArgument,
@@ -20,6 +21,7 @@ pub enum NodeKind
     ContractEmbedding,
     ContractMethodSignature,
     ContractNode,
+    ElseBranch,
     EnumConstructorExpression,
     EnumDefinition,
     EnumPath,
@@ -36,6 +38,7 @@ pub enum NodeKind
     HostDefinition,
     Identifier,
     IfStatement,
+    IndexExpression,
     InlineModule,
     LambdaExpression,
     LambdaParameter,
@@ -55,7 +58,6 @@ pub enum NodeKind
     ModuleDeclaration,
     Node,
     Parameter,
-    ParameterModifier,
     Path,
     PathExpression,
     PathSegment,

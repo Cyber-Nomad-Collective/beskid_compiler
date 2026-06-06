@@ -1,4 +1,6 @@
-use crate::hir::{HirBlock, HirExpressionNode, HirPrimitiveType, HirStatementNode};
+use crate::hir::{
+    HirBlock, HirElseBranch, HirExpressionNode, HirIfStatement, HirPrimitiveType, HirStatementNode,
+};
 use crate::syntax::Spanned;
 
 use super::context::{TypeContext, TypeError};
@@ -94,17 +96,24 @@ impl<'a> TypeContext<'a> {
                 self.type_block(&for_stmt.node.body);
             }
             HirStatementNode::IfStatement(if_stmt) => {
-                self.require_bool(if_stmt.node.condition.span, &if_stmt.node.condition);
-                self.type_block(&if_stmt.node.then_block);
-                if let Some(else_block) = &if_stmt.node.else_block {
-                    self.type_block(else_block);
-                }
+                self.type_if_statement(if_stmt);
             }
             HirStatementNode::ExpressionStatement(expr_stmt) => {
                 self.type_expression(&expr_stmt.node.expression);
             }
             HirStatementNode::BreakStatement(_) | HirStatementNode::ContinueStatement(_) => {}
             HirStatementNode::WithStatement(_) | HirStatementNode::LaunchStatement(_) => {}
+        }
+    }
+
+    pub(super) fn type_if_statement(&mut self, if_stmt: &Spanned<HirIfStatement>) {
+        self.require_bool(if_stmt.node.condition.span, &if_stmt.node.condition);
+        self.type_block(&if_stmt.node.then_block);
+        if let Some(else_branch) = &if_stmt.node.else_branch {
+            match &else_branch.node {
+                HirElseBranch::Block(block) => self.type_block(block),
+                HirElseBranch::If(nested) => self.type_if_statement(nested),
+            }
         }
     }
 }

@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use beskid_analysis::hir::{
-    HirBlock, HirCallExpression, HirExpressionNode, HirStatementNode,
+    HirBlock, HirCallExpression, HirElseBranch, HirExpressionNode, HirStatementNode,
 };
 use beskid_analysis::paths::same_file;
 use beskid_analysis::resolve::{ItemId, ItemKind, ResolvedValue, Resolution, canonical_item_id};
@@ -26,6 +26,33 @@ pub(crate) fn collect_calls_in_body(
         collect_calls_in_statement(statement, resolution, type_result, source_path, &mut out);
     }
     out
+}
+
+fn collect_calls_in_else_branch(
+    else_branch: &Spanned<HirElseBranch>,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    source_path: Option<&PathBuf>,
+    out: &mut Vec<ResolvedCall>,
+) {
+    match &else_branch.node {
+        HirElseBranch::Block(block) => {
+            collect_calls_in_block(block, resolution, type_result, source_path, out);
+        }
+        HirElseBranch::If(nested) => {
+            collect_calls_in_expression(
+                &nested.node.condition,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
+            collect_calls_in_block(&nested.node.then_block, resolution, type_result, source_path, out);
+            if let Some(nested_else) = &nested.node.else_branch {
+                collect_calls_in_else_branch(nested_else, resolution, type_result, source_path, out);
+            }
+        }
+    }
 }
 
 fn collect_calls_in_statement(
@@ -54,8 +81,14 @@ fn collect_calls_in_statement(
                 out,
             );
             collect_calls_in_block(&if_stmt.node.then_block, resolution, type_result, source_path, out);
-            if let Some(else_block) = &if_stmt.node.else_block {
-                collect_calls_in_block(else_block, resolution, type_result, source_path, out);
+            if let Some(else_branch) = &if_stmt.node.else_branch {
+                collect_calls_in_else_branch(
+                    else_branch,
+                    resolution,
+                    type_result,
+                    source_path,
+                    out,
+                );
             }
         }
         HirStatementNode::WhileStatement(while_stmt) => {

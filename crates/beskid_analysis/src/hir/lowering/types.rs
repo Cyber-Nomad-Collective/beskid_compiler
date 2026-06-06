@@ -1,6 +1,6 @@
 use crate::hir::{
     HirBinaryOp, HirEnumPath, HirField, HirFieldKind, HirIdentifier, HirParameter,
-    HirParameterModifier, HirPath, HirPathSegment, HirPrimitiveType, HirRangeExpression, HirType,
+    HirPath, HirPathSegment, HirPrimitiveType, HirRangeExpression, HirType,
     HirUnaryOp, HirVisibility,
 };
 use crate::syntax::{self, Spanned};
@@ -15,7 +15,6 @@ impl Lowerable for Spanned<syntax::Type> {
             syntax::Type::Primitive(primitive) => HirType::Primitive(primitive.lower()),
             syntax::Type::Complex(path) => HirType::Complex(path.lower()),
             syntax::Type::Array(inner) => HirType::Array(Box::new(inner.lower())),
-            syntax::Type::Ref(inner) => HirType::Ref(Box::new(inner.lower())),
             syntax::Type::Function {
                 return_type,
                 parameters,
@@ -56,24 +55,9 @@ impl Lowerable for Spanned<syntax::Parameter> {
     fn lower(&self) -> Self::Output {
         Spanned::new(
             HirParameter {
-                modifier: self.node.modifier.as_ref().map(Lowerable::lower),
                 mutable: self.node.mutable,
                 name: self.node.name.lower(),
                 ty: self.node.ty.lower(),
-            },
-            self.span,
-        )
-    }
-}
-
-impl Lowerable for Spanned<syntax::ParameterModifier> {
-    type Output = Spanned<HirParameterModifier>;
-
-    fn lower(&self) -> Self::Output {
-        Spanned::new(
-            match self.node {
-                syntax::ParameterModifier::Ref => HirParameterModifier::Ref,
-                syntax::ParameterModifier::Out => HirParameterModifier::Out,
             },
             self.span,
         )
@@ -202,6 +186,7 @@ impl Lowerable for Spanned<syntax::BinaryOp> {
                 syntax::BinaryOp::Sub => HirBinaryOp::Sub,
                 syntax::BinaryOp::Mul => HirBinaryOp::Mul,
                 syntax::BinaryOp::Div => HirBinaryOp::Div,
+                syntax::BinaryOp::Mod => HirBinaryOp::Mod,
             },
             self.span,
         )

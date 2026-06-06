@@ -75,8 +75,8 @@ fn parses_array_type() {
 }
 
 #[test]
-fn parses_ref_type() {
-    assert_parse(Rule::BeskidType, "ref string");
+fn parses_ref_as_ordinary_type_name() {
+    assert_parse(Rule::BeskidType, "ref");
 }
 
 #[test]
@@ -102,8 +102,11 @@ fn parses_event_field_with_capacity() {
 }
 
 #[test]
-fn rejects_invalid_type() {
-    assert_parse_fail(Rule::BeskidType, "ref");
+fn rejects_legacy_ref_parameter_modifier() {
+    assert_parse_fail(
+        Rule::ContractDefinition,
+        "contract C { i64 f(ref i64 p); }",
+    );
 }
 
 #[test]

@@ -1,17 +1,7 @@
-/// Linux terminal probes via libc Extern (`isatty`, best-effort `ioctl` winsize).
+/// Linux terminal probes via libc Extern (`isatty`) and runtime `__tty_winsize`.
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract Libc {
     i32 isatty(i32 fd);
-    /// `TIOCGWINSZ` (0x5413); `arg` is `struct winsize*` when host linking is enabled.
-    i32 ioctl(i32 fd, i64 request, i64 arg);
-}
-
-/// Packed `struct winsize` layout for ioctl out-parameters (host ABI).
-pub type WinSize {
-    i32 ws_row,
-    i32 ws_col,
-    i32 ws_xpixel,
-    i32 ws_ypixel,
 }
 
 pub bool IsAtty(i64 fd) {
@@ -24,17 +14,16 @@ pub bool IsAtty(i64 fd) {
     return Libc.isatty(fd) == 1;
 }
 
-/// Returns terminal size from ioctl when available; otherwise zeroed columns for env fallback.
-/// `TIOCGWINSZ` on Linux; ioctl needs a live pointer at link/runtime (see platform spec).
+/// Returns terminal size from `__tty_winsize` when stdout is a TTY.
 pub Console.ConsoleSize Winsize() {
     if !IsAtty(1) {
         return Console.ConsoleSize { columns: 0, rows: 0 };
     }
-    i64 request = 1074295912;
-    i64 arg = 0;
-    i32 rc = Libc.ioctl(1, request, arg);
-    if rc != 0 {
+    i64 packed = __tty_winsize(1);
+    if packed == 0 {
         return Console.ConsoleSize { columns: 0, rows: 0 };
     }
-    return Console.ConsoleSize { columns: 0, rows: 0 };
+    i32 columns = packed / 65536;
+    i32 rows = packed % 65536;
+    return Console.ConsoleSize { columns: columns, rows: rows };
 }

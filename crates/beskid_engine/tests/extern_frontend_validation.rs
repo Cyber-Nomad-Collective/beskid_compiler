@@ -59,7 +59,7 @@ pub i64 main() { return 0; }
 }
 
 #[test]
-fn extern_disallowed_ref_param_type_rejected() -> Result<()> {
+fn extern_ref_param_modifier_rejected_at_parse() -> Result<()> {
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C { i64 nope(ref i64 p); }
@@ -68,10 +68,10 @@ pub i64 main() { return 0; }
 "#;
     let err = lower_source(std::path::Path::new("<memory>"), src, false)
         .err()
-        .expect("type checking should fail for disallowed ref param type");
+        .expect("parse should fail for removed ref parameter modifier");
     let msg = format!("{err:#}");
     assert!(
-        msg.contains("disallowed parameter type") && msg.contains("nope"),
+        msg.contains("parse error"),
         "unexpected message: {msg}"
     );
     Ok(())

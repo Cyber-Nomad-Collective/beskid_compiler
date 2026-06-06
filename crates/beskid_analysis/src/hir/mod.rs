@@ -53,12 +53,11 @@ pub use program::Program;
 pub use range_expression::HirRangeExpression;
 pub use statement::{
     HirBreakStatement, HirContinueStatement, HirExpressionStatement, HirForStatement,
-    HirIfStatement, HirLetStatement, HirReturnStatement, HirWhileStatement, StatementNode,
+    HirElseBranch, HirIfStatement, HirLetStatement, HirReturnStatement, HirWhileStatement,
+    StatementNode,
 };
 pub use struct_literal_field::HirStructLiteralField;
-pub use types::{
-    HirField, HirFieldKind, HirParameter, HirParameterModifier, HirPrimitiveType, HirType,
-};
+pub use types::{HirField, HirFieldKind, HirParameter, HirPrimitiveType, HirType};
 
 pub type AstProgram = Program<AstPhase>;
 pub type AstModule = Module<AstPhase>;

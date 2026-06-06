@@ -4,11 +4,15 @@ use std::path::PathBuf;
 
 use beskid_analysis::hir::{
     HirBinaryOp, HirCallExpression, HirExpressionNode, HirLiteral, HirMatchExpression,
-    HirPath, HirPrimitiveType, HirUnaryOp,
+    HirPrimitiveType, HirUnaryOp,
 };
 use beskid_analysis::resolve::{canonical_item_id, ItemKind, LocalId, Resolution, ResolvedValue};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
-use beskid_analysis::types::{CallLoweringKind, TypeId, TypeInfo, TypeResult};
+use beskid_analysis::types::{
+    field_type_for_value_path, field_type_on_receiver, method_name_from_path_callee,
+    receiver_type_for_path_callee, resolve_path_base_local, CallLoweringKind, TypeId, TypeInfo,
+    TypeResult,
+};
 
 use crate::errors::CodegenError;
 use crate::linking::{resolve_item_call_id, resolve_path_item_id};
@@ -30,83 +34,7 @@ pub(crate) fn expr_type_at(
     span: SpanInfo,
     source_path: Option<&PathBuf>,
 ) -> Option<TypeId> {
-    if let Some(type_id) = type_result.expr_type_at(span, source_path) {
-        return Some(type_id);
-    }
-    merge_scoped_expr_type(type_result, span, source_path, true).or_else(|| {
-        if source_path.is_some() {
-            None
-        } else {
-            merge_scoped_expr_type_unambiguous(type_result, span)
-        }
-    })
-        .or_else(|| {
-            if source_path.is_some() {
-                None
-            } else {
-                type_result.expr_types.get(&span).copied()
-            }
-        })
-}
-
-fn merge_scoped_expr_type(
-    type_result: &TypeResult,
-    span: SpanInfo,
-    source_path: Option<&PathBuf>,
-    restrict_to_source: bool,
-) -> Option<TypeId> {
-    let mut candidate: Option<TypeId> = None;
-    for (scoped_path, types) in &type_result.scoped_expr_types {
-        if restrict_to_source {
-            let Some(path) = source_path else {
-                continue;
-            };
-            if !beskid_analysis::paths::same_file(scoped_path, path) {
-                continue;
-            }
-        }
-        let Some(type_id) = types.get(&span).copied().or_else(|| {
-            types
-                .iter()
-                .find(|(stored, _)| stored.start == span.start)
-                .map(|(_, type_id)| *type_id)
-        }) else {
-            continue;
-        };
-        if let Some(existing) = candidate {
-            if existing != type_id {
-                return None;
-            }
-        } else {
-            candidate = Some(type_id);
-        }
-    }
-    candidate
-}
-
-fn merge_scoped_expr_type_unambiguous(
-    type_result: &TypeResult,
-    span: SpanInfo,
-) -> Option<TypeId> {
-    let mut unique: Option<TypeId> = None;
-    for types in type_result.scoped_expr_types.values() {
-        let Some(type_id) = types.get(&span).copied().or_else(|| {
-            types
-                .iter()
-                .find(|(stored, _)| stored.start == span.start)
-                .map(|(_, type_id)| *type_id)
-        }) else {
-            continue;
-        };
-        if let Some(existing) = unique {
-            if existing != type_id {
-                return None;
-            }
-        } else {
-            unique = Some(type_id);
-        }
-    }
-    unique
+    type_result.expr_type_at(span, source_path)
 }
 
 pub(crate) fn call_kind_at(
@@ -114,83 +42,7 @@ pub(crate) fn call_kind_at(
     span: SpanInfo,
     source_path: Option<&PathBuf>,
 ) -> Option<CallLoweringKind> {
-    if let Some(kind) = type_result.call_kind_at(span, source_path) {
-        return Some(kind);
-    }
-    merge_scoped_call_kind(type_result, span, source_path, true).or_else(|| {
-        if source_path.is_some() {
-            None
-        } else {
-            merge_scoped_call_kind_unambiguous(type_result, span)
-        }
-    })
-        .or_else(|| {
-            if source_path.is_some() {
-                None
-            } else {
-                type_result.call_kinds.get(&span).copied()
-            }
-        })
-}
-
-fn merge_scoped_call_kind(
-    type_result: &TypeResult,
-    span: SpanInfo,
-    source_path: Option<&PathBuf>,
-    restrict_to_source: bool,
-) -> Option<CallLoweringKind> {
-    let mut candidate: Option<CallLoweringKind> = None;
-    for (scoped_path, kinds) in &type_result.scoped_call_kinds {
-        if restrict_to_source {
-            let Some(path) = source_path else {
-                continue;
-            };
-            if !beskid_analysis::paths::same_file(scoped_path, path) {
-                continue;
-            }
-        }
-        let Some(kind) = kinds.get(&span).copied().or_else(|| {
-            kinds
-                .iter()
-                .find(|(stored, _)| stored.start == span.start)
-                .map(|(_, kind)| *kind)
-        }) else {
-            continue;
-        };
-        if let Some(existing) = candidate {
-            if existing != kind {
-                return None;
-            }
-        } else {
-            candidate = Some(kind);
-        }
-    }
-    candidate
-}
-
-fn merge_scoped_call_kind_unambiguous(
-    type_result: &TypeResult,
-    span: SpanInfo,
-) -> Option<CallLoweringKind> {
-    let mut unique: Option<CallLoweringKind> = None;
-    for kinds in type_result.scoped_call_kinds.values() {
-        let Some(kind) = kinds.get(&span).copied().or_else(|| {
-            kinds
-                .iter()
-                .find(|(stored, _)| stored.start == span.start)
-                .map(|(_, kind)| *kind)
-        }) else {
-            continue;
-        };
-        if let Some(existing) = unique {
-            if existing != kind {
-                return None;
-            }
-        } else {
-            unique = Some(kind);
-        }
-    }
-    unique
+    type_result.call_kind_at(span, source_path)
 }
 
 pub(crate) fn require_expr_type(
@@ -235,7 +87,30 @@ pub(crate) fn infer_expr_type(
     source_path: Option<&PathBuf>,
     receiver_type: Option<TypeId>,
 ) -> Option<TypeId> {
-    if let Some(type_id) = expr_type_at(type_result, node.span, source_path) {
+    // Prefer structural field lookup over span-keyed expr types, which can be
+    // polluted when the same offsets appear across materialized compilation units.
+    if let HirExpressionNode::MemberExpression(member) = &node.node {
+        let target_type = infer_expr_type(
+            resolution,
+            type_result,
+            &member.node.target,
+            source_path,
+            receiver_type,
+        )?;
+        return struct_field_type_for_receiver(
+            resolution,
+            type_result,
+            target_type,
+            member.node.member.node.name.as_str(),
+            source_path,
+        );
+    }
+
+    if !matches!(
+        &node.node,
+        HirExpressionNode::PathExpression(_) | HirExpressionNode::MemberExpression(_)
+    ) && let Some(type_id) = expr_type_at(type_result, node.span, source_path)
+    {
         return Some(type_id);
     }
     match &node.node {
@@ -247,65 +122,46 @@ pub(crate) fn infer_expr_type(
             HirLiteral::Char(_) => primitive_type_id(type_result, HirPrimitiveType::Char),
             _ => None,
         },
-        HirExpressionNode::MemberExpression(member) => {
-            let target_type = infer_expr_type(
-                resolution,
-                type_result,
-                &member.node.target,
-                source_path,
-                receiver_type,
-            )?;
-            struct_field_type_for_receiver(
-                type_result,
-                target_type,
-                member.node.member.node.name.as_str(),
-            )
-        }
         HirExpressionNode::PathExpression(path) => {
-            if path.node.path.node.segments.len() == 1 {
-                let name = path.node.path.node.segments[0].node.name.node.name.as_str();
+            let segments = &path.node.path.node.segments;
+            if segments.is_empty() {
+                return None;
+            }
+            if segments.len() == 1 {
+                let name = segments[0].node.name.node.name.as_str();
                 if let Some(receiver_type) = receiver_type
-                    && let Some(field_type) =
-                        struct_field_type_for_receiver(type_result, receiver_type, name)
+                    && let Some(field_type) = struct_field_type_for_receiver(
+                        resolution,
+                        type_result,
+                        receiver_type,
+                        name,
+                        source_path,
+                    )
                 {
                     return Some(field_type);
                 }
             }
-            if let Some(resolved) = resolved_value_at(
-                resolution,
-                path.node.path.span,
-                source_path,
-            ) && let ResolvedValue::Local(local_id) = resolved
+            if segments.len() >= 2
+                && let Some(type_id) = field_type_for_value_path(
+                    resolution,
+                    &type_result.path_env(),
+                    path.node.path.span,
+                    &path.node.path,
+                    source_path,
+                )
+            {
+                return Some(type_id);
+            }
+            if segments.len() >= 2 {
+                return None;
+            }
+            let first_name = segments[0].node.name.node.name.as_str();
+            if let Some(local_id) =
+                resolve_path_base_local(resolution, path.node.path.span, first_name, source_path)
             {
                 return type_result.local_types.get(&local_id).copied();
             }
-            if let Some(local_id) = resolution
-                .tables
-                .local_id_for_span(path.node.path.span, source_path)
-                .or_else(|| local_id_for_span(resolution, path.node.path.span, source_path))
-            {
-                return type_result.local_types.get(&local_id).copied();
-            }
-            if path.node.path.node.segments.len() == 1 {
-                let name = path.node.path.node.segments[0].node.name.node.name.as_str();
-                if let Some(path) = source_path {
-                    let scoped: Vec<_> = resolution
-                        .tables
-                        .locals
-                        .iter()
-                        .filter(|info| {
-                            info.name == name
-                                && info.source_path.as_ref().is_some_and(|local_path| {
-                                    beskid_analysis::paths::same_file(local_path, path)
-                                })
-                        })
-                        .collect();
-                    if scoped.len() == 1 {
-                        return type_result.local_types.get(&scoped[0].id).copied();
-                    }
-                }
-            }
-            None
+            expr_type_at(type_result, node.span, source_path)
         }
         HirExpressionNode::BinaryExpression(binary) => {
             let left = infer_expr_type(resolution, type_result, &binary.node.left, source_path, receiver_type)?;
@@ -323,7 +179,9 @@ pub(crate) fn infer_expr_type(
                 | HirBinaryOp::IdentityEq | HirBinaryOp::IdentityNotEq => {
                     primitive_type_id(type_result, HirPrimitiveType::Bool)
                 }
-                HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div => Some(left),
+                HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div | HirBinaryOp::Mod => {
+                    Some(left)
+                }
             }
         }
         HirExpressionNode::GroupedExpression(grouped) => {
@@ -505,38 +363,23 @@ fn infer_call_expr_type(
         HirExpressionNode::MemberExpression(_) => None,
         HirExpressionNode::PathExpression(path) => {
             let segments = &path.node.path.node.segments;
-            if segments.len() >= 2 {
-                let method_name = segments[1].node.name.node.name.as_str();
-                let local_id = resolved_value_at(
+            if segments.len() >= 2
+                && let Some(method_name) = method_name_from_path_callee(segments)
+                && let Some((_local_id, receiver_type)) = receiver_type_for_path_callee(
                     resolution,
+                    &type_result.path_env(),
                     path.node.path.span,
+                    segments,
                     source_path,
                 )
-                .and_then(|resolved| match resolved {
-                    ResolvedValue::Local(local_id) => Some(local_id),
-                    _ => None,
-                })
-                .or_else(|| {
-                    let receiver_name = segments[0].node.name.node.name.as_str();
-                    resolution
-                        .tables
-                        .locals
-                        .iter()
-                        .find(|info| info.name == receiver_name)
-                        .map(|info| info.id)
-                });
-                if let Some(local_id) = local_id
-                    && let Some(receiver_type) = type_result.local_types.get(&local_id).copied()
-                {
-                    if let Some(return_type) = method_return_type_for_receiver(
-                        resolution,
-                        type_result,
-                        receiver_type,
-                        method_name,
-                    ) {
-                        return Some(return_type);
-                    }
-                }
+                && let Some(return_type) = method_return_type_for_receiver(
+                    resolution,
+                    type_result,
+                    receiver_type,
+                    method_name,
+                )
+            {
+                return Some(return_type);
             }
             let ResolvedValue::Item(item_id) = resolved_value_at(
                 resolution,
@@ -556,22 +399,20 @@ fn infer_call_expr_type(
     }
 }
 
-fn struct_field_type_for_receiver(
+pub(crate) fn struct_field_type_for_receiver(
+    resolution: &Resolution,
     type_result: &TypeResult,
     receiver_type: TypeId,
     field_name: &str,
+    source_path: Option<&PathBuf>,
 ) -> Option<TypeId> {
-    let item_id = match type_result.types.get(receiver_type) {
-        Some(TypeInfo::Named(item_id)) => *item_id,
-        Some(TypeInfo::Applied { base, .. }) => *base,
-        _ => return None,
-    };
-    type_result
-        .struct_fields_ordered
-        .get(&item_id)?
-        .iter()
-        .find(|(name, _)| name.as_str() == field_name)
-        .map(|(_, field_type)| *field_type)
+    field_type_on_receiver(
+        resolution,
+        &type_result.path_env(),
+        receiver_type,
+        field_name,
+        source_path,
+    )
 }
 
 fn method_return_type_for_receiver(
@@ -652,60 +493,7 @@ pub(crate) fn resolved_value_at(
     span: SpanInfo,
     source_path: Option<&PathBuf>,
 ) -> Option<ResolvedValue> {
-    if let Some(value) = resolution.tables.resolved_value_at(span, source_path) {
-        return Some(match value {
-            ResolvedValue::Item(item_id) => {
-                ResolvedValue::Item(canonical_item_id(resolution, item_id))
-            }
-            other => other,
-        });
-    }
-    if let Some(path) = source_path {
-        let mut candidate: Option<ResolvedValue> = None;
-        for (scoped_path, values) in &resolution.tables.scoped_resolved_values {
-            if !beskid_analysis::paths::same_file(scoped_path, path) {
-                continue;
-            }
-            let Some(value) = values.get(&span).copied().or_else(|| {
-                values
-                    .iter()
-                    .find(|(stored, _)| stored.start == span.start)
-                    .map(|(_, value)| *value)
-            }) else {
-                continue;
-            };
-            if let Some(existing) = candidate {
-                if existing != value {
-                    return None;
-                }
-            } else {
-                candidate = Some(value);
-            }
-        }
-        if let Some(value) = candidate {
-            return Some(match value {
-                ResolvedValue::Item(item_id) => {
-                    ResolvedValue::Item(canonical_item_id(resolution, item_id))
-                }
-                other => other,
-            });
-        }
-    }
-
-    let mut unique: Option<ResolvedValue> = None;
-    for values in resolution.tables.scoped_resolved_values.values() {
-        let Some(value) = values.get(&span).copied() else {
-            continue;
-        };
-        if let Some(existing) = unique {
-            if existing != value {
-                return None;
-            }
-        } else {
-            unique = Some(value);
-        }
-    }
-    unique.map(|value| match value {
+    resolution.tables.resolved_value_at(span, source_path).map(|value| match value {
         ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(resolution, item_id)),
         other => other,
     })
@@ -770,15 +558,4 @@ pub(crate) fn local_id_for_span(
     } else {
         None
     }
-}
-
-pub(crate) fn source_path_for_item_span(
-    resolution: &Resolution,
-    span: SpanInfo,
-) -> Option<PathBuf> {
-    resolution
-        .items
-        .iter()
-        .find(|info| info.span == span)
-        .and_then(|info| info.source_path.clone())
 }

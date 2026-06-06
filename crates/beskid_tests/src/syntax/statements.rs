@@ -9,7 +9,7 @@ use crate::syntax::util::{
 
 #[test]
 fn parses_let_statement_ast() {
-    let statement = parse_statement_ast(Rule::LetStatement, "i32 mut age = 42;");
+    let statement = parse_statement_ast(Rule::LetStatement, "mut i32 age = 42;");
     match &statement.node {
         Statement::Let(let_stmt) => {
             assert!(let_stmt.node.mutable);
@@ -62,9 +62,14 @@ fn parses_if_statement_ast() {
         Statement::If(if_stmt) => {
             assert_expression_path_segments(&if_stmt.node.condition, &["cond"]);
             assert_eq!(if_stmt.node.then_block.node.statements.len(), 1);
-            assert!(if_stmt.node.else_block.is_some());
-            let else_block = if_stmt.node.else_block.as_ref().expect("else block");
-            assert_eq!(else_block.node.statements.len(), 1);
+            assert!(if_stmt.node.else_branch.is_some());
+            let else_branch = if_stmt.node.else_branch.as_ref().expect("else branch");
+            match &else_branch.node {
+                beskid_analysis::syntax::ElseBranch::Block(block) => {
+                    assert_eq!(block.node.statements.len(), 1);
+                }
+                _ => panic!("expected else block"),
+            }
         }
         _ => panic!("expected if statement"),
     }

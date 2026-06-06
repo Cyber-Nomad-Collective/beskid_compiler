@@ -337,9 +337,27 @@ fn count_statement(stmt: &Statement) -> usize {
         Statement::If(i) => {
             count_block_statements(&i.node.then_block.node)
                 + i.node
-                    .else_block
+                    .else_branch
                     .as_ref()
-                    .map(|b| count_block_statements(&b.node))
+                    .map(|branch| match &branch.node {
+                        beskid_analysis::syntax::ElseBranch::Block(b) => {
+                            count_block_statements(&b.node)
+                        }
+                        beskid_analysis::syntax::ElseBranch::If(nested) => {
+                            count_block_statements(&nested.node.then_block.node)
+                                + nested
+                                    .node
+                                    .else_branch
+                                    .as_ref()
+                                    .map(|nested_else| match &nested_else.node {
+                                        beskid_analysis::syntax::ElseBranch::Block(b) => {
+                                            count_block_statements(&b.node)
+                                        }
+                                        beskid_analysis::syntax::ElseBranch::If(_) => 0,
+                                    })
+                                    .unwrap_or(0)
+                        }
+                    })
                     .unwrap_or(0)
         }
         Statement::While(w) => count_block_statements(&w.node.body.node),

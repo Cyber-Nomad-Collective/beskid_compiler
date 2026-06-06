@@ -163,6 +163,7 @@ pub enum HirBinaryOp {
     Sub,
     Mul,
     Div,
+    Mod,
 }
 
 #[derive(beskid_ast_derive::HirNode)]

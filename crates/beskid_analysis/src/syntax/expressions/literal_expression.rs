@@ -318,7 +318,7 @@ fn remap_type_spans(ty: &mut Spanned<crate::syntax::Type>, offset: usize, source
     ty.span = remap_span(ty.span, offset, source);
     match &mut ty.node {
         crate::syntax::Type::Complex(path) => remap_path_spans(path, offset, source),
-        crate::syntax::Type::Array(inner) | crate::syntax::Type::Ref(inner) => {
+        crate::syntax::Type::Array(inner) => {
             remap_type_spans(inner, offset, source);
         }
         crate::syntax::Type::Function {
@@ -352,6 +352,25 @@ fn remap_pattern_spans(pattern: &mut Spanned<crate::syntax::Pattern>, offset: us
                 remap_span(enum_pattern.node.path.node.variant.span, offset, source);
             for item in &mut enum_pattern.node.items {
                 remap_pattern_spans(item, offset, source);
+            }
+        }
+    }
+}
+
+fn remap_else_branch_spans(
+    else_branch: &mut Spanned<crate::syntax::ElseBranch>,
+    offset: usize,
+    source: &str,
+) {
+    else_branch.span = remap_span(else_branch.span, offset, source);
+    match &mut else_branch.node {
+        crate::syntax::ElseBranch::Block(block) => remap_block_spans(block, offset, source),
+        crate::syntax::ElseBranch::If(nested) => {
+            nested.span = remap_span(nested.span, offset, source);
+            remap_expression_spans(&mut nested.node.condition, offset, source);
+            remap_block_spans(&mut nested.node.then_block, offset, source);
+            if let Some(nested_else) = &mut nested.node.else_branch {
+                remap_else_branch_spans(nested_else, offset, source);
             }
         }
     }
@@ -394,8 +413,8 @@ fn remap_statement_spans(
             if_stmt.span = remap_span(if_stmt.span, offset, source);
             remap_expression_spans(&mut if_stmt.node.condition, offset, source);
             remap_block_spans(&mut if_stmt.node.then_block, offset, source);
-            if let Some(else_block) = &mut if_stmt.node.else_block {
-                remap_block_spans(else_block, offset, source);
+            if let Some(else_branch) = &mut if_stmt.node.else_branch {
+                remap_else_branch_spans(else_branch, offset, source);
             }
         }
         Statement::While(while_stmt) => {

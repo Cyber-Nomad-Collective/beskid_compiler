@@ -11,8 +11,8 @@ pub fn uri(path: &str) -> Uri {
 pub fn sample_source() -> String {
     [
         "i32 main() {",
-        "    i32 mut value = 1;",
-        "    i32 mut total = value + value;",
+        "    mut i32 value = 1;",
+        "    mut i32 total = value + value;",
         "    return value;",
         "}",
     ]

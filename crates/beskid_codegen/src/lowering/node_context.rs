@@ -31,9 +31,6 @@ impl NodeLoweringContext<'_, '_> {
     }
 
     pub(crate) fn require_expr_type(&self, span: SpanInfo) -> Result<TypeId, CodegenError> {
-        if let Some(type_id) = self.expr_type(span) {
-            return Ok(type_id);
-        }
         if let Some(ResolvedValue::Local(local_id)) = resolved_value_at(
             self.resolution,
             span,
@@ -41,6 +38,9 @@ impl NodeLoweringContext<'_, '_> {
         ) && let Some(type_id) = self.type_result.local_types.get(&local_id)
         {
             return Ok(*type_id);
+        }
+        if let Some(type_id) = self.expr_type(span) {
+            return Ok(type_id);
         }
         require_expr_type(
             self.resolution,
@@ -64,7 +64,11 @@ impl NodeLoweringContext<'_, '_> {
         ) {
             return Ok(type_id);
         }
-        if let Some(type_id) = self.expr_type(node.span) {
+        if !matches!(
+            node.node,
+            HirExpressionNode::MemberExpression(_) | HirExpressionNode::PathExpression(_)
+        ) && let Some(type_id) = self.expr_type(node.span)
+        {
             return Ok(type_id);
         }
         Err(CodegenError::MissingExpressionType { span: node.span })

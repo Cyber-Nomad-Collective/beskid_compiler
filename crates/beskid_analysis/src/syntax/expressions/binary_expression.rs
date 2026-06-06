@@ -35,6 +35,7 @@ pub enum BinaryOp {
     Sub,
     Mul,
     Div,
+    Mod,
 }
 
 pub(crate) fn parse_binary_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
@@ -44,7 +45,7 @@ pub(crate) fn parse_binary_expression(pair: Pair<Rule>) -> Result<Spanned<Expres
         Rule::EqualityExpression => parse_chain(pair, &["===", "!==", "==", "!="]),
         Rule::ComparisonExpression => parse_chain(pair, &["<", "<=", ">", ">="]),
         Rule::AdditionExpression => parse_chain(pair, &["+", "-"]),
-        Rule::MultiplicationExpression => parse_chain(pair, &["*", "/"]),
+        Rule::MultiplicationExpression => parse_chain(pair, &["*", "/", "%"]),
         _ => Err(ParseError::unexpected_rule(pair, None)),
     }
 }
@@ -100,6 +101,7 @@ fn map_binary_op(op_text: &str) -> Result<BinaryOp, ParseError> {
         "-" => Ok(BinaryOp::Sub),
         "*" => Ok(BinaryOp::Mul),
         "/" => Ok(BinaryOp::Div),
+        "%" => Ok(BinaryOp::Mod),
         _ => Err(ParseError::missing(Rule::Expression)),
     }
 }

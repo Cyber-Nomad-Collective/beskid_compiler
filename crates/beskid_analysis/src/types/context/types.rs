@@ -12,7 +12,6 @@ fn type_display_name(ty: &Spanned<HirType>) -> String {
         HirType::Primitive(primitive) => format!("{:?}", primitive.node),
         HirType::Complex(path) => path_display_name(path),
         HirType::Array(inner) => format!("{}[]", type_display_name(inner)),
-        HirType::Ref(inner) => format!("&{}", type_display_name(inner)),
         HirType::Function {
             return_type,
             parameters,
@@ -90,7 +89,6 @@ impl<'a> TypeContext<'a> {
                     Some(self.type_table.intern(TypeInfo::Array(inner_id)))
                 }
             }
-            HirType::Ref(inner) => self.type_id_for_type(inner),
             HirType::Function {
                 return_type,
                 parameters,

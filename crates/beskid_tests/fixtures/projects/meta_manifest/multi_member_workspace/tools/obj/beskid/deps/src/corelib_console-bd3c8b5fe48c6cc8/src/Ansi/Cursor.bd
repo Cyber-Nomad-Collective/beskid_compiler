@@ -38,7 +38,7 @@ pub CursorBuilder Column(CursorBuilder self, i64 col) {
 }
 
 pub CursorBuilder Home(CursorBuilder self) {
-    return Append(self, Escape.Csi("", "H"));
+    return Append(self, Escape.CsiSequence("", "H"));
 }
 
 pub CursorBuilder Position(CursorBuilder self, i64 row, i64 col) {

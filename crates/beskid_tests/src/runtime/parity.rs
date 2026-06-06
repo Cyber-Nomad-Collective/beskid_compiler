@@ -83,7 +83,7 @@ const TRY_PARITY_OK_CASES: &[TryParityOkCase] = &[
             enum Result { Ok(i64 value), Error(string error) }
             i64 main() {
                 Result source = Result::Ok(7);
-                i64 mut value = 0;
+                mut i64 value = 0;
                 if true {
                     value = source?;
                 }
@@ -247,7 +247,7 @@ fn parity_event_lifecycle_is_consistent_for_explicit_capacity_form() {
             unit Emit(string payload) { this.Created(payload); }
         }
         i64 main() {
-            User mut u = User { };
+            mut User u = User { };
             unit(string) handler = (string payload) => { __syscall_write(1, payload); };
             u.Created += handler;
             u.Emit(\"x\");
@@ -279,7 +279,7 @@ fn parity_event_lifecycle_is_consistent_for_default_capacity_form() {
             unit Emit(string payload) { this.Created(payload); }
         }
         i64 main() {
-            User mut u = User { };
+            mut User u = User { };
             unit(string) handler = (string payload) => { __syscall_write(1, payload); };
             u.Created += handler;
             u.Emit(\"x\");
@@ -334,7 +334,7 @@ fn parity_identity_equality_behavior_is_consistent() {
 #[test]
 fn parity_range_loop_behavior_is_consistent() {
     let source =
-        "i32 main() { i32 mut sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
+        "i32 main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
     let jit_value = jit_run_main_i32(source);
     assert_eq!(jit_value, 6, "expected JIT range-loop accumulation result");
 

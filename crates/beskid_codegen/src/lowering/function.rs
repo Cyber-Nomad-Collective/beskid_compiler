@@ -110,12 +110,6 @@ fn lower_method_body(
     let mut signature = Signature::new(CallConv::SystemV);
     signature.params.push(AbiParam::new(receiver_clif_ty));
     for (index, param) in def.node.parameters.iter().enumerate() {
-        if param.node.modifier.is_some() {
-            return Err(CodegenError::UnsupportedNode {
-                span: param.span,
-                node: "function parameter modifier",
-            });
-        }
         let type_id = signature_types
             .and_then(|sig| sig.params.get(index).copied())
             .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))
@@ -462,12 +456,6 @@ fn lower_function_with_name_body(
     let signature_types = item_id.and_then(|id| type_result.function_signatures.get(&id));
     let mut signature = Signature::new(CallConv::SystemV);
     for (index, param) in def.node.parameters.iter().enumerate() {
-        if param.node.modifier.is_some() {
-            return Err(CodegenError::UnsupportedNode {
-                span: param.span,
-                node: "function parameter modifier",
-            });
-        }
         let type_id = signature_types
             .and_then(|sig| sig.params.get(index).copied())
             .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))

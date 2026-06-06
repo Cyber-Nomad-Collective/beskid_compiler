@@ -1,4 +1,4 @@
-`System.Time` defines **`Instant`** and **`Duration`** value types.
+`System.Time` defines **`Instant`** and **`Duration`** value types with clock builtins.
 
 ## Types
 
@@ -16,8 +16,8 @@ pub type Duration {
 
 | Function | Behavior |
 |----------|----------|
-| `NowUtc() -> Instant` | Returns **`Instant { ticks: 0 }`**. |
-| `MonotonicNow() -> Instant` | Returns **`Instant { ticks: 0 }`**. |
+| `NowUtc() -> Instant` | **`Instant { ticks: __clock_realtime_nanos() }`** (nanoseconds since Unix epoch). |
+| `MonotonicNow() -> Instant` | **`Instant { ticks: __clock_monotonic_nanos() }`** (monotonic nanoseconds). |
 | `FromMilliseconds(i64 ms) -> Duration` | Returns **`Duration { milliseconds: ms }`**. |
 
-Real wall-clock and monotonic reads require runtime support; the API shape is stable for forward use.
+Tick values are raw nanoseconds from the host; compare durations in the same clock domain.

@@ -5,6 +5,17 @@ pub mod Core.Results;
 pub mod Core.ErrorHandling;
 /// Re-exports string helper functions.
 pub mod Core.String;
+/// Re-exports byte buffer primitives.
+pub mod Core.Bytes;
+/// Re-exports byte buffer slice helpers.
+pub mod Core.Bytes.Slice;
+/// Re-exports byte buffer error variants.
+pub mod Core.Bytes.Errors;
+/// Re-exports encoding hub and algorithms.
+pub mod Core.Encoding;
+pub mod Core.Encoding.Utf8;
+pub mod Core.Encoding.Hex;
+pub mod Core.Encoding.Base64;
 /// Re-exports assertion-related contracts.
 pub mod Testing.Contracts;
 /// Re-exports assertion helper functions.
@@ -24,6 +35,10 @@ pub mod System.Syscall.SyscallError;
 pub mod System.Syscall.WriteRequest;
 /// Re-exports read request payload type.
 pub mod System.Syscall.ReadRequest;
+/// Re-exports binary write request payload type.
+pub mod System.Syscall.WriteBytesRequest;
+/// Re-exports binary read request payload type.
+pub mod System.Syscall.ReadBytesRequest;
 /// Re-exports standard input helpers.
 pub mod System.Input;
 /// Re-exports standard output helpers.

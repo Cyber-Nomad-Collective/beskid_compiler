@@ -19,7 +19,7 @@ pub use break_statement::BreakStatement;
 pub use continue_statement::ContinueStatement;
 pub use expression_statement::ExpressionStatement;
 pub use for_statement::ForStatement;
-pub use if_statement::IfStatement;
+pub use if_statement::{ElseBranch, IfStatement};
 pub use launch_statement::LaunchStatement;
 pub use let_statement::LetStatement;
 pub use range_expression::RangeExpression;

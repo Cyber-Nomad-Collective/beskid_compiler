@@ -39,18 +39,13 @@ fn rejects_parameter_without_type() {
 }
 
 #[test]
-fn parses_parameter_modifier() {
-    assert_parse(Rule::ParameterModifier, "ref");
-}
-
-#[test]
-fn rejects_invalid_parameter_modifier() {
-    assert_parse_fail(Rule::ParameterModifier, "mut");
+fn parses_mut_parameter() {
+    assert_parse(Rule::Parameter, "mut i32 value");
 }
 
 #[test]
 fn parses_parameter() {
-    assert_parse(Rule::Parameter, "out i32 value");
+    assert_parse(Rule::Parameter, "i32 value");
 }
 
 #[test]

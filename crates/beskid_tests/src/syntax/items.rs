@@ -68,34 +68,13 @@ fn parses_function_definition_ast() {
 }
 
 #[test]
-fn parses_function_with_out_parameter_modifier_ast() {
-    let node = parse_node_ast("i32 write(out i32 value) { return value; }");
+fn parses_function_with_mut_parameter_ast() {
+    let node = parse_node_ast("i32 write(mut i32 value) { return value; }");
     match &node.node {
         Node::Function(function) => {
             assert_eq!(function.node.parameters.len(), 1);
             let param = &function.node.parameters[0].node;
-            assert!(matches!(
-                param.modifier.as_ref().map(|m| m.node),
-                Some(beskid_analysis::syntax::ParameterModifier::Out)
-            ));
-            assert_eq!(param.name.node.name, "value");
-            assert_type_primitive(&param.ty, beskid_analysis::syntax::PrimitiveType::I32);
-        }
-        _ => panic!("expected function definition"),
-    }
-}
-
-#[test]
-fn parses_function_with_parameter_modifier_ast() {
-    let node = parse_node_ast("i32 update(ref i32 value) { return value; }");
-    match &node.node {
-        Node::Function(function) => {
-            assert_eq!(function.node.parameters.len(), 1);
-            let param = &function.node.parameters[0].node;
-            assert!(matches!(
-                param.modifier.as_ref().map(|m| m.node),
-                Some(beskid_analysis::syntax::ParameterModifier::Ref)
-            ));
+            assert!(param.mutable);
             assert_eq!(param.name.node.name, "value");
             assert_type_primitive(&param.ty, beskid_analysis::syntax::PrimitiveType::I32);
         }

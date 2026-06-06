@@ -26,7 +26,6 @@ pub(super) fn type_name_for_method_receiver(receiver_type: &Spanned<HirType>) ->
             .collect::<Vec<_>>()
             .join("."),
         HirType::Array(_) => "Array".to_string(),
-        HirType::Ref(_) => "Ref".to_string(),
         HirType::Function { .. } => "Function".to_string(),
     }
 }

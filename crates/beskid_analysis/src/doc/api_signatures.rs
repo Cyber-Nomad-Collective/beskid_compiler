@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::hir::{
     AstProgram, HirContractMethodSignature, HirEnumDefinition, HirEnumVariant, HirField,
-    HirFunctionDefinition, HirItem, HirMethodDefinition, HirParameter, HirParameterModifier,
+    HirFunctionDefinition, HirItem, HirMethodDefinition, HirParameter,
     HirProgram, HirTypeDefinition, lower_program as lower_hir_program, normalize_program,
 };
 use crate::projects::assembly::SourceUnit;
@@ -132,12 +132,7 @@ fn find_field<'a>(
 }
 
 fn parameter_modifier(parameter: &HirParameter) -> Option<String> {
-    parameter.modifier.as_ref().map(|modifier| {
-        match modifier.node {
-            HirParameterModifier::Ref => "ref".to_string(),
-            HirParameterModifier::Out => "out".to_string(),
-        }
-    })
+    parameter.mutable.then(|| "mut".to_string())
 }
 
 fn generic_parameters_from_names(names: &[String]) -> Vec<ApiGenericParameterDoc> {
@@ -195,12 +190,12 @@ fn build_from_decl(
             let param_display = params
                 .iter()
                 .map(|p| {
-                    let mod_prefix = p
+                    let mut_prefix = p
                         .modifier
                         .as_ref()
                         .map(|m| format!("{m} "))
                         .unwrap_or_default();
-                    format!("{mod_prefix}{} {}", p.ty.display, p.name)
+                    format!("{mut_prefix}{} {}", p.ty.display, p.name)
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -225,12 +220,12 @@ fn build_from_decl(
             let param_display = params
                 .iter()
                 .map(|p| {
-                    let mod_prefix = p
+                    let mut_prefix = p
                         .modifier
                         .as_ref()
                         .map(|m| format!("{m} "))
                         .unwrap_or_default();
-                    format!("{mod_prefix}{} {}", p.ty.display, p.name)
+                    format!("{mut_prefix}{} {}", p.ty.display, p.name)
                 })
                 .collect::<Vec<_>>()
                 .join(", ");

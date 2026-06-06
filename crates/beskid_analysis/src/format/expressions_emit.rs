@@ -97,6 +97,7 @@ impl Emit for BinaryOp {
             BinaryOp::Sub => "-",
             BinaryOp::Mul => "*",
             BinaryOp::Div => "/",
+            BinaryOp::Mod => "%",
         };
         cx.token(w, s)
     }

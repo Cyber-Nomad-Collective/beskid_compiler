@@ -3,13 +3,12 @@
 /// Generated syntax node mirror: `crates/beskid_analysis/src/syntax/types/parameter.rs` — `Parameter`.
 ///
 /// **Rust documentation** (from mirrored type):
-/// Function or method parameter: optional modifier, name, and type (`ty name` surface order).
+/// Function or method parameter: optional `mut`, type, and name.
 ///
 /// Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
 /// Implements `Node` via the host bridge; traverse with `Beskid.Compiler.Query` and `NodeRef`.
-/// Struct fields (see declaration): `modifier`, `name`, `ty`.
+/// Struct fields (see declaration): `name`, `ty`.
 pub type Parameter {
-    Beskid.Syntax.Nodes.OptionalParameterModifier modifier,
     Beskid.Syntax.Nodes.Identifier name,
     Beskid.Syntax.Nodes.Type ty,
 }

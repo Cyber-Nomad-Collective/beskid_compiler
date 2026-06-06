@@ -1,8 +1,8 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
-    BreakStatement, ContinueStatement, Expression, ExpressionStatement, ForStatement, IfStatement,
-    LaunchStatement, LetStatement, RangeExpression, ReturnStatement, Spanned, Statement,
-    WhileStatement, WithStatement,
+    BreakStatement, ContinueStatement, ElseBranch, Expression, ExpressionStatement, ForStatement,
+    IfStatement, LaunchStatement, LetStatement, RangeExpression, ReturnStatement, Spanned,
+    Statement, WhileStatement, WithStatement,
 };
 use std::fmt::Write;
 
@@ -26,15 +26,19 @@ fn emit_parenthesized_condition<W: Write>(
 impl Emit for LetStatement {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         if let Some(ty) = &self.type_annotation {
-            ty.emit(w, cx)?;
             if self.mutable {
-                cx.space(w)?;
                 cx.token(w, "mut")?;
+                cx.space(w)?;
             }
+            ty.emit(w, cx)?;
             cx.space(w)?;
             self.name.emit(w, cx)?;
         } else {
             cx.token(w, "let")?;
+            if self.mutable {
+                cx.space(w)?;
+                cx.token(w, "mut")?;
+            }
             cx.space(w)?;
             self.name.emit(w, cx)?;
         }
@@ -153,6 +157,25 @@ impl Emit for Spanned<ForStatement> {
     }
 }
 
+impl Emit for ElseBranch {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        match self {
+            Self::If(if_stmt) => if_stmt.emit(w, cx),
+            Self::Block(block) => {
+                cx.nl(w)?;
+                cx.write_indent(w)?;
+                block.emit(w, cx)
+            }
+        }
+    }
+}
+
+impl Emit for Spanned<ElseBranch> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.node.emit(w, cx)
+    }
+}
+
 impl Emit for IfStatement {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         cx.token(w, "if")?;
@@ -161,13 +184,17 @@ impl Emit for IfStatement {
         cx.nl(w)?;
         cx.write_indent(w)?;
         self.then_block.emit(w, cx)?;
-        if let Some(else_b) = &self.else_block {
+        if let Some(else_b) = &self.else_branch {
             cx.nl(w)?;
             cx.write_indent(w)?;
             cx.token(w, "else")?;
-            cx.nl(w)?;
-            cx.write_indent(w)?;
-            else_b.emit(w, cx)?;
+            match &else_b.node {
+                ElseBranch::If(_) => {
+                    cx.space(w)?;
+                    else_b.emit(w, cx)?;
+                }
+                ElseBranch::Block(_) => else_b.emit(w, cx)?,
+            }
         }
         Ok(())
     }

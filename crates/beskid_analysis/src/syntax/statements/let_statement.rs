@@ -40,7 +40,13 @@ impl Parsable for LetStatement {
 
         match rule {
             Rule::TypedLetStatement => {
-                let type_pair = inner.next().ok_or(ParseError::missing(Rule::BeskidType))?;
+                let first = inner.next().ok_or(ParseError::missing(Rule::BeskidType))?;
+                let type_pair = if first.as_rule() == Rule::MutKeyword {
+                    mutable = true;
+                    inner.next().ok_or(ParseError::missing(Rule::BeskidType))?
+                } else {
+                    first
+                };
                 type_annotation = Some(Type::parse(type_pair)?);
             }
             Rule::InferredLetStatement => {

@@ -1,12 +1,22 @@
 use crate::hir::{HirExpressionNode, HirPrimitiveType};
 use crate::resolve::{canonical_item_id, ItemId, ItemKind, ResolvedType, ResolvedValue};
 use crate::syntax::{SpanInfo, Spanned};
+use crate::types::path_value::PathTypeEnv;
 use crate::types::{TypeId, TypeInfo};
 
 use super::context::{CastIntent, TypeContext, TypeError};
 use std::collections::HashMap;
 
 impl<'a> TypeContext<'a> {
+    pub(super) fn path_env(&self) -> PathTypeEnv<'_> {
+        PathTypeEnv {
+            types: &self.type_table,
+            local_types: &self.local_types,
+            struct_fields_ordered: &self.struct_fields_ordered,
+            generic_items: &self.generic_items,
+        }
+    }
+
     pub(super) fn resolved_value_at(&self, span: SpanInfo) -> Option<ResolvedValue> {
         let value = self
             .resolution
@@ -407,6 +417,9 @@ impl<'a> TypeContext<'a> {
         if self.is_contract_compatible(expected, actual) {
             return;
         }
+        if self.is_byte_array_ptr_compatible(expected, actual) {
+            return;
+        }
         if self.is_numeric(expected) && self.is_numeric(actual) {
             if self
                 .cast_intents
@@ -440,6 +453,17 @@ impl<'a> TypeContext<'a> {
             expected,
             actual,
         });
+    }
+
+    /// `u8[]` and `i64` Ptr handles share the same runtime representation (BYTES-001 ABI).
+    fn is_byte_array_ptr_compatible(&mut self, expected: TypeId, actual: TypeId) -> bool {
+        let (Some(i64_id), Some(u8_arr)) = (
+            self.primitive_type_id(HirPrimitiveType::I64),
+            self.u8_array_type_id(),
+        ) else {
+            return false;
+        };
+        (expected == i64_id && actual == u8_arr) || (expected == u8_arr && actual == i64_id)
     }
 
     fn is_contract_compatible(&self, expected: TypeId, actual: TypeId) -> bool {

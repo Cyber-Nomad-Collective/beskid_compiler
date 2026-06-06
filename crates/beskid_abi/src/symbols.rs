@@ -12,6 +12,28 @@ pub const SYM_PANIC: &str = "panic";
 pub const SYM_PANIC_STR: &str = "panic_str";
 pub const SYM_SYSCALL_WRITE: &str = "syscall_write";
 pub const SYM_SYSCALL_READ: &str = "syscall_read";
+pub const SYM_SYSCALL_WRITE_BYTES: &str = "syscall_write_bytes";
+pub const SYM_SYSCALL_READ_BYTES: &str = "syscall_read_bytes";
+pub const SYM_STR_SLICE: &str = "str_slice";
+pub const SYM_BYTES_FROM_STR: &str = "bytes_from_str";
+pub const SYM_STR_FROM_BYTES_UTF8: &str = "str_from_bytes_utf8";
+pub const SYM_BYTES_COPY: &str = "bytes_copy";
+pub const SYM_BYTES_GET: &str = "bytes_get";
+pub const SYM_BYTES_SET: &str = "bytes_set";
+pub const SYM_BYTES_COMPARE: &str = "bytes_compare";
+pub const SYM_FS_READ_TEXT: &str = "fs_read_text";
+pub const SYM_FS_WRITE_TEXT: &str = "fs_write_text";
+pub const SYM_FS_EXISTS: &str = "fs_exists";
+pub const SYM_FS_DELETE: &str = "fs_delete";
+pub const SYM_FS_MKDIR: &str = "fs_mkdir";
+pub const SYM_ENV_GET: &str = "env_get";
+pub const SYM_ENV_SET: &str = "env_set";
+pub const SYM_ENV_GETCWD: &str = "env_getcwd";
+pub const SYM_PROCESS_GETPID: &str = "process_getpid";
+pub const SYM_PROCESS_EXIT: &str = "process_exit";
+pub const SYM_CLOCK_REALTIME_NANOS: &str = "clock_realtime_nanos";
+pub const SYM_CLOCK_MONOTONIC_NANOS: &str = "clock_monotonic_nanos";
+pub const SYM_TTY_WINSIZE: &str = "tty_winsize";
 pub const SYM_STR_LEN: &str = "str_len";
 pub const SYM_GC_BYTES_ALLOCATED: &str = "gc_bytes_allocated";
 pub const SYM_GC_OBJECT_COUNT: &str = "gc_object_count";
@@ -125,6 +147,28 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_PANIC_STR,
     SYM_SYSCALL_WRITE,
     SYM_SYSCALL_READ,
+    SYM_SYSCALL_WRITE_BYTES,
+    SYM_SYSCALL_READ_BYTES,
+    SYM_STR_SLICE,
+    SYM_BYTES_FROM_STR,
+    SYM_STR_FROM_BYTES_UTF8,
+    SYM_BYTES_COPY,
+    SYM_BYTES_GET,
+    SYM_BYTES_SET,
+    SYM_BYTES_COMPARE,
+    SYM_FS_READ_TEXT,
+    SYM_FS_WRITE_TEXT,
+    SYM_FS_EXISTS,
+    SYM_FS_DELETE,
+    SYM_FS_MKDIR,
+    SYM_ENV_GET,
+    SYM_ENV_SET,
+    SYM_ENV_GETCWD,
+    SYM_PROCESS_GETPID,
+    SYM_PROCESS_EXIT,
+    SYM_CLOCK_REALTIME_NANOS,
+    SYM_CLOCK_MONOTONIC_NANOS,
+    SYM_TTY_WINSIZE,
     SYM_GC_BYTES_ALLOCATED,
     SYM_GC_OBJECT_COUNT,
     SYM_GC_PHASE,

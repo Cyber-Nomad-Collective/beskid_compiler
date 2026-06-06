@@ -185,6 +185,22 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     });
                 }
             }
+            HirBinaryOp::Mod => {
+                if operand_clif_ty.is_float() {
+                    return Err(CodegenError::UnsupportedNode {
+                        span: node.span,
+                        node: "binary mod on float",
+                    });
+                }
+                if operand_clif_ty.is_int() {
+                    ctx.builder.ins().srem(left, right)
+                } else {
+                    return Err(CodegenError::UnsupportedNode {
+                        span: node.span,
+                        node: "binary mod type",
+                    });
+                }
+            }
             HirBinaryOp::And | HirBinaryOp::Or => {
                 let is_bool = matches!(
                     operand_info,

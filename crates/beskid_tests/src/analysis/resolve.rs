@@ -80,7 +80,7 @@ fn shadowing_item_with_local_emits_warning() {
 
 #[test]
 fn qualified_value_path_with_missing_module_is_error() {
-    let result = resolve_program("unit foo() { let x = dep.thing; }");
+    let result = resolve_program("unit foo(MissingModule.Symbol x) { }");
     let errors = result.expect_err("expected unknown module path error");
     assert!(
         errors

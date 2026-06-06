@@ -64,6 +64,7 @@ pub Option<ContractDefinition> AsContractDefinition(Beskid.Syntax.Nodes.NodeRef 
 pub Option<ContractEmbedding> AsContractEmbedding(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<ContractMethodSignature> AsContractMethodSignature(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<ContractNode> AsContractNode(Beskid.Syntax.Nodes.NodeRef node);
+pub Option<ElseBranch> AsElseBranch(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<EnumConstructorExpression> AsEnumConstructorExpression(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<EnumDefinition> AsEnumDefinition(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<EnumPath> AsEnumPath(Beskid.Syntax.Nodes.NodeRef node);
@@ -100,7 +101,6 @@ pub Option<MemberExpression> AsMemberExpression(Beskid.Syntax.Nodes.NodeRef node
 pub Option<MethodDefinition> AsMethodDefinition(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<ModuleDeclaration> AsModuleDeclaration(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<Parameter> AsParameter(Beskid.Syntax.Nodes.NodeRef node);
-pub Option<ParameterModifier> AsParameterModifier(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<Path> AsPath(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<PathExpression> AsPathExpression(Beskid.Syntax.Nodes.NodeRef node);
 pub Option<PathSegment> AsPathSegment(Beskid.Syntax.Nodes.NodeRef node);

@@ -41,15 +41,6 @@ fn parses_array_type_ast() {
 }
 
 #[test]
-fn parses_ref_type_ast() {
-    let ty = parse_type_ast("ref string");
-    match &ty.node {
-        Type::Ref(inner) => assert_type_primitive(inner, PrimitiveType::String),
-        _ => panic!("expected ref type"),
-    }
-}
-
-#[test]
 fn parses_path_type_ast() {
     let ty = parse_type_ast("User");
     assert_type_complex_path(&ty, &["User"]);
@@ -61,15 +52,6 @@ fn parses_array_of_complex_type_ast() {
     match &ty.node {
         Type::Array(inner) => assert_type_complex_path(inner, &["User"]),
         _ => panic!("expected array type"),
-    }
-}
-
-#[test]
-fn parses_ref_of_complex_type_ast() {
-    let ty = parse_type_ast("ref User");
-    match &ty.node {
-        Type::Ref(inner) => assert_type_complex_path(inner, &["User"]),
-        _ => panic!("expected ref type"),
     }
 }
 

@@ -8,6 +8,15 @@ use crate::syntax::SpanInfo;
 
 use super::ids::{ItemId, LocalId};
 
+fn value_at_span<T: Copy>(values: &HashMap<SpanInfo, T>, span: SpanInfo) -> Option<T> {
+    values.get(&span).copied().or_else(|| {
+        values
+            .iter()
+            .find(|(stored, _)| stored.start == span.start)
+            .map(|(_, value)| *value)
+    })
+}
+
 /// Result of resolving a value-position path or identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResolvedValue {
@@ -58,38 +67,46 @@ impl ResolutionTables {
         span: SpanInfo,
         source_path: Option<&PathBuf>,
     ) -> Option<ResolvedValue> {
-        if let Some(path) = source_path
-            && let Some(value) = self.scoped_value_at(path, span)
-        {
-            return Some(value);
-        }
-
-        let mut candidate: Option<ResolvedValue> = None;
-        for values in self.scoped_resolved_values.values() {
-            if let Some(value) = values.get(&span) {
-                if candidate.is_some() {
-                    candidate = None;
-                    break;
+        if let Some(path) = source_path {
+            let mut candidate: Option<ResolvedValue> = None;
+            for (scoped_path, values) in &self.scoped_resolved_values {
+                if !same_file_opt(Some(scoped_path), Some(path)) {
+                    continue;
                 }
-                candidate = Some(*value);
+                let Some(value) = value_at_span(values, span) else {
+                    continue;
+                };
+                if let Some(existing) = candidate {
+                    if existing != value {
+                        return None;
+                    }
+                } else {
+                    candidate = Some(value);
+                }
+            }
+            if let Some(value) = candidate {
+                return Some(value);
+            }
+        } else {
+            let mut candidate: Option<ResolvedValue> = None;
+            for values in self.scoped_resolved_values.values() {
+                let Some(value) = value_at_span(values, span) else {
+                    continue;
+                };
+                if let Some(existing) = candidate {
+                    if existing != value {
+                        return None;
+                    }
+                } else {
+                    candidate = Some(value);
+                }
+            }
+            if let Some(value) = candidate {
+                return Some(value);
             }
         }
-        if let Some(value) = candidate {
-            return Some(value);
-        }
 
-        self.resolved_values.get(&span).copied()
-    }
-
-    fn scoped_value_at(&self, path: &PathBuf, span: SpanInfo) -> Option<ResolvedValue> {
-        for (scoped_path, values) in &self.scoped_resolved_values {
-            if same_file_opt(Some(scoped_path), Some(path))
-                && let Some(value) = values.get(&span)
-            {
-                return Some(*value);
-            }
-        }
-        None
+        value_at_span(&self.resolved_values, span)
     }
 
     pub fn insert_type(&mut self, span: SpanInfo, resolved_type: ResolvedType) {

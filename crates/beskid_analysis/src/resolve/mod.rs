@@ -22,7 +22,6 @@ pub use symbol::{
     SymbolId, SymbolQualifier, SymbolRegistry, SymbolShape,
 };
 pub use symbol_lookup::{
-    canonical_item_id, item_id_for_qualifier, item_id_for_symbol, qualified_name,
-    qualified_name_from_symbol, symbol_for_item, symbol_string,
+    canonical_item_id, item_id_for_symbol, qualified_name, symbol_for_item,
 };
 pub use tables::{LocalInfo, ResolutionTables, ResolvedType, ResolvedValue};

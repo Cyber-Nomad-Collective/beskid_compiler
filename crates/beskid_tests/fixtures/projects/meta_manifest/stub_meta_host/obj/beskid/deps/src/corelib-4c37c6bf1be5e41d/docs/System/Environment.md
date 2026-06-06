@@ -1,4 +1,4 @@
-`System.Environment` defines **`EnvironmentError`** and accessors for process environment data.
+`System.Environment` defines **`EnvironmentError`** and accessors backed by runtime `env_*` builtins.
 
 ## EnvironmentError
 
@@ -14,8 +14,8 @@ pub enum EnvironmentError {
 
 | Function | Behavior |
 |----------|----------|
-| `Get(string name)` | Empty name → **`InvalidName`**. Otherwise **`NotFound`** (no host lookup yet). |
-| `TryGet(string name)` | Empty name → **`None`**. Otherwise **`None`**. |
-| `Set(string name, string value)` | Empty name → **`InvalidName`**. Empty `value` or any mutation attempt → **`UnsupportedMutation`**. |
+| `Get(string name)` | Empty name → **`InvalidName`**. Lookup via **`__env_get`**; unset → **`NotFound`**. |
+| `TryGet(string name)` | Empty name → **`None`**. Unset → **`None`**; otherwise **`Some(value)`**. |
+| `Set(string name, string value)` | Empty name → **`InvalidName`**. Mutation via **`__env_set`**; unsupported host → **`UnsupportedMutation`**. |
 | `GetVariable` | Alias of **`Get`**. |
-| `CurrentDirectory()` | Returns **`"."`**. |
+| `CurrentDirectory()` | Returns **`__env_getcwd()`**. |

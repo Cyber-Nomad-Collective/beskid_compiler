@@ -3,13 +3,13 @@
 /// Generated syntax node mirror: `crates/beskid_analysis/src/syntax/statements/if_statement.rs` — `IfStatement`.
 ///
 /// **Rust documentation** (from mirrored type):
-/// Conditional with mandatory then-block and optional `else` block.
+/// Conditional with mandatory then-block and optional `else` branch.
 ///
 /// Generated index uses `beskid_doc.pest` `@variant` / `@par`; struct types list field names once (`@arg` is for callables only).
 /// Implements `Node` via the host bridge; traverse with `Beskid.Compiler.Query` and `NodeRef`.
-/// Struct fields (see declaration): `condition`, `thenBlock`, `elseBlock`.
+/// Struct fields (see declaration): `condition`, `thenBlock`, `elseBranch`.
 pub type IfStatement {
     Beskid.Syntax.Nodes.Expression condition,
     Beskid.Syntax.Nodes.Block thenBlock,
-    Beskid.Syntax.Nodes.OptionalBlock elseBlock,
+    Beskid.Syntax.Nodes.OptionalElseBranch elseBranch,
 }

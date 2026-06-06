@@ -307,6 +307,26 @@ fn collect_array_fors_item(
     }
 }
 
+fn collect_array_fors_in_else_branch(
+    resolution: &Resolution,
+    programs: &[&Spanned<HirProgram>],
+    else_branch: &Spanned<crate::hir::HirElseBranch>,
+    set: &mut HashSet<SpanInfo>,
+) {
+    match &else_branch.node {
+        crate::hir::HirElseBranch::Block(block) => {
+            collect_array_fors_in_block(resolution, programs, block, set);
+        }
+        crate::hir::HirElseBranch::If(nested) => {
+            collect_array_fors_in_expression(resolution, programs, &nested.node.condition, set);
+            collect_array_fors_in_block(resolution, programs, &nested.node.then_block, set);
+            if let Some(nested_else) = &nested.node.else_branch {
+                collect_array_fors_in_else_branch(resolution, programs, nested_else, set);
+            }
+        }
+    }
+}
+
 fn collect_array_fors_in_block(
     resolution: &Resolution,
     programs: &[&Spanned<HirProgram>],
@@ -345,8 +365,8 @@ fn collect_array_fors_in_statement(
         HirStatementNode::IfStatement(if_stmt) => {
             collect_array_fors_in_expression(resolution, programs, &if_stmt.node.condition, set);
             collect_array_fors_in_block(resolution, programs, &if_stmt.node.then_block, set);
-            if let Some(else_block) = &if_stmt.node.else_block {
-                collect_array_fors_in_block(resolution, programs, else_block, set);
+            if let Some(else_branch) = &if_stmt.node.else_branch {
+                collect_array_fors_in_else_branch(resolution, programs, else_branch, set);
             }
         }
         HirStatementNode::ExpressionStatement(expr_stmt) => {

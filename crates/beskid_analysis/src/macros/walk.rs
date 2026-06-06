@@ -1,7 +1,7 @@
 //! Shared AST walks for macro expansion and substitution.
 
 use crate::syntax::expressions::Expression;
-use crate::syntax::statements::{Block, ExpressionStatement, Statement};
+use crate::syntax::statements::{Block, ElseBranch, ExpressionStatement, IfStatement, Statement};
 use crate::syntax::Spanned;
 
 /// Map an expression bottom-up: children are transformed first, then `f` is applied to the result.
@@ -126,6 +126,32 @@ pub fn map_expression(
     f(Spanned::new(mapped, span))
 }
 
+fn map_else_branch(
+    else_branch: Spanned<ElseBranch>,
+    f: &mut impl FnMut(Spanned<Expression>) -> Spanned<Expression>,
+) -> Spanned<ElseBranch> {
+    let mapped = match else_branch.node {
+        ElseBranch::Block(block) => ElseBranch::Block(map_block(block, f)),
+        ElseBranch::If(nested) => ElseBranch::If(Box::new(map_if_statement(*nested, f))),
+    };
+    Spanned::new(mapped, else_branch.span)
+}
+
+fn map_if_statement(
+    if_stmt: Spanned<IfStatement>,
+    f: &mut impl FnMut(Spanned<Expression>) -> Spanned<Expression>,
+) -> Spanned<IfStatement> {
+    let mut mapped = if_stmt.clone();
+    mapped.node.condition = map_expression(if_stmt.node.condition.clone(), f);
+    mapped.node.then_block = map_block(if_stmt.node.then_block.clone(), f);
+    mapped.node.else_branch = if_stmt
+        .node
+        .else_branch
+        .as_ref()
+        .map(|else_branch| map_else_branch(else_branch.clone(), f));
+    mapped
+}
+
 pub fn map_block(
     block: Spanned<Block>,
     f: &mut impl FnMut(Spanned<Expression>) -> Spanned<Expression>,
@@ -167,17 +193,7 @@ pub fn map_statement(
             }
             Statement::Return(n)
         }
-        Statement::If(i) => {
-            let mut n = i.clone();
-            n.node.condition = map_expression(i.node.condition.clone(), f);
-            n.node.then_block = map_block(i.node.then_block.clone(), f);
-            n.node.else_block = i
-                .node
-                .else_block
-                .as_ref()
-                .map(|b| map_block(b.clone(), f));
-            Statement::If(n)
-        }
+        Statement::If(i) => Statement::If(map_if_statement(i, f)),
         Statement::While(w) => {
             let mut n = w.clone();
             n.node.condition = map_expression(w.node.condition.clone(), f);

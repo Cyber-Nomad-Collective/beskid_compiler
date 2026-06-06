@@ -1,6 +1,7 @@
 use crate::hir::{
-    HirBlock, HirBreakStatement, HirContinueStatement, HirExpressionStatement, HirForStatement,
-    HirIfStatement, HirLetStatement, HirReturnStatement, HirStatementNode, HirWhileStatement,
+    HirBlock, HirBreakStatement, HirContinueStatement, HirElseBranch, HirExpressionStatement,
+    HirForStatement, HirIfStatement, HirLetStatement, HirReturnStatement, HirStatementNode,
+    HirWhileStatement,
 };
 use crate::syntax::{self, Spanned};
 
@@ -111,6 +112,20 @@ impl Lowerable for Spanned<syntax::ForStatement> {
     }
 }
 
+impl Lowerable for Spanned<syntax::ElseBranch> {
+    type Output = Spanned<HirElseBranch>;
+
+    fn lower(&self) -> Self::Output {
+        let node = match &self.node {
+            syntax::ElseBranch::If(if_stmt) => {
+                HirElseBranch::If(Box::new(if_stmt.lower()))
+            }
+            syntax::ElseBranch::Block(block) => HirElseBranch::Block(block.lower()),
+        };
+        Spanned::new(node, self.span)
+    }
+}
+
 impl Lowerable for Spanned<syntax::IfStatement> {
     type Output = Spanned<HirIfStatement>;
 
@@ -119,7 +134,7 @@ impl Lowerable for Spanned<syntax::IfStatement> {
             HirIfStatement {
                 condition: self.node.condition.lower(),
                 then_block: self.node.then_block.lower(),
-                else_block: self.node.else_block.as_ref().map(Lowerable::lower),
+                else_branch: self.node.else_branch.as_ref().map(Lowerable::lower),
             },
             self.span,
         )

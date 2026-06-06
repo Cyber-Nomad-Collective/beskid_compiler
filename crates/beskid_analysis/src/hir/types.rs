@@ -47,7 +47,7 @@ impl HirPrimitiveType {
 /// Type tree used in HIR declarations and expressions.
 ///
 /// `Primitive` and `Complex` cover named/inline types, `Array` for `T[]`,
-/// `Ref` for reference types, and `Function` for callable signatures.
+/// and `Function` for callable signatures.
 #[derive(Debug, Clone, PartialEq, Eq, beskid_ast_derive::HirNode)]
 #[ast(kind = "Type")]
 pub enum HirType {
@@ -57,8 +57,6 @@ pub enum HirType {
     Complex(Spanned<HirPath>),
     #[ast(child)]
     Array(Box<Spanned<HirType>>),
-    #[ast(child)]
-    Ref(Box<Spanned<HirType>>),
     #[ast(children)]
     Function {
         return_type: Box<Spanned<HirType>>,
@@ -90,18 +88,9 @@ pub enum HirFieldKind {
     Injected,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, beskid_ast_derive::HirNode)]
-#[ast(kind = "ParameterModifier")]
-pub enum HirParameterModifier {
-    Ref,
-    Out,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, beskid_ast_derive::HirNode)]
 #[ast(kind = "Parameter")]
 pub struct HirParameter {
-    #[ast(child)]
-    pub modifier: Option<Spanned<HirParameterModifier>>,
     #[ast(skip)]
     pub mutable: bool,
     #[ast(child)]

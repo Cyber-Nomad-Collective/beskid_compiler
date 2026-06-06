@@ -92,7 +92,6 @@ pub(crate) fn type_id_for_type(
             let inner_id = type_id_for_type(resolution, type_result, inner)?;
             type_result.types.find_array_of(inner_id)
         }
-        HirType::Ref(inner) => type_id_for_type(resolution, type_result, inner),
         HirType::Function {
             return_type,
             parameters,

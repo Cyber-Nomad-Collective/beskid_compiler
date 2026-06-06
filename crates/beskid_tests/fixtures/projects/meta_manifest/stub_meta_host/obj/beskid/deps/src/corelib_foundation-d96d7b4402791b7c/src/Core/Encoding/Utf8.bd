@@ -1,0 +1,51 @@
+/// UTF-8 encoding (language default).
+/// @tier(standard)
+use Core.Encoding.EncodingError;
+
+pub Core.Results.Result<u8[], EncodingError> EncodeToBytes(string text) {
+    return Result::Ok(Core.Bytes.Slice.FromString(text));
+}
+
+pub bool IsValid(u8[] data) {
+    i64 len = __array_len(data);
+    mut i64 i = 0;
+    while i < len {
+        u8 b = data[i];
+        if b < 128 {
+            i = i + 1;
+            continue;
+        }
+        i64 need = 0;
+        if b < 192 {
+            return false;
+        } else if b < 224 {
+            need = 1;
+        } else if b < 240 {
+            need = 2;
+        } else if b < 248 {
+            need = 3;
+        } else {
+            return false;
+        }
+        if i + need >= len {
+            return false;
+        }
+        mut i64 j = 1;
+        while j <= need {
+            u8 cont = data[i + j];
+            if cont < 128 || cont >= 192 {
+                return false;
+            }
+            j = j + 1;
+        }
+        i = i + need + 1;
+    }
+    return true;
+}
+
+pub Core.Results.Result<string, EncodingError> DecodeFromBytes(u8[] data) {
+    if !IsValid(data) {
+        return Result::Error(EncodingError::InvalidSequence());
+    }
+    return Result::Ok(__str_from_bytes_utf8(data));
+}

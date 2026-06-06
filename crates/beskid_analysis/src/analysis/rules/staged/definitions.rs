@@ -413,7 +413,6 @@ impl SemanticPipelineRule {
                 .collect::<Vec<_>>()
                 .join("."),
             HirType::Array(inner) => format!("{}[]", self.type_to_string(inner)),
-            HirType::Ref(inner) => format!("ref {}", self.type_to_string(inner)),
             HirType::Function {
                 return_type,
                 parameters,
@@ -492,7 +491,7 @@ impl SemanticPipelineRule {
                     },
                 );
             }
-            HirType::Array(inner) | HirType::Ref(inner) => {
+            HirType::Array(inner) => {
                 self.validate_type_reference(ctx, inner, known_types, generic_names);
             }
             HirType::Function {

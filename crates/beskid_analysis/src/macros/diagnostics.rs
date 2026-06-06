@@ -137,8 +137,24 @@ fn scan_statement_residuals(
         Statement::If(i) => {
             scan_expression_residuals(source_name, source, &i.node.condition, out);
             scan_block_residuals(source_name, source, &i.node.then_block, out);
-            if let Some(b) = &i.node.else_block {
-                scan_block_residuals(source_name, source, b, out);
+            if let Some(else_branch) = &i.node.else_branch {
+                match &else_branch.node {
+                    crate::syntax::ElseBranch::Block(b) => {
+                        scan_block_residuals(source_name, source, b, out);
+                    }
+                    crate::syntax::ElseBranch::If(nested) => {
+                        scan_expression_residuals(source_name, source, &nested.node.condition, out);
+                        scan_block_residuals(source_name, source, &nested.node.then_block, out);
+                        if let Some(nested_else) = &nested.node.else_branch {
+                            match &nested_else.node {
+                                crate::syntax::ElseBranch::Block(b) => {
+                                    scan_block_residuals(source_name, source, b, out);
+                                }
+                                crate::syntax::ElseBranch::If(_) => {}
+                            }
+                        }
+                    }
+                }
             }
         }
         Statement::While(w) => {

@@ -142,8 +142,16 @@ fn walk_statement(stmt: &Statement, visit: &mut dyn FnMut(&Expression)) {
         Statement::If(i) => {
             walk_expression(&i.node.condition.node, visit);
             walk_block(&i.node.then_block.node, visit);
-            if let Some(else_b) = &i.node.else_block {
-                walk_block(&else_b.node, visit);
+            if let Some(else_b) = &i.node.else_branch {
+                match &else_b.node {
+                    beskid_analysis::syntax::ElseBranch::Block(block) => {
+                        walk_block(&block.node, visit);
+                    }
+                    beskid_analysis::syntax::ElseBranch::If(nested) => {
+                        walk_expression(&nested.node.condition.node, visit);
+                        walk_block(&nested.node.then_block.node, visit);
+                    }
+                }
             }
         }
         Statement::While(w) => {

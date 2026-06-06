@@ -98,16 +98,11 @@ impl<'a> TypeContext<'a> {
         spawn_span: crate::syntax::SpanInfo,
     ) -> Option<TypeId> {
         if let HirExpressionNode::PathExpression(path) = &entry.node
-            && let Some(ResolvedValue::Item(item_id)) = self
-                .resolution
-                .tables
-                .resolved_values
-                .get(&path.node.path.span)
-                .or_else(|| self.resolution.tables.resolved_values.get(&entry.span))
+            && let Some(ResolvedValue::Item(item_id)) = self.resolved_value_at(path.node.path.span)
         {
             return self
                 .function_signatures
-                .get(item_id)
+                .get(&item_id)
                 .map(|signature| signature.return_type);
         }
 

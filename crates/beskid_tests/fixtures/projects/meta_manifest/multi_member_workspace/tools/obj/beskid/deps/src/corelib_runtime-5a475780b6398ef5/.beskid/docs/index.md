@@ -4,36 +4,6 @@
 
 - `Collections`
   - `Array`
-    - `Advance`
-      - `it`
-        - `Collections::Array::Advance::it` (`parameter`)
-      - `Collections::Array::Advance` (`function`)
-    - `ArrayIter`
-      - `index`
-        - `Collections::Array::ArrayIter::index` (`field`)
-      - `length`
-        - `Collections::Array::ArrayIter::length` (`field`)
-      - `Collections::Array::ArrayIter` (`type`)
-    - `HasNext`
-      - `it`
-        - `Collections::Array::HasNext::it` (`parameter`)
-      - `Collections::Array::HasNext` (`function`)
-    - `Index`
-      - `it`
-        - `Collections::Array::Index::it` (`parameter`)
-      - `Collections::Array::Index` (`function`)
-    - `IsEmpty`
-      - `values`
-        - `Collections::Array::IsEmpty::values` (`parameter`)
-      - `Collections::Array::IsEmpty` (`function`)
-    - `Iterate`
-      - `values`
-        - `Collections::Array::Iterate::values` (`parameter`)
-      - `Collections::Array::Iterate` (`function`)
-    - `Len`
-      - `values`
-        - `Collections::Array::Len::values` (`parameter`)
-      - `Collections::Array::Len` (`function`)
     - `Collections::Array` (`module`)
   - `List`
     - `Count`
@@ -249,20 +219,6 @@
       - `Core::Results::Result` (`enum`)
     - `Core::Results` (`module`)
   - `String`
-    - `Contains`
-      - `needle`
-        - `Core::String::Contains::needle` (`parameter`)
-      - `text`
-        - `Core::String::Contains::text` (`parameter`)
-      - `Core::String::Contains` (`function`)
-    - `IsEmpty`
-      - `text`
-        - `Core::String::IsEmpty::text` (`parameter`)
-      - `Core::String::IsEmpty` (`function`)
-    - `Len`
-      - `text`
-        - `Core::String::Len::text` (`parameter`)
-      - `Core::String::Len` (`function`)
     - `Core::String` (`module`)
 - `Query`
   - `Contracts`
@@ -278,6 +234,7 @@
       - `value`
         - `Query::Contracts::Option::value` (`field`)
       - `Query::Contracts::Option` (`enum`)
+    - `Query::Contracts` (`module`)
   - `Execution`
     - `IsDeferred`
       - `state`
@@ -772,192 +729,14 @@
   - `__wait_group_done` (`function`)
 - `__wait_group_wait`
   - `__wait_group_wait` (`function`)
+- `range`
+  - `range` (`function`)
 
 ## Items
 
 ### `Collections::Array` (`module`)
 
 Re-exports growable array surface.
-
----
-
-### `Collections::Array::Advance` (`function`)
-
-Advance an iterator one element.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice (the iterator carries no payload in v1).
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-Iterator with `index` incremented by one.
-
-
----
-
-### `Collections::Array::Advance::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::ArrayIter` (`type`)
-
-Fixed-size array helper types and iteration primitives.
-Slice-like `T[]` values use the runtime `BeskidArray` layout; length is read via `__array_len`.
-@tier(standard)
-
-**Type parameter `T`**
-Element type for iterators.
-
-
----
-
-### `Collections::Array::ArrayIter::index` (`field`)
-
-Current traversal position.
-
----
-
-### `Collections::Array::ArrayIter::length` (`field`)
-
-Total number of readable elements.
-
----
-
-### `Collections::Array::HasNext` (`function`)
-
-Returns true when an iterator has remaining elements.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-`true` while `index < length`.
-
-
----
-
-### `Collections::Array::HasNext::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Index` (`function`)
-
-Returns the iterator's current zero-based index.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-`it.index`.
-
-
----
-
-### `Collections::Array::Index::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::IsEmpty` (`function`)
-
-Returns true when the array carries no readable elements.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `values`**
-Slice-like array handle.
-
-
-**Returns**
-
-`true` when `Len(values) == 0`.
-
-
----
-
-### `Collections::Array::IsEmpty::values` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Iterate` (`function`)
-
-Creates an iterator at the first element.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `values`**
-Source array.
-
-
-**Returns**
-
-Iterator positioned at index zero.
-
-
----
-
-### `Collections::Array::Iterate::values` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Len` (`function`)
-
-Returns array length (element count).
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice (length is independent of `T` in v1).
-
-
-**Parameter `values`**
-Slice-like array handle.
-
-
-**Returns**
-
-Element count from the runtime header.
-
-
----
-
-### `Collections::Array::Len::values` (`parameter`)
-
-*No documentation provided.*
 
 ---
 
@@ -2044,77 +1823,9 @@ Re-exports string helper functions.
 
 ---
 
-### `Core::String::Contains` (`function`)
+### `Query::Contracts` (`module`)
 
-Returns true when needle is treated as present in text (prefix/suffix equality only in v1).
-
-**Parameter `text`**
-Haystack UTF-8 string.
-
-
-**Parameter `needle`**
-Needle UTF-8 string; empty needle is always considered found.
-
-
-**Returns**
-
-`true` when `needle` is empty, longer than `text`, or exactly equal to `text`.
-
-
----
-
-### `Core::String::Contains::needle` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Core::String::Contains::text` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Core::String::IsEmpty` (`function`)
-
-Returns true when text is empty.
-
-**Parameter `text`**
-UTF-8 string handle.
-
-
-**Returns**
-
-`true` when `Len` is zero.
-
-
----
-
-### `Core::String::IsEmpty::text` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Core::String::Len` (`function`)
-
-UTF-8 string helpers backed by runtime string builtins (`__str_len`).
-Returns the number of UTF-8 code units in text.
-
-**Parameter `text`**
-UTF-8 string handle.
-
-
-**Returns**
-
-Code unit count as `i64`.
-
-
----
-
-### `Core::String::Len::text` (`parameter`)
-
-*No documentation provided.*
+Re-exports query contracts (Option type).
 
 ---
 
@@ -4268,6 +3979,12 @@ Evaluates predicate pass/fail status.
 ---
 
 ### `__wait_group_wait` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `range` (`function`)
 
 *No documentation provided.*
 

@@ -3,9 +3,10 @@ use beskid_analysis::Rule;
 
 #[test]
 fn parses_let_statement() {
-    assert_parse(Rule::LetStatement, "i32 mut age = 42;");
+    assert_parse(Rule::LetStatement, "mut i32 age = 42;");
     assert_parse(Rule::LetStatement, "i32 age = 42;");
     assert_parse(Rule::LetStatement, "let age = 42;");
+    assert_parse(Rule::LetStatement, "let mut age = 42;");
 }
 
 #[test]
@@ -19,8 +20,8 @@ fn rejects_let_without_equals() {
 }
 
 #[test]
-fn rejects_let_with_mut_keyword() {
-    assert_parse_fail(Rule::LetStatement, "let mut age = 42;");
+fn rejects_legacy_suffix_mut_typed_let() {
+    assert_parse_fail(Rule::LetStatement, "i32 mut age = 42;");
 }
 
 #[test]

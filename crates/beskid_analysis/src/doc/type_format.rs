@@ -30,7 +30,6 @@ pub fn format_hir_type(ty: &Spanned<HirType>) -> String {
             .collect::<Vec<_>>()
             .join("."),
         HirType::Array(inner) => format!("{}[]", format_hir_type(inner)),
-        HirType::Ref(inner) => format!("ref {}", format_hir_type(inner)),
         HirType::Function {
             return_type,
             parameters,

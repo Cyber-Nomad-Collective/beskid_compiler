@@ -1,8 +1,8 @@
 //! Post-resolution HIR invariants: spans, resolved paths, control-flow shape, and attribute targets.
 
 use crate::hir::{
-    AttributeTargetKind, HirAttribute, HirBlock, HirContractNode, HirExpressionNode, HirItem,
-    HirPattern, HirProgram, HirStatementNode, HirType,
+    AttributeTargetKind, HirAttribute, HirBlock, HirContractNode, HirElseBranch, HirExpressionNode,
+    HirIfStatement, HirItem, HirPattern, HirProgram, HirStatementNode, HirType,
 };
 use crate::resolve::Resolution;
 use crate::syntax::{SpanInfo, Spanned};
@@ -293,6 +293,17 @@ impl<'a> HirLegalityValidator<'a> {
         }
     }
 
+    fn validate_if_statement(&mut self, if_stmt: &Spanned<HirIfStatement>) {
+        self.validate_expression(&if_stmt.node.condition);
+        self.validate_block(&if_stmt.node.then_block);
+        if let Some(else_branch) = &if_stmt.node.else_branch {
+            match &else_branch.node {
+                HirElseBranch::Block(block) => self.validate_block(block),
+                HirElseBranch::If(nested) => self.validate_if_statement(nested),
+            }
+        }
+    }
+
     fn validate_statement(&mut self, statement: &Spanned<HirStatementNode>) {
         self.check_span(statement.span, "statement");
         match &statement.node {
@@ -327,11 +338,7 @@ impl<'a> HirLegalityValidator<'a> {
             }
             HirStatementNode::IfStatement(if_stmt) => {
                 self.check_span(if_stmt.span, "if_statement");
-                self.validate_expression(&if_stmt.node.condition);
-                self.validate_block(&if_stmt.node.then_block);
-                if let Some(else_block) = &if_stmt.node.else_block {
-                    self.validate_block(else_block);
-                }
+                self.validate_if_statement(if_stmt);
             }
             HirStatementNode::ExpressionStatement(expr_stmt) => {
                 self.check_span(expr_stmt.span, "expression_statement");
@@ -536,7 +543,7 @@ impl<'a> HirLegalityValidator<'a> {
                         .push(HirLegalityError::UnresolvedTypePath { span: path.span });
                 }
             }
-            HirType::Array(inner) | HirType::Ref(inner) => self.validate_type(inner),
+            HirType::Array(inner) => self.validate_type(inner),
             HirType::Function {
                 return_type,
                 parameters,

@@ -4,36 +4,6 @@
 
 - `Collections`
   - `Array`
-    - `Advance`
-      - `it`
-        - `Collections::Array::Advance::it` (`parameter`)
-      - `Collections::Array::Advance` (`function`)
-    - `ArrayIter`
-      - `index`
-        - `Collections::Array::ArrayIter::index` (`field`)
-      - `length`
-        - `Collections::Array::ArrayIter::length` (`field`)
-      - `Collections::Array::ArrayIter` (`type`)
-    - `HasNext`
-      - `it`
-        - `Collections::Array::HasNext::it` (`parameter`)
-      - `Collections::Array::HasNext` (`function`)
-    - `Index`
-      - `it`
-        - `Collections::Array::Index::it` (`parameter`)
-      - `Collections::Array::Index` (`function`)
-    - `IsEmpty`
-      - `values`
-        - `Collections::Array::IsEmpty::values` (`parameter`)
-      - `Collections::Array::IsEmpty` (`function`)
-    - `Iterate`
-      - `values`
-        - `Collections::Array::Iterate::values` (`parameter`)
-      - `Collections::Array::Iterate` (`function`)
-    - `Len`
-      - `values`
-        - `Collections::Array::Len::values` (`parameter`)
-      - `Collections::Array::Len` (`function`)
     - `Collections::Array` (`module`)
   - `List`
     - `Count`
@@ -211,6 +181,54 @@
     - `Collections::Stack` (`module`)
 - `Concurrency`
   - `Channel`
+    - `Channel`
+      - `handle`
+        - `Concurrency::Channel::Channel::handle` (`field`)
+      - `Concurrency::Channel::Channel` (`type`)
+    - `Close`
+      - `self`
+        - `Concurrency::Channel::Close::self` (`parameter`)
+      - `Concurrency::Channel::Close` (`function`)
+    - `Create`
+      - `Concurrency::Channel::Create` (`function`)
+    - `CreateWithOptions`
+      - `options`
+        - `Concurrency::Channel::CreateWithOptions::options` (`parameter`)
+      - `Concurrency::Channel::CreateWithOptions` (`function`)
+    - `Handle`
+      - `self`
+        - `Concurrency::Channel::Handle::self` (`parameter`)
+      - `Concurrency::Channel::Handle` (`function`)
+    - `MapReceiveError`
+      - `status`
+        - `Concurrency::Channel::MapReceiveError::status` (`parameter`)
+      - `Concurrency::Channel::MapReceiveError` (`function`)
+    - `MapSendStatus`
+      - `status`
+        - `Concurrency::Channel::MapSendStatus::status` (`parameter`)
+      - `Concurrency::Channel::MapSendStatus` (`function`)
+    - `Receive`
+      - `self`
+        - `Concurrency::Channel::Receive::self` (`parameter`)
+      - `Concurrency::Channel::Receive` (`function`)
+    - `Send`
+      - `self`
+        - `Concurrency::Channel::Send::self` (`parameter`)
+      - `value`
+        - `Concurrency::Channel::Send::value` (`parameter`)
+      - `Concurrency::Channel::Send` (`function`)
+    - `SendOk`
+      - `Concurrency::Channel::SendOk` (`type`)
+    - `TryReceive`
+      - `self`
+        - `Concurrency::Channel::TryReceive::self` (`parameter`)
+      - `Concurrency::Channel::TryReceive` (`function`)
+    - `TrySend`
+      - `self`
+        - `Concurrency::Channel::TrySend::self` (`parameter`)
+      - `value`
+        - `Concurrency::Channel::TrySend::value` (`parameter`)
+      - `Concurrency::Channel::TrySend` (`function`)
     - `Concurrency::Channel` (`module`)
   - `ChannelError`
     - `ChannelError`
@@ -221,8 +239,66 @@
       - `Concurrency::ChannelError::ChannelError` (`enum`)
     - `Concurrency::ChannelError` (`module`)
   - `ChannelOptions`
+    - `Bounded`
+      - `capacity`
+        - `Concurrency::ChannelOptions::Bounded::capacity` (`parameter`)
+      - `Concurrency::ChannelOptions::Bounded` (`function`)
+    - `ChannelCapacity`
+      - `Bounded`
+        - `Concurrency::ChannelOptions::ChannelCapacity::Bounded` (`enum_variant`)
+      - `Unbounded`
+        - `Concurrency::ChannelOptions::ChannelCapacity::Unbounded` (`enum_variant`)
+      - `capacity`
+        - `Concurrency::ChannelOptions::ChannelCapacity::capacity` (`field`)
+      - `Concurrency::ChannelOptions::ChannelCapacity` (`enum`)
+    - `ChannelOptions`
+      - `capacity`
+        - `Concurrency::ChannelOptions::ChannelOptions::capacity` (`field`)
+      - `singleReader`
+        - `Concurrency::ChannelOptions::ChannelOptions::singleReader` (`field`)
+      - `singleWriter`
+        - `Concurrency::ChannelOptions::ChannelOptions::singleWriter` (`field`)
+      - `Concurrency::ChannelOptions::ChannelOptions` (`type`)
+    - `Default`
+      - `Concurrency::ChannelOptions::Default` (`function`)
+    - `EncodeCapacity`
+      - `options`
+        - `Concurrency::ChannelOptions::EncodeCapacity::options` (`parameter`)
+      - `Concurrency::ChannelOptions::EncodeCapacity` (`function`)
+    - `EncodeFlags`
+      - `options`
+        - `Concurrency::ChannelOptions::EncodeFlags::options` (`parameter`)
+      - `Concurrency::ChannelOptions::EncodeFlags` (`function`)
+    - `SingleReader`
+      - `Concurrency::ChannelOptions::SingleReader` (`function`)
+    - `SingleWriter`
+      - `Concurrency::ChannelOptions::SingleWriter` (`function`)
+    - `Unbounded`
+      - `Concurrency::ChannelOptions::Unbounded` (`function`)
     - `Concurrency::ChannelOptions` (`module`)
   - `Fiber`
+    - `Cancel`
+      - `self`
+        - `Concurrency::Fiber::Cancel::self` (`parameter`)
+      - `Concurrency::Fiber::Cancel` (`function`)
+    - `Detach`
+      - `self`
+        - `Concurrency::Fiber::Detach::self` (`parameter`)
+      - `Concurrency::Fiber::Detach` (`function`)
+    - `Fiber`
+      - `OnCancelled`
+        - `Concurrency::Fiber::Fiber::OnCancelled` (`field`)
+      - `handle`
+        - `Concurrency::Fiber::Fiber::handle` (`field`)
+      - `Concurrency::Fiber::Fiber` (`type`)
+    - `Join`
+      - `self`
+        - `Concurrency::Fiber::Join::self` (`parameter`)
+      - `Concurrency::Fiber::Join` (`function`)
+    - `MapJoinError`
+      - `status`
+        - `Concurrency::Fiber::MapJoinError::status` (`parameter`)
+      - `Concurrency::Fiber::MapJoinError` (`function`)
     - `Concurrency::Fiber` (`module`)
   - `FiberError`
     - `FiberError`
@@ -249,6 +325,30 @@
       - `Concurrency::FiberJoinStatus::StackOverflow` (`function`)
     - `Concurrency::FiberJoinStatus` (`module`)
   - `Hub`
+    - `Create`
+      - `Concurrency::Hub::Create` (`function`)
+    - `Hub`
+      - `handle`
+        - `Concurrency::Hub::Hub::handle` (`field`)
+      - `Concurrency::Hub::Hub` (`type`)
+    - `Register`
+      - `channel`
+        - `Concurrency::Hub::Register::channel` (`parameter`)
+      - `index`
+        - `Concurrency::Hub::Register::index` (`parameter`)
+      - `self`
+        - `Concurrency::Hub::Register::self` (`parameter`)
+      - `Concurrency::Hub::Register` (`function`)
+    - `Unregister`
+      - `index`
+        - `Concurrency::Hub::Unregister::index` (`parameter`)
+      - `self`
+        - `Concurrency::Hub::Unregister::self` (`parameter`)
+      - `Concurrency::Hub::Unregister` (`function`)
+    - `WaitReceive`
+      - `self`
+        - `Concurrency::Hub::WaitReceive::self` (`parameter`)
+      - `Concurrency::Hub::WaitReceive` (`function`)
     - `Concurrency::Hub` (`module`)
   - `HubError`
     - `HubError`
@@ -261,8 +361,32 @@
       - `Concurrency::HubError::HubError` (`enum`)
     - `Concurrency::HubError` (`module`)
   - `HubReceiveResult`
+    - `HubReceiveResult`
+      - `index`
+        - `Concurrency::HubReceiveResult::HubReceiveResult::index` (`field`)
+      - `value`
+        - `Concurrency::HubReceiveResult::HubReceiveResult::value` (`field`)
+      - `Concurrency::HubReceiveResult::HubReceiveResult` (`type`)
     - `Concurrency::HubReceiveResult` (`module`)
   - `Mutex`
+    - `Create`
+      - `Concurrency::Mutex::Create` (`function`)
+    - `Lock`
+      - `self`
+        - `Concurrency::Mutex::Lock::self` (`parameter`)
+      - `Concurrency::Mutex::Lock` (`function`)
+    - `Mutex`
+      - `handle`
+        - `Concurrency::Mutex::Mutex::handle` (`field`)
+      - `Concurrency::Mutex::Mutex` (`type`)
+    - `TryLock`
+      - `self`
+        - `Concurrency::Mutex::TryLock::self` (`parameter`)
+      - `Concurrency::Mutex::TryLock` (`function`)
+    - `Unlock`
+      - `guard`
+        - `Concurrency::Mutex::Unlock::guard` (`parameter`)
+      - `Concurrency::Mutex::Unlock` (`function`)
     - `Concurrency::Mutex` (`module`)
   - `MutexError`
     - `MutexError`
@@ -271,7 +395,19 @@
       - `Concurrency::MutexError::MutexError` (`enum`)
     - `Concurrency::MutexError` (`module`)
   - `MutexGuard`
+    - `MutexGuard`
+      - `mutexHandle`
+        - `Concurrency::MutexGuard::MutexGuard::mutexHandle` (`field`)
+      - `Concurrency::MutexGuard::MutexGuard` (`type`)
     - `Concurrency::MutexGuard` (`module`)
+  - `NowMillis`
+    - `Concurrency::NowMillis` (`function`)
+  - `ProcessorCount`
+    - `Concurrency::ProcessorCount` (`function`)
+  - `SetProcessorCount`
+    - `count`
+      - `Concurrency::SetProcessorCount::count` (`parameter`)
+    - `Concurrency::SetProcessorCount` (`function`)
   - `Status`
     - `Cancelled`
       - `Concurrency::Status::Cancelled` (`function`)
@@ -290,7 +426,29 @@
     - `WouldBlock`
       - `Concurrency::Status::WouldBlock` (`function`)
   - `WaitGroup`
+    - `Add`
+      - `delta`
+        - `Concurrency::WaitGroup::Add::delta` (`parameter`)
+      - `self`
+        - `Concurrency::WaitGroup::Add::self` (`parameter`)
+      - `Concurrency::WaitGroup::Add` (`function`)
+    - `Create`
+      - `Concurrency::WaitGroup::Create` (`function`)
+    - `Done`
+      - `self`
+        - `Concurrency::WaitGroup::Done::self` (`parameter`)
+      - `Concurrency::WaitGroup::Done` (`function`)
+    - `Wait`
+      - `self`
+        - `Concurrency::WaitGroup::Wait::self` (`parameter`)
+      - `Concurrency::WaitGroup::Wait` (`function`)
+    - `WaitGroup`
+      - `handle`
+        - `Concurrency::WaitGroup::WaitGroup::handle` (`field`)
+      - `Concurrency::WaitGroup::WaitGroup` (`type`)
     - `Concurrency::WaitGroup` (`module`)
+  - `Yield`
+    - `Concurrency::Yield` (`function`)
   - `Concurrency` (`module`)
 - `Core`
   - `ErrorHandling`
@@ -332,20 +490,6 @@
       - `Core::Results::Result` (`enum`)
     - `Core::Results` (`module`)
   - `String`
-    - `Contains`
-      - `needle`
-        - `Core::String::Contains::needle` (`parameter`)
-      - `text`
-        - `Core::String::Contains::text` (`parameter`)
-      - `Core::String::Contains` (`function`)
-    - `IsEmpty`
-      - `text`
-        - `Core::String::IsEmpty::text` (`parameter`)
-      - `Core::String::IsEmpty` (`function`)
-    - `Len`
-      - `text`
-        - `Core::String::Len::text` (`parameter`)
-      - `Core::String::Len` (`function`)
     - `Core::String` (`module`)
 - `Query`
   - `Contracts`
@@ -361,6 +505,7 @@
       - `value`
         - `Query::Contracts::Option::value` (`field`)
       - `Query::Contracts::Option` (`enum`)
+    - `Query::Contracts` (`module`)
   - `Execution`
     - `IsDeferred`
       - `state`
@@ -418,6 +563,62 @@
 - `System`
   - `Threading`
     - `Thread`
+      - `DarwinPthread`
+        - `arg`
+          - `System::Threading::Thread::DarwinPthread::arg` (`parameter`)
+        - `attr`
+          - `System::Threading::Thread::DarwinPthread::attr` (`parameter`)
+        - `pthread_create`
+          - `System::Threading::Thread::DarwinPthread::pthread_create` (`contract_method`)
+        - `pthread_join`
+          - `System::Threading::Thread::DarwinPthread::pthread_join` (`contract_method`)
+        - `sched_yield`
+          - `System::Threading::Thread::DarwinPthread::sched_yield` (`contract_method`)
+        - `startRoutine`
+          - `System::Threading::Thread::DarwinPthread::startRoutine` (`parameter`)
+        - `thread`
+          - `System::Threading::Thread::DarwinPthread::thread` (`parameter`)
+        - `threadOut`
+          - `System::Threading::Thread::DarwinPthread::threadOut` (`parameter`)
+        - `valueOut`
+          - `System::Threading::Thread::DarwinPthread::valueOut` (`parameter`)
+        - `System::Threading::Thread::DarwinPthread` (`contract`)
+      - `Join`
+        - `self`
+          - `System::Threading::Thread::Join::self` (`parameter`)
+        - `System::Threading::Thread::Join` (`function`)
+      - `LinuxPthread`
+        - `arg`
+          - `System::Threading::Thread::LinuxPthread::arg` (`parameter`)
+        - `attr`
+          - `System::Threading::Thread::LinuxPthread::attr` (`parameter`)
+        - `pthread_create`
+          - `System::Threading::Thread::LinuxPthread::pthread_create` (`contract_method`)
+        - `pthread_join`
+          - `System::Threading::Thread::LinuxPthread::pthread_join` (`contract_method`)
+        - `sched_yield`
+          - `System::Threading::Thread::LinuxPthread::sched_yield` (`contract_method`)
+        - `startRoutine`
+          - `System::Threading::Thread::LinuxPthread::startRoutine` (`parameter`)
+        - `thread`
+          - `System::Threading::Thread::LinuxPthread::thread` (`parameter`)
+        - `threadOut`
+          - `System::Threading::Thread::LinuxPthread::threadOut` (`parameter`)
+        - `valueOut`
+          - `System::Threading::Thread::LinuxPthread::valueOut` (`parameter`)
+        - `System::Threading::Thread::LinuxPthread` (`contract`)
+      - `Spawn`
+        - `arg`
+          - `System::Threading::Thread::Spawn::arg` (`parameter`)
+        - `entryRoutine`
+          - `System::Threading::Thread::Spawn::entryRoutine` (`parameter`)
+        - `System::Threading::Thread::Spawn` (`function`)
+      - `Thread`
+        - `handle`
+          - `System::Threading::Thread::Thread::handle` (`field`)
+        - `System::Threading::Thread::Thread` (`type`)
+      - `Yield`
+        - `System::Threading::Thread::Yield` (`function`)
       - `System::Threading::Thread` (`module`)
     - `ThreadError`
       - `ThreadError`
@@ -590,192 +791,14 @@
   - `__wait_group_done` (`function`)
 - `__wait_group_wait`
   - `__wait_group_wait` (`function`)
+- `range`
+  - `range` (`function`)
 
 ## Items
 
 ### `Collections::Array` (`module`)
 
 Re-exports growable array surface.
-
----
-
-### `Collections::Array::Advance` (`function`)
-
-Advance an iterator one element.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice (the iterator carries no payload in v1).
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-Iterator with `index` incremented by one.
-
-
----
-
-### `Collections::Array::Advance::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::ArrayIter` (`type`)
-
-Fixed-size array helper types and iteration primitives.
-Slice-like `T[]` values use the runtime `BeskidArray` layout; length is read via `__array_len`.
-@tier(standard)
-
-**Type parameter `T`**
-Element type for iterators.
-
-
----
-
-### `Collections::Array::ArrayIter::index` (`field`)
-
-Current traversal position.
-
----
-
-### `Collections::Array::ArrayIter::length` (`field`)
-
-Total number of readable elements.
-
----
-
-### `Collections::Array::HasNext` (`function`)
-
-Returns true when an iterator has remaining elements.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-`true` while `index < length`.
-
-
----
-
-### `Collections::Array::HasNext::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Index` (`function`)
-
-Returns the iterator's current zero-based index.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-`it.index`.
-
-
----
-
-### `Collections::Array::Index::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::IsEmpty` (`function`)
-
-Returns true when the array carries no readable elements.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `values`**
-Slice-like array handle.
-
-
-**Returns**
-
-`true` when `Len(values) == 0`.
-
-
----
-
-### `Collections::Array::IsEmpty::values` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Iterate` (`function`)
-
-Creates an iterator at the first element.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `values`**
-Source array.
-
-
-**Returns**
-
-Iterator positioned at index zero.
-
-
----
-
-### `Collections::Array::Iterate::values` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Len` (`function`)
-
-Returns array length (element count).
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice (length is independent of `T` in v1).
-
-
-**Parameter `values`**
-Slice-like array handle.
-
-
-**Returns**
-
-Element count from the runtime header.
-
-
----
-
-### `Collections::Array::Len::values` (`parameter`)
-
-*No documentation provided.*
 
 ---
 
@@ -1697,6 +1720,150 @@ Concurrency package prelude: cooperative fibers, channels, and OS threading.
 
 ---
 
+### `Concurrency::Channel::Channel` (`type`)
+
+Opaque channel handle (move-only at language layer).
+
+---
+
+### `Concurrency::Channel::Channel::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Close` (`function`)
+
+Idempotent writer shutdown.
+
+---
+
+### `Concurrency::Channel::Close::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Create` (`function`)
+
+Creates an unbounded channel (default per platform spec).
+
+---
+
+### `Concurrency::Channel::CreateWithOptions` (`function`)
+
+Creates a channel with explicit options.
+
+---
+
+### `Concurrency::Channel::CreateWithOptions::options` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Handle` (`function`)
+
+Runtime queue id for `Hub.Register` and builtins.
+
+---
+
+### `Concurrency::Channel::Handle::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapReceiveError` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapReceiveError::status` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapSendStatus` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapSendStatus::status` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Receive` (`function`)
+
+Receives a value; parks when empty and open.
+
+---
+
+### `Concurrency::Channel::Receive::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Send` (`function`)
+
+Sends a value; parks the current fiber when the queue is full (bounded + wait mode).
+
+---
+
+### `Concurrency::Channel::Send::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Send::value` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::SendOk` (`type`)
+
+Success marker for [`Send`] / [`TrySend`] (`Result<SendOk, ChannelError>` per platform spec `Result<(), _>`).
+
+---
+
+### `Concurrency::Channel::TryReceive` (`function`)
+
+Non-blocking receive; `None` when the operation would block.
+
+---
+
+### `Concurrency::Channel::TryReceive::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::TrySend` (`function`)
+
+Non-blocking send; `None` when the operation would block.
+
+---
+
+### `Concurrency::Channel::TrySend::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::TrySend::value` (`parameter`)
+
+*No documentation provided.*
+
+---
+
 ### `Concurrency::ChannelError` (`module`)
 
 *No documentation provided.*
@@ -1735,7 +1902,182 @@ Owning fiber was cancelled.
 
 ---
 
+### `Concurrency::ChannelOptions::Bounded` (`function`)
+
+Bounded queue with `capacity > 0`; senders park when full.
+
+---
+
+### `Concurrency::ChannelOptions::Bounded::capacity` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity` (`enum`)
+
+Construction options for `Channel<T>.Create`.
+Capacity selector: default is unbounded.
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity::Bounded` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity::Unbounded` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity::capacity` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions` (`type`)
+
+Channel factory options (capacity plus v1 optimization hints).
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions::capacity` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions::singleReader` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions::singleWriter` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::Default` (`function`)
+
+Default options: unbounded queue, no single-reader/writer hints.
+
+---
+
+### `Concurrency::ChannelOptions::EncodeCapacity` (`function`)
+
+Encodes capacity for `__channel_create` (`0` = unbounded).
+
+---
+
+### `Concurrency::ChannelOptions::EncodeCapacity::options` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::EncodeFlags` (`function`)
+
+Encodes reader/writer hint flags for `__channel_create`.
+
+---
+
+### `Concurrency::ChannelOptions::EncodeFlags::options` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::SingleReader` (`function`)
+
+Unbounded queue optimized for a single reader.
+
+---
+
+### `Concurrency::ChannelOptions::SingleWriter` (`function`)
+
+Unbounded queue optimized for a single writer.
+
+---
+
+### `Concurrency::ChannelOptions::Unbounded` (`function`)
+
+Explicit unbounded queue (equivalent to default).
+
+---
+
 ### `Concurrency::Fiber` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Cancel` (`function`)
+
+Sets cancellation flag and raises `OnCancelled` on the child fiber.
+
+---
+
+### `Concurrency::Fiber::Cancel::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Detach` (`function`)
+
+Waives parent shutdown join; child panic still aborts the process in v1.
+
+---
+
+### `Concurrency::Fiber::Detach::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Fiber` (`type`)
+
+Runtime fiber handle; declares cancellation event on the handle only.
+
+---
+
+### `Concurrency::Fiber::Fiber::OnCancelled` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Fiber::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Join` (`function`)
+
+Waits for completion and returns the entry value or a `FiberError`.
+
+---
+
+### `Concurrency::Fiber::Join::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::MapJoinError` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::MapJoinError::status` (`parameter`)
 
 *No documentation provided.*
 
@@ -1831,6 +2173,78 @@ ABI status codes returned by `__fiber_join`.
 
 ---
 
+### `Concurrency::Hub::Create` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Hub` (`type`)
+
+Multiplexes `Channel<T>` members with `WaitReceive`.
+
+---
+
+### `Concurrency::Hub::Hub::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Register` (`function`)
+
+Registers `channel` at `index` (max 256 members in v1).
+
+---
+
+### `Concurrency::Hub::Register::channel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Register::index` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Register::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Unregister` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Unregister::index` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Unregister::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::WaitReceive` (`function`)
+
+Blocks until a member can satisfy `Receive` (round-robin among ready channels).
+
+---
+
+### `Concurrency::Hub::WaitReceive::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
 ### `Concurrency::HubError` (`module`)
 
 *No documentation provided.*
@@ -1879,7 +2293,79 @@ All registered channels are closed.
 
 ---
 
+### `Concurrency::HubReceiveResult::HubReceiveResult` (`type`)
+
+Successful `Hub.WaitReceive` payload.
+
+---
+
+### `Concurrency::HubReceiveResult::HubReceiveResult::index` (`field`)
+
+User registration index passed to `Hub.Register`.
+
+---
+
+### `Concurrency::HubReceiveResult::HubReceiveResult::value` (`field`)
+
+Message received from the selected member channel.
+
+---
+
 ### `Concurrency::Mutex` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Create` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Lock` (`function`)
+
+Parks until the mutex is acquired or the fiber is cancelled.
+
+---
+
+### `Concurrency::Mutex::Lock::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Mutex` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Mutex::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::TryLock` (`function`)
+
+Returns `None` when the mutex would block.
+
+---
+
+### `Concurrency::Mutex::TryLock::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Unlock` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Unlock::guard` (`parameter`)
 
 *No documentation provided.*
 
@@ -1908,6 +2394,43 @@ Waiting fiber was cancelled before acquire.
 ---
 
 ### `Concurrency::MutexGuard` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::MutexGuard::MutexGuard` (`type`)
+
+RAII guard acquired from `Mutex.Lock` or `Mutex.TryLock`.
+
+---
+
+### `Concurrency::MutexGuard::MutexGuard::mutexHandle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::NowMillis` (`function`)
+
+Monotonic milliseconds since an unspecified epoch (not wall clock).
+
+---
+
+### `Concurrency::ProcessorCount` (`function`)
+
+Active scheduler worker count (defaults to host logical CPUs at init).
+
+---
+
+### `Concurrency::SetProcessorCount` (`function`)
+
+Sets scheduler worker pool size (Go `GOMAXPROCS` analogue).
+v1 Phase A: no-op until runtime exposes dynamic resizing.
+
+---
+
+### `Concurrency::SetProcessorCount::count` (`parameter`)
 
 *No documentation provided.*
 
@@ -1964,6 +2487,73 @@ ABI status codes returned by channel, hub, mutex, and wait-group builtins.
 ### `Concurrency::WaitGroup` (`module`)
 
 *No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Add` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Add::delta` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Add::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Create` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Done` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Done::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Wait` (`function`)
+
+Parks until the counter reaches zero.
+
+---
+
+### `Concurrency::WaitGroup::Wait::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::WaitGroup` (`type`)
+
+Fork–join counter with `Add` / `Done` / `Wait` operations.
+
+---
+
+### `Concurrency::WaitGroup::WaitGroup::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Yield` (`function`)
+
+Scheduler entry points (`fiber_yield`, monotonic clock, worker pool sizing).
+Cooperative reschedule of the current fiber.
 
 ---
 
@@ -2144,77 +2734,9 @@ Re-exports string helper functions.
 
 ---
 
-### `Core::String::Contains` (`function`)
+### `Query::Contracts` (`module`)
 
-Returns true when needle is treated as present in text (prefix/suffix equality only in v1).
-
-**Parameter `text`**
-Haystack UTF-8 string.
-
-
-**Parameter `needle`**
-Needle UTF-8 string; empty needle is always considered found.
-
-
-**Returns**
-
-`true` when `needle` is empty, longer than `text`, or exactly equal to `text`.
-
-
----
-
-### `Core::String::Contains::needle` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Core::String::Contains::text` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Core::String::IsEmpty` (`function`)
-
-Returns true when text is empty.
-
-**Parameter `text`**
-UTF-8 string handle.
-
-
-**Returns**
-
-`true` when `Len` is zero.
-
-
----
-
-### `Core::String::IsEmpty::text` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Core::String::Len` (`function`)
-
-UTF-8 string helpers backed by runtime string builtins (`__str_len`).
-Returns the number of UTF-8 code units in text.
-
-**Parameter `text`**
-UTF-8 string handle.
-
-
-**Returns**
-
-Code unit count as `i64`.
-
-
----
-
-### `Core::String::Len::text` (`parameter`)
-
-*No documentation provided.*
+Re-exports query contracts (Option type).
 
 ---
 
@@ -2542,6 +3064,179 @@ Filtered state.
 ### `System::Threading::Thread` (`module`)
 
 *No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread` (`contract`)
+
+macOS libc pthread surface (v1).
+
+---
+
+### `System::Threading::Thread::DarwinPthread::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::attr` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::pthread_create` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::pthread_join` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::sched_yield` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::startRoutine` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::thread` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::threadOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::valueOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Join` (`function`)
+
+Waits for OS thread completion.
+
+---
+
+### `System::Threading::Thread::Join::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread` (`contract`)
+
+Linux libc pthread surface (v1).
+
+---
+
+### `System::Threading::Thread::LinuxPthread::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::attr` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::pthread_create` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::pthread_join` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::sched_yield` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::startRoutine` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::thread` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::threadOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::valueOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Spawn` (`function`)
+
+Starts an OS thread. Beskid entry attachment is enforced by the runtime before user code runs.
+
+**Returns**
+
+`Thread` handle or `ThreadError::SpawnFailed` when pthread creation fails.
+
+
+---
+
+### `System::Threading::Thread::Spawn::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Spawn::entryRoutine` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Thread` (`type`)
+
+Opaque pthread handle on Linux and macOS.
+
+---
+
+### `System::Threading::Thread::Thread::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Yield` (`function`)
+
+OS-level yield (not `Concurrency.Yield`).
 
 ---
 
@@ -3127,6 +3822,12 @@ Evaluates predicate pass/fail status.
 ---
 
 ### `__wait_group_wait` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `range` (`function`)
 
 *No documentation provided.*
 

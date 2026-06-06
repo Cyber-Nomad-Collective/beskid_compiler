@@ -118,6 +118,43 @@ fn item_statement_list(item: &Spanned<HirItem>) -> Option<&[Spanned<HirStatement
     }
 }
 
+fn collect_hir_else_branch(
+    else_branch: &Spanned<crate::hir::HirElseBranch>,
+    collected: &mut CollectedComposition,
+) {
+    match &else_branch.node {
+        crate::hir::HirElseBranch::Block(block) => {
+            collect_launch_and_with_statements(&block.node.statements, collected);
+        }
+        crate::hir::HirElseBranch::If(nested) => {
+            collect_launch_and_with_statements(&nested.node.then_block.node.statements, collected);
+            if let Some(nested_else) = &nested.node.else_branch {
+                collect_hir_else_branch(nested_else, collected);
+            }
+        }
+    }
+}
+
+fn collect_syntax_else_branch(
+    else_branch: &Spanned<crate::syntax::ElseBranch>,
+    collected: &mut CollectedComposition,
+) {
+    match &else_branch.node {
+        crate::syntax::ElseBranch::Block(block) => {
+            collect_launch_and_with_statements_from_syntax(&block.node.statements, collected);
+        }
+        crate::syntax::ElseBranch::If(nested) => {
+            collect_launch_and_with_statements_from_syntax(
+                &nested.node.then_block.node.statements,
+                collected,
+            );
+            if let Some(nested_else) = &nested.node.else_branch {
+                collect_syntax_else_branch(nested_else, collected);
+            }
+        }
+    }
+}
+
 fn collect_launch_and_with_statements(
     statements: &[Spanned<HirStatementNode>],
     collected: &mut CollectedComposition,
@@ -136,8 +173,8 @@ fn collect_launch_and_with_statements(
             }
             HirStatementNode::IfStatement(if_stmt) => {
                 collect_launch_and_with_statements(&if_stmt.node.then_block.node.statements, collected);
-                if let Some(else_block) = &if_stmt.node.else_block {
-                    collect_launch_and_with_statements(&else_block.node.statements, collected);
+                if let Some(else_branch) = &if_stmt.node.else_branch {
+                    collect_hir_else_branch(else_branch, collected);
                 }
             }
             HirStatementNode::WhileStatement(while_stmt) => {
@@ -172,11 +209,8 @@ fn collect_launch_and_with_statements_from_syntax(
                     &if_stmt.node.then_block.node.statements,
                     collected,
                 );
-                if let Some(else_block) = &if_stmt.node.else_block {
-                    collect_launch_and_with_statements_from_syntax(
-                        &else_block.node.statements,
-                        collected,
-                    );
+                if let Some(else_branch) = &if_stmt.node.else_branch {
+                    collect_syntax_else_branch(else_branch, collected);
                 }
             }
             crate::syntax::Statement::While(while_stmt) => {
@@ -397,7 +431,6 @@ fn type_name(ty: &Spanned<crate::hir::HirType>) -> String {
             .collect::<Vec<_>>()
             .join("."),
         crate::hir::HirType::Array(inner) => type_name(inner),
-        crate::hir::HirType::Ref(inner) => type_name(inner),
         crate::hir::HirType::Function { .. } => "Function".to_string(),
     }
 }

@@ -1,6 +1,6 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
-    EnumPath, Field, FieldKind, Identifier, Parameter, ParameterModifier, Path, PathSegment,
+    EnumPath, Field, FieldKind, Identifier, Parameter, Path, PathSegment,
     PrimitiveType, Spanned, Type, Visibility,
 };
 use std::fmt::Write;
@@ -110,11 +110,6 @@ impl Emit for Type {
                 w.write_str("[]")?;
                 Ok(())
             }
-            Type::Ref(inner) => {
-                cx.token(w, "ref")?;
-                cx.space(w)?;
-                inner.emit(w, cx)
-            }
             Type::Function {
                 return_type,
                 parameters,
@@ -140,32 +135,13 @@ impl Emit for Spanned<Type> {
     }
 }
 
-impl Emit for ParameterModifier {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        match self {
-            ParameterModifier::Ref => cx.token(w, "ref"),
-            ParameterModifier::Out => cx.token(w, "out"),
-        }
-    }
-}
-
-impl Emit for Spanned<ParameterModifier> {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        self.node.emit(w, cx)
-    }
-}
-
 impl Emit for Parameter {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
-        if let Some(m) = &self.modifier {
-            m.emit(w, cx)?;
+        if self.mutable {
+            cx.token(w, "mut")?;
             cx.space(w)?;
         }
         self.ty.emit(w, cx)?;
-        if self.mutable {
-            cx.space(w)?;
-            cx.token(w, "mut")?;
-        }
         cx.space(w)?;
         self.name.emit(w, cx)
     }

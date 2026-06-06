@@ -60,7 +60,7 @@ pub Option<SendOk> TrySend<T>(Channel<T> self, T value) {
 
 /// Non-blocking receive; `None` when the operation would block.
 pub Option<T> TryReceive<T>(Channel<T> self) {
-    i64 mut value = 0;
+    mut i64 value = 0;
     i64 status = __channel_try_receive(self.handle, value);
     if status == Status.Ok() {
         return Option::Some(value);

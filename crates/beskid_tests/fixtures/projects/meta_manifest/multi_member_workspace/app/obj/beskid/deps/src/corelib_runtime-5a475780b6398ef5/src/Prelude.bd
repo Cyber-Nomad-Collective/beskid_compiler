@@ -17,6 +17,10 @@ pub mod System.Syscall.SyscallError;
 pub mod System.Syscall.WriteRequest;
 /// Re-exports read request payload type.
 pub mod System.Syscall.ReadRequest;
+/// Re-exports binary write request payload type.
+pub mod System.Syscall.WriteBytesRequest;
+/// Re-exports binary read request payload type.
+pub mod System.Syscall.ReadBytesRequest;
 /// Re-exports standard input helpers.
 pub mod System.Input;
 /// Re-exports standard output helpers.

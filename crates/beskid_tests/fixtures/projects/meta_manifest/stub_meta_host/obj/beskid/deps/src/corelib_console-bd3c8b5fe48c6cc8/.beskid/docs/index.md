@@ -777,36 +777,6 @@
     - `Ansi::StyleChain` (`module`)
 - `Collections`
   - `Array`
-    - `Advance`
-      - `it`
-        - `Collections::Array::Advance::it` (`parameter`)
-      - `Collections::Array::Advance` (`function`)
-    - `ArrayIter`
-      - `index`
-        - `Collections::Array::ArrayIter::index` (`field`)
-      - `length`
-        - `Collections::Array::ArrayIter::length` (`field`)
-      - `Collections::Array::ArrayIter` (`type`)
-    - `HasNext`
-      - `it`
-        - `Collections::Array::HasNext::it` (`parameter`)
-      - `Collections::Array::HasNext` (`function`)
-    - `Index`
-      - `it`
-        - `Collections::Array::Index::it` (`parameter`)
-      - `Collections::Array::Index` (`function`)
-    - `IsEmpty`
-      - `values`
-        - `Collections::Array::IsEmpty::values` (`parameter`)
-      - `Collections::Array::IsEmpty` (`function`)
-    - `Iterate`
-      - `values`
-        - `Collections::Array::Iterate::values` (`parameter`)
-      - `Collections::Array::Iterate` (`function`)
-    - `Len`
-      - `values`
-        - `Collections::Array::Len::values` (`parameter`)
-      - `Collections::Array::Len` (`function`)
     - `Collections::Array` (`module`)
   - `List`
     - `Count`
@@ -984,6 +954,54 @@
     - `Collections::Stack` (`module`)
 - `Concurrency`
   - `Channel`
+    - `Channel`
+      - `handle`
+        - `Concurrency::Channel::Channel::handle` (`field`)
+      - `Concurrency::Channel::Channel` (`type`)
+    - `Close`
+      - `self`
+        - `Concurrency::Channel::Close::self` (`parameter`)
+      - `Concurrency::Channel::Close` (`function`)
+    - `Create`
+      - `Concurrency::Channel::Create` (`function`)
+    - `CreateWithOptions`
+      - `options`
+        - `Concurrency::Channel::CreateWithOptions::options` (`parameter`)
+      - `Concurrency::Channel::CreateWithOptions` (`function`)
+    - `Handle`
+      - `self`
+        - `Concurrency::Channel::Handle::self` (`parameter`)
+      - `Concurrency::Channel::Handle` (`function`)
+    - `MapReceiveError`
+      - `status`
+        - `Concurrency::Channel::MapReceiveError::status` (`parameter`)
+      - `Concurrency::Channel::MapReceiveError` (`function`)
+    - `MapSendStatus`
+      - `status`
+        - `Concurrency::Channel::MapSendStatus::status` (`parameter`)
+      - `Concurrency::Channel::MapSendStatus` (`function`)
+    - `Receive`
+      - `self`
+        - `Concurrency::Channel::Receive::self` (`parameter`)
+      - `Concurrency::Channel::Receive` (`function`)
+    - `Send`
+      - `self`
+        - `Concurrency::Channel::Send::self` (`parameter`)
+      - `value`
+        - `Concurrency::Channel::Send::value` (`parameter`)
+      - `Concurrency::Channel::Send` (`function`)
+    - `SendOk`
+      - `Concurrency::Channel::SendOk` (`type`)
+    - `TryReceive`
+      - `self`
+        - `Concurrency::Channel::TryReceive::self` (`parameter`)
+      - `Concurrency::Channel::TryReceive` (`function`)
+    - `TrySend`
+      - `self`
+        - `Concurrency::Channel::TrySend::self` (`parameter`)
+      - `value`
+        - `Concurrency::Channel::TrySend::value` (`parameter`)
+      - `Concurrency::Channel::TrySend` (`function`)
     - `Concurrency::Channel` (`module`)
   - `ChannelError`
     - `ChannelError`
@@ -994,8 +1012,66 @@
       - `Concurrency::ChannelError::ChannelError` (`enum`)
     - `Concurrency::ChannelError` (`module`)
   - `ChannelOptions`
+    - `Bounded`
+      - `capacity`
+        - `Concurrency::ChannelOptions::Bounded::capacity` (`parameter`)
+      - `Concurrency::ChannelOptions::Bounded` (`function`)
+    - `ChannelCapacity`
+      - `Bounded`
+        - `Concurrency::ChannelOptions::ChannelCapacity::Bounded` (`enum_variant`)
+      - `Unbounded`
+        - `Concurrency::ChannelOptions::ChannelCapacity::Unbounded` (`enum_variant`)
+      - `capacity`
+        - `Concurrency::ChannelOptions::ChannelCapacity::capacity` (`field`)
+      - `Concurrency::ChannelOptions::ChannelCapacity` (`enum`)
+    - `ChannelOptions`
+      - `capacity`
+        - `Concurrency::ChannelOptions::ChannelOptions::capacity` (`field`)
+      - `singleReader`
+        - `Concurrency::ChannelOptions::ChannelOptions::singleReader` (`field`)
+      - `singleWriter`
+        - `Concurrency::ChannelOptions::ChannelOptions::singleWriter` (`field`)
+      - `Concurrency::ChannelOptions::ChannelOptions` (`type`)
+    - `Default`
+      - `Concurrency::ChannelOptions::Default` (`function`)
+    - `EncodeCapacity`
+      - `options`
+        - `Concurrency::ChannelOptions::EncodeCapacity::options` (`parameter`)
+      - `Concurrency::ChannelOptions::EncodeCapacity` (`function`)
+    - `EncodeFlags`
+      - `options`
+        - `Concurrency::ChannelOptions::EncodeFlags::options` (`parameter`)
+      - `Concurrency::ChannelOptions::EncodeFlags` (`function`)
+    - `SingleReader`
+      - `Concurrency::ChannelOptions::SingleReader` (`function`)
+    - `SingleWriter`
+      - `Concurrency::ChannelOptions::SingleWriter` (`function`)
+    - `Unbounded`
+      - `Concurrency::ChannelOptions::Unbounded` (`function`)
     - `Concurrency::ChannelOptions` (`module`)
   - `Fiber`
+    - `Cancel`
+      - `self`
+        - `Concurrency::Fiber::Cancel::self` (`parameter`)
+      - `Concurrency::Fiber::Cancel` (`function`)
+    - `Detach`
+      - `self`
+        - `Concurrency::Fiber::Detach::self` (`parameter`)
+      - `Concurrency::Fiber::Detach` (`function`)
+    - `Fiber`
+      - `OnCancelled`
+        - `Concurrency::Fiber::Fiber::OnCancelled` (`field`)
+      - `handle`
+        - `Concurrency::Fiber::Fiber::handle` (`field`)
+      - `Concurrency::Fiber::Fiber` (`type`)
+    - `Join`
+      - `self`
+        - `Concurrency::Fiber::Join::self` (`parameter`)
+      - `Concurrency::Fiber::Join` (`function`)
+    - `MapJoinError`
+      - `status`
+        - `Concurrency::Fiber::MapJoinError::status` (`parameter`)
+      - `Concurrency::Fiber::MapJoinError` (`function`)
     - `Concurrency::Fiber` (`module`)
   - `FiberError`
     - `FiberError`
@@ -1022,6 +1098,30 @@
       - `Concurrency::FiberJoinStatus::StackOverflow` (`function`)
     - `Concurrency::FiberJoinStatus` (`module`)
   - `Hub`
+    - `Create`
+      - `Concurrency::Hub::Create` (`function`)
+    - `Hub`
+      - `handle`
+        - `Concurrency::Hub::Hub::handle` (`field`)
+      - `Concurrency::Hub::Hub` (`type`)
+    - `Register`
+      - `channel`
+        - `Concurrency::Hub::Register::channel` (`parameter`)
+      - `index`
+        - `Concurrency::Hub::Register::index` (`parameter`)
+      - `self`
+        - `Concurrency::Hub::Register::self` (`parameter`)
+      - `Concurrency::Hub::Register` (`function`)
+    - `Unregister`
+      - `index`
+        - `Concurrency::Hub::Unregister::index` (`parameter`)
+      - `self`
+        - `Concurrency::Hub::Unregister::self` (`parameter`)
+      - `Concurrency::Hub::Unregister` (`function`)
+    - `WaitReceive`
+      - `self`
+        - `Concurrency::Hub::WaitReceive::self` (`parameter`)
+      - `Concurrency::Hub::WaitReceive` (`function`)
     - `Concurrency::Hub` (`module`)
   - `HubError`
     - `HubError`
@@ -1034,8 +1134,32 @@
       - `Concurrency::HubError::HubError` (`enum`)
     - `Concurrency::HubError` (`module`)
   - `HubReceiveResult`
+    - `HubReceiveResult`
+      - `index`
+        - `Concurrency::HubReceiveResult::HubReceiveResult::index` (`field`)
+      - `value`
+        - `Concurrency::HubReceiveResult::HubReceiveResult::value` (`field`)
+      - `Concurrency::HubReceiveResult::HubReceiveResult` (`type`)
     - `Concurrency::HubReceiveResult` (`module`)
   - `Mutex`
+    - `Create`
+      - `Concurrency::Mutex::Create` (`function`)
+    - `Lock`
+      - `self`
+        - `Concurrency::Mutex::Lock::self` (`parameter`)
+      - `Concurrency::Mutex::Lock` (`function`)
+    - `Mutex`
+      - `handle`
+        - `Concurrency::Mutex::Mutex::handle` (`field`)
+      - `Concurrency::Mutex::Mutex` (`type`)
+    - `TryLock`
+      - `self`
+        - `Concurrency::Mutex::TryLock::self` (`parameter`)
+      - `Concurrency::Mutex::TryLock` (`function`)
+    - `Unlock`
+      - `guard`
+        - `Concurrency::Mutex::Unlock::guard` (`parameter`)
+      - `Concurrency::Mutex::Unlock` (`function`)
     - `Concurrency::Mutex` (`module`)
   - `MutexError`
     - `MutexError`
@@ -1044,7 +1168,19 @@
       - `Concurrency::MutexError::MutexError` (`enum`)
     - `Concurrency::MutexError` (`module`)
   - `MutexGuard`
+    - `MutexGuard`
+      - `mutexHandle`
+        - `Concurrency::MutexGuard::MutexGuard::mutexHandle` (`field`)
+      - `Concurrency::MutexGuard::MutexGuard` (`type`)
     - `Concurrency::MutexGuard` (`module`)
+  - `NowMillis`
+    - `Concurrency::NowMillis` (`function`)
+  - `ProcessorCount`
+    - `Concurrency::ProcessorCount` (`function`)
+  - `SetProcessorCount`
+    - `count`
+      - `Concurrency::SetProcessorCount::count` (`parameter`)
+    - `Concurrency::SetProcessorCount` (`function`)
   - `Status`
     - `Cancelled`
       - `Concurrency::Status::Cancelled` (`function`)
@@ -1063,7 +1199,29 @@
     - `WouldBlock`
       - `Concurrency::Status::WouldBlock` (`function`)
   - `WaitGroup`
+    - `Add`
+      - `delta`
+        - `Concurrency::WaitGroup::Add::delta` (`parameter`)
+      - `self`
+        - `Concurrency::WaitGroup::Add::self` (`parameter`)
+      - `Concurrency::WaitGroup::Add` (`function`)
+    - `Create`
+      - `Concurrency::WaitGroup::Create` (`function`)
+    - `Done`
+      - `self`
+        - `Concurrency::WaitGroup::Done::self` (`parameter`)
+      - `Concurrency::WaitGroup::Done` (`function`)
+    - `Wait`
+      - `self`
+        - `Concurrency::WaitGroup::Wait::self` (`parameter`)
+      - `Concurrency::WaitGroup::Wait` (`function`)
+    - `WaitGroup`
+      - `handle`
+        - `Concurrency::WaitGroup::WaitGroup::handle` (`field`)
+      - `Concurrency::WaitGroup::WaitGroup` (`type`)
     - `Concurrency::WaitGroup` (`module`)
+  - `Yield`
+    - `Concurrency::Yield` (`function`)
   - `Concurrency` (`module`)
 - `Console`
   - `Capabilities`
@@ -1105,6 +1263,14 @@
       - `Console::Capabilities::ShouldStripColor` (`function`)
     - `Console::Capabilities` (`module`)
   - `ConsoleMessage`
+    - `ConsoleMessage`
+      - `Resize`
+        - `Console::ConsoleMessage::ConsoleMessage::Resize` (`enum_variant`)
+      - `Tick`
+        - `Console::ConsoleMessage::ConsoleMessage::Tick` (`enum_variant`)
+      - `size`
+        - `Console::ConsoleMessage::ConsoleMessage::size` (`field`)
+      - `Console::ConsoleMessage::ConsoleMessage` (`enum`)
     - `Console::ConsoleMessage` (`module`)
   - `ConsoleSize`
     - `columns`
@@ -1146,6 +1312,38 @@
         - `Console::Controls::Contracts::PaddingProvider` (`contract`)
       - `Console::Controls::Contracts` (`module`)
     - `Frame`
+      - `Ascii`
+        - `Console::Controls::Frame::Ascii` (`function`)
+      - `ForHost`
+        - `useUnicode`
+          - `Console::Controls::Frame::ForHost::useUnicode` (`parameter`)
+        - `Console::Controls::Frame::ForHost` (`function`)
+      - `FrameChars`
+        - `bottom`
+          - `Console::Controls::Frame::FrameChars::bottom` (`field`)
+        - `bottomLeft`
+          - `Console::Controls::Frame::FrameChars::bottomLeft` (`field`)
+        - `bottomRight`
+          - `Console::Controls::Frame::FrameChars::bottomRight` (`field`)
+        - `side`
+          - `Console::Controls::Frame::FrameChars::side` (`field`)
+        - `top`
+          - `Console::Controls::Frame::FrameChars::top` (`field`)
+        - `topLeft`
+          - `Console::Controls::Frame::FrameChars::topLeft` (`field`)
+        - `topRight`
+          - `Console::Controls::Frame::FrameChars::topRight` (`field`)
+        - `Console::Controls::Frame::FrameChars` (`type`)
+      - `PreferUnicodeFrame`
+        - `Console::Controls::Frame::PreferUnicodeFrame` (`function`)
+      - `Repeat`
+        - `count`
+          - `Console::Controls::Frame::Repeat::count` (`parameter`)
+        - `unit`
+          - `Console::Controls::Frame::Repeat::unit` (`parameter`)
+        - `Console::Controls::Frame::Repeat` (`function`)
+      - `Unicode`
+        - `Console::Controls::Frame::Unicode` (`function`)
       - `Console::Controls::Frame` (`module`)
     - `HorizontalStack`
       - `ChildCount`
@@ -1208,6 +1406,98 @@
         - `Console::Controls::LiveTick::RegisterProgressBar` (`function`)
       - `Console::Controls::LiveTick` (`module`)
     - `Panel`
+      - `BodyLine`
+        - `frame`
+          - `Console::Controls::Panel::BodyLine::frame` (`parameter`)
+        - `innerWidth`
+          - `Console::Controls::Panel::BodyLine::innerWidth` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::BodyLine::panel` (`parameter`)
+        - `Console::Controls::Panel::BodyLine` (`function`)
+      - `ContentWidth`
+        - `panel`
+          - `Console::Controls::Panel::ContentWidth::panel` (`parameter`)
+        - `Console::Controls::Panel::ContentWidth` (`function`)
+      - `Margin`
+        - `panel`
+          - `Console::Controls::Panel::Margin::panel` (`parameter`)
+        - `Console::Controls::Panel::Margin` (`function`)
+      - `Measure`
+        - `available`
+          - `Console::Controls::Panel::Measure::available` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::Measure::panel` (`parameter`)
+        - `Console::Controls::Panel::Measure` (`function`)
+      - `New`
+        - `body`
+          - `Console::Controls::Panel::New::body` (`parameter`)
+        - `Console::Controls::Panel::New` (`function`)
+      - `Padding`
+        - `panel`
+          - `Console::Controls::Panel::Padding::panel` (`parameter`)
+        - `Console::Controls::Panel::Padding` (`function`)
+      - `Panel`
+        - `align`
+          - `Console::Controls::Panel::Panel::align` (`field`)
+        - `body`
+          - `Console::Controls::Panel::Panel::body` (`field`)
+        - `forceAscii`
+          - `Console::Controls::Panel::Panel::forceAscii` (`field`)
+        - `margin`
+          - `Console::Controls::Panel::Panel::margin` (`field`)
+        - `padding`
+          - `Console::Controls::Panel::Panel::padding` (`field`)
+        - `title`
+          - `Console::Controls::Panel::Panel::title` (`field`)
+        - `Console::Controls::Panel::Panel` (`type`)
+      - `Render`
+        - `panel`
+          - `Console::Controls::Panel::Render::panel` (`parameter`)
+        - `size`
+          - `Console::Controls::Panel::Render::size` (`parameter`)
+        - `Console::Controls::Panel::Render` (`function`)
+      - `RenderWithContext`
+        - `ctx`
+          - `Console::Controls::Panel::RenderWithContext::ctx` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::RenderWithContext::panel` (`parameter`)
+        - `size`
+          - `Console::Controls::Panel::RenderWithContext::size` (`parameter`)
+        - `Console::Controls::Panel::RenderWithContext` (`function`)
+      - `TopBorder`
+        - `frame`
+          - `Console::Controls::Panel::TopBorder::frame` (`parameter`)
+        - `innerWidth`
+          - `Console::Controls::Panel::TopBorder::innerWidth` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::TopBorder::panel` (`parameter`)
+        - `Console::Controls::Panel::TopBorder` (`function`)
+      - `UseUnicodeFrame`
+        - `panel`
+          - `Console::Controls::Panel::UseUnicodeFrame::panel` (`parameter`)
+        - `Console::Controls::Panel::UseUnicodeFrame` (`function`)
+      - `WithAlignment`
+        - `align`
+          - `Console::Controls::Panel::WithAlignment::align` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::WithAlignment::panel` (`parameter`)
+        - `Console::Controls::Panel::WithAlignment` (`function`)
+      - `WithAsciiFrame`
+        - `panel`
+          - `Console::Controls::Panel::WithAsciiFrame::panel` (`parameter`)
+        - `Console::Controls::Panel::WithAsciiFrame` (`function`)
+      - `WithPadding`
+        - `padding`
+          - `Console::Controls::Panel::WithPadding::padding` (`parameter`)
+        - `panel`
+          - `Console::Controls::Panel::WithPadding::panel` (`parameter`)
+        - `Console::Controls::Panel::WithPadding` (`function`)
+      - `WithTitle`
+        - `panel`
+          - `Console::Controls::Panel::WithTitle::panel` (`parameter`)
+        - `title`
+          - `Console::Controls::Panel::WithTitle::title` (`parameter`)
+        - `Console::Controls::Panel::WithTitle` (`function`)
       - `Console::Controls::Panel` (`module`)
     - `ProgressBar`
       - `BarBody`
@@ -1320,6 +1610,44 @@
         - `Console::Controls::RenderContext::WithoutIncremental` (`function`)
       - `Console::Controls::RenderContext` (`module`)
     - `VerticalStack`
+      - `ChildCount`
+        - `stack`
+          - `Console::Controls::VerticalStack::ChildCount::stack` (`parameter`)
+        - `Console::Controls::VerticalStack::ChildCount` (`function`)
+      - `Measure`
+        - `available`
+          - `Console::Controls::VerticalStack::Measure::available` (`parameter`)
+        - `stack`
+          - `Console::Controls::VerticalStack::Measure::stack` (`parameter`)
+        - `Console::Controls::VerticalStack::Measure` (`function`)
+      - `New`
+        - `Console::Controls::VerticalStack::New` (`function`)
+      - `Render`
+        - `size`
+          - `Console::Controls::VerticalStack::Render::size` (`parameter`)
+        - `stack`
+          - `Console::Controls::VerticalStack::Render::stack` (`parameter`)
+        - `Console::Controls::VerticalStack::Render` (`function`)
+      - `RenderWithContext`
+        - `ctx`
+          - `Console::Controls::VerticalStack::RenderWithContext::ctx` (`parameter`)
+        - `size`
+          - `Console::Controls::VerticalStack::RenderWithContext::size` (`parameter`)
+        - `stack`
+          - `Console::Controls::VerticalStack::RenderWithContext::stack` (`parameter`)
+        - `Console::Controls::VerticalStack::RenderWithContext` (`function`)
+      - `VerticalStack`
+        - `childBodies`
+          - `Console::Controls::VerticalStack::VerticalStack::childBodies` (`field`)
+        - `childCount`
+          - `Console::Controls::VerticalStack::VerticalStack::childCount` (`field`)
+        - `Console::Controls::VerticalStack::VerticalStack` (`type`)
+      - `WithChild`
+        - `body`
+          - `Console::Controls::VerticalStack::WithChild::body` (`parameter`)
+        - `stack`
+          - `Console::Controls::VerticalStack::WithChild::stack` (`parameter`)
+        - `Console::Controls::VerticalStack::WithChild` (`function`)
       - `Console::Controls::VerticalStack` (`module`)
   - `Format`
     - `Attributes`
@@ -1511,6 +1839,72 @@
       - `Console::Start::hub` (`parameter`)
     - `Console::Start` (`function`)
   - `Style`
+    - `ClampWidth`
+      - `maxValue`
+        - `Console::Style::ClampWidth::maxValue` (`parameter`)
+      - `minValue`
+        - `Console::Style::ClampWidth::minValue` (`parameter`)
+      - `value`
+        - `Console::Style::ClampWidth::value` (`parameter`)
+      - `Console::Style::ClampWidth` (`function`)
+    - `Margin`
+      - `None`
+        - `Console::Style::Margin::None` (`enum_variant`)
+      - `Sized`
+        - `Console::Style::Margin::Sized` (`enum_variant`)
+      - `Value`
+        - `Console::Style::Margin::Value` (`enum_variant`)
+      - `size`
+        - `Console::Style::Margin::size` (`field`)
+      - `value`
+        - `Console::Style::Margin::value` (`field`)
+      - `Console::Style::Margin` (`enum`)
+    - `Padding`
+      - `None`
+        - `Console::Style::Padding::None` (`enum_variant`)
+      - `Sized`
+        - `Console::Style::Padding::Sized` (`enum_variant`)
+      - `Value`
+        - `Console::Style::Padding::Value` (`enum_variant`)
+      - `size`
+        - `Console::Style::Padding::size` (`field`)
+      - `value`
+        - `Console::Style::Padding::value` (`field`)
+      - `Console::Style::Padding` (`enum`)
+    - `ResolveMargin`
+      - `columns`
+        - `Console::Style::ResolveMargin::columns` (`parameter`)
+      - `margin`
+        - `Console::Style::ResolveMargin::margin` (`parameter`)
+      - `Console::Style::ResolveMargin` (`function`)
+    - `ResolvePadding`
+      - `columns`
+        - `Console::Style::ResolvePadding::columns` (`parameter`)
+      - `padding`
+        - `Console::Style::ResolvePadding::padding` (`parameter`)
+      - `Console::Style::ResolvePadding` (`function`)
+    - `ResolveSize`
+      - `columns`
+        - `Console::Style::ResolveSize::columns` (`parameter`)
+      - `size`
+        - `Console::Style::ResolveSize::size` (`parameter`)
+      - `Console::Style::ResolveSize` (`function`)
+    - `Size`
+      - `Large`
+        - `Console::Style::Size::Large` (`enum_variant`)
+      - `Medium`
+        - `Console::Style::Size::Medium` (`enum_variant`)
+      - `Small`
+        - `Console::Style::Size::Small` (`enum_variant`)
+      - `Console::Style::Size` (`enum`)
+    - `TitleAlignment`
+      - `Center`
+        - `Console::Style::TitleAlignment::Center` (`enum_variant`)
+      - `Left`
+        - `Console::Style::TitleAlignment::Left` (`enum_variant`)
+      - `Right`
+        - `Console::Style::TitleAlignment::Right` (`enum_variant`)
+      - `Console::Style::TitleAlignment` (`enum`)
     - `Console::Style` (`module`)
   - `SubscribeOnResize`
     - `handler`
@@ -1559,22 +1953,68 @@
       - `Core::Results::Result` (`enum`)
     - `Core::Results` (`module`)
   - `String`
-    - `Contains`
-      - `needle`
-        - `Core::String::Contains::needle` (`parameter`)
-      - `text`
-        - `Core::String::Contains::text` (`parameter`)
-      - `Core::String::Contains` (`function`)
-    - `IsEmpty`
-      - `text`
-        - `Core::String::IsEmpty::text` (`parameter`)
-      - `Core::String::IsEmpty` (`function`)
-    - `Len`
-      - `text`
-        - `Core::String::Len::text` (`parameter`)
-      - `Core::String::Len` (`function`)
     - `Core::String` (`module`)
 - `Platform`
+  - `Linux`
+    - `IsAtty`
+      - `fd`
+        - `Platform::Linux::IsAtty::fd` (`parameter`)
+      - `Platform::Linux::IsAtty` (`function`)
+    - `Libc`
+      - `arg`
+        - `Platform::Linux::Libc::arg` (`parameter`)
+      - `fd`
+        - `Platform::Linux::Libc::fd` (`parameter`)
+        - `Platform::Linux::Libc::fd` (`parameter`)
+      - `ioctl`
+        - `Platform::Linux::Libc::ioctl` (`contract_method`)
+      - `isatty`
+        - `Platform::Linux::Libc::isatty` (`contract_method`)
+      - `request`
+        - `Platform::Linux::Libc::request` (`parameter`)
+      - `Platform::Linux::Libc` (`contract`)
+    - `WinSize`
+      - `ws_col`
+        - `Platform::Linux::WinSize::ws_col` (`field`)
+      - `ws_row`
+        - `Platform::Linux::WinSize::ws_row` (`field`)
+      - `ws_xpixel`
+        - `Platform::Linux::WinSize::ws_xpixel` (`field`)
+      - `ws_ypixel`
+        - `Platform::Linux::WinSize::ws_ypixel` (`field`)
+      - `Platform::Linux::WinSize` (`type`)
+    - `Winsize`
+      - `Platform::Linux::Winsize` (`function`)
+  - `MacOS`
+    - `IsAtty`
+      - `fd`
+        - `Platform::MacOS::IsAtty::fd` (`parameter`)
+      - `Platform::MacOS::IsAtty` (`function`)
+    - `Libc`
+      - `arg`
+        - `Platform::MacOS::Libc::arg` (`parameter`)
+      - `fd`
+        - `Platform::MacOS::Libc::fd` (`parameter`)
+        - `Platform::MacOS::Libc::fd` (`parameter`)
+      - `ioctl`
+        - `Platform::MacOS::Libc::ioctl` (`contract_method`)
+      - `isatty`
+        - `Platform::MacOS::Libc::isatty` (`contract_method`)
+      - `request`
+        - `Platform::MacOS::Libc::request` (`parameter`)
+      - `Platform::MacOS::Libc` (`contract`)
+    - `WinSize`
+      - `ws_col`
+        - `Platform::MacOS::WinSize::ws_col` (`field`)
+      - `ws_row`
+        - `Platform::MacOS::WinSize::ws_row` (`field`)
+      - `ws_xpixel`
+        - `Platform::MacOS::WinSize::ws_xpixel` (`field`)
+      - `ws_ypixel`
+        - `Platform::MacOS::WinSize::ws_ypixel` (`field`)
+      - `Platform::MacOS::WinSize` (`type`)
+    - `Winsize`
+      - `Platform::MacOS::Winsize` (`function`)
   - `Terminal`
     - `EnsureInitialized`
       - `Platform::Terminal::EnsureInitialized` (`function`)
@@ -1623,6 +2063,31 @@
     - `QuerySize`
       - `Platform::Terminal::QuerySize` (`function`)
     - `Platform::Terminal` (`module`)
+  - `Windows`
+    - `IsAtty`
+      - `fd`
+        - `Platform::Windows::IsAtty::fd` (`parameter`)
+      - `Platform::Windows::IsAtty` (`function`)
+    - `Kernel32`
+      - `GetConsoleScreenBufferInfo`
+        - `Platform::Windows::Kernel32::GetConsoleScreenBufferInfo` (`contract_method`)
+      - `GetStdHandle`
+        - `Platform::Windows::Kernel32::GetStdHandle` (`contract_method`)
+      - `handle`
+        - `Platform::Windows::Kernel32::handle` (`parameter`)
+      - `infoOut`
+        - `Platform::Windows::Kernel32::infoOut` (`parameter`)
+      - `nStdHandle`
+        - `Platform::Windows::Kernel32::nStdHandle` (`parameter`)
+      - `Platform::Windows::Kernel32` (`contract`)
+    - `Ucrt`
+      - `_isatty`
+        - `Platform::Windows::Ucrt::_isatty` (`contract_method`)
+      - `fd`
+        - `Platform::Windows::Ucrt::fd` (`parameter`)
+      - `Platform::Windows::Ucrt` (`contract`)
+    - `Winsize`
+      - `Platform::Windows::Winsize` (`function`)
 - `Query`
   - `Contracts`
     - `HasValue`
@@ -1637,6 +2102,7 @@
       - `value`
         - `Query::Contracts::Option::value` (`field`)
       - `Query::Contracts::Option` (`enum`)
+    - `Query::Contracts` (`module`)
   - `Execution`
     - `IsDeferred`
       - `state`
@@ -1952,6 +2418,62 @@
     - `System::Syscall` (`module`)
   - `Threading`
     - `Thread`
+      - `DarwinPthread`
+        - `arg`
+          - `System::Threading::Thread::DarwinPthread::arg` (`parameter`)
+        - `attr`
+          - `System::Threading::Thread::DarwinPthread::attr` (`parameter`)
+        - `pthread_create`
+          - `System::Threading::Thread::DarwinPthread::pthread_create` (`contract_method`)
+        - `pthread_join`
+          - `System::Threading::Thread::DarwinPthread::pthread_join` (`contract_method`)
+        - `sched_yield`
+          - `System::Threading::Thread::DarwinPthread::sched_yield` (`contract_method`)
+        - `startRoutine`
+          - `System::Threading::Thread::DarwinPthread::startRoutine` (`parameter`)
+        - `thread`
+          - `System::Threading::Thread::DarwinPthread::thread` (`parameter`)
+        - `threadOut`
+          - `System::Threading::Thread::DarwinPthread::threadOut` (`parameter`)
+        - `valueOut`
+          - `System::Threading::Thread::DarwinPthread::valueOut` (`parameter`)
+        - `System::Threading::Thread::DarwinPthread` (`contract`)
+      - `Join`
+        - `self`
+          - `System::Threading::Thread::Join::self` (`parameter`)
+        - `System::Threading::Thread::Join` (`function`)
+      - `LinuxPthread`
+        - `arg`
+          - `System::Threading::Thread::LinuxPthread::arg` (`parameter`)
+        - `attr`
+          - `System::Threading::Thread::LinuxPthread::attr` (`parameter`)
+        - `pthread_create`
+          - `System::Threading::Thread::LinuxPthread::pthread_create` (`contract_method`)
+        - `pthread_join`
+          - `System::Threading::Thread::LinuxPthread::pthread_join` (`contract_method`)
+        - `sched_yield`
+          - `System::Threading::Thread::LinuxPthread::sched_yield` (`contract_method`)
+        - `startRoutine`
+          - `System::Threading::Thread::LinuxPthread::startRoutine` (`parameter`)
+        - `thread`
+          - `System::Threading::Thread::LinuxPthread::thread` (`parameter`)
+        - `threadOut`
+          - `System::Threading::Thread::LinuxPthread::threadOut` (`parameter`)
+        - `valueOut`
+          - `System::Threading::Thread::LinuxPthread::valueOut` (`parameter`)
+        - `System::Threading::Thread::LinuxPthread` (`contract`)
+      - `Spawn`
+        - `arg`
+          - `System::Threading::Thread::Spawn::arg` (`parameter`)
+        - `entryRoutine`
+          - `System::Threading::Thread::Spawn::entryRoutine` (`parameter`)
+        - `System::Threading::Thread::Spawn` (`function`)
+      - `Thread`
+        - `handle`
+          - `System::Threading::Thread::Thread::handle` (`field`)
+        - `System::Threading::Thread::Thread` (`type`)
+      - `Yield`
+        - `System::Threading::Thread::Yield` (`function`)
       - `System::Threading::Thread` (`module`)
     - `ThreadError`
       - `ThreadError`
@@ -2142,6 +2664,8 @@
   - `__wait_group_done` (`function`)
 - `__wait_group_wait`
   - `__wait_group_wait` (`function`)
+- `range`
+  - `range` (`function`)
 
 ## Items
 
@@ -4497,186 +5021,6 @@ Re-exports growable array surface.
 
 ---
 
-### `Collections::Array::Advance` (`function`)
-
-Advance an iterator one element.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice (the iterator carries no payload in v1).
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-Iterator with `index` incremented by one.
-
-
----
-
-### `Collections::Array::Advance::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::ArrayIter` (`type`)
-
-Fixed-size array helper types and iteration primitives.
-Slice-like `T[]` values use the runtime `BeskidArray` layout; length is read via `__array_len`.
-@tier(standard)
-
-**Type parameter `T`**
-Element type for iterators.
-
-
----
-
-### `Collections::Array::ArrayIter::index` (`field`)
-
-Current traversal position.
-
----
-
-### `Collections::Array::ArrayIter::length` (`field`)
-
-Total number of readable elements.
-
----
-
-### `Collections::Array::HasNext` (`function`)
-
-Returns true when an iterator has remaining elements.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-`true` while `index < length`.
-
-
----
-
-### `Collections::Array::HasNext::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Index` (`function`)
-
-Returns the iterator's current zero-based index.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `it`**
-Iterator state.
-
-
-**Returns**
-
-`it.index`.
-
-
----
-
-### `Collections::Array::Index::it` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::IsEmpty` (`function`)
-
-Returns true when the array carries no readable elements.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `values`**
-Slice-like array handle.
-
-
-**Returns**
-
-`true` when `Len(values) == 0`.
-
-
----
-
-### `Collections::Array::IsEmpty::values` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Iterate` (`function`)
-
-Creates an iterator at the first element.
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice.
-
-
-**Parameter `values`**
-Source array.
-
-
-**Returns**
-
-Iterator positioned at index zero.
-
-
----
-
-### `Collections::Array::Iterate::values` (`parameter`)
-
-*No documentation provided.*
-
----
-
-### `Collections::Array::Len` (`function`)
-
-Returns array length (element count).
-@tier(standard)
-
-**Type parameter `T`**
-Element type of the slice (length is independent of `T` in v1).
-
-
-**Parameter `values`**
-Slice-like array handle.
-
-
-**Returns**
-
-Element count from the runtime header.
-
-
----
-
-### `Collections::Array::Len::values` (`parameter`)
-
-*No documentation provided.*
-
----
-
 ### `Collections::List` (`module`)
 
 Re-exports list surface.
@@ -5595,6 +5939,150 @@ Concurrency package prelude: cooperative fibers, channels, and OS threading.
 
 ---
 
+### `Concurrency::Channel::Channel` (`type`)
+
+Opaque channel handle (move-only at language layer).
+
+---
+
+### `Concurrency::Channel::Channel::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Close` (`function`)
+
+Idempotent writer shutdown.
+
+---
+
+### `Concurrency::Channel::Close::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Create` (`function`)
+
+Creates an unbounded channel (default per platform spec).
+
+---
+
+### `Concurrency::Channel::CreateWithOptions` (`function`)
+
+Creates a channel with explicit options.
+
+---
+
+### `Concurrency::Channel::CreateWithOptions::options` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Handle` (`function`)
+
+Runtime queue id for `Hub.Register` and builtins.
+
+---
+
+### `Concurrency::Channel::Handle::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapReceiveError` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapReceiveError::status` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapSendStatus` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::MapSendStatus::status` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Receive` (`function`)
+
+Receives a value; parks when empty and open.
+
+---
+
+### `Concurrency::Channel::Receive::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Send` (`function`)
+
+Sends a value; parks the current fiber when the queue is full (bounded + wait mode).
+
+---
+
+### `Concurrency::Channel::Send::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::Send::value` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::SendOk` (`type`)
+
+Success marker for [`Send`] / [`TrySend`] (`Result<SendOk, ChannelError>` per platform spec `Result<(), _>`).
+
+---
+
+### `Concurrency::Channel::TryReceive` (`function`)
+
+Non-blocking receive; `None` when the operation would block.
+
+---
+
+### `Concurrency::Channel::TryReceive::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::TrySend` (`function`)
+
+Non-blocking send; `None` when the operation would block.
+
+---
+
+### `Concurrency::Channel::TrySend::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Channel::TrySend::value` (`parameter`)
+
+*No documentation provided.*
+
+---
+
 ### `Concurrency::ChannelError` (`module`)
 
 *No documentation provided.*
@@ -5633,7 +6121,182 @@ Owning fiber was cancelled.
 
 ---
 
+### `Concurrency::ChannelOptions::Bounded` (`function`)
+
+Bounded queue with `capacity > 0`; senders park when full.
+
+---
+
+### `Concurrency::ChannelOptions::Bounded::capacity` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity` (`enum`)
+
+Construction options for `Channel<T>.Create`.
+Capacity selector: default is unbounded.
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity::Bounded` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity::Unbounded` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelCapacity::capacity` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions` (`type`)
+
+Channel factory options (capacity plus v1 optimization hints).
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions::capacity` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions::singleReader` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::ChannelOptions::singleWriter` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::Default` (`function`)
+
+Default options: unbounded queue, no single-reader/writer hints.
+
+---
+
+### `Concurrency::ChannelOptions::EncodeCapacity` (`function`)
+
+Encodes capacity for `__channel_create` (`0` = unbounded).
+
+---
+
+### `Concurrency::ChannelOptions::EncodeCapacity::options` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::EncodeFlags` (`function`)
+
+Encodes reader/writer hint flags for `__channel_create`.
+
+---
+
+### `Concurrency::ChannelOptions::EncodeFlags::options` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::ChannelOptions::SingleReader` (`function`)
+
+Unbounded queue optimized for a single reader.
+
+---
+
+### `Concurrency::ChannelOptions::SingleWriter` (`function`)
+
+Unbounded queue optimized for a single writer.
+
+---
+
+### `Concurrency::ChannelOptions::Unbounded` (`function`)
+
+Explicit unbounded queue (equivalent to default).
+
+---
+
 ### `Concurrency::Fiber` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Cancel` (`function`)
+
+Sets cancellation flag and raises `OnCancelled` on the child fiber.
+
+---
+
+### `Concurrency::Fiber::Cancel::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Detach` (`function`)
+
+Waives parent shutdown join; child panic still aborts the process in v1.
+
+---
+
+### `Concurrency::Fiber::Detach::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Fiber` (`type`)
+
+Runtime fiber handle; declares cancellation event on the handle only.
+
+---
+
+### `Concurrency::Fiber::Fiber::OnCancelled` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Fiber::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::Join` (`function`)
+
+Waits for completion and returns the entry value or a `FiberError`.
+
+---
+
+### `Concurrency::Fiber::Join::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::MapJoinError` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Fiber::MapJoinError::status` (`parameter`)
 
 *No documentation provided.*
 
@@ -5729,6 +6392,78 @@ ABI status codes returned by `__fiber_join`.
 
 ---
 
+### `Concurrency::Hub::Create` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Hub` (`type`)
+
+Multiplexes `Channel<T>` members with `WaitReceive`.
+
+---
+
+### `Concurrency::Hub::Hub::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Register` (`function`)
+
+Registers `channel` at `index` (max 256 members in v1).
+
+---
+
+### `Concurrency::Hub::Register::channel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Register::index` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Register::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Unregister` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Unregister::index` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::Unregister::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Hub::WaitReceive` (`function`)
+
+Blocks until a member can satisfy `Receive` (round-robin among ready channels).
+
+---
+
+### `Concurrency::Hub::WaitReceive::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
 ### `Concurrency::HubError` (`module`)
 
 *No documentation provided.*
@@ -5777,7 +6512,79 @@ All registered channels are closed.
 
 ---
 
+### `Concurrency::HubReceiveResult::HubReceiveResult` (`type`)
+
+Successful `Hub.WaitReceive` payload.
+
+---
+
+### `Concurrency::HubReceiveResult::HubReceiveResult::index` (`field`)
+
+User registration index passed to `Hub.Register`.
+
+---
+
+### `Concurrency::HubReceiveResult::HubReceiveResult::value` (`field`)
+
+Message received from the selected member channel.
+
+---
+
 ### `Concurrency::Mutex` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Create` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Lock` (`function`)
+
+Parks until the mutex is acquired or the fiber is cancelled.
+
+---
+
+### `Concurrency::Mutex::Lock::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Mutex` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Mutex::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::TryLock` (`function`)
+
+Returns `None` when the mutex would block.
+
+---
+
+### `Concurrency::Mutex::TryLock::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Unlock` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Mutex::Unlock::guard` (`parameter`)
 
 *No documentation provided.*
 
@@ -5806,6 +6613,43 @@ Waiting fiber was cancelled before acquire.
 ---
 
 ### `Concurrency::MutexGuard` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::MutexGuard::MutexGuard` (`type`)
+
+RAII guard acquired from `Mutex.Lock` or `Mutex.TryLock`.
+
+---
+
+### `Concurrency::MutexGuard::MutexGuard::mutexHandle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::NowMillis` (`function`)
+
+Monotonic milliseconds since an unspecified epoch (not wall clock).
+
+---
+
+### `Concurrency::ProcessorCount` (`function`)
+
+Active scheduler worker count (defaults to host logical CPUs at init).
+
+---
+
+### `Concurrency::SetProcessorCount` (`function`)
+
+Sets scheduler worker pool size (Go `GOMAXPROCS` analogue).
+v1 Phase A: no-op until runtime exposes dynamic resizing.
+
+---
+
+### `Concurrency::SetProcessorCount::count` (`parameter`)
 
 *No documentation provided.*
 
@@ -5862,6 +6706,73 @@ ABI status codes returned by channel, hub, mutex, and wait-group builtins.
 ### `Concurrency::WaitGroup` (`module`)
 
 *No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Add` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Add::delta` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Add::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Create` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Done` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Done::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::Wait` (`function`)
+
+Parks until the counter reaches zero.
+
+---
+
+### `Concurrency::WaitGroup::Wait::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::WaitGroup::WaitGroup` (`type`)
+
+Fork–join counter with `Add` / `Done` / `Wait` operations.
+
+---
+
+### `Concurrency::WaitGroup::WaitGroup::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Concurrency::Yield` (`function`)
+
+Scheduler entry points (`fiber_yield`, monotonic clock, worker pool sizing).
+Cooperative reschedule of the current fiber.
 
 ---
 
@@ -5991,6 +6902,31 @@ Console package prelude.
 
 ---
 
+### `Console::ConsoleMessage::ConsoleMessage` (`enum`)
+
+Cross-fiber terminal signals delivered via `Channel<ConsoleMessage>`.
+Multiplexed console events for UI fibers (`Receive` / `Hub.WaitReceive`).
+
+---
+
+### `Console::ConsoleMessage::ConsoleMessage::Resize` (`enum_variant`)
+
+Terminal size changed (character cells).
+
+---
+
+### `Console::ConsoleMessage::ConsoleMessage::Tick` (`enum_variant`)
+
+Tick pulse for live controls (`Console.RunTick`).
+
+---
+
+### `Console::ConsoleMessage::ConsoleMessage::size` (`field`)
+
+*No documentation provided.*
+
+---
+
 ### `Console::ConsoleSize` (`type`)
 
 Terminal dimensions in character cells.
@@ -6107,6 +7043,102 @@ Implementing types should declare `event onTick();` on the type.
 ---
 
 ### `Console::Controls::Frame` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::Ascii` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::ForHost` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::ForHost::useUnicode` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::bottom` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::bottomLeft` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::bottomRight` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::side` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::top` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::topLeft` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::FrameChars::topRight` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::PreferUnicodeFrame` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::Repeat` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::Repeat::count` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::Repeat::unit` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Frame::Unicode` (`function`)
 
 *No documentation provided.*
 
@@ -6293,6 +7325,282 @@ Implementing types should declare `event onTick();` on the type.
 ---
 
 ### `Console::Controls::Panel` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::BodyLine` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::BodyLine::frame` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::BodyLine::innerWidth` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::BodyLine::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::ContentWidth` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::ContentWidth::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Margin` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Margin::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Measure` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Measure::available` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Measure::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::New` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::New::body` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Padding` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Padding::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::align` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::body` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::forceAscii` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::margin` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::padding` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Panel::title` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Render` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Render::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::Render::size` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::RenderWithContext` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::RenderWithContext::ctx` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::RenderWithContext::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::RenderWithContext::size` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::TopBorder` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::TopBorder::frame` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::TopBorder::innerWidth` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::TopBorder::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::UseUnicodeFrame` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::UseUnicodeFrame::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithAlignment` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithAlignment::align` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithAlignment::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithAsciiFrame` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithAsciiFrame::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithPadding` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithPadding::padding` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithPadding::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithTitle` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithTitle::panel` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::Panel::WithTitle::title` (`parameter`)
 
 *No documentation provided.*
 
@@ -6629,6 +7937,120 @@ Implementing types should declare `event onTick();` on the type.
 ---
 
 ### `Console::Controls::VerticalStack` (`module`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::ChildCount` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::ChildCount::stack` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Measure` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Measure::available` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Measure::stack` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::New` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Render` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Render::size` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::Render::stack` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::RenderWithContext` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::RenderWithContext::ctx` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::RenderWithContext::size` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::RenderWithContext::stack` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::VerticalStack` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::VerticalStack::childBodies` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::VerticalStack::childCount` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::WithChild` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::WithChild::body` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Controls::VerticalStack::WithChild::stack` (`parameter`)
 
 *No documentation provided.*
 
@@ -7207,6 +8629,212 @@ Initializes platform terminal probes and seeds resize tracking on the hub.
 
 ---
 
+### `Console::Style::ClampWidth` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ClampWidth::maxValue` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ClampWidth::minValue` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ClampWidth::value` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin` (`enum`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin::None` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin::Sized` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin::Value` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin::size` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Margin::value` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding` (`enum`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding::None` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding::Sized` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding::Value` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding::size` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Padding::value` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolveMargin` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolveMargin::columns` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolveMargin::margin` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolvePadding` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolvePadding::columns` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolvePadding::padding` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolveSize` (`function`)
+
+Resolves `Size` to a character count for the given terminal width.
+
+**Parameter `size`**
+Logical size token.
+
+
+**Parameter `columns`**
+Terminal width in columns.
+
+
+---
+
+### `Console::Style::ResolveSize::columns` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::ResolveSize::size` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Size` (`enum`)
+
+Shared layout/style enums for console controls.
+
+---
+
+### `Console::Style::Size::Large` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Size::Medium` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::Size::Small` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::TitleAlignment` (`enum`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::TitleAlignment::Center` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::TitleAlignment::Left` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
+### `Console::Style::TitleAlignment::Right` (`enum_variant`)
+
+*No documentation provided.*
+
+---
+
 ### `Console::SubscribeOnResize` (`function`)
 
 Subscribes to resize notifications and synchronously raises once with the current size.
@@ -7402,75 +9030,182 @@ Re-exports string helper functions.
 
 ---
 
-### `Core::String::Contains` (`function`)
-
-Returns true when needle is treated as present in text (prefix/suffix equality only in v1).
-
-**Parameter `text`**
-Haystack UTF-8 string.
-
-
-**Parameter `needle`**
-Needle UTF-8 string; empty needle is always considered found.
-
-
-**Returns**
-
-`true` when `needle` is empty, longer than `text`, or exactly equal to `text`.
-
-
----
-
-### `Core::String::Contains::needle` (`parameter`)
+### `Platform::Linux::IsAtty` (`function`)
 
 *No documentation provided.*
 
 ---
 
-### `Core::String::Contains::text` (`parameter`)
+### `Platform::Linux::IsAtty::fd` (`parameter`)
 
 *No documentation provided.*
 
 ---
 
-### `Core::String::IsEmpty` (`function`)
+### `Platform::Linux::Libc` (`contract`)
 
-Returns true when text is empty.
-
-**Parameter `text`**
-UTF-8 string handle.
-
-
-**Returns**
-
-`true` when `Len` is zero.
-
+Linux terminal probes via libc Extern (`isatty`, best-effort `ioctl` winsize).
 
 ---
 
-### `Core::String::IsEmpty::text` (`parameter`)
+### `Platform::Linux::Libc::arg` (`parameter`)
 
 *No documentation provided.*
 
 ---
 
-### `Core::String::Len` (`function`)
+### `Platform::Linux::Libc::fd` (`parameter`)
 
-UTF-8 string helpers backed by runtime string builtins (`__str_len`).
-Returns the number of UTF-8 code units in text.
-
-**Parameter `text`**
-UTF-8 string handle.
-
-
-**Returns**
-
-Code unit count as `i64`.
-
+*No documentation provided.*
 
 ---
 
-### `Core::String::Len::text` (`parameter`)
+### `Platform::Linux::Libc::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::Libc::ioctl` (`contract_method`)
+
+`TIOCGWINSZ` (0x5413); `arg` is `struct winsize*` when host linking is enabled.
+
+---
+
+### `Platform::Linux::Libc::isatty` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::Libc::request` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::WinSize` (`type`)
+
+Packed `struct winsize` layout for ioctl out-parameters (host ABI).
+
+---
+
+### `Platform::Linux::WinSize::ws_col` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::WinSize::ws_row` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::WinSize::ws_xpixel` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::WinSize::ws_ypixel` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Linux::Winsize` (`function`)
+
+Returns terminal size from ioctl when available; otherwise zeroed columns for env fallback.
+`TIOCGWINSZ` on Linux; ioctl needs a live pointer at link/runtime (see platform spec).
+
+---
+
+### `Platform::MacOS::IsAtty` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::IsAtty::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Libc` (`contract`)
+
+macOS terminal probes via libc Extern (`isatty`, best-effort `ioctl` winsize).
+
+---
+
+### `Platform::MacOS::Libc::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Libc::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Libc::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Libc::ioctl` (`contract_method`)
+
+`TIOCGWINSZ` (0x40087468 on macOS); `arg` is `struct winsize*` when host linking is enabled.
+
+---
+
+### `Platform::MacOS::Libc::isatty` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Libc::request` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::WinSize` (`type`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::WinSize::ws_col` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::WinSize::ws_row` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::WinSize::ws_xpixel` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::WinSize::ws_ypixel` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::MacOS::Winsize` (`function`)
 
 *No documentation provided.*
 
@@ -7617,6 +9352,84 @@ In-fiber resize hub (event multicast on the owning fiber).
 ### `Platform::Terminal::QuerySize` (`function`)
 
 *No documentation provided.*
+
+---
+
+### `Platform::Windows::IsAtty` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::IsAtty::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32` (`contract`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32::GetConsoleScreenBufferInfo` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32::GetStdHandle` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32::handle` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32::infoOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Kernel32::nStdHandle` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Ucrt` (`contract`)
+
+Windows console probes (`_isatty`, best-effort `GetConsoleScreenBufferInfo`).
+
+---
+
+### `Platform::Windows::Ucrt::_isatty` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Ucrt::fd` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `Platform::Windows::Winsize` (`function`)
+
+Returns size from console buffer info when host linking supplies struct out-pointers; else zeroed.
+
+---
+
+### `Query::Contracts` (`module`)
+
+Re-exports query contracts (Option type).
 
 ---
 
@@ -9141,6 +10954,179 @@ Written byte count or a `SyscallError`.
 
 ---
 
+### `System::Threading::Thread::DarwinPthread` (`contract`)
+
+macOS libc pthread surface (v1).
+
+---
+
+### `System::Threading::Thread::DarwinPthread::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::attr` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::pthread_create` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::pthread_join` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::sched_yield` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::startRoutine` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::thread` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::threadOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::DarwinPthread::valueOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Join` (`function`)
+
+Waits for OS thread completion.
+
+---
+
+### `System::Threading::Thread::Join::self` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread` (`contract`)
+
+Linux libc pthread surface (v1).
+
+---
+
+### `System::Threading::Thread::LinuxPthread::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::attr` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::pthread_create` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::pthread_join` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::sched_yield` (`contract_method`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::startRoutine` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::thread` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::threadOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::LinuxPthread::valueOut` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Spawn` (`function`)
+
+Starts an OS thread. Beskid entry attachment is enforced by the runtime before user code runs.
+
+**Returns**
+
+`Thread` handle or `ThreadError::SpawnFailed` when pthread creation fails.
+
+
+---
+
+### `System::Threading::Thread::Spawn::arg` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Spawn::entryRoutine` (`parameter`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Thread` (`type`)
+
+Opaque pthread handle on Linux and macOS.
+
+---
+
+### `System::Threading::Thread::Thread::handle` (`field`)
+
+*No documentation provided.*
+
+---
+
+### `System::Threading::Thread::Yield` (`function`)
+
+OS-level yield (not `Concurrency.Yield`).
+
+---
+
 ### `System::Threading::ThreadError` (`module`)
 
 *No documentation provided.*
@@ -9804,6 +11790,12 @@ Evaluates predicate pass/fail status.
 ---
 
 ### `__wait_group_wait` (`function`)
+
+*No documentation provided.*
+
+---
+
+### `range` (`function`)
 
 *No documentation provided.*
 

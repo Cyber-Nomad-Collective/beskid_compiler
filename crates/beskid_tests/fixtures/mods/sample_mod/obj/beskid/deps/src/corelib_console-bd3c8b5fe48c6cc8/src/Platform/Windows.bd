@@ -1,13 +1,7 @@
-/// Windows console probes (`_isatty`, best-effort `GetConsoleScreenBufferInfo`).
+/// Windows console probes (`_isatty`, runtime `__tty_winsize` when available).
 [Extern(Abi:"C", Library:"ucrtbase")]
 pub contract Ucrt {
     i32 _isatty(i32 fd);
-}
-
-[Extern(Abi:"C", Library:"kernel32")]
-pub contract Kernel32 {
-    i64 GetStdHandle(i32 nStdHandle);
-    i32 GetConsoleScreenBufferInfo(i64 handle, i64 infoOut);
 }
 
 pub bool IsAtty(i64 fd) {
@@ -20,18 +14,15 @@ pub bool IsAtty(i64 fd) {
     return Ucrt._isatty(fd) == 1;
 }
 
-/// Returns size from console buffer info when host linking supplies struct out-pointers; else zeroed.
 pub Console.ConsoleSize Winsize() {
     if !IsAtty(1) {
         return Console.ConsoleSize { columns: 0, rows: 0 };
     }
-    i64 handle = Kernel32.GetStdHandle(-11);
-    if handle == 0 {
+    i64 packed = __tty_winsize(1);
+    if packed == 0 {
         return Console.ConsoleSize { columns: 0, rows: 0 };
     }
-    i32 rc = Kernel32.GetConsoleScreenBufferInfo(handle, 0);
-    if rc == 0 {
-        return Console.ConsoleSize { columns: 0, rows: 0 };
-    }
-    return Console.ConsoleSize { columns: 0, rows: 0 };
+    i32 columns = packed / 65536;
+    i32 rows = packed % 65536;
+    return Console.ConsoleSize { columns: columns, rows: rows };
 }

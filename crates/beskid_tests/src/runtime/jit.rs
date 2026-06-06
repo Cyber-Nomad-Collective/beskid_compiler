@@ -278,7 +278,7 @@ fn jit_event_invoke_executes_subscribed_handler() {
             unit Emit(string payload) { this.Created(payload); }
         }
         i64 main() {
-            User mut u = User { };
+            mut User u = User { };
             unit(string) handler = (string payload) => { __syscall_write(1, payload); };
             u.Created += handler;
             u.Emit(\"x\");
@@ -301,7 +301,7 @@ fn jit_event_unsubscribe_removes_first_match() {
             unit Emit(string payload) { this.Created(payload); }
         }
         i64 main() {
-            User mut u = User { };
+            mut User u = User { };
             unit(string) boom = (string payload) => { __panic_str(\"boom\"); };
             u.Created += boom;
             u.Created -= boom;
