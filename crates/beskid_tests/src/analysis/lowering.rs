@@ -4,7 +4,7 @@ use beskid_analysis::hir::{
 };
 use beskid_analysis::syntax::Spanned;
 
-use crate::syntax::util::parse_program_ast;
+use crate::surface::ast::parse_program_ast;
 
 fn sample_source() -> &'static str {
     "enum Option { Some(i64 value), None }\n\

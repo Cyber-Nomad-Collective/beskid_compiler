@@ -8,15 +8,7 @@ use beskid_queries::{
     configure_db_for_project, prepare_compilation_with_db, program_assembly, with_db,
 };
 
-use crate::projects::with_cwd_at_workspace_root;
-
-fn compiler_workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("compiler workspace root")
-        .to_path_buf()
-}
+use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 #[test]
 fn ansi_escape_resolves_under_corelib_test_assembly() {

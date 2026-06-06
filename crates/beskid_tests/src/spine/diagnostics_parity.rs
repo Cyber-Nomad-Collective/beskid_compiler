@@ -8,6 +8,7 @@ use beskid_analysis::services::{
 };
 use beskid_analysis::CompilationContext;
 
+use crate::projects::with_cwd;
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
 
 #[test]
@@ -42,40 +43,39 @@ i32 main() {
     let entry = src_dir.join("Main.bd");
     fs::write(&entry, source).expect("write source");
 
-    let previous_cwd = std::env::current_dir().expect("cwd");
-    std::env::set_current_dir(&root).expect("chdir to isolated project");
+    with_cwd(&root, || {
+        let mut ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
+        let plan = ctx.compile_plan.clone().expect("plan");
+        let resolved = resolved_input_from_plan(
+            entry.clone(),
+            source.to_string(),
+            plan,
+            ctx.prepared_workspace.clone(),
+            None,
+        );
 
-    let mut ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
-    let plan = ctx.compile_plan.clone().expect("plan");
-    let resolved = resolved_input_from_plan(
-        entry.clone(),
-        source.to_string(),
-        plan,
-        ctx.prepared_workspace.clone(),
-        None,
-    );
-
-    let gate = analyze_source_with_compilation_context(&entry, source, &mut ctx).expect("analyze");
-    let (_, prepare) = prepare_compilation_diagnostics(
-        &resolved,
-        PrepareOptions {
-            mode: PrepareMode::DiagnosticsOnly,
-            front_end: FrontEndOptions {
-                with_semantic_diagnostics: true,
-                ..Default::default()
+        let gate =
+            analyze_source_with_compilation_context(&entry, source, &mut ctx).expect("analyze");
+        let (_, prepare) = prepare_compilation_diagnostics(
+            &resolved,
+            PrepareOptions {
+                mode: PrepareMode::DiagnosticsOnly,
+                front_end: FrontEndOptions {
+                    with_semantic_diagnostics: true,
+                    ..Default::default()
+                },
             },
-        },
-        None,
-    )
-    .expect("prepare");
+            None,
+        )
+        .expect("prepare");
 
-    assert_eq!(
-        diagnostic_codes(&gate),
-        diagnostic_codes(&prepare),
-        "analyze gate and prepare spine must emit the same diagnostic codes"
-    );
+        assert_eq!(
+            diagnostic_codes(&gate),
+            diagnostic_codes(&prepare),
+            "analyze gate and prepare spine must emit the same diagnostic codes"
+        );
+    });
 
-    std::env::set_current_dir(previous_cwd).expect("restore cwd");
     let _ = fs::remove_dir_all(root);
 }
 

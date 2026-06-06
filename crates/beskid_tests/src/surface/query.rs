@@ -1,4 +1,4 @@
-use crate::syntax::util::parse_program_ast;
+use crate::surface::ast::parse_program_ast;
 use beskid_analysis::query::*;
 use beskid_analysis::syntax::*;
 

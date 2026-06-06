@@ -15,10 +15,10 @@ mod test_harness;
 pub mod spine;
 
 #[cfg(test)]
-pub mod parsing;
+pub mod support;
 
 #[cfg(test)]
-pub mod syntax;
+pub mod surface;
 
 #[cfg(test)]
 pub mod analysis;

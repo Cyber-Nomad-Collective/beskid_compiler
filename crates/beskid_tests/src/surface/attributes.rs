@@ -1,4 +1,4 @@
-use crate::parsing::util::{assert_parse, assert_parse_fail};
+use crate::surface::util::{assert_parse, assert_parse_fail};
 use beskid_analysis::Rule;
 
 #[test]

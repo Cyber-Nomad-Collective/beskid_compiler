@@ -7,15 +7,7 @@ use beskid_analysis::services::{
     compile_front_end_from_resolved_input, resolve_input, FrontEndOptions, ResolvedInput,
 };
 
-use crate::projects::with_cwd_at_workspace_root;
-
-fn compiler_workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("compiler workspace root")
-        .to_path_buf()
-}
+use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 #[test]
 fn channel_api_tests_front_end_typechecks() {

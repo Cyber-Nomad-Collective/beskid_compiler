@@ -3,6 +3,10 @@ name = "beskid_codegen"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+slow = []
+
 [dependencies]
 beskid_abi = { path = "../beskid_abi" }
 beskid_pipeline = { path = "../beskid_pipeline" }

@@ -3,7 +3,7 @@ use beskid_analysis::builtin_rules;
 use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::{Severity, diag};
 
-use crate::syntax::util::parse_program_ast;
+use crate::surface::ast::parse_program_ast;
 
 struct EmitOne;
 

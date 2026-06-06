@@ -40,11 +40,7 @@ mod tests {
     }
 
     fn with_cwd_at_workspace_root<R>(root: &PathBuf, f: impl FnOnce() -> R) -> R {
-        let previous = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(root).expect("chdir");
-        let out = f();
-        std::env::set_current_dir(previous).expect("restore cwd");
-        out
+        super::super::test_support::with_cwd(root.as_path(), f)
     }
 
     fn assemble_corelib_mvp(

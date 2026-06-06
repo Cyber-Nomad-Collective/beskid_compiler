@@ -37,6 +37,23 @@ fn corelib_source_candidates(manifest_dir: &Path) -> [PathBuf; 1] {
     [manifest_dir.join("../../corelib/beskid_corelib")]
 }
 
+/// Representative corelib sources for fast parse smoke (full inventory stays in `layout`).
+pub(super) fn stratified_corelib_parse_samples() -> &'static [&'static str] {
+    &[
+        "packages/foundation/src/Prelude.bd",
+        "packages/runtime/src/System/Syscall.bd",
+        "packages/console/src/Platform/Terminal.bd",
+    ]
+}
+
+/// Foundation, runtime, and console packages analyzed in project context (excludes compiler-sdk).
+pub(super) fn stratified_corelib_analyze_sources() -> impl Iterator<Item = &'static str> {
+    expected_corelib_workspace_sources()
+        .iter()
+        .copied()
+        .filter(|path| !path.contains("compiler-sdk"))
+}
+
 /// Workspace-relative `.bd` sources that must exist for the split corelib layout.
 pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
     &[

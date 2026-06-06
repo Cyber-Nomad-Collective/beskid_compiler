@@ -1,21 +1,9 @@
 use beskid_analysis::hir::{
-    AstProgram, HirExpressionNode, HirItem, HirLegalityError, HirProgram, HirStatementNode,
-    lower_program, validate_hir_program,
+    HirExpressionNode, HirItem, HirLegalityError, HirProgram, HirStatementNode, validate_hir_program,
 };
-use beskid_analysis::resolve::Resolver;
 use beskid_analysis::syntax::Spanned;
 
-use crate::syntax::util::parse_program_ast;
-
-fn lower_and_resolve(source: &str) -> (Spanned<HirProgram>, beskid_analysis::resolve::Resolution) {
-    let program = parse_program_ast(source);
-    let ast: Spanned<AstProgram> = program.into();
-    let hir: Spanned<HirProgram> = lower_program(&ast);
-    let resolution = Resolver::new()
-        .resolve_program(&hir)
-        .expect("expected resolution to succeed");
-    (hir, resolution)
-}
+use crate::support::pipeline::lower_resolve as lower_and_resolve;
 
 #[test]
 fn legality_passes_for_valid_program() {

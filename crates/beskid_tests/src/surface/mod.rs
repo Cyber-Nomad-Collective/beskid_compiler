@@ -1,4 +1,6 @@
-#[cfg(test)]
+//! Surface syntax: pest rules plus AST shape (merged parsing + syntax layers).
+
+pub mod ast;
 pub mod util;
 
 #[cfg(test)]
@@ -14,7 +16,7 @@ mod expression_rules;
 #[cfg(test)]
 mod expressions;
 #[cfg(test)]
-mod functions;
+mod items;
 #[cfg(test)]
 mod item_rules;
 #[cfg(test)]
@@ -29,6 +31,8 @@ mod methods;
 mod modules;
 #[cfg(test)]
 mod patterns;
+#[cfg(test)]
+mod query;
 #[cfg(test)]
 mod statements;
 #[cfg(test)]

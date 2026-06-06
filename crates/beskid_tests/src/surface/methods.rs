@@ -1,4 +1,4 @@
-use crate::parsing::util::{assert_parse, assert_parse_fail};
+use crate::surface::util::{assert_parse, assert_parse_fail};
 use beskid_analysis::Rule;
 use beskid_analysis::parsing::parsable::Parsable;
 
@@ -23,7 +23,7 @@ fn parses_impl_method_member_signature_shape() {
 
 #[test]
 fn rejects_explicit_self_parameter_in_impl_method() {
-    let pair = crate::parsing::util::parse_pair(
+    let pair = crate::surface::util::parse_pair(
         Rule::Program,
         "impl Point { i32 len(Point self) { return 0; } }",
     );

@@ -4,12 +4,8 @@ use beskid_analysis::syntax::{
     Expression, Literal, Node, Path, PrimitiveType, Program, Spanned, Statement, Type,
 };
 
-use crate::parsing::util::parse_pair;
-
-pub fn parse_program_ast(input: &str) -> Spanned<Program> {
-    let pair = parse_pair(Rule::Program, input);
-    Program::parse(pair).expect("expected program AST")
-}
+use crate::surface::util::parse_pair;
+pub use crate::support::pipeline::parse_program as parse_program_ast;
 
 pub fn parse_node_ast(input: &str) -> Spanned<Node> {
     let pair = parse_pair(Rule::InnerItem, input);

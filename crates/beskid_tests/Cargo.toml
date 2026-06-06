@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 default = []
+slow = []
 pckg = ["dep:beskid_pckg"]
 
 [dependencies]

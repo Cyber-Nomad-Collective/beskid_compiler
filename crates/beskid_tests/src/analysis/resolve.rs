@@ -1,18 +1,6 @@
-use beskid_analysis::hir::{AstProgram, HirProgram, lower_program, normalize_program};
-use beskid_analysis::resolve::{ResolveError, ResolveWarning, Resolver};
-use beskid_analysis::syntax::Spanned;
+use beskid_analysis::resolve::{ResolveError, ResolveWarning};
 
-use crate::syntax::util::parse_program_ast;
-
-fn resolve_program(
-    source: &str,
-) -> Result<beskid_analysis::resolve::Resolution, Vec<ResolveError>> {
-    let program = parse_program_ast(source);
-    let ast: Spanned<AstProgram> = program.into();
-    let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    normalize_program(&mut hir).expect("normalization failed");
-    Resolver::new().resolve_program(&hir)
-}
+use crate::support::pipeline::resolve as resolve_program;
 
 #[test]
 fn duplicate_top_level_item_is_error() {

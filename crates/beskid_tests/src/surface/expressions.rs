@@ -1,4 +1,4 @@
-use crate::parsing::util::{assert_parse, assert_parse_fail, parse_expression_ast};
+use crate::surface::util::{assert_parse, assert_parse_fail, parse_expression_ast};
 use beskid_analysis::Rule;
 use beskid_analysis::syntax::{AssignOp, BinaryOp, Expression, Literal, Spanned};
 

@@ -1,10 +1,11 @@
+use beskid_analysis::Rule;
 use beskid_analysis::syntax::{ContractNode, EnumVariant, FieldKind, Node, Type, Visibility};
 
-use crate::parsing::util::assert_parse_fail;
-use crate::syntax::util::{
+use crate::surface::ast::{
     assert_expression_path_segments, assert_path_segments, assert_type_complex_path,
     assert_type_primitive, parse_node_ast, parse_program_ast,
 };
+use crate::surface::util::{assert_parse, assert_parse_fail};
 
 fn assert_string_literal_expression(
     expr: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
@@ -24,8 +25,10 @@ fn assert_string_literal_expression(
 }
 
 #[test]
-fn parses_function_definition_ast() {
-    let program = parse_program_ast("i32 add(i32 a, i32 b) { return a + b; }");
+fn function_definition_parses_and_builds_ast() {
+    let input = "i32 add(i32 a, i32 b) { return a + b; }";
+    assert_parse(Rule::FunctionDefinition, input);
+    let program = parse_program_ast(input);
     assert_eq!(program.node.items.len(), 1);
     let node = &program.node.items[0];
 
@@ -371,4 +374,42 @@ fn assert_enum_variant(
     if fields_len > 0 {
         assert_type_complex_path(&variant.node.fields[0].node.ty, &["T"]);
     }
+}
+
+#[test]
+fn generic_function_definition_parses() {
+    assert_parse(Rule::FunctionDefinition, "T id<T>(T x) { return x; }");
+}
+
+#[test]
+fn rejects_empty_generic_parameters() {
+    assert_parse_fail(Rule::GenericParameters, "<>");
+}
+
+#[test]
+fn rejects_function_without_body() {
+    assert_parse_fail(Rule::FunctionDefinition, "i32 bad();");
+}
+
+#[test]
+fn rejects_parameter_without_type() {
+    assert_parse_fail(Rule::FunctionDefinition, "i32 bad(x) { return x; }");
+}
+
+#[test]
+fn rejects_receiver_type_without_name() {
+    assert_parse_fail(Rule::ReceiverType, "<T>");
+}
+
+#[test]
+fn rejects_legacy_parameter_syntax() {
+    assert_parse_fail(Rule::Parameter, "value: i32");
+}
+
+#[test]
+fn rejects_legacy_function_parameter_syntax() {
+    assert_parse_fail(
+        Rule::FunctionDefinition,
+        "i32 add(a: i32, b: i32) { return a + b; }",
+    );
 }

@@ -7,6 +7,8 @@ mod diagnostics_emit;
 mod document;
 #[cfg(test)]
 mod document_tests;
+#[cfg(test)]
+mod test_support;
 mod front_end;
 mod input;
 mod prepare;

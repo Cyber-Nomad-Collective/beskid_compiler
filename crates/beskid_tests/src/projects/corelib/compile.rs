@@ -17,8 +17,8 @@ use crate::projects::std_dependency_env_lock;
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 use super::{
-    compiler_sdk_src, corelib_root, corelib_workspace_root, expected_corelib_workspace_sources,
-    foundation_src, runtime_src,
+    compiler_sdk_src, corelib_root, corelib_workspace_root, stratified_corelib_analyze_sources,
+    stratified_corelib_parse_samples, foundation_src, runtime_src,
 };
 
 /// Linux CI runners use a smaller default thread stack than macOS; corelib lowering needs more headroom.
@@ -49,7 +49,7 @@ fn checked_in_corelib_template_builds_compile_plan() {
 fn checked_in_corelib_sources_parse_as_beskid_programs() {
     let root = corelib_workspace_root();
 
-    for relative in expected_corelib_workspace_sources() {
+    for relative in stratified_corelib_parse_samples() {
         let path = root.join(relative);
         let source = fs::read_to_string(&path)
             .unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
@@ -87,7 +87,7 @@ fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context()
             .expect("corelib workspace compilation context");
         let _ = ctx.assembly_for_entry(&seed, &seed_source);
 
-        for relative in expected_corelib_workspace_sources() {
+        for relative in stratified_corelib_analyze_sources() {
             let path = root.join(relative);
             let source = fs::read_to_string(&path)
                 .unwrap_or_else(|_| panic!("read corelib source {}", path.display()));

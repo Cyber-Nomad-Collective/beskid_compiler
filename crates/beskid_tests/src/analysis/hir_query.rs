@@ -5,7 +5,7 @@ use beskid_analysis::hir::{
 use beskid_analysis::query::{HirNodeKind, HirQuery};
 use beskid_analysis::syntax::Spanned;
 
-use crate::syntax::util::parse_program_ast;
+use crate::surface::ast::parse_program_ast;
 
 fn parse_hir(source: &str) -> Spanned<HirProgram> {
     let ast_program = parse_program_ast(source);

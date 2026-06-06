@@ -1,37 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::codegen::util::lower_resolve_type;
+use crate::support::runtime::{
+    compile_artifact, compile_jit, jit_compile_only, jit_run_main_i64, jit_run_main_i32,
+};
 use crate::test_harness::temp_case_dir;
 use beskid_aot::{AotBuildRequest, BuildOutputKind, build};
-use beskid_codegen::lowering::lower_program;
-use beskid_engine::Engine;
-
-fn compile_artifact(source: &str) -> beskid_codegen::CodegenArtifact {
-    let (hir, resolution, typed) = lower_resolve_type(source);
-    lower_program(&hir, &resolution, &typed).expect("expected codegen lowering to succeed")
-}
-
-fn jit_run_main_i64(source: &str) -> i64 {
-    let artifact = compile_artifact(source);
-    let mut engine = Engine::new();
-    engine
-        .compile_artifact(&artifact)
-        .expect("expected JIT compile to succeed");
-
-    let ptr = unsafe { engine.entrypoint_ptr("main") }.expect("expected main entrypoint pointer");
-    assert!(!ptr.is_null(), "expected non-null entrypoint pointer");
-    let main_fn: extern "C" fn() -> i64 = unsafe { std::mem::transmute(ptr) };
-    engine.with_runtime(|_, _| main_fn())
-}
-
-fn jit_compile_only(source: &str) {
-    let artifact = compile_artifact(source);
-    let mut engine = Engine::new();
-    engine
-        .compile_artifact(&artifact)
-        .expect("expected JIT compile to succeed");
-}
 
 fn assert_try_parity_ok_case(name: &str, source: &str, expected: i64) {
     let jit_value = jit_run_main_i64(source);
@@ -93,19 +67,6 @@ const TRY_PARITY_OK_CASES: &[TryParityOkCase] = &[
         expected: 7,
     },
 ];
-
-fn jit_run_main_i32(source: &str) -> i32 {
-    let artifact = compile_artifact(source);
-    let mut engine = Engine::new();
-    engine
-        .compile_artifact(&artifact)
-        .expect("expected JIT compile to succeed");
-
-    let ptr = unsafe { engine.entrypoint_ptr("main") }.expect("expected main entrypoint pointer");
-    assert!(!ptr.is_null(), "expected non-null entrypoint pointer");
-    let main_fn: extern "C" fn() -> i32 = unsafe { std::mem::transmute(ptr) };
-    engine.with_runtime(|_, _| main_fn())
-}
 
 fn build_aot_object(source: &str, output: PathBuf) -> PathBuf {
     let artifact = compile_artifact(source);
@@ -193,11 +154,7 @@ fn parity_alloc_path_is_consistent() {
 fn parity_panic_builtin_compiles_for_both_backends() {
     let source = "unit main() { if false { __panic_str(\"boom\"); } }";
     let artifact = compile_artifact(source);
-
-    let mut engine = Engine::new();
-    engine
-        .compile_artifact(&artifact)
-        .expect("expected JIT compile to succeed for panic builtin path");
+    let _engine = compile_jit(source);
 
     let dir = temp_case_dir("panic_builtin");
     let result = build(AotBuildRequest::with_defaults(
@@ -239,68 +196,64 @@ fn parity_contract_dispatch_outcome_is_consistent() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-#[test]
-fn parity_event_lifecycle_is_consistent_for_explicit_capacity_form() {
-    let source = "
-        type User { event{4} Created(string payload) }
-        impl User {
-            unit Emit(string payload) { this.Created(payload); }
-        }
-        i64 main() {
-            mut User u = User { };
-            unit(string) handler = (string payload) => { __syscall_write(1, payload); };
-            u.Created += handler;
-            u.Emit(\"x\");
-            u.Created -= handler;
-            return 42;
-        }
-    ";
-    let jit_value = jit_run_main_i64(source);
-    assert_eq!(
-        jit_value, 42,
-        "expected JIT explicit-capacity event lifecycle outcome"
-    );
-
-    let dir = temp_case_dir("event_explicit_capacity");
-    let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(
-        object_contains_symbol(&object_path, "event_subscribe")
-            && object_contains_symbol(&object_path, "event_unsubscribe_first"),
-        "expected AOT object to reference event lifecycle helpers"
-    );
-    let _ = std::fs::remove_dir_all(dir);
+struct EventParityCase {
+    name: &'static str,
+    source: &'static str,
 }
 
-#[test]
-fn parity_event_lifecycle_is_consistent_for_default_capacity_form() {
-    let source = "
-        type User { event Created(string payload) }
-        impl User {
-            unit Emit(string payload) { this.Created(payload); }
-        }
-        i64 main() {
-            mut User u = User { };
-            unit(string) handler = (string payload) => { __syscall_write(1, payload); };
-            u.Created += handler;
-            u.Emit(\"x\");
-            u.Created -= handler;
-            return 42;
-        }
-    ";
-    let jit_value = jit_run_main_i64(source);
-    assert_eq!(
-        jit_value, 42,
-        "expected JIT default-capacity event lifecycle outcome"
-    );
+const EVENT_PARITY_CASES: &[EventParityCase] = &[
+    EventParityCase {
+        name: "event_explicit_capacity",
+        source: "
+            type User { event{4} Created(string payload) }
+            impl User { unit Emit(string payload) { this.Created(payload); } }
+            i64 main() {
+                mut User u = User { };
+                unit(string) handler = (string payload) => { __syscall_write(1, payload); };
+                u.Created += handler;
+                u.Emit(\"x\");
+                u.Created -= handler;
+                return 42;
+            }
+        ",
+    },
+    EventParityCase {
+        name: "event_default_capacity",
+        source: "
+            type User { event Created(string payload) }
+            impl User { unit Emit(string payload) { this.Created(payload); } }
+            i64 main() {
+                mut User u = User { };
+                unit(string) handler = (string payload) => { __syscall_write(1, payload); };
+                u.Created += handler;
+                u.Emit(\"x\");
+                u.Created -= handler;
+                return 42;
+            }
+        ",
+    },
+];
 
-    let dir = temp_case_dir("event_default_capacity");
-    let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(
-        object_contains_symbol(&object_path, "event_subscribe")
-            && object_contains_symbol(&object_path, "event_unsubscribe_first"),
-        "expected AOT object to reference event lifecycle helpers"
-    );
-    let _ = std::fs::remove_dir_all(dir);
+#[test]
+fn parity_event_lifecycle_is_consistent() {
+    for case in EVENT_PARITY_CASES {
+        let jit_value = jit_run_main_i64(case.source);
+        assert_eq!(
+            jit_value, 42,
+            "expected JIT event lifecycle outcome for {}",
+            case.name
+        );
+
+        let dir = temp_case_dir(case.name);
+        let object_path = build_aot_object(case.source, dir.join("parity.o"));
+        assert!(
+            object_contains_symbol(&object_path, "event_subscribe")
+                && object_contains_symbol(&object_path, "event_unsubscribe_first"),
+            "expected AOT object to reference event lifecycle helpers for {}",
+            case.name
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
 
 #[test]

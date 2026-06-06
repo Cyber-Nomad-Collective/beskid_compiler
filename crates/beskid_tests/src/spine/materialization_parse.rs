@@ -6,15 +6,7 @@ use beskid_analysis::projects::AssemblyDiscovery;
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_analysis::services::resolve_input;
 
-use crate::projects::with_cwd_at_workspace_root;
-
-fn compiler_workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("compiler workspace root")
-        .to_path_buf()
-}
+use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 #[test]
 fn concurrency_source_and_materialized_parse_equally() {

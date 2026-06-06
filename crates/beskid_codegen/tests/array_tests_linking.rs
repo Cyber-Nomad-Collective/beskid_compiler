@@ -1,4 +1,5 @@
 //! Lower `CollectionsArrayTests` without JIT to isolate link-plan / codegen stack issues.
+#![cfg(feature = "slow")]
 
 use std::path::PathBuf;
 

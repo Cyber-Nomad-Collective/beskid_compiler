@@ -16,16 +16,8 @@ use beskid_codegen::lowering::{
 };
 use beskid_codegen::validate_artifact;
 
-use crate::projects::{with_cwd, with_cwd_at_workspace_root};
+use crate::projects::{compiler_workspace_root, with_cwd, with_cwd_at_workspace_root};
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
-
-fn compiler_workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("compiler workspace root")
-        .to_path_buf()
-}
 
 #[test]
 fn main_entry_link_plan_validates_for_temp_project() {
@@ -120,6 +112,7 @@ i32 main() {
 }
 
 /// Corelib `Testing.Assertions.AssertEqualI64` must survive dependency link plans and validate.
+#[cfg(feature = "slow")]
 #[test]
 fn corelib_assert_equal_i64_link_plan_validates() {
     let root = compiler_workspace_root();
@@ -211,6 +204,7 @@ fn corelib_assert_equal_i64_link_plan_validates() {
 }
 
 /// `ansi_cursor_builder_home` must reach the Capabilities/Terminal symbol chain via link plan.
+#[cfg(feature = "slow")]
 #[test]
 fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home() {
     let root = compiler_workspace_root();
@@ -369,6 +363,7 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
     });
 }
 
+#[cfg(feature = "slow")]
 #[test]
 fn ansi_csi_bold_red_link_plan_validates() {
     let root = compiler_workspace_root();

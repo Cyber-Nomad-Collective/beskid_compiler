@@ -4,7 +4,7 @@
 use beskid_analysis::analysis::{AnalysisOptions, AnalysisResult, run_rules};
 use beskid_analysis::builtin_rules;
 
-use crate::syntax::util::parse_program_ast;
+use crate::surface::ast::parse_program_ast;
 
 fn run_on(source: &str) -> AnalysisResult {
     let program = parse_program_ast(source);
