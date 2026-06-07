@@ -36,7 +36,7 @@ i32 helper() {
     return 1;
 }
 
-i32 main() {
+i32 Main() {
     return helper();
 }
 "#;

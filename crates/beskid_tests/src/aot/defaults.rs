@@ -24,7 +24,7 @@ fn app_and_test_targets_default_to_executable_output() {
 fn default_entrypoint_is_main_when_not_specified() {
     assert_eq!(
         resolve_entrypoint(None).expect("default entrypoint"),
-        "main"
+        "Main"
     );
 }
 

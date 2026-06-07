@@ -6,7 +6,7 @@ fn extern_real_call_write() -> anyhow::Result<()> {
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C { i64 write(i32 fd, i64 buf, i64 len); }
 
-pub i64 main() {
+pub i64 Main() {
     return C.write(1, __test_bytes_ptr(), __test_bytes_len());
 }
 "#;

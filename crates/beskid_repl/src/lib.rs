@@ -6,7 +6,7 @@
 //! - **Expressions** (e.g. `1 + 1`, `"hello"`) — wrapped as `<ret> main() { return …; }` with
 //!   return type chosen by trying common scalar types until analysis succeeds.
 //! - **Statements** (e.g. `let x = 1;`, `for i in range(0, 3) { … }`) — wrapped as
-//!   `unit main() { … }`.
+//!   `unit Main() { … }`.
 //!
 //! Commands: `:quit` / `:q`, `:reset`, optional `:type <snippet>`.
 

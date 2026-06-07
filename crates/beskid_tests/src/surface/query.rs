@@ -5,7 +5,7 @@ use beskid_analysis::syntax::*;
 #[test]
 fn test_query_descendants_count() {
     let input = "
-        unit main() {
+        unit Main() {
             let x = 1;
             let y = 2;
             return x + y;
@@ -26,7 +26,7 @@ fn test_query_descendants_count() {
 #[test]
 fn test_query_of_type() {
     let input = "
-        unit main() {
+        unit Main() {
             let x = 1;
             let y = 2;
         }
@@ -37,14 +37,14 @@ fn test_query_of_type() {
 
     let functions: Vec<&FunctionDefinition> = query.of::<FunctionDefinition>().collect();
     assert_eq!(functions.len(), 2);
-    assert_eq!(functions[0].name.node.name, "main");
+    assert_eq!(functions[0].name.node.name, "Main");
     assert_eq!(functions[1].name.node.name, "other");
 }
 
 #[test]
 fn test_query_filter_typed() {
     let input = "
-        unit main() {
+        unit Main() {
             let x = 1;
             mut i32 y = 2;
         }
@@ -61,7 +61,7 @@ fn test_query_filter_typed() {
 #[test]
 fn test_query_find_first() {
     let input = "
-        unit main() {
+        unit Main() {
             let x = 42;
         }
     ";
@@ -71,7 +71,7 @@ fn test_query_find_first() {
     let first_ident = query
         .find_first::<Identifier>()
         .expect("Expected at least one identifier");
-    assert_eq!(first_ident.name, "main");
+    assert_eq!(first_ident.name, "Main");
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn test_query_binary_expressions() {
 
 #[test]
 fn test_node_kind() {
-    let input = "unit main() {}";
+    let input = "unit Main() {}";
     let program = parse_program_ast(input);
     let query = Query::from(&program.node);
 
@@ -108,7 +108,7 @@ fn test_complex_traversal() {
         contract MyContract {
             i32 method(i32 x);
         }
-        unit main() {
+        unit Main() {
             i32 x = 1;
         }
     ";
@@ -126,7 +126,7 @@ fn test_complex_traversal() {
 #[test]
 fn test_ast_walker() {
     let input = "
-        unit main() {
+        unit Main() {
             let x = 1;
             if x > 0 {
                 return 42;
@@ -157,6 +157,6 @@ fn test_ast_walker() {
     walker.walk(NodeRef::from(&program.node));
 
     let names = names.borrow();
-    assert!(names.contains(&"main".to_string()));
+    assert!(names.contains(&"Main".to_string()));
     assert!(names.contains(&"x".to_string()));
 }

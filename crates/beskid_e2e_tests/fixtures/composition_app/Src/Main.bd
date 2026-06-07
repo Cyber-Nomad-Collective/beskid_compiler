@@ -8,7 +8,7 @@ type Logger {
     i32 value
 }
 
-i32 main() {
+i32 Main() {
     launch AppHost();
     return 0;
 }

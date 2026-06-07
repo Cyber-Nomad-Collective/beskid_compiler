@@ -26,7 +26,7 @@ pub use linking::{
 pub use lowering::{
     CodegenArtifact, CodegenContext, CodegenResult, DYNAMIC_TYPE_NAME, ExportEntry, ExternImport,
     Lowerable, LoweredFunction, dynamic_clif_type, is_dynamic_type_id, lower_node, lower_program,
-    map_type_id_to_clif_with_dynamic, mapping_pair_eligible, pointer_type,
+    map_type_id_to_clif_with_dynamic, mapping_pair_eligible, object_link_symbol, pointer_type,
     require_mapping_eligible, shape_id_for_item,
 };
 pub use module_emission::{DescriptorHandles, emit_string_literals, emit_type_descriptors};

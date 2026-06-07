@@ -102,10 +102,27 @@ pub fn export_linker_name(def: &Spanned<HirFunctionDefinition>) -> String {
         .unwrap_or_else(|| def.node.name.node.name.clone())
 }
 
+/// Native object-file symbol for AOT linking (`Main` maps to C `main` for executable entry).
+pub fn object_link_symbol(beskid_name: &str, exports: &[ExportEntry]) -> String {
+    if let Some(entry) = exports.iter().find(|e| e.beskid_name == beskid_name) {
+        return entry.exported_symbol.clone();
+    }
+    if beskid_name == "Main" {
+        return "main".to_string();
+    }
+    beskid_name.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use beskid_analysis::hir::HirExportInterface;
+
+    #[test]
+    fn object_link_symbol_maps_main_entry_to_native_main() {
+        assert_eq!(object_link_symbol("Main", &[]), "main");
+        assert_eq!(object_link_symbol("Run", &[]), "Run");
+    }
 
     #[test]
     fn read_export_defaults_symbol_to_beskid_name() {

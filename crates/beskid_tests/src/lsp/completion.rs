@@ -75,7 +75,7 @@ async fn ignores_stale_document_change_version() {
         server,
         doc_uri.clone(),
         0,
-        "i32 main() { return 0; }".to_string(),
+        "i32 Main() { return 0; }".to_string(),
     )
     .await;
 

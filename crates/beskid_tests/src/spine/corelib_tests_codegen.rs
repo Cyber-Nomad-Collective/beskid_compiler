@@ -75,3 +75,27 @@ corelib_lower_test!(
     "console/ControlsLayoutTests.bd",
     "vertical_stack_render_joins_lines"
 );
+corelib_lower_test!(
+    hub_register_accepts_channel_lowers,
+    "concurrency/HubRegisterTests.bd",
+    "hub_register_accepts_channel"
+);
+corelib_lower_test!(
+    slice_returns_substring_lowers,
+    "console/FormatScanTests.bd",
+    "slice_returns_substring"
+);
+
+#[test]
+fn dump_repeat_clif() {
+    use crate::projects::fixture_harness::{corelib_tests_project_root, lower_corelib_tests_entrypoint, with_project_test_env};
+    with_project_test_env(&corelib_tests_project_root(), || {
+        let artifact = lower_corelib_tests_entrypoint("console/ControlsFrameTests.bd", "repeat_builds_string");
+        for f in &artifact.functions {
+            if f.name.contains("Repeat") {
+                eprintln!("=== {} ===
+{}", f.name, f.function);
+            }
+        }
+    });
+}

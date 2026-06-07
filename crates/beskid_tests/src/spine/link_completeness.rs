@@ -44,7 +44,7 @@ i32 helper() {
     return 7;
 }
 
-i32 main() {
+i32 Main() {
     return helper();
 }
 "#;
@@ -84,7 +84,7 @@ i32 main() {
         let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
         let link_plan = LinkPlan::build_for_entrypoint(
             &front.hir,
-            "main",
+            "Main",
             Some(&resolved.source_path),
             &front.resolution,
             &front.typed,
@@ -100,7 +100,7 @@ i32 main() {
             &front.resolution,
             &front.typed,
             Some(&assembly),
-            Some("main"),
+            Some("Main"),
         )
         .expect("lower");
 

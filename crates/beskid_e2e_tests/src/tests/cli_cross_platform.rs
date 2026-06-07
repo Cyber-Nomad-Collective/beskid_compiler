@@ -39,7 +39,7 @@ fn tree_succeeds_on_valid_source() {
     assert_success(&output, "tree smoke file");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("Program") || stdout.contains("main"),
+        stdout.contains("Program") || stdout.contains("Main"),
         "tree output should mention program structure; got:\n{stdout}"
     );
 }
@@ -54,8 +54,8 @@ fn parse_succeeds_on_valid_source() {
     assert_success(&output, "parse smoke file");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("main") || stdout.contains("Function"),
-        "parse debug output should mention main or Function; got:\n{stdout}"
+        stdout.contains("Main") || stdout.contains("Function"),
+        "parse debug output should mention Main or Function; got:\n{stdout}"
     );
 }
 

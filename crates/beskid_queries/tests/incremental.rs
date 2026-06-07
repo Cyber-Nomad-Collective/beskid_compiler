@@ -12,7 +12,7 @@ use beskid_queries::{
 };
 
 fn fixture_source() -> String {
-    "use std.io;\ni32 main() { return 0; }".to_string()
+    "use std.io;\ni32 Main() { return 0; }".to_string()
 }
 
 fn fixture_path() -> PathBuf {
@@ -57,8 +57,8 @@ fn semantic_snapshot_query_hits_registry() {
 #[test]
 fn unit_fingerprint_changes_when_source_changes() {
     let path = fixture_path();
-    let fp1 = unit_content_fingerprint(&path, "i32 main() { return 0; }");
-    let fp2 = unit_content_fingerprint(&path, "i32 main() { return 1; }");
+    let fp1 = unit_content_fingerprint(&path, "i32 Main() { return 0; }");
+    let fp2 = unit_content_fingerprint(&path, "i32 Main() { return 1; }");
     assert_ne!(fp1, fp2);
 }
 
@@ -108,7 +108,7 @@ fn file_edit_invalidates_unit_cache() {
 
     let _ = unit_hir(&db, session, path.clone());
     reset();
-    db.set_file_text(path.clone(), "i32 main() { return 99; }".to_string());
+    db.set_file_text(path.clone(), "i32 Main() { return 99; }".to_string());
     let _ = unit_hir(&db, session, path.clone());
     let (_, misses, _) = snapshot();
     assert!(misses >= 1);

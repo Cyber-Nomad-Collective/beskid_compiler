@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use beskid_codegen::cranelift_host::{
-    declare_builtin_imports, declare_user_functions, declare_validated_extern_imports,
+    declare_builtin_imports, declare_user_functions_with_link_symbols,
+    declare_validated_extern_imports,
     remap_testcase_externals,
 };
 use beskid_codegen::{
@@ -98,8 +99,14 @@ impl BeskidObjectModule {
             self.builtins_declared = true;
         }
 
-        let declared =
-            declare_user_functions(module, artifact, Linkage::Export, &mut self.func_ids)?;
+        let exports = artifact.exports.clone();
+        let declared = declare_user_functions_with_link_symbols(
+            module,
+            artifact,
+            Linkage::Export,
+            &mut self.func_ids,
+            |name| beskid_codegen::lowering::expressions::export::object_link_symbol(name, &exports),
+        )?;
         // User functions use Export linkage so AOT shared libraries surface symbols to the host
         // linker; `[Export(Symbol:"...")]` renames the emitted symbol via codegen export metadata.
         self.declared_symbols.extend(declared);

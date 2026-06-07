@@ -104,7 +104,7 @@ i32 total_chain() {
     return call100();
 }
 
-i32 main() {
+i32 Main() {
     i32 total = total_chain();
     if total < 1 {
         return 31;

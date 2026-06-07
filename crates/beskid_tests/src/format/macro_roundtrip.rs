@@ -63,7 +63,7 @@ macro twice (expression value, block body) {
     $body;
 }
 
-unit main() {
+unit Main() {
     twice!(1) {
         return;
     };
@@ -101,7 +101,7 @@ unit main() {
 
 #[test]
 fn macro_definition_roundtrip_preserves_macro_name() {
-    let source = "macro id (expression x) { $x; }\nunit main() { return; }\n";
+    let source = "macro id (expression x) { $x; }\nunit Main() { return; }\n";
     let before = parse_program(source).expect("parse");
     let def_before = first_macro_definition(&before.node);
     let after = parse_format_reparse(source);
@@ -116,7 +116,7 @@ fn macro_definition_roundtrip_preserves_macro_name() {
 fn macro_invocation_roundtrip_preserves_arguments_and_block() {
     let source = r#"
 macro m (expression a, block b) { $a; $b; }
-unit main() {
+unit Main() {
     m!(1, 2) {
         return;
     };
@@ -144,7 +144,7 @@ unit main() {
 
 #[test]
 fn macro_metavariable_roundtrip_preserves_parameter_names() {
-    let source = "macro m (expression x) { $x; }\nunit main() { return; }\n";
+    let source = "macro m (expression x) { $x; }\nunit Main() { return; }\n";
     let program = parse_program(source).expect("parse");
     let formatted = format_program(&program).expect("format");
     assert!(

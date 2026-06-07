@@ -4,7 +4,7 @@ use beskid_codegen::lowering::lower_program;
 
 #[test]
 fn codegen_lowers_basic_function_to_clif() {
-    let (hir, resolution, typed) = lower_resolve_type("i64 main() { i64 x = 1; return x; }");
+    let (hir, resolution, typed) = lower_resolve_type("i64 Main() { i64 x = 1; return x; }");
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected codegen lowering to succeed");
     assert_eq!(artifact.functions.len(), 1);
@@ -16,7 +16,7 @@ fn codegen_lowers_basic_function_to_clif() {
 #[test]
 fn codegen_lowers_spawn_expression() {
     let (hir, resolution, typed) =
-        lower_resolve_type("i64 child() { return 42; } i64 main() { spawn child; return 0; }");
+        lower_resolve_type("i64 child() { return 42; } i64 Main() { spawn child; return 0; }");
     let artifact = lower_program(&hir, &resolution, &typed)
         .expect("expected spawn expression lowering to succeed");
     assert_eq!(artifact.functions.len(), 3, "expected child, main, and spawn entry trampoline");
@@ -24,14 +24,14 @@ fn codegen_lowers_spawn_expression() {
 
 #[test]
 fn codegen_lowers_desugared_try_match() {
-    let source = "enum Result { Ok(i64 value), Error(string message) } i64 main() { Result r = Result::Ok(1); i64 value = r?; return value; }";
+    let source = "enum Result { Ok(i64 value), Error(string message) } i64 Main() { Result r = Result::Ok(1); i64 value = r?; return value; }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact = lower_program(&hir, &resolution, &typed)
         .expect("expected desugared try/match lowering to succeed");
     let main_fn = artifact
         .functions
         .iter()
-        .find(|f| f.name == "main")
+        .find(|f| f.name == "Main")
         .expect("expected main function");
     let clif = main_fn.function.to_string();
     assert!(
@@ -42,7 +42,7 @@ fn codegen_lowers_desugared_try_match() {
 
 #[test]
 fn codegen_lowers_string_equality_via_str_eq() {
-    let (hir, resolution, typed) = lower_resolve_type("bool main() { return \"a\" == \"a\"; }");
+    let (hir, resolution, typed) = lower_resolve_type("bool Main() { return \"a\" == \"a\"; }");
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected string equality lowering");
     let clif = artifact.functions[0].function.to_string();
@@ -54,7 +54,7 @@ fn codegen_lowers_string_equality_via_str_eq() {
 
 #[test]
 fn codegen_lowers_numeric_cast_intent_via_sextend_or_ireduce() {
-    let (hir, resolution, typed) = lower_resolve_type("i32 main() { i64 x = 1; return x; }");
+    let (hir, resolution, typed) = lower_resolve_type("i32 Main() { i64 x = 1; return x; }");
     let artifact = lower_program(&hir, &resolution, &typed)
         .expect("expected numeric cast intent to be supported without error");
     let clif = artifact.functions[0].function.to_string();
@@ -67,7 +67,7 @@ fn codegen_lowers_numeric_cast_intent_via_sextend_or_ireduce() {
 #[test]
 fn codegen_lowers_range_for_loop_with_assignment() {
     let source =
-        "i32 main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
+        "i32 Main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected for loop lowering to succeed");
@@ -92,7 +92,7 @@ fn codegen_lowers_generic_iterable_for_loop() {
                 return Option::None();
             }
         }
-        i64 main() {
+        i64 Main() {
             CounterIter iter = CounterIter { sentinel: 0 };
             for i in iter {
                 continue;
@@ -106,7 +106,7 @@ fn codegen_lowers_generic_iterable_for_loop() {
     let main = artifact
         .functions
         .iter()
-        .find(|f| f.name == "main")
+        .find(|f| f.name == "Main")
         .expect("expected main function");
     let clif = main.function.to_string();
     assert!(
@@ -123,7 +123,7 @@ fn codegen_lowers_generic_iterable_for_loop() {
 fn codegen_lowers_nullary_enum_constructor_without_parens() {
     let source = "
         enum Option { Some(i64 value), None }
-        i64 main() {
+        i64 Main() {
             Option value = Option::None;
             return 0;
         }
@@ -134,7 +134,7 @@ fn codegen_lowers_nullary_enum_constructor_without_parens() {
     let main = artifact
         .functions
         .iter()
-        .find(|f| f.name == "main")
+        .find(|f| f.name == "Main")
         .expect("expected main function");
     let clif = main.function.to_string();
     assert!(
@@ -145,7 +145,7 @@ fn codegen_lowers_nullary_enum_constructor_without_parens() {
 
 #[test]
 fn codegen_lowers_while_with_break_and_continue() {
-    let source = "i32 main() { mut i32 i = 0; mut i32 sum = 0; while i < 5 { i = i + 1; if i == 2 { continue; } if i == 4 { break; } sum = sum + i; } return sum; }";
+    let source = "i32 Main() { mut i32 i = 0; mut i32 sum = 0; while i < 5 { i = i + 1; if i == 2 { continue; } if i == 4 { break; } sum = sum + i; } return sum; }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact = lower_program(&hir, &resolution, &typed)
         .expect("expected while/break/continue lowering to succeed");
@@ -170,7 +170,7 @@ fn codegen_lowers_functions_inside_inline_modules() {
 
 #[test]
 fn codegen_lowers_method_and_member_call() {
-    let source = "type Counter { i64 value } impl Counter { i64 Get() { return this.value; } } i64 main() { Counter c = Counter { value: 7 }; return c.Get(); }";
+    let source = "type Counter { i64 value } impl Counter { i64 Get() { return this.value; } } i64 Main() { Counter c = Counter { value: 7 }; return c.Get(); }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected method lowering to succeed");
@@ -183,7 +183,7 @@ fn codegen_lowers_method_and_member_call() {
         "expected lowered method symbol"
     );
     assert!(
-        artifact.functions.iter().any(|f| f.name == "main"),
+        artifact.functions.iter().any(|f| f.name == "Main"),
         "expected main function to be lowered"
     );
 }
@@ -195,7 +195,7 @@ fn codegen_lowers_contract_dispatch_via_indirect_call() {
         type Worker : Service { i64 base }
         impl Worker { i64 run(i64 x) { return this.base + x; } }
         i64 apply(Service s) { return s.run(1); }
-        i64 main() {
+        i64 Main() {
             Worker w = Worker { base: 41 };
             return apply(w);
         }
@@ -223,7 +223,7 @@ fn codegen_lowers_event_subscribe_unsubscribe_and_invoke() {
         impl User {
             unit Emit(string payload) { this.Created(payload); }
         }
-        unit main() {
+        unit Main() {
             mut User u = User { };
             unit(string) handler = (string payload) => { return; };
             u.Created += handler;
@@ -239,7 +239,7 @@ fn codegen_lowers_event_subscribe_unsubscribe_and_invoke() {
     let main_fn = artifact
         .functions
         .iter()
-        .find(|f| f.name == "main")
+        .find(|f| f.name == "Main")
         .expect("expected main function");
     let main_clif = main_fn.function.to_string();
     assert!(
@@ -263,7 +263,7 @@ fn codegen_lowers_event_subscribe_unsubscribe_and_invoke() {
 fn codegen_lowers_value_producing_match_returning_bool() {
     let source = "enum Result { Ok(i64 value), Error(i64 error) } \
         bool IsOk(Result value) { return match value { Result::Ok(_) => true, Result::Error(_) => false }; } \
-        bool main() { Result r = Result::Ok(1); return IsOk(r); }";
+        bool Main() { Result r = Result::Ok(1); return IsOk(r); }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected bool match return lowering");
@@ -286,7 +286,7 @@ fn codegen_lowers_event_lifecycle_for_default_capacity_form() {
         impl User {
             unit Emit(string payload) { this.Created(payload); }
         }
-        unit main() {
+        unit Main() {
             mut User u = User { };
             unit(string) handler = (string payload) => { return; };
             u.Created += handler;
@@ -302,7 +302,7 @@ fn codegen_lowers_event_lifecycle_for_default_capacity_form() {
     let main_fn = artifact
         .functions
         .iter()
-        .find(|f| f.name == "main")
+        .find(|f| f.name == "Main")
         .expect("expected main function");
     let main_clif = main_fn.function.to_string();
     assert!(

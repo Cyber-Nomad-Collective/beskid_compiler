@@ -19,7 +19,7 @@ fn format_program_is_idempotent() {
     let src = r#"use a.b;
 
 
-pub i32 main() { return 42; }
+pub i32 Main() { return 42; }
 "#;
     let p = parse_program(src).expect("parse");
     let once = format_program(&p).expect("format");
@@ -30,7 +30,7 @@ pub i32 main() { return 42; }
 
 #[test]
 fn format_golden_use_and_function() {
-    let src = "use a.b;\npub i32 main() { return 42; }\n";
+    let src = "use a.b;\npub i32 Main() { return 42; }\n";
     let p = parse_program(src).expect("parse");
     let out = format_program(&p).expect("format");
     let expected = concat!(

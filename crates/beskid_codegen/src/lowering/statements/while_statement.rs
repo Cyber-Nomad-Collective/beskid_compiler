@@ -1,5 +1,5 @@
 use crate::errors::CodegenError;
-use crate::lowering::function::LoopControl;
+use crate::lowering::function::{LoopControl, materialize_locals_for_loop_back_edge};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use beskid_analysis::hir::{HirPrimitiveType, HirWhileStatement};
@@ -43,7 +43,6 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirWhileStatement {
             .brif(condition, body_block, &[], exit_block, &[]);
 
         ctx.builder.switch_to_block(body_block);
-        ctx.builder.seal_block(body_block);
         ctx.state.loop_stack.push(LoopControl {
             continue_block: header_block,
             break_block: exit_block,
@@ -57,9 +56,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirWhileStatement {
         }
         ctx.state.loop_stack.pop();
         if !ctx.state.block_terminated {
+            materialize_locals_for_loop_back_edge(ctx.builder, ctx.state);
             ctx.builder.ins().jump(header_block, &[]);
         }
 
+        ctx.builder.seal_block(body_block);
         ctx.builder.seal_block(header_block);
         ctx.state.block_terminated = false;
         ctx.builder.switch_to_block(exit_block);

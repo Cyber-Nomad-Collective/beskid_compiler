@@ -6,7 +6,7 @@ use crate::codegen::util::lower_resolve_type;
 #[test]
 fn codegen_lowers_struct_literal_expression() {
     let (hir, resolution, typed) =
-        lower_resolve_type("type User { i64 id } unit main() { User u = User { id: 1 }; }");
+        lower_resolve_type("type User { i64 id } unit Main() { User u = User { id: 1 }; }");
     let artifact = lower_program(&hir, &resolution, &typed)
         .expect("expected struct literal lowering to succeed");
     assert_eq!(artifact.functions.len(), 1);
@@ -15,7 +15,7 @@ fn codegen_lowers_struct_literal_expression() {
 #[test]
 fn codegen_lowers_enum_constructor_expression() {
     let (hir, resolution, typed) = lower_resolve_type(
-        "enum Choice { Some(i64 value), None } unit main() { Choice x = Choice::Some(1); }",
+        "enum Choice { Some(i64 value), None } unit Main() { Choice x = Choice::Some(1); }",
     );
     let artifact = lower_program(&hir, &resolution, &typed)
         .expect("expected enum constructor lowering to succeed");
@@ -25,7 +25,7 @@ fn codegen_lowers_enum_constructor_expression() {
 #[test]
 fn codegen_lowers_member_expression() {
     let (hir, resolution, typed) = lower_resolve_type(
-        "type User { i64 id } unit main() { User u = User { id: 1 }; i64 x = u.id; }",
+        "type User { i64 id } unit Main() { User u = User { id: 1 }; i64 x = u.id; }",
     );
     let artifact = lower_program(&hir, &resolution, &typed)
         .expect("expected member access lowering to succeed");
@@ -34,7 +34,7 @@ fn codegen_lowers_member_expression() {
 
 #[test]
 fn codegen_lowers_mut_parameter() {
-    let (hir, resolution, typed) = lower_resolve_type("i64 main(mut i64 x) { return x; }");
+    let (hir, resolution, typed) = lower_resolve_type("i64 Main(mut i64 x) { return x; }");
     let artifact = lower_program(&hir, &resolution, &typed)
         .expect("expected mut parameter lowering to succeed");
     assert_eq!(artifact.functions.len(), 1);

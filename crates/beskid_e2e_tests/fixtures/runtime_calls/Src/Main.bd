@@ -1,4 +1,4 @@
-i32 main() {
+i32 Main() {
     __syscall_write(1, "ok");
     string read = __syscall_read(99, 8);
     i32 read_len = __str_len(read);

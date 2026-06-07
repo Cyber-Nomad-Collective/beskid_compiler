@@ -38,7 +38,7 @@ macro twice (expression value) {
     $value + $value;
 }
 
-unit main() {
+unit Main() {
     let x = twice!(1);
     return;
 }
@@ -65,7 +65,7 @@ macro wrap (block body) {
     $body;
 }
 
-unit main() {
+unit Main() {
     wrap!() {
         let x = 1;
     };
@@ -98,7 +98,7 @@ macro outer () {
     inner!(1);
 }
 
-unit main() {
+unit Main() {
     let x = outer!();
     return;
 }
@@ -124,7 +124,7 @@ fn expansion_depth_cap_emits_e1905() {
 macro a (expression x) { b!($x); }
 macro b (expression x) { a!($x); }
 
-unit main() {
+unit Main() {
     let x = a!(1);
     return;
 }
@@ -148,7 +148,7 @@ fn expansion_depth_cap_leaves_invocations_when_exceeded() {
 macro a (expression x) { b!($x); }
 macro b (expression x) { a!($x); }
 
-unit main() {
+unit Main() {
     let x = a!(1);
     return;
 }
@@ -165,7 +165,7 @@ fn macro_in_if_body_expands() {
     let source = r#"
 macro one (expression x) { $x; }
 
-unit main() {
+unit Main() {
     if true {
         let x = one!(1);
     }
@@ -196,7 +196,7 @@ mod Inner {
     }
 }
 
-unit main() {
+unit Main() {
     return;
 }
 "#;
@@ -223,7 +223,7 @@ macro pick (expression value) {
     $value + $value;
 }
 
-unit main() {
+unit Main() {
     let x = pick!(3);
     return;
 }
@@ -247,7 +247,7 @@ fn arity_mismatch_emits_e1902() {
     let source = r#"
 macro need_one (expression x) { $x; }
 
-unit main() {
+unit Main() {
     let x = need_one!();
     return;
 }
@@ -274,7 +274,7 @@ fn fragment_kind_mismatch_expression_param_block_actual_emits_e1903() {
     let source = r#"
 macro need_literal (literal lit) { $lit; }
 
-unit main() {
+unit Main() {
     need_literal!(x);
     return;
 }
@@ -298,7 +298,7 @@ unit main() {
 
 #[test]
 fn unknown_macro_invocation_remains_for_semantic_pass() {
-    let source = "unit main() { missing!(1); return; }\n";
+    let source = "unit Main() { missing!(1); return; }\n";
     let expanded = parse_expand(source);
     let body = find_function_body(&expanded.node, "main");
     let stmt = &body.node.statements[0];
@@ -314,7 +314,7 @@ fn fragment_kind_mismatch_leaves_invocation_unexpanded() {
     let source = r#"
 macro need_expr (expression x) { $x; }
 
-unit main() {
+unit Main() {
     need_expr!() {
         let a = 1;
     };
@@ -439,7 +439,7 @@ fn fragment_kind_matrix_valid_invocations_parse() {
             continue;
         }
         let source = format!(
-            "{}\nunit main() {{\n    {}\n    return;\n}}\n",
+            "{}\nunit Main() {{\n    {}\n    return;\n}}\n",
             case.macro_def, case.valid_invocation
         );
         parse_program_with_source_name("Main.bd", &source)
@@ -451,7 +451,7 @@ fn fragment_kind_matrix_valid_invocations_parse() {
 fn fragment_kind_matrix_invalid_invocations_parse() {
     for case in fragment_kind_cases() {
         let source = format!(
-            "{}\nunit main() {{\n    {}\n    return;\n}}\n",
+            "{}\nunit Main() {{\n    {}\n    return;\n}}\n",
             case.macro_def, case.invalid_invocation
         );
         parse_program_with_source_name("Main.bd", &source)
@@ -469,7 +469,7 @@ fn fragment_kind_matrix_valid_expansion_behavior() {
             continue;
         }
         let source = format!(
-            "{}\nunit main() {{\n    {}\n    return;\n}}\n",
+            "{}\nunit Main() {{\n    {}\n    return;\n}}\n",
             case.macro_def, case.valid_invocation
         );
         let expanded = parse_expand(&source);

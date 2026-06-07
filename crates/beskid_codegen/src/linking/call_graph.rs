@@ -10,7 +10,7 @@ use beskid_analysis::resolve::{ItemId, ItemKind, Resolution, ResolvedValue, cano
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{CallLoweringKind, TypeId, TypeInfo, TypeResult};
 
-use crate::lowering::function::{mangle_function_name, mangle_method_name};
+use crate::lowering::function::{mangle_generic_item_function, mangle_method_name};
 use crate::lowering::types::type_id_for_type;
 
 use super::plan::ResolvedCall;
@@ -287,6 +287,45 @@ fn collect_calls_in_expression(
                 out,
             );
         }
+        HirExpressionNode::SpawnExpression(spawn) => {
+            collect_spawn_entry_callees(
+                &spawn.node.callee,
+                resolution,
+                type_result,
+                source_path,
+                out,
+            );
+        }
+        _ => {}
+    }
+}
+
+fn collect_spawn_entry_callees(
+    callee: &Spanned<HirExpressionNode>,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    source_path: Option<&PathBuf>,
+    out: &mut Vec<ResolvedCall>,
+) {
+    match &callee.node {
+        HirExpressionNode::PathExpression(path) => {
+            if let Some(ResolvedValue::Item(item_id)) = resolution
+                .tables
+                .resolved_value_at(path.node.path.span, source_path)
+            {
+                let item_id = canonical_item_id(resolution, item_id);
+                out.push(ResolvedCall {
+                    item_id,
+                    symbol: symbol_for_call(resolution, item_id),
+                    mangled: None,
+                    receiver_type: None,
+                });
+            }
+        }
+        HirExpressionNode::CallExpression(call) if call.node.args.is_empty() => {
+            collect_spawn_entry_callees(&call.node.callee, resolution, type_result, source_path, out);
+        }
+        HirExpressionNode::LambdaExpression(_) => {}
         _ => {}
     }
 }
@@ -405,8 +444,20 @@ fn resolve_call(
     match kind {
         CallLoweringKind::ItemCall { item_id } => {
             let item_id = canonical_item_id(resolution, item_id);
-            let generic_args = generic_type_args_for_call(call, resolution, type_result);
-            let mangled = build_function_mangled(item_id, &generic_args, resolution);
+            let mut generic_args =
+                generic_type_args_for_call(call, resolution, type_result, source_path);
+            if generic_args.is_empty() {
+                if let Some(inferred) = infer_generic_type_args_for_call(
+                    call,
+                    item_id,
+                    resolution,
+                    type_result,
+                    source_path,
+                ) {
+                    generic_args = inferred;
+                }
+            }
+            let mangled = build_function_mangled(item_id, &generic_args, resolution, type_result);
             Some(ResolvedCall {
                 item_id,
                 symbol: symbol_for_call(resolution, item_id),
@@ -653,6 +704,7 @@ fn generic_type_args_for_call(
     call: &Spanned<HirCallExpression>,
     resolution: &Resolution,
     type_result: &TypeResult,
+    source_path: Option<&PathBuf>,
 ) -> Vec<TypeId> {
     let HirExpressionNode::PathExpression(path_expr) = &call.node.callee.node else {
         return Vec::new();
@@ -664,20 +716,150 @@ fn generic_type_args_for_call(
         .node
         .type_args
         .iter()
-        .filter_map(|arg| type_id_for_type(resolution, type_result, None, arg))
+        .filter_map(|arg| type_id_for_type(resolution, type_result, source_path, arg))
         .collect()
+}
+
+fn infer_generic_type_args_for_call(
+    call: &Spanned<HirCallExpression>,
+    item_id: ItemId,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    source_path: Option<&PathBuf>,
+) -> Option<Vec<TypeId>> {
+    let expected = type_result.generic_items.get(&item_id)?.len();
+    if expected == 0 {
+        return Some(Vec::new());
+    }
+
+    if let Some(expr_type) = type_result.expr_type_at(call.span, source_path)
+        && let Some(args) = infer_generic_args_from_call_expr_type(type_result, item_id, expr_type)
+    {
+        return Some(args);
+    }
+
+    let mut arg_types = Vec::with_capacity(call.node.args.len());
+    for arg in &call.node.args {
+        arg_types.push(expr_type_for_call_arg(
+            arg,
+            resolution,
+            type_result,
+            source_path,
+        )?);
+    }
+    type_result.infer_generic_args_from_call_types(item_id, &arg_types)
+}
+
+fn infer_generic_args_from_call_expr_type(
+    type_result: &TypeResult,
+    item_id: ItemId,
+    expr_type: TypeId,
+) -> Option<Vec<TypeId>> {
+    let generic_names = type_result.generic_items.get(&item_id)?;
+    let expected = generic_names.len();
+    if expected == 0 {
+        return Some(Vec::new());
+    }
+    if let Some(TypeInfo::Applied { args, .. }) = type_result.types.get(expr_type)
+        && args.len() == expected
+    {
+        return Some(args.clone());
+    }
+    let signature = type_result.function_signatures.get(&item_id)?;
+    let mut mapping = std::collections::HashMap::new();
+    if !bind_generic_args_from_return_type(
+        &type_result.types,
+        signature.return_type,
+        expr_type,
+        &mut mapping,
+    ) || mapping.len() != expected
+    {
+        return None;
+    }
+    let mut substitution = Vec::with_capacity(expected);
+    for name in generic_names {
+        substitution.push(*mapping.get(name)?);
+    }
+    Some(substitution)
+}
+
+fn bind_generic_args_from_return_type(
+    types: &beskid_analysis::types::TypeTable,
+    param_type: TypeId,
+    arg_type: TypeId,
+    mapping: &mut std::collections::HashMap<String, TypeId>,
+) -> bool {
+    match types.get(param_type) {
+        Some(TypeInfo::GenericParam(name)) => {
+            if let Some(existing) = mapping.get(name) {
+                *existing == arg_type
+            } else {
+                mapping.insert(name.clone(), arg_type);
+                true
+            }
+        }
+        Some(TypeInfo::Applied {
+            base: param_base,
+            args: param_args,
+        }) => {
+            let Some(TypeInfo::Applied {
+                base: arg_base,
+                args: arg_args,
+            }) = types.get(arg_type)
+            else {
+                return false;
+            };
+            if param_base != arg_base || param_args.len() != arg_args.len() {
+                return false;
+            }
+            for (param, arg) in param_args.iter().zip(arg_args.iter()) {
+                if !bind_generic_args_from_return_type(types, *param, *arg, mapping) {
+                    return false;
+                }
+            }
+            true
+        }
+        _ => true,
+    }
+}
+
+fn expr_type_for_call_arg(
+    arg: &Spanned<HirExpressionNode>,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    source_path: Option<&PathBuf>,
+) -> Option<TypeId> {
+    if let Some(type_id) = type_result.expr_type_at(arg.span, source_path) {
+        return Some(type_id);
+    }
+    if let HirExpressionNode::PathExpression(path) = &arg.node {
+        let span = path.node.path.span;
+        if let Some(local_id) = resolution.tables.local_id_for_span(span, source_path) {
+            if let Some(type_id) = type_result.local_types.get(&local_id) {
+                return Some(*type_id);
+            }
+        }
+    }
+    None
 }
 
 fn build_function_mangled(
     item_id: ItemId,
     generic_args: &[TypeId],
     resolution: &Resolution,
+    type_result: &TypeResult,
 ) -> Option<String> {
     if generic_args.is_empty() {
         return None;
     }
     let base = resolution.items.get(item_id.0)?.name.clone();
-    Some(mangle_function_name(&base, generic_args))
+    Some(mangle_generic_item_function(
+        item_id,
+        &base,
+        generic_args,
+        resolution,
+        type_result,
+    ))
 }
 
 fn method_mangled_from_receiver(

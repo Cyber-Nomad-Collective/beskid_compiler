@@ -40,7 +40,7 @@ pub fn build_aot_exe(source: &str, case_name: &str) -> (PathBuf, beskid_aot::Aot
     .unwrap_or(RuntimeStrategy::Standalone);
     let result = build_and_run(AotRunRequest {
         artifact,
-        entrypoint: "main".to_owned(),
+        entrypoint: "Main".to_owned(),
         output_dir: output_dir.clone(),
         runtime,
     })

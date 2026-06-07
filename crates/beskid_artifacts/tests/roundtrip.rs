@@ -5,10 +5,10 @@ use beskid_artifacts::{
 
 #[test]
 fn content_fingerprint_is_path_independent() {
-    let fp1 = content_fingerprint("i32 main() { return 0; }");
-    let fp2 = content_fingerprint("i32 main() { return 0; }");
+    let fp1 = content_fingerprint("i32 Main() { return 0; }");
+    let fp2 = content_fingerprint("i32 Main() { return 0; }");
     assert_eq!(fp1, fp2);
-    assert_ne!(fp1, content_fingerprint("i32 main() { return 1; }"));
+    assert_ne!(fp1, content_fingerprint("i32 Main() { return 1; }"));
 }
 
 #[test]

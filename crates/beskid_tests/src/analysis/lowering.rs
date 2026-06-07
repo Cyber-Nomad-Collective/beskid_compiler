@@ -9,7 +9,7 @@ use crate::surface::ast::parse_program_ast;
 fn sample_source() -> &'static str {
     "enum Option { Some(i64 value), None }\n\
      type User { i64 id, string name }\n\
-     unit main() {\n\
+     unit Main() {\n\
        User u = User { id: 1, name: \"a\" };\n\
        i64 x = u.id;\n\
        Option y = Option::Some(1);\n\
@@ -208,7 +208,7 @@ fn lowering_preserves_attribute_declaration_items() {
 
 #[test]
 fn analysis_desugars_try_to_match() {
-    let source = "i64 foo() { return 1; } i64 main() { i64 value = foo()?; return value; }";
+    let source = "i64 foo() { return 1; } i64 Main() { i64 value = foo()?; return value; }";
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
@@ -272,7 +272,7 @@ fn lowering_normalizes_iterable_for_statement_to_state_machine() {
         impl Iter {
             Option Next() { return Option::None(); }
         }
-        unit main() {
+        unit Main() {
             Iter items = Iter { current: 0 };
             for item in items { continue; }
         }
@@ -330,7 +330,7 @@ fn lowering_normalizes_iterable_for_statement_to_state_machine() {
 
 #[test]
 fn lowering_normalizes_range_for_statement_to_fast_path() {
-    let source = "unit main() { for i in range(0, 3) { continue; } }";
+    let source = "unit Main() { for i in range(0, 3) { continue; } }";
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
@@ -394,7 +394,7 @@ fn lowering_preserves_type_conformances_and_field_kinds() {
 
 #[test]
 fn lowering_maps_identity_binary_and_assign_ops() {
-    let source = "unit main() { i64 x = 1; bool same = x === 1; x += 2; }";
+    let source = "unit Main() { i64 x = 1; bool same = x === 1; x += 2; }";
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);

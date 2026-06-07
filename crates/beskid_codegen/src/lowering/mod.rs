@@ -15,7 +15,7 @@ mod statements;
 pub mod types;
 
 pub use context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport, LoweredFunction};
-pub use expressions::export::ExportEntry;
+pub use expressions::export::{ExportEntry, object_link_symbol};
 pub use expressions::mapping::shape_id_for_item;
 pub use expressions::serialize::{
     DYNAMIC_TYPE_NAME, mapping_pair_eligible, require_mapping_eligible,

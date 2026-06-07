@@ -243,7 +243,7 @@ target "app" {
 "#,
         )
         .unwrap();
-        fs::write(template_dir.join("content/Src/Main.bd"), "unit main() {}\n").unwrap();
+        fs::write(template_dir.join("content/Src/Main.bd"), "unit Main() {}\n").unwrap();
         template_dir
     }
 

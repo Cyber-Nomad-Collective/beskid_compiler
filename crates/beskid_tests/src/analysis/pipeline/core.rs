@@ -37,7 +37,7 @@ impl Rule for EmitOne {
 #[test]
 fn analysis_type_mismatch_renders_named_type_names() {
     let source =
-        "type User { i64 id } type Order { i64 id } unit main() { User u = Order { id: 1 }; }";
+        "type User { i64 id } type Order { i64 id } unit Main() { User u = Order { id: 1 }; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -61,11 +61,11 @@ fn analysis_type_mismatch_renders_named_type_names() {
 
 #[test]
 fn analysis_emits_resolve_errors() {
-    let program = parse_program_ast("unit main() { let x = y; }");
+    let program = parse_program_ast("unit Main() { let x = y; }");
     let result = run_rules(
         &program.node,
         "test.bd",
-        "unit main() { let x = y; }",
+        "unit Main() { let x = y; }",
         &builtin_rules(),
         AnalysisOptions::default(),
     );
@@ -80,11 +80,11 @@ fn analysis_emits_resolve_errors() {
 
 #[test]
 fn analysis_emits_type_errors() {
-    let program = parse_program_ast("unit main() { bool x = 1; }");
+    let program = parse_program_ast("unit Main() { bool x = 1; }");
     let result = run_rules(
         &program.node,
         "test.bd",
-        "unit main() { bool x = 1; }",
+        "unit Main() { bool x = 1; }",
         &builtin_rules(),
         AnalysisOptions::default(),
     );
@@ -99,7 +99,7 @@ fn analysis_emits_type_errors() {
 
 #[test]
 fn analysis_emits_cast_intent_warnings() {
-    let source = "unit main() { i64 x = 1; i32 y = x; }";
+    let source = "unit Main() { i64 x = 1; i32 y = x; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -123,7 +123,7 @@ fn analysis_emits_cast_intent_warnings() {
 
 #[test]
 fn analysis_suppresses_cast_intent_warnings_when_warnings_disabled() {
-    let source = "unit main() { i64 x = 1; i32 y = x; }";
+    let source = "unit Main() { i64 x = 1; i32 y = x; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -151,7 +151,7 @@ fn analysis_suppresses_cast_intent_warnings_when_warnings_disabled() {
 
 #[test]
 fn analysis_pipeline_succeeds_after_lowering() {
-    let source = "type User { i64 id } unit main() { User u = User { id: 1 }; i64 x = u.id; }";
+    let source = "type User { i64 id } unit Main() { User u = User { id: 1 }; i64 x = u.id; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -232,7 +232,7 @@ fn analysis_emits_duplicate_definition_name_errors() {
 
 #[test]
 fn analysis_emits_break_outside_loop_errors() {
-    let source = "unit main() { break; }";
+    let source = "unit Main() { break; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -252,7 +252,7 @@ fn analysis_emits_break_outside_loop_errors() {
 
 #[test]
 fn analysis_emits_continue_outside_loop_errors() {
-    let source = "unit main() { continue; }";
+    let source = "unit Main() { continue; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -272,7 +272,7 @@ fn analysis_emits_continue_outside_loop_errors() {
 
 #[test]
 fn analysis_emits_unreachable_code_warnings() {
-    let source = "unit main() { return; i64 x = 1; }";
+    let source = "unit Main() { return; i64 x = 1; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -292,7 +292,7 @@ fn analysis_emits_unreachable_code_warnings() {
 
 #[test]
 fn analysis_emits_duplicate_pattern_binding_errors() {
-    let source = "enum Choice { Pair(i64 a, i64 b) } unit main() { Choice c = Choice::Pair(1, 2); i64 x = match c { Choice::Pair(v, v) => v, }; }";
+    let source = "enum Choice { Pair(i64 a, i64 b) } unit Main() { Choice c = Choice::Pair(1, 2); i64 x = match c { Choice::Pair(v, v) => v, }; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -332,7 +332,7 @@ fn analysis_emits_unknown_type_in_definition_errors() {
 
 #[test]
 fn analysis_does_not_emit_unknown_type_for_qualified_type_paths() {
-    let source = "unit main(Core.Results.Result<i64, string> value) { return; }";
+    let source = "unit Main(Core.Results.Result<i64, string> value) { return; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -413,7 +413,7 @@ fn analysis_emits_invalid_conformance_target_errors() {
 
 #[test]
 fn analysis_emits_invalid_identity_equality_domain_errors() {
-    let source = "bool main() { return 1 === 1; }";
+    let source = "bool Main() { return 1 === 1; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -434,7 +434,7 @@ fn analysis_emits_invalid_identity_equality_domain_errors() {
 
 #[test]
 fn analysis_emits_unknown_enum_path_errors() {
-    let source = "unit main() { i64 x = Missing::None(); }";
+    let source = "unit Main() { i64 x = Missing::None(); }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -454,7 +454,7 @@ fn analysis_emits_unknown_enum_path_errors() {
 
 #[test]
 fn analysis_emits_enum_constructor_arity_mismatch_errors() {
-    let source = "enum Option { Some(i64 value) } unit main() { Option x = Option::Some(); }";
+    let source = "enum Option { Some(i64 value) } unit Main() { Option x = Option::Some(); }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -474,7 +474,7 @@ fn analysis_emits_enum_constructor_arity_mismatch_errors() {
 
 #[test]
 fn analysis_emits_pattern_arity_mismatch_errors() {
-    let source = "enum Option { Some(i64 value) } unit main() { Option x = Option::Some(1); i64 y = match x { Option::Some() => 1, }; }";
+    let source = "enum Option { Some(i64 value) } unit Main() { Option x = Option::Some(1); i64 y = match x { Option::Some() => 1, }; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -514,7 +514,7 @@ fn analysis_emits_ambiguous_import_errors() {
 
 #[test]
 fn analysis_accepts_aliased_imports_without_ambiguity() {
-    let source = "mod dep.Parser; mod other.Parser; use dep.Parser as DepParser; use other.Parser as OtherParser; unit main() { let x = DepParser; let y = OtherParser; }";
+    let source = "mod dep.Parser; mod other.Parser; use dep.Parser as DepParser; use other.Parser as OtherParser; unit Main() { let x = DepParser; let y = OtherParser; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -619,7 +619,7 @@ fn analysis_visibility_private_import_still_uses_resolved_symbol_name() {
 
 #[test]
 fn analysis_emits_private_item_in_module_access_errors() {
-    let source = "mod dep; type secret { i32 value } unit main() { let x = dep.secret; }";
+    let source = "mod dep; type secret { i32 value } unit Main() { let x = dep.secret; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -639,7 +639,7 @@ fn analysis_emits_private_item_in_module_access_errors() {
 
 #[test]
 fn analysis_emits_use_before_declaration_errors() {
-    let source = "unit main() { i64 x = y; i64 y = 1; }";
+    let source = "unit Main() { i64 x = y; i64 y = 1; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -659,7 +659,7 @@ fn analysis_emits_use_before_declaration_errors() {
 
 #[test]
 fn analysis_emits_immutable_assignment_errors() {
-    let source = "unit main() { i64 x = 1; x = 2; }";
+    let source = "unit Main() { i64 x = 1; x = 2; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -679,7 +679,7 @@ fn analysis_emits_immutable_assignment_errors() {
 
 #[test]
 fn analysis_emits_invalid_member_target_errors() {
-    let source = "unit main() { i64 x = 1; i64 y = x.foo; }";
+    let source = "unit Main() { i64 x = 1; i64 y = x.foo; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -701,7 +701,7 @@ fn analysis_emits_invalid_member_target_errors() {
 fn analysis_emits_non_iterable_for_target_errors() {
     let source = "
         enum Option { Some(i64 value), None }
-        unit main() { i64 value = 1; for i in value { continue; } }
+        unit Main() { i64 value = 1; for i in value { continue; } }
     ";
     let program = parse_program_ast(source);
     let result = run_rules(
@@ -729,7 +729,7 @@ fn analysis_emits_iterable_next_return_not_option_errors() {
         impl Iter {
             i64 Next() { return this.seed; }
         }
-        unit main() {
+        unit Main() {
             Iter iter = Iter { seed: 0 };
             for i in iter { continue; }
         }
@@ -760,7 +760,7 @@ fn analysis_emits_iterable_next_arity_mismatch_errors() {
         impl Iter {
             Option Next(i64 step) { return Option::None(); }
         }
-        unit main() {
+        unit Main() {
             Iter iter = Iter { seed: 0 };
             for i in iter { continue; }
         }
@@ -791,7 +791,7 @@ fn analysis_emits_iterable_option_some_payload_mismatch_errors() {
         impl Iter {
             Option Next() { return Option::None(); }
         }
-        unit main() {
+        unit Main() {
             Iter iter = Iter { seed: 0 };
             for i in iter { continue; }
         }
@@ -816,7 +816,7 @@ fn analysis_emits_iterable_option_some_payload_mismatch_errors() {
 
 #[test]
 fn analysis_emits_invalid_try_target_errors() {
-    let source = "i64 foo() { return 1; } i64 main() { i64 value = foo()?; return value; }";
+    let source = "i64 foo() { return 1; } i64 Main() { i64 value = foo()?; return value; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -836,7 +836,7 @@ fn analysis_emits_invalid_try_target_errors() {
 
 #[test]
 fn analysis_emits_unqualified_enum_constructor_errors() {
-    let source = "enum Option { Some(i64 value) } unit main() { Option x = Some(1); }";
+    let source = "enum Option { Some(i64 value) } unit Main() { Option x = Some(1); }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -856,7 +856,7 @@ fn analysis_emits_unqualified_enum_constructor_errors() {
 
 #[test]
 fn analysis_emits_non_exhaustive_match_errors() {
-    let source = "enum Option { Some(i64 value), None } unit main() { Option x = Option::Some(1); i64 y = match x { Option::Some(v) => v, }; }";
+    let source = "enum Option { Some(i64 value), None } unit Main() { Option x = Option::Some(1); i64 y = match x { Option::Some(v) => v, }; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -876,7 +876,7 @@ fn analysis_emits_non_exhaustive_match_errors() {
 
 #[test]
 fn analysis_emits_match_arm_type_mismatch_errors() {
-    let source = "enum Option { Some(i64 value), None } unit main() { Option x = Option::Some(1); let y = match x { Option::Some(_) => 1, Option::None => true, }; }";
+    let source = "enum Option { Some(i64 value), None } unit Main() { Option x = Option::Some(1); let y = match x { Option::Some(_) => 1, Option::None => true, }; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -896,7 +896,7 @@ fn analysis_emits_match_arm_type_mismatch_errors() {
 
 #[test]
 fn analysis_emits_guard_type_mismatch_errors() {
-    let source = "enum Option { Some(i64 value) } unit main() { Option x = Option::Some(1); let y = match x { Option::Some(v) when 1 => v, }; }";
+    let source = "enum Option { Some(i64 value) } unit Main() { Option x = Option::Some(1); let y = match x { Option::Some(v) when 1 => v, }; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -916,7 +916,7 @@ fn analysis_emits_guard_type_mismatch_errors() {
 
 #[test]
 fn analysis_emits_file_scoped_module_must_be_first_errors() {
-    let source = "unit main() { return; } mod app.core;";
+    let source = "unit Main() { return; } mod app.core;";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -936,7 +936,7 @@ fn analysis_emits_file_scoped_module_must_be_first_errors() {
 
 #[test]
 fn analysis_emits_duplicate_file_scoped_module_errors() {
-    let source = "mod app.core; mod app.other; unit main() { return; }";
+    let source = "mod app.core; mod app.other; unit Main() { return; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -956,7 +956,7 @@ fn analysis_emits_duplicate_file_scoped_module_errors() {
 
 #[test]
 fn analysis_emits_forbidden_mod_declaration_errors_in_file_scoped_module() {
-    let source = "mod app.core; mod nested { unit helper() { return; } } unit main() { return; }";
+    let source = "mod app.core; mod nested { unit helper() { return; } } unit Main() { return; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -976,7 +976,7 @@ fn analysis_emits_forbidden_mod_declaration_errors_in_file_scoped_module() {
 
 #[test]
 fn analysis_emits_unused_import_warnings() {
-    let source = "mod dep.Parser; use dep.Parser as DepParser; unit main() { return; }";
+    let source = "mod dep.Parser; use dep.Parser as DepParser; unit Main() { return; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -996,7 +996,7 @@ fn analysis_emits_unused_import_warnings() {
 
 #[test]
 fn analysis_emits_unused_private_item_warnings() {
-    let source = "unit helper() { return; } unit main() { return; }";
+    let source = "unit helper() { return; } unit Main() { return; }";
     let program = parse_program_ast(source);
     let result = run_rules(
         &program.node,
@@ -1165,11 +1165,11 @@ fn analysis_emits_attribute_target_not_allowed_errors() {
 
 #[test]
 fn runs_rules_and_collects_diagnostics() {
-    let program = parse_program_ast("unit main() { return; }");
+    let program = parse_program_ast("unit Main() { return; }");
     let result = run_rules(
         &program.node,
         "test.bd",
-        "unit main() { return; }",
+        "unit Main() { return; }",
         &[Box::new(EmitOne)],
         AnalysisOptions::default(),
     );

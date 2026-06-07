@@ -207,6 +207,7 @@ fn lower_method_body(
         let var = builder.declare_var(clif_ty);
         builder.def_var(var, value);
         state.locals.insert(local_id, var);
+        state.local_type_overrides.insert(local_id, type_id);
     }
 
     let mut node_ctx = NodeLoweringContext {
@@ -423,6 +424,89 @@ pub(crate) fn mangle_function_name(base: &str, args: &[beskid_analysis::types::T
     format!("{base}#{suffix}")
 }
 
+/// Stem-qualified mangling for generic factory functions on owning types (`Hub__Create#2`).
+pub(crate) fn mangle_generic_factory_name(
+    owner_stem: &str,
+    method: &str,
+    args: &[TypeId],
+) -> String {
+    let leaf = method.rsplit("::").next().unwrap_or(method);
+    mangle_function_name(&format!("{owner_stem}__{leaf}"), args)
+}
+
+/// When a generic function returns `Owner<T>` from the same source file as `Owner`, qualify the symbol stem.
+pub(crate) fn owner_stem_for_generic_factory(
+    item_id: ItemId,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+) -> Option<String> {
+    let generic_names = type_result.generic_items.get(&item_id)?;
+    if generic_names.is_empty() {
+        return None;
+    }
+    let sig = type_result.function_signatures.get(&item_id)?;
+    let TypeInfo::Applied { base, .. } = type_result.types.get(sig.return_type)? else {
+        return None;
+    };
+    let func_info = resolution.items.get(item_id.0)?;
+    let owner_info = resolution.items.iter().find(|info| info.id == *base)?;
+    if !same_file_opt(
+        func_info.source_path.as_ref(),
+        owner_info.source_path.as_ref(),
+    ) {
+        return None;
+    }
+    owner_info
+        .name
+        .rsplit("::")
+        .next()
+        .map(str::to_string)
+}
+
+pub(crate) fn mangle_generic_item_function(
+    item_id: ItemId,
+    base: &str,
+    generic_args: &[TypeId],
+    resolution: &Resolution,
+    type_result: &TypeResult,
+) -> String {
+    let leaf = base.rsplit("::").next().unwrap_or(base);
+    if !generic_args.is_empty()
+        && let Some(stem) = owner_stem_for_generic_factory(item_id, resolution, type_result)
+    {
+        return mangle_generic_factory_name(&stem, leaf, generic_args);
+    }
+    mangle_function_name(leaf, generic_args)
+}
+
+/// Recover generic substitution from a monomorph symbol name (`Equal#5` or `Hub__Create#2`).
+pub(crate) fn generic_mapping_from_mangled(
+    type_result: &TypeResult,
+    item_id: ItemId,
+    mangled: &str,
+) -> Option<HashMap<String, TypeId>> {
+    let generic_names = type_result.generic_items.get(&item_id)?;
+    let suffix = mangled.rsplit('#').next()?;
+    if suffix == mangled {
+        return None;
+    }
+    let type_ids: Vec<TypeId> = suffix
+        .split('_')
+        .filter_map(|part| part.parse::<usize>().ok())
+        .map(TypeId)
+        .collect();
+    if type_ids.len() != generic_names.len() {
+        return None;
+    }
+    Some(
+        generic_names
+            .iter()
+            .cloned()
+            .zip(type_ids)
+            .collect(),
+    )
+}
+
 fn substitute_type_id(
     type_result: &TypeResult,
     type_id: beskid_analysis::types::TypeId,
@@ -586,6 +670,8 @@ fn lower_function_with_name_body(
         let var = builder.declare_var(clif_ty);
         builder.def_var(var, value);
         state.locals.insert(local_id, var);
+        state.local_type_overrides.insert(local_id, type_id);
+        state.local_type_overrides.insert(local_id, type_id);
     }
 
     let mut node_ctx = NodeLoweringContext {
@@ -653,6 +739,17 @@ pub(crate) struct FunctionLoweringState {
 pub(crate) struct LoopControl {
     pub(crate) continue_block: Block,
     pub(crate) break_block: Block,
+}
+
+/// Touch every local SSA variable so Cranelift records the current value before a loop back-edge.
+pub(crate) fn materialize_locals_for_loop_back_edge(
+    builder: &mut FunctionBuilder,
+    state: &FunctionLoweringState,
+) {
+    let vars: Vec<Variable> = state.locals.values().copied().collect();
+    for var in vars {
+        let _ = builder.use_var(var);
+    }
 }
 
 fn signature_has_return(signature: &Signature) -> bool {

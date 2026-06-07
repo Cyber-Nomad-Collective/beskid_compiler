@@ -34,7 +34,7 @@ impl ModFixtureWorkspace {
         fs::create_dir_all(mod_dir.join("Src")).expect("mod source root");
         fs::write(
             host_dir.join("Src").join("Main.bd"),
-            "unit main() { return; }\n",
+            "unit Main() { return; }\n",
         )
         .expect("host source");
         fs::write(host_dir.join(HOST_PROJECT_MANIFEST), HOST_MANIFEST).expect("host manifest");
@@ -114,7 +114,7 @@ impl ModFixtureWorkspace {
     }
 
     pub(crate) fn host_source(&self) -> &'static str {
-        "unit main() { return; }\n"
+        "unit Main() { return; }\n"
     }
 }
 

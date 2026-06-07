@@ -136,35 +136,35 @@ fn qualified_module_path_to_public_item_is_allowed() {
 
 #[test]
 fn syscall_write_builtin_resolves() {
-    let result = resolve_program("i64 main() { return __syscall_write(1, \"hi\"); }")
+    let result = resolve_program("i64 Main() { return __syscall_write(1, \"hi\"); }")
         .expect("expected __syscall_write to resolve");
     assert!(result.warnings.is_empty());
 }
 
 #[test]
 fn syscall_read_builtin_resolves() {
-    let result = resolve_program("string main() { return __syscall_read(0, 16); }")
+    let result = resolve_program("string Main() { return __syscall_read(0, 16); }")
         .expect("expected __syscall_read to resolve");
     assert!(result.warnings.is_empty());
 }
 
 #[test]
 fn stdstring_len_resolves() {
-    let result = resolve_program("i64 main() { return __str_len(\"hello\"); }")
+    let result = resolve_program("i64 Main() { return __str_len(\"hello\"); }")
         .expect("expected direct str_len path to resolve");
     assert!(result.warnings.is_empty());
 }
 
 #[test]
 fn std_panic_resolves() {
-    let result = resolve_program("unit main() { __panic_str(\"boom\"); }")
+    let result = resolve_program("unit Main() { __panic_str(\"boom\"); }")
         .expect("expected __panic_str to resolve");
     assert!(result.warnings.is_empty());
 }
 
 #[test]
 fn stdarray_new_resolves() {
-    let result = resolve_program("i64 main() { return __array_new(8, 2); }")
+    let result = resolve_program("i64 Main() { return __array_new(8, 2); }")
         .expect("expected __array_new to resolve");
     assert!(result.warnings.is_empty());
 }
@@ -172,7 +172,7 @@ fn stdarray_new_resolves() {
 #[test]
 fn qualified_nested_public_module_path_is_allowed() {
     let result = resolve_program(
-        "mod dep.api; pub type v1 { i32 value } unit main() { let x = dep.api.v1; }",
+        "mod dep.api; pub type v1 { i32 value } unit Main() { let x = dep.api.v1; }",
     );
     assert!(
         result.is_ok(),
@@ -183,7 +183,7 @@ fn qualified_nested_public_module_path_is_allowed() {
 #[test]
 fn qualified_nested_private_module_path_is_error() {
     let result = resolve_program(
-        "mod dep.api; type secret { i32 value } unit main() { let x = dep.api.secret; }",
+        "mod dep.api; type secret { i32 value } unit Main() { let x = dep.api.secret; }",
     );
     let errors = result.expect_err("expected private nested module item error");
     assert!(
@@ -222,7 +222,7 @@ unit smoke() {
 #[ignore = "import alias as type value: resolver gap tracked for v0.3 follow-up"]
 fn aliased_import_name_resolves_in_value_path() {
     let result = resolve_program(
-        "mod dep { pub type Parser { i32 value } } use dep.Parser as DepParser; unit main() { let x = DepParser; }",
+        "mod dep { pub type Parser { i32 value } } use dep.Parser as DepParser; unit Main() { let x = DepParser; }",
     );
     assert!(
         result.is_ok(),

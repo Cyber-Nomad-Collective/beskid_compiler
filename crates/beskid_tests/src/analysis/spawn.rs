@@ -3,7 +3,7 @@ use beskid_analysis::services::analyze_program;
 
 #[test]
 fn async_keyword_reserved_diagnostic() {
-    let source = "i64 main() { async x = 1; return 0; }\n";
+    let source = "i64 Main() { async x = 1; return 0; }\n";
     let diags = analyze_program(std::path::Path::new("test.bd"), source).expect("analyze");
     assert!(
         diags.iter().any(|d| d.code.as_deref() == Some("E1226")),
@@ -13,7 +13,7 @@ fn async_keyword_reserved_diagnostic() {
 
 #[test]
 fn await_keyword_reserved_diagnostic() {
-    let source = "i64 main() { let x = await; return 0; }\n";
+    let source = "i64 Main() { let x = await; return 0; }\n";
     let diags = analyze_program(std::path::Path::new("test.bd"), source).expect("analyze");
     assert!(
         diags.iter().any(|d| d.code.as_deref() == Some("E1227")),
@@ -31,7 +31,7 @@ fn join_would_deadlock_diagnostic_codes_are_stable() {
 #[test]
 fn spawn_expression_parses() {
     use beskid_analysis::services::parse_program;
-    let source = "unit child() { }\nunit main() { spawn child(); }\n";
+    let source = "unit child() { }\nunit Main() { spawn child(); }\n";
     let program = parse_program(source).expect("parse spawn");
     use beskid_analysis::syntax::Expression;
     let has_spawn = program.node.items.iter().any(|item| {

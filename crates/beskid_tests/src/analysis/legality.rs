@@ -8,7 +8,7 @@ use crate::support::pipeline::lower_resolve as lower_and_resolve;
 
 #[test]
 fn legality_passes_for_valid_program() {
-    let (hir, resolution) = lower_and_resolve("unit main() { i64 x = 1; i64 y = x; return; }");
+    let (hir, resolution) = lower_and_resolve("unit Main() { i64 x = 1; i64 y = x; return; }");
 
     let errors = validate_hir_program(&hir, &resolution);
     assert!(
@@ -19,7 +19,7 @@ fn legality_passes_for_valid_program() {
 
 #[test]
 fn legality_reports_unresolved_value_path_when_resolution_entry_missing() {
-    let (hir, mut resolution) = lower_and_resolve("unit main() { i64 x = 1; i64 y = x; }");
+    let (hir, mut resolution) = lower_and_resolve("unit Main() { i64 x = 1; i64 y = x; }");
 
     let main_fn = hir
         .node
@@ -55,7 +55,7 @@ fn legality_reports_unresolved_value_path_when_resolution_entry_missing() {
 
 #[test]
 fn legality_reports_invalid_span_invariants() {
-    let (mut hir, resolution) = lower_and_resolve("unit main() { return; }");
+    let (mut hir, resolution) = lower_and_resolve("unit Main() { return; }");
     hir.span.start = hir.span.end + 1;
 
     let errors = validate_hir_program(&hir, &resolution);

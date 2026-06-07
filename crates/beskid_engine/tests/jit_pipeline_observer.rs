@@ -33,7 +33,7 @@ impl PipelineObserver for Recorder {
 #[test]
 fn jit_compile_emits_emit_work_units_and_finalize_phase() {
     let src = r#"
-pub i64 main() { return 0; }
+pub i64 Main() { return 0; }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false).unwrap();
     let recorder = Recorder::default();

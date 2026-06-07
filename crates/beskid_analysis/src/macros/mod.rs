@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn unknown_macro_produces_e1901() {
-        let source = "unit main() { missing!(1); return; }\n";
+        let source = "unit Main() { missing!(1); return; }\n";
         let outcome = expand_program_with_diagnostics(
             parse_program_with_source_name("Main.bd", source).expect("parse"),
             DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
@@ -104,7 +104,7 @@ mod tests {
     fn expression_macro_expands_to_binary() {
         let source = r#"
 macro twice (expression value) { $value + $value; }
-unit main() { let x = twice!(1); return; }
+unit Main() { let x = twice!(1); return; }
 "#;
         let expanded = expand_program(
             parse_program_with_source_name("Main.bd", source).expect("parse"),

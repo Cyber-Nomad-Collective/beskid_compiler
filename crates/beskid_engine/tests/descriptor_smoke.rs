@@ -9,7 +9,7 @@ fn descriptor_symbol_exists_for_named_type() -> Result<()> {
     let src = r#"
 pub type Point { i64 x, i64 y }
 
-pub i64 main() { return 0; }
+pub i64 Main() { return 0; }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     assert!(!lowered.artifact.type_descriptors.is_empty());

@@ -15,7 +15,7 @@ fn parse_hir(source: &str) -> Spanned<HirProgram> {
 
 #[test]
 fn hir_query_descendants_counts_nodes() {
-    let hir = parse_hir("i32 main() { i32 x = 1; return x; }");
+    let hir = parse_hir("i32 Main() { i32 x = 1; return x; }");
     let count = HirQuery::from(&hir.node).descendants().count();
     assert!(count > 6, "expected several HIR descendants, got {count}");
 }
@@ -34,7 +34,7 @@ fn hir_query_of_type_finds_contract_signatures() {
 
 #[test]
 fn hir_query_filter_typed_finds_match_expressions() {
-    let hir = parse_hir("i32 main() { return match 1 { 1 => 10, _ => 20, }; }");
+    let hir = parse_hir("i32 Main() { return match 1 { 1 => 10, _ => 20, }; }");
     let match_exprs: Vec<&HirExpressionNode> = HirQuery::from(&hir.node)
         .filter_typed::<HirExpressionNode>(|expr| {
             matches!(expr, HirExpressionNode::MatchExpression(_))
@@ -46,7 +46,7 @@ fn hir_query_filter_typed_finds_match_expressions() {
 
 #[test]
 fn hir_query_filter_by_kind_finds_functions() {
-    let hir = parse_hir("i32 main() { return 1; } i32 other() { return 2; }");
+    let hir = parse_hir("i32 Main() { return 1; } i32 other() { return 2; }");
     let functions: Vec<_> = HirQuery::from(&hir.node)
         .filter(|node| node.node_kind() == HirNodeKind::FunctionDefinition)
         .collect();
@@ -56,12 +56,12 @@ fn hir_query_filter_by_kind_finds_functions() {
 
 #[test]
 fn hir_query_find_first_identifier() {
-    let hir = parse_hir("i32 main() { return 1; }");
+    let hir = parse_hir("i32 Main() { return 1; }");
     let ident = HirQuery::from(&hir.node)
         .find_first::<beskid_analysis::hir::HirIdentifier>()
         .expect("expected at least one HIR identifier");
 
-    assert_eq!(ident.name, "main");
+    assert_eq!(ident.name, "Main");
 }
 
 #[test]

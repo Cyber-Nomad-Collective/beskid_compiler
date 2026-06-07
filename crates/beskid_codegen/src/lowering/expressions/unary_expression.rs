@@ -1,7 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
-use crate::lowering::types::map_type_id_to_clif;
+use crate::lowering::types::{map_type_id_to_clif, resolve_monomorph_type_id};
 use beskid_analysis::hir::{HirPrimitiveType, HirUnaryExpression, HirUnaryOp};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeInfo;
@@ -19,6 +19,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirUnaryExpression {
             node: "unit-valued unary operand",
         })?;
         let type_id = ctx.require_expr_type_for_node(&node.node.expr)?;
+        let type_id = resolve_monomorph_type_id(
+            ctx.type_result,
+            &ctx.codegen.active_generic_substitution,
+            type_id,
+        );
         let type_info = ctx.type_result.types.get(type_id);
         let clif_ty =
             map_type_id_to_clif(ctx.type_result, type_id).ok_or(CodegenError::UnsupportedNode {
@@ -39,18 +44,20 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirUnaryExpression {
                     });
                 }
             }
-            HirUnaryOp::Not => match type_info {
-                Some(TypeInfo::Primitive(HirPrimitiveType::Bool)) => {
+            HirUnaryOp::Not => {
+                let clif_is_bool = clif_ty.is_int() && clif_ty.bits() == 8;
+                if matches!(type_info, Some(TypeInfo::Primitive(HirPrimitiveType::Bool)))
+                    || clif_is_bool
+                {
                     let one = ctx.builder.ins().iconst(types::I8, 1);
                     ctx.builder.ins().bxor(value, one)
-                }
-                _ => {
+                } else {
                     return Err(CodegenError::UnsupportedNode {
                         span: node.span,
                         node: "unary not type",
                     });
                 }
-            },
+            }
         };
 
         Ok(Some(lowered))

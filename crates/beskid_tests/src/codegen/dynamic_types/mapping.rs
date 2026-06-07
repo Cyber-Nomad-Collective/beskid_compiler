@@ -16,7 +16,7 @@ fn first_two_struct_items(resolution: &beskid_analysis::resolve::Resolution) -> 
 
 #[test]
 fn dynamic_aot_mapping_eligibility_passes_for_matching_structs() {
-    let source = "type Source { i64 id, i32 flags } type Target { i64 id, i32 flags } i64 main() { return 0; }";
+    let source = "type Source { i64 id, i32 flags } type Target { i64 id, i32 flags } i64 Main() { return 0; }";
     let (_, resolution, typed) = lower_resolve_type(source);
     let (src_item, dst_item) = first_two_struct_items(&resolution);
     let span = beskid_analysis::syntax::SpanInfo {

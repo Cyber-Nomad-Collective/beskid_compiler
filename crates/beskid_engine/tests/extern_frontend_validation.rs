@@ -7,7 +7,7 @@ fn extern_invalid_abi_rejected() -> Result<()> {
 [Extern(Abi:"Rust", Library:"libc.so.6")]
 pub contract C { i64 getpid(); }
 
-pub i64 main() { return 0; }
+pub i64 Main() { return 0; }
 "#;
     let err = lower_source(std::path::Path::new("<memory>"), src, false)
         .err()
@@ -26,7 +26,7 @@ fn extern_missing_library_rejected() -> Result<()> {
 [Extern(Abi:"C")]
 pub contract C { i64 getpid(); }
 
-pub i64 main() { return 0; }
+pub i64 Main() { return 0; }
 "#;
     let err = lower_source(std::path::Path::new("<memory>"), src, false)
         .err()
@@ -45,7 +45,7 @@ fn extern_disallowed_param_type_rejected() -> Result<()> {
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C { i64 nope(string s); }
 
-pub i64 main() { return 0; }
+pub i64 Main() { return 0; }
 "#;
     let err = lower_source(std::path::Path::new("<memory>"), src, false)
         .err()
@@ -64,7 +64,7 @@ fn extern_ref_param_modifier_rejected_at_parse() -> Result<()> {
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C { i64 nope(ref i64 p); }
 
-pub i64 main() { return 0; }
+pub i64 Main() { return 0; }
 "#;
     let err = lower_source(std::path::Path::new("<memory>"), src, false)
         .err()

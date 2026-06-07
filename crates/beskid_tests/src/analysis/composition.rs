@@ -31,7 +31,7 @@ host AppHost() : ConsoleHost {
     }
 }
 
-i32 main() {
+i32 Main() {
     return 0;
 }
 "#;
@@ -60,7 +60,7 @@ host AppHost() : ConsoleHost {
     }
 }
 
-i32 main() {
+i32 Main() {
     launch MissingHost();
     return 0;
 }
@@ -93,7 +93,7 @@ host AppHost() : ConsoleHost {
     }
 }
 
-i32 main() {
+i32 Main() {
     launch AppHost();
     launch AppHost();
     return 0;
@@ -135,7 +135,7 @@ type Worker {
     inject Logger logger
 }
 
-i32 main() {
+i32 Main() {
     launch AppHost();
     return 0;
 }
@@ -165,7 +165,7 @@ type Beta {
     inject Alpha alpha
 }
 
-i32 main() {
+i32 Main() {
     launch AppHost();
     return 0;
 }

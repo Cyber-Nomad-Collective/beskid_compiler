@@ -3,7 +3,7 @@ use crate::linking::resolve_item_call_id;
 use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
 use crate::lowering::dispatch::lower_dispatch_builtin_call;
 use crate::lowering::function::{
-    lower_function_with_name, mangle_function_name, mangle_method_name,
+    lower_function_with_name, mangle_generic_item_function, mangle_method_name,
 };
 use crate::lowering::locals::{canonicalize_call_kind, local_id_for_span, resolved_value_at};
 use crate::lowering::lowerable::{Lowerable, lower_node};
@@ -21,7 +21,7 @@ use beskid_analysis::resolve::{ItemKind, ResolvedValue, canonical_item_id};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{
     CallLoweringKind, MethodReceiverSource, TypeId, TypeInfo, first_field_segment_name,
-    method_name_from_path_callee,
+    method_name_from_path_callee, resolve_path_base_local,
 };
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
@@ -1121,7 +1121,61 @@ fn infer_generic_args_from_call(
 ) -> Option<Vec<TypeId>> {
     let mut arg_types = Vec::with_capacity(args.len());
     for arg in args {
-        arg_types.push(ctx.require_expr_type_for_node(arg).ok()?);
+        if let HirExpressionNode::PathExpression(path) = &arg.node {
+            let segments = &path.node.path.node.segments;
+            if segments.len() == 1 {
+                let name = segments[0].node.name.node.name.as_str();
+                if let Some(local_id) = resolve_path_base_local(
+                    ctx.resolution,
+                    path.node.path.span,
+                    name,
+                    ctx.codegen.current_source_path.as_ref(),
+                ) {
+                    if let Some(type_id) = ctx
+                        .state
+                        .local_type_overrides
+                        .get(&local_id)
+                        .copied()
+                        .or_else(|| ctx.type_result.local_types.get(&local_id).copied())
+                    {
+                        arg_types.push(type_id);
+                        continue;
+                    }
+                }
+            }
+        }
+        let type_id = ctx
+            .require_expr_type_for_node(arg)
+            .ok()
+            .or_else(|| {
+                crate::lowering::locals::infer_expr_type(
+                    ctx.resolution,
+                    ctx.type_result,
+                    arg,
+                    ctx.codegen.current_source_path.as_ref(),
+                    ctx.receiver_type,
+                )
+            })
+            .or_else(|| ctx.expr_type(arg.span))
+            .or_else(|| {
+                if let HirExpressionNode::PathExpression(path) = &arg.node {
+                    crate::lowering::locals::local_id_for_span(
+                        ctx.resolution,
+                        path.node.path.span,
+                        ctx.codegen.current_source_path.as_ref(),
+                    )
+                    .and_then(|local_id| {
+                        ctx.state
+                            .local_type_overrides
+                            .get(&local_id)
+                            .copied()
+                            .or_else(|| ctx.type_result.local_types.get(&local_id).copied())
+                    })
+                } else {
+                    None
+                }
+            })?;
+        arg_types.push(type_id);
     }
     type_result.infer_generic_args_from_call_types(item_id, &arg_types)
 }
@@ -1760,7 +1814,19 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                         .rsplit("::")
                         .next()
                         .unwrap_or(&item_info.name);
-                    let mangled = mangle_function_name(base, &generic_args);
+                    let mangled = mangle_generic_item_function(
+                        item_id,
+                        base,
+                        &generic_args,
+                        ctx.resolution,
+                        ctx.type_result,
+                    );
+                    if ctx.codegen.symbol_emitted(&mangled) {
+                        ctx.codegen
+                            .monomorphized_functions
+                            .insert(key, mangled.clone());
+                        mangled
+                    } else {
                     let saved_source_path = ctx.codegen.current_source_path.clone();
                     ctx.codegen.current_source_path = ctx
                         .resolution
@@ -1784,6 +1850,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                         .monomorphized_functions
                         .insert(key, mangled.clone());
                     mangled
+                    }
                 }
             } else if item_info.kind == ItemKind::Method {
                 if let Some((receiver, method)) = item_info.name.rsplit_once("::") {

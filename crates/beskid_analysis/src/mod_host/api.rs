@@ -203,7 +203,7 @@ dependency "ModA" {
 
     #[test]
     fn skips_all_mod_phases_when_plan_has_no_mod_dependencies() {
-        let source = "unit main() { return; }\n";
+        let source = "unit Main() { return; }\n";
         let program = parse_program_with_source_name("Main.bd", source).expect("parse");
         let pipeline = CapturePipeline::default();
 
@@ -276,7 +276,7 @@ dependency "ModA" {
         )
         .expect("descriptor");
 
-        let source = "unit main() { return; }\n";
+        let source = "unit Main() { return; }\n";
         let program = parse_program_with_source_name("Main.bd", source).expect("parse");
         let plan = compile_plan(&host, &mod_dir);
         let pipeline = Arc::new(CapturePipeline::default());
@@ -377,7 +377,7 @@ dependency "ModA" {
         )
         .expect("descriptor");
 
-        let source = "unit main() { return; }\n";
+        let source = "unit Main() { return; }\n";
         let program = parse_program_with_source_name("Main.bd", source).expect("parse");
         let plan = compile_plan(&host, &mod_dir);
         let pipeline = CapturePipeline::default();

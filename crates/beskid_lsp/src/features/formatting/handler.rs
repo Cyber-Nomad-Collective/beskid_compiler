@@ -45,23 +45,23 @@ mod tests {
 
     #[test]
     fn formatting_returns_edit_for_non_canonical_source() {
-        let doc = mk_doc("pub i32 main() { return 42; }\n");
+        let doc = mk_doc("pub i32 Main() { return 42; }\n");
         let edits = handle_document_formatting(&doc).expect("parse + format");
         assert_eq!(edits.len(), 1);
-        assert!(edits[0].new_text.contains("pub i32 main()"));
+        assert!(edits[0].new_text.contains("pub i32 Main()"));
         assert!(edits[0].new_text.contains("{\n    return 42;\n}"));
     }
 
     #[test]
     fn formatting_returns_empty_when_already_formatted() {
-        let doc = mk_doc("pub i32 main()\n{\n    return 42;\n}\n");
+        let doc = mk_doc("pub i32 Main()\n{\n    return 42;\n}\n");
         let edits = handle_document_formatting(&doc).expect("parse + format");
         assert!(edits.is_empty());
     }
 
     #[test]
     fn range_formatting_uses_full_document_strategy() {
-        let doc = mk_doc("pub i32 main() { return 42; }\n");
+        let doc = mk_doc("pub i32 Main() { return 42; }\n");
         let range = Range::new(Position::new(0, 0), Position::new(0, 3));
         let edits = handle_range_formatting(&doc, range).expect("range format");
         assert_eq!(edits.len(), 1);
@@ -69,12 +69,12 @@ mod tests {
             edits[0].range,
             offset_range_to_lsp(&doc.text, 0, doc.text.len())
         );
-        assert!(edits[0].new_text.contains("pub i32 main()"));
+        assert!(edits[0].new_text.contains("pub i32 Main()"));
     }
 
     #[test]
     fn formatting_edit_reparses() {
-        let doc = mk_doc("pub i32 main() { return 42; }\n");
+        let doc = mk_doc("pub i32 Main() { return 42; }\n");
         let edits = handle_document_formatting(&doc).expect("format");
         assert_eq!(edits.len(), 1);
         let reparsed = beskid_analysis::services::parse_program(&edits[0].new_text);

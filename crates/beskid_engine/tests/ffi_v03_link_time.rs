@@ -32,14 +32,14 @@ pub contract Libc {
     i64 getpid();
 }
 
-pub i64 main() { return Libc.getpid(); }
+pub i64 Main() { return Libc.getpid(); }
 "#;
     let lowered = lower_source(Path::new("<memory>"), src, false)?;
     let dir = temp_case_dir("getpid");
     let output = dir.join("getpid_test");
     let result = build(AotBuildRequest {
         external_libraries: vec!["c".into()],
-        ..AotBuildRequest::with_defaults(lowered.artifact, BuildOutputKind::Exe, output, "main")
+        ..AotBuildRequest::with_defaults(lowered.artifact, BuildOutputKind::Exe, output, "Main")
     })?;
     let binary = result.final_path.expect("linked executable path");
     let mut child = Command::new(&binary).spawn()?;

@@ -23,7 +23,7 @@ fn find_named_type_id_for_item(
 
 #[test]
 fn dynamic_named_alias_maps_to_cell_pointer_clif() {
-    let source = format!("type {DYNAMIC_TYPE_NAME} {{ i64 payload }} i64 main() {{ return 0; }}");
+    let source = format!("type {DYNAMIC_TYPE_NAME} {{ i64 payload }} i64 Main() {{ return 0; }}");
     let (_, resolution, typed) = lower_resolve_type(&source);
 
     let dynamic_item = resolution

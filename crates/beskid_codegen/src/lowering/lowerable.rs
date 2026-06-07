@@ -5,8 +5,8 @@ use crate::lowering::cast_intent::validate_cast_intents;
 use crate::lowering::context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport};
 use crate::lowering::expressions::export::{collect_exports, export_linker_name};
 use crate::lowering::function::{
-    generic_mapping_for_method_receiver, is_self_parameter_function, lower_function,
-    lower_function_with_name, lower_method, lower_test,
+    generic_mapping_for_method_receiver, generic_mapping_from_mangled, is_self_parameter_function,
+    lower_function, lower_function_with_name, lower_method, lower_test,
 };
 use beskid_analysis::hir::{
     HirContractDefinition, HirContractNode, HirFunctionDefinition, HirInlineModule, HirItem,
@@ -206,38 +206,62 @@ fn emit_function_item(
         .is_some_and(|name| name.starts_with("__method__"))
         && is_self_parameter_function(&def.node);
     if !def.node.generics.is_empty() {
-        if !method_style {
+        if method_style {
+            let Some(receiver_type) = receiver_type else {
+                return;
+            };
+            let generic_args =
+                generic_mapping_for_method_receiver(type_result, item, receiver_type);
+            if let Some(names) = type_result.generic_items.get(&item)
+                && names.iter().any(|name| !generic_args.contains_key(name))
+            {
+                return;
+            }
+            let symbol_name = mangled.clone().unwrap_or_else(|| export_linker_name(def));
+            if ctx.symbol_emitted(&symbol_name) {
+                return;
+            }
+            ctx.current_source_path = effective_source_path(item, def_index, resolution);
+            let result = lower_function_with_name(
+                def,
+                resolution,
+                type_result,
+                function_defs,
+                ctx,
+                mangled,
+                Some(generic_args),
+                Some(item),
+            );
+            if let Err(error) = result {
+                errors.push(error);
+            }
+            ctx.current_source_path = None;
             return;
         }
-        let Some(receiver_type) = receiver_type else {
-            return;
-        };
-        let generic_args =
-            generic_mapping_for_method_receiver(type_result, item, receiver_type);
-        if let Some(names) = type_result.generic_items.get(&item)
-            && names.iter().any(|name| !generic_args.contains_key(name))
+        if let Some(mangled_name) = mangled.as_ref()
+            && let Some(generic_args) =
+                generic_mapping_from_mangled(type_result, item, mangled_name)
         {
-            return;
+            let symbol_name = mangled.clone().unwrap_or_else(|| export_linker_name(def));
+            if ctx.symbol_emitted(&symbol_name) {
+                return;
+            }
+            ctx.current_source_path = effective_source_path(item, def_index, resolution);
+            let result = lower_function_with_name(
+                def,
+                resolution,
+                type_result,
+                function_defs,
+                ctx,
+                mangled,
+                Some(generic_args),
+                Some(item),
+            );
+            if let Err(error) = result {
+                errors.push(error);
+            }
+            ctx.current_source_path = None;
         }
-        let symbol_name = mangled.clone().unwrap_or_else(|| export_linker_name(def));
-        if ctx.symbol_emitted(&symbol_name) {
-            return;
-        }
-        ctx.current_source_path = effective_source_path(item, def_index, resolution);
-        let result = lower_function_with_name(
-            def,
-            resolution,
-            type_result,
-            function_defs,
-            ctx,
-            mangled,
-            Some(generic_args),
-            Some(item),
-        );
-        if let Err(error) = result {
-            errors.push(error);
-        }
-        ctx.current_source_path = None;
         return;
     }
     let symbol_name = mangled.clone().unwrap_or_else(|| export_linker_name(def));

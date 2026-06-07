@@ -10,7 +10,7 @@ use beskid_codegen::lower_source;
 fn build_and_run_executes_linked_executable() {
     let temp = tempfile::tempdir().expect("tempdir");
     let source_path = temp.path().join("main.bd");
-    let source = "i32 main() { return 7; }";
+    let source = "i32 Main() { return 7; }";
     fs::write(&source_path, source).expect("write source");
 
     let lowered = lower_source(&source_path, source, false).expect("lower fixture");
@@ -22,7 +22,7 @@ fn build_and_run_executes_linked_executable() {
     let output_dir = temp.path().join("out");
     let result = build_and_run(AotRunRequest {
         artifact: lowered.artifact,
-        entrypoint: "main".to_owned(),
+        entrypoint: "Main".to_owned(),
         output_dir: output_dir.clone(),
         runtime,
     })
@@ -45,7 +45,7 @@ fn build_and_run_executes_linked_executable() {
 fn build_and_run_executes_str_len() {
     let temp = tempfile::tempdir().expect("tempdir");
     let source_path = temp.path().join("main.bd");
-    let source = "i64 main() { return __str_len(\"hello\"); }";
+    let source = "i64 Main() { return __str_len(\"hello\"); }";
     std::fs::write(&source_path, source).expect("write source");
 
     let lowered = lower_source(&source_path, source, false).expect("lower fixture");
@@ -55,7 +55,7 @@ fn build_and_run_executes_str_len() {
     let output_dir = temp.path().join("out");
     let result = build_and_run(AotRunRequest {
         artifact: lowered.artifact,
-        entrypoint: "main".to_owned(),
+        entrypoint: "Main".to_owned(),
         output_dir: output_dir.clone(),
         runtime,
     })
@@ -84,7 +84,7 @@ fn std_build_links_host_archive() {
 
     let temp = tempfile::tempdir().expect("tempdir");
     let source_path = temp.path().join("main.bd");
-    let source = "i32 main() { return 7; }";
+    let source = "i32 Main() { return 7; }";
     fs::write(&source_path, source).expect("write source");
 
     let lowered = lower_source(&source_path, source, false).expect("lower fixture");
@@ -100,7 +100,7 @@ fn std_build_links_host_archive() {
             lowered.artifact,
             BuildOutputKind::Exe,
             exe_path.clone(),
-            "main",
+            "Main",
         )
     })
     .expect("build should succeed");

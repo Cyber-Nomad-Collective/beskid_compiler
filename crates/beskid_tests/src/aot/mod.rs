@@ -44,7 +44,7 @@ fn temp_case_dir(name: &str) -> PathBuf {
 
 /// Minimal valid program source for default AOT samples.
 fn sample_program() -> &'static str {
-    "unit main() { }"
+    "unit Main() { }"
 }
 
 /// Parse `sample_program`, run analysis, HIR, resolve, typecheck, and lower to a codegen artifact.

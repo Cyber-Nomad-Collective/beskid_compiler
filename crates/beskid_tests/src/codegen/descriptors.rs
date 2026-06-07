@@ -34,7 +34,7 @@ fn align_to(value: usize, align: usize) -> usize {
 
 #[test]
 fn descriptor_emits_entries_for_named_types() {
-    let source = "type Foo { i64 x } enum Choice { Some(Foo value), None } unit main() { }";
+    let source = "type Foo { i64 x } enum Choice { Some(Foo value), None } unit Main() { }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected codegen lowering to succeed");
@@ -47,7 +47,7 @@ fn descriptor_emits_entries_for_named_types() {
 
 #[test]
 fn descriptor_struct_pointer_offsets_for_named_fields() {
-    let source = "type Foo { i64 x } type Bar { Foo f, i64 y } unit main() { }";
+    let source = "type Foo { i64 x } type Bar { Foo f, i64 y } unit Main() { }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected codegen lowering to succeed");
@@ -71,7 +71,7 @@ fn descriptor_struct_pointer_offsets_for_named_fields() {
 
 #[test]
 fn descriptor_enum_pointer_offsets_include_payload_start() {
-    let source = "type Foo { i64 x } enum Choice { Some(Foo value), None } unit main() { }";
+    let source = "type Foo { i64 x } enum Choice { Some(Foo value), None } unit Main() { }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected codegen lowering to succeed");
@@ -97,7 +97,7 @@ fn descriptor_enum_pointer_offsets_include_payload_start() {
 
 #[test]
 fn descriptor_enum_layout_respects_header_and_tag_contract() {
-    let source = "enum Choice { Some(i64 value), None } unit main() { }";
+    let source = "enum Choice { Some(i64 value), None } unit Main() { }";
     let (hir, resolution, typed) = lower_resolve_type(source);
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("expected codegen lowering to succeed");

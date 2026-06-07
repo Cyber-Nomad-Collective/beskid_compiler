@@ -234,7 +234,7 @@ host AppHost() : ConsoleHost {
     }
 }
 
-i32 main() {
+i32 Main() {
     launch MissingHost();
     return 0;
 }

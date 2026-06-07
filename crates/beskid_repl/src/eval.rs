@@ -23,7 +23,7 @@ const EXPR_RETURN_TYPES: &[&str] = &["i64", "i32", "bool", "string", "f64", "cha
 
 pub fn eval_snippet(engine: &mut Engine, snippet: &str) -> EvalOutcome {
     match wrap_snippet(snippet) {
-        Ok(wrapped) => match run_wrapped(engine, &wrapped.source, "main", None) {
+        Ok(wrapped) => match run_wrapped(engine, &wrapped.source, "Main", None) {
             Ok(output) => {
                 if wrapped.return_type == "unit" {
                     EvalOutcome::Unit
@@ -41,11 +41,11 @@ pub fn type_of_snippet(snippet: &str) -> EvalOutcome {
     match wrap_snippet(snippet) {
         Ok(wrapped) => match lower_wrapped(&wrapped.source) {
             Ok(lowered) => {
-                let Some(main) = find_entrypoint(&lowered.resolution, "main") else {
-                    return EvalOutcome::Error("missing `main` entrypoint".to_string());
+                let Some(main) = find_entrypoint(&lowered.resolution, "Main") else {
+                    return EvalOutcome::Error("missing `Main` entrypoint".to_string());
                 };
                 let Some(signature) = lowered.typed.function_signatures.get(&main.id) else {
-                    return EvalOutcome::Error("missing signature for `main`".to_string());
+                    return EvalOutcome::Error("missing signature for `Main`".to_string());
                 };
                 let display = format_type_id(
                     &lowered.typed,
@@ -73,13 +73,13 @@ fn wrap_snippet(snippet: &str) -> Result<WrappedSnippet, String> {
 
     if is_likely_statement(trimmed) {
         return Ok(WrappedSnippet {
-            source: format!("unit main() {{ {trimmed} }}"),
+            source: format!("unit Main() {{ {trimmed} }}"),
             return_type: "unit".to_string(),
         });
     }
 
     for ret in EXPR_RETURN_TYPES {
-        let wrapped = format!("{ret} main() {{ return {trimmed}; }}");
+        let wrapped = format!("{ret} Main() {{ return {trimmed}; }}");
         if lower_wrapped(&wrapped).is_ok() {
             return Ok(WrappedSnippet {
                 source: wrapped,
@@ -219,14 +219,14 @@ mod tests {
     #[test]
     fn wraps_expression_as_i64_main() {
         let wrapped = wrap_snippet("1 + 1").expect("wrap");
-        assert!(wrapped.source.contains("i64 main()"));
+        assert!(wrapped.source.contains("i64 Main()"));
         assert_eq!(wrapped.return_type, "i64");
     }
 
     #[test]
     fn wraps_statement_as_unit_main() {
         let wrapped = wrap_snippet("let x = 1;").expect("wrap");
-        assert!(wrapped.source.starts_with("unit main()"));
+        assert!(wrapped.source.starts_with("unit Main()"));
         assert_eq!(wrapped.return_type, "unit");
     }
 

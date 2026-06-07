@@ -21,7 +21,7 @@ fn security_allow_deny_sequences() -> Result<()> {
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C { i64 getpid(); }
 
-pub i64 main() { return 0; }
+pub i64 Main() { return 0; }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
 

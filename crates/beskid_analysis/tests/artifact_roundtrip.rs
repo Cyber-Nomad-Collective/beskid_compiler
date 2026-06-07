@@ -9,7 +9,7 @@ use beskid_artifacts::encode_ast;
 
 #[test]
 fn syntax_program_snapshot_roundtrips() {
-    let source = "use std.io;\ni32 main() { return 0; }";
+    let source = "use std.io;\ni32 Main() { return 0; }";
     let program = parse_program_with_source_name("Main.bd", source)
         .map(|p| {
             expand_program_with_diagnostics(
@@ -28,7 +28,7 @@ fn syntax_program_snapshot_roundtrips() {
 
 #[test]
 fn unit_artifact_snapshots_roundtrip() {
-    let source = "i32 main() { return 0; }";
+    let source = "i32 Main() { return 0; }";
     let program = parse_program_with_source_name("Main.bd", source)
         .map(|p| {
             expand_program_with_diagnostics(

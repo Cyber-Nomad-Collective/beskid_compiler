@@ -48,7 +48,7 @@ fn static_build_contains_required_runtime_symbols() {
         artifact,
         BuildOutputKind::StaticLib,
         output,
-        "main",
+        "Main",
     ))
     .expect("aot static build");
 

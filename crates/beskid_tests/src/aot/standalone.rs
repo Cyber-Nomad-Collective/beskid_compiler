@@ -8,7 +8,7 @@ fn executable_build_succeeds_in_standalone_mode() {
 
     let result = build(AotBuildRequest {
         runtime: RuntimeStrategy::Standalone,
-        ..AotBuildRequest::with_defaults(artifact, BuildOutputKind::Exe, output, "main")
+        ..AotBuildRequest::with_defaults(artifact, BuildOutputKind::Exe, output, "Main")
     })
     .expect("standalone executable build");
 

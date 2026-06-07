@@ -15,7 +15,7 @@ pub contract C {
     i64 write(i64 fd, ref u8 buf, i64 len);
 }
 
-pub i64 main() { return 0; }
+pub i64 Main() { return 0; }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     // Assert extern_imports recorded
@@ -43,7 +43,7 @@ pub contract C {
     i64 getpid();
 }
 
-pub i64 main() { return C.getpid(); }
+pub i64 Main() { return C.getpid(); }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
@@ -62,7 +62,7 @@ pub contract C {
     i64 no_such_symbol();
 }
 
-pub i64 main() { return C.no_such_symbol(); }
+pub i64 Main() { return C.no_such_symbol(); }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
@@ -83,14 +83,14 @@ pub contract C {
     i64 getpid();
 }
 
-pub i64 main() { return C.getpid(); }
+pub i64 Main() { return C.getpid(); }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
     engine
         .compile_artifact(&lowered.artifact)
         .expect("compile extern call");
-    let main_ptr = unsafe { engine.entrypoint_ptr("main").unwrap() };
+    let main_ptr = unsafe { engine.entrypoint_ptr("Main").unwrap() };
     let fun: extern "C" fn() -> i64 = unsafe { std::mem::transmute(main_ptr) };
     let pid = fun();
     assert!(pid > 1);
@@ -106,7 +106,7 @@ pub contract C {
     i64 no_such_symbol();
 }
 
-pub i64 main() { return C.no_such_symbol(); }
+pub i64 Main() { return C.no_such_symbol(); }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();
@@ -127,7 +127,7 @@ pub contract C {
     i64 getpid();
 }
 
-pub i64 main() { return C.getpid(); }
+pub i64 Main() { return C.getpid(); }
 "#;
     let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
     let mut engine = Engine::new();

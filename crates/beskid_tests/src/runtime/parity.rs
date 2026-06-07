@@ -32,7 +32,7 @@ struct TryParityOkCase {
 const TRY_PARITY_OK_CASES: &[TryParityOkCase] = &[
     TryParityOkCase {
         name: "try_expression",
-        source: "enum Result { Ok(i64 value), Error(string error) } i64 main() { Result r = Result::Ok(1); i64 value = r?; return value; }",
+        source: "enum Result { Ok(i64 value), Error(string error) } i64 Main() { Result r = Result::Ok(1); i64 value = r?; return value; }",
         expected: 1,
     },
     TryParityOkCase {
@@ -43,7 +43,7 @@ const TRY_PARITY_OK_CASES: &[TryParityOkCase] = &[
                 Result first = Result::Ok(1);
                 return first?;
             }
-            i64 main() {
+            i64 Main() {
                 i64 value = unwrap_ok();
                 Result second = Result::Ok(value);
                 return second?;
@@ -55,7 +55,7 @@ const TRY_PARITY_OK_CASES: &[TryParityOkCase] = &[
         name: "try_expression_assignment_branch",
         source: "
             enum Result { Ok(i64 value), Error(string error) }
-            i64 main() {
+            i64 Main() {
                 Result source = Result::Ok(7);
                 mut i64 value = 0;
                 if true {
@@ -74,7 +74,7 @@ fn build_aot_object(source: &str, output: PathBuf) -> PathBuf {
         artifact,
         BuildOutputKind::ObjectOnly,
         output,
-        "main",
+        "Main",
     ))
     .expect("expected AOT object build to succeed");
 
@@ -93,7 +93,7 @@ fn object_contains_symbol(path: &Path, symbol: &str) -> bool {
 
 #[test]
 fn parity_interop_usize_dispatch_path_is_consistent() {
-    let source = "i64 main() { return __array_len(__array_new(8, 3)); }";
+    let source = "i64 Main() { return __array_len(__array_new(8, 3)); }";
     let aot_value = aot_run_main_i64(source);
     assert_eq!(aot_value, 3, "expected AOT dispatch array_len result");
 
@@ -110,7 +110,7 @@ fn parity_interop_usize_dispatch_path_is_consistent() {
 #[test]
 fn parity_array_len_reads_beskid_array_length() {
     let source = "
-        i64 main() {
+        i64 Main() {
             i64 h = __array_new(8, 3);
             return __array_len(h);
         }
@@ -133,7 +133,7 @@ fn parity_array_len_reads_beskid_array_length() {
 
 #[test]
 fn parity_alloc_path_is_consistent() {
-    let source = "i64 main() { return __array_new(8, 3); }";
+    let source = "i64 Main() { return __array_new(8, 3); }";
     let aot_value = aot_run_main_i64(source);
     assert_ne!(
         aot_value, 0,
@@ -152,7 +152,7 @@ fn parity_alloc_path_is_consistent() {
 
 #[test]
 fn parity_panic_builtin_compiles() {
-    let source = "unit main() { if false { __panic_str(\"boom\"); } }";
+    let source = "unit Main() { if false { __panic_str(\"boom\"); } }";
     aot_compile_only(source);
 
     let dir = temp_case_dir("panic_builtin");
@@ -160,7 +160,7 @@ fn parity_panic_builtin_compiles() {
         compile_artifact(source),
         BuildOutputKind::ObjectOnly,
         dir.join("panic.o"),
-        "main",
+        "Main",
     ))
     .expect("expected AOT compile to succeed for panic builtin path");
 
@@ -178,7 +178,7 @@ fn parity_contract_dispatch_outcome_is_consistent() {
         type Worker : Service { i64 base }
         impl Worker { i64 run(i64 x) { return this.base + x; } }
         i64 apply(Service s) { return s.run(1); }
-        i64 main() {
+        i64 Main() {
             Worker w = Worker { base: 41 };
             return apply(w);
         }
@@ -206,7 +206,7 @@ const EVENT_PARITY_CASES: &[EventParityCase] = &[
         source: "
             type User { event{4} Created(string payload) }
             impl User { unit Emit(string payload) { this.Created(payload); } }
-            i64 main() {
+            i64 Main() {
                 mut User u = User { };
                 unit(string) handler = (string payload) => { __syscall_write(1, payload); };
                 u.Created += handler;
@@ -221,7 +221,7 @@ const EVENT_PARITY_CASES: &[EventParityCase] = &[
         source: "
             type User { event Created(string payload) }
             impl User { unit Emit(string payload) { this.Created(payload); } }
-            i64 main() {
+            i64 Main() {
                 mut User u = User { };
                 unit(string) handler = (string payload) => { __syscall_write(1, payload); };
                 u.Created += handler;
@@ -259,7 +259,7 @@ fn parity_event_lifecycle_is_consistent() {
 fn parity_identity_equality_behavior_is_consistent() {
     let source = "
         type User { i64 id }
-        i64 main() {
+        i64 Main() {
             User a = User { id: 1 };
             User b = a;
             if a === b {
@@ -286,7 +286,7 @@ fn parity_identity_equality_behavior_is_consistent() {
 #[test]
 fn parity_range_loop_behavior_is_consistent() {
     let source =
-        "i32 main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
+        "i32 Main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
     let aot_value = aot_run_main_i32(source);
     assert_eq!(aot_value, 6, "expected AOT range-loop accumulation result");
 
@@ -309,7 +309,7 @@ fn parity_generic_iterable_loop_behavior_is_consistent() {
                 return Option::None();
             }
         }
-        i64 main() {
+        i64 Main() {
             CounterIter iter = CounterIter { sentinel: 0 };
             for i in iter {
                 continue;
@@ -340,7 +340,7 @@ fn parity_try_success_cases_are_consistent() {
 fn parity_try_expression_err_path_compiles() {
     let source = "
         enum Result { Ok(i64 value), Error(string error) }
-        i64 main() {
+        i64 Main() {
             Result failed = Result::Error(\"boom\");
             i64 value = failed?;
             return value;
@@ -355,4 +355,79 @@ fn parity_try_expression_err_path_compiles() {
         "expected AOT object output for try-expression err-path compile parity"
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+
+#[test]
+fn probe_repeat_fn() {
+    use crate::support::runtime::aot_run_main_i64;
+    let source = r#"string Repeat(string unit, i64 count) {
+    string acc = "";
+    i64 i = 0;
+    while i < count {
+        acc = "${acc}${unit}";
+        i = i + 1;
+    }
+    return acc;
+}
+i64 Main() { return __str_len(Repeat("-", 4)); }"#;
+    let v = aot_run_main_i64(source);
+    eprintln!("repeat_fn = {}", v);
+    assert_eq!(v, 4, "repeat_fn");
+}
+
+#[test]
+fn probe_repeat_fn_i32_count() {
+    use crate::support::runtime::aot_run_main_i64;
+    let source = r#"string Repeat(string unit, i32 count) {
+    string acc = "";
+    i32 i = 0;
+    while i < count {
+        acc = "${acc}${unit}";
+        i = i + 1;
+    }
+    return acc;
+}
+i64 Main() { return __str_len(Repeat("-", 4)); }"#;
+    let v = aot_run_main_i64(source);
+    eprintln!("repeat_fn_i32_count = {}", v);
+    assert_eq!(v, 4, "repeat_fn_i32_count");
+}
+
+#[test]
+fn probe_repeat_fn_mut() {
+    use crate::support::runtime::aot_run_main_i64;
+    let source = r#"string Repeat(string unit, i64 count) {
+    mut string acc = "";
+    mut i64 i = 0;
+    while i < count {
+        acc = "${acc}${unit}";
+        i = i + 1;
+    }
+    return acc;
+}
+i64 Main() { return __str_len(Repeat("-", 4)); }"#;
+    let v = aot_run_main_i64(source);
+    eprintln!("repeat_fn_mut = {}", v);
+    assert_eq!(v, 4, "repeat_fn_mut");
+}
+
+#[test]
+fn probe_repeat_cross_mod() {
+    use crate::support::runtime::aot_run_main_i64;
+    let source = r#"mod lib {
+    pub string Repeat(string unit, i64 count) {
+        string acc = "";
+        i64 i = 0;
+        while i < count {
+            acc = "${acc}${unit}";
+            i = i + 1;
+        }
+        return acc;
+    }
+}
+i64 Main() { return __str_len(lib.Repeat("-", 4)); }"#;
+    let v = aot_run_main_i64(source);
+    eprintln!("cross_mod = {}", v);
+    assert_eq!(v, 4);
 }

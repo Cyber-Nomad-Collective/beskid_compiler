@@ -39,6 +39,10 @@ corelib_typecheck_test!(
     "system/OutputWriteLineTests.bd"
 );
 corelib_typecheck_test!(
+    system_output_write_tests_front_end_typechecks,
+    "system/OutputWriteTests.bd"
+);
+corelib_typecheck_test!(
     console_ansi_escape_tests_front_end_typechecks,
     "console/AnsiEscapeTests.bd"
 );
@@ -81,6 +85,10 @@ corelib_typecheck_test!(
 corelib_typecheck_test!(
     core_bytes_tests_front_end_typechecks,
     "core/BytesTests.bd"
+);
+corelib_typecheck_test!(
+    core_encoding_utf8_tests_front_end_typechecks,
+    "core/EncodingUtf8Tests.bd"
 );
 corelib_typecheck_test!(
     collections_array_tests_front_end_typechecks,

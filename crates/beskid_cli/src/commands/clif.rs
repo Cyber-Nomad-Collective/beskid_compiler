@@ -43,7 +43,7 @@ pub fn execute(args: ClifArgs) -> Result<()> {
 
     let lowered = lower_resolved_entrypoint_with_pipeline(
         &resolved,
-        Some("main"),
+        Some("Main"),
         false,
         Some(session.observer()),
     )?;

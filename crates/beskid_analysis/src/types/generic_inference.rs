@@ -22,14 +22,6 @@ pub fn infer_generic_args_from_call_types(
         return Some(Vec::new());
     }
 
-    for arg_type in arg_types {
-        if let Some(TypeInfo::Applied { args, .. }) = types.get(*arg_type)
-            && args.len() == expected_len
-        {
-            return Some(args.clone());
-        }
-    }
-
     let params = function_signatures.get(&item_id)?.params.clone();
     let mut mapping: HashMap<String, TypeId> = HashMap::new();
     for (arg_type, param_type) in arg_types.iter().zip(params.iter()) {

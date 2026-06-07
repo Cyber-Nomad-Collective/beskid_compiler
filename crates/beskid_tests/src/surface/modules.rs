@@ -8,7 +8,7 @@ fn parses_module_declaration() {
 
 #[test]
 fn parses_file_scoped_module_declaration() {
-    assert_parse(Rule::Program, "mod net.http; unit main() { return; }");
+    assert_parse(Rule::Program, "mod net.http; unit Main() { return; }");
 }
 
 #[test]

@@ -14,7 +14,7 @@ use pest::Parser;
 
 #[test]
 fn triple_slash_doc_normalized_on_program_item() {
-    let src = "/// Summary line\n/// Second line\nunit main() { return 42; }\n";
+    let src = "/// Summary line\n/// Second line\nunit Main() { return 42; }\n";
     let program = parse_program(src).unwrap();
     assert_eq!(program.node.items.len(), 1);
     let d = program.node.leading_docs[0].as_ref().expect("leading doc");
@@ -110,7 +110,7 @@ fn doc_diagnostics_variant_on_type_is_wrong_placement() {
 
 #[test]
 fn doc_diagnostics_par_without_generics_on_function() {
-    let src = "/// @par(T) bad\nunit main() { return 42; }\n";
+    let src = "/// @par(T) bad\nunit Main() { return 42; }\n";
     let program = parse_program(src).unwrap();
     let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some());
@@ -141,7 +141,7 @@ fn doc_diagnostics_flag_unknown_arg_name() {
 
 #[test]
 fn hover_includes_doc_markdown_when_resolved() {
-    let src = "/// Hello **doc**\nunit main() { return 42; }\n";
+    let src = "/// Hello **doc**\nunit Main() { return 42; }\n";
     let program = parse_program(src).unwrap();
     let snap = build_document_analysis(&program, "<memory>", src, None);
     let name_start = src.find("main").expect("main");
@@ -152,31 +152,31 @@ fn hover_includes_doc_markdown_when_resolved() {
 
 #[test]
 fn program_rule_accepts_single_function_with_trailing_newline() {
-    let src = "unit main() { return 42; }\n";
+    let src = "unit Main() { return 42; }\n";
     BeskidParser::parse(MainRule::Program, src).expect("program parser");
 }
 
 #[test]
 fn program_rule_accepts_doc_and_function_with_trailing_newline() {
-    let src = "/// Hello\nunit main() { return 42; }\n";
+    let src = "/// Hello\nunit Main() { return 42; }\n";
     BeskidParser::parse(MainRule::Program, src).expect("program parser");
 }
 
 #[test]
 fn item_with_docs_rule_accepts_doc_and_function_with_trailing_newline() {
-    let src = "/// Hello\nunit main() { return 42; }\n";
+    let src = "/// Hello\nunit Main() { return 42; }\n";
     BeskidParser::parse(MainRule::ItemWithDocs, src).expect("item parser");
 }
 
 #[test]
 fn item_with_docs_rule_accepts_doc_and_function_without_trailing_newline() {
-    let src = "/// Hello\nunit main() { return 42; }";
+    let src = "/// Hello\nunit Main() { return 42; }";
     BeskidParser::parse(MainRule::ItemWithDocs, src).expect("item parser");
 }
 
 #[test]
 fn inner_item_rule_accepts_function_with_trailing_newline() {
-    let src = "unit main() { return 42; }\n";
+    let src = "unit Main() { return 42; }\n";
     BeskidParser::parse(MainRule::InnerItem, src).expect("inner item parser");
 }
 
@@ -247,7 +247,7 @@ fn resolved_ref_emits_pckg_doc_route_in_markdown_when_context_set() {
     let src = r#"
 /// See @ref(main) for details.
 unit other() { return 1; }
-unit main() { return 42; }
+unit Main() { return 42; }
 "#;
     let program = parse_program(src).unwrap();
     let ctx = DocRefLinkContext {

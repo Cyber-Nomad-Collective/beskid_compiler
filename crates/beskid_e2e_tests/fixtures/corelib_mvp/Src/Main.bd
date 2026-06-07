@@ -1,7 +1,7 @@
 use Std.System.Output;
 use Std.Core.String;
 
-i32 main() {
+i32 Main() {
     Output.WriteLine("ok");
     if String.IsEmpty("ok") {
         return 31;

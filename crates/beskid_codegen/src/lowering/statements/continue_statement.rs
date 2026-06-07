@@ -1,6 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::lowerable::Lowerable;
 use crate::lowering::node_context::NodeLoweringContext;
+use crate::lowering::function::materialize_locals_for_loop_back_edge;
 use beskid_analysis::hir::HirContinueStatement;
 use beskid_analysis::syntax::Spanned;
 use cranelift_codegen::ir::InstBuilder;
@@ -21,6 +22,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirContinueStatement {
                     span: node.span,
                     node: "continue outside loop",
                 })?;
+        materialize_locals_for_loop_back_edge(ctx.builder, ctx.state);
         ctx.builder.ins().jump(control.continue_block, &[]);
         ctx.state.block_terminated = true;
         Ok(())

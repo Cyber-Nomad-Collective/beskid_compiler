@@ -151,12 +151,33 @@ pub fn declare_user_functions<M: Module>(
     linkage: Linkage,
     func_ids: &mut HashMap<String, FuncId>,
 ) -> Result<Vec<String>, ModuleError> {
+    declare_user_functions_with_link_symbols(
+        module,
+        artifact,
+        linkage,
+        func_ids,
+        |name| name.to_string(),
+    )
+}
+
+/// Like [`declare_user_functions`], but allows renaming symbols at the object boundary (AOT `Main` → `main`).
+pub fn declare_user_functions_with_link_symbols<M: Module>(
+    module: &mut M,
+    artifact: &CodegenArtifact,
+    linkage: Linkage,
+    func_ids: &mut HashMap<String, FuncId>,
+    link_symbol: impl Fn(&str) -> String,
+) -> Result<Vec<String>, ModuleError> {
     let mut declared = Vec::with_capacity(artifact.functions.len());
     for function in &artifact.functions {
-        let func_id =
-            module.declare_function(&function.name, linkage, &function.function.signature)?;
+        let emitted_symbol = link_symbol(&function.name);
+        let func_id = module.declare_function(
+            &emitted_symbol,
+            linkage,
+            &function.function.signature,
+        )?;
         func_ids.insert(function.name.clone(), func_id);
-        declared.push(function.name.clone());
+        declared.push(emitted_symbol);
     }
     Ok(declared)
 }

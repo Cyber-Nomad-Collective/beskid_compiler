@@ -43,7 +43,7 @@ fn descriptor_backed_noop_mod_emits_mod_phases_in_order() {
     let mod_dir = root.join("ModA");
     fs::create_dir_all(host_dir.join("Src")).expect("host source root");
     fs::create_dir_all(mod_dir.join("Src")).expect("mod source root");
-    fs::write(host_dir.join("Src/Main.bd"), "unit main() { return; }\n").expect("host source");
+    fs::write(host_dir.join("Src/Main.bd"), "unit Main() { return; }\n").expect("host source");
     fs::write(mod_dir.join("Src/Mod.bd"), "unit marker() { return; }\n").expect("mod source");
 
     write_manifest(
@@ -80,7 +80,7 @@ project {
     );
     write_noop_descriptor(&host_dir, "ModA");
 
-    let source = "unit main() { return; }\n";
+    let source = "unit Main() { return; }\n";
     let program = parse_program_with_source_name("Main.bd", source).expect("parse host program");
     let plan = CompilePlan {
         project_root: host_dir.clone(),

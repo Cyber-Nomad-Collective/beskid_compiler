@@ -193,7 +193,7 @@ mod tests {
     use crate::session::store::{Document, State};
 
     fn source() -> String {
-        "i32 main() { return 0; }".to_string()
+        "i32 Main() { return 0; }".to_string()
     }
 
     fn uri() -> Uri {
@@ -209,7 +209,7 @@ mod tests {
             &state,
             file_uri.clone(),
             1,
-            "i32 main() { return 1; }".to_string(),
+            "i32 Main() { return 1; }".to_string(),
         )
         .await;
 

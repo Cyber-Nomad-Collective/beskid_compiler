@@ -51,7 +51,7 @@ dependency "SampleMod" {
 }
 "#;
 
-const HOST_SOURCE: &str = "pub i64 main() { return 0; }\n";
+const HOST_SOURCE: &str = "pub i64 Main() { return 0; }\n";
 
 const SAMPLE_DESCRIPTOR_REGS: &str = r#"[
     { "contractId": "Beskid.Compiler.Collect.Collector", "typeId": "SampleMod.SampleCollect", "entrySymbol": "samplemod_collect" },

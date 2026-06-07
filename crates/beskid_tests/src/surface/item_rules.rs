@@ -3,7 +3,7 @@ use beskid_analysis::Rule;
 
 #[test]
 fn parses_item_rule() {
-    assert_parse(Rule::InnerItem, "unit main() { return; }");
+    assert_parse(Rule::InnerItem, "unit Main() { return; }");
 }
 
 #[test]

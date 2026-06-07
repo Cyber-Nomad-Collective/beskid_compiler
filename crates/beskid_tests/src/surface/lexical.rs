@@ -18,15 +18,15 @@ fn rejects_identifier_starting_with_digit() {
 
 #[test]
 fn parses_line_comment_as_whitespace() {
-    assert_parse(Rule::Program, "// comment\nunit main() { return; }");
+    assert_parse(Rule::Program, "// comment\nunit Main() { return; }");
 }
 
 #[test]
 fn parses_block_comment_as_whitespace() {
-    assert_parse(Rule::Program, "/* comment */ unit main() { return; }");
+    assert_parse(Rule::Program, "/* comment */ unit Main() { return; }");
 }
 
 #[test]
 fn rejects_program_with_trailing_tokens() {
-    assert_parse_fail(Rule::Program, "unit main() { return; } extra");
+    assert_parse_fail(Rule::Program, "unit Main() { return; } extra");
 }

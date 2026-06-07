@@ -35,7 +35,7 @@ host AppHost() : ConsoleHost {
     }
 }
 
-i32 main() {
+i32 Main() {
     return 0;
 }
 "#;

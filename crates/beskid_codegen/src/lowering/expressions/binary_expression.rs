@@ -226,6 +226,16 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 }
             }
             HirBinaryOp::And | HirBinaryOp::Or => {
+                let left_type = resolve_monomorph_type_id(
+                    ctx.type_result,
+                    &ctx.codegen.active_generic_substitution,
+                    left_type,
+                );
+                let right_type = resolve_monomorph_type_id(
+                    ctx.type_result,
+                    &ctx.codegen.active_generic_substitution,
+                    right_type,
+                );
                 let left_is_bool = matches!(
                     ctx.type_result.types.get(left_type),
                     Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
@@ -234,7 +244,14 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     ctx.type_result.types.get(right_type),
                     Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
                 );
+                let left_clif = ctx.builder.func.dfg.value_type(left);
+                let right_clif = ctx.builder.func.dfg.value_type(right);
+                let operands_are_bool_clif = left_clif.is_int()
+                    && right_clif.is_int()
+                    && left_clif.bits() == 8
+                    && right_clif.bits() == 8;
                 let is_bool = (left_is_bool && right_is_bool)
+                    || operands_are_bool_clif
                     || matches!(
                         operand_info,
                         Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
@@ -334,11 +351,40 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     });
                 }
 
-                if matches!(
+                if (matches!(
                     operand_info,
                     Some(TypeInfo::Primitive(HirPrimitiveType::String))
-                ) && matches!(node.node.op.node, HirBinaryOp::Eq | HirBinaryOp::NotEq)
+                ) || is_string_type(ctx, left_type) || is_string_type(ctx, right_type))
+                    && matches!(node.node.op.node, HirBinaryOp::Eq | HirBinaryOp::NotEq)
                 {
+                    if !is_string_type(ctx, left_type) {
+                        let string_type = if is_string_type(ctx, right_type) {
+                            right_type
+                        } else {
+                            left_type
+                        };
+                        left = coerce_operand_to_string(
+                            node.node.left.span,
+                            left,
+                            left_type,
+                            string_type,
+                            ctx,
+                        )?;
+                    }
+                    if !is_string_type(ctx, right_type) {
+                        let string_type = if is_string_type(ctx, left_type) {
+                            left_type
+                        } else {
+                            right_type
+                        };
+                        right = coerce_operand_to_string(
+                            node.node.right.span,
+                            right,
+                            right_type,
+                            string_type,
+                            ctx,
+                        )?;
+                    }
                     return lower_string_eq(node, left, right, ctx);
                 }
 

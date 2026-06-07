@@ -4,7 +4,7 @@ use beskid_codegen::{DYNAMIC_TYPE_NAME, lower_program};
 #[test]
 fn dynamic_type_alias_lowers_without_codegen_failure() {
     let source =
-        format!("type {DYNAMIC_TYPE_NAME} {{ i64 payload }} i64 main() {{ i64 x = 1; return x; }}");
+        format!("type {DYNAMIC_TYPE_NAME} {{ i64 payload }} i64 Main() {{ i64 x = 1; return x; }}");
     let (hir, resolution, typed) = lower_resolve_type(&source);
     let artifact =
         lower_program(&hir, &resolution, &typed).expect("dynamic alias program should codegen");

@@ -194,7 +194,19 @@ pub fn default_output_kind(target_kind: Option<ProjectTargetKind>) -> BuildOutpu
     }
 }
 
-/// Normalize CLI-style entrypoint: non-empty string or default `"main"`.
+/// Normalize CLI-style entrypoint: non-empty string or default [`DEFAULT_ENTRYPOINT`].
+pub const DEFAULT_ENTRYPOINT: &str = "Main";
+
+/// Beskid entrypoint name mapped to the native C link symbol for executable output.
+pub fn native_link_entrypoint(beskid_entrypoint: &str) -> &str {
+    if beskid_entrypoint == DEFAULT_ENTRYPOINT {
+        "main"
+    } else {
+        beskid_entrypoint
+    }
+}
+
+/// Normalize CLI-style entrypoint: non-empty string or default [`DEFAULT_ENTRYPOINT`].
 pub fn resolve_entrypoint(entrypoint: Option<String>) -> AotResult<String> {
     if let Some(entrypoint) = entrypoint {
         if entrypoint.trim().is_empty() {
@@ -205,7 +217,7 @@ pub fn resolve_entrypoint(entrypoint: Option<String>) -> AotResult<String> {
         return Ok(entrypoint);
     }
 
-    Ok("main".to_owned())
+    Ok(DEFAULT_ENTRYPOINT.to_owned())
 }
 
 /// Run object emission, optional runtime preparation, and linking per `req.output_kind`.
@@ -264,7 +276,11 @@ fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
 }
 
 fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]) -> AotResult<()> {
-    if exported_symbols.iter().any(|sym| sym == &req.entrypoint) {
+    let native = native_link_entrypoint(&req.entrypoint);
+    if exported_symbols
+        .iter()
+        .any(|sym| sym == &req.entrypoint || sym == native)
+    {
         return Ok(());
     }
 
@@ -296,7 +312,7 @@ fn link_stage(
             object_path: object_stage.object_path.clone(),
             runtime_staticlib: runtime.staticlib_path.clone(),
             host_staticlib: None,
-            entrypoint_symbol: req.entrypoint.clone(),
+            entrypoint_symbol: native_link_entrypoint(&req.entrypoint).to_owned(),
             exported_symbols: object_stage.exported_symbols.clone(),
             link_mode: req.link_mode,
             verbose: req.verbose_link,
@@ -391,12 +407,12 @@ mod with_defaults_tests {
             CodegenArtifact::default(),
             BuildOutputKind::ObjectOnly,
             PathBuf::from("/tmp/out.o"),
-            "main",
+            "Main",
         );
         assert_eq!(req.object_path, None);
         assert_eq!(req.target_triple, None);
         assert_eq!(req.profile, BuildProfile::Debug);
-        assert_eq!(req.entrypoint, "main");
+        assert_eq!(req.entrypoint, "Main");
         assert_eq!(req.export_policy, ExportPolicy::PublicOnly);
         assert_eq!(req.link_mode, LinkMode::Auto);
         assert!(matches!(req.runtime, RuntimeStrategy::UsePrebuilt { .. }));

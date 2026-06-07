@@ -30,7 +30,7 @@ pub struct RunArgs {
     pub lockfile: LockfilePolicyArgs,
 
     /// Entrypoint function name
-    #[arg(long, default_value = "main")]
+    #[arg(long, default_value = "Main")]
     pub entrypoint: String,
 
     /// Disable animated progress and graph output

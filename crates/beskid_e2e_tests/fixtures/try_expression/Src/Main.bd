@@ -1,6 +1,6 @@
 enum Result { Ok(i32 value), Error(string error) }
 
-i32 main() {
+i32 Main() {
     Result r = Result::Ok(1);
     i32 value = r?;
     return value;

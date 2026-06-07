@@ -151,7 +151,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
             let saved_locals = ctx.state.locals.clone();
             let prior_terminated = ctx.state.block_terminated;
             ctx.state.block_terminated = false;
-            bind_match_pattern(ctx, scrutinee, item_id, variants, arm)?;
+            bind_match_pattern(ctx, scrutinee, scrutinee_type, item_id, variants, arm)?;
 
             let value_block = if arm.node.guard.is_some() {
                 let guard_val = lower_node(arm.node.guard.as_ref().unwrap(), ctx)?.ok_or(
@@ -380,6 +380,7 @@ fn bind_primitive_match_pattern(
 fn bind_match_pattern(
     ctx: &mut NodeLoweringContext<'_, '_>,
     scrutinee: Value,
+    scrutinee_type: TypeId,
     item_id: beskid_analysis::resolve::ItemId,
     variants: &[(String, Vec<beskid_analysis::types::TypeId>)],
     arm: &Spanned<beskid_analysis::hir::HirMatchArm>,
@@ -391,7 +392,14 @@ fn bind_match_pattern(
             let field_types = variants
                 .iter()
                 .find(|(name, _)| name == variant_name)
-                .map(|(_, fields)| fields)
+                .map(|(_, fields)| {
+                    substitute_enum_payload_field_types(
+                        ctx.type_result,
+                        scrutinee_type,
+                        item_id,
+                        fields,
+                    )
+                })
                 .ok_or(CodegenError::UnsupportedNode {
                     span: enum_pattern.span,
                     node: "match variant fields",
@@ -463,4 +471,34 @@ fn bind_local(
     ctx.state.locals.insert(local_id, var);
     ctx.state.local_type_overrides.insert(local_id, type_id);
     Ok(())
+}
+
+fn substitute_enum_payload_field_types(
+    type_result: &beskid_analysis::types::TypeResult,
+    scrutinee_type: TypeId,
+    enum_item_id: beskid_analysis::resolve::ItemId,
+    field_types: &[TypeId],
+) -> Vec<TypeId> {
+    let Some(TypeInfo::Applied { base, args }) = type_result.types.get(scrutinee_type) else {
+        return field_types.to_vec();
+    };
+    if *base != enum_item_id {
+        return field_types.to_vec();
+    }
+    let Some(generic_names) = type_result.generic_items.get(&enum_item_id) else {
+        return field_types.to_vec();
+    };
+    field_types
+        .iter()
+        .map(|field_type| {
+            if let Some(TypeInfo::GenericParam(name)) = type_result.types.get(*field_type)
+                && let Some(index) = generic_names.iter().position(|n| n == name)
+                && let Some(arg) = args.get(index)
+            {
+                *arg
+            } else {
+                *field_type
+            }
+        })
+        .collect()
 }

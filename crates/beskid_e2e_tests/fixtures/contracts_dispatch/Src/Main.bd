@@ -12,7 +12,7 @@ i32 apply(Service s) {
     return s.run(1);
 }
 
-i32 main() {
+i32 Main() {
     Worker w = Worker { base: 41 };
     return apply(w);
 }
