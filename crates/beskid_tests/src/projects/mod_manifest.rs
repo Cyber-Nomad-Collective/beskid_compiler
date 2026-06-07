@@ -3,7 +3,7 @@
 use std::fs;
 
 use beskid_analysis::projects::{
-    MOD_CAPABILITY_NAMES, PROJECT_FILE_NAME, ProjectGraphNode, ProjectKind, TargetKind,
+    MOD_CAPABILITY_NAMES, ProjectGraphNode, ProjectKind, TargetKind,
     build_compile_plan, build_project_graph, parse_manifest,
 };
 
@@ -14,7 +14,7 @@ use super::test_cwd::with_cwd_at_workspace_root;
 #[test]
 fn parses_mod_nested_block() {
     let src = r#"
-project {
+serialization-mod {
   name = "serialization-mod"
   version = "0.1.0"
   type = Mod
@@ -44,7 +44,7 @@ project {
 #[test]
 fn legacy_meta_type_and_block_map_to_mod() {
     let src = r#"
-project {
+legacy {
   name = "legacy"
   version = "0.1.0"
   type = Meta
@@ -69,7 +69,7 @@ project {
 #[test]
 fn mod_projects_reject_target_blocks() {
     let src = r#"
-project {
+bad {
   name = "bad"
   version = "0.1.0"
   type = Mod
@@ -90,7 +90,7 @@ target "main" {
 #[test]
 fn host_projects_reject_mod_block() {
     let src = r#"
-project {
+bad {
   name = "bad"
   version = "0.1.0"
   mod {
@@ -110,7 +110,7 @@ target "main" {
 #[test]
 fn rejects_unknown_mod_capability() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -133,10 +133,10 @@ fn graph_discovers_transitive_mod_dependency() {
     fs::create_dir_all(mod_dir.join("Src")).expect("mkdir mod src");
     fs::write(app_dir.join("Src/Main.bd"), "// host\n").expect("main");
 
-    write_manifest(
+    let manifest_path = write_manifest(
         &app_dir,
         r#"
-project {
+App {
   name = "App"
   version = "0.1.0"
 }
@@ -156,7 +156,7 @@ dependency "MyMod" {
     write_manifest(
         &mod_dir,
         r#"
-project {
+MyMod {
   name = "MyMod"
   version = "0.1.0"
   type = Mod
@@ -166,8 +166,6 @@ project {
 }
 "#,
     );
-
-    let manifest_path = app_dir.join(PROJECT_FILE_NAME);
     with_cwd_at_workspace_root(&root, || {
         let graph = build_project_graph(&manifest_path).expect("graph");
         let mut mod_nodes = 0usize;
@@ -195,10 +193,10 @@ fn compile_plan_builds_for_mod_root() {
     let mod_dir = root.join("MyMod");
     fs::create_dir_all(mod_dir.join("Src")).expect("mkdir");
 
-    write_manifest(
+    let manifest_path = write_manifest(
         &mod_dir,
         r#"
-project {
+MyMod {
   name = "MyMod"
   version = "0.1.0"
   type = Mod
@@ -208,8 +206,6 @@ project {
 }
 "#,
     );
-
-    let manifest_path = mod_dir.join(PROJECT_FILE_NAME);
     with_cwd_at_workspace_root(&root, || {
         let plan = build_compile_plan(&manifest_path, None).expect("mod compile plan");
         assert_eq!(plan.project_name, "MyMod");
@@ -225,7 +221,7 @@ project {
 #[test]
 fn rejects_max_generator_rounds_zero_with_e1803() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -241,7 +237,7 @@ project {
 #[test]
 fn accepts_max_generator_rounds_one() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -258,7 +254,7 @@ project {
 #[test]
 fn rejects_unknown_artifact_policy_with_e1805() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -274,7 +270,7 @@ project {
 #[test]
 fn parses_artifact_policy_rebuild() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -291,7 +287,7 @@ project {
 #[test]
 fn parses_artifact_policy_clean_rebuild() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -311,7 +307,7 @@ project {
 #[test]
 fn parses_artifact_policy_reuse_default() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -328,7 +324,7 @@ project {
 #[test]
 fn normalizes_single_quoted_capability_to_one_element_list() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -346,7 +342,7 @@ project {
 #[test]
 fn normalizes_single_bare_capability_to_one_element_list() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -364,7 +360,7 @@ project {
 #[test]
 fn rejects_non_numeric_max_generator_rounds_at_parse_level() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -380,7 +376,7 @@ project {
 #[test]
 fn rejects_artifact_policy_as_list_at_parse_level() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod
@@ -396,7 +392,7 @@ project {
 #[test]
 fn parses_multiple_capabilities() {
     let src = r#"
-project {
+m {
   name = "m"
   version = "0.1.0"
   type = Mod

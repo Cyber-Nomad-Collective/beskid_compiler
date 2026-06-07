@@ -5,6 +5,13 @@ use std::hash::{Hash, Hasher};
 use std::io::{Cursor, Read};
 use std::path::Path;
 
+use beskid_pipeline::{
+    PipelineObserver, observe_phase_result,
+    phases::{
+        WORKSPACE_MATERIALIZE_LOCAL, WORKSPACE_MATERIALIZE_LOCKFILE,
+        WORKSPACE_MATERIALIZE_PATH_DEPS, WORKSPACE_MATERIALIZE_REGISTRY,
+    },
+};
 use serde_json::Value;
 use zip::ZipArchive;
 
@@ -259,12 +266,13 @@ pub struct WorkspacePrepareOptions {
 pub fn prepare_project_workspace(
     plan: &CompilePlan,
 ) -> Result<PreparedProjectWorkspace, ProjectError> {
-    prepare_project_workspace_with_options(plan, WorkspacePrepareOptions::default())
+    prepare_project_workspace_with_options(plan, WorkspacePrepareOptions::default(), None)
 }
 
 pub fn prepare_project_workspace_with_options(
     plan: &CompilePlan,
     options: WorkspacePrepareOptions,
+    pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<PreparedProjectWorkspace, ProjectError> {
     let deps_root = plan
         .project_root
@@ -286,57 +294,67 @@ pub fn prepare_project_workspace_with_options(
         .map(|segment| segment.to_string_lossy().to_string())
         .unwrap_or_else(|| "Src".to_string());
     let materialized_source_root = root_materialized_project.join(source_segment);
-    copy_directory_when_newer(&plan.source_root, &materialized_source_root)?;
+    observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_LOCAL, || {
+        copy_directory_when_newer(&plan.source_root, &materialized_source_root)
+    })?;
 
     let mut lock_entries = Vec::with_capacity(plan.dependency_projects.len());
     let mut materialized_dependencies = Vec::with_capacity(plan.dependency_projects.len());
 
-    for dependency in &plan.dependency_projects {
-        let materialized_root = deps_root.join(materialized_dependency_id(
-            &dependency.project_name,
-            &dependency.manifest_path,
-        ));
-        copy_directory_when_newer(&dependency.project_root, &materialized_root)?;
+    observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_PATH_DEPS, || {
+        for dependency in &plan.dependency_projects {
+            let materialized_root = deps_root.join(materialized_dependency_id(
+                &dependency.project_name,
+                &dependency.manifest_path,
+            ));
+            copy_directory_when_newer(&dependency.project_root, &materialized_root)?;
 
-        lock_entries.push(ProjectLockDependencyEntry {
-            name: dependency.dependency_name.clone(),
-            manifest: dependency.manifest_path.display().to_string(),
-            project: dependency.project_root.display().to_string(),
-            source_root: dependency.source_root.display().to_string(),
-            materialized_root: materialized_root.display().to_string(),
-            resolved_version: None,
-            artifact_digest: None,
-            registry: None,
-        });
+            lock_entries.push(ProjectLockDependencyEntry {
+                name: dependency.dependency_name.clone(),
+                manifest: dependency.manifest_path.display().to_string(),
+                project: dependency.project_root.display().to_string(),
+                source_root: dependency.source_root.display().to_string(),
+                materialized_root: materialized_root.display().to_string(),
+                resolved_version: None,
+                artifact_digest: None,
+                registry: None,
+            });
 
-        let source_relative = dependency
-            .source_root
-            .strip_prefix(&dependency.project_root)
-            .unwrap_or_else(|_| std::path::Path::new(""));
-        materialized_dependencies.push(MaterializedDependencyProject {
-            dependency_name: dependency.dependency_name.clone(),
-            manifest_path: dependency.manifest_path.clone(),
-            project_name: dependency.project_name.clone(),
-            materialized_project_root: materialized_root.clone(),
-            materialized_source_root: materialized_root.join(source_relative),
-        });
-    }
-
-    for unresolved in plan
-        .unresolved_dependencies
-        .iter()
-        .filter(|x| x.source == DependencySource::Registry)
-    {
-        if let Some((lock_entry, materialized_dependency)) =
-            materialize_registry_dependency(unresolved, &deps_root, workspace_rules.as_ref())?
-        {
-            lock_entries.push(lock_entry);
-            materialized_dependencies.push(materialized_dependency);
+            let source_relative = dependency
+                .source_root
+                .strip_prefix(&dependency.project_root)
+                .unwrap_or_else(|_| std::path::Path::new(""));
+            materialized_dependencies.push(MaterializedDependencyProject {
+                dependency_name: dependency.dependency_name.clone(),
+                manifest_path: dependency.manifest_path.clone(),
+                project_name: dependency.project_name.clone(),
+                materialized_project_root: materialized_root.clone(),
+                materialized_source_root: materialized_root.join(source_relative),
+            });
         }
-    }
+        Ok::<(), ProjectError>(())
+    })?;
+
+    observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_REGISTRY, || {
+        for unresolved in plan
+            .unresolved_dependencies
+            .iter()
+            .filter(|x| x.source == DependencySource::Registry)
+        {
+            if let Some((lock_entry, materialized_dependency)) =
+                materialize_registry_dependency(unresolved, &deps_root, workspace_rules.as_ref())?
+            {
+                lock_entries.push(lock_entry);
+                materialized_dependencies.push(materialized_dependency);
+            }
+        }
+        Ok::<(), ProjectError>(())
+    })?;
 
     lock_entries.sort_by_key(|entry| entry.to_v1_line());
-    let lockfile_path = sync_project_lockfile(plan, &lock_entries, options)?;
+    let lockfile_path = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_LOCKFILE, || {
+        sync_project_lockfile(plan, &lock_entries, options)
+    })?;
 
     Ok(PreparedProjectWorkspace {
         lockfile_path,
@@ -599,13 +617,15 @@ fn materialize_registry_dependency(
     })?;
     extract_zip_to_dir(&artifact, &materialized_root)?;
 
-    let manifest_path = materialized_root.join("Project.proj");
-    if !manifest_path.is_file() {
-        return Err(ProjectError::Validation(format!(
-            "registry artifact for {}:{} missing Project.proj",
+    let manifest_path = crate::projects::discovery::discover_project_manifest_in_dir(
+        &materialized_root,
+    )?
+    .ok_or_else(|| {
+        ProjectError::Validation(format!(
+            "registry artifact for {}:{} missing a `.bproj` manifest",
             unresolved.dependency_name, selected_version
-        )));
-    }
+        ))
+    })?;
 
     let materialized_source_root = if materialized_root.join("src").is_dir() {
         materialized_root.join("src")

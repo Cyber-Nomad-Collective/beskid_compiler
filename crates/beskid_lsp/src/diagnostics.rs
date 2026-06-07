@@ -172,9 +172,9 @@ fn semantic_to_lsp_diagnostic(source: &str, diag: SemanticDiagnostic) -> Diagnos
 
 fn analyze_project_manifest(uri: &Uri, source: &str) -> Vec<Diagnostic> {
     let source_label = if project_manifest::is_workspace_manifest_uri(uri) {
-        "Workspace.proj"
+        "workspace manifest"
     } else {
-        "Project.proj"
+        "project manifest"
     };
     let err = if project_manifest::is_workspace_manifest_uri(uri) {
         parse_workspace_manifest(source).err()

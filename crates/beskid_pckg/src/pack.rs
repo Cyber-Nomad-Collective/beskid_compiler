@@ -5,8 +5,9 @@ use std::io;
 use std::path::Path;
 
 use beskid_analysis::projects::{
-    PACKAGE_README_ARTIFACT_NAME, ProjectKind, discover_readme_for_package_root,
-    is_package_root_readme_entry, parse_manifest, resolve_readme_file_path,
+    PACKAGE_README_ARTIFACT_NAME, ProjectKind, discover_project_manifest_in_dir,
+    discover_readme_for_package_root, is_package_root_readme_entry, parse_manifest,
+    resolve_readme_file_path,
 };
 use serde_json::{Value, json};
 use walkdir::WalkDir;
@@ -81,13 +82,22 @@ pub fn detect_pack_profile_with_override(
     source_root: &Path,
     override_kind: PackProfileOverride,
 ) -> Result<PackProfile, PckgError> {
-    let manifest_path = source_root.join("Project.proj");
+    let manifest_path = discover_project_manifest_in_dir(source_root).map_err(|err| {
+        PckgError::Api {
+            status: reqwest::StatusCode::BAD_REQUEST,
+            message: format!(
+                "failed to discover `.bproj` manifest in {}: {err}",
+                source_root.display()
+            ),
+            body: None,
+        }
+    })?;
 
-    let manifest = if manifest_path.is_file() {
+    let manifest = if let Some(manifest_path) = manifest_path {
         let source = fs::read_to_string(&manifest_path).map_err(|err| PckgError::Api {
             status: reqwest::StatusCode::BAD_REQUEST,
             message: format!(
-                "failed to read Project.proj at {}: {err}",
+                "failed to read {}: {err}",
                 manifest_path.display()
             ),
             body: None,
@@ -95,7 +105,7 @@ pub fn detect_pack_profile_with_override(
 
         Some(parse_manifest(&source).map_err(|err| PckgError::Api {
             status: reqwest::StatusCode::BAD_REQUEST,
-            message: format!("invalid Project.proj: {err}"),
+            message: format!("invalid {}: {err}", manifest_path.display()),
             body: None,
         })?)
     } else {

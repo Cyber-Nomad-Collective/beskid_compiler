@@ -38,18 +38,6 @@ pub enum AssemblyError {
     MaxUnits { max: usize },
 }
 
-fn prelude_reexport_module_paths(prelude_text: &str) -> Vec<String> {
-    prelude_text
-        .lines()
-        .filter_map(|line| {
-            let line = line.split("//").next()?.trim();
-            let rest = line.strip_prefix("pub mod ")?;
-            let path = rest.trim_end_matches(';').trim();
-            (!path.is_empty()).then(|| path.to_string())
-        })
-        .collect()
-}
-
 pub(crate) fn expand_syntax_for_assembly(program: Spanned<Program>) -> Spanned<Program> {
     crate::macros::expand_program_with_diagnostics(
         program,
@@ -58,6 +46,15 @@ pub(crate) fn expand_syntax_for_assembly(program: Spanned<Program>) -> Spanned<P
         "",
     )
     .program
+}
+
+/// Default assembly options for a compile plan (workspace scan when no entry file is declared).
+pub fn assembly_options_for_plan(plan: &CompilePlan) -> AssemblyOptions {
+    let mut options = AssemblyOptions::default();
+    if plan.target.entry.as_deref().unwrap_or("").trim().is_empty() {
+        options.discovery = AssemblyDiscovery::WorkspaceScan;
+    }
+    options
 }
 
 /// Build a [`ProgramAssembly`] for `entry_path` using effective roots and discovery options.
@@ -87,6 +84,15 @@ pub fn assemble_program_with_materializer(
         .canonicalize()
         .unwrap_or_else(|_| entry_path.to_path_buf());
 
+    let scan_without_entry = options.discovery == AssemblyDiscovery::WorkspaceScan
+        && plan.target.entry.as_deref().unwrap_or("").trim().is_empty();
+
+    if !scan_without_entry && !entry_canonical.is_file() {
+        return Err(AssemblyError::EntryNotFound {
+            path: entry_path.to_path_buf(),
+        });
+    }
+
     let mut discovered: Vec<PathBuf> = Vec::new();
     let mut discovered_sources: Vec<(PathBuf, String)> = Vec::new();
     let mut seen = HashSet::new();
@@ -98,64 +104,10 @@ pub fn assemble_program_with_materializer(
         }
     };
 
-    if !entry_canonical.is_file() {
-        return Err(AssemblyError::EntryNotFound {
-            path: entry_path.to_path_buf(),
-        });
-    }
-
-    let entry_is_prelude = entry_canonical
-        .file_name()
-        .is_some_and(|name| name == "Prelude.bd");
-
-    let mut prelude_seeds = Vec::new();
-    let mut prelude_reexport_paths = Vec::new();
-    if options.include_std_prelude && !entry_is_prelude {
-        for root in &module_roots {
-            if is_compiler_mod_sdk_source_root(root) {
-                continue;
-            }
-            let prelude = root.join("Prelude.bd");
-            if !prelude.is_file() {
-                continue;
-            }
-            let Ok(text) = fs::read_to_string(&prelude) else {
-                continue;
-            };
-            prelude_reexport_paths.extend(prelude_reexport_module_paths(&text));
-        }
-        prelude_reexport_paths.sort();
-        prelude_reexport_paths.dedup();
-        if options.discovery == AssemblyDiscovery::WorkspaceScan && plan.has_std_dependency {
-            for root in &module_roots {
-                if is_compiler_mod_sdk_source_root(root) {
-                    continue;
-                }
-                let prelude = root.join("Prelude.bd");
-                if prelude.is_file() && !prelude_seeds.contains(&prelude) {
-                    prelude_seeds.push(prelude);
-                    break;
-                }
-            }
-        }
-    }
-
-    discovered.clear();
-    discovered_sources.clear();
-    seen.clear();
-
     match options.discovery {
         AssemblyDiscovery::ImportClosure => {
             let mut queue = VecDeque::new();
             queue.push_back(entry_canonical.clone());
-            for seed in prelude_seeds {
-                queue.push_back(seed);
-            }
-            for module_path in &prelude_reexport_paths {
-                if let Some(dep_file) = resolve_module_file(module_path, &roots) {
-                    queue.push_back(dep_file);
-                }
-            }
 
             while let Some(path) = queue.pop_front() {
                 if discovered_sources.len() >= options.max_units {
@@ -195,9 +147,8 @@ pub fn assemble_program_with_materializer(
             }
         }
         AssemblyDiscovery::WorkspaceScan => {
-            enqueue(entry_canonical.clone(), &mut discovered, &mut seen);
-            for seed in prelude_seeds {
-                enqueue(seed, &mut discovered, &mut seen);
+            if entry_canonical.is_file() {
+                enqueue(entry_canonical.clone(), &mut discovered, &mut seen);
             }
 
             let mut paths: Vec<PathBuf> = Vec::new();
@@ -278,7 +229,6 @@ pub fn assemble_program_with_materializer(
     };
 
     let default_threads = if materializer.is_some() {
-        // Salsa materializer serializes on a shared DB mutex; extra rayon threads add overhead only.
         1
     } else {
         std::thread::available_parallelism()
@@ -362,17 +312,12 @@ pub fn assemble_program_with_materializer(
     let _ = beskid_artifacts::ArtifactStore::new(&project_root).refresh_manifest();
 
     let hir_units = Arc::new(hir_units_vec);
-    let prelude_module_paths: Vec<Vec<String>> = prelude_reexport_paths
-        .iter()
-        .map(|path| path.split('.').map(String::from).collect())
-        .collect();
     let module_index = Arc::new(ModuleIndex::build(
         &units,
         hir_units.as_ref(),
         entry_index,
         &roots,
         plan,
-        prelude_module_paths,
     ));
 
     Ok(ProgramAssembly {
@@ -422,9 +367,4 @@ fn parse_use_import_path(trimmed: &str) -> Option<String> {
         .map(|(path, _)| path.trim())
         .unwrap_or(without_comment);
     (!import_path.is_empty()).then(|| import_path.to_string())
-}
-
-fn is_compiler_mod_sdk_source_root(root: &Path) -> bool {
-    let root_str = root.to_string_lossy();
-    root_str.contains("compiler_sdk") || root_str.contains("compiler-sdk")
 }

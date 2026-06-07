@@ -1,6 +1,7 @@
 use crate::analysis::rules::{Rule, RuleContext};
-use crate::hir::{AstProgram, HirProgram, lower_program};
+use crate::hir::{AstProgram, lower_program};
 use crate::syntax::{Program, SpanInfo, Spanned};
+use beskid_pipeline::{PipelineObserver, observe_phase, observe_phase_value, phases};
 
 mod contracts;
 mod control_flow;
@@ -18,6 +19,17 @@ impl Rule for SemanticPipelineRule {
     }
 
     fn run(&self, ctx: &mut RuleContext, program: &Program) {
+        self.run_stages(ctx, program, None);
+    }
+}
+
+impl SemanticPipelineRule {
+    pub(crate) fn run_stages(
+        &self,
+        ctx: &mut RuleContext,
+        program: &Program,
+        pipeline: Option<&dyn PipelineObserver>,
+    ) {
         let span = program
             .items
             .first()
@@ -30,18 +42,60 @@ impl Rule for SemanticPipelineRule {
             });
         let spanned_program = Spanned::new(program.clone(), span);
         let ast: Spanned<AstProgram> = spanned_program.into();
-        let hir: Spanned<HirProgram> = lower_program(&ast);
+        let hir = observe_phase_value(pipeline, phases::SEMANTIC_AST_LOWER, || lower_program(&ast));
 
-        self.stage0_collect_definitions(ctx, &hir);
-        self.stage3_control_flow_and_patterns(ctx, &hir);
+        observe_stage(pipeline, phases::SEMANTIC_DEFINITIONS, || {
+            self.stage0_collect_definitions(ctx, &hir);
+        });
+        observe_stage(pipeline, phases::SEMANTIC_CONTROL_FLOW, || {
+            self.stage3_control_flow_and_patterns(ctx, &hir);
+        });
 
-        let Some(resolution) = self.stage1_name_resolution(ctx, &hir) else {
+        let Some(resolution) = observe_stage_optional(pipeline, phases::SEMANTIC_NAME_RESOLUTION, || {
+            self.stage1_name_resolution(ctx, &hir)
+        }) else {
             return;
         };
 
-        self.stage5_modules_and_visibility(ctx, &hir);
-        self.stage6_contracts_and_methods(ctx, &hir, &resolution);
-        self.stage7_error_handling(ctx, &hir, &resolution);
-        self.stage2_type_check(ctx, hir, &resolution);
+        observe_stage(pipeline, phases::SEMANTIC_VISIBILITY, || {
+            self.stage5_modules_and_visibility(ctx, &hir);
+        });
+        observe_stage(pipeline, phases::SEMANTIC_CONTRACTS, || {
+            self.stage6_contracts_and_methods(ctx, &hir, &resolution);
+        });
+        observe_stage(pipeline, phases::SEMANTIC_ERROR_HANDLING, || {
+            self.stage7_error_handling(ctx, &hir, &resolution);
+        });
+        observe_stage(pipeline, phases::SEMANTIC_TYPE_CHECK, || {
+            self.stage2_type_check(ctx, hir, &resolution, pipeline);
+        });
+    }
+}
+
+fn observe_stage<O: PipelineObserver + ?Sized>(
+    obs: Option<&O>,
+    id: &'static str,
+    f: impl FnOnce(),
+) {
+    if let Some(o) = obs {
+        observe_phase(Some(o), id, f);
+    } else {
+        f();
+    }
+}
+
+fn observe_stage_optional<T, O: PipelineObserver + ?Sized>(
+    obs: Option<&O>,
+    id: &'static str,
+    f: impl FnOnce() -> Option<T>,
+) -> Option<T> {
+    if let Some(o) = obs {
+        let mut result = None;
+        observe_phase(Some(o), id, || {
+            result = f();
+        });
+        result
+    } else {
+        f()
     }
 }

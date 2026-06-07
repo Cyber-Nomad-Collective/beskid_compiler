@@ -292,7 +292,7 @@ fn minimal_session(db: &mut BeskidDatabase, manifest_path: &Path) -> ProjectSess
             target: beskid_analysis::projects::Target {
                 name: "graph".to_owned(),
                 kind: beskid_analysis::projects::TargetKind::App,
-                entry: "Main.bd".to_owned(),
+                entry: Some("Main.bd".to_owned()),
             },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),

@@ -64,7 +64,7 @@ unsafe extern "C" fn host_dispatch_fs_mkdir(enum_ptr: *const u8) -> i64 {
 unsafe extern "C" fn host_dispatch_process_exit(enum_ptr: *const u8) -> i64 {
     unsafe {
                     let p0 = *(enum_ptr.add(16) as *const u64);
-crate::process_exit(p0 as i64);;
+crate::process_exit(p0 as i64);
             unreachable_unchecked()
     }
 }

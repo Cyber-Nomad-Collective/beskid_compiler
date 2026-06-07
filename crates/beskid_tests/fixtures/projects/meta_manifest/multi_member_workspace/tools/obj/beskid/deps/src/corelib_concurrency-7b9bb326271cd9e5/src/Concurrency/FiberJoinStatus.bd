@@ -18,23 +18,3 @@ pub i64 StackOverflow() {
 pub i64 NotDone() {
     return 4;
 }
-/// ABI status codes returned by fiber join builtins.
-pub i64 Ok() {
-    return 0;
-}
-
-pub i64 Cancelled() {
-    return 1;
-}
-
-pub i64 Panicked() {
-    return 2;
-}
-
-pub i64 StackOverflow() {
-    return 3;
-}
-
-pub i64 NotDone() {
-    return 4;
-}

@@ -14,13 +14,13 @@ use beskid_analysis::external_library::{
 use beskid_analysis::projects::parse_manifest as parse_project_manifest;
 
 fn write_minimal_manifest(dir: &std::path::Path) -> PathBuf {
-    let manifest = dir.join("Project.proj");
+    let manifest = dir.join("ImportTest.bproj");
     fs::write(
         &manifest,
-        "project {\n  name = \"ImportTest\"\n  version = \"0.1.0\"\n}\n\n\
+        "ImportTest {\n  name = \"ImportTest\"\n  version = \"0.1.0\"\n}\n\n\
          target \"App\" {\n  kind = App\n  entry = \"Main.bd\"\n}\n",
     )
-    .expect("write Project.proj");
+    .expect("write ImportTest.bproj");
     manifest
 }
 
@@ -86,14 +86,14 @@ fn import_lib_is_idempotent_on_repeat_invocations() {
 #[test]
 fn import_lib_merges_into_existing_link_block() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let manifest_path = tmp.path().join("Project.proj");
+    let manifest_path = tmp.path().join("ImportTest.bproj");
     fs::write(
         &manifest_path,
-        "project {\n  name = \"ImportTest\"\n  version = \"0.1.0\"\n}\n\n\
+        "ImportTest {\n  name = \"ImportTest\"\n  version = \"0.1.0\"\n}\n\n\
          target \"App\" {\n  kind = App\n  entry = \"Main.bd\"\n}\n\n\
          link {\n  libraries = [pthread]\n}\n",
     )
-    .expect("write Project.proj");
+    .expect("write ImportTest.bproj");
 
     let registry = default_registry();
     let resolution = registry

@@ -110,6 +110,29 @@ impl CommandSession {
         Ok(prepared)
     }
 
+    /// Single prepare through typed HIR with semantic diagnostics gate (for `beskid test`).
+    pub fn executable_gate_prepared(
+        &self,
+        resolved: &ResolvedInput,
+        options: SemanticGateOptions,
+    ) -> Result<PreparedCompilation> {
+        self.pipeline.halt_progress_bars_for_output();
+
+        let (prepared, gate_diagnostics) = beskid_queries::prepare_compilation_diagnostics(
+            resolved,
+            services::PrepareOptions {
+                mode: services::PrepareMode::Executable,
+                front_end: services::FrontEndOptions {
+                    with_semantic_diagnostics: true,
+                    ..Default::default()
+                },
+            },
+            Some(self.pipeline.as_ref()),
+        )?;
+        self.finish_gate(&gate_diagnostics, options)?;
+        Ok(prepared)
+    }
+
     fn run_semantic_diagnostics(
         &self,
         resolved: &ResolvedInput,

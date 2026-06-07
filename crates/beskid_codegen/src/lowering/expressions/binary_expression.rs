@@ -3,7 +3,7 @@ use crate::lowering::cast_intent::ensure_type_compatibility;
 use crate::lowering::descriptor::enum_payload_start;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
-use crate::lowering::types::{map_type_id_to_clif, pointer_type};
+use crate::lowering::types::{map_type_id_to_clif, pointer_type, resolve_monomorph_type_id};
 use beskid_analysis::hir::{HirBinaryExpression, HirBinaryOp, HirPrimitiveType};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{TypeId, TypeInfo};
@@ -430,6 +430,11 @@ fn coerce_operand_to_string(
     string_type: TypeId,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Value, CodegenError> {
+    let type_id = resolve_monomorph_type_id(
+        ctx.type_result,
+        &ctx.codegen.active_generic_substitution,
+        type_id,
+    );
     if is_string_type(ctx, type_id) {
         return Ok(value);
     }

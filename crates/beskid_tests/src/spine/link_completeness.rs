@@ -71,7 +71,6 @@ i32 main() {
                 Some(source),
                 &AssemblyOptions {
                     discovery: AssemblyDiscovery::ImportClosure,
-                    include_std_prelude: false,
                     ..Default::default()
                 },
             )
@@ -111,7 +110,7 @@ i32 main() {
     let _ = fs::remove_dir_all(root);
 }
 
-/// Corelib `Testing.Assertions.AssertEqualI64` must survive dependency link plans and validate.
+/// Corelib `Testing.Assert.Equal` must survive dependency link plans and validate.
 #[cfg(feature = "slow")]
 #[test]
 fn corelib_assert_equal_i64_link_plan_validates() {
@@ -174,8 +173,8 @@ fn corelib_assert_equal_i64_link_plan_validates() {
             link_plan
                 .emitted_symbol_names(&front.resolution)
                 .iter()
-                .any(|name| name.contains("AssertEqualI64")),
-            "link plan should reach Testing.Assertions.AssertEqualI64"
+                .any(|name| name.contains("Equal")),
+            "link plan should reach Testing.Assert.Equal"
         );
 
         let artifact = lower_program_with_assembly(
@@ -188,11 +187,11 @@ fn corelib_assert_equal_i64_link_plan_validates() {
 
         let names: Vec<_> = artifact.functions.iter().map(|f| f.name.as_str()).collect();
         assert!(
-            names.iter().any(|name| name.contains("AssertEqualI64")),
-            "expected AssertEqualI64 in artifact, have {} symbols",
+            names.iter().any(|name| name.contains("Equal")),
+            "expected Equal in artifact, have {} symbols",
             names.len()
         );
-        validate_artifact(&artifact).expect("AssertEqualI64 link plan must validate");
+        validate_artifact(&artifact).expect("Assert.Equal link plan must validate");
     });
 }
 

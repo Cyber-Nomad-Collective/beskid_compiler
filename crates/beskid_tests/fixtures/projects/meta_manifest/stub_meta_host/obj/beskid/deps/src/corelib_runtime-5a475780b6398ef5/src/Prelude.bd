@@ -37,7 +37,7 @@ pub mod System.FS;
 pub mod System.Environment;
 /// Re-exports time helpers.
 pub mod System.Time;
-/// Runtime ABI constants and status codes (dispatch tags, join/mutex/channel status).
+/// ABI v4 dispatch tags and status codes (dispatch tags, join/mutex/channel status).
 pub mod Runtime.Abi;
-/// Process-start handler registration (`__beskid_register_handlers`).
+/// Compatibility hook; host registration is owned by `beskid_host` at link/JIT startup (ABI v4).
 pub mod Runtime.Init;

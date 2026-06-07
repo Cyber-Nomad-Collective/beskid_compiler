@@ -8,12 +8,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use beskid_analysis::projects::{
-    CompilePlan, PROJECT_FILE_NAME, ResolvedDependencyProject, Target, TargetKind,
+    CompilePlan, ResolvedDependencyProject, Target, TargetKind,
 };
 
 use crate::test_harness::temp_case_dir;
 
-const SAMPLE_MOD_PROJECT: &str = include_str!("../../fixtures/mods/sample_mod/Project.proj");
+const HOST_PROJECT_MANIFEST: &str = "Host.bproj";
+const SAMPLE_MOD_PROJECT_MANIFEST: &str = "SampleMod.bproj";
+const SAMPLE_MOD_PROJECT: &str = include_str!("../../fixtures/mods/sample_mod/SampleMod.bproj");
 const SAMPLE_MOD_SOURCE: &str = include_str!("../../fixtures/mods/sample_mod/Src/Mod.bd");
 
 /// One per-test workspace materialized under `temp_case_dir(prefix)`.
@@ -35,8 +37,12 @@ impl ModFixtureWorkspace {
             "unit main() { return; }\n",
         )
         .expect("host source");
-        fs::write(host_dir.join(PROJECT_FILE_NAME), HOST_MANIFEST).expect("host manifest");
-        fs::write(mod_dir.join(PROJECT_FILE_NAME), SAMPLE_MOD_PROJECT).expect("mod manifest");
+        fs::write(host_dir.join(HOST_PROJECT_MANIFEST), HOST_MANIFEST).expect("host manifest");
+        fs::write(
+            mod_dir.join(SAMPLE_MOD_PROJECT_MANIFEST),
+            SAMPLE_MOD_PROJECT,
+        )
+        .expect("mod manifest");
         fs::write(mod_dir.join("Src").join("Mod.bd"), SAMPLE_MOD_SOURCE).expect("mod source");
         Self {
             root,
@@ -87,17 +93,17 @@ impl ModFixtureWorkspace {
     pub(crate) fn compile_plan(&self) -> CompilePlan {
         CompilePlan {
             project_root: self.host_dir.clone(),
-            manifest_path: self.host_dir.join(PROJECT_FILE_NAME),
+            manifest_path: self.host_dir.join(HOST_PROJECT_MANIFEST),
             project_name: "Host".to_string(),
             source_root: self.host_dir.join("Src"),
             target: Target {
                 name: "main".to_string(),
                 kind: TargetKind::App,
-                entry: "Main.bd".to_string(),
+                entry: Some("Main.bd".to_string()),
             },
             dependency_projects: vec![ResolvedDependencyProject {
                 dependency_name: "SampleMod".to_string(),
-                manifest_path: self.mod_dir.join(PROJECT_FILE_NAME),
+                manifest_path: self.mod_dir.join(SAMPLE_MOD_PROJECT_MANIFEST),
                 project_root: self.mod_dir.clone(),
                 project_name: "SampleMod".to_string(),
                 source_root: self.mod_dir.join("Src"),
@@ -119,7 +125,7 @@ impl Drop for ModFixtureWorkspace {
 }
 
 const HOST_MANIFEST: &str = r#"
-project {
+Host {
   name = "Host"
   version = "0.1.0"
 }

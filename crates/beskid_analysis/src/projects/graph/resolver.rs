@@ -8,6 +8,7 @@ use daggy::{Dag, NodeIndex};
 
 use crate::projects::error::ProjectError;
 use crate::projects::graph::loader::load_manifest_from_path;
+use crate::projects::discovery::{discover_project_manifest_in_dir, discover_workspace_manifest_in_dir};
 use crate::projects::graph::pathing::{
     dependency_manifest_path, normalize_existing_path, project_root_from_manifest_path,
 };
@@ -257,14 +258,7 @@ fn attach_path_dependency(
     visiting: &mut Vec<PathBuf>,
     has_std_dependency: &mut bool,
 ) -> Result<(), ProjectError> {
-    let dependency_manifest_path = dependency_manifest_path(consumer_project_root, relative_path);
-
-    if !dependency_manifest_path.is_file() {
-        return Err(ProjectError::DependencyManifestNotFound {
-            dependency: dependency_name.to_string(),
-            path: dependency_manifest_path,
-        });
-    }
+    let dependency_manifest_path = dependency_manifest_path(consumer_project_root, relative_path)?;
 
     if let Some(cycle_start) = visiting
         .iter()
@@ -351,13 +345,23 @@ fn default_corelib_dependency_path() -> Option<String> {
 
 /// `BESKID_CORELIB_ROOT` / install roots may be either the aggregate `beskid_corelib/` package
 /// (contains `Project.proj`) or the parent **workspace** directory (has `Workspace.proj` and
-/// nests `beskid_corelib/Project.proj`). `Std` path resolution must always end at the package.
+/// nests `beskid_corelib/corelib.bproj`). `Std` path resolution must always end at the package.
 fn corelib_aggregate_project_dir(root: &Path) -> PathBuf {
     let nested = root.join("beskid_corelib");
-    if nested.join("Project.proj").is_file() {
+    if discover_project_manifest_in_dir(&nested)
+        .ok()
+        .flatten()
+        .is_some()
+    {
         nested
-    } else {
+    } else if discover_project_manifest_in_dir(root)
+        .ok()
+        .flatten()
+        .is_some()
+    {
         root.to_path_buf()
+    } else {
+        nested
     }
 }
 
@@ -371,7 +375,11 @@ fn depends_on_corelib_aggregate(
     let Some(corelib_root) = default_corelib_dependency_path().map(PathBuf::from) else {
         return false;
     };
-    let corelib_manifest = normalize_existing_path(&corelib_root.join("Project.proj"));
+    let corelib_manifest = discover_project_manifest_in_dir(&corelib_root)
+        .ok()
+        .flatten()
+        .map(|path| normalize_existing_path(&path))
+        .unwrap_or_else(|| normalize_existing_path(&corelib_root.join("corelib.bproj")));
     consumer_manifest.dependencies.iter().any(|dependency| {
         if dependency.source != DependencySource::Path {
             return false;
@@ -379,9 +387,12 @@ fn depends_on_corelib_aggregate(
         dependency.name.eq_ignore_ascii_case("corelib")
             || dependency.name.eq_ignore_ascii_case("Std")
             || dependency.path.as_ref().is_some_and(|relative_path| {
-                let dependency_manifest =
-                    dependency_manifest_path(consumer_project_root, relative_path);
-                normalize_existing_path(&dependency_manifest) == corelib_manifest
+                dependency_manifest_path(consumer_project_root, relative_path)
+                    .ok()
+                    .map(|dependency_manifest| {
+                        normalize_existing_path(&dependency_manifest) == corelib_manifest
+                    })
+                    .unwrap_or(false)
             })
     })
 }
@@ -406,7 +417,11 @@ fn discover_repo_corelib_root() -> Option<PathBuf> {
     let cwd = env::current_dir().ok()?;
     for ancestor in cwd.ancestors() {
         let candidate = ancestor.join("corelib").join("beskid_corelib");
-        if candidate.join("Project.proj").is_file() {
+        if discover_project_manifest_in_dir(&candidate)
+            .ok()
+            .flatten()
+            .is_some()
+        {
             return Some(candidate);
         }
     }
@@ -418,8 +433,13 @@ fn is_std_manifest_path(manifest_path: &Path) -> bool {
     let Some(corelib_root) = default_corelib_dependency_path() else {
         return false;
     };
-    let corelib_manifest =
-        normalize_existing_path(&PathBuf::from(corelib_root).join("Project.proj"));
+    let corelib_manifest = discover_project_manifest_in_dir(&PathBuf::from(&corelib_root))
+        .ok()
+        .flatten()
+        .map(|path| normalize_existing_path(&path))
+        .unwrap_or_else(|| {
+            normalize_existing_path(&PathBuf::from(corelib_root).join("corelib.bproj"))
+        });
     normalized_manifest == corelib_manifest
 }
 

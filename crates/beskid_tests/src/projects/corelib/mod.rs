@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 pub(super) fn corelib_root() -> PathBuf {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     for root in corelib_source_candidates(manifest_dir) {
-        if root.join("Project.proj").is_file() {
+        if root.join("corelib.bproj").is_file() {
             return root;
         }
     }

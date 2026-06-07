@@ -18,7 +18,9 @@ pub mod Core.Encoding.Hex;
 pub mod Core.Encoding.Base64;
 /// Re-exports assertion-related contracts.
 pub mod Testing.Contracts;
-/// Re-exports assertion helper functions.
+/// Re-exports Shouldly-style assertion helpers (`Testing.Assert.Equal`, …).
+pub mod Testing.Assert;
+/// Re-exports deprecated assertion aliases (`Testing.Assertions.*`).
 pub mod Testing.Assertions;
 
 /// Re-exports syscall facade helpers.

@@ -109,7 +109,8 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
         PipelineProgressKind::PrepareAndRun,
         &resolve_args,
     )?;
-    let prepared = session.semantic_gate_prepared(&resolved, SemanticGateOptions::default())?;
+    let prepared =
+        session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;
 
     let tests = services::collect_test_cases(&prepared.program);
     if tests.is_empty() {
@@ -127,19 +128,7 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
         return Ok(());
     }
 
-    let resolved_with_assembly = resolved.with_assembly(prepared.assembly.clone());
-    let front = beskid_queries::prepare_compilation(
-        &resolved_with_assembly,
-        services::PrepareOptions {
-            mode: services::PrepareMode::Executable,
-            front_end: services::FrontEndOptions {
-                with_semantic_diagnostics: false,
-                ..Default::default()
-            },
-        },
-        Some(session.observer()),
-    )?
-    .into_executable()?;
+    let front = prepared.into_executable()?;
 
     let source_name = resolved.source_path.display().to_string();
 

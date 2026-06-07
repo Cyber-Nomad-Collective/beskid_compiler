@@ -1,0 +1,15 @@
+# Reference compiler-mod fixture exercising all four contract kinds.
+#
+# Used by `beskid_tests::mods` and `beskid_engine` integration tests to validate
+# the `mod.load` -> `mod.collect` -> `mod.generate` -> `mod.analyze` -> `mod.rewrite`
+# pipeline against AOT artifacts. Sources mirror the compiler-sdk contract shape
+# from `compiler/corelib/packages/compiler-sdk/src/Beskid/Compiler/Collect.bd`.
+
+SampleMod {
+  name = "SampleMod"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot, rewrite_syntax]
+  }
+}

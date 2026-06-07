@@ -45,7 +45,8 @@ pub fn typecheck_hir(source: &str) -> (Spanned<HirProgram>, Resolution, TypeResu
     let resolution = Resolver::new()
         .resolve_program(&hir)
         .unwrap_or_else(|errors| panic!("expected resolution success: {errors:?}"));
-    let (hir, resolution, typed) = typed_hir_from_lowered_after_resolution(hir, &resolution)
+    let (hir, resolution, typed) =
+        typed_hir_from_lowered_after_resolution(hir, &resolution, None)
         .unwrap_or_else(|err| panic!("expected type success: {err}"));
     (hir, resolution, typed)
 }

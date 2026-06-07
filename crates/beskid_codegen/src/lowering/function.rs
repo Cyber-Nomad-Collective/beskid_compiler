@@ -402,6 +402,10 @@ pub(crate) fn lower_function_with_name(
     if let Some(id) = item_id {
         ctx.emitting_items.insert(id);
     }
+    let saved_substitution = std::mem::take(&mut ctx.active_generic_substitution);
+    if !generic_args.is_empty() {
+        ctx.active_generic_substitution = generic_args.clone();
+    }
     let result = lower_function_with_name_body(
         def,
         resolution,
@@ -412,6 +416,7 @@ pub(crate) fn lower_function_with_name(
         &generic_args,
         item_id,
     );
+    ctx.active_generic_substitution = saved_substitution;
     finish_emitting(ctx, item_id);
     result
 }

@@ -67,8 +67,7 @@ mod tests {
         fs::create_dir_all(host.join("Src")).expect("host dir");
         write_manifest(
             &mod_a,
-            r#"
-project {
+            r#"ModA {
   name = "ModA"
   version = "0.1.0"
   type = Mod
@@ -80,8 +79,7 @@ project {
         );
         write_manifest(
             &lib,
-            r#"
-project {
+            r#"Lib {
   name = "Lib"
   version = "0.1.0"
 }
@@ -95,13 +93,13 @@ target "lib" {
 
         let plan = CompilePlan {
             project_root: host.clone(),
-            manifest_path: host.join("Project.proj"),
+            manifest_path: host.join("Host.bproj"),
             project_name: "Host".to_owned(),
             source_root: host.join("Src"),
             target: Target {
                 name: "main".to_owned(),
                 kind: TargetKind::App,
-                entry: "Main.bd".to_owned(),
+                entry: Some("Main.bd".to_owned()),
             },
             dependency_projects: vec![
                 dependency("Lib", &lib),
@@ -122,7 +120,7 @@ target "lib" {
     fn dependency(name: &str, root: &std::path::Path) -> ResolvedDependencyProject {
         ResolvedDependencyProject {
             dependency_name: name.to_owned(),
-            manifest_path: root.join("Project.proj"),
+            manifest_path: root.join(format!("{name}.bproj")),
             project_root: root.to_path_buf(),
             project_name: name.to_owned(),
             source_root: root.join("Src"),
@@ -130,7 +128,14 @@ target "lib" {
     }
 
     fn write_manifest(root: &std::path::Path, source: &str) {
-        fs::write(root.join("Project.proj"), source).expect("manifest");
+        let file_name = source
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .and_then(|line| line.split('{').next())
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("test");
+        fs::write(root.join(format!("{file_name}.bproj")), source).expect("manifest");
     }
 
     fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {

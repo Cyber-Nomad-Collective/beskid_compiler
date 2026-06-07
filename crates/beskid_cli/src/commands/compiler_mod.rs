@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
 use beskid_analysis::projects::{
-    PROJECT_FILE_NAME, ProjectKind, WorkspacePrepareOptions, build_compile_plan,
-    discover_project_manifest_from_input_or_cwd, load_manifest_from_path,
+    ProjectKind, WorkspacePrepareOptions, build_compile_plan,
+    discover_project_manifest_from_input_or_cwd, discover_project_manifest_in_dir,
+    discover_workspace_manifest_in_dir, load_manifest_from_path,
     prepare_project_workspace_with_options, resolve_workspace_candidate_path,
 };
 use beskid_analysis::services::resolved_input_from_plan;
@@ -41,7 +42,7 @@ pub enum ModCommand {
 
 #[derive(Args, Debug)]
 pub struct ModRebuildArgs {
-    /// Path to a Mod project directory, Project.proj, or Workspace.proj
+    /// Path to a Mod project directory, `.bproj`, or `.bws` manifest
     pub project: Option<PathBuf>,
 
     #[command(flatten)]
@@ -62,7 +63,7 @@ pub struct ModRebuildArgs {
 
 #[derive(Args, Debug)]
 pub struct ModCleanArgs {
-    /// Path to a Mod project directory, Project.proj, or Workspace.proj
+    /// Path to a Mod project directory, `.bproj`, or `.bws` manifest
     pub project: Option<PathBuf>,
 
     /// Disable animated progress and graph output
@@ -90,6 +91,7 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
                 frozen: args.lockfile.frozen,
                 locked: args.lockfile.locked,
             },
+            pipeline,
         )
         .map_err(anyhow::Error::from)
     })?;
@@ -215,16 +217,24 @@ fn resolve_manifest_path(project: Option<&PathBuf>) -> Result<PathBuf> {
 
     discover_project_manifest_from_input_or_cwd(None, None)?
         .map(|(manifest, _summary)| manifest)
-        .ok_or_else(|| anyhow!("could not discover Project.proj from current directory"))
+        .ok_or_else(|| anyhow!("could not discover a `.bproj` manifest from current directory"))
 }
 
 fn resolve_explicit_project_path(project: &Path) -> Result<PathBuf> {
     let candidate = if project.is_dir() {
-        let project_manifest = project.join(PROJECT_FILE_NAME);
-        if project_manifest.is_file() {
-            project_manifest
+        if let Some(manifest) =
+            discover_project_manifest_in_dir(project).map_err(anyhow::Error::from)?
+        {
+            manifest
+        } else if let Some(workspace) =
+            discover_workspace_manifest_in_dir(project).map_err(anyhow::Error::from)?
+        {
+            workspace
         } else {
-            project.join("Workspace.proj")
+            return Err(anyhow!(
+                "no `.bproj` or `.bws` manifest found in {}",
+                project.display()
+            ));
         }
     } else {
         project.to_path_buf()

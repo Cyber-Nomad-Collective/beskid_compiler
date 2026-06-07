@@ -27,21 +27,12 @@ use super::{
 #[test]
 fn checked_in_corelib_template_builds_compile_plan() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
-        let manifest_path = corelib_root().join("Project.proj");
-        let plan =
-            build_compile_plan(&manifest_path, Some("CoreLib")).expect("corelib plan should build");
-        let expected_root = corelib_root()
-            .join("src")
-            .canonicalize()
-            .expect("canonical corelib source root");
-        let actual_root = plan
-            .source_root
-            .canonicalize()
-            .expect("canonical compile-plan source root");
+        let manifest_path = corelib_root().join("corelib.bproj");
+        let plan = build_compile_plan(&manifest_path, None).expect("corelib plan should build");
 
-        assert_eq!(plan.target.name, "CoreLib");
-        assert_eq!(actual_root, expected_root);
-        assert!(plan.source_root.join("Prelude.bd").is_file());
+        assert_eq!(plan.project_name, "corelib");
+        assert_eq!(plan.target.name, "__aggregate__");
+        assert_eq!(plan.target.entry, None);
     });
 }
 
@@ -81,8 +72,8 @@ fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_posit
 fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let root = corelib_workspace_root();
-        let seed = root.join("packages/foundation/src/Prelude.bd");
-        let seed_source = fs::read_to_string(&seed).expect("read prelude");
+        let seed = root.join("packages/foundation/src/Core/Results.bd");
+        let seed_source = fs::read_to_string(&seed).expect("read foundation seed");
         let mut ctx = CompilationContext::try_for_analysis_path(&seed, None)
             .expect("corelib workspace compilation context");
         let _ = ctx.assembly_for_entry(&seed, &seed_source);
@@ -135,6 +126,7 @@ fn corelib_mvp_fixture_lowers_via_program_assembly() {
             lower_normalize_resolve_type_spanned_with_assembly(
                 &assembly.entry_unit().program,
                 Some(&assembly),
+                None,
             )
             .expect("corelib_mvp should resolve and type-check with use aliases");
         });
@@ -188,68 +180,6 @@ fn checked_in_compiler_sdk_prelude_lowers_to_codegen_artifact() {
                 .expect("lower compiler-sdk prelude should succeed");
         });
     });
-}
-
-#[test]
-fn checked_in_corelib_prelude_exports_mvp_modules() {
-    let prelude = fs::read_to_string(corelib_root().join("src/Prelude.bd")).expect("read prelude");
-
-    assert!(
-        prelude.contains("pub mod Core.Results;"),
-        "Prelude should export Core.Results"
-    );
-    assert!(
-        prelude.contains("pub mod Core.ErrorHandling;"),
-        "Prelude should export Core.ErrorHandling"
-    );
-    assert!(
-        prelude.contains("pub mod Core.String;"),
-        "Prelude should export Core.String"
-    );
-    assert!(
-        prelude.contains("pub mod Testing.Contracts;"),
-        "Prelude should export Testing.Contracts"
-    );
-    assert!(
-        prelude.contains("pub mod Testing.Assertions;"),
-        "Prelude should export Testing.Assertions"
-    );
-    assert!(
-        prelude.contains("pub mod System.Input;"),
-        "Prelude should export System.Input"
-    );
-    assert!(
-        prelude.contains("pub mod System.Output;"),
-        "Prelude should export System.Output"
-    );
-    assert!(
-        prelude.contains("pub mod System.Error;"),
-        "Prelude should export System.Error"
-    );
-    assert!(
-        prelude.contains("pub mod Console;"),
-        "Prelude should export Console"
-    );
-    assert!(
-        prelude.contains("pub mod System.Syscall;"),
-        "Prelude should export System.Syscall"
-    );
-    assert!(
-        prelude.contains("pub mod System.Syscall.Descriptor;"),
-        "Prelude should export System.Syscall.Descriptor"
-    );
-    assert!(
-        prelude.contains("pub mod System.Syscall.ReadLimit;"),
-        "Prelude should export System.Syscall.ReadLimit"
-    );
-    assert!(
-        prelude.contains("pub mod Collections.Array;"),
-        "Prelude should export Collections.Array"
-    );
-    assert!(
-        prelude.contains("host ConsoleHost()"),
-        "Prelude should declare ConsoleHost baseline for native IoC launch"
-    );
 }
 
 #[test]

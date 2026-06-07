@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use beskid_analysis::projects::WORKSPACE_FILE_NAME;
+use beskid_analysis::projects::is_workspace_manifest_path;
 use std::time::{Duration, Instant};
 
 use tokio::sync::{RwLock, Semaphore};
@@ -241,7 +241,7 @@ pub fn discover_workspace_manifest_paths(workspace_roots: &[PathBuf]) -> Vec<Pat
             .filter(|e| e.file_type().is_file())
         {
             let path = entry.path();
-            if path.file_name().and_then(|n| n.to_str()) != Some(WORKSPACE_FILE_NAME) {
+            if !is_workspace_manifest_path(path) {
                 continue;
             }
             let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());

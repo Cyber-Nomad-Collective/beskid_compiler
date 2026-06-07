@@ -19,9 +19,7 @@ use beskid_analysis::mod_host::{
     InvocationKind, ModHostInput, StubContractInvoker, run_analyze_rewrite_with_invoker,
     run_through_generate,
 };
-use beskid_analysis::projects::{
-    CompilePlan, PROJECT_FILE_NAME, ResolvedDependencyProject, Target, TargetKind,
-};
+use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
 use beskid_analysis::services::{
     lower_normalize_resolve_type_spanned, parse_program_with_source_name,
     semantic_rule_diagnostics_for_program,
@@ -33,18 +31,11 @@ use beskid_pipeline::phases::{
 };
 use beskid_pipeline::{PipelineEvent, PipelineObserver, observe_phase};
 
-const SAMPLE_MOD_PROJECT: &str = r#"project {
-  name = "SampleMod"
-  version = "0.1.0"
-  type = Mod
-  mod {
-    capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot, rewrite_syntax]
-  }
-}
-"#;
+const SAMPLE_MOD_PROJECT: &str =
+    include_str!("../../beskid_tests/fixtures/mods/sample_mod/SampleMod.bproj");
 
 const HOST_MANIFEST: &str = r#"
-project {
+Host {
   name = "Host"
   version = "0.1.0"
 }
@@ -203,8 +194,8 @@ impl TestWorkspace {
         fs::create_dir_all(host_dir.join("Src")).expect("host source root");
         fs::create_dir_all(mod_dir.join("Src")).expect("mod source root");
         fs::write(host_dir.join("Src").join("Main.bd"), HOST_SOURCE).expect("host source");
-        fs::write(host_dir.join(PROJECT_FILE_NAME), HOST_MANIFEST).expect("host manifest");
-        fs::write(mod_dir.join(PROJECT_FILE_NAME), SAMPLE_MOD_PROJECT).expect("mod manifest");
+        fs::write(host_dir.join("Host.bproj"), HOST_MANIFEST).expect("host manifest");
+        fs::write(mod_dir.join("SampleMod.bproj"), SAMPLE_MOD_PROJECT).expect("mod manifest");
         Self {
             root,
             host_dir,
@@ -243,17 +234,17 @@ impl TestWorkspace {
     fn compile_plan(&self) -> CompilePlan {
         CompilePlan {
             project_root: self.host_dir.clone(),
-            manifest_path: self.host_dir.join(PROJECT_FILE_NAME),
+            manifest_path: self.host_dir.join("Host.bproj"),
             project_name: "Host".to_owned(),
             source_root: self.host_dir.join("Src"),
             target: Target {
                 name: "main".to_owned(),
                 kind: TargetKind::App,
-                entry: "Main.bd".to_owned(),
+                entry: Some("Main.bd".to_owned()),
             },
             dependency_projects: vec![ResolvedDependencyProject {
                 dependency_name: "SampleMod".to_owned(),
-                manifest_path: self.mod_dir.join(PROJECT_FILE_NAME),
+                manifest_path: self.mod_dir.join("SampleMod.bproj"),
                 project_root: self.mod_dir.clone(),
                 project_name: "SampleMod".to_owned(),
                 source_root: self.mod_dir.join("Src"),

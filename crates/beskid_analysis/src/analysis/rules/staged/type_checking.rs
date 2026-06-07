@@ -11,6 +11,7 @@ use crate::services::{
     typed_hir_from_lowered_with_module_index,
 };
 use crate::syntax::Spanned;
+use beskid_pipeline::PipelineObserver;
 use std::collections::HashMap;
 
 impl SemanticPipelineRule {
@@ -19,33 +20,36 @@ impl SemanticPipelineRule {
         ctx: &mut RuleContext,
         hir: Spanned<HirProgram>,
         resolution: &Resolution,
+        pipeline: Option<&dyn PipelineObserver>,
     ) {
         self.check_immutable_assignments(ctx, &hir);
 
         let result = if ctx.options.semantic_gate_only {
             if let Some(assembly) = ctx.options.program_assembly.as_ref() {
-                typed_hir_from_lowered_gate_with_assembly(hir, Some(assembly))
+                typed_hir_from_lowered_gate_with_assembly(hir, Some(assembly), pipeline)
             } else if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
                 typed_hir_from_lowered_with_module_index(
                     hir,
                     index,
                     ctx.options.entry_source_path.clone(),
                     None,
+                    pipeline,
                 )
             } else {
-                typed_hir_from_lowered_after_resolution(hir, resolution)
+                typed_hir_from_lowered_after_resolution(hir, resolution, pipeline)
             }
         } else if let Some(assembly) = ctx.options.program_assembly.as_ref() {
-            typed_hir_from_lowered_with_assembly(hir, Some(assembly))
+            typed_hir_from_lowered_with_assembly(hir, Some(assembly), pipeline)
         } else if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
             typed_hir_from_lowered_with_module_index(
                 hir,
                 index,
                 ctx.options.entry_source_path.clone(),
                 None,
+                pipeline,
             )
         } else {
-            typed_hir_from_lowered_after_resolution(hir, resolution)
+            typed_hir_from_lowered_after_resolution(hir, resolution, pipeline)
         };
 
         match result {

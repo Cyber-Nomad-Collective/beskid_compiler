@@ -1,4 +1,4 @@
-//! CLI [`beskid_pipeline::PipelineObserver`] with plain lines or an interactive build TUI.
+//! CLI [`beskid_pipeline::PipelineObserver`] with plain lines or a Ratatui build UI.
 
 pub mod frontend;
 
@@ -7,10 +7,9 @@ pub mod tui;
 
 use std::borrow::Cow;
 use std::env;
-use std::io::{IsTerminal, Write, stderr};
+use std::io::{self, IsTerminal, Write, stderr};
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -21,10 +20,12 @@ use beskid_pipeline::{
     PipelineEvent, PipelineObserver,
     phases::{FULL_BUILD_PHASE_ORDER, JIT_RUN_PHASE_ORDER, MOD_BUILD_PHASE_ORDER},
 };
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
-use labels::phase_label;
-use tui::{count_severities, format_duration, format_severity_summary};
+use labels::{phase_label, sub_phase_index};
+use tui::{
+    count_severities, format_duration, format_phase_end, format_phase_start, format_severity_summary,
+    format_work_unit, TuiSession,
+};
 
 const WORK_UNIT_UI_MIN_INTERVAL: Duration = Duration::from_millis(120);
 const WORK_UNIT_UI_BURST_INTERVAL: u64 = 32;
@@ -33,6 +34,11 @@ struct WorkUnitThrottleState {
     last_emit: Option<Instant>,
     work_unit_events: u64,
     pending_msg: Option<String>,
+}
+
+struct PhaseStackEntry {
+    id: &'static str,
+    started: Instant,
 }
 
 impl WorkUnitThrottleState {
@@ -65,7 +71,7 @@ impl WorkUnitThrottleState {
     }
 }
 
-/// Which phase budget the step progress bar tracks.
+/// Which phase budget the top progress bar tracks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PipelineProgressKind {
     /// Full `beskid build` pipeline (resolve through link).
@@ -76,17 +82,25 @@ pub enum PipelineProgressKind {
     PrepareAndRun,
 }
 
-/// CLI adapter: maps [`PipelineEvent`] to indicatif or plain `eprintln`.
+/// CLI adapter: maps [`PipelineEvent`] to Ratatui or plain `eprintln`.
 pub struct CliPipeline {
     plain: bool,
+    phase_total: u64,
+    total_pos: Mutex<u64>,
     prepare_ui_finished: Mutex<bool>,
-    progress_bars_halted: Mutex<bool>,
-    multi: MultiProgress,
-    step_bar: Option<ProgressBar>,
-    work_bar: Option<ProgressBar>,
+    tui_suspended: Mutex<bool>,
+    tui: Mutex<TuiSession>,
     started_at: Instant,
-    phase_started_at: Mutex<Option<Instant>>,
+    phase_stack: Mutex<Vec<PhaseStackEntry>>,
     work_unit_throttle: Mutex<WorkUnitThrottleState>,
+}
+
+impl Drop for CliPipeline {
+    fn drop(&mut self) {
+        if let Ok(mut tui) = self.tui.lock() {
+            let _ = tui.suspend();
+        }
+    }
 }
 
 fn no_color_requested() -> bool {
@@ -97,20 +111,6 @@ pub fn use_cli_spinner(plain: bool) -> bool {
     !plain && !no_color_requested() && stderr().is_terminal()
 }
 
-fn step_bar_style() -> ProgressStyle {
-    ProgressStyle::with_template(
-        "{spinner:.green} [{bar:36.cyan/blue}] {pos:>2}/{len:2} {wide_msg}",
-    )
-    .expect("step progress template")
-    .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-}
-
-fn work_bar_style() -> ProgressStyle {
-    ProgressStyle::with_template("{spinner:.blue.dim} {msg:.dim}")
-        .expect("work unit template")
-        .tick_strings(&["·", "∙", "•"])
-}
-
 impl CliPipeline {
     pub fn new(use_spinner: bool) -> Self {
         Self::new_with_kind(use_spinner, PipelineProgressKind::FullBuild)
@@ -119,37 +119,24 @@ impl CliPipeline {
     pub fn new_with_kind(use_spinner: bool, kind: PipelineProgressKind) -> Self {
         let tty = stderr().is_terminal();
         let plain = !use_spinner || !tty;
-        let multi = MultiProgress::new();
-        let phase_count = match kind {
+        let phase_total = match kind {
             PipelineProgressKind::FullBuild => FULL_BUILD_PHASE_ORDER.len(),
             PipelineProgressKind::ModBuild => MOD_BUILD_PHASE_ORDER.len(),
-            PipelineProgressKind::PrepareAndRun => {
-                // Resolve/materialize (4) + semantic gate + one JIT path.
-                4 + JIT_RUN_PHASE_ORDER.len()
-            }
-        };
-        let (step_bar, work_bar) = if plain {
-            (None, None)
-        } else {
-            let steps = multi.add(ProgressBar::new(phase_count as u64));
-            steps.set_style(step_bar_style());
-            steps.enable_steady_tick(Duration::from_millis(100));
-            steps.set_message("Starting…");
-            let work = multi.add(ProgressBar::new_spinner());
-            work.set_style(work_bar_style());
-            work.enable_steady_tick(Duration::from_millis(120));
-            work.set_message("");
-            (Some(steps), Some(work))
-        };
+            PipelineProgressKind::PrepareAndRun => 4 + JIT_RUN_PHASE_ORDER.len(),
+        } as u64;
+        let tui = TuiSession::try_open(!plain).unwrap_or_else(|err| {
+            eprintln!("warning: terminal UI unavailable ({err}); falling back to plain output");
+            TuiSession::try_open_plain()
+        });
         Self {
             plain,
+            phase_total,
+            total_pos: Mutex::new(0),
             prepare_ui_finished: Mutex::new(false),
-            progress_bars_halted: Mutex::new(false),
-            multi,
-            step_bar,
-            work_bar,
+            tui_suspended: Mutex::new(plain),
+            tui: Mutex::new(tui),
             started_at: Instant::now(),
-            phase_started_at: Mutex::new(None),
+            phase_stack: Mutex::new(Vec::new()),
             work_unit_throttle: Mutex::new(WorkUnitThrottleState {
                 last_emit: None,
                 work_unit_events: 0,
@@ -158,41 +145,37 @@ impl CliPipeline {
         }
     }
 
-    /// Stop indicatif before writing to stderr (avoids TTY deadlocks with miette).
+    /// Leave alternate screen before writing to stderr (avoids TTY deadlocks with miette).
     pub fn halt_progress_bars_for_output(&self) {
         if self.plain {
             return;
         }
-        let mut halted = self
-            .progress_bars_halted
+        let mut suspended = self
+            .tui_suspended
             .lock()
-            .expect("progress_bars_halted mutex poisoned");
-        if *halted {
+            .expect("tui_suspended mutex poisoned");
+        if *suspended {
             return;
         }
-        *halted = true;
+        *suspended = true;
         self.flush_pending_work_unit_ui();
-        if let Some(work) = &self.work_bar {
-            work.finish_and_clear();
+        if let Ok(mut tui) = self.tui.lock() {
+            let _ = tui.suspend();
         }
-        if let Some(steps) = &self.step_bar {
-            steps.finish_and_clear();
-        }
-        let _ = self.multi.clear();
     }
 
-    fn progress_bars_active(&self) -> bool {
-        !self.progress_bars_halted() && self.step_bar.as_ref().is_some_and(|bar| !bar.is_finished())
+    fn tui_active(&self) -> bool {
+        !self.tui_suspended() && !self.plain && self.tui.lock().is_ok_and(|t| t.is_active())
     }
 
-    fn progress_bars_halted(&self) -> bool {
+    fn tui_suspended(&self) -> bool {
         *self
-            .progress_bars_halted
+            .tui_suspended
             .lock()
-            .expect("progress_bars_halted mutex poisoned")
+            .expect("tui_suspended mutex poisoned")
     }
 
-    /// Print semantic diagnostics (suspending progress bars when needed) and return severity counts.
+    /// Print semantic diagnostics (suspending the TUI when needed) and return severity counts.
     pub fn report_semantic_diagnostics(
         &self,
         diagnostics: &[SemanticDiagnostic],
@@ -234,10 +217,11 @@ impl CliPipeline {
 
     pub fn println_session(&self, line: impl AsRef<str>) {
         let line = line.as_ref();
-        if self.plain || self.progress_bars_halted() || self.prepare_ui_finished() {
+        if self.plain || self.tui_suspended() || self.prepare_ui_finished() {
+            tracing::info!(target: "beskid.tools.pipeline", "{line}");
             eprintln!("{line}");
-        } else {
-            let _ = self.multi.println(line);
+        } else if let Ok(mut tui) = self.tui.lock() {
+            let _ = tui.push_log(line);
         }
     }
 
@@ -246,19 +230,7 @@ impl CliPipeline {
         self.flush_pending_work_unit_ui();
         let elapsed = self.started_at.elapsed();
         let summary = format!("{msg} in {}", format_duration(elapsed));
-
-        let bars_active = self.step_bar.as_ref().is_some_and(|bar| !bar.is_finished());
-        if let Some(work) = &self.work_bar
-            && !work.is_finished()
-        {
-            work.finish_and_clear();
-        }
-        if let Some(bar) = &self.step_bar
-            && bars_active
-        {
-            bar.finish_with_message(summary);
-            return;
-        }
+        self.halt_progress_bars_for_output();
         eprintln!("{summary}");
     }
 
@@ -267,38 +239,117 @@ impl CliPipeline {
     }
 
     pub fn is_spinner_enabled(&self) -> bool {
-        self.step_bar.is_some()
+        !self.plain
     }
 
     fn flush_pending_work_unit_ui(&self) {
-        let msg = {
+        let pending = {
             let mut t = self
                 .work_unit_throttle
                 .lock()
                 .expect("cli pipeline throttle mutex poisoned");
             t.take_pending_message()
         };
-        let Some(msg) = msg else {
+        let Some(msg) = pending else {
             return;
         };
-        if self.plain {
-            eprintln!("    {msg}");
-        } else if let Some(work) = &self.work_bar {
-            work.set_message(msg);
+        if self.plain || self.tui_suspended() {
+            eprintln!("{msg}");
         }
     }
 
-    fn emit_work_unit_if_due(&self, msg: String) {
+    fn parent_phase_id(&self, depth: usize) -> Option<&'static str> {
+        let stack = self.phase_stack.lock().ok()?;
+        if depth == 0 {
+            return None;
+        }
+        stack.get(depth.saturating_sub(1)).map(|entry| entry.id)
+    }
+
+    fn stage_progress(&self, depth: usize, id: &'static str) -> (u64, u64, String) {
+        let label = phase_label(id).to_owned();
+        if depth == 0 {
+            return (0, 1, label);
+        }
+        if let Some(parent_id) = self.parent_phase_id(depth)
+            && let Some((index, total)) = sub_phase_index(parent_id, id)
+        {
+            return (index as u64, total as u64, label);
+        }
+        (0, 1, label)
+    }
+
+    fn refresh_progress_bars(
+        &self,
+        stage_pos: u64,
+        stage_len: u64,
+        stage_label: &str,
+    ) {
+        if !self.tui_active() {
+            return;
+        }
+        let total_pos = *self.total_pos.lock().expect("total_pos mutex poisoned");
+        if let Ok(mut tui) = self.tui.lock() {
+            let _ = tui.set_pipeline_progress(
+                total_pos,
+                self.phase_total,
+                "Pipeline",
+                stage_pos,
+                stage_len,
+                stage_label,
+            );
+        }
+    }
+
+    fn current_phase_depth(&self) -> usize {
+        self.phase_stack
+            .lock()
+            .map(|stack| stack.len())
+            .unwrap_or(0)
+    }
+
+    fn emit_tree_line(&self, line: impl AsRef<str>) {
+        let line = line.as_ref();
+        if self.plain || self.tui_suspended() {
+            eprintln!("{line}");
+        }
+    }
+
+    fn with_tui<F>(&self, f: F)
+    where
+        F: FnOnce(&mut TuiSession) -> io::Result<()>,
+    {
+        if self.plain || self.tui_suspended() {
+            return;
+        }
+        if let Ok(mut tui) = self.tui.lock() {
+            let _ = f(&mut tui);
+        }
+    }
+
+    fn emit_work_unit_if_due(
+        &self,
+        msg: String,
+        depth: usize,
+        done: u64,
+        total: u64,
+        label: &str,
+    ) {
         let now = Instant::now();
         let emit = {
             let mut t = self
                 .work_unit_throttle
                 .lock()
                 .expect("cli pipeline throttle mutex poisoned");
-            t.should_emit_work_unit(msg, now)
+            t.should_emit_work_unit(msg.clone(), now)
         };
         if emit {
-            self.flush_pending_work_unit_ui();
+            self.refresh_progress_bars(done, total.max(1), label);
+            if self.plain || self.tui_suspended() {
+                eprintln!("{msg}");
+            } else {
+                self.with_tui(|tui| tui.tree_work_unit(depth, done, total, label));
+            }
         }
     }
 
@@ -307,14 +358,23 @@ impl CliPipeline {
         if let Ok(mut t) = self.work_unit_throttle.lock() {
             t.reset_for_phase_boundary();
         }
-        if let Ok(mut started) = self.phase_started_at.lock() {
-            *started = Some(Instant::now());
+        let depth = self.current_phase_depth();
+        if let Ok(mut stack) = self.phase_stack.lock() {
+            stack.push(PhaseStackEntry {
+                id,
+                started: Instant::now(),
+            });
         }
         let label = phase_label(id);
-        if self.plain || !self.progress_bars_active() {
-            eprintln!("→ {label}");
-        } else if let Some(steps) = &self.step_bar {
-            steps.set_message(label.to_owned());
+        let line = format_phase_start(depth, self.plain, label);
+        let (stage_pos, stage_len, _) = self.stage_progress(depth, id);
+        self.refresh_progress_bars(stage_pos, stage_len, label);
+        if self.plain || self.tui_suspended() {
+            if !line.is_empty() {
+                eprintln!("{line}");
+            }
+        } else {
+            self.with_tui(|tui| tui.tree_phase_start(depth, label));
         }
     }
 
@@ -323,27 +383,36 @@ impl CliPipeline {
         if let Ok(mut t) = self.work_unit_throttle.lock() {
             t.reset_for_phase_boundary();
         }
-        let label = phase_label(id).to_owned();
-        let duration = self
-            .phase_started_at
-            .lock()
-            .ok()
-            .and_then(|mut guard| guard.take())
-            .map(|start| start.elapsed())
-            .unwrap_or_default();
-        if self.plain || !self.progress_bars_active() {
-            eprintln!("✓ {label} ({})", format_duration(duration));
+        let (depth, duration) = {
+            let mut stack = self
+                .phase_stack
+                .lock()
+                .expect("cli pipeline phase stack mutex poisoned");
+            let depth = stack.len().saturating_sub(1);
+            let duration = stack
+                .pop()
+                .map(|entry| entry.started.elapsed())
+                .unwrap_or_default();
+            (depth, duration)
+        };
+        let label = phase_label(id);
+        let duration_text = format_duration(duration);
+        let line = format_phase_end(depth, self.plain, label, &duration_text);
+        if self.plain || self.tui_suspended() {
+            eprintln!("{line}");
         } else {
-            self.println_session(format!("  ✓ {} ({})", label, format_duration(duration)));
-            if let Some(steps) = &self.step_bar {
-                steps.inc(1);
-                steps.set_message(label);
-            }
+            self.with_tui(|tui| tui.tree_phase_end(depth, label, duration_text));
         }
-        if self.progress_bars_active()
-            && let Some(work) = &self.work_bar
+        if depth == 0 {
+            if let Ok(mut total_pos) = self.total_pos.lock() {
+                *total_pos = total_pos.saturating_add(1);
+            }
+            let (stage_pos, stage_len, _) = self.stage_progress(depth, id);
+            self.refresh_progress_bars(stage_pos.saturating_add(1), stage_len, label);
+        } else if let Some(parent_id) = self.parent_phase_id(depth)
+            && let Some((index, total)) = sub_phase_index(parent_id, id)
         {
-            work.set_message("");
+            self.refresh_progress_bars((index as u64).saturating_add(1), total as u64, label);
         }
     }
 }
@@ -433,13 +502,14 @@ impl PipelineObserver for CliPipeline {
             PipelineEvent::PhaseStart { id } => self.on_phase_start(id),
             PipelineEvent::PhaseEnd { id } => self.on_phase_end(id),
             PipelineEvent::WorkUnit {
-                id,
+                id: _,
                 done,
                 total,
                 label,
             } => {
-                let msg = format!("{id} [{done}/{total}] {label}");
-                self.emit_work_unit_if_due(msg);
+                let depth = self.current_phase_depth().saturating_add(1);
+                let msg = format_work_unit(depth, self.plain, done, total, &label);
+                self.emit_work_unit_if_due(msg, depth, done, total, &label);
             }
         }
     }

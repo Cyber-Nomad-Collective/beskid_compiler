@@ -12,12 +12,12 @@ fn main() {
 
     let corelib_workspace_dir = candidates
         .into_iter()
-        .find(|p| p.join("Workspace.proj").is_file() && p.join("beskid_corelib").is_dir())
+        .find(|p| has_corelib_workspace_manifest(p) && p.join("beskid_corelib").is_dir())
         .unwrap_or_else(|| {
             panic!(
-                "beskid_tools: corelib workspace not found. Expected `../../corelib` with \
-                 `Workspace.proj` plus `beskid_corelib/` (init the `compiler/corelib` submodule). \
-                 Set {} to an absolute path to the **workspace** directory (parent of \
+                "beskid_tools: corelib workspace not found. Expected `../../corelib` with a \
+                 `.bws` workspace manifest plus `beskid_corelib/` (init the `compiler/corelib` \
+                 submodule). Set {} to an absolute path to the **workspace** directory (parent of \
                  `beskid_corelib/`) to override. Hint: `git submodule update --init --recursive` \
                  from the compiler repo root.",
                 ENV_CORELIB_SOURCE
@@ -41,10 +41,10 @@ fn corelib_workspace_candidates(manifest_dir: &Path) -> Vec<PathBuf> {
     {
         let p = PathBuf::from(&override_path);
         // Allow override to point at either workspace root or legacy beskid_corelib only.
-        if p.join("Workspace.proj").is_file() {
+        if has_corelib_workspace_manifest(&p) {
             candidates.push(p);
         } else if p.file_name().is_some_and(|n| n == "beskid_corelib")
-            && p.join("Project.proj").is_file()
+            && discover_project_manifest_in_embed_dir(&p)
         {
             if let Some(parent) = p.parent() {
                 candidates.push(parent.to_path_buf());
@@ -58,11 +58,49 @@ fn corelib_workspace_candidates(manifest_dir: &Path) -> Vec<PathBuf> {
     candidates
 }
 
+fn has_corelib_workspace_manifest(dir: &Path) -> bool {
+    discover_workspace_manifest_in_embed_dir(dir)
+}
+
+fn discover_workspace_manifest_in_embed_dir(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    entries.filter_map(Result::ok).any(|entry| {
+        let path = entry.path();
+        path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bws"))
+    })
+}
+
+fn discover_project_manifest_in_embed_dir(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    entries.filter_map(Result::ok).any(|entry| {
+        let path = entry.path();
+        path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bproj"))
+    })
+}
+
 fn copy_corelib_workspace_for_embed(src_workspace: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
-    let workspace_proj = src_workspace.join("Workspace.proj");
-    if workspace_proj.is_file() {
-        std::fs::copy(&workspace_proj, dst.join("Workspace.proj"))?;
+    if let Ok(entries) = std::fs::read_dir(src_workspace) {
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_file()
+                && path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("bws"))
+            {
+                std::fs::copy(&path, dst.join(entry.file_name()))?;
+            }
+        }
     }
     copy_dir_for_embed(&src_workspace.join("packages"), &dst.join("packages"))?;
     copy_dir_for_embed(

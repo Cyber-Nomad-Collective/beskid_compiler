@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use include_dir::{Dir, include_dir};
 use semver::Version;
 
-// Populated by build.rs from ../../corelib (workspace: Workspace.proj + packages + beskid_corelib).
+// Populated by build.rs from ../../corelib (workspace: *.bws + packages + beskid_corelib).
 static EMBEDDED_CORELIB: Dir<'_> = include_dir!("$OUT_DIR/embedded_corelib");
 
 /// Outcome of [`ensure_bundled_corelib`]: install root, embedded version string, and whether files were refreshed.
@@ -95,13 +95,13 @@ fn embedded_version() -> Result<Version> {
     }
 
     let project = EMBEDDED_CORELIB
-        .get_file("beskid_corelib/Project.proj")
+        .get_file("beskid_corelib/corelib.bproj")
         .ok_or_else(|| {
-            anyhow::anyhow!("embedded corelib is missing beskid_corelib/Project.proj")
+            anyhow::anyhow!("embedded corelib is missing beskid_corelib/corelib.bproj")
         })?;
     parse_project_manifest_version(
         project.contents_utf8().unwrap_or_default(),
-        "embedded Project.proj",
+        "embedded corelib.bproj",
     )
 }
 
@@ -125,8 +125,8 @@ fn installed_version(root: &Path) -> Result<Option<Version>> {
     }
 
     for project_path in [
-        root.join("beskid_corelib/Project.proj"),
-        root.join("Project.proj"),
+        root.join("beskid_corelib/corelib.bproj"),
+        root.join("corelib.bproj"),
     ] {
         if !project_path.is_file() {
             continue;
@@ -139,7 +139,7 @@ fn installed_version(root: &Path) -> Result<Option<Version>> {
         })?;
         return Ok(Some(parse_project_manifest_version(
             &content,
-            "installed Project.proj",
+            "installed .bproj manifest",
         )?));
     }
 

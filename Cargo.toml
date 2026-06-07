@@ -21,13 +21,21 @@ smallvec = { version = "1.15", default-features = false }
 syn = { version = "2.0.17", features = ["default", "visit-mut"] }
 synstructure = "0.13"
 tracing = { version = "0.1.37", default-features = false }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = "0.2"
 trybuild = "1.0"
 beskid_template = { path = "crates/beskid_template" }
-mermaid-builder = "0.1.2"
 graphs-tui = "0.4.0"
 beskid_graph = { path = "crates/beskid_graph" }
 beskid_artifacts = { path = "crates/beskid_artifacts" }
 postcard = "1"
+ratatui = { version = "0.30", features = ["crossterm"] }
+crossterm = "0.29"
+tui-tree-widget = "0.24"
+tui-widget-list = "0.15"
+tui-piechart = "0.3"
+tui-logger = { version = "0.18", features = ["tracing-support"] }
+tui-term = "0.3.4"
 
 cranelift-codegen = "0.128.3"
 cranelift-frontend = "0.128.3"

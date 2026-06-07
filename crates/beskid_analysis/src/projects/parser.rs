@@ -358,9 +358,55 @@ fn parse_mod_block_contents(
     Ok(fields)
 }
 
-fn parse_project_block(
+const RESERVED_TOP_LEVEL_BLOCKS: &[&str] = &["target", "dependency", "link"];
+const PROJECT_ROOT_FIELDS: &[&str] = &["name", "version", "root", "root_namespace", "type", "readme"];
+const WORKSPACE_ROOT_FIELDS: &[&str] = &["name", "resolver"];
+const MEMBER_FIELDS: &[&str] = &["path"];
+
+fn split_known_fields(
+    fields: HashMap<String, String>,
+    known: &[&str],
+) -> (HashMap<String, String>, HashMap<String, String>) {
+    let mut known_out = HashMap::new();
+    let mut extras = HashMap::new();
+    for (key, value) in fields {
+        if known.contains(&key.as_str()) {
+            known_out.insert(key, value);
+        } else {
+            extras.insert(key, value);
+        }
+    }
+    (known_out, extras)
+}
+
+fn parse_loose_assignment_line(ctx: &LineCtx<'_>) -> Result<(String, String), ProjectError> {
+    let line = strip_comment(ctx.text).trim();
+    let (left, right) = line
+        .split_once('=')
+        .ok_or_else(|| parse_err(ctx, "expected key = value assignment", None))?;
+    let key = left.trim();
+    if key.is_empty() {
+        return Err(parse_err(ctx, "assignment key cannot be empty", None));
+    }
+    let trimmed = right.trim();
+    let value = if trimmed.starts_with('"') {
+        parse_quoted_string_token(trimmed).map_err(|message| {
+            parse_err(
+                ctx,
+                message,
+                value_span_in_source(ctx, trimmed),
+            )
+        })?
+    } else {
+        trimmed.to_string()
+    };
+    Ok((key.to_string(), value))
+}
+
+fn parse_named_project_block(
     lines: &mut PhysicalLines<'_>,
     header_ctx: &LineCtx<'_>,
+    block_kind: &str,
 ) -> Result<ParsedProjectBlock, ProjectError> {
     let mut fields: HashMap<String, String> = HashMap::new();
     let mut mod_section: Option<HashMap<String, ModFieldValue>> = None;
@@ -381,7 +427,7 @@ fn parse_project_block(
                 if mod_section.is_some() {
                     return Err(parse_err(
                         &ctx,
-                        "duplicate `mod` block inside `project`",
+                        format!("duplicate `mod` block inside `{block_kind}`"),
                         None,
                     ));
                 }
@@ -392,7 +438,7 @@ fn parse_project_block(
                 if template_section.is_some() {
                     return Err(parse_err(
                         &ctx,
-                        "duplicate `template` block inside `project`",
+                        format!("duplicate `template` block inside `{block_kind}`"),
                         None,
                     ));
                 }
@@ -401,7 +447,7 @@ fn parse_project_block(
             }
             return Err(parse_err(
                 &ctx,
-                format!("unknown nested block `{nested_kind}` inside `project`"),
+                format!("unknown nested block `{nested_kind}` inside `{block_kind}`"),
                 None,
             ));
         }
@@ -410,7 +456,7 @@ fn parse_project_block(
         if fields.insert(key.clone(), value).is_some() {
             return Err(parse_err(
                 &ctx,
-                format!("duplicate `project` field `{key}`"),
+                format!("duplicate `{block_kind}` field `{key}`"),
                 None,
             ));
         }
@@ -418,13 +464,16 @@ fn parse_project_block(
     if !closed {
         return Err(ProjectError::ParseAt {
             line: header_ctx.line_1,
-            message: "missing closing `}` for `project` block".to_string(),
+            message: format!("missing closing `}}` for `{block_kind}` block"),
             start: None,
             end: None,
         });
     }
+    let (fields, extras) = split_known_fields(fields, PROJECT_ROOT_FIELDS);
     Ok(ParsedProjectBlock {
+        block_kind: block_kind.to_string(),
         fields,
+        extras,
         mod_section,
         template_section,
     })
@@ -562,7 +611,13 @@ fn parse_workspace_blocks(source: &str) -> Result<ParsedWorkspaceBlocks, Project
                 break;
             }
 
-            let (key, value) = parse_assignment_line(&body_ctx)?;
+            let (key, value) = match kind.as_str() {
+                "member" | "workspace" => parse_loose_assignment_line(&body_ctx)?,
+                _ => {
+                    let (key, value) = parse_assignment_line(&body_ctx)?;
+                    (key, value)
+                }
+            };
             fields.insert(key, value);
         }
 
@@ -602,7 +657,9 @@ fn parse_workspace_blocks(source: &str) -> Result<ParsedWorkspaceBlocks, Project
 
 #[derive(Debug)]
 struct ParsedProjectBlock {
+    block_kind: String,
     fields: HashMap<String, String>,
+    extras: HashMap<String, String>,
     mod_section: Option<HashMap<String, ModFieldValue>>,
     template_section: Option<HashMap<String, String>>,
 }
@@ -692,52 +749,66 @@ fn parse_blocks(source: &str) -> Result<ParsedBlocks, ProjectError> {
         let (kind, label) = parse_block_header(&line_ctx)?;
 
         if kind == "project" {
-            if label.is_some() {
-                return Err(parse_err(
-                    &line_ctx,
-                    "`project` block cannot carry a label",
-                    None,
-                ));
+            return Err(ProjectError::meta_contract(
+                "E1894",
+                "legacy `project { ... }` block is not supported; use a named root block matching `name` (for example `myapp { name = \"myapp\" ... }`)",
+            ));
+        }
+
+        if RESERVED_TOP_LEVEL_BLOCKS.contains(&kind.as_str()) {
+            if kind == "link" {
+                if label.is_some() {
+                    return Err(parse_err(
+                        &line_ctx,
+                        "`link` block cannot carry a label",
+                        None,
+                    ));
+                }
+                if parsed.link.is_some() {
+                    return Err(ProjectError::meta_contract(
+                        "E1890",
+                        "duplicate `link` block at top level",
+                    ));
+                }
+                let link_block = parse_link_block_contents(&mut lines, &line_ctx)?;
+                parsed.link = Some(link_block);
+                continue;
             }
-            let project_block = parse_project_block(&mut lines, &line_ctx)?;
-            parsed.project = Some(project_block);
+
+            let mut block = parse_flat_block(&mut lines, &line_ctx, &kind)?;
+            block.label = label;
+
+            match block.kind.as_str() {
+                "target" => parsed.targets.push(block),
+                "dependency" => parsed.dependencies.push(block),
+                other => {
+                    return Err(ProjectError::ParseAt {
+                        line: line_ctx.line_1,
+                        message: format!("unknown block kind `{other}`"),
+                        start: None,
+                        end: None,
+                    });
+                }
+            }
             continue;
         }
 
-        if kind == "link" {
-            if label.is_some() {
-                return Err(parse_err(
-                    &line_ctx,
-                    "`link` block cannot carry a label",
-                    None,
-                ));
-            }
-            if parsed.link.is_some() {
-                return Err(ProjectError::meta_contract(
-                    "E1890",
-                    "duplicate `link` block at top level",
-                ));
-            }
-            let link_block = parse_link_block_contents(&mut lines, &line_ctx)?;
-            parsed.link = Some(link_block);
-            continue;
+        if parsed.project.is_some() {
+            return Err(parse_err(
+                &line_ctx,
+                "manifest must contain exactly one named project root block",
+                None,
+            ));
         }
-
-        let mut block = parse_flat_block(&mut lines, &line_ctx, &kind)?;
-        block.label = label;
-
-        match block.kind.as_str() {
-            "target" => parsed.targets.push(block),
-            "dependency" => parsed.dependencies.push(block),
-            other => {
-                return Err(ProjectError::ParseAt {
-                    line: line_ctx.line_1,
-                    message: format!("unknown block kind `{other}`"),
-                    start: None,
-                    end: None,
-                });
-            }
+        if label.is_some() {
+            return Err(parse_err(
+                &line_ctx,
+                "project root block cannot carry a label",
+                None,
+            ));
         }
+        let project_block = parse_named_project_block(&mut lines, &line_ctx, &kind)?;
+        parsed.project = Some(project_block);
     }
 
     Ok(parsed)
@@ -818,10 +889,11 @@ fn build_project_kind(type_field: Option<&str>) -> Result<ProjectKind, ProjectEr
         None => Ok(ProjectKind::Host),
         Some("Mod") | Some("Meta") => Ok(ProjectKind::Mod),
         Some("Template") => Ok(ProjectKind::Template),
+        Some("Aggregate") => Ok(ProjectKind::Aggregate),
         Some(other) => Err(ProjectError::meta_contract(
             "E1807",
             format!(
-                "unsupported project.type `{other}` (omit the field for ordinary host projects, or use `Mod` / `Template`)"
+                "unsupported project.type `{other}` (omit the field for ordinary host projects, or use `Mod`, `Template`, or `Aggregate`)"
             ),
         )),
     }
@@ -892,20 +964,20 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
     reject_corelib_opt_out_keys(&project.fields)?;
     let kind = build_project_kind(project.fields.get("type").map(|s| s.as_str()))?;
     let mod_section = match (&kind, &project.mod_section) {
-        (ProjectKind::Host | ProjectKind::Template, Some(_)) => {
+        (ProjectKind::Host | ProjectKind::Template | ProjectKind::Aggregate, Some(_)) => {
             return Err(ProjectError::meta_contract(
                 "E1874",
-                "`project.mod` is only allowed when `type = Mod`",
+                "`mod` is only allowed when `type = Mod`",
             ));
         }
         (ProjectKind::Mod, Some(mod_fields)) => Some(build_project_mod_from_fields(mod_fields)?),
         _ => None,
     };
     let template_section = match (&kind, &project.template_section) {
-        (ProjectKind::Host | ProjectKind::Mod, Some(_)) => {
+        (ProjectKind::Host | ProjectKind::Mod | ProjectKind::Aggregate, Some(_)) => {
             return Err(ProjectError::meta_contract(
                 "E1879",
-                "`project.template` is only allowed when `type = Template`",
+                "`template` is only allowed when `type = Template`",
             ));
         }
         (ProjectKind::Template, Some(template_fields)) => {
@@ -915,26 +987,44 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
     };
 
     Ok(ProjectSection {
+        block_kind: project.block_kind.clone(),
         name: required_field(&project.fields, "name")?,
         version: required_field(&project.fields, "version")?,
         root: project
             .fields
             .get("root")
             .cloned()
-            .unwrap_or_else(|| "Src".to_string()),
+            .unwrap_or_else(|| {
+                if kind == ProjectKind::Aggregate {
+                    String::new()
+                } else {
+                    "Src".to_string()
+                }
+            }),
         root_namespace: project.fields.get("root_namespace").cloned(),
         kind,
         mod_section,
         template_section,
+        readme: project.fields.get("readme").cloned(),
+        extras: project.extras.clone(),
     })
 }
 
 fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError> {
-    let project = parsed
-        .project
-        .ok_or_else(|| ProjectError::Validation("missing required `project` block".to_string()))?;
+    let project = parsed.project.ok_or_else(|| {
+        ProjectError::Validation("missing required named project root block".to_string())
+    })?;
 
     let project_section = assemble_project_section(&project)?;
+    if project_section.block_kind != project_section.name {
+        return Err(ProjectError::meta_contract(
+            "E1896",
+            format!(
+                "project root block kind `{}` must match `name = \"{}\"`",
+                project_section.block_kind, project_section.name
+            ),
+        ));
+    }
 
     let mut targets = Vec::with_capacity(parsed.targets.len());
     for target in parsed.targets {
@@ -950,12 +1040,20 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
             }
         };
 
+        let entry = target.fields.get("entry").cloned();
+        if !matches!(kind, TargetKind::Lib) && entry.as_deref().unwrap_or("").trim().is_empty() {
+            return Err(ProjectError::Validation(format!(
+                "target `{}` requires `entry` when kind is App or Test",
+                target.label.as_deref().unwrap_or("<unnamed>")
+            )));
+        }
+
         targets.push(Target {
             name: target.label.ok_or_else(|| {
                 ProjectError::Validation("target block must include a label".to_string())
             })?,
             kind,
-            entry: required_field(&target.fields, "entry")?,
+            entry,
         });
     }
 
@@ -1015,22 +1113,26 @@ fn build_workspace_manifest(
         ProjectError::Validation("missing required `workspace` block".to_string())
     })?;
 
+    let (workspace_fields, workspace_extras) =
+        split_known_fields(workspace.fields, WORKSPACE_ROOT_FIELDS);
     let workspace_section = WorkspaceSection {
-        name: required_field(&workspace.fields, "name")?,
-        resolver: workspace
-            .fields
+        name: required_field(&workspace_fields, "name")?,
+        resolver: workspace_fields
             .get("resolver")
             .cloned()
             .unwrap_or_else(|| "v1".to_string()),
+        extras: workspace_extras,
     };
 
     let mut members = Vec::with_capacity(parsed.members.len());
     for member in parsed.members {
+        let (member_fields, member_extras) = split_known_fields(member.fields, MEMBER_FIELDS);
         members.push(WorkspaceMember {
             name: member.label.ok_or_else(|| {
                 ProjectError::Validation("member block must include a label".to_string())
             })?,
-            path: required_field(&member.fields, "path")?,
+            path: required_field(&member_fields, "path")?,
+            extras: member_extras,
         });
     }
 
@@ -1111,7 +1213,7 @@ mod tests {
 
     fn minimal_project(kind: &str, source_field: &str) -> String {
         format!(
-            r#"project {{
+            r#"p {{
   name = "p"
   version = "0.1.0"
 }}
@@ -1145,7 +1247,7 @@ dependency "d" {{
 
     #[test]
     fn name_must_stay_quoted() {
-        let src = r#"project {
+        let src = r#"MyApp {
   name = MyApp
   version = "0.1.0"
 }
@@ -1167,7 +1269,7 @@ target "t" { kind = Lib entry = "e.bd" }
 
     #[test]
     fn parse_link_block_libraries_and_paths() {
-        let src = r#"project {
+        let src = r#"p {
   name = "p"
   version = "0.1.0"
 }
@@ -1192,7 +1294,7 @@ link {
 
     #[test]
     fn parse_link_block_unknown_key_rejected() {
-        let src = r#"project {
+        let src = r#"p {
   name = "p"
   version = "0.1.0"
 }
@@ -1213,7 +1315,7 @@ link {
 
     #[test]
     fn parse_link_block_duplicate_library_rejected() {
-        let src = r#"project {
+        let src = r#"p {
   name = "p"
   version = "0.1.0"
 }
@@ -1234,7 +1336,7 @@ link {
 
     #[test]
     fn parse_link_block_absent_yields_none() {
-        let src = r#"project {
+        let src = r#"p {
   name = "p"
   version = "0.1.0"
 }
@@ -1259,5 +1361,7 @@ member "m" {
 "#;
         let w = parse_workspace_manifest(src).expect("parse workspace");
         assert_eq!(w.workspace.resolver, "v1");
+        assert_eq!(w.workspace.name, "w");
+        assert_eq!(w.members[0].path, "pkg");
     }
 }

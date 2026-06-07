@@ -58,4 +58,11 @@ impl TypeTable {
             matches!(info, TypeInfo::Array(e) if *e == element).then_some(TypeId(i))
         })
     }
+
+    /// Returns an existing primitive type id when already interned.
+    pub fn find_primitive(&self, primitive: HirPrimitiveType) -> Option<TypeId> {
+        self.types.iter().enumerate().find_map(|(i, info)| {
+            matches!(info, TypeInfo::Primitive(p) if *p == primitive).then_some(TypeId(i))
+        })
+    }
 }

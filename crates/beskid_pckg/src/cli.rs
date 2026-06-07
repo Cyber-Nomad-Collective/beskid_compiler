@@ -10,7 +10,7 @@ use clap::{Args, Subcommand};
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
-use indicatif::{ProgressBar, ProgressStyle};
+use crate::progress::UploadProgress;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -697,26 +697,15 @@ async fn execute_publish(
         .map_err(PckgError::Io)?
         .len();
 
-    let upload_pb = if io::stdout().is_terminal() && len > 0 {
-        let pb = ProgressBar::new(len);
-        pb.set_style(
-            ProgressStyle::with_template(
-                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
-            )
-            .expect("template")
-            .progress_chars("#>-"),
-        );
-        pb.set_message("uploading artifact");
-        Some(pb)
+    let upload_progress = if io::stderr().is_terminal() && len > 0 {
+        Some(UploadProgress::new(len))
     } else {
         None
     };
 
-    let spinner = if upload_pb.is_none() {
-        Some(spinner("Publishing package version..."))
-    } else {
-        None
-    };
+    if upload_progress.is_none() {
+        eprintln!("Publishing package version...");
+    }
 
     let started = Instant::now();
     let response = client
@@ -727,16 +716,9 @@ async fn execute_publish(
             &artifact_name,
             args.manifest_json.as_deref(),
             args.checksum_sha256.as_deref(),
-            upload_pb.as_ref(),
+            upload_progress.as_ref(),
         )
         .await;
-
-    if let Some(s) = spinner.as_ref() {
-        match &response {
-            Ok(_) => s.finish_with_message("Package publish request completed."),
-            Err(_) => s.abandon_with_message("Package publish failed."),
-        }
-    }
 
     match response {
         Ok(response) => {
@@ -912,16 +894,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hasher.update(bytes);
     let hash = hasher.finalize();
     format!("{hash:x}")
-}
-
-fn spinner(message: &str) -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
-    if let Ok(style) = ProgressStyle::with_template("{spinner:.green} {msg}") {
-        spinner.set_style(style);
-    }
-    spinner.enable_steady_tick(Duration::from_millis(90));
-    spinner.set_message(message.to_string());
-    spinner
 }
 
 #[cfg(test)]

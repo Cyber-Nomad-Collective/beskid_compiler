@@ -71,21 +71,24 @@ impl<'a> TypeContext<'a> {
         args: &[Spanned<crate::hir::HirExpressionNode>],
     ) -> Option<Vec<TypeId>> {
         let item_id = callee_item_id?;
-        let expected_len = self.generic_items.get(&item_id)?.len();
+        let generic_names = self.generic_items.get(&item_id)?.clone();
+        let expected_len = generic_names.len();
         if expected_len == 0 {
             return Some(Vec::new());
         }
+
+        let mut arg_types = Vec::with_capacity(args.len());
         for arg in args {
-            let Some(arg_type) = self.type_expression(arg) else {
-                continue;
-            };
-            if let Some(TypeInfo::Applied { args, .. }) = self.type_table.get(arg_type)
-                && args.len() == expected_len
-            {
-                return Some(args.clone());
-            }
+            arg_types.push(self.type_expression(arg)?);
         }
-        None
+
+        crate::types::generic_inference::infer_generic_args_from_call_types(
+            &self.type_table,
+            &self.generic_items,
+            &self.function_signatures,
+            item_id,
+            &arg_types,
+        )
     }
 
     pub(super) fn infer_generic_args_from_qualified_type_path(

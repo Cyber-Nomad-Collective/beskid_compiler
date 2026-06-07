@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 #[derive(Args, Debug)]
 pub struct CorelibArgs {
     /// Destination directory for the materialized corelib **workspace** tree
-    /// (`Workspace.proj`, `packages/`, `beskid_corelib/`)
+    /// (`.bws` workspace manifest, `packages/`, `beskid_corelib/`)
     #[arg(long, default_value = "corelib")]
     pub output: PathBuf,
 }
@@ -44,30 +44,40 @@ fn generate_corelib_project(output: &Path) -> Result<()> {
 }
 
 fn validate_template_layout(template_root: &Path) -> Result<()> {
-    let workspace = template_root.join("Workspace.proj");
-    if !workspace.is_file() {
-        anyhow::bail!(
-            "missing corelib workspace template at `{}`",
-            workspace.display()
-        );
-    }
+    let workspace = discover_workspace_manifest(template_root).ok_or_else(|| {
+        anyhow::anyhow!(
+            "missing corelib workspace template (expected a `.bws` manifest under `{}`)",
+            template_root.display()
+        )
+    })?;
 
-    let manifest = template_root.join("beskid_corelib/Project.proj");
-    let prelude = template_root.join("beskid_corelib/src/Prelude.bd");
-
+    let manifest = template_root.join("beskid_corelib/corelib.bproj");
     if !manifest.is_file() {
         anyhow::bail!(
             "missing corelib manifest template at `{}`",
             manifest.display()
         );
     }
-    if !prelude.is_file() {
-        anyhow::bail!(
-            "missing corelib prelude template at `{}`",
-            prelude.display()
-        );
-    }
+
+    let _ = workspace;
     Ok(())
+}
+
+fn discover_workspace_manifest(root: &Path) -> Option<PathBuf> {
+    std::fs::read_dir(root).ok().and_then(|entries| {
+        let mut matches = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.is_file()
+                    && path
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("bws"))
+            })
+            .collect::<Vec<_>>();
+        matches.sort();
+        matches.into_iter().next()
+    })
 }
 
 fn is_same_location(left: &Path, right: &Path) -> bool {

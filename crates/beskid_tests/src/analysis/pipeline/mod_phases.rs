@@ -5,7 +5,7 @@ use beskid_analysis::mod_host::{
     ModHostInput, run_analyze_rewrite_with_invoker, run_through_generate,
 };
 use beskid_analysis::projects::{
-    CompilePlan, PROJECT_FILE_NAME, ResolvedDependencyProject, Target, TargetKind,
+    CompilePlan, ResolvedDependencyProject, Target, TargetKind,
 };
 use beskid_analysis::services::SemanticSnapshot;
 use beskid_analysis::services::parse_program_with_source_name;
@@ -84,17 +84,17 @@ project {
     let program = parse_program_with_source_name("Main.bd", source).expect("parse host program");
     let plan = CompilePlan {
         project_root: host_dir.clone(),
-        manifest_path: host_dir.join(PROJECT_FILE_NAME),
+        manifest_path: host_dir.join("Host.bproj"),
         project_name: "Host".to_string(),
         source_root: host_dir.join("Src"),
         target: Target {
             name: "main".to_string(),
             kind: TargetKind::App,
-            entry: "Main.bd".to_string(),
+            entry: Some("Main.bd".to_string()),
         },
         dependency_projects: vec![ResolvedDependencyProject {
             dependency_name: "ModA".to_string(),
-            manifest_path: mod_dir.join(PROJECT_FILE_NAME),
+            manifest_path: mod_dir.join("SampleMod.bproj"),
             project_root: mod_dir.clone(),
             project_name: "ModA".to_string(),
             source_root: mod_dir.join("Src"),

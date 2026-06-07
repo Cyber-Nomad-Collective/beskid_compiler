@@ -1,6 +1,6 @@
 //! Ordered post-instantiation actions (`beskidLock`, `runCommand`, `openReadme`, …).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::error::{TemplateError, TemplateResult};
@@ -49,16 +49,17 @@ fn beskid_command(ctx: &PostActionContext) -> PathBuf {
 
 fn run_beskid_lock(ctx: &PostActionContext) -> TemplateResult<()> {
     let exe = beskid_command(ctx);
-    let project = ctx.lock_root.join("Project.proj");
-    if !project.is_file() {
-        let workspace = ctx.lock_root.join("Workspace.proj");
-        if !workspace.is_file() {
+    let project = discover_project_manifest(&ctx.lock_root);
+    if project.is_none() {
+        let workspace = discover_workspace_manifest(&ctx.lock_root);
+        if workspace.is_none() {
             eprintln!(
-                "warning: skipping beskidLock — no Project.proj or Workspace.proj at {}",
+                "warning: skipping beskidLock — no `.bproj` or `.bws` manifest at {}",
                 ctx.lock_root.display()
             );
             return Ok(());
         }
+        let workspace = workspace.expect("checked above");
         let status = Command::new(&exe)
             .args(["lock", "--project", workspace.to_str().unwrap_or_default()])
             .status()
@@ -71,6 +72,7 @@ fn run_beskid_lock(ctx: &PostActionContext) -> TemplateResult<()> {
         return Ok(());
     }
 
+    let project = project.expect("checked above");
     let status = Command::new(&exe)
         .args(["lock", "--project", project.to_str().unwrap_or_default()])
         .status()
@@ -81,6 +83,18 @@ fn run_beskid_lock(ctx: &PostActionContext) -> TemplateResult<()> {
         )));
     }
     Ok(())
+}
+
+fn discover_project_manifest(root: &Path) -> Option<PathBuf> {
+    beskid_analysis::projects::discover_project_manifest_in_dir(root)
+        .ok()
+        .flatten()
+}
+
+fn discover_workspace_manifest(root: &Path) -> Option<PathBuf> {
+    beskid_analysis::projects::discover_workspace_manifest_in_dir(root)
+        .ok()
+        .flatten()
 }
 
 fn run_command(action: &TemplatePostAction, ctx: &PostActionContext) -> TemplateResult<()> {

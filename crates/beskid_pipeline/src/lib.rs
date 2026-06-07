@@ -1,6 +1,6 @@
 //! Shared compilation pipeline model: stable phase ids, events, and observers.
 //!
-//! This crate is **std-only**. UI (e.g. `indicatif`) lives in `beskid_cli` by implementing
+//! This crate is **std-only**. UI (e.g. Ratatui) lives in `beskid_tools` by implementing
 //! [`PipelineObserver`]. Emitters (`beskid_analysis`, `beskid_codegen`, `beskid_aot`,
 //! `beskid_engine`) depend on this leaf crate only.
 //!
@@ -38,7 +38,7 @@ pub enum PipelineEvent {
 }
 
 /// Receives [`PipelineEvent`] from compiler stages. Implementations must be cheap; heavy work
-/// (throttling, indicatif updates) belongs in the CLI adapter.
+/// (throttling, progress bar updates) belongs in the CLI adapter.
 pub trait PipelineObserver: Send + Sync {
     fn on_event(&self, event: PipelineEvent);
 }
@@ -57,9 +57,13 @@ pub fn observe_phase<O: PipelineObserver + ?Sized>(
     id: &'static str,
     f: impl FnOnce(),
 ) {
+    let span = tracing::info_span!(target: "beskid.pipeline", "pipeline.phase", phase = id);
+    let _guard = span.enter();
     if let Some(o) = obs {
+        tracing::debug!(target: "beskid.pipeline", "phase start");
         o.on_event(PipelineEvent::PhaseStart { id });
         f();
+        tracing::debug!(target: "beskid.pipeline", "phase end");
         o.on_event(PipelineEvent::PhaseEnd { id });
     } else {
         f();
@@ -72,12 +76,31 @@ pub fn observe_phase_result<T, E, O: PipelineObserver + ?Sized>(
     id: &'static str,
     f: impl FnOnce() -> Result<T, E>,
 ) -> Result<T, E> {
+    let span = tracing::info_span!(target: "beskid.pipeline", "pipeline.phase", phase = id);
+    let _guard = span.enter();
     if let Some(o) = obs {
+        tracing::debug!(target: "beskid.pipeline", "phase start");
         o.on_event(PipelineEvent::PhaseStart { id });
         let out = f();
+        tracing::debug!(target: "beskid.pipeline", "phase end");
         o.on_event(PipelineEvent::PhaseEnd { id });
         out
     } else {
+        f()
+    }
+}
+
+/// Like [`observe_phase`], but preserves the value returned by `f`.
+pub fn observe_phase_value<T, O: PipelineObserver + ?Sized>(
+    obs: Option<&O>,
+    id: &'static str,
+    f: impl FnOnce() -> T,
+) -> T {
+    if let Some(o) = obs {
+        observe_phase_result(Some(o), id, || Ok::<T, std::convert::Infallible>(f())).unwrap()
+    } else {
+        let span = tracing::info_span!(target: "beskid.pipeline", "pipeline.phase", phase = id);
+        let _guard = span.enter();
         f()
     }
 }
@@ -90,12 +113,21 @@ pub fn emit_work_unit<O: PipelineObserver + ?Sized>(
     total: u64,
     label: impl Into<Cow<'static, str>>,
 ) {
+    let label = label.into();
+    tracing::trace!(
+        target: "beskid.pipeline",
+        phase = id,
+        done,
+        total,
+        label = label.as_ref(),
+        "work unit"
+    );
     if let Some(o) = obs {
         o.on_event(PipelineEvent::WorkUnit {
             id,
             done,
             total,
-            label: label.into(),
+            label,
         });
     }
 }

@@ -5,20 +5,14 @@ use super::{
 };
 
 #[test]
-fn checked_in_corelib_template_has_manifest_and_prelude() {
+fn checked_in_corelib_template_has_manifest() {
     let template_root = corelib_root();
-    let manifest = template_root.join("Project.proj");
-    let prelude = template_root.join("src/Prelude.bd");
+    let manifest = template_root.join("corelib.bproj");
 
     assert!(
         manifest.is_file(),
         "missing corelib manifest: {}",
         manifest.display()
-    );
-    assert!(
-        prelude.is_file(),
-        "missing corelib prelude: {}",
-        prelude.display()
     );
 }
 
@@ -34,26 +28,26 @@ fn checked_in_corelib_template_is_resolved_from_corelib_submodule() {
 
 #[test]
 fn checked_in_corelib_workspace_declares_workspace_manifest() {
-    let ws = corelib_workspace_root().join("Workspace.proj");
+    let ws = corelib_workspace_root().join("CoreLib.bws");
     assert!(
         ws.is_file(),
         "missing corelib workspace manifest: {}",
         ws.display()
     );
-    let raw = std::fs::read_to_string(&ws).expect("read Workspace.proj");
+    let raw = std::fs::read_to_string(&ws).expect("read CoreLib.bws");
     assert!(
         raw.contains("workspace {"),
-        "Workspace.proj should open a workspace block"
+        "CoreLib.bws should open a workspace block"
     );
 }
 
 #[test]
 fn checked_in_corelib_template_declares_corelib_project_name() {
     let root = corelib_root();
-    let manifest = std::fs::read_to_string(root.join("Project.proj")).expect("read manifest");
+    let manifest = std::fs::read_to_string(root.join("corelib.bproj")).expect("read manifest");
     assert!(
         manifest.contains("name = \"corelib\""),
-        "expected corelib package identity in Project.proj"
+        "expected corelib package identity in corelib.bproj"
     );
 }
 
@@ -116,14 +110,17 @@ fn compiler_sdk_syntax_inventory_excludes_removed_meta_definition() {
 
 #[test]
 fn checked_in_corelib_foundation_package_has_manifest() {
-    let p = foundation_src().parent().expect("src").join("Project.proj");
+    let p = foundation_src()
+        .parent()
+        .expect("src")
+        .join("corelib_foundation.bproj");
     assert!(p.is_file(), "missing foundation manifest: {}", p.display());
 }
 
 #[test]
 fn checked_in_corelib_template_has_beskid_tests_project() {
     let root = corelib_root();
-    let tests_project = root.join("tests/corelib_tests/Project.proj");
+    let tests_project = root.join("tests/corelib_tests/corelib_tests.bproj");
     let write_tests = root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd");
     let api_tests = root.join("tests/corelib_tests/src/system/SyscallApiTests.bd");
     let ergonomics_tests = root.join("tests/corelib_tests/src/system/SyscallErgonomicsTests.bd");
@@ -151,15 +148,17 @@ fn checked_in_corelib_template_has_beskid_tests_project() {
 
 #[test]
 fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
-    let manifest = std::fs::read_to_string(corelib_root().join("tests/corelib_tests/Project.proj"))
-        .expect("read corelib_tests Project.proj");
+    let manifest = std::fs::read_to_string(
+        corelib_root().join("tests/corelib_tests/corelib_tests.bproj"),
+    )
+    .expect("read corelib_tests.bproj");
     assert!(
         manifest.contains("name = \"corelib_tests\""),
         "corelib test harness must use project name corelib_tests (not corelib) to avoid recursive obj/ paths"
     );
     assert!(
         !manifest.contains("name = \"corelib\""),
-        "corelib_tests Project.proj must not reuse aggregate package name corelib"
+        "corelib_tests.bproj must not reuse aggregate package name corelib"
     );
     assert!(
         manifest.contains("dependency \"corelib\""),

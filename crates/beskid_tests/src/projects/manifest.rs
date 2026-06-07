@@ -2,7 +2,7 @@ use beskid_analysis::projects::{ProjectError, parse_manifest};
 
 fn base_manifest() -> &'static str {
     r#"
-project {
+MyApp {
   name = "MyApp"
   version = "0.1.0"
 }
@@ -28,7 +28,7 @@ fn parses_minimal_manifest() {
 fn parses_manifest_with_comments() {
     let source = r#"
 # project metadata
-project {
+MyApp {
   name = "MyApp" // app name
   version = "0.1.0"
   root = "Src"
@@ -47,7 +47,7 @@ target "App" {
 #[test]
 fn parses_optional_root_namespace() {
     let source = r#"
-project {
+MyApp {
   name = "MyApp"
   version = "0.1.0"
   root = "Src"
@@ -83,7 +83,7 @@ target "App" {
 #[test]
 fn rejects_missing_required_project_fields() {
     let source = r#"
-project {
+MyApp {
   name = "MyApp"
 }
 
@@ -100,7 +100,7 @@ target "App" {
 #[test]
 fn rejects_duplicate_target_labels() {
     let source = r#"
-project {
+MyApp {
   name = "MyApp"
   version = "0.1.0"
 }
@@ -123,7 +123,7 @@ target "App" {
 #[test]
 fn rejects_duplicate_dependency_labels() {
     let source = r#"
-project {
+MyApp {
   name = "MyApp"
   version = "0.1.0"
 }
@@ -152,7 +152,7 @@ dependency "Std" {
 #[test]
 fn rejects_unknown_dependency_source() {
     let source = r#"
-project {
+MyApp {
   name = "MyApp"
   version = "0.1.0"
 }
@@ -174,7 +174,7 @@ dependency "X" {
 #[test]
 fn rejects_unknown_target_kind() {
     let source = r#"
-project {
+MyApp {
   name = "MyApp"
   version = "0.1.0"
 }
@@ -192,7 +192,7 @@ target "App" {
 #[test]
 fn rejects_absolute_entry_path() {
     let source = r#"
-project {
+MyApp {
   name = "MyApp"
   version = "0.1.0"
 }
@@ -210,7 +210,7 @@ target "App" {
 #[test]
 fn rejects_parent_dir_entry_path() {
     let source = r#"
-project {
+MyApp {
   name = "MyApp"
   version = "0.1.0"
 }
@@ -228,7 +228,7 @@ target "App" {
 #[test]
 fn accepts_nested_relative_entry_path() {
     let source = r#"
-project {
+MyApp {
   name = "MyApp"
   version = "0.1.0"
 }
@@ -240,7 +240,7 @@ target "App" {
 "#;
 
     let manifest = parse_manifest(source).expect("valid manifest");
-    assert_eq!(manifest.targets[0].entry, "Net/Main.bd");
+    assert_eq!(manifest.targets[0].entry.as_deref(), Some("Net/Main.bd"));
 }
 
 #[test]
@@ -288,7 +288,7 @@ fn allows_std_path_dependency_without_explicit_path() {
 #[test]
 fn rejects_unknown_top_level_block_kind() {
     let source = r#"
-project {
+MyApp {
   name = "MyApp"
   version = "0.1.0"
 }

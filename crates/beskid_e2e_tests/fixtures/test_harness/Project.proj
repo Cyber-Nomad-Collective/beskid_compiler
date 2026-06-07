@@ -1,9 +1,0 @@
-project {
-  name = "TestHarness"
-  version = "0.1.0"
-}
-
-target "Harness" {
-  kind = Test
-  entry = "Src/Harness.bd"
-}

@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::test_harness::{
     assert_same_canonical_path, temp_case_dir, write_project_manifest as write_manifest,
+    write_workspace_manifest,
 };
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;
@@ -25,7 +26,7 @@ fn resolve_project_uses_workspace_member_for_input_path() {
     fs::create_dir_all(&compiler_src).expect("create compiler src");
 
     fs::write(
-        root.join("Workspace.proj"),
+        root.join("Root.bws"),
         "workspace {\n  name = \"Root\"\n}\n\nmember \"compiler\" {\n  path = \"compiler\"\n}\n",
     )
     .expect("write workspace");
@@ -42,7 +43,7 @@ fn resolve_project_uses_workspace_member_for_input_path() {
     assert_eq!(compile_plan.project_name, "Compiler");
     assert_same_canonical_path(
         &compile_plan.manifest_path,
-        compiler_dir.join("Project.proj"),
+        compiler_dir.join("Compiler.bproj"),
     );
 
     let _ = fs::remove_dir_all(root);
@@ -56,18 +57,17 @@ fn resolve_project_with_warn_policy_allows_unresolved_registry_dependencies() {
     fs::create_dir_all(&app_src).expect("create app src");
 
     fs::write(
-        root.join("Workspace.proj"),
+        root.join("Root.bws"),
         "workspace {\n  name = \"Root\"\n}\n\nmember \"app\" {\n  path = \"app\"\n}\n\nregistry \"default\" {\n  url = \"https://pckg.beskid-lang.org\"\n}\n",
     )
     .expect("write workspace");
-    fs::write(
-        app_dir.join("Project.proj"),
+    write_manifest(
+        &app_dir,
         "project {\n  name = \"App\"\n  version = \"0.1.0\"\n}\n\ntarget \"App\" {\n  kind = \"App\"\n  entry = \"Main.bd\"\n}\n\ndependency \"PkgCore\" {\n  source = \"registry\"\n  version = \"1.2.3\"\n  registry = \"default\"\n}\n",
-    )
-    .expect("write project manifest");
+    );
     fs::write(app_src.join("Main.bd"), "fn Main() {}\n").expect("write entry source");
 
-    let workspace_manifest = root.join("Workspace.proj");
+    let workspace_manifest = root.join("Root.bws");
     let resolved = with_cwd_at_workspace_root(&root, || {
         resolve_project_with_policy(
             None,
@@ -101,14 +101,14 @@ fn resolve_project_with_workspace_manifest_uses_first_member_when_no_input() {
     fs::create_dir_all(&alpha_src).expect("create alpha src");
 
     fs::write(
-        root.join("Workspace.proj"),
+        root.join("Root.bws"),
         "workspace {\n  name = \"Root\"\n}\n\nmember \"alpha\" {\n  path = \"alpha\"\n}\n",
     )
     .expect("write workspace");
     write_named_project_manifest(&alpha_dir, "Alpha");
     fs::write(alpha_src.join("Main.bd"), "fn Main() {}\n").expect("write entry source");
 
-    let workspace_manifest = root.join("Workspace.proj");
+    let workspace_manifest = root.join("Root.bws");
     let resolved = with_cwd_at_workspace_root(&root, || {
         resolve_project(None, Some(&workspace_manifest), None, None, false, false)
     })
@@ -116,7 +116,7 @@ fn resolve_project_with_workspace_manifest_uses_first_member_when_no_input() {
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Alpha");
-    assert_same_canonical_path(&compile_plan.manifest_path, alpha_dir.join("Project.proj"));
+    assert_same_canonical_path(&compile_plan.manifest_path, alpha_dir.join("Alpha.bproj"));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -132,7 +132,7 @@ fn resolve_project_prefers_deepest_matching_workspace_member() {
     fs::create_dir_all(&cli_src).expect("create cli src");
 
     fs::write(
-        root.join("Workspace.proj"),
+        root.join("Root.bws"),
         "workspace {\n  name = \"Root\"\n}\n\nmember \"tools\" {\n  path = \"tools\"\n}\n\nmember \"cli\" {\n  path = \"tools/cli\"\n}\n",
     )
     .expect("write workspace");
@@ -149,7 +149,7 @@ fn resolve_project_prefers_deepest_matching_workspace_member() {
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Cli");
-    assert_same_canonical_path(&compile_plan.manifest_path, cli_dir.join("Project.proj"));
+    assert_same_canonical_path(&compile_plan.manifest_path, cli_dir.join("Cli.bproj"));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -165,7 +165,7 @@ fn resolve_project_uses_explicit_workspace_member() {
     fs::create_dir_all(&beta_src).expect("create beta src");
 
     fs::write(
-        root.join("Workspace.proj"),
+        root.join("Root.bws"),
         "workspace {\n  name = \"Root\"\n}\n\nmember \"alpha\" {\n  path = \"alpha\"\n}\n\nmember \"beta\" {\n  path = \"beta\"\n}\n",
     )
     .expect("write workspace");
@@ -173,7 +173,7 @@ fn resolve_project_uses_explicit_workspace_member() {
     write_named_project_manifest(&beta_dir, "Beta");
     fs::write(beta_src.join("Main.bd"), "fn Main() {}\n").expect("write beta entry source");
 
-    let workspace_manifest = root.join("Workspace.proj");
+    let workspace_manifest = root.join("Root.bws");
     let resolved = with_cwd_at_workspace_root(&root, || {
         resolve_project(
             None,
@@ -188,7 +188,7 @@ fn resolve_project_uses_explicit_workspace_member() {
 
     let compile_plan = resolved.compile_plan.expect("compile plan present");
     assert_eq!(compile_plan.project_name, "Beta");
-    assert_same_canonical_path(&compile_plan.manifest_path, beta_dir.join("Project.proj"));
+    assert_same_canonical_path(&compile_plan.manifest_path, beta_dir.join("Beta.bproj"));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -201,14 +201,14 @@ fn resolve_project_errors_for_unknown_workspace_member() {
     fs::create_dir_all(&alpha_src).expect("create alpha src");
 
     fs::write(
-        root.join("Workspace.proj"),
+        root.join("Root.bws"),
         "workspace {\n  name = \"Root\"\n}\n\nmember \"alpha\" {\n  path = \"alpha\"\n}\n",
     )
     .expect("write workspace");
     write_named_project_manifest(&alpha_dir, "Alpha");
     fs::write(alpha_src.join("Main.bd"), "fn Main() {}\n").expect("write alpha entry source");
 
-    let workspace_manifest = root.join("Workspace.proj");
+    let workspace_manifest = root.join("Root.bws");
     let result = with_cwd_at_workspace_root(&root, || {
         resolve_project(
             None,
@@ -234,7 +234,7 @@ fn compilation_context_matches_workspace_member_for_bd_file() {
     fs::create_dir_all(&compiler_src).expect("create compiler src");
 
     fs::write(
-        root.join("Workspace.proj"),
+        root.join("Root.bws"),
         "workspace {\n  name = \"Root\"\n}\n\nmember \"compiler\" {\n  path = \"compiler\"\n}\n",
     )
     .expect("write workspace");
@@ -255,7 +255,7 @@ fn compilation_context_matches_workspace_member_for_bd_file() {
     );
     assert_same_canonical_path(
         &ctx.project_manifest_path,
-        compiler_dir.join("Project.proj"),
+        compiler_dir.join("Compiler.bproj"),
     );
 
     let _ = fs::remove_dir_all(root);

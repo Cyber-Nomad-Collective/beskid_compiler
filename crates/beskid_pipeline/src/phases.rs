@@ -11,6 +11,14 @@ pub const RESOLVE_GRAPH: &str = "resolve.graph";
 pub const WORKSPACE_GRAPH_CHANGED: &str = "workspace.graph_changed";
 /// Lockfile + materialize dependency trees.
 pub const WORKSPACE_MATERIALIZE: &str = "workspace.materialize";
+/// Copy the host project sources into the materialized workspace root.
+pub const WORKSPACE_MATERIALIZE_LOCAL: &str = "workspace.materialize.local";
+/// Copy path/workspace dependency project trees.
+pub const WORKSPACE_MATERIALIZE_PATH_DEPS: &str = "workspace.materialize.path_deps";
+/// Fetch and extract registry dependency packages.
+pub const WORKSPACE_MATERIALIZE_REGISTRY: &str = "workspace.materialize.registry";
+/// Write or validate the project lockfile after materialization.
+pub const WORKSPACE_MATERIALIZE_LOCKFILE: &str = "workspace.materialize.lockfile";
 /// Discover and parse compilation units from effective roots + compile plan.
 pub const PROGRAM_ASSEMBLE: &str = "program.assemble";
 /// Parse Beskid source.
@@ -27,6 +35,22 @@ pub const MOD_GENERATE: &str = "mod.generate";
 pub const SYNTAX_GENERATION: &str = "syntax.generation";
 /// Semantic rules / diagnostics gate.
 pub const SEMANTIC: &str = "semantic";
+/// Lower parsed AST to HIR inside the semantic rule pipeline.
+pub const SEMANTIC_AST_LOWER: &str = "semantic.ast_lower";
+/// Collect and validate top-level definitions.
+pub const SEMANTIC_DEFINITIONS: &str = "semantic.definitions";
+/// Control-flow and pattern checks before name resolution.
+pub const SEMANTIC_CONTROL_FLOW: &str = "semantic.control_flow";
+/// Resolve names and build the symbol tables used by later stages.
+pub const SEMANTIC_NAME_RESOLUTION: &str = "semantic.name_resolution";
+/// Module graph and visibility rules.
+pub const SEMANTIC_VISIBILITY: &str = "semantic.visibility";
+/// Contract and method signature checks.
+pub const SEMANTIC_CONTRACTS: &str = "semantic.contracts";
+/// Error-handling (`try` / `catch`) rules.
+pub const SEMANTIC_ERROR_HANDLING: &str = "semantic.error_handling";
+/// Expression and declaration type checking.
+pub const SEMANTIC_TYPE_CHECK: &str = "semantic.type_check";
 /// Builtin semantic rules finished for the generation (snapshot boundary for inspectors).
 pub const SEMANTIC_SNAPSHOT: &str = "semantic.snapshot";
 /// Native composition graph resolution for host DI (after semantic snapshot).
@@ -39,6 +63,16 @@ pub const MOD_REWRITE: &str = "mod.rewrite";
 pub const LOWER_READY: &str = "lower.ready";
 /// HIR lowering and middle-end.
 pub const LOWER: &str = "lower";
+/// AST → HIR lowering inside the typed-HIR spine.
+pub const LOWER_AST: &str = "lower.ast";
+/// First resolution pass against assembly / module index.
+pub const LOWER_RESOLVE_PASS1: &str = "lower.resolve_pass1";
+/// HIR normalization after initial resolution.
+pub const LOWER_NORMALIZE: &str = "lower.normalize";
+/// Final resolution pass before type checking.
+pub const LOWER_RESOLVE: &str = "lower.resolve";
+/// Type-check the lowered program.
+pub const LOWER_TYPE_CHECK: &str = "lower.type_check";
 /// CLIF generation from typed HIR.
 pub const CODEGEN_CLIF: &str = "codegen_clif";
 /// Cranelift object emission (per-function work units common here).

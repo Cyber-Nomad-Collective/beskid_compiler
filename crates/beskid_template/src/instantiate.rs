@@ -159,9 +159,9 @@ fn validate_item_outputs(
 ) -> TemplateResult<()> {
     for plan in plans {
         let rel = plan.relative_output.to_string_lossy();
-        if rel.contains("Project.proj") && !options.allow_project_manifest {
+        if rel.ends_with(".bproj") && !options.allow_project_manifest {
             return Err(TemplateError::InvalidManifest(
-                "item template cannot write Project.proj without --allow-project-manifest"
+                "item template cannot write a `.bproj` manifest without --allow-project-manifest"
                     .to_string(),
             ));
         }
@@ -173,7 +173,11 @@ fn validate_item_outputs(
 fn find_project_root(start: &Path) -> Option<PathBuf> {
     let mut current = start.to_path_buf();
     loop {
-        if current.join("Project.proj").is_file() {
+        if beskid_analysis::projects::discover_project_manifest_in_dir(&current)
+            .ok()
+            .flatten()
+            .is_some()
+        {
             return Some(current);
         }
         if !current.pop() {
@@ -192,10 +196,11 @@ fn workspace_lock_root(kind: TemplateOutputKind, output_root: &Path) -> Template
 }
 
 fn ensure_no_corelib_opt_out(output_root: &Path) -> TemplateResult<()> {
-    let manifest = output_root.join("Project.proj");
-    if !manifest.is_file() {
+    let Some(manifest) = beskid_analysis::projects::discover_project_manifest_in_dir(output_root)
+        .map_err(|err| TemplateError::InvalidManifest(err.to_string()))?
+    else {
         return Ok(());
-    }
+    };
     let text = fs::read_to_string(&manifest)?;
     for flag in ["noCorelib", "useCorelib: false", "useCorelib=false"] {
         if text.contains(flag) {

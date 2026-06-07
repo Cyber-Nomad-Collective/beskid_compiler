@@ -5,3 +5,4 @@ edition = "2024"
 description = "Shared compilation pipeline phase ids, events, and observers (std-only)"
 
 [dependencies]
+tracing = { workspace = true, features = ["std"] }

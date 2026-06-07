@@ -62,6 +62,8 @@ pub struct CodegenContext {
     pub emitting_items: HashSet<ItemId>,
     /// Source file for the function body currently being lowered (cross-unit local lookup).
     pub current_source_path: Option<PathBuf>,
+    /// Active generic parameter substitution while lowering a monomorphized function body.
+    pub active_generic_substitution: HashMap<String, TypeId>,
     next_string_literal_id: usize,
 }
 

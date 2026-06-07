@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use beskid_pipeline::PipelineObserver;
 
 use crate::projects::{
-    CompilePlan, PROJECT_FILE_NAME, PreparedProjectWorkspace, ProgramAssembly,
-    UnresolvedDependencyPolicy, WorkspaceResolutionSummary,
+    CompilePlan, PreparedProjectWorkspace, ProgramAssembly, UnresolvedDependencyPolicy,
+    WorkspaceResolutionSummary, plan_entry_path,
 };
 
 use super::project::{infer_manifest_from_input, resolve_project_with_policy};
@@ -121,19 +121,28 @@ pub fn resolve_input_with_policy(
     ) {
         (Some(input), false, _, _) => input.clone(),
         (_, _, Some(plan), Some(workspace)) => {
-            workspace.materialized_source_root.join(&plan.target.entry)
+            plan_entry_path(plan, &workspace.materialized_source_root)
         }
-        (_, _, Some(plan), None) => plan.source_root.join(&plan.target.entry),
+        (_, _, Some(plan), None) => plan_entry_path(plan, &plan.source_root),
         (_, _, None, _) => {
             return Err(anyhow::anyhow!(
-                "no input file provided and no `{}` discovered",
-                PROJECT_FILE_NAME
+                "no input file provided and no `.bproj` manifest discovered"
             ));
         }
     };
 
-    let source = fs::read_to_string(&source_path)
-        .with_context(|| format!("Failed to read file: {}", source_path.display()))?;
+    let source = if source_path.is_file() {
+        fs::read_to_string(&source_path)
+            .with_context(|| format!("Failed to read file: {}", source_path.display()))?
+    } else if compile_plan
+        .as_ref()
+        .is_some_and(|plan| plan.target.entry.as_deref().unwrap_or("").trim().is_empty())
+    {
+        String::new()
+    } else {
+        fs::read_to_string(&source_path)
+            .with_context(|| format!("Failed to read file: {}", source_path.display()))?
+    };
 
     // Assembly is populated once by `beskid_queries::prepare_compilation_with_db` (Salsa path).
     Ok(ResolvedInput {

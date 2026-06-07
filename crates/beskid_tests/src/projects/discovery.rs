@@ -2,9 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use beskid_analysis::projects::{
-    PROJECT_FILE_NAME, WORKSPACE_FILE_NAME, discover_project_file, discover_workspace_file,
-};
+use beskid_analysis::projects::{discover_project_file, discover_workspace_file};
 
 fn temp_case_dir(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -26,8 +24,8 @@ fn discovery_finds_project_file_upwards() {
     let nested = root.join("Src").join("Net");
     fs::create_dir_all(&nested).expect("create nested");
 
-    let manifest = root.join(PROJECT_FILE_NAME);
-    fs::write(&manifest, "project { name = \"A\" version = \"0.1.0\" }\n").expect("write manifest");
+    let manifest = root.join("App.bproj");
+    fs::write(&manifest, "App { name = \"A\" version = \"0.1.0\" }\n").expect("write manifest");
 
     let found = discover_project_file(&nested).expect("must find project file");
     assert_eq!(found, manifest);
@@ -41,7 +39,7 @@ fn discovery_finds_workspace_file_upwards() {
     let nested = root.join("compiler").join("Src");
     fs::create_dir_all(&nested).expect("create nested");
 
-    let workspace_manifest = root.join(WORKSPACE_FILE_NAME);
+    let workspace_manifest = root.join("Root.bws");
     fs::write(
         &workspace_manifest,
         "workspace {\n  name = \"Root\"\n}\nmember \"compiler\" {\n  path = \"compiler\"\n}\n",

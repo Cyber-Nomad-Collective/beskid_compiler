@@ -114,11 +114,11 @@ mod tests {
         let temp = TempDir::new().expect("tempdir");
         let root = temp.path().to_path_buf();
         write(
-            &root.join("Workspace.proj"),
+            &root.join("Demo.bws"),
             r#"
 workspace {
   name = "Demo"
-  resolver = "v1"
+  resolver = v1
 }
 
 member "app" {
@@ -131,9 +131,9 @@ registry "default" {
 "#,
         );
         write(
-            &root.join("apps/demo/Project.proj"),
+            &root.join("apps/demo/demo.bproj"),
             r#"
-project {
+demo {
   name = "demo"
   version = "0.1.0"
 }
@@ -150,9 +150,9 @@ dependency "lib" {
 "#,
         );
         write(
-            &root.join("apps/lib/Project.proj"),
+            &root.join("apps/lib/lib.bproj"),
             r#"
-project {
+lib {
   name = "lib"
   version = "0.1.0"
 }
@@ -166,10 +166,10 @@ target "Lib" {
         write(
             &root.join("apps/demo/Project.lock"),
             r#"# Project.lock v1
-root_manifest=Project.proj
+root_manifest=demo.bproj
 project_name=demo
 dependencies:
-- name=lib;manifest=Project.proj;project=lib;source_root=Src;materialized_root=obj/beskid/deps/src/lib;resolved_version=1.0.0;registry=default
+- name=lib;manifest=lib.bproj;project=lib;source_root=Src;materialized_root=obj/beskid/deps/src/lib;resolved_version=1.0.0;registry=default
 "#,
         );
         (temp, root)
@@ -191,7 +191,7 @@ dependencies:
     #[test]
     fn get_workspace_summary_includes_registries() {
         let (_temp, root) = workspace_fixture();
-        let uri = path_to_uri_string(&root.join("Workspace.proj"));
+        let uri = path_to_uri_string(&root.join("Demo.bws"));
         let value = workspaces::get_workspace_summary(&uri).expect("summary");
         assert_eq!(value["name"], "Demo");
         let registries = value["registries"].as_array().expect("registries");
@@ -202,7 +202,7 @@ dependencies:
     #[test]
     fn get_graph_returns_mermaid_and_metadata() {
         let (_temp, root) = workspace_fixture();
-        let project = root.join("apps/demo/Project.proj");
+        let project = root.join("apps/demo/demo.bproj");
         let uri = path_to_uri_string(&project);
         let value = graph::get_graph(&uri, beskid_graph::GraphKind::ProjectDeps, None, None, None)
             .expect("graph");
@@ -215,7 +215,7 @@ dependencies:
     #[test]
     fn get_project_dependencies_merges_declared_and_lock() {
         let (_temp, root) = workspace_fixture();
-        let project = root.join("apps/demo/Project.proj");
+        let project = root.join("apps/demo/demo.bproj");
         let uri = path_to_uri_string(&project);
         let value = graph::get_project_dependencies(&uri).expect("deps");
         let declared = value["declared"].as_array().expect("declared");
@@ -259,7 +259,7 @@ dependencies:
 
     #[test]
     fn focused_project_from_configuration_paths() {
-        let path = std::env::temp_dir().join("focus-test/Project.proj");
+        let path = std::env::temp_dir().join("focus-test/demo.bproj");
         let uri = format!("file://{}", path.display());
         let settings = serde_json::json!({ "beskid": { "focusedProjectUri": uri } });
         let focused = focused_project_from_configuration(&settings).expect("some");

@@ -1,4 +1,3 @@
-use crate::hir::normalize::builders::hir_path_expr;
 use crate::hir::{
     ExpressionNode, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBinaryOp, HirBlock,
     HirBlockExpression, HirBreakStatement, HirCallExpression, HirEnumPath, HirEnumPattern,

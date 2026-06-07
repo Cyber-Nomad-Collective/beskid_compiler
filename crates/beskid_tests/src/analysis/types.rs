@@ -271,7 +271,13 @@ fn typing_rejects_event_handler_on_non_event_targets() {
 const GENERIC_ERROR_CASES: &[TypeCase] = &[
     TypeCase {
         name: "missing_generic_args_for_call",
-        source: "T id<T>(T x) { return x; } unit main() { i64 x = id(1); }",
+        source: "unit noop<T>() { } unit main() { noop(); }",
+        expect_ok: false,
+        error_matcher: Some(matches_missing_type_args),
+    },
+    TypeCase {
+        name: "generic_arg_conflict_for_call",
+        source: "T pick<T>(T left, T right) { return left; } unit main() { i64 x = pick(1, \"two\"); }",
         expect_ok: false,
         error_matcher: Some(matches_missing_type_args),
     },
@@ -462,6 +468,36 @@ fn typing_generic_function_call_succeeds() {
     assert_type_case(&TypeCase {
         name: "generic_call",
         source: "T id<T>(T x) { return x; } unit main() { i64 x = id<i64>(1); }",
+        expect_ok: true,
+        error_matcher: None,
+    });
+}
+
+#[test]
+fn typing_generic_function_call_infers_from_arguments() {
+    assert_type_case(&TypeCase {
+        name: "generic_call_inferred",
+        source: "T id<T>(T x) { return x; } unit main() { i64 x = id(1); }",
+        expect_ok: true,
+        error_matcher: None,
+    });
+}
+
+#[test]
+fn typing_generic_equality_assertion_infers_from_arguments() {
+    assert_type_case(&TypeCase {
+        name: "generic_assert_equal_inferred",
+        source: "unit AssertEqual<T>(T expected, T actual, string message) { if expected == actual { return; } } unit main() { AssertEqual(1, 1, \"ok\"); }",
+        expect_ok: true,
+        error_matcher: None,
+    });
+}
+
+#[test]
+fn typing_generic_equality_assertion_infers_mixed_numeric_arguments() {
+    assert_type_case(&TypeCase {
+        name: "generic_assert_equal_mixed_numeric",
+        source: "unit AssertEqual<T>(T expected, T actual, string message) { if expected == actual { return; } } unit main() { i64 len = 3; AssertEqual(3, len, \"ok\"); }",
         expect_ok: true,
         error_matcher: None,
     });

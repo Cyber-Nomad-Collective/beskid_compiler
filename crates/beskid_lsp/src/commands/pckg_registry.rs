@@ -322,13 +322,13 @@ mod tests {
     #[test]
     fn default_from_workspace_manifest_prefers_default_registry() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("Workspace.proj");
+        let path = dir.path().join("W.bws");
         std::fs::write(
             &path,
             r#"
 workspace {
   name = "W"
-  resolver = "v1"
+  resolver = v1
 }
 
 registry "mirror" {

@@ -152,7 +152,7 @@ fn resolve_manifest_path(explicit: Option<&Path>) -> Result<PathBuf> {
         let candidate = expand_to_project_manifest(path)?;
         if !candidate.is_file() {
             bail!(
-                "project manifest not found at {} (expected Project.proj)",
+                "project manifest not found at {} (expected a `.bproj` manifest)",
                 candidate.display()
             );
         }
@@ -163,7 +163,7 @@ fn resolve_manifest_path(explicit: Option<&Path>) -> Result<PathBuf> {
     match discovered {
         Some((manifest_path, _)) => Ok(manifest_path),
         None => Err(anyhow!(
-            "no Project.proj found from {}; pass --project or run inside a project directory",
+            "no `.bproj` manifest found from {}; pass --project or run inside a project directory",
             env::current_dir()
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|_| "<cwd unavailable>".to_string())
@@ -173,7 +173,14 @@ fn resolve_manifest_path(explicit: Option<&Path>) -> Result<PathBuf> {
 
 fn expand_to_project_manifest(path: &Path) -> Result<PathBuf> {
     if path.is_dir() {
-        return Ok(path.join("Project.proj"));
+        return beskid_analysis::projects::discover_project_manifest_in_dir(path)
+            .map_err(anyhow::Error::from)?
+            .ok_or_else(|| {
+                anyhow!(
+                    "no `.bproj` manifest found in {}",
+                    path.display()
+                )
+            });
     }
     Ok(path.to_path_buf())
 }

@@ -45,7 +45,7 @@ pub fn type_entry(
     entry_hir: Spanned<HirProgram>,
     assembly: &ProgramAssembly,
 ) -> Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
-    typed_hir_from_lowered_with_assembly(entry_hir, Some(assembly))
+    typed_hir_from_lowered_with_assembly(entry_hir, Some(assembly), None)
 }
 
 /// Query: type entry for semantic gate (dependency signatures only).
@@ -53,7 +53,7 @@ pub fn type_entry_gate(
     entry_hir: Spanned<HirProgram>,
     assembly: &ProgramAssembly,
 ) -> Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
-    typed_hir_from_lowered_gate_with_assembly(entry_hir, Some(assembly))
+    typed_hir_from_lowered_gate_with_assembly(entry_hir, Some(assembly), None)
 }
 
 /// Query: prefetch dependency signatures without typing dependency bodies.
@@ -62,7 +62,8 @@ pub fn type_dep_signatures(
 ) -> Result<TypeResult, LowerResolveTypeError> {
     let entry_unit = assembly.entry_unit().clone();
     let entry_hir = assemble_unit(&entry_unit).hir;
-    let (_, _, typed) = typed_hir_from_lowered_gate_with_assembly(entry_hir, Some(assembly))?;
+    let (_, _, typed) =
+        typed_hir_from_lowered_gate_with_assembly(entry_hir, Some(assembly), None)?;
     Ok(typed)
 }
 
@@ -74,7 +75,7 @@ pub fn module_index_query(
     roots: &crate::projects::assembly::EffectiveCompilationRoots,
     plan: &CompilePlan,
 ) -> ModuleIndex {
-    ModuleIndex::build(units, hir_units, entry_index, roots, plan, Vec::new())
+    ModuleIndex::build(units, hir_units, entry_index, roots, plan)
 }
 
 /// Invalidate dependent units when imports change (BFS over import edges).

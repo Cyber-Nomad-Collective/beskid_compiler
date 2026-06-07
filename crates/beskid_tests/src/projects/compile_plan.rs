@@ -5,7 +5,8 @@ use crate::test_harness::{
     write_workspace_manifest,
 };
 use beskid_analysis::projects::{
-    DependencySource, PROJECT_FILE_NAME, PROJECT_LOCK_FILE_NAME, ProjectError, TargetKind,
+    DependencySource, PROJECT_LOCK_FILE_NAME, ProjectError, TargetKind,
+    is_project_manifest_path,
     UnresolvedDependencyPolicy, WorkspacePrepareOptions, build_compile_plan,
     build_compile_plan_with_policy, prepare_project_workspace,
     prepare_project_workspace_with_options,
@@ -381,6 +382,7 @@ dependency "Util" {
                 frozen: false,
                 locked: true,
             },
+            None,
         );
         assert!(locked_result.is_ok());
     });
@@ -466,7 +468,12 @@ dependency "Core" {
         for entry in fs::read_dir(&deps_src_root).expect("read deps src dir") {
             let entry = entry.expect("valid deps entry");
             let dependency_root = entry.path();
-            if dependency_root.join(PROJECT_FILE_NAME).is_file() {
+            if fs::read_dir(&dependency_root)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .any(|entry| entry.path().is_file() && is_project_manifest_path(&entry.path()))
+            {
                 materialized_manifest_count += 1;
             }
         }

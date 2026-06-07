@@ -58,7 +58,9 @@ pub struct KernelEntry {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DispatchEntry {
-    pub legacy_symbol: String,
+    /// Stable routing key for codegen and dispatch lookup (e.g. `str_len`).
+    #[serde(alias = "legacy_symbol")]
+    pub dispatch_key: String,
     pub name: String,
     pub tag: u32,
     #[serde(default)]

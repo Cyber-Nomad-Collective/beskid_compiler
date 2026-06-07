@@ -76,7 +76,8 @@ pub use queries::{
 };
 pub use render::render_program_tree;
 pub use semantic::{
-    SemanticDiagnosticsError, require_no_semantic_errors, semantic_rule_diagnostics_for_program,
+    SemanticDiagnosticsError, require_no_semantic_errors,
+    semantic_rule_diagnostics_for_program, semantic_rule_diagnostics_for_program_with_pipeline,
 };
 pub use session::{
     CompilationSession, SEMANTIC_SNAPSHOT_VERSION, SemanticSnapshot, SessionFingerprint,

@@ -12,7 +12,7 @@
 //!   handling and [`ProjectGraphBuildOptions`] passed into the project graph builder.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::projects::error::ProjectError;
 use crate::projects::graph::{
@@ -26,6 +26,7 @@ use crate::projects::model::{
 use crate::projects::parser::parse_manifest;
 
 pub fn load_manifest_from_path(path: &Path) -> Result<ProjectManifest, ProjectError> {
+    crate::projects::discovery::reject_legacy_manifest_path(path)?;
     let source = fs::read_to_string(path).map_err(|source| ProjectError::ReadManifest {
         path: path.to_path_buf(),
         source,
@@ -120,6 +121,14 @@ pub fn build_compile_plan_with_policy_and_graph(
             ));
         }
         mod_artifact_placeholder_target()
+    } else if manifest.project.kind == ProjectKind::Aggregate {
+        if target_name.is_some() {
+            return Err(ProjectError::meta_contract(
+                "E1897",
+                "`Aggregate` projects do not declare `target` blocks; omit `--target`",
+            ));
+        }
+        aggregate_placeholder_target()
     } else {
         match target_name {
             Some(name) => manifest
@@ -150,11 +159,29 @@ pub fn build_compile_plan_with_policy_and_graph(
     })
 }
 
+/// Resolved on-disk entry path for assembly (placeholder when the target omits `entry`).
+pub fn plan_entry_path(plan: &CompilePlan, source_root: &Path) -> PathBuf {
+    plan.target
+        .entry
+        .as_ref()
+        .filter(|entry| !entry.trim().is_empty())
+        .map(|entry| source_root.join(entry))
+        .unwrap_or_else(|| source_root.join("__workspace_entry__.bd"))
+}
+
 fn mod_artifact_placeholder_target() -> Target {
     Target {
         name: "__mod__".to_string(),
         kind: TargetKind::Lib,
-        entry: "__mod__.bd".to_string(),
+        entry: Some("__mod__.bd".to_string()),
+    }
+}
+
+fn aggregate_placeholder_target() -> Target {
+    Target {
+        name: "__aggregate__".to_string(),
+        kind: TargetKind::Lib,
+        entry: None,
     }
 }
 

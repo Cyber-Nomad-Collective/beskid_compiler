@@ -1,77 +1,25 @@
-/// Assertion helpers for Beskid `test` blocks and user tests.
-/// Uses `Core.String` for diagnostics text helpers.
+/// Deprecated assertion helpers. Prefer Testing.Assert (actual-first argument order).
 
-use Core.String;
-
-/// Emits a message and forces a runtime crash.
-/// @arg(message) Text printed before the intentional fault.
-unit trigger_failure(string message) {
-    __panic_str(message);
-}
-
-/// Unconditionally fails the current test.
-/// @arg(message) Failure reason surfaced to the user.
 pub unit Fail(string message) {
-    trigger_failure("Assertion failed: ${message}");
+    Testing.Assert.Fail(message);
 }
 
-/// Fails when condition is not true.
-/// @arg(condition) Predicate that must hold.
-/// @arg(message) Diagnostic when the assertion fails.
 pub unit AssertTrue(bool condition, string message) {
-    if condition {
-        return;
-    }
-    Fail(message);
+    Testing.Assert.True(condition, message);
 }
 
-/// Fails when condition is true.
-/// @arg(condition) Predicate that must be false.
-/// @arg(message) Diagnostic when the assertion fails.
 pub unit AssertFalse(bool condition, string message) {
-    AssertTrue(!condition, message);
+    Testing.Assert.False(condition, message);
 }
 
-/// Fails when expected and actual i64 values differ.
-/// @arg(expected) Expected integral value.
-/// @arg(actual) Actual integral value.
-/// @arg(message) Diagnostic when values differ.
-pub unit AssertEqualI64(i64 expected, i64 actual, string message) {
-    if expected == actual {
-        return;
-    }
-    Fail("${message} (expected=${expected}, actual=${actual})");
+pub unit AssertEqual<T>(T expected, T actual, string message) {
+    Testing.Assert.Equal(actual, expected, message);
 }
 
-/// Fails when expected and actual strings differ.
-/// @arg(expected) Expected UTF-8 text.
-/// @arg(actual) Actual UTF-8 text.
-/// @arg(message) Diagnostic when values differ.
-pub unit AssertEqualString(string expected, string actual, string message) {
-    if expected == actual {
-        return;
-    }
-    Fail("${message} (expected=${expected}, actual=${actual})");
+pub unit AssertNotEqual<T>(T left, T right, string message) {
+    Testing.Assert.NotEqual(left, right, message);
 }
 
-/// Fails when both i64 values are equal.
-/// @arg(left) First operand.
-/// @arg(right) Second operand.
-/// @arg(message) Diagnostic when values match unexpectedly.
-pub unit AssertNotEqualI64(i64 left, i64 right, string message) {
-    if left != right {
-        return;
-    }
-    Fail("${message} (left=${left}, right=${right})");
-}
-
-/// Fails when needle is not found in text.
-/// @arg(text) Haystack UTF-8 string.
-/// @arg(needle) Needle UTF-8 string.
-/// @arg(message) Diagnostic when `Contains` fails.
 pub unit AssertContains(string text, string needle, string message) {
-    if Core.String.Contains(text, needle) {
-        return;
-    }
-    Fail("${message} (needle=${needle})");
+    Testing.Assert.Contains(text, needle, message);
 }

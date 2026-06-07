@@ -5,7 +5,6 @@ use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::HirMemberExpression;
 use beskid_analysis::syntax::Spanned;
-use beskid_analysis::types::TypeInfo;
 use cranelift_codegen::ir::{InstBuilder, MemFlags, Value};
 
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirMemberExpression {

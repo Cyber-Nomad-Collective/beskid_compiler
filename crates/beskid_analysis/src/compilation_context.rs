@@ -6,9 +6,9 @@ use crate::projects::{
     AssemblyDiscovery, AssemblyOptions, CompilePlan, PROJECT_LOCK_FILE_NAME,
     PreparedProjectWorkspace, ProgramAssembly, ProjectGraphBuildOptions, ProjectKind,
     UnresolvedDependencyPolicy, WorkspacePrepareOptions, assemble_program,
-    build_compile_plan_with_policy_and_graph, discover_workspace_file, effective_roots_for_plan,
-    load_manifest_from_path, module_roots_from_effective, prepare_project_workspace_with_options,
-    resolve_project_manifest_for_source_path,
+    assembly_options_for_plan, build_compile_plan_with_policy_and_graph, discover_workspace_file,
+    effective_roots_for_plan, load_manifest_from_path, module_roots_from_effective,
+    prepare_project_workspace_with_options, resolve_project_manifest_for_source_path,
 };
 
 /// Workspace-aware compilation slice: selected `Project.proj`, optional [`CompilePlan`] for
@@ -51,13 +51,15 @@ impl CompilationContext {
             .or_else(|| discover_workspace_file(&manifest_path));
         let compile_plan = match project_kind {
             ProjectKind::Template => None,
-            ProjectKind::Host | ProjectKind::Mod => build_compile_plan_with_policy_and_graph(
-                &manifest_path,
-                None,
-                UnresolvedDependencyPolicy::Error,
-                graph_options,
-            )
-            .ok(),
+            ProjectKind::Host | ProjectKind::Mod | ProjectKind::Aggregate => {
+                build_compile_plan_with_policy_and_graph(
+                    &manifest_path,
+                    None,
+                    UnresolvedDependencyPolicy::Error,
+                    graph_options,
+                )
+                .ok()
+            }
         };
         let prepared_workspace = None;
         let module_roots = compile_plan
@@ -105,7 +107,9 @@ impl CompilationContext {
                 frozen: false,
                 locked: lockfile.is_file(),
             };
-            if let Ok(workspace) = prepare_project_workspace_with_options(plan, prepare_options) {
+            if let Ok(workspace) =
+                prepare_project_workspace_with_options(plan, prepare_options, None)
+            {
                 self.prepared_workspace = Some(workspace);
                 self.module_roots = module_roots_from_effective(&effective_roots_for_plan(
                     plan,
@@ -114,14 +118,7 @@ impl CompilationContext {
             }
         }
 
-        let mut options = AssemblyOptions::default();
-        options.discovery = AssemblyDiscovery::ImportClosure;
-        if entry_path
-            .file_name()
-            .is_some_and(|name| name == "Prelude.bd")
-        {
-            options.include_std_prelude = false;
-        }
+        let options = assembly_options_for_plan(plan);
         self.assembly = assemble_program(
             plan,
             self.prepared_workspace.as_ref(),

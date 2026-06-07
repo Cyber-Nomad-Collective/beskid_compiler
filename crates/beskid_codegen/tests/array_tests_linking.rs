@@ -225,8 +225,8 @@ fn lower_collections_array_tests_artifact_validates() {
     assert!(
         plan.emitted_symbol_names(&front.resolution)
             .iter()
-            .any(|name| name.contains("AssertEqualI64")),
-        "link plan should reach AssertEqualI64"
+            .any(|name| name.contains("Equal")),
+        "link plan should reach Testing.Assert.Equal"
     );
 
     match lower_program_with_assembly(
@@ -238,8 +238,8 @@ fn lower_collections_array_tests_artifact_validates() {
         Ok(artifact) => {
             let names: Vec<_> = artifact.functions.iter().map(|f| f.name.as_str()).collect();
             assert!(
-                names.iter().any(|n: &&str| n.contains("AssertEqualI64")),
-                "expected AssertEqualI64 in artifact, have {} symbols",
+                names.iter().any(|n: &&str| n.contains("Equal")),
+                "expected Equal in artifact, have {} symbols",
                 names.len()
             );
             validate_artifact(&artifact).expect("artifact should satisfy TestCase contract");

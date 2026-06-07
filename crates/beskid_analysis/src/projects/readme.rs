@@ -1,9 +1,11 @@
-//! Readme path resolution for `Project.proj` / `Workspace.proj` and package publishing.
+//! Readme path resolution for `.bproj` / `.bws` manifests and package publishing.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::projects::discovery::{PROJECT_FILE_NAME, WORKSPACE_FILE_NAME};
+use crate::projects::discovery::{
+    discover_project_manifest_in_dir, discover_workspace_manifest_in_dir,
+};
 use crate::projects::error::ProjectError;
 use crate::projects::model::{ProjectManifest, WorkspaceManifest};
 use crate::projects::parser::{parse_manifest, parse_workspace_manifest};
@@ -29,9 +31,9 @@ pub fn resolve_readme_relative_path(explicit: Option<&str>, package_root: &Path)
 
 pub fn resolve_readme_from_project_manifest(
     package_root: &Path,
-    _manifest: &ProjectManifest,
+    manifest: &ProjectManifest,
 ) -> Option<String> {
-    resolve_readme_relative_path(None, package_root)
+    resolve_readme_relative_path(manifest.project.readme.as_deref(), package_root)
 }
 
 pub fn resolve_readme_from_workspace_manifest(
@@ -45,8 +47,7 @@ pub fn resolve_readme_from_workspace_manifest(
 pub fn discover_readme_for_package_root(
     package_root: &Path,
 ) -> Result<Option<String>, ProjectError> {
-    let project_manifest_path = package_root.join(PROJECT_FILE_NAME);
-    if project_manifest_path.is_file() {
+    if let Some(project_manifest_path) = discover_project_manifest_in_dir(package_root)? {
         let source = fs::read_to_string(&project_manifest_path).map_err(|source| {
             ProjectError::ReadManifest {
                 path: project_manifest_path.clone(),
@@ -60,8 +61,7 @@ pub fn discover_readme_for_package_root(
         ));
     }
 
-    let workspace_manifest_path = package_root.join(WORKSPACE_FILE_NAME);
-    if workspace_manifest_path.is_file() {
+    if let Some(workspace_manifest_path) = discover_workspace_manifest_in_dir(package_root)? {
         let source = fs::read_to_string(&workspace_manifest_path).map_err(|source| {
             ProjectError::ReadManifest {
                 path: workspace_manifest_path.clone(),

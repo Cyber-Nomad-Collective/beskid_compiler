@@ -211,7 +211,15 @@ fn is_non_entry_project_file(path: &Path, plan: Option<&CompilePlan>) -> bool {
     let Some(plan) = plan else {
         return false;
     };
-    let entry_path = plan.source_root.join(&plan.target.entry);
+    let entry_path = plan
+        .target
+        .entry
+        .as_ref()
+        .filter(|entry| !entry.trim().is_empty())
+        .map(|entry| plan.source_root.join(entry));
+    let Some(entry_path) = entry_path else {
+        return false;
+    };
     match (path.canonicalize(), entry_path.canonicalize()) {
         (Ok(path), Ok(entry)) => path != entry,
         _ => path != entry_path,

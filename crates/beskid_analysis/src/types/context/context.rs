@@ -1080,7 +1080,7 @@ impl<'a> TypeContext<'a> {
     }
 
     fn is_allowed_ffi_param(&self, param: &Spanned<crate::hir::HirParameter>) -> bool {
-        use crate::hir::{HirPrimitiveType, HirType};
+        use crate::hir::HirType;
         match &param.node.ty.node {
             HirType::Primitive(p) => Self::is_allowed_ffi_primitive(p.node),
             _ => false,

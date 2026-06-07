@@ -9,6 +9,7 @@ pub mod error;
 pub mod models;
 pub mod pack;
 pub mod packages;
+pub mod progress;
 pub mod users;
 
 pub use cli::PckgArgs;

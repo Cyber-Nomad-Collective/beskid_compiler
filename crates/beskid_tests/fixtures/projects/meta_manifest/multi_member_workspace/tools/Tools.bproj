@@ -1,0 +1,9 @@
+Tools {
+  name = "Tools"
+  version = "0.1.0"
+}
+
+target "ToolsLib" {
+  kind = "Lib"
+  entry = "Tools.bd"
+}

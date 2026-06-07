@@ -3,7 +3,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use beskid_analysis::projects::{WORKSPACE_FILE_NAME, parse_workspace_manifest};
+use beskid_analysis::projects::{
+    is_workspace_manifest_path, parse_workspace_manifest, project_manifest_for_member_dir,
+};
 use serde_json::{Value, json};
 use tower_lsp_server::jsonrpc::Result;
 use walkdir::WalkDir;
@@ -32,7 +34,7 @@ pub(crate) fn list_workspaces(workspace_roots: &[PathBuf]) -> Result<Value> {
             .filter(|e| e.file_type().is_file())
         {
             let path = entry.path();
-            if path.file_name().and_then(|n| n.to_str()) != Some(WORKSPACE_FILE_NAME) {
+            if !is_workspace_manifest_path(path) {
                 continue;
             }
             let canonical = match path.canonicalize() {
@@ -60,11 +62,14 @@ pub(crate) fn get_workspace_summary(workspace_uri: &str) -> Result<Value> {
 
     let mut members = Vec::new();
     for member in &manifest.members {
-        let member_manifest = workspace_dir.join(&member.path).join("Project.proj");
+        let member_dir = workspace_dir.join(&member.path);
+        let member_uri = project_manifest_for_member_dir(&member_dir)
+            .ok()
+            .map(|member_manifest| path_to_uri_string(&member_manifest));
         members.push(json!({
             "name": member.name,
             "path": member.path,
-            "uri": member_manifest.is_file().then(|| path_to_uri_string(&member_manifest)),
+            "uri": member_uri,
         }));
     }
 
@@ -93,12 +98,10 @@ fn workspace_entry(workspace_manifest_path: &Path) -> Option<Value> {
 
     let mut members = Vec::new();
     for member in manifest.members {
-        let member_manifest = workspace_dir.join(&member.path).join("Project.proj");
-        let member_uri = if member_manifest.is_file() {
-            Some(path_to_uri_string(&member_manifest))
-        } else {
-            None
-        };
+        let member_dir = workspace_dir.join(&member.path);
+        let member_uri = project_manifest_for_member_dir(&member_dir)
+            .ok()
+            .map(|member_manifest| path_to_uri_string(&member_manifest));
         members.push(json!({
             "name": member.name,
             "path": member.path,

@@ -13,6 +13,7 @@ fn try_expression_fixture_lowers_via_program_assembly() {
         lower_normalize_resolve_type_spanned_with_assembly(
             &assembly.entry_unit().program,
             Some(&assembly),
+            None,
         )
         .expect("try_expression should resolve and type-check with implicit Std assembly");
     });

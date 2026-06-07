@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0"
+beskid_analysis = { path = "../beskid_analysis" }
 beskid_tools = { path = "../beskid_tools" }
 beskid_pckg = { path = "../beskid_pckg" }
 dirs = "6"

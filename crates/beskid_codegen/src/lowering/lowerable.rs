@@ -15,7 +15,7 @@ use beskid_analysis::projects::assembly::ProgramAssembly;
 use beskid_analysis::resolve::{ItemId, ItemKind, Resolution};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// HIR (or sub-) node that can be lowered with a specific context type `Ctx`.

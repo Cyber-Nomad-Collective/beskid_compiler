@@ -1,8 +1,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use mermaid_builder::prelude::Direction as MermaidDirection;
-
 /// Discriminator for graph domains exposed to CLI/LSP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GraphKind {
@@ -45,10 +43,10 @@ pub enum GraphDirection {
 }
 
 impl GraphDirection {
-    pub fn to_mermaid(self) -> MermaidDirection {
+    pub fn to_mermaid_direction(self) -> &'static str {
         match self {
-            Self::LeftRight => MermaidDirection::LeftToRight,
-            Self::TopDown => MermaidDirection::TopToBottom,
+            Self::LeftRight => "LR",
+            Self::TopDown => "TB",
         }
     }
 }

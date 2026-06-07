@@ -1,7 +1,10 @@
 //! Shared fixture resolution and Salsa-backed assembly for integration tests.
 
+use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::services::{PrepareMode, PrepareOptions, ResolvedInput, resolve_input};
@@ -84,6 +87,8 @@ pub fn resolve_fixture_with_assembly(
 }
 
 static CORELIB_MVP_ASSEMBLY: OnceLock<Arc<ProgramAssembly>> = OnceLock::new();
+static CORELIB_TESTS_ENTRY_ASSEMBLIES: Mutex<Option<HashMap<String, Arc<ProgramAssembly>>>> =
+    Mutex::new(None);
 
 pub fn corelib_tests_project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -101,20 +106,51 @@ pub fn resolve_corelib_tests_entry(entry_relative: &str) -> ResolvedInput {
 /// Resolve and assemble a `corelib_tests` entry via Salsa [`program_assembly`].
 pub fn resolve_corelib_tests_entry_with_assembly(entry_relative: &str) -> ResolvedInput {
     let mut resolved = resolve_corelib_tests_entry(entry_relative);
-    let plan = resolved.compile_plan.clone().expect("compile plan");
-    let assembly = with_db(|db| {
-        program_assembly(
-            db,
-            &plan,
-            resolved.prepared_workspace.as_ref(),
-            &resolved.source_path,
-            Some(&resolved.source),
-            &Default::default(),
-        )
-    })
-    .expect("program_assembly");
-    resolved.assembly = Some(assembly);
+    let assembly = cached_corelib_tests_assembly(entry_relative, &resolved);
+    resolved.assembly = Some((*assembly).clone());
     resolved
+}
+
+fn cached_corelib_tests_assembly(
+    entry_relative: &str,
+    resolved: &ResolvedInput,
+) -> Arc<ProgramAssembly> {
+    let mut guard = CORELIB_TESTS_ENTRY_ASSEMBLIES
+        .lock()
+        .expect("corelib_tests assembly cache lock");
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    let cache = guard.as_mut().expect("corelib_tests assembly cache");
+    if let Some(assembly) = cache.get(entry_relative) {
+        test_progress(&format!("↺ corelib assembly cache hit: {entry_relative}"));
+        return Arc::clone(assembly);
+    }
+
+    test_progress(&format!("⋯ corelib program assembly: {entry_relative}"));
+    let assemble_started = Instant::now();
+    let plan = resolved.compile_plan.clone().expect("compile plan");
+    let assembly = Arc::new(
+        with_db(|db| {
+            program_assembly(
+                db,
+                &plan,
+                resolved.prepared_workspace.as_ref(),
+                &resolved.source_path,
+                Some(&resolved.source),
+                &Default::default(),
+            )
+        })
+        .unwrap_or_else(|err| {
+            panic!("program_assembly for {entry_relative}: {err}");
+        }),
+    );
+    test_progress(&format!(
+        "⋯ corelib program assembly done: {entry_relative} ({:.1}s)",
+        assemble_started.elapsed().as_secs_f64()
+    ));
+    cache.insert(entry_relative.to_owned(), Arc::clone(&assembly));
+    assembly
 }
 
 pub fn compile_corelib_tests_front_end(
@@ -126,7 +162,22 @@ pub fn compile_corelib_tests_front_end(
 }
 
 pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
+    test_progress(&format!("→ corelib typecheck: {entry_relative}"));
+    let started = Instant::now();
     let _ = compile_corelib_tests_front_end(entry_relative);
+    test_progress(&format!(
+        "✓ corelib typecheck: {entry_relative} ({:.1}s)",
+        started.elapsed().as_secs_f64()
+    ));
+}
+
+fn test_progress(message: &str) {
+    if std::env::var("BESKID_TEST_QUIET").is_ok() {
+        return;
+    }
+    let mut err = std::io::stderr();
+    let _ = writeln!(err, "{message}");
+    let _ = err.flush();
 }
 
 pub fn shared_corelib_mvp_assembly() -> Arc<ProgramAssembly> {

@@ -9,11 +9,12 @@ use beskid_pipeline::{
 
 use crate::analysis::diagnostics::MietteReportError;
 use crate::projects::{
-    CompilePlan, PROJECT_FILE_NAME, PreparedProjectWorkspace, ProjectGraphBuildOptions,
-    UnresolvedDependencyPolicy, WORKSPACE_FILE_NAME, WorkspacePrepareOptions,
-    WorkspaceResolutionSummary, build_compile_plan_with_policy_and_graph,
-    discover_project_manifest_from_input_or_cwd, prepare_project_workspace_with_options,
-    resolve_workspace_candidate_with_summary,
+    CompilePlan, PreparedProjectWorkspace, ProjectGraphBuildOptions, UnresolvedDependencyPolicy,
+    WorkspacePrepareOptions, WorkspaceResolutionSummary,
+    build_compile_plan_with_policy_and_graph, discover_project_manifest_in_dir,
+    discover_project_manifest_from_input_or_cwd, discover_workspace_manifest_in_dir,
+    is_project_manifest_path, is_workspace_manifest_path, prepare_project_workspace_with_options,
+    reject_legacy_manifest_path, resolve_workspace_candidate_with_summary,
 };
 
 use super::diagnostics_emit::project_error_diagnostic;
@@ -115,6 +116,7 @@ pub fn resolve_project_with_policy(
                 prepare_project_workspace_with_options(
                     &plan,
                     WorkspacePrepareOptions { frozen, locked },
+                    pipeline,
                 )
                 .map_err(|err| {
                     anyhow::Error::new(MietteReportError::new(project_error_diagnostic(
@@ -139,33 +141,26 @@ pub fn resolve_project_with_policy(
 
 fn resolve_project_manifest_path(project: &Path) -> PathBuf {
     if project.is_dir() {
-        let project_manifest = project.join(PROJECT_FILE_NAME);
-        if project_manifest.is_file() {
-            return project_manifest;
+        if let Ok(Some(manifest)) = discover_project_manifest_in_dir(project) {
+            return manifest;
         }
-
-        let workspace_manifest = project.join(WORKSPACE_FILE_NAME);
-        if workspace_manifest.is_file() {
-            return workspace_manifest;
+        if let Ok(Some(manifest)) = discover_workspace_manifest_in_dir(project) {
+            return manifest;
         }
-
-        project_manifest
+        project.join("project.bproj")
     } else {
+        let _ = reject_legacy_manifest_path(project);
         project.to_path_buf()
     }
 }
 
 pub(super) fn infer_manifest_from_input(input: &Path) -> Option<PathBuf> {
-    if input
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name == PROJECT_FILE_NAME)
-    {
+    if is_project_manifest_path(input) || is_workspace_manifest_path(input) {
         return Some(input.to_path_buf());
     }
 
     if input.extension().and_then(|ext| ext.to_str()) == Some("proj") {
-        return Some(input.to_path_buf());
+        let _ = reject_legacy_manifest_path(input);
     }
 
     None

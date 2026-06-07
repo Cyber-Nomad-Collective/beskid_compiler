@@ -2,6 +2,7 @@
 
 pub mod context;
 pub mod display;
+pub mod generic_inference;
 pub mod path_value;
 pub mod table;
 

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,12 +35,16 @@ pub struct WorkspaceManifest {
 pub struct WorkspaceSection {
     pub name: String,
     pub resolver: String,
+    /// Additional workspace-level keys (for example `schema`, `defaultTestMember`).
+    pub extras: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceMember {
     pub name: String,
     pub path: String,
+    /// Publish/editor metadata and other extension keys (`package`, `description`, `tags`, …).
+    pub extras: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,13 +59,15 @@ pub struct WorkspaceRegistry {
     pub url: String,
 }
 
-/// `project.type` in `Project.proj` (`Host` is the implicit default when omitted).
+/// `type` in a `.bproj` root block (`Host` is the implicit default when omitted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ProjectKind {
     #[default]
     Host,
     Mod,
     Template,
+    /// Dependency-only aggregate (for example canonical `corelib`); no source targets.
+    Aggregate,
 }
 
 /// Nested `project.template { ... }` block for [`ProjectKind::Template`] manifests.
@@ -87,6 +94,8 @@ impl ProjectModSection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectSection {
+    /// Block kind in the manifest file (must equal `name`).
+    pub block_kind: String,
     pub name: String,
     pub version: String,
     pub root: String,
@@ -94,13 +103,17 @@ pub struct ProjectSection {
     pub kind: ProjectKind,
     pub mod_section: Option<ProjectModSection>,
     pub template_section: Option<ProjectTemplateSection>,
+    pub readme: Option<String>,
+    /// Additional root-block keys not interpreted by the compiler.
+    pub extras: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
     pub name: String,
     pub kind: TargetKind,
-    pub entry: String,
+    /// Omitted for `Lib` targets that compile via workspace scan of `root`.
+    pub entry: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,7 +194,7 @@ pub struct MaterializedDependencyProject {
 /// How assembly discovers `.bd` files under effective roots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssemblyDiscovery {
-    /// Entry plus transitive `use` paths and optional std prelude.
+    /// Entry plus transitive `use` paths.
     ImportClosure,
     /// All `*.bd` files under each root (IDE / project analyze), capped by `max_units`.
     WorkspaceScan,
@@ -191,7 +204,6 @@ pub enum AssemblyDiscovery {
 #[derive(Debug, Clone)]
 pub struct AssemblyOptions {
     pub discovery: AssemblyDiscovery,
-    pub include_std_prelude: bool,
     pub max_units: usize,
     /// When true, skip units that fail to parse instead of failing the whole assembly (`beskid doc`).
     pub skip_parse_errors: bool,
@@ -201,7 +213,6 @@ impl Default for AssemblyOptions {
     fn default() -> Self {
         Self {
             discovery: AssemblyDiscovery::ImportClosure,
-            include_std_prelude: true,
             max_units: 4096,
             skip_parse_errors: false,
         }

@@ -96,8 +96,8 @@ pub fn render_abi_symbols(manifest: &ManifestRoot) -> String {
     for group in dispatch_groups(manifest) {
         for entry in group {
             all_symbols.push((
-                symbol_const_suffix(&entry.legacy_symbol),
-                entry.legacy_symbol.clone(),
+                symbol_const_suffix(&entry.dispatch_key),
+                entry.dispatch_key.clone(),
             ));
         }
     }
@@ -183,7 +183,7 @@ pub fn render_dispatch_lookup(manifest: &ManifestRoot) -> String {
     writeln!(&mut out).unwrap();
     writeln!(
         &mut out,
-        "//! Maps legacy runtime symbols to manifest dispatch tags and return groups."
+        "//! Maps dispatch routing keys to manifest dispatch tags and return groups."
     )
     .unwrap();
     writeln!(&mut out).unwrap();
@@ -225,7 +225,7 @@ pub fn render_dispatch_lookup(manifest: &ManifestRoot) -> String {
     writeln!(&mut out).unwrap();
     writeln!(
         &mut out,
-        "/// Resolve a legacy runtime symbol to its manifest dispatch route, if any."
+        "/// Resolve a dispatch routing key to its manifest dispatch route, if any."
     )
     .unwrap();
     writeln!(
@@ -240,7 +240,7 @@ pub fn render_dispatch_lookup(manifest: &ManifestRoot) -> String {
             writeln!(
                 &mut out,
                 "        \"{symbol}\" => Some(DispatchRoute {{ tag: TAG_{tag}, group: DispatchReturnGroup::{group_ident} }}),",
-                symbol = entry.legacy_symbol,
+                symbol = entry.dispatch_key,
                 tag = tag_const_name(&entry.name),
                 group_ident = group_ident,
             )
@@ -366,9 +366,9 @@ fn render_dispatch_group(out: &mut String, group: &str, entries: &[DispatchEntry
     for entry in entries {
         writeln!(
             out,
-            "/// `{symbol}` → legacy handler `{legacy}`",
+            "/// `{symbol}` → dispatch key `{key}`",
             symbol = entry.name,
-            legacy = entry.legacy_symbol
+            key = entry.dispatch_key
         )
         .unwrap();
         writeln!(
@@ -424,7 +424,7 @@ pub fn render_analysis_builtins(manifest: &ManifestRoot) -> String {
             write_analysis_entry(
                 &mut out,
                 &entry.beskid_path,
-                &entry.legacy_symbol,
+                &entry.dispatch_key,
                 &entry.params,
                 &entry.returns,
                 entry.injected,
@@ -480,10 +480,10 @@ fn dispatch_doc(manifest: &ManifestRoot, symbol: &str) -> Option<String> {
     }
     for group in dispatch_groups(manifest) {
         for entry in group {
-            if entry.legacy_symbol == symbol {
+            if entry.dispatch_key == symbol {
                 return Some(format!(
-                    "Legacy runtime symbol for dispatch tag `{}` ({})",
-                    entry.name, entry.legacy_symbol
+                    "Dispatch routing key for tag `{}` ({})",
+                    entry.name, entry.dispatch_key
                 ));
             }
         }
@@ -858,7 +858,7 @@ pub fn render_host_handler_table(manifest: &ManifestRoot) -> String {
             "ptr" => format!("{body} as *mut u8"),
             "usize" => format!("{body} as usize"),
             "i64" if entry.returns == "never" => {
-                format!("{body};\n            unreachable_unchecked()")
+                format!("{body}\n            unreachable_unchecked()")
             }
             "i64" => format!("{body} as i64"),
             _ => body,
@@ -917,7 +917,7 @@ pub fn render_host_handler_table(manifest: &ManifestRoot) -> String {
 }
 
 fn host_wrapper_fn_name(entry: &DispatchEntry) -> String {
-    format!("host_dispatch_{}", entry.legacy_symbol)
+    format!("host_dispatch_{}", entry.dispatch_key)
 }
 
 fn host_wrapper_return_type(group: &str) -> &'static str {
@@ -956,11 +956,11 @@ fn render_dispatch_arm_body(entry: &DispatchEntry, callee: DispatchCallee) -> St
         .iter()
         .enumerate()
         .map(|(index, param)| {
-            cast_call_arg(&entry.legacy_symbol, param, &format!("p{index}"), index)
+            cast_call_arg(&entry.dispatch_key, param, &format!("p{index}"), index)
         })
         .collect::<Vec<_>>()
         .join(", ");
-    let callee = dispatch_callee_path(&entry.legacy_symbol, callee);
+    let callee = dispatch_callee_path(&entry.dispatch_key, callee);
     if args.is_empty() {
         format!("{decode}            {callee}()")
     } else {
@@ -968,14 +968,14 @@ fn render_dispatch_arm_body(entry: &DispatchEntry, callee: DispatchCallee) -> St
     }
 }
 
-fn dispatch_callee_path(legacy_symbol: &str, callee: DispatchCallee) -> String {
+fn dispatch_callee_path(dispatch_key: &str, callee: DispatchCallee) -> String {
     match callee {
-        DispatchCallee::Host => format!("crate::{legacy_symbol}"),
-        DispatchCallee::Runtime => match legacy_symbol {
+        DispatchCallee::Host => format!("crate::{dispatch_key}"),
+        DispatchCallee::Runtime => match dispatch_key {
             "channel_receive_ptr"
             | "channel_send_ptr"
             | "channel_try_receive_ptr"
-            | "channel_try_send_ptr" => format!("crate::{legacy_symbol}"),
+            | "channel_try_send_ptr" => format!("crate::{dispatch_key}"),
             other => format!("crate::builtins::{other}"),
         },
     }
@@ -986,7 +986,7 @@ fn special_dispatch_arm(entry: &DispatchEntry, callee: DispatchCallee) -> Option
         DispatchCallee::Host => "crate::",
         DispatchCallee::Runtime => "crate::builtins::",
     };
-    match entry.legacy_symbol.as_str() {
+    match entry.dispatch_key.as_str() {
         "array_len" => Some(
             "            let p0 = *(enum_ptr.add(16) as *const *const u8);\n\
              crate::builtins::array_len(p0 as *const beskid_abi::BeskidArray)"
@@ -1038,7 +1038,7 @@ fn special_dispatch_arm(entry: &DispatchEntry, callee: DispatchCallee) -> Option
                 .to_string(),
         ),
         "str_concat" | "str_eq" => {
-            let symbol = entry.legacy_symbol.clone();
+            let symbol = entry.dispatch_key.clone();
             Some(format!(
                 "            let p0 = *(enum_ptr.add(16) as *const *const u8);\n\
                  let p1 = *(enum_ptr.add(24) as *const *const u8);\n\
@@ -1046,7 +1046,7 @@ fn special_dispatch_arm(entry: &DispatchEntry, callee: DispatchCallee) -> Option
             ))
         }
         "channel_receive_ptr" | "channel_try_receive_ptr" => {
-            let symbol = entry.legacy_symbol.clone();
+            let symbol = entry.dispatch_key.clone();
             Some(format!(
                 "            let p0 = *(enum_ptr.add(16) as *const u64);\n\
                  let p1 = *(enum_ptr.add(24) as *const *const u8);\n\
@@ -1054,7 +1054,7 @@ fn special_dispatch_arm(entry: &DispatchEntry, callee: DispatchCallee) -> Option
             ))
         }
         "channel_send_ptr" | "channel_try_send_ptr" => {
-            let symbol = entry.legacy_symbol.clone();
+            let symbol = entry.dispatch_key.clone();
             Some(format!(
                 "            let p0 = *(enum_ptr.add(16) as *const u64);\n\
                  let p1 = *(enum_ptr.add(24) as *const *const u8);\n\
@@ -1077,11 +1077,11 @@ fn payload_load_type(param: &str) -> &'static str {
     }
 }
 
-fn cast_call_arg(legacy_symbol: &str, param: &str, var: &str, index: usize) -> String {
+fn cast_call_arg(dispatch_key: &str, param: &str, var: &str, index: usize) -> String {
     match param {
         "string" => format!("{var} as *const BeskidStr"),
-        "ptr" => ptr_arg_cast(legacy_symbol, var, index),
-        "usize" => match legacy_symbol {
+        "ptr" => ptr_arg_cast(dispatch_key, var, index),
+        "usize" => match dispatch_key {
             "array_new" if index == 0 => format!("{var} as usize"),
             "array_new" if index == 1 => format!("{var} as usize"),
             "str_new" if index == 1 => format!("{var} as usize"),
@@ -1092,13 +1092,13 @@ fn cast_call_arg(legacy_symbol: &str, param: &str, var: &str, index: usize) -> S
             "dynamic_cast_checked" if index == 1 => format!("{var} as u32"),
             _ => var.to_string(),
         },
-        "u64" | "i64" | "i32" => numeric_arg_cast(legacy_symbol, param, var, index),
+        "u64" | "i64" | "i32" => numeric_arg_cast(dispatch_key, param, var, index),
         _ => var.to_string(),
     }
 }
 
-fn numeric_arg_cast(legacy_symbol: &str, param: &str, var: &str, index: usize) -> String {
-    match (legacy_symbol, index) {
+fn numeric_arg_cast(dispatch_key: &str, param: &str, var: &str, index: usize) -> String {
+    match (dispatch_key, index) {
         ("str_slice", 1) | ("str_slice", 2) => format!("{var} as usize"),
         ("bytes_set", 1) | ("bytes_set", 2) => format!("{var} as i64"),
         ("dynamic_map_aot", 0)
@@ -1107,7 +1107,7 @@ fn numeric_arg_cast(legacy_symbol: &str, param: &str, var: &str, index: usize) -
         | ("dynamic_cell_create", 0)
         | ("dynamic_cell_wrap", 0) => format!("{var} as u32"),
         _ => match param {
-            "u64" if legacy_symbol == "str_slice" && (index == 1 || index == 2) => {
+            "u64" if dispatch_key == "str_slice" && (index == 1 || index == 2) => {
                 format!("{var} as usize")
             }
             "i64" => format!("{var} as i64"),
@@ -1118,8 +1118,8 @@ fn numeric_arg_cast(legacy_symbol: &str, param: &str, var: &str, index: usize) -
     }
 }
 
-fn ptr_arg_cast(legacy_symbol: &str, var: &str, index: usize) -> String {
-    match (legacy_symbol, index) {
+fn ptr_arg_cast(dispatch_key: &str, var: &str, index: usize) -> String {
+    match (dispatch_key, index) {
         ("array_len", 0) => format!("{var} as *const beskid_abi::BeskidArray"),
         ("bytes_from_str", 0) | ("str_from_bytes_utf8", 0) => {
             format!("{var} as *const beskid_abi::BeskidArray")
@@ -1200,5 +1200,7 @@ mod tests {
         assert!(symbols.contains("RUNTIME_EXPORT_SYMBOLS"));
         assert!(symbols.contains("SYM_STR_LEN"));
         assert!(!symbols.contains("RUNTIME_EXPORT_SYMBOLS: &[&str] = &[\n    SYM_STR_LEN"));
+        assert!(!symbols.contains("Legacy runtime symbol"));
+        assert!(!symbols.contains("legacy handler"));
     }
 }

@@ -66,9 +66,15 @@ fn test_command_runs_and_filters_test_items() {
     let source = workspace.join("Src/Harness.bd");
     let cli = BeskidCliInvoker::new();
 
+    let manifest = project_root.join("TestHarness.bproj");
     let output = cli.run_in(
         &project_root,
-        ["test", source.to_str().expect("source path str")],
+        [
+            "test",
+            "--project",
+            manifest.to_str().expect("manifest path str"),
+            source.to_str().expect("source path str"),
+        ],
     );
     assert_success(&output, "run test harness fixture");
     assert_output_contains(&output, "PASS Passes", "run test harness fixture");
@@ -89,6 +95,8 @@ fn test_command_runs_and_filters_test_items() {
         &project_root,
         [
             "test",
+            "--project",
+            manifest.to_str().expect("manifest path str"),
             source.to_str().expect("source path str"),
             "--include-tag",
             "fast",

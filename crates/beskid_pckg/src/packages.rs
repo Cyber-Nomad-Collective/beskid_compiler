@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use indicatif::ProgressBar;
+use crate::progress::UploadProgress;
 use reqwest::Method;
 use reqwest::multipart;
 use tokio::fs::File;
@@ -114,7 +114,7 @@ impl PckgClient {
     /// Omits multipart `version` so the registry assigns the next semver. Optional
     /// `version_bump` is sent as `versionBump` (`patch`, `minor`, or `major`; server
     /// defaults to patch when omitted).
-    /// `upload_progress`: when set, updates an indicatif bar during the HTTP upload.
+    /// `upload_progress`: when set, reports byte progress on stderr during the HTTP upload.
     #[allow(clippy::too_many_arguments)]
     pub async fn publish_package_version(
         &self,
@@ -124,7 +124,7 @@ impl PckgClient {
         artifact_name: &str,
         manifest_json: Option<&str>,
         checksum_sha256: Option<&str>,
-        upload_progress: Option<&ProgressBar>,
+        upload_progress: Option<&UploadProgress>,
     ) -> Result<PublishPackageVersionResponse, PckgError> {
         if self.config().auth.is_none() {
             return Err(PckgError::MissingAuthToken);
@@ -135,21 +135,12 @@ impl PckgClient {
         let file = File::open(artifact_path).await.map_err(PckgError::Io)?;
         let len = file.metadata().await.map_err(PckgError::Io)?.len();
 
-        let tracked_file: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>> = if let Some(pb) =
-            upload_progress
-        {
-            pb.set_length(len);
-            pb.set_style(
-                    indicatif::ProgressStyle::with_template(
-                        "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
-                    )
-                    .unwrap()
-                    .progress_chars("#>-"),
-                );
-            Box::pin(pb.wrap_async_read(file))
-        } else {
-            Box::pin(file)
-        };
+        let tracked_file: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>> =
+            if let Some(progress) = upload_progress {
+                Box::pin(progress.wrap_async_read(file))
+            } else {
+                Box::pin(file)
+            };
 
         let stream = ReaderStream::new(tracked_file);
         let body = reqwest::Body::wrap_stream(stream);
@@ -174,9 +165,6 @@ impl PckgClient {
 
         let response: PublishPackageVersionResponse =
             self.send_multipart(Method::POST, &path, form, true).await?;
-        if let Some(pb) = upload_progress {
-            pb.finish_and_clear();
-        }
         ensure_publish_success(response, None)
     }
 

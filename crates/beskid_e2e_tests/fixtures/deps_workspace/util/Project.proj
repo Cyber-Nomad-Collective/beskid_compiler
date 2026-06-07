@@ -1,9 +1,0 @@
-project {
-  name = "Util"
-  version = "0.1.0"
-}
-
-target "UtilLib" {
-  kind = "Lib"
-  entry = "Util.bd"
-}

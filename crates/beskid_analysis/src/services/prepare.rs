@@ -24,7 +24,9 @@ use super::entry_session::{current_syntax_generation_id, update_semantic_snapsho
 use super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::input::ResolvedInput;
 use super::lower::lower_normalize_resolve_type_spanned_with_assembly;
-use super::semantic::{require_no_semantic_errors, semantic_rule_diagnostics_for_program};
+use super::semantic::{
+    require_no_semantic_errors, semantic_rule_diagnostics_for_program_with_pipeline,
+};
 use super::session::{SemanticSnapshot, SessionFingerprint, session_for_assembly};
 
 /// Whether prepare stops after diagnostics or continues through typed HIR.
@@ -198,11 +200,12 @@ fn run_prepare_spine(
 
     if options.front_end.with_semantic_diagnostics || collect_diagnostics {
         let semantic = observe_phase_result(pipeline, SEMANTIC, || {
-            Ok::<_, anyhow::Error>(semantic_rule_diagnostics_for_program(
+            Ok::<_, anyhow::Error>(semantic_rule_diagnostics_for_program_with_pipeline(
                 &program.node,
                 entry_unit.logical_name.clone(),
                 entry_source,
                 rule_options.clone(),
+                pipeline,
             ))
         })?;
         let snapshot_diagnostics = if collect_diagnostics {
@@ -274,8 +277,12 @@ fn run_prepare_spine(
         observe_phase(pipeline, LOWER_READY, || {});
 
         let (hir, resolution, typed) = observe_phase_result(pipeline, LOWER, || {
-            lower_normalize_resolve_type_spanned_with_assembly(&program, Some(&assembly))
-                .map_err(anyhow::Error::from)
+            lower_normalize_resolve_type_spanned_with_assembly(
+                &program,
+                Some(&assembly),
+                pipeline,
+            )
+            .map_err(anyhow::Error::from)
         })?;
 
         let resolution_fingerprint = typed_fingerprint(&resolution);

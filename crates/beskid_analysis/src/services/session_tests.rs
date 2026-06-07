@@ -42,11 +42,13 @@ fn test_plan(lock_bytes: Option<&[u8]>) -> (CompilePlan, SessionFingerprint, Pat
         target: Target {
             name: "main".to_string(),
             kind: TargetKind::App,
-            entry: entry_path
-                .strip_prefix(&root)
-                .expect("entry under root")
-                .to_string_lossy()
-                .into_owned(),
+            entry: Some(
+                entry_path
+                    .strip_prefix(&root)
+                    .expect("entry under root")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
         },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),

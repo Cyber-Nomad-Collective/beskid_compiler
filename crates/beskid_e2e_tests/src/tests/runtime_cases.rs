@@ -8,7 +8,7 @@ use crate::harness::workspace::E2eWorkspace;
 #[test]
 fn runtime_calls_fixture_aot_runs_and_object_contains_runtime_symbols() {
     let workspace = E2eWorkspace::from_fixture("runtime_calls");
-    let manifest = workspace.join("Project.proj");
+    let manifest = workspace.join("RuntimeCalls.bproj");
     let output_binary = workspace.join("out/runtime_calls");
     let object_output = workspace.join("out/runtime_calls.o");
     let cli = BeskidCliInvoker::new();
@@ -64,7 +64,7 @@ fn runtime_calls_fixture_aot_runs_and_object_contains_runtime_symbols() {
 #[test]
 fn event_unsubscribe_fixture_aot_runs_and_object_contains_event_symbols() {
     let workspace = E2eWorkspace::from_fixture("event_unsubscribe");
-    let manifest = workspace.join("Project.proj");
+    let manifest = workspace.join("EventUnsubscribe.bproj");
     let output_binary = workspace.join("out/event_unsubscribe");
     let object_output = workspace.join("out/event_unsubscribe.o");
     let cli = BeskidCliInvoker::new();
@@ -113,7 +113,7 @@ fn event_unsubscribe_fixture_aot_runs_and_object_contains_event_symbols() {
 #[test]
 fn smoke_fixture_build_graph_includes_corelib_dependency() {
     let workspace = E2eWorkspace::from_fixture("smoke_project");
-    let manifest = workspace.join("Project.proj");
+    let manifest = workspace.join("SmokeProject.bproj");
     let output_binary = workspace.join("out/corelib_graph");
     let object_output = workspace.join("out/corelib_graph.o");
     let cli = BeskidCliInvoker::new();

@@ -3,7 +3,8 @@ use std::path::{Component, Path};
 
 use crate::projects::error::ProjectError;
 use crate::projects::model::{
-    DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest, WorkspaceManifest,
+    DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest, TargetKind,
+    WorkspaceManifest,
 };
 
 /// Closed capability names accepted in `project.mod.capabilities` (compiler-mod host bridge).
@@ -18,25 +19,50 @@ pub const MOD_CAPABILITY_NAMES: &[&str] = &[
 const MOD_ARTIFACT_POLICIES: &[&str] = &["reuse", "rebuild", "clean_rebuild"];
 
 pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError> {
+    if manifest.project.block_kind != manifest.project.name {
+        return Err(ProjectError::meta_contract(
+            "E1896",
+            format!(
+                "project root block kind `{}` must match `name` (`{}`)",
+                manifest.project.block_kind, manifest.project.name
+            ),
+        ));
+    }
     if manifest.project.name.trim().is_empty() {
         return Err(ProjectError::Validation(
-            "`project.name` is required".to_string(),
+            "`name` is required in the project root block".to_string(),
         ));
     }
     if manifest.project.version.trim().is_empty() {
         return Err(ProjectError::Validation(
-            "`project.version` is required".to_string(),
+            "`version` is required in the project root block".to_string(),
         ));
     }
-    if manifest.project.root.trim().is_empty() {
-        return Err(ProjectError::Validation(
-            "`project.root` cannot be empty".to_string(),
-        ));
-    }
+
     match manifest.project.kind {
+        ProjectKind::Aggregate => {
+            if !manifest.targets.is_empty() {
+                return Err(ProjectError::Validation(
+                    "`Aggregate` projects must not declare `target` blocks".to_string(),
+                ));
+            }
+            if manifest.dependencies.is_empty() {
+                return Err(ProjectError::Validation(
+                    "`Aggregate` projects require at least one `dependency` block".to_string(),
+                ));
+            }
+        }
         ProjectKind::Host if manifest.targets.is_empty() => {
             return Err(ProjectError::Validation(
                 "at least one `target` block is required for host projects".to_string(),
+            ));
+        }
+        ProjectKind::Host | ProjectKind::Template if !manifest.project.root.trim().is_empty() => {
+            // root validated per-target below for non-aggregate hosts
+        }
+        ProjectKind::Host | ProjectKind::Template if manifest.project.root.trim().is_empty() => {
+            return Err(ProjectError::Validation(
+                "`root` cannot be empty for host or template projects".to_string(),
             ));
         }
         ProjectKind::Mod if !manifest.targets.is_empty() => {
@@ -48,7 +74,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
         ProjectKind::Mod if manifest.project.mod_section.is_none() => {
             return Err(ProjectError::meta_contract(
                 "E1802",
-                "`type = Mod` requires a nested `mod { ... }` block under `project`",
+                "`type = Mod` requires a nested `mod { ... }` block under the project root",
             ));
         }
         ProjectKind::Template if !manifest.targets.is_empty() => {
@@ -68,7 +94,17 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                 target.name
             )));
         }
-        validate_relative_entry_path(&target.entry)?;
+        match (target.kind, target.entry.as_deref()) {
+            (TargetKind::Lib, None) | (TargetKind::Lib, Some("")) => {}
+            (TargetKind::Lib, Some(entry)) => validate_relative_entry_path(entry)?,
+            (_, None) | (_, Some("")) => {
+                return Err(ProjectError::Validation(format!(
+                    "target `{}` requires `entry` when kind is App or Test",
+                    target.name
+                )));
+            }
+            (_, Some(entry)) => validate_relative_entry_path(entry)?,
+        }
     }
 
     if let Some(mod_section) = &manifest.project.mod_section {

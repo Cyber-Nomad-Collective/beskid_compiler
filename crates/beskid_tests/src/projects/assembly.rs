@@ -182,14 +182,14 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
             .map(|unit| unit.path.display().to_string())
             .collect();
         assert!(
-            loaded.iter().any(|p| p.contains("Testing/Assertions.bd")),
-            "expected Testing.Assertions in import closure, got: {loaded:?}"
+            loaded.iter().any(|p| p.contains("Testing/Assert.bd")),
+            "expected Testing.Assert in import closure, got: {loaded:?}"
         );
 
         let known_modules = assembly.module_index.known_module_path_strings();
         assert!(
-            known_modules.contains("Testing::Assertions"),
-            "expected Testing::Assertions module in prefetch graph, got: {known_modules:?}"
+            known_modules.contains("Testing::Assert"),
+            "expected Testing::Assert module in prefetch graph, got: {known_modules:?}"
         );
 
         let resolution = assembly

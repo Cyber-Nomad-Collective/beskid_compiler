@@ -9,7 +9,7 @@ use beskid_analysis::hir::{HirExpressionNode, HirSpawnExpression};
 use beskid_analysis::resolve::ResolvedValue;
 use beskid_analysis::syntax::Spanned;
 use cranelift_codegen::ir::{
-    AbiParam, ExtFuncData, ExternalName, InstBuilder, Signature, StackSlotData, StackSlotKind,
+    ExtFuncData, ExternalName, InstBuilder, Signature, StackSlotData, StackSlotKind,
 };
 use cranelift_codegen::isa::CallConv;
 

@@ -1,11 +1,10 @@
 use crate::errors::CodegenError;
-use crate::lowering::cast_intent::ensure_type_compatibility;
 use crate::lowering::descriptor::{enum_payload_start, enum_variant_field_offsets};
 use crate::lowering::locals::local_id_for_span;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
-use beskid_analysis::hir::{HirLiteral, HirMatchExpression, HirPattern, HirPrimitiveType};
+use beskid_analysis::hir::{HirLiteral, HirMatchExpression, HirPattern};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo};
 use cranelift_codegen::ir::condcodes::IntCC;

@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 
 use super::discovery::{
-    PROJECT_FILE_NAME, WORKSPACE_FILE_NAME, discover_project_file, discover_workspace_file,
+    discover_project_file, discover_project_manifest_in_dir, discover_workspace_file,
+    is_project_manifest_path, is_workspace_manifest_path, project_manifest_for_member_dir,
+    reject_legacy_manifest_path,
 };
 use super::error::ProjectError;
 use super::model::WorkspaceResolutionSummary;
@@ -19,10 +21,7 @@ pub fn resolve_workspace_candidate_with_summary(
     input: Option<&Path>,
     workspace_member: Option<&str>,
 ) -> Result<(PathBuf, Option<WorkspaceResolutionSummary>)> {
-    let is_workspace_manifest = candidate
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name == WORKSPACE_FILE_NAME);
+    let is_workspace_manifest = is_workspace_manifest_path(candidate);
 
     if is_workspace_manifest {
         let (path, summary) =
@@ -92,9 +91,31 @@ pub fn resolve_project_manifest_from_workspace(
             })
             .max_by_key(|(depth, _)| *depth)
             .map(|(_, member)| member)
+            .or_else(|| {
+                workspace_manifest
+                    .workspace
+                    .extras
+                    .get("defaultTestMember")
+                    .and_then(|member_id| {
+                        workspace_manifest
+                            .members
+                            .iter()
+                            .find(|member| member.name == *member_id)
+                    })
+            })
             .or_else(|| workspace_manifest.members.first())
     } else {
-        workspace_manifest.members.first()
+        workspace_manifest
+            .workspace
+            .extras
+            .get("defaultTestMember")
+            .and_then(|member_id| {
+                workspace_manifest
+                    .members
+                    .iter()
+                    .find(|member| member.name == *member_id)
+            })
+            .or(workspace_manifest.members.first())
     }
     .ok_or_else(|| {
         anyhow!(
@@ -105,18 +126,15 @@ pub fn resolve_project_manifest_from_workspace(
         )
     })?;
 
-    let member_manifest = workspace_root
-        .join(&selected_member.path)
-        .join(PROJECT_FILE_NAME);
-
-    if !member_manifest.is_file() {
-        return Err(anyhow!(
-            "{}: workspace member `{}` project file not found at {}",
-            ProjectError::ProjectFileNotFound(member_manifest.clone()).code(),
+    let member_dir = workspace_root.join(&selected_member.path);
+    let member_manifest = project_manifest_for_member_dir(&member_dir).map_err(|err| {
+        anyhow!(
+            "{}: workspace member `{}` project manifest not found under {} ({err})",
+            ProjectError::ProjectFileNotFound(member_dir.join("<missing>.bproj")).code(),
             selected_member.name,
-            member_manifest.display()
-        ));
-    }
+            member_dir.display(),
+        )
+    })?;
 
     let summary = WorkspaceResolutionSummary {
         workspace_manifest_path: workspace_manifest_path.to_path_buf(),

@@ -1081,19 +1081,11 @@ fn infer_generic_args_from_call(
     args: &[Spanned<HirExpressionNode>],
     ctx: &NodeLoweringContext<'_, '_>,
 ) -> Option<Vec<TypeId>> {
-    let expected_len = type_result.generic_items.get(&item_id)?.len();
-    if expected_len == 0 {
-        return Some(Vec::new());
-    }
+    let mut arg_types = Vec::with_capacity(args.len());
     for arg in args {
-        let actual = ctx.require_expr_type_for_node(arg).ok()?;
-        if let Some(TypeInfo::Applied { args, .. }) = type_result.types.get(actual)
-            && args.len() == expected_len
-        {
-            return Some(args.clone());
-        }
+        arg_types.push(ctx.require_expr_type_for_node(arg).ok()?);
     }
-    None
+    type_result.infer_generic_args_from_call_types(item_id, &arg_types)
 }
 
 fn lower_method_dispatch_call(
@@ -1632,7 +1624,14 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                         .get(&item_id)
                         .ok_or(CodegenError::MissingSymbol("function definition"))?;
                     let mangled = mangle_function_name(&item_info.name, &generic_args);
-                    lower_function_with_name(
+                    let saved_source_path = ctx.codegen.current_source_path.clone();
+                    ctx.codegen.current_source_path = ctx
+                        .resolution
+                        .items
+                        .get(item_id.0)
+                        .and_then(|info| info.source_path.clone())
+                        .or_else(|| saved_source_path.clone());
+                    let lower_result = lower_function_with_name(
                         def,
                         ctx.resolution,
                         ctx.type_result,
@@ -1641,7 +1640,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                         Some(mangled.clone()),
                         Some(mapping.clone()),
                         Some(item_id),
-                    )?;
+                    );
+                    ctx.codegen.current_source_path = saved_source_path;
+                    lower_result?;
                     ctx.codegen
                         .monomorphized_functions
                         .insert(key, mangled.clone());

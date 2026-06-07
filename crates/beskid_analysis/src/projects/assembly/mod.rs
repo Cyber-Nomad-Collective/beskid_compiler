@@ -14,6 +14,7 @@ pub use discovery::{
 pub use hir_units::{UnitHir, build_hir_units};
 pub use loader::{
     AssemblyError, UnitMaterializer, assemble_program, assemble_program_with_materializer,
+    assembly_options_for_plan,
 };
 pub use module_index::{ModuleIndex, infer_logical_module_path};
 pub use roots::{
@@ -97,6 +98,23 @@ impl ProgramAssembly {
             .filter(|(index, _)| *index != self.entry_index)
             .map(|(_, unit)| &unit.hir)
             .collect()
+    }
+
+    /// Rebind the entry unit when reusing a workspace-wide assembly for another target file.
+    pub fn with_entry_at(&self, entry_path: &std::path::Path) -> Option<Self> {
+        let target = entry_path
+            .canonicalize()
+            .unwrap_or_else(|_| entry_path.to_path_buf());
+        let entry_index = self.units.iter().position(|unit| {
+            unit.path
+                .canonicalize()
+                .unwrap_or_else(|_| unit.path.clone())
+                == target
+        })?;
+        Some(Self {
+            entry_index,
+            ..self.clone()
+        })
     }
 
     pub fn module_roots(&self) -> Vec<PathBuf> {

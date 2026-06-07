@@ -212,8 +212,9 @@ fn absolutize_source_root(source: &Path) -> anyhow::Result<PathBuf> {
 fn resolve_doc_entrypoint(
     source_root: &Path,
 ) -> anyhow::Result<(Option<PathBuf>, Option<PathBuf>)> {
-    let project_manifest = source_root.join("Project.proj");
-    if project_manifest.exists() {
+    if let Ok(Some(project_manifest)) =
+        beskid_analysis::projects::discover_project_manifest_in_dir(source_root)
+    {
         return Ok((None, Some(project_manifest)));
     }
 
@@ -240,7 +241,7 @@ fn resolve_doc_entrypoint(
     }
 
     anyhow::bail!(
-        "cannot infer docs entrypoint for package source {} (expected Project.proj, main.bd/src/main.bd, or a single .bd file)",
+        "cannot infer docs entrypoint for package source {} (expected a `.bproj` manifest, main.bd/src/main.bd, or a single .bd file)",
         source_root.display()
     )
 }

@@ -3,8 +3,20 @@ use beskid_analysis::resolve::{ItemId, ItemKind, Resolution, ResolvedType};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use cranelift_codegen::ir::types;
+use std::collections::HashMap;
 
 use super::expressions::serialize::DYNAMIC_TYPE_NAME;
+
+pub(crate) fn resolve_monomorph_type_id(
+    type_result: &TypeResult,
+    substitution: &HashMap<String, TypeId>,
+    type_id: TypeId,
+) -> TypeId {
+    match type_result.types.get(type_id) {
+        Some(TypeInfo::GenericParam(name)) => substitution.get(name).copied().unwrap_or(type_id),
+        _ => type_id,
+    }
+}
 
 pub(crate) fn map_type_id_to_clif(
     type_result: &TypeResult,

@@ -162,6 +162,32 @@ mod tests {
     use super::super::invoker::{InvocationKind, StubContractInvoker};
     use super::*;
 
+    const HOST_MANIFEST: &str = r#"Host {
+  name = "Host"
+  version = "0.1.0"
+}
+
+target "main" {
+  kind = App
+  entry = "Main.bd"
+}
+
+dependency "ModA" {
+  source = path
+  path = "../ModA"
+}
+"#;
+
+    const MODA_MANIFEST: &str = r#"ModA {
+  name = "ModA"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot, rewrite_syntax]
+  }
+}
+"#;
+
     #[derive(Default)]
     struct CapturePipeline {
         events: Mutex<Vec<&'static str>>,
@@ -210,21 +236,8 @@ mod tests {
         let mod_dir = root.join("ModA");
         fs::create_dir_all(host.join("Src")).expect("host src");
         fs::create_dir_all(mod_dir.join("Src")).expect("mod src");
-        fs::write(host.join("Project.proj"), "placeholder").expect("host manifest");
-        fs::write(
-            mod_dir.join("Project.proj"),
-            r#"
-project {
-  name = "ModA"
-  version = "0.1.0"
-  type = Mod
-  mod {
-    capabilities = [read_project_sources, emit_syntax, query_semantic_snapshot, rewrite_syntax]
-  }
-}
-"#,
-        )
-        .expect("mod manifest");
+        fs::write(host.join("Host.bproj"), HOST_MANIFEST).expect("host manifest");
+        fs::write(mod_dir.join("ModA.bproj"), MODA_MANIFEST).expect("mod manifest");
         let descriptor_dir = host.join(".beskid/obj/mods/ModA/cache-key/test-triple");
         fs::create_dir_all(&descriptor_dir).expect("descriptor dir");
         fs::write(
@@ -330,11 +343,10 @@ project {
         let mod_dir = root.join("ModA");
         fs::create_dir_all(host.join("Src")).expect("host src");
         fs::create_dir_all(mod_dir.join("Src")).expect("mod src");
-        fs::write(host.join("Project.proj"), "placeholder").expect("host manifest");
+        fs::write(host.join("Host.bproj"), HOST_MANIFEST).expect("host manifest");
         fs::write(
-            mod_dir.join("Project.proj"),
-            r#"
-project {
+            mod_dir.join("ModA.bproj"),
+            r#"ModA {
   name = "ModA"
   version = "0.1.0"
   type = Mod
@@ -400,17 +412,17 @@ project {
     fn compile_plan(host: &std::path::Path, mod_dir: &std::path::Path) -> CompilePlan {
         CompilePlan {
             project_root: host.to_path_buf(),
-            manifest_path: host.join("Project.proj"),
+            manifest_path: host.join("Host.bproj"),
             project_name: "Host".to_owned(),
             source_root: host.join("Src"),
             target: Target {
                 name: "main".to_owned(),
                 kind: TargetKind::App,
-                entry: "Main.bd".to_owned(),
+                entry: Some("Main.bd".to_owned()),
             },
             dependency_projects: vec![ResolvedDependencyProject {
                 dependency_name: "ModA".to_owned(),
-                manifest_path: mod_dir.join("Project.proj"),
+                manifest_path: mod_dir.join("ModA.bproj"),
                 project_root: mod_dir.to_path_buf(),
                 project_name: "ModA".to_owned(),
                 source_root: mod_dir.join("Src"),

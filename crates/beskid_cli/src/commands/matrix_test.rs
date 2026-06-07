@@ -108,11 +108,26 @@ fn resolve_manifest_path(args: &TestArgs) -> Result<PathBuf> {
         if project
             .extension()
             .and_then(|ext: &std::ffi::OsStr| ext.to_str())
-            == Some("proj")
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("bproj") || ext.eq_ignore_ascii_case("bws"))
         {
             return Ok(project.clone());
         }
-        return Ok(project.join("Project.proj"));
+        if let Some(manifest) =
+            beskid_analysis::projects::discover_project_manifest_in_dir(project)
+                .map_err(anyhow::Error::from)?
+        {
+            return Ok(manifest);
+        }
+        if let Some(workspace) =
+            beskid_analysis::projects::discover_workspace_manifest_in_dir(project)
+                .map_err(anyhow::Error::from)?
+        {
+            return Ok(workspace);
+        }
+        return Err(anyhow!(
+            "no `.bproj` or `.bws` manifest found in {}",
+            project.display()
+        ));
     }
     Err(anyhow!("--all-targets requires --project"))
 }
