@@ -23,13 +23,33 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
             span: node.node.name.span,
         })?;
 
-        let type_id = ctx.type_result.local_types.get(&local_id).copied().ok_or(
-            CodegenError::MissingLocalType {
+        let type_id = ctx
+            .type_result
+            .local_types
+            .get(&local_id)
+            .copied()
+            .or_else(|| {
+                node.node.type_annotation.as_ref().and_then(|ty| {
+                    crate::lowering::types::type_id_for_type(
+                        ctx.resolution,
+                        ctx.type_result,
+                        ctx.codegen.current_source_path.as_ref(),
+                        ty,
+                    )
+                })
+            })
+            .or_else(|| ctx.require_expr_type_for_node(&node.node.value).ok())
+            .ok_or(CodegenError::MissingLocalType {
                 span: node.node.name.span,
-            },
-        )?;
-        let clif_ty =
-            map_type_id_to_clif(ctx.type_result, type_id).ok_or(CodegenError::UnsupportedNode {
+            })?;
+        let clif_ty = map_type_id_to_clif(ctx.type_result, type_id)
+            .or_else(|| {
+                ctx.type_result
+                    .types
+                    .get(type_id)
+                    .map(|_| crate::lowering::types::pointer_type())
+            })
+            .ok_or(CodegenError::UnsupportedNode {
                 span: node.node.name.span,
                 node: "unsupported local type",
             })?;
@@ -67,6 +87,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
             let var = ctx.builder.declare_var(clif_ty);
             ctx.builder.def_var(var, value);
             ctx.state.locals.insert(local_id, var);
+            ctx.state.local_type_overrides.insert(local_id, type_id);
             return Ok(());
         }
 
@@ -89,6 +110,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
         let var = ctx.builder.declare_var(clif_ty);
         ctx.builder.def_var(var, value);
         ctx.state.locals.insert(local_id, var);
+        ctx.state.local_type_overrides.insert(local_id, type_id);
         Ok(())
     }
 }

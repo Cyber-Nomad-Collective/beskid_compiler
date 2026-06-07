@@ -32,6 +32,7 @@ pub fn anchor_kernel_exports() {
     let _ = beskid_runtime::interop_dispatch_ptr as usize;
     let _ = beskid_runtime::interop_dispatch_unit as usize;
     let _ = beskid_runtime::interop_dispatch_usize as usize;
+    let _ = beskid_runtime::interop_dispatch_i64 as usize;
     let _ = beskid_runtime::panic as usize;
     let _ = beskid_runtime::panic_str as usize;
     let _ = beskid_runtime::runtime_preempt_check as usize;

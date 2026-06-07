@@ -19,7 +19,7 @@ fn codegen_lowers_spawn_expression() {
         lower_resolve_type("i64 child() { return 42; } i64 main() { spawn child; return 0; }");
     let artifact = lower_program(&hir, &resolution, &typed)
         .expect("expected spawn expression lowering to succeed");
-    assert_eq!(artifact.functions.len(), 2);
+    assert_eq!(artifact.functions.len(), 3, "expected child, main, and spawn entry trampoline");
 }
 
 #[test]

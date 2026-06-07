@@ -1,6 +1,7 @@
 //! Formatter (`Emit`) integration tests.
 
 mod macro_roundtrip;
+mod naming_normalize;
 
 use beskid_analysis::format::Emitter;
 use beskid_analysis::format::format_program;
@@ -33,9 +34,9 @@ fn format_golden_use_and_function() {
     let p = parse_program(src).expect("parse");
     let out = format_program(&p).expect("format");
     let expected = concat!(
-        "use a.b;\n",
+        "use A.B;\n",
         "\n",
-        "pub i32 main()\n",
+        "pub i32 Main()\n",
         "{\n",
         "    return 42;\n",
         "}\n",
@@ -53,7 +54,7 @@ let x = 1;
     let p = parse_program(src).expect("parse");
     let out = format_program(&p).expect("format");
     let expected = concat!(
-        "pub unit f()\n",
+        "pub unit F()\n",
         "{\n",
         "    if (cond)\n",
         "    {\n",
@@ -129,7 +130,7 @@ let v = match 0 { _ => 1, };
     let p = parse_program(src).expect("parse");
     let out = format_program(&p).expect("format");
     let expected = concat!(
-        "use std.io;\n",
+        "use Std.Io;\n",
         "\n",
         "pub type Point\n",
         "{\n",
@@ -147,12 +148,12 @@ let v = match 0 { _ => 1, };
         "\n",
         "pub contract C\n",
         "{\n",
-        "    i32 m();\n",
+        "    i32 M();\n",
         "\n",
         "    Other;\n",
         "}\n",
         "\n",
-        "pub unit demo()\n",
+        "pub unit Demo()\n",
         "{\n",
         "    let v = match 0\n",
         "    {\n",

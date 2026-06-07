@@ -738,7 +738,7 @@ impl<'a> TypeContext<'a> {
         self,
         program: &Spanned<HirProgram>,
     ) -> (TypeResult, Vec<TypeError>) {
-        self.type_program_with_errors_and_dependencies(program, &[], None, None, true)
+        self.type_program_with_errors_and_dependencies(program, &[], None, None, true, None)
     }
 
     pub fn type_program_with_errors_and_dependencies(
@@ -748,7 +748,13 @@ impl<'a> TypeContext<'a> {
         dependency_source_paths: Option<&[std::path::PathBuf]>,
         entry_source_path: Option<std::path::PathBuf>,
         type_dependency_bodies: bool,
+        module_index: Option<&crate::projects::assembly::ModuleIndex>,
     ) -> (TypeResult, Vec<TypeError>) {
+        if let Some(index) = module_index {
+            for path in index.prefetched_paths() {
+                self.seed_definitions_from_source_path(path);
+            }
+        }
         let dependency_errors_before = self.errors.len();
         let dependency_cast_intents_before = self.cast_intents.len();
         for (index, dependency) in dependency_programs.iter().enumerate() {
@@ -794,7 +800,12 @@ impl<'a> TypeContext<'a> {
                     }
                 }
             }
-            if type_dependency_bodies {
+        }
+        if type_dependency_bodies {
+            for (index, dependency) in dependency_programs.iter().enumerate() {
+                self.current_source_path = dependency_source_paths
+                    .and_then(|paths| paths.get(index))
+                    .map(|path| crate::paths::unit_path_key(path));
                 self.type_dependency_function_items(&dependency.node.items);
             }
         }

@@ -1,6 +1,7 @@
 //! Cross-unit module graph built by collection-only resolver passes.
 
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use crate::hir::HirProgram;
 use crate::resolve::{
@@ -23,6 +24,7 @@ pub struct ModuleIndex {
     by_symbol: HashMap<SymbolId, ItemId>,
     entry_project_name: String,
     dependency_packages: HashMap<String, String>,
+    prefetched_paths: Vec<PathBuf>,
 }
 
 impl ModuleIndex {
@@ -35,7 +37,13 @@ impl ModuleIndex {
             by_symbol: HashMap::new(),
             entry_project_name: String::new(),
             dependency_packages: HashMap::new(),
+            prefetched_paths: Vec::new(),
         }
+    }
+
+    /// Source paths scanned from dependency roots but not in the import-closure assembly.
+    pub fn prefetched_paths(&self) -> &[PathBuf] {
+        &self.prefetched_paths
     }
 
     pub fn module_graph(&self) -> &ModuleGraph {
@@ -82,11 +90,34 @@ impl ModuleIndex {
             }
         }
 
-        let dependency_packages = plan
+        let dependency_packages: HashMap<String, String> = plan
             .dependency_projects
             .iter()
             .map(|dep| (dep.dependency_name.clone(), dep.project_name.clone()))
             .collect();
+        let unit_paths: HashSet<PathBuf> = units
+            .iter()
+            .map(|unit| unit.path.clone())
+            .collect();
+        let mut prefetched_paths = Vec::new();
+        for dep in &roots.dependencies {
+            let declaring_package = dep
+                .dependency_name
+                .as_ref()
+                .and_then(|name| dependency_packages.get(name))
+                .cloned()
+                .or_else(|| dep.dependency_name.clone())
+                .unwrap_or_else(|| plan.project_name.clone());
+            collect_prefetched_modules(
+                &mut resolver,
+                &dep.source_root,
+                &unit_paths,
+                &declaring_package,
+                plan.has_std_dependency,
+                &mut prefetched_paths,
+            );
+        }
+
         let (items, module_graph, builtin_items, symbols, by_symbol) =
             resolver.into_prefetch_parts();
         Self {
@@ -97,6 +128,7 @@ impl ModuleIndex {
             by_symbol,
             entry_project_name: plan.project_name.clone(),
             dependency_packages,
+            prefetched_paths,
         }
     }
 
@@ -301,6 +333,80 @@ fn collapse_homonymous_module_segment(segments: &mut Vec<String>) {
         let last = segments.len() - 1;
         if segments[last] == segments[last - 1] {
             segments.pop();
+        }
+    }
+}
+
+fn collect_prefetched_modules(
+    resolver: &mut Resolver,
+    source_root: &Path,
+    unit_paths: &HashSet<PathBuf>,
+    declaring_package: &str,
+    has_std_dependency: bool,
+    prefetched_paths: &mut Vec<PathBuf>,
+) {
+    let mut bd_files = Vec::new();
+    collect_bd_files(source_root, &mut bd_files);
+    bd_files.sort();
+    for path in bd_files {
+        if unit_paths.contains(&path) {
+            continue;
+        }
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let logical_name = path.display().to_string();
+        let Ok(program) = crate::services::parse_program_with_source_name(&logical_name, &source)
+        else {
+            continue;
+        };
+        let ast: crate::syntax::Spanned<crate::hir::AstProgram> = program.into();
+        let hir = crate::hir::lower_program(&ast);
+        let module_path = module_path_from_src_suffix(&path, has_std_dependency).or_else(|| {
+            let Ok(rel) = path.strip_prefix(source_root) else {
+                return None;
+            };
+            let rel = rel.with_extension("");
+            let mut segments: Vec<String> = rel
+                .components()
+                .filter_map(|component| match component {
+                    std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+                    _ => None,
+                })
+                .collect();
+            if segments.is_empty() {
+                return None;
+            }
+            collapse_homonymous_module_segment(&mut segments);
+            if has_std_dependency {
+                let mut with_std = vec!["Std".to_string()];
+                with_std.extend(segments);
+                Some(with_std)
+            } else {
+                Some(segments)
+            }
+        });
+        resolver.set_declaring_package(declaring_package.to_string());
+        if let Some(module_path) = module_path {
+            resolver.collect_program_in_module(&hir, &module_path, Some(&path));
+        } else {
+            resolver.set_current_source_path(Some(path.clone()));
+            resolver.collect_program(&hir);
+        }
+        prefetched_paths.push(path);
+    }
+}
+
+fn collect_bd_files(root: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(read_dir) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_bd_files(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("bd") {
+            out.push(path);
         }
     }
 }

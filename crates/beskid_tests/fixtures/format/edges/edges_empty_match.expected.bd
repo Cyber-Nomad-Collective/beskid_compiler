@@ -1,4 +1,4 @@
-pub unit m()
+pub unit M()
 {
     let u = match 0 { };
     return;

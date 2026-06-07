@@ -1,9 +1,9 @@
-pub i32 add(i32 a, i32 b)
+pub i32 Add(i32 a, i32 b)
 {
     return a;
 }
 
-pub unit ops()
+pub unit Ops()
 {
     let a = true || false;
     let b = true && false;

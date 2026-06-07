@@ -2,7 +2,7 @@ use crate::errors::CodegenError;
 use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
-use crate::lowering::types::{map_type_id_to_clif, pointer_type};
+use crate::lowering::types::{is_fiber_handle_type, map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::HirMemberExpression;
 use beskid_analysis::syntax::Spanned;
 use cranelift_codegen::ir::{InstBuilder, MemFlags, Value};
@@ -20,6 +20,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMemberExpression {
                 node: "unit-valued member target",
             })?;
         let target_type = ctx.require_expr_type(node.node.target.span)?;
+        let field_name = node.node.member.node.name.as_str();
+        if field_name == "handle"
+            && is_fiber_handle_type(ctx.type_result, ctx.resolution, target_type)
+        {
+            return Ok(Some(target_value));
+        }
         let item_id =
             struct_item_id(ctx.type_result, target_type).ok_or(CodegenError::UnsupportedNode {
                 span: node.node.target.span,
@@ -31,7 +37,6 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMemberExpression {
                 node: "member offsets",
             },
         )?;
-        let field_name = node.node.member.node.name.as_str();
         let offset = offsets
             .get(field_name)
             .copied()

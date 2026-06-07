@@ -141,6 +141,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
             )?;
             target
         };
+        let operand_type = resolve_monomorph_type_id(
+            ctx.type_result,
+            &ctx.codegen.active_generic_substitution,
+            operand_type,
+        );
         let operand_info = ctx.type_result.types.get(operand_type);
         let operand_clif_ty = map_type_id_to_clif(ctx.type_result, operand_type).ok_or(
             CodegenError::UnsupportedNode {
@@ -221,10 +226,19 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 }
             }
             HirBinaryOp::And | HirBinaryOp::Or => {
-                let is_bool = matches!(
-                    operand_info,
+                let left_is_bool = matches!(
+                    ctx.type_result.types.get(left_type),
                     Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
                 );
+                let right_is_bool = matches!(
+                    ctx.type_result.types.get(right_type),
+                    Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
+                );
+                let is_bool = (left_is_bool && right_is_bool)
+                    || matches!(
+                        operand_info,
+                        Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
+                    );
                 if !is_bool {
                     return Err(CodegenError::UnsupportedNode {
                         span: node.span,
@@ -398,6 +412,11 @@ fn lower_string_concat(
 }
 
 fn is_string_type(ctx: &NodeLoweringContext<'_, '_>, type_id: TypeId) -> bool {
+    let type_id = resolve_monomorph_type_id(
+        ctx.type_result,
+        &ctx.codegen.active_generic_substitution,
+        type_id,
+    );
     matches!(
         ctx.type_result.types.get(type_id),
         Some(TypeInfo::Primitive(HirPrimitiveType::String))

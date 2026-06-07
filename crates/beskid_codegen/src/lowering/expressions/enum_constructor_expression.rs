@@ -2,12 +2,12 @@ use crate::errors::CodegenError;
 use crate::lowering::descriptor::{
     enum_payload_start, enum_variant_field_offsets, is_pointer_like_type,
 };
-use crate::lowering::locals::{
-    expr_type_at, resolve_type_path_item_id_for_codegen, type_id_for_item,
-};
+use crate::lowering::locals::{expr_type_at, type_id_for_item};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
-use crate::lowering::types::{map_type_id_to_clif, pointer_type};
+use crate::lowering::types::{
+    map_type_id_to_clif, pointer_type, resolve_type_path_item_id_for_codegen,
+};
 use crate::module_emission::descriptor_symbol_name;
 use beskid_analysis::hir::HirEnumConstructorExpression;
 use beskid_analysis::syntax::Spanned;
@@ -24,30 +24,48 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirEnumConstructorExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let type_id = expr_type_at(
-            ctx.type_result,
-            node.span,
-            ctx.codegen.current_source_path.as_ref(),
-        )
-        .or_else(|| enum_constructor_type_from_context(ctx, node))
-        .ok_or(CodegenError::MissingExpressionType { span: node.span })?;
-        let item_id = match ctx.type_result.types.get(type_id) {
-            Some(TypeInfo::Named(item_id)) => *item_id,
-            Some(TypeInfo::Applied { base, .. }) => *base,
-            _ => {
-                return Err(CodegenError::UnsupportedNode {
-                    span: node.span,
-                    node: "enum constructor type",
-                });
-            }
-        };
+        let variant_name = node.node.path.node.variant.node.name.as_str();
+        let contextual_type = ctx
+            .expected_return_type
+            .filter(|type_id| enum_constructor_matches_type(ctx.type_result, *type_id, variant_name));
+        let inferred_type_id = contextual_type
+            .or_else(|| {
+                expr_type_at(
+                    ctx.type_result,
+                    node.span,
+                    ctx.codegen.current_source_path.as_ref(),
+                )
+                .filter(|type_id| enum_type_candidate(ctx.type_result, *type_id))
+            })
+            .or_else(|| enum_constructor_type_from_context(ctx, node))
+            .or_else(|| {
+                let segments: Vec<String> = node
+                    .node
+                    .path
+                    .node
+                    .type_path
+                    .node
+                    .segments
+                    .iter()
+                    .map(|segment| segment.node.name.node.name.clone())
+                    .collect();
+                crate::linking::resolve_path_item_id(ctx.resolution, &segments)
+                    .and_then(|item_id| type_id_for_item(ctx.type_result, item_id))
+            })
+            .ok_or(CodegenError::MissingExpressionType { span: node.span })?;
+        let type_id = enum_layout_type_id(ctx, node, inferred_type_id).ok_or(
+            CodegenError::UnsupportedNode {
+                span: node.span,
+                node: "enum constructor type",
+            },
+        )?;
+        let item_id = enum_base_item_id(ctx, type_id, node)?;
         let layout = ctx.codegen.type_layout(ctx.type_result, type_id).ok_or(
             CodegenError::UnsupportedNode {
                 span: node.span,
                 node: "enum constructor layout",
             },
         )?;
-        let variant_name = node.node.path.node.variant.node.name.as_str();
         let offsets = enum_variant_field_offsets(ctx.type_result, item_id, variant_name).ok_or(
             CodegenError::UnsupportedNode {
                 span: node.span,
@@ -178,6 +196,59 @@ fn emit_alloc(
     Ok(result)
 }
 
+fn enum_type_candidate(
+    type_result: &beskid_analysis::types::TypeResult,
+    type_id: beskid_analysis::types::TypeId,
+) -> bool {
+    matches!(
+        type_result.types.get(type_id),
+        Some(TypeInfo::Named(_) | TypeInfo::Applied { .. })
+    )
+}
+
+fn enum_layout_type_id(
+    ctx: &NodeLoweringContext<'_, '_>,
+    node: &Spanned<HirEnumConstructorExpression>,
+    inferred: beskid_analysis::types::TypeId,
+) -> Option<beskid_analysis::types::TypeId> {
+    if matches!(
+        ctx.type_result.types.get(inferred),
+        Some(TypeInfo::Named(_) | TypeInfo::Applied { .. })
+    ) {
+        return Some(inferred);
+    }
+    enum_constructor_type_from_context(ctx, node)
+}
+
+fn enum_base_item_id(
+    ctx: &NodeLoweringContext<'_, '_>,
+    type_id: beskid_analysis::types::TypeId,
+    node: &Spanned<HirEnumConstructorExpression>,
+) -> Result<beskid_analysis::resolve::ItemId, CodegenError> {
+    if let Some(TypeInfo::Named(item_id)) = ctx.type_result.types.get(type_id) {
+        return Ok(*item_id);
+    }
+    if let Some(TypeInfo::Applied { base, .. }) = ctx.type_result.types.get(type_id) {
+        return Ok(*base);
+    }
+    let segments: Vec<String> = node
+        .node
+        .path
+        .node
+        .type_path
+        .node
+        .segments
+        .iter()
+        .map(|segment| segment.node.name.node.name.clone())
+        .collect();
+    resolve_type_path_item_id_for_codegen(ctx.resolution, ctx.type_result, &segments).ok_or(
+        CodegenError::UnsupportedNode {
+            span: node.span,
+            node: "enum constructor type",
+        },
+    )
+}
+
 fn enum_constructor_type_from_context(
     ctx: &NodeLoweringContext<'_, '_>,
     node: &Spanned<HirEnumConstructorExpression>,
@@ -202,6 +273,22 @@ fn enum_constructor_type_from_context(
         }
     }
     type_id_for_item(ctx.type_result, base_item_id)
+}
+
+fn enum_constructor_matches_type(
+    type_result: &beskid_analysis::types::TypeResult,
+    type_id: beskid_analysis::types::TypeId,
+    variant_name: &str,
+) -> bool {
+    let item_id = match type_result.types.get(type_id) {
+        Some(TypeInfo::Named(item_id)) => *item_id,
+        Some(TypeInfo::Applied { base, .. }) => *base,
+        _ => return false,
+    };
+    type_result
+        .enum_variants_ordered
+        .get(&item_id)
+        .is_some_and(|variants| variants.iter().any(|(name, _)| name == variant_name))
 }
 
 fn emit_write_barrier(

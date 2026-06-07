@@ -1,12 +1,12 @@
-pub mod remote;
+pub mod Remote;
 
-use std.io;
+use Std.Io;
 
-pub mod nest
+pub mod Nest
 {
-    pub use std.io;
+    pub use Std.Io;
 
-    pub unit inner()
+    pub unit Inner()
     {
         return;
     }

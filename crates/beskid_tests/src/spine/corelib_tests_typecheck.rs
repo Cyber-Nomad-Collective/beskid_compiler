@@ -1,4 +1,4 @@
-//! Front-end type-check gates for selected `corelib_tests` entries.
+//! Front-end type-check gates for all `corelib_tests` entries.
 //!
 //! Run with progress visible:
 //! `cargo test -p beskid_tests corelib_test -- --nocapture --test-threads=1`
@@ -23,19 +23,162 @@ macro_rules! corelib_typecheck_test {
 }
 
 corelib_typecheck_test!(
-    channel_api_tests_front_end_typechecks,
-    "concurrency/ChannelApiTests.bd"
+    system_syscall_write_tests_front_end_typechecks,
+    "system/SyscallWriteTests.bd"
 );
 corelib_typecheck_test!(
-    wait_group_tests_front_end_typechecks,
-    "concurrency/WaitGroupTests.bd"
+    system_syscall_api_tests_front_end_typechecks,
+    "system/SyscallApiTests.bd"
+);
+corelib_typecheck_test!(
+    system_syscall_ergonomics_tests_front_end_typechecks,
+    "system/SyscallErgonomicsTests.bd"
+);
+corelib_typecheck_test!(
+    system_output_write_line_tests_front_end_typechecks,
+    "system/OutputWriteLineTests.bd"
+);
+corelib_typecheck_test!(
+    console_ansi_escape_tests_front_end_typechecks,
+    "console/AnsiEscapeTests.bd"
+);
+corelib_typecheck_test!(
+    console_ansi_style_chain_tests_front_end_typechecks,
+    "console/AnsiStyleChainTests.bd"
+);
+corelib_typecheck_test!(
+    console_format_markdown_tests_front_end_typechecks,
+    "console/FormatMarkdownTests.bd"
+);
+corelib_typecheck_test!(
+    console_ansi_sgr_golden_tests_front_end_typechecks,
+    "console/AnsiSgrGoldenTests.bd"
+);
+corelib_typecheck_test!(
+    console_controls_panel_tests_front_end_typechecks,
+    "console/ControlsPanelTests.bd"
+);
+corelib_typecheck_test!(
+    controls_progress_bar_tests_front_end_typechecks,
+    "console/ControlsProgressBarTests.bd"
+);
+corelib_typecheck_test!(
+    console_controls_layout_tests_front_end_typechecks,
+    "console/ControlsLayoutTests.bd"
+);
+corelib_typecheck_test!(
+    system_input_read_tests_front_end_typechecks,
+    "system/InputReadTests.bd"
+);
+corelib_typecheck_test!(
+    system_error_write_tests_front_end_typechecks,
+    "system/ErrorWriteTests.bd"
+);
+corelib_typecheck_test!(
+    core_results_tests_front_end_typechecks,
+    "core/ResultsTests.bd"
+);
+corelib_typecheck_test!(
+    core_bytes_tests_front_end_typechecks,
+    "core/BytesTests.bd"
+);
+corelib_typecheck_test!(
+    collections_array_tests_front_end_typechecks,
+    "collections/ArrayTests.bd"
+);
+corelib_typecheck_test!(
+    collections_tier1_tests_front_end_typechecks,
+    "collections/CollectionsTier1Tests.bd"
+);
+corelib_typecheck_test!(
+    collections_list_tests_front_end_typechecks,
+    "collections/ListTests.bd"
+);
+corelib_typecheck_test!(
+    collections_map_tests_front_end_typechecks,
+    "collections/MapTests.bd"
+);
+corelib_typecheck_test!(
+    collections_set_tests_front_end_typechecks,
+    "collections/SetTests.bd"
+);
+corelib_typecheck_test!(
+    collections_queue_tests_front_end_typechecks,
+    "collections/QueueTests.bd"
+);
+corelib_typecheck_test!(
+    collections_stack_tests_front_end_typechecks,
+    "collections/StackTests.bd"
+);
+corelib_typecheck_test!(
+    system_fs_tests_front_end_typechecks,
+    "system/FsTests.bd"
+);
+corelib_typecheck_test!(
+    system_path_tests_front_end_typechecks,
+    "system/PathTests.bd"
+);
+corelib_typecheck_test!(
+    channel_api_tests_front_end_typechecks,
+    "concurrency/ChannelApiTests.bd"
 );
 corelib_typecheck_test!(
     mutex_try_lock_tests_front_end_typechecks,
     "concurrency/MutexTryLockTests.bd"
 );
 corelib_typecheck_test!(
-    controls_progress_bar_tests_front_end_typechecks,
-    "console/ControlsProgressBarTests.bd"
+    concurrency_clock_tests_front_end_typechecks,
+    "concurrency/ConcurrencyClockTests.bd"
 );
-corelib_typecheck_test!(core_results_tests_front_end_typechecks, "core/ResultsTests.bd");
+corelib_typecheck_test!(
+    hub_register_tests_front_end_typechecks,
+    "concurrency/HubRegisterTests.bd"
+);
+corelib_typecheck_test!(
+    wait_group_tests_front_end_typechecks,
+    "concurrency/WaitGroupTests.bd"
+);
+corelib_typecheck_test!(
+    fiber_handle_tests_front_end_typechecks,
+    "concurrency/FiberHandleTests.bd"
+);
+corelib_typecheck_test!(
+    console_message_channel_tests_front_end_typechecks,
+    "console/ConsoleMessageChannelTests.bd"
+);
+corelib_typecheck_test!(
+    console_capabilities_tests_front_end_typechecks,
+    "console/CapabilitiesTests.bd"
+);
+corelib_typecheck_test!(
+    console_terminal_platform_tests_front_end_typechecks,
+    "console/TerminalPlatformTests.bd"
+);
+corelib_typecheck_test!(
+    console_facade_tests_front_end_typechecks,
+    "console/ConsoleFacadeTests.bd"
+);
+corelib_typecheck_test!(
+    console_format_attributes_tests_front_end_typechecks,
+    "console/FormatAttributesTests.bd"
+);
+corelib_typecheck_test!(
+    console_format_scan_tests_front_end_typechecks,
+    "console/FormatScanTests.bd"
+);
+corelib_typecheck_test!(
+    console_style_tests_front_end_typechecks,
+    "console/ConsoleStyleTests.bd"
+);
+corelib_typecheck_test!(
+    console_controls_frame_tests_front_end_typechecks,
+    "console/ControlsFrameTests.bd"
+);
+corelib_typecheck_test!(
+    console_ansi_builders_tests_front_end_typechecks,
+    "console/AnsiBuildersTests.bd"
+);
+corelib_typecheck_test!(
+    console_render_context_tests_front_end_typechecks,
+    "console/RenderContextTests.bd"
+);

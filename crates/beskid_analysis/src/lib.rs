@@ -25,6 +25,8 @@ pub mod external_library;
 pub mod format;
 pub mod hir;
 pub mod macros;
+pub mod naming_case;
+pub(crate) mod naming_program;
 pub mod mod_host;
 pub mod parser;
 pub mod parsing;

@@ -1,5 +1,6 @@
 //! Opinionated pretty-printing: `Emit` trait and formatting context (mirrors bsharp `emit_trait.rs`, without JSONL instrumentation).
 
+use crate::format::naming_normalize::normalize_program_naming;
 use crate::format::policy;
 use crate::syntax::{Block, Program, SpanInfo, Spanned, Statement};
 use std::fmt::{self, Write};
@@ -173,7 +174,9 @@ impl Emitter {
 
 /// Format a parsed program (each top-level item on its own line; trailing newline after each item).
 pub fn format_program(program: &Spanned<Program>) -> Result<String, EmitError> {
-    Emitter::new().write(&program.node)
+    let mut normalized = program.clone();
+    normalize_program_naming(&mut normalized.node);
+    Emitter::new().write(&normalized.node)
 }
 
 impl Emit for Spanned<Block> {

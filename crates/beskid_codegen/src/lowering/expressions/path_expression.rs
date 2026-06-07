@@ -4,7 +4,7 @@ use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
 use crate::lowering::locals::{local_type_id, resolved_value_at};
 use crate::lowering::lowerable::Lowerable;
 use crate::lowering::node_context::NodeLoweringContext;
-use crate::lowering::types::{map_type_id_to_clif, pointer_type};
+use crate::lowering::types::{is_fiber_handle_type, map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::HirPathExpression;
 use beskid_analysis::resolve::ResolvedValue;
 use beskid_analysis::syntax::Spanned;
@@ -56,6 +56,15 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                         && let Some(offsets) = struct_field_offsets(ctx.type_result, item_id)
                     {
                         if let Some(offset) = offsets.get(field_name) {
+                            if field_name == "handle"
+                                && is_fiber_handle_type(
+                                    ctx.type_result,
+                                    ctx.resolution,
+                                    current_type,
+                                )
+                            {
+                                return Ok(Some(value));
+                            }
                             let field_type = ctx
                                 .type_result
                                 .struct_fields_ordered
@@ -116,6 +125,25 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                         },
                     )?;
                     let field_name = segment.node.name.node.name.as_str();
+                    if field_name == "handle"
+                        && is_fiber_handle_type(ctx.type_result, ctx.resolution, current_type)
+                    {
+                        current_type = ctx
+                            .type_result
+                            .struct_fields_ordered
+                            .get(&item_id)
+                            .and_then(|fields| {
+                                fields
+                                    .iter()
+                                    .find(|(name, _)| name == field_name)
+                                    .map(|(_, ty)| *ty)
+                            })
+                            .ok_or(CodegenError::UnsupportedNode {
+                                span: segment.span,
+                                node: "member field type",
+                            })?;
+                        continue;
+                    }
                     let offset =
                         offsets
                             .get(field_name)

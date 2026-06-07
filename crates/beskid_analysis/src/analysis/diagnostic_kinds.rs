@@ -336,6 +336,35 @@ pub enum SemanticIssueKind {
         name: String,
     },
 
+    // ── Naming-style warnings (W1630–W1638) ──
+    NamingNotPascalCaseType {
+        name: String,
+    },
+    NamingNotPascalCaseVariant {
+        name: String,
+    },
+    NamingNotCamelCaseField {
+        name: String,
+    },
+    NamingNotPascalCaseCallable {
+        name: String,
+    },
+    NamingNotPascalCaseModuleSegment {
+        segment: String,
+    },
+    NamingNotPascalCaseGeneric {
+        name: String,
+    },
+    NamingNotCamelCaseBinding {
+        name: String,
+    },
+    NamingNotSnakeCaseTest {
+        name: String,
+    },
+    NamingNotCamelCaseMacro {
+        name: String,
+    },
+
     // ── Composition diagnostics ──
     CompositionMissingLaunchHost,
     CompositionMultipleLaunchHosts,
@@ -513,6 +542,16 @@ impl SemanticIssueKind {
             Self::DocParWithoutGenerics => "W1623",
             Self::DocUnknownGenericName { .. } => "W1624",
             Self::DocDuplicateGenericName { .. } => "W1625",
+
+            Self::NamingNotPascalCaseType { .. } => "W1630",
+            Self::NamingNotPascalCaseVariant { .. } => "W1631",
+            Self::NamingNotCamelCaseField { .. } => "W1632",
+            Self::NamingNotPascalCaseCallable { .. } => "W1633",
+            Self::NamingNotPascalCaseModuleSegment { .. } => "W1634",
+            Self::NamingNotPascalCaseGeneric { .. } => "W1635",
+            Self::NamingNotCamelCaseBinding { .. } => "W1636",
+            Self::NamingNotSnakeCaseTest { .. } => "W1637",
+            Self::NamingNotCamelCaseMacro { .. } => "W1638",
         }
     }
 
@@ -534,7 +573,16 @@ impl SemanticIssueKind {
             | Self::DocDuplicateVariantName { .. }
             | Self::DocParWithoutGenerics
             | Self::DocUnknownGenericName { .. }
-            | Self::DocDuplicateGenericName { .. } => Severity::Warning,
+            | Self::DocDuplicateGenericName { .. }
+            | Self::NamingNotPascalCaseType { .. }
+            | Self::NamingNotPascalCaseVariant { .. }
+            | Self::NamingNotCamelCaseField { .. }
+            | Self::NamingNotPascalCaseCallable { .. }
+            | Self::NamingNotPascalCaseModuleSegment { .. }
+            | Self::NamingNotPascalCaseGeneric { .. }
+            | Self::NamingNotCamelCaseBinding { .. }
+            | Self::NamingNotSnakeCaseTest { .. }
+            | Self::NamingNotCamelCaseMacro { .. } => Severity::Warning,
             _ => Severity::Error,
         }
     }
@@ -710,6 +758,20 @@ impl SemanticIssueKind {
             Self::DocParWithoutGenerics => "invalid @par placement".to_string(),
             Self::DocUnknownGenericName { .. } => "unknown @par type parameter".to_string(),
             Self::DocDuplicateGenericName { .. } => "duplicate @par".to_string(),
+
+            Self::NamingNotPascalCaseType { .. } => "type name not PascalCase".to_string(),
+            Self::NamingNotPascalCaseVariant { .. } => "enum variant not PascalCase".to_string(),
+            Self::NamingNotCamelCaseField { .. } => "field not lowerCamelCase".to_string(),
+            Self::NamingNotPascalCaseCallable { .. } => "callable not PascalCase".to_string(),
+            Self::NamingNotPascalCaseModuleSegment { .. } => {
+                "module segment not PascalCase".to_string()
+            }
+            Self::NamingNotPascalCaseGeneric { .. } => {
+                "generic parameter not PascalCase".to_string()
+            }
+            Self::NamingNotCamelCaseBinding { .. } => "binding not lowerCamelCase".to_string(),
+            Self::NamingNotSnakeCaseTest { .. } => "test name not snake_case".to_string(),
+            Self::NamingNotCamelCaseMacro { .. } => "macro name not lowerCamelCase".to_string(),
         }
     }
 
@@ -1068,6 +1130,33 @@ impl SemanticIssueKind {
             Self::DocDuplicateGenericName { name } => {
                 format!("duplicate `@par({name})` in the same documentation block")
             }
+            Self::NamingNotPascalCaseType { name } => {
+                format!("type name `{name}` should use PascalCase")
+            }
+            Self::NamingNotPascalCaseVariant { name } => {
+                format!("enum variant `{name}` should use PascalCase")
+            }
+            Self::NamingNotCamelCaseField { name } => {
+                format!("field `{name}` should use lowerCamelCase")
+            }
+            Self::NamingNotPascalCaseCallable { name } => {
+                format!("callable `{name}` should use PascalCase")
+            }
+            Self::NamingNotPascalCaseModuleSegment { segment } => {
+                format!("module segment `{segment}` should use PascalCase")
+            }
+            Self::NamingNotPascalCaseGeneric { name } => {
+                format!("generic type parameter `{name}` should use PascalCase")
+            }
+            Self::NamingNotCamelCaseBinding { name } => {
+                format!("binding `{name}` should use lowerCamelCase")
+            }
+            Self::NamingNotSnakeCaseTest { name } => {
+                format!("test name `{name}` should use snake_case")
+            }
+            Self::NamingNotCamelCaseMacro { name } => {
+                format!("macro `{name}` should use lowerCamelCase")
+            }
         }
     }
 
@@ -1149,6 +1238,27 @@ impl SemanticIssueKind {
             Self::DocUnresolvedRef { .. } => {
                 Some("use a name that exists in this compilation unit".to_string())
             }
+            Self::NamingNotPascalCaseType { name }
+            | Self::NamingNotPascalCaseVariant { name }
+            | Self::NamingNotPascalCaseCallable { name }
+            | Self::NamingNotPascalCaseModuleSegment { segment: name }
+            | Self::NamingNotPascalCaseGeneric { name } => Some(format!(
+                "try `{}`",
+                crate::naming_case::normalize_to_profile(name, crate::naming_case::NamingProfile::PascalCase)
+            )),
+            Self::NamingNotCamelCaseField { name }
+            | Self::NamingNotCamelCaseBinding { name }
+            | Self::NamingNotCamelCaseMacro { name } => Some(format!(
+                "try `{}`",
+                crate::naming_case::normalize_to_profile(
+                    name,
+                    crate::naming_case::NamingProfile::LowerCamelCase,
+                )
+            )),
+            Self::NamingNotSnakeCaseTest { name } => Some(format!(
+                "try `{}`",
+                crate::naming_case::normalize_to_profile(name, crate::naming_case::NamingProfile::SnakeCase)
+            )),
             _ => None,
         }
     }

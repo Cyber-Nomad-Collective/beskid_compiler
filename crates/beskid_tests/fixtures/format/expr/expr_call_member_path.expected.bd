@@ -3,12 +3,12 @@ pub type P
     i32 x,
 }
 
-pub i32 f(i32 a, i32 b)
+pub i32 F(i32 a, i32 b)
 {
     return a;
 }
 
-pub unit calls()
+pub unit Calls()
 {
     let p = P
     {

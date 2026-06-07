@@ -70,10 +70,7 @@ pub fn register_kernel_exports(builder: &mut JITBuilder) {
     builder.symbol(SYM_INTEROP_DISPATCH_PTR, beskid_runtime::interop_dispatch_ptr as *const u8);
     builder.symbol(SYM_INTEROP_DISPATCH_UNIT, beskid_runtime::interop_dispatch_unit as *const u8);
     builder.symbol(SYM_INTEROP_DISPATCH_USIZE, beskid_runtime::interop_dispatch_usize as *const u8);
-    builder.symbol(
-        SYM_INTEROP_DISPATCH_I64,
-        beskid_runtime::interop_dispatch_i64 as *const u8,
-    );
+    builder.symbol(SYM_INTEROP_DISPATCH_I64, beskid_runtime::interop_dispatch_i64 as *const u8);
     builder.symbol(SYM_PANIC, beskid_runtime::panic as *const u8);
     builder.symbol(SYM_PANIC_STR, beskid_runtime::panic_str as *const u8);
     builder.symbol(SYM_RUNTIME_PREEMPT_CHECK, beskid_runtime::runtime_preempt_check as *const u8);

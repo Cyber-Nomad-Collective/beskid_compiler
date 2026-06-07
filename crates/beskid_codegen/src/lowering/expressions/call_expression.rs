@@ -71,7 +71,7 @@ fn lower_call_return(
     Ok(Some(value))
 }
 
-fn type_returns_runtime_value(
+pub(crate) fn type_returns_runtime_value(
     type_result: &beskid_analysis::types::TypeResult,
     type_id: TypeId,
 ) -> bool {
@@ -358,6 +358,18 @@ fn lambda_signature_from_types(
         signature.returns.push(AbiParam::new(clif_ty));
     }
     Ok((signature, returns_value))
+}
+
+pub(crate) fn lower_spawn_lambda_target(
+    lambda: &Spanned<HirLambdaExpression>,
+    span: SpanInfo,
+    ctx: &mut NodeLoweringContext<'_, '_>,
+) -> Result<(String, Signature, bool), CodegenError> {
+    let (param_types, return_type) = lambda_signature_type_ids(lambda, ctx)?;
+    let (signature, returns_value) =
+        lambda_signature_from_types(&param_types, return_type, span, ctx)?;
+    let name = lower_lambda_to_symbol(lambda, ctx)?;
+    Ok((name, signature, returns_value))
 }
 
 fn lower_lambda_to_symbol(

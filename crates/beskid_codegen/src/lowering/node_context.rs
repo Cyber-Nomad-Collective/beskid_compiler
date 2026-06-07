@@ -8,7 +8,7 @@ use beskid_analysis::hir::{HirExpressionNode, HirFunctionDefinition};
 use beskid_analysis::resolve::Resolution;
 use beskid_analysis::resolve::{ItemId, ResolvedValue};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
-use beskid_analysis::types::{TypeId, TypeResult};
+use beskid_analysis::types::{TypeId, TypeResult, resolve_path_base_local};
 use cranelift_frontend::FunctionBuilder;
 use std::collections::HashMap;
 
@@ -37,9 +37,13 @@ impl NodeLoweringContext<'_, '_> {
             self.resolution,
             span,
             self.codegen.current_source_path.as_ref(),
-        ) && let Some(type_id) = self.type_result.local_types.get(&local_id)
-        {
-            return Ok(*type_id);
+        ) {
+            if let Some(type_id) = self.state.local_type_overrides.get(&local_id) {
+                return Ok(*type_id);
+            }
+            if let Some(type_id) = self.type_result.local_types.get(&local_id) {
+                return Ok(*type_id);
+            }
         }
         if let Some(type_id) = self.expr_type(span) {
             return Ok(type_id);
@@ -57,6 +61,25 @@ impl NodeLoweringContext<'_, '_> {
         &self,
         node: &Spanned<HirExpressionNode>,
     ) -> Result<TypeId, CodegenError> {
+        if let HirExpressionNode::PathExpression(path) = &node.node {
+            let segments = &path.node.path.node.segments;
+            if segments.len() == 1 {
+                let name = segments[0].node.name.node.name.as_str();
+                if let Some(local_id) = resolve_path_base_local(
+                    self.resolution,
+                    path.node.path.span,
+                    name,
+                    self.codegen.current_source_path.as_ref(),
+                ) {
+                    if let Some(type_id) = self.state.local_type_overrides.get(&local_id) {
+                        return Ok(*type_id);
+                    }
+                    if let Some(type_id) = self.type_result.local_types.get(&local_id) {
+                        return Ok(*type_id);
+                    }
+                }
+            }
+        }
         if let Some(type_id) = infer_expr_type(
             self.resolution,
             self.type_result,

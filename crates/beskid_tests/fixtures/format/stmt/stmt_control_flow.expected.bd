@@ -1,4 +1,4 @@
-pub unit flow(i32 n)
+pub unit Flow(i32 n)
 {
     for i in n
     {

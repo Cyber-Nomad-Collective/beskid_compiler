@@ -262,6 +262,15 @@ kernel {
 }
 
 kernel {
+  symbol = interop_dispatch_i64
+  name = InteropDispatchI64
+  params = [ptr]
+  returns = i64
+  injected = true
+  beskid_path = [__interop_dispatch_i64]
+}
+
+kernel {
   symbol = panic
   name = Panic
   params = [ptr, ptr]

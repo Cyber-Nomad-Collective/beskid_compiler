@@ -1,4 +1,4 @@
-use std.io;
+use Std.Io;
 
 pub type Pair
 {
@@ -14,7 +14,7 @@ pub enum Result<T>
     Err(string message),
 }
 
-pub i32 sum(i32 a, i32 b)
+pub i32 Sum(i32 a, i32 b)
 {
     return a + b;
 }

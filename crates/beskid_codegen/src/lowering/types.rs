@@ -1,7 +1,9 @@
-use beskid_analysis::hir::{HirPrimitiveType, HirType};
+use beskid_analysis::hir::{HirPath, HirPrimitiveType, HirType};
 use beskid_analysis::resolve::{ItemId, ItemKind, Resolution, ResolvedType};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
+
+use crate::linking::resolve_path_item_id;
 use cranelift_codegen::ir::types;
 use std::collections::HashMap;
 
@@ -15,6 +17,21 @@ pub(crate) fn resolve_monomorph_type_id(
     match type_result.types.get(type_id) {
         Some(TypeInfo::GenericParam(name)) => substitution.get(name).copied().unwrap_or(type_id),
         _ => type_id,
+    }
+}
+
+pub(crate) fn is_fiber_handle_type(
+    type_result: &TypeResult,
+    resolution: &Resolution,
+    type_id: TypeId,
+) -> bool {
+    match type_result.types.get(type_id) {
+        Some(TypeInfo::Fiber(_)) => true,
+        Some(TypeInfo::Applied { base, .. }) | Some(TypeInfo::Named(base)) => resolution
+            .items
+            .get(base.0)
+            .is_some_and(|info| info.name == "Fiber" || info.name.ends_with("::Fiber")),
+        _ => false,
     }
 }
 
@@ -97,22 +114,7 @@ pub(crate) fn type_id_for_type(
 ) -> Option<TypeId> {
     match &ty.node {
         HirType::Primitive(primitive) => find_primitive_type_id(type_result, primitive.node),
-        HirType::Complex(path) => {
-            if let Some(resolved) = resolution.tables.resolved_type_at(ty.span, source_path) {
-                match resolved {
-                    ResolvedType::Item(item_id) => find_named_type_id(type_result, item_id)
-                        .or_else(|| primitive_type_id_for_item(resolution, type_result, item_id)),
-                    ResolvedType::Generic(_) => None,
-                }
-            } else if path.node.segments.len() == 1
-                && path.node.segments[0].node.type_args.is_empty()
-            {
-                let name = path.node.segments[0].node.name.node.name.as_str();
-                primitive_type_id_for_name(type_result, name)
-            } else {
-                None
-            }
-        }
+        HirType::Complex(path) => type_id_for_complex_type(resolution, type_result, source_path, path),
         HirType::Array(inner) => {
             let inner_id = type_id_for_type(resolution, type_result, source_path, inner)?;
             type_result.types.find_array_of(inner_id)
@@ -192,6 +194,156 @@ pub(crate) fn map_primitive_to_clif(
         HirPrimitiveType::Char => Some(types::I32),
         HirPrimitiveType::String => Some(pointer_type()),
     }
+}
+
+fn type_id_for_complex_type(
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    source_path: Option<&std::path::PathBuf>,
+    path: &Spanned<HirPath>,
+) -> Option<TypeId> {
+    if let Some(last_segment) = path.node.segments.last()
+        && !last_segment.node.type_args.is_empty()
+    {
+        let segments: Vec<String> = path
+            .node
+            .segments
+            .iter()
+            .map(|segment| segment.node.name.node.name.clone())
+            .collect();
+        let mut args = Vec::with_capacity(last_segment.node.type_args.len());
+        for arg in &last_segment.node.type_args {
+            args.push(type_id_for_type(resolution, type_result, source_path, arg)?);
+        }
+        if let Some(base) = resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
+            && let Some(applied) = find_applied_type_id(type_result, base, &args)
+        {
+            return Some(applied);
+        }
+        return find_applied_type_id_by_args(type_result, &args);
+    }
+
+    if let Some(resolved) = resolution.tables.resolved_type_at(path.span, source_path) {
+        match resolved {
+            ResolvedType::Item(item_id) => find_named_type_id(type_result, item_id)
+                .or_else(|| find_applied_type_id_for_base(type_result, item_id))
+                .or_else(|| primitive_type_id_for_item(resolution, type_result, item_id)),
+            ResolvedType::Generic(_) => None,
+        }
+    } else {
+        let segments: Vec<String> = path
+            .node
+            .segments
+            .iter()
+            .map(|segment| segment.node.name.node.name.clone())
+            .collect();
+        resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
+            .and_then(|item_id| {
+                find_named_type_id(type_result, item_id)
+                    .or_else(|| find_applied_type_id_for_base(type_result, item_id))
+            })
+            .or_else(|| {
+                if path.node.segments.len() == 1 && path.node.segments[0].node.type_args.is_empty() {
+                    let name = path.node.segments[0].node.name.node.name.as_str();
+                    primitive_type_id_for_name(type_result, name)
+                } else {
+                    None
+                }
+            })
+    }
+}
+
+fn find_applied_type_id_by_args(type_result: &TypeResult, args: &[TypeId]) -> Option<TypeId> {
+    let mut index = 0usize;
+    loop {
+        let type_id = TypeId(index);
+        let Some(info) = type_result.types.get(type_id) else {
+            return None;
+        };
+        if let TypeInfo::Applied {
+            args: found_args, ..
+        } = info
+            && found_args.as_slice() == args
+        {
+            return Some(type_id);
+        }
+        index += 1;
+    }
+}
+
+fn find_applied_type_id(
+    type_result: &TypeResult,
+    base: ItemId,
+    args: &[TypeId],
+) -> Option<TypeId> {
+    let mut index = 0usize;
+    loop {
+        let type_id = TypeId(index);
+        let Some(info) = type_result.types.get(type_id) else {
+            return None;
+        };
+        if let TypeInfo::Applied {
+            base: found_base,
+            args: found_args,
+        } = info
+            && *found_base == base
+            && found_args.as_slice() == args
+        {
+            return Some(type_id);
+        }
+        index += 1;
+    }
+}
+
+fn find_applied_type_id_for_base(type_result: &TypeResult, base: ItemId) -> Option<TypeId> {
+    let mut index = 0usize;
+    loop {
+        let type_id = TypeId(index);
+        let Some(info) = type_result.types.get(type_id) else {
+            return None;
+        };
+        if matches!(info, TypeInfo::Applied { base: found, .. } if *found == base) {
+            return Some(type_id);
+        }
+        index += 1;
+    }
+}
+
+pub(crate) fn resolve_type_path_item_id_for_codegen(
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    segments: &[String],
+) -> Option<ItemId> {
+    if let Some(item_id) = resolve_path_item_id(resolution, segments) {
+        return Some(item_id);
+    }
+    if segments.len() >= 2 {
+        let name = segments.last()?;
+        if let Some(module_id) = resolution.module_graph.module_id(segments)
+            && let Some(module) = resolution.module_graph.module(module_id)
+            && let Some(item_id) = module.scope.get(name)
+        {
+            return Some(*item_id);
+        }
+    }
+    let name = segments.last()?;
+    for (item_id, type_name) in &type_result.named_type_names {
+        if (type_name.as_str() == name.as_str() || type_name.ends_with(&format!("::{name}")))
+            && (type_result.enum_variants_ordered.contains_key(item_id)
+                || type_result.struct_fields_ordered.contains_key(item_id))
+        {
+            return Some(*item_id);
+        }
+    }
+    resolution
+        .items
+        .iter()
+        .find(|info| {
+            matches!(info.kind, ItemKind::Type | ItemKind::Enum)
+                && (info.name.as_str() == name.as_str()
+                    || info.name.ends_with(&format!("::{name}")))
+        })
+        .map(|info| info.id)
 }
 
 fn find_named_type_id(

@@ -1,4 +1,4 @@
-pub unit lam()
+pub unit Lam()
 {
     let id = x => x;
     let id2 = (i32 a, i32 b) => a + b;

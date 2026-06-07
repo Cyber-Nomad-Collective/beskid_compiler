@@ -8,6 +8,7 @@ mod control_flow;
 mod definitions;
 mod error_handling;
 mod name_resolution;
+mod naming_style;
 mod type_checking;
 mod visibility;
 
@@ -68,6 +69,9 @@ impl SemanticPipelineRule {
         });
         observe_stage(pipeline, phases::SEMANTIC_TYPE_CHECK, || {
             self.stage2_type_check(ctx, hir, &resolution, pipeline);
+        });
+        observe_stage(pipeline, "semantic.naming_style", || {
+            self.stage_naming_style(ctx, program);
         });
     }
 }

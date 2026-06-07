@@ -43,7 +43,7 @@ pub fn typed_hir_from_lowered_after_resolution(
     })?;
     observe_phase_result(pipeline, phases::LOWER_TYPE_CHECK, || {
         let (typed, type_errors) = TypeContext::new(&resolution)
-            .type_program_with_errors_and_dependencies(&hir, &[], None, None, true);
+            .type_program_with_errors_and_dependencies(&hir, &[], None, None, true, None);
         if !type_errors.is_empty() {
             Err(LowerResolveTypeError::Type(type_errors))
         } else {
@@ -86,6 +86,7 @@ pub fn typed_hir_from_lowered_with_module_index(
                 None,
                 entry_source_path,
                 true,
+                Some(module_index),
             );
         if !type_errors.is_empty() {
             Err(LowerResolveTypeError::Type(type_errors))
@@ -163,6 +164,7 @@ fn typed_hir_from_lowered_with_assembly_options(
                 Some(&dependency_source_paths),
                 entry_source_path,
                 type_dependency_bodies,
+                assembly.map(|a| a.module_index.as_ref()),
             );
         if !type_errors.is_empty() {
             Err(LowerResolveTypeError::Type(type_errors))

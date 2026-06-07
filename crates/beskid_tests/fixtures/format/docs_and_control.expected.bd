@@ -1,8 +1,8 @@
 /// Utility module docs
-pub mod util
+pub mod Util
 {
     /// Checks if value is positive
-    pub bool is_positive(i32 value)
+    pub bool IsPositive(i32 value)
     {
         if (value > 0)
         {
@@ -15,7 +15,7 @@ pub mod util
     }
 }
 
-pub unit run()
+pub unit Run()
 {
     while (cond)
     {

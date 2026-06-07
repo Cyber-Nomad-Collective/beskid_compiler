@@ -1,4 +1,4 @@
-use crate::hir::{HirItem, HirPrimitiveType, HirProgram, HirTypeDefinition};
+use crate::hir::{HirItem, HirPrimitiveType, HirProgram, HirType, HirTypeDefinition};
 use crate::resolve::ItemId;
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::TypeId;
@@ -6,6 +6,24 @@ use crate::types::TypeId;
 use super::context::{FunctionSignature, TypeContext};
 
 impl<'a> TypeContext<'a> {
+    pub(super) fn seed_definitions_from_source_path(&mut self, path: &std::path::Path) {
+        let Ok(source) = std::fs::read_to_string(path) else {
+            return;
+        };
+        let logical_name = path.display().to_string();
+        let Ok(program) = crate::services::parse_program_with_source_name(&logical_name, &source)
+        else {
+            return;
+        };
+        let ast: crate::syntax::Spanned<crate::hir::AstProgram> = program.into();
+        let hir = crate::hir::lower_program(&ast);
+        self.current_source_path = Some(crate::paths::unit_path_key(path));
+        let errors_before = self.errors.len();
+        self.seed_enum_definitions(&hir);
+        self.seed_struct_definitions(&hir);
+        self.errors.truncate(errors_before);
+    }
+
     /// Populate [`struct_fields_ordered`](super::context::TypeContext::struct_fields_ordered) from type items without typing bodies.
     pub(super) fn seed_struct_definitions(&mut self, program: &Spanned<HirProgram>) {
         for item in &program.node.items {
@@ -124,6 +142,35 @@ impl<'a> TypeContext<'a> {
         }
     }
 
+    fn resolve_foreign_return_type(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
+        let errors_before = self.errors.len();
+        if let Some(type_id) = self.type_id_for_type_in_generic_scope(ty) {
+            return Some(type_id);
+        }
+        self.errors.truncate(errors_before);
+        if let Some(type_id) = self.type_id_for_type(ty) {
+            return Some(type_id);
+        }
+        self.errors.truncate(errors_before);
+        let HirType::Complex(path) = &ty.node else {
+            return None;
+        };
+        let applied = self
+            .intern_foreign_applied_type(path)
+            .or_else(|| {
+                let errors_before = self.errors.len();
+                let id = self.type_id_for_path_with_args(path);
+                if id.is_none() {
+                    self.errors.truncate(errors_before);
+                }
+                id
+            });
+        if applied.is_none() {
+            self.errors.truncate(errors_before);
+        }
+        applied
+    }
+
     pub(super) fn register_foreign_function_signatures(&mut self, program: &Spanned<HirProgram>) {
         for item in &program.node.items {
             self.register_foreign_function_signatures_item(item);
@@ -146,7 +193,7 @@ impl<'a> TypeContext<'a> {
                     .node
                     .return_type
                     .as_ref()
-                    .and_then(|ty| self.type_id_for_type_in_generic_scope(ty))
+                    .and_then(|ty| self.resolve_foreign_return_type(ty))
                     .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
                 let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
                 let mut params = Vec::new();
@@ -222,7 +269,10 @@ impl<'a> TypeContext<'a> {
                     .node
                     .return_type
                     .as_ref()
-                    .and_then(|ty| self.type_id_for_type(ty))
+                    .and_then(|ty| {
+                        self.type_id_for_type(ty)
+                            .or_else(|| self.resolve_foreign_return_type(ty))
+                    })
                     .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
                 self.current_return_type = return_type;
                 let mut params = Vec::new();

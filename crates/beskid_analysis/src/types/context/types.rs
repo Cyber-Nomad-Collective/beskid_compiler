@@ -176,6 +176,72 @@ impl<'a> TypeContext<'a> {
         })
     }
 
+    pub(super) fn intern_foreign_applied_type(&mut self, path: &Spanned<HirPath>) -> Option<TypeId> {
+        let last_segment = path.node.segments.last()?;
+        if last_segment.node.type_args.is_empty() {
+            return None;
+        }
+        let base = self.base_item_id_for_applied_path(path).or_else(|| {
+            self.foreign_applied_base_item_id(path)
+        });
+        let Some(base) = base else {
+            return None;
+        };
+        let mut args = Vec::with_capacity(last_segment.node.type_args.len());
+        for arg in &last_segment.node.type_args {
+            let errors_before = self.errors.len();
+            let type_id = self
+                .type_id_for_type(arg)
+                .or_else(|| self.foreign_type_arg_id(arg));
+            if type_id.is_none() {
+                self.errors.truncate(errors_before);
+                return None;
+            }
+            args.push(type_id?);
+        }
+        Some(self.type_table.intern(crate::types::TypeInfo::Applied { base, args }))
+    }
+
+    fn foreign_applied_base_item_id(&self, path: &Spanned<HirPath>) -> Option<crate::resolve::ItemId> {
+        let segments: Vec<String> = path
+            .node
+            .segments
+            .iter()
+            .map(|segment| segment.node.name.node.name.clone())
+            .collect();
+        if segments.is_empty() {
+            return None;
+        }
+        let qualified = segments.join("::");
+        let leaf = segments.last().map(String::as_str).unwrap_or("");
+        self.resolution
+            .items
+            .iter()
+            .find(|info| {
+                matches!(info.kind, ItemKind::Enum | ItemKind::Type)
+                    && (info.name.as_str() == qualified.as_str()
+                        || info.name.ends_with(&format!("::{leaf}")))
+            })
+            .map(|info| info.id)
+    }
+
+    fn foreign_type_arg_id(&self, ty: &Spanned<HirType>) -> Option<TypeId> {
+        match &ty.node {
+            HirType::Primitive(primitive) => {
+                self.primitive_type_id(self.map_primitive(primitive.node))
+            }
+            HirType::Complex(path) => {
+                let name = path.node.segments.last()?.node.name.node.name.as_str();
+                let item_id = self.resolution.items.iter().find(|info| {
+                    matches!(info.kind, ItemKind::Enum | ItemKind::Type)
+                        && (info.name.as_str() == name || info.name.ends_with(&format!("::{name}")))
+                })?;
+                self.named_types.get(&item_id.id).copied()
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn type_id_for_path_with_args(&mut self, path: &Spanned<HirPath>) -> Option<TypeId> {
         if let Some(last_segment) = path.node.segments.last()
             && !last_segment.node.type_args.is_empty()

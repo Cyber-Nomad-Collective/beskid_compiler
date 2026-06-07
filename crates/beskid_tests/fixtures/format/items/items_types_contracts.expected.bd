@@ -7,7 +7,7 @@ pub contract Widget
 {
     Loggable;
 
-    i32 paint();
+    i32 Paint();
 }
 
 pub enum Flag
@@ -17,7 +17,7 @@ pub enum Flag
     Off,
 }
 
-pub i32 dbl(i32 x)
+pub i32 Dbl(i32 x)
 {
     return x * 2;
 }

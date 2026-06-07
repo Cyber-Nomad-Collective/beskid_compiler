@@ -251,3 +251,13 @@ fn syscall_pool_parks_blocking_work_so_other_fibers_progress() {
         0
     });
 }
+
+#[test]
+fn fiber_join_status_then_join_value_matches_single_join() {
+    run_closure_as_main(|| {
+        let child = fiber_spawn(bump_counter, std::ptr::null_mut());
+        assert_eq!(beskid_runtime::fiber_join_status(child), FIBER_JOIN_OK);
+        assert_eq!(beskid_runtime::fiber_join_value(child), 42);
+        0
+    });
+}

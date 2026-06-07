@@ -16,6 +16,7 @@ use beskid_analysis::types::{
 
 use crate::errors::CodegenError;
 use crate::linking::{resolve_item_call_id, resolve_path_item_id};
+use crate::lowering::types::resolve_type_path_item_id_for_codegen;
 
 pub(crate) fn local_type_id(
     type_result: &TypeResult,
@@ -368,34 +369,6 @@ pub(crate) fn struct_literal_type_id(
         .collect();
     resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
         .and_then(|item_id| type_id_for_item(type_result, item_id))
-}
-
-pub(crate) fn resolve_type_path_item_id_for_codegen(
-    resolution: &Resolution,
-    type_result: &TypeResult,
-    segments: &[String],
-) -> Option<beskid_analysis::resolve::ItemId> {
-    if let Some(item_id) = resolve_path_item_id(resolution, segments) {
-        return Some(item_id);
-    }
-    let name = segments.last()?;
-    for (item_id, type_name) in &type_result.named_type_names {
-        if (type_name.as_str() == name.as_str() || type_name.ends_with(&format!("::{name}")))
-            && (type_result.enum_variants_ordered.contains_key(item_id)
-                || type_result.struct_fields_ordered.contains_key(item_id))
-        {
-            return Some(*item_id);
-        }
-    }
-    resolution
-        .items
-        .iter()
-        .find(|info| {
-            matches!(info.kind, ItemKind::Type | ItemKind::Enum)
-                && (info.name.as_str() == name.as_str()
-                    || info.name.ends_with(&format!("::{name}")))
-        })
-        .map(|info| info.id)
 }
 
 fn type_is_string(type_result: &TypeResult, type_id: TypeId) -> bool {

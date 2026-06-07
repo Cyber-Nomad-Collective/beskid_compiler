@@ -182,6 +182,20 @@ impl ResolutionTables {
             return Some(id);
         }
 
+        if let Some(path) = source_path {
+            let matches: Vec<&LocalInfo> = self
+                .locals
+                .iter()
+                .filter(|info| {
+                    info.span.start == span.start
+                        && same_file_opt(info.source_path.as_ref(), Some(path))
+                })
+                .collect();
+            if matches.len() == 1 {
+                return Some(matches[0].id);
+            }
+        }
+
         let matches: Vec<&LocalInfo> = self
             .locals
             .iter()
@@ -189,6 +203,15 @@ impl ResolutionTables {
             .collect();
         if matches.len() == 1 {
             return Some(matches[0].id);
+        }
+
+        let start_matches: Vec<&LocalInfo> = self
+            .locals
+            .iter()
+            .filter(|info| info.span.start == span.start)
+            .collect();
+        if start_matches.len() == 1 {
+            return Some(start_matches[0].id);
         }
         None
     }

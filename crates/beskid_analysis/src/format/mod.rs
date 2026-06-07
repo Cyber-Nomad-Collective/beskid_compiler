@@ -3,6 +3,7 @@
 mod emit;
 mod expressions_emit;
 mod items;
+mod naming_normalize;
 mod policy;
 mod statements_emit;
 mod types_emit;

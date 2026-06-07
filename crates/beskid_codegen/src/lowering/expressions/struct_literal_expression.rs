@@ -1,6 +1,6 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
-use crate::lowering::descriptor::{is_pointer_like_type, struct_field_offsets};
+use crate::lowering::descriptor::{is_pointer_like_type, struct_field_offsets, struct_item_id};
 use crate::lowering::locals::struct_literal_type_id;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
@@ -29,15 +29,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
             ctx.codegen.current_source_path.as_ref(),
         )
         .ok_or(CodegenError::MissingExpressionType { span: node.span })?;
-        let item_id = match ctx.type_result.types.get(type_id) {
-            Some(TypeInfo::Named(item_id)) => *item_id,
-            _ => {
-                return Err(CodegenError::UnsupportedNode {
-                    span: node.span,
-                    node: "struct literal type",
-                });
-            }
-        };
+        let item_id = struct_item_id(ctx.type_result, type_id).ok_or(
+            CodegenError::UnsupportedNode {
+                span: node.span,
+                node: "struct literal type",
+            },
+        )?;
         let layout = ctx.codegen.type_layout(ctx.type_result, type_id).ok_or(
             CodegenError::UnsupportedNode {
                 span: node.span,

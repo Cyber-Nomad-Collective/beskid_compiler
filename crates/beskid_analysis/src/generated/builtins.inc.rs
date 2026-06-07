@@ -73,6 +73,12 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
+    &["__interop_dispatch_i64"] => {
+        symbol: "interop_dispatch_i64",
+        params: [Ptr],
+        returns: U64,
+        injected: true,
+    },
     &["__panic_str"] => {
         symbol: "panic_str",
         params: [String],

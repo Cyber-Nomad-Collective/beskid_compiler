@@ -143,6 +143,11 @@ pub fn assemble_program_with_materializer(
                     if let Some(dep_file) = resolve_module_file(&import_path, &roots) {
                         queue.push_back(dep_file);
                     }
+                    if let Some(parent_import) = parent_module_import_path(&import_path)
+                        && let Some(parent_file) = resolve_module_file(&parent_import, &roots)
+                    {
+                        queue.push_back(parent_file);
+                    }
                 }
             }
         }
@@ -367,4 +372,15 @@ fn parse_use_import_path(trimmed: &str) -> Option<String> {
         .map(|(path, _)| path.trim())
         .unwrap_or(without_comment);
     (!import_path.is_empty()).then(|| import_path.to_string())
+}
+
+/// When a unit imports nested symbols (`System.Syscall.ReadRequest`), also pull in the
+/// parent module facade (`System/Syscall.bd`) that hosts sibling functions referenced via
+/// qualified paths (`System.Syscall.ReadWith`) without an explicit `use`.
+fn parent_module_import_path(import_path: &str) -> Option<String> {
+    let segments: Vec<&str> = import_path.split('.').filter(|segment| !segment.is_empty()).collect();
+    if segments.len() <= 2 {
+        return None;
+    }
+    Some(segments[..segments.len() - 1].join("."))
 }

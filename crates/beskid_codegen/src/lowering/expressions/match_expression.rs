@@ -368,7 +368,7 @@ fn bind_primitive_match_pattern(
     scrutinee: Value,
 ) -> Result<(), CodegenError> {
     match &arm.node.pattern.node {
-        HirPattern::Identifier(identifier) => bind_local(ctx, identifier.span, scrutinee),
+        HirPattern::Identifier(identifier) => bind_local(ctx, identifier.span, scrutinee, None),
         HirPattern::Wildcard | HirPattern::Literal(_) => Ok(()),
         _ => Err(CodegenError::UnsupportedNode {
             span: arm.node.pattern.span,
@@ -385,7 +385,7 @@ fn bind_match_pattern(
     arm: &Spanned<beskid_analysis::hir::HirMatchArm>,
 ) -> Result<(), CodegenError> {
     match &arm.node.pattern.node {
-        HirPattern::Identifier(identifier) => bind_local(ctx, identifier.span, scrutinee),
+        HirPattern::Identifier(identifier) => bind_local(ctx, identifier.span, scrutinee, None),
         HirPattern::Enum(enum_pattern) => {
             let variant_name = enum_pattern.node.path.node.variant.node.name.as_str();
             let field_types = variants
@@ -419,7 +419,7 @@ fn bind_match_pattern(
                         let offset_val = ctx.builder.ins().iconst(pointer_type(), offset as i64);
                         let addr = ctx.builder.ins().iadd(scrutinee, offset_val);
                         let value = ctx.builder.ins().load(clif_ty, MemFlags::new(), addr, 0);
-                        bind_local(ctx, identifier.span, value)?;
+                        bind_local(ctx, identifier.span, value, Some(*field_type))?;
                     }
                     HirPattern::Wildcard => {}
                     _ => {
@@ -440,6 +440,7 @@ fn bind_local(
     ctx: &mut NodeLoweringContext<'_, '_>,
     span: beskid_analysis::syntax::SpanInfo,
     value: Value,
+    type_override: Option<TypeId>,
 ) -> Result<(), CodegenError> {
     let local_id = local_id_for_span(
         ctx.resolution,
@@ -447,11 +448,9 @@ fn bind_local(
         ctx.codegen.current_source_path.as_ref(),
     )
     .ok_or(CodegenError::InvalidLocalBinding { span })?;
-    let type_id = ctx
-        .type_result
-        .local_types
-        .get(&local_id)
-        .copied()
+    let type_id = type_override
+        .or_else(|| ctx.state.local_type_overrides.get(&local_id).copied())
+        .or_else(|| ctx.type_result.local_types.get(&local_id).copied())
         .ok_or(CodegenError::MissingLocalType { span })?;
     let clif_ty =
         map_type_id_to_clif(ctx.type_result, type_id).ok_or(CodegenError::UnsupportedNode {
@@ -462,5 +461,6 @@ fn bind_local(
     let value = ensure_value_clif_type(ctx.builder, value, clif_ty);
     ctx.builder.def_var(var, value);
     ctx.state.locals.insert(local_id, var);
+    ctx.state.local_type_overrides.insert(local_id, type_id);
     Ok(())
 }
