@@ -543,4 +543,12 @@ target "t" {
         }
         result.expect("validate corelib_tests");
     }
+
+    #[test]
+    fn validate_corelib_workspace_manifest() {
+        let src = include_str!("../../../corelib/CoreLib.bws");
+        let doc = parse_bsol_document(src).expect("parse CoreLib.bws");
+        let profile = crate::load_profile("workspace.v1").expect("profile");
+        crate::validate::validate(&doc, &profile).expect("validate CoreLib.bws");
+    }
 }

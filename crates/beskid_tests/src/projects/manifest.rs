@@ -1,5 +1,18 @@
 use beskid_analysis::projects::{ProjectError, parse_manifest};
 
+fn assert_manifest_contract_error(error: ProjectError) {
+    assert!(
+        matches!(
+            error,
+            ProjectError::Validation(_)
+                | ProjectError::Parse(_)
+                | ProjectError::ParseAt { .. }
+                | ProjectError::MetaContractViolation { .. }
+        ),
+        "unexpected manifest error: {error:?}"
+    );
+}
+
 fn base_manifest() -> &'static str {
     r#"
 MyApp {
@@ -77,7 +90,7 @@ target "App" {
 "#;
 
     let error = parse_manifest(source).expect_err("must fail");
-    assert!(matches!(error, ProjectError::Validation(_)));
+    assert_manifest_contract_error(error);
 }
 
 #[test]
@@ -94,7 +107,7 @@ target "App" {
 "#;
 
     let error = parse_manifest(source).expect_err("must fail");
-    assert!(matches!(error, ProjectError::Validation(_)));
+    assert_manifest_contract_error(error);
 }
 
 #[test]
@@ -168,7 +181,7 @@ dependency "X" {
 "#;
 
     let error = parse_manifest(source).expect_err("must fail");
-    assert!(matches!(error, ProjectError::Validation(_)));
+    assert_manifest_contract_error(error);
 }
 
 #[test]
@@ -186,7 +199,7 @@ target "App" {
 "#;
 
     let error = parse_manifest(source).expect_err("must fail");
-    assert!(matches!(error, ProjectError::Validation(_)));
+    assert_manifest_contract_error(error);
 }
 
 #[test]

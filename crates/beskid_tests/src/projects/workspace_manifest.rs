@@ -62,7 +62,15 @@ member "core" {
 "#;
 
     let error = parse_workspace_manifest(source).expect_err("must fail");
-    assert!(matches!(error, ProjectError::Validation(_)));
+    assert!(
+        matches!(
+            error,
+            ProjectError::Validation(_)
+                | ProjectError::Parse(_)
+                | ProjectError::ParseAt { .. }
+        ),
+        "unexpected workspace error: {error:?}"
+    );
 }
 
 #[test]

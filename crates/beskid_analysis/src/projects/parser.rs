@@ -245,7 +245,7 @@ fn lower_template_block(block: &ValidatedBlock) -> Result<HashMap<String, String
 fn reject_corelib_opt_out_keys(
     fields: &HashMap<String, String>,
     extras: &HashMap<String, String>,
-    span: BsolSpan,
+    _span: BsolSpan,
 ) -> Result<(), ProjectError> {
     if fields.contains_key("noCorelib") || extras.contains_key("noCorelib") {
         return Err(ProjectError::meta_contract(
@@ -258,8 +258,8 @@ fn reject_corelib_opt_out_keys(
         .or_else(|| extras.get("useCorelib"))
         .is_some_and(|value| value.trim().eq_ignore_ascii_case("false"));
     if disables {
-        return Err(parse_at(
-            span,
+        return Err(ProjectError::meta_contract(
+            "E1876",
             "manifest must not set `useCorelib = false`; host projects always resolve corelib through toolchain defaults",
         ));
     }

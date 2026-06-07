@@ -143,7 +143,7 @@ fn validate_block(block: &BsolBlock, rule: &BlockRule) -> Result<ValidatedBlock,
                     }
                     fields.insert(key, value);
                 } else if rule.allow_extra_fields {
-                    let value = loose_string(assignment)?;
+                    let value = extra_field_value(assignment)?;
                     extras.insert(key, value);
                 } else {
                     return Err(BsolError::schema_at(
@@ -287,6 +287,35 @@ fn loose_string(assignment: &BsolAssignment) -> Result<String, BsolError> {
             "expected string or identifier, found list",
         )),
     }
+}
+
+/// Serialize schema `extras` values for downstream `HashMap<String, String>` lowering.
+fn extra_field_value(assignment: &BsolAssignment) -> Result<String, BsolError> {
+    match &assignment.value {
+        BsolValue::QuotedString(q) => Ok(q.value.clone()),
+        BsolValue::Ident(i) => Ok(i.clone()),
+        BsolValue::BracketList(list) => Ok(format_bracket_list_literal(list)),
+    }
+}
+
+fn format_bracket_list_literal(list: &crate::ast::BsolBracketList) -> String {
+    let mut out = String::from("[");
+    for (index, item) in list.items.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        match item {
+            BsolListItem::Default => out.push_str("default"),
+            BsolListItem::QuotedString(q) => {
+                out.push('"');
+                out.push_str(&q.value);
+                out.push('"');
+            }
+            BsolListItem::Ident(i) => out.push_str(i),
+        }
+    }
+    out.push(']');
+    out
 }
 
 fn require_list(assignment: &BsolAssignment) -> Result<Vec<String>, BsolError> {

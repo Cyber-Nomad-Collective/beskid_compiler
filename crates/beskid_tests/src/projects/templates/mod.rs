@@ -9,13 +9,14 @@ use beskid_analysis::projects::{
 
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
 
+use super::std_dependency_env_lock;
 use super::test_cwd::with_cwd_at_workspace_root;
 
 #[test]
 fn parses_template_type_and_nested_block() {
     let src = r#"
-beskid-templates-console {
-  name = "beskid-templates-console"
+beskid_templates_console {
+  name = "beskid_templates_console"
   version = "0.0.0"
   type = Template
   template {
@@ -246,6 +247,7 @@ target "app" {
         template_dir
     }
 
+    let _env = std_dependency_env_lock();
     let temp = tempfile::tempdir().expect("tempdir");
     let template_root = write_inline_fixture(temp.path());
     let manifest =

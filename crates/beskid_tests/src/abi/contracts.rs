@@ -276,7 +276,7 @@ fn host_manifest_entries_match_generated_registration_table() {
         std::fs::read_to_string(crate_dir.join("../beskid_host/src/generated/host_handlers.rs"))
             .expect("generated host handler table should be readable");
 
-    let manifest_host_count = manifest.matches("owner = \"host\"").count();
+    let manifest_host_count = manifest.matches("owner = host").count();
     let registration_count = host_handlers.matches("HandlerTableEntry {").count();
 
     assert_eq!(

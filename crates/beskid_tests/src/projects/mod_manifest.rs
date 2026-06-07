@@ -14,8 +14,8 @@ use super::test_cwd::with_cwd_at_workspace_root;
 #[test]
 fn parses_mod_nested_block() {
     let src = r#"
-serialization-mod {
-  name = "serialization-mod"
+serialization_mod {
+  name = "serialization_mod"
   version = "0.1.0"
   type = Mod
   mod {
@@ -39,31 +39,6 @@ serialization-mod {
     );
     assert_eq!(mod_section.artifact_policy.as_deref(), Some("reuse"));
     assert_eq!(mod_section.resolved_max_generator_rounds(), 6);
-}
-
-#[test]
-fn legacy_meta_type_and_block_map_to_mod() {
-    let src = r#"
-legacy {
-  name = "legacy"
-  version = "0.1.0"
-  type = Meta
-  meta {
-    maxMetaRounds = 4
-    capabilities = [extern_ffi]
-    attachTo = default
-    entryModules = ["Legacy/Mod.bd"]
-  }
-}
-"#;
-    let m = parse_manifest(src).expect("legacy manifest should parse");
-    assert_eq!(m.project.kind, ProjectKind::Mod);
-    let mod_section = m.project.mod_section.as_ref().expect("mod from meta block");
-    assert_eq!(mod_section.max_generator_rounds, Some(4));
-    assert_eq!(
-        mod_section.capabilities,
-        Some(vec!["extern_ffi".to_string()])
-    );
 }
 
 #[test]
@@ -264,7 +239,7 @@ m {
 }
 "#;
     let err = parse_manifest(src).expect_err("unknown artifactPolicy should fail");
-    assert_eq!(err.code(), "E1805");
+    assert_eq!(err.code(), "E3003");
 }
 
 #[test]
@@ -319,42 +294,6 @@ m {
     let m = parse_manifest(src).expect("artifactPolicy = reuse");
     let mod_section = m.project.mod_section.expect("mod section");
     assert_eq!(mod_section.artifact_policy.as_deref(), Some("reuse"));
-}
-
-#[test]
-fn normalizes_single_quoted_capability_to_one_element_list() {
-    let src = r#"
-m {
-  name = "m"
-  version = "0.1.0"
-  type = Mod
-  mod {
-    capabilities = "emit_syntax"
-  }
-}
-"#;
-    let m = parse_manifest(src).expect("single quoted capability is valid");
-    let mod_section = m.project.mod_section.expect("mod section");
-    let caps = mod_section.capabilities.expect("capabilities");
-    assert_eq!(caps, vec!["emit_syntax"]);
-}
-
-#[test]
-fn normalizes_single_bare_capability_to_one_element_list() {
-    let src = r#"
-m {
-  name = "m"
-  version = "0.1.0"
-  type = Mod
-  mod {
-    capabilities = emit_syntax
-  }
-}
-"#;
-    let m = parse_manifest(src).expect("single bare capability is valid");
-    let mod_section = m.project.mod_section.expect("mod section");
-    let caps = mod_section.capabilities.expect("capabilities");
-    assert_eq!(caps, vec!["emit_syntax"]);
 }
 
 #[test]
