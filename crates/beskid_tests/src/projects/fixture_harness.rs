@@ -7,7 +7,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use beskid_analysis::projects::ProgramAssembly;
-use beskid_analysis::services::{PrepareMode, PrepareOptions, ResolvedInput, resolve_input};
+use beskid_analysis::services::{
+    FrontEndOptions, PrepareMode, PrepareOptions, ResolvedInput, compile_front_end_from_resolved_input,
+    resolve_input,
+};
 use beskid_queries::{
     configure_db_for_project, prepare_compilation_with_db, program_assembly, with_db,
 };
@@ -169,6 +172,31 @@ pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
         "✓ corelib typecheck: {entry_relative} ({:.1}s)",
         started.elapsed().as_secs_f64()
     ));
+}
+
+/// Lower a single test entrypoint from a `corelib_tests` file to CLIF (same path as `beskid test`).
+pub fn lower_corelib_tests_entrypoint(
+    entry_relative: &str,
+    entrypoint: &str,
+) -> beskid_codegen::CodegenArtifact {
+    let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
+    let front = compile_front_end_from_resolved_input(
+        &resolved,
+        FrontEndOptions {
+            with_semantic_diagnostics: false,
+            ..Default::default()
+        },
+        None,
+    )
+    .unwrap_or_else(|err| panic!("front-end for {entry_relative}: {err}"));
+    beskid_codegen::entrypoint_artifact_from_front_end(
+        front.as_lower_input(),
+        &resolved.source_path.display().to_string(),
+        &resolved.source,
+        entrypoint,
+        None,
+    )
+    .unwrap_or_else(|err| panic!("lower {entrypoint} in {entry_relative}: {err}"))
 }
 
 fn test_progress(message: &str) {

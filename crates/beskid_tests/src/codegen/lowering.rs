@@ -47,8 +47,8 @@ fn codegen_lowers_string_equality_via_str_eq() {
         lower_program(&hir, &resolution, &typed).expect("expected string equality lowering");
     let clif = artifact.functions[0].function.to_string();
     assert!(
-        clif.contains("str_eq"),
-        "expected content-based string equality via str_eq, got: {clif}"
+        clif.contains("interop_dispatch_i64"),
+        "expected content-based string equality via str_eq dispatch, got: {clif}"
     );
 }
 
@@ -256,6 +256,26 @@ fn codegen_lowers_event_subscribe_unsubscribe_and_invoke() {
     assert!(
         emit_clif.contains("interop_dispatch") && emit_clif.contains("call_indirect"),
         "expected event invoke lowering via dispatch iteration and indirect calls: {emit_clif}"
+    );
+}
+
+#[test]
+fn codegen_lowers_value_producing_match_returning_bool() {
+    let source = "enum Result { Ok(i64 value), Error(i64 error) } \
+        bool IsOk(Result value) { return match value { Result::Ok(_) => true, Result::Error(_) => false }; } \
+        bool main() { Result r = Result::Ok(1); return IsOk(r); }";
+    let (hir, resolution, typed) = lower_resolve_type(source);
+    let artifact =
+        lower_program(&hir, &resolution, &typed).expect("expected bool match return lowering");
+    let is_ok = artifact
+        .functions
+        .iter()
+        .find(|f| f.name == "IsOk")
+        .expect("expected IsOk function");
+    let clif = is_ok.function.to_string();
+    assert!(
+        clif.contains("return") && (clif.contains("iconst") || clif.contains("icmp")),
+        "expected value-producing match to lower to bool return: {clif}"
     );
 }
 

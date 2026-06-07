@@ -1,6 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::CodegenResult;
 use crate::lowering::function::mangle_method_name;
+use crate::lowering::dispatch::emit_str_from_i64_dispatch;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::HirPrimitiveType;
 use beskid_analysis::resolve::{ItemKind, Resolution, canonical_item_id};
@@ -78,6 +79,34 @@ pub(crate) fn ensure_type_compatibility(
     })
 }
 
+/// Like [`ensure_type_compatibility`], but when span-keyed expression types collide across
+/// linked units, fall back to the expected type and rely on the lowered CLIF value.
+pub(crate) fn ensure_type_compatibility_or_expected(
+    span: SpanInfo,
+    expected: TypeId,
+    actual: TypeId,
+    type_result: &TypeResult,
+    resolution: &Resolution,
+    builder: &mut FunctionBuilder,
+    value: Value,
+) -> CodegenResult<Value> {
+    match ensure_type_compatibility(
+        span, expected, actual, type_result, resolution, builder, value,
+    ) {
+        Ok(value) => Ok(value),
+        Err(CodegenError::TypeMismatch { .. }) => ensure_type_compatibility(
+            span,
+            expected,
+            expected,
+            type_result,
+            resolution,
+            builder,
+            value,
+        ),
+        Err(err) => Err(err),
+    }
+}
+
 pub(crate) fn retry_call_argument_compatibility(
     span: SpanInfo,
     expected: TypeId,
@@ -133,29 +162,10 @@ fn coerce_numeric_to_string(
         }
     };
 
-    let mut signature = Signature::new(CallConv::SystemV);
-    signature.params.push(AbiParam::new(
-        crate::lowering::types::map_primitive_to_clif(HirPrimitiveType::I64).expect("i64 clif"),
-    ));
-    signature.returns.push(AbiParam::new(pointer_type()));
-    let sig_ref = builder.func.import_signature(signature);
-    let func_ref = builder
-        .func
-        .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("str_from_i64"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
-    let call = builder.ins().call(func_ref, &[value]);
-    builder
-        .inst_results(call)
-        .first()
-        .copied()
-        .ok_or(CodegenError::UnsupportedNode {
-            span,
-            node: "str_from_i64 result",
-        })
+    emit_str_from_i64_dispatch(builder, value).map_err(|node| CodegenError::UnsupportedNode {
+        span,
+        node,
+    })
 }
 
 fn lower_contract_compatibility(
@@ -395,6 +405,22 @@ fn coerce_int_clif(
         builder.ins().sextend(to, value)
     } else {
         builder.ins().ireduce(to, value)
+    }
+}
+
+/// Align a lowered value with the CLIF type used for a `declare_var` binding.
+pub(crate) fn ensure_value_clif_type(
+    builder: &mut FunctionBuilder,
+    value: Value,
+    expected_clif: cranelift_codegen::ir::Type,
+) -> Value {
+    let actual_clif = builder.func.dfg.value_type(value);
+    if actual_clif == expected_clif {
+        value
+    } else if expected_clif.is_int() && actual_clif.is_int() {
+        coerce_int_clif(builder, value, actual_clif, expected_clif)
+    } else {
+        value
     }
 }
 

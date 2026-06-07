@@ -1,10 +1,12 @@
 use crate::errors::CodegenError;
-use crate::lowering::cast_intent::ensure_type_compatibility;
+use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
 use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
+use crate::lowering::dispatch::lower_dispatch_builtin_call;
 use crate::lowering::locals::resolved_value_at;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
+use beskid_abi::dispatch_route_for_symbol;
 use beskid_analysis::hir::{HirAssignExpression, HirAssignOp, HirExpressionNode, HirPrimitiveType};
 use beskid_analysis::resolve::ResolvedValue;
 use beskid_analysis::syntax::Spanned;
@@ -32,7 +34,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
 
         let expected_type = target.expected_type;
         let actual_type = ctx.require_expr_type(node.node.value.span)?;
-        let value = ensure_type_compatibility(
+        let value = ensure_type_compatibility_or_expected(
             node.node.value.span,
             expected_type,
             actual_type,
@@ -644,25 +646,9 @@ fn lower_string_concat(
     ctx: &mut NodeLoweringContext<'_, '_>,
     span: beskid_analysis::syntax::SpanInfo,
 ) -> Result<Value, CodegenError> {
-    let mut signature = Signature::new(CallConv::SystemV);
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.returns.push(AbiParam::new(pointer_type()));
-    let sig_ref = ctx.builder.func.import_signature(signature);
-    let func_ref = ctx
-        .builder
-        .func
-        .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("str_concat"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
-    let call = ctx.builder.ins().call(func_ref, &[left, right]);
-    ctx.builder
-        .inst_results(call)
-        .first()
-        .copied()
+    let route = dispatch_route_for_symbol("str_concat")
+        .ok_or(CodegenError::MissingSymbol("str_concat dispatch route"))?;
+    lower_dispatch_builtin_call(span, route, &[left, right], true, ctx)?
         .ok_or(CodegenError::UnsupportedNode {
             span,
             node: "string concat result",

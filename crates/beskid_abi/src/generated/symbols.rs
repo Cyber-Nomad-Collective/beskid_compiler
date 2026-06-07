@@ -136,6 +136,7 @@ pub const SYM_HUB_WAIT_RECEIVE_VALUE: &str = "hub_wait_receive_value";
 pub const SYM_INTEROP_DISPATCH_PTR: &str = "interop_dispatch_ptr";
 pub const SYM_INTEROP_DISPATCH_UNIT: &str = "interop_dispatch_unit";
 pub const SYM_INTEROP_DISPATCH_USIZE: &str = "interop_dispatch_usize";
+pub const SYM_INTEROP_DISPATCH_I64: &str = "interop_dispatch_i64";
 /// Dispatch routing key for tag `MutexCreate` (mutex_create)
 pub const SYM_MUTEX_CREATE: &str = "mutex_create";
 /// Dispatch routing key for tag `MutexLock` (mutex_lock)
@@ -224,6 +225,7 @@ pub const RUNTIME_EXPORT_SYMBOLS: &[&str] = &[
     SYM_INTEROP_DISPATCH_PTR,
     SYM_INTEROP_DISPATCH_UNIT,
     SYM_INTEROP_DISPATCH_USIZE,
+    SYM_INTEROP_DISPATCH_I64,
     SYM_PANIC,
     SYM_PANIC_STR,
     SYM_RUNTIME_PREEMPT_CHECK,

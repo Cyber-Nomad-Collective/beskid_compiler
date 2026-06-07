@@ -102,7 +102,14 @@ fn lower_method_body(
     for (index, param) in def.node.parameters.iter().enumerate() {
         let type_id = signature_types
             .and_then(|sig| sig.params.get(index).copied())
-            .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))
+            .or_else(|| {
+                type_id_for_type(
+                    resolution,
+                    type_result,
+                    ctx.current_source_path.as_ref(),
+                    &param.node.ty,
+                )
+            })
             .ok_or(CodegenError::UnsupportedNode {
                 span: param.span,
                 node: "function parameter type",
@@ -119,7 +126,14 @@ fn lower_method_body(
         def.node
             .return_type
             .as_ref()
-            .and_then(|ty| type_id_for_type(resolution, type_result, ty))
+            .and_then(|ty| {
+                type_id_for_type(
+                    resolution,
+                    type_result,
+                    ctx.current_source_path.as_ref(),
+                    ty,
+                )
+            })
     });
     if let Some(type_id) = return_type_id
         && let Some(clif_ty) = map_type_id_to_clif(type_result, type_id)
@@ -176,7 +190,14 @@ fn lower_method_body(
             .get(&local_id)
             .copied()
             .or_else(|| signature_types.and_then(|sig| sig.params.get(index).copied()))
-            .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))
+            .or_else(|| {
+                type_id_for_type(
+                    resolution,
+                    type_result,
+                    ctx.current_source_path.as_ref(),
+                    &param.node.ty,
+                )
+            })
             .ok_or(CodegenError::MissingLocalType {
                 span: param.node.name.span,
             })?;
@@ -357,7 +378,39 @@ fn lower_test_body(
 }
 
 pub(crate) fn mangle_method_name(receiver: &str, method: &str) -> String {
-    format!("__method__{receiver}__{method}")
+    let receiver_short = receiver.rsplit("::").next().unwrap_or(receiver);
+    let method_short = method.rsplit("::").next().unwrap_or(method);
+    format!("__method__{receiver_short}__{method_short}")
+}
+
+pub(crate) fn is_self_parameter_function(def: &HirFunctionDefinition) -> bool {
+    def.parameters
+        .first()
+        .is_some_and(|param| param.node.name.node.name == "self")
+}
+
+pub(crate) fn generic_mapping_for_method_receiver(
+    type_result: &TypeResult,
+    item_id: ItemId,
+    receiver_type: TypeId,
+) -> HashMap<String, TypeId> {
+    let mut mapping = HashMap::new();
+    let Some(method_generic_names) = type_result.generic_items.get(&item_id) else {
+        return mapping;
+    };
+    let Some(TypeInfo::Applied { base, args }) = type_result.types.get(receiver_type) else {
+        return mapping;
+    };
+    if method_generic_names.len() == 1 && args.len() == 1 {
+        mapping.insert(method_generic_names[0].clone(), args[0]);
+        return mapping;
+    }
+    if let Some(type_generic_names) = type_result.generic_items.get(base) {
+        for (name, arg) in type_generic_names.iter().zip(args.iter()) {
+            mapping.insert(name.clone(), *arg);
+        }
+    }
+    mapping
 }
 
 pub(crate) fn mangle_function_name(base: &str, args: &[beskid_analysis::types::TypeId]) -> String {
@@ -446,7 +499,14 @@ fn lower_function_with_name_body(
     for (index, param) in def.node.parameters.iter().enumerate() {
         let type_id = signature_types
             .and_then(|sig| sig.params.get(index).copied())
-            .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))
+            .or_else(|| {
+                type_id_for_type(
+                    resolution,
+                    type_result,
+                    ctx.current_source_path.as_ref(),
+                    &param.node.ty,
+                )
+            })
             .map(&substitute)
             .ok_or(CodegenError::UnsupportedNode {
                 span: param.span,
@@ -465,7 +525,14 @@ fn lower_function_with_name_body(
             def.node
                 .return_type
                 .as_ref()
-                .and_then(|ty| type_id_for_type(resolution, type_result, ty))
+                .and_then(|ty| {
+                type_id_for_type(
+                    resolution,
+                    type_result,
+                    ctx.current_source_path.as_ref(),
+                    ty,
+                )
+            })
         })
         .map(&substitute);
     if let Some(type_id) = return_type_id
@@ -509,7 +576,14 @@ fn lower_function_with_name_body(
         let type_id = signature_types
             .and_then(|sig| sig.params.get(index).copied())
             .or_else(|| type_result.local_types.get(&local_id).copied())
-            .or_else(|| type_id_for_type(resolution, type_result, &param.node.ty))
+            .or_else(|| {
+                type_id_for_type(
+                    resolution,
+                    type_result,
+                    ctx.current_source_path.as_ref(),
+                    &param.node.ty,
+                )
+            })
             .map(&substitute)
             .ok_or(CodegenError::MissingLocalType {
                 span: param.node.name.span,

@@ -81,6 +81,8 @@ pub use gc::{
     set_syscall_pool_worker, with_current_heap, with_current_root,
 };
 pub use interop::register::bootstrap_dispatch_handlers;
-pub use interop::{interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize};
+pub use interop::{
+    interop_dispatch_i64, interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize,
+};
 pub use runtime::{GcSnapshot, collect_if_needed, force_collect, snapshot_gc};
 pub use scheduler::{init as scheduler_init, run_closure_as_main, run_main_fiber};

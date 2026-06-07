@@ -1,5 +1,5 @@
 use crate::errors::CodegenError;
-use crate::lowering::cast_intent::ensure_type_compatibility;
+use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
 use crate::lowering::locals::local_id_for_span;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
@@ -54,7 +54,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
             })?;
 
             let actual_type = ctx.require_expr_type_for_node(&node.node.value)?;
-            let value = ensure_type_compatibility(
+            let value = ensure_type_compatibility_or_expected(
                 node.node.value.span,
                 type_id,
                 actual_type,
@@ -76,7 +76,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
         })?;
 
         let actual_type = ctx.require_expr_type_for_node(&node.node.value)?;
-        let value = ensure_type_compatibility(
+        let value = ensure_type_compatibility_or_expected(
             node.node.value.span,
             type_id,
             actual_type,

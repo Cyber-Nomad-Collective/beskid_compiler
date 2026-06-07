@@ -1,5 +1,5 @@
 use crate::errors::CodegenError;
-use crate::lowering::cast_intent::ensure_type_compatibility;
+use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use beskid_analysis::hir::HirReturnStatement;
@@ -26,7 +26,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirReturnStatement {
                     let actual = ctx
                         .require_expr_type_for_node(value_expr)
                         .unwrap_or(expected);
-                    value = ensure_type_compatibility(
+                    value = ensure_type_compatibility_or_expected(
                         value_expr.span,
                         expected,
                         actual,

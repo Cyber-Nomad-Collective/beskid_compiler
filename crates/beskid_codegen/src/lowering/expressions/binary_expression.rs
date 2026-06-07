@@ -1,9 +1,13 @@
 use crate::errors::CodegenError;
-use crate::lowering::cast_intent::ensure_type_compatibility;
+use crate::lowering::cast_intent::{
+    ensure_type_compatibility, ensure_type_compatibility_or_expected,
+};
 use crate::lowering::descriptor::enum_payload_start;
+use crate::lowering::dispatch::{emit_str_from_i64_dispatch, lower_dispatch_builtin_call};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type, resolve_monomorph_type_id};
+use beskid_abi::dispatch_route_for_symbol;
 use beskid_analysis::hir::{HirBinaryExpression, HirBinaryOp, HirPrimitiveType};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{TypeId, TypeInfo};
@@ -96,7 +100,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
             && is_numeric_type(ctx.type_result.types.get(right_type))
         {
             let target = preferred_numeric_type_id(ctx, left_type, right_type);
-            left = ensure_type_compatibility(
+            left = ensure_type_compatibility_or_expected(
                 node.node.left.span,
                 target,
                 left_type,
@@ -105,7 +109,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 ctx.builder,
                 left,
             )?;
-            right = ensure_type_compatibility(
+            right = ensure_type_compatibility_or_expected(
                 node.node.right.span,
                 target,
                 right_type,
@@ -116,11 +120,26 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
             )?;
             target
         } else {
-            return Err(CodegenError::TypeMismatch {
-                span: node.span,
-                expected: left_type,
-                actual: right_type,
-            });
+            let target = left_type;
+            left = ensure_type_compatibility_or_expected(
+                node.node.left.span,
+                target,
+                left_type,
+                ctx.type_result,
+                ctx.resolution,
+                ctx.builder,
+                left,
+            )?;
+            right = ensure_type_compatibility_or_expected(
+                node.node.right.span,
+                target,
+                right_type,
+                ctx.type_result,
+                ctx.resolution,
+                ctx.builder,
+                right,
+            )?;
+            target
         };
         let operand_info = ctx.type_result.types.get(operand_type);
         let operand_clif_ty = map_type_id_to_clif(ctx.type_result, operand_type).ok_or(
@@ -350,26 +369,9 @@ fn lower_string_eq(
     right: Value,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<Value>, CodegenError> {
-    let mut signature = Signature::new(CallConv::SystemV);
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.returns.push(AbiParam::new(clif_types::I64));
-    let sig_ref = ctx.builder.func.import_signature(signature);
-    let func_ref = ctx
-        .builder
-        .func
-        .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("str_eq"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
-
-    let call = ctx.builder.ins().call(func_ref, &[left, right]);
-    let eq_flag = *ctx
-        .builder
-        .inst_results(call)
-        .first()
+    let route =
+        dispatch_route_for_symbol("str_eq").ok_or(CodegenError::MissingSymbol("str_eq dispatch route"))?;
+    let eq_flag = lower_dispatch_builtin_call(node.span, route, &[left, right], true, ctx)?
         .ok_or(CodegenError::UnsupportedNode {
             span: node.span,
             node: "string eq result",
@@ -389,31 +391,10 @@ fn lower_string_concat(
     right: Value,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<Value>, CodegenError> {
-    let mut signature = Signature::new(CallConv::SystemV);
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.params.push(AbiParam::new(pointer_type()));
-    signature.returns.push(AbiParam::new(pointer_type()));
-    let sig_ref = ctx.builder.func.import_signature(signature);
-    let func_ref = ctx
-        .builder
-        .func
-        .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("str_concat"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
-
-    let call = ctx.builder.ins().call(func_ref, &[left, right]);
-    let result = *ctx
-        .builder
-        .inst_results(call)
-        .first()
-        .ok_or(CodegenError::UnsupportedNode {
-            span: node.span,
-            node: "string concat result",
-        })?;
-    Ok(Some(result))
+    let route = dispatch_route_for_symbol("str_concat").ok_or(CodegenError::MissingSymbol(
+        "str_concat dispatch route",
+    ))?;
+    lower_dispatch_builtin_call(node.span, route, &[left, right], true, ctx)
 }
 
 fn is_string_type(ctx: &NodeLoweringContext<'_, '_>, type_id: TypeId) -> bool {
@@ -466,28 +447,10 @@ fn lower_str_from_i64(
     span: SpanInfo,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Value, CodegenError> {
-    let mut signature = Signature::new(CallConv::SystemV);
-    signature.params.push(AbiParam::new(clif_types::I64));
-    signature.returns.push(AbiParam::new(pointer_type()));
-    let sig_ref = ctx.builder.func.import_signature(signature);
-    let func_ref = ctx
-        .builder
-        .func
-        .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("str_from_i64"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
-    let call = ctx.builder.ins().call(func_ref, &[value]);
-    ctx.builder
-        .inst_results(call)
-        .first()
-        .copied()
-        .ok_or(CodegenError::UnsupportedNode {
-            span,
-            node: "str_from_i64 result",
-        })
+    emit_str_from_i64_dispatch(ctx.builder, value).map_err(|node| CodegenError::UnsupportedNode {
+        span,
+        node,
+    })
 }
 
 fn is_numeric_type(info: Option<&TypeInfo>) -> bool {

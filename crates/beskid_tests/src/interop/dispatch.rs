@@ -1,9 +1,10 @@
 use beskid_abi::BeskidStr;
 use beskid_abi::{
     RUNTIME_EXPORT_SYMBOLS, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
-    SYM_INTEROP_DISPATCH_USIZE, TAG_STR_LEN,
+    SYM_INTEROP_DISPATCH_USIZE, TAG_CHANNEL_CREATE, TAG_STR_LEN,
 };
 use beskid_runtime::interop::dispatch_table::{dispatch_ptr, dispatch_unit, dispatch_usize};
+use beskid_runtime::interop_dispatch_i64;
 
 #[repr(C)]
 struct RuntimeInteropEnvelope {
@@ -47,6 +48,24 @@ fn return_group_routing_uses_usize_dispatch_for_string_len_tag() {
     let enum_ptr = &envelope as *const RuntimeInteropEnvelope as *const u8;
     let usize_result = unsafe { dispatch_usize(TAG_STR_LEN, enum_ptr) };
     assert_eq!(usize_result, Some(5));
+}
+
+#[test]
+fn colliding_tag_two_routes_by_return_group() {
+    assert_eq!(TAG_STR_LEN, TAG_CHANNEL_CREATE);
+    beskid_runtime::run_closure_as_main(|| {
+        let mut envelope = [0u8; 32];
+        envelope[8..12].copy_from_slice(&TAG_CHANNEL_CREATE.to_le_bytes());
+        envelope[16..24].copy_from_slice(&0i64.to_le_bytes());
+        envelope[24..32].copy_from_slice(&0i64.to_le_bytes());
+        let enum_ptr = envelope.as_ptr();
+        let channel_id = unsafe { interop_dispatch_i64(enum_ptr) };
+        assert!(
+            channel_id > 0,
+            "i64 interop must route tag 2 to channel_create, not str_len"
+        );
+        0
+    });
 }
 
 #[test]

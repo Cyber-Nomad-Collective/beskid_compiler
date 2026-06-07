@@ -33,22 +33,23 @@ use crate::generated::symbols::{
     SYM_INTEROP_DISPATCH_PTR,
     SYM_INTEROP_DISPATCH_UNIT,
     SYM_INTEROP_DISPATCH_USIZE,
+    SYM_INTEROP_DISPATCH_I64,
     SYM_PANIC,
     SYM_PANIC_STR,
     SYM_RUNTIME_PREEMPT_CHECK,
 };
 
+const PARAMS_3: [AbiParamKind; 4] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::I64];
+const PARAMS_1: [AbiParamKind; 3] = [AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64];
 const EMPTY: [AbiParamKind; 0] = [];
+const PARAMS_4: [AbiParamKind; 2] = [AbiParamKind::Ptr, AbiParamKind::I64];
+const PARAMS_5: [AbiParamKind; 4] = [AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::Ptr];
 const PARAMS_0: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::Ptr];
+const PTR_ONLY: [AbiParamKind; 1] = [AbiParamKind::Ptr];
+const PARAMS_6: [AbiParamKind; 3] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::Ptr];
+const PARAMS_2: [AbiParamKind; 4] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64];
 const I64_ONLY: [AbiParamKind; 1] = [AbiParamKind::I64];
 const PTR_PTR: [AbiParamKind; 2] = [AbiParamKind::Ptr, AbiParamKind::Ptr];
-const PARAMS_4: [AbiParamKind; 2] = [AbiParamKind::Ptr, AbiParamKind::I64];
-const PARAMS_1: [AbiParamKind; 3] = [AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64];
-const PARAMS_2: [AbiParamKind; 4] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64];
-const PARAMS_3: [AbiParamKind; 4] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::I64];
-const PARAMS_5: [AbiParamKind; 4] = [AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::Ptr];
-const PARAMS_6: [AbiParamKind; 3] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::Ptr];
-const PTR_ONLY: [AbiParamKind; 1] = [AbiParamKind::Ptr];
 
 /// Kernel direct imports and interop dispatch entrypoints (ABI v4).
 pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
@@ -82,6 +83,7 @@ pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
     BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_PTR, params: &PTR_ONLY, returns: AbiReturnKind::Ptr },
     BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_UNIT, params: &PTR_ONLY, returns: AbiReturnKind::Void },
     BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_USIZE, params: &PTR_ONLY, returns: AbiReturnKind::I64 },
+    BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_I64, params: &PTR_ONLY, returns: AbiReturnKind::I64 },
     BuiltinFnSpec { symbol: SYM_PANIC, params: &PTR_PTR, returns: AbiReturnKind::Never },
     BuiltinFnSpec { symbol: SYM_PANIC_STR, params: &PTR_ONLY, returns: AbiReturnKind::Never },
     BuiltinFnSpec { symbol: SYM_RUNTIME_PREEMPT_CHECK, params: &[], returns: AbiReturnKind::Void },

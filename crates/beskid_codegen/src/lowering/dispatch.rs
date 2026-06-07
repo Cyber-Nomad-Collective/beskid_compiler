@@ -5,8 +5,8 @@ use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::pointer_type;
 use beskid_abi::{
     DISPATCH_PAD_OFFSET, DISPATCH_PAYLOAD_OFFSET, DISPATCH_TAG_OFFSET, DISPATCH_TYPE_DESC_OFFSET,
-    DispatchReturnGroup, DispatchRoute, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
-    SYM_INTEROP_DISPATCH_USIZE,
+    DispatchReturnGroup, DispatchRoute, SYM_INTEROP_DISPATCH_I64, SYM_INTEROP_DISPATCH_PTR,
+    SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, dispatch_route_for_symbol,
 };
 use beskid_analysis::syntax::SpanInfo;
 use cranelift_codegen::ir::{
@@ -70,9 +70,8 @@ pub(crate) fn emit_dispatch_call(
     let (dispatch_symbol, returns_ptr, returns_i64) = match route.group {
         DispatchReturnGroup::Unit => (SYM_INTEROP_DISPATCH_UNIT, false, false),
         DispatchReturnGroup::Ptr => (SYM_INTEROP_DISPATCH_PTR, true, false),
-        DispatchReturnGroup::Usize | DispatchReturnGroup::I64 => {
-            (SYM_INTEROP_DISPATCH_USIZE, false, true)
-        }
+        DispatchReturnGroup::Usize => (SYM_INTEROP_DISPATCH_USIZE, false, true),
+        DispatchReturnGroup::I64 => (SYM_INTEROP_DISPATCH_I64, false, true),
     };
 
     let mut signature = Signature::new(CallConv::SystemV);
@@ -102,4 +101,12 @@ pub(crate) fn emit_dispatch_call(
         .ok_or("dispatch call result")?;
 
     Ok(Some(value))
+}
+
+pub(crate) fn emit_str_from_i64_dispatch(
+    builder: &mut FunctionBuilder,
+    value: Value,
+) -> Result<Value, &'static str> {
+    let route = dispatch_route_for_symbol("str_from_i64").ok_or("str_from_i64 dispatch route")?;
+    emit_dispatch_call(builder, route, &[value], true)?.ok_or("str_from_i64 result")
 }

@@ -1,5 +1,5 @@
 use crate::errors::CodegenError;
-use crate::lowering::cast_intent::ensure_type_compatibility;
+use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
 use crate::lowering::descriptor::{is_pointer_like_type, struct_field_offsets};
 use crate::lowering::locals::struct_literal_type_id;
 use crate::lowering::lowerable::{Lowerable, lower_node};
@@ -88,7 +88,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
             let actual = ctx
                 .require_expr_type_for_node(&field.node.value)
                 .unwrap_or(field_type);
-            let value = ensure_type_compatibility(
+            let value = ensure_type_compatibility_or_expected(
                 field.node.value.span,
                 field_type,
                 actual,

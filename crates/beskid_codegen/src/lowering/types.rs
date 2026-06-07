@@ -92,30 +92,72 @@ fn find_function_type_id(
 pub(crate) fn type_id_for_type(
     resolution: &Resolution,
     type_result: &TypeResult,
+    source_path: Option<&std::path::PathBuf>,
     ty: &Spanned<HirType>,
 ) -> Option<TypeId> {
     match &ty.node {
         HirType::Primitive(primitive) => find_primitive_type_id(type_result, primitive.node),
-        HirType::Complex(_) => match resolution.tables.resolved_types.get(&ty.span)? {
-            ResolvedType::Item(item_id) => find_named_type_id(type_result, *item_id),
-            ResolvedType::Generic(_) => None,
-        },
+        HirType::Complex(path) => {
+            if let Some(resolved) = resolution.tables.resolved_type_at(ty.span, source_path) {
+                match resolved {
+                    ResolvedType::Item(item_id) => find_named_type_id(type_result, item_id)
+                        .or_else(|| primitive_type_id_for_item(resolution, type_result, item_id)),
+                    ResolvedType::Generic(_) => None,
+                }
+            } else if path.node.segments.len() == 1
+                && path.node.segments[0].node.type_args.is_empty()
+            {
+                let name = path.node.segments[0].node.name.node.name.as_str();
+                primitive_type_id_for_name(type_result, name)
+            } else {
+                None
+            }
+        }
         HirType::Array(inner) => {
-            let inner_id = type_id_for_type(resolution, type_result, inner)?;
+            let inner_id = type_id_for_type(resolution, type_result, source_path, inner)?;
             type_result.types.find_array_of(inner_id)
         }
         HirType::Function {
             return_type,
             parameters,
         } => {
-            let return_type = type_id_for_type(resolution, type_result, return_type)?;
+            let return_type = type_id_for_type(resolution, type_result, source_path, return_type)?;
             let mut params = Vec::with_capacity(parameters.len());
             for parameter in parameters {
-                params.push(type_id_for_type(resolution, type_result, parameter)?);
+                params.push(type_id_for_type(
+                    resolution,
+                    type_result,
+                    source_path,
+                    parameter,
+                )?);
             }
             find_function_type_id(type_result, &params, return_type)
         }
     }
+}
+
+fn primitive_type_id_for_name(type_result: &TypeResult, name: &str) -> Option<TypeId> {
+    let primitive = match name {
+        "bool" => HirPrimitiveType::Bool,
+        "i32" => HirPrimitiveType::I32,
+        "i64" => HirPrimitiveType::I64,
+        "u8" => HirPrimitiveType::U8,
+        "f64" => HirPrimitiveType::F64,
+        "char" => HirPrimitiveType::Char,
+        "string" => HirPrimitiveType::String,
+        _ => return None,
+    };
+    find_primitive_type_id(type_result, primitive)
+}
+
+fn primitive_type_id_for_item(
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    item_id: beskid_analysis::resolve::ItemId,
+) -> Option<TypeId> {
+    let name = resolution.items.get(item_id.0)?.name.as_str();
+    let leaf = name.rsplit("::").next().unwrap_or(name);
+    primitive_type_id_for_name(type_result, leaf)
 }
 
 pub fn pointer_type() -> cranelift_codegen::ir::Type {
@@ -175,7 +217,7 @@ pub(crate) fn method_receiver_type_id(
     def: &Spanned<HirType>,
     method_item_id: ItemId,
 ) -> Option<TypeId> {
-    if let Some(type_id) = type_id_for_type(resolution, type_result, def) {
+    if let Some(type_id) = type_id_for_type(resolution, type_result, None, def) {
         return Some(type_id);
     }
     if let HirType::Complex(path) = &def.node {

@@ -1,6 +1,7 @@
 //! Conformance tests for the unified prepare → lower spine.
 
 mod assembly_prelude;
+mod corelib_tests_codegen;
 mod corelib_tests_typecheck;
 mod diagnostics_parity;
 mod link_completeness;

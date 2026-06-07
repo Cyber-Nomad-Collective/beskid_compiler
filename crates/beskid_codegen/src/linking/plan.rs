@@ -7,7 +7,7 @@ use beskid_analysis::hir::{HirItem, HirMethodDefinition, HirProgram};
 use beskid_analysis::paths::unit_path_key;
 use beskid_analysis::resolve::{ItemId, ItemInfo, ItemKind, Resolution};
 use beskid_analysis::syntax::Spanned;
-use beskid_analysis::types::{TypeInfo, TypeResult};
+use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 
 use crate::lowering::function::mangle_method_name;
 use crate::lowering::types::type_id_for_type;
@@ -22,6 +22,8 @@ pub enum LinkSymbol {
         item: ItemId,
         /// `None` uses the item's base name; `Some` is a monomorphized instance name.
         mangled: Option<String>,
+        /// Monomorph receiver type for generic owning-type methods (`Send<T>` on `Channel<i64>`).
+        receiver_type: Option<TypeId>,
     },
     Method {
         item: ItemId,
@@ -52,6 +54,7 @@ pub(crate) struct ResolvedCall {
     pub item_id: ItemId,
     pub symbol: Option<beskid_analysis::resolve::SymbolId>,
     pub mangled: Option<String>,
+    pub receiver_type: Option<TypeId>,
 }
 
 impl LinkPlan {
@@ -147,6 +150,7 @@ impl LinkPlan {
                         entries.push(LinkSymbol::Function {
                             item: info.id,
                             mangled: None,
+                            receiver_type: None,
                         });
                         for call in collect_calls_in_body(
                             &def.node.body,
@@ -237,12 +241,14 @@ impl LinkPlan {
                 LinkSymbol::Function {
                     item: _,
                     mangled: Some(name),
+                    receiver_type: _,
                 } => {
                     names.insert(name.clone());
                 }
                 LinkSymbol::Function {
                     item,
                     mangled: None,
+                    receiver_type: _,
                 } => {
                     if let Some(info) = resolution.items.get(item.0) {
                         names.insert(info.name.clone());
@@ -328,6 +334,7 @@ fn visit_callee(
         callees.push(LinkSymbol::Function {
             item: call.item_id,
             mangled: call.mangled,
+            receiver_type: call.receiver_type,
         });
         return;
     }
@@ -361,6 +368,7 @@ fn visit_callee(
         callees.push(LinkSymbol::Function {
             item: call.item_id,
             mangled: call.mangled,
+            receiver_type: call.receiver_type,
         });
     }
 }
@@ -370,7 +378,7 @@ fn method_mangled_name(
     type_result: &TypeResult,
     def: &Spanned<HirMethodDefinition>,
 ) -> Option<String> {
-    let receiver_type_id = type_id_for_type(resolution, type_result, &def.node.receiver_type)?;
+    let receiver_type_id = type_id_for_type(resolution, type_result, None, &def.node.receiver_type)?;
     let receiver_item = match type_result.types.get(receiver_type_id) {
         Some(TypeInfo::Named(item_id)) => *item_id,
         Some(TypeInfo::Applied { base, .. }) => *base,

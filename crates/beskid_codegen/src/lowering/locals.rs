@@ -260,7 +260,7 @@ pub(crate) fn infer_expr_type(
     }
 }
 
-fn infer_match_expr_type(
+pub(crate) fn infer_match_expr_type(
     resolution: &Resolution,
     type_result: &TypeResult,
     match_expr: &Spanned<HirMatchExpression>,
@@ -285,15 +285,50 @@ fn infer_match_expr_type(
         );
         if let Some(actual) = arm_type {
             if let Some(expected_type) = expected {
-                if actual != expected_type {
-                    return expected;
+                if actual == expected_type {
+                    continue;
                 }
+                if is_numeric(type_result, actual) && is_numeric(type_result, expected_type) {
+                    expected = preferred_numeric_type_id(type_result, expected_type, actual);
+                    continue;
+                }
+                return expected;
             } else {
                 expected = Some(actual);
             }
         }
     }
     expected
+}
+
+fn is_numeric(type_result: &TypeResult, type_id: TypeId) -> bool {
+    matches!(
+        type_result.types.get(type_id),
+        Some(TypeInfo::Primitive(
+            HirPrimitiveType::I32
+                | HirPrimitiveType::I64
+                | HirPrimitiveType::U8
+                | HirPrimitiveType::F64
+        ))
+    )
+}
+
+fn preferred_numeric_type_id(
+    type_result: &TypeResult,
+    left: TypeId,
+    right: TypeId,
+) -> Option<TypeId> {
+    let width = |type_id: TypeId| {
+        type_result
+            .types
+            .get(type_id)
+            .and_then(|info| match info {
+                TypeInfo::Primitive(primitive) => Some(primitive.bit_width()),
+                _ => None,
+            })
+            .unwrap_or(0)
+    };
+    if width(left) >= width(right) { Some(left) } else { Some(right) }
 }
 
 pub(crate) fn type_id_for_item(
