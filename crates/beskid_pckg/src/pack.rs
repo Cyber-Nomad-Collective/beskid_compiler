@@ -483,8 +483,8 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join(".beskid")).expect("mkdir");
         fs::write(
-            dir.join("Project.proj"),
-            r#"project {
+            dir.join("Tpl.bproj"),
+            r#"Tpl {
   name = "Tpl"
   version = "0.1.0"
   type = Template
@@ -495,7 +495,7 @@ mod tests {
 }
 "#,
         )
-        .expect("write proj");
+        .expect("write bproj");
         fs::write(
             dir.join(TEMPLATE_JSON_REL),
             r#"{"schema":"beskid.template.v1","shortName":"x"}"#,

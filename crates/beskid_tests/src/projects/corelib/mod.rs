@@ -40,8 +40,7 @@ fn corelib_source_candidates(manifest_dir: &Path) -> [PathBuf; 1] {
 /// Representative corelib sources for fast parse smoke (full inventory stays in `layout`).
 pub(super) fn stratified_corelib_parse_samples() -> &'static [&'static str] {
     &[
-        "packages/foundation/src/Prelude.bd",
-        "packages/runtime/src/System/Syscall.bd",
+        "packages/foundation/src/Core/Results.bd",
         "packages/console/src/Platform/Terminal.bd",
     ]
 }
@@ -57,7 +56,6 @@ pub(super) fn stratified_corelib_analyze_sources() -> impl Iterator<Item = &'sta
 /// Workspace-relative `.bd` sources that must exist for the split corelib layout.
 pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
     &[
-        "packages/foundation/src/Prelude.bd",
         "packages/foundation/src/Collections/Array.bd",
         "packages/foundation/src/Collections/List.bd",
         "packages/foundation/src/Collections/Map.bd",
@@ -72,13 +70,11 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/foundation/src/Query/Operators.bd",
         "packages/foundation/src/Testing/Assertions.bd",
         "packages/foundation/src/Testing/Contracts.bd",
-        "packages/runtime/src/Prelude.bd",
         "packages/runtime/src/System/Environment.bd",
         "packages/runtime/src/System/FS.bd",
         "packages/runtime/src/System/Input.bd",
         "packages/runtime/src/System/Output.bd",
         "packages/runtime/src/System/Error.bd",
-        "packages/console/src/Prelude.bd",
         "packages/console/src/Console.bd",
         "packages/console/src/Ansi/Escape.bd",
         "packages/console/src/Ansi/Contracts.bd",
@@ -107,7 +103,6 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/runtime/src/System/Time.bd",
         "packages/runtime/src/Runtime/Abi.bd",
         "packages/runtime/src/Runtime/Init.bd",
-        "packages/compiler-sdk/src/Prelude.bd",
         "packages/compiler-sdk/src/Beskid/Syntax.bd",
         "packages/compiler-sdk/src/Beskid/Syntax/Nodes.bd",
         "packages/compiler-sdk/src/Beskid/Compiler/TypedEmitter.bd",

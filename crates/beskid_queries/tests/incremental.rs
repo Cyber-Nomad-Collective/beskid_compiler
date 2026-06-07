@@ -173,7 +173,9 @@ fn entry_resolution_with_db_populates_symbol_registry() {
 
     use beskid_analysis::projects::AssemblyDiscovery;
     use beskid_analysis::services::{PrepareOptions, resolve_input};
-    use beskid_queries::{BeskidDatabase, entry_resolution_with_db};
+    use beskid_queries::{
+        BeskidDatabase, configure_db_for_project, entry_resolution_with_db,
+    };
 
     let compiler_root = {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -183,24 +185,28 @@ fn entry_resolution_with_db_populates_symbol_registry() {
             .expect("compiler root")
             .to_path_buf()
     };
-    let main_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
-    let project_root = main_path.parent().unwrap().parent().unwrap().to_path_buf();
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../beskid_e2e_tests/fixtures/corelib_mvp");
+    let main_path = fixture_root.join("Src/Main.bd");
     let _source = std::fs::read_to_string(&main_path).expect("read Main.bd");
+    let project_root = fixture_root
+        .canonicalize()
+        .unwrap_or(fixture_root.clone());
 
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(&compiler_root).expect("chdir");
     let result = (|| {
+        configure_db_for_project(&project_root);
         let resolved = resolve_input(
             Some(&main_path),
             Some(&project_root),
-            None,
+            Some("App"),
             None,
             false,
             false,
         )
         .expect("resolve fixture");
-        let mut db = BeskidDatabase::default();
+        let mut db = BeskidDatabase::with_persistence(&project_root);
         let mut options = PrepareOptions::default();
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
         entry_resolution_with_db(&mut db, &resolved, &options)
@@ -236,11 +242,11 @@ fn manifest_digest_changes_when_manifest_or_lock_changes() {
     use beskid_queries::manifest_digest;
 
     let dir = tempfile::tempdir().expect("tempdir");
-    let manifest = dir.path().join("Project.proj");
-    std::fs::write(&manifest, "project v1").expect("manifest");
+    let manifest = dir.path().join("App.bproj");
+    std::fs::write(&manifest, "manifest v1").expect("manifest");
     let digest_v1 = manifest_digest(&manifest);
 
-    std::fs::write(&manifest, "project v2").expect("manifest update");
+    std::fs::write(&manifest, "manifest v2").expect("manifest update");
     let digest_v2 = manifest_digest(&manifest);
     assert_ne!(digest_v1, digest_v2);
 

@@ -57,8 +57,11 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                 "at least one `target` block is required for host projects".to_string(),
             ));
         }
-        ProjectKind::Host | ProjectKind::Template if !manifest.project.root.trim().is_empty() => {
-            // root validated per-target below for non-aggregate hosts
+        ProjectKind::Template if !manifest.targets.is_empty() => {
+            return Err(ProjectError::meta_contract(
+                "E1878",
+                "`Template` projects must not declare `target` blocks (template authoring packages are not host compile roots)",
+            ));
         }
         ProjectKind::Host | ProjectKind::Template if manifest.project.root.trim().is_empty() => {
             return Err(ProjectError::Validation(
@@ -75,12 +78,6 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
             return Err(ProjectError::meta_contract(
                 "E1802",
                 "`type = Mod` requires a nested `mod { ... }` block under the project root",
-            ));
-        }
-        ProjectKind::Template if !manifest.targets.is_empty() => {
-            return Err(ProjectError::meta_contract(
-                "E1878",
-                "`Template` projects must not declare `target` blocks (template authoring packages are not host compile roots)",
             ));
         }
         _ => {}

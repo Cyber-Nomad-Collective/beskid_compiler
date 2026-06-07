@@ -40,8 +40,8 @@ fn write_inline_fixture(root: &std::path::Path) -> PathBuf {
     fs::write(manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
     fs::create_dir_all(template_dir.join("content/Src")).unwrap();
     fs::write(
-        template_dir.join("content/Project.proj"),
-        r#"project {
+        template_dir.join("content/{{name}}.bproj"),
+        r#"{{name}} {
   name    = "{{name}}"
   version = "0.1.0"
   root    = "Src"
@@ -91,7 +91,7 @@ fn instantiates_inline_project_template() {
         output: output.clone(),
         host_project: None,
         force: false,
-        allow_project_manifest: false,
+        allow_project_manifest: true,
         strict_post_actions: false,
         symbol_options: SymbolCollectOptions {
             interactive: false,
@@ -103,7 +103,16 @@ fn instantiates_inline_project_template() {
         beskid_exe: None,
     };
     instantiate(&manifest, &options).expect("instantiate");
-    let proj = fs::read_to_string(output.join("Project.proj")).expect("read");
+    let proj_path = fs::read_dir(&output)
+        .expect("read output")
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bproj"))
+        })
+        .expect("instantiated .bproj manifest");
+    let proj = fs::read_to_string(&proj_path).expect("read");
     assert!(proj.contains("MyGame"));
     assert!(!proj.contains("{{"));
 }
@@ -143,9 +152,16 @@ fn instantiates_packaged_template_when_present() {
             beskid_exe: None,
         };
         instantiate(&manifest, &options).expect("instantiate packaged template");
-        assert!(
-            output.join("Project.proj").is_file() || output.read_dir().unwrap().next().is_some()
-        );
+        let has_bproj = fs::read_dir(&output)
+            .expect("read output")
+            .filter_map(|entry| entry.ok())
+            .any(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("bproj"))
+            });
+        assert!(has_bproj || output.read_dir().unwrap().next().is_some());
         return;
     }
 }

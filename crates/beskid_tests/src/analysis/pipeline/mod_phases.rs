@@ -94,7 +94,7 @@ project {
         },
         dependency_projects: vec![ResolvedDependencyProject {
             dependency_name: "ModA".to_string(),
-            manifest_path: mod_dir.join("SampleMod.bproj"),
+            manifest_path: mod_dir.join("ModA.bproj"),
             project_root: mod_dir.clone(),
             project_name: "ModA".to_string(),
             source_root: mod_dir.join("Src"),

@@ -1,4 +1,4 @@
-//! Assembly prelude seeding must surface console shard modules (Ansi.Escape).
+//! Import-closure assembly must surface console shard modules (Ansi.Escape).
 
 use std::fs;
 use std::path::PathBuf;
@@ -51,7 +51,7 @@ fn ansi_escape_resolves_under_corelib_test_assembly() {
             unit.path.to_string_lossy().contains("Ansi")
                 && unit.path.to_string_lossy().contains("Escape")
         }),
-        "assembly must include Ansi.Escape from prelude seeding, got {} units",
+        "assembly must include Ansi.Escape via import closure, got {} units",
         assembly.units.len()
     );
 }

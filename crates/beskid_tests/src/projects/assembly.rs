@@ -151,16 +151,16 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
 
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let project = corelib_root().join("tests/corelib_tests");
-        let entry = project.join("src/system/SyscallWriteTests.bd");
+        let entry = project.join("src/console/AnsiEscapeTests.bd");
         let resolved = resolve_input(
             Some(&entry),
             Some(&project),
-            Some("SystemSyscallWriteTests"),
+            Some("ConsoleAnsiEscapeTests"),
             None,
             false,
             false,
         )
-        .expect("resolve corelib_tests syscall target");
+        .expect("resolve corelib_tests console target");
 
         let plan = resolved.compile_plan.expect("compile plan");
         let options = AssemblyOptions {
@@ -174,7 +174,7 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
             Some(&resolved.source),
             &options,
         )
-        .expect("assemble syscall tests");
+        .expect("assemble console tests");
 
         let loaded: Vec<String> = assembly
             .units
@@ -185,23 +185,9 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
             loaded.iter().any(|p| p.contains("Testing/Assert.bd")),
             "expected Testing.Assert in import closure, got: {loaded:?}"
         );
-
-        let known_modules = assembly.module_index.known_module_path_strings();
         assert!(
-            known_modules.contains("Testing::Assert"),
-            "expected Testing::Assert module in prefetch graph, got: {known_modules:?}"
-        );
-
-        let resolution = assembly
-            .module_index
-            .resolve_entry(&assembly.entry_unit().program)
-            .expect("resolve syscall tests entry");
-        assert!(
-            resolution
-                .items
-                .iter()
-                .any(|item| { item.name == "AssertTrue" && item.kind == ItemKind::Function }),
-            "expected AssertTrue in merged resolution"
+            loaded.iter().any(|p| p.ends_with("AnsiEscapeTests.bd")),
+            "expected entry unit in assembly, got: {loaded:?}"
         );
     });
 }

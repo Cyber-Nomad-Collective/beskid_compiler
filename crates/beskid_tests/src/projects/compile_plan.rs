@@ -587,7 +587,9 @@ dependency "Core" {
 fn compile_plan_errors_when_dependency_manifest_missing() {
     let root = temp_case_dir("missing_dependency_manifest");
     let app_dir = root.join("App");
+    let core_dir = root.join("Core");
     fs::create_dir_all(&app_dir).expect("create app dir");
+    fs::create_dir_all(&core_dir).expect("create empty core dir");
 
     let app_manifest = r#"
 project {

@@ -1,6 +1,7 @@
 //! `*.bproj` / `*.bws` manifests, lockfiles, dependency graphs, compile plans, and validation.
 
 pub mod assembly;
+pub mod bsol;
 pub mod compile_plan;
 pub mod discovery;
 pub mod error;
@@ -51,6 +52,7 @@ pub use model::{
     WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
 };
 pub use parser::{parse_manifest, parse_workspace_manifest};
+pub use bsol::{parse_bsol_document, BsolDocument, BsolParser};
 pub use readme::{
     PACKAGE_README_ARTIFACT_NAME, discover_readme_for_package_root, is_package_root_readme_entry,
     resolve_readme_file_path,
