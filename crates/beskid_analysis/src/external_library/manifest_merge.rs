@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+use crate::projects::parse_bsol_document;
 use crate::projects::model::ProjectLinkSection;
 
 use super::resolution::LibraryResolution;
@@ -156,98 +157,12 @@ fn is_safe_ident(value: &str) -> bool {
 
 /// Byte range `(start, end)` of the top-level `link { ... }` block, or `None`.
 fn find_top_level_link_block_range(source: &str) -> Option<(usize, usize)> {
-    let bytes = source.as_bytes();
-    let len = bytes.len();
-    let mut i = 0usize;
-    while i < len {
-        // Skip whitespace and comments at line starts.
-        while i < len && (bytes[i] == b' ' || bytes[i] == b'\t') {
-            i += 1;
-        }
-        if i >= len {
-            break;
-        }
-        // Comment line.
-        if bytes[i] == b'#' || (i + 1 < len && bytes[i] == b'/' && bytes[i + 1] == b'/') {
-            advance_to_next_line(bytes, &mut i);
-            continue;
-        }
-        if bytes[i] == b'\n' {
-            i += 1;
-            continue;
-        }
-
-        let line_start = i;
-        // Read tag identifier up to whitespace, comment, or `{`.
-        let mut j = i;
-        while j < len
-            && bytes[j] != b' '
-            && bytes[j] != b'\t'
-            && bytes[j] != b'\n'
-            && bytes[j] != b'{'
-            && bytes[j] != b'#'
-        {
-            j += 1;
-        }
-        let tag = &source[line_start..j];
-
-        // Locate the next `{` or newline.
-        let mut k = j;
-        while k < len && bytes[k] != b'{' && bytes[k] != b'\n' {
-            k += 1;
-        }
-
-        if k < len && bytes[k] == b'{' && tag == "link" {
-            // Found `link {` at top level. Now scan for the matching `}`.
-            let block_close = scan_matching_close(bytes, k);
-            let end = block_close.unwrap_or(len);
-            return Some((line_start, end));
-        }
-
-        if k < len && bytes[k] == b'{' {
-            // Skip this block entirely.
-            if let Some(close) = scan_matching_close(bytes, k) {
-                i = close;
-                continue;
-            }
-            return None;
-        }
-
-        advance_to_next_line(bytes, &mut i);
-    }
-    None
-}
-
-fn scan_matching_close(bytes: &[u8], open_brace: usize) -> Option<usize> {
-    debug_assert_eq!(bytes[open_brace], b'{');
-    let mut depth = 0i32;
-    let mut i = open_brace;
-    let mut in_string = false;
-    while i < bytes.len() {
-        let b = bytes[i];
-        match b {
-            b'"' => in_string = !in_string,
-            b'{' if !in_string => depth += 1,
-            b'}' if !in_string => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(i + 1);
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
-fn advance_to_next_line(bytes: &[u8], i: &mut usize) {
-    while *i < bytes.len() && bytes[*i] != b'\n' {
-        *i += 1;
-    }
-    if *i < bytes.len() {
-        *i += 1;
-    }
+    let document = parse_bsol_document(source).ok()?;
+    document
+        .blocks
+        .iter()
+        .find(|block| block.kind == "link")
+        .map(|block| (block.span.start, block.span.end))
 }
 
 #[cfg(test)]

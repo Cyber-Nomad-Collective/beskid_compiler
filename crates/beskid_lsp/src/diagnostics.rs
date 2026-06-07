@@ -2,7 +2,7 @@
 
 use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
-use beskid_analysis::projects::{parse_manifest, parse_workspace_manifest};
+use beskid_analysis::projects::{parse_bsol_document, parse_manifest, parse_workspace_manifest, ProjectError};
 use beskid_analysis::services::{
     self, DocumentAnalysisSnapshot, FrontEndOptions, PrepareMode, PrepareOptions,
     resolved_input_from_plan,
@@ -176,6 +176,15 @@ fn analyze_project_manifest(uri: &Uri, source: &str) -> Vec<Diagnostic> {
     } else {
         "project manifest"
     };
+
+    if let Err(err) = parse_bsol_document(source) {
+        let error = ProjectError::from_bsol(err);
+        return vec![semantic_to_lsp_diagnostic(
+            source,
+            services::project_error_diagnostic(source_label, source, &error),
+        )];
+    }
+
     let err = if project_manifest::is_workspace_manifest_uri(uri) {
         parse_workspace_manifest(source).err()
     } else {

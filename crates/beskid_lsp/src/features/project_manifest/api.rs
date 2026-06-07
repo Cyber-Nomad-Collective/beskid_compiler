@@ -1,4 +1,4 @@
-use beskid_analysis::projects::{parse_manifest, parse_workspace_manifest};
+use beskid_analysis::projects::{parse_bsol_document, BsolBlock, BsolDocument, BsolItem, BsolSpan, BsolValue};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -99,16 +99,39 @@ pub fn token_references(text: &str, offset: usize) -> Vec<(usize, usize)> {
     references
 }
 
-fn first_match_range(text: &str, needle: &str) -> Option<Range> {
-    let start = text.find(needle)?;
-    let end = start + needle.len();
-    Some(offset_range_to_lsp(text, start, end))
+fn span_to_range(text: &str, span: BsolSpan) -> Range {
+    offset_range_to_lsp(text, span.start, span.end.max(span.start + 1))
 }
 
-fn block_header_range(text: &str, block: &str, label: &str) -> Option<Range> {
-    let quoted = format!("{block} \"{label}\"");
-    first_match_range(text, &quoted)
-        .or_else(|| first_match_range(text, &format!("{block} {label}")))
+const PROJECT_RESERVED: &[&str] = &[
+    "target", "dependency", "link", "workspace", "member", "override", "registry", "project",
+];
+
+fn is_project_root_block(kind: &str) -> bool {
+    !PROJECT_RESERVED.contains(&kind)
+}
+
+fn block_label_name(block: &BsolBlock) -> String {
+    block
+        .label
+        .as_ref()
+        .map(|label| label.value.clone())
+        .unwrap_or_else(|| block.kind.clone())
+}
+
+fn assignment_string_value(block: &BsolBlock, key: &str) -> Option<String> {
+    for item in &block.items {
+        let BsolItem::Assignment(assign) = item else {
+            continue;
+        };
+        if assign.key != key {
+            continue;
+        }
+        if let BsolValue::QuotedString(qs) = &assign.value {
+            return Some(qs.value.clone());
+        }
+    }
+    None
 }
 
 fn build_document_symbol(
@@ -132,111 +155,110 @@ fn build_document_symbol(
 }
 
 pub fn document_symbols(uri: &Uri, text: &str) -> Vec<DocumentSymbol> {
-    if is_workspace_manifest_uri(uri) {
-        return workspace_document_symbols(text);
-    }
-
-    let Ok(manifest) = parse_manifest(text) else {
+    let Ok(document) = parse_bsol_document(text) else {
         return Vec::new();
     };
 
+    if is_workspace_manifest_uri(uri) {
+        return workspace_document_symbols_from_ast(text, &document);
+    }
+
+    project_document_symbols_from_ast(text, &document)
+}
+
+fn project_document_symbols_from_ast(text: &str, document: &BsolDocument) -> Vec<DocumentSymbol> {
     let mut symbols = Vec::new();
-    if let Some(range) = first_match_range(text, "project") {
-        symbols.push(build_document_symbol(
-            manifest.project.name.clone(),
-            Some("project".to_string()),
-            SymbolKind::MODULE,
-            None,
-            range,
-            range,
-        ));
-    }
+    for block in &document.blocks {
+        let range = span_to_range(text, block.span);
+        if is_project_root_block(&block.kind) {
+            let name = assignment_string_value(block, "name")
+                .unwrap_or_else(|| block.kind.clone());
+            symbols.push(build_document_symbol(
+                name,
+                Some("project".to_string()),
+                SymbolKind::MODULE,
+                None,
+                range,
+                range,
+            ));
+            continue;
+        }
 
-    for target in manifest.targets {
-        let range = block_header_range(text, "target", &target.name)
-            .unwrap_or_else(|| Range::new(Position::new(0, 0), Position::new(0, 0)));
-        symbols.push(build_document_symbol(
-            target.name,
-            Some("target".to_string()),
-            SymbolKind::CLASS,
-            None,
-            range,
-            range,
-        ));
+        match block.kind.as_str() {
+            "target" => symbols.push(build_document_symbol(
+                block_label_name(block),
+                Some("target".to_string()),
+                SymbolKind::CLASS,
+                None,
+                range,
+                range,
+            )),
+            "dependency" => symbols.push(build_document_symbol(
+                block_label_name(block),
+                Some("dependency".to_string()),
+                SymbolKind::NAMESPACE,
+                None,
+                range,
+                range,
+            )),
+            "link" => symbols.push(build_document_symbol(
+                "link".to_string(),
+                Some("link".to_string()),
+                SymbolKind::INTERFACE,
+                None,
+                range,
+                range,
+            )),
+            _ => {}
+        }
     }
-
-    for dependency in manifest.dependencies {
-        let range = block_header_range(text, "dependency", &dependency.name)
-            .unwrap_or_else(|| Range::new(Position::new(0, 0), Position::new(0, 0)));
-        symbols.push(build_document_symbol(
-            dependency.name,
-            Some("dependency".to_string()),
-            SymbolKind::NAMESPACE,
-            None,
-            range,
-            range,
-        ));
-    }
-
     symbols
 }
 
-fn workspace_document_symbols(text: &str) -> Vec<DocumentSymbol> {
-    let Ok(manifest) = parse_workspace_manifest(text) else {
-        return Vec::new();
-    };
-
+fn workspace_document_symbols_from_ast(text: &str, document: &BsolDocument) -> Vec<DocumentSymbol> {
     let mut symbols = Vec::new();
-    if let Some(range) = first_match_range(text, "workspace") {
-        symbols.push(build_document_symbol(
-            manifest.workspace.name.clone(),
-            Some("workspace".to_string()),
-            SymbolKind::MODULE,
-            None,
-            range,
-            range,
-        ));
+    for block in &document.blocks {
+        let range = span_to_range(text, block.span);
+        match block.kind.as_str() {
+            "workspace" => {
+                let name = assignment_string_value(block, "name")
+                    .unwrap_or_else(|| "workspace".to_string());
+                symbols.push(build_document_symbol(
+                    name,
+                    Some("workspace".to_string()),
+                    SymbolKind::MODULE,
+                    None,
+                    range,
+                    range,
+                ));
+            }
+            "member" => symbols.push(build_document_symbol(
+                block_label_name(block),
+                Some("member".to_string()),
+                SymbolKind::MODULE,
+                None,
+                range,
+                range,
+            )),
+            "override" => symbols.push(build_document_symbol(
+                block_label_name(block),
+                Some("override".to_string()),
+                SymbolKind::CONSTANT,
+                None,
+                range,
+                range,
+            )),
+            "registry" => symbols.push(build_document_symbol(
+                block_label_name(block),
+                Some("registry".to_string()),
+                SymbolKind::INTERFACE,
+                None,
+                range,
+                range,
+            )),
+            _ => {}
+        }
     }
-
-    for member in manifest.members {
-        let range = block_header_range(text, "member", &member.name)
-            .unwrap_or_else(|| Range::new(Position::new(0, 0), Position::new(0, 0)));
-        symbols.push(build_document_symbol(
-            member.name,
-            Some("member".to_string()),
-            SymbolKind::MODULE,
-            None,
-            range,
-            range,
-        ));
-    }
-
-    for dependency_override in manifest.overrides {
-        let range = block_header_range(text, "override", &dependency_override.dependency)
-            .unwrap_or_else(|| Range::new(Position::new(0, 0), Position::new(0, 0)));
-        symbols.push(build_document_symbol(
-            dependency_override.dependency,
-            Some("override".to_string()),
-            SymbolKind::CONSTANT,
-            None,
-            range,
-            range,
-        ));
-    }
-
-    for registry in manifest.registries {
-        let range = block_header_range(text, "registry", &registry.name)
-            .unwrap_or_else(|| Range::new(Position::new(0, 0), Position::new(0, 0)));
-        symbols.push(build_document_symbol(
-            registry.name,
-            Some("registry".to_string()),
-            SymbolKind::INTERFACE,
-            None,
-            range,
-            range,
-        ));
-    }
-
     symbols
 }
 
@@ -450,34 +472,34 @@ fn file_uri_from_path(path: &Path) -> Option<Uri> {
 }
 
 pub fn dependency_path_location(uri: &Uri, text: &str, offset: usize) -> Option<Location> {
-    let mut consumed = 0usize;
-    for line in text.lines() {
-        let line_start = consumed;
-        let line_end = consumed + line.len();
-        consumed = line_end.saturating_add(1);
-
-        let trimmed = line.trim();
-        if !trimmed.starts_with("path") || !trimmed.contains('=') {
+    let document = parse_bsol_document(text).ok()?;
+    for block in &document.blocks {
+        if block.kind != "dependency" {
             continue;
         }
+        for item in &block.items {
+            let BsolItem::Assignment(assign) = item else {
+                continue;
+            };
+            if assign.key != "path" {
+                continue;
+            }
+            let BsolValue::QuotedString(path_value) = &assign.value else {
+                continue;
+            };
+            if offset < path_value.span.start || offset > path_value.span.end {
+                continue;
+            }
 
-        let quote_start = line.find('"')?;
-        let quote_end = line[quote_start + 1..].find('"')? + quote_start + 1;
-        let value_start = line_start + quote_start + 1;
-        let value_end = line_start + quote_end;
-        if !(value_start <= offset && offset <= value_end) {
-            continue;
+            let current = file_path_from_uri(uri)?;
+            let parent = current.parent()?;
+            let target = parent.join(&path_value.value).join("Project.proj");
+            let dep_uri = file_uri_from_path(&target)?;
+            return Some(Location {
+                uri: dep_uri,
+                range: Range::new(Position::new(0, 0), Position::new(0, 0)),
+            });
         }
-
-        let dep_rel = &line[quote_start + 1..quote_end];
-        let current = file_path_from_uri(uri)?;
-        let parent = current.parent()?;
-        let target = parent.join(dep_rel).join("Project.proj");
-        let dep_uri = file_uri_from_path(&target)?;
-        return Some(Location {
-            uri: dep_uri,
-            range: Range::new(Position::new(0, 0), Position::new(0, 0)),
-        });
     }
     None
 }

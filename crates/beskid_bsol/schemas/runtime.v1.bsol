@@ -1,0 +1,103 @@
+profile "runtime.v1" {
+  rule "manifest" {
+    scope = top
+    match = keyword
+    keyword = manifest
+    label = forbidden
+    cardinality = one
+    field "abi_version" { type = u32 required = true }
+  }
+  rule "profile" {
+    scope = top
+    match = keyword
+    keyword = profile
+    label = required
+    cardinality = many
+    field "owners" { type = list required = false }
+  }
+  rule "kernel" {
+    scope = top
+    match = keyword
+    keyword = kernel
+    label = forbidden
+    cardinality = many
+    field "symbol" { type = ident required = true }
+    field "name" { type = ident required = true }
+    field "params" { type = list required = false }
+    field "returns" { type = ident required = true }
+    field "injected" { type = enum_or_quoted values = [true, false] required = false }
+    field "beskid_path" { type = list required = false }
+  }
+  rule "dispatch_usize" {
+    scope = top
+    match = keyword
+    keyword = dispatch_usize
+    label = forbidden
+    cardinality = many
+    field "tag" { type = u32 required = true }
+    field "dispatch_key" { type = ident required = true }
+    field "name" { type = ident required = true }
+    field "params" { type = list required = false }
+    field "returns" { type = ident required = true }
+    field "injected" { type = enum_or_quoted values = [true, false] required = false }
+    field "beskid_path" { type = list required = false }
+    field "owner" { type = enum_or_quoted values = [language, host] required = false }
+  }
+  rule "dispatch_ptr" {
+    scope = top
+    match = keyword
+    keyword = dispatch_ptr
+    label = forbidden
+    cardinality = many
+    field "tag" { type = u32 required = true }
+    field "dispatch_key" { type = ident required = true }
+    field "name" { type = ident required = true }
+    field "params" { type = list required = false }
+    field "returns" { type = ident required = true }
+    field "injected" { type = enum_or_quoted values = [true, false] required = false }
+    field "beskid_path" { type = list required = false }
+    field "owner" { type = enum_or_quoted values = [language, host] required = false }
+  }
+  rule "dispatch_unit" {
+    scope = top
+    match = keyword
+    keyword = dispatch_unit
+    label = forbidden
+    cardinality = many
+    field "tag" { type = u32 required = true }
+    field "dispatch_key" { type = ident required = true }
+    field "name" { type = ident required = true }
+    field "params" { type = list required = false }
+    field "returns" { type = ident required = true }
+    field "injected" { type = enum_or_quoted values = [true, false] required = false }
+    field "beskid_path" { type = list required = false }
+    field "owner" { type = enum_or_quoted values = [language, host] required = false }
+  }
+  rule "dispatch_i64" {
+    scope = top
+    match = keyword
+    keyword = dispatch_i64
+    label = forbidden
+    cardinality = many
+    field "tag" { type = u32 required = true }
+    field "dispatch_key" { type = ident required = true }
+    field "name" { type = ident required = true }
+    field "params" { type = list required = false }
+    field "returns" { type = ident required = true }
+    field "injected" { type = enum_or_quoted values = [true, false] required = false }
+    field "beskid_path" { type = list required = false }
+    field "owner" { type = enum_or_quoted values = [language, host] required = false }
+  }
+  rule "intrinsic" {
+    scope = top
+    match = keyword
+    keyword = intrinsic
+    label = forbidden
+    cardinality = many
+    field "symbol" { type = ident required = true }
+    field "path" { type = list required = false }
+    field "params" { type = list required = false }
+    field "returns" { type = ident required = true }
+    field "injected" { type = enum_or_quoted values = [true, false] required = false }
+  }
+}

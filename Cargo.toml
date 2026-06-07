@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/beskid_analysis", "crates/beskid_artifacts", "crates/beskid_cli", "crates/beskid_tools", "crates/beskid_template", "crates/beskid_tests", "crates/beskid_e2e_tests", "crates/beskid_ast_derive", "crates/beskid_ast_reflect_gen", "crates/beskid_codegen", "crates/beskid_abi", "crates/beskid_manifest", "crates/beskid_pipeline", "crates/beskid_runtime", "crates/beskid_runtime_bridge", "crates/beskid_host", "crates/beskid_engine", "crates/abfall", "crates/beskid_lsp", "crates/beskid_repl", "crates/beskid_aot", "crates/beskid_pckg", "crates/beskid_queries", "crates/beskid_graph"]
+members = ["crates/beskid_analysis", "crates/beskid_artifacts", "crates/beskid_cli", "crates/beskid_tools", "crates/beskid_template", "crates/beskid_tests", "crates/beskid_e2e_tests", "crates/beskid_ast_derive", "crates/beskid_ast_reflect_gen", "crates/beskid_codegen", "crates/beskid_abi", "crates/beskid_bsol", "crates/beskid_manifest", "crates/beskid_pipeline", "crates/beskid_runtime", "crates/beskid_runtime_bridge", "crates/beskid_host", "crates/beskid_engine", "crates/abfall", "crates/beskid_lsp", "crates/beskid_repl", "crates/beskid_aot", "crates/beskid_pckg", "crates/beskid_queries", "crates/beskid_graph"]
 [workspace.dependencies]
 salsa = { version = "0.26", features = ["macros", "persistence"] }
 allocator-api2 = { version = "0.2", default-features = false, features = ["alloc"] }
@@ -9,6 +9,7 @@ hashbrown = { version = "0.16", default-features = false }
 indexmap = { version = "2.13", default-features = false }
 semver = "1"
 abfall = { path = "crates/abfall" }
+beskid_bsol = { path = "crates/beskid_bsol" }
 pest = "2.8"
 pest_derive = "2.8"
 pest-ast = "0.3.3"

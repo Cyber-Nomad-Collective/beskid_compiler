@@ -2,7 +2,7 @@
 
 use pest_derive::Parser;
 
-/// Entry type for [`pest::Parser`] over Bsol manifest source ([`Rule::document`]).
+/// Entry type for [`pest::Parser`] over Bsol source ([`Rule::document`]).
 #[derive(Parser)]
 #[grammar = "bsol.pest"]
 pub struct BsolParser;

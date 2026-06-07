@@ -1,0 +1,37 @@
+profile "workspace.v1" {
+  rule "workspace" {
+    scope = top
+    match = keyword
+    keyword = workspace
+    label = forbidden
+    cardinality = one
+    extras = true
+    field "name" { type = quoted required = true }
+    field "resolver" { type = enum_or_quoted values = [v1] required = false }
+  }
+  rule "member" {
+    scope = top
+    match = keyword
+    keyword = member
+    label = required
+    cardinality = many
+    extras = true
+    field "path" { type = loose required = true }
+  }
+  rule "override" {
+    scope = top
+    match = keyword
+    keyword = override
+    label = required
+    cardinality = many
+    field "version" { type = quoted required = true }
+  }
+  rule "registry" {
+    scope = top
+    match = keyword
+    keyword = registry
+    label = required
+    cardinality = many
+    field "url" { type = quoted required = true }
+  }
+}

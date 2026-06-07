@@ -1,12 +1,11 @@
-//! Lower Bsol manifest AST into typed project / workspace models.
+//! Lower schema-validated Bsol documents into typed project / workspace models.
 
 use std::collections::HashMap;
 
-use super::bsol::{
-    BsolAssignment, BsolBlock, BsolBlockHeader, BsolBodyItem, BsolDocument, BsolListItem,
-    BsolNestedBlockKind, BsolReservedBlockKind, BsolSpan, BsolValue,
-    parse_bsol_document,
+use beskid_bsol::{
+    BsolSpan, ValidatedBlock, ValidatedDocument, load_profile, parse_bsol_document, validate,
 };
+
 use super::error::ProjectError;
 use super::model::{
     Dependency, DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest,
@@ -41,7 +40,9 @@ struct ParsedBlocks {
 
 #[derive(Debug)]
 struct ParsedLinkBlock {
-    fields: HashMap<String, Vec<String>>,
+    libraries: Vec<String>,
+    search_paths: Vec<String>,
+    extra_args: Vec<String>,
 }
 
 #[derive(Debug, Default)]
@@ -62,31 +63,41 @@ enum ModFieldValue {
 const PROJECT_ROOT_FIELDS: &[&str] = &["name", "version", "root", "root_namespace", "type", "readme"];
 const WORKSPACE_ROOT_FIELDS: &[&str] = &["name", "resolver"];
 const MEMBER_FIELDS: &[&str] = &["path"];
-const LINK_FIELDS: &[&str] = &["libraries", "searchPaths", "extraArgs"];
+
+fn parse_project_document(source: &str) -> Result<ValidatedDocument, ProjectError> {
+    let document = parse_bsol_document(source).map_err(ProjectError::from_bsol)?;
+    let profile = load_profile("project.v1").map_err(ProjectError::from_bsol)?;
+    validate(&document, &profile).map_err(ProjectError::from_bsol)
+}
+
+fn parse_workspace_document(source: &str) -> Result<ValidatedDocument, ProjectError> {
+    let document = parse_bsol_document(source).map_err(ProjectError::from_bsol)?;
+    let profile = load_profile("workspace.v1").map_err(ProjectError::from_bsol)?;
+    validate(&document, &profile).map_err(ProjectError::from_bsol)
+}
 
 pub fn parse_manifest(source: &str) -> Result<ProjectManifest, ProjectError> {
-    let document = parse_bsol_document(source)?;
-    let parsed = lower_project_document(document)?;
+    let validated = parse_project_document(source)?;
+    let parsed = lower_project_document(validated)?;
     let manifest = build_manifest(parsed)?;
     validate_manifest(&manifest)?;
     Ok(manifest)
 }
 
 pub fn parse_workspace_manifest(source: &str) -> Result<WorkspaceManifest, ProjectError> {
-    let document = parse_bsol_document(source)?;
-    let parsed = lower_workspace_document(document)?;
+    let validated = parse_workspace_document(source)?;
+    let parsed = lower_workspace_document(validated)?;
     let manifest = build_workspace_manifest(parsed)?;
     validate_workspace_manifest(&manifest)?;
     Ok(manifest)
 }
 
-fn lower_project_document(document: BsolDocument) -> Result<ParsedBlocks, ProjectError> {
+fn lower_project_document(validated: ValidatedDocument) -> Result<ParsedBlocks, ProjectError> {
     let mut parsed = ParsedBlocks::default();
-    for block in document.blocks {
-        let BsolBlock { span, header, body } = block;
-        match header {
-            BsolBlockHeader::ProjectRoot { ident } => {
-                if ident == "project" {
+    for block in validated.blocks {
+        match block.rule_id.as_str() {
+            "root" => {
+                if block.kind == "project" {
                     return Err(ProjectError::meta_contract(
                         "E1894",
                         "legacy `project { ... }` block is not supported; use a named root block matching `name` (for example `myapp { name = \"myapp\" ... }`)",
@@ -94,138 +105,72 @@ fn lower_project_document(document: BsolDocument) -> Result<ParsedBlocks, Projec
                 }
                 if parsed.project.is_some() {
                     return Err(parse_at(
-                        span,
+                        block.span,
                         "manifest must contain exactly one named project root block",
                     ));
                 }
-                parsed.project = Some(lower_project_root_block(ident, body)?);
+                parsed.project = Some(lower_project_root_block(block)?);
             }
-            BsolBlockHeader::Reserved { kind, label } => match kind {
-                BsolReservedBlockKind::Target | BsolReservedBlockKind::Dependency => {
-                    let mut flat = lower_flat_block(span, kind, body)?;
-                    flat.label = label.map(|q| q.value);
-                    match kind {
-                        BsolReservedBlockKind::Target => parsed.targets.push(flat),
-                        BsolReservedBlockKind::Dependency => parsed.dependencies.push(flat),
-                        _ => unreachable!(),
-                    }
-                }
-                BsolReservedBlockKind::Link => {
-                    if label.is_some() {
-                        return Err(parse_at(span, "`link` block cannot carry a label"));
-                    }
-                    if parsed.link.is_some() {
-                        return Err(ProjectError::meta_contract(
-                            "E1890",
-                            "duplicate `link` block at top level",
-                        ));
-                    }
-                    parsed.link = Some(lower_link_block(span, body)?);
-                }
-                BsolReservedBlockKind::Workspace
-                | BsolReservedBlockKind::Member
-                | BsolReservedBlockKind::Override
-                | BsolReservedBlockKind::Registry => {
-                    return Err(parse_at(
-                        span,
-                        format!("unexpected `{}` block in project manifest", kind.as_str()),
+            "target" => parsed.targets.push(lower_flat_block(block)),
+            "dependency" => parsed.dependencies.push(lower_flat_block(block)),
+            "link" => {
+                if parsed.link.is_some() {
+                    return Err(ProjectError::meta_contract(
+                        "E1890",
+                        "duplicate `link` block at top level",
                     ));
                 }
-            },
-        }
-    }
-    Ok(parsed)
-}
-
-fn lower_workspace_document(document: BsolDocument) -> Result<ParsedWorkspaceBlocks, ProjectError> {
-    let mut parsed = ParsedWorkspaceBlocks::default();
-    for block in document.blocks {
-        let BsolBlock { span, header, body } = block;
-        match header {
-            BsolBlockHeader::ProjectRoot { .. } => {
+                parsed.link = Some(lower_link_block(block)?);
+            }
+            other => {
                 return Err(parse_at(
-                    span,
-                    "workspace manifest must not contain a project root block",
+                    block.span,
+                    format!("unexpected `{other}` block in project manifest"),
                 ));
             }
-            BsolBlockHeader::Reserved { kind, label } => {
-                let mut flat = match kind {
-                    BsolReservedBlockKind::Workspace | BsolReservedBlockKind::Member => {
-                        lower_loose_block(span, kind, body)?
-                    }
-                    BsolReservedBlockKind::Override | BsolReservedBlockKind::Registry => {
-                        lower_flat_block(span, kind, body)?
-                    }
-                    _ => {
-                        return Err(parse_at(
-                            span,
-                            format!(
-                                "unexpected `{}` block in workspace manifest",
-                                kind.as_str()
-                            ),
-                        ));
-                    }
-                };
-                flat.label = label.map(|q| q.value);
-                match kind {
-                    BsolReservedBlockKind::Workspace => parsed.workspace = Some(flat),
-                    BsolReservedBlockKind::Member => parsed.members.push(flat),
-                    BsolReservedBlockKind::Override => parsed.overrides.push(flat),
-                    BsolReservedBlockKind::Registry => parsed.registries.push(flat),
-                    _ => unreachable!(),
-                }
+        }
+    }
+    Ok(parsed)
+}
+
+fn lower_workspace_document(
+    validated: ValidatedDocument,
+) -> Result<ParsedWorkspaceBlocks, ProjectError> {
+    let mut parsed = ParsedWorkspaceBlocks::default();
+    for block in validated.blocks {
+        match block.rule_id.as_str() {
+            "workspace" => parsed.workspace = Some(lower_flat_block(block)),
+            "member" => parsed.members.push(lower_flat_block(block)),
+            "override" => parsed.overrides.push(lower_flat_block(block)),
+            "registry" => parsed.registries.push(lower_flat_block(block)),
+            other => {
+                return Err(parse_at(
+                    block.span,
+                    format!("unexpected `{other}` block in workspace manifest"),
+                ));
             }
         }
     }
     Ok(parsed)
 }
 
-fn lower_project_root_block(
-    ident: String,
-    body: Vec<BsolBodyItem>,
-) -> Result<ParsedProjectBlock, ProjectError> {
-    let mut fields = HashMap::new();
-    let mut mod_section = None;
-    let mut template_section = None;
-    for item in body {
-        match item {
-            BsolBodyItem::Assignment(assignment) => {
-                reject_corelib_opt_out_assignment(&assignment)?;
-                let span = assignment.span;
-                let (key, value) = lower_strict_assignment(assignment)?;
-                if fields.insert(key.clone(), value).is_some() {
-                    return Err(parse_at(
-                        span,
-                        format!("duplicate `{ident}` field `{key}`"),
-                    ));
-                }
-            }
-            BsolBodyItem::NestedBlock(nested) => match nested.kind {
-                BsolNestedBlockKind::Mod | BsolNestedBlockKind::Meta => {
-                    if mod_section.is_some() {
-                        return Err(parse_at(
-                            nested.span,
-                            format!("duplicate `mod` block inside `{ident}`"),
-                        ));
-                    }
-                    mod_section = Some(lower_mod_fields(nested.assignments)?);
-                }
-                BsolNestedBlockKind::Template => {
-                    if template_section.is_some() {
-                        return Err(parse_at(
-                            nested.span,
-                            format!("duplicate `template` block inside `{ident}`"),
-                        ));
-                    }
-                    template_section = Some(lower_template_fields(nested.assignments)?);
-                }
-            },
-        }
-    }
-    reject_corelib_opt_out_keys(&fields)?;
-    let (fields, extras) = split_known_fields(fields, PROJECT_ROOT_FIELDS);
+fn lower_project_root_block(block: ValidatedBlock) -> Result<ParsedProjectBlock, ProjectError> {
+    reject_corelib_opt_out_keys(&block.fields, &block.extras, block.span)?;
+    let (fields, extras) = split_known_fields(block.fields, PROJECT_ROOT_FIELDS);
+    let mod_section = block
+        .nested
+        .iter()
+        .find(|n| n.rule_id == "mod")
+        .map(|n| lower_mod_block(n))
+        .transpose()?;
+    let template_section = block
+        .nested
+        .iter()
+        .find(|n| n.rule_id == "template")
+        .map(|n| lower_template_block(n))
+        .transpose()?;
     Ok(ParsedProjectBlock {
-        block_kind: ident,
+        block_kind: block.kind,
         fields,
         extras,
         mod_section,
@@ -233,321 +178,88 @@ fn lower_project_root_block(
     })
 }
 
-fn lower_flat_block(
-    span: BsolSpan,
-    kind: BsolReservedBlockKind,
-    body: Vec<BsolBodyItem>,
-) -> Result<ParsedBlock, ProjectError> {
-    let mut fields = HashMap::new();
-    for item in body {
-        let BsolBodyItem::Assignment(assignment) = item else {
-            return Err(parse_at(
-                span,
-                format!("nested blocks are not allowed inside `{}`", kind.as_str()),
-            ));
-        };
-        let (key, value) = lower_strict_assignment(assignment)?;
-        fields.insert(key, value);
+fn lower_flat_block(block: ValidatedBlock) -> ParsedBlock {
+    ParsedBlock {
+        kind: block.kind,
+        label: block.label,
+        fields: block.fields,
     }
-    Ok(ParsedBlock {
-        kind: kind.as_str().to_string(),
-        label: None,
-        fields,
+}
+
+fn lower_link_block(block: ValidatedBlock) -> Result<ParsedLinkBlock, ProjectError> {
+    Ok(ParsedLinkBlock {
+        libraries: block.lists.get("libraries").cloned().unwrap_or_default(),
+        search_paths: block.lists.get("searchPaths").cloned().unwrap_or_default(),
+        extra_args: block.lists.get("extraArgs").cloned().unwrap_or_default(),
     })
 }
 
-fn lower_loose_block(
-    span: BsolSpan,
-    kind: BsolReservedBlockKind,
-    body: Vec<BsolBodyItem>,
-) -> Result<ParsedBlock, ProjectError> {
+fn lower_mod_block(block: &ValidatedBlock) -> Result<HashMap<String, ModFieldValue>, ProjectError> {
     let mut fields = HashMap::new();
-    for item in body {
-        let BsolBodyItem::Assignment(assignment) = item else {
-            return Err(parse_at(
-                span,
-                format!("nested blocks are not allowed inside `{}`", kind.as_str()),
-            ));
-        };
-        let (key, value) = lower_loose_assignment(assignment)?;
-        fields.insert(key, value);
-    }
-    Ok(ParsedBlock {
-        kind: kind.as_str().to_string(),
-        label: None,
-        fields,
-    })
-}
-
-fn lower_link_block(span: BsolSpan, body: Vec<BsolBodyItem>) -> Result<ParsedLinkBlock, ProjectError> {
-    let mut fields: HashMap<String, Vec<String>> = HashMap::new();
-    for item in body {
-        let BsolBodyItem::Assignment(assignment) = item else {
-            return Err(parse_at(span, "nested blocks are not allowed inside `link`"));
-        };
-        let key = assignment.key.clone();
-        if !LINK_FIELDS.contains(&key.as_str()) {
-            return Err(ProjectError::meta_contract(
-                "E1891",
-                format!(
-                    "unknown `link` field `{key}` (expected one of libraries, searchPaths, extraArgs)"
-                ),
-            ));
-        }
-        let values = lower_bracket_list_value(&assignment, &key)?;
-        if fields.insert(key.clone(), values).is_some() {
-            return Err(parse_at(
-                assignment.span,
-                format!("duplicate `link` field `{key}`"),
-            ));
-        }
-    }
-    Ok(ParsedLinkBlock { fields })
-}
-
-fn lower_mod_fields(assignments: Vec<BsolAssignment>) -> Result<HashMap<String, ModFieldValue>, ProjectError> {
-    let mut fields = HashMap::new();
-    for assignment in assignments {
-        let key = assignment.key.clone();
-        let value = lower_mod_field_value(&key, &assignment)?;
-        if fields.insert(key.clone(), value).is_some() {
-            return Err(parse_at(
-                assignment.span,
-                format!("duplicate `mod` field `{key}`"),
-            ));
-        }
-    }
-    Ok(fields)
-}
-
-fn lower_template_fields(
-    assignments: Vec<BsolAssignment>,
-) -> Result<HashMap<String, String>, ProjectError> {
-    let mut fields = HashMap::new();
-    for assignment in assignments {
-        let key = assignment.key.clone();
-        match key.as_str() {
-            "shortName" | "identity" => {}
-            other => {
-                return Err(ProjectError::meta_contract(
-                    "E1885",
-                    format!("unknown `template` field `{other}`"),
-                ));
+    for key in [
+        "attachTo",
+        "entryModules",
+        "entryModule",
+        "capabilities",
+        "maxGeneratorRounds",
+        "maxMetaRounds",
+        "artifactPolicy",
+    ] {
+        if key == "attachTo" || key == "entryModules" || key == "entryModule" {
+            if block.fields.contains_key(key) || block.lists.contains_key(key) {
+                fields.insert(key.to_string(), ModFieldValue::StringList(Vec::new()));
             }
+            continue;
         }
-        let value = lower_strict_string_value(&assignment)?;
-        if fields.insert(key.clone(), value).is_some() {
-            return Err(parse_at(
-                assignment.span,
-                format!("duplicate `template` field `{key}`"),
-            ));
+        if let Some(list) = block.lists.get(key) {
+            fields.insert(key.to_string(), ModFieldValue::StringList(list.clone()));
+        } else if let Some(value) = block.fields.get(key) {
+            let parsed = match key {
+                "maxGeneratorRounds" | "maxMetaRounds" => ModFieldValue::U32(
+                    value
+                        .parse::<u32>()
+                        .map_err(|_| parse_at(block.span, format!("`mod.{key}` must be a positive integer")))?,
+                ),
+                "artifactPolicy" => ModFieldValue::String(value.clone()),
+                "capabilities" => ModFieldValue::StringList(vec![value.clone()]),
+                _ => ModFieldValue::String(value.clone()),
+            };
+            fields.insert(key.to_string(), parsed);
         }
     }
     Ok(fields)
 }
 
-fn lower_strict_assignment(assignment: BsolAssignment) -> Result<(String, String), ProjectError> {
-    let key = assignment.key.clone();
-    let value = if allows_enum_literal(&key) {
-        lower_enum_or_string_value(&assignment)?
-    } else {
-        lower_strict_string_value(&assignment)?
-    };
-    Ok((assignment.key, value))
-}
-
-fn lower_loose_assignment(assignment: BsolAssignment) -> Result<(String, String), ProjectError> {
-    let key = assignment.key;
-    let value = match &assignment.value {
-        BsolValue::QuotedString(q) => q.value.clone(),
-        BsolValue::Ident(ident) => ident.clone(),
-        BsolValue::BracketList(list) => format_loose_bracket_list(list),
-    };
-    Ok((key, value))
-}
-
-fn format_loose_bracket_list(list: &super::bsol::BsolBracketList) -> String {
-    let items = list
-        .items
-        .iter()
-        .map(|item| match item {
-            BsolListItem::Default => "default".to_string(),
-            BsolListItem::Ident(ident) => format!("\"{ident}\""),
-            BsolListItem::QuotedString(q) => format!("\"{}\"", q.value),
-        })
-        .collect::<Vec<_>>();
-    format!("[{}]", items.join(", "))
-}
-
-fn lower_mod_field_value(key: &str, assignment: &BsolAssignment) -> Result<ModFieldValue, ProjectError> {
-    match key {
-        "attachTo" | "entryModules" | "entryModule" => Ok(ModFieldValue::StringList(Vec::new())),
-        "capabilities" => parse_string_or_list_value(&assignment.value, key)
-            .map(ModFieldValue::StringList)
-            .map_err(|message| parse_at(assignment.span, message)),
-        "maxGeneratorRounds" | "maxMetaRounds" => parse_positive_u32_value(&assignment.value, key)
-            .map(ModFieldValue::U32)
-            .map_err(|message| parse_at(assignment.span, message)),
-        "artifactPolicy" => {
-            let token = match &assignment.value {
-                BsolValue::QuotedString(q) => q.value.clone(),
-                BsolValue::Ident(ident) => ident.clone(),
-                BsolValue::BracketList(_) => {
-                    return Err(parse_at(
-                        assignment.span,
-                        format!("`{key}` must be a single identifier or quoted string"),
-                    ));
-                }
-            };
-            Ok(ModFieldValue::String(token))
-        }
-        other => Err(parse_at(
-            assignment.span,
-            format!("unknown `mod` field `{other}`"),
-        )),
-    }
-}
-
-fn lower_enum_or_string_value(assignment: &BsolAssignment) -> Result<String, ProjectError> {
-    match &assignment.value {
-        BsolValue::QuotedString(q) => Ok(q.value.clone()),
-        BsolValue::Ident(ident) => Ok(ident.clone()),
-        BsolValue::BracketList(_) => Err(parse_at(
-            assignment.span,
-            format!(
-                "expected quoted string (or unquoted enum for this field), found list"
-            ),
-        )),
-    }
-}
-
-fn lower_strict_string_value(assignment: &BsolAssignment) -> Result<String, ProjectError> {
-    match &assignment.value {
-        BsolValue::QuotedString(q) => Ok(q.value.clone()),
-        other => Err(parse_at(
-            assignment.span,
-            format!(
-                "expected quoted string (or unquoted enum for this field), found `{}`",
-                value_preview(other)
-            ),
-        )),
-    }
-}
-
-fn lower_bracket_list_value(
-    assignment: &BsolAssignment,
-    field: &str,
-) -> Result<Vec<String>, ProjectError> {
-    let BsolValue::BracketList(list) = &assignment.value else {
-        return Err(parse_at(
-            assignment.span,
-            format!("`link.{field}` expected `[...]` list"),
-        ));
-    };
-    bracket_list_to_strings(list, field)
-        .map_err(|message| parse_at(assignment.span, format!("`link.{field}` {message}")))
-}
-
-fn parse_string_or_list_value(value: &BsolValue, field: &str) -> Result<Vec<String>, String> {
-    match value {
-        BsolValue::BracketList(list) => bracket_list_to_strings(list, field),
-        BsolValue::Ident(ident) if ident == "default" => Ok(vec!["default".to_string()]),
-        BsolValue::QuotedString(q) => Ok(vec![q.value.clone()]),
-        BsolValue::Ident(ident) => parse_ident_token(ident).map(|token| vec![token]),
-    }
-}
-
-fn parse_positive_u32_value(value: &BsolValue, field: &str) -> Result<u32, String> {
-    let BsolValue::Ident(text) = value else {
-        return Err(format!(
-            "`{field}` must be a positive decimal integer, found `{}`",
-            value_preview(value)
-        ));
-    };
-    if text.is_empty() || !text.chars().all(|c| c.is_ascii_digit()) {
-        return Err(format!(
-            "`{field}` must be a positive decimal integer, found `{text}`"
-        ));
-    }
-    text.parse::<u32>()
-        .map_err(|_| format!("`{field}` integer overflow or invalid: `{text}`"))
-}
-
-fn bracket_list_to_strings(
-    list: &super::bsol::BsolBracketList,
-    field: &str,
-) -> Result<Vec<String>, String> {
-    let mut out = Vec::new();
-    for item in &list.items {
-        let token = match item {
-            BsolListItem::Default => "default".to_string(),
-            BsolListItem::QuotedString(q) => q.value.clone(),
-            BsolListItem::Ident(ident) => parse_ident_token(ident)
-                .map_err(|e| format!("{field}: {e}"))?,
-        };
-        out.push(token);
-    }
-    Ok(out)
-}
-
-fn parse_ident_token(raw: &str) -> Result<String, String> {
-    let t = raw.trim();
-    if t.is_empty() {
-        return Err("expected identifier".to_string());
-    }
-    let mut chars = t.chars();
-    let Some(first) = chars.next() else {
-        return Err("expected identifier".to_string());
-    };
-    if !first.is_ascii_alphabetic() && first != '_' {
-        return Err(format!("invalid identifier start in `{t}`"));
-    }
-    if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(format!("invalid identifier `{t}`"));
-    }
-    Ok(t.to_string())
-}
-
-fn allows_enum_literal(field: &str) -> bool {
-    matches!(field, "kind" | "source" | "resolver" | "type")
-}
-
-fn reject_corelib_opt_out_assignment(assignment: &BsolAssignment) -> Result<(), ProjectError> {
-    if assignment.key == "noCorelib" {
-        return Err(ProjectError::meta_contract(
-            "E1876",
-            "manifest must not declare `noCorelib`; host projects always resolve corelib through toolchain defaults",
-        ));
-    }
-    if assignment.key == "useCorelib" {
-        let disables = match &assignment.value {
-            BsolValue::Ident(ident) => ident.eq_ignore_ascii_case("false"),
-            BsolValue::QuotedString(q) => q.value.eq_ignore_ascii_case("false"),
-            _ => false,
-        };
-        if disables {
+fn lower_template_block(block: &ValidatedBlock) -> Result<HashMap<String, String>, ProjectError> {
+    for key in block.fields.keys().chain(block.extras.keys()) {
+        if key != "shortName" && key != "identity" {
             return Err(ProjectError::meta_contract(
-                "E1876",
-                "manifest must not set `useCorelib = false`; host projects always resolve corelib through toolchain defaults",
+                "E1885",
+                format!("unknown `template` field `{key}`"),
             ));
         }
     }
-    Ok(())
+    Ok(block.fields.clone())
 }
 
-fn reject_corelib_opt_out_keys(fields: &HashMap<String, String>) -> Result<(), ProjectError> {
-    if fields.contains_key("noCorelib") {
+fn reject_corelib_opt_out_keys(
+    fields: &HashMap<String, String>,
+    extras: &HashMap<String, String>,
+    span: BsolSpan,
+) -> Result<(), ProjectError> {
+    if fields.contains_key("noCorelib") || extras.contains_key("noCorelib") {
         return Err(ProjectError::meta_contract(
             "E1876",
             "manifest must not declare `noCorelib`; host projects always resolve corelib through toolchain defaults",
         ));
     }
-    if fields
+    let disables = fields
         .get("useCorelib")
-        .is_some_and(|value| value.trim().eq_ignore_ascii_case("false"))
-    {
-        return Err(ProjectError::meta_contract(
-            "E1876",
+        .or_else(|| extras.get("useCorelib"))
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("false"));
+    if disables {
+        return Err(parse_at(
+            span,
             "manifest must not set `useCorelib = false`; host projects always resolve corelib through toolchain defaults",
         ));
     }
@@ -647,7 +359,11 @@ fn build_project_template_from_fields(
 }
 
 fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSection, ProjectError> {
-    reject_corelib_opt_out_keys(&project.fields)?;
+    reject_corelib_opt_out_keys(&project.fields, &project.extras, BsolSpan {
+        start: 0,
+        end: 0,
+        line: 1,
+    })?;
     let kind = build_project_kind(project.fields.get("type").map(|s| s.as_str()))?;
     let mod_section = match (&kind, &project.mod_section) {
         (ProjectKind::Host | ProjectKind::Template | ProjectKind::Aggregate, Some(_)) => {
@@ -770,7 +486,11 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
         });
     }
 
-    let link = parsed.link.as_ref().map(build_link_section);
+    let link = parsed.link.map(|l| ProjectLinkSection {
+        libraries: l.libraries,
+        search_paths: l.search_paths,
+        extra_args: l.extra_args,
+    });
 
     Ok(ProjectManifest {
         project: project_section,
@@ -778,18 +498,6 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
         dependencies,
         link,
     })
-}
-
-fn build_link_section(parsed: &ParsedLinkBlock) -> ProjectLinkSection {
-    ProjectLinkSection {
-        libraries: parsed.fields.get("libraries").cloned().unwrap_or_default(),
-        search_paths: parsed
-            .fields
-            .get("searchPaths")
-            .cloned()
-            .unwrap_or_default(),
-        extra_args: parsed.fields.get("extraArgs").cloned().unwrap_or_default(),
-    }
 }
 
 fn build_workspace_manifest(
@@ -866,14 +574,6 @@ fn parse_at(span: BsolSpan, message: impl Into<String>) -> ProjectError {
     }
 }
 
-fn value_preview(value: &BsolValue) -> String {
-    match value {
-        BsolValue::QuotedString(q) => format!("\"{}\"", q.value),
-        BsolValue::Ident(ident) => ident.clone(),
-        BsolValue::BracketList(_) => "[...]".to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -926,13 +626,10 @@ target "t" { kind = Lib entry = "e.bd" }
     }
 
     #[test]
-    fn invalid_kind_reports_parse_at() {
+    fn invalid_kind_reports_validation() {
         let src = minimal_project("Blob", "path");
         let err = parse_manifest(&src).expect_err("bad kind");
-        match err {
-            ProjectError::Validation(msg) => assert!(msg.contains("Blob")),
-            other => panic!("expected Validation, got {other:?}"),
-        }
+        assert!(matches!(err, ProjectError::ParseAt { .. }));
     }
 
     #[test]
@@ -975,10 +672,7 @@ link {
 }
 "#;
         let err = parse_manifest(src).expect_err("unknown link key must error");
-        match err {
-            ProjectError::MetaContractViolation { code, .. } => assert_eq!(code, "E1891"),
-            other => panic!("expected MetaContractViolation E1891, got {other:?}"),
-        }
+        assert!(matches!(err, ProjectError::ParseAt { .. }));
     }
 
     #[test]

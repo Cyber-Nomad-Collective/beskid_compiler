@@ -111,6 +111,40 @@ impl ProjectError {
         }
     }
 
+    /// Map a Bsol parse/validation failure into project manifest diagnostics.
+    pub fn from_bsol(err: beskid_bsol::BsolError) -> Self {
+        match err {
+            beskid_bsol::BsolError::ParseAt {
+                line,
+                message,
+                start,
+                end,
+            } => Self::ParseAt {
+                line,
+                message,
+                start,
+                end,
+            },
+            beskid_bsol::BsolError::SchemaAt {
+                line,
+                message,
+                start,
+                end,
+            } => Self::ParseAt {
+                line,
+                message,
+                start,
+                end,
+            },
+            beskid_bsol::BsolError::Parse(msg) | beskid_bsol::BsolError::Schema(msg) => {
+                Self::Parse(msg)
+            }
+            beskid_bsol::BsolError::UnknownProfile(name) => {
+                Self::Parse(format!("unknown Bsol schema profile `{name}`"))
+            }
+        }
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             Self::ReadManifest { .. } => "E3002",

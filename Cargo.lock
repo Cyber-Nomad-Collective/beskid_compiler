@@ -238,6 +238,7 @@ dependencies = [
  "anyhow",
  "beskid_artifacts",
  "beskid_ast_derive",
+ "beskid_bsol",
  "beskid_manifest",
  "beskid_pipeline",
  "daggy",
@@ -303,6 +304,15 @@ name = "beskid_ast_reflect_gen"
 version = "0.1.0"
 dependencies = [
  "syn 2.0.116",
+]
+
+[[package]]
+name = "beskid_bsol"
+version = "0.1.0"
+dependencies = [
+ "pest",
+ "pest_derive",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -426,8 +436,8 @@ dependencies = [
 name = "beskid_manifest"
 version = "0.1.0"
 dependencies = [
+ "beskid_bsol",
  "serde",
- "toml",
 ]
 
 [[package]]

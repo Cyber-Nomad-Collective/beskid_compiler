@@ -270,7 +270,7 @@ fn host_ops_are_not_kernel_exports_v4() {
 #[test]
 fn host_manifest_entries_match_generated_registration_table() {
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let manifest = std::fs::read_to_string(crate_dir.join("../../runtime_manifest.toml"))
+    let manifest = std::fs::read_to_string(crate_dir.join("../../runtime_manifest.bsol"))
         .expect("runtime manifest should be readable");
     let host_handlers =
         std::fs::read_to_string(crate_dir.join("../beskid_host/src/generated/host_handlers.rs"))

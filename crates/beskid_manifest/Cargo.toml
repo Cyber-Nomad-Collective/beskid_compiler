@@ -5,5 +5,5 @@ edition = "2024"
 publish = false
 
 [dependencies]
+beskid_bsol = { workspace = true }
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"

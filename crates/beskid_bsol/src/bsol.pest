@@ -1,0 +1,35 @@
+////////////////////////////////////////////////////////////
+// Bsol — Beskid Structured Object Language
+// Unified surface grammar for all Bsol documents and schema profiles.
+////////////////////////////////////////////////////////////
+
+WHITESPACE = _{ " " | "\t" | NEWLINE | COMMENT }
+COMMENT = _{ LineComment | HashComment }
+LineComment = _{ "//" ~ (!NEWLINE ~ ANY)* }
+HashComment = _{ "#" ~ (!NEWLINE ~ ANY)* }
+
+document = { SOI ~ block* ~ EOI }
+
+block = { block_kind ~ quoted_string? ~ schemaless? ~ "{" ~ block_body ~ "}" }
+schemaless = { "@schemaless" }
+block_kind = @{ ident }
+
+block_body = { block_item* }
+block_item = { assignment | block }
+
+assignment = { ident ~ "=" ~ value }
+
+value = {
+    bracket_list
+  | quoted_string
+  | bare_token
+}
+
+bracket_list = { "[" ~ list_content? ~ "]" }
+list_content = { list_item ~ ("," ~ list_item)* }
+list_item = { "default" | quoted_string | ident }
+
+quoted_string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+bare_token = @{ ident | decimal_unsigned }
+ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+decimal_unsigned = @{ ASCII_DIGIT+ }

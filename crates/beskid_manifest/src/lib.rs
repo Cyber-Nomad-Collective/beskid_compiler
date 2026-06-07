@@ -1,6 +1,7 @@
-//! Reads [`runtime_manifest.toml`] and generates ABI / analysis registry Rust sources.
+//! Reads [`runtime_manifest.bsol`] and generates ABI / analysis registry Rust sources.
 
 mod codegen;
+mod lower;
 mod model;
 
 pub use model::ManifestRoot;
@@ -8,12 +9,18 @@ pub use model::ManifestRoot;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use beskid_bsol::{load_profile, parse_bsol_document, validate};
+
+use lower::lower_runtime_manifest;
 use model::ManifestRoot as Manifest;
 
 /// Load and parse the runtime manifest from `path`.
 pub fn load_manifest(path: &Path) -> Result<Manifest, String> {
     let text = fs::read_to_string(path).map_err(|err| format!("read {}: {err}", path.display()))?;
-    toml::from_str(&text).map_err(|err| format!("parse {}: {err}", path.display()))
+    let document = parse_bsol_document(&text).map_err(|err| err.to_string())?;
+    let profile = load_profile("runtime.v1").map_err(|err| err.to_string())?;
+    let validated = validate(&document, &profile).map_err(|err| err.to_string())?;
+    lower_runtime_manifest(validated)
 }
 
 /// Generate `beskid_host` handler registration table under `out_dir`.
@@ -141,5 +148,5 @@ pub fn generate_analysis_from_path(manifest_path: &Path, out_path: &Path) -> Res
 
 /// Default manifest path relative to the compiler workspace root.
 pub fn default_manifest_path(manifest_dir: &Path) -> PathBuf {
-    manifest_dir.join("../../runtime_manifest.toml")
+    manifest_dir.join("../../runtime_manifest.bsol")
 }

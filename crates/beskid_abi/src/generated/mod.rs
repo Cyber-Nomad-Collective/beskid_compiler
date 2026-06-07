@@ -1,4 +1,4 @@
-//! Generated runtime manifest tables (see `compiler/runtime_manifest.toml`).
+//! Generated runtime manifest tables (see `compiler/runtime_manifest.bsol`).
 
 pub mod builtins;
 pub mod dispatch_lookup;
