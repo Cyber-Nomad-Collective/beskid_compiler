@@ -6,7 +6,9 @@ use clap::Args;
 use std::path::PathBuf;
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
-use beskid_tools::pipeline::{resolve_input_with_cli_pipeline, tui::format_severity_summary};
+use beskid_tools::pipeline::{
+    resolve_input_with_cli_pipeline, tui::format_severity_summary, tui::severity_command_summary,
+};
 
 #[derive(Args, Debug)]
 pub struct AnalyzeArgs {
@@ -53,9 +55,15 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
         services::analyze_source_in_project(&resolved.source_path, &resolved.source)?
     };
     let counts = pipeline_ui.report_semantic_diagnostics(&diagnostics);
-    pipeline_ui.finish_session(format!(
-        "Analyze complete ({})",
-        format_severity_summary(counts)
-    ));
+    let severity_line = format_severity_summary(counts);
+    let summary = severity_command_summary(
+        "Analyze",
+        format!("Analyze complete ({severity_line})"),
+        counts,
+    );
+    pipeline_ui.finish_session_with_summary(
+        format!("Analyze complete ({severity_line})"),
+        Some(summary),
+    );
     Ok(())
 }

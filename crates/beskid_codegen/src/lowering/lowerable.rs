@@ -167,7 +167,7 @@ fn emit_link_plan(
             entry,
             resolution,
             type_result,
-            function_defs,
+            &function_defs,
             def_index,
             ctx,
             errors,
@@ -179,7 +179,7 @@ fn emit_link_plan(
             entry,
             resolution,
             type_result,
-            function_defs,
+            &function_defs,
             def_index,
             ctx,
             errors,
@@ -198,7 +198,22 @@ fn emit_function_item(
     ctx: &mut CodegenContext,
     errors: &mut Vec<crate::errors::CodegenError>,
 ) {
-    let Some(def) = def_index.function(item) else {
+    let loaded_hir;
+    let def = if let Some(def) = def_index.function(item) {
+        def
+    } else if let (Some(info), Some(hir)) = (
+        resolution.items.get(item.0),
+        crate::linking::load_hir_program_for_item(resolution, item),
+    ) {
+        loaded_hir = hir;
+        let short_name = info.name.rsplit("::").next().unwrap_or(&info.name);
+        let Some(def) = crate::linking::find_function_by_span(&loaded_hir, info.span)
+            .or_else(|| crate::linking::find_function_by_name(&loaded_hir, short_name))
+        else {
+            return;
+        };
+        def
+    } else {
         return;
     };
     let method_style = mangled
@@ -306,7 +321,22 @@ fn emit_link_symbol(
                 .get(item.0)
                 .is_some_and(|info| info.kind == ItemKind::Method)
             {
-                let Some(def) = def_index.method(*item) else {
+                let loaded_hir;
+                let def = if let Some(def) = def_index.method(*item) {
+                    def
+                } else if let (Some(info), Some(hir)) = (
+                    resolution.items.get(item.0),
+                    crate::linking::load_hir_program_for_item(resolution, *item),
+                ) {
+                    loaded_hir = hir;
+                    let short_name = info.name.rsplit("::").next().unwrap_or(&info.name);
+                    let Some(def) = crate::linking::find_method_by_span(&loaded_hir, info.span)
+                        .or_else(|| crate::linking::find_method_by_name(&loaded_hir, short_name))
+                    else {
+                        return;
+                    };
+                    def
+                } else {
                     return;
                 };
                 ctx.current_source_path = effective_source_path(*item, def_index, resolution);
@@ -331,7 +361,22 @@ fn emit_link_symbol(
             }
         }
         LinkSymbol::Method { item, mangled: _ } => {
-            let Some(def) = def_index.method(*item) else {
+            let loaded_hir;
+            let def = if let Some(def) = def_index.method(*item) {
+                def
+            } else if let (Some(info), Some(hir)) = (
+                resolution.items.get(item.0),
+                crate::linking::load_hir_program_for_item(resolution, *item),
+            ) {
+                loaded_hir = hir;
+                let short_name = info.name.rsplit("::").next().unwrap_or(&info.name);
+                let Some(def) = crate::linking::find_method_by_span(&loaded_hir, info.span)
+                    .or_else(|| crate::linking::find_method_by_name(&loaded_hir, short_name))
+                else {
+                    return;
+                };
+                def
+            } else {
                 return;
             };
             ctx.current_source_path = effective_source_path(*item, def_index, resolution);

@@ -8,6 +8,10 @@ use serde_json::{Value, json};
 use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::{LSPAny, Uri};
 
+use beskid_analysis::resolve::symbol::{BUILTIN_PACKAGE, symbol_key};
+use beskid_analysis::resolve::symbol_lookup::symbol_for_item;
+use beskid_analysis::services::{DocumentAnalysisSnapshot, item_id_at_offset};
+
 use crate::protocol::execute_args::{first_arg_object, missing_args};
 use crate::session::store::Document;
 
@@ -15,6 +19,11 @@ pub const CMD_GET_DOCUMENTATION_URI: &str = "beskid.symbol.getDocumentationUri";
 
 const DEFAULT_PCKG_BASE: &str = "https://pckg.beskid-lang.org";
 const DEFAULT_BOOK_BASE: &str = "https://beskid-lang.org";
+const DEFAULT_SPEC_BASE: &str = "https://beskid-lang.org/platform-spec";
+
+const CORELIB_SPEC_PATH: &str =
+    "/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/";
+const BUILTIN_SPEC_PATH: &str = "/platform-spec/language-meta/interop/builtins-and-symbols/";
 
 pub fn handle_symbol_documentation_command(
     command: &str,
@@ -59,6 +68,10 @@ fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<St
         return Some(format!("{base}/docs/{package}@{version}{fragment}"));
     }
 
+    if let Some(spec_path) = platform_spec_path_for_offset(analysis, offset, source_path) {
+        return Some(absolute_spec_url(&spec_path));
+    }
+
     let book_base =
         std::env::var("BESKID_BOOK_BASE_URL").unwrap_or_else(|_| DEFAULT_BOOK_BASE.to_string());
     let book_base = book_base.trim_end_matches('/');
@@ -66,6 +79,55 @@ fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<St
         return Some(format!("{book_base}/book/?q={}", urlencoding_encode(&name)));
     }
     Some(format!("{book_base}/book/"))
+}
+
+fn absolute_spec_url(spec_path: &str) -> String {
+    let spec_base =
+        std::env::var("BESKID_SPEC_BASE_URL").unwrap_or_else(|_| DEFAULT_SPEC_BASE.to_string());
+    let spec_base = spec_base.trim_end_matches('/');
+    if spec_path.starts_with("/platform-spec/") {
+        let site_root = spec_base
+            .strip_suffix("/platform-spec")
+            .unwrap_or(spec_base)
+            .trim_end_matches('/');
+        return format!("{site_root}{spec_path}");
+    }
+    format!("{spec_base}{}", normalize_spec_suffix(spec_path))
+}
+
+fn normalize_spec_suffix(spec_path: &str) -> String {
+    if spec_path.starts_with('/') {
+        spec_path.to_string()
+    } else {
+        format!("/{spec_path}")
+    }
+}
+
+fn platform_spec_path_for_offset(
+    snapshot: &DocumentAnalysisSnapshot,
+    offset: usize,
+    source_path: &Path,
+) -> Option<String> {
+    if path_looks_like_corelib(source_path) {
+        return Some(CORELIB_SPEC_PATH.to_string());
+    }
+    let resolution = snapshot.resolution.as_ref()?;
+    let item_id = item_id_at_offset(snapshot, offset)?;
+    let symbol_id = symbol_for_item(resolution, item_id)?;
+    let key = symbol_key(&resolution.symbols, symbol_id)?;
+    let package = key.split("::").next()?;
+    if package == BUILTIN_PACKAGE {
+        return Some(BUILTIN_SPEC_PATH.to_string());
+    }
+    if package.starts_with("corelib") || package == "beskid_standard" {
+        return Some(CORELIB_SPEC_PATH.to_string());
+    }
+    None
+}
+
+fn path_looks_like_corelib(path: &Path) -> bool {
+    let path_str = path.to_string_lossy();
+    path_str.contains("/corelib/") || path_str.contains("\\corelib\\")
 }
 
 fn extract_symbol_name(markdown: &str) -> Option<String> {
@@ -129,5 +191,31 @@ mod tests {
         let (pkg, ver) = package_from_materialized_path(path).expect("parsed");
         assert_eq!(pkg, "corelib_console");
         assert_eq!(ver, "latest");
+    }
+
+    #[test]
+    fn absolute_spec_url_joins_default_site_root() {
+        // Uses DEFAULT_SPEC_BASE when BESKID_SPEC_BASE_URL is unset.
+        let prior = std::env::var("BESKID_SPEC_BASE_URL").ok();
+        // SAFETY: test-only env mutation; restored before return.
+        unsafe {
+            std::env::remove_var("BESKID_SPEC_BASE_URL");
+        }
+        assert_eq!(
+            absolute_spec_url(CORELIB_SPEC_PATH),
+            "https://beskid-lang.org/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/"
+        );
+        if let Some(value) = prior {
+            // SAFETY: test-only env restore.
+            unsafe {
+                std::env::set_var("BESKID_SPEC_BASE_URL", value);
+            }
+        }
+    }
+
+    #[test]
+    fn corelib_source_path_maps_to_spec() {
+        let path = Path::new("/work/compiler/corelib/packages/foundation/src/Core/Result.bd");
+        assert!(path_looks_like_corelib(path));
     }
 }

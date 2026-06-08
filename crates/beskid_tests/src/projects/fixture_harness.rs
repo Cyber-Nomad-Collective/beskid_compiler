@@ -164,10 +164,29 @@ pub fn compile_corelib_tests_front_end(
         .expect("executable")
 }
 
+/// Semantic gate for a `corelib_tests` entry (resolve + typecheck entry body; dependency signatures only).
+///
+/// Uses [`PrepareMode::DiagnosticsOnly`] so the spine does not re-run full executable lowering and
+/// does not type-check every corelib dependency body (that path can take 20+ minutes per entry).
 pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
     test_progress(&format!("→ corelib typecheck: {entry_relative}"));
     let started = Instant::now();
-    let _ = compile_corelib_tests_front_end(entry_relative);
+    let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
+    with_db(|db| {
+        prepare_compilation_with_db(
+            db,
+            &resolved,
+            PrepareOptions {
+                mode: PrepareMode::DiagnosticsOnly,
+                front_end: FrontEndOptions {
+                    with_semantic_diagnostics: true,
+                    ..Default::default()
+                },
+            },
+            None,
+        )
+    })
+    .expect("corelib_tests semantic gate");
     test_progress(&format!(
         "✓ corelib typecheck: {entry_relative} ({:.1}s)",
         started.elapsed().as_secs_f64()

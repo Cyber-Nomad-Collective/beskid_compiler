@@ -132,6 +132,8 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<ModArtifact
         pipeline: None,
     })?;
 
+    generate_embedded_grammars(&req.project_root, &artifact_dir)?;
+
     let descriptor = ModArtifactDescriptor {
         schema_version: MOD_DESCRIPTOR_SCHEMA_VERSION,
         package_id: req.package_id,
@@ -147,6 +149,52 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<ModArtifact
     };
     write_descriptor_sidecar(&descriptor)?;
     Ok(descriptor)
+}
+
+fn generate_embedded_grammars(project_root: &Path, artifact_dir: &Path) -> AotResult<()> {
+    let grammars_dir = project_root.join("grammars");
+    if !grammars_dir.is_dir() {
+        return Ok(());
+    }
+    let generated_dir = artifact_dir.join("generated");
+    fs::create_dir_all(&generated_dir).map_err(|err| AotError::Io {
+        path: generated_dir.clone(),
+        message: err.to_string(),
+    })?;
+    for entry in fs::read_dir(&grammars_dir).map_err(|err| AotError::Io {
+        path: grammars_dir.clone(),
+        message: err.to_string(),
+    })? {
+        let entry = entry.map_err(|err| AotError::Io {
+            path: grammars_dir.clone(),
+            message: err.to_string(),
+        })?;
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("pest") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).map_err(|err| AotError::Io {
+            path: path.clone(),
+            message: err.to_string(),
+        })?;
+        let rules = beskid_pest_gen::parse_grammar_rules(&source).map_err(|message| {
+            AotError::InvalidRequest {
+                message: format!("grammar {}: {message}", path.display()),
+            }
+        })?;
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("grammar");
+        let module_name = stem.replace('-', "_");
+        let emitted = beskid_pest_gen::emit_combinator_module(&module_name, &rules);
+        let out_path = generated_dir.join(format!("{module_name}.bd"));
+        fs::write(&out_path, emitted).map_err(|err| AotError::Io {
+            path: out_path,
+            message: err.to_string(),
+        })?;
+    }
+    Ok(())
 }
 
 /// Compute the content-addressed artifact key from the normative cache tuple.

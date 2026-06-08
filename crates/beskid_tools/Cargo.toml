@@ -14,7 +14,6 @@ include_dir = "0.7.4"
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 tui-tree-widget = { workspace = true }
-tui-widget-list = { workspace = true }
 tui-piechart = { workspace = true }
 tui-logger = { workspace = true }
 tracing = { workspace = true, features = ["std"] }

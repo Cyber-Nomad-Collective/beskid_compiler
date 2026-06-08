@@ -808,6 +808,18 @@ impl<'a> TypeContext<'a> {
                     .map(|path| crate::paths::unit_path_key(path));
                 self.type_dependency_function_items(&dependency.node.items);
             }
+            if let Some(index) = module_index {
+                let assembled: HashSet<std::path::PathBuf> = dependency_source_paths
+                    .map(|paths| paths.iter().map(|path| crate::paths::unit_path_key(path)).collect())
+                    .unwrap_or_default();
+                for path in index.prefetched_paths() {
+                    let key = crate::paths::unit_path_key(path);
+                    if assembled.contains(&key) {
+                        continue;
+                    }
+                    self.type_prefetched_source_path(path);
+                }
+            }
         }
         self.errors.truncate(dependency_errors_before);
         self.cast_intents.truncate(dependency_cast_intents_before);

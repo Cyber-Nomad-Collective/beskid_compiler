@@ -1,5 +1,5 @@
 use crate::errors::CodegenError;
-use crate::lowering::function::{LoopControl, materialize_locals_for_loop_back_edge};
+use crate::lowering::function::{LoopControl, refresh_locals_at_loop_header};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use beskid_analysis::hir::{HirPrimitiveType, HirWhileStatement};
@@ -14,12 +14,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirWhileStatement {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let header_block = ctx.builder.create_block();
+        let cond_block = ctx.builder.create_block();
         let body_block = ctx.builder.create_block();
         let exit_block = ctx.builder.create_block();
 
-        ctx.builder.ins().jump(header_block, &[]);
-        ctx.builder.switch_to_block(header_block);
+        ctx.builder.ins().jump(cond_block, &[]);
+        ctx.builder.switch_to_block(cond_block);
+        refresh_locals_at_loop_header(ctx.builder, ctx.state);
 
         let condition =
             lower_node(&node.node.condition, ctx)?.ok_or(CodegenError::UnsupportedNode {
@@ -44,7 +45,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirWhileStatement {
 
         ctx.builder.switch_to_block(body_block);
         ctx.state.loop_stack.push(LoopControl {
-            continue_block: header_block,
+            continue_block: cond_block,
             break_block: exit_block,
         });
         ctx.state.block_terminated = false;
@@ -56,12 +57,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirWhileStatement {
         }
         ctx.state.loop_stack.pop();
         if !ctx.state.block_terminated {
-            materialize_locals_for_loop_back_edge(ctx.builder, ctx.state);
-            ctx.builder.ins().jump(header_block, &[]);
+            ctx.builder.ins().jump(cond_block, &[]);
         }
 
         ctx.builder.seal_block(body_block);
-        ctx.builder.seal_block(header_block);
+        ctx.builder.seal_block(cond_block);
         ctx.state.block_terminated = false;
         ctx.builder.switch_to_block(exit_block);
         ctx.builder.seal_block(exit_block);

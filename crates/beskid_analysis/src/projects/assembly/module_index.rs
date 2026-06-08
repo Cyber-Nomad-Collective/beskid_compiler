@@ -267,8 +267,120 @@ impl ModuleIndex {
                 .merge_from(&unit_resolution.tables, unit_hir.path.clone());
         }
 
+        self.merge_prefetched_path_resolutions(&mut resolution, assembly);
+
         Some(resolution)
     }
+
+    /// Resolve locals and value tables for prefetch-only sources not in the assembly closure.
+    fn merge_prefetched_path_resolutions(
+        &self,
+        resolution: &mut Resolution,
+        assembly: &super::ProgramAssembly,
+    ) {
+        for path in &self.prefetched_paths {
+            if assembly
+                .hir_units
+                .iter()
+                .any(|unit| crate::paths::same_file(&unit.path, path))
+            {
+                continue;
+            }
+            let Ok(source) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let logical_name = path.display().to_string();
+            let Ok(program) =
+                crate::services::parse_program_with_source_name(&logical_name, &source)
+            else {
+                continue;
+            };
+            let ast: crate::syntax::Spanned<crate::hir::AstProgram> = program.into();
+            let hir = crate::hir::lower_program(&ast);
+            let key = crate::paths::unit_path_key(path);
+            let declaring_package =
+                declaring_package_for_prefetched_path(path, assembly, &self.entry_project_name, &self.dependency_packages);
+            let module_path = prefetched_module_path_for_file(path, assembly);
+
+            let mut unit_resolver = Resolver::with_module_prefetch(
+                self.items.clone(),
+                self.module_graph.clone(),
+                self.builtin_items.clone(),
+                self.symbols.clone(),
+                self.by_symbol.clone(),
+            );
+            unit_resolver.set_declaring_package(declaring_package);
+            unit_resolver.set_current_source_path(Some(key.clone()));
+            if let Some(ref module_path) = module_path {
+                unit_resolver.collect_program_in_module(&hir, module_path, Some(path));
+            } else {
+                unit_resolver.collect_program(&hir);
+            }
+            let unit_resolution = unit_resolver
+                .resolve_collected_program_for_api_documentation(&hir, module_path.as_deref());
+            resolution.tables.merge_from(&unit_resolution.tables, key);
+        }
+    }
+}
+
+fn declaring_package_for_prefetched_path(
+    path: &Path,
+    assembly: &super::ProgramAssembly,
+    entry_project_name: &str,
+    dependency_packages: &HashMap<String, String>,
+) -> String {
+    if path.starts_with(&assembly.roots.host.source_root) {
+        return entry_project_name.to_string();
+    }
+    for dep in &assembly.roots.dependencies {
+        if path.starts_with(&dep.source_root) {
+            if let Some(dep_name) = &dep.dependency_name
+                && let Some(project_name) = dependency_packages.get(dep_name)
+            {
+                return project_name.clone();
+            }
+        }
+    }
+    entry_project_name.to_string()
+}
+
+fn prefetched_module_path_for_file(
+    path: &Path,
+    assembly: &super::ProgramAssembly,
+) -> Option<Vec<String>> {
+    if path.starts_with(&assembly.roots.host.source_root) {
+        return module_path_from_src_suffix(path, assembly.has_std_dependency);
+    }
+    for dep in &assembly.roots.dependencies {
+        if path.starts_with(&dep.source_root) {
+            if let Some(segments) = module_path_from_src_suffix(path, assembly.has_std_dependency)
+            {
+                return Some(segments);
+            }
+            let Ok(rel) = path.strip_prefix(&dep.source_root) else {
+                continue;
+            };
+            let rel = rel.with_extension("");
+            let mut segments: Vec<String> = rel
+                .components()
+                .filter_map(|component| match component {
+                    std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+                    _ => None,
+                })
+                .collect();
+            if segments.is_empty() {
+                return None;
+            }
+            collapse_homonymous_module_segment(&mut segments);
+            if assembly.has_std_dependency {
+                let mut with_std = vec!["Std".to_string()];
+                with_std.extend(segments);
+                return Some(with_std);
+            }
+            return Some(segments);
+        }
+    }
+    module_path_from_src_suffix(path, assembly.has_std_dependency)
 }
 
 /// Declaring package name for symbols collected from a compilation unit.

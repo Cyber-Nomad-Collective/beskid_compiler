@@ -179,10 +179,12 @@ fn lower_project_root_block(block: ValidatedBlock) -> Result<ParsedProjectBlock,
 }
 
 fn lower_flat_block(block: ValidatedBlock) -> ParsedBlock {
+    let mut fields = block.fields;
+    fields.extend(block.extras);
     ParsedBlock {
         kind: block.kind,
         label: block.label,
-        fields: block.fields,
+        fields,
     }
 }
 
@@ -725,5 +727,23 @@ member "m" {
         assert_eq!(w.workspace.resolver, "v1");
         assert_eq!(w.workspace.name, "w");
         assert_eq!(w.members[0].path, "pkg");
+    }
+
+    #[test]
+    fn workspace_default_test_member_lands_in_extras() {
+        let src = r#"workspace {
+  name = "corelib"
+  resolver = v1
+  defaultTestMember = "corelib_tests"
+}
+member "corelib_tests" {
+  path = "tests/corelib_tests"
+}
+"#;
+        let w = parse_workspace_manifest(src).expect("parse workspace");
+        assert_eq!(
+            w.workspace.extras.get("defaultTestMember").map(String::as_str),
+            Some("corelib_tests")
+        );
     }
 }

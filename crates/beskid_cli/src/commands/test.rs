@@ -6,7 +6,6 @@ use beskid_engine::Engine;
 use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use clap::Args;
 use serde::Serialize;
-use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -92,10 +91,10 @@ pub fn execute(args: TestArgs) -> Result<()> {
     if args.all_targets {
         return super::matrix_test::execute_all_targets(args);
     }
-    execute_single_target(args)
+    execute_single_target(args, None)
 }
 
-pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
+pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut Engine>) -> Result<()> {
     let resolve_args = ResolveInputArgs {
         input: args.input.as_ref(),
         project: args.project.project.as_ref(),
@@ -171,7 +170,8 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
 
     let mut executions = Vec::new();
     let mut summary = TestSummary::default();
-    let mut engine = Engine::with_link_profile(args.runtime_profile.into());
+    let mut owned_engine = Engine::with_link_profile(args.runtime_profile.into());
+    let engine = shared_engine.unwrap_or(&mut owned_engine);
     for (test, row_index, initial) in planned {
         if initial == TestRowState::FilteredOut {
             executions.push(TestExecution {
@@ -209,7 +209,7 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
         }
         let started = Instant::now();
         match run_entrypoint_from_front_end_with_engine(
-            &mut engine,
+            engine,
             &front,
             &source_name,
             &resolved.source,
@@ -243,11 +243,11 @@ pub(crate) fn execute_single_target(args: TestArgs) -> Result<()> {
                     name = test.qualified_name,
                     reason = reason.trim()
                 );
-                if !test_ui.is_plain() {
-                    eprint!("{reason}");
-                    let _ = std::io::stderr().flush();
+                if test_ui.is_plain() {
+                    eprintln!("{detail}");
+                } else {
+                    log::error!(target: "beskid.tools.test", "{detail}");
                 }
-                eprintln!("{detail}");
                 test_ui.finish_row(row_index, TestRowState::Failed, duration, None)?;
                 executions.push(TestExecution {
                     name: test.name.to_string(),

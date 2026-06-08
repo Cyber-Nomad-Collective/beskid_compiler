@@ -3,6 +3,7 @@
 
 use anyhow::{Result, anyhow};
 use beskid_analysis::projects::{TargetKind, load_manifest_from_path};
+use beskid_engine::Engine;
 use std::env;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -36,6 +37,7 @@ pub fn execute_all_targets(mut args: TestArgs) -> Result<()> {
     let mut failures = Vec::new();
     let mut passed = 0usize;
     let total = test_targets.len();
+    let mut engine = Engine::with_link_profile(args.runtime_profile.into());
 
     for target in test_targets {
         eprint!("Running {target}... ");
@@ -43,7 +45,7 @@ pub fn execute_all_targets(mut args: TestArgs) -> Result<()> {
 
         args.project.target = Some(target.clone());
         let start = Instant::now();
-        match execute_single_target(args.clone()) {
+        match execute_single_target(args.clone(), Some(&mut engine)) {
             Ok(()) => {
                 let elapsed = start.elapsed();
                 eprintln!("PASS ({elapsed:.1?})");

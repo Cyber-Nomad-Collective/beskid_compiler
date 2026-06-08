@@ -226,16 +226,40 @@ impl CliPipeline {
     }
 
     pub fn finish_session(&self, message: impl Into<Cow<'static, str>>) {
+        self.finish_session_with_summary(message, None);
+    }
+
+    pub fn finish_session_with_summary(
+        &self,
+        message: impl Into<Cow<'static, str>>,
+        summary: Option<tui::CommandSummary>,
+    ) {
         let msg = message.into().into_owned();
         self.flush_pending_work_unit_ui();
         let elapsed = self.started_at.elapsed();
-        let summary = format!("{msg} in {}", format_duration(elapsed));
+        let headline = format!("{msg} in {}", format_duration(elapsed));
+        if self.tui_active() {
+            if let Ok(mut tui) = self.tui.lock() {
+                let panel = summary
+                    .unwrap_or_else(|| tui::CommandSummary::plain("Result", headline.clone()));
+                let _ = tui.show_summary(panel);
+                let _ = tui.draw();
+            }
+        }
         self.halt_progress_bars_for_output();
-        eprintln!("{summary}");
+        eprintln!("{headline}");
     }
 
     pub fn finish_build(&self, message: impl Into<Cow<'static, str>>) {
         self.finish_session(message);
+    }
+
+    pub fn finish_build_with_summary(
+        &self,
+        message: impl Into<Cow<'static, str>>,
+        summary: tui::CommandSummary,
+    ) {
+        self.finish_session_with_summary(message, Some(summary));
     }
 
     pub fn is_spinner_enabled(&self) -> bool {

@@ -264,6 +264,7 @@ dependencies = [
  "ar",
  "beskid_abi",
  "beskid_codegen",
+ "beskid_pest_gen",
  "beskid_pipeline",
  "cc",
  "cranelift-codegen",
@@ -383,6 +384,7 @@ dependencies = [
  "beskid_host",
  "beskid_manifest",
  "beskid_pipeline",
+ "beskid_queries",
  "beskid_runtime",
  "cranelift-codegen",
  "cranelift-jit",
@@ -458,6 +460,14 @@ dependencies = [
  "url",
  "walkdir",
  "zip",
+]
+
+[[package]]
+name = "beskid_pest_gen"
+version = "0.1.0"
+dependencies = [
+ "pest",
+ "pest_derive",
 ]
 
 [[package]]
@@ -590,7 +600,6 @@ dependencies = [
  "tui-logger",
  "tui-piechart",
  "tui-tree-widget",
- "tui-widget-list",
  "ureq",
 ]
 
@@ -4417,16 +4426,6 @@ dependencies = [
  "ratatui-core",
  "ratatui-widgets",
  "unicode-width 0.2.2",
-]
-
-[[package]]
-name = "tui-widget-list"
-version = "0.15.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fbf7f6c7d04beb3602630d83db44e81d7a1de1fea11ca3435d82e094c5c0192"
-dependencies = [
- "ratatui-core",
- "ratatui-widgets",
 ]
 
 [[package]]

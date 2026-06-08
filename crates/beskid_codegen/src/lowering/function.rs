@@ -164,6 +164,7 @@ fn lower_method_body(
     let this_var = builder.declare_var(receiver_clif_ty);
     builder.def_var(this_var, param_values[0]);
     state.locals.insert(this_local_id, this_var);
+    state.parameter_locals.push(this_local_id);
     state
         .local_type_overrides
         .insert(this_local_id, receiver_type_id);
@@ -207,6 +208,7 @@ fn lower_method_body(
         let var = builder.declare_var(clif_ty);
         builder.def_var(var, value);
         state.locals.insert(local_id, var);
+        state.parameter_locals.push(local_id);
         state.local_type_overrides.insert(local_id, type_id);
     }
 
@@ -670,6 +672,7 @@ fn lower_function_with_name_body(
         let var = builder.declare_var(clif_ty);
         builder.def_var(var, value);
         state.locals.insert(local_id, var);
+        state.parameter_locals.push(local_id);
         state.local_type_overrides.insert(local_id, type_id);
         state.local_type_overrides.insert(local_id, type_id);
     }
@@ -727,6 +730,7 @@ fn lower_function_with_name_body(
 #[derive(Default)]
 pub(crate) struct FunctionLoweringState {
     pub(crate) locals: HashMap<LocalId, Variable>,
+    pub(crate) parameter_locals: Vec<LocalId>,
     pub(crate) local_type_overrides: HashMap<LocalId, TypeId>,
     pub(crate) local_lambdas: HashMap<LocalId, *const Spanned<HirLambdaExpression>>,
     pub(crate) emitted_lambda_symbols: HashMap<*const Spanned<HirLambdaExpression>, String>,
@@ -741,14 +745,17 @@ pub(crate) struct LoopControl {
     pub(crate) break_block: Block,
 }
 
-/// Touch every local SSA variable so Cranelift records the current value before a loop back-edge.
-pub(crate) fn materialize_locals_for_loop_back_edge(
+/// Re-read parameter locals at the loop header so invariant bindings survive backedges.
+pub(crate) fn refresh_locals_at_loop_header(
     builder: &mut FunctionBuilder,
     state: &FunctionLoweringState,
 ) {
-    let vars: Vec<Variable> = state.locals.values().copied().collect();
-    for var in vars {
-        let _ = builder.use_var(var);
+    for local_id in &state.parameter_locals {
+        let Some(var) = state.locals.get(local_id) else {
+            continue;
+        };
+        let value = builder.use_var(*var);
+        builder.def_var(*var, value);
     }
 }
 

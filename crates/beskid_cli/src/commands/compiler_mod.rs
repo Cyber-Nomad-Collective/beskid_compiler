@@ -24,7 +24,7 @@ use clap::{Args, Subcommand};
 use walkdir::WalkDir;
 
 use crate::project_args::LockfilePolicyArgs;
-use beskid_tools::pipeline::{CliPipeline, PipelineProgressKind, use_cli_spinner};
+use beskid_tools::pipeline::{CliPipeline, PipelineProgressKind, tui::CommandSummary, use_cli_spinner};
 
 #[derive(Args, Debug)]
 pub struct ModArgs {
@@ -129,7 +129,15 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
         .map_err(anyhow::Error::from)
     })?;
 
-    pipeline_ui.finish_session("Mod rebuild complete");
+    pipeline_ui.finish_session_with_summary(
+        "Mod rebuild complete",
+        Some(
+            CommandSummary::plain("Mod rebuild", "Mod rebuild complete").with_stat(
+                "artifact",
+                descriptor.artifact_dir.display().to_string(),
+            ),
+        ),
+    );
     println!("mod artifact: {}", descriptor.artifact_dir.display());
     println!("  object     {}", descriptor.object_path().display());
     println!("  descriptor {}", descriptor.sidecar_path().display());
@@ -145,7 +153,10 @@ fn clean(args: ModCleanArgs) -> Result<()> {
         &_resolved.plan.project_root,
         &_resolved.manifest.project.name,
     )?;
-    pipeline_ui.finish_session("Mod clean complete");
+    pipeline_ui.finish_session_with_summary(
+        "Mod clean complete",
+        Some(CommandSummary::plain("Mod clean", "Mod clean complete")),
+    );
     if removed {
         println!(
             "removed mod artifact cache for {}",

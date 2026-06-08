@@ -13,7 +13,10 @@ use crate::lowering::function::mangle_method_name;
 use crate::lowering::types::type_id_for_type;
 
 use super::call_graph::collect_calls_in_body;
-use super::def_index::FunctionDefIndex;
+use super::def_index::{
+    find_function_by_name, find_function_by_span, find_method_by_name, find_method_by_span,
+    FunctionDefIndex,
+};
 
 /// One symbol to emit in the link plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -311,7 +314,7 @@ fn visit_callee(
     call: ResolvedCall,
     resolution: &Resolution,
     type_result: &TypeResult,
-    def_index: &FunctionDefIndex<'_>,
+    def_index: &FunctionDefIndex,
     visited: &mut HashSet<CalleeKey>,
     callees: &mut Vec<LinkSymbol>,
 ) {
@@ -365,11 +368,59 @@ fn visit_callee(
     if let Some(info) = resolution.items.get(call.item_id.0)
         && matches!(info.kind, ItemKind::Function | ItemKind::Method)
     {
+        visit_callee_body_from_source(info, resolution, type_result, def_index, visited, callees);
         callees.push(LinkSymbol::Function {
             item: call.item_id,
             mangled: call.mangled,
             receiver_type: call.receiver_type,
         });
+    }
+}
+
+fn visit_callee_body_from_source(
+    info: &ItemInfo,
+    resolution: &Resolution,
+    type_result: &TypeResult,
+    def_index: &FunctionDefIndex,
+    visited: &mut HashSet<CalleeKey>,
+    callees: &mut Vec<LinkSymbol>,
+) {
+    let Some(path) = info.source_path.as_ref() else {
+        return;
+    };
+    let Ok(source) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let logical_name = path.display().to_string();
+    let Ok(program) = beskid_analysis::services::parse_program_with_source_name(&logical_name, &source)
+    else {
+        return;
+    };
+    let ast: beskid_analysis::syntax::Spanned<beskid_analysis::hir::AstProgram> = program.into();
+    let hir = beskid_analysis::hir::lower_program(&ast);
+    let source_path = unit_path_key(path);
+    let short_name = info.name.rsplit("::").next().unwrap_or(&info.name);
+    let body = match info.kind {
+        ItemKind::Function => find_function_by_span(&hir, info.span)
+            .or_else(|| find_function_by_name(&hir, short_name))
+            .map(|def| &def.node.body),
+        ItemKind::Method => find_method_by_span(&hir, info.span)
+            .or_else(|| find_method_by_name(&hir, short_name))
+            .map(|def| &def.node.body),
+        _ => None,
+    };
+    let Some(body) = body else {
+        return;
+    };
+    for call in collect_calls_in_body(body, resolution, type_result, Some(&source_path)) {
+        visit_callee(
+            call,
+            resolution,
+            type_result,
+            def_index,
+            visited,
+            callees,
+        );
     }
 }
 

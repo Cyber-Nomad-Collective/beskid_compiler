@@ -173,10 +173,12 @@ fn enrich_resolved_with_assembly(
     let Some(plan) = resolved.compile_plan.as_ref() else {
         return Ok(clone_resolved(resolved));
     };
-    let assembly_options = beskid_analysis::projects::model::AssemblyOptions {
-        discovery: options.front_end.assembly_discovery,
-        ..Default::default()
-    };
+    let mut assembly_options = beskid_analysis::projects::assembly_options_for_plan(plan);
+    if options.front_end.assembly_discovery
+        != beskid_analysis::projects::AssemblyDiscovery::ImportClosure
+    {
+        assembly_options.discovery = options.front_end.assembly_discovery;
+    }
     let assembly = program_assembly(
         db,
         plan,

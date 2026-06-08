@@ -1,4 +1,4 @@
-//! Ratatui terminal session: alternate screen + TEA dispatch loop hook.
+//! Ratatui terminal session: alternate screen + TEA dispatch loop.
 
 use std::io::{self, Stderr, Write, stderr};
 
@@ -9,12 +9,14 @@ use crossterm::terminal::{
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
-use super::app::{Message, Model, update, view};
-use super::logger_panel::{init_session_logger, shutdown_session_logger};
-use super::test_report::TestReportSummary;
+use super::message::Message;
+use super::model::{CommandSummary, Model, TestReportSummary};
 use super::test_table::TestRow;
+use super::update::update;
+use super::view::view;
+use super::widgets::{init_session_logger, shutdown_session_logger};
 
-pub use super::app::PipelineProgress as PipelineViewState;
+pub use super::model::PipelineProgress as PipelineViewState;
 
 /// Ratatui session on stderr alternate screen.
 pub struct TuiSession {
@@ -125,12 +127,19 @@ impl TuiSession {
         })
     }
 
+    pub fn show_summary(&mut self, summary: CommandSummary) -> io::Result<()> {
+        self.dispatch(Message::ShowSummary(summary))
+    }
+
     pub fn push_log(&mut self, line: &str) -> io::Result<()> {
         self.dispatch(Message::PushLog(line.to_string()))
     }
 
     fn dispatch(&mut self, msg: Message) -> io::Result<()> {
-        update(&mut self.model, msg);
+        let mut next = Some(msg);
+        while let Some(current) = next.take() {
+            next = update(&mut self.model, current);
+        }
         self.draw()
     }
 

@@ -41,7 +41,8 @@ pub use document::{
     DocumentSymbolInfo, HoverInfo, ReferenceInfo, SymbolLocation, TestCaseInfo,
     assemble_for_api_documentation, build_document_analysis, build_document_analysis_for_resolved,
     build_document_analysis_with_context, collect_document_symbols, collect_test_cases,
-    completion_candidates, definition_at_offset, hover_at_offset, references_at_offset,
+    completion_candidates, definition_at_offset, hover_at_offset, item_id_at_offset,
+    references_at_offset,
     references_at_offset_workspace, resolve_assembly_for_api_documentation, symbol_kind_name,
 };
 pub use entry_session::{

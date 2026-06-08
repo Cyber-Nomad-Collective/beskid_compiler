@@ -33,35 +33,49 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 node: "unit-valued binary operand",
             })?;
 
-        let left_type = ctx.require_expr_type_for_node(&node.node.left)?;
-        let right_type = ctx.require_expr_type_for_node(&node.node.right)?;
+        let (left_type, right_type) = if node.node.op.node == HirBinaryOp::Add
+            && let Some(string_type) = [ctx.expr_type(node.span)]
+                .into_iter()
+                .flatten()
+                .find(|type_id| is_string_type(ctx, *type_id))
+                .or_else(|| primitive_string_type(ctx))
+        {
+            (string_type, string_type)
+        } else {
+            let left_type = ctx.require_expr_type_for_node(&node.node.left)?;
+            let right_type = ctx.require_expr_type_for_node(&node.node.right)?;
+            (left_type, right_type)
+        };
 
         if node.node.op.node == HirBinaryOp::Add {
             let left_is_string = is_string_type(ctx, left_type);
             let right_is_string = is_string_type(ctx, right_type);
-            if left_is_string || right_is_string {
-                if left_is_string && !right_is_string {
-                    right = coerce_operand_to_string(
-                        node.node.right.span,
-                        right,
-                        right_type,
-                        left_type,
-                        ctx,
-                    )?;
-                } else if right_is_string && !left_is_string {
+            let result_is_string = ctx
+                .expr_type(node.span)
+                .is_some_and(|type_id| is_string_type(ctx, type_id));
+            if result_is_string || left_is_string || right_is_string {
+                let string_type = [ctx.expr_type(node.span), Some(left_type), Some(right_type)]
+                    .into_iter()
+                    .flatten()
+                    .find(|type_id| is_string_type(ctx, *type_id))
+                    .unwrap_or(left_type);
+                if !is_string_type(ctx, left_type) {
                     left = coerce_operand_to_string(
                         node.node.left.span,
                         left,
                         left_type,
-                        right_type,
+                        string_type,
                         ctx,
                     )?;
-                } else if !left_is_string {
-                    return Err(CodegenError::TypeMismatch {
-                        span: node.span,
-                        expected: left_type,
-                        actual: right_type,
-                    });
+                }
+                if !is_string_type(ctx, right_type) {
+                    right = coerce_operand_to_string(
+                        node.node.right.span,
+                        right,
+                        right_type,
+                        string_type,
+                        ctx,
+                    )?;
                 }
                 return lower_string_concat(node, left, right, ctx);
             }
@@ -467,6 +481,20 @@ fn is_string_type(ctx: &NodeLoweringContext<'_, '_>, type_id: TypeId) -> bool {
         ctx.type_result.types.get(type_id),
         Some(TypeInfo::Primitive(HirPrimitiveType::String))
     )
+}
+
+fn primitive_string_type(ctx: &NodeLoweringContext<'_, '_>) -> Option<TypeId> {
+    let mut index = 0usize;
+    loop {
+        let type_id = TypeId(index);
+        let Some(info) = ctx.type_result.types.get(type_id) else {
+            return None;
+        };
+        if matches!(info, TypeInfo::Primitive(HirPrimitiveType::String)) {
+            return Some(type_id);
+        }
+        index += 1;
+    }
 }
 
 fn coerce_operand_to_string(

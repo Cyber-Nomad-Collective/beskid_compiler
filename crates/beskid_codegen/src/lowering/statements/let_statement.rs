@@ -23,21 +23,21 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
             span: node.node.name.span,
         })?;
 
-        let type_id = ctx
-            .type_result
-            .local_types
-            .get(&local_id)
-            .copied()
-            .or_else(|| {
-                node.node.type_annotation.as_ref().and_then(|ty| {
-                    crate::lowering::types::type_id_for_type(
-                        ctx.resolution,
-                        ctx.type_result,
-                        ctx.codegen.current_source_path.as_ref(),
-                        ty,
-                    )
-                })
+        // Prefer the written type annotation over span-keyed `local_types`, which can collide
+        // across materialized compilation units in linked assemblies.
+        let type_id = node
+            .node
+            .type_annotation
+            .as_ref()
+            .and_then(|ty| {
+                crate::lowering::types::type_id_for_type(
+                    ctx.resolution,
+                    ctx.type_result,
+                    ctx.codegen.current_source_path.as_ref(),
+                    ty,
+                )
             })
+            .or_else(|| ctx.type_result.local_types.get(&local_id).copied())
             .or_else(|| ctx.require_expr_type_for_node(&node.node.value).ok())
             .ok_or(CodegenError::MissingLocalType {
                 span: node.node.name.span,

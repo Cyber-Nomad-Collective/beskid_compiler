@@ -3,7 +3,7 @@
 use crate::project_args::{LockfilePolicyArgs, PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;
-use beskid_tools::pipeline::resolve_project_with_cli_pipeline;
+use beskid_tools::pipeline::{resolve_project_with_cli_pipeline, tui::CommandSummary};
 use clap::Args;
 
 #[derive(Args, Debug)]
@@ -30,7 +30,13 @@ pub fn execute(args: FetchArgs) -> Result<()> {
         args.progress.plain,
         UnresolvedDependencyPolicy::Warn,
     )?;
-    pipeline_ui.finish_session("Dependencies resolved and materialized");
+    pipeline_ui.finish_session_with_summary(
+        "Dependencies resolved and materialized",
+        Some(CommandSummary::plain(
+            "Fetch",
+            "Dependencies resolved and materialized",
+        )),
+    );
     println!("Dependencies resolved and materialized.");
     Ok(())
 }

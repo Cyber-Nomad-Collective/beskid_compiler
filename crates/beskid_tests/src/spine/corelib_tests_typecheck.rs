@@ -1,15 +1,47 @@
 //! Front-end type-check gates for all `corelib_tests` entries.
 //!
-//! Run with progress visible:
-//! `cargo test -p beskid_tests corelib_test -- --nocapture --test-threads=1`
+//! # Running
+//!
+//! **CI / full gate** (one shared Salsa session, ~minutes not hours):
+//! ```bash
+//! cargo test -p beskid_tests corelib_tests_front_end_typechecks_matrix -- --nocapture --test-threads=1
+//! ```
+//!
+//! **Fast local smoke** (5 representative entries):
+//! ```bash
+//! BESKID_CORELIB_SPINE_SMOKE=1 cargo test -p beskid_tests corelib_tests_front_end_typechecks_matrix -- --nocapture --test-threads=1
+//! ```
+//!
+//! **Skip entirely** (local iteration on unrelated crates):
+//! ```bash
+//! BESKID_SKIP_CORELIB_SPINE=1 cargo test -p beskid_tests
+//! ```
+//!
+//! **Bisect one entry** (ignored per-entry tests):
+//! ```bash
+//! cargo test -p beskid_tests text_cursor_tests_front_end_typechecks -- --ignored --nocapture --test-threads=1
+//! ```
+//!
+//! Expected durations (debug build, warm Salsa disk cache, `--test-threads=1`):
+//! - Single entry semantic gate: ~5–60s (assembly ~5s + gate typecheck)
+//! - Full matrix (~44 entries): ~5–15 min
+//! - Legacy executable prepare per entry was ~25 min — do not use for spine gates.
 
 use crate::projects::fixture_harness::{
     corelib_tests_project_root, typecheck_corelib_tests_entry, with_project_test_env,
 };
 
+use super::corelib_spine_harness::run_corelib_typecheck_matrix;
+
+#[test]
+fn corelib_tests_front_end_typechecks_matrix() {
+    run_corelib_typecheck_matrix();
+}
+
 macro_rules! corelib_typecheck_test {
     ($name:ident, $entry:literal) => {
         #[test]
+        #[ignore = "bisect helper; CI uses corelib_tests_front_end_typechecks_matrix"]
         fn $name() {
             let path = corelib_tests_project_root().join("src").join($entry);
             if !path.is_file() {
@@ -189,4 +221,16 @@ corelib_typecheck_test!(
 corelib_typecheck_test!(
     console_render_context_tests_front_end_typechecks,
     "console/RenderContextTests.bd"
+);
+corelib_typecheck_test!(
+    text_cursor_tests_front_end_typechecks,
+    "text/TextCursorTests.bd"
+);
+corelib_typecheck_test!(
+    text_parser_tests_front_end_typechecks,
+    "text/TextParserTests.bd"
+);
+corelib_typecheck_test!(
+    text_regex_tests_front_end_typechecks,
+    "text/TextRegexTests.bd"
 );

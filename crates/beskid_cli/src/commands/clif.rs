@@ -4,6 +4,7 @@ use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_codegen::{lower_resolved_entrypoint_with_pipeline, render_clif};
 use beskid_tools::PipelineProgressKind;
+use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use clap::Args;
 use std::path::PathBuf;
@@ -47,7 +48,10 @@ pub fn execute(args: ClifArgs) -> Result<()> {
         false,
         Some(session.observer()),
     )?;
-    session.pipeline().finish_session("CLIF ready");
+    session.pipeline().finish_session_with_summary(
+        "CLIF ready",
+        Some(CommandSummary::plain("CLIF", "CLIF ready")),
+    );
     print!("{}", render_clif(&lowered.artifact));
 
     Ok(())

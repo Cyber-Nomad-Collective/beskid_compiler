@@ -384,3 +384,79 @@ fn parent_module_import_path(import_path: &str) -> Option<String> {
     }
     Some(segments[..segments.len() - 1].join("."))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::projects::{
+        AssemblyDiscovery, AssemblyError, CompilePlan, Target, TargetKind,
+        assembly_options_for_plan, assemble_program, plan_entry_path,
+    };
+
+    fn no_entry_plan_with_source(source: &str) -> (CompilePlan, PathBuf) {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let project_root = std::env::temp_dir().join(format!("beskid_asm_test_{nanos}"));
+        let source_root = project_root.join("src");
+        fs::create_dir_all(&source_root).expect("create source root");
+        fs::write(source_root.join("Main.bd"), source).expect("write Main.bd");
+        let plan = CompilePlan {
+            source_root: source_root.clone(),
+            project_root: project_root.clone(),
+            manifest_path: project_root.join("project.bproj"),
+            project_name: "fixture".to_string(),
+            target: Target {
+                name: "__aggregate__".to_string(),
+                kind: TargetKind::Lib,
+                entry: None,
+            },
+            dependency_projects: Vec::new(),
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let entry_path = plan_entry_path(&plan, &source_root);
+        (plan, entry_path)
+    }
+
+    #[test]
+    fn no_entry_plan_uses_workspace_scan_discovery() {
+        let (plan, _) = no_entry_plan_with_source("pub fn Main() { }");
+        let options = assembly_options_for_plan(&plan);
+        assert_eq!(options.discovery, AssemblyDiscovery::WorkspaceScan);
+    }
+
+    #[test]
+    fn workspace_scan_assembles_without_placeholder_entry_file() {
+        let (plan, entry_path) = no_entry_plan_with_source("pub fn Main() { }");
+        let options = assembly_options_for_plan(&plan);
+        assert!(
+            !entry_path.is_file(),
+            "placeholder entry should not exist: {}",
+            entry_path.display()
+        );
+
+        let assembly = assemble_program(&plan, None, &entry_path, Some(""), &options)
+            .expect("workspace scan should assemble units without a real entry file");
+        assert!(!assembly.units.is_empty());
+        let _ = fs::remove_dir_all(&plan.project_root);
+    }
+
+    #[test]
+    fn import_closure_still_requires_entry_file() {
+        let (plan, entry_path) = no_entry_plan_with_source("pub fn Main() { }");
+        let mut options = assembly_options_for_plan(&plan);
+        options.discovery = AssemblyDiscovery::ImportClosure;
+        let err = assemble_program(&plan, None, &entry_path, Some(""), &options)
+            .expect_err("import closure without entry file should fail");
+        assert!(
+            matches!(err, AssemblyError::EntryNotFound { .. }),
+            "unexpected error: {err}"
+        );
+        let _ = fs::remove_dir_all(&plan.project_root);
+    }
+}

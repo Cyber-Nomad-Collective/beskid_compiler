@@ -6,6 +6,44 @@ use crate::types::TypeId;
 use super::context::{FunctionSignature, TypeContext};
 
 impl<'a> TypeContext<'a> {
+    pub(super) fn type_prefetched_source_path(&mut self, path: &std::path::Path) {
+        let Ok(source) = std::fs::read_to_string(path) else {
+            return;
+        };
+        let logical_name = path.display().to_string();
+        let Ok(program) = crate::services::parse_program_with_source_name(&logical_name, &source)
+        else {
+            return;
+        };
+        let ast: crate::syntax::Spanned<crate::hir::AstProgram> = program.into();
+        let hir = crate::hir::lower_program(&ast);
+        self.current_source_path = Some(crate::paths::unit_path_key(path));
+        let errors_before = self.errors.len();
+        let cast_intents_before = self.cast_intents.len();
+        self.seed_enum_definitions(&hir);
+        self.seed_struct_definitions(&hir);
+        for item in &hir.node.items {
+            let (span, generics) = match &item.node {
+                HirItem::FunctionDefinition(def) => (item.span, &def.node.generics),
+                HirItem::TypeDefinition(def) => (item.span, &def.node.generics),
+                HirItem::EnumDefinition(def) => (item.span, &def.node.generics),
+                _ => continue,
+            };
+            if let Some(item_id) = self.item_id_for_span(span) {
+                let names = generics
+                    .iter()
+                    .map(|generic| generic.node.name.clone())
+                    .collect::<Vec<_>>();
+                self.generic_items.insert(item_id, names);
+            }
+        }
+        self.register_foreign_function_signatures(&hir);
+        self.type_dependency_function_items(&hir.node.items);
+        self.errors.truncate(errors_before);
+        self.cast_intents.truncate(cast_intents_before);
+        self.flush_scoped_type_maps_for_current_path();
+    }
+
     pub(super) fn seed_definitions_from_source_path(&mut self, path: &std::path::Path) {
         let Ok(source) = std::fs::read_to_string(path) else {
             return;
@@ -21,6 +59,7 @@ impl<'a> TypeContext<'a> {
         let errors_before = self.errors.len();
         self.seed_enum_definitions(&hir);
         self.seed_struct_definitions(&hir);
+        self.register_foreign_function_signatures(&hir);
         self.errors.truncate(errors_before);
     }
 

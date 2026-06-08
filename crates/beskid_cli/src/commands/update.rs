@@ -3,7 +3,7 @@
 use crate::project_args::{PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;
-use beskid_tools::pipeline::resolve_project_with_cli_pipeline;
+use beskid_tools::pipeline::{resolve_project_with_cli_pipeline, tui::CommandSummary};
 use clap::Args;
 
 #[derive(Args, Debug)]
@@ -27,7 +27,10 @@ pub fn execute(args: UpdateArgs) -> Result<()> {
         args.progress.plain,
         UnresolvedDependencyPolicy::Warn,
     )?;
-    pipeline_ui.finish_session("Workspace updated");
+    pipeline_ui.finish_session_with_summary(
+        "Workspace updated",
+        Some(CommandSummary::plain("Update", "Workspace updated")),
+    );
     println!("Dependency lock and materialized workspace updated.");
     Ok(())
 }

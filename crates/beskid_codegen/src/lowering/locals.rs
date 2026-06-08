@@ -15,7 +15,9 @@ use beskid_analysis::types::{
 };
 
 use crate::errors::CodegenError;
-use crate::linking::{resolve_item_call_id, resolve_path_item_id};
+use crate::linking::{
+    resolve_item_call_id, resolve_path_item_id, return_type_for_module_path_call,
+};
 use crate::lowering::types::resolve_type_path_item_id_for_codegen;
 
 pub(crate) fn local_type_id(
@@ -109,7 +111,9 @@ pub(crate) fn infer_expr_type(
 
     if !matches!(
         &node.node,
-        HirExpressionNode::PathExpression(_) | HirExpressionNode::MemberExpression(_)
+        HirExpressionNode::PathExpression(_)
+            | HirExpressionNode::MemberExpression(_)
+            | HirExpressionNode::LiteralExpression(_)
     ) && let Some(type_id) = expr_type_at(type_result, node.span, source_path)
     {
         return Some(type_id);
@@ -171,21 +175,24 @@ pub(crate) fn infer_expr_type(
                 &binary.node.left,
                 source_path,
                 receiver_type,
-            )?;
+            );
             let right = infer_expr_type(
                 resolution,
                 type_result,
                 &binary.node.right,
                 source_path,
                 receiver_type,
-            )?;
+            );
             match binary.node.op.node {
                 HirBinaryOp::Add => {
-                    if type_is_string(type_result, left) || type_is_string(type_result, right) {
+                    if left.is_some_and(|type_id| type_is_string(type_result, type_id))
+                        || right.is_some_and(|type_id| type_is_string(type_result, type_id))
+                    {
                         return primitive_type_id(type_result, HirPrimitiveType::String)
-                            .or(Some(left));
+                            .or(left)
+                            .or(right);
                     }
-                    Some(left)
+                    left.or(right)
                 }
                 HirBinaryOp::And
                 | HirBinaryOp::Or
@@ -200,7 +207,7 @@ pub(crate) fn infer_expr_type(
                     primitive_type_id(type_result, HirPrimitiveType::Bool)
                 }
                 HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div | HirBinaryOp::Mod => {
-                    Some(left)
+                    left.or(right)
                 }
             }
         }
@@ -386,6 +393,10 @@ fn infer_call_expr_type(
     source_path: Option<&PathBuf>,
     receiver_type: Option<TypeId>,
 ) -> Option<TypeId> {
+    if let Some(return_type) = return_type_for_module_path_call(resolution, type_result, call) {
+        return Some(return_type);
+    }
+
     if let HirExpressionNode::MemberExpression(member_expr) = &call.node.callee.node {
         let method_name = member_expr.node.member.node.name.as_str();
         let receiver_type = infer_expr_type(

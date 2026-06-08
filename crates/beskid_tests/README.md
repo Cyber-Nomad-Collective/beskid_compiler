@@ -32,3 +32,23 @@ cargo test -p beskid_codegen --features slow
 ```
 
 Default CI runs the fast tier only.
+
+## Corelib spine gates (`spine::corelib_tests_*`)
+
+The primary CI gate is a **single-process matrix** that typechecks every `corelib_tests`
+entry with the semantic gate (`PrepareMode::DiagnosticsOnly`), not full executable lowering.
+
+| Command | When |
+| --- | --- |
+| `cargo test -p beskid_tests corelib_tests_front_end_typechecks_matrix -- --nocapture --test-threads=1` | Full gate (~5–15 min debug, warm cache) |
+| `BESKID_CORELIB_SPINE_SMOKE=1 cargo test … matrix …` | Fast local smoke (5 entries) |
+| `BESKID_SKIP_CORELIB_SPINE=1 cargo test -p beskid_tests` | Skip spine while iterating elsewhere |
+| `BESKID_CORELIB_SPINE_ENTRIES=text/TextCursorTests.bd cargo test … matrix …` | One entry via matrix driver |
+| `cargo test -p beskid_tests text_cursor_tests_front_end_typechecks -- --ignored --test-threads=1` | Bisect one ignored per-entry helper |
+
+**Hang prevention:** always pass `--test-threads=1` for spine work (process-global cwd/env locks).
+Per-entry timeouts panic with remediation hints (`BESKID_SKIP_CORELIB_SPINE`, filter env vars).
+
+**Do not** use a 90s wall-clock timeout on spine gates — assembly alone can take ~5s and a cold
+semantic gate ~60s per entry. CI should allow **≥45 min** for full `cargo test --workspace` on
+debug builds, or run `beskid_tests` with a **≥20 min** job timeout when scoped.

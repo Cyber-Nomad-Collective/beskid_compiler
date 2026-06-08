@@ -1,0 +1,15 @@
+[package]
+name = "beskid_pest_gen"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+pest = { workspace = true }
+pest_derive = { workspace = true }
+
+[[bin]]
+name = "emit_grammar"
+path = "src/bin/emit_grammar.rs"
+
+[dev-dependencies]

@@ -666,6 +666,23 @@ pub fn collect_document_symbols(snapshot: &DocumentAnalysisSnapshot) -> Vec<Docu
         .collect()
 }
 
+/// Resolved item id at `offset` for documentation routing (definitions and enclosing items).
+pub fn item_id_at_offset(snapshot: &DocumentAnalysisSnapshot, offset: usize) -> Option<ItemId> {
+    let resolution = snapshot.resolution.as_ref()?;
+    if let Some(resolved) = resolved_value_at_offset(resolution, offset) {
+        return match resolved {
+            ResolvedValue::Item(item_id) => Some(*item_id),
+            ResolvedValue::Local(_) => None,
+        };
+    }
+    resolution
+        .items
+        .iter()
+        .filter(|item| item.span.start <= offset && offset <= item.span.end)
+        .min_by_key(|item| item.span.end.saturating_sub(item.span.start))
+        .map(|item| item.id)
+}
+
 pub fn hover_at_offset(snapshot: &DocumentAnalysisSnapshot, offset: usize) -> Option<HoverInfo> {
     let resolution = snapshot.resolution.as_ref()?;
     if let Some(resolved) = resolved_value_at_offset(resolution, offset) {

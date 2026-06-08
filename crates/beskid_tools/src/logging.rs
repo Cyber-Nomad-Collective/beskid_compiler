@@ -35,10 +35,11 @@ impl Write for GatedStderr {
 }
 
 fn default_filter(log_cranelift: bool) -> String {
+    let base = "info,beskid_pipeline=info,beskid_tools=info,beskid_queries=info,salsa=warn";
     if log_cranelift {
-        "info,beskid_pipeline=info,beskid_tools=info".to_string()
+        base.to_string()
     } else {
-        format!("info,beskid_pipeline=info,beskid_tools=info,{CRANELIFT_QUIET}")
+        format!("{base},{CRANELIFT_QUIET}")
     }
 }
 

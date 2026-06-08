@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use super::hyperlink::FileLineLink;
 use super::terminal::TuiSession;
-use super::test_report::TestReportSummary;
+use super::model::TestReportSummary;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TestRowState {
@@ -151,7 +151,8 @@ impl TestRunUi {
         }
         if let Some(tui) = &mut self.tui {
             let title = format!("Tests ({})", self.rows.len());
-            tui.show_test_report(summary, title)?;
+            let panel = summary.into_command_summary(title);
+            tui.show_summary(panel)?;
             tui.suspend()?;
         }
         writeln!(stderr(), "{summary_line}")?;

@@ -1868,7 +1868,6 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                     .to_string();
                 if !ctx.codegen.symbol_emitted(&symbol_name)
                     && !ctx.codegen.emitting_items.contains(&item_id)
-                    && let Some(def) = ctx.function_defs.get(&item_id)
                 {
                     let saved_source_path = ctx.codegen.current_source_path.clone();
                     ctx.codegen.current_source_path = ctx
@@ -1877,16 +1876,38 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                         .get(item_id.0)
                         .and_then(|info| info.source_path.clone())
                         .or_else(|| saved_source_path.clone());
-                    let lower_result = lower_function_with_name(
-                        def,
-                        ctx.resolution,
-                        ctx.type_result,
-                        ctx.function_defs,
-                        ctx.codegen,
-                        None,
-                        None,
-                        Some(item_id),
-                    );
+                    let lower_result = if let Some(def) = ctx.function_defs.get(&item_id) {
+                        lower_function_with_name(
+                            def,
+                            ctx.resolution,
+                            ctx.type_result,
+                            ctx.function_defs,
+                            ctx.codegen,
+                            None,
+                            None,
+                            Some(item_id),
+                        )
+                    } else if let (Some(info), Some(hir)) = (
+                        ctx.resolution.items.get(item_id.0),
+                        crate::linking::load_hir_program_for_item(ctx.resolution, item_id),
+                    ) && let Some(def) = {
+                        let short_name = info.name.rsplit("::").next().unwrap_or(&info.name);
+                        crate::linking::find_function_by_span(&hir, info.span)
+                            .or_else(|| crate::linking::find_function_by_name(&hir, short_name))
+                    } {
+                        lower_function_with_name(
+                            def,
+                            ctx.resolution,
+                            ctx.type_result,
+                            ctx.function_defs,
+                            ctx.codegen,
+                            None,
+                            None,
+                            Some(item_id),
+                        )
+                    } else {
+                        Ok(())
+                    };
                     ctx.codegen.current_source_path = saved_source_path;
                     lower_result?;
                 }

@@ -205,3 +205,41 @@ pub fn discover_project_manifest_from_input_or_cwd(
         resolve_project_manifest_for_cwd(workspace_member)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::resolve_project_manifest_from_workspace;
+    use crate::projects::parse_workspace_manifest;
+
+    fn corelib_workspace_path() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/CoreLib.bws")
+    }
+
+    #[test]
+    fn corelib_workspace_default_test_member_resolves_tests_project() {
+        let path = corelib_workspace_path();
+        let src = std::fs::read_to_string(&path).expect("read CoreLib.bws");
+        let manifest = parse_workspace_manifest(&src).expect("parse workspace");
+        assert_eq!(
+            manifest
+                .workspace
+                .extras
+                .get("defaultTestMember")
+                .map(String::as_str),
+            Some("corelib_tests")
+        );
+
+        let (member_manifest, summary) =
+            resolve_project_manifest_from_workspace(&path, None, None).expect("resolve member");
+        assert!(
+            member_manifest
+                .components()
+                .any(|part| part.as_os_str() == "corelib_tests.bproj"),
+            "expected corelib_tests.bproj, got {}",
+            member_manifest.display()
+        );
+        assert_eq!(summary.selected_member_id, "corelib_tests");
+    }
+}

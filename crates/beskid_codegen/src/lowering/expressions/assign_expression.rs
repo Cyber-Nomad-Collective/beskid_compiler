@@ -2,7 +2,7 @@ use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
 use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
 use crate::lowering::dispatch::lower_dispatch_builtin_call;
-use crate::lowering::locals::resolved_value_at;
+use crate::lowering::locals::{local_type_id, resolved_value_at};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -249,7 +249,7 @@ fn resolve_assign_target(
                         span: path_expr.node.path.span,
                     },
                 )?;
-                let expected_type = ctx.type_result.local_types.get(&local_id).copied().ok_or(
+                let expected_type = local_type_id(ctx.type_result, ctx.state, local_id).ok_or(
                     CodegenError::MissingLocalType {
                         span: path_expr.node.path.span,
                     },

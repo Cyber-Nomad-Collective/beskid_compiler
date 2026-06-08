@@ -4,7 +4,7 @@ use crate::lowering::function::FunctionLoweringState;
 use crate::lowering::locals::{
     expr_type_at, infer_expr_type, require_expr_type, resolved_value_at,
 };
-use beskid_analysis::hir::{HirExpressionNode, HirFunctionDefinition};
+use beskid_analysis::hir::{HirBinaryOp, HirExpressionNode, HirFunctionDefinition, HirPrimitiveType};
 use beskid_analysis::resolve::Resolution;
 use beskid_analysis::resolve::{ItemId, ResolvedValue};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
@@ -61,6 +61,12 @@ impl NodeLoweringContext<'_, '_> {
         &self,
         node: &Spanned<HirExpressionNode>,
     ) -> Result<TypeId, CodegenError> {
+        if let HirExpressionNode::BinaryExpression(binary) = &node.node
+            && binary.node.op.node == HirBinaryOp::Add
+            && let Some(type_id) = primitive_type_id(self.type_result, HirPrimitiveType::String)
+        {
+            return Ok(type_id);
+        }
         if let HirExpressionNode::PathExpression(path) = &node.node {
             let segments = &path.node.path.node.segments;
             if segments.len() == 1 {
@@ -97,5 +103,22 @@ impl NodeLoweringContext<'_, '_> {
             return Ok(type_id);
         }
         Err(CodegenError::MissingExpressionType { span: node.span })
+    }
+}
+
+fn primitive_type_id(
+    type_result: &TypeResult,
+    primitive: HirPrimitiveType,
+) -> Option<TypeId> {
+    let mut index = 0usize;
+    loop {
+        let type_id = TypeId(index);
+        let Some(info) = type_result.types.get(type_id) else {
+            return None;
+        };
+        if matches!(info, beskid_analysis::types::TypeInfo::Primitive(found) if *found == primitive) {
+            return Some(type_id);
+        }
+        index += 1;
     }
 }

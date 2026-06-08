@@ -16,6 +16,7 @@ use beskid_codegen::lower_resolved_entrypoint_with_pipeline;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
+use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use clap::{Args, ValueEnum};
 
@@ -224,7 +225,10 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     };
     apply_link_libraries(&mut build_request, link_inputs);
     let result = build(build_request)?;
-    session.pipeline().finish_build("Build complete");
+    session.pipeline().finish_build_with_summary(
+        "Build complete",
+        CommandSummary::plain("Build", "Build complete").with_stat("output", output.display().to_string()),
+    );
 
     if args.plain
         && let Some(plan) = resolved.compile_plan.as_ref()

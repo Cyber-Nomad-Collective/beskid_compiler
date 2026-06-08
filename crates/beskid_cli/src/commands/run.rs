@@ -15,6 +15,7 @@ use beskid_codegen::lower_resolved_entrypoint_with_pipeline;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
+use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use clap::Args;
 
@@ -121,7 +122,15 @@ pub fn execute(args: RunArgs) -> Result<()> {
     let exe_path = build_result.final_path.unwrap_or(exe_path);
 
     let run_result = run_linked_executable(&exe_path).map_err(|err| anyhow::anyhow!("{err}"))?;
-    session.pipeline().finish_session("Run complete");
+    session
+        .pipeline()
+        .finish_session_with_summary(
+            "Run complete",
+            Some(
+                CommandSummary::plain("Run", "Run complete")
+                    .with_stat("exit", run_result.exit_code.to_string()),
+            ),
+        );
 
     if !run_result.stdout.is_empty() {
         io::stdout().write_all(&run_result.stdout)?;

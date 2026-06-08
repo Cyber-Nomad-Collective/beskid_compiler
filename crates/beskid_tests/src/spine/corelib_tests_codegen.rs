@@ -1,4 +1,7 @@
 //! CLIF lowering gates for selected `corelib_tests` entries (per-test link plan).
+//!
+//! Run serially (lowering reuses assembly cache but holds process-global locks):
+//! `cargo test -p beskid_tests corelib_tests_codegen -- --nocapture --test-threads=1`
 
 use crate::projects::fixture_harness::{
     corelib_tests_project_root, lower_corelib_tests_entrypoint, with_project_test_env,
@@ -85,17 +88,13 @@ corelib_lower_test!(
     "console/FormatScanTests.bd",
     "slice_returns_substring"
 );
-
-#[test]
-fn dump_repeat_clif() {
-    use crate::projects::fixture_harness::{corelib_tests_project_root, lower_corelib_tests_entrypoint, with_project_test_env};
-    with_project_test_env(&corelib_tests_project_root(), || {
-        let artifact = lower_corelib_tests_entrypoint("console/ControlsFrameTests.bd", "repeat_builds_string");
-        for f in &artifact.functions {
-            if f.name.contains("Repeat") {
-                eprintln!("=== {} ===
-{}", f.name, f.function);
-            }
-        }
-    });
-}
+corelib_lower_test!(
+    text_cursor_from_starts_at_zero_lowers,
+    "text/TextCursorTests.bd",
+    "from_starts_at_zero"
+);
+corelib_lower_test!(
+    text_parser_literal_matches_prefix_lowers,
+    "text/TextParserTests.bd",
+    "literal_matches_prefix"
+);

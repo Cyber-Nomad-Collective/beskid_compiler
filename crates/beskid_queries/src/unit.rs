@@ -35,9 +35,17 @@ pub fn unit_imports(
     path: PathBuf,
 ) -> Vec<String> {
     let _ = (project, grammar);
+    let display_path = path.display().to_string();
     let text = resolve_unit_text(db, &path);
     record_query_hit();
-    import_paths_from_source(&text)
+    let imports = import_paths_from_source(&text);
+    log::info!(
+        target: "beskid_queries::unit",
+        "unit_imports path={} imports=[{}]",
+        display_path,
+        imports.join(", ")
+    );
+    imports
 }
 
 /// Salsa memoization token for parse+expand (heavy `SourceUnit` lives in `unit_cache`).
