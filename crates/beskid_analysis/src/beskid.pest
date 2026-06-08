@@ -101,7 +101,7 @@ Keyword = {
     ) ~ !ASCII_ALPHANUMERIC
 }
 
-IntegerLiteral = @{ "-"? ~ ASCII_DIGIT+ }
+IntegerLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ ("_i32" | "_i64" | "_u8")? }
 FloatLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 StringLiteral = @{ "\"" ~ StringContent* ~ "\"" }
 StringContent = { StringInterpolation | StringEscape | StringText }

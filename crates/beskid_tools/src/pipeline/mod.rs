@@ -24,7 +24,7 @@ use beskid_pipeline::{
 use labels::{phase_label, sub_phase_index};
 use tui::{
     count_severities, format_duration, format_phase_end, format_phase_start, format_severity_summary,
-    format_work_unit, TuiSession,
+    format_work_unit, TestReportSummary, TestRow, TuiSession,
 };
 
 const WORK_UNIT_UI_MIN_INTERVAL: Duration = Duration::from_millis(120);
@@ -145,6 +145,96 @@ impl CliPipeline {
         }
     }
 
+    /// Re-enter alternate screen after [`halt_progress_bars_for_output`](Self::halt_progress_bars_for_output).
+    pub fn resume_after_output(&self) -> io::Result<()> {
+        if self.plain {
+            return Ok(());
+        }
+        let mut suspended = self
+            .tui_suspended
+            .lock()
+            .expect("tui_suspended mutex poisoned");
+        if !*suspended {
+            return Ok(());
+        }
+        if let Ok(mut tui) = self.tui.lock() {
+            tui.resume()?;
+        }
+        *suspended = false;
+        Ok(())
+    }
+
+    /// Transition the shared shell from pipeline prepare to live test execution.
+    pub fn begin_test_run(
+        &self,
+        title: impl Into<String>,
+        rows: Vec<TestRow>,
+    ) -> io::Result<()> {
+        self.resume_after_output()?;
+        self.with_tui_result(|tui| tui.begin_tests(title, rows))
+    }
+
+    /// Refresh test rows in the shared shell.
+    pub fn update_test_rows(&self, rows: Vec<TestRow>) -> io::Result<()> {
+        self.with_tui_result(|tui| tui.update_test_rows(rows))
+    }
+
+    /// Show the test-outcome summary chart in the shared shell (staged until Space).
+    pub fn show_test_summary(
+        &self,
+        summary: TestReportSummary,
+        title: impl Into<String>,
+    ) -> io::Result<()> {
+        self.with_tui_result(|tui| {
+            tui.show_test_report(summary, title)
+        })
+    }
+
+    /// Mark compile/prepare complete; pipeline tree remains until Space.
+    pub fn mark_compile_complete(&self) -> io::Result<()> {
+        self.with_tui_result(|tui| tui.mark_compile_complete())
+    }
+
+    /// Block until Space opens the test screen (q/Esc skips).
+    pub fn wait_for_tests_screen(&self) -> io::Result<()> {
+        self.with_tui_result(|tui| tui.wait_for(tui::NavTarget::Tests))
+    }
+
+    /// Block until Space opens the summary screen (q/Esc skips).
+    pub fn wait_for_summary_screen(&self) -> io::Result<()> {
+        self.with_tui_result(|tui| tui.wait_for(tui::NavTarget::Summary))
+    }
+
+    /// Pump keyboard events between long-running steps (Space still advances when ready).
+    pub fn pump_interactive(&self) -> io::Result<()> {
+        self.reset_after_test()
+    }
+
+    /// Clear stray ANSI styling from test output, then refresh the TUI shell.
+    pub fn reset_after_test(&self) -> io::Result<()> {
+        tui::reset_stderr_ansi()?;
+        if self.plain {
+            return Ok(());
+        }
+        self.with_tui_result(|tui| tui.pump_interactive())
+    }
+
+    /// Block on the summary screen until Space/q, then leave alternate screen.
+    pub fn wait_for_dismiss(&self) -> io::Result<()> {
+        if self.plain {
+            return Ok(());
+        }
+        if let Ok(mut tui) = self.tui.lock() {
+            tui.wait_for_dismiss()?;
+        }
+        let mut suspended = self
+            .tui_suspended
+            .lock()
+            .expect("tui_suspended mutex poisoned");
+        *suspended = true;
+        Ok(())
+    }
+
     /// Leave alternate screen before writing to stderr (avoids TTY deadlocks with miette).
     pub fn halt_progress_bars_for_output(&self) {
         if self.plain {
@@ -166,6 +256,10 @@ impl CliPipeline {
 
     fn tui_active(&self) -> bool {
         !self.tui_suspended() && !self.plain && self.tui.lock().is_ok_and(|t| t.is_active())
+    }
+
+    fn should_use_tui(&self) -> bool {
+        self.tui_active()
     }
 
     fn tui_suspended(&self) -> bool {
@@ -238,15 +332,22 @@ impl CliPipeline {
         self.flush_pending_work_unit_ui();
         let elapsed = self.started_at.elapsed();
         let headline = format!("{msg} in {}", format_duration(elapsed));
-        if self.tui_active() {
+        if !self.plain {
             if let Ok(mut tui) = self.tui.lock() {
-                let panel = summary
-                    .unwrap_or_else(|| tui::CommandSummary::plain("Result", headline.clone()));
-                let _ = tui.show_summary(panel);
-                let _ = tui.draw();
+                if tui.is_active() {
+                    let panel = summary
+                        .unwrap_or_else(|| tui::CommandSummary::plain("Result", headline.clone()));
+                    let _ = tui.stage_summary(panel);
+                    let _ = tui.wait_for(tui::NavTarget::Summary);
+                    let _ = tui.wait_for_dismiss();
+                }
             }
+            let mut suspended = self
+                .tui_suspended
+                .lock()
+                .expect("tui_suspended mutex poisoned");
+            *suspended = true;
         }
-        self.halt_progress_bars_for_output();
         eprintln!("{headline}");
     }
 
@@ -277,7 +378,7 @@ impl CliPipeline {
         let Some(msg) = pending else {
             return;
         };
-        if self.plain || self.tui_suspended() {
+        if !self.should_use_tui() {
             eprintln!("{msg}");
         }
     }
@@ -334,7 +435,7 @@ impl CliPipeline {
 
     fn emit_tree_line(&self, line: impl AsRef<str>) {
         let line = line.as_ref();
-        if self.plain || self.tui_suspended() {
+        if !self.should_use_tui() {
             eprintln!("{line}");
         }
     }
@@ -343,12 +444,20 @@ impl CliPipeline {
     where
         F: FnOnce(&mut TuiSession) -> io::Result<()>,
     {
-        if self.plain || self.tui_suspended() {
-            return;
+        let _ = self.with_tui_result(f);
+    }
+
+    fn with_tui_result<F>(&self, f: F) -> io::Result<()>
+    where
+        F: FnOnce(&mut TuiSession) -> io::Result<()>,
+    {
+        if !self.should_use_tui() {
+            return Ok(());
         }
         if let Ok(mut tui) = self.tui.lock() {
-            let _ = f(&mut tui);
+            f(&mut tui)?;
         }
+        Ok(())
     }
 
     fn emit_work_unit_if_due(
@@ -369,7 +478,7 @@ impl CliPipeline {
         };
         if emit {
             self.refresh_progress_bars(done, total.max(1), label);
-            if self.plain || self.tui_suspended() {
+            if !self.should_use_tui() {
                 eprintln!("{msg}");
             } else {
                 self.with_tui(|tui| tui.tree_work_unit(depth, done, total, label));
@@ -393,7 +502,7 @@ impl CliPipeline {
         let line = format_phase_start(depth, self.plain, label);
         let (stage_pos, stage_len, _) = self.stage_progress(depth, id);
         self.refresh_progress_bars(stage_pos, stage_len, label);
-        if self.plain || self.tui_suspended() {
+        if !self.should_use_tui() {
             if !line.is_empty() {
                 eprintln!("{line}");
             }
@@ -422,7 +531,7 @@ impl CliPipeline {
         let label = phase_label(id);
         let duration_text = format_duration(duration);
         let line = format_phase_end(depth, self.plain, label, &duration_text);
-        if self.plain || self.tui_suspended() {
+        if !self.should_use_tui() {
             eprintln!("{line}");
         } else {
             self.with_tui(|tui| tui.tree_phase_end(depth, label, duration_text));

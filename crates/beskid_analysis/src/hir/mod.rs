@@ -41,7 +41,7 @@ pub use item::{
     HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition, HirUseDeclaration, Item,
 };
 pub use legality::{HirLegalityError, validate_hir_program};
-pub use literal::HirLiteral;
+pub use literal::{HirLiteral, integer_literal_magnitude, integer_literal_primitive_type};
 pub use lowering::lower_program;
 pub use match_arm::HirMatchArm;
 pub use module::Module;

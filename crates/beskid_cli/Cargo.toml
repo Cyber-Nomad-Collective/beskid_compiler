@@ -20,6 +20,7 @@ beskid_repl = { path = "../beskid_repl" }
 tokio = { version = "1.48", features = ["rt-multi-thread"] }
 anyhow = "1.0"
 clap = { version = "4.4", features = ["derive"] }
+crossterm = { workspace = true }
 log = "0.4"
 miette = { version = "7.1", features = ["fancy"] }
 pest = { workspace = true }

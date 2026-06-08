@@ -38,5 +38,12 @@ pub enum Message {
         summary: TestReportSummary,
         title: String,
     },
-    ShowSummary(CommandSummary),
+    /// Store summary data without switching screens (Space opens summary view).
+    StageSummary(CommandSummary),
+    /// Switch to the live test table (after user presses Space).
+    ShowTestsScreen,
+    /// Switch to the outcome summary chart (after user presses Space).
+    ShowSummaryScreen,
+    /// Mark compile/prepare finished; pipeline tree stays visible.
+    CompileComplete,
 }

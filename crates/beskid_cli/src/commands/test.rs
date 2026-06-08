@@ -13,9 +13,7 @@ use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use crate::runtime_profile::CliRuntimeProfile;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::diagnostics;
-use beskid_tools::pipeline::{
-    tui::FileLineLink, tui::TestRowState, tui::TestRunUi, use_cli_spinner,
-};
+use beskid_tools::pipeline::{tui::FileLineLink, tui::TestRowState, tui::TestRunUi};
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 
 #[derive(Args, Debug, Clone)]
@@ -108,8 +106,13 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
         PipelineProgressKind::PrepareAndRun,
         &resolve_args,
     )?;
-    let prepared =
-        session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;
+    let prepared = session.executable_gate_prepared(
+        &resolved,
+        SemanticGateOptions {
+            finish_prepare_ui: false,
+            prepare_message: "Analysis complete",
+        },
+    )?;
 
     let tests = services::collect_test_cases(&prepared.program);
     if tests.is_empty() {
@@ -144,7 +147,7 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
         .filter(|tag| !tag.is_empty())
         .collect();
 
-    let mut test_ui = TestRunUi::new(args.plain, use_cli_spinner(args.plain));
+    let mut test_ui = TestRunUi::new(args.plain, Some(session.pipeline()));
     let mut planned = Vec::new();
     for (row_index, test) in tests.iter().enumerate() {
         let initial = if is_filtered_out(test, &include_tags, &exclude_tags, args.group.as_deref())
@@ -166,6 +169,9 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
 
     if !args.json {
         test_ui.draw_initial()?;
+        if !args.plain {
+            session.pipeline().wait_for_tests_screen()?;
+        }
     }
 
     let mut executions = Vec::new();
@@ -206,6 +212,9 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
 
         if !args.json {
             test_ui.start_running(row_index)?;
+            if !args.plain {
+                session.pipeline().reset_after_test()?;
+            }
         }
         let started = Instant::now();
         match run_entrypoint_from_front_end_with_engine(
@@ -220,6 +229,9 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
                 let duration = started.elapsed();
                 if !args.json {
                     test_ui.finish_row(row_index, TestRowState::Passed, duration, None)?;
+                    if !args.plain {
+                        session.pipeline().reset_after_test()?;
+                    }
                 }
                 executions.push(TestExecution {
                     name: test.name.to_string(),
@@ -249,6 +261,9 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
                     log::error!(target: "beskid.tools.test", "{detail}");
                 }
                 test_ui.finish_row(row_index, TestRowState::Failed, duration, None)?;
+                if !args.plain {
+                    session.pipeline().reset_after_test()?;
+                }
                 executions.push(TestExecution {
                     name: test.name.to_string(),
                     qualified_name: test.qualified_name.clone(),
@@ -276,6 +291,10 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
             summary.skipped,
             summary.filtered_out,
         )?;
+        if !args.plain {
+            session.pipeline().wait_for_summary_screen()?;
+            session.pipeline().wait_for_dismiss()?;
+        }
     }
 
     if summary.failed > 0 {

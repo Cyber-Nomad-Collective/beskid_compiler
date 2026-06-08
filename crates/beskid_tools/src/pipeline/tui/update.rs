@@ -1,13 +1,18 @@
 //! TEA update: apply messages to the model.
 
+use crate::logging::clear_tui_log_buffer;
+
 use super::message::Message;
 use super::model::{Mode, Model};
-use super::widgets::init_session_logger;
 use super::test_table::TestRowState;
+use super::widgets::init_session_logger;
 
 pub fn update(model: &mut Model, msg: Message) -> Option<Message> {
     match msg {
         Message::PhaseStart { depth, label } => {
+            if depth == 0 {
+                model.last_work_unit = None;
+            }
             model.tree.phase_start(depth, &label);
             tracing::info!(target: "beskid.tools.pipeline.ui", depth, label = label.as_str(), "phase");
             expand_tree(model);
@@ -33,6 +38,7 @@ pub fn update(model: &mut Model, msg: Message) -> Option<Message> {
             total,
             label,
         } => {
+            model.last_work_unit = Some(format!("[{done}/{total}] {label}"));
             model.tree.work_unit(depth, done, total, &label);
             tracing::trace!(
                 target: "beskid.tools.pipeline.ui",
@@ -64,9 +70,11 @@ pub fn update(model: &mut Model, msg: Message) -> Option<Message> {
         }
         Message::BeginTests { title, rows } => {
             init_session_logger();
-            model.mode = Mode::Tests;
+            clear_tui_log_buffer();
+            model.logger_state = tui_logger::TuiWidgetState::new();
             model.test_title = Some(title);
             model.test_rows = rows;
+            model.tests_loaded = true;
         }
         Message::UpdateTestRows(rows) => {
             model.test_rows = rows;
@@ -77,12 +85,20 @@ pub fn update(model: &mut Model, msg: Message) -> Option<Message> {
             model.report_summary = summary;
             model.test_title = Some(title.clone());
             model.command_summary = summary.into_command_summary(title);
-            model.mode = Mode::Report;
+            model.summary_ready = true;
         }
-        Message::ShowSummary(summary) => {
-            init_session_logger();
+        Message::StageSummary(summary) => {
             model.command_summary = summary;
+            model.summary_ready = true;
+        }
+        Message::ShowTestsScreen => {
+            model.mode = Mode::Tests;
+        }
+        Message::ShowSummaryScreen => {
             model.mode = Mode::Summary;
+        }
+        Message::CompileComplete => {
+            model.compile_complete = true;
         }
     }
     None
@@ -97,12 +113,29 @@ fn seed_failure_logs(rows: &[super::test_table::TestRow]) {
 }
 
 fn expand_tree(model: &mut Model) {
-    if let Ok(items) = model.tree.tree_items() {
-        for item in items {
-            model.tree_state.open(vec![item.identifier().clone()]);
+    for path in model.tree.open_paths() {
+        let key = path.join(".");
+        if model.expanded_tree_paths.insert(key) {
+            model.tree_state.open(path);
         }
     }
-    for path in model.tree.open_paths() {
-        model.tree_state.open(path);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expand_tree_opens_new_paths_once() {
+        let mut model = Model::default();
+        model.tree.phase_start(0, "Resolve");
+        expand_tree(&mut model);
+        let first = model.expanded_tree_paths.len();
+        assert_eq!(first, 1);
+        expand_tree(&mut model);
+        assert_eq!(model.expanded_tree_paths.len(), first);
+        model.tree.phase_start(1, "Graph");
+        expand_tree(&mut model);
+        assert_eq!(model.expanded_tree_paths.len(), first + 1);
     }
 }

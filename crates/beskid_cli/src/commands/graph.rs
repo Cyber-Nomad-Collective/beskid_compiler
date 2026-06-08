@@ -104,7 +104,7 @@ pub fn execute(args: GraphArgs) -> Result<()> {
     }
 
     if use_tui {
-        let result = render_mermaid_to_tui(&doc.mermaid, RenderOptions::default())?;
+        let result = render_mermaid_to_tui(&doc.mermaid, tui_render_options())?;
         for warning in &result.warnings {
             eprintln!("layout warning: {warning}");
         }
@@ -118,6 +118,13 @@ pub fn execute(args: GraphArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn tui_render_options() -> RenderOptions {
+    // graphs-tui applies max_width twice: layout gap compression (LR only) and
+    // hard per-line truncation in the renderer. Terminal column count is too
+    // narrow for wide TB graphs and chops off nodes/edges — use library defaults.
+    RenderOptions::default()
 }
 
 fn warning_code(code: beskid_graph::GraphWarningCode) -> &'static str {

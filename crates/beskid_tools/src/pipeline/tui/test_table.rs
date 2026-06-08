@@ -1,11 +1,11 @@
 //! Live test-run table for `beskid test` (status, duration, name).
 
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, Write};
 use std::time::Duration;
 
 use super::hyperlink::FileLineLink;
-use super::terminal::TuiSession;
 use super::model::TestReportSummary;
+use crate::pipeline::CliPipeline;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TestRowState {
@@ -26,19 +26,21 @@ pub struct TestRow {
 }
 
 /// Interactive or plain presenter for a test run.
-pub struct TestRunUi {
+pub struct TestRunUi<'a> {
     plain: bool,
     rows: Vec<TestRow>,
-    tui: Option<TuiSession>,
+    pipeline: Option<&'a CliPipeline>,
 }
 
-impl TestRunUi {
-    pub fn new(plain: bool, use_tty: bool) -> Self {
-        let interactive = use_tty && !plain && stderr().is_terminal();
+impl<'a> TestRunUi<'a> {
+    /// When `pipeline` is `Some` and not plain, reuses its [`TuiSession`](super::terminal::TuiSession).
+    pub fn new(plain: bool, pipeline: Option<&'a CliPipeline>) -> Self {
+        let interactive = !plain
+            && pipeline.is_some_and(|pipeline| pipeline.is_spinner_enabled());
         Self {
             plain: !interactive,
             rows: Vec::new(),
-            tui: None,
+            pipeline: if interactive { pipeline } else { None },
         }
     }
 
@@ -60,24 +62,15 @@ impl TestRunUi {
         self.plain
     }
 
-    fn ensure_tui(&mut self) -> io::Result<()> {
-        if self.plain || self.tui.is_some() {
-            return Ok(());
-        }
-        self.tui = Some(TuiSession::try_open(true)?);
-        Ok(())
-    }
-
     pub fn draw_initial(&mut self) -> io::Result<()> {
         if self.plain {
             return Ok(());
         }
-        self.ensure_tui()?;
-        if let Some(tui) = &mut self.tui {
-            let title = format!("Tests ({})", self.rows.len());
-            tui.begin_tests(title, self.rows.clone())?;
-        }
-        Ok(())
+        let Some(pipeline) = self.pipeline else {
+            return Ok(());
+        };
+        let title = format!("Tests ({})", self.rows.len());
+        pipeline.begin_test_run(title, self.rows.clone())
     }
 
     pub fn start_running(&mut self, index: usize) -> io::Result<()> {
@@ -90,6 +83,9 @@ impl TestRunUi {
         }
         self.rows[index].state = TestRowState::Running;
         self.rows[index].duration = None;
+        if !self.plain {
+            super::terminal::reset_stderr_ansi()?;
+        }
         self.redraw()
     }
 
@@ -120,11 +116,12 @@ impl TestRunUi {
                 TestRowState::FilteredOut => eprintln!("FILT {name}"),
                 TestRowState::Pending | TestRowState::Running => eprintln!("???? {name}"),
             }
-            return Ok(());
+            return super::terminal::reset_stderr_ansi();
         }
+        super::terminal::reset_stderr_ansi()?;
         self.redraw()?;
         if state == TestRowState::Failed {
-            writeln!(stderr())?;
+            writeln!(io::stderr())?;
         }
         Ok(())
     }
@@ -149,13 +146,11 @@ impl TestRunUi {
             println!("{summary_line}");
             return Ok(());
         }
-        if let Some(tui) = &mut self.tui {
+        if let Some(pipeline) = self.pipeline {
             let title = format!("Tests ({})", self.rows.len());
-            let panel = summary.into_command_summary(title);
-            tui.show_summary(panel)?;
-            tui.suspend()?;
+            pipeline.show_test_summary(summary, title)?;
         }
-        writeln!(stderr(), "{summary_line}")?;
+        writeln!(io::stderr(), "{summary_line}")?;
         Ok(())
     }
 
@@ -163,16 +158,11 @@ impl TestRunUi {
         if self.plain {
             return Ok(());
         }
-        self.ensure_tui()?;
-        if let Some(tui) = &mut self.tui {
-            tui.update_test_rows(self.rows.clone())?;
-        }
-        Ok(())
+        let Some(pipeline) = self.pipeline else {
+            return Ok(());
+        };
+        pipeline.update_test_rows(self.rows.clone())
     }
-}
-
-fn stderr() -> io::Stderr {
-    io::stderr()
 }
 
 #[cfg(test)]
@@ -181,8 +171,8 @@ mod tests {
 
     #[test]
     fn plain_mode_skips_tui() {
-        let ui = TestRunUi::new(true, false);
+        let ui = TestRunUi::new(true, None);
         assert!(ui.is_plain());
-        assert!(ui.tui.is_none());
+        assert!(ui.pipeline.is_none());
     }
 }

@@ -74,8 +74,16 @@ pub fn module_index_query(
     entry_index: usize,
     roots: &crate::projects::assembly::EffectiveCompilationRoots,
     plan: &CompilePlan,
+    prefetch_dependency_roots: bool,
 ) -> ModuleIndex {
-    ModuleIndex::build(units, hir_units, entry_index, roots, plan)
+    ModuleIndex::build(
+        units,
+        hir_units,
+        entry_index,
+        roots,
+        plan,
+        prefetch_dependency_roots,
+    )
 }
 
 /// Invalidate dependent units when imports change (BFS over import edges).

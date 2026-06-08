@@ -4,6 +4,7 @@ use crate::hir::{
     HirEnumConstructorExpression, HirExpressionNode, HirIndexExpression, HirLambdaExpression,
     HirLiteral, HirMatchArm, HirMatchExpression, HirMemberExpression, HirPath, HirPathExpression,
     HirPattern, HirPrimitiveType, HirStructLiteralExpression, HirUnaryExpression, HirUnaryOp,
+    integer_literal_magnitude, integer_literal_primitive_type,
 };
 use crate::resolve::{ItemKind, ResolvedType, ResolvedValue};
 use crate::syntax::Spanned;
@@ -1433,7 +1434,9 @@ impl<'a> TypeContext<'a> {
 
     pub(super) fn type_id_for_literal(&mut self, literal: &Spanned<HirLiteral>) -> Option<TypeId> {
         match &literal.node {
-            HirLiteral::Integer(_) => self.primitive_type_id(HirPrimitiveType::I32),
+            HirLiteral::Integer(text) => {
+                self.primitive_type_id(integer_literal_primitive_type(text))
+            }
             HirLiteral::Float(_) => self.primitive_type_id(HirPrimitiveType::F64),
             HirLiteral::String(_) => self.primitive_type_id(HirPrimitiveType::String),
             HirLiteral::Char(_) => self.primitive_type_id(HirPrimitiveType::Char),
@@ -1570,5 +1573,5 @@ fn integer_literal_value(expression: &HirExpressionNode) -> Option<i64> {
     let HirLiteral::Integer(text) = &literal.node.literal.node else {
         return None;
     };
-    text.parse().ok()
+    integer_literal_magnitude(text).parse().ok()
 }

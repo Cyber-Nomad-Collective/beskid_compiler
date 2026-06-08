@@ -20,19 +20,28 @@ pub fn draw_summary_panel(
     let (body_area, headline_area) = split_summary_root(area);
     let (chart_area, log_area) = split_summary_body(body_area);
 
-    if !summary.slices.is_empty() {
-        draw_pie_chart(frame, chart_area, summary);
-    } else {
-        draw_stats_table(frame, chart_area, summary);
-    }
+    draw_summary_chart_panel(frame, chart_area, summary);
     draw_log_panel(frame, log_area, "Log", logger_state);
+    draw_summary_headline_footer(frame, headline_area, summary);
+}
 
+/// Secondary pane in the unified shell (chart or stats table).
+pub fn draw_summary_chart_panel(frame: &mut Frame, area: Rect, summary: &CommandSummary) {
+    if !summary.slices.is_empty() {
+        draw_pie_chart(frame, area, summary);
+    } else {
+        draw_stats_table(frame, area, summary);
+    }
+}
+
+/// Footer strip for summary / report modes.
+pub fn draw_summary_headline_footer(frame: &mut Frame, area: Rect, summary: &CommandSummary) {
     let headline = Paragraph::new(summary.headline.as_str()).block(
         Block::default()
             .borders(Borders::ALL)
             .title(format!(" {} ", summary.title)),
     );
-    frame.render_widget(headline, headline_area);
+    frame.render_widget(headline, area);
 }
 
 fn draw_pie_chart(frame: &mut Frame, area: Rect, summary: &CommandSummary) {

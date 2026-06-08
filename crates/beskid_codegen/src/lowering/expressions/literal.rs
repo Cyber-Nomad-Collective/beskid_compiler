@@ -5,7 +5,9 @@ use crate::lowering::dispatch::emit_dispatch_call;
 use crate::lowering::locals::expr_type_at;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_abi::{DispatchReturnGroup, DispatchRoute, TAG_STR_NEW};
-use beskid_analysis::hir::{HirLiteral, HirPrimitiveType};
+use beskid_analysis::hir::{
+    HirLiteral, HirPrimitiveType, integer_literal_magnitude, integer_literal_primitive_type,
+};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use cranelift_codegen::ir::{ExternalName, GlobalValueData, InstBuilder, Value};
@@ -24,7 +26,9 @@ pub(crate) fn lower_literal(
         codegen.current_source_path.as_ref(),
     )
     .or_else(|| match &literal.node {
-        HirLiteral::Integer(_) => find_literal_type(type_result, HirPrimitiveType::I32),
+        HirLiteral::Integer(text) => {
+            find_literal_type(type_result, integer_literal_primitive_type(text))
+        }
         HirLiteral::Float(_) => find_literal_type(type_result, HirPrimitiveType::F64),
         HirLiteral::Bool(_) => find_literal_type(type_result, HirPrimitiveType::Bool),
         HirLiteral::String(_) => find_literal_type(type_result, HirPrimitiveType::String),
@@ -43,7 +47,7 @@ pub(crate) fn lower_literal(
 
     match &literal.node {
         HirLiteral::Integer(value) => {
-            let parsed = value
+            let parsed = integer_literal_magnitude(value)
                 .parse::<i64>()
                 .map_err(|_| CodegenError::UnsupportedNode {
                     span: literal.span,

@@ -121,7 +121,10 @@ pub(crate) fn infer_expr_type(
     match &node.node {
         HirExpressionNode::LiteralExpression(literal) => match &literal.node.literal.node {
             HirLiteral::String(_) => primitive_type_id(type_result, HirPrimitiveType::String),
-            HirLiteral::Integer(_) => primitive_type_id(type_result, HirPrimitiveType::I32),
+            HirLiteral::Integer(text) => primitive_type_id(
+                type_result,
+                beskid_analysis::hir::integer_literal_primitive_type(text),
+            ),
             HirLiteral::Float(_) => primitive_type_id(type_result, HirPrimitiveType::F64),
             HirLiteral::Bool(_) => primitive_type_id(type_result, HirPrimitiveType::Bool),
             HirLiteral::Char(_) => primitive_type_id(type_result, HirPrimitiveType::Char),

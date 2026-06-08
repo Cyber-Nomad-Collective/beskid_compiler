@@ -41,7 +41,7 @@ fn ansi_escape_resolves_under_corelib_test_assembly() {
             resolved.prepared_workspace.as_ref(),
             &entry,
             Some(&source),
-            &Default::default(),
+            &beskid_analysis::projects::assembly_options_for_plan(&plan),
         )
     })
     .expect("assemble");

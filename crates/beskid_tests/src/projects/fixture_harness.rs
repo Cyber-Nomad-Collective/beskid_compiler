@@ -141,7 +141,7 @@ fn cached_corelib_tests_assembly(
                 resolved.prepared_workspace.as_ref(),
                 &resolved.source_path,
                 Some(&resolved.source),
-                &Default::default(),
+                &beskid_analysis::projects::assembly_options_for_plan(&plan),
             )
         })
         .unwrap_or_else(|err| {

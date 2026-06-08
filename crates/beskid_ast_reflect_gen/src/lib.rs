@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use syn::{Attribute, Fields, Generics, Item, Visibility, parse_file};
 
-use crate::emit_idents::escape_beskid_ident;
+use crate::emit_idents::rust_snake_to_beskid_field_camel;
 
 /// Default Rust sources under `beskid_analysis` (relative to the compiler workspace root).
 pub const DEFAULT_ANALYSIS_ALLOWLIST: &[&str] = &[
@@ -215,10 +215,11 @@ fn emit_enum_variant(v: &syn::Variant) -> String {
             let names = tuple_variant_placeholder_names(uf.unnamed.len());
             let mut parts = Vec::new();
             for (i, _f) in uf.unnamed.iter().enumerate() {
-                let n = names
+                let raw = names
                     .get(i)
-                    .cloned()
-                    .unwrap_or_else(|| format!("variant_field_{i}"));
+                    .map(|s| s.as_str())
+                    .unwrap_or("variant_field_0");
+                let n = rust_snake_to_beskid_field_camel(raw);
                 parts.push(format!("ReflectStub {n}"));
             }
             let inner = parts.join(", ");
@@ -230,7 +231,7 @@ fn emit_enum_variant(v: &syn::Variant) -> String {
                 let fname = f
                     .ident
                     .as_ref()
-                    .map(|i| escape_beskid_ident(&i.to_string()))
+                    .map(|i| rust_snake_to_beskid_field_camel(&i.to_string()))
                     .unwrap_or_else(|| "field".into());
                 parts.push(format!("ReflectStub {fname}"));
             }

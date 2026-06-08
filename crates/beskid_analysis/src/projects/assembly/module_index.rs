@@ -1,6 +1,6 @@
 //! Cross-unit module graph built by collection-only resolver passes.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use crate::hir::HirProgram;
@@ -10,7 +10,11 @@ use crate::resolve::{
 use crate::syntax::{Program, Spanned};
 
 use super::SourceUnit;
+use super::discovery::resolve_module_file;
 use super::hir_units::UnitHir;
+use super::loader::{
+    import_paths_from_source_full, module_paths_from_qualified_references, parent_module_import_path,
+};
 use super::roots::EffectiveCompilationRoots;
 use crate::projects::CompilePlan;
 
@@ -51,12 +55,16 @@ impl ModuleIndex {
     }
 
     /// Collect symbols from all units except `entry_index`.
+    ///
+    /// When `prefetch_dependency_roots` is false ([`AssemblyDiscovery::ImportClosure`]), symbols
+    /// come only from assembled units — not a full scan of materialized dependency trees.
     pub fn build(
         units: &[SourceUnit],
         hir_units: &[UnitHir],
         entry_index: usize,
         roots: &EffectiveCompilationRoots,
         plan: &CompilePlan,
+        prefetch_dependency_roots: bool,
     ) -> Self {
         let mut resolver = Resolver::new();
         resolver.collect_builtins();
@@ -100,20 +108,32 @@ impl ModuleIndex {
             .map(|unit| unit.path.clone())
             .collect();
         let mut prefetched_paths = Vec::new();
-        for dep in &roots.dependencies {
-            let declaring_package = dep
-                .dependency_name
-                .as_ref()
-                .and_then(|name| dependency_packages.get(name))
-                .cloned()
-                .or_else(|| dep.dependency_name.clone())
-                .unwrap_or_else(|| plan.project_name.clone());
-            collect_prefetched_modules(
+        if prefetch_dependency_roots {
+            for dep in &roots.dependencies {
+                let declaring_package = dep
+                    .dependency_name
+                    .as_ref()
+                    .and_then(|name| dependency_packages.get(name))
+                    .cloned()
+                    .or_else(|| dep.dependency_name.clone())
+                    .unwrap_or_else(|| plan.project_name.clone());
+                collect_prefetched_modules(
+                    &mut resolver,
+                    &dep.source_root,
+                    &unit_paths,
+                    &declaring_package,
+                    plan.has_std_dependency,
+                    &mut prefetched_paths,
+                );
+            }
+        } else {
+            collect_prefetched_import_closure(
                 &mut resolver,
-                &dep.source_root,
+                roots,
+                units,
                 &unit_paths,
-                &declaring_package,
-                plan.has_std_dependency,
+                &dependency_packages,
+                plan,
                 &mut prefetched_paths,
             );
         }
@@ -202,8 +222,8 @@ impl ModuleIndex {
         resolver.resolve_collected_program_for_api_documentation(unit_hir, None)
     }
 
-    /// Full-project resolution for `api.json`: prefetch symbols, best-effort resolve entry + every unit.
-    pub fn resolve_for_api_documentation(
+    /// Resolve entry plus every assembled unit (import closure). Skips prefetch-only paths.
+    pub fn resolve_assembly_closure(
         &self,
         entry_hir: &Spanned<HirProgram>,
         assembly: &super::ProgramAssembly,
@@ -270,6 +290,15 @@ impl ModuleIndex {
         self.merge_prefetched_path_resolutions(&mut resolution, assembly);
 
         Some(resolution)
+    }
+
+    /// Full-project resolution for `api.json`: assembly closure plus any remaining prefetch-only paths.
+    pub fn resolve_for_api_documentation(
+        &self,
+        entry_hir: &Spanned<HirProgram>,
+        assembly: &super::ProgramAssembly,
+    ) -> Option<Resolution> {
+        self.resolve_assembly_closure(entry_hir, assembly)
     }
 
     /// Resolve locals and value tables for prefetch-only sources not in the assembly closure.
@@ -449,6 +478,109 @@ fn collapse_homonymous_module_segment(segments: &mut Vec<String>) {
     }
 }
 
+fn collect_prefetched_import_closure(
+    resolver: &mut Resolver,
+    roots: &EffectiveCompilationRoots,
+    units: &[SourceUnit],
+    unit_paths: &HashSet<PathBuf>,
+    dependency_packages: &HashMap<String, String>,
+    plan: &CompilePlan,
+    prefetched_paths: &mut Vec<PathBuf>,
+) {
+    if roots.dependencies.is_empty() {
+        return;
+    }
+
+    let mut queue = VecDeque::new();
+    let mut seen_imports = HashSet::new();
+    let mut seen_paths = HashSet::new();
+
+    let enqueue_import = |queue: &mut VecDeque<String>, seen: &mut HashSet<String>, import: String| {
+        if seen.insert(import.clone()) {
+            queue.push_back(import);
+        }
+    };
+
+    let enqueue_module_paths =
+        |queue: &mut VecDeque<String>, seen: &mut HashSet<String>, source: &str| {
+            for import_path in import_paths_from_source_full(source) {
+                enqueue_import(queue, seen, import_path);
+            }
+            for module_path in module_paths_from_qualified_references(source) {
+                enqueue_import(queue, seen, module_path);
+            }
+        };
+
+    for unit in units {
+        enqueue_module_paths(&mut queue, &mut seen_imports, &unit.source);
+    }
+
+    while let Some(import_path) = queue.pop_front() {
+        if let Some(parent_import) = parent_module_import_path(&import_path) {
+            enqueue_import(&mut queue, &mut seen_imports, parent_import);
+        }
+        let Some(path) = resolve_module_file(&import_path, roots) else {
+            continue;
+        };
+        if unit_paths.contains(&path) || !seen_paths.insert(path.clone()) {
+            continue;
+        }
+        if !path_in_dependency_roots(&path, roots) {
+            continue;
+        }
+        let declaring_package = declaring_package_for_dependency_path(
+            &path,
+            roots,
+            dependency_packages,
+            &plan.project_name,
+        );
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        prefetch_module_at_path(
+            resolver,
+            &path,
+            &source,
+            &declaring_package,
+            plan.has_std_dependency,
+            prefetched_paths,
+            None,
+        );
+        enqueue_module_paths(&mut queue, &mut seen_imports, &source);
+    }
+}
+
+fn path_in_dependency_roots(path: &Path, roots: &EffectiveCompilationRoots) -> bool {
+    roots.dependencies.iter().any(|dep| {
+        path.starts_with(&dep.source_root)
+            || path
+                .canonicalize()
+                .ok()
+                .zip(dep.source_root.canonicalize().ok())
+                .is_some_and(|(a, b)| a.starts_with(b))
+    })
+}
+
+fn declaring_package_for_dependency_path(
+    path: &Path,
+    roots: &EffectiveCompilationRoots,
+    dependency_packages: &HashMap<String, String>,
+    host_project_name: &str,
+) -> String {
+    for dep in &roots.dependencies {
+        if path.starts_with(&dep.source_root) {
+            return dep
+                .dependency_name
+                .as_ref()
+                .and_then(|name| dependency_packages.get(name))
+                .cloned()
+                .or_else(|| dep.dependency_name.clone())
+                .unwrap_or_else(|| host_project_name.to_string());
+        }
+    }
+    host_project_name.to_string()
+}
+
 fn collect_prefetched_modules(
     resolver: &mut Resolver,
     source_root: &Path,
@@ -467,46 +599,66 @@ fn collect_prefetched_modules(
         let Ok(source) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let logical_name = path.display().to_string();
-        let Ok(program) = crate::services::parse_program_with_source_name(&logical_name, &source)
-        else {
-            continue;
-        };
-        let ast: crate::syntax::Spanned<crate::hir::AstProgram> = program.into();
-        let hir = crate::hir::lower_program(&ast);
-        let module_path = module_path_from_src_suffix(&path, has_std_dependency).or_else(|| {
-            let Ok(rel) = path.strip_prefix(source_root) else {
-                return None;
-            };
-            let rel = rel.with_extension("");
-            let mut segments: Vec<String> = rel
-                .components()
-                .filter_map(|component| match component {
-                    std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
-                    _ => None,
-                })
-                .collect();
-            if segments.is_empty() {
-                return None;
-            }
-            collapse_homonymous_module_segment(&mut segments);
-            if has_std_dependency {
-                let mut with_std = vec!["Std".to_string()];
-                with_std.extend(segments);
-                Some(with_std)
-            } else {
-                Some(segments)
-            }
-        });
-        resolver.set_declaring_package(declaring_package.to_string());
-        if let Some(module_path) = module_path {
-            resolver.collect_program_in_module(&hir, &module_path, Some(&path));
-        } else {
-            resolver.set_current_source_path(Some(path.clone()));
-            resolver.collect_program(&hir);
-        }
-        prefetched_paths.push(path);
+        prefetch_module_at_path(
+            resolver,
+            &path,
+            &source,
+            declaring_package,
+            has_std_dependency,
+            prefetched_paths,
+            Some(source_root),
+        );
     }
+}
+
+fn prefetch_module_at_path(
+    resolver: &mut Resolver,
+    path: &Path,
+    source: &str,
+    declaring_package: &str,
+    has_std_dependency: bool,
+    prefetched_paths: &mut Vec<PathBuf>,
+    source_root: Option<&Path>,
+) {
+    let logical_name = path.display().to_string();
+    let Ok(program) = crate::services::parse_program_with_source_name(&logical_name, source) else {
+        return;
+    };
+    let ast: crate::syntax::Spanned<crate::hir::AstProgram> = program.into();
+    let hir = crate::hir::lower_program(&ast);
+    let module_path = module_path_from_src_suffix(path, has_std_dependency).or_else(|| {
+        let source_root = source_root?;
+        let Ok(rel) = path.strip_prefix(source_root) else {
+            return None;
+        };
+        let rel = rel.with_extension("");
+        let mut segments: Vec<String> = rel
+            .components()
+            .filter_map(|component| match component {
+                std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+                _ => None,
+            })
+            .collect();
+        if segments.is_empty() {
+            return None;
+        }
+        collapse_homonymous_module_segment(&mut segments);
+        if has_std_dependency {
+            let mut with_std = vec!["Std".to_string()];
+            with_std.extend(segments);
+            Some(with_std)
+        } else {
+            Some(segments)
+        }
+    });
+    resolver.set_declaring_package(declaring_package.to_string());
+    if let Some(module_path) = module_path {
+        resolver.collect_program_in_module(&hir, &module_path, Some(&path.to_path_buf()));
+    } else {
+        resolver.set_current_source_path(Some(path.to_path_buf()));
+        resolver.collect_program(&hir);
+    }
+    prefetched_paths.push(path.to_path_buf());
 }
 
 fn collect_bd_files(root: &Path, out: &mut Vec<PathBuf>) {

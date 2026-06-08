@@ -15,7 +15,8 @@ use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
 use crate::mod_host::{ModHostInput, run_analyze_rewrite_after_composition, run_through_generate};
 use crate::projects::{
-    AssemblyOptions, CompilePlan, PreparedProjectWorkspace, ProgramAssembly, assemble_program,
+    CompilePlan, PreparedProjectWorkspace, ProgramAssembly, assemble_program,
+    assembly_options_for_prepare,
 };
 use crate::syntax::Spanned;
 
@@ -146,8 +147,8 @@ fn run_prepare_spine(
     pipeline: Option<&dyn PipelineObserver>,
     collect_diagnostics: bool,
 ) -> Result<PrepareSpineOutput> {
-    let mut assembly_options = AssemblyOptions::default();
-    assembly_options.discovery = options.front_end.assembly_discovery;
+    let assembly_options =
+        assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
 
     let session_fingerprint = SessionFingerprint::for_entry(plan, entry_path);
 

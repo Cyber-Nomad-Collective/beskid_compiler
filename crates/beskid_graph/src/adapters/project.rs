@@ -96,7 +96,7 @@ fn node_props(node: &ProjectGraphNode) -> (String, GraphNodeKind, &'static str, 
             project_kind,
             ..
         } => (
-            format!("{project_name} ({dependency_name})"),
+            dependency_display_label(project_name, dependency_name),
             GraphNodeKind::PathDependency,
             style_class_for_project_kind(*project_kind),
             NodeMetadata {
@@ -133,10 +133,30 @@ fn node_props(node: &ProjectGraphNode) -> (String, GraphNodeKind, &'static str, 
     }
 }
 
+fn dependency_display_label(project_name: &str, dependency_name: &str) -> String {
+    if project_name == dependency_name {
+        project_name.to_owned()
+    } else {
+        format!("{project_name} ({dependency_name})")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn dependency_label_omits_redundant_pair() {
+        assert_eq!(
+            dependency_display_label("corelib_foundation", "corelib_foundation"),
+            "corelib_foundation"
+        );
+        assert_eq!(
+            dependency_display_label("app", "corelib"),
+            "app (corelib)"
+        );
+    }
 
     #[test]
     fn project_graph_renders_mermaid() {

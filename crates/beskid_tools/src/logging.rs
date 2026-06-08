@@ -75,3 +75,12 @@ pub fn activate_tui_log_sink() {
 pub fn deactivate_tui_log_sink() {
     TUI_LOG_SINK_ACTIVE.store(false, Ordering::Relaxed);
 }
+
+/// Default circular-buffer depth for [`tui_logger`] (matches crate default).
+const TUI_LOG_BUFFER_DEPTH: usize = 10_000;
+
+/// Drop buffered log lines (e.g. when switching pipeline → test mode).
+pub fn clear_tui_log_buffer() {
+    tui_logger::move_events();
+    tui_logger::set_buffer_depth(TUI_LOG_BUFFER_DEPTH);
+}

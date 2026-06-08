@@ -335,6 +335,7 @@ dependencies = [
  "beskid_template",
  "beskid_tools",
  "clap",
+ "crossterm",
  "graphs-tui",
  "log",
  "miette",

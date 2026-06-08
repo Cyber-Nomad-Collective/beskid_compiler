@@ -11,12 +11,13 @@ pub fn draw_pipeline_tree(
     area: Rect,
     items: &[TreeItem<'_, String>],
     tree_state: &mut TreeState<String>,
+    title: &str,
 ) {
     if let Ok(tree) = Tree::new(items).map(|tree| {
         tree.block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Build "),
+                .title(format!(" {title} ")),
         )
         .highlight_style(Style::default().fg(Color::Cyan))
     }) {

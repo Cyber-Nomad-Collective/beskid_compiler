@@ -48,11 +48,31 @@ pub(crate) fn expand_syntax_for_assembly(program: Spanned<Program>) -> Spanned<P
     .program
 }
 
-/// Default assembly options for a compile plan (workspace scan when no entry file is declared).
+/// Default assembly options for a compile plan.
+///
+/// Targets with an explicit `entry` (Lib/App test entrypoints) use import-closure discovery;
+/// aggregate / IDE-style plans without `entry` scan the workspace.
 pub fn assembly_options_for_plan(plan: &CompilePlan) -> AssemblyOptions {
     let mut options = AssemblyOptions::default();
     if plan.target.entry.as_deref().unwrap_or("").trim().is_empty() {
         options.discovery = AssemblyDiscovery::WorkspaceScan;
+    } else {
+        options.discovery = AssemblyDiscovery::ImportClosure;
+    }
+    options
+}
+
+/// Merge plan-derived discovery with an explicit front-end override.
+///
+/// [`AssemblyDiscovery::ImportClosure`] in `front_end_discovery` means "use the plan default"
+/// (import closure when `entry` is set, workspace scan when it is not). Any other mode overrides.
+pub fn assembly_options_for_prepare(
+    plan: &CompilePlan,
+    front_end_discovery: AssemblyDiscovery,
+) -> AssemblyOptions {
+    let mut options = assembly_options_for_plan(plan);
+    if front_end_discovery != AssemblyDiscovery::ImportClosure {
+        options.discovery = front_end_discovery;
     }
     options
 }
@@ -317,12 +337,14 @@ pub fn assemble_program_with_materializer(
     let _ = beskid_artifacts::ArtifactStore::new(&project_root).refresh_manifest();
 
     let hir_units = Arc::new(hir_units_vec);
+    let prefetch_dependency_roots = options.discovery == AssemblyDiscovery::WorkspaceScan;
     let module_index = Arc::new(ModuleIndex::build(
         &units,
         hir_units.as_ref(),
         entry_index,
         &roots,
         plan,
+        prefetch_dependency_roots,
     ));
 
     Ok(ProgramAssembly {
@@ -364,6 +386,75 @@ pub(crate) fn import_paths_from_source_full(source: &str) -> Vec<String> {
     paths
 }
 
+/// Module path prefixes from qualified references (`Core.Results.Result`, `System.Syscall.WriteWith`).
+pub(crate) fn module_paths_from_qualified_references(source: &str) -> Vec<String> {
+    use std::collections::HashSet;
+    let mut paths = HashSet::new();
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("//") || trimmed.starts_with("use ") {
+            continue;
+        }
+        for dotted in find_dotted_module_references(trimmed) {
+            let segments: Vec<&str> = dotted
+                .split('.')
+                .filter(|segment| !segment.is_empty())
+                .collect();
+            if segments.len() < 2 {
+                continue;
+            }
+            for len in 1..segments.len() {
+                paths.insert(segments[..len].join("."));
+            }
+        }
+    }
+    paths.into_iter().collect()
+}
+
+fn is_ident_start(byte: u8) -> bool {
+    byte.is_ascii_alphabetic() || byte == b'_'
+}
+
+fn is_ident_part(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+fn find_dotted_module_references(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = line.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if !is_ident_start(bytes[index]) || !bytes[index].is_ascii_uppercase() {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && is_ident_part(bytes[index]) {
+            index += 1;
+        }
+        if index >= bytes.len() || bytes[index] != b'.' {
+            continue;
+        }
+        let mut end = index;
+        loop {
+            if end >= bytes.len() || bytes[end] != b'.' {
+                break;
+            }
+            end += 1;
+            if end >= bytes.len() || !is_ident_start(bytes[end]) {
+                break;
+            }
+            while end < bytes.len() && is_ident_part(bytes[end]) {
+                end += 1;
+            }
+        }
+        if end > start + 1 {
+            out.push(line[start..end].to_string());
+        }
+    }
+    out
+}
+
 fn parse_use_import_path(trimmed: &str) -> Option<String> {
     let rest = trimmed.strip_prefix("use ")?;
     let without_comment = rest.split("//").next()?.trim_end_matches(';').trim();
@@ -377,7 +468,7 @@ fn parse_use_import_path(trimmed: &str) -> Option<String> {
 /// When a unit imports nested symbols (`System.Syscall.ReadRequest`), also pull in the
 /// parent module facade (`System/Syscall.bd`) that hosts sibling functions referenced via
 /// qualified paths (`System.Syscall.ReadWith`) without an explicit `use`.
-fn parent_module_import_path(import_path: &str) -> Option<String> {
+pub(crate) fn parent_module_import_path(import_path: &str) -> Option<String> {
     let segments: Vec<&str> = import_path.split('.').filter(|segment| !segment.is_empty()).collect();
     if segments.len() <= 2 {
         return None;
@@ -388,13 +479,30 @@ fn parent_module_import_path(import_path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::projects::{
-        AssemblyDiscovery, AssemblyError, CompilePlan, Target, TargetKind,
-        assembly_options_for_plan, assemble_program, plan_entry_path,
+        AssemblyDiscovery, AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject,
+        Target, TargetKind, assembly_options_for_plan, assembly_options_for_prepare,
+        assemble_program, plan_entry_path,
     };
+
+    fn temp_project_root(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("beskid_asm_{label}_{nanos}"))
+    }
+
+    fn write_bd(root: &Path, relative: &str, source: &str) {
+        let path = root.join(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create parent dirs");
+        }
+        fs::write(path, source).expect("write bd source");
+    }
 
     fn no_entry_plan_with_source(source: &str) -> (CompilePlan, PathBuf) {
         let nanos = SystemTime::now()
@@ -431,6 +539,24 @@ mod tests {
     }
 
     #[test]
+    fn entry_plan_uses_import_closure_discovery() {
+        let (mut plan, _) = no_entry_plan_with_source("pub fn Main() { }");
+        plan.target.entry = Some("Main.bd".to_string());
+        let options = assembly_options_for_plan(&plan);
+        assert_eq!(options.discovery, AssemblyDiscovery::ImportClosure);
+    }
+
+    #[test]
+    fn qualified_reference_scan_finds_module_prefixes() {
+        let source = "Core.Results.Result<i64, SyscallError> Write() { System.Syscall.WriteWith(x); }";
+        let paths = super::module_paths_from_qualified_references(source);
+        assert!(paths.contains(&"Core.Results".to_string()));
+        assert!(paths.contains(&"Core".to_string()));
+        assert!(paths.contains(&"System.Syscall".to_string()));
+        assert!(paths.contains(&"System".to_string()));
+    }
+
+    #[test]
     fn workspace_scan_assembles_without_placeholder_entry_file() {
         let (plan, entry_path) = no_entry_plan_with_source("pub fn Main() { }");
         let options = assembly_options_for_plan(&plan);
@@ -458,5 +584,203 @@ mod tests {
             "unexpected error: {err}"
         );
         let _ = fs::remove_dir_all(&plan.project_root);
+    }
+
+    #[test]
+    fn prepare_options_use_plan_default_when_front_end_is_import_closure() {
+        let (plan, _) = no_entry_plan_with_source("pub fn Main() { }");
+        let options = assembly_options_for_prepare(&plan, AssemblyDiscovery::ImportClosure);
+        assert_eq!(options.discovery, AssemblyDiscovery::WorkspaceScan);
+
+        let mut entry_plan = plan.clone();
+        entry_plan.target.entry = Some("Main.bd".to_string());
+        let options = assembly_options_for_prepare(&entry_plan, AssemblyDiscovery::ImportClosure);
+        assert_eq!(options.discovery, AssemblyDiscovery::ImportClosure);
+        let _ = fs::remove_dir_all(&plan.project_root);
+    }
+
+    #[test]
+    fn prepare_options_honor_explicit_front_end_override() {
+        let (mut plan, _) = no_entry_plan_with_source("pub fn Main() { }");
+        plan.target.entry = Some("Main.bd".to_string());
+        let options =
+            assembly_options_for_prepare(&plan, AssemblyDiscovery::WorkspaceScan);
+        assert_eq!(options.discovery, AssemblyDiscovery::WorkspaceScan);
+        let _ = fs::remove_dir_all(&plan.project_root);
+    }
+
+    #[test]
+    fn import_closure_assembles_entry_without_sibling_units() {
+        let project_root = temp_project_root("import_closure_entry_only");
+        let source_root = project_root.join("src");
+        write_bd(&source_root, "Entry.bd", "pub fn Entry() { }");
+        write_bd(&source_root, "Sibling.bd", "pub fn Sibling() { }");
+        let plan = CompilePlan {
+            source_root: source_root.clone(),
+            project_root: project_root.clone(),
+            manifest_path: project_root.join("project.bproj"),
+            project_name: "fixture".to_string(),
+            target: Target {
+                name: "Entry".to_string(),
+                kind: TargetKind::Lib,
+                entry: Some("Entry.bd".to_string()),
+            },
+            dependency_projects: Vec::new(),
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let entry_path = source_root.join("Entry.bd");
+        let options = assembly_options_for_plan(&plan);
+        let assembly = assemble_program(&plan, None, &entry_path, None, &options)
+            .expect("import closure should assemble entry");
+        assert_eq!(assembly.units.len(), 1);
+        assert_eq!(assembly.discovery, AssemblyDiscovery::ImportClosure);
+        assert!(
+            assembly
+                .units
+                .iter()
+                .all(|unit| unit.path.file_name().and_then(|name| name.to_str()) == Some("Entry.bd")),
+            "unexpected units: {:?}",
+            assembly
+                .units
+                .iter()
+                .map(|unit| unit.path.display().to_string())
+                .collect::<Vec<_>>()
+        );
+        let _ = fs::remove_dir_all(&project_root);
+    }
+
+    #[test]
+    fn import_closure_follows_transitive_use_imports() {
+        let project_root = temp_project_root("import_closure_transitive");
+        let source_root = project_root.join("src");
+        write_bd(
+            &source_root,
+            "Entry.bd",
+            "use Lib.A;\npub fn Entry() { Lib.A.Run(); }",
+        );
+        write_bd(&source_root, "Lib/A.bd", "use Lib.B;\npub fn Run() { Lib.B.Run(); }");
+        write_bd(&source_root, "Lib/B.bd", "pub fn Run() { }");
+        write_bd(&source_root, "Unused.bd", "pub fn Unused() { }");
+        let plan = CompilePlan {
+            source_root: source_root.clone(),
+            project_root: project_root.clone(),
+            manifest_path: project_root.join("project.bproj"),
+            project_name: "fixture".to_string(),
+            target: Target {
+                name: "Entry".to_string(),
+                kind: TargetKind::Lib,
+                entry: Some("Entry.bd".to_string()),
+            },
+            dependency_projects: Vec::new(),
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let entry_path = source_root.join("Entry.bd");
+        let options = assembly_options_for_plan(&plan);
+        let assembly = assemble_program(&plan, None, &entry_path, None, &options)
+            .expect("import closure should follow transitive imports");
+        let names: Vec<String> = assembly
+            .units
+            .iter()
+            .map(|unit| unit.path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 3);
+        assert!(names.iter().any(|name| name == "Entry.bd"));
+        assert!(names.iter().any(|name| name == "A.bd"));
+        assert!(names.iter().any(|name| name == "B.bd"));
+        assert!(!names.iter().any(|name| name == "Unused.bd"));
+        let _ = fs::remove_dir_all(&project_root);
+    }
+
+    #[test]
+    fn workspace_scan_assembles_all_host_sources() {
+        let project_root = temp_project_root("workspace_scan_all");
+        let source_root = project_root.join("src");
+        write_bd(&source_root, "Main.bd", "pub fn Main() { }");
+        write_bd(&source_root, "Other.bd", "pub fn Other() { }");
+        let plan = CompilePlan {
+            source_root: source_root.clone(),
+            project_root: project_root.clone(),
+            manifest_path: project_root.join("project.bproj"),
+            project_name: "fixture".to_string(),
+            target: Target {
+                name: "__aggregate__".to_string(),
+                kind: TargetKind::Lib,
+                entry: None,
+            },
+            dependency_projects: Vec::new(),
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let entry_path = plan_entry_path(&plan, &source_root);
+        let options = assembly_options_for_plan(&plan);
+        let assembly = assemble_program(&plan, None, &entry_path, Some(""), &options)
+            .expect("workspace scan should assemble every host unit");
+        assert_eq!(assembly.discovery, AssemblyDiscovery::WorkspaceScan);
+        assert_eq!(assembly.units.len(), 2);
+        let _ = fs::remove_dir_all(&project_root);
+    }
+
+    #[test]
+    fn import_closure_module_index_skips_unimported_dependency_tree() {
+        let project_root = temp_project_root("import_closure_dep_prefetch");
+        let source_root = project_root.join("src");
+        let dep_root = project_root.join("deps").join("core");
+        let dep_source_root = dep_root.join("src");
+        write_bd(&source_root, "Entry.bd", "pub fn Entry() { }");
+        for index in 0..8 {
+            write_bd(
+                &dep_source_root,
+                &format!("Shard{index}.bd"),
+                &format!("pub fn Shard{index}() {{ }}"),
+            );
+        }
+        let plan = CompilePlan {
+            source_root: source_root.clone(),
+            project_root: project_root.clone(),
+            manifest_path: project_root.join("project.bproj"),
+            project_name: "fixture".to_string(),
+            target: Target {
+                name: "Entry".to_string(),
+                kind: TargetKind::Lib,
+                entry: Some("Entry.bd".to_string()),
+            },
+            dependency_projects: vec![ResolvedDependencyProject {
+                dependency_name: "core".to_string(),
+                manifest_path: dep_root.join("core.bproj"),
+                project_root: dep_root.clone(),
+                project_name: "core".to_string(),
+                source_root: dep_source_root.clone(),
+            }],
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let entry_path = source_root.join("Entry.bd");
+        let options = AssemblyOptions {
+            discovery: AssemblyDiscovery::ImportClosure,
+            ..AssemblyOptions::default()
+        };
+        let assembly = assemble_program(&plan, None, &entry_path, None, &options)
+            .expect("import closure should assemble entry without dependency units");
+        assert_eq!(assembly.units.len(), 1);
+        assert!(
+            assembly.module_index.prefetched_paths().is_empty(),
+            "expected no dependency prefetch for zero-import entry, got {} paths",
+            assembly.module_index.prefetched_paths().len()
+        );
+
+        let scan_options = AssemblyOptions {
+            discovery: AssemblyDiscovery::WorkspaceScan,
+            ..AssemblyOptions::default()
+        };
+        let scanned = assemble_program(&plan, None, &entry_path, None, &scan_options)
+            .expect("workspace scan should assemble host and prefetch dependency tree");
+        assert!(
+            scanned.module_index.prefetched_paths().len() >= 8,
+            "workspace scan should prefetch dependency shards, got {}",
+            scanned.module_index.prefetched_paths().len()
+        );
+        let _ = fs::remove_dir_all(&project_root);
     }
 }

@@ -5,7 +5,9 @@ mod hyperlink;
 mod layout;
 mod message;
 mod model;
+mod nav;
 mod pipeline_tree;
+mod stage_focus;
 mod terminal;
 mod test_report;
 mod test_table;
@@ -20,8 +22,9 @@ pub use hyperlink::{FileLineLink, hyperlinks_enabled};
 pub use model::{
     CommandSummary, PipelineProgress, SummarySlice, SummaryStat, TestReportSummary,
 };
+pub use nav::NavTarget;
 pub use pipeline_tree::PipelineTree;
-pub use terminal::{PipelineViewState, TuiSession};
+pub use terminal::{PipelineViewState, TuiSession, reset_stderr_ansi};
 pub use test_table::{TestRow, TestRowState, TestRunUi};
 pub use timer::format_duration;
 pub use tree::{format_phase_end, format_phase_start, format_work_unit};

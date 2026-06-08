@@ -345,7 +345,9 @@ fn literal_value(
 ) -> Result<Value, CodegenError> {
     match &literal.node {
         HirLiteral::Integer(raw) => {
-            let value: i64 = raw.parse().map_err(|_| CodegenError::UnsupportedNode {
+            let value: i64 = beskid_analysis::hir::integer_literal_magnitude(raw)
+                .parse()
+                .map_err(|_| CodegenError::UnsupportedNode {
                 span: literal.span,
                 node: "match literal integer",
             })?;

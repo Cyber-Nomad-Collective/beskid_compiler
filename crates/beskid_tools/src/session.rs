@@ -103,8 +103,6 @@ impl CommandSession {
         resolved: &ResolvedInput,
         options: SemanticGateOptions,
     ) -> Result<PreparedCompilation> {
-        self.pipeline.halt_progress_bars_for_output();
-
         let (prepared, gate_diagnostics) = self.run_semantic_diagnostics(resolved)?;
         self.finish_gate(&gate_diagnostics, options)?;
         Ok(prepared)
@@ -116,8 +114,6 @@ impl CommandSession {
         resolved: &ResolvedInput,
         options: SemanticGateOptions,
     ) -> Result<PreparedCompilation> {
-        self.pipeline.halt_progress_bars_for_output();
-
         let (prepared, gate_diagnostics) = beskid_queries::prepare_compilation_diagnostics(
             resolved,
             services::PrepareOptions {
@@ -160,6 +156,9 @@ impl CommandSession {
 
         if options.finish_prepare_ui {
             self.pipeline.finish_prepare_ui(options.prepare_message);
+        } else {
+            let _ = self.pipeline.mark_compile_complete();
+            let _ = self.pipeline.resume_after_output();
         }
 
         Ok(())

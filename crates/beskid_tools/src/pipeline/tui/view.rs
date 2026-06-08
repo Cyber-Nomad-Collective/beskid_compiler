@@ -1,65 +1,77 @@
-//! TEA view: render the model (no business logic).
+//! TEA view: unified flexible shell with stage-aware pane content.
 
 use ratatui::Frame;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem};
 
-use super::layout::{
-    FOOTER_HEIGHT, TEST_LIST_PANEL_RATIO, TREE_PANEL_RATIO, split_main_footer, split_panels,
-};
+use super::layout::{split_main_panes, split_shell};
 use super::model::{Mode, Model};
+use super::stage_focus::StageFocus;
 use super::test_table::TestRowState;
 use super::timer::format_duration;
 use super::widgets::{
-    draw_log_panel, draw_pipeline_tree, draw_progress_footer, draw_summary_panel,
+    draw_context_bar, draw_log_panel, draw_pipeline_tree, draw_progress_footer,
+    draw_stage_panel, draw_summary_chart_panel, draw_summary_headline_footer,
 };
 
 pub fn view(model: &mut Model, frame: &mut Frame) {
+    let focus = StageFocus::from_model(model);
+    let areas = split_shell(frame.area(), focus);
+    let (primary, secondary) = split_main_panes(areas.main, focus);
+
+    draw_context_bar(frame, areas.header, model, focus);
+    draw_stage_panel(frame, primary, model, focus);
+    draw_secondary_pane(frame, secondary, model);
+    draw_log_panel(frame, areas.log, log_title(model.mode), &mut model.logger_state);
+
     match model.mode {
-        Mode::Pipeline => view_pipeline(model, frame),
-        Mode::Tests => view_tests(model, frame),
-        Mode::Report | Mode::Summary => view_summary(model, frame),
+        Mode::Report | Mode::Summary => {
+            draw_summary_headline_footer(frame, areas.footer, &model.command_summary);
+        }
+        _ => draw_progress_footer(frame, areas.footer, &model.pipeline),
     }
 }
 
-fn view_pipeline(model: &mut Model, frame: &mut Frame) {
-    let items = model.tree.tree_items().unwrap_or_default();
-    let (body, footer) = split_main_footer(frame.area(), FOOTER_HEIGHT);
-    let (tree_area, log_area) = split_panels(body, TREE_PANEL_RATIO);
-
-    draw_pipeline_tree(frame, tree_area, &items, &mut model.tree_state);
-    draw_log_panel(frame, log_area, "Build log", &mut model.logger_state);
-    draw_progress_footer(frame, footer, &model.pipeline);
+fn log_title(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Tests => "Test log",
+        Mode::Report | Mode::Summary => "Log",
+        Mode::Pipeline => "Build log",
+    }
 }
 
-fn view_tests(model: &mut Model, frame: &mut Frame) {
+fn draw_secondary_pane(frame: &mut Frame, area: ratatui::layout::Rect, model: &mut Model) {
+    match model.mode {
+        Mode::Pipeline => {
+            let items = model.tree.tree_items().unwrap_or_default();
+            let title = StageFocus::from_model(model).title();
+            draw_pipeline_tree(frame, area, &items, &mut model.tree_state, title);
+        }
+        Mode::Tests => draw_test_list(frame, area, model),
+        Mode::Report | Mode::Summary => {
+            draw_summary_chart_panel(frame, area, &model.command_summary);
+        }
+    }
+}
+
+fn draw_test_list(frame: &mut Frame, area: ratatui::layout::Rect, model: &mut Model) {
     let title = model.test_title.as_deref().unwrap_or("Tests");
     let row_count = model.test_rows.len();
-    let selected = selected_test_index(&model.test_rows);
-
-    let (list_area, log_area) = split_panels(frame.area(), TEST_LIST_PANEL_RATIO);
-
+    if let Some(index) = selected_test_index(&model.test_rows) {
+        model.test_list_state.select(Some(index));
+    }
     let items: Vec<ListItem> = model
         .test_rows
         .iter()
         .map(|row| ListItem::new(format_test_row(row)))
         .collect();
-    if let Some(index) = selected {
-        model.test_list_state.select(Some(index));
-    }
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
             .title(format!(" {title} ({row_count}) ")),
     ).highlight_style(Style::default().bg(Color::DarkGray));
-    frame.render_stateful_widget(list, list_area, &mut model.test_list_state);
-    draw_log_panel(frame, log_area, "Test log", &mut model.logger_state);
-}
-
-fn view_summary(model: &mut Model, frame: &mut Frame) {
-    let summary = model.command_summary.clone();
-    draw_summary_panel(frame, frame.area(), &summary, &mut model.logger_state);
+    frame.render_stateful_widget(list, area, &mut model.test_list_state);
 }
 
 fn selected_test_index(rows: &[super::test_table::TestRow]) -> Option<usize> {

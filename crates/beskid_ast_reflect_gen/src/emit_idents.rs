@@ -32,6 +32,24 @@ pub const BESKID_RESERVED_IDENTIFIERS: &[&str] = &[
     "test",
     "meta",
     "skip",
+    "spawn",
+    "async",
+    "await",
+    "host",
+    "registry",
+    "scope",
+    "startup",
+    "init",
+    "dispose",
+    "with",
+    "launch",
+    "inject",
+    "single",
+    "transient",
+    "global",
+    "parent",
+    "extend",
+    "when",
 ];
 
 fn reserved_keyword_prefix_conflict(lower: &str) -> bool {
@@ -111,6 +129,15 @@ mod tests {
             rust_snake_to_beskid_field_camel("contract_name"),
             "contractName"
         );
+    }
+
+    #[test]
+    fn camel_case_composition_keyword_prefixes() {
+        assert_eq!(
+            rust_snake_to_beskid_field_camel("scope_name"),
+            "scopeName"
+        );
+        assert_eq!(rust_snake_to_beskid_field_camel("host_name"), "hostName");
     }
 
     #[test]

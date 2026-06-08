@@ -2,7 +2,7 @@ use crate::hir::{
     AstProgram, HirNormalizeError, HirProgram, lower_program as lower_hir_program,
     normalize_program_with_resolution,
 };
-use crate::projects::assembly::ProgramAssembly;
+use crate::projects::{AssemblyDiscovery, assembly::ProgramAssembly};
 use crate::resolve::{Resolution, ResolveError, Resolver};
 use crate::syntax::{Program, Spanned};
 use crate::types::{TypeContext, TypeError, TypeResult};
@@ -143,15 +143,19 @@ fn typed_hir_from_lowered_with_assembly_options(
     })?;
     let resolution = observe_phase_result(pipeline, phases::LOWER_RESOLVE, || {
         if let Some(assembly) = assembly {
-            assembly
-                .module_index
-                .resolve_for_api_documentation(&hir, assembly)
-                .ok_or(LowerResolveTypeError::Resolve(vec![
-                    crate::resolve::ResolveError::UnknownModulePath {
-                        path: "<assembly>".to_string(),
-                        span: hir.span,
-                    },
-                ]))
+            let resolve = if assembly.discovery == AssemblyDiscovery::ImportClosure {
+                assembly.module_index.resolve_assembly_closure(&hir, assembly)
+            } else {
+                assembly
+                    .module_index
+                    .resolve_for_api_documentation(&hir, assembly)
+            };
+            resolve.ok_or(LowerResolveTypeError::Resolve(vec![
+                crate::resolve::ResolveError::UnknownModulePath {
+                    path: "<assembly>".to_string(),
+                    span: hir.span,
+                },
+            ]))
         } else {
             resolve_entry_hir(&hir, None, None)
         }
