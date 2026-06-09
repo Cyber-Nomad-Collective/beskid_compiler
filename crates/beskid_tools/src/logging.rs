@@ -48,7 +48,7 @@ fn default_filter(log_cranelift: bool) -> String {
 /// When `RUST_LOG` is unset, Cranelift crates default to `warn` unless `log_cranelift` is true.
 pub fn init(log_cranelift: bool) {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&default_filter(log_cranelift)));
+        .unwrap_or_else(|_| EnvFilter::new(default_filter(log_cranelift)));
 
     tracing_subscriber::registry()
         .with(filter)

@@ -1,9 +1,14 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::Result;
 use beskid_analysis::hir::HirProgram;
 use beskid_analysis::resolve::Resolution;
-use beskid_analysis::services::FrontEndOptions;
+use beskid_analysis::services::{
+    FrontEndOptions, FrontEndTypedResult, ResolvedInput, SemanticDiagnosticsError,
+    SessionFingerprint, cached_executable, cached_semantic_snapshot,
+    current_syntax_generation_id,
+};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeResult;
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::CODEGEN_CLIF};
@@ -13,7 +18,6 @@ use crate::{
     CodegenArtifact, codegen_errors_to_diagnostics,
     lowering::{lower_program, lower_program_with_assembly_for_entrypoint},
 };
-use beskid_analysis::services::{ResolvedInput, SemanticDiagnosticsError};
 
 /// Fully lowered program: typed HIR plus the Cranelift artifact from [`lower_source`] /
 /// [`lower_source_with_pipeline`].
@@ -127,6 +131,24 @@ pub fn lower_resolved_input_with_pipeline(
     lower_resolved_entrypoint_with_pipeline(resolved, None, with_diagnostics, pipeline)
 }
 
+/// Lower from an optional prepared front-end, else session cache or full compile.
+pub fn lower_from_prepared_or_cache(
+    resolved: &ResolvedInput,
+    front: Option<FrontEndTypedResult>,
+    link_entrypoint: Option<&str>,
+    with_diagnostics: bool,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<LoweredProgram> {
+    let front = resolve_front_end_for_lowering(resolved, front, with_diagnostics, pipeline)?;
+    lower_from_front_end(
+        &resolved.source_path.display().to_string(),
+        &resolved.source,
+        front,
+        link_entrypoint,
+        pipeline,
+    )
+}
+
 /// Lower a single entry function or test from a resolved project input.
 pub fn lower_resolved_entrypoint_with_pipeline(
     resolved: &ResolvedInput,
@@ -143,20 +165,50 @@ pub fn lower_resolved_entrypoint_with_pipeline(
         );
     }
 
+    lower_from_prepared_or_cache(
+        resolved,
+        None,
+        link_entrypoint,
+        with_diagnostics,
+        pipeline,
+    )
+}
+
+fn resolve_front_end_for_lowering(
+    resolved: &ResolvedInput,
+    front: Option<FrontEndTypedResult>,
+    with_diagnostics: bool,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<FrontEndTypedResult> {
+    if let Some(front) = front {
+        return Ok(front);
+    }
+
+    let plan = resolved
+        .compile_plan
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("resolve_front_end_for_lowering requires a compile plan"))?;
+    let fingerprint = SessionFingerprint::for_entry(plan, &resolved.source_path);
+    if cached_front_end_is_valid(&fingerprint)
+        && let Some(cached) = cached_executable(&fingerprint)
+        && let Ok(owned) = Arc::try_unwrap(cached)
+    {
+        return Ok(owned);
+    }
+
     let options = FrontEndOptions {
         with_semantic_diagnostics: with_diagnostics,
         ..Default::default()
     };
+    compile_front_end_from_resolved_input(resolved, options, pipeline)
+}
 
-    let front = compile_front_end_from_resolved_input(resolved, options, pipeline)?;
-
-    lower_from_front_end(
-        &resolved.source_path.display().to_string(),
-        &resolved.source,
-        front,
-        link_entrypoint,
-        pipeline,
-    )
+fn cached_front_end_is_valid(fingerprint: &SessionFingerprint) -> bool {
+    let Some(snapshot) = cached_semantic_snapshot(fingerprint) else {
+        return false;
+    };
+    snapshot.satisfies_minimum("executable")
+        && snapshot.syntax_generation_id == current_syntax_generation_id(fingerprint)
 }
 
 /// CLIF artifact for a single entrypoint from a shared front-end bundle.

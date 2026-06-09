@@ -1,3 +1,4 @@
+#[cfg(target_os = "linux")]
 use std::path::Path;
 use std::process::Output;
 
@@ -11,6 +12,7 @@ pub fn assert_success(output: &Output, context: &str) {
     );
 }
 
+#[cfg(target_os = "linux")]
 pub fn assert_failure(output: &Output, context: &str) {
     assert!(
         !output.status.success(),
@@ -29,10 +31,12 @@ pub fn assert_output_contains(output: &Output, needle: &str, context: &str) {
     );
 }
 
+#[cfg(target_os = "linux")]
 pub fn assert_file_exists(path: &Path, context: &str) {
     assert!(path.is_file(), "{context}: missing file {}", path.display());
 }
 
+#[cfg(target_os = "linux")]
 pub fn assert_exit_code(output: &Output, expected: i32, context: &str) {
     let actual = output.status.code();
     assert_eq!(

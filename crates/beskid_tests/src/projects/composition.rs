@@ -2,7 +2,7 @@ use std::fs;
 
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::TargetKind;
-use beskid_analysis::services::analyze_source_with_compilation_context;
+use beskid_analysis::services::analyze_source_in_project;
 
 use crate::projects::with_cwd_at_workspace_root;
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
@@ -43,7 +43,7 @@ i32 Main() {
     fs::write(&entry, source).expect("write source");
 
     with_cwd_at_workspace_root(&root, || {
-        let mut context = CompilationContext::try_for_analysis_path(&entry, None)
+        let context = CompilationContext::try_for_analysis_path(&entry, None)
             .expect("compilation context for project");
         assert_eq!(
             context
@@ -54,7 +54,7 @@ i32 Main() {
                 .kind,
             TargetKind::App
         );
-        let diagnostics = analyze_source_with_compilation_context(&entry, source, &mut context)
+        let diagnostics = analyze_source_in_project(&entry, source)
             .expect("analyze project source");
         let codes: Vec<String> = diagnostics
             .into_iter()
@@ -106,7 +106,7 @@ i32 marker() {
     fs::write(&entry, source).expect("write source");
 
     with_cwd_at_workspace_root(&root, || {
-        let mut context = CompilationContext::try_for_analysis_path(&entry, None)
+        let context = CompilationContext::try_for_analysis_path(&entry, None)
             .expect("compilation context for project");
         assert_eq!(
             context
@@ -117,7 +117,7 @@ i32 marker() {
                 .kind,
             TargetKind::Lib
         );
-        let diagnostics = analyze_source_with_compilation_context(&entry, source, &mut context)
+        let diagnostics = analyze_source_in_project(&entry, source)
             .expect("analyze lib project source");
         let codes: Vec<String> = diagnostics
             .into_iter()

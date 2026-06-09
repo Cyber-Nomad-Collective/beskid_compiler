@@ -1,23 +1,29 @@
 //! Link-plan lowering must pass `validate_artifact` for project entrypoints.
 
 use std::fs;
-use std::path::PathBuf;
 
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions};
 use beskid_analysis::services::{
-    FrontEndOptions, ResolvedInput, compile_front_end_from_resolved_input, resolve_input,
+    FrontEndOptions, compile_front_end_from_resolved_input,
     resolved_input_from_plan,
 };
-use beskid_codegen::linking::{FunctionDefIndex, LinkPlan, LinkSymbol};
-use beskid_codegen::lowering::{
-    lower_program_with_assembly, lower_program_with_assembly_for_entrypoint,
-};
+use beskid_codegen::linking::{FunctionDefIndex, LinkPlan};
+use beskid_codegen::lowering::lower_program_with_assembly_for_entrypoint;
 use beskid_codegen::validate_artifact;
 use beskid_queries::{configure_db_for_project, program_assembly, with_db};
 
-use crate::projects::{compiler_workspace_root, with_cwd, with_cwd_at_workspace_root};
+use crate::projects::with_cwd;
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
+
+#[cfg(feature = "slow")]
+use beskid_codegen::LinkSymbol;
+#[cfg(feature = "slow")]
+use beskid_codegen::lowering::lower_program_with_assembly;
+#[cfg(feature = "slow")]
+use crate::projects::fixture_harness::{
+    corelib_tests_project_root, resolve_corelib_tests_entry_with_assembly, with_project_test_env,
+};
 
 #[test]
 fn main_entry_link_plan_validates_for_temp_project() {
@@ -58,7 +64,7 @@ i32 Main() {
             entry.clone(),
             source.to_string(),
             plan.clone(),
-            ctx.prepared_workspace.clone(),
+            None,
             None,
         );
         configure_db_for_project(&root);
@@ -114,51 +120,10 @@ i32 Main() {
 #[cfg(feature = "slow")]
 #[test]
 fn corelib_assert_equal_i64_link_plan_validates() {
-    let root = compiler_workspace_root();
-    with_cwd_at_workspace_root(&root, || {
-        let entry =
-            root.join("corelib/beskid_corelib/tests/corelib_tests/src/collections/ArrayTests.bd");
-        let project_root: PathBuf = entry
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_path_buf();
-        let source = fs::read_to_string(&entry).expect("read ArrayTests.bd");
-
-        let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
-            .expect("resolve");
-
-        let plan = resolved.compile_plan.expect("compile plan");
-        configure_db_for_project(&project_root);
-        let assembly = with_db(|db| {
-            program_assembly(
-                db,
-                &plan,
-                resolved.prepared_workspace.as_ref(),
-                &entry,
-                Some(&source),
-                &AssemblyOptions {
-                    discovery: AssemblyDiscovery::ImportClosure,
-                    ..Default::default()
-                },
-            )
-        })
-        .expect("assemble");
-
-        let resolved_input = ResolvedInput {
-            source_path: entry,
-            source,
-            compile_plan: Some(plan),
-            prepared_workspace: resolved.prepared_workspace,
-            workspace_summary: resolved.workspace_summary,
-            assembly: Some(assembly),
-        };
-
+    with_project_test_env(&corelib_tests_project_root(), || {
+        let resolved = resolve_corelib_tests_entry_with_assembly("collections/ArrayTests.bd");
         let front = compile_front_end_from_resolved_input(
-            &resolved_input,
+            &resolved,
             FrontEndOptions {
                 with_semantic_diagnostics: false,
                 ..Default::default()
@@ -167,7 +132,8 @@ fn corelib_assert_equal_i64_link_plan_validates() {
         )
         .expect("front-end");
 
-        let def_index = FunctionDefIndex::build(&front.resolution, &front.assembly.hir_units);
+        let assembly = resolved.assembly.as_ref().expect("assembly");
+        let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
         let link_plan = LinkPlan::build(&front.hir, &front.resolution, &front.typed, &def_index);
         assert!(
             link_plan
@@ -181,11 +147,11 @@ fn corelib_assert_equal_i64_link_plan_validates() {
             &front.hir,
             &front.resolution,
             &front.typed,
-            Some(&front.assembly),
+            Some(assembly),
         )
         .expect("lower corelib array tests");
 
-        let names: Vec<_> = artifact.functions.iter().map(|f| f.name.as_str()).collect();
+        let names: Vec<&str> = artifact.functions.iter().map(|f| f.name.as_str()).collect();
         assert!(
             names.iter().any(|name| name.contains("Equal")),
             "expected Equal in artifact, have {} symbols",
@@ -199,51 +165,11 @@ fn corelib_assert_equal_i64_link_plan_validates() {
 #[cfg(feature = "slow")]
 #[test]
 fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home() {
-    let root = compiler_workspace_root();
-    with_cwd_at_workspace_root(&root, || {
-        let entry =
-            root.join("corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd");
-        let project_root: PathBuf = entry
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_path_buf();
-        let source = fs::read_to_string(&entry).expect("read AnsiEscapeTests.bd");
-
-        let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
-            .expect("resolve");
-
-        let plan = resolved.compile_plan.expect("compile plan");
-        configure_db_for_project(&project_root);
-        let assembly = with_db(|db| {
-            program_assembly(
-                db,
-                &plan,
-                resolved.prepared_workspace.as_ref(),
-                &entry,
-                Some(&source),
-                &AssemblyOptions {
-                    discovery: AssemblyDiscovery::ImportClosure,
-                    ..Default::default()
-                },
-            )
-        })
-        .expect("assemble");
-
-        let resolved_input = ResolvedInput {
-            source_path: entry.clone(),
-            source,
-            compile_plan: Some(plan),
-            prepared_workspace: resolved.prepared_workspace,
-            workspace_summary: resolved.workspace_summary,
-            assembly: Some(assembly),
-        };
-
+    with_project_test_env(&corelib_tests_project_root(), || {
+        let resolved =
+            resolve_corelib_tests_entry_with_assembly("console/AnsiEscapeTests.bd");
         let front = compile_front_end_from_resolved_input(
-            &resolved_input,
+            &resolved,
             FrontEndOptions {
                 with_semantic_diagnostics: false,
                 ..Default::default()
@@ -252,11 +178,12 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
         )
         .expect("front-end");
 
-        let def_index = FunctionDefIndex::build(&front.resolution, &front.assembly.hir_units);
+        let assembly = resolved.assembly.as_ref().expect("assembly");
+        let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
         let link_plan = LinkPlan::build_for_entrypoint(
             &front.hir,
             "ansi_cursor_builder_home",
-            Some(&front.assembly.entry_unit().path),
+            Some(&assembly.entry_unit().path),
             &front.resolution,
             &front.typed,
             &def_index,
@@ -342,7 +269,7 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
             &front.hir,
             &front.resolution,
             &front.typed,
-            Some(&front.assembly),
+            Some(assembly),
             Some("ansi_cursor_builder_home"),
         )
         .expect("lower ansi_cursor_builder_home");
@@ -353,51 +280,11 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
 #[cfg(feature = "slow")]
 #[test]
 fn ansi_csi_bold_red_link_plan_validates() {
-    let root = compiler_workspace_root();
-    with_cwd_at_workspace_root(&root, || {
-        let entry =
-            root.join("corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd");
-        let project_root: PathBuf = entry
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_path_buf();
-        let source = fs::read_to_string(&entry).expect("read AnsiEscapeTests.bd");
-
-        let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
-            .expect("resolve");
-
-        let plan = resolved.compile_plan.expect("compile plan");
-        configure_db_for_project(&project_root);
-        let assembly = with_db(|db| {
-            program_assembly(
-                db,
-                &plan,
-                resolved.prepared_workspace.as_ref(),
-                &entry,
-                Some(&source),
-                &AssemblyOptions {
-                    discovery: AssemblyDiscovery::ImportClosure,
-                    ..Default::default()
-                },
-            )
-        })
-        .expect("assemble");
-
-        let resolved_input = ResolvedInput {
-            source_path: entry.clone(),
-            source: source.clone(),
-            compile_plan: Some(plan),
-            prepared_workspace: resolved.prepared_workspace,
-            workspace_summary: resolved.workspace_summary,
-            assembly: Some(assembly.clone()),
-        };
-
+    with_project_test_env(&corelib_tests_project_root(), || {
+        let resolved =
+            resolve_corelib_tests_entry_with_assembly("console/AnsiEscapeTests.bd");
         let front = compile_front_end_from_resolved_input(
-            &resolved_input,
+            &resolved,
             FrontEndOptions {
                 with_semantic_diagnostics: false,
                 ..Default::default()
@@ -406,6 +293,7 @@ fn ansi_csi_bold_red_link_plan_validates() {
         )
         .expect("front-end");
 
+        let assembly = resolved.assembly.as_ref().expect("assembly");
         let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
         let link_plan = LinkPlan::build_for_entrypoint(
             &front.hir,
@@ -434,7 +322,7 @@ fn ansi_csi_bold_red_link_plan_validates() {
             &front.hir,
             &front.resolution,
             &front.typed,
-            Some(&assembly),
+            Some(assembly),
             Some("ansi_csi_bold_red"),
         )
         .expect("lower ansi_csi_bold_red");

@@ -103,7 +103,7 @@ pub enum Commands {
     Corelib(CorelibArgs),
 
     /// Scaffold projects from templates (`list`, `install`, `uninstall`, or `<shortName>`)
-    New(NewArgs),
+    New(Box<NewArgs>),
 
     /// Package-manager operations backed by the pckg service
     Pckg(PckgArgs),
@@ -141,7 +141,7 @@ pub fn run() -> miette::Result<()> {
         Commands::Lock(args) => lock::execute(args),
         Commands::Update(args) => update::execute(args),
         Commands::Corelib(args) => corelib::execute(args),
-        Commands::New(args) => new::execute(args),
+        Commands::New(args) => new::execute(*args),
         Commands::Pckg(args) => maybe_generate_docs_for_pack(&args)
             .and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into)),
         Commands::Lsp(args) => lsp::execute(args),

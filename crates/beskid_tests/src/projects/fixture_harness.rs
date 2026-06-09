@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::services::{
-    FrontEndOptions, PrepareMode, PrepareOptions, ResolvedInput, compile_front_end_from_resolved_input,
+    FrontEndOptions, PrepareOptions, ResolvedInput, compile_front_end_from_resolved_input,
     resolve_input,
 };
 use beskid_queries::{
@@ -156,18 +156,7 @@ fn cached_corelib_tests_assembly(
     assembly
 }
 
-pub fn compile_corelib_tests_front_end(
-    entry_relative: &str,
-) -> beskid_analysis::services::FrontEndTypedResult {
-    prepare_executable(&resolve_corelib_tests_entry_with_assembly(entry_relative))
-        .into_executable()
-        .expect("executable")
-}
-
 /// Semantic gate for a `corelib_tests` entry (resolve + typecheck entry body; dependency signatures only).
-///
-/// Uses [`PrepareMode::DiagnosticsOnly`] so the spine does not re-run full executable lowering and
-/// does not type-check every corelib dependency body (that path can take 20+ minutes per entry).
 pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
     test_progress(&format!("→ corelib typecheck: {entry_relative}"));
     let started = Instant::now();
@@ -177,7 +166,6 @@ pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
             db,
             &resolved,
             PrepareOptions {
-                mode: PrepareMode::DiagnosticsOnly,
                 front_end: FrontEndOptions {
                     with_semantic_diagnostics: true,
                     ..Default::default()
@@ -245,21 +233,4 @@ pub fn shared_corelib_mvp_assembly() -> Arc<ProgramAssembly> {
 fn with_project_test_env_return<T>(project_root: &Path, f: impl FnOnce(&Path) -> T) -> T {
     configure_db_for_project(project_root);
     f(project_root)
-}
-
-pub fn prepare_executable(
-    resolved: &ResolvedInput,
-) -> beskid_analysis::services::PreparedCompilation {
-    with_db(|db| {
-        prepare_compilation_with_db(
-            db,
-            resolved,
-            PrepareOptions {
-                mode: PrepareMode::Executable,
-                ..Default::default()
-            },
-            None,
-        )
-    })
-    .expect("prepare executable")
 }

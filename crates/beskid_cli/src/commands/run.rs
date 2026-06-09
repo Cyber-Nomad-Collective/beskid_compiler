@@ -11,7 +11,7 @@ use beskid_aot::{
     AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, build,
     default_runtime_strategy, run_linked_executable,
 };
-use beskid_codegen::lower_resolved_entrypoint_with_pipeline;
+use beskid_codegen::services::lower_from_front_end;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
@@ -58,12 +58,14 @@ pub fn execute(args: RunArgs) -> Result<()> {
         PipelineProgressKind::PrepareAndRun,
         &resolve_args,
     )?;
-    session.semantic_gate(&resolved, SemanticGateOptions::default())?;
-
-    let lowered = lower_resolved_entrypoint_with_pipeline(
-        &resolved,
+    let prepared = session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;
+    let front = prepared.into_executable()?;
+    let source_name = resolved.source_path.display().to_string();
+    let lowered = lower_from_front_end(
+        &source_name,
+        &resolved.source,
+        front,
         Some(&args.entrypoint),
-        false,
         Some(session.observer()),
     )?;
     let artifact = lowered.artifact;

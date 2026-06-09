@@ -1,18 +1,15 @@
 //! CLIF lowering helpers for the v0.3 `dynamic` cell surface.
 
-use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::pointer_type;
-use beskid_abi::{
-    SYM_DYNAMIC_CAST_CHECKED, SYM_DYNAMIC_CELL_CREATE, SYM_DYNAMIC_CELL_WRAP, SYM_DYNAMIC_MAP_AOT,
-    SYM_DYNAMIC_MAP_FALLBACK,
-};
+use beskid_abi::{SYM_DYNAMIC_CELL_CREATE, SYM_DYNAMIC_MAP_AOT};
 use cranelift_codegen::ir::{
     AbiParam, ExtFuncData, ExternalName, InstBuilder, Signature, Value, types,
 };
 use cranelift_codegen::isa::CallConv;
+use cranelift_frontend::FunctionBuilder;
 
 fn import_builtin(
-    ctx: &mut NodeLoweringContext<'_, '_>,
+    builder: &mut FunctionBuilder,
     symbol: &str,
     params: &[cranelift_codegen::ir::Type],
     returns: Option<cranelift_codegen::ir::Type>,
@@ -24,8 +21,8 @@ fn import_builtin(
     if let Some(ret) = returns {
         sig.returns.push(AbiParam::new(ret));
     }
-    let sig_ref = ctx.builder.func.import_signature(sig);
-    ctx.builder.func.import_function(ExtFuncData {
+    let sig_ref = builder.func.import_signature(sig);
+    builder.func.import_function(ExtFuncData {
         name: ExternalName::testcase(symbol),
         signature: sig_ref,
         colocated: false,
@@ -34,101 +31,43 @@ fn import_builtin(
 }
 
 /// Emit `dynamic_cell_create(shape_id, payload)` → `*DynamicCell`.
-pub fn emit_dynamic_cell_create(
-    ctx: &mut NodeLoweringContext<'_, '_>,
+#[allow(dead_code)] // Spec anchor until dynamic wrap/cast lowering wires this helper.
+pub(crate) fn emit_dynamic_cell_create(
+    builder: &mut FunctionBuilder,
     shape_id: u32,
     payload: Value,
 ) -> Value {
     let func_ref = import_builtin(
-        ctx,
+        builder,
         SYM_DYNAMIC_CELL_CREATE,
         &[types::I64, pointer_type()],
         Some(pointer_type()),
     );
-    let shape_val = ctx.builder.ins().iconst(types::I64, i64::from(shape_id));
-    let call = ctx.builder.ins().call(func_ref, &[shape_val, payload]);
-    ctx.builder.inst_results(call)[0]
-}
-
-/// Emit `dynamic_cell_wrap(shape_id, static_ptr)` → `*DynamicCell`.
-pub fn emit_dynamic_cell_wrap(
-    ctx: &mut NodeLoweringContext<'_, '_>,
-    shape_id: u32,
-    static_ptr: Value,
-) -> Value {
-    let func_ref = import_builtin(
-        ctx,
-        SYM_DYNAMIC_CELL_WRAP,
-        &[types::I64, pointer_type()],
-        Some(pointer_type()),
-    );
-    let shape_val = ctx.builder.ins().iconst(types::I64, i64::from(shape_id));
-    let call = ctx.builder.ins().call(func_ref, &[shape_val, static_ptr]);
-    ctx.builder.inst_results(call)[0]
-}
-
-/// Emit `dynamic_cast_checked(cell, expected_shape)` → `i32` status.
-pub fn emit_dynamic_cast_checked(
-    ctx: &mut NodeLoweringContext<'_, '_>,
-    cell: Value,
-    expected_shape: u32,
-) -> Value {
-    let func_ref = import_builtin(
-        ctx,
-        SYM_DYNAMIC_CAST_CHECKED,
-        &[pointer_type(), types::I64],
-        Some(types::I32),
-    );
-    let shape_val = ctx
-        .builder
-        .ins()
-        .iconst(types::I64, i64::from(expected_shape));
-    let call = ctx.builder.ins().call(func_ref, &[cell, shape_val]);
-    ctx.builder.inst_results(call)[0]
+    let shape_val = builder.ins().iconst(types::I64, i64::from(shape_id));
+    let call = builder.ins().call(func_ref, &[shape_val, payload]);
+    builder.inst_results(call)[0]
 }
 
 /// Emit `dynamic_map_aot(src_shape, dst_shape, src_ptr, dst_out)` → `i32` status.
-pub fn emit_dynamic_map_aot(
-    ctx: &mut NodeLoweringContext<'_, '_>,
+pub(crate) fn emit_dynamic_map_aot(
+    builder: &mut FunctionBuilder,
     src_shape: u32,
     dst_shape: u32,
     src_ptr: Value,
     dst_out: Value,
 ) -> Value {
     let func_ref = import_builtin(
-        ctx,
+        builder,
         SYM_DYNAMIC_MAP_AOT,
         &[types::I64, types::I64, pointer_type(), pointer_type()],
         Some(types::I32),
     );
-    let src_shape_val = ctx.builder.ins().iconst(types::I64, i64::from(src_shape));
-    let dst_shape_val = ctx.builder.ins().iconst(types::I64, i64::from(dst_shape));
-    let call = ctx
-        .builder
+    let src_shape_val = builder.ins().iconst(types::I64, i64::from(src_shape));
+    let dst_shape_val = builder.ins().iconst(types::I64, i64::from(dst_shape));
+    let call = builder
         .ins()
         .call(func_ref, &[src_shape_val, dst_shape_val, src_ptr, dst_out]);
-    ctx.builder.inst_results(call)[0]
-}
-
-/// Emit `dynamic_map_fallback(cell, dst_shape, dst_out)` → `i32` status.
-pub fn emit_dynamic_map_fallback(
-    ctx: &mut NodeLoweringContext<'_, '_>,
-    cell: Value,
-    dst_shape: u32,
-    dst_out: Value,
-) -> Value {
-    let func_ref = import_builtin(
-        ctx,
-        SYM_DYNAMIC_MAP_FALLBACK,
-        &[pointer_type(), types::I64, pointer_type()],
-        Some(types::I32),
-    );
-    let dst_shape_val = ctx.builder.ins().iconst(types::I64, i64::from(dst_shape));
-    let call = ctx
-        .builder
-        .ins()
-        .call(func_ref, &[cell, dst_shape_val, dst_out]);
-    ctx.builder.inst_results(call)[0]
+    builder.inst_results(call)[0]
 }
 
 #[cfg(test)]
@@ -196,7 +135,7 @@ mod dynamic_clif_tests {
         let mut codegen = CodegenContext::new();
         let null_payload = builder.ins().iconst(pointer_type(), 0);
         {
-            let mut ctx = NodeLoweringContext {
+            let ctx = NodeLoweringContext {
                 resolution: &resolution,
                 type_result: &type_result,
                 codegen: &mut codegen,
@@ -206,7 +145,7 @@ mod dynamic_clif_tests {
                 expected_return_type: None,
                 receiver_type: None,
             };
-            let _cell = emit_dynamic_cell_create(&mut ctx, 7, null_payload);
+            let _cell = emit_dynamic_cell_create(ctx.builder, 7, null_payload);
             ctx.builder.ins().return_(&[null_payload]);
         }
         builder.finalize();

@@ -14,6 +14,10 @@ use beskid_tools::registry::{RegistryConnectConfig, parse_package_selector};
 
 #[derive(Args, Debug)]
 pub struct NewArgs {
+    /// Open the interactive template picker TUI (installed + registry download).
+    #[arg(long)]
+    pub tui: bool,
+
     #[command(subcommand)]
     pub command: Option<NewCommand>,
 
@@ -137,7 +141,7 @@ pub struct UninstallArgs {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct RegistryConnectArgs {
-    #[arg(long, env = "BESKID_PCKG_URL", default_value = "http://127.0.0.1:8082")]
+    #[arg(long, env = "BESKID_PCKG_URL", default_value = "https://pckg.beskid-lang.org")]
     pub registry_url: String,
 
     #[arg(long, env = "BESKID_PCKG_TOKEN")]
@@ -160,6 +164,9 @@ impl RegistryConnectArgs {
 }
 
 pub fn execute(args: NewArgs) -> Result<()> {
+    if args.tui && args.command.is_none() && args.short_name.is_none() {
+        return beskid_tools::tui::run_project_wizard().map_err(Into::into);
+    }
     match args.command {
         Some(NewCommand::List(list)) => execute_list(list),
         Some(NewCommand::Install(install)) => execute_install(install),

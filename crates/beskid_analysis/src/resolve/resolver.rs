@@ -1,8 +1,10 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::hir::HirItem;
+use crate::hir::{HirProgram, HirItem};
 use crate::syntax::Spanned;
+
+use super::errors::ResolveResult;
 
 use super::errors::{ResolveError, ResolveWarning};
 use super::ids::{ItemId, ModuleId};
@@ -35,6 +37,44 @@ impl Resolver {
     pub fn new() -> Self {
         Self::default()
     }
+}
+
+/// Optional correlation fields for [`resolve_program_traced`] / [`enter_resolve_span`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ResolveTraceContext<'a> {
+    pub entry_path: Option<&'a Path>,
+    pub session_fingerprint: Option<&'a str>,
+    pub syntax_generation_id: Option<u64>,
+}
+
+fn resolve_span(ctx: ResolveTraceContext<'_>) -> tracing::Span {
+    tracing::info_span!(
+        target: "beskid.analysis",
+        "beskid.analysis.resolve",
+        entry = tracing::field::display(
+            ctx.entry_path
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "<unknown>".to_string())
+        ),
+        session_fingerprint = tracing::field::display(
+            ctx.session_fingerprint.unwrap_or("<none>")
+        ),
+        syntax_generation_id = ctx.syntax_generation_id.unwrap_or(0),
+    )
+}
+
+/// Enters a `beskid.analysis.resolve` span nested under the active pipeline phase span.
+pub fn enter_resolve_span(ctx: ResolveTraceContext<'_>) -> tracing::span::EnteredSpan {
+    resolve_span(ctx).entered()
+}
+
+/// Resolve a program under a `beskid.analysis.resolve` tracing span.
+pub fn resolve_program_traced(
+    program: &Spanned<HirProgram>,
+    ctx: ResolveTraceContext<'_>,
+) -> ResolveResult<Resolution> {
+    let _guard = enter_resolve_span(ctx);
+    Resolver::new().resolve_program(program)
 }
 
 pub(super) fn path_segments(path: &Spanned<crate::hir::HirPath>) -> Vec<String> {

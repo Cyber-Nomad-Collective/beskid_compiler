@@ -4,7 +4,7 @@ use std::fs;
 
 use beskid_analysis::CompilationContext;
 use beskid_analysis::services::{
-    FrontEndOptions, PrepareMode, PrepareOptions, analyze_source_with_compilation_context,
+    FrontEndOptions, PrepareOptions, analyze_source_in_project,
     prepare_compilation_diagnostics, resolved_input_from_plan,
 };
 
@@ -44,22 +44,20 @@ i32 Main() {
     fs::write(&entry, source).expect("write source");
 
     with_cwd(&root, || {
-        let mut ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
+        let ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
         let plan = ctx.compile_plan.clone().expect("plan");
         let resolved = resolved_input_from_plan(
             entry.clone(),
             source.to_string(),
             plan,
-            ctx.prepared_workspace.clone(),
+            None,
             None,
         );
 
-        let gate =
-            analyze_source_with_compilation_context(&entry, source, &mut ctx).expect("analyze");
+        let gate = analyze_source_in_project(&entry, source).expect("analyze");
         let (_, prepare) = prepare_compilation_diagnostics(
             &resolved,
             PrepareOptions {
-                mode: PrepareMode::DiagnosticsOnly,
                 front_end: FrontEndOptions {
                     with_semantic_diagnostics: true,
                     ..Default::default()

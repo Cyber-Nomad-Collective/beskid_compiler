@@ -16,7 +16,7 @@ use beskid_analysis::types::{
 
 use crate::errors::CodegenError;
 use crate::linking::{
-    resolve_item_call_id, resolve_path_item_id, return_type_for_module_path_call,
+    resolve_item_call_id, return_type_for_module_path_call,
 };
 use crate::lowering::types::resolve_type_path_item_id_for_codegen;
 
@@ -128,7 +128,6 @@ pub(crate) fn infer_expr_type(
             HirLiteral::Float(_) => primitive_type_id(type_result, HirPrimitiveType::F64),
             HirLiteral::Bool(_) => primitive_type_id(type_result, HirPrimitiveType::Bool),
             HirLiteral::Char(_) => primitive_type_id(type_result, HirPrimitiveType::Char),
-            _ => None,
         },
         HirExpressionNode::PathExpression(path) => {
             let segments = &path.node.path.node.segments;

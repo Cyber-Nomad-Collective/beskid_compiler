@@ -1,9 +1,23 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
 use tokio::sync::RwLock;
 use tower_lsp_server::Client;
 use tower_lsp_server::ls_types::Uri;
+
+use beskid_analysis::services::{
+    PrepareOptions, ResolvedInput, SessionFingerprint, build_document_analysis_from_resolution,
+    build_document_analysis_with_context, parse_program_with_source_name, resolve_input,
+    resolved_input_from_plan,
+};
+use beskid_queries::{
+    bump_file_revision, bump_typed_prepare_revision, fingerprint_key, typed_entry_state_with_db,
+};
 
 use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::project_context::cached_compilation_context;
@@ -13,6 +27,9 @@ use crate::workspace_scan::uri_to_path;
 /// Document analysis snapshot shape; bump when snapshot fields change.
 pub const ANALYSIS_CACHE_VERSION: u32 = 4;
 
+/// Debounce window for typed executable prepare (coalesced with diagnostic publish).
+const TYPED_PREPARE_DEBOUNCE_MS: u64 = 120;
+
 fn is_project_manifest_uri(uri: &Uri) -> bool {
     uri.to_string().to_lowercase().ends_with(".proj")
 }
@@ -21,6 +38,77 @@ fn salsa_revision(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     hasher.finish()
+}
+
+fn entry_key_for_resolved(resolved: &ResolvedInput) -> Option<String> {
+    let plan = resolved.compile_plan.as_ref()?;
+    Some(fingerprint_key(&SessionFingerprint::for_entry(
+        plan,
+        &resolved.source_path,
+    )))
+}
+
+fn module_paths_from_resolution(resolution: &beskid_analysis::resolve::Resolution) -> HashSet<String> {
+    resolution
+        .module_graph
+        .modules()
+        .iter()
+        .filter_map(|module| {
+            if module.path.is_empty() {
+                None
+            } else {
+                Some(module.path.join("::"))
+            }
+        })
+        .collect()
+}
+
+fn bump_entry_file_revision(
+    db: &mut beskid_queries::BeskidDatabase,
+    resolved: &ResolvedInput,
+) {
+    if let Some(entry_key) = entry_key_for_resolved(resolved) {
+        bump_file_revision(db, &entry_key);
+    }
+}
+
+fn bump_entry_typed_prepare_revision(
+    db: &mut beskid_queries::BeskidDatabase,
+    resolved: &ResolvedInput,
+) {
+    if let Some(entry_key) = entry_key_for_resolved(resolved) {
+        bump_typed_prepare_revision(db, &entry_key);
+    }
+}
+
+async fn resolved_input_for_path(
+    state: &RwLock<State>,
+    path: &Path,
+    text: &str,
+) -> Option<(ResolvedInput, beskid_analysis::CompilationContext)> {
+    let session = cached_compilation_context(state, path).await?;
+    session.compile_plan.as_ref()?;
+    let mut resolved = resolve_input(
+        Some(&path.to_path_buf()),
+        None,
+        None,
+        None,
+        false,
+        false,
+    )
+    .ok()
+    .or_else(|| {
+        let plan = session.compile_plan.clone()?;
+        Some(resolved_input_from_plan(
+            path.to_path_buf(),
+            text.to_string(),
+            plan,
+            None,
+            None,
+        ))
+    })?;
+    resolved.source = text.to_string();
+    Some((resolved, session))
 }
 
 async fn build_document_analysis(
@@ -33,29 +121,64 @@ async fn build_document_analysis(
     }
 
     let path = uri_to_path(uri)?;
-    let mut compilation_context = cached_compilation_context(state, &path).await;
+    let program =
+        parse_program_with_source_name(&uri.to_string(), text).ok()?;
 
-    if let Some(path) = uri_to_path(uri) {
-        let write = state.write().await;
-        write
-            .compilation_db
-            .lock()
-            .expect("compilation db lock")
-            .ensure_file_text(path, text.to_string());
-    }
-
-    beskid_analysis::services::parse_program_with_source_name(&uri.to_string(), text)
-        .ok()
-        .map(|program| {
-            beskid_analysis::services::build_document_analysis_with_context(
+    let (resolved, session) = match resolved_input_for_path(state, &path, text).await {
+        Some(pair) => pair,
+        None => {
+            return Some(build_document_analysis_with_context(
                 &program,
                 uri.to_string(),
                 text,
                 &path,
-                compilation_context.as_mut(),
                 None,
-            )
-        })
+                None,
+            ));
+        }
+    };
+
+    {
+        let write = state.write().await;
+        if let Some(plan) = session.compile_plan.as_ref() {
+            write.configure_db_for_project(&plan.project_root);
+        }
+        write
+            .compilation_db
+            .lock()
+            .expect("compilation db lock")
+            .ensure_file_text(path.clone(), text.to_string());
+    }
+
+    let write = state.write().await;
+    let mut db = write
+        .compilation_db
+        .lock()
+        .expect("compilation db lock");
+    let options = PrepareOptions::default();
+    if let Ok(entry_state) = typed_entry_state_with_db(&mut db, &resolved, &options, None) {
+        let resolution = (*entry_state.resolution.0).clone();
+        let module_paths = module_paths_from_resolution(&resolution);
+        return Some(build_document_analysis_from_resolution(
+            &program,
+            uri.to_string(),
+            text,
+            &path,
+            Some(resolution),
+            module_paths,
+            session.compile_plan.as_ref(),
+            None,
+        ));
+    }
+
+    Some(build_document_analysis_with_context(
+        &program,
+        uri.to_string(),
+        text,
+        &path,
+        Some(&session),
+        None,
+    ))
 }
 
 /// Build a [`Document`] for `uri`, attaching a fresh analysis snapshot when possible.
@@ -81,6 +204,96 @@ pub async fn set_disk_snapshot(state: &RwLock<State>, uri: Uri, doc: Document) {
         return;
     }
     write_state.workspace_index.insert(uri, doc);
+}
+
+async fn touch_entry_file_revision_for_uri(state: &RwLock<State>, uri: &Uri, text: &str) {
+    let Some(path) = uri_to_path(uri) else {
+        return;
+    };
+    let Some((resolved, _)) = resolved_input_for_path(state, &path, text).await else {
+        return;
+    };
+    let write = state.write().await;
+    if let Some(plan) = resolved.compile_plan.as_ref() {
+        write.configure_db_for_project(&plan.project_root);
+    }
+    let mut db = write.compilation_db.lock().expect("compilation db lock");
+    db.ensure_file_text(path, text.to_string());
+    bump_entry_file_revision(&mut db, &resolved);
+}
+
+async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
+    let text = {
+        let read = state.read().await;
+        read.docs
+            .get(uri)
+            .map(|doc| doc.text.clone())
+            .or_else(|| read.workspace_index.get(uri).map(|doc| doc.text.clone()))
+    };
+    let Some(text) = text else {
+        return;
+    };
+
+    let Some(path) = uri_to_path(uri) else {
+        return;
+    };
+    let Some((resolved, _)) = resolved_input_for_path(state, &path, &text).await else {
+        return;
+    };
+
+    {
+        let write = state.write().await;
+        if let Some(plan) = resolved.compile_plan.as_ref() {
+            write.configure_db_for_project(&plan.project_root);
+        }
+        let mut db = write.compilation_db.lock().expect("compilation db lock");
+        bump_entry_typed_prepare_revision(&mut db, &resolved);
+    }
+
+    let analysis = build_document_analysis(state, uri, &text).await;
+    let mut write = state.write().await;
+    if let Some(doc) = write.docs.get_mut(uri)
+        && doc.text == text
+    {
+        doc.analysis = analysis;
+        doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
+    } else if let Some(doc) = write.workspace_index.get_mut(uri)
+        && doc.text == text
+    {
+        doc.analysis = analysis;
+        doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
+    }
+}
+
+/// Schedule debounced typed executable prepare after buffer edits (120ms coalescing).
+pub async fn schedule_typed_prepare_rebuild(state: Arc<RwLock<State>>, uri: Uri) {
+    let rev = {
+        let mut write = state.write().await;
+        let next = write
+            .typed_prepare_schedule_revision
+            .get(&uri)
+            .copied()
+            .unwrap_or(0)
+            .saturating_add(1);
+        write.typed_prepare_schedule_revision.insert(uri.clone(), next);
+        next
+    };
+
+    let state_for_task = state.clone();
+    let uri_for_task = uri.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(TYPED_PREPARE_DEBOUNCE_MS)).await;
+        let should_run = {
+            let read = state_for_task.read().await;
+            read.typed_prepare_schedule_revision
+                .get(&uri_for_task)
+                .copied()
+                == Some(rev)
+        };
+        if should_run {
+            apply_typed_prepare_rebuild(&state_for_task, &uri_for_task).await;
+        }
+    });
 }
 
 /// Upsert an open document, respecting monotonic versions and Salsa revision fast paths.
@@ -112,6 +325,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
     }
 
     drop(write_state);
+    touch_entry_file_revision_for_uri(state, &uri, &text).await;
     let analysis = build_document_analysis(state, &uri, &text).await;
 
     let mut write_state = state.write().await;
@@ -128,7 +342,9 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
 
 /// Drop an open buffer after `didClose` (disk hydration may repopulate the workspace index).
 pub async fn remove_document(state: &RwLock<State>, uri: &Uri) {
-    state.write().await.docs.remove(uri);
+    let mut write = state.write().await;
+    write.docs.remove(uri);
+    write.typed_prepare_schedule_revision.remove(uri);
 }
 
 /// Rebuild analysis snapshots for open `.bd` buffers after compilation context / assembly invalidation.

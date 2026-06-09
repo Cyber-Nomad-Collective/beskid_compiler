@@ -291,7 +291,6 @@ fn collect_calls_in_expression(
             collect_spawn_entry_callees(
                 &spawn.node.callee,
                 resolution,
-                type_result,
                 source_path,
                 out,
             );
@@ -303,7 +302,6 @@ fn collect_calls_in_expression(
 fn collect_spawn_entry_callees(
     callee: &Spanned<HirExpressionNode>,
     resolution: &Resolution,
-    type_result: &TypeResult,
     source_path: Option<&PathBuf>,
     out: &mut Vec<ResolvedCall>,
 ) {
@@ -323,7 +321,7 @@ fn collect_spawn_entry_callees(
             }
         }
         HirExpressionNode::CallExpression(call) if call.node.args.is_empty() => {
-            collect_spawn_entry_callees(&call.node.callee, resolution, type_result, source_path, out);
+            collect_spawn_entry_callees(&call.node.callee, resolution, source_path, out);
         }
         HirExpressionNode::LambdaExpression(_) => {}
         _ => {}
@@ -459,8 +457,8 @@ fn resolve_call(
             let item_id = canonical_item_id(resolution, item_id);
             let mut generic_args =
                 generic_type_args_for_call(call, resolution, type_result, source_path);
-            if generic_args.is_empty() {
-                if let Some(inferred) = infer_generic_type_args_for_call(
+            if generic_args.is_empty()
+                && let Some(inferred) = infer_generic_type_args_for_call(
                     call,
                     item_id,
                     resolution,
@@ -469,7 +467,6 @@ fn resolve_call(
                 ) {
                     generic_args = inferred;
                 }
-            }
             let mangled = build_function_mangled(item_id, &generic_args, resolution, type_result);
             Some(ResolvedCall {
                 item_id,
@@ -642,8 +639,8 @@ fn item_id_for_call_path(
         [] => None,
         [single] => Some(*single),
         many => {
-            if let Some(path) = source_path {
-                if let Some(item) = many.iter().find(|item| {
+            if let Some(path) = source_path
+                && let Some(item) = many.iter().find(|item| {
                     resolution.items.get(item.0).is_some_and(|info| {
                         info.source_path
                             .as_ref()
@@ -652,7 +649,6 @@ fn item_id_for_call_path(
                 }) {
                     return Some(*item);
                 }
-            }
             many.last().copied()
         }
     }
@@ -847,11 +843,10 @@ fn expr_type_for_call_arg(
     }
     if let HirExpressionNode::PathExpression(path) = &arg.node {
         let span = path.node.path.span;
-        if let Some(local_id) = resolution.tables.local_id_for_span(span, source_path) {
-            if let Some(type_id) = type_result.local_types.get(&local_id) {
+        if let Some(local_id) = resolution.tables.local_id_for_span(span, source_path)
+            && let Some(type_id) = type_result.local_types.get(&local_id) {
                 return Some(*type_id);
             }
-        }
     }
     None
 }

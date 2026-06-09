@@ -57,7 +57,7 @@ pub fn aot_run_main_i64(source: &str) -> i64 {
 
 pub fn aot_run_main_i32(source: &str) -> i32 {
     let (dir, result) = build_aot_exe(source, "aot_run_main_i32");
-    let value = i32::from(result.exit_code);
+    let value = result.exit_code;
     let _ = std::fs::remove_dir_all(dir);
     value
 }

@@ -448,8 +448,8 @@ fn item_info_for_span<'a>(
     span: beskid_analysis::syntax::SpanInfo,
     source_path: Option<&PathBuf>,
 ) -> Option<&'a ItemInfo> {
-    if let Some(path) = source_path {
-        if let Some(info) = resolution.items.iter().find(|info| {
+    if let Some(path) = source_path
+        && let Some(info) = resolution.items.iter().find(|info| {
             info.span == span
                 && info
                     .source_path
@@ -458,7 +458,6 @@ fn item_info_for_span<'a>(
         }) {
             return Some(info);
         }
-    }
 
     let matches: Vec<_> = resolution
         .items

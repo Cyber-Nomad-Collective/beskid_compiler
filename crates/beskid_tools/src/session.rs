@@ -1,4 +1,8 @@
-//! Facade for resolve + semantic gate flows shared by compile commands.
+//! Facade for resolve + executable prepare gate flows shared by compile commands.
+//!
+//! Compile commands should perform **one** [`executable_gate_prepared`] prepare before lowering or
+//! codegen. Chaining the deprecated semantic gate APIs with a separate lower prepare duplicates
+//! pipeline phases and skews [`PipelineProgressKind::PrepareAndRun`] progress.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,7 +12,9 @@ use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{self, PreparedCompilation, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
 
-use crate::pipeline::{CliPipeline, PipelineProgressKind, frontend, use_cli_spinner};
+use crate::pipeline::{
+    CliPipeline, CliResolveOptions, PipelineProgressKind, frontend, use_cli_spinner,
+};
 
 /// Project / lockfile inputs for [`CommandSession::resolve_input`].
 #[derive(Debug, Clone, Copy)]
@@ -21,7 +27,7 @@ pub struct ResolveInputArgs<'a> {
     pub locked: bool,
 }
 
-/// Options for [`CommandSession::semantic_gate`].
+/// Options for [`CommandSession::executable_gate_prepared`].
 #[derive(Debug, Clone, Copy)]
 pub struct SemanticGateOptions {
     /// When true, stop animated progress after analysis (run / test / clif).
@@ -38,13 +44,16 @@ impl Default for SemanticGateOptions {
     }
 }
 
-/// Shared CLI session: pipeline observer plus resolve and semantic gate helpers.
+/// Shared CLI session: pipeline observer plus resolve and executable prepare gate helpers.
 pub struct CommandSession {
     pipeline: Arc<CliPipeline>,
 }
 
 impl CommandSession {
     /// Create a session with pipeline progress for the given phase budget.
+    ///
+    /// Use [`PipelineProgressKind::PrepareAndRun`] for run / test / clif paths that call
+    /// [`executable_gate_prepared`] once, then lower or JIT-run.
     pub fn with_progress(plain: bool, kind: PipelineProgressKind) -> Self {
         Self {
             pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)),
@@ -54,12 +63,15 @@ impl CommandSession {
     /// Resolve project input while forwarding pipeline events to this session.
     pub fn resolve_input(&self, args: &ResolveInputArgs<'_>) -> Result<ResolvedInput> {
         frontend::resolve_input_with_pipeline(
-            args.input,
-            args.project,
-            args.target,
-            args.workspace_member,
-            args.frozen,
-            args.locked,
+            CliResolveOptions {
+                input: args.input,
+                project: args.project,
+                target: args.target,
+                workspace_member: args.workspace_member,
+                frozen: args.frozen,
+                locked: args.locked,
+                plain: false,
+            },
             Some(self.pipeline.as_ref()),
         )
     }
@@ -87,28 +99,11 @@ impl CommandSession {
         self.pipeline.as_ref()
     }
 
-    /// Run the semantic diagnostics gate; halts progress bars before printing diagnostics.
-    pub fn semantic_gate(
-        &self,
-        resolved: &ResolvedInput,
-        options: SemanticGateOptions,
-    ) -> Result<()> {
-        let _ = self.semantic_gate_prepared(resolved, options)?;
-        Ok(())
-    }
-
-    /// Like [`semantic_gate`] but returns the prepared compilation snapshot (for `beskid test`).
-    pub fn semantic_gate_prepared(
-        &self,
-        resolved: &ResolvedInput,
-        options: SemanticGateOptions,
-    ) -> Result<PreparedCompilation> {
-        let (prepared, gate_diagnostics) = self.run_semantic_diagnostics(resolved)?;
-        self.finish_gate(&gate_diagnostics, options)?;
-        Ok(prepared)
-    }
-
-    /// Single prepare through typed HIR with semantic diagnostics gate (for `beskid test`).
+    /// Single prepare through typed executable HIR with semantic diagnostics gate.
+    ///
+    /// Primary API for `beskid run`, `beskid build`, `beskid test`, and `beskid clif`. Pass the
+    /// returned [`PreparedCompilation`] to [`PreparedCompilation::into_executable`] and
+    /// `lower_from_front_end` — do not run a second prepare.
     pub fn executable_gate_prepared(
         &self,
         resolved: &ResolvedInput,
@@ -117,7 +112,6 @@ impl CommandSession {
         let (prepared, gate_diagnostics) = beskid_queries::prepare_compilation_diagnostics(
             resolved,
             services::PrepareOptions {
-                mode: services::PrepareMode::Executable,
                 front_end: services::FrontEndOptions {
                     with_semantic_diagnostics: true,
                     ..Default::default()
@@ -129,21 +123,27 @@ impl CommandSession {
         Ok(prepared)
     }
 
-    fn run_semantic_diagnostics(
+    /// **Deprecated:** use [`executable_gate_prepared`] instead.
+    ///
+    /// Thin wrapper that forwards to [`executable_gate_prepared`] without a second prepare.
+    pub fn semantic_gate_prepared(
         &self,
         resolved: &ResolvedInput,
-    ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>)> {
-        beskid_queries::prepare_compilation_diagnostics(
-            resolved,
-            services::PrepareOptions {
-                mode: services::PrepareMode::DiagnosticsOnly,
-                front_end: services::FrontEndOptions {
-                    with_semantic_diagnostics: true,
-                    ..Default::default()
-                },
-            },
-            Some(self.pipeline.as_ref()),
-        )
+        options: SemanticGateOptions,
+    ) -> Result<PreparedCompilation> {
+        self.executable_gate_prepared(resolved, options)
+    }
+
+    /// **Deprecated:** use [`executable_gate_prepared`] instead.
+    ///
+    /// Thin wrapper that forwards to [`executable_gate_prepared`] without a second prepare.
+    pub fn semantic_gate(
+        &self,
+        resolved: &ResolvedInput,
+        options: SemanticGateOptions,
+    ) -> Result<()> {
+        let _ = self.executable_gate_prepared(resolved, options)?;
+        Ok(())
     }
 
     fn finish_gate(

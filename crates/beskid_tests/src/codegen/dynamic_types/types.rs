@@ -11,9 +11,7 @@ fn find_named_type_id_for_item(
     let mut index = 0usize;
     loop {
         let type_id = beskid_analysis::types::TypeId(index);
-        let Some(info) = typed.types.get(type_id) else {
-            return None;
-        };
+        let info = typed.types.get(type_id)?;
         if matches!(info, beskid_analysis::types::TypeInfo::Named(found) if *found == item_id) {
             return Some(type_id);
         }

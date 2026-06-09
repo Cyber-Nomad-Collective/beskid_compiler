@@ -9,6 +9,7 @@ use beskid_analysis::syntax::{Program, Spanned};
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::SEMANTIC};
 
 use super::CliPipeline;
+use super::resolve_options::{CliResolveOptions, FrontendProjectPipelineOptions};
 
 /// Resolve `input` / `project` / lockfile flags the same way as most CLI subcommands.
 pub fn resolve_input(
@@ -24,45 +25,37 @@ pub fn resolve_input(
 
 /// Like [`resolve_input`], forwarding [`PipelineObserver`] events (e.g. for CLI progress).
 pub fn resolve_input_with_pipeline(
-    input: Option<&PathBuf>,
-    project: Option<&PathBuf>,
-    target: Option<&str>,
-    workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
+    resolve: CliResolveOptions<'_>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<services::ResolvedInput> {
     services::resolve_input_with_policy(
-        input,
-        project,
-        target,
-        workspace_member,
-        frozen,
-        locked,
+        resolve.input,
+        resolve.project,
+        resolve.target,
+        resolve.workspace_member,
+        resolve.frozen,
+        resolve.locked,
         UnresolvedDependencyPolicy::Error,
         pipeline,
     )
 }
 
 /// Resolve to a [`ResolvedProject`] with optional pipeline reporting and unresolved-deps policy.
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_project_with_pipeline(
-    input: Option<&PathBuf>,
-    project: Option<&PathBuf>,
-    target: Option<&str>,
-    workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
-    unresolved_dependency_policy: UnresolvedDependencyPolicy,
-    pipeline: Option<&dyn PipelineObserver>,
+    options: FrontendProjectPipelineOptions<'_>,
 ) -> Result<ResolvedProject> {
+    let FrontendProjectPipelineOptions {
+        resolve,
+        unresolved_dependency_policy,
+        pipeline,
+    } = options;
     services::resolve_project_with_policy(
-        input,
-        project,
-        target,
-        workspace_member,
-        frozen,
-        locked,
+        resolve.input,
+        resolve.project,
+        resolve.target,
+        resolve.workspace_member,
+        resolve.frozen,
+        resolve.locked,
         unresolved_dependency_policy,
         pipeline,
     )
@@ -98,7 +91,6 @@ pub fn run_semantic_analysis_gate(
             let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
                 &resolved,
                 services::PrepareOptions {
-                    mode: services::PrepareMode::DiagnosticsOnly,
                     front_end: services::FrontEndOptions {
                         with_semantic_diagnostics: true,
                         ..Default::default()
@@ -108,7 +100,7 @@ pub fn run_semantic_analysis_gate(
             )?;
             diagnostics
         } else {
-            services::analyze_source_in_project(path, source)?
+            services::analyze_program(path, source)?
         };
         session.report_semantic_diagnostics(&diagnostics);
         services::require_no_semantic_errors(&diagnostics).map_err(anyhow::Error::from)

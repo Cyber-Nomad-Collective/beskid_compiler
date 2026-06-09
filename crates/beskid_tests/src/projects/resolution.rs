@@ -3,7 +3,6 @@ use std::path::Path;
 
 use crate::test_harness::{
     assert_same_canonical_path, temp_case_dir, write_project_manifest as write_manifest,
-    write_workspace_manifest,
 };
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;

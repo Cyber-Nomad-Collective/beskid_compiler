@@ -51,6 +51,8 @@ pub const SEMANTIC_CONTRACTS: &str = "semantic.contracts";
 pub const SEMANTIC_ERROR_HANDLING: &str = "semantic.error_handling";
 /// Expression and declaration type checking.
 pub const SEMANTIC_TYPE_CHECK: &str = "semantic.type_check";
+/// Code style and naming convention checks (W163x).
+pub const SEMANTIC_NAMING_STYLE: &str = "semantic.naming_style";
 /// Builtin semantic rules finished for the generation (snapshot boundary for inspectors).
 pub const SEMANTIC_SNAPSHOT: &str = "semantic.snapshot";
 /// Native composition graph resolution for host DI (after semantic snapshot).

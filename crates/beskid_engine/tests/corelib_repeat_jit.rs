@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use beskid_analysis::services::{PrepareMode, PrepareOptions, resolve_input};
+use beskid_analysis::services::{PrepareOptions, resolve_input};
 use beskid_engine::Engine;
 use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, with_db};
@@ -30,7 +30,6 @@ fn jit_corelib_repeat_builds_string_entrypoint() {
             db,
             &resolved,
             PrepareOptions {
-                mode: PrepareMode::Executable,
                 ..Default::default()
             },
             None,

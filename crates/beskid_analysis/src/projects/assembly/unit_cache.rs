@@ -42,10 +42,6 @@ pub fn unit_fingerprint(path: &Path, source: &str) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-pub fn import_paths_from_source(source: &str) -> Vec<String> {
-    super::loader::import_paths_from_source_full(source)
-}
-
 /// No-op: legacy `units/` manifest retired in favor of `obj/beskid/cache/salsa/`.
 pub fn ensure_manifest(_project_root: &Path) -> std::io::Result<()> {
     Ok(())

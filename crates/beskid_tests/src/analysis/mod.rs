@@ -13,4 +13,5 @@ mod macros_support;
 mod pipeline;
 mod resolve;
 mod spawn;
+mod type_check_diagnostics;
 mod types;

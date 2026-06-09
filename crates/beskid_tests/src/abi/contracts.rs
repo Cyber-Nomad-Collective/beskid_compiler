@@ -182,7 +182,7 @@ fn runtime_export_symbols_match_frozen_kernel_allowlist_v4() {
         SYM_RUNTIME_PREEMPT_CHECK,
     ];
     let mut expected_sorted = expected;
-    let mut actual: Vec<_> = RUNTIME_EXPORT_SYMBOLS.iter().copied().collect();
+    let mut actual: Vec<_> = RUNTIME_EXPORT_SYMBOLS.to_vec();
     expected_sorted.sort();
     actual.sort();
     assert_eq!(actual, expected_sorted);
@@ -296,7 +296,7 @@ fn minimal_profile_host_tag_traps_without_registration() {
         0,
     );
     let mut envelope = [0u8; 16];
-    envelope[8..12].copy_from_slice(&(TAG_FS_WRITE_TEXT as i32).to_le_bytes());
+    envelope[8..12].copy_from_slice(&TAG_FS_WRITE_TEXT.to_le_bytes());
 
     let _ = beskid_runtime::interop_dispatch_usize(envelope.as_ptr());
 }

@@ -14,6 +14,7 @@ use beskid_codegen::lowering::composition::with_statement::scope_id_from_name;
 use beskid_codegen::lowering::composition_policy::RUNTIME_CONTAINER_LOWERING_ENABLED;
 
 #[test]
+#[allow(clippy::assertions_on_constants)]
 fn runtime_container_lowering_gate_is_on() {
     assert!(
         RUNTIME_CONTAINER_LOWERING_ENABLED,

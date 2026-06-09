@@ -11,20 +11,12 @@ pub const SEMANTIC_SUB_PHASE_ORDER: &[&str] = &[
     phases::SEMANTIC_VISIBILITY,
     phases::SEMANTIC_CONTRACTS,
     phases::SEMANTIC_ERROR_HANDLING,
-    phases::SEMANTIC_TYPE_CHECK,
+    phases::SEMANTIC_NAMING_STYLE,
 ];
 
 /// Lower spine inside [`phases::LOWER`] (AST lower through type check).
 pub const LOWER_FULL_SUB_PHASE_ORDER: &[&str] = &[
     phases::LOWER_AST,
-    phases::LOWER_RESOLVE_PASS1,
-    phases::LOWER_NORMALIZE,
-    phases::LOWER_RESOLVE,
-    phases::LOWER_TYPE_CHECK,
-];
-
-/// Typed-HIR spine reused inside semantic type check (HIR already lowered).
-pub const LOWER_TYPED_SPINE_SUB_PHASE_ORDER: &[&str] = &[
     phases::LOWER_RESOLVE_PASS1,
     phases::LOWER_NORMALIZE,
     phases::LOWER_RESOLVE,
@@ -43,7 +35,6 @@ pub const MATERIALIZE_SUB_PHASE_ORDER: &[&str] = &[
 pub fn sub_phases_for_parent(parent_id: &str) -> Option<&'static [&'static str]> {
     match parent_id {
         phases::SEMANTIC => Some(SEMANTIC_SUB_PHASE_ORDER),
-        phases::SEMANTIC_TYPE_CHECK => Some(LOWER_TYPED_SPINE_SUB_PHASE_ORDER),
         phases::LOWER => Some(LOWER_FULL_SUB_PHASE_ORDER),
         phases::WORKSPACE_MATERIALIZE => Some(MATERIALIZE_SUB_PHASE_ORDER),
         _ => None,
@@ -84,6 +75,7 @@ pub fn phase_label(id: &str) -> &str {
         phases::SEMANTIC_CONTRACTS => "Check contracts and methods",
         phases::SEMANTIC_ERROR_HANDLING => "Check error handling",
         phases::SEMANTIC_TYPE_CHECK => "Type check",
+        phases::SEMANTIC_NAMING_STYLE => "Check naming style",
         phases::SEMANTIC_SNAPSHOT => "Semantic snapshot",
         phases::COMPOSITION_RESOLVE => "Resolve composition",
         phases::MOD_ANALYZE => "Analyze with mods",
@@ -111,19 +103,18 @@ mod tests {
     use beskid_pipeline::phases;
 
     #[test]
-    fn semantic_type_check_is_last_semantic_sub_phase() {
+    fn semantic_naming_style_is_last_semantic_sub_phase() {
         let (index, total) =
-            sub_phase_index(phases::SEMANTIC, phases::SEMANTIC_TYPE_CHECK).expect("indexed");
+            sub_phase_index(phases::SEMANTIC, phases::SEMANTIC_NAMING_STYLE).expect("indexed");
         assert_eq!(index, 7);
         assert_eq!(total, 8);
     }
 
     #[test]
-    fn typed_spine_phases_index_under_type_check() {
+    fn lower_type_check_indexes_under_lower_parent() {
         let (index, total) =
-            sub_phase_index(phases::SEMANTIC_TYPE_CHECK, phases::LOWER_RESOLVE_PASS1)
-                .expect("indexed");
-        assert_eq!(index, 0);
-        assert_eq!(total, 4);
+            sub_phase_index(phases::LOWER, phases::LOWER_TYPE_CHECK).expect("indexed");
+        assert_eq!(index, 4);
+        assert_eq!(total, 5);
     }
 }

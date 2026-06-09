@@ -1,8 +1,10 @@
 //! Unified compilation prepare spine consumed by analyze, run, build, test, and LSP.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::Result;
+use tracing::Span;
 use beskid_pipeline::{
     PipelineObserver, observe_phase, observe_phase_result,
     phases::{
@@ -13,6 +15,7 @@ use beskid_pipeline::{
 
 use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
+use crate::analysis::rules::{RuleContext, resolve, types};
 use crate::mod_host::{ModHostInput, run_analyze_rewrite_after_composition, run_through_generate};
 use crate::projects::{
     CompilePlan, PreparedProjectWorkspace, ProgramAssembly, assemble_program,
@@ -21,65 +24,58 @@ use crate::projects::{
 use crate::syntax::Spanned;
 
 use super::composition::{composition_result_to_diagnostics, resolve_program_composition};
-use super::entry_session::{current_syntax_generation_id, update_semantic_snapshot};
+use super::entry_session::{
+    cached_executable_if_valid, current_syntax_generation_id, store_executable_and_snapshot,
+    update_semantic_snapshot,
+};
 use super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::input::ResolvedInput;
-use super::lower::lower_normalize_resolve_type_spanned_with_assembly;
+use super::lower::{LowerResolveTypeError, lower_normalize_resolve_type_spanned_with_assembly};
 use super::semantic::{
     require_no_semantic_errors, semantic_rule_diagnostics_for_program_with_pipeline,
 };
 use super::session::{SemanticSnapshot, SessionFingerprint, session_for_assembly};
 
-/// Whether prepare stops after diagnostics or continues through typed HIR.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrepareMode {
-    /// Semantic + composition on post-rewrite AST; no typed HIR (analyze / LSP gate).
-    DiagnosticsOnly,
-    /// Full front-end through typed HIR (run / build / test / codegen).
-    Executable,
-}
-
 /// Options for [`prepare_compilation`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PrepareOptions {
-    pub mode: PrepareMode,
     pub front_end: FrontEndOptions,
 }
 
-impl Default for PrepareOptions {
-    fn default() -> Self {
-        Self {
-            mode: PrepareMode::Executable,
-            front_end: FrontEndOptions::default(),
-        }
-    }
-}
-
-/// Result of the unified prepare spine (typed HIR present only in [`PrepareMode::Executable`]).
+/// Result of the unified prepare spine (typed HIR when lower succeeds).
 pub struct PreparedCompilation {
     pub assembly: ProgramAssembly,
     pub program: Spanned<crate::syntax::Program>,
     pub binding_plan: crate::composition::BindingPlan,
     pub composition_snapshot: crate::composition::CompositionSnapshot,
-    pub typed: Option<FrontEndTypedResult>,
+    pub typed: Option<Arc<FrontEndTypedResult>>,
 }
 
 impl PreparedCompilation {
-    /// Typed HIR bundle for codegen; panics if prepare ran in diagnostics-only mode.
+    /// Typed HIR bundle for codegen.
     pub fn into_executable(self) -> Result<FrontEndTypedResult> {
-        self.typed.ok_or_else(|| {
+        let Some(typed) = self.typed else {
+            return Err(anyhow::anyhow!(
+                "prepare_compilation did not produce typed HIR (lower failed during diagnostic collection)"
+            ));
+        };
+        Arc::try_unwrap(typed).map_err(|shared| {
             anyhow::anyhow!(
-                "prepare_compilation ran in DiagnosticsOnly mode; no typed HIR available"
+                "executable front-end is still shared in the entry session cache (strong_refs={})",
+                Arc::strong_count(&shared)
             )
         })
     }
 
     pub fn executable(&self) -> Result<&FrontEndTypedResult> {
-        self.typed.as_ref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "prepare_compilation ran in DiagnosticsOnly mode; no typed HIR available"
-            )
-        })
+        self.typed
+            .as_ref()
+            .map(|typed| typed.as_ref())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "prepare_compilation did not produce typed HIR (lower failed during diagnostic collection)"
+                )
+            })
     }
 }
 
@@ -107,7 +103,8 @@ pub fn prepare_compilation(
     Ok(spine.prepared)
 }
 
-/// Like [`prepare_compilation`], collecting semantic diagnostics instead of failing on errors.
+/// Like [`prepare_compilation`], collecting diagnostics from semantic, composition, and lower
+/// instead of failing on errors.
 pub fn prepare_compilation_diagnostics(
     resolved: &ResolvedInput,
     options: PrepareOptions,
@@ -137,6 +134,14 @@ struct PrepareSpineOutput {
     collected_diagnostics: Vec<SemanticDiagnostic>,
 }
 
+fn session_fingerprint_field(fingerprint: &SessionFingerprint) -> String {
+    format!(
+        "{}:{}",
+        fingerprint.entry_canonical.display(),
+        fingerprint.lockfile_digest
+    )
+}
+
 fn run_prepare_spine(
     entry_path: &Path,
     entry_source: &str,
@@ -151,6 +156,30 @@ fn run_prepare_spine(
         assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
 
     let session_fingerprint = SessionFingerprint::for_entry(plan, entry_path);
+    let _prepare_guard = tracing::info_span!(
+        target: "beskid.analysis",
+        "beskid.analysis.prepare",
+        entry = %entry_path.display(),
+        session_fingerprint = %session_fingerprint_field(&session_fingerprint),
+        syntax_generation_id = tracing::field::Empty,
+    )
+    .entered();
+
+    if let Some(cached) = cached_executable_if_valid(&session_fingerprint) {
+        let syntax_generation_id = current_syntax_generation_id(&session_fingerprint);
+        Span::current().record("syntax_generation_id", syntax_generation_id);
+        let front = cached.as_ref();
+        return Ok(PrepareSpineOutput {
+            prepared: PreparedCompilation {
+                assembly: front.assembly.clone(),
+                program: front.program.clone(),
+                binding_plan: front.binding_plan.clone(),
+                composition_snapshot: front.composition_snapshot.clone(),
+                typed: Some(cached),
+            },
+            collected_diagnostics: Vec::new(),
+        });
+    }
 
     let assembly = if let Some(cached) = cached_assembly {
         let session = session_for_assembly(session_fingerprint.clone(), cached.clone());
@@ -163,6 +192,7 @@ fn run_prepare_spine(
                 entry_path,
                 Some(entry_source),
                 &assembly_options,
+                pipeline,
             )
             .map_err(|err| anyhow::anyhow!("{err}"))?;
             let session = session_for_assembly(session_fingerprint.clone(), assembled);
@@ -188,6 +218,7 @@ fn run_prepare_spine(
 
     let mut collected_diagnostics = generated.macro_diagnostics;
     let syntax_generation_id = current_syntax_generation_id(&session_fingerprint);
+    Span::current().record("syntax_generation_id", syntax_generation_id);
 
     let mut rule_options = AnalysisOptions::default();
     rule_options.module_level_meta_items_allowed =
@@ -197,7 +228,6 @@ fn run_prepare_spine(
     rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
     rule_options.entry_source_path = Some(entry_unit.path.clone());
     rule_options.program_assembly = Some(assembly.clone());
-    rule_options.semantic_gate_only = options.mode == PrepareMode::DiagnosticsOnly;
 
     if options.front_end.with_semantic_diagnostics || collect_diagnostics {
         let semantic = observe_phase_result(pipeline, SEMANTIC, || {
@@ -274,40 +304,47 @@ fn run_prepare_spine(
     let binding_plan = composition_result.plan.clone();
     let composition_snapshot = composition_result.snapshot.clone();
 
-    let typed = if options.mode == PrepareMode::Executable {
-        observe_phase(pipeline, LOWER_READY, || {});
+    observe_phase(pipeline, LOWER_READY, || {});
 
-        let (hir, resolution, typed) = observe_phase_result(pipeline, LOWER, || {
-            lower_normalize_resolve_type_spanned_with_assembly(
-                &program,
-                Some(&assembly),
-                pipeline,
+    let typed = match observe_phase_result(pipeline, LOWER, || {
+        lower_normalize_resolve_type_spanned_with_assembly(&program, Some(&assembly), pipeline)
+    }) {
+        Ok((hir, resolution, typed)) => {
+            let resolution_fingerprint = typed_fingerprint(&resolution);
+            let types_fingerprint = typed_fingerprint_types(&typed);
+            let typed_result = FrontEndTypedResult {
+                assembly: assembly.clone(),
+                program: program.clone(),
+                hir,
+                resolution,
+                typed,
+                binding_plan: binding_plan.clone(),
+                composition_snapshot: composition_snapshot.clone(),
+            };
+            let executable_snapshot = super::session::cached_semantic_snapshot(&session_fingerprint)
+                .map(|snap| snap.with_typed_resolution(resolution_fingerprint, types_fingerprint))
+                .unwrap_or_else(|| {
+                    SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
+                        .with_composition(&composition_snapshot)
+                        .with_typed_resolution(resolution_fingerprint, types_fingerprint)
+                });
+            let stored = store_executable_and_snapshot(
+                &session_fingerprint,
+                Some(typed_result),
+                executable_snapshot,
             )
-            .map_err(anyhow::Error::from)
-        })?;
-
-        let resolution_fingerprint = typed_fingerprint(&resolution);
-        let types_fingerprint = typed_fingerprint_types(&typed);
-        let typed_result = FrontEndTypedResult {
-            assembly: assembly.clone(),
-            program: program.clone(),
-            hir,
-            resolution,
-            typed,
-            binding_plan: binding_plan.clone(),
-            composition_snapshot: composition_snapshot.clone(),
-        };
-        let executable_snapshot = super::session::cached_semantic_snapshot(&session_fingerprint)
-            .map(|snap| snap.with_typed_resolution(resolution_fingerprint, types_fingerprint))
-            .unwrap_or_else(|| {
-                SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
-                    .with_composition(&composition_snapshot)
-                    .with_typed_resolution(resolution_fingerprint, types_fingerprint)
-            });
-        update_semantic_snapshot(&session_fingerprint, executable_snapshot);
-        Some(typed_result)
-    } else {
-        None
+            .ok_or_else(|| anyhow::anyhow!("entry session missing for executable cache store"))?;
+            Some(stored)
+        }
+        Err(error) if collect_diagnostics => {
+            collected_diagnostics.extend(lower_errors_to_diagnostics(
+                error,
+                entry_unit.logical_name.as_str(),
+                entry_source,
+            ));
+            None
+        }
+        Err(error) => return Err(error.into()),
     };
 
     Ok(PrepareSpineOutput {
@@ -338,6 +375,28 @@ pub fn resolved_input_from_plan(
         workspace_summary: None,
         assembly,
     }
+}
+
+fn lower_errors_to_diagnostics(
+    error: LowerResolveTypeError,
+    source_name: &str,
+    source: &str,
+) -> Vec<SemanticDiagnostic> {
+    let mut ctx = RuleContext::new(source_name, source, AnalysisOptions::default());
+    match error {
+        LowerResolveTypeError::Type(errors) => {
+            for error in errors {
+                types::emit_type_error(&mut ctx, error, None);
+            }
+        }
+        LowerResolveTypeError::Resolve(errors) => {
+            for error in errors {
+                resolve::emit_resolve_error(&mut ctx, error);
+            }
+        }
+        LowerResolveTypeError::Normalize(_) => {}
+    }
+    ctx.diagnostics
 }
 
 fn typed_fingerprint(resolution: &crate::resolve::Resolution) -> u64 {

@@ -9,4 +9,5 @@ mod diagnostics_parity;
 mod link_completeness;
 mod materialization_parse;
 mod mutex_local_path;
+mod single_prepare;
 mod type_inline_method;

@@ -2,6 +2,7 @@
 
 mod db;
 mod entry;
+mod typed_entry_bundle;
 mod expand;
 mod graph;
 mod graph_viz;
@@ -20,6 +21,12 @@ pub use entry::{
     cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key,
     invalidate_entry_sessions, prepare_compilation_diagnostics_with_db,
     prepare_compilation_with_db, semantic_gate_diagnostics, semantic_snapshot, typed_entry_bundle,
+};
+pub use typed_entry_bundle::{
+    FileRevision, TypedEntryState, TypedPrepareRevision, bump_file_revision,
+    bump_typed_prepare_revision, clear_typed_entry_cache, file_revision_for,
+    is_typed_bundle_stale, typed_entry_bundle_tracked, typed_entry_bundle_with_db,
+    typed_entry_state_with_db, typed_prepare_revision_for,
 };
 pub use graph::{
     assemble_program_query, discovered_units, module_index_fingerprint, program_assembly,
@@ -53,5 +60,5 @@ pub use unit::{
 };
 
 pub use beskid_analysis::services::{
-    FrontEndOptions, FrontEndTypedResult, PrepareMode, PrepareOptions, PreparedCompilation,
+    FrontEndOptions, FrontEndTypedResult, PrepareOptions, PreparedCompilation,
 };

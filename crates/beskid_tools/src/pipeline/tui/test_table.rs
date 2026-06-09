@@ -3,7 +3,7 @@
 use std::io::{self, Write};
 use std::time::Duration;
 
-use super::hyperlink::FileLineLink;
+use super::hyperlink::{FileLineLink, maybe_link_label};
 use super::model::TestReportSummary;
 use crate::pipeline::CliPipeline;
 
@@ -23,6 +23,8 @@ pub struct TestRow {
     pub link: Option<FileLineLink>,
     pub state: TestRowState,
     pub duration: Option<Duration>,
+    /// Diagnostic text or miette report for failed tests (shown in the code viewer).
+    pub failure_detail: Option<String>,
 }
 
 /// Interactive or plain presenter for a test run.
@@ -55,6 +57,7 @@ impl<'a> TestRunUi<'a> {
             link,
             state,
             duration: None,
+            failure_detail: None,
         });
     }
 
@@ -101,8 +104,12 @@ impl<'a> TestRunUi<'a> {
         }
         self.rows[index].state = state;
         self.rows[index].duration = Some(duration);
+        if state == TestRowState::Failed {
+            self.rows[index].failure_detail = detail.map(str::to_owned);
+        }
         if self.plain {
-            let name = &self.rows[index].qualified_name;
+            let row = &self.rows[index];
+            let name = maybe_link_label(row.link.as_ref(), &row.qualified_name, false);
             match state {
                 TestRowState::Passed => eprintln!("PASS {name}"),
                 TestRowState::Failed => eprintln!("FAIL {name}"),

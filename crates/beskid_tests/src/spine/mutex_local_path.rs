@@ -5,7 +5,7 @@ use std::fs;
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_analysis::syntax::{Node, Statement};
 
-use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
+use crate::projects::compiler_workspace_root;
 
 #[test]
 fn typed_let_mutex_name_is_not_split_on_mut_keyword() {

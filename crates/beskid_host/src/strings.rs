@@ -10,6 +10,20 @@ pub(crate) fn string_from_rust(text: &str) -> *mut BeskidStr {
     beskid_runtime::builtins::str_new(text.as_ptr(), text.len())
 }
 
+pub(crate) fn read_beskid_str_bytes(value: *const BeskidStr) -> Option<&'static [u8]> {
+    if value.is_null() {
+        return None;
+    }
+    let (ptr, len) = unsafe { ((*value).ptr, (*value).len) };
+    if len == 0 {
+        return Some(&[]);
+    }
+    if ptr.is_null() {
+        return None;
+    }
+    Some(unsafe { std::slice::from_raw_parts(ptr, len) })
+}
+
 pub(crate) fn read_string_path(value: *const BeskidStr) -> String {
     if value.is_null() {
         panic!("null string handle");

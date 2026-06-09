@@ -134,9 +134,9 @@ impl<'a> TypeContext<'a> {
     }
 
     pub(super) fn fiber_handle_type_for_payload(&self, payload: TypeId) -> Option<TypeId> {
-        if let Some(expected) = self.contextual_expected_type {
-            if let Some(TypeInfo::Applied { base, args }) = self.type_table.get(expected) {
-                if args.len() == 1
+        if let Some(expected) = self.contextual_expected_type
+            && let Some(TypeInfo::Applied { base, args }) = self.type_table.get(expected)
+                && args.len() == 1
                     && args[0] == payload
                     && self
                         .resolution
@@ -146,8 +146,6 @@ impl<'a> TypeContext<'a> {
                 {
                     return Some(expected);
                 }
-            }
-        }
         None
     }
 
@@ -214,8 +212,8 @@ impl<'a> TypeContext<'a> {
     }
 
     pub(super) fn item_id_for_span(&self, span: SpanInfo) -> Option<crate::resolve::ItemId> {
-        if let Some(path) = &self.current_source_path {
-            if let Some(info) = self.resolution.items.iter().find(|info| {
+        if let Some(path) = &self.current_source_path
+            && let Some(info) = self.resolution.items.iter().find(|info| {
                 info.span == span
                     && info
                         .source_path
@@ -224,7 +222,6 @@ impl<'a> TypeContext<'a> {
             }) {
                 return Some(info.id);
             }
-        }
 
         let matches: Vec<_> = self
             .resolution
@@ -250,15 +247,14 @@ impl<'a> TypeContext<'a> {
             [] => None,
             [single] => Some(single.id),
             many => {
-                if let Some(path) = &self.current_source_path {
-                    if let Some(info) = many.iter().rev().find(|info| {
+                if let Some(path) = &self.current_source_path
+                    && let Some(info) = many.iter().rev().find(|info| {
                         info.source_path
                             .as_ref()
                             .is_some_and(|source| crate::paths::same_file(source, path))
                     }) {
                         return Some(info.id);
                     }
-                }
                 // Entry-unit symbols are collected after dependency prefetch; prefer the last match.
                 many.last().map(|info| info.id)
             }
@@ -396,9 +392,9 @@ impl<'a> TypeContext<'a> {
         {
             return;
         }
-        if let Some(TypeInfo::Fiber(payload)) = self.type_table.get(actual) {
-            if let Some(TypeInfo::Applied { base, args }) = self.type_table.get(expected) {
-                if args.len() == 1
+        if let Some(TypeInfo::Fiber(payload)) = self.type_table.get(actual)
+            && let Some(TypeInfo::Applied { base, args }) = self.type_table.get(expected)
+                && args.len() == 1
                     && args[0] == *payload
                     && self
                         .resolution
@@ -408,8 +404,6 @@ impl<'a> TypeContext<'a> {
                 {
                     return;
                 }
-            }
-        }
         if self.named_item_id(expected).is_some()
             && self.named_item_id(expected) == self.named_item_id(actual)
         {

@@ -1,7 +1,5 @@
 use crate::errors::CodegenError;
-use crate::lowering::cast_intent::{
-    ensure_type_compatibility, ensure_type_compatibility_or_expected,
-};
+use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
 use crate::lowering::descriptor::enum_payload_start;
 use crate::lowering::dispatch::{emit_str_from_i64_dispatch, lower_dispatch_builtin_call};
 use crate::lowering::lowerable::{Lowerable, lower_node};
@@ -13,8 +11,7 @@ use beskid_analysis::syntax::{SpanInfo, Spanned};
 use beskid_analysis::types::{TypeId, TypeInfo};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::types as clif_types;
-use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, MemFlags, Signature, Value};
-use cranelift_codegen::isa::CallConv;
+use cranelift_codegen::ir::{InstBuilder, MemFlags, Value};
 
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
     type Output = Option<Value>;
@@ -33,19 +30,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 node: "unit-valued binary operand",
             })?;
 
-        let (left_type, right_type) = if node.node.op.node == HirBinaryOp::Add
-            && let Some(string_type) = [ctx.expr_type(node.span)]
-                .into_iter()
-                .flatten()
-                .find(|type_id| is_string_type(ctx, *type_id))
-                .or_else(|| primitive_string_type(ctx))
-        {
-            (string_type, string_type)
-        } else {
-            let left_type = ctx.require_expr_type_for_node(&node.node.left)?;
-            let right_type = ctx.require_expr_type_for_node(&node.node.right)?;
-            (left_type, right_type)
-        };
+        let left_type = ctx.require_expr_type_for_node(&node.node.left)?;
+        let right_type = ctx.require_expr_type_for_node(&node.node.right)?;
 
         if node.node.op.node == HirBinaryOp::Add {
             let left_is_string = is_string_type(ctx, left_type);
@@ -481,20 +467,6 @@ fn is_string_type(ctx: &NodeLoweringContext<'_, '_>, type_id: TypeId) -> bool {
         ctx.type_result.types.get(type_id),
         Some(TypeInfo::Primitive(HirPrimitiveType::String))
     )
-}
-
-fn primitive_string_type(ctx: &NodeLoweringContext<'_, '_>) -> Option<TypeId> {
-    let mut index = 0usize;
-    loop {
-        let type_id = TypeId(index);
-        let Some(info) = ctx.type_result.types.get(type_id) else {
-            return None;
-        };
-        if matches!(info, TypeInfo::Primitive(HirPrimitiveType::String)) {
-            return Some(type_id);
-        }
-        index += 1;
-    }
 }
 
 fn coerce_operand_to_string(

@@ -236,26 +236,9 @@ pub(crate) fn emit_type_error(
     }
 }
 
-pub(crate) fn emit_cast_intent_warnings(ctx: &mut RuleContext, result: &TypeResult) {
-    let entry_source_path = ctx.options.entry_source_path.as_ref();
-    let intents: Vec<_> = result.cast_intents_for_entry(entry_source_path).collect();
-    for intent in intents {
-        let from = render_type_from_result(result, intent.from);
-        let to = render_type_from_result(result, intent.to);
-        ctx.emit_issue(
-            intent.span,
-            SemanticIssueKind::TypeImplicitNumericCast { from, to },
-        );
-    }
-}
-
 fn render_type(result: Option<&TypeResult>, type_id: crate::types::TypeId) -> String {
     let Some(result) = result else {
         return format!("type#{}", type_id.0);
     };
-    format_type_id(result, None, type_id)
-}
-
-fn render_type_from_result(result: &TypeResult, type_id: crate::types::TypeId) -> String {
     format_type_id(result, None, type_id)
 }

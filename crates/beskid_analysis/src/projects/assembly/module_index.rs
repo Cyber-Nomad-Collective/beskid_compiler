@@ -66,6 +66,15 @@ impl ModuleIndex {
         plan: &CompilePlan,
         prefetch_dependency_roots: bool,
     ) -> Self {
+        let prefetch_span = tracing::info_span!(
+            target: "beskid.analysis.assembly",
+            "module_index.build",
+            prefetch_dependency_roots,
+            unit_count = units.len(),
+            prefetched_paths = tracing::field::Empty,
+        );
+        let _prefetch_guard = prefetch_span.enter();
+
         let mut resolver = Resolver::new();
         resolver.collect_builtins();
 
@@ -140,6 +149,7 @@ impl ModuleIndex {
 
         let (items, module_graph, builtin_items, symbols, by_symbol) =
             resolver.into_prefetch_parts();
+        prefetch_span.record("prefetched_paths", prefetched_paths.len() as u64);
         Self {
             items,
             module_graph,
@@ -362,13 +372,12 @@ fn declaring_package_for_prefetched_path(
         return entry_project_name.to_string();
     }
     for dep in &assembly.roots.dependencies {
-        if path.starts_with(&dep.source_root) {
-            if let Some(dep_name) = &dep.dependency_name
+        if path.starts_with(&dep.source_root)
+            && let Some(dep_name) = &dep.dependency_name
                 && let Some(project_name) = dependency_packages.get(dep_name)
             {
                 return project_name.clone();
             }
-        }
     }
     entry_project_name.to_string()
 }
@@ -424,14 +433,13 @@ pub fn package_for_unit(
         return host_project_name.to_string();
     }
     for dep in &roots.dependencies {
-        if path.starts_with(&dep.source_root) {
-            if let Some(dep_name) = &dep.dependency_name {
+        if path.starts_with(&dep.source_root)
+            && let Some(dep_name) = &dep.dependency_name {
                 if let Some(project_name) = dependency_packages.get(dep_name) {
                     return project_name.clone();
                 }
                 return dep_name.clone();
             }
-        }
     }
     host_project_name.to_string()
 }

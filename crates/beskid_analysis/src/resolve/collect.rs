@@ -138,7 +138,7 @@ impl Resolver {
         module_path: &[String],
         source_path: Option<&PathBuf>,
     ) {
-        self.current_source_path = source_path.map(|path| crate::paths::unit_path_key(&path));
+        self.current_source_path = source_path.map(|path| crate::paths::unit_path_key(path));
         if resolver::file_scoped_module_index(program).is_some() {
             self.collect_program(program);
             return;

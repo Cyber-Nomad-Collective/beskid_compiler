@@ -12,8 +12,7 @@ use crate::projects::assembly::{
 use crate::projects::{AssemblyOptions, CompilePlan, PreparedProjectWorkspace};
 use crate::resolve::Resolution;
 use crate::services::lower::{
-    LowerResolveTypeError, typed_hir_from_lowered_gate_with_assembly,
-    typed_hir_from_lowered_with_assembly,
+    DependencyTypingPolicy, LowerResolveTypeError, TypedHirResolution, typed_hir_from_lowered,
 };
 use crate::syntax::Spanned;
 use crate::types::TypeResult;
@@ -45,7 +44,12 @@ pub fn type_entry(
     entry_hir: Spanned<HirProgram>,
     assembly: &ProgramAssembly,
 ) -> Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
-    typed_hir_from_lowered_with_assembly(entry_hir, Some(assembly), None)
+    typed_hir_from_lowered(
+        entry_hir,
+        TypedHirResolution::Assembly(Some(assembly)),
+        None,
+        DependencyTypingPolicy::FullClosure,
+    )
 }
 
 /// Query: type entry for semantic gate (dependency signatures only).
@@ -53,7 +57,12 @@ pub fn type_entry_gate(
     entry_hir: Spanned<HirProgram>,
     assembly: &ProgramAssembly,
 ) -> Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
-    typed_hir_from_lowered_gate_with_assembly(entry_hir, Some(assembly), None)
+    typed_hir_from_lowered(
+        entry_hir,
+        TypedHirResolution::Assembly(Some(assembly)),
+        None,
+        DependencyTypingPolicy::EntryOnly,
+    )
 }
 
 /// Query: prefetch dependency signatures without typing dependency bodies.
@@ -63,7 +72,12 @@ pub fn type_dep_signatures(
     let entry_unit = assembly.entry_unit().clone();
     let entry_hir = assemble_unit(&entry_unit).hir;
     let (_, _, typed) =
-        typed_hir_from_lowered_gate_with_assembly(entry_hir, Some(assembly), None)?;
+        typed_hir_from_lowered(
+            entry_hir,
+            TypedHirResolution::Assembly(Some(assembly)),
+            None,
+            DependencyTypingPolicy::EntryOnly,
+        )?;
     Ok(typed)
 }
 
@@ -112,5 +126,5 @@ pub fn assemble_program_query(
     entry_source: Option<&str>,
     options: &AssemblyOptions,
 ) -> Result<ProgramAssembly, crate::projects::assembly::AssemblyError> {
-    crate::projects::assemble_program(plan, workspace, entry_path, entry_source, options)
+    crate::projects::assemble_program(plan, workspace, entry_path, entry_source, options, None)
 }

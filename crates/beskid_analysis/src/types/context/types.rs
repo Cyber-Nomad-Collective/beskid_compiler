@@ -184,9 +184,7 @@ impl<'a> TypeContext<'a> {
         let base = self.base_item_id_for_applied_path(path).or_else(|| {
             self.foreign_applied_base_item_id(path)
         });
-        let Some(base) = base else {
-            return None;
-        };
+        let base = base?;
         let mut args = Vec::with_capacity(last_segment.node.type_args.len());
         for arg in &last_segment.node.type_args {
             let errors_before = self.errors.len();

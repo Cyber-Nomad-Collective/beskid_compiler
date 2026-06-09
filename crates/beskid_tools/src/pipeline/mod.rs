@@ -1,6 +1,7 @@
 //! CLI [`beskid_pipeline::PipelineObserver`] with plain lines or a Ratatui build UI.
 
 pub mod frontend;
+pub mod resolve_options;
 
 mod labels;
 pub mod tui;
@@ -8,13 +9,11 @@ pub mod tui;
 use std::borrow::Cow;
 use std::env;
 use std::io::{self, IsTerminal, Write, stderr};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
-use beskid_analysis::projects::UnresolvedDependencyPolicy;
 use beskid_analysis::services::{ResolvedInput, ResolvedProject};
 use beskid_pipeline::{
     PipelineEvent, PipelineObserver,
@@ -22,12 +21,17 @@ use beskid_pipeline::{
 };
 
 use labels::{phase_label, sub_phase_index};
+pub use resolve_options::{
+    CliInputPipelineOptions, CliProjectPipelineOptions, CliResolveOptions,
+    FrontendProjectPipelineOptions,
+};
+
 use tui::{
     count_severities, format_duration, format_phase_end, format_phase_start, format_severity_summary,
     format_work_unit, TestReportSummary, TestRow, TuiSession,
 };
 
-const WORK_UNIT_UI_MIN_INTERVAL: Duration = Duration::from_millis(120);
+const WORK_UNIT_UI_MIN_INTERVAL: Duration = Duration::from_millis(60);
 const WORK_UNIT_UI_BURST_INTERVAL: u64 = 32;
 
 struct WorkUnitThrottleState {
@@ -97,9 +101,7 @@ pub struct CliPipeline {
 
 impl Drop for CliPipeline {
     fn drop(&mut self) {
-        if let Ok(mut tui) = self.tui.lock() {
-            let _ = tui.suspend();
-        }
+        // `TuiSession::drop` shuts down the background event loop and restores stderr.
     }
 }
 
@@ -157,7 +159,7 @@ impl CliPipeline {
         if !*suspended {
             return Ok(());
         }
-        if let Ok(mut tui) = self.tui.lock() {
+        if let Ok(tui) = self.tui.lock() {
             tui.resume()?;
         }
         *suspended = false;
@@ -224,7 +226,7 @@ impl CliPipeline {
         if self.plain {
             return Ok(());
         }
-        if let Ok(mut tui) = self.tui.lock() {
+        if let Ok(tui) = self.tui.lock() {
             tui.wait_for_dismiss()?;
         }
         let mut suspended = self
@@ -249,7 +251,7 @@ impl CliPipeline {
         }
         *suspended = true;
         self.flush_pending_work_unit_ui();
-        if let Ok(mut tui) = self.tui.lock() {
+        if let Ok(tui) = self.tui.lock() {
             let _ = tui.suspend();
         }
     }
@@ -312,9 +314,9 @@ impl CliPipeline {
     pub fn println_session(&self, line: impl AsRef<str>) {
         let line = line.as_ref();
         if self.plain || self.tui_suspended() || self.prepare_ui_finished() {
-            tracing::info!(target: "beskid.tools.pipeline", "{line}");
+            tracing::info!(target: "beskid_tools::pipeline::build", "{line}");
             eprintln!("{line}");
-        } else if let Ok(mut tui) = self.tui.lock() {
+        } else if let Ok(tui) = self.tui.lock() {
             let _ = tui.push_log(line);
         }
     }
@@ -333,12 +335,20 @@ impl CliPipeline {
         let elapsed = self.started_at.elapsed();
         let headline = format!("{msg} in {}", format_duration(elapsed));
         if !self.plain {
-            if let Ok(mut tui) = self.tui.lock() {
-                if tui.is_active() {
-                    let panel = summary
-                        .unwrap_or_else(|| tui::CommandSummary::plain("Result", headline.clone()));
+            let active = self
+                .tui
+                .lock()
+                .is_ok_and(|tui| tui.is_active());
+            if active {
+                let panel = summary
+                    .unwrap_or_else(|| tui::CommandSummary::plain("Result", headline.clone()));
+                if let Ok(tui) = self.tui.lock() {
                     let _ = tui.stage_summary(panel);
+                }
+                if let Ok(tui) = self.tui.lock() {
                     let _ = tui.wait_for(tui::NavTarget::Summary);
+                }
+                if let Ok(tui) = self.tui.lock() {
                     let _ = tui.wait_for_dismiss();
                 }
             }
@@ -365,6 +375,16 @@ impl CliPipeline {
 
     pub fn is_spinner_enabled(&self) -> bool {
         !self.plain
+    }
+
+    pub fn interrupted(&self) -> bool {
+        if self.plain {
+            return false;
+        }
+        self.tui
+            .lock()
+            .map(|tui| tui.interrupted())
+            .unwrap_or(false)
     }
 
     fn flush_pending_work_unit_ui(&self) {
@@ -414,7 +434,7 @@ impl CliPipeline {
             return;
         }
         let total_pos = *self.total_pos.lock().expect("total_pos mutex poisoned");
-        if let Ok(mut tui) = self.tui.lock() {
+        if let Ok(tui) = self.tui.lock() {
             let _ = tui.set_pipeline_progress(
                 total_pos,
                 self.phase_total,
@@ -433,29 +453,22 @@ impl CliPipeline {
             .unwrap_or(0)
     }
 
-    fn emit_tree_line(&self, line: impl AsRef<str>) {
-        let line = line.as_ref();
-        if !self.should_use_tui() {
-            eprintln!("{line}");
-        }
-    }
-
     fn with_tui<F>(&self, f: F)
     where
-        F: FnOnce(&mut TuiSession) -> io::Result<()>,
+        F: FnOnce(&TuiSession) -> io::Result<()>,
     {
         let _ = self.with_tui_result(f);
     }
 
     fn with_tui_result<F>(&self, f: F) -> io::Result<()>
     where
-        F: FnOnce(&mut TuiSession) -> io::Result<()>,
+        F: FnOnce(&TuiSession) -> io::Result<()>,
     {
         if !self.should_use_tui() {
             return Ok(());
         }
-        if let Ok(mut tui) = self.tui.lock() {
-            f(&mut tui)?;
+        if let Ok(tui) = self.tui.lock() {
+            f(&tui)?;
         }
         Ok(())
     }
@@ -468,16 +481,22 @@ impl CliPipeline {
         total: u64,
         label: &str,
     ) {
+        self.refresh_progress_bars(done, total.max(1), label);
+        if self.should_use_tui() {
+            self.with_tui(|tui| {
+                tui.active_work_unit(done, total, label)?;
+                Ok(())
+            });
+        }
         let now = Instant::now();
-        let emit = {
+        let emit_tree = {
             let mut t = self
                 .work_unit_throttle
                 .lock()
                 .expect("cli pipeline throttle mutex poisoned");
             t.should_emit_work_unit(msg.clone(), now)
         };
-        if emit {
-            self.refresh_progress_bars(done, total.max(1), label);
+        if emit_tree {
             if !self.should_use_tui() {
                 eprintln!("{msg}");
             } else {
@@ -500,8 +519,8 @@ impl CliPipeline {
         }
         let label = phase_label(id);
         let line = format_phase_start(depth, self.plain, label);
-        let (stage_pos, stage_len, _) = self.stage_progress(depth, id);
-        self.refresh_progress_bars(stage_pos, stage_len, label);
+        let (stage_pos, stage_len, stage_label) = self.stage_progress(depth, id);
+        self.refresh_progress_bars(stage_pos, stage_len, stage_label.as_str());
         if !self.should_use_tui() {
             if !line.is_empty() {
                 eprintln!("{line}");
@@ -551,84 +570,54 @@ impl CliPipeline {
 }
 
 pub fn resolve_input_with_cli_pipeline(
-    input: Option<&PathBuf>,
-    project: Option<&PathBuf>,
-    target: Option<&str>,
-    workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
-    plain: bool,
+    options: CliResolveOptions<'_>,
 ) -> Result<(Arc<CliPipeline>, ResolvedInput)> {
-    resolve_input_with_cli_pipeline_kind(
-        input,
-        project,
-        target,
-        workspace_member,
-        frozen,
-        locked,
-        plain,
-        PipelineProgressKind::FullBuild,
-    )
+    resolve_input_with_cli_pipeline_kind(CliInputPipelineOptions {
+        resolve: options,
+        progress_kind: PipelineProgressKind::FullBuild,
+    })
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_input_with_cli_pipeline_kind(
-    input: Option<&PathBuf>,
-    project: Option<&PathBuf>,
-    target: Option<&str>,
-    workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
-    plain: bool,
-    progress_kind: PipelineProgressKind,
+    options: CliInputPipelineOptions<'_>,
 ) -> Result<(Arc<CliPipeline>, ResolvedInput)> {
+    let CliInputPipelineOptions {
+        resolve,
+        progress_kind,
+    } = options;
     let pipeline_ui = Arc::new(CliPipeline::new_with_kind(
-        use_cli_spinner(plain),
+        use_cli_spinner(resolve.plain),
         progress_kind,
     ));
     let resolved = frontend::resolve_input_with_pipeline(
-        input,
-        project,
-        target,
-        workspace_member,
-        frozen,
-        locked,
+        resolve,
         Some(pipeline_ui.as_ref()),
     )?;
     Ok((pipeline_ui, resolved))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_project_with_cli_pipeline(
-    input: Option<&PathBuf>,
-    project: Option<&PathBuf>,
-    target: Option<&str>,
-    workspace_member: Option<&str>,
-    frozen: bool,
-    locked: bool,
-    plain: bool,
-    unresolved_dependency_policy: UnresolvedDependencyPolicy,
+    options: CliProjectPipelineOptions<'_>,
 ) -> Result<(Arc<CliPipeline>, ResolvedProject)> {
+    let CliProjectPipelineOptions {
+        resolve,
+        unresolved_dependency_policy,
+    } = options;
     let pipeline_ui = Arc::new(CliPipeline::new_with_kind(
-        use_cli_spinner(plain),
+        use_cli_spinner(resolve.plain),
         PipelineProgressKind::FullBuild,
     ));
-    let resolved = frontend::resolve_project_with_pipeline(
-        input,
-        project,
-        target,
-        workspace_member,
-        frozen,
-        locked,
+    let resolved = frontend::resolve_project_with_pipeline(FrontendProjectPipelineOptions {
+        resolve,
         unresolved_dependency_policy,
-        Some(pipeline_ui.as_ref()),
-    )?;
+        pipeline: Some(pipeline_ui.as_ref()),
+    })?;
     Ok((pipeline_ui, resolved))
 }
 
 impl PipelineObserver for CliPipeline {
     fn on_event(&self, event: PipelineEvent) {
-        if self.prepare_ui_finished() {
+        if self.prepare_ui_finished() || self.interrupted() {
             return;
         }
         match event {

@@ -90,7 +90,6 @@ pub fn escape_reserved(raw: &str) -> String {
 
 /// Normalize `name` toward `profile` without changing word semantics.
 pub fn normalize_to_profile(name: &str, profile: NamingProfile) -> String {
-    let had_escape = name.starts_with('_') && is_keyword_escape(name);
     let words = split_words(name);
     if words.is_empty() || words.iter().all(|w| w.is_empty()) {
         return escape_reserved("_");
@@ -106,11 +105,7 @@ pub fn normalize_to_profile(name: &str, profile: NamingProfile) -> String {
         }
         NamingProfile::SnakeCase => words.join("_"),
     };
-    if had_escape {
-        escape_reserved(&raw)
-    } else {
-        escape_reserved(&raw)
-    }
+    escape_reserved(&raw)
 }
 
 fn profile_body_matches(name: &str, profile: NamingProfile) -> bool {

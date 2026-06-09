@@ -19,8 +19,9 @@ use crate::features::{
 use crate::logging::{ClientLogFilter, client_log};
 use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot_request};
 use crate::server::init::initialize_result;
-use crate::session::lifecycle::{publish_diagnostics_for_uri, remove_document, set_document};
-use crate::session::project_context::cached_compilation_context;
+use crate::session::lifecycle::{
+    publish_diagnostics_for_uri, remove_document, schedule_typed_prepare_rebuild, set_document,
+};
 use crate::session::store::State;
 use crate::text_sync::apply_document_changes;
 use crate::workspace_scan::{
@@ -154,7 +155,8 @@ impl LanguageServer for Backend {
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let doc = params.text_document;
         set_document(&self.state, doc.uri.clone(), doc.version, doc.text).await;
-        self.schedule_publish_diagnostics(doc.uri).await;
+        self.schedule_publish_diagnostics(doc.uri.clone()).await;
+        schedule_typed_prepare_rebuild(self.state.clone(), doc.uri).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -169,7 +171,8 @@ impl LanguageServer for Backend {
                 doc.text,
             )
             .await;
-            self.schedule_publish_diagnostics(uri).await;
+            self.schedule_publish_diagnostics(uri.clone()).await;
+            schedule_typed_prepare_rebuild(self.state.clone(), uri).await;
         } else if let Some(full_text) = content_changes
             .into_iter()
             .rev()
@@ -183,7 +186,8 @@ impl LanguageServer for Backend {
                 full_text,
             )
             .await;
-            self.schedule_publish_diagnostics(uri).await;
+            self.schedule_publish_diagnostics(uri.clone()).await;
+            schedule_typed_prepare_rebuild(self.state.clone(), uri).await;
         }
     }
 
@@ -243,18 +247,12 @@ impl LanguageServer for Backend {
             return Ok(Some(Vec::new()));
         };
         let entry_path = uri_to_path(&snapshot.uri);
-        let compilation_context = if let Some(path) = entry_path.as_deref() {
-            cached_compilation_context(&self.state, path).await
-        } else {
-            None
-        };
         Ok(Some(references::handler::handle_references(
             &snapshot.uri,
             &snapshot.document,
             snapshot.offset,
             include_declaration,
             entry_path.as_deref(),
-            compilation_context,
         )))
     }
 

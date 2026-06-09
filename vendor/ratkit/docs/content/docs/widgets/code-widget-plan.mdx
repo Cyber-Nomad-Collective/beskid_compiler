@@ -1,0 +1,259 @@
+---
+title: CodeWidget Extraction Plan
+description: Plan for introducing a reusable document viewer foundation and a CodeWidget with syntax highlighting, gutters, and symbol outline.
+---
+
+## Objective
+
+Create a `CodeWidget` that provides code-focused viewing features while reusing the mature interaction model from `MarkdownWidget`.
+
+The implementation should extract shared document-viewer behavior into a reusable module, then make `MarkdownWidget` and `CodeWidget` thin adapters around different content parsers.
+
+## Current Evidence
+
+- `MarkdownWidget` currently owns viewer behavior under `src/widgets/markdown_preview/widgets/markdown_widget/`.
+- Markdown parsing and code-block highlighting live in `src/widgets/markdown_preview/widgets/markdown_widget/foundation/parser.rs`.
+- Syntax highlighting is already available through `SyntaxHighlighter` and `syntect` behind the `markdown-preview` feature.
+- Existing viewer state includes scroll, selection, display settings, source, TOC, vim state, collapse state, git stats, and cache modules.
+- `CodeDiff` exists for diffs, but it is not a general-purpose source-file viewer.
+
+## Non-goals
+
+- Do not turn `CodeWidget` into an editor.
+- Do not add language-server integration in the first version.
+- Do not duplicate `MarkdownWidget` internals under a new folder.
+- Do not couple the shared viewer foundation to Markdown-specific concepts like headings, frontmatter, blockquotes, or markdown tables.
+
+## Target Architecture
+
+```text
+src/widgets/
+  document_viewer/
+    mod.rs
+    foundation/
+      document_line.rs
+      document_outline_item.rs
+      rendered_document.rs
+      viewer_event.rs
+    state/
+      display_settings.rs
+      scroll.rs
+      selection.rs
+      source.rs
+      vim.rs
+      cache.rs
+    widget/
+      document_viewer_widget.rs
+      render_document_lines.rs
+      handle_key.rs
+      handle_mouse.rs
+    extensions/
+      gutter.rs
+      scrollbar.rs
+      selection.rs
+      outline.rs
+      statusline.rs
+
+  markdown_preview/
+    widgets/markdown_widget/
+      markdown_document_adapter.rs
+      markdown_outline_adapter.rs
+      markdown_widget.rs
+
+  code_widget/
+    mod.rs
+    foundation/
+      code_language.rs
+      code_line.rs
+      code_outline_item.rs
+    parser/
+      detect_language.rs
+      highlight_code_lines.rs
+      extract_symbol_outline.rs
+    state/
+      code_state.rs
+    widget/
+      code_widget.rs
+```
+
+## Shared `document_viewer` Responsibilities
+
+The shared foundation should own behavior that applies to any read-only document:
+
+1. Scrolling and viewport math.
+2. Line-number gutter rendering.
+3. Current-line highlighting.
+4. Mouse and keyboard navigation.
+5. Vim-style movement state.
+6. Text selection and copy events.
+7. Statusline metadata.
+8. Scrollbar rendering.
+9. Optional outline panel rendering.
+10. Source loading from string or file.
+11. Render cache keyed by content hash and display settings.
+
+## Adapter Boundary
+
+`DocumentViewerWidget` should render a normalized document model instead of Markdown-specific elements.
+
+```rust
+pub struct RenderedDocument {
+    pub lines: Vec<DocumentLine>,
+    pub outline: Vec<DocumentOutlineItem>,
+}
+
+pub struct DocumentLine {
+    pub source_line: usize,
+    pub spans: Vec<ratatui::text::Span<'static>>,
+    pub kind: DocumentLineKind,
+}
+
+pub enum DocumentLineKind {
+    Text,
+    Heading { level: u8, collapsed: bool },
+    Code,
+    Separator,
+    Metadata,
+    Empty,
+}
+```
+
+`MarkdownWidget` should convert markdown parser output into `RenderedDocument`.
+
+`CodeWidget` should convert source code into `RenderedDocument`.
+
+## CodeWidget First Version
+
+`CodeWidget` should support:
+
+1. Syntax highlighting using the existing syntect-based highlighter.
+2. File-extension and shebang language detection.
+3. Explicit language override through builder API.
+4. Absolute and relative line numbers.
+5. Current-line highlighting.
+6. Selection and copy.
+7. Vim-style navigation.
+8. Search or filter only after the shared viewer has stable tests.
+9. Outline panel generated from lightweight symbol extraction.
+
+## Code Outline / TOC Strategy
+
+Markdown TOC maps to headings. Code TOC should map to symbols.
+
+Initial symbol extraction should be deterministic and lightweight:
+
+- Rust: `fn`, `struct`, `enum`, `trait`, `impl`, `mod`.
+- TypeScript/JavaScript: `function`, `class`, exported const arrow functions.
+- Python: `def`, `class`.
+- Unknown languages: no outline, but the widget still renders highlighted lines when syntect recognizes the syntax.
+
+Tree-sitter can be added later behind a separate feature after the basic regex/token extractor is tested.
+
+## Public API Sketch
+
+```rust
+use ratkit::widgets::code_widget::{CodeState, CodeWidget};
+
+let mut state = CodeState::default();
+state.source.set_source_file("src/main.rs")?;
+
+let widget = CodeWidget::from_state(&state)
+    .show_line_numbers(true)
+    .show_outline(true)
+    .language("rust");
+
+frame.render_stateful_widget(widget, area, &mut state);
+```
+
+## Extraction Sequence
+
+### Phase 1: Characterization tests
+
+Add tests around current `MarkdownWidget` behavior before moving code:
+
+1. Scroll state keeps viewport stable.
+2. Line numbers render when enabled.
+3. Selection copies expected text.
+4. TOC renders headings and selection.
+5. Code block highlighting remains present.
+6. Vim navigation updates the same state values.
+
+### Phase 2: Extract viewer state
+
+Move generic state modules into `src/widgets/document_viewer/state/`:
+
+- `scroll.rs`
+- `selection.rs`
+- `display_settings.rs`
+- `source.rs`
+- `vim.rs`
+- generic cache pieces
+
+Keep compatibility re-exports from `MarkdownWidget` while callers migrate.
+
+### Phase 3: Extract viewer rendering
+
+Move generic rendering pieces into `src/widgets/document_viewer/`:
+
+- gutter rendering
+- visible-line calculation
+- scrollbar
+- selection overlay
+- statusline wiring
+- key and mouse handling
+
+Markdown-specific element rendering stays in the markdown module until the adapter is ready.
+
+### Phase 4: Introduce normalized document model
+
+Add `RenderedDocument`, `DocumentLine`, and `DocumentOutlineItem`.
+
+Update `MarkdownWidget` to map markdown elements into the normalized model. Keep markdown-only rendering details inside the markdown adapter.
+
+### Phase 5: Add CodeWidget
+
+Create `src/widgets/code_widget/` with:
+
+- `detect_language.rs`
+- `highlight_code_lines.rs`
+- `extract_symbol_outline.rs`
+- `code_state.rs`
+- `code_widget.rs`
+
+Use `DocumentViewerWidget` for the actual viewport rendering and event handling.
+
+### Phase 6: Documentation and examples
+
+Add:
+
+- `docs/content/docs/widgets/code-widget.mdx`
+- `examples/code_widget_code_widget_demo.rs`
+- README feature entry
+- changelog entry
+
+## Feature Flags
+
+Add a dedicated feature:
+
+```toml
+code-widget = ["syntect", "syntect-tui", "pane", "statusline"]
+```
+
+Do not force consumers of Markdown rendering to depend on CodeWidget. Shared `document_viewer` code should compile without syntax highlighting dependencies.
+
+## Testing Requirements
+
+- Unit tests for language detection.
+- Unit tests for symbol outline extraction.
+- Snapshot tests for rendered Rust, TypeScript, and Python snippets.
+- Regression tests proving MarkdownWidget output remains stable after extraction.
+- Mouse/key event tests for shared viewer navigation.
+
+## Done Criteria
+
+- `MarkdownWidget` still passes its existing behavior tests.
+- `CodeWidget` renders plain text and highlighted code.
+- `CodeWidget` supports line numbers, selection, copy, scrolling, and outline.
+- Shared code lives under `src/widgets/document_viewer/`.
+- No extracted module contains Markdown-specific terms unless it is an adapter.
+- Public docs and one runnable example exist.

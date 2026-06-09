@@ -132,5 +132,36 @@ pub fn emit_work_unit<O: PipelineObserver + ?Sized>(
     }
 }
 
+/// Log the current unit to tracing and forward a [`PipelineEvent::WorkUnit`] to observers.
+pub fn report_progress<O: PipelineObserver + ?Sized>(
+    obs: Option<&O>,
+    id: &'static str,
+    done: u64,
+    total: u64,
+    label: impl Into<Cow<'static, str>>,
+) {
+    let label = label.into();
+    if id.starts_with("semantic") {
+        tracing::info!(
+            target: "beskid_tools::pipeline::semantic",
+            phase = id,
+            done,
+            total,
+            label = label.as_ref(),
+            "progress"
+        );
+    } else {
+        tracing::info!(
+            target: "beskid_tools::pipeline::build",
+            phase = id,
+            done,
+            total,
+            label = label.as_ref(),
+            "progress"
+        );
+    }
+    emit_work_unit(obs, id, done, total, label);
+}
+
 /// Shared handle for stages that take owned requests (e.g. AOT build).
 pub type SharedPipelineObserver = Arc<dyn PipelineObserver>;

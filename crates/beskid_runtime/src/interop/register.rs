@@ -80,24 +80,28 @@ pub extern "C-unwind" fn beskid_register_handlers(
         }
         match entry.group {
             DISPATCH_GROUP_USIZE => {
-                overrides
-                    .usize_handlers
-                    .insert(entry.tag, unsafe { std::mem::transmute(handler) });
+                overrides.usize_handlers.insert(
+                    entry.tag,
+                    unsafe { std::mem::transmute::<*const u8, UsizeHandler>(handler) },
+                );
             }
             DISPATCH_GROUP_PTR => {
-                overrides
-                    .ptr_handlers
-                    .insert(entry.tag, unsafe { std::mem::transmute(handler) });
+                overrides.ptr_handlers.insert(
+                    entry.tag,
+                    unsafe { std::mem::transmute::<*const u8, PtrHandler>(handler) },
+                );
             }
             DISPATCH_GROUP_UNIT => {
-                overrides
-                    .unit_handlers
-                    .insert(entry.tag, unsafe { std::mem::transmute(handler) });
+                overrides.unit_handlers.insert(
+                    entry.tag,
+                    unsafe { std::mem::transmute::<*const u8, UnitHandler>(handler) },
+                );
             }
             DISPATCH_GROUP_I64 => {
-                overrides
-                    .i64_handlers
-                    .insert(entry.tag, unsafe { std::mem::transmute(handler) });
+                overrides.i64_handlers.insert(
+                    entry.tag,
+                    unsafe { std::mem::transmute::<*const u8, I64Handler>(handler) },
+                );
             }
             _ => {}
         }
@@ -108,6 +112,10 @@ pub extern "C-unwind" fn beskid_register_handlers(
 }
 
 /// Attempt a registered `usize` handler override for `tag`.
+///
+/// # Safety
+///
+/// `enum_ptr` must reference a valid dispatch envelope for the duration of dispatch.
 pub unsafe fn try_dispatch_usize(tag: i32, enum_ptr: *const u8) -> Option<usize> {
     let table = handler_overrides().lock().ok()?;
     let handler = table.usize_handlers.get(&(tag as u32))?;
@@ -115,6 +123,10 @@ pub unsafe fn try_dispatch_usize(tag: i32, enum_ptr: *const u8) -> Option<usize>
 }
 
 /// Attempt a registered `ptr` handler override for `tag`.
+///
+/// # Safety
+///
+/// `enum_ptr` must reference a valid dispatch envelope for the duration of dispatch.
 pub unsafe fn try_dispatch_ptr(tag: i32, enum_ptr: *const u8) -> Option<*mut u8> {
     let table = handler_overrides().lock().ok()?;
     let handler = table.ptr_handlers.get(&(tag as u32))?;
@@ -122,6 +134,10 @@ pub unsafe fn try_dispatch_ptr(tag: i32, enum_ptr: *const u8) -> Option<*mut u8>
 }
 
 /// Attempt a registered `unit` handler override for `tag`.
+///
+/// # Safety
+///
+/// `enum_ptr` must reference a valid dispatch envelope for the duration of dispatch.
 pub unsafe fn try_dispatch_unit(tag: i32, enum_ptr: *const u8) -> bool {
     let Ok(table) = handler_overrides().lock() else {
         return false;
@@ -136,6 +152,10 @@ pub unsafe fn try_dispatch_unit(tag: i32, enum_ptr: *const u8) -> bool {
 }
 
 /// Attempt a registered `i64` handler override for `tag`.
+///
+/// # Safety
+///
+/// `enum_ptr` must reference a valid dispatch envelope for the duration of dispatch.
 pub unsafe fn try_dispatch_i64(tag: i32, enum_ptr: *const u8) -> Option<i64> {
     let table = handler_overrides().lock().ok()?;
     let handler = table.i64_handlers.get(&(tag as u32))?;

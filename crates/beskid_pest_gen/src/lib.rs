@@ -47,14 +47,14 @@ pub fn parse_grammar_rules(source: &str) -> Result<Vec<GrammarRule>, String> {
                 current_expr.push(' ');
             }
             current_expr.push_str(part);
-            if trimmed.ends_with('}') {
-                if let Some(prev) = current_name.take() {
-                    rules.push(GrammarRule {
-                        name: prev,
-                        expression: current_expr.trim().to_string(),
-                    });
-                    current_expr.clear();
-                }
+            if trimmed.ends_with('}')
+                && let Some(prev) = current_name.take()
+            {
+                rules.push(GrammarRule {
+                    name: prev,
+                    expression: current_expr.trim().to_string(),
+                });
+                current_expr.clear();
             }
         }
     }
@@ -385,11 +385,7 @@ fn emit_node_on_cursor(
         Expr::Any => format!(
             "Parser.TextParseResult<string> opt_inner = Parser.Satisfy({cursor}, \"{rule}\");"
         ),
-        Expr::Group(inner) => {
-            let mut code = emit_node_on_cursor(cursor, inner, rule, rules);
-            code = code.replacen("opt_inner", "opt_inner", 1);
-            code
-        }
+        Expr::Group(inner) => emit_node_on_cursor(cursor, inner, rule, rules),
         _ => {
             let body = emit_node(node, rule, rules);
             format!(
@@ -409,17 +405,13 @@ fn emit_seq(parts: &[Expr], rule: &str, rules: &BTreeMap<&str, &GrammarRule>) ->
     let mut out = String::new();
     writeln!(out, "Cursor.TextCursor seq_cur = c;").unwrap();
     for (index, part) in parts.iter().enumerate() {
-        let step = emit_step_on_cursor("seq_cur", part, rule, rules, &format!("seq_{index}"));
+        let var = format!("seq_{index}");
+        let step = emit_step_on_cursor("seq_cur", part, rule, rules, &var);
         writeln!(out, "{step}").unwrap();
-        writeln!(out, "if !Parser.IsOk({var}) {{", var = format!("seq_{index}")).unwrap();
-        writeln!(out, "    return {var};", var = format!("seq_{index}")).unwrap();
+        writeln!(out, "if !Parser.IsOk({var}) {{").unwrap();
+        writeln!(out, "    return {var};").unwrap();
         writeln!(out, "}}").unwrap();
-        writeln!(
-            out,
-            "    seq_cur = Parser.RestOnOk({var}, seq_cur);",
-            var = format!("seq_{index}")
-        )
-        .unwrap();
+        writeln!(out, "    seq_cur = Parser.RestOnOk({var}, seq_cur);").unwrap();
     }
     writeln!(out, "return Parser.Pure(\"\", seq_cur);").unwrap();
     out.trim_end().to_string()
@@ -434,10 +426,11 @@ fn emit_choice(parts: &[Expr], rule: &str, rules: &BTreeMap<&str, &GrammarRule>)
     }
     let mut out = String::new();
     for (index, part) in parts.iter().enumerate() {
-        let step = emit_step_on_cursor("c", part, rule, rules, &format!("choice_{index}"));
+        let var = format!("choice_{index}");
+        let step = emit_step_on_cursor("c", part, rule, rules, &var);
         writeln!(out, "{step}").unwrap();
-        writeln!(out, "if Parser.IsOk({var}) {{", var = format!("choice_{index}")).unwrap();
-        writeln!(out, "    return {var};", var = format!("choice_{index}")).unwrap();
+        writeln!(out, "if Parser.IsOk({var}) {{").unwrap();
+        writeln!(out, "    return {var};").unwrap();
         writeln!(out, "}}").unwrap();
     }
     writeln!(

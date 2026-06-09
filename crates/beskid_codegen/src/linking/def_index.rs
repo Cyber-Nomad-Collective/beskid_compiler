@@ -104,9 +104,7 @@ impl<'a> FunctionDefIndex<'a> {
         if index < self.assembly_unit_count {
             self.hir_units.get(index).map(|unit| &unit.hir)
         } else {
-            self.programs
-                .get(index - self.assembly_unit_count)
-                .map(|program| program)
+            self.programs.get(index - self.assembly_unit_count)
         }
     }
 
@@ -160,7 +158,7 @@ fn program_index_for_source(
     programs: &mut Vec<Spanned<HirProgram>>,
     program_keys: &mut HashMap<PathBuf, usize>,
     hir_units: &[UnitHir],
-    by_path: &HashMap<PathBuf, &UnitHir>,
+    _by_path: &HashMap<PathBuf, &UnitHir>,
     source_path: &PathBuf,
 ) -> Option<usize> {
     let key = unit_path_key(source_path);
@@ -212,10 +210,10 @@ fn find_method_in_unit<'a>(
         .or_else(|| find_method_by_name(program, short_name))
 }
 
-pub(crate) fn find_function_by_span<'a>(
-    program: &'a Spanned<HirProgram>,
+pub(crate) fn find_function_by_span(
+    program: &Spanned<HirProgram>,
     span: SpanInfo,
-) -> Option<&'a Spanned<HirFunctionDefinition>> {
+) -> Option<&Spanned<HirFunctionDefinition>> {
     find_function_in_items(&program.node.items, span)
 }
 
@@ -226,10 +224,10 @@ pub(crate) fn find_function_by_name<'a>(
     find_function_by_name_in_items(&program.node.items, name, &mut HashSet::new())
 }
 
-pub(crate) fn find_method_by_span<'a>(
-    program: &'a Spanned<HirProgram>,
+pub(crate) fn find_method_by_span(
+    program: &Spanned<HirProgram>,
     span: SpanInfo,
-) -> Option<&'a Spanned<HirMethodDefinition>> {
+) -> Option<&Spanned<HirMethodDefinition>> {
     find_method_in_items(&program.node.items, span)
 }
 
@@ -254,14 +252,13 @@ fn find_function_by_name_in_items<'a>(
 ) -> Option<&'a Spanned<HirFunctionDefinition>> {
     let mut match_def: Option<&'a Spanned<HirFunctionDefinition>> = None;
     for item in items {
-        if let HirItem::FunctionDefinition(def) = &item.node {
-            if def.node.name.node.name == name {
+        if let HirItem::FunctionDefinition(def) = &item.node
+            && def.node.name.node.name == name {
                 if match_def.is_some() {
                     return None;
                 }
                 match_def = Some(def);
             }
-        }
         if let HirItem::InlineModule(module) = &item.node {
             let ptr = module.node.items.as_ptr() as usize;
             if modules.insert(ptr) {
@@ -284,11 +281,10 @@ fn find_function_in_items_inner<'a>(
     modules: &mut HashSet<usize>,
 ) -> Option<&'a Spanned<HirFunctionDefinition>> {
     for item in items {
-        if spans_match(item.span, span) {
-            if let HirItem::FunctionDefinition(def) = &item.node {
+        if spans_match(item.span, span)
+            && let HirItem::FunctionDefinition(def) = &item.node {
                 return Some(def);
             }
-        }
         if let HirItem::InlineModule(module) = &item.node {
             let ptr = module.node.items.as_ptr() as usize;
             if modules.insert(ptr)
@@ -339,14 +335,13 @@ fn find_method_by_name_in_items<'a>(
                 }
             }
         }
-        if let HirItem::MethodDefinition(def) = &item.node {
-            if def.node.name.node.name == name {
+        if let HirItem::MethodDefinition(def) = &item.node
+            && def.node.name.node.name == name {
                 if match_def.is_some() {
                     return None;
                 }
                 match_def = Some(def);
             }
-        }
         if let HirItem::InlineModule(module) = &item.node {
             let ptr = module.node.items.as_ptr() as usize;
             if modules.insert(ptr) {

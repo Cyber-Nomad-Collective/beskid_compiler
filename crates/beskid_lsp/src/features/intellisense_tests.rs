@@ -1,10 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use beskid_analysis::compilation_context::CompilationContext;
-    use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions, assemble_program};
+    use beskid_analysis::projects::AssemblyDiscovery;
     use beskid_analysis::services::{
-        build_document_analysis_with_context, parse_program_with_source_name, resolve_input,
+        PrepareOptions, build_document_analysis_from_resolution, parse_program_with_source_name,
+        resolve_input,
     };
+    use beskid_queries::{BeskidDatabase, configure_db_for_project, entry_resolution_with_db};
     use std::path::PathBuf;
     use tower_lsp_server::ls_types::{GotoDefinitionResponse, Hover, Uri};
 
@@ -55,7 +56,7 @@ mod tests {
         }
     }
 
-    fn corelib_mvp_document_with_assembly() -> (Uri, Document, CorelibMvpFixture) {
+    fn corelib_mvp_document_with_entry_resolution() -> (Uri, Document, CorelibMvpFixture, BeskidDatabase) {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
@@ -73,27 +74,31 @@ mod tests {
                 false,
             )
             .expect("resolve");
-            let plan = resolved.compile_plan.expect("plan");
-            let assembly = assemble_program(
-                &plan,
-                resolved.prepared_workspace.as_ref(),
-                &fixture.main_path,
-                Some(&fixture.source),
-                &AssemblyOptions {
-                    discovery: AssemblyDiscovery::ImportClosure,
-                    ..Default::default()
-                },
-            )
-            .expect("assemble");
-            let mut ctx =
-                CompilationContext::try_for_analysis_path(&fixture.main_path, None).expect("ctx");
-            ctx.assembly = Some(assembly);
-            let analysis = build_document_analysis_with_context(
+            let project_root = fixture
+                .project_root
+                .canonicalize()
+                .unwrap_or_else(|_| fixture.project_root.clone());
+            configure_db_for_project(&project_root);
+            let mut db = BeskidDatabase::with_persistence(&project_root);
+            let mut options = PrepareOptions::default();
+            options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
+            let shared =
+                entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
+            let module_paths = shared.module_graph.modules().iter().filter_map(|module| {
+                if module.path.is_empty() {
+                    None
+                } else {
+                    Some(module.path.join("::"))
+                }
+            }).collect();
+            let analysis = build_document_analysis_from_resolution(
                 &program,
                 fixture.main_path.to_string_lossy(),
                 &fixture.source,
                 &fixture.main_path,
-                Some(&mut ctx),
+                Some((*shared).clone()),
+                module_paths,
+                resolved.compile_plan.as_ref(),
                 None,
             );
             let doc = Document {
@@ -102,13 +107,13 @@ mod tests {
                 analysis_cache_version: ANALYSIS_CACHE_VERSION,
                 analysis: Some(analysis),
             };
-            (fixture.uri.clone(), doc, fixture)
+            (fixture.uri.clone(), doc, fixture, db)
         })
     }
 
     #[test]
     fn completion_after_output_dot_lists_writeline() {
-        let (_uri, doc, fixture) = corelib_mvp_document_with_assembly();
+        let (_uri, doc, fixture, _db) = corelib_mvp_document_with_entry_resolution();
         let analysis = doc.analysis.as_ref().expect("analysis");
         let offset =
             fixture.source.find("    Output.").expect("main Output.") + "    Output.".len();
@@ -125,7 +130,7 @@ mod tests {
 
     #[test]
     fn definition_on_printline_targets_dependency_file() {
-        let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
+        let (uri, doc, fixture, _db) = corelib_mvp_document_with_entry_resolution();
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let response = definition::handler::handle_definition(&uri, &doc, offset);
         if let Some(GotoDefinitionResponse::Scalar(location)) = response {
@@ -147,12 +152,13 @@ mod tests {
     #[tokio::test]
     async fn lifecycle_build_document_corelib_mvp_has_resolution() {
         let root = compiler_workspace_root();
-        let (uri, fixture) = with_cwd_at_workspace_root(&root, || {
-            let fixture = corelib_mvp_paths();
-            (fixture.uri.clone(), fixture)
-        });
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(&root).expect("chdir");
+        let fixture = corelib_mvp_paths();
+        let uri = fixture.uri.clone();
         let state = tokio::sync::RwLock::new(State::default());
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
+        std::env::set_current_dir(previous).expect("restore cwd");
         let analysis = doc
             .analysis
             .expect("analysis from lifecycle build_document");
@@ -171,18 +177,65 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn lifecycle_build_document_parses_corelib_mvp() {
+        let root = compiler_workspace_root();
+        let (uri, fixture) = with_cwd_at_workspace_root(&root, || {
+            let fixture = corelib_mvp_paths();
+            (fixture.uri.clone(), fixture)
+        });
+        let state = tokio::sync::RwLock::new(State::default());
+        let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
+        let analysis = doc
+            .analysis
+            .expect("analysis from lifecycle build_document");
+        assert!(
+            !analysis.program.node.items.is_empty(),
+            "lifecycle build_document should attach a parsed program snapshot"
+        );
+    }
+
+    #[test]
+    fn entry_resolution_with_db_populates_writeline_for_intellisense() {
+        let root = compiler_workspace_root();
+        with_cwd_at_workspace_root(&root, || {
+            let fixture = corelib_mvp_paths();
+            let resolved = resolve_input(
+                Some(&fixture.main_path),
+                Some(&fixture.project_root),
+                None,
+                None,
+                false,
+                false,
+            )
+            .expect("resolve");
+            let project_root = fixture
+                .project_root
+                .canonicalize()
+                .unwrap_or_else(|_| fixture.project_root.clone());
+            configure_db_for_project(&project_root);
+            let mut db = BeskidDatabase::with_persistence(&project_root);
+            let mut options = PrepareOptions::default();
+            options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
+            let shared =
+                entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
+            assert!(
+                shared.items.iter().any(|item| item.name == "WriteLine"),
+                "entry_resolution_with_db should expose dependency WriteLine"
+            );
+        });
+    }
+
     #[test]
     fn references_on_printline_includes_dependency() {
-        let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
+        let (uri, doc, fixture, _db) = corelib_mvp_document_with_entry_resolution();
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
-        let ctx = CompilationContext::try_for_analysis_path(&fixture.main_path, None).expect("ctx");
         let locations = references::handler::handle_references(
             &uri,
             &doc,
             offset,
             true,
             Some(fixture.main_path.as_path()),
-            Some(ctx),
         );
         if locations.is_empty() {
             let analysis = doc.analysis.as_ref().expect("analysis");
@@ -207,7 +260,7 @@ mod tests {
 
     #[test]
     fn hover_on_printline_range_in_dependency_file() {
-        let (uri, doc, fixture) = corelib_mvp_document_with_assembly();
+        let (uri, doc, fixture, _db) = corelib_mvp_document_with_entry_resolution();
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let hover = hover::handler::handle_hover(&uri, &doc, offset).expect("hover");
         let Hover { range, .. } = hover;

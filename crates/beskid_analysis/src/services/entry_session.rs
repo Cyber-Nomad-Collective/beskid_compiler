@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use crate::composition::CompositionSnapshot;
 use crate::projects::ProgramAssembly;
@@ -15,6 +15,7 @@ static REGISTRY: OnceLock<Mutex<EntrySessionRegistry>> = OnceLock::new();
 struct EntrySessionRegistry {
     sessions: HashMap<SessionFingerprint, Arc<CompilationSession>>,
     syntax_generation: HashMap<SessionFingerprint, u64>,
+    executable_weak: HashMap<SessionFingerprint, Weak<FrontEndTypedResult>>,
 }
 
 fn registry() -> &'static Mutex<EntrySessionRegistry> {
@@ -22,6 +23,7 @@ fn registry() -> &'static Mutex<EntrySessionRegistry> {
         Mutex::new(EntrySessionRegistry {
             sessions: HashMap::new(),
             syntax_generation: HashMap::new(),
+            executable_weak: HashMap::new(),
         })
     })
 }
@@ -87,18 +89,23 @@ pub fn store_executable_and_snapshot(
     fingerprint: &SessionFingerprint,
     executable: Option<FrontEndTypedResult>,
     snapshot: SemanticSnapshot,
-) {
+) -> Option<Arc<FrontEndTypedResult>> {
     let mut guard = registry().lock().expect("entry session registry");
-    let Some(session) = guard.sessions.get(fingerprint) else {
-        return;
-    };
+    let session = guard.sessions.get(fingerprint).cloned()?;
+    let stored = executable.map(Arc::new);
+    if let Some(arc) = stored.as_ref() {
+        guard
+            .executable_weak
+            .insert(fingerprint.clone(), Arc::downgrade(arc));
+    }
     let updated = Arc::new(CompilationSession {
         fingerprint: session.fingerprint.clone(),
         assembly: Arc::clone(&session.assembly),
-        prepared_executable: executable.map(Arc::new),
+        prepared_executable: None,
         semantic_snapshot: Some(snapshot),
     });
     guard.sessions.insert(fingerprint.clone(), updated);
+    stored
 }
 
 pub fn cached_compilation_session(
@@ -113,7 +120,22 @@ pub fn cached_semantic_snapshot(fingerprint: &SessionFingerprint) -> Option<Sema
 }
 
 pub fn cached_executable(fingerprint: &SessionFingerprint) -> Option<Arc<FrontEndTypedResult>> {
-    cached_compilation_session(fingerprint).and_then(|s| s.prepared_executable.clone())
+    let guard = registry().lock().expect("entry session registry");
+    guard.executable_weak.get(fingerprint)?.upgrade()
+}
+
+/// Cached executable when the entry fingerprint and syntax generation still match.
+pub fn cached_executable_if_valid(
+    fingerprint: &SessionFingerprint,
+) -> Option<Arc<FrontEndTypedResult>> {
+    let snapshot = cached_semantic_snapshot(fingerprint)?;
+    if snapshot.syntax_generation_id != current_syntax_generation_id(fingerprint) {
+        return None;
+    }
+    if !snapshot.satisfies_minimum("executable") {
+        return None;
+    }
+    cached_executable(fingerprint)
 }
 
 fn canonical_path(path: &Path) -> std::path::PathBuf {
@@ -129,12 +151,16 @@ pub fn invalidate_project(project_root: &Path) {
     guard
         .syntax_generation
         .retain(|fp, _| canonical_path(&fp.project_root) != canonical);
+    guard
+        .executable_weak
+        .retain(|fp, _| canonical_path(&fp.project_root) != canonical);
 }
 
 pub fn invalidate_all() {
     let mut guard = registry().lock().expect("entry session registry");
     guard.sessions.clear();
     guard.syntax_generation.clear();
+    guard.executable_weak.clear();
 }
 
 pub fn composition_fingerprint(snapshot: &CompositionSnapshot) -> u64 {

@@ -23,8 +23,6 @@ pub struct AnalysisOptions {
     pub entry_source_path: Option<PathBuf>,
     /// Full assembly for dependency-aware type checking in staged rules.
     pub program_assembly: Option<crate::projects::ProgramAssembly>,
-    /// When true, semantic gate type-checks entry bodies only (dependency signature prefetch).
-    pub semantic_gate_only: bool,
 }
 
 impl Default for AnalysisOptions {
@@ -36,7 +34,6 @@ impl Default for AnalysisOptions {
             program_assembly_module_index: None,
             entry_source_path: None,
             program_assembly: None,
-            semantic_gate_only: false,
         }
     }
 }

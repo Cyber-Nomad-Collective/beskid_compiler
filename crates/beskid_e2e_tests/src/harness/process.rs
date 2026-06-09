@@ -1,3 +1,7 @@
+//! Linux-only subprocess helpers (`nm`, timed binary execution).
+
+#![cfg(target_os = "linux")]
+
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::thread;

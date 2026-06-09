@@ -2,7 +2,7 @@
 
 use beskid_abi::BeskidStr;
 
-use crate::strings::{read_string_path, string_from_rust};
+use crate::strings::{read_beskid_str_bytes, read_string_path, string_from_rust};
 
 /// Read entire file as UTF-8 text. Returns empty string when missing or unreadable.
 #[unsafe(no_mangle)]
@@ -18,14 +18,8 @@ pub extern "C-unwind" fn fs_read_text(path: *const BeskidStr) -> *mut BeskidStr 
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn fs_write_text(path: *const BeskidStr, data: *const BeskidStr) -> i64 {
     let path = read_string_path(path);
-    if data.is_null() {
+    let Some(bytes) = read_beskid_str_bytes(data) else {
         return -1;
-    }
-    let (ptr, len) = unsafe { ((*data).ptr, (*data).len) };
-    let bytes = if ptr.is_null() || len == 0 {
-        &[][..]
-    } else {
-        unsafe { std::slice::from_raw_parts(ptr, len) }
     };
     match std::fs::write(&path, bytes) {
         Ok(()) => 0,

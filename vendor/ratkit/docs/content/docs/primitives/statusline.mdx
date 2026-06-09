@@ -1,0 +1,42 @@
+---
+title: StatusLine
+description: Status bar component for displaying application information.
+---
+
+## Overview
+
+The StatusLine primitive provides a status bar for displaying application state, information, and context.
+
+## Basic Usage
+
+```rust
+use ratkit::primitives::statusline::StatusLine;
+use ratatui::Frame;
+
+fn render_status(frame: &mut Frame) {
+    let status = StatusLine::new()
+        .left("Ready")
+        .right("UTF-8 | Rust");
+    
+    frame.render_widget(status, bottom_area);
+}
+```
+
+## Sections
+
+The status line has three sections:
+
+- **Left** - Primary status information
+- **Center** - Secondary information
+- **Right** - Contextual details
+
+## Dynamic Updates
+
+Update status based on application state:
+
+```rust
+let status = StatusLine::new()
+    .left(format!("File: {}", filename))
+    .center(format!("Line: {}, Col: {}", line, col))
+    .right(if modified { "[Modified]" } else { "" });
+```

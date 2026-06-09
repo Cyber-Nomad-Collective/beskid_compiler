@@ -4,7 +4,9 @@ use beskid_analysis::Rule;
 use beskid_analysis::hir::{AstProgram, HirProgram, lower_program, normalize_program};
 use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::resolve::{Resolution, ResolveError, Resolver};
-use beskid_analysis::services::typed_hir_from_lowered_after_resolution;
+use beskid_analysis::services::{
+    DependencyTypingPolicy, TypedHirResolution, typed_hir_from_lowered,
+};
 use beskid_analysis::syntax::{Program, Spanned};
 use beskid_analysis::types::{TypeError, TypeResult, type_program};
 
@@ -45,9 +47,13 @@ pub fn typecheck_hir(source: &str) -> (Spanned<HirProgram>, Resolution, TypeResu
     let resolution = Resolver::new()
         .resolve_program(&hir)
         .unwrap_or_else(|errors| panic!("expected resolution success: {errors:?}"));
-    let (hir, resolution, typed) =
-        typed_hir_from_lowered_after_resolution(hir, &resolution, None)
-        .unwrap_or_else(|err| panic!("expected type success: {err}"));
+    let (hir, resolution, typed) = typed_hir_from_lowered(
+        hir,
+        TypedHirResolution::Pass1(&resolution),
+        None,
+        DependencyTypingPolicy::FullClosure,
+    )
+    .unwrap_or_else(|err| panic!("expected type success: {err}"));
     (hir, resolution, typed)
 }
 

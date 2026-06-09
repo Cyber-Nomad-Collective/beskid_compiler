@@ -1,12 +1,20 @@
 //! Dual pipeline progress gauges (stage + total).
 
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Direction, Flex, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Gauge};
 
-use super::super::layout::split_progress_footer;
 use super::super::model::PipelineProgress;
+
+fn split_progress_footer(area: Rect) -> (Rect, Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Length(2)])
+        .flex(Flex::SpaceBetween)
+        .split(area);
+    (chunks[0], chunks[1])
+}
 
 fn percent(done: u64, total: u64) -> u16 {
     let total = total.max(1);

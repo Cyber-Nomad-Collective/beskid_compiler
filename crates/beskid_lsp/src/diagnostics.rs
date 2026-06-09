@@ -4,8 +4,7 @@ use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{parse_bsol_document, parse_manifest, parse_workspace_manifest, ProjectError};
 use beskid_analysis::services::{
-    self, DocumentAnalysisSnapshot, FrontEndOptions, PrepareMode, PrepareOptions,
-    resolved_input_from_plan,
+    self, DocumentAnalysisSnapshot, FrontEndOptions, PrepareOptions, resolved_input_from_plan,
 };
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity};
@@ -15,7 +14,11 @@ use tower_lsp_server::ls_types::*;
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::offset_range_to_lsp;
 
-/// Produce LSP diagnostics for a `.bd`, `.proj`, or manifest buffer using the Salsa-backed prepare spine when a project is known.
+/// Produce LSP diagnostics for a `.bd`, `.proj`, or manifest buffer.
+///
+/// Project-backed `.bd` buffers use the Salsa prepare spine when a [`BeskidDatabase`] and
+/// [`CompilationContext`] are available; otherwise the server falls back to a warm
+/// [`DocumentAnalysisSnapshot`] or parse-only structural rules.
 pub fn analyze_document(
     db: Option<&mut BeskidDatabase>,
     uri: &Uri,
@@ -31,20 +34,19 @@ pub fn analyze_document(
         && path.extension().and_then(|ext| ext.to_str()) == Some("bd")
     {
         if let (Some(db), Some(ctx)) = (db, compilation_context)
-            && let Some(plan) = ctx.compile_plan.clone()
+            && ctx.compile_plan.is_some()
         {
             let resolved = resolved_input_from_plan(
                 path.to_path_buf(),
                 source.to_string(),
-                plan,
-                ctx.prepared_workspace.clone(),
-                ctx.assembly.clone(),
+                ctx.compile_plan.clone().expect("compile plan"),
+                None,
+                None,
             );
             if let Ok((_, mut diags)) = beskid_queries::prepare_compilation_diagnostics_with_db(
                 db,
                 &resolved,
                 PrepareOptions {
-                    mode: PrepareMode::DiagnosticsOnly,
                     front_end: FrontEndOptions {
                         with_semantic_diagnostics: true,
                         ..Default::default()
@@ -62,61 +64,9 @@ pub fn analyze_document(
             }
         }
 
-        let mut ctx = compilation_context
-            .cloned()
-            .or_else(|| CompilationContext::try_for_analysis_path(&path, None));
-        if let Some(ref mut ctx) = ctx
-            && let Ok(mut diags) =
-                services::analyze_source_with_compilation_context(path.as_ref(), source, ctx)
-        {
-            if let Some(snap) = cached {
-                diags.extend(snap.doc_diagnostics.iter().cloned());
-            }
-            return diags
-                .into_iter()
-                .map(|diag| semantic_to_lsp_diagnostic(source, diag))
-                .collect();
-        }
-
-        if services::compile_plan_for_input_path(&path).is_some() {
-            if let Ok(diagnostics) = services::analyze_source_in_project(path.as_ref(), source) {
-                return diagnostics
-                    .into_iter()
-                    .map(|diag| semantic_to_lsp_diagnostic(source, diag))
-                    .collect();
-            }
-            return vec![simple_error(
-                "project",
-                "project analysis failed; open the workspace entry or reload the language server",
-                Range::new(Position::new(0, 0), Position::new(0, 0)),
-            )];
-        }
-
         if let Some(snap) = cached {
-            let mut out: Vec<Diagnostic> =
-                semantic_diagnostics(&uri.to_string(), source, &snap.program.node);
-            out.extend(
-                snap.doc_diagnostics
-                    .iter()
-                    .cloned()
-                    .map(|d| semantic_to_lsp_diagnostic(source, d)),
-            );
-            out.extend(
-                snap.composition_diagnostics
-                    .iter()
-                    .cloned()
-                    .map(|d| semantic_to_lsp_diagnostic(source, d)),
-            );
-            out.sort_by(|a, b| {
-                (a.range.start.line, a.range.start.character)
-                    .cmp(&(b.range.start.line, b.range.start.character))
-            });
-            return out;
+            return diagnostics_from_cached_snapshot(uri, source, snap);
         }
-    }
-
-    if let Some(project_diags) = analyze_project_file(uri, source) {
-        return project_diags;
     }
 
     match services::parse_program_with_source_name(&uri.to_string(), source) {
@@ -129,15 +79,30 @@ pub fn analyze_document(
     }
 }
 
-fn analyze_project_file(uri: &Uri, source: &str) -> Option<Vec<Diagnostic>> {
-    let path = uri.to_file_path()?;
-    let diagnostics = services::analyze_source_in_project(path.as_ref(), source).ok()?;
-    Some(
-        diagnostics
-            .into_iter()
-            .map(|diag| semantic_to_lsp_diagnostic(source, diag))
-            .collect(),
-    )
+fn diagnostics_from_cached_snapshot(
+    uri: &Uri,
+    source: &str,
+    snap: &DocumentAnalysisSnapshot,
+) -> Vec<Diagnostic> {
+    let mut out: Vec<Diagnostic> =
+        semantic_diagnostics(&uri.to_string(), source, &snap.program.node);
+    out.extend(
+        snap.doc_diagnostics
+            .iter()
+            .cloned()
+            .map(|d| semantic_to_lsp_diagnostic(source, d)),
+    );
+    out.extend(
+        snap.composition_diagnostics
+            .iter()
+            .cloned()
+            .map(|d| semantic_to_lsp_diagnostic(source, d)),
+    );
+    out.sort_by(|a, b| {
+        (a.range.start.line, a.range.start.character)
+            .cmp(&(b.range.start.line, b.range.start.character))
+    });
+    out
 }
 
 fn semantic_diagnostics(source_name: &str, source: &str, program: &Program) -> Vec<Diagnostic> {

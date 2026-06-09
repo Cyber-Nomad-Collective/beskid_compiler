@@ -1,0 +1,12 @@
+---
+source: tests/code_widget_snapshots.rs
+expression: snapshot
+---
+  1 │ export class Counter {                                           █
+  2 │   private value = 0;                                ╭ TOC ─────╮ █
+  3 │                                                     │⠉⢙⣛⣛⣛⣛⣛⣛⣛⣛│ █
+  4 │   increment(): number {                             │          │ █
+  5 │     this.value += 1;                                ╰──────────╯ █
+  6 │     return this.value;                                           █
+  7 │   }                                                              █
+ NORMAL                                                         12%/8

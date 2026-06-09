@@ -1,0 +1,24 @@
+board "hi-default" {
+  title = "Beskid Hi"
+  scope = user
+}
+tile "header" {
+  widget = "shell.scope"
+  region = header
+}
+tile "stage" {
+  widget = "hi.welcome"
+  region = stage
+}
+tile "detail" {
+  widget = "shell.shortcuts"
+  region = detail
+}
+tile "log" {
+  widget = "shell.log"
+  region = log
+}
+tile "footer" {
+  widget = "shell.chrome"
+  region = footer
+}

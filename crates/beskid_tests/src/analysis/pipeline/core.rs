@@ -36,6 +36,7 @@ impl Rule for EmitOne {
 
 #[test]
 fn analysis_type_mismatch_renders_named_type_names() {
+    // Full type mismatch (E1206) is emitted on the lower spine; see type_check_diagnostics.rs.
     let source =
         "type User { i64 id } type Order { i64 id } unit Main() { User u = Order { id: 1 }; }";
     let program = parse_program_ast(source);
@@ -47,15 +48,12 @@ fn analysis_type_mismatch_renders_named_type_names() {
         AnalysisOptions::default(),
     );
 
-    let mismatch = result
-        .diagnostics
-        .iter()
-        .find(|diag| diag.code.as_deref() == Some("E1206"))
-        .expect("expected type mismatch diagnostic");
     assert!(
-        mismatch.message.contains("expected") && mismatch.message.contains("got"),
-        "expected a readable mismatch message, got: {}",
-        mismatch.message
+        !result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("E1206")),
+        "semantic rules must not duplicate lower-spine type mismatch diagnostics"
     );
 }
 
@@ -79,7 +77,7 @@ fn analysis_emits_resolve_errors() {
 }
 
 #[test]
-fn analysis_emits_type_errors() {
+fn analysis_does_not_emit_lower_spine_type_mismatch_from_semantic_rules() {
     let program = parse_program_ast("unit Main() { bool x = 1; }");
     let result = run_rules(
         &program.node,
@@ -90,15 +88,16 @@ fn analysis_emits_type_errors() {
     );
 
     assert!(
-        result
+        !result
             .diagnostics
             .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1206"))
+            .any(|diag| diag.code.as_deref() == Some("E1206")),
+        "E1206 is owned by lower.type_check; see type_check_diagnostics.rs"
     );
 }
 
 #[test]
-fn analysis_emits_cast_intent_warnings() {
+fn analysis_does_not_emit_cast_intent_warnings_from_semantic_rules() {
     let source = "unit Main() { i64 x = 1; i32 y = x; }";
     let program = parse_program_ast(source);
     let result = run_rules(
@@ -109,15 +108,12 @@ fn analysis_emits_cast_intent_warnings() {
         AnalysisOptions::default(),
     );
 
-    let cast_diag = result
-        .diagnostics
-        .iter()
-        .find(|diag| diag.code.as_deref() == Some("W1203"))
-        .expect("expected cast-intent warning");
     assert!(
-        cast_diag.message.contains("i64") && cast_diag.message.contains("i32"),
-        "expected readable cast types in warning message, got: {}",
-        cast_diag.message
+        !result
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code.as_deref() == Some("W1203")),
+        "W1203 cast warnings are owned by lower.type_check"
     );
 }
 
@@ -137,7 +133,6 @@ fn analysis_suppresses_cast_intent_warnings_when_warnings_disabled() {
             program_assembly_module_index: None,
             program_assembly: None,
             entry_source_path: None,
-            semantic_gate_only: false,
         },
     );
 
@@ -412,7 +407,7 @@ fn analysis_emits_invalid_conformance_target_errors() {
 }
 
 #[test]
-fn analysis_emits_invalid_identity_equality_domain_errors() {
+fn analysis_does_not_emit_lower_spine_invalid_binary_op_from_semantic_rules() {
     let source = "bool Main() { return 1 === 1; }";
     let program = parse_program_ast(source);
     let result = run_rules(
@@ -424,11 +419,11 @@ fn analysis_emits_invalid_identity_equality_domain_errors() {
     );
 
     assert!(
-        result
+        !result
             .diagnostics
             .iter()
             .any(|diag| diag.code.as_deref() == Some("E1209")),
-        "expected invalid identity equality diagnostic E1209"
+        "E1209 is owned by lower.type_check; see type_check_diagnostics.rs"
     );
 }
 
@@ -678,7 +673,7 @@ fn analysis_emits_immutable_assignment_errors() {
 }
 
 #[test]
-fn analysis_emits_invalid_member_target_errors() {
+fn analysis_does_not_emit_lower_spine_invalid_member_from_semantic_rules() {
     let source = "unit Main() { i64 x = 1; i64 y = x.foo; }";
     let program = parse_program_ast(source);
     let result = run_rules(
@@ -690,40 +685,22 @@ fn analysis_emits_invalid_member_target_errors() {
     );
 
     assert!(
-        result
+        !result
             .diagnostics
             .iter()
-            .any(|diag| diag.code.as_deref() == Some("E1213"))
+            .any(|diag| diag.code.as_deref() == Some("E1213")),
+        "E1213 is owned by lower.type_check; see type_check_diagnostics.rs"
     );
 }
 
 #[test]
-fn analysis_emits_non_iterable_for_target_errors() {
-    let source = "
+fn analysis_does_not_emit_for_loop_iterable_errors_from_semantic_rules() {
+    let sources = [
+        "
         enum Option { Some(i64 value), None }
         unit Main() { i64 value = 1; for i in value { continue; } }
-    ";
-    let program = parse_program_ast(source);
-    let result = run_rules(
-        &program.node,
-        "test.bd",
-        source,
-        &builtin_rules(),
-        AnalysisOptions::default(),
-    );
-
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|diag| diag.severity == Severity::Error),
-        "expected for-loop over non-iterable value to emit an error diagnostic"
-    );
-}
-
-#[test]
-fn analysis_emits_iterable_next_return_not_option_errors() {
-    let source = "
+    ",
+        "
         enum Option { Some(i64 value), None }
         type Iter { i64 seed }
         impl Iter {
@@ -733,28 +710,8 @@ fn analysis_emits_iterable_next_return_not_option_errors() {
             Iter iter = Iter { seed: 0 };
             for i in iter { continue; }
         }
-    ";
-    let program = parse_program_ast(source);
-    let result = run_rules(
-        &program.node,
-        "test.bd",
-        source,
-        &builtin_rules(),
-        AnalysisOptions::default(),
-    );
-
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|diag| diag.severity == Severity::Error),
-        "expected invalid iterator Next return to emit an error diagnostic"
-    );
-}
-
-#[test]
-fn analysis_emits_iterable_next_arity_mismatch_errors() {
-    let source = "
+    ",
+        "
         enum Option { Some(i64 value), None }
         type Iter { i64 seed }
         impl Iter {
@@ -764,28 +721,8 @@ fn analysis_emits_iterable_next_arity_mismatch_errors() {
             Iter iter = Iter { seed: 0 };
             for i in iter { continue; }
         }
-    ";
-    let program = parse_program_ast(source);
-    let result = run_rules(
-        &program.node,
-        "test.bd",
-        source,
-        &builtin_rules(),
-        AnalysisOptions::default(),
-    );
-
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|diag| diag.severity == Severity::Error),
-        "expected invalid iterator Next arity to emit an error diagnostic"
-    );
-}
-
-#[test]
-fn analysis_emits_iterable_option_some_payload_mismatch_errors() {
-    let source = "
+    ",
+        "
         enum Option { Some(i64 a, i64 b), None }
         type Iter { i64 seed }
         impl Iter {
@@ -795,23 +732,27 @@ fn analysis_emits_iterable_option_some_payload_mismatch_errors() {
             Iter iter = Iter { seed: 0 };
             for i in iter { continue; }
         }
-    ";
-    let program = parse_program_ast(source);
-    let result = run_rules(
-        &program.node,
-        "test.bd",
-        source,
-        &builtin_rules(),
-        AnalysisOptions::default(),
-    );
+    ",
+    ];
 
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|diag| diag.severity == Severity::Error),
-        "expected invalid Option::Some payload shape to emit an error diagnostic"
-    );
+    for source in sources {
+        let program = parse_program_ast(source);
+        let result = run_rules(
+            &program.node,
+            "test.bd",
+            source,
+            &builtin_rules(),
+            AnalysisOptions::default(),
+        );
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|diag| matches!(diag.code.as_deref(), Some("E1215" | "E1216" | "E1217" | "E1218"))),
+            "for-loop iterable diagnostics are owned by lower.type_check; got {:?}",
+            result.diagnostics
+        );
+    }
 }
 
 #[test]

@@ -13,7 +13,7 @@ fn aot_callable_unit_main_exits_cleanly() {
     let (dir, result) = build_aot_exe("unit Main() { }", "aot_callable_unit");
     assert!(
         (0..=1).contains(&result.exit_code),
-        "expected unit main subprocess to exit cleanly, got {}",
+        "expected unit Main subprocess to exit cleanly, got {}",
         result.exit_code
     );
     let _ = std::fs::remove_dir_all(dir);

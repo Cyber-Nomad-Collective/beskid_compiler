@@ -39,13 +39,6 @@ impl EntryReturnKind {
 pub(crate) struct JitCallable;
 
 impl JitCallable {
-    pub(crate) fn execute_and_format(ptr: *const u8, return_info: &TypeInfo) -> String {
-        Self::format_i64_result(
-            Self::execute_as_i64(ptr, EntryReturnKind::from_type_info(return_info)),
-            EntryReturnKind::from_type_info(return_info),
-        )
-    }
-
     pub(crate) fn execute_as_i64(ptr: *const u8, kind: EntryReturnKind) -> i64 {
         match kind {
             EntryReturnKind::Unit => {

@@ -8,7 +8,7 @@ use beskid_analysis::services::parse_program_with_source_name;
 
 use crate::db::Db;
 use crate::inputs::{GrammarRevision, ProjectSession};
-use crate::stats::{record_query_hit, record_query_miss};
+use crate::stats::{trace_query, trace_query_with_reason};
 
 fn expand_syntax_for_assembly(
     program: beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -37,7 +37,7 @@ pub fn unit_imports(
     let _ = (project, grammar);
     let display_path = path.display().to_string();
     let text = resolve_unit_text(db, &path);
-    record_query_hit();
+    trace_query("unit_imports", true);
     let imports = import_paths_from_source(&text);
     log::info!(
         target: "beskid_queries::unit",
@@ -58,7 +58,7 @@ pub fn parse_and_expand_unit_tracked(
     content_fp: String,
 ) -> String {
     let _ = (project, grammar);
-    record_query_miss();
+    trace_query("parse_and_expand_unit_tracked", false);
     materialize_parsed_unit(db, &path, &content_fp);
     content_fp
 }
@@ -73,7 +73,7 @@ pub fn unit_hir_tracked(
     content_fp: String,
 ) -> String {
     let _ = grammar;
-    record_query_miss();
+    trace_query("unit_hir_tracked", false);
     let _ = parse_and_expand_unit_tracked(db, project, grammar, path.clone(), content_fp.clone());
     materialize_unit_hir(db, &path, &content_fp);
     content_fp
@@ -83,15 +83,13 @@ pub fn unit_hir_tracked(
 pub fn parse_and_expand_unit(db: &dyn Db, project: ProjectSession, path: PathBuf) -> SourceUnit {
     let grammar = grammar_for(db);
     let content_fp = unit_source_fingerprint(db, &path);
-    if db
+    let cache_hit = db
         .unit_cache()
         .lock()
         .expect("unit cache")
         .source_units
-        .contains_key(&content_fp)
-    {
-        record_query_hit();
-    }
+        .contains_key(&content_fp);
+    trace_query("parse_and_expand_unit", cache_hit);
     let _ = parse_and_expand_unit_tracked(db, project, grammar, path.clone(), content_fp.clone());
     db.unit_cache()
         .lock()
@@ -118,10 +116,10 @@ pub fn parse_and_expand_unit_with_source(
         .source_units
         .get(&content_fp)
     {
-        record_query_hit();
+        trace_query("parse_and_expand_unit_with_source", true);
         return (**cached).clone();
     }
-    record_query_miss();
+    trace_query("parse_and_expand_unit_with_source", false);
     materialize_parsed_unit_from_text(db, &path, text, &content_fp)
 }
 
@@ -129,15 +127,13 @@ pub fn parse_and_expand_unit_with_source(
 pub fn unit_hir(db: &dyn Db, project: ProjectSession, path: PathBuf) -> Arc<UnitHir> {
     let grammar = grammar_for(db);
     let content_fp = unit_source_fingerprint(db, &path);
-    if db
+    let cache_hit = db
         .unit_cache()
         .lock()
         .expect("unit cache")
         .unit_hir
-        .contains_key(&content_fp)
-    {
-        record_query_hit();
-    }
+        .contains_key(&content_fp);
+    trace_query("unit_hir", cache_hit);
     let _ = unit_hir_tracked(db, project, grammar, path.clone(), content_fp.clone());
     Arc::clone(
         db.unit_cache()
@@ -165,10 +161,10 @@ pub fn unit_hir_with_source(
         .unit_hir
         .get(&content_fp)
     {
-        record_query_hit();
+        trace_query("unit_hir_with_source", true);
         return Arc::clone(cached);
     }
-    record_query_miss();
+    trace_query("unit_hir_with_source", false);
     let unit = parse_and_expand_unit_with_source(db, project, path.clone(), text);
     let hir = build_hir_units(&[unit])
         .into_iter()
@@ -264,9 +260,10 @@ fn resolve_unit_text(db: &dyn Db, path: &std::path::Path) -> String {
         .expect("file registry")
         .get(&canonical)
     {
-        record_query_hit();
+        trace_query_with_reason("resolve_unit_text", true, Some("file_registry"));
         return file.text(db).clone();
     }
+    trace_query_with_reason("resolve_unit_text", false, Some("disk_read"));
     std::fs::read_to_string(path).unwrap_or_else(|_| String::new())
 }
 

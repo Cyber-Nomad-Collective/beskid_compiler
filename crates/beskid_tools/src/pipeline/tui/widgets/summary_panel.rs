@@ -4,26 +4,9 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table, Widget};
-use tui_logger::TuiWidgetState;
 use tui_piechart::{PieChart, PieSlice};
 
-use super::super::layout::{split_summary_body, split_summary_root};
 use super::super::model::CommandSummary;
-use super::log_panel::draw_log_panel;
-
-pub fn draw_summary_panel(
-    frame: &mut Frame,
-    area: Rect,
-    summary: &CommandSummary,
-    logger_state: &mut TuiWidgetState,
-) {
-    let (body_area, headline_area) = split_summary_root(area);
-    let (chart_area, log_area) = split_summary_body(body_area);
-
-    draw_summary_chart_panel(frame, chart_area, summary);
-    draw_log_panel(frame, log_area, "Log", logger_state);
-    draw_summary_headline_footer(frame, headline_area, summary);
-}
 
 /// Secondary pane in the unified shell (chart or stats table).
 pub fn draw_summary_chart_panel(frame: &mut Frame, area: Rect, summary: &CommandSummary) {

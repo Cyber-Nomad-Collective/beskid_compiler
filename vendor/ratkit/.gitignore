@@ -1,0 +1,25 @@
+# Build artifacts
+/target/
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Editor backups
+*.bak
+target
+.serena
+web-demo
+node_modules/
+
+# Logs
+logs/
+mprocs.log
+mprocs.yaml

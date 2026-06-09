@@ -1,0 +1,61 @@
+---
+title: GitWatcher
+description: Monitor git repository changes.
+---
+
+## Overview
+
+The GitWatcher service tracks changes in git repositories including branch status, commits, and working directory state.
+
+## Basic Usage
+
+```rust
+use ratkit::services::git_watcher::{GitWatcher, GitEvent};
+
+fn setup_git_watcher() -> std::io::Result<()> {
+    let watcher = GitWatcher::new("./")
+        .on_change(|event: GitEvent| {
+            match event {
+                GitEvent::BranchChanged { old, new } => {
+                    println!("Branch changed: {} -> {}", old, new);
+                }
+                GitEvent::CommitsAhead(ahead) => {
+                    println!("{} commits ahead of remote", ahead);
+                }
+                GitEvent::CommitsBehind(behind) => {
+                    println!("{} commits behind remote", behind);
+                }
+                GitEvent::StatusChanged(status) => {
+                    println!("Working directory changed");
+                    println!("Modified: {:?}", status.modified);
+                    println!("Staged: {:?}", status.staged);
+                }
+            }
+        });
+    
+    watcher.start()?;
+    
+    std::thread::sleep(std::time::Duration::from_secs(60));
+    
+    watcher.stop()?;
+    Ok(())
+}
+```
+
+## Event Types
+
+- **BranchChanged** - Current branch has changed
+- **CommitsAhead** - Local commits not pushed
+- **CommitsBehind** - Remote commits not pulled
+- **StatusChanged** - Working directory status changed
+
+## Repository Status
+
+Access current repository state:
+
+```rust
+let status = watcher.status();
+println!("Current branch: {}", status.branch);
+println!("Modified files: {}", status.modified.len());
+println!("Staged files: {}", status.staged.len());
+```

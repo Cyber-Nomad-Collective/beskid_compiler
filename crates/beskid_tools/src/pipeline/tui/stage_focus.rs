@@ -1,6 +1,7 @@
 //! Map pipeline stage labels to layout focus (pane weights and primary content).
 
-use super::model::{Mode, Model};
+use crate::tui::shell::focus::{FocusTarget, OverlayKind};
+use crate::tui::shell::state::ShellState;
 
 /// Which pipeline region drives pane sizing and primary-panel content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,6 +16,7 @@ pub enum StageFocus {
 
 impl StageFocus {
     /// Left (primary) pane percentage in the main horizontal split.
+    #[allow(dead_code)]
     pub fn main_split_left_pct(self) -> u16 {
         match self {
             Self::Semantic => 36,
@@ -27,6 +29,7 @@ impl StageFocus {
     }
 
     /// Minimum log panel height (rows).
+    #[allow(dead_code)]
     pub fn log_min_rows(self) -> u16 {
         match self {
             Self::Semantic | Self::LowerCodegen => 7,
@@ -103,11 +106,14 @@ impl StageFocus {
         Self::LowerCodegen
     }
 
-    pub fn from_model(model: &Model) -> Self {
-        match model.mode {
-            Mode::Tests => Self::Tests,
-            Mode::Report | Mode::Summary => Self::Summary,
-            Mode::Pipeline => Self::from_stage_label(&model.pipeline.stage_label),
+    pub fn from_shell_state(state: &ShellState) -> Self {
+        match state.focus {
+            FocusTarget::Overlay(OverlayKind::Tests) => Self::Tests,
+            FocusTarget::Overlay(OverlayKind::Summary) => Self::Summary,
+            FocusTarget::Overlay(OverlayKind::Pckg) | FocusTarget::Overlay(OverlayKind::Templates) => {
+                Self::Workspace
+            }
+            FocusTarget::Base(_) => Self::from_stage_label(&state.pipeline.stage_label),
         }
     }
 }

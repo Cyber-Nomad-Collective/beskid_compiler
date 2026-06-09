@@ -48,6 +48,7 @@ fn assemble_array_tests_workspace() {
             discovery: AssemblyDiscovery::ImportClosure,
             ..Default::default()
         },
+        None,
     )
     .expect("assemble");
     assert!(assembly.hir_units.len() > 5);
@@ -82,6 +83,7 @@ fn front_end_array_tests() {
             discovery: AssemblyDiscovery::ImportClosure,
             ..Default::default()
         },
+        None,
     )
     .expect("assemble");
     let resolved_input = ResolvedInput {
@@ -134,6 +136,7 @@ fn lower_collections_array_tests_artifact_without_jit() {
             discovery: AssemblyDiscovery::ImportClosure,
             ..Default::default()
         },
+        None,
     )
     .expect("assemble");
 
@@ -199,6 +202,7 @@ fn lower_collections_array_tests_artifact_validates() {
             discovery: AssemblyDiscovery::ImportClosure,
             ..Default::default()
         },
+        None,
     )
     .expect("assemble");
 

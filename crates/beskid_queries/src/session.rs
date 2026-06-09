@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{
-    FrontEndOptions, FrontEndTypedResult, PrepareMode, PrepareOptions, PreparedCompilation,
+    FrontEndOptions, FrontEndTypedResult, PrepareOptions, PreparedCompilation,
     ResolvedInput,
 };
 use beskid_pipeline::PipelineObserver;
@@ -82,10 +82,7 @@ pub fn compile_front_end_from_resolved_input(
 ) -> Result<FrontEndTypedResult> {
     let prepared = prepare_compilation(
         resolved,
-        PrepareOptions {
-            mode: PrepareMode::Executable,
-            front_end: options,
-        },
+        PrepareOptions { front_end: options },
         pipeline,
     )?;
     prepared.into_executable()

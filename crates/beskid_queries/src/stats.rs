@@ -4,9 +4,35 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use beskid_pipeline::{PipelineObserver, emit_work_unit, phases};
 
+/// Tracing target for Salsa query execution and invalidation.
+pub const SALSA_TRACE_TARGET: &str = "beskid.queries.salsa";
+
 static QUERY_HITS: AtomicU64 = AtomicU64::new(0);
 static QUERY_MISSES: AtomicU64 = AtomicU64::new(0);
 static REVISION_BUMPS: AtomicU64 = AtomicU64::new(0);
+
+/// Record a query outcome with a structured span (`query`, `outcome`, optional `invalidation_reason`).
+pub fn trace_query(name: &'static str, hit: bool) {
+    trace_query_with_reason(name, hit, None);
+}
+
+/// Record a query outcome with an explicit invalidation reason when applicable.
+pub fn trace_query_with_reason(name: &'static str, hit: bool, invalidation_reason: Option<&str>) {
+    let outcome = if hit { "hit" } else { "miss" };
+    let span = tracing::debug_span!(
+        target: SALSA_TRACE_TARGET,
+        "query",
+        query = name,
+        outcome,
+        invalidation_reason = invalidation_reason.unwrap_or_default(),
+    );
+    let _guard = span.enter();
+    if hit {
+        QUERY_HITS.fetch_add(1, Ordering::Relaxed);
+    } else {
+        QUERY_MISSES.fetch_add(1, Ordering::Relaxed);
+    }
+}
 
 pub fn record_query_hit() {
     QUERY_HITS.fetch_add(1, Ordering::Relaxed);

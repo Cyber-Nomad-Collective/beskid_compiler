@@ -1,8 +1,7 @@
 use beskid_analysis::hir::{
-    HirExpressionNode, HirItem, HirLegalityError, HirProgram, HirStatementNode,
+    HirExpressionNode, HirItem, HirLegalityError, HirStatementNode,
     validate_hir_program,
 };
-use beskid_analysis::syntax::Spanned;
 
 use crate::support::pipeline::lower_resolve as lower_and_resolve;
 
@@ -26,7 +25,7 @@ fn legality_reports_unresolved_value_path_when_resolution_entry_missing() {
         .items
         .iter()
         .find_map(|item| match &item.node {
-            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "Main" => Some(def),
             _ => None,
         })
         .expect("expected main function");

@@ -26,8 +26,6 @@ pub(super) enum JoinOutcome {
     Value(i64),
     Cancelled,
     Panicked,
-    #[allow(dead_code)]
-    StackOverflow,
 }
 
 pub(super) struct Fiber {

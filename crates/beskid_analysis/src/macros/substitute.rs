@@ -7,27 +7,12 @@ use crate::syntax::statements::{Block, Statement};
 use crate::syntax::{SpanInfo, Spanned};
 
 use super::match_args::FragmentBinding;
-use super::walk::{map_block, map_expression};
+use super::walk::map_block;
 
 pub type Bindings = HashMap<String, FragmentBinding>;
 
 pub fn bindings_from_pairs(pairs: Vec<(String, FragmentBinding)>) -> Bindings {
     pairs.into_iter().collect()
-}
-
-#[allow(dead_code)]
-pub fn substitute_expression(
-    expr: &Spanned<Expression>,
-    bindings: &Bindings,
-) -> Spanned<Expression> {
-    map_expression(expr.clone(), &mut |mapped| {
-        if let Expression::MacroMetavariable(mv) = &mapped.node
-            && let Some(binding) = bindings.get(&mv.node.name.node.name)
-        {
-            return binding_to_expression(binding, mv.span);
-        }
-        mapped
-    })
 }
 
 pub fn substitute_block(block: &Spanned<Block>, bindings: &Bindings) -> Spanned<Block> {

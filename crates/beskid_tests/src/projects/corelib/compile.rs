@@ -1,17 +1,15 @@
 use std::fs;
 
 use beskid_analysis::Severity;
-use beskid_analysis::compilation_context::CompilationContext;
 use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::lower_normalize_resolve_type_spanned_with_assembly;
 use beskid_analysis::services::{
-    analyze_file_in_project, analyze_source_with_compilation_context, parse_program, resolve_input,
+    analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input,
 };
 use crate::projects::fixture_harness::{
-    corelib_mvp_fixture, resolve_fixture_with_assembly, shared_corelib_mvp_assembly,
+    corelib_mvp_fixture, shared_corelib_mvp_assembly,
     with_large_test_stack, with_project_test_env,
 };
-use crate::projects::std_dependency_env_lock;
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 use super::{
@@ -72,29 +70,21 @@ fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_posit
 fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let root = corelib_workspace_root();
-        let seed = root.join("packages/foundation/src/Core/Results.bd");
-        let seed_source = fs::read_to_string(&seed).expect("read foundation seed");
-        let mut ctx = CompilationContext::try_for_analysis_path(&seed, None)
-            .expect("corelib workspace compilation context");
-        let _ = ctx.assembly_for_entry(&seed, &seed_source);
-
-        for relative in ["packages/foundation/src/Core/Results.bd"] {
-            let path = root.join(relative);
-            let source = fs::read_to_string(&path)
-                .unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
-            ctx.assembly = None;
-            let diagnostics = analyze_source_with_compilation_context(&path, &source, &mut ctx)
-                .unwrap_or_else(|_| panic!("analyze {}", path.display()));
+        let relative = "packages/foundation/src/Core/Results.bd";
+        let path = root.join(relative);
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
+        let diagnostics = analyze_source_in_project(&path, &source)
+            .unwrap_or_else(|_| panic!("analyze {}", path.display()));
             let errors: Vec<_> = diagnostics
                 .into_iter()
                 .filter(|diag| matches!(diag.severity, Severity::Error))
                 .collect();
-            assert!(
-                errors.is_empty(),
-                "expected no error diagnostics for {} but got: {errors:#?}",
-                path.display()
-            );
-        }
+        assert!(
+            errors.is_empty(),
+            "expected no error diagnostics for {} but got: {errors:#?}",
+            path.display()
+        );
     });
 }
 
@@ -221,7 +211,7 @@ fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
     let string_mod =
         fs::read_to_string(foundation_src().join("Core/String.bd")).expect("read Core.String");
     let output_mod =
-        fs::read_to_string(runtime_src().join("System/Output.bd")).expect("read System.Output");
+        fs::read_to_string(runtime_src().join("System/Output/Output.bd")).expect("read System.Output");
 
     assert!(
         results_mod.contains("pub enum Result"),
@@ -356,6 +346,7 @@ fn checked_in_corelib_beskid_test_sources_parse() {
         root.join("tests/corelib_tests/src/system/ErrorWriteTests.bd"),
         root.join("tests/corelib_tests/src/system/FsTests.bd"),
         root.join("tests/corelib_tests/src/system/PathTests.bd"),
+        root.join("tests/corelib_tests/src/system/TimeTests.bd"),
         root.join("tests/corelib_tests/src/core/ResultsTests.bd"),
         root.join("tests/corelib_tests/src/collections/ArrayTests.bd"),
         root.join("tests/corelib_tests/src/collections/CollectionsTier1Tests.bd"),

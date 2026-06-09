@@ -187,6 +187,7 @@ fn emit_link_plan(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_function_item(
     item: ItemId,
     mangled: Option<String>,
@@ -300,6 +301,7 @@ fn emit_function_item(
     ctx.current_source_path = None;
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_link_symbol(
     symbol: &LinkSymbol,
     entry: &Spanned<HirProgram>,

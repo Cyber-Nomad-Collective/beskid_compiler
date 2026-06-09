@@ -52230,7 +52230,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Error.bd",
+        "file": "src/System/Error/Error.bd",
         "startLine": 12,
         "startColumn": 1,
         "endLine": 27,
@@ -52277,7 +52277,7 @@
       "kind": "parameter",
       "visibility": "public",
       "location": {
-        "file": "src/System/Error.bd",
+        "file": "src/System/Error/Error.bd",
         "startLine": 12,
         "startColumn": 16,
         "endLine": 12,
@@ -52299,7 +52299,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Error.bd",
+        "file": "src/System/Error/Error.bd",
         "startLine": 31,
         "startColumn": 1,
         "endLine": 35,
@@ -52346,7 +52346,7 @@
       "kind": "parameter",
       "visibility": "public",
       "location": {
-        "file": "src/System/Error.bd",
+        "file": "src/System/Error/Error.bd",
         "startLine": 31,
         "startColumn": 20,
         "endLine": 31,
@@ -53128,7 +53128,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Input.bd",
+        "file": "src/System/Input/Input.bd",
         "startLine": 13,
         "startColumn": 1,
         "endLine": 22,
@@ -53160,7 +53160,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Input.bd",
+        "file": "src/System/Input/Input.bd",
         "startLine": 25,
         "startColumn": 1,
         "endLine": 34,
@@ -53191,7 +53191,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Input.bd",
+        "file": "src/System/Input/Input.bd",
         "startLine": 38,
         "startColumn": 1,
         "endLine": 62,
@@ -53253,7 +53253,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Output.bd",
+        "file": "src/System/Output/Output.bd",
         "startLine": 13,
         "startColumn": 1,
         "endLine": 28,
@@ -53301,7 +53301,7 @@
       "kind": "parameter",
       "visibility": "public",
       "location": {
-        "file": "src/System/Output.bd",
+        "file": "src/System/Output/Output.bd",
         "startLine": 13,
         "startColumn": 16,
         "endLine": 13,
@@ -53323,7 +53323,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Output.bd",
+        "file": "src/System/Output/Output.bd",
         "startLine": 32,
         "startColumn": 1,
         "endLine": 36,
@@ -53370,7 +53370,7 @@
       "kind": "parameter",
       "visibility": "public",
       "location": {
-        "file": "src/System/Output.bd",
+        "file": "src/System/Output/Output.bd",
         "startLine": 32,
         "startColumn": 20,
         "endLine": 32,
@@ -53426,7 +53426,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 14,
         "startColumn": 1,
         "endLine": 22,
@@ -53486,7 +53486,7 @@
       "kind": "parameter",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 14,
         "startColumn": 20,
         "endLine": 14,
@@ -53509,7 +53509,7 @@
       "kind": "parameter",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 14,
         "startColumn": 33,
         "endLine": 14,
@@ -53532,7 +53532,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 38,
         "startColumn": 1,
         "endLine": 40,
@@ -53581,7 +53581,7 @@
       "kind": "parameter",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 38,
         "startColumn": 22,
         "endLine": 38,
@@ -53604,7 +53604,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 29,
         "startColumn": 1,
         "endLine": 31,
@@ -53653,7 +53653,7 @@
       "kind": "parameter",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 29,
         "startColumn": 21,
         "endLine": 29,
@@ -53676,7 +53676,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 48,
         "startColumn": 1,
         "endLine": 56,
@@ -53725,7 +53725,7 @@
       "kind": "parameter",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 48,
         "startColumn": 21,
         "endLine": 48,
@@ -53748,7 +53748,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 62,
         "startColumn": 1,
         "endLine": 64,
@@ -53797,7 +53797,7 @@
       "kind": "parameter",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 62,
         "startColumn": 18,
         "endLine": 62,
@@ -53820,7 +53820,7 @@
       "kind": "function",
       "visibility": "public",
       "location": {
-        "file": "src/System/Path.bd",
+        "file": "src/System/Path/Path.bd",
         "startLine": 5,
         "startColumn": 1,
         "endLine": 7,

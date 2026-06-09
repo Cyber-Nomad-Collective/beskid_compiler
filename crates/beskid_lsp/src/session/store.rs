@@ -28,6 +28,8 @@ pub struct State {
     pub compilation_context_cache: HashMap<(PathBuf, Option<String>), CompilationContext>,
     /// Salsa incremental database shared by IDE features and diagnostics.
     pub compilation_db: Mutex<BeskidDatabase>,
+    /// Coalesced typed-prepare schedule revision per open URI (debounced rebuild).
+    pub typed_prepare_schedule_revision: HashMap<Uri, u64>,
 }
 
 impl Default for State {
@@ -38,6 +40,7 @@ impl Default for State {
             workspace_index: HashMap::new(),
             compilation_context_cache: HashMap::new(),
             compilation_db: Mutex::new(BeskidDatabase::default()),
+            typed_prepare_schedule_revision: HashMap::new(),
         }
     }
 }

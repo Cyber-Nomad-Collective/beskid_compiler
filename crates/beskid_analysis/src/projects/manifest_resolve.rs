@@ -7,9 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 
 use super::discovery::{
-    discover_project_file, discover_project_manifest_in_dir, discover_workspace_file,
-    is_project_manifest_path, is_workspace_manifest_path, project_manifest_for_member_dir,
-    reject_legacy_manifest_path,
+    discover_project_file, discover_workspace_file, is_workspace_manifest_path, project_manifest_for_member_dir,
 };
 use super::error::ProjectError;
 use super::model::WorkspaceResolutionSummary;

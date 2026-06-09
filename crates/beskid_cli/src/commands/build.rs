@@ -12,7 +12,7 @@ use beskid_aot::{
     LinkMode, ProjectTargetKind, RuntimeStrategy, build, default_output_kind,
     default_runtime_strategy, resolve_entrypoint,
 };
-use beskid_codegen::lower_resolved_entrypoint_with_pipeline;
+use beskid_codegen::services::lower_from_front_end;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
@@ -117,14 +117,15 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         PipelineProgressKind::FullBuild,
         &resolve_args,
     )?;
-    session.semantic_gate(
+    let prepared = session.executable_gate_prepared(
         &resolved,
         SemanticGateOptions {
             finish_prepare_ui: false,
             prepare_message: "Analysis complete",
         },
     )?;
-    let obs: Option<&dyn PipelineObserver> = Some(session.observer());
+    let front = prepared.into_executable()?;
+    let source_name = resolved.source_path.display().to_string();
 
     let input_path = resolved.source_path.clone();
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
@@ -134,8 +135,13 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         .map(|plan| plan.target.name.clone());
 
     let entrypoint = resolve_entrypoint(args.entrypoint.clone())?;
-    let lowered =
-        lower_resolved_entrypoint_with_pipeline(&resolved, Some(&entrypoint), false, obs)?;
+    let lowered = lower_from_front_end(
+        &source_name,
+        &resolved.source,
+        front,
+        Some(&entrypoint),
+        Some(session.observer()),
+    )?;
     let artifact = lowered.artifact;
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);

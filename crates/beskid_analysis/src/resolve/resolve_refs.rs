@@ -519,7 +519,7 @@ impl Resolver {
                     .module_graph
                     .module_id(std::slice::from_ref(&segments[0]))
                     .is_none()
-                && self.module_imports.get(&segments[0]).is_none()
+                && !self.module_imports.contains_key(&segments[0])
             {
                 self.errors.push(ResolveError::UnknownValue {
                     name: segments[0].clone(),
@@ -698,8 +698,8 @@ impl Resolver {
         }
 
         // `use Console.Controls.ProgressBar; ProgressBar.ProgressBar.New()` — member in aliased module.
-        if original_segments.len() >= 3 {
-            if let Some(base_module) = self.module_imports.get(&original_segments[0]) {
+        if original_segments.len() >= 3
+            && let Some(base_module) = self.module_imports.get(&original_segments[0]) {
                 let member = &original_segments[original_segments.len() - 1];
                 if let ModulePathLookup::Found(item) =
                     self.lookup_named_item_in_module(base_module, member)
@@ -707,7 +707,6 @@ impl Resolver {
                     return ModulePathLookup::Found(item);
                 }
             }
-        }
 
         // `Console.Controls.Panel.Panel.Render` — skip homonymous type segment in fully qualified paths.
         if original_segments.len() >= 4 {

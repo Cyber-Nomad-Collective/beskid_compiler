@@ -1130,8 +1130,8 @@ fn infer_generic_args_from_call(
                     path.node.path.span,
                     name,
                     ctx.codegen.current_source_path.as_ref(),
-                ) {
-                    if let Some(type_id) = ctx
+                )
+                    && let Some(type_id) = ctx
                         .state
                         .local_type_overrides
                         .get(&local_id)
@@ -1141,7 +1141,6 @@ fn infer_generic_args_from_call(
                         arg_types.push(type_id);
                         continue;
                     }
-                }
             }
         }
         let type_id = ctx

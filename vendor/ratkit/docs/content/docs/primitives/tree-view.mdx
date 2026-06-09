@@ -1,0 +1,45 @@
+---
+title: TreeView
+description: Hierarchical tree view component for nested data.
+---
+
+## Overview
+
+The TreeView primitive displays hierarchical data structures with expandable/collapsible nodes.
+
+## Basic Usage
+
+```rust
+use ratkit::primitives::tree_view::{TreeView, TreeNode, TreeState};
+use ratatui::Frame;
+
+fn render_tree(frame: &mut Frame) {
+    let tree = TreeView::new(vec![
+        TreeNode::new("src")
+            .child(TreeNode::new("main.rs"))
+            .child(TreeNode::new("lib.rs")),
+        TreeNode::new("Cargo.toml"),
+    ]);
+    
+    let mut state = TreeState::default();
+    frame.render_stateful_widget(tree, frame.area(), &mut state);
+}
+```
+
+## Navigation
+
+Tree views support keyboard navigation:
+
+- **Up/Down** - Move selection
+- **Left** - Collapse node
+- **Right** - Expand node
+- **Enter** - Toggle expansion
+
+## Customization
+
+```rust
+let tree = TreeView::new(nodes)
+    .highlight_style(Style::default().bg(Color::Blue))
+    .indent_size(2)
+    .show_root(false);
+```

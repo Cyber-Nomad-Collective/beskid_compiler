@@ -2,7 +2,8 @@
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
-use beskid_codegen::{lower_resolved_entrypoint_with_pipeline, render_clif};
+use beskid_codegen::render_clif;
+use beskid_codegen::services::lower_from_front_end;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
@@ -40,12 +41,14 @@ pub fn execute(args: ClifArgs) -> Result<()> {
         PipelineProgressKind::PrepareAndRun,
         &resolve_args,
     )?;
-    session.semantic_gate(&resolved, SemanticGateOptions::default())?;
-
-    let lowered = lower_resolved_entrypoint_with_pipeline(
-        &resolved,
+    let prepared = session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;
+    let front = prepared.into_executable()?;
+    let source_name = resolved.source_path.display().to_string();
+    let lowered = lower_from_front_end(
+        &source_name,
+        &resolved.source,
+        front,
         Some("Main"),
-        false,
         Some(session.observer()),
     )?;
     session.pipeline().finish_session_with_summary(

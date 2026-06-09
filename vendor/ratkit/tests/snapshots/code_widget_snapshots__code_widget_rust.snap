@@ -1,0 +1,12 @@
+---
+source: tests/code_widget_snapshots.rs
+expression: snapshot
+---
+  1 │ pub struct Counter {                                             █
+  2 │     value: usize,                                   ╭ TOC ─────╮ █
+  3 │ }                                                   │⠉⢙⣛⣛⣛⣛⣛⣛⣛⣛│ █
+  4 │                                                     │          │ █
+  5 │ impl Counter {                                      ╰──────────╯ █
+  6 │     pub fn increment(&mut self) {                                █
+  7 │         self.value += 1;                                         │
+ NORMAL                                                         11%/9

@@ -159,7 +159,7 @@ struct CallKindCase {
 
 fn assert_call_kind_case(case: &CallKindCase) {
     let result =
-        resolve_and_type(case.source).expect(&format!("{}: expected typing to succeed", case.name));
+        resolve_and_type(case.source).unwrap_or_else(|_| panic!("{}: expected typing to succeed", case.name));
     assert!(
         result.call_kinds.values().any(case.predicate),
         "{}: expected matching call kind, got {:?}",

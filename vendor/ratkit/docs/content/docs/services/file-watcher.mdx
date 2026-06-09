@@ -1,0 +1,69 @@
+---
+title: FileWatcher
+description: Monitor files and directories for changes.
+---
+
+## Overview
+
+The FileWatcher service monitors files and directories for changes such as creation, modification, deletion, and renaming.
+
+## Basic Usage
+
+```rust
+use ratkit::services::file_watcher::{FileWatcher, FileEvent};
+
+fn setup_watcher() -> std::io::Result<()> {
+    let watcher = FileWatcher::new("./src")
+        .on_change(|event: FileEvent| {
+            match event {
+                FileEvent::Created(path) => {
+                    println!("Created: {:?}", path);
+                }
+                FileEvent::Modified(path) => {
+                    println!("Modified: {:?}", path);
+                }
+                FileEvent::Deleted(path) => {
+                    println!("Deleted: {:?}", path);
+                }
+                FileEvent::Renamed(old, new) => {
+                    println!("Renamed: {:?} -> {:?}", old, new);
+                }
+            }
+        });
+    
+    watcher.start()?;
+    
+    // Keep the watcher alive
+    std::thread::sleep(std::time::Duration::from_secs(60));
+    
+    watcher.stop()?;
+    Ok(())
+}
+```
+
+## Event Types
+
+- **Created** - New file or directory created
+- **Modified** - File content modified
+- **Deleted** - File or directory deleted
+- **Renamed** - File or directory renamed
+
+## Filtering
+
+Filter which files to watch:
+
+```rust
+let watcher = FileWatcher::new("./src")
+    .include(vec!["*.rs", "*.toml"])  // Only watch Rust files
+    .exclude(vec!["target/*", "*.lock"])  // Ignore build directory
+    .recursive(true);  // Watch subdirectories
+```
+
+## Debouncing
+
+Prevent duplicate events:
+
+```rust
+let watcher = FileWatcher::new("./src")
+    .debounce(Duration::from_millis(500));
+```

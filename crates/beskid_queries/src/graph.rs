@@ -11,7 +11,7 @@ use beskid_analysis::projects::{CompilePlan, PreparedProjectWorkspace};
 use crate::db::{BeskidDatabase, Db};
 use crate::inputs::ProjectSession;
 use crate::materializer::unit_materializer_for;
-use crate::stats::record_query_miss;
+use crate::stats::{SALSA_TRACE_TARGET, trace_query, trace_query_with_reason};
 use crate::unit::{seed_file_from_disk, unit_imports};
 
 /// Discovered unit paths for an entry (query boundary marker).
@@ -20,13 +20,13 @@ pub fn discovered_units(
     _project: ProjectSession,
     _entry_path: PathBuf,
 ) -> Vec<String> {
-    record_query_miss();
+    trace_query("discovered_units", false);
     Vec::new()
 }
 
 /// Module index fingerprint for a unit set (query boundary marker).
 pub fn module_index_fingerprint(_db: &dyn Db, _project: ProjectSession, unit_count: u64) -> String {
-    record_query_miss();
+    trace_query("module_index_fingerprint", false);
     format!("modules:{unit_count}")
 }
 
@@ -37,7 +37,16 @@ pub fn reverse_dependents(
     changed_path: PathBuf,
     candidate_paths: Vec<PathBuf>,
 ) -> Vec<PathBuf> {
-    let changed_key = changed_path.display().to_string();
+    let trigger_file = changed_path.display().to_string();
+    let _bfs_guard = tracing::debug_span!(
+        target: SALSA_TRACE_TARGET,
+        "invalidate_import_dependents.bfs",
+        trigger_file = %trigger_file,
+        candidate_count = candidate_paths.len(),
+    )
+    .entered();
+
+    let changed_key = trigger_file.clone();
     let mut invalidated = vec![changed_path.clone()];
     let mut queue = vec![changed_path];
     while let Some(current) = queue.pop() {
@@ -56,7 +65,12 @@ pub fn reverse_dependents(
         }
     }
     let _ = changed_key;
-    record_query_miss();
+    tracing::debug!(
+        target: SALSA_TRACE_TARGET,
+        closure_size = invalidated.len(),
+        "import_dependents_bfs_complete"
+    );
+    trace_query_with_reason("reverse_dependents", false, Some("import_dependents_bfs"));
     invalidated
 }
 
@@ -71,7 +85,7 @@ pub fn program_assembly_tracked(
     options_fingerprint: String,
 ) -> String {
     let _ = (db, project, grammar);
-    record_query_miss();
+    trace_query("program_assembly_tracked", false);
     format!(
         "{}:{}:{}",
         entry_path.display(),
@@ -89,6 +103,15 @@ pub fn program_assembly(
     entry_source: Option<&str>,
     options: &AssemblyOptions,
 ) -> Result<ProgramAssembly, AssemblyError> {
+    let _assembly_guard = tracing::debug_span!(
+        target: SALSA_TRACE_TARGET,
+        "query",
+        query = "program_assembly",
+        outcome = "miss",
+        entry = %entry_path.display(),
+    )
+    .entered();
+
     let lockfile_digest = lockfile_digest_for_plan(plan);
     let session = db.ensure_project_session(plan, entry_path, lockfile_digest.clone());
     let grammar = db.grammar_revision();
@@ -116,6 +139,7 @@ pub fn program_assembly(
         entry_source,
         options,
         Some(materializer),
+        None,
     )?;
 
     let _ = discovered_units(db, session, entry_path.to_path_buf());

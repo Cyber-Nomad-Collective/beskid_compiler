@@ -40,6 +40,7 @@ impl BeskidCliInvoker {
         command
     }
 
+    #[cfg(target_os = "linux")]
     pub fn command<I, S>(&self, args: I) -> Command
     where
         I: IntoIterator<Item = S>,

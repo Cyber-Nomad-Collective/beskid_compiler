@@ -321,7 +321,7 @@ mod tests {
         let source_root = root.join("Src");
         fs::create_dir_all(&source_root).expect("source root");
         let only_source = source_root.join("Generator.bd");
-        fs::write(&only_source, "unit main() { return; }\n").expect("source");
+        fs::write(&only_source, "unit Main() { return; }\n").expect("source");
 
         assert_eq!(
             discover_mod_entry_source(&source_root).expect("entry source"),

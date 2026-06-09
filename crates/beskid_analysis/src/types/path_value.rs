@@ -163,15 +163,14 @@ fn item_id_for_name(
         [] => None,
         [single] => Some(single.id),
         many => {
-            if let Some(path) = source_path {
-                if let Some(info) = many.iter().rev().find(|info| {
+            if let Some(path) = source_path
+                && let Some(info) = many.iter().rev().find(|info| {
                     info.source_path
                         .as_ref()
                         .is_some_and(|source| paths::same_file(source, path))
                 }) {
                     return Some(info.id);
                 }
-            }
             many.last().map(|info| info.id)
         }
     }

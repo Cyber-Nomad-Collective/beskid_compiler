@@ -59,7 +59,7 @@ fn colliding_tag_two_routes_by_return_group() {
         envelope[16..24].copy_from_slice(&0i64.to_le_bytes());
         envelope[24..32].copy_from_slice(&0i64.to_le_bytes());
         let enum_ptr = envelope.as_ptr();
-        let channel_id = unsafe { interop_dispatch_i64(enum_ptr) };
+        let channel_id = interop_dispatch_i64(enum_ptr);
         assert!(
             channel_id > 0,
             "i64 interop must route tag 2 to channel_create, not str_len"

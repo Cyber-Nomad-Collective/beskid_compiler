@@ -179,6 +179,9 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
     let mut owned_engine = Engine::with_link_profile(args.runtime_profile.into());
     let engine = shared_engine.unwrap_or(&mut owned_engine);
     for (test, row_index, initial) in planned {
+        if !args.plain && session.pipeline().interrupted() {
+            return Err(anyhow!("interrupted"));
+        }
         if initial == TestRowState::FilteredOut {
             executions.push(TestExecution {
                 name: test.name.to_string(),
@@ -260,7 +263,7 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
                 } else {
                     log::error!(target: "beskid.tools.test", "{detail}");
                 }
-                test_ui.finish_row(row_index, TestRowState::Failed, duration, None)?;
+                test_ui.finish_row(row_index, TestRowState::Failed, duration, Some(&reason))?;
                 if !args.plain {
                     session.pipeline().reset_after_test()?;
                 }

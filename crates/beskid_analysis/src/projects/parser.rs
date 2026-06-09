@@ -16,7 +16,6 @@ use super::validator::{validate_manifest, validate_workspace_manifest};
 
 #[derive(Debug)]
 struct ParsedBlock {
-    kind: String,
     label: Option<String>,
     fields: HashMap<String, String>,
 }
@@ -161,13 +160,13 @@ fn lower_project_root_block(block: ValidatedBlock) -> Result<ParsedProjectBlock,
         .nested
         .iter()
         .find(|n| n.rule_id == "mod")
-        .map(|n| lower_mod_block(n))
+        .map(lower_mod_block)
         .transpose()?;
     let template_section = block
         .nested
         .iter()
         .find(|n| n.rule_id == "template")
-        .map(|n| lower_template_block(n))
+        .map(lower_template_block)
         .transpose()?;
     Ok(ParsedProjectBlock {
         block_kind: block.kind,
@@ -182,7 +181,6 @@ fn lower_flat_block(block: ValidatedBlock) -> ParsedBlock {
     let mut fields = block.fields;
     fields.extend(block.extras);
     ParsedBlock {
-        kind: block.kind,
         label: block.label,
         fields,
     }

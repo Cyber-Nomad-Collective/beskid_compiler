@@ -195,7 +195,7 @@ fn entry_resolution_with_db_populates_symbol_registry() {
 
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(&compiler_root).expect("chdir");
-    let result = (|| {
+    let result = {
         configure_db_for_project(&project_root);
         let resolved = resolve_input(
             Some(&main_path),
@@ -210,7 +210,7 @@ fn entry_resolution_with_db_populates_symbol_registry() {
         let mut options = PrepareOptions::default();
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
         entry_resolution_with_db(&mut db, &resolved, &options)
-    })();
+    };
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let shared = result.expect("entry resolution");
@@ -234,6 +234,96 @@ fn entry_resolution_with_db_populates_symbol_registry() {
             )
             .is_some(),
         "WriteLine should have registry-backed qualified name"
+    );
+}
+
+#[test]
+fn typed_entry_state_uses_fast_resolution_when_stale() {
+    use beskid_analysis::projects::AssemblyDiscovery;
+    use beskid_analysis::services::{PrepareOptions, resolve_input};
+    use beskid_queries::{
+        bump_file_revision, bump_typed_prepare_revision, configure_db_for_project,
+        entry_resolution_with_db, fingerprint_key, is_typed_bundle_stale,
+        typed_entry_state_with_db,
+    };
+
+    let compiler_root = {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        manifest
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("compiler root")
+            .to_path_buf()
+    };
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../beskid_e2e_tests/fixtures/corelib_mvp");
+    let main_path = fixture_root.join("Src/Main.bd");
+    let project_root = fixture_root
+        .canonicalize()
+        .unwrap_or(fixture_root.clone());
+
+    let previous = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(&compiler_root).expect("chdir");
+    let result = {
+        configure_db_for_project(&project_root);
+        let resolved = resolve_input(
+            Some(&main_path),
+            Some(&project_root),
+            Some("App"),
+            None,
+            false,
+            false,
+        )
+        .expect("resolve fixture");
+        let mut db = BeskidDatabase::with_persistence(&project_root);
+        let mut options = PrepareOptions::default();
+        options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
+        let entry_key = resolved
+            .compile_plan
+            .as_ref()
+            .map(|plan| {
+                fingerprint_key(&beskid_analysis::services::SessionFingerprint::for_entry(
+                    plan,
+                    &resolved.source_path,
+                ))
+            })
+            .expect("entry key");
+        bump_file_revision(&mut db, &entry_key);
+        assert!(is_typed_bundle_stale(&db, &entry_key));
+
+        let state = typed_entry_state_with_db(&mut db, &resolved, &options, None)
+            .expect("typed entry state");
+        assert!(
+            state.typed.is_none(),
+            "stale typed bundle should skip executable prepare"
+        );
+        assert!(
+            !state.resolution.by_symbol().is_empty(),
+            "fast resolution path should still populate registry"
+        );
+
+        bump_typed_prepare_revision(&mut db, &entry_key);
+        assert!(!is_typed_bundle_stale(&db, &entry_key));
+
+        let resolution_only =
+            entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
+        assert!(
+            !resolution_only.by_symbol().is_empty(),
+            "entry_resolution_with_db remains the fast path export"
+        );
+
+        typed_entry_state_with_db(&mut db, &resolved, &options, None).expect("typed entry state")
+    };
+    std::env::set_current_dir(previous).expect("restore cwd");
+
+    let state = result;
+    assert!(
+        state.typed.is_some(),
+        "caught-up typed prepare revision should produce executable bundle"
+    );
+    assert!(
+        !state.resolution.by_symbol().is_empty(),
+        "typed state should retain resolution"
     );
 }
 

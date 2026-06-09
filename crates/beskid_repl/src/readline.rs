@@ -90,7 +90,6 @@ pub fn run_loop(session: &mut ReplSession, input: &mut dyn ReplInput) -> io::Res
         }
 
         match handle_line(session, trimmed) {
-            LineAction::Continue => {}
             LineAction::Quit => break,
             LineAction::Print(message) => {
                 writeln!(io::stdout(), "{message}")?;
@@ -106,7 +105,6 @@ pub fn run_loop(session: &mut ReplSession, input: &mut dyn ReplInput) -> io::Res
 
 #[derive(Debug)]
 enum LineAction {
-    Continue,
     Quit,
     Print(String),
     PrintError(String),

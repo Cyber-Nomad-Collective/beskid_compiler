@@ -42,7 +42,7 @@ pub use analysis::{
     AnalysisOptions, AnalysisResult, MietteReportError, Rule as AnalysisRule, RuleContext,
     SemanticDiagnostic, Severity, builtin_rules, run_rules,
 };
-pub use compilation_context::CompilationContext;
+pub use compilation_context::{CompilationContext, ProjectSessionHandle, module_roots_for_plan};
 pub use parser::{BeskidParser, Rule};
 pub use projects::{
     AssemblyDiscovery, AssemblyOptions, ProgramAssembly, assemble_program, effective_roots_for_plan,
@@ -54,6 +54,7 @@ pub use query::{
     Ancestors, AstNode, Descendants, DynNodeRef, HirDescendants, HirNode, HirNodeKind, HirNodeRef,
     HirQuery, HirVisit, HirWalker, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,
 };
+#[allow(deprecated)]
 pub use services::{
     AnalyzeInProjectOptions, analyze_program_with_options, analyze_source_with_compilation_context,
     compile_plan_for_input_path, compile_plan_for_input_path_with_member,

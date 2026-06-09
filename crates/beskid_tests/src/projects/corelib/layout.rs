@@ -177,6 +177,7 @@ fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
         "SystemErrorWriteTests",
         "SystemFsTests",
         "SystemPathTests",
+        "SystemTimeTests",
         "ConsoleAnsiEscapeTests",
         "ConsoleAnsiStyleChainTests",
         "ConsoleAnsiSgrGoldenTests",
@@ -240,12 +241,13 @@ fn corelib_system_streams_carry_api_shape_tier_directives() {
     let runtime_root = super::runtime_src().join("System");
     let mut missing: Vec<String> = Vec::new();
     for file in [
-        "Input.bd",
-        "Output.bd",
-        "Error.bd",
+        "Input/Input.bd",
+        "Output/Output.bd",
+        "Error/Error.bd",
         "Syscall.bd",
         "FS.bd",
-        "Path.bd",
+        "Path/Path.bd",
+        "Time.bd",
     ] {
         let path = runtime_root.join(file);
         let text = std::fs::read_to_string(&path)

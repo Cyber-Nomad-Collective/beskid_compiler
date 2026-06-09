@@ -3,16 +3,15 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::analysis::diagnostics::SemanticDiagnostic;
-use crate::compilation_context::CompilationContext;
+use crate::compilation_context::ProjectSessionHandle;
 use crate::doc::DocRefLinkContext;
 use crate::doc::ResolvedDoc;
-use crate::hir::{AstProgram, HirProgram, lower_program as lower_hir_program, normalize_program};
 use crate::projects::assembly::{AssemblyError, ProgramAssembly};
 use crate::projects::{
     AssemblyDiscovery, AssemblyOptions, CompilePlan, PreparedProjectWorkspace, assemble_program,
 };
 use crate::resolve::{
-    ItemId, ItemKind, LocalId, Resolution, ResolvedValue, Resolver, SymbolId, canonical_item_id,
+    ItemId, ItemKind, LocalId, Resolution, ResolvedValue, SymbolId, canonical_item_id,
     symbol_for_item,
 };
 use crate::syntax::{Expression, Literal, Node, Program, Spanned, TestDefinition};
@@ -112,28 +111,6 @@ pub struct TestCaseInfo {
     pub definition_column: usize,
 }
 
-fn lower_normalize_hir(program: &Spanned<Program>) -> Option<Spanned<HirProgram>> {
-    let ast: Spanned<AstProgram> = program.clone().into();
-    let mut hir: Spanned<HirProgram> = lower_hir_program(&ast);
-    normalize_program(&mut hir).ok()?;
-    Some(hir)
-}
-
-fn resolve_program(program: &Spanned<Program>) -> Option<Resolution> {
-    let hir = lower_normalize_hir(program)?;
-    Resolver::new().resolve_program(&hir).ok()
-}
-
-pub(crate) fn resolve_program_with_assembly(
-    program: &Spanned<Program>,
-    assembly: &ProgramAssembly,
-    entry_path: &Path,
-) -> Option<(Resolution, HashSet<String>)> {
-    let resolution = resolve_assembly_for_api_documentation(program, assembly, entry_path)?;
-    let module_paths = assembly.module_index.known_module_path_strings();
-    Some((resolution, module_paths))
-}
-
 /// Discover all `.bd` units under host + dependency roots (not import-closure only).
 pub fn assemble_for_api_documentation(
     plan: &CompilePlan,
@@ -144,19 +121,17 @@ pub fn assemble_for_api_documentation(
     let mut options = AssemblyOptions::default();
     options.discovery = AssemblyDiscovery::WorkspaceScan;
     options.skip_parse_errors = true;
-    assemble_program(plan, workspace, entry_path, entry_source, &options)
+    assemble_program(plan, workspace, entry_path, entry_source, &options, None)
 }
 
 /// Full-project resolution for `api.json`: prefetch symbols from every unit, resolve entry, then merge type/value tables from each unit.
 pub fn resolve_assembly_for_api_documentation(
-    entry_program: &Spanned<Program>,
     assembly: &ProgramAssembly,
     _entry_path: &Path,
 ) -> Option<Resolution> {
-    let entry_hir = lower_normalize_hir(entry_program)?;
     assembly
         .module_index
-        .resolve_for_api_documentation(&entry_hir, assembly)
+        .resolve_for_api_documentation(assembly.entry_hir(), assembly)
 }
 
 fn symbol_location_for_item(
@@ -328,46 +303,17 @@ pub fn symbol_kind_name(kind: AnalysisSymbolKind) -> &'static str {
     }
 }
 
-pub fn build_document_analysis(
+fn build_document_snapshot(
     program: &Spanned<Program>,
-    source_name: impl AsRef<str>,
-    source_text: &str,
-    docs_ref_links: Option<&DocRefLinkContext>,
-) -> DocumentAnalysisSnapshot {
-    let source_path = Path::new(source_name.as_ref());
-    let source_name_owned = source_name.as_ref().to_string();
-    build_document_analysis_for_resolved(
-        program,
-        source_name_owned,
-        source_text,
-        source_path,
-        None,
-        docs_ref_links,
-    )
-}
-
-/// Like [`build_document_analysis`], with optional [`ProgramAssembly`] for multi-unit docs and resolution.
-pub fn build_document_analysis_for_resolved(
-    program: &Spanned<Program>,
-    source_name: impl AsRef<str>,
+    source_name: &str,
     source_text: &str,
     path: &Path,
+    resolution: Option<Resolution>,
+    assembly_module_paths: HashSet<String>,
     assembly: Option<&ProgramAssembly>,
+    compile_plan: Option<&CompilePlan>,
     docs_ref_links: Option<&DocRefLinkContext>,
 ) -> DocumentAnalysisSnapshot {
-    let (resolution, assembly_module_paths) = if let Some(asm) = assembly {
-        resolve_assembly_for_api_documentation(program, asm, path)
-            .map(|resolution| {
-                (
-                    Some(resolution),
-                    asm.module_index.known_module_path_strings(),
-                )
-            })
-            .unwrap_or_else(|| (resolve_program(program), HashSet::new()))
-    } else {
-        (resolve_program(program), HashSet::new())
-    };
-
     let item_docs = if let Some(res) = resolution.as_ref() {
         if let Some(asm) = assembly {
             let programs: Vec<(&Path, &Program)> = asm
@@ -385,14 +331,12 @@ pub fn build_document_analysis_for_resolved(
 
     let doc_diagnostics = resolution
         .as_ref()
-        .map(|r| {
-            crate::doc::collect_doc_diagnostics(&program.node, r, source_name.as_ref(), source_text)
-        })
+        .map(|r| crate::doc::collect_doc_diagnostics(&program.node, r, source_name, source_text))
         .unwrap_or_default();
     let composition_diagnostics = super::composition::composition_diagnostics_for_program(
         program,
-        None,
-        source_name.as_ref(),
+        compile_plan,
+        source_name,
         source_text,
     )
     .unwrap_or_default();
@@ -408,69 +352,103 @@ pub fn build_document_analysis_for_resolved(
     }
 }
 
+/// Build an IDE snapshot from entry resolution produced by the prepare spine
+/// (for example [`beskid_queries::entry_resolution_with_db`]).
+pub fn build_document_analysis_from_resolution(
+    program: &Spanned<Program>,
+    source_name: impl AsRef<str>,
+    source_text: &str,
+    path: &Path,
+    resolution: Option<Resolution>,
+    assembly_module_paths: HashSet<String>,
+    compile_plan: Option<&CompilePlan>,
+    docs_ref_links: Option<&DocRefLinkContext>,
+) -> DocumentAnalysisSnapshot {
+    build_document_snapshot(
+        program,
+        source_name.as_ref(),
+        source_text,
+        path,
+        resolution,
+        assembly_module_paths,
+        None,
+        compile_plan,
+        docs_ref_links,
+    )
+}
+
+pub fn build_document_analysis(
+    program: &Spanned<Program>,
+    source_name: impl AsRef<str>,
+    source_text: &str,
+    docs_ref_links: Option<&DocRefLinkContext>,
+) -> DocumentAnalysisSnapshot {
+    let source_path = Path::new(source_name.as_ref());
+    build_document_analysis_for_resolved(
+        program,
+        source_name.as_ref(),
+        source_text,
+        source_path,
+        None,
+        docs_ref_links,
+    )
+}
+
+/// Like [`build_document_analysis`], with optional [`ProgramAssembly`] for multi-unit docs and resolution.
+pub fn build_document_analysis_for_resolved(
+    program: &Spanned<Program>,
+    source_name: impl AsRef<str>,
+    source_text: &str,
+    path: &Path,
+    assembly: Option<&ProgramAssembly>,
+    docs_ref_links: Option<&DocRefLinkContext>,
+) -> DocumentAnalysisSnapshot {
+    let (resolution, assembly_module_paths) = assembly
+        .and_then(|asm| {
+            resolve_assembly_for_api_documentation(asm, path)
+                .map(|resolution| (Some(resolution), asm.module_index.known_module_path_strings()))
+        })
+        .unwrap_or((None, HashSet::new()));
+
+    build_document_snapshot(
+        program,
+        source_name.as_ref(),
+        source_text,
+        path,
+        resolution,
+        assembly_module_paths,
+        assembly,
+        None,
+        docs_ref_links,
+    )
+}
+
+/// Build an IDE snapshot using project session metadata (composition diagnostics only).
+///
+/// For entry resolution and multi-unit docs, callers must use
+/// [`beskid_queries::entry_resolution_with_db`] (or the prepare spine) and then
+/// [`build_document_analysis_from_resolution`].
 pub fn build_document_analysis_with_context(
     program: &Spanned<Program>,
     source_name: impl AsRef<str>,
     source_text: &str,
     path: &Path,
-    ctx: Option<&mut CompilationContext>,
+    ctx: Option<&ProjectSessionHandle>,
     docs_ref_links: Option<&DocRefLinkContext>,
 ) -> DocumentAnalysisSnapshot {
-    let (resolution, assembly_module_paths, composition_diagnostics) = match ctx {
-        Some(ctx) => {
-            let compile_plan = ctx.compile_plan.as_ref();
-            let composition_diagnostics = super::composition::composition_diagnostics_for_program(
-                program,
-                compile_plan,
-                source_name.as_ref(),
-                source_text,
-            )
-            .unwrap_or_default();
-            let (resolution, assembly_module_paths) =
-                if let Some(assembly) = ctx.assembly_for_entry(path, source_text) {
-                    resolve_program_with_assembly(program, assembly, path)
-                        .map(|(resolution, paths)| (Some(resolution), paths))
-                        .unwrap_or_else(|| (resolve_program(program), HashSet::new()))
-                } else {
-                    (resolve_program(program), HashSet::new())
-                };
-            (resolution, assembly_module_paths, composition_diagnostics)
-        }
-        None => {
-            let composition_diagnostics = super::composition::composition_diagnostics_for_program(
-                program,
-                None,
-                source_name.as_ref(),
-                source_text,
-            )
-            .unwrap_or_default();
-            (
-                resolve_program(program),
-                HashSet::new(),
-                composition_diagnostics,
-            )
-        }
-    };
+    let compile_plan = ctx.and_then(|handle| handle.compile_plan.as_ref());
 
-    let item_docs = resolution
-        .as_ref()
-        .map(|r| crate::doc::build_item_docs_markdown(&program.node, r, docs_ref_links))
-        .unwrap_or_default();
-    let doc_diagnostics = resolution
-        .as_ref()
-        .map(|r| {
-            crate::doc::collect_doc_diagnostics(&program.node, r, source_name.as_ref(), source_text)
-        })
-        .unwrap_or_default();
-    DocumentAnalysisSnapshot {
-        program: program.clone(),
-        resolution,
-        item_docs,
-        doc_diagnostics,
-        composition_diagnostics,
-        source_path: path.to_path_buf(),
-        assembly_module_paths,
-    }
+    build_document_snapshot(
+        program,
+        source_name.as_ref(),
+        source_text,
+        path,
+        None,
+        HashSet::new(),
+        None,
+        compile_plan,
+        docs_ref_links,
+    )
 }
 
 pub fn collect_test_cases(program: &Spanned<Program>) -> Vec<TestCaseInfo> {
@@ -836,14 +814,15 @@ pub fn references_at_offset_workspace(
     };
     let target = reference_target(resolution, &target_resolved);
 
-    for (index, unit) in assembly.units.iter().enumerate() {
+    for (index, unit_hir) in assembly.hir_units.iter().enumerate() {
         if index == assembly.entry_index {
             continue;
         }
-        let Some(hir) = lower_normalize_hir(&unit.program) else {
-            continue;
-        };
-        let Ok(unit_resolution) = assembly.module_index.resolve_unit_hir(&hir, &unit.path) else {
+        let Ok(unit_resolution) =
+            assembly
+                .module_index
+                .resolve_unit_hir(&unit_hir.hir, &unit_hir.path)
+        else {
             continue;
         };
         for (span, resolved) in &unit_resolution.tables.resolved_values {
@@ -851,7 +830,7 @@ pub fn references_at_offset_workspace(
                 continue;
             }
             references.push(ReferenceInfo {
-                location: symbol_location_for_span(&unit.path, span.start, span.end),
+                location: symbol_location_for_span(&unit_hir.path, span.start, span.end),
             });
         }
     }

@@ -1,71 +1,16 @@
 use super::SemanticPipelineRule;
-use crate::analysis::rules::{RuleContext, resolve, types};
+use crate::analysis::rules::RuleContext;
 use crate::hir::{
     HirBlock, HirExpressionNode, HirForStatement, HirLetStatement, HirParameter, HirProgram,
 };
 use crate::query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
-use crate::resolve::Resolution;
-use crate::services::{
-    LowerResolveTypeError, typed_hir_from_lowered_after_resolution,
-    typed_hir_from_lowered_gate_with_assembly, typed_hir_from_lowered_with_assembly,
-    typed_hir_from_lowered_with_module_index,
-};
 use crate::syntax::Spanned;
-use beskid_pipeline::PipelineObserver;
 use std::collections::HashMap;
 
 impl SemanticPipelineRule {
-    pub(super) fn stage2_type_check(
-        &self,
-        ctx: &mut RuleContext,
-        hir: Spanned<HirProgram>,
-        resolution: &Resolution,
-        pipeline: Option<&dyn PipelineObserver>,
-    ) {
-        self.check_immutable_assignments(ctx, &hir);
-
-        let result = if ctx.options.semantic_gate_only {
-            if let Some(assembly) = ctx.options.program_assembly.as_ref() {
-                typed_hir_from_lowered_gate_with_assembly(hir, Some(assembly), pipeline)
-            } else if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
-                typed_hir_from_lowered_with_module_index(
-                    hir,
-                    index,
-                    ctx.options.entry_source_path.clone(),
-                    None,
-                    pipeline,
-                )
-            } else {
-                typed_hir_from_lowered_after_resolution(hir, resolution, pipeline)
-            }
-        } else if let Some(assembly) = ctx.options.program_assembly.as_ref() {
-            typed_hir_from_lowered_with_assembly(hir, Some(assembly), pipeline)
-        } else if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
-            typed_hir_from_lowered_with_module_index(
-                hir,
-                index,
-                ctx.options.entry_source_path.clone(),
-                None,
-                pipeline,
-            )
-        } else {
-            typed_hir_from_lowered_after_resolution(hir, resolution, pipeline)
-        };
-
-        match result {
-            Ok((_, _, typed)) => types::emit_cast_intent_warnings(ctx, &typed),
-            Err(LowerResolveTypeError::Type(errors)) => {
-                for error in errors {
-                    types::emit_type_error(ctx, error, None);
-                }
-            }
-            Err(LowerResolveTypeError::Resolve(errors)) => {
-                for error in errors {
-                    resolve::emit_resolve_error(ctx, error);
-                }
-            }
-            Err(LowerResolveTypeError::Normalize(_)) => {}
-        }
+    /// Structural immutability checks only; full type-check runs in the lower spine.
+    pub(super) fn stage2_type_check(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
+        self.check_immutable_assignments(ctx, hir);
     }
 
     fn check_immutable_assignments(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {

@@ -5,7 +5,7 @@
 //! without leaking across tests.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use beskid_analysis::projects::{
     CompilePlan, ResolvedDependencyProject, Target, TargetKind,
@@ -141,15 +141,3 @@ dependency "SampleMod" {
 }
 "#;
 
-/// Walk a host workspace and return the descriptor JSON path if present.
-#[allow(dead_code)]
-pub(crate) fn descriptor_path_in(workspace: &Path) -> PathBuf {
-    workspace
-        .join(".beskid")
-        .join("obj")
-        .join("mods")
-        .join("SampleMod")
-        .join("cache-key")
-        .join("test-triple")
-        .join("mod.descriptor.json")
-}

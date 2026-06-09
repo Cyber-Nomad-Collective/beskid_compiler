@@ -61,7 +61,7 @@ fn lowering_maps_statement_and_expression_kinds() {
         .items
         .iter()
         .find_map(|item| match &item.node {
-            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "Main" => Some(def),
             _ => None,
         })
         .expect("expected main function");
@@ -110,7 +110,7 @@ fn lowering_preserves_match_patterns() {
         .items
         .iter()
         .find_map(|item| match &item.node {
-            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "Main" => Some(def),
             _ => None,
         })
         .expect("expected main function");
@@ -223,7 +223,7 @@ fn analysis_desugars_try_to_match() {
         .items
         .iter()
         .find_map(|item| match &item.node {
-            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "Main" => Some(def),
             _ => None,
         })
         .expect("expected main function");
@@ -291,7 +291,7 @@ fn lowering_normalizes_iterable_for_statement_to_state_machine() {
         .items
         .iter()
         .find_map(|item| match &item.node {
-            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "Main" => Some(def),
             _ => None,
         })
         .expect("expected main function");
@@ -345,7 +345,7 @@ fn lowering_normalizes_range_for_statement_to_fast_path() {
         .items
         .iter()
         .find_map(|item| match &item.node {
-            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "Main" => Some(def),
             _ => None,
         })
         .expect("expected main function");
@@ -409,7 +409,7 @@ fn lowering_maps_identity_binary_and_assign_ops() {
         .items
         .iter()
         .find_map(|item| match &item.node {
-            HirItem::FunctionDefinition(def) if def.node.name.node.name == "main" => Some(def),
+            HirItem::FunctionDefinition(def) if def.node.name.node.name == "Main" => Some(def),
             _ => None,
         })
         .expect("expected main function");

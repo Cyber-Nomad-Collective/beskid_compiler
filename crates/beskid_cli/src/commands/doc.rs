@@ -633,7 +633,7 @@ type Outer { Inner inner, }
         let out_path = root.join("out");
         let source = r#"
 /// See @ref(helper) for details.
-unit main() { return 1; }
+unit Main() { return 1; }
 
 unit helper() { return 0; }
 "#;

@@ -1,14 +1,8 @@
-//! TEA model: all pipeline UI state.
-
-use std::collections::HashSet;
+//! Shared pipeline UI value types (progress bars, summaries, test reports).
+//!
+//! All interactive state lives in [`crate::tui::shell::state::ShellState`].
 
 use ratatui::style::Color;
-use ratatui::widgets::ListState;
-use tui_logger::TuiWidgetState;
-use tui_tree_widget::TreeState;
-
-use super::pipeline_tree::PipelineTree;
-use super::test_table::TestRow;
 
 /// Dual progress-bar state pinned to the layout footer.
 #[derive(Debug, Clone)]
@@ -32,14 +26,6 @@ impl Default for PipelineProgress {
             stage_label: String::new(),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
-    Pipeline,
-    Tests,
-    Report,
-    Summary,
 }
 
 /// One key/value row in the summary table.
@@ -87,7 +73,7 @@ impl CommandSummary {
     }
 }
 
-/// Outcome counts for test runs (legacy; converts to [`CommandSummary`]).
+/// Outcome counts for test runs (converts to [`CommandSummary`]).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TestReportSummary {
     pub passed: usize,
@@ -169,51 +155,6 @@ impl TestReportSummary {
                 },
             ],
             slices,
-        }
-    }
-}
-
-/// Application model: tree, log buffer, progress, and mode-specific panels.
-pub struct Model {
-    pub mode: Mode,
-    pub pipeline: PipelineProgress,
-    pub tree: PipelineTree,
-    pub tree_state: TreeState<String>,
-    pub last_work_unit: Option<String>,
-    pub test_rows: Vec<TestRow>,
-    pub test_title: Option<String>,
-    pub test_list_state: ListState,
-    pub report_summary: TestReportSummary,
-    pub command_summary: CommandSummary,
-    pub logger_state: TuiWidgetState,
-    /// Tree node paths already passed to [`TreeState::open`](tui_tree_widget::TreeState::open).
-    pub expanded_tree_paths: HashSet<String>,
-    /// Compile/prepare finished; pipeline screen may remain until Space.
-    pub compile_complete: bool,
-    /// Test rows loaded; Space can open the test screen.
-    pub tests_loaded: bool,
-    /// Outcome summary staged; Space can open the summary screen.
-    pub summary_ready: bool,
-}
-
-impl Default for Model {
-    fn default() -> Self {
-        Self {
-            mode: Mode::Pipeline,
-            pipeline: PipelineProgress::default(),
-            tree: PipelineTree::default(),
-            tree_state: TreeState::default(),
-            last_work_unit: None,
-            test_rows: Vec::new(),
-            test_title: None,
-            test_list_state: ListState::default(),
-            report_summary: TestReportSummary::default(),
-            command_summary: CommandSummary::default(),
-            logger_state: TuiWidgetState::new(),
-            expanded_tree_paths: HashSet::new(),
-            compile_complete: false,
-            tests_loaded: false,
-            summary_ready: false,
         }
     }
 }

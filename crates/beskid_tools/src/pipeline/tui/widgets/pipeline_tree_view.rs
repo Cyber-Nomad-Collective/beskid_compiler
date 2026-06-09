@@ -1,26 +1,38 @@
-//! Pipeline phase tree via `tui-tree-widget`.
+//! Pipeline phase tree via ratkit `tree-view`.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders};
-use tui_tree_widget::{Tree, TreeItem, TreeState};
+use ratkit::widgets::{TreeNode, TreeView, TreeViewRef, TreeViewState};
 
 pub fn draw_pipeline_tree(
     frame: &mut Frame,
     area: Rect,
-    items: &[TreeItem<'_, String>],
-    tree_state: &mut TreeState<String>,
+    nodes: &[TreeNode<String>],
+    tree_state: &mut TreeViewState,
     title: &str,
 ) {
-    if let Ok(tree) = Tree::new(items).map(|tree| {
-        tree.block(
+    let tree = TreeViewRef::new(nodes)
+        .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title(format!(" {title} ")),
         )
         .highlight_style(Style::default().fg(Color::Cyan))
-    }) {
-        frame.render_stateful_widget(tree, area, tree_state);
-    }
+        .render_fn(|label, _| Line::from(label.clone()));
+    frame.render_stateful_widget(tree, area, tree_state);
+}
+
+pub fn tree_click_at(
+    area: Rect,
+    mouse: crossterm::event::MouseEvent,
+    nodes: &[TreeNode<String>],
+    tree_state: &mut TreeViewState,
+) {
+    let mut tree = TreeView::new(nodes.to_vec())
+        .block(Block::default().borders(Borders::ALL))
+        .render_fn(|label, _| Line::from(label.clone()));
+    let _ = tree.handle_mouse_event(mouse, tree_state, area);
 }

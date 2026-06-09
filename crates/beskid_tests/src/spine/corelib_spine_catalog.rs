@@ -28,6 +28,7 @@ pub const CORELIB_TYPECHECK_ENTRIES: &[&str] = &[
     "collections/StackTests.bd",
     "system/FsTests.bd",
     "system/PathTests.bd",
+    "system/TimeTests.bd",
     "concurrency/ChannelApiTests.bd",
     "concurrency/MutexTryLockTests.bd",
     "concurrency/ConcurrencyClockTests.bd",

@@ -84,7 +84,7 @@ pub(crate) fn emit_dispatch_call(
 
     let sig_ref = builder.func.import_signature(signature);
     let func_ref = builder.func.import_function(ExtFuncData {
-        name: ExternalName::testcase(dispatch_symbol.to_string()),
+        name: ExternalName::testcase(dispatch_symbol),
         signature: sig_ref,
         colocated: false,
         patchable: false,

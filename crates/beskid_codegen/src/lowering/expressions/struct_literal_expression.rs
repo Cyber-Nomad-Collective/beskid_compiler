@@ -8,7 +8,6 @@ use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use crate::module_emission::descriptor_symbol_name;
 use beskid_analysis::hir::HirStructLiteralExpression;
 use beskid_analysis::syntax::Spanned;
-use beskid_analysis::types::TypeInfo;
 use cranelift_codegen::ir::{
     AbiParam, ExternalName, GlobalValueData, InstBuilder, MemFlags, Signature, Value,
 };

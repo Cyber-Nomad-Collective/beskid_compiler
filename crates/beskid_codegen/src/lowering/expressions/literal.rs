@@ -33,7 +33,6 @@ pub(crate) fn lower_literal(
         HirLiteral::Bool(_) => find_literal_type(type_result, HirPrimitiveType::Bool),
         HirLiteral::String(_) => find_literal_type(type_result, HirPrimitiveType::String),
         HirLiteral::Char(_) => find_literal_type(type_result, HirPrimitiveType::Char),
-        _ => None,
     })
     .ok_or(CodegenError::UnsupportedNode {
         span: expression_span,

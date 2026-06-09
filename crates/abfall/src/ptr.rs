@@ -26,13 +26,6 @@ use std::ptr::NonNull;
 pub struct GcPtr<T: ?Sized>(NonNull<GcBox<T>>);
 
 impl<T: ?Sized> GcPtr<T> {
-    /// Create a GcPtr from a raw pointer (for internal use or future API)
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn new(ptr: NonNull<GcBox<T>>) -> Self {
-        Self(ptr)
-    }
-
     /// Convert this pointer to a rooted pointer
     ///
     /// Increments the root count, ensuring the object stays alive

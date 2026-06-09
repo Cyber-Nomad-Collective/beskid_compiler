@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 
 use crate::fiber::Yielder;
 use crate::status::{
-    FIBER_JOIN_CANCELLED, FIBER_JOIN_OK, FIBER_JOIN_PANICKED, FIBER_JOIN_STACK_OVERFLOW,
+    FIBER_JOIN_CANCELLED, FIBER_JOIN_OK, FIBER_JOIN_PANICKED,
 };
 
 use super::state::{
@@ -173,7 +173,6 @@ pub(super) fn refresh_join_snapshot(s: &Scheduler) {
                     JoinOutcome::Value(v) => JoinOutcome::Value(*v),
                     JoinOutcome::Cancelled => JoinOutcome::Cancelled,
                     JoinOutcome::Panicked => JoinOutcome::Panicked,
-                    JoinOutcome::StackOverflow => JoinOutcome::StackOverflow,
                 }),
             },
         );
@@ -201,7 +200,6 @@ pub(super) fn join_status_from_snapshot(key: FiberKey, out: *mut i64) -> Option<
                         Some(FIBER_JOIN_OK)
                     }
                     Some(JoinOutcome::Panicked) => Some(FIBER_JOIN_PANICKED),
-                    Some(JoinOutcome::StackOverflow) => Some(FIBER_JOIN_STACK_OVERFLOW),
                     Some(JoinOutcome::Cancelled) => Some(FIBER_JOIN_CANCELLED),
                     None => Some(FIBER_JOIN_PANICKED),
                 }

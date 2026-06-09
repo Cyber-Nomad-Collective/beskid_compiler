@@ -1,0 +1,24 @@
+board "default" {
+  title = "Beskid"
+  scope = user
+}
+tile "header" {
+  widget = "shell.header"
+  region = header
+}
+tile "stage" {
+  widget = "pipeline.stage"
+  region = stage
+}
+tile "detail" {
+  widget = "pipeline.detail"
+  region = detail
+}
+tile "log" {
+  widget = "pipeline.log"
+  region = log
+}
+tile "footer" {
+  widget = "pipeline.footer"
+  region = footer
+}

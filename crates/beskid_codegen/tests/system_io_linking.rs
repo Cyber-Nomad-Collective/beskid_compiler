@@ -38,6 +38,7 @@ fn lower_entry(entry_rel: &str, entrypoint: &str) {
             discovery: AssemblyDiscovery::ImportClosure,
             ..Default::default()
         },
+        None,
     )
     .expect("assemble");
 

@@ -68,9 +68,9 @@ impl SemanticPipelineRule {
             self.stage7_error_handling(ctx, &hir, &resolution);
         });
         observe_stage(pipeline, phases::SEMANTIC_TYPE_CHECK, || {
-            self.stage2_type_check(ctx, hir, &resolution, pipeline);
+            self.stage2_type_check(ctx, &hir);
         });
-        observe_stage(pipeline, "semantic.naming_style", || {
+        observe_stage(pipeline, phases::SEMANTIC_NAMING_STYLE, || {
             self.stage_naming_style(ctx, program);
         });
     }

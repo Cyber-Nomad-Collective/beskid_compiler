@@ -1,13 +1,14 @@
 //! `beskid analyze` — run builtin semantic rules and print diagnostics.
 
 use anyhow::Result;
-use beskid_analysis::services::{self, FrontEndOptions, PrepareMode, PrepareOptions};
+use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions};
 use clap::Args;
 use std::path::PathBuf;
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_tools::pipeline::{
-    resolve_input_with_cli_pipeline, tui::format_severity_summary, tui::severity_command_summary,
+    CliResolveOptions, resolve_input_with_cli_pipeline,
+    tui::format_severity_summary, tui::severity_command_summary,
 };
 
 #[derive(Args, Debug)]
@@ -28,7 +29,7 @@ pub struct AnalyzeArgs {
 
 /// Resolve the project, analyze the entry source, and print diagnostics (or "No diagnostics.").
 pub fn execute(args: AnalyzeArgs) -> Result<()> {
-    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline(
+    let (pipeline_ui, resolved) = resolve_input_with_cli_pipeline(CliResolveOptions::new(
         args.input.as_ref(),
         args.project.project.as_ref(),
         args.project.target.as_deref(),
@@ -36,9 +37,8 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
         args.lockfile.frozen,
         args.lockfile.locked,
         args.plain,
-    )?;
+    ))?;
     let prepare_options = PrepareOptions {
-        mode: PrepareMode::DiagnosticsOnly,
         front_end: FrontEndOptions {
             with_semantic_diagnostics: true,
             ..Default::default()
@@ -51,8 +51,22 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
             Some(pipeline_ui.as_ref()),
         )?;
         diagnostics
+    } else if let Some(plan) = services::compile_plan_for_input_path(&resolved.source_path) {
+        let project_resolved = services::resolved_input_from_plan(
+            resolved.source_path.clone(),
+            resolved.source.clone(),
+            plan,
+            None,
+            None,
+        );
+        let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
+            &project_resolved,
+            prepare_options,
+            Some(pipeline_ui.as_ref()),
+        )?;
+        diagnostics
     } else {
-        services::analyze_source_in_project(&resolved.source_path, &resolved.source)?
+        services::analyze_program(&resolved.source_path, &resolved.source)?
     };
     let counts = pipeline_ui.report_semantic_diagnostics(&diagnostics);
     let severity_line = format_severity_summary(counts);

@@ -1,0 +1,41 @@
+---
+title: CodeWidget
+description: Read-only source viewer with syntax highlighting, gutters, Vim-style navigation, selection, and lightweight symbol outlines.
+---
+
+## Overview
+
+`CodeWidget` renders source files without acting as an editor. It uses the shared `document_viewer` foundation for viewport behavior and code-specific parsers for language detection, syntax highlighting, and outlines.
+
+## Feature flag
+
+```toml
+ratkit = { version = "0.2.14", features = ["code-widget"] }
+```
+
+## Usage
+
+```rust
+use ratkit::widgets::{CodeState, CodeWidget};
+
+let mut state = CodeState::default();
+state.source.set_source_file("src/main.rs")?;
+
+let widget = CodeWidget::from_state(&state)
+    .show_line_numbers(true)
+    .show_outline(true)
+    .language("rust");
+
+frame.render_stateful_widget(widget, area, &mut state);
+# Ok::<(), std::io::Error>(())
+```
+
+## First-version capabilities
+
+1. Syntax highlighting through `syntect`.
+2. Extension, shebang, and explicit language detection.
+3. Absolute or relative line-number gutters.
+4. Current-line highlighting.
+5. Line-oriented selection and copy state.
+6. Vim-style navigation with `j`, `k`, `gg`, and `G`.
+7. Lightweight symbol outlines for Rust, TypeScript/JavaScript, and Python.

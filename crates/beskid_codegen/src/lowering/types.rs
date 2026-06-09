@@ -372,8 +372,8 @@ pub(crate) fn method_receiver_type_id(
     if let Some(type_id) = type_id_for_type(resolution, type_result, None, def) {
         return Some(type_id);
     }
-    if let HirType::Complex(path) = &def.node {
-        if let Some(segment) = path.node.segments.last() {
+    if let HirType::Complex(path) = &def.node
+        && let Some(segment) = path.node.segments.last() {
             let name = &segment.node.name.node.name;
             if let Some(item) = resolution
                 .items
@@ -383,7 +383,6 @@ pub(crate) fn method_receiver_type_id(
                 return find_named_type_id(type_result, item.id);
             }
         }
-    }
     let info = resolution.items.get(method_item_id.0)?;
     let (receiver_name, _) = info.name.split_once("::")?;
     let receiver_item = resolution

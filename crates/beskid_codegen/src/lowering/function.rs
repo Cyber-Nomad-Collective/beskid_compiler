@@ -522,6 +522,7 @@ fn substitute_type_id(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn lower_function_with_name(
     def: &Spanned<HirFunctionDefinition>,
     resolution: &Resolution,
@@ -828,11 +829,10 @@ fn fallback_applied_return_type(
         })?;
         arg_ids.push(type_id);
     }
-    if let Some(base) = resolve_type_path_item_id_for_codegen(resolution, type_result, &segments) {
-        if let Some(applied) = find_applied_type_id_by_base_and_args(type_result, base, &arg_ids) {
+    if let Some(base) = resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
+        && let Some(applied) = find_applied_type_id_by_base_and_args(type_result, base, &arg_ids) {
             return Some(applied);
         }
-    }
     find_applied_type_id_by_args(type_result, &arg_ids).or_else(|| {
         find_applied_type_id_by_ok_arg(type_result, arg_ids.first().copied())
     })
@@ -940,15 +940,14 @@ pub(crate) fn item_id_for_item_span(
     span: SpanInfo,
     source_path: Option<&std::path::PathBuf>,
 ) -> Option<ItemId> {
-    if let Some(path) = source_path {
-        if let Some(info) = resolution
+    if let Some(path) = source_path
+        && let Some(info) = resolution
             .items
             .iter()
             .find(|info| info.span == span && same_file_opt(info.source_path.as_ref(), Some(path)))
         {
             return Some(info.id);
         }
-    }
 
     let matches: Vec<_> = resolution
         .items

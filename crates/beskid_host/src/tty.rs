@@ -1,5 +1,6 @@
 //! Terminal geometry host builtin for corelib console.
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[repr(C)]
 struct Winsize {
     ws_row: u16,

@@ -1,0 +1,35 @@
+profile "board.v1" {
+  rule "board" {
+    scope = top
+    match = keyword
+    keyword = board
+    label = required
+    cardinality = one
+    field "title" { type = quoted required = false }
+    field "scope" { type = enum_or_quoted values = [user, project, workspace] required = false }
+  }
+  rule "tile" {
+    scope = top
+    match = keyword
+    keyword = tile
+    label = required
+    cardinality = many
+    field "widget" { type = quoted required = true }
+    field "title" { type = quoted required = false }
+    field "region" { type = enum_or_quoted values = [header, stage, detail, log, footer, full, main] required = true }
+    field "weight" { type = u32 required = false }
+    field "min_height" { type = u32 required = false }
+    field "min_width" { type = u32 required = false }
+  }
+  rule "split" {
+    scope = top
+    match = keyword
+    keyword = split
+    label = required
+    cardinality = many
+    field "axis" { type = enum_or_quoted values = [horizontal, vertical] required = true }
+    field "ratio" { type = u32 required = false }
+    field "first" { type = quoted required = true }
+    field "second" { type = quoted required = true }
+  }
+}

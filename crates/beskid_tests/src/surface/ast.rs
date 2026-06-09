@@ -1,7 +1,7 @@
 use beskid_analysis::Rule;
 use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::syntax::{
-    Expression, Literal, Node, Path, PrimitiveType, Program, Spanned, Statement, Type,
+    Expression, Literal, Node, Path, PrimitiveType, Spanned, Statement, Type,
 };
 
 pub use crate::support::pipeline::parse_program as parse_program_ast;

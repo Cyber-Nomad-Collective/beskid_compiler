@@ -1,16 +1,21 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::CodegenResult;
+use crate::lowering::descriptor::get_or_compute_layout;
+use crate::lowering::expressions::mapping::lower_aot_object_mapping;
+use crate::lowering::expressions::serialize::{is_serializable_struct, mapping_pair_eligible};
 use crate::lowering::function::mangle_method_name;
 use crate::lowering::dispatch::emit_str_from_i64_dispatch;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::HirPrimitiveType;
-use beskid_analysis::resolve::{ItemKind, Resolution, canonical_item_id};
+use beskid_analysis::resolve::{ItemId, ItemKind, Resolution, canonical_item_id};
 use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
-use cranelift_codegen::ir::{AbiParam, ExternalName, InstBuilder, MemFlags, Signature, Value};
+use cranelift_codegen::ir::{
+    AbiParam, ExternalName, InstBuilder, MemFlags, Signature, StackSlotData, StackSlotKind, Value,
+};
 use cranelift_codegen::isa::CallConv;
 use cranelift_frontend::FunctionBuilder;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub(crate) fn ensure_type_compatibility(
     span: SpanInfo,
@@ -72,11 +77,98 @@ pub(crate) fn ensure_type_compatibility(
         return coerce_numeric_to_string(span, value, actual_info, builder);
     }
 
+    if let Some(mapped) = try_lower_struct_object_mapping(
+        span,
+        expected,
+        actual,
+        value,
+        type_result,
+        resolution,
+        builder,
+    )? {
+        return Ok(mapped);
+    }
+
     Err(CodegenError::TypeMismatch {
         span,
         expected,
         actual,
     })
+}
+
+fn try_lower_struct_object_mapping(
+    span: SpanInfo,
+    expected: TypeId,
+    actual: TypeId,
+    value: Value,
+    type_result: &TypeResult,
+    resolution: &Resolution,
+    builder: &mut FunctionBuilder,
+) -> CodegenResult<Option<Value>> {
+    let Some(expected_item) = named_item_id(type_result, expected) else {
+        return Ok(None);
+    };
+    let Some(actual_item) = named_item_id(type_result, actual) else {
+        return Ok(None);
+    };
+    if canonical_item_id(resolution, expected_item) == canonical_item_id(resolution, actual_item) {
+        return Ok(None);
+    }
+    if !matches!(type_result.types.get(expected), Some(TypeInfo::Named(_)))
+        || !matches!(type_result.types.get(actual), Some(TypeInfo::Named(_)))
+    {
+        return Ok(None);
+    }
+
+    if mapping_pair_eligible(resolution, type_result, actual_item, expected_item) {
+        let mut layouts = HashMap::new();
+        let layout = get_or_compute_layout(&mut layouts, type_result, expected).ok_or(
+            CodegenError::UnsupportedNode {
+                span,
+                node: "struct mapping destination layout",
+            },
+        )?;
+        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            layout.size as u32,
+            3,
+        ));
+        let dst_out = builder.ins().stack_addr(pointer_type(), slot, 0);
+        let _status = lower_aot_object_mapping(
+            builder,
+            resolution,
+            type_result,
+            span,
+            actual_item,
+            expected_item,
+            value,
+            dst_out,
+        )?;
+        return Ok(Some(dst_out));
+    }
+
+    if is_serializable_struct(resolution, type_result, actual_item)
+        && is_serializable_struct(resolution, type_result, expected_item)
+    {
+        let src_name = item_display_name(resolution, actual_item);
+        let dst_name = item_display_name(resolution, expected_item);
+        return Err(CodegenError::IneligibleSerializeMapping {
+            span,
+            src_name,
+            dst_name,
+        });
+    }
+
+    Ok(None)
+}
+
+fn item_display_name(resolution: &Resolution, item_id: ItemId) -> String {
+    resolution
+        .items
+        .iter()
+        .find(|item| item.id == item_id)
+        .map(|item| item.name.clone())
+        .unwrap_or_else(|| "<unknown>".to_string())
 }
 
 /// Like [`ensure_type_compatibility`], but when span-keyed expression types collide across
@@ -105,30 +197,6 @@ pub(crate) fn ensure_type_compatibility_or_expected(
         ),
         Err(err) => Err(err),
     }
-}
-
-pub(crate) fn retry_call_argument_compatibility(
-    span: SpanInfo,
-    expected: TypeId,
-    value: Value,
-    type_result: &TypeResult,
-    resolution: &Resolution,
-    builder: &mut FunctionBuilder,
-) -> CodegenResult<Value> {
-    let expected_info = type_result.types.get(expected);
-    let value_ty = builder.func.dfg.value_type(value);
-    if is_string_primitive(expected_info) && value_ty.is_int() {
-        return coerce_numeric_to_string(span, value, None, builder);
-    }
-    ensure_type_compatibility(
-        span,
-        expected,
-        expected,
-        type_result,
-        resolution,
-        builder,
-        value,
-    )
 }
 
 fn is_string_primitive(info: Option<&TypeInfo>) -> bool {
@@ -434,4 +502,133 @@ fn is_numeric_type(info: Option<&TypeInfo>) -> bool {
                 | HirPrimitiveType::F64
         ))
     )
+}
+
+#[cfg(test)]
+mod struct_mapping_clif_tests {
+    use super::*;
+    use beskid_analysis::hir::{HirPrimitiveType, HirVisibility};
+    use beskid_analysis::resolve::{ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution};
+    use beskid_analysis::types::{TypeId, TypeInfo, TypeResult, TypeTable};
+    use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+
+    fn struct_mapping_type_context() -> (TypeResult, Resolution, TypeId, TypeId) {
+        let mut types = TypeTable::new();
+        let i64_type = types.intern(TypeInfo::Primitive(HirPrimitiveType::I64));
+        let source_item = ItemId(1);
+        let target_item = ItemId(2);
+        let source_type = types.intern(TypeInfo::Named(source_item));
+        let target_type = types.intern(TypeInfo::Named(target_item));
+
+        let mut struct_fields_ordered = HashMap::new();
+        struct_fields_ordered.insert(source_item, vec![("id".to_string(), i64_type)]);
+        struct_fields_ordered.insert(target_item, vec![("id".to_string(), i64_type)]);
+
+        let type_result = TypeResult {
+            types,
+            named_type_names: HashMap::new(),
+            expr_types: HashMap::new(),
+            scoped_expr_types: HashMap::new(),
+            local_types: HashMap::new(),
+            function_signatures: HashMap::new(),
+            method_function_signatures: HashMap::new(),
+            struct_fields_ordered,
+            struct_event_fields: HashMap::new(),
+            enum_variants_ordered: HashMap::new(),
+            generic_items: HashMap::new(),
+            call_kinds: HashMap::new(),
+            scoped_call_kinds: HashMap::new(),
+            contract_method_order: HashMap::new(),
+            contract_signatures: HashMap::new(),
+            cast_intents: Vec::new(),
+        };
+        let resolution = Resolution {
+            items: vec![
+                ItemInfo {
+                    id: source_item,
+                    parent_id: None,
+                    name: "Source".to_string(),
+                    kind: ItemKind::Type,
+                    span: SpanInfo {
+                        start: 0,
+                        end: 1,
+                        line_col_start: (1, 1),
+                        line_col_end: (1, 2),
+                    },
+                    source_path: None,
+                    visibility: HirVisibility::Public,
+                    symbol: None,
+                },
+                ItemInfo {
+                    id: target_item,
+                    parent_id: None,
+                    name: "Target".to_string(),
+                    kind: ItemKind::Type,
+                    span: SpanInfo {
+                        start: 2,
+                        end: 3,
+                        line_col_start: (1, 3),
+                        line_col_end: (1, 4),
+                    },
+                    source_path: None,
+                    visibility: HirVisibility::Public,
+                    symbol: None,
+                },
+            ],
+            module_graph: ModuleGraph::new_root(),
+            tables: Default::default(),
+            warnings: Vec::new(),
+            builtin_items: HashMap::new(),
+            module_imports: HashMap::new(),
+            symbols: Default::default(),
+            by_symbol: HashMap::new(),
+        };
+        (type_result, resolution, source_type, target_type)
+    }
+
+    #[test]
+    fn ensure_type_compatibility_emits_dynamic_map_aot_for_eligible_structs() {
+        let (type_result, resolution, source_type, target_type) = struct_mapping_type_context();
+        let span = SpanInfo {
+            start: 0,
+            end: 1,
+            line_col_start: (1, 1),
+            line_col_end: (1, 2),
+        };
+
+        let mut sig = Signature::new(CallConv::SystemV);
+        sig.params.push(AbiParam::new(pointer_type()));
+        sig.returns.push(AbiParam::new(pointer_type()));
+        let mut func = cranelift_codegen::ir::Function::with_name_signature(
+            cranelift_codegen::ir::UserFuncName::testcase("struct_mapping_test"),
+            sig,
+        );
+        let mut fn_ctx = FunctionBuilderContext::new();
+        let mut builder = FunctionBuilder::new(&mut func, &mut fn_ctx);
+        let entry = builder.create_block();
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+        builder.seal_block(entry);
+
+        let src_ptr = builder.block_params(entry)[0];
+        let mapped = ensure_type_compatibility(
+            span,
+            target_type,
+            source_type,
+            &type_result,
+            &resolution,
+            &mut builder,
+            src_ptr,
+        )
+        .expect("eligible struct mapping should lower");
+
+        builder.ins().return_(&[mapped]);
+        builder.finalize();
+
+        let clif = func.to_string();
+        assert!(
+            clif.contains("dynamic_map_aot"),
+            "expected dynamic_map_aot in struct coercion CLIF: {clif}"
+        );
+    }
 }

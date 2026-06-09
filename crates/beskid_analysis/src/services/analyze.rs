@@ -6,17 +6,14 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::analysis::SemanticDiagnostic;
-use crate::compilation_context::CompilationContext;
+use crate::compilation_context::ProjectSessionHandle;
 use crate::projects::CompilePlan;
 
 use super::composition::composition_diagnostics_for_program;
-use super::document::resolve_program_with_assembly;
 use super::front_end::FrontEndOptions;
 use super::input::AnalyzeInProjectOptions;
 use super::parse::parse_program_with_source_name;
-use super::prepare::{
-    PrepareMode, PrepareOptions, prepare_compilation_diagnostics, resolved_input_from_plan,
-};
+use super::prepare::{PrepareOptions, prepare_compilation_diagnostics, resolved_input_from_plan};
 
 pub fn analyze_program(path: &Path, source: &str) -> Result<Vec<SemanticDiagnostic>> {
     analyze_program_with_options(path, source, crate::AnalysisOptions::default())
@@ -96,7 +93,6 @@ fn analyze_program_with_options_and_plan(
     );
 
     let prepare_options = PrepareOptions {
-        mode: PrepareMode::DiagnosticsOnly,
         front_end: FrontEndOptions {
             with_semantic_diagnostics: true,
             ..Default::default()
@@ -119,27 +115,32 @@ pub fn analyze_source_in_project(path: &Path, source: &str) -> Result<Vec<Semant
     analyze_source_in_project_with_options(path, source, AnalyzeInProjectOptions::default())
 }
 
-/// Run project-aware analysis using a pre-resolved [`CompilationContext`].
+/// Run project-aware analysis using a pre-resolved [`ProjectSessionHandle`].
+///
+/// Prefer [`prepare_compilation_diagnostics`] (or [`beskid_queries::prepare_compilation_diagnostics_with_db`]
+/// when a Salsa database is available) for LSP and CLI paths; this helper remains for legacy callers.
+#[deprecated(
+    since = "0.2.0",
+    note = "use prepare_compilation_diagnostics or beskid_queries::prepare_compilation_diagnostics_with_db"
+)]
 pub fn analyze_source_with_compilation_context(
     path: &Path,
     source: &str,
-    ctx: &mut CompilationContext,
+    ctx: &ProjectSessionHandle,
 ) -> Result<Vec<SemanticDiagnostic>> {
     let Some(plan) = ctx.compile_plan.clone() else {
         return analyze_program(path, source);
     };
 
-    let assembly = ctx.assembly_for_entry(path, source).cloned();
     let resolved = resolved_input_from_plan(
         path.to_path_buf(),
         source.to_string(),
         plan.clone(),
-        ctx.prepared_workspace.clone(),
-        assembly,
+        None,
+        None,
     );
 
     let prepare_options = PrepareOptions {
-        mode: PrepareMode::DiagnosticsOnly,
         front_end: FrontEndOptions {
             with_semantic_diagnostics: true,
             module_level_meta_items_allowed: Some(ctx.module_level_meta_items_allowed()),
@@ -150,16 +151,6 @@ pub fn analyze_source_with_compilation_context(
     let (_prepared, mut diagnostics) =
         prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
 
-    if let Some(assembly) = ctx.assembly_for_entry(path, source) {
-        let source_name = path.display().to_string();
-        if let Ok(program) = parse_program_with_source_name(&source_name, source)
-            && resolve_program_with_assembly(&program, assembly, path).is_some()
-        {
-            diagnostics
-                .retain(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108")));
-        }
-    }
-
     if is_non_entry_project_file(path, Some(&plan)) {
         diagnostics.retain(|diagnostic| diagnostic.code.as_deref() == Some("parse"));
         return Ok(diagnostics);
@@ -168,6 +159,7 @@ pub fn analyze_source_with_compilation_context(
     Ok(diagnostics)
 }
 
+#[allow(deprecated)]
 pub fn analyze_source_in_project_with_options(
     path: &Path,
     source: &str,
@@ -180,12 +172,12 @@ pub fn analyze_source_in_project_with_options(
         graph_opts.workspace_member_for_meta_default = Some(member.to_string());
     }
 
-    match CompilationContext::try_for_analysis_path_with_graph_options(
+    match ProjectSessionHandle::try_for_analysis_path_with_graph_options(
         path,
         options.workspace_member,
         graph_opts,
     ) {
-        Some(mut ctx) => analyze_source_with_compilation_context(path, source, &mut ctx),
+        Some(ctx) => analyze_source_with_compilation_context(path, source, &ctx),
         None => analyze_program(path, source),
     }
 }
@@ -194,7 +186,7 @@ pub fn compile_plan_for_input_path(path: &Path) -> Option<CompilePlan> {
     if !path.is_file() {
         return None;
     }
-    CompilationContext::try_for_analysis_path(path, None).and_then(|c| c.compile_plan)
+    ProjectSessionHandle::try_for_analysis_path(path, None).and_then(|c| c.compile_plan)
 }
 
 pub fn compile_plan_for_input_path_with_member(
@@ -204,7 +196,7 @@ pub fn compile_plan_for_input_path_with_member(
     if !path.is_file() {
         return None;
     }
-    CompilationContext::try_for_analysis_path(path, workspace_member).and_then(|c| c.compile_plan)
+    ProjectSessionHandle::try_for_analysis_path(path, workspace_member).and_then(|c| c.compile_plan)
 }
 
 fn is_non_entry_project_file(path: &Path, plan: Option<&CompilePlan>) -> bool {

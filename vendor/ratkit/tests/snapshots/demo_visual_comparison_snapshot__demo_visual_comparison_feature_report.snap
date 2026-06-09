@@ -1,0 +1,13 @@
+---
+source: tests/demo_visual_comparison_snapshot.rs
+expression: "feature_discrepancy_report(&markdown, &code)"
+---
+rounded pane chrome: markdown=true code=true
+TOC overlay: markdown=true code=true
+TOC toggle hint: markdown=true code=true
+TOC hover hint: markdown=true code=true
+TOC click-jump hint: markdown=true code=true
+document gutter separator: markdown=true code=true
+mode statusline: markdown=true code=true
+percent statusline: markdown=true code=true
+symbol outline panel: markdown=false code=false

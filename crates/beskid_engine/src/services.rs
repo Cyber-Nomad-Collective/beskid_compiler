@@ -213,22 +213,6 @@ fn artifact_needs_fiber_scheduler(artifact: &beskid_codegen::CodegenArtifact) ->
         .any(|func| func.name.starts_with("__beskid_spawn_entry_"))
 }
 
-fn run_lowered_entrypoint(
-    lowered: &beskid_codegen::LoweredProgram,
-    entrypoint: &str,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<String> {
-    let mut engine = Engine::new();
-    run_jitted_entrypoint(
-        &mut engine,
-        &lowered.resolution,
-        &lowered.typed,
-        &lowered.artifact,
-        entrypoint,
-        pipeline,
-    )
-}
-
 fn entrypoint_matches_item(item: &beskid_analysis::resolve::ItemInfo, entrypoint: &str) -> bool {
     if item.name == entrypoint {
         return true;

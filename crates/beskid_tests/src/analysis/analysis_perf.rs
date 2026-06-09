@@ -1,6 +1,6 @@
 //! Analysis phase timing smoke (run with `cargo test -p beskid_tests analysis_perf -- --ignored --nocapture`).
 
-use beskid_analysis::services::{PrepareMode, PrepareOptions, resolve_input};
+use beskid_analysis::services::{PrepareOptions, resolve_input};
 use beskid_pipeline::{TimedPipelineObserver, phases};
 use beskid_queries::prepare_compilation_diagnostics_with_db;
 
@@ -26,7 +26,6 @@ fn analysis_perf_ansi_style_chain_tests() {
                 db,
                 &resolved,
                 PrepareOptions {
-                    mode: PrepareMode::Executable,
                     front_end: Default::default(),
                 },
                 Some(&timer),

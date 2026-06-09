@@ -1,0 +1,12 @@
+---
+source: tests/code_widget_snapshots.rs
+expression: snapshot
+---
+  1 │ class Counter:                                                    
+  2 │     def __init__(self):                             ╭ TOC ─────╮  
+  3 │         self.value = 0                              │⠉⢙⣛⣛⣛⣛⣛⣛⣛⣛│  
+  4 │                                                     │          │  
+  5 │     def increment(self):                            ╰──────────╯  
+  6 │         self.value += 1                                           
+  7 │         return self.value                                         
+ NORMAL                                                         14%/7

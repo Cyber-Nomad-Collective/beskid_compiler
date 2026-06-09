@@ -36,7 +36,7 @@ Default CI runs the fast tier only.
 ## Corelib spine gates (`spine::corelib_tests_*`)
 
 The primary CI gate is a **single-process matrix** that typechecks every `corelib_tests`
-entry with the semantic gate (`PrepareMode::DiagnosticsOnly`), not full executable lowering.
+entry with the unified prepare spine via `prepare_compilation_diagnostics`, not a separate diagnostics-only mode.
 
 | Command | When |
 | --- | --- |

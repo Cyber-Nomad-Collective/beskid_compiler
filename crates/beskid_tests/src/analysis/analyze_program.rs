@@ -4,7 +4,7 @@ use beskid_analysis::services::analyze_program;
 
 #[test]
 fn analyze_program_empty_diagnostics_for_trivial_i32_main() {
-    let source = "i32 Main() {\n    return 0;\n}\n";
+    let source = "pub i32 Main() {\n    return 0;\n}\n";
     let diags = analyze_program(Path::new("test.bd"), source).expect("analyze");
     assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
 }

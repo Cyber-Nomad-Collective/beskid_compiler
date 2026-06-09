@@ -170,13 +170,12 @@ impl<'a> TypeContext<'a> {
 
         for elem in &lit.node.elements[1..] {
             let elem_type = self.type_expression(elem);
-            if let Some(elem_type) = elem_type {
-                if elem_type != first_type {
+            if let Some(elem_type) = elem_type
+                && elem_type != first_type {
                     self.errors
                         .push(TypeError::UnsupportedExpression { span: lit.span });
                     return None;
                 }
-            }
         }
 
         Some(self.type_table.intern(TypeInfo::Array(first_type)))
@@ -482,8 +481,7 @@ impl<'a> TypeContext<'a> {
             if segments.len() >= 2
                 && let Some(ResolvedValue::Item(contract_item_id)) = resolved
                 && let Some(method_name) = method_name_from_path_callee(segments)
-            {
-                if let Some(signature) = self
+                && let Some(signature) = self
                     .contract_signatures
                     .get(&(contract_item_id, method_name.to_string()))
                     .cloned()
@@ -520,7 +518,6 @@ impl<'a> TypeContext<'a> {
                     );
                     return Some(signature.return_type);
                 }
-            }
         }
 
         if let HirExpressionNode::MemberExpression(member) = &call.node.callee.node {
@@ -814,7 +811,7 @@ impl<'a> TypeContext<'a> {
         if let Some(item_id) = callee_item_id
             && let Some(index) = self.resolution.builtin_items.get(&item_id)
             && let Some(spec) = crate::builtins::builtin_specs().get(*index)
-            && spec.beskid_path == &["__array_new"]
+            && spec.beskid_path == ["__array_new"]
             && let Some(elem_size) = call
                 .node
                 .args
@@ -1127,23 +1124,16 @@ impl<'a> TypeContext<'a> {
             }
             HirExpressionNode::PathExpression(path_expr) => {
                 let segments = &path_expr.node.path.node.segments;
-                let Some(field_name) = first_field_segment_name(segments) else {
-                    return None;
-                };
-                let Some(first_name) = segments
+                let field_name = first_field_segment_name(segments)?;
+                let first_name = segments
                     .first()
-                    .map(|segment| segment.node.name.node.name.as_str())
-                else {
-                    return None;
-                };
-                let Some(local_id) = resolve_path_base_local(
+                    .map(|segment| segment.node.name.node.name.as_str())?;
+                let local_id = resolve_path_base_local(
                     self.resolution,
                     path_expr.node.path.span,
                     first_name,
                     self.current_source_path.as_ref(),
-                ) else {
-                    return None;
-                };
+                )?;
                 let receiver_type = *self.local_types.get(&local_id)?;
                 let receiver_item_id = self.named_item_id(receiver_type)?;
                 let is_event = self

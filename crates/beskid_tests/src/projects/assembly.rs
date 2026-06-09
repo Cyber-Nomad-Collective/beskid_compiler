@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::projects::fixture_harness::{
-    corelib_mvp_fixture, resolve_fixture_with_assembly, shared_corelib_mvp_assembly,
+    corelib_mvp_fixture, shared_corelib_mvp_assembly,
     with_project_test_env,
 };
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
@@ -99,6 +99,7 @@ fn workspace_scan_respects_max_units() {
             &resolved.source_path,
             Some(&resolved.source),
             &options,
+            None,
         )
         .expect_err("should hit max_units");
         assert!(err.to_string().contains("max_units"));
@@ -147,7 +148,7 @@ fn module_index_resolve_entry_succeeds_for_corelib_mvp_main() {
 #[test]
 fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
     use crate::projects::corelib::corelib_root;
-    use beskid_analysis::resolve::ItemKind;
+    
 
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let project = corelib_root().join("tests/corelib_tests");
@@ -173,6 +174,7 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
             &resolved.source_path,
             Some(&resolved.source),
             &options,
+            None,
         )
         .expect("assemble console tests");
 
@@ -268,6 +270,6 @@ fn assemble_with_thread_cap(
     unsafe {
         std::env::set_var("BESKID_ASSEMBLY_THREADS", threads.to_string());
     }
-    assemble_program(plan, workspace, entry_path, Some(entry_source), options)
+    assemble_program(plan, workspace, entry_path, Some(entry_source), options, None)
         .expect("assemble with thread cap")
 }

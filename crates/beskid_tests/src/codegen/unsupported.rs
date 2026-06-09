@@ -1,4 +1,3 @@
-use beskid_codegen::errors::CodegenError;
 use beskid_codegen::lowering::lower_program;
 
 use crate::codegen::util::lower_resolve_type;

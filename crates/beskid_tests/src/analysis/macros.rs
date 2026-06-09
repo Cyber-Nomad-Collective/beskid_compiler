@@ -44,7 +44,7 @@ unit Main() {
 }
 "#;
     let expanded = parse_expand(source);
-    let body = find_function_body(&expanded.node, "main");
+    let body = find_function_body(&expanded.node, "Main");
     let let_stmt = body.node.statements.first().expect("let statement");
     let expr = match &let_stmt.node {
         beskid_analysis::syntax::Statement::Let(ls) => &ls.node.value,
@@ -73,7 +73,7 @@ unit Main() {
 }
 "#;
     let expanded = parse_expand(source);
-    let body = find_function_body(&expanded.node, "main");
+    let body = find_function_body(&expanded.node, "Main");
     assert!(
         body.node.statements.len() >= 2,
         "expected spliced let plus return, got {} statements",
@@ -104,7 +104,7 @@ unit Main() {
 }
 "#;
     let expanded = parse_expand(source);
-    let body = find_function_body(&expanded.node, "main");
+    let body = find_function_body(&expanded.node, "Main");
     let let_stmt = body.node.statements.first().expect("let");
     let expr = match &let_stmt.node {
         beskid_analysis::syntax::Statement::Let(ls) => &ls.node.value,
@@ -173,7 +173,7 @@ unit Main() {
 }
 "#;
     let expanded = parse_expand(source);
-    let body = find_function_body(&expanded.node, "main");
+    let body = find_function_body(&expanded.node, "Main");
     let if_stmt = body.node.statements.first().expect("if statement");
     let then_block = match &if_stmt.node {
         beskid_analysis::syntax::Statement::If(i) => &i.node.then_block,
@@ -229,7 +229,7 @@ unit Main() {
 }
 "#;
     let expanded = parse_expand(source);
-    let body = find_function_body(&expanded.node, "main");
+    let body = find_function_body(&expanded.node, "Main");
     let let_stmt = body.node.statements.first().expect("let");
     let expr = match &let_stmt.node {
         beskid_analysis::syntax::Statement::Let(ls) => &ls.node.value,
@@ -300,7 +300,7 @@ unit Main() {
 fn unknown_macro_invocation_remains_for_semantic_pass() {
     let source = "unit Main() { missing!(1); return; }\n";
     let expanded = parse_expand(source);
-    let body = find_function_body(&expanded.node, "main");
+    let body = find_function_body(&expanded.node, "Main");
     let stmt = &body.node.statements[0];
     let expr = match &stmt.node {
         beskid_analysis::syntax::Statement::Expression(es) => &es.node.expression,
@@ -322,7 +322,7 @@ unit Main() {
 }
 "#;
     let expanded = parse_expand(source);
-    let body = find_function_body(&expanded.node, "main");
+    let body = find_function_body(&expanded.node, "Main");
     assert!(
         block_contains_macro_invocation_named(&body.node, "need_expr"),
         "expression parameter with block-only actual should not expand yet"
@@ -473,7 +473,7 @@ fn fragment_kind_matrix_valid_expansion_behavior() {
             case.macro_def, case.valid_invocation
         );
         let expanded = parse_expand(&source);
-        let body = find_function_body(&expanded.node, "main");
+        let body = find_function_body(&expanded.node, "Main");
         let has_invocation = block_contains_macro_invocation_named(&body.node, "m");
         if case.expect_valid_expands {
             assert!(

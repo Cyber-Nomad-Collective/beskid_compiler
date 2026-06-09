@@ -1,0 +1,52 @@
+---
+title: TermTUI
+description: Terminal TUI utilities for advanced terminal manipulation.
+---
+
+## Overview
+
+The TermTUI primitive provides utilities for advanced terminal manipulation and TUI-specific operations.
+
+## Basic Usage
+
+```rust
+use ratkit::primitives::termtui::TermTUI;
+
+fn setup_terminal() {
+    let term = TermTUI::new();
+    
+    // Enable raw mode
+    term.enable_raw_mode();
+    
+    // Clear screen
+    term.clear();
+    
+    // Restore terminal on exit
+    term.restore();
+}
+```
+
+## Terminal Information
+
+Get terminal information:
+
+```rust
+let size = term.size();  // Get terminal dimensions
+let is_tty = term.is_tty();  // Check if running in TTY
+```
+
+## Cursor Control
+
+Control the cursor:
+
+```rust
+term.hide_cursor();
+term.show_cursor();
+term.set_cursor_position(x, y);
+```
+
+## Advanced Features
+
+- **Mouse capture** - Enable mouse event handling
+- **Alternate screen** - Switch to alternate screen buffer
+- **Bracketed paste** - Support bracketed paste mode

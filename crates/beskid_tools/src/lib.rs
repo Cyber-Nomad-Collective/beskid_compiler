@@ -8,6 +8,7 @@
 //! should add a `commands/<name>.rs` wrapper plus library logic in the appropriate domain crate.
 
 pub mod corelib;
+pub mod tui;
 pub mod diagnostics;
 pub mod logging;
 pub mod pipeline;
@@ -23,8 +24,9 @@ pub use diagnostics::{
 };
 pub use logging::init as init_logging;
 pub use pipeline::{
-    CliPipeline, PipelineProgressKind, resolve_input_with_cli_pipeline,
-    resolve_input_with_cli_pipeline_kind, resolve_project_with_cli_pipeline, use_cli_spinner,
+    CliInputPipelineOptions, CliPipeline, CliProjectPipelineOptions, CliResolveOptions,
+    PipelineProgressKind, resolve_input_with_cli_pipeline, resolve_input_with_cli_pipeline_kind,
+    resolve_project_with_cli_pipeline, use_cli_spinner,
 };
 pub use registry::{
     RegistryConnectConfig, build_pckg_client, is_network_error, latest_non_yanked,

@@ -159,6 +159,10 @@ corelib_typecheck_test!(
     "system/PathTests.bd"
 );
 corelib_typecheck_test!(
+    system_time_tests_front_end_typechecks,
+    "system/TimeTests.bd"
+);
+corelib_typecheck_test!(
     channel_api_tests_front_end_typechecks,
     "concurrency/ChannelApiTests.bd"
 );

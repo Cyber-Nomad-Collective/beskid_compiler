@@ -6,7 +6,7 @@ use std::io::{Cursor, Read};
 use std::path::Path;
 
 use beskid_pipeline::{
-    PipelineObserver, observe_phase_result,
+    PipelineObserver, observe_phase_result, report_progress,
     phases::{
         WORKSPACE_MATERIALIZE_LOCAL, WORKSPACE_MATERIALIZE_LOCKFILE,
         WORKSPACE_MATERIALIZE_PATH_DEPS, WORKSPACE_MATERIALIZE_REGISTRY,
@@ -293,21 +293,38 @@ pub fn prepare_project_workspace_with_options(
         .file_name()
         .map(|segment| segment.to_string_lossy().to_string())
         .unwrap_or_else(|| "Src".to_string());
-    let materialized_source_root = root_materialized_project.join(source_segment);
+    let materialized_source_root = root_materialized_project.join(&source_segment);
     observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_LOCAL, || {
-        copy_directory_when_newer(&plan.source_root, &materialized_source_root)
+        copy_directory_when_newer(&plan.source_root, &materialized_source_root)?;
+        report_progress(
+            pipeline,
+            WORKSPACE_MATERIALIZE_LOCAL,
+            1,
+            1,
+            source_segment.clone(),
+        );
+        Ok(())
     })?;
 
     let mut lock_entries = Vec::with_capacity(plan.dependency_projects.len());
     let mut materialized_dependencies = Vec::with_capacity(plan.dependency_projects.len());
 
+    let path_deps_total = plan.dependency_projects.len() as u64;
     observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_PATH_DEPS, || {
-        for dependency in &plan.dependency_projects {
+        for (index, dependency) in plan.dependency_projects.iter().enumerate() {
             let materialized_root = deps_root.join(materialized_dependency_id(
                 &dependency.project_name,
                 &dependency.manifest_path,
             ));
             copy_directory_when_newer(&dependency.project_root, &materialized_root)?;
+
+            report_progress(
+                pipeline,
+                WORKSPACE_MATERIALIZE_PATH_DEPS,
+                index as u64 + 1,
+                path_deps_total.max(1),
+                dependency.dependency_name.clone(),
+            );
 
             lock_entries.push(ProjectLockDependencyEntry {
                 name: dependency.dependency_name.clone(),
@@ -335,17 +352,26 @@ pub fn prepare_project_workspace_with_options(
         Ok::<(), ProjectError>(())
     })?;
 
+    let registry_deps: Vec<_> = plan
+        .unresolved_dependencies
+        .iter()
+        .filter(|x| x.source == DependencySource::Registry)
+        .collect();
+    let registry_deps_total = registry_deps.len() as u64;
     observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_REGISTRY, || {
-        for unresolved in plan
-            .unresolved_dependencies
-            .iter()
-            .filter(|x| x.source == DependencySource::Registry)
-        {
+        for (index, unresolved) in registry_deps.iter().enumerate() {
             if let Some((lock_entry, materialized_dependency)) =
                 materialize_registry_dependency(unresolved, &deps_root, workspace_rules.as_ref())?
             {
                 lock_entries.push(lock_entry);
                 materialized_dependencies.push(materialized_dependency);
+                report_progress(
+                    pipeline,
+                    WORKSPACE_MATERIALIZE_REGISTRY,
+                    index as u64 + 1,
+                    registry_deps_total.max(1),
+                    unresolved.dependency_name.clone(),
+                );
             }
         }
         Ok::<(), ProjectError>(())
@@ -672,7 +698,7 @@ fn resolve_registry_base_url(
     {
         return url.trim_end_matches('/').to_string();
     }
-    "http://127.0.0.1:8082".trim_end_matches('/').to_string()
+    "https://pckg.beskid-lang.org".trim_end_matches('/').to_string()
 }
 
 fn parse_registry_descriptor(descriptor: &str) -> (Option<String>, Option<String>) {

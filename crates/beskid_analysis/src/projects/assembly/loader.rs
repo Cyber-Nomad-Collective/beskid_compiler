@@ -4,7 +4,9 @@ use std::collections::{HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
+use beskid_pipeline::{PipelineObserver, phases::PROGRAM_ASSEMBLE, report_progress};
 use rayon::prelude::*;
 use thiserror::Error;
 
@@ -84,8 +86,17 @@ pub fn assemble_program(
     entry_path: &Path,
     entry_source: Option<&str>,
     options: &AssemblyOptions,
+    pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ProgramAssembly, AssemblyError> {
-    assemble_program_with_materializer(plan, workspace, entry_path, entry_source, options, None)
+    assemble_program_with_materializer(
+        plan,
+        workspace,
+        entry_path,
+        entry_source,
+        options,
+        None,
+        pipeline,
+    )
 }
 
 /// Like [`assemble_program`], using an optional Salsa unit materializer when provided.
@@ -96,6 +107,7 @@ pub fn assemble_program_with_materializer(
     entry_source: Option<&str>,
     options: &AssemblyOptions,
     materializer: Option<UnitMaterializer>,
+    pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ProgramAssembly, AssemblyError> {
     let roots = effective_roots_for_plan(plan, workspace);
     let module_roots: Vec<PathBuf> = super::roots::module_roots_from_effective(&roots);
@@ -194,9 +206,11 @@ pub fn assemble_program_with_materializer(
 
     let project_root = plan.project_root.clone();
     if let Err(err) = ensure_manifest(&project_root) {
-        log::warn!(
-            "unit cache manifest skipped for {}: {err}",
-            project_root.display()
+        tracing::warn!(
+            target: "beskid.analysis.assembly",
+            project_root = %project_root.display(),
+            error = %err,
+            "unit cache manifest skipped"
         );
     }
     let entry_key = entry_canonical
@@ -233,7 +247,12 @@ pub fn assemble_program_with_materializer(
                     match fs::read_to_string(path) {
                         Ok(text) => text,
                         Err(source) if options.skip_parse_errors && !is_entry => {
-                            log::warn!("skipping unreadable unit {} ({source})", path.display());
+                            tracing::warn!(
+                                target: "beskid.analysis.assembly",
+                                file = %path.display(),
+                                error = %source,
+                                "skipping unreadable unit"
+                            );
                             return None;
                         }
                         Err(source) => {
@@ -274,31 +293,64 @@ pub fn assemble_program_with_materializer(
 
     let project_root_for_pool = project_root.clone();
     let salsa_build = materializer.as_ref().map(|build| build.as_ref() as _);
+    let build_total = build_inputs.len() as u64;
+    let build_done = AtomicU64::new(0);
     let built_units: Result<Vec<(usize, bool, SourceUnit, super::UnitHir)>, AssemblyError> = pool
         .install(|| {
             build_inputs
                 .par_iter()
                 .enumerate()
                 .map(|(discovered_index, input)| {
+                    let logical_name = input.path.display().to_string();
+                    let file = input.path.display().to_string();
+                    let started = std::time::Instant::now();
+                    let unit_span = tracing::info_span!(
+                        target: "beskid.analysis.assembly",
+                        "assembly.unit",
+                        unit = %logical_name,
+                        file = %file,
+                        duration_ms = tracing::field::Empty,
+                    );
+                    let _unit_guard = unit_span.enter();
+
                     let builder = UnitBuilder::new(&project_root_for_pool);
                     let builder = if let Some(build) = salsa_build {
                         builder.with_salsa_build(build)
                     } else {
                         builder
                     };
-                    match builder.build_unit(&input.path, &input.source) {
-                        Ok((unit, hir)) => Ok((discovered_index, input.is_entry, unit, hir)),
+                    let label = unit_progress_label(&input.path);
+                    let result = match builder.build_unit(&input.path, &input.source) {
+                        Ok((unit, hir)) => {
+                            let done = build_done.fetch_add(1, Ordering::Relaxed) + 1;
+                            report_progress(
+                                pipeline,
+                                PROGRAM_ASSEMBLE,
+                                done,
+                                build_total.max(1),
+                                label,
+                            );
+                            Ok((discovered_index, input.is_entry, unit, hir))
+                        }
                         Err(AssemblyError::Parse { path, message })
                             if options.skip_parse_errors && !input.is_entry =>
                         {
-                            log::warn!("skipping unparseable unit {} ({message})", path.display());
+                            tracing::warn!(
+                                target: "beskid.analysis.assembly",
+                                unit = %path.display(),
+                                file = %path.display(),
+                                error = %message,
+                                "skipping unparseable unit"
+                            );
                             Err(AssemblyError::Parse {
                                 path,
                                 message: "skipped".to_string(),
                             })
                         }
                         Err(err) => Err(err),
-                    }
+                    };
+                    unit_span.record("duration_ms", started.elapsed().as_millis() as u64);
+                    result
                 })
                 .filter(|result| {
                     !matches!(
@@ -329,10 +381,11 @@ pub fn assemble_program_with_materializer(
     }
 
     let disk_stats = disk_cache_stats();
-    log::debug!(
-        "assembly artifact cache hits={} misses={}",
-        disk_stats.hits,
-        disk_stats.misses
+    tracing::debug!(
+        target: "beskid.analysis.assembly",
+        hits = disk_stats.hits,
+        misses = disk_stats.misses,
+        "assembly artifact cache stats"
     );
     let _ = beskid_artifacts::ArtifactStore::new(&project_root).refresh_manifest();
 
@@ -476,6 +529,12 @@ pub(crate) fn parent_module_import_path(import_path: &str) -> Option<String> {
     Some(segments[..segments.len() - 1].join("."))
 }
 
+fn unit_progress_label(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -566,7 +625,7 @@ mod tests {
             entry_path.display()
         );
 
-        let assembly = assemble_program(&plan, None, &entry_path, Some(""), &options)
+        let assembly = assemble_program(&plan, None, &entry_path, Some(""), &options, None)
             .expect("workspace scan should assemble units without a real entry file");
         assert!(!assembly.units.is_empty());
         let _ = fs::remove_dir_all(&plan.project_root);
@@ -577,7 +636,7 @@ mod tests {
         let (plan, entry_path) = no_entry_plan_with_source("pub fn Main() { }");
         let mut options = assembly_options_for_plan(&plan);
         options.discovery = AssemblyDiscovery::ImportClosure;
-        let err = assemble_program(&plan, None, &entry_path, Some(""), &options)
+        let err = assemble_program(&plan, None, &entry_path, Some(""), &options, None)
             .expect_err("import closure without entry file should fail");
         assert!(
             matches!(err, AssemblyError::EntryNotFound { .. }),
@@ -631,7 +690,7 @@ mod tests {
         };
         let entry_path = source_root.join("Entry.bd");
         let options = assembly_options_for_plan(&plan);
-        let assembly = assemble_program(&plan, None, &entry_path, None, &options)
+        let assembly = assemble_program(&plan, None, &entry_path, None, &options, None)
             .expect("import closure should assemble entry");
         assert_eq!(assembly.units.len(), 1);
         assert_eq!(assembly.discovery, AssemblyDiscovery::ImportClosure);
@@ -678,7 +737,7 @@ mod tests {
         };
         let entry_path = source_root.join("Entry.bd");
         let options = assembly_options_for_plan(&plan);
-        let assembly = assemble_program(&plan, None, &entry_path, None, &options)
+        let assembly = assemble_program(&plan, None, &entry_path, None, &options, None)
             .expect("import closure should follow transitive imports");
         let names: Vec<String> = assembly
             .units
@@ -715,7 +774,7 @@ mod tests {
         };
         let entry_path = plan_entry_path(&plan, &source_root);
         let options = assembly_options_for_plan(&plan);
-        let assembly = assemble_program(&plan, None, &entry_path, Some(""), &options)
+        let assembly = assemble_program(&plan, None, &entry_path, Some(""), &options, None)
             .expect("workspace scan should assemble every host unit");
         assert_eq!(assembly.discovery, AssemblyDiscovery::WorkspaceScan);
         assert_eq!(assembly.units.len(), 2);
@@ -761,7 +820,7 @@ mod tests {
             discovery: AssemblyDiscovery::ImportClosure,
             ..AssemblyOptions::default()
         };
-        let assembly = assemble_program(&plan, None, &entry_path, None, &options)
+        let assembly = assemble_program(&plan, None, &entry_path, None, &options, None)
             .expect("import closure should assemble entry without dependency units");
         assert_eq!(assembly.units.len(), 1);
         assert!(
@@ -774,7 +833,7 @@ mod tests {
             discovery: AssemblyDiscovery::WorkspaceScan,
             ..AssemblyOptions::default()
         };
-        let scanned = assemble_program(&plan, None, &entry_path, None, &scan_options)
+        let scanned = assemble_program(&plan, None, &entry_path, None, &scan_options, None)
             .expect("workspace scan should assemble host and prefetch dependency tree");
         assert!(
             scanned.module_index.prefetched_paths().len() >= 8,

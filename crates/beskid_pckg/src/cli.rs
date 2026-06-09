@@ -46,7 +46,7 @@ struct RepositoryAuthConfig {
 #[derive(Args, Debug, Clone)]
 pub struct PckgArgs {
     /// pckg server base URL.
-    #[arg(long, env = "BESKID_PCKG_URL", default_value = "http://127.0.0.1:8082")]
+    #[arg(long, env = "BESKID_PCKG_URL", default_value = "https://pckg.beskid-lang.org")]
     pub base_url: String,
 
     /// Bearer token for authenticated endpoints.
@@ -650,7 +650,8 @@ fn load_repositories_config(config_path: &Path) -> Result<PckgRepositoriesConfig
 
             if let Some(legacy_key) = legacy_key {
                 let mut repositories = BTreeMap::new();
-                let default_repository = canonical_repository_url("http://127.0.0.1:8082")?;
+                let default_repository =
+                    canonical_repository_url("https://pckg.beskid-lang.org")?;
                 repositories.insert(
                     default_repository,
                     RepositoryAuthConfig {

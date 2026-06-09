@@ -1,11 +1,9 @@
 //! Entry-spine queries: prepare, semantic gate, composition, typed HIR.
 
-use std::sync::Arc;
-
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{
-    FrontEndOptions, PrepareMode, PrepareOptions, PreparedCompilation, ResolvedInput,
+    FrontEndOptions, PrepareOptions, PreparedCompilation, ResolvedInput,
     SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot,
     invalidate_entry_sessions_for_project,
 };
@@ -14,9 +12,9 @@ use beskid_pipeline::{PipelineObserver, observe_phase, phases};
 use crate::db::BeskidDatabase;
 use crate::graph::program_assembly;
 use crate::output::{SharedFrontEnd, SharedResolution};
-use crate::stats::{emit_salsa_stats, record_query_hit, record_query_miss, record_revision_bump};
+use crate::stats::{emit_salsa_stats, record_revision_bump, trace_query};
 
-fn session_fingerprint(resolved: &ResolvedInput) -> Option<SessionFingerprint> {
+pub(crate) fn session_fingerprint(resolved: &ResolvedInput) -> Option<SessionFingerprint> {
     let plan = resolved.compile_plan.as_ref()?;
     Some(SessionFingerprint::for_entry(plan, &resolved.source_path))
 }
@@ -25,10 +23,10 @@ fn session_fingerprint(resolved: &ResolvedInput) -> Option<SessionFingerprint> {
 pub fn semantic_gate_diagnostics(_db: &dyn crate::db::Db, fingerprint: &str) -> u64 {
     let fp = decode_fingerprint_key(fingerprint);
     if let Some(snapshot) = cached_semantic_snapshot(&fp) {
-        record_query_hit();
+        trace_query("semantic_gate_diagnostics", true);
         return snapshot.diagnostic_fingerprint;
     }
-    record_query_miss();
+    trace_query("semantic_gate_diagnostics", false);
     0
 }
 
@@ -36,10 +34,10 @@ pub fn semantic_gate_diagnostics(_db: &dyn crate::db::Db, fingerprint: &str) -> 
 pub fn semantic_snapshot(_db: &dyn crate::db::Db, fingerprint: &str) -> u64 {
     let fp = decode_fingerprint_key(fingerprint);
     if let Some(snapshot) = cached_semantic_snapshot(&fp) {
-        record_query_hit();
+        trace_query("semantic_snapshot", true);
         return snapshot.diagnostic_count as u64;
     }
-    record_query_miss();
+    trace_query("semantic_snapshot", false);
     0
 }
 
@@ -91,7 +89,7 @@ pub fn prepare_compilation_with_db(
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<PreparedCompilation> {
-    record_query_miss();
+    trace_query("prepare_compilation_with_db", false);
     let resolved = enrich_resolved_with_assembly(db, resolved, &options)?;
     db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
     let result = beskid_analysis::services::prepare_compilation(&resolved, options, pipeline)?;
@@ -106,7 +104,7 @@ pub fn prepare_compilation_diagnostics_with_db(
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>)> {
-    record_query_miss();
+    trace_query("prepare_compilation_diagnostics_with_db", false);
     let resolved = enrich_resolved_with_assembly(db, resolved, &options)?;
     db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
     let result =
@@ -125,19 +123,13 @@ pub fn typed_entry_bundle(
     resolved: &ResolvedInput,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
-    let prepared = prepare_compilation_with_db(
-        db,
-        resolved,
-        PrepareOptions {
-            mode: PrepareMode::Executable,
-            front_end: FrontEndOptions {
-                with_semantic_diagnostics: false,
-                ..Default::default()
-            },
+    let options = PrepareOptions {
+        front_end: FrontEndOptions {
+            with_semantic_diagnostics: false,
+            ..Default::default()
         },
-        pipeline,
-    )?;
-    Ok(SharedFrontEnd(Arc::new(prepared.into_executable()?)))
+    };
+    crate::typed_entry_bundle::typed_entry_bundle_with_db(db, resolved, &options, pipeline)
 }
 
 /// Entry resolution only (assembly + module index resolve, no typecheck).
@@ -146,7 +138,7 @@ pub fn entry_resolution_with_db(
     resolved: &ResolvedInput,
     options: &PrepareOptions,
 ) -> Result<SharedResolution> {
-    record_query_miss();
+    trace_query("entry_resolution_with_db", false);
     let resolved = enrich_resolved_with_assembly(db, resolved, options)?;
     db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
     let assembly = resolved

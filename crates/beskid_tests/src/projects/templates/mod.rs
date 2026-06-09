@@ -201,7 +201,7 @@ Tpl {
 
 #[test]
 fn instantiated_project_analyzes_cleanly() {
-    use beskid_analysis::services::{self, FrontEndOptions, PrepareMode, PrepareOptions};
+    use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions};
     use beskid_template::{
         InstantiateOptions, SymbolCollectOptions, TEMPLATE_MANIFEST_REL, TEMPLATE_SCHEMA,
         instantiate, load_manifest_from_template_root,
@@ -294,7 +294,6 @@ target "app" {
     let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
         &resolved,
         PrepareOptions {
-            mode: PrepareMode::DiagnosticsOnly,
             front_end: FrontEndOptions {
                 with_semantic_diagnostics: true,
                 ..Default::default()

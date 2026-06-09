@@ -3,6 +3,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+use beskid_pipeline::report_progress;
+
 use crate::builtins::{BuiltinType, builtin_specs};
 use crate::hir::{HirContractNode, HirItem, HirPrimitiveType, HirProgram};
 use crate::resolve::{ItemId, ItemKind, LocalId, Resolution, ResolvedType};
@@ -600,6 +602,7 @@ pub struct TypeContext<'a> {
     pub(super) next_fiber_scope: usize,
     pub(super) fiber_handle_scopes: HashMap<SpanInfo, usize>,
     pub(super) fiber_handle_locals: HashMap<crate::resolve::LocalId, usize>,
+    progress: Option<(&'a dyn beskid_pipeline::PipelineObserver, &'static str)>,
 }
 
 impl<'a> TypeContext<'a> {
@@ -637,10 +640,20 @@ impl<'a> TypeContext<'a> {
             next_fiber_scope: 1,
             fiber_handle_scopes: HashMap::new(),
             fiber_handle_locals: HashMap::new(),
+            progress: None,
         };
         context.seed_types();
         context.seed_builtin_signatures();
         context
+    }
+
+    pub fn with_progress(
+        mut self,
+        observer: &'a dyn beskid_pipeline::PipelineObserver,
+        phase_id: &'static str,
+    ) -> Self {
+        self.progress = Some((observer, phase_id));
+        self
     }
 
     fn seed_builtin_signatures(&mut self) {
@@ -685,8 +698,8 @@ impl<'a> TypeContext<'a> {
     ) -> Option<TypeId> {
         if builtin == BuiltinType::Ptr {
             let path = spec.beskid_path;
-            if is_return {
-                if matches!(
+            if is_return
+                && matches!(
                     path,
                     &["__bytes_from_str"]
                         | &["__syscall_read_bytes"]
@@ -699,7 +712,6 @@ impl<'a> TypeContext<'a> {
                     }
                     return self.u8_array_type_id();
                 }
-            }
             if matches!(
                 path,
                 &["__bytes_copy"]
@@ -750,6 +762,19 @@ impl<'a> TypeContext<'a> {
         type_dependency_bodies: bool,
         module_index: Option<&crate::projects::assembly::ModuleIndex>,
     ) -> (TypeResult, Vec<TypeError>) {
+        let _types_guard = tracing::info_span!(
+            target: "beskid.analysis",
+            "beskid.analysis.types",
+            entry = tracing::field::display(
+                entry_source_path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "<unknown>".to_string())
+            ),
+            session_fingerprint = tracing::field::display("<none>"),
+            syntax_generation_id = 0,
+        )
+        .entered();
         if let Some(index) = module_index {
             for path in index.prefetched_paths() {
                 self.seed_definitions_from_source_path(path);
@@ -861,7 +886,19 @@ impl<'a> TypeContext<'a> {
                 _ => {}
             }
         }
-        for item in &program.node.items {
+        let items = &program.node.items;
+        let item_total = items.len() as u64;
+        for (index, item) in items.iter().enumerate() {
+            if let Some((observer, phase)) = self.progress {
+                let label = self.progress_label_with_path(hir_item_progress_label(item));
+                report_progress(
+                    Some(observer),
+                    phase,
+                    index as u64 + 1,
+                    item_total.max(1),
+                    label,
+                );
+            }
             self.type_item(item);
         }
         self.cast_intents.sort_by_key(|intent| {
@@ -1119,6 +1156,34 @@ impl<'a> TypeContext<'a> {
             }
             _ => false,
         }
+    }
+
+    fn progress_label_with_path(&self, item_label: String) -> String {
+        if let Some(path) = &self.current_source_path
+            && let Some(file) = path.file_name()
+        {
+            return format!("{item_label} ({})", file.to_string_lossy());
+        }
+        item_label
+    }
+}
+
+fn hir_item_progress_label(item: &Spanned<HirItem>) -> String {
+    match &item.node {
+        HirItem::FunctionDefinition(def) => format!("fn {}", def.node.name.node.name),
+        HirItem::TypeDefinition(def) => format!("type {}", def.node.name.node.name),
+        HirItem::EnumDefinition(def) => format!("enum {}", def.node.name.node.name),
+        HirItem::MethodDefinition(def) => format!("method {}", def.node.name.node.name),
+        HirItem::TestDefinition(def) => format!("test {}", def.node.name.node.name),
+        HirItem::ContractDefinition(def) => format!("contract {}", def.node.name.node.name),
+        HirItem::ExtendTypeDefinition(def) => {
+            if let Some(method) = def.node.methods.first() {
+                format!("extend {}", method.node.name.node.name)
+            } else {
+                "extend type".into()
+            }
+        }
+        _ => "item".into(),
     }
 }
 

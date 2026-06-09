@@ -1,28 +1,25 @@
-//! Shared terminal UI helpers (Ratatui TEA session, timers, diagnostic summaries).
+//! Shared terminal UI helpers (Ratatui session, timers, diagnostic summaries).
 
-mod diagnostics;
-mod hyperlink;
-mod layout;
-mod message;
-mod model;
-mod nav;
-mod pipeline_tree;
-mod stage_focus;
-mod terminal;
-mod test_report;
-mod test_table;
-mod timer;
-mod tree;
-mod update;
-mod view;
-mod widgets;
+pub(crate) mod diagnostics;
+pub(crate) mod hyperlink;
+pub(crate) mod log_input;
+pub(crate) mod log_tabs;
+pub(crate) mod model;
+pub(crate) mod pipeline_tree;
+pub(crate) mod stage_focus;
+pub(crate) mod terminal;
+pub(crate) mod terminal_io;
+pub(crate) mod test_table;
+pub(crate) mod timer;
+pub(crate) mod tree;
+pub(crate) mod widgets;
 
 pub use diagnostics::{SeverityCounts, count_severities, format_severity_summary};
-pub use hyperlink::{FileLineLink, hyperlinks_enabled};
+pub use hyperlink::FileLineLink;
 pub use model::{
     CommandSummary, PipelineProgress, SummarySlice, SummaryStat, TestReportSummary,
 };
-pub use nav::NavTarget;
+pub use crate::tui::shell::state::NavTarget;
 pub use pipeline_tree::PipelineTree;
 pub use terminal::{PipelineViewState, TuiSession, reset_stderr_ansi};
 pub use test_table::{TestRow, TestRowState, TestRunUi};

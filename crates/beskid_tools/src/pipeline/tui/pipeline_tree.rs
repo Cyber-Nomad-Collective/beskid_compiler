@@ -1,8 +1,6 @@
-//! Structured pipeline tree for [`tui-tree-widget`] rendering.
+//! Structured pipeline tree for ratkit [`TreeView`] rendering.
 
-use std::io;
-
-use tui_tree_widget::TreeItem;
+use ratkit::widgets::TreeNode;
 
 #[derive(Debug, Clone)]
 struct PipelineNode {
@@ -12,21 +10,22 @@ struct PipelineNode {
 }
 
 impl PipelineNode {
-    fn to_tree_item(&self, id: String) -> io::Result<TreeItem<'static, String>> {
-        let text = match &self.detail {
+    fn display_label(&self) -> String {
+        match &self.detail {
             Some(detail) => format!("{} ({detail})", self.label),
             None => self.label.clone(),
-        };
-        if self.children.is_empty() {
-            return Ok(TreeItem::new_leaf(id, text));
         }
-        let children: io::Result<Vec<_>> = self
-            .children
-            .iter()
-            .enumerate()
-            .map(|(index, child)| child.to_tree_item(format!("{id}.{index}")))
-            .collect();
-        TreeItem::new(id, text, children?)
+    }
+
+    fn to_tree_node(&self) -> TreeNode<String> {
+        if self.children.is_empty() {
+            TreeNode::new(self.display_label())
+        } else {
+            TreeNode::with_children(
+                self.display_label(),
+                self.children.iter().map(PipelineNode::to_tree_node).collect(),
+            )
+        }
     }
 }
 
@@ -115,20 +114,16 @@ impl PipelineTree {
         }
     }
 
-    pub fn tree_items(&self) -> io::Result<Vec<TreeItem<'static, String>>> {
-        self.roots
-            .iter()
-            .enumerate()
-            .map(|(index, node)| node.to_tree_item(index.to_string()))
-            .collect()
+    pub fn tree_nodes(&self) -> Vec<TreeNode<String>> {
+        self.roots.iter().map(PipelineNode::to_tree_node).collect()
     }
 
-    pub fn open_paths(&self) -> Vec<Vec<String>> {
+    pub fn open_paths(&self) -> Vec<Vec<usize>> {
         let mut paths = Vec::new();
         for (index, root) in self.roots.iter().enumerate() {
-            let prefix = index.to_string();
-            paths.push(vec![prefix.clone()]);
-            collect_open_paths(root, prefix, &mut paths);
+            let path = vec![index];
+            paths.push(path.clone());
+            collect_open_paths(root, path, &mut paths);
         }
         paths
     }
@@ -142,10 +137,11 @@ impl PipelineTree {
     }
 }
 
-fn collect_open_paths(node: &PipelineNode, prefix: String, paths: &mut Vec<Vec<String>>) {
+fn collect_open_paths(node: &PipelineNode, prefix: Vec<usize>, paths: &mut Vec<Vec<usize>>) {
     for (index, child) in node.children.iter().enumerate() {
-        let path = format!("{prefix}.{index}");
-        paths.push(vec![path.clone()]);
+        let mut path = prefix.clone();
+        path.push(index);
+        paths.push(path.clone());
         collect_open_paths(child, path, paths);
     }
 }
@@ -161,8 +157,8 @@ mod tests {
         tree.phase_start(1, "Type check");
         tree.phase_end(1, "Type check", "12ms");
         tree.phase_end(0, "Semantic analysis", "45ms");
-        let items = tree.tree_items().expect("tree");
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].children().len(), 1);
+        let nodes = tree.tree_nodes();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].children.len(), 1);
     }
 }

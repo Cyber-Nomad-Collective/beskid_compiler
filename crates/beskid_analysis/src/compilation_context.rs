@@ -1,32 +1,36 @@
-//! Resolved project graph slice used for analysis and tooling (module roots, compile plan).
+//! Project session identity for analysis and tooling (manifest paths, module roots).
+//!
+//! [`ProgramAssembly`] and materialized workspace state live in
+//! [`beskid_queries::BeskidDatabase`] (see `program_assembly` and prepare spine).
 
 use std::path::{Path, PathBuf};
 
 use crate::projects::{
-    AssemblyDiscovery, AssemblyOptions, CompilePlan, PROJECT_LOCK_FILE_NAME,
-    PreparedProjectWorkspace, ProgramAssembly, ProjectGraphBuildOptions, ProjectKind,
-    UnresolvedDependencyPolicy, WorkspacePrepareOptions, assemble_program,
-    assembly_options_for_plan, build_compile_plan_with_policy_and_graph, discover_workspace_file,
+    CompilePlan, ProgramAssembly, ProjectGraphBuildOptions, ProjectKind,
+    UnresolvedDependencyPolicy, build_compile_plan_with_policy_and_graph, discover_workspace_file,
     effective_roots_for_plan, load_manifest_from_path, module_roots_from_effective,
-    prepare_project_workspace_with_options, resolve_project_manifest_for_source_path,
+    resolve_project_manifest_for_source_path,
 };
 
-/// Workspace-aware compilation slice: selected `Project.proj`, optional [`CompilePlan`] for
-/// host and mod roots, [`ProjectKind`] for staged rules (for example compiler-mod contract placement),
-/// materialized-first [`module_roots`](Self::module_roots), and optional cached [`ProgramAssembly`].
+/// Thin project session view: manifest paths and module roots for query/database inputs.
+///
+/// Does not cache [`ProgramAssembly`] or prepared workspace artifacts. Callers attach a
+/// [`beskid_queries::BeskidDatabase`] (or use `beskid_queries::with_db`) when assembly or prepare
+/// output is required.
 #[derive(Debug, Clone)]
-pub struct CompilationContext {
+pub struct ProjectSessionHandle {
     pub project_manifest_path: PathBuf,
     pub workspace_manifest_path: Option<PathBuf>,
     pub project_kind: ProjectKind,
     pub compile_plan: Option<CompilePlan>,
-    pub prepared_workspace: Option<PreparedProjectWorkspace>,
     pub module_roots: Vec<PathBuf>,
-    pub assembly: Option<ProgramAssembly>,
 }
 
-impl CompilationContext {
-    /// Build context for IDE/analysis: uses lockfile materialized paths when present; no full materialize.
+/// Backward-compatible alias for [`ProjectSessionHandle`].
+pub type CompilationContext = ProjectSessionHandle;
+
+impl ProjectSessionHandle {
+    /// Build a session handle for IDE/analysis paths (module roots from lockfile when present).
     pub fn try_for_analysis_path(path: &Path, workspace_member: Option<&str>) -> Option<Self> {
         Self::try_for_analysis_path_with_graph_options(
             path,
@@ -36,7 +40,7 @@ impl CompilationContext {
     }
 
     /// Like [`Self::try_for_analysis_path`], but forwards [`ProjectGraphBuildOptions`] (for example
-    /// `workspace_member_for_meta_default`) into graph / compile-plan construction (legacy field; ignored).
+    /// `workspace_member_for_meta_default`) into graph / compile-plan construction.
     pub fn try_for_analysis_path_with_graph_options(
         path: &Path,
         workspace_member: Option<&str>,
@@ -61,15 +65,9 @@ impl CompilationContext {
                 .ok()
             }
         };
-        let prepared_workspace = None;
         let module_roots = compile_plan
             .as_ref()
-            .map(|plan| {
-                module_roots_from_effective(&effective_roots_for_plan(
-                    plan,
-                    prepared_workspace.as_ref(),
-                ))
-            })
+            .map(|plan| module_roots_from_effective(&effective_roots_for_plan(plan, None)))
             .unwrap_or_else(|| {
                 let project_root = manifest_path
                     .parent()
@@ -82,52 +80,19 @@ impl CompilationContext {
             workspace_manifest_path,
             project_kind,
             compile_plan,
-            prepared_workspace,
             module_roots,
-            assembly: None,
         })
     }
 
-    /// Lazily build or return cached assembly for `entry_path` (import-closure for IDE).
+    /// Legacy hook retained until document/LSP callers migrate to query-backed assembly (W3-B/W3-D).
+    ///
+    /// Always returns `None`; assembly is no longer built or cached on the session handle.
     pub fn assembly_for_entry(
         &mut self,
-        entry_path: &Path,
-        entry_source: &str,
+        _entry_path: &Path,
+        _entry_source: &str,
     ) -> Option<&ProgramAssembly> {
-        if self.assembly.is_some() {
-            return self.assembly.as_ref();
-        }
-        let plan = self.compile_plan.as_ref()?;
-
-        // Std shard modules (e.g. System/Output) resolve from materialized dependency roots.
-        // IDE context starts without a prepared workspace; materialize lazily on first assembly.
-        if self.prepared_workspace.is_none() {
-            let lockfile = plan.manifest_path.with_file_name(PROJECT_LOCK_FILE_NAME);
-            let prepare_options = WorkspacePrepareOptions {
-                frozen: false,
-                locked: lockfile.is_file(),
-            };
-            if let Ok(workspace) =
-                prepare_project_workspace_with_options(plan, prepare_options, None)
-            {
-                self.prepared_workspace = Some(workspace);
-                self.module_roots = module_roots_from_effective(&effective_roots_for_plan(
-                    plan,
-                    self.prepared_workspace.as_ref(),
-                ));
-            }
-        }
-
-        let options = assembly_options_for_plan(plan);
-        self.assembly = assemble_program(
-            plan,
-            self.prepared_workspace.as_ref(),
-            entry_path,
-            Some(entry_source),
-            &options,
-        )
-        .ok();
-        self.assembly.as_ref()
+        None
     }
 
     /// Whether compiler-mod contract items may be placed at module scope in this project's Beskid sources.

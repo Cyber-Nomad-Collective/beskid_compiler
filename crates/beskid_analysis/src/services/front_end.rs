@@ -8,7 +8,7 @@ use beskid_pipeline::PipelineObserver;
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 
 use super::input::ResolvedInput;
-use super::prepare::{PrepareMode, PrepareOptions, prepare_compilation};
+use super::prepare::{PrepareOptions, prepare_compilation};
 
 /// Result of the shared front-end through typed HIR (codegen consumes this).
 pub struct FrontEndTypedResult {
@@ -92,29 +92,9 @@ pub fn compile_front_end_with_pipeline(
 
     let prepared = prepare_compilation(
         &resolved,
-        PrepareOptions {
-            mode: PrepareMode::Executable,
-            front_end: options,
-        },
+        PrepareOptions { front_end: options },
         pipeline,
     )?;
 
-    prepared.into_executable()
-}
-
-/// Build typed HIR from a fully resolved [`ResolvedInput`] (CLI build/run path).
-pub fn compile_front_end_from_resolved_input(
-    resolved: &ResolvedInput,
-    options: FrontEndOptions,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<FrontEndTypedResult> {
-    let prepared = prepare_compilation(
-        resolved,
-        PrepareOptions {
-            mode: PrepareMode::Executable,
-            front_end: options,
-        },
-        pipeline,
-    )?;
     prepared.into_executable()
 }

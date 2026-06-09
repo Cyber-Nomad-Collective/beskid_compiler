@@ -16,7 +16,7 @@ use super::{SourceUnit, UnitHir, build_hir_units};
 
 /// Builds `(SourceUnit, UnitHir)` with artifact persistence and optional Salsa delegate.
 pub struct UnitBuilder<'a> {
-    project_root: PathBuf,
+    _project_root: PathBuf,
     store: ArtifactStore,
     salsa_build: Option<
         &'a (dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync),
@@ -26,7 +26,7 @@ pub struct UnitBuilder<'a> {
 impl<'a> UnitBuilder<'a> {
     pub fn new(project_root: &Path) -> Self {
         Self {
-            project_root: project_root.to_path_buf(),
+            _project_root: project_root.to_path_buf(),
             store: ArtifactStore::new(project_root),
             salsa_build: None,
         }
@@ -50,15 +50,13 @@ impl<'a> UnitBuilder<'a> {
         let fp = content_fingerprint(source);
         if let (Some(ast_snap), Some(hir_snap)) =
             (self.store.read_ast(&fp), self.store.read_hir(&fp))
-        {
-            if ast_snap.meta.source_len == source.len()
+            && ast_snap.meta.source_len == source.len()
                 && let Ok(unit) = source_unit_from_ast_snapshot(&ast_snap, source)
                 && let Ok(hir) = unit_hir_from_hir_snapshot(path.to_path_buf(), &unit, &hir_snap)
             {
                 crate::projects::assembly::unit_cache::record_disk_hit();
                 return Ok((unit, hir));
             }
-        }
 
         if let Some(build) = self.salsa_build {
             crate::projects::assembly::unit_cache::record_disk_miss();

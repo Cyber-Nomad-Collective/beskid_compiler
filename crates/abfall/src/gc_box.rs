@@ -166,10 +166,6 @@ impl GcHeader {
         self.header_word.fetch_and(!COLOR_MASK, Ordering::Release);
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn raw_word(&self) -> usize {
-        self.header_word.load(Ordering::Relaxed)
-    }
 }
 
 /// A garbage collected object with metadata

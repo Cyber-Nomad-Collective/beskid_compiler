@@ -180,19 +180,16 @@ pub fn symbol_shape_for_item(
     parent_symbol: Option<SymbolId>,
     member_display_name: Option<&str>,
 ) -> Option<SymbolShape> {
-    if let Some(receiver) = method_receiver {
-        if kind == ItemKind::Method {
+    if let Some(receiver) = method_receiver
+        && kind == ItemKind::Method {
             return Some(SymbolShape::Method {
                 receiver: receiver.to_string(),
                 name: name.rsplit("::").next().unwrap_or(name).to_string(),
             });
         }
-    }
-    if let (Some(parent), Some(member_name)) = (parent_symbol, member_display_name) {
-        if let Some(member_kind) = MemberKind::from_item_kind(kind) {
-            let short = member_name
-                .splitn(2, "::")
-                .nth(1)
+    if let (Some(parent), Some(member_name)) = (parent_symbol, member_display_name)
+        && let Some(member_kind) = MemberKind::from_item_kind(kind) {
+            let short = member_name.split_once("::").map(|x| x.1)
                 .unwrap_or(member_name)
                 .to_string();
             return Some(SymbolShape::Member {
@@ -201,7 +198,6 @@ pub fn symbol_shape_for_item(
                 kind: member_kind,
             });
         }
-    }
     if let Some(export_kind) = ExportKind::from_item_kind(kind) {
         return Some(SymbolShape::ModuleItem {
             module_path: module_path.to_vec(),

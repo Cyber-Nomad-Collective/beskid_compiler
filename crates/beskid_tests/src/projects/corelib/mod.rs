@@ -45,14 +45,6 @@ pub(super) fn stratified_corelib_parse_samples() -> &'static [&'static str] {
     ]
 }
 
-/// Foundation, runtime, and console packages analyzed in project context (excludes compiler-sdk).
-pub(super) fn stratified_corelib_analyze_sources() -> impl Iterator<Item = &'static str> {
-    expected_corelib_workspace_sources()
-        .iter()
-        .copied()
-        .filter(|path| !path.contains("compiler-sdk"))
-}
-
 /// Workspace-relative `.bd` sources that must exist for the split corelib layout.
 pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
     &[
@@ -71,10 +63,12 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/foundation/src/Testing/Assertions.bd",
         "packages/foundation/src/Testing/Contracts.bd",
         "packages/runtime/src/System/Environment.bd",
+        "packages/runtime/src/System/Environment/EnvironmentError.bd",
         "packages/runtime/src/System/FS.bd",
-        "packages/runtime/src/System/Input.bd",
-        "packages/runtime/src/System/Output.bd",
-        "packages/runtime/src/System/Error.bd",
+        "packages/runtime/src/System/FS/FsError.bd",
+        "packages/runtime/src/System/Input/Input.bd",
+        "packages/runtime/src/System/Output/Output.bd",
+        "packages/runtime/src/System/Error/Error.bd",
         "packages/console/src/Console.bd",
         "packages/console/src/Ansi/Escape.bd",
         "packages/console/src/Ansi/Contracts.bd",
@@ -91,8 +85,9 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/console/src/Console/Format/Attributes.bd",
         "packages/console/src/Console/Format/Markdown.bd",
         "packages/console/src/Platform/Terminal.bd",
-        "packages/runtime/src/System/Path.bd",
+        "packages/runtime/src/System/Path/Path.bd",
         "packages/runtime/src/System/Process.bd",
+        "packages/runtime/src/System/Process/ProcessError.bd",
         "packages/runtime/src/System/Syscall.bd",
         "packages/runtime/src/System/Syscall/Descriptor.bd",
         "packages/runtime/src/System/Syscall/ReadRequest.bd",
@@ -101,6 +96,12 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/runtime/src/System/Syscall/SyscallError.bd",
         "packages/runtime/src/System/Syscall/WriteRequest.bd",
         "packages/runtime/src/System/Time.bd",
+        "packages/runtime/src/System/Time/Instant.bd",
+        "packages/runtime/src/System/Time/Duration.bd",
+        "packages/runtime/src/System/Time/Date.bd",
+        "packages/runtime/src/System/Time/TimeOfDay.bd",
+        "packages/runtime/src/System/Time/DateTime.bd",
+        "packages/runtime/src/System/Time/TimeError.bd",
         "packages/runtime/src/Runtime/Abi.bd",
         "packages/runtime/src/Runtime/Init.bd",
         "packages/compiler-sdk/src/Beskid/Syntax.bd",

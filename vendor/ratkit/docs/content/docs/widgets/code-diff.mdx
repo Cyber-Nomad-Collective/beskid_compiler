@@ -1,0 +1,43 @@
+---
+title: CodeDiff
+description: Display code diffs with syntax highlighting.
+---
+
+## Overview
+
+The CodeDiff widget displays code differences with syntax highlighting, line numbers, and color-coded changes.
+
+## Basic Usage
+
+```rust
+use ratkit::widgets::code_diff::{CodeDiff, DiffState};
+use ratatui::Frame;
+
+fn render_diff(frame: &mut Frame) {
+    let old_code = "fn hello() {\n    println!(\"Hello\");\n}";
+    let new_code = "fn hello() {\n    println!(\"Hello, World!\");\n}";
+    
+    let diff = CodeDiff::new(old_code, new_code)
+        .language("rust");
+    
+    let mut state = DiffState::default();
+    frame.render_stateful_widget(diff, frame.area(), &mut state);
+}
+```
+
+## Features
+
+- **Unified diff** - Side-by-side or unified view
+- **Syntax highlighting** - Language-aware coloring
+- **Line numbers** - Optional line number display
+- **Color coding** - Green for additions, red for deletions
+
+## Customization
+
+```rust
+let diff = CodeDiff::new(old_code, new_code)
+    .show_line_numbers(true)
+    .context_lines(3)
+    .addition_style(Style::default().bg(Color::Green))
+    .deletion_style(Style::default().bg(Color::Red));
+```

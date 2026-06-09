@@ -11,7 +11,7 @@ use clap::Args;
 use graphs_tui::{RenderOptions, render_mermaid_to_tui};
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
-use beskid_tools::pipeline::frontend::resolve_input_with_pipeline;
+use beskid_tools::pipeline::{CliResolveOptions, frontend::resolve_input_with_pipeline};
 
 #[derive(Args, Debug)]
 pub struct GraphArgs {
@@ -54,12 +54,15 @@ pub fn execute(args: GraphArgs) -> Result<()> {
     })?;
 
     let resolved = resolve_input_with_pipeline(
-        args.input.as_ref(),
-        args.project.project.as_ref(),
-        args.project.target.as_deref(),
-        args.project.workspace_member.as_deref(),
-        args.lockfile.frozen,
-        args.lockfile.locked,
+        CliResolveOptions::new(
+            args.input.as_ref(),
+            args.project.project.as_ref(),
+            args.project.target.as_deref(),
+            args.project.workspace_member.as_deref(),
+            args.lockfile.frozen,
+            args.lockfile.locked,
+            args.plain,
+        ),
         None,
     )?;
 

@@ -1,87 +1,95 @@
-//! Primary pane: stage-appropriate headline, progress, and work-unit detail.
+//! Primary pane: stage focus blurb and live work unit (gauges live in the footer only).
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Gauge, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
-use super::super::model::{Mode, Model};
 use super::super::stage_focus::StageFocus;
 use super::super::test_table::TestRowState;
+use super::spinner::draw_stage_bar_spinner;
+use crate::tui::shell::focus::{FocusTarget, OverlayKind};
+use crate::tui::shell::state::{NavTarget, ShellState};
 
-fn percent(done: u64, total: u64) -> u16 {
-    let total = total.max(1);
-    ((done.saturating_mul(100)) / total).min(100) as u16
-}
-
-pub fn draw_stage_panel(frame: &mut Frame, area: Rect, model: &Model, focus: StageFocus) {
-    match model.mode {
-        Mode::Pipeline => draw_pipeline_stage(frame, area, model, focus),
-        Mode::Tests => draw_test_stage(frame, area, model),
-        Mode::Report | Mode::Summary => draw_summary_stage(frame, area, model),
+pub fn draw_stage_panel(frame: &mut Frame, area: Rect, state: &ShellState, focus: StageFocus) {
+    match state.focus {
+        FocusTarget::Overlay(OverlayKind::Tests) => draw_test_stage(frame, area, state),
+        FocusTarget::Overlay(OverlayKind::Summary) => draw_summary_stage(frame, area, state),
+        _ => draw_pipeline_stage(frame, area, state, focus),
     }
 }
 
-fn draw_pipeline_stage(frame: &mut Frame, area: Rect, model: &Model, focus: StageFocus) {
-    let (detail_area, gauge_area) = split_detail_gauge(area);
+fn draw_pipeline_stage(frame: &mut Frame, area: Rect, state: &ShellState, focus: StageFocus) {
     let title = match focus {
-        StageFocus::Workspace => "Workspace progress",
-        StageFocus::FrontEnd => "Parse & macros",
-        StageFocus::Semantic => "Semantic pass",
-        StageFocus::LowerCodegen => "Codegen",
+        StageFocus::Workspace => "Workspace",
+        StageFocus::FrontEnd => "Front end",
+        StageFocus::Semantic => "Semantic analysis",
+        StageFocus::LowerCodegen => "Lowering & codegen",
         _ => "Stage",
     };
 
-    let mut lines = vec![
-        Line::from(vec![
+    let mut lines = Vec::new();
+    if state.compile_complete
+        && state.awaiting_nav == Some(NavTarget::Tests)
+        && state.tests_loaded
+    {
+        lines.push(Line::from(vec![
             Span::styled(
-                model.pipeline.stage_label.as_str(),
+                "Compile finished — press Space to run tests",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        lines.push(Line::from(""));
+    }
+    if let Some(work) = state.last_work_unit.as_deref() {
+        lines.push(Line::from(vec![
+            Span::styled("Now ", Style::default().fg(Color::DarkGray)),
+            Span::styled(work, Style::default().add_modifier(Modifier::BOLD)),
+        ]));
+        lines.push(Line::from(""));
+    } else if !state.pipeline.stage_label.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled(
+                state.pipeline.stage_label.as_str(),
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ),
-        ]),
-    ];
-    if let Some(work) = model.last_work_unit.as_deref() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled("Work ", Style::default().fg(Color::DarkGray)),
-            Span::raw(work),
         ]));
+        lines.push(Line::from(""));
     }
     push_focus_description(&mut lines, focus);
 
-    let detail = Paragraph::new(lines)
-        .wrap(Wrap { trim: true })
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" {title} ")),
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {title} "));
+    if state.show_spinner() {
+        let [spinner_area, text_area] =
+            ratatui::layout::Layout::vertical([
+                ratatui::layout::Constraint::Length(1),
+                ratatui::layout::Constraint::Min(2),
+            ])
+            .areas(area);
+        draw_stage_bar_spinner(frame, spinner_area, state.tick);
+        frame.render_widget(
+            Paragraph::new(lines).wrap(Wrap { trim: true }).block(block),
+            text_area,
         );
-    frame.render_widget(detail, detail_area);
+        return;
+    }
 
-    let gauge = Gauge::default()
-        .block(
-            Block::default()
-                .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
-                .title(" Stage "),
-        )
-        .gauge_style(Style::default().fg(Color::Cyan))
-        .percent(percent(
-            model.pipeline.stage_pos,
-            model.pipeline.stage_len,
-        ))
-        .label(format!(
-            "{}/{}",
-            model.pipeline.stage_pos, model.pipeline.stage_len
-        ));
-    frame.render_widget(gauge, gauge_area);
+    frame.render_widget(
+        Paragraph::new(lines).wrap(Wrap { trim: true }).block(block),
+        area,
+    );
 }
 
-fn draw_test_stage(frame: &mut Frame, area: Rect, model: &Model) {
-    let title = model.test_title.as_deref().unwrap_or("Tests");
-    let running = model
+fn draw_test_stage(frame: &mut Frame, area: Rect, state: &ShellState) {
+    let title = state.test_title.as_deref().unwrap_or("Tests");
+    let running = state
         .test_rows
         .iter()
         .find(|row| row.state == TestRowState::Running);
@@ -97,18 +105,18 @@ fn draw_test_stage(frame: &mut Frame, area: Rect, model: &Model) {
         ))]
     };
     push_focus_description(&mut lines, StageFocus::Tests);
-    if !model.test_rows.is_empty() {
-        let passed = model
+    if !state.test_rows.is_empty() {
+        let passed = state
             .test_rows
             .iter()
             .filter(|row| row.state == TestRowState::Passed)
             .count();
-        let failed = model
+        let failed = state
             .test_rows
             .iter()
             .filter(|row| row.state == TestRowState::Failed)
             .count();
-        let pending = model
+        let pending = state
             .test_rows
             .iter()
             .filter(|row| {
@@ -150,8 +158,8 @@ fn draw_test_stage(frame: &mut Frame, area: Rect, model: &Model) {
     frame.render_widget(widget, area);
 }
 
-fn draw_summary_stage(frame: &mut Frame, area: Rect, model: &Model) {
-    let summary = &model.command_summary;
+fn draw_summary_stage(frame: &mut Frame, area: Rect, state: &ShellState) {
+    let summary = &state.command_summary;
     let mut lines = vec![
         Line::from(vec![
             Span::styled(
@@ -181,16 +189,4 @@ fn push_focus_description(lines: &mut Vec<Line<'_>>, focus: StageFocus) {
         focus.description(),
         Style::default().fg(Color::DarkGray),
     )));
-}
-
-fn split_detail_gauge(area: Rect) -> (Rect, Rect) {
-    let chunks = ratatui::layout::Layout::default()
-        .direction(ratatui::layout::Direction::Vertical)
-        .constraints([
-            ratatui::layout::Constraint::Min(3),
-            ratatui::layout::Constraint::Length(3),
-        ])
-        .flex(ratatui::layout::Flex::Legacy)
-        .split(area);
-    (chunks[0], chunks[1])
 }
