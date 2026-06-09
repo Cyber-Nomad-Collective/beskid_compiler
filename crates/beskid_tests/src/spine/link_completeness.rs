@@ -4,14 +4,13 @@ use std::fs;
 
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions};
-use beskid_analysis::services::{
-    FrontEndOptions, compile_front_end_from_resolved_input,
-    resolved_input_from_plan,
-};
+use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan};
 use beskid_codegen::linking::{FunctionDefIndex, LinkPlan};
 use beskid_codegen::lowering::lower_program_with_assembly_for_entrypoint;
 use beskid_codegen::validate_artifact;
-use beskid_queries::{configure_db_for_project, program_assembly, with_db};
+use beskid_queries::{
+    compile_front_end_from_resolved_input, configure_db_for_project, program_assembly, with_db,
+};
 
 use crate::projects::with_cwd;
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};

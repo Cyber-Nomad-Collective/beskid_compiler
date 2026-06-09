@@ -5,7 +5,7 @@ use crate::hir::{
     HirContractDefinition, HirInlineModule, HirItem, HirModuleDeclaration, HirPath,
     HirPrimitiveType, HirProgram, HirType, HirVisibility,
 };
-use crate::query::{HirNode, HirQuery};
+use crate::syntax_query::{HirNode, HirQuery};
 use crate::syntax::{SpanInfo, Spanned};
 use std::collections::{HashMap, HashSet};
 

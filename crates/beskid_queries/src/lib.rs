@@ -29,8 +29,8 @@ pub use typed_entry_bundle::{
     typed_entry_state_with_db, typed_prepare_revision_for,
 };
 pub use graph::{
-    assemble_program_query, discovered_units, module_index_fingerprint, program_assembly,
-    program_assembly_tracked, reverse_dependents,
+    discovered_units, module_index_fingerprint, program_assembly, program_assembly_tracked,
+    reverse_dependents,
 };
 pub use graph_viz::{
     GraphFetchRequest, GraphQueryError, get_graph_document, get_graph_document_simple,

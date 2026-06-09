@@ -2,11 +2,9 @@
 
 use std::path::PathBuf;
 
-use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions, assemble_program};
-use beskid_analysis::services::{
-    FrontEndOptions, ResolvedInput, compile_front_end_from_resolved_input, resolve_input,
-};
+use beskid_analysis::services::{FrontEndOptions, ResolvedInput, resolve_input};
 use beskid_codegen::lowering::lower_program_with_assembly_for_entrypoint;
+use beskid_queries::compile_front_end_from_resolved_input;
 
 fn compiler_workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -29,18 +27,6 @@ fn lower_entry(entry_rel: &str, entrypoint: &str) {
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let plan = resolved.compile_plan.expect("compile plan");
-    let assembly = assemble_program(
-        &plan,
-        resolved.prepared_workspace.as_ref(),
-        &entry,
-        Some(&source),
-        &AssemblyOptions {
-            discovery: AssemblyDiscovery::ImportClosure,
-            ..Default::default()
-        },
-        None,
-    )
-    .expect("assemble");
 
     let resolved_input = ResolvedInput {
         source_path: entry,
@@ -48,7 +34,7 @@ fn lower_entry(entry_rel: &str, entrypoint: &str) {
         compile_plan: Some(plan),
         prepared_workspace: resolved.prepared_workspace,
         workspace_summary: resolved.workspace_summary,
-        assembly: Some(assembly),
+        assembly: None,
     };
 
     let front = compile_front_end_from_resolved_input(

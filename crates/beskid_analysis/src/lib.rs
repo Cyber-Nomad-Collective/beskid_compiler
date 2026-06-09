@@ -10,7 +10,7 @@
 )]
 //!
 //! Public entry points include [`services`] (workspace-aware analysis), [`projects`] (manifests and
-//! compile plans), and re-exports for queries, diagnostics, and formatting.
+//! compile plans), and re-exports for syntax queries, diagnostics, and formatting.
 
 pub mod analysis;
 pub mod artifacts;
@@ -32,7 +32,16 @@ pub mod parser;
 pub mod parsing;
 pub mod paths;
 pub mod projects;
-pub mod query;
+pub mod syntax_query;
+
+#[doc(hidden)]
+#[deprecated(
+    since = "0.5.0",
+    note = "renamed to `syntax_query`; use `beskid_analysis::syntax_query` instead"
+)]
+pub mod query {
+    pub use super::syntax_query::*;
+}
 pub mod resolve;
 pub mod services;
 pub mod syntax;
@@ -45,12 +54,12 @@ pub use analysis::{
 pub use compilation_context::{CompilationContext, ProjectSessionHandle, module_roots_for_plan};
 pub use parser::{BeskidParser, Rule};
 pub use projects::{
-    AssemblyDiscovery, AssemblyOptions, ProgramAssembly, assemble_program, effective_roots_for_plan,
+    AssemblyDiscovery, AssemblyOptions, ProgramAssembly, effective_roots_for_plan,
 };
 pub use projects::{
     ProjectGraphBuildOptions, WorkspaceResolutionSummary, resolve_project_manifest_for_source_path,
 };
-pub use query::{
+pub use syntax_query::{
     Ancestors, AstNode, Descendants, DynNodeRef, HirDescendants, HirNode, HirNodeKind, HirNodeRef,
     HirQuery, HirVisit, HirWalker, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,
 };

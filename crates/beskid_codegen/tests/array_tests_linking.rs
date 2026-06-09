@@ -3,13 +3,11 @@
 
 use std::path::PathBuf;
 
-use beskid_analysis::projects::{AssemblyDiscovery, AssemblyOptions, assemble_program};
-use beskid_analysis::services::{
-    FrontEndOptions, ResolvedInput, compile_front_end_from_resolved_input, resolve_input,
-};
+use beskid_analysis::services::{FrontEndOptions, ResolvedInput, resolve_input};
 use beskid_codegen::linking::{FunctionDefIndex, LinkPlan};
 use beskid_codegen::lowering::lower_program_with_assembly;
 use beskid_codegen::validate_artifact;
+use beskid_queries::compile_front_end_from_resolved_input;
 
 fn compiler_workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -39,19 +37,24 @@ fn assemble_array_tests_workspace() {
         .expect("resolve");
     std::env::set_current_dir(previous).expect("restore cwd");
     let plan = resolved.compile_plan.expect("compile plan");
-    let assembly = assemble_program(
-        &plan,
-        resolved.prepared_workspace.as_ref(),
-        &entry,
-        Some(&source),
-        &AssemblyOptions {
-            discovery: AssemblyDiscovery::ImportClosure,
+    let resolved_input = ResolvedInput {
+        source_path: entry,
+        source,
+        compile_plan: Some(plan),
+        prepared_workspace: resolved.prepared_workspace,
+        workspace_summary: resolved.workspace_summary,
+        assembly: None,
+    };
+    let front = compile_front_end_from_resolved_input(
+        &resolved_input,
+        FrontEndOptions {
+            with_semantic_diagnostics: false,
             ..Default::default()
         },
         None,
     )
-    .expect("assemble");
-    assert!(assembly.hir_units.len() > 5);
+    .expect("front-end");
+    assert!(front.assembly.hir_units.len() > 5);
 }
 
 #[test]
@@ -74,25 +77,13 @@ fn front_end_array_tests() {
         .expect("resolve");
     std::env::set_current_dir(previous).expect("restore cwd");
     let plan = resolved.compile_plan.expect("compile plan");
-    let assembly = assemble_program(
-        &plan,
-        resolved.prepared_workspace.as_ref(),
-        &entry,
-        Some(&source),
-        &AssemblyOptions {
-            discovery: AssemblyDiscovery::ImportClosure,
-            ..Default::default()
-        },
-        None,
-    )
-    .expect("assemble");
     let resolved_input = ResolvedInput {
         source_path: entry,
         source,
         compile_plan: Some(plan),
         prepared_workspace: resolved.prepared_workspace,
         workspace_summary: resolved.workspace_summary,
-        assembly: Some(assembly),
+        assembly: None,
     };
     let _front = compile_front_end_from_resolved_input(
         &resolved_input,
@@ -127,20 +118,6 @@ fn lower_collections_array_tests_artifact_without_jit() {
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let plan = resolved.compile_plan.expect("compile plan");
-    let assembly = assemble_program(
-        &plan,
-        resolved.prepared_workspace.as_ref(),
-        &entry,
-        Some(&source),
-        &AssemblyOptions {
-            discovery: AssemblyDiscovery::ImportClosure,
-            ..Default::default()
-        },
-        None,
-    )
-    .expect("assemble");
-
-    assert!(assembly.hir_units.len() > 1, "expected dependency units");
 
     let resolved_input = ResolvedInput {
         source_path: entry.clone(),
@@ -148,7 +125,7 @@ fn lower_collections_array_tests_artifact_without_jit() {
         compile_plan: Some(plan),
         prepared_workspace: resolved.prepared_workspace,
         workspace_summary: resolved.workspace_summary,
-        assembly: Some(assembly),
+        assembly: None,
     };
 
     let front = compile_front_end_from_resolved_input(
@@ -160,7 +137,9 @@ fn lower_collections_array_tests_artifact_without_jit() {
         None,
     )
     .expect("front-end");
-    let assembly = resolved_input.assembly.as_ref().expect("assembly");
+    assert!(front.assembly.hir_units.len() > 1, "expected dependency units");
+
+    let assembly = &front.assembly;
     let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
     let plan = LinkPlan::build(&front.hir, &front.resolution, &front.typed, &def_index);
     assert!(plan.callees.len() < 32, "callees={}", plan.callees.len());
@@ -193,18 +172,6 @@ fn lower_collections_array_tests_artifact_validates() {
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let plan = resolved.compile_plan.expect("compile plan");
-    let assembly = assemble_program(
-        &plan,
-        resolved.prepared_workspace.as_ref(),
-        &entry,
-        Some(&source),
-        &AssemblyOptions {
-            discovery: AssemblyDiscovery::ImportClosure,
-            ..Default::default()
-        },
-        None,
-    )
-    .expect("assemble");
 
     let resolved_input = ResolvedInput {
         source_path: entry,
@@ -212,7 +179,7 @@ fn lower_collections_array_tests_artifact_validates() {
         compile_plan: Some(plan),
         prepared_workspace: resolved.prepared_workspace,
         workspace_summary: resolved.workspace_summary,
-        assembly: Some(assembly),
+        assembly: None,
     };
 
     let front = compile_front_end_from_resolved_input(

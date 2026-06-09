@@ -1,0 +1,6 @@
+node "hello" {
+  kind = panel
+  widget = "hi.hello"
+  grow = 1
+  title = "Extension demo"
+}

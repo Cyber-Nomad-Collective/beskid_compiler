@@ -1,4 +1,4 @@
-use crate::query::{HirNode, HirNodeKind, HirNodeRef};
+use crate::syntax_query::{HirNode, HirNodeKind, HirNodeRef};
 use crate::syntax::Spanned;
 
 use super::block::HirBlock;

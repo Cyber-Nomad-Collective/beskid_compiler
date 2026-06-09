@@ -7,7 +7,6 @@ use beskid_pipeline::PipelineObserver;
 
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 
-use super::input::ResolvedInput;
 use super::prepare::{PrepareOptions, prepare_compilation};
 
 /// Result of the shared front-end through typed HIR (codegen consumes this).

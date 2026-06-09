@@ -7,7 +7,8 @@ use beskid_analysis::resolve::Resolution;
 use beskid_analysis::services::{
     FrontEndOptions, FrontEndTypedResult, ResolvedInput, SemanticDiagnosticsError,
     SessionFingerprint, cached_executable, cached_semantic_snapshot,
-    current_syntax_generation_id,
+    compile_plan_for_input_path, current_syntax_generation_id, resolved_input_from_plan,
+    synthetic_compile_plan_for_source,
 };
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeResult;
@@ -16,7 +17,7 @@ use beskid_queries::compile_front_end_from_resolved_input;
 
 use crate::{
     CodegenArtifact, codegen_errors_to_diagnostics,
-    lowering::{lower_program, lower_program_with_assembly_for_entrypoint},
+    lowering::lower_program_with_assembly_for_entrypoint,
 };
 
 /// Fully lowered program: typed HIR plus the Cranelift artifact from [`lower_source`] /
@@ -40,86 +41,16 @@ pub fn lower_source_with_pipeline(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    let _options = FrontEndOptions {
-        with_semantic_diagnostics: with_diagnostics,
-        ..Default::default()
-    };
-
-    if let Some(plan) = beskid_analysis::services::compile_plan_for_input_path(path) {
-        let resolved = ResolvedInput {
-            source_path: path.to_path_buf(),
-            source: source.to_string(),
-            compile_plan: Some(plan),
-            prepared_workspace: None,
-            workspace_summary: None,
-            assembly: None,
-        };
-        return lower_resolved_input_with_pipeline(&resolved, with_diagnostics, pipeline);
-    }
-
-    lower_single_unit_without_project(path, source, with_diagnostics, pipeline)
-}
-
-/// Single `.bd` file without a `Project.proj` — not used for project-backed hosts.
-fn lower_single_unit_without_project(
-    path: &Path,
-    source: &str,
-    with_diagnostics: bool,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<LoweredProgram> {
-    use beskid_analysis::AnalysisOptions;
-    use beskid_analysis::mod_host::{ModHostInput, run_analyze_rewrite, run_through_generate};
-    use beskid_analysis::services::{
-        lower_normalize_resolve_type_spanned, parse_program_with_source_name,
-        require_no_semantic_errors, semantic_rule_diagnostics_for_program,
-    };
-    use beskid_pipeline::{observe_phase, observe_phase_result, phases};
-
-    let source_name = path.display().to_string();
-    let program = observe_phase_result(pipeline, phases::PARSE, || {
-        parse_program_with_source_name(&source_name, source)
-    })?;
-    let generated = run_through_generate(
-        program,
-        &ModHostInput {
-            compile_plan: None,
-            source_name: &source_name,
-            source,
-            pipeline,
-            invoker: None,
-        },
-    )?;
-    let mut program = generated.program;
-    if with_diagnostics {
-        observe_phase_result(pipeline, phases::SEMANTIC, || {
-            let diagnostics = semantic_rule_diagnostics_for_program(
-                &program.node,
-                source_name.clone(),
-                source,
-                AnalysisOptions::default(),
-            );
-            require_no_semantic_errors(&diagnostics).map_err(anyhow::Error::from)
-        })?;
-        observe_phase(pipeline, phases::SEMANTIC_SNAPSHOT, || {});
-    }
-    program = run_analyze_rewrite(program, &generated.session, pipeline)?;
-    observe_phase(pipeline, phases::LOWER_READY, || {});
-    let (hir, resolution, typed) = observe_phase_result(pipeline, phases::LOWER, || {
-        lower_normalize_resolve_type_spanned(&program).map_err(anyhow::Error::from)
-    })?;
-    let artifact = observe_phase_result(pipeline, CODEGEN_CLIF, || {
-        lower_program(&hir, &resolution, &typed).map_err(|errors| {
-            let diagnostics =
-                codegen_errors_to_diagnostics(&source_name, source, &errors, &typed, &resolution);
-            anyhow::Error::new(SemanticDiagnosticsError::from_diagnostics(diagnostics))
-        })
-    })?;
-    Ok(LoweredProgram {
-        hir,
-        resolution,
-        typed,
-        artifact,
-    })
+    let plan = compile_plan_for_input_path(path)
+        .unwrap_or_else(|| synthetic_compile_plan_for_source(path));
+    let resolved = resolved_input_from_plan(
+        path.to_path_buf(),
+        source.to_string(),
+        plan,
+        None,
+        None,
+    );
+    lower_resolved_input_with_pipeline(&resolved, with_diagnostics, pipeline)
 }
 
 /// Lower using a fully resolved CLI input (includes materialized assembly when available).

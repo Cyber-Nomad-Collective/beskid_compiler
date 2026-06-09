@@ -31,6 +31,7 @@ pub struct LayoutRects {
     pub detail: Rect,
     pub log: Rect,
     pub footer: Rect,
+    pub chrome: Rect,
     pub tests_overlay: Option<Rect>,
     pub summary_overlay: Option<Rect>,
     pub pckg_overlay: Option<Rect>,

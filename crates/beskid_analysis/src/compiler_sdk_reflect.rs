@@ -3,7 +3,7 @@
 //! `ReflectSdkNodeKind` / `ReflectSdkHirNodeKind` mirror the `node_kinds!` expansions in
 //! `query/mod.rs` — update both together when adding node kinds.
 
-/// Syntax / AST query classification tokens (mirrors [`crate::query::NodeKind`]).
+/// Syntax / AST query classification tokens (mirrors [`crate::syntax_query::NodeKind`]).
 #[beskid_ast_derive::beskid_reflect]
 pub enum ReflectSdkNodeKind {
     Program,
@@ -93,7 +93,7 @@ pub enum ReflectSdkNodeKind {
     LaunchStatement,
 }
 
-/// HIR query classification tokens (mirrors [`crate::query::HirNodeKind`]).
+/// HIR query classification tokens (mirrors [`crate::syntax_query::HirNodeKind`]).
 #[beskid_ast_derive::beskid_reflect]
 pub enum ReflectSdkHirNodeKind {
     Program,

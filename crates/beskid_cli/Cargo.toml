@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 beskid_tools = { path = "../beskid_tools" }
+beskid_hi = { path = "../beskid_hi" }
 beskid_aot = { path = "../beskid_aot" }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_queries = { path = "../beskid_queries" }
@@ -17,6 +18,8 @@ beskid_pckg = { path = "../beskid_pckg" }
 beskid_template = { path = "../beskid_template" }
 beskid_lsp = { path = "../beskid_lsp" }
 beskid_repl = { path = "../beskid_repl" }
+bsol = { workspace = true }
+bsol-beskid-bridge = { workspace = true }
 tokio = { version = "1.48", features = ["rt-multi-thread"] }
 anyhow = "1.0"
 clap = { version = "4.4", features = ["derive"] }

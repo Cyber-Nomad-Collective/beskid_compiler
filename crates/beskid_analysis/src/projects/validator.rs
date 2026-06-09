@@ -80,6 +80,27 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                 "`type = Mod` requires a nested `mod { ... }` block under the project root",
             ));
         }
+        ProjectKind::Bsol if !manifest.targets.is_empty() => {
+            return Err(ProjectError::meta_contract(
+                "E1901",
+                "`Bsol` projects must not declare `target` blocks (schema packages are not compile roots)",
+            ));
+        }
+        ProjectKind::Bsol if manifest.project.schemas_section.is_none() => {
+            return Err(ProjectError::meta_contract(
+                "E1902",
+                "`type = Bsol` requires a nested `schemas { export ... }` block",
+            ));
+        }
+        ProjectKind::Bsol => {
+            if let Some(schemas) = &manifest.project.schemas_section {
+                if schemas.exports.is_empty() {
+                    return Err(ProjectError::Validation(
+                        "`schemas` must declare at least one `export` block".to_string(),
+                    ));
+                }
+            }
+        }
         _ => {}
     }
 

@@ -68,6 +68,8 @@ pub enum ProjectKind {
     Template,
     /// Dependency-only aggregate (for example canonical `corelib`); no source targets.
     Aggregate,
+    /// Schema-only package exporting BSOL profiles; no Beskid compilation.
+    Bsol,
 }
 
 /// Nested `project.template { ... }` block for [`ProjectKind::Template`] manifests.
@@ -75,6 +77,21 @@ pub enum ProjectKind {
 pub struct ProjectTemplateSection {
     pub short_name: Option<String>,
     pub identity: Option<String>,
+}
+
+/// One exported schema profile in a [`ProjectKind::Bsol`] manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaExport {
+    pub name: String,
+    pub profile: String,
+    pub path: String,
+}
+
+/// Nested `schemas { export ... }` block for [`ProjectKind::Bsol`] manifests.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProjectSchemasSection {
+    pub default_profile: Option<String>,
+    pub exports: Vec<SchemaExport>,
 }
 
 /// Nested `project.mod { ... }` block for [`ProjectKind::Mod`] manifests.
@@ -103,6 +120,7 @@ pub struct ProjectSection {
     pub kind: ProjectKind,
     pub mod_section: Option<ProjectModSection>,
     pub template_section: Option<ProjectTemplateSection>,
+    pub schemas_section: Option<ProjectSchemasSection>,
     pub readme: Option<String>,
     /// Additional root-block keys not interpreted by the compiler.
     pub extras: HashMap<String, String>,

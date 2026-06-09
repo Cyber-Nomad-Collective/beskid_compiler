@@ -34,5 +34,5 @@ pub trait BeskidWidget: Send {
         Vec::new()
     }
     fn on_input(&mut self, event: &ShellInput, ctx: &mut WidgetContext<'_>) -> ShellAction;
-    fn render(&self, area: Rect, frame: &mut Frame, ctx: &WidgetContext<'_>);
+    fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>);
 }

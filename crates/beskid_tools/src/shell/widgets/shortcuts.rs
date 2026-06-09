@@ -1,0 +1,50 @@
+use ratatui::Frame;
+use ratatui::layout::Rect;
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Paragraph};
+use ratkit::services::hotkey_service::Hotkey;
+
+use crate::shell::catalog::builtin_contextual_commands;
+use crate::shell::context::WidgetContext;
+use crate::shell::input::ShellInput;
+use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
+
+pub struct ShortcutsWidget;
+
+impl BeskidWidget for ShortcutsWidget {
+    fn meta(&self) -> WidgetMeta {
+        WidgetMeta {
+            id: "shell.shortcuts",
+            title: "Shortcuts",
+            icon: "?",
+        }
+    }
+
+    fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
+        Vec::new()
+    }
+
+    fn on_input(&mut self, _event: &ShellInput, _ctx: &mut WidgetContext<'_>) -> ShellAction {
+        ShellAction::None
+    }
+
+    fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
+        let mut lines = vec![
+            Line::from(Span::styled("Global", Style::default().fg(Color::Yellow))),
+            Line::from("  Ctrl+P / :  command palette"),
+            Line::from("  ?           shortcut help"),
+            Line::from("  q           quit"),
+            Line::from(""),
+        ];
+        for cmd in builtin_contextual_commands(ctx.scope) {
+            if let crate::shell::catalog::CommandItem::Contextual(c) = cmd {
+                lines.push(Line::from(format!("  {}  {}", c.icon, c.name)));
+            }
+        }
+        frame.render_widget(
+            Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" Shortcuts ")),
+            area,
+        );
+    }
+}

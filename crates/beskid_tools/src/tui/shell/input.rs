@@ -713,7 +713,8 @@ mod tests {
                 stage: ratatui::layout::Rect::new(0, 3, 40, 10),
                 detail: ratatui::layout::Rect::new(40, 3, 40, 10),
                 log: ratatui::layout::Rect::new(0, 13, 80, 6),
-                footer: ratatui::layout::Rect::new(0, 19, 80, 5),
+                footer: ratatui::layout::Rect::new(0, 19, 80, 4),
+                chrome: ratatui::layout::Rect::new(0, 23, 80, 1),
                 ..Default::default()
             },
             ..Default::default()

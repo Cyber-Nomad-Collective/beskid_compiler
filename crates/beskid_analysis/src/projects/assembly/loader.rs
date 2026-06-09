@@ -80,7 +80,9 @@ pub fn assembly_options_for_prepare(
 }
 
 /// Build a [`ProgramAssembly`] for `entry_path` using effective roots and discovery options.
-pub fn assemble_program(
+///
+/// Crate-internal; public callers use [`beskid_queries::program_assembly`].
+pub(crate) fn assemble_program(
     plan: &CompilePlan,
     workspace: Option<&PreparedProjectWorkspace>,
     entry_path: &Path,

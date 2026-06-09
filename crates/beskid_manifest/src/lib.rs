@@ -9,7 +9,7 @@ pub use model::ManifestRoot;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use beskid_bsol::{load_profile, parse_bsol_document, validate};
+use bsol::{load_profile, parse_bsol_document, validate};
 
 use lower::lower_runtime_manifest;
 use model::ManifestRoot as Manifest;

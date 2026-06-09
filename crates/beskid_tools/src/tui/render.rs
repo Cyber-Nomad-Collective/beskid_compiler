@@ -7,6 +7,8 @@ use crate::tui::layout::{
     overlay_rect_for, resolve_shell_layout, OVERLAY_PCKG, OVERLAY_SUMMARY, OVERLAY_TEMPLATES,
     OVERLAY_TESTS, PANEL_DETAIL, PANEL_FOOTER, PANEL_HEADER, PANEL_LOG, PANEL_STAGE,
 };
+use crate::shell::chrome::ShellChrome;
+use crate::shell::hotkeys::ShellHotkeys;
 use crate::tui::overlay_chrome::{draw_backdrop, hotkey, render_overlay_panel};
 use crate::tui::screens::{
     pckg_overlay, pipeline_compile, summary_overlay, templates_overlay, tests_overlay,
@@ -24,6 +26,14 @@ pub fn draw_shell(frame: &mut Frame, state: &mut ShellState) {
     pipeline_compile::render_panel(PANEL_DETAIL, rects.detail, frame, state);
     pipeline_compile::render_panel(PANEL_LOG, rects.log, frame, state);
     pipeline_compile::render_panel(PANEL_FOOTER, rects.footer, frame, state);
+
+    let hotkeys = ShellHotkeys::default();
+    ShellChrome::default().render_footer(
+        rects.chrome,
+        frame,
+        &hotkeys,
+        None,
+    );
 
     let any_overlay = state.overlay_visible(OverlayKind::Tests)
         || state.overlay_visible(OverlayKind::Summary)

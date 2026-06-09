@@ -87,7 +87,7 @@ fn collect_dependency_projects_from_node(
             continue;
         }
 
-        if child_kind != Some(ProjectKind::Template) {
+        if !matches!(child_kind, Some(ProjectKind::Template) | Some(ProjectKind::Bsol)) {
             collect_dependency_projects_from_node(graph, child, visited, output);
         }
 
@@ -100,7 +100,7 @@ fn collect_dependency_projects_from_node(
             project_kind,
             ..
         }) = graph.dag.graph().node_weight(child)
-            && *project_kind != ProjectKind::Template
+            && !matches!(*project_kind, ProjectKind::Template | ProjectKind::Bsol)
         {
             output.push(ResolvedDependencyProject {
                 dependency_name: dependency_name.clone(),

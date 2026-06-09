@@ -7,12 +7,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use beskid_analysis::projects::ProgramAssembly;
-use beskid_analysis::services::{
-    FrontEndOptions, PrepareOptions, ResolvedInput, compile_front_end_from_resolved_input,
-    resolve_input,
-};
+use beskid_analysis::services::{FrontEndOptions, PrepareOptions, ResolvedInput, resolve_input};
 use beskid_queries::{
-    configure_db_for_project, prepare_compilation_with_db, program_assembly, with_db,
+    compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation_with_db,
+    program_assembly, with_db,
 };
 
 use super::std_env_lock::std_dependency_env_lock;

@@ -14,12 +14,22 @@ mod lower;
 mod parse;
 mod prepare;
 mod project;
-mod queries;
+mod unit_ops;
+
+#[doc(hidden)]
+#[deprecated(
+    since = "0.5.0",
+    note = "renamed to `unit_ops`; import helpers from `beskid_analysis::services` re-exports"
+)]
+pub mod queries {
+    pub use super::unit_ops::*;
+}
 mod render;
 mod semantic;
 mod session;
 #[cfg(test)]
 mod session_tests;
+mod synthetic_plan;
 #[cfg(test)]
 mod test_support;
 
@@ -40,8 +50,9 @@ pub use diagnostics_emit::{
 pub use document::{
     AnalysisSymbolKind, CompletionInfo, CompletionKind, DefinitionInfo, DocumentAnalysisSnapshot,
     DocumentSymbolInfo, HoverInfo, ReferenceInfo, SymbolLocation, TestCaseInfo,
-    assemble_for_api_documentation, build_document_analysis, build_document_analysis_for_resolved,
-    build_document_analysis_from_resolution, build_document_analysis_with_context,
+    assemble_for_api_documentation, build_api_documentation_snapshot, build_document_analysis,
+    build_document_analysis_for_resolved, build_document_analysis_from_resolution,
+    build_document_analysis_with_context,
     collect_document_symbols, collect_test_cases,
     completion_candidates, definition_at_offset, hover_at_offset, item_id_at_offset,
     references_at_offset,
@@ -71,9 +82,9 @@ pub use prepare::{
     prepare_compilation_diagnostics, resolved_input_from_plan,
 };
 pub use project::{ResolvedProject, resolve_project, resolve_project_with_policy};
-pub use queries::{
-    assemble_program_query, assemble_unit, invalidate_dependents, module_index_query,
-    resolve_entry, type_dep_signatures, type_entry, type_entry_gate,
+pub use unit_ops::{
+    assemble_unit, invalidate_dependents, module_index_query, resolve_entry, type_dep_signatures,
+    type_entry, type_entry_gate,
 };
 pub use render::render_program_tree;
 pub use semantic::{
@@ -85,3 +96,4 @@ pub use session::{
     cached_compilation_session, cached_executable, cached_semantic_snapshot, session_for_assembly,
     store_executable_on_session,
 };
+pub use synthetic_plan::synthetic_compile_plan_for_source;

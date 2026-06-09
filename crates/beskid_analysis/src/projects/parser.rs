@@ -2,14 +2,15 @@
 
 use std::collections::HashMap;
 
-use beskid_bsol::{
+use bsol::{
     BsolSpan, ValidatedBlock, ValidatedDocument, load_profile, parse_bsol_document, validate,
 };
 
 use super::error::ProjectError;
 use super::model::{
     Dependency, DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest,
-    ProjectModSection, ProjectSection, ProjectTemplateSection, Target, TargetKind,
+    ProjectModSection, ProjectSchemasSection, ProjectSection, ProjectTemplateSection, SchemaExport,
+    Target, TargetKind,
     WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry, WorkspaceSection,
 };
 use super::validator::{validate_manifest, validate_workspace_manifest};
@@ -27,6 +28,7 @@ struct ParsedProjectBlock {
     extras: HashMap<String, String>,
     mod_section: Option<HashMap<String, ModFieldValue>>,
     template_section: Option<HashMap<String, String>>,
+    schemas_section: Option<ProjectSchemasSection>,
 }
 
 #[derive(Debug, Default)]
@@ -64,13 +66,15 @@ const WORKSPACE_ROOT_FIELDS: &[&str] = &["name", "resolver"];
 const MEMBER_FIELDS: &[&str] = &["path"];
 
 fn parse_project_document(source: &str) -> Result<ValidatedDocument, ProjectError> {
-    let document = parse_bsol_document(source).map_err(ProjectError::from_bsol)?;
+    let document = parse_bsol_document(source)
+        .map_err(|e| ProjectError::from_bsol(bsol::BsolError::from(e)))?;
     let profile = load_profile("project.v1").map_err(ProjectError::from_bsol)?;
     validate(&document, &profile).map_err(ProjectError::from_bsol)
 }
 
 fn parse_workspace_document(source: &str) -> Result<ValidatedDocument, ProjectError> {
-    let document = parse_bsol_document(source).map_err(ProjectError::from_bsol)?;
+    let document = parse_bsol_document(source)
+        .map_err(|e| ProjectError::from_bsol(bsol::BsolError::from(e)))?;
     let profile = load_profile("workspace.v1").map_err(ProjectError::from_bsol)?;
     validate(&document, &profile).map_err(ProjectError::from_bsol)
 }
@@ -168,12 +172,40 @@ fn lower_project_root_block(block: ValidatedBlock) -> Result<ParsedProjectBlock,
         .find(|n| n.rule_id == "template")
         .map(lower_template_block)
         .transpose()?;
+    let schemas_section = block
+        .nested
+        .iter()
+        .find(|n| n.rule_id == "schemas")
+        .map(lower_schemas_block)
+        .transpose()?;
     Ok(ParsedProjectBlock {
         block_kind: block.kind,
         fields,
         extras,
         mod_section,
         template_section,
+        schemas_section,
+    })
+}
+
+fn lower_schemas_block(block: &ValidatedBlock) -> Result<ProjectSchemasSection, ProjectError> {
+    let default_profile = block.fields.get("defaultProfile").cloned();
+    let mut exports = Vec::new();
+    for nested in &block.nested {
+        if nested.rule_id != "export" {
+            continue;
+        }
+        exports.push(SchemaExport {
+            name: nested.label.clone().ok_or_else(|| {
+                ProjectError::Validation("`export` block requires a label".to_string())
+            })?,
+            profile: required_field(&nested.fields, "profile")?,
+            path: required_field(&nested.fields, "path")?,
+        });
+    }
+    Ok(ProjectSchemasSection {
+        default_profile,
+        exports,
     })
 }
 
@@ -288,10 +320,11 @@ fn build_project_kind(type_field: Option<&str>) -> Result<ProjectKind, ProjectEr
         Some("Mod") | Some("Meta") => Ok(ProjectKind::Mod),
         Some("Template") => Ok(ProjectKind::Template),
         Some("Aggregate") => Ok(ProjectKind::Aggregate),
+        Some("Bsol") => Ok(ProjectKind::Bsol),
         Some(other) => Err(ProjectError::meta_contract(
             "E1807",
             format!(
-                "unsupported project.type `{other}` (omit the field for ordinary host projects, or use `Mod`, `Template`, or `Aggregate`)"
+                "unsupported project.type `{other}` (omit the field for ordinary host projects, or use `Mod`, `Template`, `Aggregate`, or `Bsol`)"
             ),
         )),
     }
@@ -366,7 +399,7 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
     })?;
     let kind = build_project_kind(project.fields.get("type").map(|s| s.as_str()))?;
     let mod_section = match (&kind, &project.mod_section) {
-        (ProjectKind::Host | ProjectKind::Template | ProjectKind::Aggregate, Some(_)) => {
+        (ProjectKind::Host | ProjectKind::Template | ProjectKind::Aggregate | ProjectKind::Bsol, Some(_)) => {
             return Err(ProjectError::meta_contract(
                 "E1874",
                 "`mod` is only allowed when `type = Mod`",
@@ -376,7 +409,7 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
         _ => None,
     };
     let template_section = match (&kind, &project.template_section) {
-        (ProjectKind::Host | ProjectKind::Mod | ProjectKind::Aggregate, Some(_)) => {
+        (ProjectKind::Host | ProjectKind::Mod | ProjectKind::Aggregate | ProjectKind::Bsol, Some(_)) => {
             return Err(ProjectError::meta_contract(
                 "E1879",
                 "`template` is only allowed when `type = Template`",
@@ -386,6 +419,16 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
             Some(build_project_template_from_fields(template_fields))
         }
         _ => None,
+    };
+    let schemas_section = match (&kind, &project.schemas_section) {
+        (ProjectKind::Host | ProjectKind::Mod | ProjectKind::Template | ProjectKind::Aggregate, Some(_)) => {
+            return Err(ProjectError::meta_contract(
+                "E1900",
+                "`schemas` is only allowed when `type = Bsol`",
+            ));
+        }
+        (ProjectKind::Bsol, section) => section.clone(),
+        (_, None) => None,
     };
 
     Ok(ProjectSection {
@@ -397,7 +440,7 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
             .get("root")
             .cloned()
             .unwrap_or_else(|| {
-                if kind == ProjectKind::Aggregate {
+                if matches!(kind, ProjectKind::Aggregate | ProjectKind::Bsol) {
                     String::new()
                 } else {
                     "Src".to_string()
@@ -407,6 +450,7 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
         kind,
         mod_section,
         template_section,
+        schemas_section,
         readme: project.fields.get("readme").cloned(),
         extras: project.extras.clone(),
     })

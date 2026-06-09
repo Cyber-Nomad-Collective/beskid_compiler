@@ -8,6 +8,7 @@
 //! should add a `commands/<name>.rs` wrapper plus library logic in the appropriate domain crate.
 
 pub mod corelib;
+pub mod shell;
 pub mod tui;
 pub mod diagnostics;
 pub mod logging;
@@ -33,3 +34,7 @@ pub use registry::{
     parse_package_selector, pckg_to_anyhow, pick_version, tokio_runtime,
 };
 pub use session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
+pub use shell::{
+    BeskidWidget, BoardLayout, BoardV2Doc, CommandItem, HiLayoutState, ShellAction, ShellHost,
+    ShellScope, WidgetDescriptor, WidgetMeta, WidgetRegistrar, WidgetRegistry,
+};

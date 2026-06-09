@@ -112,9 +112,9 @@ impl ProjectError {
     }
 
     /// Map a Bsol parse/validation failure into project manifest diagnostics.
-    pub fn from_bsol(err: beskid_bsol::BsolError) -> Self {
+    pub fn from_bsol(err: bsol::BsolError) -> Self {
         match err {
-            beskid_bsol::BsolError::ParseAt {
+            bsol::BsolError::ParseAt {
                 line,
                 message,
                 start,
@@ -125,7 +125,7 @@ impl ProjectError {
                 start,
                 end,
             },
-            beskid_bsol::BsolError::SchemaAt {
+            bsol::BsolError::SchemaAt {
                 line,
                 message,
                 start,
@@ -136,12 +136,11 @@ impl ProjectError {
                 start,
                 end,
             },
-            beskid_bsol::BsolError::Parse(msg) | beskid_bsol::BsolError::Schema(msg) => {
-                Self::Parse(msg)
-            }
-            beskid_bsol::BsolError::UnknownProfile(name) => {
+            bsol::BsolError::Parse(msg) | bsol::BsolError::Schema(msg) => Self::Parse(msg),
+            bsol::BsolError::UnknownProfile(name) => {
                 Self::Parse(format!("unknown Bsol schema profile `{name}`"))
             }
+            bsol::BsolError::Import(msg) => Self::Parse(msg),
         }
     }
 

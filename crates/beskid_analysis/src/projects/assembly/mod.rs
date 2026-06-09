@@ -13,9 +13,10 @@ pub use discovery::{
 };
 pub use hir_units::{UnitHir, build_hir_units};
 pub use loader::{
-    AssemblyError, UnitMaterializer, assemble_program, assemble_program_with_materializer,
-    assembly_options_for_plan, assembly_options_for_prepare,
+    AssemblyError, UnitMaterializer, assembly_options_for_plan, assembly_options_for_prepare,
 };
+pub use loader::assemble_program_with_materializer;
+pub(crate) use loader::assemble_program;
 pub use module_index::{ModuleIndex, infer_logical_module_path};
 pub use roots::{
     EffectiveCompilationRoots, RootEntry, effective_roots_for_plan, effective_roots_from_lockfile,

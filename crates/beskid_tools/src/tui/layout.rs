@@ -36,22 +36,33 @@ pub fn panel_kinds() -> [&'static str; 5] {
 
 /// Base panels: header → stage|detail → log → footer.
 pub fn resolve_shell_layout(area: Rect) -> LayoutRects {
-    let [header, body, log, footer] = Layout::vertical([
+    let [header, body, log, footer_block] = Layout::vertical([
         Constraint::Length(4),
         Constraint::Min(0),
         Constraint::Length(8),
-        Constraint::Length(5),
+        Constraint::Length(6),
     ])
     .areas(area);
+    let footer = Rect {
+        height: footer_block.height.saturating_sub(1),
+        ..footer_block
+    };
     let [stage, detail] = Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)])
         .areas(body);
 
+    let chrome = Rect {
+        y: footer_block.y + footer.height,
+        height: 1.min(footer_block.height),
+        x: footer_block.x,
+        width: footer_block.width,
+    };
     LayoutRects {
         header,
         stage,
         detail,
         log,
         footer,
+        chrome,
         tests_overlay: None,
         summary_overlay: None,
         pckg_overlay: None,

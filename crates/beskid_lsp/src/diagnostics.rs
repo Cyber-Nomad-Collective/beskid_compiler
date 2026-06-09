@@ -143,7 +143,7 @@ fn analyze_project_manifest(uri: &Uri, source: &str) -> Vec<Diagnostic> {
     };
 
     if let Err(err) = parse_bsol_document(source) {
-        let error = ProjectError::from_bsol(err);
+        let error = ProjectError::from_bsol(err.into());
         return vec![semantic_to_lsp_diagnostic(
             source,
             services::project_error_diagnostic(source_label, source, &error),

@@ -6,11 +6,12 @@ use crate::projects::fixture_harness::{
 };
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 use beskid_analysis::projects::{
-    AssemblyDiscovery, AssemblyOptions, assemble_program, effective_roots_for_plan,
+    AssemblyDiscovery, AssemblyOptions, ProgramAssembly, effective_roots_for_plan,
     module_roots_from_effective,
 };
 use beskid_analysis::services::resolve_input;
 use beskid_pipeline::phases::{FULL_BUILD_PHASE_ORDER, PROGRAM_ASSEMBLE, WORKSPACE_MATERIALIZE};
+use beskid_queries::{configure_db_for_project, program_assembly, with_db};
 
 #[test]
 fn full_build_phase_order_includes_program_assemble() {
@@ -93,14 +94,17 @@ fn workspace_scan_respects_max_units() {
             ..Default::default()
         };
 
-        let err = assemble_program(
-            &plan,
-            resolved.prepared_workspace.as_ref(),
-            &resolved.source_path,
-            Some(&resolved.source),
-            &options,
-            None,
-        )
+        configure_db_for_project(&fixture);
+        let err = with_db(|db| {
+            program_assembly(
+                db,
+                &plan,
+                resolved.prepared_workspace.as_ref(),
+                &resolved.source_path,
+                Some(&resolved.source),
+                &options,
+            )
+        })
         .expect_err("should hit max_units");
         assert!(err.to_string().contains("max_units"));
     });
@@ -168,14 +172,17 @@ fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
             discovery: AssemblyDiscovery::ImportClosure,
             ..Default::default()
         };
-        let assembly = assemble_program(
-            &plan,
-            resolved.prepared_workspace.as_ref(),
-            &resolved.source_path,
-            Some(&resolved.source),
-            &options,
-            None,
-        )
+        configure_db_for_project(&project);
+        let assembly = with_db(|db| {
+            program_assembly(
+                db,
+                &plan,
+                resolved.prepared_workspace.as_ref(),
+                &resolved.source_path,
+                Some(&resolved.source),
+                &options,
+            )
+        })
         .expect("assemble console tests");
 
         let loaded: Vec<String> = assembly
@@ -217,6 +224,7 @@ fn parallel_unit_build_matches_serial_assembly_order() {
             ..Default::default()
         };
 
+        configure_db_for_project(&fixture);
         let serial = assemble_with_thread_cap(
             &plan,
             resolved.prepared_workspace.as_ref(),
@@ -265,11 +273,20 @@ fn assemble_with_thread_cap(
     entry_source: &str,
     options: &AssemblyOptions,
     threads: usize,
-) -> beskid_analysis::projects::ProgramAssembly {
+) -> ProgramAssembly {
     // SAFETY: test runs single-threaded under `std_dependency_env_lock`.
     unsafe {
         std::env::set_var("BESKID_ASSEMBLY_THREADS", threads.to_string());
     }
-    assemble_program(plan, workspace, entry_path, Some(entry_source), options, None)
-        .expect("assemble with thread cap")
+    with_db(|db| {
+        program_assembly(
+            db,
+            plan,
+            workspace,
+            entry_path,
+            Some(entry_source),
+            options,
+        )
+    })
+    .expect("assemble with thread cap")
 }

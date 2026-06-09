@@ -118,6 +118,7 @@ pub fn style_class_for_project_kind(kind: beskid_analysis::projects::ProjectKind
         ProjectKind::Mod => "mod",
         ProjectKind::Template => "template",
         ProjectKind::Aggregate => "aggregate",
+        ProjectKind::Bsol => "bsol",
     }
 }
 

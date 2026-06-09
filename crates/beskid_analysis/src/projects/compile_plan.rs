@@ -113,6 +113,11 @@ pub fn build_compile_plan_with_policy_and_graph(
             "E1877",
             "`Template` projects are template-authoring roots and cannot be built with `beskid build`; instantiate with `beskid new` first",
         ));
+    } else if manifest.project.kind == ProjectKind::Bsol {
+        return Err(ProjectError::meta_contract(
+            "E1903",
+            "`Bsol` projects are schema-only packages and cannot be built with `beskid build`; use `beskid validate-bsol` instead",
+        ));
     } else if manifest.project.kind == ProjectKind::Mod {
         if target_name.is_some() {
             return Err(ProjectError::meta_contract(

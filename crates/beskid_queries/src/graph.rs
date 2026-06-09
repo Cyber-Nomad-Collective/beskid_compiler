@@ -175,14 +175,3 @@ fn lockfile_digest_for_plan(plan: &CompilePlan) -> String {
     }
     format!("{:016x}", hasher.finish())
 }
-
-pub fn assemble_program_query(
-    db: &mut BeskidDatabase,
-    plan: &CompilePlan,
-    workspace: Option<&PreparedProjectWorkspace>,
-    entry_path: &Path,
-    entry_source: Option<&str>,
-    options: &AssemblyOptions,
-) -> Result<ProgramAssembly, AssemblyError> {
-    program_assembly(db, plan, workspace, entry_path, entry_source, options)
-}

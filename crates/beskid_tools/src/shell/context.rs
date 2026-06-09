@@ -2,14 +2,14 @@
 
 use std::path::PathBuf;
 
-use super::board::BoardLayout;
+use super::layout::BoardV2Doc;
 use super::palette::CommandPaletteState;
 use super::scope::ShellScope;
 use crate::tui::shell::state::ShellState;
 
 pub struct WidgetContext<'a> {
     pub scope: &'a ShellScope,
-    pub board: &'a BoardLayout,
+    pub layout: &'a BoardV2Doc,
     pub shell_state: &'a mut ShellState,
     pub palette: &'a mut CommandPaletteState,
     pub focused_widget: &'a str,
@@ -19,7 +19,7 @@ pub struct WidgetContext<'a> {
 impl<'a> WidgetContext<'a> {
     pub fn new(
         scope: &'a ShellScope,
-        board: &'a BoardLayout,
+        layout: &'a BoardV2Doc,
         shell_state: &'a mut ShellState,
         palette: &'a mut CommandPaletteState,
         focused_widget: &'a str,
@@ -27,7 +27,7 @@ impl<'a> WidgetContext<'a> {
     ) -> Self {
         Self {
             scope,
-            board,
+            layout,
             shell_state,
             palette,
             focused_widget,

@@ -12,6 +12,7 @@ pub enum ShellMode {
     #[default]
     Compile,
     ProjectWizard,
+    Hi,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

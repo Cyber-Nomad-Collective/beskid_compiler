@@ -1,0 +1,10 @@
+[package]
+name = "beskid_hi"
+version = "0.1.0"
+edition = "2024"
+description = "Extension widgets for beskid hi — validates the beskid_tools shell API"
+
+[dependencies]
+beskid_tools = { path = "../beskid_tools" }
+ratatui = { workspace = true }
+ratkit = { workspace = true, features = ["hotkey-service"] }

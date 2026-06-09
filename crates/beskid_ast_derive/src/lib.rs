@@ -23,9 +23,9 @@ pub fn beskid_reflect(_attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn derive_ast_node(input: TokenStream) -> TokenStream {
     derive_node_impl(
         input,
-        quote! { crate::query::AstNode },
-        quote! { crate::query::DynNodeRef },
-        quote! { crate::query::NodeKind },
+        quote! { crate::syntax_query::AstNode },
+        quote! { crate::syntax_query::DynNodeRef },
+        quote! { crate::syntax_query::NodeKind },
     )
 }
 
@@ -34,9 +34,9 @@ pub fn derive_ast_node(input: TokenStream) -> TokenStream {
 pub fn derive_hir_node(input: TokenStream) -> TokenStream {
     derive_node_impl(
         input,
-        quote! { crate::query::HirNode },
-        quote! { crate::query::HirNodeRef },
-        quote! { crate::query::HirNodeKind },
+        quote! { crate::syntax_query::HirNode },
+        quote! { crate::syntax_query::HirNodeRef },
+        quote! { crate::syntax_query::HirNodeKind },
     )
 }
 

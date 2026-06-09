@@ -1,9 +1,8 @@
 //! BSOL board layout: parse, lower, and resolve scope-specific configs.
 
 use std::fs;
-use std::path::Path;
 
-use beskid_bsol::{load_profile, parse_bsol_document, validate, ValidatedBlock, ValidatedDocument};
+use bsol::{load_profile, parse_bsol_document, validate, ValidatedBlock, ValidatedDocument};
 use ratatui::layout::{Constraint, Layout, Rect};
 
 use super::scope::{ShellScope, user_board_path};

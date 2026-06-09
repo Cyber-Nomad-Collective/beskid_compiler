@@ -284,9 +284,9 @@ dependencies = [
  "anyhow",
  "beskid_artifacts",
  "beskid_ast_derive",
- "beskid_bsol",
  "beskid_manifest",
  "beskid_pipeline",
+ "bsol",
  "daggy",
  "from-pest",
  "log",
@@ -355,15 +355,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "beskid_bsol"
-version = "0.1.0"
-dependencies = [
- "pest",
- "pest_derive",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "beskid_cli"
 version = "0.1.77"
 dependencies = [
@@ -374,6 +365,7 @@ dependencies = [
  "beskid_codegen",
  "beskid_engine",
  "beskid_graph",
+ "beskid_hi",
  "beskid_lsp",
  "beskid_pckg",
  "beskid_pipeline",
@@ -381,6 +373,8 @@ dependencies = [
  "beskid_repl",
  "beskid_template",
  "beskid_tools",
+ "bsol",
+ "bsol-beskid-bridge",
  "clap",
  "crossterm 0.29.0",
  "graphs-tui",
@@ -454,6 +448,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "beskid_hi"
+version = "0.1.0"
+dependencies = [
+ "beskid_tools",
+ "ratatui 0.30.1",
+ "ratkit",
+]
+
+[[package]]
 name = "beskid_host"
 version = "0.1.0"
 dependencies = [
@@ -486,7 +489,7 @@ dependencies = [
 name = "beskid_manifest"
 version = "0.1.0"
 dependencies = [
- "beskid_bsol",
+ "bsol",
  "serde",
 ]
 
@@ -630,18 +633,21 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "beskid_analysis",
- "beskid_bsol",
  "beskid_pckg",
  "beskid_pipeline",
  "beskid_queries",
+ "bsol",
  "crossterm 0.29.0",
  "dirs 6.0.0",
  "include_dir",
  "log",
  "miette",
+ "panes",
+ "panes-ratatui",
  "pest",
  "ratatui 0.30.1",
  "ratatui-code-editor",
+ "ratatui-explorer",
  "ratkit",
  "semver",
  "serde",
@@ -739,6 +745,61 @@ name = "boxcar"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36f64beae40a84da1b4b26ff2761a5b895c12adc41dc25aaee1c4f2bbfe97a6e"
+
+[[package]]
+name = "bsol"
+version = "0.1.0"
+dependencies = [
+ "bsol-analysis",
+ "bsol-pipeline",
+ "bsol-schema",
+ "bsol-syntax",
+]
+
+[[package]]
+name = "bsol-analysis"
+version = "0.1.0"
+dependencies = [
+ "bsol-pipeline",
+ "bsol-schema",
+ "bsol-syntax",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "bsol-beskid-bridge"
+version = "0.1.0"
+dependencies = [
+ "bsol-analysis",
+ "bsol-schema",
+ "bsol-syntax",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "bsol-pipeline"
+version = "0.1.0"
+dependencies = [
+ "bsol-schema",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "bsol-schema"
+version = "0.1.0"
+dependencies = [
+ "bsol-syntax",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "bsol-syntax"
+version = "0.1.0"
+dependencies = [
+ "pest",
+ "pest_derive",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "bstr"
@@ -1735,6 +1796,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "educe"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d7bc049e1bd8cdeb31b68bbd586a9464ecf9f3944af3958a7a9d0f8b9799417"
+dependencies = [
+ "enum-ordinalize",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1765,6 +1838,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "enum-ordinalize"
+version = "4.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a1091a7bb1f8f2c4b28f1fe2cef4980ca2d410a3d727d67ecc3178c9b0800f0"
+dependencies = [
+ "enum-ordinalize-derive",
+]
+
+[[package]]
+name = "enum-ordinalize-derive"
+version = "4.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ca9601fb2d62598ee17836250842873a413586e5d7ed88b356e38ddbb0ec631"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -2220,6 +2313,12 @@ dependencies = [
  "unicode-width 0.2.2",
  "winnow 0.6.26",
 ]
+
+[[package]]
+name = "grid"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
 
 [[package]]
 name = "h2"
@@ -3621,6 +3720,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "panes"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c7b6b251b12ba50682feb76d7bffe9b44b42141283440df0daf7e14bba7c267"
+dependencies = [
+ "rustc-hash",
+ "taffy",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "panes-ratatui"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bea5e293fa89936a14cc848b6f885eed51c30f7c90ec991c2db3d86e344d23a3"
+dependencies = [
+ "panes",
+ "ratatui 0.30.1",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4183,6 +4303,16 @@ dependencies = [
  "crossterm 0.29.0",
  "instability",
  "ratatui-core",
+]
+
+[[package]]
+name = "ratatui-explorer"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1034d08c806b090cf2eb450f60717e38d28b3a0a9fae01eee282db488d2e513b"
+dependencies = [
+ "educe",
+ "ratatui 0.30.1",
 ]
 
 [[package]]
@@ -5194,6 +5324,18 @@ dependencies = [
  "ratatui-core",
  "thiserror 2.0.18",
  "unicode-width 0.2.2",
+]
+
+[[package]]
+name = "taffy"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aea22054047c16c3f34d3ac473a2170be1424b1115b2a3adcf28cfb067c88859"
+dependencies = [
+ "arrayvec",
+ "grid",
+ "serde",
+ "slotmap",
 ]
 
 [[package]]

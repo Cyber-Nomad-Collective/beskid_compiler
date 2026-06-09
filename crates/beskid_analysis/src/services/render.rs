@@ -1,4 +1,4 @@
-use crate::query::NodeRef;
+use crate::syntax_query::NodeRef;
 use crate::syntax::{Program, Spanned};
 
 pub fn render_program_tree(program: &Spanned<Program>) -> String {

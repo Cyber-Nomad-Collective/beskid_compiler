@@ -2,7 +2,7 @@ use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
 use crate::hir::{HirBlock, HirExpressionNode, HirItem, HirPattern, HirProgram, HirStatementNode};
-use crate::query::{HirNodeRef, HirQuery, HirVisit, HirWalker};
+use crate::syntax_query::{HirNodeRef, HirQuery, HirVisit, HirWalker};
 use crate::syntax::Spanned;
 use std::collections::{HashMap, HashSet};
 

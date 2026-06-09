@@ -14,13 +14,13 @@ pub mod workflow;
 
 pub use assembly::{
     AssemblyError, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
-    UnitHir, UnitMaterializer, assemble_program, assemble_program_with_materializer,
-    assembly_options_for_plan, assembly_options_for_prepare, build_hir_units,
-    effective_roots_for_plan,
+    UnitHir, UnitMaterializer, assemble_program_with_materializer, assembly_options_for_plan,
+    assembly_options_for_prepare, build_hir_units, effective_roots_for_plan,
     effective_roots_from_lockfile, effective_roots_from_plan_and_workspace,
     infer_logical_module_path, module_path_exists_on_disk, module_path_to_relative_path,
     module_roots_from_effective, resolve_module_file,
 };
+pub(crate) use assembly::assemble_program;
 pub use compile_plan::{
     build_compile_plan, build_compile_plan_with_policy, build_compile_plan_with_policy_and_graph,
     load_manifest_from_path, plan_entry_path,
@@ -52,7 +52,7 @@ pub use model::{
     WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,
 };
 pub use parser::{parse_manifest, parse_workspace_manifest};
-pub use beskid_bsol::{
+pub use bsol::{
     parse_bsol_document, BsolBlock, BsolDocument, BsolError, BsolItem, BsolSpan, BsolValue,
 };
 pub use readme::{

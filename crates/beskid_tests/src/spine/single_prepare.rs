@@ -175,3 +175,49 @@ fn run_path_single_prepare_after_wave1() {
 
     let _ = fs::remove_dir_all(root);
 }
+
+fn orphan_bd_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = temp_case_dir("spine_orphan_bd");
+    let entry = root.join("Orphan.bd");
+    fs::write(
+        &entry,
+        r#"
+i32 Main() {
+    return 1;
+}
+"#,
+    )
+    .expect("write orphan entry");
+    (root, entry)
+}
+
+/// Orphan `.bd` without `.bproj` uses a synthetic compile plan on the CLI resolve path.
+#[test]
+fn orphan_bd_single_prepare_without_bproj() {
+    let (root, entry) = orphan_bd_fixture();
+
+    with_cwd(&root, || {
+        let resolved =
+            resolve_input(Some(&entry), None, None, None, false, false).expect("resolve orphan");
+
+        let plan = resolved
+            .compile_plan
+            .as_ref()
+            .expect("orphan .bd should get synthetic compile plan");
+        assert_eq!(plan.project_name, "__synthetic__");
+        assert_eq!(plan.target.entry.as_deref(), Some("Orphan.bd"));
+
+        let recorder = PhaseStartRecorder::default();
+        run_single_prepare_path(&resolved, &recorder);
+
+        assert_eq!(
+            recorder.count(phases::PARSE),
+            1,
+            "orphan .bd run path must invoke prepare once"
+        );
+        assert_eq!(recorder.count(phases::SEMANTIC), 1);
+        assert_eq!(recorder.count(phases::LOWER), 1);
+    });
+
+    let _ = fs::remove_dir_all(root);
+}

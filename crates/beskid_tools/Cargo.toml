@@ -6,13 +6,16 @@ build = "build.rs"
 
 [dependencies]
 beskid_analysis = { path = "../beskid_analysis" }
-beskid_bsol = { path = "../beskid_bsol" }
+bsol = { workspace = true }
 beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_queries = { path = "../beskid_queries" }
 beskid_pckg = { path = "../beskid_pckg" }
 anyhow = "1.0"
 include_dir = "0.7.4"
 ratatui = { workspace = true }
+panes = { workspace = true }
+panes-ratatui = { workspace = true }
+ratatui-explorer = { workspace = true }
 crossterm = { workspace = true }
 ratkit = { workspace = true, features = ["pane", "tree-view", "dialog", "hotkey-footer", "hotkey-service", "widget-event", "resizable-grid"] }
 tui-piechart = { workspace = true }

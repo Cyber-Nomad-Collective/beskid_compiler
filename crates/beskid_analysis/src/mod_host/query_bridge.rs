@@ -1,6 +1,6 @@
-//! Host bridge for `Beskid.Compiler.Query` — maps Mod SDK `NodeRef` to `beskid_analysis::query`.
+//! Host bridge for `Beskid.Compiler.Query` — maps Mod SDK `NodeRef` to `beskid_analysis::syntax_query`.
 
-use crate::query::{
+use crate::syntax_query::{
     Ancestors, Descendants, DynNodeRef, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,
 };
 use crate::syntax::{Program, SpanInfo, Spanned};
@@ -214,7 +214,7 @@ impl<'a> SdkSyntaxQuery<'a> {
         self.of_kind(kind).into_iter().next()
     }
 
-    pub fn find_first_typed<T: crate::query::AstNode + 'static>(&mut self) -> Option<SdkNodeRef> {
+    pub fn find_first_typed<T: crate::syntax_query::AstNode + 'static>(&mut self) -> Option<SdkNodeRef> {
         let start = self.resolve(self.start)?;
         for node in Descendants::new(start) {
             if node.of::<T>().is_none() {
@@ -373,7 +373,7 @@ pub fn materialize_snapshot<'a>(
 }
 
 /// Typed downcast helper for host-side `As*` lowering.
-pub fn downcast_node<'a, T: crate::query::AstNode + 'static>(
+pub fn downcast_node<'a, T: crate::syntax_query::AstNode + 'static>(
     snapshot: &'a SyntaxSnapshot<'a>,
     id: SdkNodeRef,
 ) -> Option<&'a T> {

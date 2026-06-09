@@ -1,0 +1,40 @@
+board "hi-default" {
+  version = 2
+  title = "Beskid Hi"
+  scope = user
+  root = "root"
+}
+node "root" {
+  kind = col
+  children = ["header", "body", "log", "footer"]
+}
+node "header" {
+  kind = panel
+  widget = "shell.scope"
+  fixed_height = 4
+}
+node "body" {
+  kind = row
+  grow = 1
+  children = ["stage", "detail"]
+}
+node "stage" {
+  kind = panel
+  widget = "hi.welcome"
+  grow = 1
+}
+node "detail" {
+  kind = panel
+  widget = "shell.shortcuts"
+  grow = 2
+}
+node "log" {
+  kind = panel
+  widget = "shell.log"
+  fixed_height = 8
+}
+node "footer" {
+  kind = panel
+  widget = "shell.chrome"
+  fixed_height = 4
+}

@@ -9,7 +9,7 @@ pub enum CommandKind {
     Contextual,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CliCommandDef {
     pub id: &'static str,
     pub name: &'static str,
@@ -19,7 +19,7 @@ pub struct CliCommandDef {
     pub args_hint: &'static str,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ContextualCommand {
     pub id: &'static str,
     pub name: &'static str,
@@ -29,7 +29,7 @@ pub struct ContextualCommand {
     pub widget_id: Option<&'static str>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CommandItem {
     Cli(CliCommandDef),
     Contextual(ContextualCommand),
@@ -124,6 +124,30 @@ pub fn builtin_contextual_commands(scope: &ShellScope) -> Vec<CommandItem> {
             None,
             Some("templates.picker"),
         ),
+        contextual(
+            "ctx.open_workspace",
+            "Open workspace",
+            "Pick a workspace (.bws) to scope the shell",
+            "◎",
+            None,
+            None,
+        ),
+        contextual(
+            "ctx.open_project",
+            "Open project",
+            "Pick a project (.bproj) to scope the shell",
+            "▣",
+            None,
+            None,
+        ),
+        contextual(
+            "ctx.layout_edit",
+            "Layout edit",
+            "Toggle layout editor",
+            "▦",
+            None,
+            None,
+        ),
     ];
     match scope {
         ShellScope::Workspace { .. } | ShellScope::Project { .. } => {
@@ -155,6 +179,33 @@ pub fn builtin_contextual_commands(scope: &ShellScope) -> Vec<CommandItem> {
         ShellScope::User => {}
     }
     out.into_iter().map(CommandItem::Contextual).collect()
+}
+
+/// Palette entries when layout editor is active or inactive.
+pub fn layout_editor_commands(edit_active: bool) -> Vec<CommandItem> {
+    if !edit_active {
+        return vec![CommandItem::Contextual(contextual(
+            "ctx.layout_edit",
+            "Layout edit",
+            "Toggle layout editor",
+            "▦",
+            None,
+            None,
+        ))];
+    }
+    vec![
+        CommandItem::Contextual(contextual("layout.focus_next", "Focus next panel", "Select next layout panel", "↓", None, None)),
+        CommandItem::Contextual(contextual("layout.focus_prev", "Focus prev panel", "Select previous layout panel", "↑", None, None)),
+        CommandItem::Contextual(contextual("layout.add", "Add panel", "Add widget panel (param: widget id)", "+", Some("<widget>"), None)),
+        CommandItem::Contextual(contextual("layout.remove", "Remove panel", "Remove focused panel", "−", None, None)),
+        CommandItem::Contextual(contextual("layout.wrap_col", "Wrap column", "Wrap focused panel in column", "⫯", None, None)),
+        CommandItem::Contextual(contextual("layout.wrap_row", "Wrap row", "Wrap focused panel in row", "⫰", None, None)),
+        CommandItem::Contextual(contextual("layout.tabs", "Convert tabs", "Convert layout to tabs", "⊞", None, None)),
+        CommandItem::Contextual(contextual("layout.stack", "Convert stack", "Convert layout to stack", "▤", None, None)),
+        CommandItem::Contextual(contextual("layout.set_widget", "Set widget", "Set focused panel widget id", "◎", Some("<widget>"), None)),
+        CommandItem::Contextual(contextual("layout.save", "Save layout", "Save board to scope path", "💾", None, None)),
+        CommandItem::Contextual(contextual("layout.reset", "Reset layout", "Reset to embedded default", "↺", None, None)),
+    ]
 }
 
 fn cli(

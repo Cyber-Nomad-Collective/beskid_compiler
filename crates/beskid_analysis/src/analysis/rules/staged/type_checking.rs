@@ -3,7 +3,7 @@ use crate::analysis::rules::RuleContext;
 use crate::hir::{
     HirBlock, HirExpressionNode, HirForStatement, HirLetStatement, HirParameter, HirProgram,
 };
-use crate::query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
+use crate::syntax_query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
 use crate::syntax::Spanned;
 use std::collections::HashMap;
 

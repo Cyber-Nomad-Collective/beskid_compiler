@@ -8,7 +8,8 @@ use crate::doc::DocRefLinkContext;
 use crate::doc::ResolvedDoc;
 use crate::projects::assembly::{AssemblyError, ProgramAssembly};
 use crate::projects::{
-    AssemblyDiscovery, AssemblyOptions, CompilePlan, PreparedProjectWorkspace, assemble_program,
+    AssemblyDiscovery, CompilePlan, PreparedProjectWorkspace, assemble_program,
+    assembly_options_for_prepare,
 };
 use crate::resolve::{
     ItemId, ItemKind, LocalId, Resolution, ResolvedValue, SymbolId, canonical_item_id,
@@ -111,17 +112,41 @@ pub struct TestCaseInfo {
     pub definition_column: usize,
 }
 
-/// Discover all `.bd` units under host + dependency roots (not import-closure only).
+/// Assemble the entry import closure for `api.json` (same discovery as prepare / `beskid build`).
 pub fn assemble_for_api_documentation(
     plan: &CompilePlan,
     workspace: Option<&PreparedProjectWorkspace>,
     entry_path: &Path,
     entry_source: Option<&str>,
 ) -> Result<ProgramAssembly, AssemblyError> {
-    let mut options = AssemblyOptions::default();
-    options.discovery = AssemblyDiscovery::WorkspaceScan;
+    let mut options = assembly_options_for_prepare(plan, AssemblyDiscovery::ImportClosure);
     options.skip_parse_errors = true;
     assemble_program(plan, workspace, entry_path, entry_source, &options, None)
+}
+
+/// Build a documentation snapshot from prepare-spine entry resolution and assembled units.
+pub fn build_api_documentation_snapshot(
+    program: &Spanned<Program>,
+    source_name: impl AsRef<str>,
+    source_text: &str,
+    path: &Path,
+    resolution: Resolution,
+    assembly: &ProgramAssembly,
+    compile_plan: &CompilePlan,
+    docs_ref_links: Option<&DocRefLinkContext>,
+) -> DocumentAnalysisSnapshot {
+    let module_paths = assembly.module_index.known_module_path_strings();
+    build_document_snapshot(
+        program,
+        source_name.as_ref(),
+        source_text,
+        path,
+        Some(resolution),
+        module_paths,
+        Some(assembly),
+        Some(compile_plan),
+        docs_ref_links,
+    )
 }
 
 /// Full-project resolution for `api.json`: prefetch symbols from every unit, resolve entry, then merge type/value tables from each unit.

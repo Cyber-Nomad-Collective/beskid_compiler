@@ -1,6 +1,6 @@
 //! Lower a validated runtime Bsol document into [`ManifestRoot`].
 
-use beskid_bsol::{ValidatedBlock, ValidatedDocument};
+use bsol::{ValidatedBlock, ValidatedDocument};
 
 use crate::model::{
     DispatchEntry, DispatchTables, IntrinsicEntry, KernelEntry, ManifestMeta, ManifestProfiles,
@@ -124,7 +124,7 @@ fn parse_u32_field(block: &ValidatedBlock, key: &str) -> Result<u32, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use beskid_bsol::{load_profile, parse_bsol_document, validate};
+    use bsol::{load_profile, parse_bsol_document, validate};
 
     #[test]
     fn lower_runtime_manifest_smoke() {

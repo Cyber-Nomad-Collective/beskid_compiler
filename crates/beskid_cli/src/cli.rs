@@ -9,6 +9,7 @@ use crate::commands::doc::DocArgs;
 use crate::commands::fetch::FetchArgs;
 use crate::commands::format::FormatArgs;
 use crate::commands::graph::GraphArgs;
+use crate::commands::hi::HiArgs;
 use crate::commands::import::ImportArgs;
 use crate::commands::lock::LockArgs;
 use crate::commands::lsp::LspArgs;
@@ -19,9 +20,10 @@ use crate::commands::run::RunArgs;
 use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
+use crate::commands::validate_bsol::ValidateBsolArgs;
 use crate::commands::{
-    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, import, lock, lsp, new,
-    parse, repl, run, test, tree, update,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp, new,
+    parse, repl, run, test, tree, update, validate_bsol,
 };
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_pckg::PckgArgs;
@@ -111,8 +113,15 @@ pub enum Commands {
     /// Visualize project/workspace graphs (Mermaid) in the terminal or as raw output
     Graph(GraphArgs),
 
+    /// Open the pluggable Beskid dashboard shell (workspace/project/user scoped)
+    Hi(HiArgs),
+
     /// Run the Beskid language server on stdio, or install a release binary (`beskid lsp install`)
     Lsp(LspArgs),
+
+    /// Validate a BSOL document against a schema profile
+    #[command(name = "validate-bsol")]
+    ValidateBsol(ValidateBsolArgs),
 }
 
 /// Parses argv, provisions bundled corelib when needed, and runs the selected subcommand.
@@ -145,7 +154,9 @@ pub fn run() -> miette::Result<()> {
         Commands::Pckg(args) => maybe_generate_docs_for_pack(&args)
             .and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into)),
         Commands::Lsp(args) => lsp::execute(args),
+        Commands::ValidateBsol(args) => validate_bsol::execute(args),
         Commands::Graph(args) => graph::execute(args),
+        Commands::Hi(args) => hi::execute(args, &[beskid_hi::register_widgets]),
     };
 
     result.map_err(anyhow_to_miette)
