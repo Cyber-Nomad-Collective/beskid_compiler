@@ -46,7 +46,7 @@ pub extern "C-unwind" fn tty_winsize(fd: i64) -> i64 {
     }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        return linux_tty_winsize(fd as i32);
+        linux_tty_winsize(fd as i32)
     }
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     {
