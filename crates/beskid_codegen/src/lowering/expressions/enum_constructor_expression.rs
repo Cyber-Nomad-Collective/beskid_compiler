@@ -113,7 +113,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirEnumConstructorExpression {
             .args
             .iter()
             .zip(field_types.iter())
-            .zip(offsets.into_iter())
+            .zip(offsets)
         {
             let mut value = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
                 span: arg.span,

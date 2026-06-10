@@ -173,7 +173,7 @@ fn lower_method_body(
         .node
         .parameters
         .iter()
-        .zip(param_values.into_iter().skip(1))
+        .zip(param_values.iter().skip(1))
         .enumerate()
     {
         let local_id = local_id_for_span(
@@ -206,7 +206,7 @@ fn lower_method_body(
                 node: "function parameter type",
             })?;
         let var = builder.declare_var(clif_ty);
-        builder.def_var(var, value);
+        builder.def_var(var, *value);
         state.locals.insert(local_id, var);
         state.parameter_locals.push(local_id);
         state.local_type_overrides.insert(local_id, type_id);
