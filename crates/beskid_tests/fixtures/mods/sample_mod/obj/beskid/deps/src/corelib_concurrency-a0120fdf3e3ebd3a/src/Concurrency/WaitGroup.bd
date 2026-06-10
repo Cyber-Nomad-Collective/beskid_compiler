@@ -1,0 +1,25 @@
+/// Fork–join counter with `Add` / `Done` / `Wait` operations.
+pub type WaitGroup {
+    i64 handle,
+}
+
+pub WaitGroup Create() {
+    i64 handle = __wait_group_create();
+    return WaitGroup { handle: handle };
+}
+
+pub unit Add(WaitGroup self, i64 delta) {
+    __wait_group_add(self.handle, delta);
+    return;
+}
+
+pub unit Done(WaitGroup self) {
+    __wait_group_done(self.handle);
+    return;
+}
+
+/// Parks until the counter reaches zero.
+pub unit Wait(WaitGroup self) {
+    __wait_group_wait(self.handle);
+    return;
+}

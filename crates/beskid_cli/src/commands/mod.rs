@@ -23,3 +23,4 @@ pub mod test;
 pub mod tree;
 pub mod update;
 pub mod validate_bsol;
+pub mod migrate_bsol;

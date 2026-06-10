@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use bsol::{load_profile, parse_bsol_document, validate, ValidatedBlock, ValidatedDocument};
+use bsol::{load_profile, parse_bsol_document, validate, ValidatedBlock, ValidatedDocument, ValidatedValue};
 
 use super::model::{BoardNode, BoardV2Doc, NodeKind};
 use crate::shell::board::{BoardLayout, BoardRegion, BoardTile};
@@ -14,6 +14,21 @@ pub fn parse_v2(source: &str) -> Result<BoardV2Doc, String> {
     let profile = load_profile("board.v2").map_err(|e| e.to_string())?;
     let validated = validate(&document, &profile).map_err(|e| e.to_string())?;
     lower_v2(validated)
+}
+
+pub fn parse_v3(source: &str) -> Result<BoardV2Doc, String> {
+    let document = parse_bsol_document(source).map_err(|e| e.to_string())?;
+    let profile = load_profile("board.v3").map_err(|e| e.to_string())?;
+    let validated = validate(&document, &profile).map_err(|e| e.to_string())?;
+    lower_v3(validated)
+}
+
+pub fn parse_board(source: &str) -> Result<BoardV2Doc, String> {
+    if source.contains("board.v3") || source.contains("version = 3") {
+        parse_v3(source).or_else(|_| parse_v2(source))
+    } else {
+        parse_v2(source).or_else(|_| parse_v3(source))
+    }
 }
 
 pub fn import_v1(layout: &BoardLayout) -> BoardV2Doc {
@@ -84,17 +99,14 @@ fn lower_v2(doc: ValidatedDocument) -> Result<BoardV2Doc, String> {
                 name = block.label.clone().unwrap_or_else(|| "default".into());
                 title = block.fields.get("title").cloned();
                 scope_hint = block.fields.get("scope").cloned();
-                root = block
-                    .fields
-                    .get("root")
-                    .cloned()
+                root = field_as_label(block, "root")
                     .ok_or_else(|| "board missing root".to_string())?;
                 let version: u32 = block
                     .fields
                     .get("version")
                     .and_then(|v| v.parse().ok())
                     .ok_or_else(|| "board.v2 requires version = 2".to_string())?;
-                if version != 2 {
+                if version != 2 && version != 3 {
                     return Err(format!("unsupported board version {version}"));
                 }
             }
@@ -125,13 +137,50 @@ fn lower_v2(doc: ValidatedDocument) -> Result<BoardV2Doc, String> {
     })
 }
 
+fn lower_v3(doc: ValidatedDocument) -> Result<BoardV2Doc, String> {
+    lower_v2(doc)
+}
+
+fn field_as_label(block: &ValidatedBlock, key: &str) -> Option<String> {
+    if let Some(value) = block.values.get(key) {
+        return value_as_label(value);
+    }
+    block.fields.get(key).cloned()
+}
+
+fn value_as_label(value: &ValidatedValue) -> Option<String> {
+    match value {
+        ValidatedValue::Ref(r) => Some(r.label.clone()),
+        ValidatedValue::String(s) => Some(s.clone()),
+        ValidatedValue::List(items) => items.first().and_then(value_as_label),
+        _ => None,
+    }
+}
+
 fn lower_node(block: &ValidatedBlock) -> Result<BoardNode, String> {
     let kind = block
         .fields
         .get("kind")
         .and_then(|k| NodeKind::parse_kind(k))
         .ok_or_else(|| format!("node `{}` has invalid kind", block.label.as_deref().unwrap_or("?")))?;
-    let children = block.lists.get("children").cloned().unwrap_or_default();
+    let children = block
+        .values
+        .get("children")
+        .and_then(|v| v.as_list_strings())
+        .or_else(|| block.lists.get("children").cloned())
+        .map(|items| {
+            items
+                .into_iter()
+                .map(|item| {
+                    if item.starts_with('@') {
+                        item.rsplit('/').next().unwrap_or(&item).to_string()
+                    } else {
+                        item
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     Ok(BoardNode {
         kind,
         widget: block.fields.get("widget").cloned(),

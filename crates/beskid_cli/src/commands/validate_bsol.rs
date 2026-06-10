@@ -16,6 +16,10 @@ pub struct ValidateBsolArgs {
     #[arg(long, default_value = "project.v1")]
     pub profile: String,
 
+    /// Apply profile migration rewrites before validation.
+    #[arg(long)]
+    pub migrate: bool,
+
     /// Path to the BSOL document (defaults to stdin when omitted).
     pub path: Option<PathBuf>,
 }
@@ -44,7 +48,9 @@ pub fn execute(args: ValidateBsolArgs) -> Result<()> {
     if let Ok(cache) = std::env::var("BESKID_SCHEMA_CACHE") {
         session.add_schema_source(Box::new(PckgSchemaSource::new(cache)));
     }
-    let options = AnalysisOptions::for_profile(&args.profile).with_base_dir(base_dir);
+    let options = AnalysisOptions::for_profile(&args.profile)
+        .with_base_dir(base_dir)
+        .with_migrate(args.migrate);
     session
         .analyze_source(&source, &options)
         .map_err(|err| anyhow::Error::msg(err.to_string()))?;

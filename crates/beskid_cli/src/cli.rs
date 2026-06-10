@@ -21,8 +21,9 @@ use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::validate_bsol::ValidateBsolArgs;
+use crate::commands::migrate_bsol::MigrateBsolArgs;
 use crate::commands::{
-    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp, new,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp, migrate_bsol, new,
     parse, repl, run, test, tree, update, validate_bsol,
 };
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
@@ -122,6 +123,10 @@ pub enum Commands {
     /// Validate a BSOL document against a schema profile
     #[command(name = "validate-bsol")]
     ValidateBsol(ValidateBsolArgs),
+
+    /// Migrate a BSOL document to a newer schema profile version
+    #[command(name = "migrate-bsol")]
+    MigrateBsol(MigrateBsolArgs),
 }
 
 /// Parses argv, provisions bundled corelib when needed, and runs the selected subcommand.
@@ -155,6 +160,7 @@ pub fn run() -> miette::Result<()> {
             .and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into)),
         Commands::Lsp(args) => lsp::execute(args),
         Commands::ValidateBsol(args) => validate_bsol::execute(args),
+        Commands::MigrateBsol(args) => migrate_bsol::execute(args),
         Commands::Graph(args) => graph::execute(args),
         Commands::Hi(args) => hi::execute(
             args,

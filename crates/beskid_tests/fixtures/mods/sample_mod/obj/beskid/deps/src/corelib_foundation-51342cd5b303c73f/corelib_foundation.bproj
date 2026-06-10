@@ -1,0 +1,18 @@
+corelib_foundation {
+  name = "corelib_foundation"
+  version = "0.1.0"
+  root = "src"
+  readme = "README.md"
+  grammar {
+    roots = [grammars]
+    grammarOutput {
+      pest = "grammars/regex.pest"
+      module = "Core.Text.Regex.Generated"
+      packageId = "corelib_foundation"
+    }
+  }
+}
+
+target "FoundationLib" {
+  kind = Lib
+}

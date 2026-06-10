@@ -1,0 +1,31 @@
+// CHECKED IN: hand-maintained Mod SDK emit helpers (contract AST builders).
+use Beskid.Compiler.Emitter.Nodes;
+use Beskid.Syntax.Nodes;
+
+/// Build a public contract definition with typed member list.
+pub ContractDefinition PubContract(string name, ContractNodeList items) {
+    return ContractDefinition {
+        attributes: EmptyAttributes(),
+        visibility: PubVisibility(),
+        name: PubIdentifier(name),
+        items: items,
+    };
+}
+
+/// Append one contract method signature to a contract node list.
+pub ContractNodeList ConsContractMethod(ContractMethodSignature signature, ContractNodeList tail) {
+    return ContractNodeList::Cons(
+        ContractNode::MethodSignature(signature),
+        tail,
+    );
+}
+
+/// Build a contract method signature node (return type + name + parameters).
+pub ContractMethodSignature ContractMethod(Type returnType, string name, ParameterList parameters) {
+    return ContractMethodSignature {
+        attributes: EmptyAttributes(),
+        name: PubIdentifier(name),
+        parameters: parameters,
+        returnType: returnType,
+    };
+}

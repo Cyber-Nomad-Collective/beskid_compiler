@@ -1,0 +1,22 @@
+// CHECKED IN: hand-maintained Mod SDK surface (regen_mod_sdk_surfaces.sh write_internal_symbol)
+// Rust host reads [InternalSymbol] metadata when building mod.descriptor.json registrations.
+
+/// Describes how a mod entrypoint is exported for AOT host binding.
+pub enum InternalSymbolType {
+    Callable(InternalSymbolCallable),
+}
+
+/// Callable ABI shape: parameter types in Beskid type syntax (schema for marshaling).
+/// Return type is inferred from the annotated method signature.
+pub type InternalSymbolCallable {
+    Beskid.Compiler.Collect.GenerationRequest[] parameters,
+}
+
+/// Marks a contract entry method for native export and mod-host scheduling.
+pub attribute InternalSymbol(MethodDefinition) {
+    symbol: InternalSymbolType,
+}
+
+pub string InternalSymbolFacadeVersion() {
+    return "0.2.0";
+}

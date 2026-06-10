@@ -1,0 +1,36 @@
+// Bounded regex pattern language for Core.Text.Regex (REGEX-001).
+// Host codegen: beskid_pest_gen → Core.Text.Regex.Generated
+
+// --- Subject-text atoms (generated matchers over input text) ---
+digit = { "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" }
+lower = { "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" }
+upper = { "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z" }
+alpha = { lower | upper }
+word_tail = { alpha | digit | "_" }
+space = { " " }
+any_unit = { ANY }
+lower_run = { lower+ }
+digit_run = { digit+ }
+word_run = { word_tail+ }
+space_run = { space+ }
+
+// --- Pattern syntax (validates pattern strings) ---
+pat = { pat_branch ~ ( "|" ~ pat_branch )* }
+pat_branch = { pat_piece+ }
+pat_piece = { pat_anchor | pat_group_quant | pat_class_quant | pat_escape_quant | pat_dot_quant | pat_lit_quant }
+pat_anchor = { "^" | "$" }
+pat_group_quant = { "(" ~ pat ~ ")" ~ pat_quant? }
+pat_class_quant = { "[" ~ pat_class_inner ~ "]" ~ pat_quant? }
+pat_class_inner = { pat_class_neg? ~ pat_class_item+ }
+pat_class_neg = { "^" }
+pat_class_item = { pat_class_char ~ ( "-" ~ pat_class_char )? }
+pat_class_char = { ANY }
+pat_escape_quant = { "\\" ~ pat_esc_char ~ pat_quant? }
+pat_esc_char = { "d" | "w" | "s" | "D" | "W" | "S" | "." | "\\" | "/" | "-" | "+" | "|" | "(" | ")" | "[" | "]" | "{" | "}" | ":" | "'" | "\"" }
+pat_dot_quant = { "." ~ pat_quant? }
+pat_lit_quant = { pat_lit ~ pat_quant? }
+pat_lit = { letter | digit | sym_safe }
+pat_quant = { "*" | "+" | "?" }
+letter = { lower | upper }
+digit_char = { digit }
+sym_safe = { "!" | "#" | "%" | "&" | "," | "/" | ":" | ";" | "=" | "@" | "_" | "`" | "~" }

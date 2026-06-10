@@ -1,0 +1,32 @@
+profile "configuration.v1" {
+  rule "config" {
+    scope = top
+    match = keyword
+    keyword = config
+    label = forbidden
+    cardinality = one
+    field "version" { type = u32 required = false }
+    field "profile" { type = quoted required = false }
+    field "module" { type = quoted required = false }
+    field "package" { type = quoted required = false }
+  }
+  rule "moduleConfig" {
+    scope = top
+    match = free_ident
+    except = [config, option]
+    label = forbidden
+    cardinality = many
+    extras = true
+    nested_extras = true
+  }
+  rule "option" {
+    scope = top
+    match = keyword
+    keyword = option
+    label = forbidden
+    cardinality = many
+    field "section" { type = quoted required = false }
+    field "key" { type = quoted required = true }
+    field "value" { type = loose required = true }
+  }
+}

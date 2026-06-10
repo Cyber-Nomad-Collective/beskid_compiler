@@ -4393,7 +4393,6 @@ dependencies = [
  "anyhow",
  "arboard",
  "compact_str 0.8.2",
- "crossterm 0.28.1",
  "crossterm 0.29.0",
  "devicons",
  "dirs 5.0.1",
