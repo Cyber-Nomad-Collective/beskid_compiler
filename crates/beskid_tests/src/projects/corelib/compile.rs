@@ -13,7 +13,7 @@ use crate::projects::fixture_harness::{
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 use super::{
-    compiler_sdk_src, corelib_root, corelib_workspace_root, foundation_src, runtime_src,
+    compiler_sdk_src, corelib_root, corelib_workspace_root, foundation_src,
     stratified_corelib_parse_samples,
 };
 
@@ -70,7 +70,7 @@ fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_posit
 fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let root = corelib_workspace_root();
-        let relative = "packages/foundation/src/Core/Results.bd";
+        let relative = "packages/foundation/src/Core/Results/Results.bd";
         let path = root.join(relative);
         let source = fs::read_to_string(&path)
             .unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
@@ -99,7 +99,7 @@ fn corelib_mvp_fixture_resolves_std_modules_via_program_assembly() {
 
         assert!(
             resolution.items.iter().any(|item| item.name == "WriteLine"),
-            "expected WriteLine from Std.System.Output in merged resolution"
+            "expected WriteLine from Std.Core.Output in merged resolution"
         );
         assert!(
             resolution.items.iter().any(|item| item.name == "Len"),
@@ -174,6 +174,52 @@ fn checked_in_compiler_sdk_syntax_exports_node_inventory() {
 }
 
 #[test]
+fn checked_in_compiler_sdk_collect_parses_with_named_enum_payloads() {
+    let collect = compiler_sdk_src().join("Beskid/Compiler/Collect.bd");
+    let source = fs::read_to_string(&collect).expect("read Beskid.Compiler.Collect");
+    assert!(
+        source.contains("ContractDefinition(ContractDefinition definition)"),
+        "Collect should declare named enum payloads for SyntaxContributionItem"
+    );
+    parse_program(&source).expect("Beskid.Compiler.Collect should parse");
+}
+
+#[test]
+fn checked_in_compiler_sdk_emitter_hub_exports_split_modules() {
+    let hub = fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Emitter.bd"))
+        .expect("read Emitter hub");
+    for needle in [
+        "pub mod Beskid.Compiler.Emitter.Nodes",
+        "pub mod Beskid.Compiler.Emitter.Contracts",
+        "pub mod Beskid.Compiler.Emitter.Items",
+        "pub mod Beskid.Compiler.Emitter.Contribution",
+        "pub string EmitterFacadeVersion()",
+    ] {
+        assert!(hub.contains(needle), "Emitter hub missing `{needle}`");
+    }
+    parse_program(&hub).expect("Emitter hub should parse");
+}
+
+#[test]
+fn checked_in_compiler_sdk_emitter_contribution_helpers_exist() {
+    let contribution = fs::read_to_string(
+        compiler_sdk_src().join("Beskid/Compiler/Emitter/Contribution.bd"),
+    )
+    .expect("read Emitter.Contribution");
+    for needle in [
+        "pub GeneratedSyntaxContribution Empty()",
+        "pub GeneratedSyntaxContribution AppendCode(",
+        "pub CodeContribution CodeOutput(",
+    ] {
+        assert!(
+            contribution.contains(needle),
+            "Emitter.Contribution missing `{needle}`"
+        );
+    }
+    parse_program(&contribution).expect("Emitter.Contribution should parse");
+}
+
+#[test]
 fn checked_in_compiler_sdk_collect_declares_mod_contracts() {
     let collect = fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Collect.bd"))
         .expect("read Beskid.Compiler.Collect");
@@ -207,11 +253,11 @@ fn checked_in_compiler_sdk_collect_declares_mod_contracts() {
 #[test]
 fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
     let results_mod =
-        fs::read_to_string(foundation_src().join("Core/Results.bd")).expect("read Core.Results");
+        fs::read_to_string(foundation_src().join("Core/Results/Results.bd")).expect("read Core.Results");
     let string_mod =
-        fs::read_to_string(foundation_src().join("Core/String.bd")).expect("read Core.String");
+        fs::read_to_string(foundation_src().join("Core/String/String.bd")).expect("read Core.String");
     let output_mod =
-        fs::read_to_string(runtime_src().join("System/Output/Output.bd")).expect("read System.Output");
+        fs::read_to_string(foundation_src().join("Core/Output/Output.bd")).expect("read Core.Output");
 
     assert!(
         results_mod.contains("pub enum Result"),
@@ -237,21 +283,21 @@ fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
     );
     assert!(
         !output_mod.contains("__sys_print"),
-        "System.Output must not reference purged __sys_print builtins"
+        "Core.Output must not reference purged __sys_print builtins"
     );
     assert!(
-        output_mod.contains("Syscall.WriteWith") && output_mod.contains("WriteLine"),
-        "System.Output should route through Syscall.WriteWith and expose WriteLine"
+        output_mod.contains("Core.Syscall.WriteWith") && output_mod.contains("WriteLine"),
+        "Core.Output should route through Core.Syscall.WriteWith and expose WriteLine"
     );
     let syscall_mod =
-        fs::read_to_string(runtime_src().join("System/Syscall.bd")).expect("read System.Syscall");
+        fs::read_to_string(foundation_src().join("Core/Syscall/Syscall.bd")).expect("read Core.Syscall");
     assert!(
         syscall_mod.contains("__syscall_write"),
-        "System.Syscall should call __syscall_write builtin"
+        "Core.Syscall should call __syscall_write builtin"
     );
     assert!(
         syscall_mod.contains("__syscall_read"),
-        "System.Syscall should call __syscall_read builtin"
+        "Core.Syscall should call __syscall_read builtin"
     );
 }
 
@@ -348,8 +394,11 @@ fn checked_in_corelib_beskid_test_sources_parse() {
         root.join("tests/corelib_tests/src/system/PathTests.bd"),
         root.join("tests/corelib_tests/src/system/TimeTests.bd"),
         root.join("tests/corelib_tests/src/core/ResultsTests.bd"),
+        root.join("tests/corelib_tests/src/core/OptionalTests.bd"),
         root.join("tests/corelib_tests/src/collections/ArrayTests.bd"),
         root.join("tests/corelib_tests/src/collections/CollectionsTier1Tests.bd"),
+        root.join("tests/corelib_tests/src/collections/CollectionsTests.bd"),
+        root.join("tests/corelib_tests/src/query/QueryTests.bd"),
         root.join("tests/corelib_tests/src/collections/ListTests.bd"),
         root.join("tests/corelib_tests/src/collections/MapTests.bd"),
         root.join("tests/corelib_tests/src/collections/SetTests.bd"),

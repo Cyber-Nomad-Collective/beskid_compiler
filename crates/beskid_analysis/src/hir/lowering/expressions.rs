@@ -75,9 +75,67 @@ impl Lowerable for Spanned<syntax::Expression> {
                 };
                 HirExpressionNode::ArrayLiteralExpression(Spanned::new(hir, node.span))
             }
+            syntax::Expression::CodeString(code) => lower_code_string_expression(code),
         };
         Spanned::new(node, self.span)
     }
+}
+
+fn lower_code_string_expression(
+    code: &Spanned<syntax::CodeStringLiteral>,
+) -> HirExpressionNode {
+    use super::Lowerable;
+    use crate::hir::{HirBinaryExpression, HirBinaryOp, HirLiteral, HirLiteralExpression};
+    use crate::services::parse_expression_source;
+
+    let mut expr: Option<Spanned<HirExpressionNode>> = None;
+    for segment in &code.node.segments {
+        let part = match segment {
+            syntax::CodeStringSegment::Text(text) => HirExpressionNode::LiteralExpression(
+                Spanned::new(
+                    HirLiteralExpression {
+                        literal: Spanned::new(HirLiteral::String(text.clone()), code.span),
+                    },
+                    code.span,
+                ),
+            ),
+            syntax::CodeStringSegment::Hole(source) => match parse_expression_source("@code-hole", source) {
+                Ok(parsed) => parsed.lower().node,
+                Err(_) => HirExpressionNode::LiteralExpression(Spanned::new(
+                    HirLiteralExpression {
+                        literal: Spanned::new(HirLiteral::String(String::new()), code.span),
+                    },
+                    code.span,
+                )),
+            },
+        };
+        expr = Some(match expr {
+            None => Spanned::new(part, code.span),
+            Some(left) => Spanned::new(
+                HirExpressionNode::BinaryExpression(Spanned::new(
+                    HirBinaryExpression {
+                        left: Box::new(left),
+                        op: Spanned::new(HirBinaryOp::Add, code.span),
+                        right: Box::new(Spanned::new(part, code.span)),
+                    },
+                    code.span,
+                )),
+                code.span,
+            ),
+        });
+    }
+    expr.unwrap_or_else(|| {
+        Spanned::new(
+            HirExpressionNode::LiteralExpression(Spanned::new(
+                HirLiteralExpression {
+                    literal: Spanned::new(HirLiteral::String(String::new()), code.span),
+                },
+                code.span,
+            )),
+            code.span,
+        )
+    })
+    .node
 }
 
 impl Lowerable for Spanned<syntax::SpawnExpression> {

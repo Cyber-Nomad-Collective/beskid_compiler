@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use beskid_analysis::projects::graph::build_project_graph_with_options;
 use beskid_analysis::projects::model::AssemblyOptions;
-use beskid_analysis::projects::{CompilePlan, ProjectGraphBuildOptions, parse_workspace_manifest};
+use beskid_analysis::projects::{CompilePlan, ProjectGraphBuildOptions, parse_workspace_manifest, project_manifest_for_member_dir};
 use beskid_analysis::services::{parse_program_with_source_name, resolve_program_composition};
 use beskid_graph::{
     GraphDocument, GraphKind, from_composition, from_import_closure, from_module_graph,
@@ -185,10 +185,10 @@ fn workspace_graph(request: &GraphFetchRequest) -> Result<GraphDocument, GraphQu
         .ok_or_else(|| GraphQueryError::Message("workspace dir missing".to_owned()))?;
     let mut members = Vec::new();
     for member in &manifest.members {
-        let member_manifest = workspace_dir.join(&member.path).join("Project.proj");
-        if !member_manifest.is_file() {
+        let member_dir = workspace_dir.join(&member.path);
+        let Ok(member_manifest) = project_manifest_for_member_dir(&member_dir) else {
             continue;
-        }
+        };
         let graph = build_project_graph_with_options(
             &member_manifest,
             ProjectGraphBuildOptions::default(),
@@ -242,10 +242,10 @@ pub fn graph_mermaid_workspace(
     let workspace_dir = path.parent().expect("workspace dir");
     let mut members = Vec::new();
     for member in &manifest.members {
-        let member_manifest = workspace_dir.join(&member.path).join("Project.proj");
-        if !member_manifest.is_file() {
+        let member_dir = workspace_dir.join(&member.path);
+        let Ok(member_manifest) = project_manifest_for_member_dir(&member_dir) else {
             continue;
-        }
+        };
         let graph =
             build_project_graph_with_options(&member_manifest, ProjectGraphBuildOptions::default())
                 .expect("member graph");

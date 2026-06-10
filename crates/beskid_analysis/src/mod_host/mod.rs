@@ -8,12 +8,17 @@ mod analyze;
 mod api;
 mod capabilities;
 mod collect;
+mod code_string;
+mod context;
 pub mod diagnostics;
 mod discovery;
+mod emit_bridge;
 mod generate;
+mod generate_output;
 pub mod invoker;
 mod load;
 mod merge;
+mod native;
 mod registrations;
 mod query_bridge;
 mod reparse;
@@ -21,22 +26,38 @@ mod rewrite;
 mod types;
 mod validate;
 
+pub(crate) use context::ModInvocationContext;
 pub use api::{
-    extract_mod_host_diagnostics, run_analyze_rewrite, run_analyze_rewrite_after_composition,
-    run_analyze_rewrite_with_invoker, run_through_generate,
+    collect_mod_target_fingerprint, extract_mod_host_diagnostics, native_invoker_for_plan,
+    run_analyze_rewrite, run_analyze_rewrite_after_composition, run_analyze_rewrite_with_invoker,
+    run_through_generate,
 };
-pub use diagnostics::{ModHostDiagnostics, ModHostIssue};
+pub use collect::{capture_target_fingerprint, targets_changed};
+pub use diagnostics::{ModHostDiagnostics, ModHostIssue, analyzer_diagnostic_to_semantic};
+pub use emit_bridge::{
+    materialize_contract_definition, materialize_function_definition,
+    materialize_program_item, materialize_program_items, materialize_type_definition,
+};
+pub use generate_output::{
+    CodeGenerateOutput, GenerateOutputFile, GenerateOutputLayout, load_generate_output_layout,
+    resolve_generated_path, resolve_package_root, write_code_generate_output,
+    write_typed_generate_output,
+};
 pub use invoker::{
     AnalyzerDiagnostic, AnalyzerOutcome, AnalyzerSeverity, CollectorOutcome,
-    ContractInvocationError, ContractInvoker, GeneratorOutcome, InvocationKind, RewriterOutcome,
-    ScriptedContractInvoker, StubContractInvoker,
+    ContractInvocationError, ContractInvoker, GeneratorOutcome, InvocationKind,
+    RewriterOutcome, ScriptedContractInvoker, StubContractInvoker,
 };
+pub use native::NativeContractInvoker;
 pub use query_bridge::{
     PipelineOp, PipelineOpKind, PipelineValidationError, QueryBounds, SdkNodeRef, SdkNodeSpan,
     SdkSyntaxPipeline, SdkSyntaxQuery, SdkSyntaxSelection, downcast_node, materialize_snapshot,
     query_at,
 };
+pub use registrations::{
+    extract_mod_contract_registrations, mod_contract_entry_symbol,
+};
 pub use types::{
     ContractRegistration, ModArtifactDescriptor, ModHostAnalyzeResult, ModHostGenerateResult,
-    ModHostInput, ModHostSession,
+    ModHostInput, ModHostSession, ProgramItem,
 };

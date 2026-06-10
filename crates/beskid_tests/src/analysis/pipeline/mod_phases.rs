@@ -112,6 +112,7 @@ project {
             source,
             pipeline: Some(&pipeline),
             invoker: None,
+        cached_target_fingerprint: None,
         },
     )
     .expect("mod host generate");
@@ -124,6 +125,7 @@ project {
     let _program = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
+        None,
         None,
         Some(&semantic_snapshot),
         Some(&pipeline),

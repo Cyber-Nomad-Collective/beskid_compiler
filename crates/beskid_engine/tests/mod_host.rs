@@ -98,6 +98,7 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
             source: HOST_SOURCE,
             pipeline: Some(pipeline.as_ref()),
             invoker: Some(&invoker),
+        cached_target_fingerprint: None,
         },
     )?;
     assert_eq!(generated.session.loaded_descriptor_count(), 1);
@@ -117,6 +118,7 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
         generated.program,
         &generated.session,
         Some(&invoker),
+        None,
         Some(&snapshot),
         Some(pipeline.as_ref()),
     )?;

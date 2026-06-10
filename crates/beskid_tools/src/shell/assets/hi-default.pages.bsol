@@ -1,0 +1,122 @@
+pages "hi-default" {
+  version = 1
+  default_page = "home"
+  title = "Beskid Hi"
+}
+
+page "home" {
+  title = "Home"
+  board_root = "root"
+}
+
+page "graphs" {
+  title = "Graphs"
+  board_root = "graphs_root"
+}
+
+page "compile_debug" {
+  title = "Compile / Debug"
+  board_root = "compile_debug_root"
+}
+
+page "analysis" {
+  title = "Analysis"
+  board_root = "analysis_root"
+}
+
+page "settings" {
+  title = "Settings"
+  board_root = "settings_root"
+}
+
+page "pckg" {
+  title = "Packages"
+  board_root = "pckg_root"
+}
+
+page "new_project" {
+  title = "New project"
+  board_root = "new_project_root"
+}
+
+page "debugger" {
+  title = "Debugger"
+  board_root = "debugger_root"
+}
+
+nav_item "beskid" {
+  label = "Beskid"
+  action = group
+  order = 0
+  icon = "◇"
+}
+
+nav_item "compiler" {
+  label = "Compiler"
+  action = group
+  parent = "beskid"
+  order = 0
+}
+
+nav_item "graphs" {
+  label = "Graphs"
+  action = page
+  target = "graphs"
+  parent = "compiler"
+  order = 0
+}
+
+nav_item "compile_debug" {
+  label = "Compile / Debug"
+  action = page
+  target = "compile_debug"
+  parent = "compiler"
+  order = 1
+}
+
+nav_item "analysis" {
+  label = "Analysis"
+  action = page
+  target = "analysis"
+  parent = "compiler"
+  order = 2
+}
+
+nav_item "settings" {
+  label = "Settings"
+  action = page
+  target = "settings"
+  parent = "compiler"
+  order = 3
+}
+
+nav_item "debugger" {
+  label = "Debugger"
+  action = page
+  target = "debugger"
+  parent = "compiler"
+  order = 4
+}
+
+nav_item "project" {
+  label = "Project"
+  action = group
+  parent = "beskid"
+  order = 1
+}
+
+nav_item "new" {
+  label = "New project"
+  action = page
+  target = "new_project"
+  parent = "project"
+  order = 0
+}
+
+nav_item "boards" {
+  label = "Boards"
+  action = page
+  target = "home"
+  parent = "beskid"
+  order = 2
+}

@@ -75,7 +75,7 @@ mod tests {
                     id: "n0".to_owned(),
                     label: "demo".to_owned(),
                     kind: "root".to_owned(),
-                    uri: Some("file:///demo/Project.proj".to_owned()),
+                    uri: Some("file:///demo/demo.bproj".to_owned()),
                     unresolved: false,
                 }],
                 focused_project_uri: None,
@@ -83,13 +83,13 @@ mod tests {
         };
 
         let payload =
-            graph_tooling_payload(&doc, GraphKind::ProjectDeps, "file:///demo/Project.proj");
+            graph_tooling_payload(&doc, GraphKind::ProjectDeps, "file:///demo/demo.bproj");
         assert_eq!(payload["kind"], "projectDeps");
         assert_eq!(payload["revision"], "abc123");
         assert!(payload["mermaid"].as_str().unwrap().contains("flowchart"));
         assert_eq!(
             payload["metadata"]["focusedProjectUri"],
-            "file:///demo/Project.proj"
+            "file:///demo/demo.bproj"
         );
         assert_eq!(payload["metadata"]["nodes"][0]["kind"], "root");
         assert_eq!(payload["warnings"][0]["code"], "unresolved");

@@ -185,6 +185,7 @@ mod tests {
                 max_generator_rounds: None,
                 capabilities: None,
                 artifact_policy: None,
+                generated_outputs: None,
             }),
         }
     }

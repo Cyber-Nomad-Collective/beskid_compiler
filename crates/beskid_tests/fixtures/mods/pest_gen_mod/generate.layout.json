@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "path": "Core/Text/Regex/Generated.bd",
+      "header": "// CHECKED IN: pest_gen_mod fixture layout\n",
+      "itemCount": 1
+    }
+  ]
+}

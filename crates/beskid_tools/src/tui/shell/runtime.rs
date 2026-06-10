@@ -1,22 +1,30 @@
-//! Background event loop: ratkit Runner + cross-thread ShellMessage dispatch.
+//! Background event loop: tuirealm Application + cross-thread ShellMessage dispatch.
 
 use std::io;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use crossterm::event;
-use crate::tui::kit::{LayoutError, RedrawSignal, RunnerAction, RunnerEvent};
+use tuirealm::application::{Application, PollStrategy};
+use tuirealm::component::AppComponent;
+use tuirealm::event::NoUserEvent;
+use tuirealm::listener::EventListenerCfg;
+use tuirealm::terminal::TerminalAdapter;
 
-use crate::pipeline::tui::terminal_io::{StderrTerminal, try_init_stderr, try_restore_stderr};
 use crate::pipeline::tui::widgets::{init_session_logger, shutdown_session_logger};
-use crate::tui::app::{self, BeskidShellApp, map_runner_action, ResizeEvent};
+use crate::shell::cli_run::run_cli_plan;
+use crate::tui::app::BeskidShellApp;
 use crate::tui::input::{InputAction, InputResult};
+use crate::tui::signals::RedrawSignal;
 use crate::tui::message::ShellMessage;
+use crate::tui::realm::{
+    PipelineShellComponent, PipelineShellId, PipelineShellMsg, StderrTerminalAdapter,
+};
 use crate::tui::shell::effects::{apply_effects, drain_pending_work};
 use crate::tui::shell::focus::{FocusTarget, OverlayKind, PaneFocus};
 use crate::tui::shell::interrupt::InterruptFlag;
 use crate::tui::shell::state::NavTarget;
+use crate::tui::realm::shell_event::ShellRealmEvent;
 
 const TICK: Duration = Duration::from_millis(80);
 
@@ -121,50 +129,76 @@ fn run_loop(
     interrupt: InterruptFlag,
     tx: Sender<RuntimeOp>,
 ) -> io::Result<()> {
-    let init_result = (|| -> io::Result<StderrTerminal> {
-        let terminal = try_init_stderr()?;
+    let init_result = (|| -> io::Result<()> {
         init_session_logger();
-        Ok(terminal)
+        Ok(())
     })();
 
-    let mut terminal = match init_result {
-        Ok(terminal) => {
-            let _ = ready.send(Ok(()));
-            terminal
-        }
-        Err(err) => {
-            let _ = ready.send(Err(io::Error::other(err.to_string())));
-            return Err(err);
-        }
-    };
+    if let Err(err) = init_result {
+        let _ = ready.send(Err(io::Error::other(err.to_string())));
+        return Err(err);
+    }
 
-    let result = event_loop(&mut terminal, rx, interrupt, tx);
+    let listener = EventListenerCfg::default()
+        .crossterm_input_listener(Duration::from_millis(10), 3)
+        .tick_interval(TICK);
+
+    let mut application = Application::init(listener);
+    let redraw_signal = RedrawSignal::new();
+    let shell_component = PipelineShellComponent::new(BeskidShellApp::new(redraw_signal.clone()));
+    application
+        .mount(
+            PipelineShellId::Root,
+            Box::new(shell_component),
+            Vec::new(),
+        )
+        .map_err(runtime_err)?;
+    application
+        .active(&PipelineShellId::Root)
+        .map_err(runtime_err)?;
+
+    let mut terminal = StderrTerminalAdapter::new().map_err(runtime_err)?;
+    terminal.enable_raw_mode().map_err(runtime_err)?;
+    terminal.enter_alternate_screen().map_err(runtime_err)?;
+    terminal.enable_mouse_capture().map_err(runtime_err)?;
+
+    let size = terminal.raw().size().map_err(io::Error::other)?;
+    shell_mut(&mut application).handle_shell_event(ShellRealmEvent::Resize {
+        width: size.width,
+        height: size.height,
+    });
+
+    let _ = ready.send(Ok(()));
+
+    let result = event_loop(&mut application, &mut terminal, rx, interrupt, tx);
     shutdown_session_logger();
-    let _ = terminal.clear();
-    try_restore_stderr()?;
+    let _ = terminal.clear_screen();
+    terminal.restore().map_err(io::Error::other)?;
     result
 }
 
+fn shell_mut(
+    application: &mut Application<PipelineShellId, PipelineShellMsg, NoUserEvent>,
+) -> &mut PipelineShellComponent {
+    let component = application
+        .get_component_mut(&PipelineShellId::Root)
+        .expect("pipeline shell mounted");
+    PipelineShellComponent::as_any_mut(component)
+}
+
 fn event_loop(
-    terminal: &mut StderrTerminal,
+    application: &mut Application<PipelineShellId, PipelineShellMsg, NoUserEvent>,
+    terminal: &mut StderrTerminalAdapter,
     rx: Receiver<RuntimeOp>,
     interrupt: InterruptFlag,
     tx: Sender<RuntimeOp>,
 ) -> io::Result<()> {
-    let redraw_signal = RedrawSignal::new();
-    let mut runner = app::new_runner(BeskidShellApp::new(redraw_signal.clone()));
-    let size = terminal.size()?;
-    runner
-        .handle_event(RunnerEvent::Resize(ResizeEvent::new(size.width, size.height)))
-        .map_err(runtime_err)?;
-
     let mut suspended = false;
     let mut pending_focus: Vec<(NavTarget, Sender<()>)> = Vec::new();
     let mut pending_dismiss: Option<Sender<()>> = None;
-    let mut last_tick = Instant::now();
-    let mut tick_count: u64 = 0;
     let mut dirty = true;
     let mut quitting = false;
+    let mut last_tick = Instant::now();
 
     loop {
         if quitting {
@@ -175,42 +209,36 @@ fn event_loop(
         while let Ok(op) = rx.try_recv() {
             match op {
                 RuntimeOp::Update(msg) => {
-                    let effects = runner
-                        .coordinator_mut()
-                        .app_mut()
-                        .apply_message(&msg);
-                    apply_effects(effects, &tx, &mut runner.coordinator_mut().app_mut().state);
-                    redraw_signal.request_redraw();
+                    apply_runtime_message(application, &msg, &tx);
+                    redraw_signal_request(application);
                     dirty = true;
                 }
                 RuntimeOp::UpdateAndAck(msg, ack) => {
-                    let effects = runner
-                        .coordinator_mut()
-                        .app_mut()
-                        .apply_message(&msg);
-                    apply_effects(effects, &tx, &mut runner.coordinator_mut().app_mut().state);
-                    redraw_signal.request_redraw();
+                    apply_runtime_message(application, &msg, &tx);
+                    redraw_signal_request(application);
                     dirty = true;
                     let _ = ack.send(());
                 }
                 RuntimeOp::SetOverlayVisible { kind, visible, ack } => {
                     {
-                        let app = runner.coordinator_mut().app_mut();
-                        app.state.set_overlay_visible(kind, visible);
+                        let shell = shell_mut(application);
+                        shell.app.state.set_overlay_visible(kind, visible);
                         if visible {
-                            app.state.focus_overlay(kind);
+                            shell.app.state.focus_overlay(kind);
                             match kind {
-                                OverlayKind::Pckg if !app.state.pckg.catalog_loaded => {
-                                    app.state.pckg.pending_catalog_refresh = true;
+                                OverlayKind::Pckg if !shell.app.state.pckg.catalog_loaded => {
+                                    shell.app.state.pckg.pending_catalog_refresh = true;
                                 }
-                                OverlayKind::Templates if !app.state.templates.catalog_loaded => {
-                                    app.state.templates.pending_catalog_refresh = true;
+                                OverlayKind::Templates
+                                    if !shell.app.state.templates.catalog_loaded =>
+                                {
+                                    shell.app.state.templates.pending_catalog_refresh = true;
                                 }
                                 _ => {}
                             }
                         }
                     }
-                    redraw_signal.request_redraw();
+                    redraw_signal_request(application);
                     dirty = true;
                     if let Some(ack) = ack {
                         let _ = ack.send(());
@@ -218,7 +246,10 @@ fn event_loop(
                 }
                 RuntimeOp::Suspend(ack) => {
                     if !suspended {
-                        try_restore_stderr()?;
+                        let _ = application.lock_ports();
+                        terminal.leave_alternate_screen().map_err(runtime_err)?;
+                        terminal.disable_raw_mode().map_err(runtime_err)?;
+                        terminal.disable_mouse_capture().map_err(runtime_err)?;
                         shutdown_session_logger();
                         suspended = true;
                     }
@@ -226,31 +257,38 @@ fn event_loop(
                 }
                 RuntimeOp::Resume(ack) => {
                     if suspended {
-                        *terminal = try_init_stderr()?;
+                        terminal.enable_raw_mode().map_err(runtime_err)?;
+                        terminal.enter_alternate_screen().map_err(runtime_err)?;
+                        terminal.enable_mouse_capture().map_err(runtime_err)?;
+                        let _ = application.unlock_ports();
                         init_session_logger();
-                        let size = terminal.size()?;
-                        runner
-                            .handle_event(RunnerEvent::Resize(ResizeEvent::new(
-                                size.width,
-                                size.height,
-                            )))
-                            .map_err(runtime_err)?;
+                        let size = terminal.raw().size().map_err(io::Error::other)?;
+                        shell_mut(application).handle_shell_event(ShellRealmEvent::Resize {
+                            width: size.width,
+                            height: size.height,
+                        });
                         suspended = false;
                         dirty = true;
                     }
                     let _ = ack.send(());
                 }
                 RuntimeOp::WaitFocus { target, ack } => {
-                    runner.coordinator_mut().app_mut().state.awaiting_nav = Some(target);
-                    pending_focus.push((target, ack));
+                    let state = &mut shell_mut(application).app.state;
+                    state.awaiting_nav = Some(target);
+                    if state.nav_reached(target) {
+                        state.awaiting_nav = None;
+                        let _ = ack.send(());
+                    } else {
+                        pending_focus.push((target, ack));
+                    }
                     dirty = true;
                 }
                 RuntimeOp::WaitDismiss(ack) => {
                     {
-                        let app = runner.coordinator_mut().app_mut();
-                        app.state.set_overlay_visible(OverlayKind::Summary, true);
-                        app.state.focus_overlay(OverlayKind::Summary);
-                        app.state.sync_summary_explorer();
+                        let shell = shell_mut(application);
+                        shell.app.state.set_overlay_visible(OverlayKind::Summary, true);
+                        shell.app.state.focus_overlay(OverlayKind::Summary);
+                        shell.app.state.sync_summary_explorer();
                     }
                     pending_dismiss = Some(ack);
                     dirty = true;
@@ -268,8 +306,9 @@ fn event_loop(
         }
 
         pending_focus.retain(|(target, ack)| {
-            if runner.coordinator_mut().app_mut().state.nav_reached(*target) {
-                runner.coordinator_mut().app_mut().state.awaiting_nav = None;
+            let state = &shell_mut(application).app.state;
+            if state.nav_reached(*target) {
+                shell_mut(application).app.state.awaiting_nav = None;
                 let _ = ack.send(());
                 false
             } else {
@@ -277,84 +316,104 @@ fn event_loop(
             }
         });
 
-        if suspended {
-            thread::sleep(TICK);
-            continue;
-        }
-
         let mut input_action = InputAction::None;
-        let now = Instant::now();
-        let until_tick = TICK.saturating_sub(now.duration_since(last_tick));
 
-        if event::poll(until_tick)? {
-            if let Some(runner_event) = app::runner_event_from_crossterm(event::read()?) {
-                let action = runner.handle_event(runner_event).map_err(runtime_err)?;
-                if map_runner_action(action) {
-                    quitting = true;
-                    dirty = true;
+        if !suspended {
+            match application.tick(PollStrategy::TryFor(TICK)) {
+                Ok(messages) => {
+                    for msg in messages {
+                        match msg {
+                            PipelineShellMsg::Quit => {
+                                quitting = true;
+                                dirty = true;
+                            }
+                            PipelineShellMsg::Input => {
+                                let result = shell_mut(application).app.take_input_result();
+                                if let Some(result) = result {
+                                    input_action = apply_input_result(
+                                        result,
+                                        &interrupt,
+                                        &mut shell_mut(application).app.state,
+                                        &mut pending_focus,
+                                        &mut pending_dismiss,
+                                        &mut quitting,
+                                    );
+                                }
+                                dirty = true;
+                            }
+                            PipelineShellMsg::Redraw => dirty = true,
+                        }
+                    }
                 }
-                if let Some(result) = runner.coordinator_mut().app_mut().take_input_result() {
-                    input_action = apply_input_result(
-                        result,
-                        &interrupt,
-                        &mut runner.coordinator_mut().app_mut().state,
-                        &mut pending_focus,
-                        &mut pending_dismiss,
-                        &mut quitting,
-                    );
-                }
-                if matches!(action, RunnerAction::Redraw) {
-                    dirty = true;
-                }
+                Err(err) => return Err(io::Error::other(err.to_string())),
             }
-        } else if now.duration_since(last_tick) >= TICK {
-            tick_count += 1;
-            let action = runner
-                .handle_event(app::tick_event(tick_count))
-                .map_err(runtime_err)?;
-            if map_runner_action(action) {
-                quitting = true;
+
+            if last_tick.elapsed() >= TICK {
+                let effects = shell_mut(application)
+                    .app
+                    .apply_message(&ShellMessage::Tick);
+                apply_effects(effects, &tx, &mut shell_mut(application).app.state);
+                last_tick = Instant::now();
+                dirty = true;
             }
-            let effects = runner
-                .coordinator_mut()
-                .app_mut()
-                .apply_message(&ShellMessage::Tick);
-            apply_effects(
-                effects,
-                &tx,
-                &mut runner.coordinator_mut().app_mut().state,
-            );
-            last_tick = now;
-            dirty = true;
-        } else if redraw_signal.take_redraw_request() {
-            dirty = true;
-        }
 
-        drain_pending_work(&tx, &mut runner.coordinator_mut().app_mut().state);
+            drain_pending_work(&tx, &mut shell_mut(application).app.state);
 
-        if input_action == InputAction::Quit {
-            request_quit(
-                &interrupt,
-                &mut runner.coordinator_mut().app_mut().state,
-                &mut pending_focus,
-                &mut pending_dismiss,
-            );
-            quitting = true;
-            dirty = true;
+            if shell_mut(application).app.redraw_signal.take_redraw_request() {
+                dirty = true;
+            }
+
+            if let Some(plan) = shell_mut(application).app.take_pending_cli() {
+                let _ = application.lock_ports();
+                terminal.disable_mouse_capture().map_err(runtime_err)?;
+                terminal.leave_alternate_screen().map_err(runtime_err)?;
+                terminal.disable_raw_mode().map_err(runtime_err)?;
+                shutdown_session_logger();
+                let _ = run_cli_plan(&plan);
+                terminal.enable_raw_mode().map_err(runtime_err)?;
+                terminal.enter_alternate_screen().map_err(runtime_err)?;
+                terminal.enable_mouse_capture().map_err(runtime_err)?;
+                let _ = application.unlock_ports();
+                init_session_logger();
+                let size = terminal.raw().size().map_err(io::Error::other)?;
+                shell_mut(application).handle_shell_event(ShellRealmEvent::Resize {
+                    width: size.width,
+                    height: size.height,
+                });
+                dirty = true;
+            }
         } else {
-            resolve_waits(
-                &mut pending_focus,
-                &mut pending_dismiss,
-                &mut runner.coordinator_mut().app_mut().state,
-                input_action,
-            );
+            thread::sleep(TICK);
         }
 
-        if dirty && !quitting {
+        {
+            let state = &mut shell_mut(application).app.state;
+            if input_action == InputAction::Quit {
+                request_quit(
+                    &interrupt,
+                    state,
+                    &mut pending_focus,
+                    &mut pending_dismiss,
+                );
+                quitting = true;
+                dirty = true;
+            } else {
+                resolve_waits(
+                    &mut pending_focus,
+                    &mut pending_dismiss,
+                    state,
+                    input_action,
+                );
+            }
+        }
+
+        if dirty && !quitting && !suspended {
             crate::pipeline::tui::reset_stderr_ansi()?;
-            terminal.draw(|frame| {
-                let _ = runner.render(frame);
-            })?;
+            terminal
+                .draw(|frame| {
+                    application.view(&PipelineShellId::Root, frame, frame.area());
+                })
+                .map_err(runtime_err)?;
             dirty = false;
         }
     }
@@ -362,7 +421,23 @@ fn event_loop(
     Ok(())
 }
 
-fn runtime_err(err: LayoutError) -> io::Error {
+fn apply_runtime_message(
+    application: &mut Application<PipelineShellId, PipelineShellMsg, NoUserEvent>,
+    msg: &ShellMessage,
+    tx: &Sender<RuntimeOp>,
+) {
+    let shell = shell_mut(application);
+    let effects = shell.app.apply_message(msg);
+    apply_effects(effects, tx, &mut shell.app.state);
+}
+
+fn redraw_signal_request(
+    application: &mut Application<PipelineShellId, PipelineShellMsg, NoUserEvent>,
+) {
+    shell_mut(application).app.redraw_signal.request_redraw();
+}
+
+fn runtime_err(err: impl std::fmt::Display) -> io::Error {
     io::Error::other(err.to_string())
 }
 

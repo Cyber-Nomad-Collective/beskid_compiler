@@ -20,6 +20,7 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 postcard = { workspace = true }
+beskid_abi = { path = "../beskid_abi" }
 beskid_artifacts = { path = "../beskid_artifacts" }
 bsol = { workspace = true }
 rayon = "1.10"

@@ -39,6 +39,10 @@ const SDK_MOD_CONTRACTS: &[SdkContractSpec] = &[
         contract_id: "Beskid.Compiler.Collect.Rewriter",
         entry_method: "Rewrite",
     },
+    SdkContractSpec {
+        contract_id: "Beskid.Compiler.Collect.GrammarGenerator",
+        entry_method: "Generate",
+    },
 ];
 
 /// Discover mod SDK contract registrations from resolved type conformances.
@@ -267,22 +271,21 @@ type DemoCollect : Collector {
     #[test]
     fn expression_bodied_inline_method_allows_trailing_semicolon() {
         let source = r#"
-pub type ListFluent<T> {
-    pub ListFluent<T> Push(T value) => ListFluent<T> { inner: inner.Push(value) };
+pub type List<T> {
+    pub List<T> Push(T value) => List<T> { storage: storage, count: count + 1 };
 }
 "#;
-        parse_program_with_source_name("ListFluent.bd", source).expect("parse");
+        parse_program_with_source_name("List.bd", source).expect("parse");
     }
 
     #[test]
     fn expression_bodied_method_with_qualified_generic_call_parses() {
         let source = r#"
-pub type QueryFluent<T> {
-    Query.QueryState<T> inner,
-    pub QueryFluent<T> Where(bool predicate) =>
-        QueryFluent<T> { inner: Query.Operators.Where<T>(inner, predicate) };
+pub type QueryState<T> {
+    pub QueryState<T> Where(bool predicate) =>
+        Query.Operators.Where<T>(this, predicate);
 }
 "#;
-        parse_program_with_source_name("QueryFluent.bd", source).expect("parse");
+        parse_program_with_source_name("QueryState.bd", source).expect("parse");
     }
 }

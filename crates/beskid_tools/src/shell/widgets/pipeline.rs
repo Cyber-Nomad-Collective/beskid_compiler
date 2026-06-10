@@ -1,6 +1,6 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratkit::services::hotkey_service::Hotkey;
+use crate::shell::primitives::Hotkey;
 
 use crate::pipeline::tui::stage_focus::StageFocus;
 use crate::pipeline::tui::widgets::{

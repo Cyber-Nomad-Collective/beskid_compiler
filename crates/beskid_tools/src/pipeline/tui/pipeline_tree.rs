@@ -1,6 +1,6 @@
 //! Structured pipeline tree for ratkit [`TreeView`] rendering.
 
-use ratkit::widgets::TreeNode;
+use crate::shell::primitives::TreeNode;
 
 #[derive(Debug, Clone)]
 struct PipelineNode {

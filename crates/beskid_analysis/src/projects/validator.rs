@@ -154,6 +154,30 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                 ),
             ));
         }
+        if let Some(outputs) = &mod_section.generated_outputs {
+            for output in outputs {
+                if output.layout.trim().is_empty() {
+                    return Err(ProjectError::meta_contract(
+                        "E1806",
+                        "`project.mod.generatedOutput.layout` must be a non-empty quoted path",
+                    ));
+                }
+                let root = Path::new(output.resolved_root());
+                if root.is_absolute()
+                    || root
+                        .components()
+                        .any(|component| matches!(component, Component::ParentDir))
+                {
+                    return Err(ProjectError::meta_contract(
+                        "E1806",
+                        format!(
+                            "`project.mod.generatedOutput.root` must be a relative path without `..`, got `{}`",
+                            output.resolved_root()
+                        ),
+                    ));
+                }
+            }
+        }
     }
 
     if let Some(link) = &manifest.link {

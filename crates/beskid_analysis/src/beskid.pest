@@ -104,12 +104,28 @@ Keyword = {
 IntegerLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ ("_i32" | "_i64" | "_u8")? }
 FloatLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 StringLiteral = @{ "\"" ~ StringContent* ~ "\"" }
+StringLiteralValueBody = ${ (StringContent)* }
+StringLiteralValue = { SOI ~ StringLiteralValueBody ~ EOI }
 StringContent = { StringInterpolation | StringEscape | StringText }
 StringInterpolation = { "${" ~ InterpolationExpression ~ "}" }
 InterpolationExpression = !{ Expression }
 StringEscape = { "\\\"" | "\\\\" | "\\${" }
 StringText = { (!("\"" | "\\" | "$") ~ ANY)+ | ("$" ~ !("{")) }
 CharLiteral = @{ "'" ~ ("\\'" | !("'") ~ ANY) ~ "'" }
+
+CodeKeyword = { "code" }
+CodeLanguageTag = @{ ASCII_ALPHA+ }
+CodeHole = { "@{" ~ InterpolationExpression ~ "}" }
+CodeFenceChar = { !("`" | "@") ~ ANY | "@" ~ !("{") }
+CodeFenceBodyContents = ${ (CodeHole | CodeFenceChar)* }
+CodeFenceBody = { CodeFenceBodyContents }
+CodeFenceOpen = { "```" ~ CodeLanguageTag? ~ NEWLINE }
+CodeFenceClose = { "```" ~ NEWLINE? }
+CodeFence = { CodeFenceOpen ~ CodeFenceBody ~ CodeFenceClose }
+CodeExpression = { CodeKeyword ~ CodeFence }
+CodePlainText = { (!("@") ~ ANY)+ | ("@" ~ !("{") ~ ANY)+ }
+CodePlainBodyContents = ${ (CodeHole | CodePlainText)* }
+CodePlainBody = { SOI ~ CodePlainBodyContents ~ EOI }
 
 Literal = { FloatLiteral | IntegerLiteral | StringLiteral | CharLiteral | "true" | "false" }
 
@@ -293,7 +309,7 @@ MacroArgumentList = { Expression ~ ("," ~ Expression)* }
 MacroInvocationBlock = { Block }
 MacroMetavariable = { "$" ~ Identifier }
 
-PrimaryExpression = { MacroInvocation | MacroMetavariable | Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | ArrayLiteralExpression | Path }
+PrimaryExpression = { MacroInvocation | MacroMetavariable | CodeExpression | Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | ArrayLiteralExpression | Path }
 
 EnumConstructorExpression = { enum_constructor_nullary | enum_constructor_with_args }
 enum_constructor_nullary = { EnumPath ~ !"(" }

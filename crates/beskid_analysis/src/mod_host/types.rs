@@ -4,7 +4,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::projects::{CompilePlan, ProjectModSection};
 
+use crate::syntax::{Node, Spanned};
+
 use super::invoker::{AnalyzerOutcome, CollectorOutcome, GeneratorOutcome, RewriterOutcome};
+use super::query_bridge::PipelineOp;
+
+/// Top-level syntax item emitted by generator contracts.
+pub type ProgramItem = Node;
 
 #[derive(Debug, Clone)]
 pub(crate) struct DiscoveredMod {
@@ -116,6 +122,22 @@ pub struct ModHostInput<'a> {
     /// dispatch deterministically. Tests can pass a recording invoker to assert
     /// `(contractId, typeId, entrySymbol)` tuples were dispatched.
     pub invoker: Option<&'a dyn super::invoker::ContractInvoker>,
+    /// When set and equal to the freshly observed collector target fingerprint,
+    /// `mod.generate` and disk materialization are skipped.
+    pub cached_target_fingerprint: Option<&'a str>,
+}
+
+impl<'a> Default for ModHostInput<'a> {
+    fn default() -> Self {
+        Self {
+            compile_plan: None,
+            source_name: "",
+            source: "",
+            pipeline: None,
+            invoker: None,
+            cached_target_fingerprint: None,
+        }
+    }
 }
 
 pub struct ModHostGenerateResult {
@@ -127,6 +149,10 @@ pub struct ModHostGenerateResult {
     pub collector_outcomes: Vec<CollectorOutcome>,
     /// Outcomes returned by `Generator` invocations during `mod.generate`.
     pub generator_outcomes: Vec<GeneratorOutcome>,
+    /// Fingerprint of collector-observed targets from the final collect round.
+    pub target_fingerprint: String,
+    /// `true` when generator execution and disk materialization were skipped.
+    pub generators_skipped: bool,
 }
 
 pub struct ModHostAnalyzeResult {
@@ -146,13 +172,20 @@ pub(crate) struct CollectedContracts {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct GeneratedSyntax {
     pub(crate) registrations: Vec<ContractRegistration>,
-    pub(crate) contributions: Vec<String>,
+    pub(crate) typed_items: Vec<Spanned<ProgramItem>>,
+    pub(crate) pipeline_ops: Vec<PipelineOp>,
+    /// Legacy text fragments retained only for transitional reparse fallback.
+    pub(crate) text_contributions: Vec<String>,
     pub(crate) outcomes: Vec<GeneratorOutcome>,
 }
 
 impl GeneratedSyntax {
+    pub(crate) fn has_typed_merge(&self) -> bool {
+        !self.typed_items.is_empty() || !self.pipeline_ops.is_empty()
+    }
+
     pub(crate) fn requires_reparse(&self) -> bool {
-        !self.contributions.is_empty() || !self.registrations.is_empty()
+        !self.text_contributions.is_empty() && !self.has_typed_merge()
     }
 }
 

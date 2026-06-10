@@ -118,6 +118,26 @@ impl ModFixtureWorkspace {
     }
 }
 
+pub(crate) fn typed_items_contain_function(
+    items: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Node>],
+    name: &str,
+) -> bool {
+    use beskid_analysis::syntax::Node;
+    items.iter().any(|item| {
+        matches!(
+            &item.node,
+            Node::Function(definition) if definition.node.name.node.name == name
+        )
+    })
+}
+
+pub(crate) fn program_contains_function(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    name: &str,
+) -> bool {
+    typed_items_contain_function(&program.node.items, name)
+}
+
 impl Drop for ModFixtureWorkspace {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);

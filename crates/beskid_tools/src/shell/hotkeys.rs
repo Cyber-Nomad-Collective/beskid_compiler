@@ -1,7 +1,8 @@
 //! Scoped hotkey registry for shell chrome and widgets.
 
-use ratkit::services::hotkey_service::{Hotkey, HotkeyRegistry, HotkeyScope};
-use ratkit::widgets::HotkeyItem;
+use super::primitives::{Hotkey, HotkeyItem, HotkeyRegistry, HotkeyScope};
+
+use super::control_mode::HiControlMode;
 
 pub struct ShellHotkeys {
     registry: HotkeyRegistry,
@@ -42,6 +43,16 @@ impl ShellHotkeys {
         self.active_scope = HotkeyScope::Global;
     }
 
+    pub fn set_control_mode(&mut self, mode: HiControlMode) {
+        self.active_scope = match mode {
+            HiControlMode::Normal => HotkeyScope::Global,
+            HiControlMode::TopMenu => HotkeyScope::Modal("menu"),
+            HiControlMode::Palette => HotkeyScope::Modal("palette"),
+            HiControlMode::LayoutEdit => HotkeyScope::Modal("layout-edit"),
+            HiControlMode::CommandDialog => HotkeyScope::Modal("command"),
+        };
+    }
+
     pub fn register_widget_hotkeys(&mut self, widget_id: &str, hotkeys: Vec<Hotkey>) {
         for mut hk in hotkeys {
             hk.scope = HotkeyScope::Tab(leak_static(widget_id));
@@ -59,6 +70,19 @@ impl ShellHotkeys {
             }
         }
         items
+    }
+
+    /// Footer for the active control mode: modal modes replace widget hotkeys.
+    pub fn footer_for_mode(
+        &self,
+        mode: HiControlMode,
+        widget_id: Option<&str>,
+        layout_drawer_visible: bool,
+    ) -> Vec<HotkeyItem> {
+        match mode {
+            HiControlMode::Normal => self.footer_items(widget_id),
+            other => other.footer_items(layout_drawer_visible),
+        }
     }
 }
 

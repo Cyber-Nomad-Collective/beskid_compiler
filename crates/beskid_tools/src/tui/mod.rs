@@ -1,9 +1,11 @@
-//! Unified Beskid terminal shell (ratkit-style Runner + CoordinatorApp on ratatui 0.30).
+//! Unified Beskid terminal shell (tuirealm Application + ratatui 0.30).
 //!
-//! Pipeline compile UI, test overlays, and pckg/template views share one runtime.
+//! Pipeline compile UI, test overlays, and pckg/template views share one background runtime.
+//! `beskid hi` uses the same tuirealm loop on stderr.
 
 pub mod app;
-pub mod kit;
+pub mod realm;
+pub mod signals;
 pub mod effects;
 pub mod overlay_chrome;
 pub mod shell_fx;

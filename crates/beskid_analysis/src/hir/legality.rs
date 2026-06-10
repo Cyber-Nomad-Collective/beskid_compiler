@@ -530,6 +530,9 @@ impl<'a> HirLegalityValidator<'a> {
             HirExpressionNode::MacroMetavariable(expr) => {
                 self.check_span(expr.span, "macro_metavariable");
             }
+            HirExpressionNode::CodeStringExpression(code) => {
+                self.check_span(code.span, "code_string_expression");
+            }
         }
     }
 

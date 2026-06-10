@@ -1,8 +1,10 @@
 //! Ratatui session handle: forwards messages to the unified shell runtime.
 
 use std::io;
+use std::sync::mpsc::Sender;
 
 use crate::tui::session::ShellSession;
+use crate::tui::shell::runtime::RuntimeOp;
 use crate::tui::shell::state::NavTarget;
 
 use super::model::{CommandSummary, TestReportSummary};
@@ -26,6 +28,12 @@ impl TuiSession {
     pub fn try_open_plain() -> Self {
         Self {
             inner: ShellSession::try_open_plain(),
+        }
+    }
+
+    pub fn try_attach(tx: Sender<RuntimeOp>) -> Self {
+        Self {
+            inner: ShellSession::try_attach(tx),
         }
     }
 

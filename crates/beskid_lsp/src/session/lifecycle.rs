@@ -19,6 +19,8 @@ use beskid_queries::{
     bump_file_revision, bump_typed_prepare_revision, fingerprint_key, typed_entry_state_with_db,
 };
 
+use crate::manifest_uri::is_manifest_uri;
+use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::project_context::cached_compilation_context;
 use crate::session::store::{Document, State};
@@ -29,10 +31,6 @@ pub const ANALYSIS_CACHE_VERSION: u32 = 4;
 
 /// Debounce window for typed executable prepare (coalesced with diagnostic publish).
 const TYPED_PREPARE_DEBOUNCE_MS: u64 = 120;
-
-fn is_project_manifest_uri(uri: &Uri) -> bool {
-    uri.to_string().to_lowercase().ends_with(".proj")
-}
 
 fn salsa_revision(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -116,7 +114,7 @@ async fn build_document_analysis(
     uri: &Uri,
     text: &str,
 ) -> Option<beskid_analysis::services::DocumentAnalysisSnapshot> {
-    if is_project_manifest_uri(uri) {
+    if is_manifest_uri(uri) {
         return None;
     }
 
@@ -138,47 +136,38 @@ async fn build_document_analysis(
         }
     };
 
-    {
-        let write = state.write().await;
+    with_compilation_db_mut_state(state, |db, write| {
         if let Some(plan) = session.compile_plan.as_ref() {
             write.configure_db_for_project(&plan.project_root);
         }
-        write
-            .compilation_db
-            .lock()
-            .expect("compilation db lock")
-            .ensure_file_text(path.clone(), text.to_string());
-    }
+        db.ensure_file_text(path.clone(), text.to_string());
 
-    let write = state.write().await;
-    let mut db = write
-        .compilation_db
-        .lock()
-        .expect("compilation db lock");
-    let options = PrepareOptions::default();
-    if let Ok(entry_state) = typed_entry_state_with_db(&mut db, &resolved, &options, None) {
-        let resolution = (*entry_state.resolution.0).clone();
-        let module_paths = module_paths_from_resolution(&resolution);
-        return Some(build_document_analysis_from_resolution(
+        let options = PrepareOptions::default();
+        if let Ok(entry_state) = typed_entry_state_with_db(db, &resolved, &options, None) {
+            let resolution = (*entry_state.resolution.0).clone();
+            let module_paths = module_paths_from_resolution(&resolution);
+            return Some(build_document_analysis_from_resolution(
+                &program,
+                uri.to_string(),
+                text,
+                &path,
+                Some(resolution),
+                module_paths,
+                session.compile_plan.as_ref(),
+                None,
+            ));
+        }
+
+        Some(build_document_analysis_with_context(
             &program,
             uri.to_string(),
             text,
             &path,
-            Some(resolution),
-            module_paths,
-            session.compile_plan.as_ref(),
+            Some(&session),
             None,
-        ));
-    }
-
-    Some(build_document_analysis_with_context(
-        &program,
-        uri.to_string(),
-        text,
-        &path,
-        Some(&session),
-        None,
-    ))
+        ))
+    })
+    .await
 }
 
 /// Build a [`Document`] for `uri`, attaching a fresh analysis snapshot when possible.
@@ -213,13 +202,14 @@ async fn touch_entry_file_revision_for_uri(state: &RwLock<State>, uri: &Uri, tex
     let Some((resolved, _)) = resolved_input_for_path(state, &path, text).await else {
         return;
     };
-    let write = state.write().await;
-    if let Some(plan) = resolved.compile_plan.as_ref() {
-        write.configure_db_for_project(&plan.project_root);
-    }
-    let mut db = write.compilation_db.lock().expect("compilation db lock");
-    db.ensure_file_text(path, text.to_string());
-    bump_entry_file_revision(&mut db, &resolved);
+    with_compilation_db_mut_state(state, |db, write| {
+        if let Some(plan) = resolved.compile_plan.as_ref() {
+            write.configure_db_for_project(&plan.project_root);
+        }
+        db.ensure_file_text(path, text.to_string());
+        bump_entry_file_revision(db, &resolved);
+    })
+    .await;
 }
 
 async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
@@ -241,14 +231,13 @@ async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
         return;
     };
 
-    {
-        let write = state.write().await;
+    with_compilation_db_mut_state(state, |db, write| {
         if let Some(plan) = resolved.compile_plan.as_ref() {
             write.configure_db_for_project(&plan.project_root);
         }
-        let mut db = write.compilation_db.lock().expect("compilation db lock");
-        bump_entry_typed_prepare_revision(&mut db, &resolved);
-    }
+        bump_entry_typed_prepare_revision(db, &resolved);
+    })
+    .await;
 
     let analysis = build_document_analysis(state, uri, &text).await;
     let mut write = state.write().await;
@@ -316,14 +305,6 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
         }
     }
 
-    if let Some(path) = uri_to_path(&uri) {
-        write_state
-            .compilation_db
-            .lock()
-            .expect("compilation db lock")
-            .ensure_file_text(path, text.clone());
-    }
-
     drop(write_state);
     touch_entry_file_revision_for_uri(state, &uri, &text).await;
     let analysis = build_document_analysis(state, &uri, &text).await;
@@ -353,7 +334,7 @@ pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
         let read = state.read().await;
         read.docs
             .iter()
-            .filter(|(uri, _)| !is_project_manifest_uri(uri))
+            .filter(|(uri, _)| !is_manifest_uri(uri))
             .map(|(uri, doc)| (uri.clone(), doc.text.clone()))
             .collect()
     };

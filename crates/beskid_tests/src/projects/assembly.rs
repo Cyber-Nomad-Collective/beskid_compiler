@@ -67,8 +67,8 @@ fn assembly_closure_loads_std_units_for_corelib_mvp() {
         assert!(
             loaded
                 .iter()
-                .any(|p| p.contains("System") && p.contains("Output")),
-            "expected System.Output module in assembly closure, got: {loaded:?}"
+                .any(|p| p.contains("Core") && p.contains("Output")),
+            "expected Core.Output module in assembly closure, got: {loaded:?}"
         );
     });
 }
@@ -116,8 +116,8 @@ fn module_index_known_paths_include_std_io_for_corelib_mvp() {
         let assembly = shared_corelib_mvp_assembly();
         let paths = assembly.module_index.known_module_path_strings();
         assert!(
-            paths.contains("Std::System::Output"),
-            "expected Std::System::Output in known module paths, got: {paths:?}"
+            paths.contains("Std::Core::Output"),
+            "expected Std::Core::Output in known module paths, got: {paths:?}"
         );
     });
 }

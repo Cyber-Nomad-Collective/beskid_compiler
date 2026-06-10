@@ -196,18 +196,33 @@ fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
         "ConsoleControlsFrameTests",
         "ConsoleRenderContextTests",
         "CoreResultsTests",
+        "CoreOptionalTests",
+        "CoreBytesTests",
+        "CoreEncodingUtf8Tests",
+        "CoreExpressionBodyTests",
+        "CompilerSdkSurfaceTests",
+        "CompilerSdkEmitterTests",
+        "ConcurrencyStatusAbiTests",
         "CollectionsArrayTests",
         "CollectionsTier1Tests",
+        "CollectionsTests",
         "CollectionsListTests",
         "CollectionsMapTests",
         "CollectionsSetTests",
         "CollectionsQueueTests",
         "CollectionsStackTests",
+        "CollectionsTests",
+        "QueryTests",
         "ConcurrencyChannelApiTests",
         "ConcurrencyMutexTryLockTests",
         "ConcurrencyClockTests",
         "ConcurrencyHubRegisterTests",
         "ConcurrencyFiberHandleTests",
+        "TextCasingTests",
+        "TextParserCombinatorTests",
+        "PestGrammarParseTests",
+        "PestEmitGoldenTests",
+        "TextRegexIntegrationTests",
     ] {
         assert!(
             manifest.contains(&format!("target \"{target}\"")),
@@ -221,7 +236,12 @@ fn corelib_collections_sources_carry_api_shape_tier_directives() {
     let collections_root = super::foundation_src().join("Collections");
     let mut missing: Vec<String> = Vec::new();
     for file in [
-        "Array.bd", "List.bd", "Map.bd", "Set.bd", "Queue.bd", "Stack.bd",
+        "Array.bd",
+        "List.bd",
+        "Map.bd",
+        "Set.bd",
+        "Queue.bd",
+        "Stack.bd",
     ] {
         let path = collections_root.join(file);
         let text = std::fs::read_to_string(&path)
@@ -237,29 +257,74 @@ fn corelib_collections_sources_carry_api_shape_tier_directives() {
 }
 
 #[test]
-fn corelib_system_streams_carry_api_shape_tier_directives() {
-    let runtime_root = super::runtime_src().join("System");
+fn corelib_core_os_streams_carry_api_shape_tier_directives() {
+    let core_root = super::foundation_src().join("Core");
     let mut missing: Vec<String> = Vec::new();
     for file in [
         "Input/Input.bd",
         "Output/Output.bd",
         "Error/Error.bd",
-        "Syscall.bd",
-        "FS.bd",
+        "Syscall/Syscall.bd",
+        "FS/FS.bd",
         "Path/Path.bd",
-        "Time.bd",
+        "Time/Time.bd",
     ] {
-        let path = runtime_root.join(file);
+        let path = core_root.join(file);
         let text = std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("read corelib system source {}", path.display()));
+            .unwrap_or_else(|_| panic!("read corelib Core OS source {}", path.display()));
         if !text.contains("@tier(") {
             missing.push(file.to_string());
         }
     }
     assert!(
         missing.is_empty(),
-        "corelib System.* sources without @tier(...) directive: {missing:?}"
+        "corelib Core.* OS sources without @tier(...) directive: {missing:?}"
     );
+}
+
+#[test]
+fn checked_in_generated_regex_parsers_use_pascal_case_callables() {
+    let generated = super::foundation_root()
+        .join(".generated/Core/Text/Regex/Generated.g.bd");
+    let text = fs::read_to_string(&generated).expect("read Generated.g.bd");
+    assert!(
+        text.contains("ParseDigit"),
+        "Generated.g.bd should expose PascalCase ParseDigit"
+    );
+    assert!(
+        !text.contains("Parse_digit"),
+        "Generated.g.bd must not emit snake_case callables (PARSER-005)"
+    );
+    assert!(
+        !text.contains("choice_0"),
+        "Generated.g.bd must use camelCase locals (choice0 not choice_0)"
+    );
+}
+
+#[test]
+fn checked_in_corelib_parser_subdirectory_exists() {
+    let parser_root = super::foundation_src().join("Core/Text/Parser");
+    for file in [
+        "Literals.bd",
+        "Combine.bd",
+        "Cardinality.bd",
+        "Flow.bd",
+        "Context.bd",
+        "Terms.bd",
+        "Coordination.bd",
+    ] {
+        let path = parser_root.join(file);
+        assert!(path.is_file(), "missing parser submodule: {}", path.display());
+    }
+    let pest_root = super::foundation_src().join("Core/Text/Pest");
+    for file in ["Names.bd", "Grammar.bd", "Expr.bd", "Emit.bd"] {
+        let path = pest_root.join(file);
+        assert!(path.is_file(), "missing pest submodule: {}", path.display());
+    }
+    let casing = super::foundation_src().join("Core/Text/Casing.bd");
+    assert!(casing.is_file(), "missing Core.Text.Casing hub: {}", casing.display());
+    let pest_hub = super::foundation_src().join("Core/Text/Pest.bd");
+    assert!(pest_hub.is_file(), "missing Core.Text.Pest hub: {}", pest_hub.display());
 }
 
 #[test]

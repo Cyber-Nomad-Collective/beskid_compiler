@@ -46,7 +46,9 @@ pub use manifest_resolve::{
 pub use model::{
     AssemblyDiscovery, AssemblyOptions, CompilePlan, Dependency, DependencySource,
     MaterializedDependencyProject, PreparedProjectWorkspace, ProjectKind, ProjectLinkSection,
-    ProjectManifest, ProjectModSection, ProjectSection, ProjectTemplateSection,
+    GrammarOutputEntry, ModGeneratedOutput, ProjectGrammarSection, ProjectManifest,
+    ProjectModSection, ProjectSection,
+    ProjectTemplateSection,
     ResolvedDependencyProject, Target, TargetKind, UnresolvedDependencyNote,
     UnresolvedDependencyPolicy, WorkspaceManifest, WorkspaceMember, WorkspaceOverride,
     WorkspaceRegistry, WorkspaceResolutionSummary, WorkspaceSection,

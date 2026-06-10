@@ -28,6 +28,7 @@ fn duplicate_identical_descriptor_produces_stable_collector_and_generator_outcom
             source,
             pipeline: None,
             invoker: None,
+        cached_target_fingerprint: None,
         },
     )
     .expect("first generate run");
@@ -42,6 +43,7 @@ fn duplicate_identical_descriptor_produces_stable_collector_and_generator_outcom
             source,
             pipeline: None,
             invoker: None,
+        cached_target_fingerprint: None,
         },
     )
     .expect("second generate run");
@@ -114,6 +116,7 @@ fn changed_registration_produces_different_outcome_count() {
             source,
             pipeline: None,
             invoker: None,
+        cached_target_fingerprint: None,
         },
     )
     .expect("first run");
@@ -134,6 +137,7 @@ fn changed_registration_produces_different_outcome_count() {
             source,
             pipeline: None,
             invoker: None,
+        cached_target_fingerprint: None,
         },
     )
     .expect("second run with reduced registrations");
@@ -172,6 +176,7 @@ fn scripted_generator_contributions_are_stable_across_identical_runs() {
             source,
             pipeline: None,
             invoker: None,
+        cached_target_fingerprint: None,
         },
     )
     .expect("first scripted run");
@@ -185,6 +190,7 @@ fn scripted_generator_contributions_are_stable_across_identical_runs() {
             source,
             pipeline: None,
             invoker: None,
+        cached_target_fingerprint: None,
         },
     )
     .expect("second scripted run");
@@ -205,16 +211,16 @@ fn scripted_generator_contributions_are_stable_across_identical_runs() {
         "generator type_ids must be identical for identical regs"
     );
 
-    // Contributions from stub generators are empty; verify stability of that emptiness.
+    // Typed items from stub generators are empty; verify stability of that emptiness.
     for (outcome_a, outcome_b) in result_a
         .generator_outcomes
         .iter()
         .zip(result_b.generator_outcomes.iter())
     {
         assert_eq!(
-            outcome_a.contributions.len(),
-            outcome_b.contributions.len(),
-            "contributions count for {} must be stable",
+            outcome_a.typed_items.len(),
+            outcome_b.typed_items.len(),
+            "typed item count for {} must be stable",
             outcome_a.type_id
         );
     }

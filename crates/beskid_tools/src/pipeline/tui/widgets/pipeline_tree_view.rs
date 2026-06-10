@@ -5,7 +5,8 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders};
-use ratkit::widgets::{TreeNode, TreeView, TreeViewRef, TreeViewState};
+use crate::shell::primitives::{TreeNode, TreeViewState};
+use ratkit::widgets::{TreeView, TreeViewRef};
 
 pub fn draw_pipeline_tree(
     frame: &mut Frame,

@@ -18,6 +18,7 @@ panes-ratatui = { workspace = true }
 ratatui-explorer = { workspace = true }
 crossterm = { workspace = true }
 ratkit = { workspace = true, features = ["pane", "tree-view", "dialog", "hotkey-footer", "hotkey-service", "widget-event", "resizable-grid"] }
+tuirealm = { workspace = true }
 tui-piechart = { workspace = true }
 tui-logger = { workspace = true }
 tui-spinner = { workspace = true }

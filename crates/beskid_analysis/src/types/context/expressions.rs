@@ -129,6 +129,9 @@ impl<'a> TypeContext<'a> {
             HirExpressionNode::ArrayLiteralExpression(lit) => {
                 self.type_array_literal_expression(lit)
             }
+            HirExpressionNode::CodeStringExpression(_) => {
+                self.primitive_type_id(HirPrimitiveType::String)
+            }
         };
 
         if let Some(type_id) = type_id {

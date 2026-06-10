@@ -10,15 +10,22 @@
 //!   deterministically.
 //! * [`ScriptedContractInvoker`] — test helper that scripts per-`typeId` outcomes for
 //!   assertions in beskid_engine and beskid_tests.
+//! * [`NativeContractInvoker`](super::native::NativeContractInvoker) — records artifact
+//!   object paths and delegates to a stub until shared-library dlopen dispatch lands.
 //!
-//! Future implementations (`NativeContractInvoker`) will dlopen the AOT object and
+//! Future implementations will dlopen the AOT object and
 //! call `entry_symbol` with the Beskid → C ABI defined in `beskid_abi`. The trait
 //! shape stays stable so production code can switch implementations without touching
 //! `mod_host` orchestration.
 
 use std::sync::Mutex;
 
-use super::types::ContractRegistration;
+use beskid_abi::{ModCollectRequest, ModGenerationRequest};
+
+use crate::syntax::Spanned;
+
+use super::emit_bridge;
+use super::types::{ContractRegistration, ProgramItem};
 
 /// Outcome from a `Collector.Collect` invocation. The MVP carries the `typeId` of the
 /// contract that was invoked and any extra "scope narrowing" tokens it produced.
@@ -29,13 +36,12 @@ pub struct CollectorOutcome {
 }
 
 /// Outcome from a `Generator.Generate` invocation: zero or more typed AST contributions
-/// represented as canonical strings (the host re-parses them when present). The MVP
-/// keeps this string-shaped because typed merge is still scaffolded; concrete typed
-/// shapes will replace `contributions` once `merge::merge_generated_syntax` lands.
+/// spliced directly into the host program by `merge::merge_generated_syntax`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GeneratorOutcome {
     pub type_id: String,
-    pub contributions: Vec<String>,
+    pub typed_items: Vec<Spanned<ProgramItem>>,
+    pub code_outputs: Vec<super::generate_output::CodeGenerateOutput>,
 }
 
 /// Outcome from `Analyzer.Analyze` — diagnostics it wants the host to emit and rewrite
@@ -76,22 +82,26 @@ pub trait ContractInvoker: Send + Sync {
     fn invoke_collector(
         &self,
         registration: &ContractRegistration,
+        request: &ModCollectRequest,
     ) -> Result<CollectorOutcome, ContractInvocationError>;
 
     fn invoke_generator(
         &self,
         registration: &ContractRegistration,
+        request: &ModGenerationRequest,
     ) -> Result<GeneratorOutcome, ContractInvocationError>;
 
     fn invoke_analyzer(
         &self,
         registration: &ContractRegistration,
+        request: &ModCollectRequest,
         snapshot: Option<&crate::services::SemanticSnapshot>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError>;
 
     fn invoke_rewriter(
         &self,
         registration: &ContractRegistration,
+        request: &ModCollectRequest,
     ) -> Result<RewriterOutcome, ContractInvocationError>;
 }
 
@@ -189,6 +199,7 @@ impl ContractInvoker for StubContractInvoker {
     fn invoke_collector(
         &self,
         registration: &ContractRegistration,
+        _request: &ModCollectRequest,
     ) -> Result<CollectorOutcome, ContractInvocationError> {
         self.record(InvocationKind::Collector {
             contract_id: registration.contract_id.clone(),
@@ -204,6 +215,7 @@ impl ContractInvoker for StubContractInvoker {
     fn invoke_generator(
         &self,
         registration: &ContractRegistration,
+        _request: &ModGenerationRequest,
     ) -> Result<GeneratorOutcome, ContractInvocationError> {
         self.record(InvocationKind::Generator {
             contract_id: registration.contract_id.clone(),
@@ -219,6 +231,7 @@ impl ContractInvoker for StubContractInvoker {
     fn invoke_analyzer(
         &self,
         registration: &ContractRegistration,
+        _request: &ModCollectRequest,
         snapshot: Option<&crate::services::SemanticSnapshot>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError> {
         self.record(InvocationKind::Analyzer {
@@ -237,6 +250,7 @@ impl ContractInvoker for StubContractInvoker {
     fn invoke_rewriter(
         &self,
         registration: &ContractRegistration,
+        _request: &ModCollectRequest,
     ) -> Result<RewriterOutcome, ContractInvocationError> {
         self.record(InvocationKind::Rewriter {
             contract_id: registration.contract_id.clone(),
@@ -254,7 +268,9 @@ impl ContractInvoker for StubContractInvoker {
 /// pair. Falls back to [`StubContractInvoker`] behavior when no script is registered.
 #[derive(Debug, Default)]
 pub struct ScriptedContractInvoker {
-    pub generator_contributions: Mutex<Vec<(String, Vec<String>)>>,
+    pub collector_narrowed_targets: Mutex<Vec<(String, Vec<String>)>>,
+    pub generator_typed_items: Mutex<Vec<(String, Vec<Spanned<ProgramItem>>)>>,
+    pub generator_code_outputs: Mutex<Vec<(String, Vec<super::generate_output::CodeGenerateOutput>)>>,
     pub analyzer_diagnostics: Mutex<Vec<(String, Vec<AnalyzerDiagnostic>)>>,
     pub recorded: StubContractInvoker,
 }
@@ -264,16 +280,70 @@ impl ScriptedContractInvoker {
         Self::default()
     }
 
+    pub fn with_collector_narrowed_targets(
+        self,
+        type_id: impl Into<String>,
+        narrowed_targets: Vec<String>,
+    ) -> Self {
+        self.collector_narrowed_targets
+            .lock()
+            .expect("scripted collector targets")
+            .push((type_id.into(), narrowed_targets));
+        self
+    }
+
+    pub fn with_generator_typed_items(
+        self,
+        type_id: impl Into<String>,
+        typed_items: Vec<Spanned<ProgramItem>>,
+    ) -> Self {
+        self.generator_typed_items
+            .lock()
+            .expect("scripted typed items")
+            .push((type_id.into(), typed_items));
+        self
+    }
+
+    pub fn with_generator_code_outputs(
+        self,
+        type_id: impl Into<String>,
+        code_outputs: Vec<super::generate_output::CodeGenerateOutput>,
+    ) -> Self {
+        self.generator_code_outputs
+            .lock()
+            .expect("scripted code outputs")
+            .push((type_id.into(), code_outputs));
+        self
+    }
+
+    /// Evaluate Beskid-tagged code bodies and register them for generator dispatch tests.
+    pub fn with_generator_code_contribution(
+        self,
+        type_id: impl Into<String>,
+        module_path: impl Into<String>,
+        file_name: impl Into<String>,
+        language: impl Into<String>,
+        body: impl Into<String>,
+    ) -> Self {
+        let output = super::code_string::code_generate_output(
+            &module_path.into(),
+            &file_name.into(),
+            &language.into(),
+            &body.into(),
+        )
+        .expect("scripted code contribution must evaluate");
+        self.with_generator_code_outputs(type_id, vec![output])
+    }
+
+    /// Parse canonical source fragments into typed items for tests and transitional callers.
     pub fn with_generator_contribution(
         self,
         type_id: impl Into<String>,
         contributions: Vec<String>,
     ) -> Self {
-        self.generator_contributions
-            .lock()
-            .expect("scripted contributions")
-            .push((type_id.into(), contributions));
-        self
+        let typed_items = emit_bridge::materialize_program_items(contributions)
+            .expect("scripted generator contribution must parse as typed program items");
+        self.with_generator_typed_items(type_id, typed_items)
     }
 
     pub fn with_analyzer_diagnostic(
@@ -297,22 +367,44 @@ impl ContractInvoker for ScriptedContractInvoker {
     fn invoke_collector(
         &self,
         registration: &ContractRegistration,
+        request: &ModCollectRequest,
     ) -> Result<CollectorOutcome, ContractInvocationError> {
-        self.recorded.invoke_collector(registration)
+        let mut outcome = self.recorded.invoke_collector(registration, request)?;
+        let scripted = self
+            .collector_narrowed_targets
+            .lock()
+            .expect("scripted collector targets");
+        for (type_id, narrowed_targets) in scripted.iter() {
+            if registration.type_id == *type_id {
+                outcome.narrowed_targets.extend(narrowed_targets.iter().cloned());
+            }
+        }
+        Ok(outcome)
     }
 
     fn invoke_generator(
         &self,
         registration: &ContractRegistration,
+        request: &ModGenerationRequest,
     ) -> Result<GeneratorOutcome, ContractInvocationError> {
-        let mut outcome = self.recorded.invoke_generator(registration)?;
+        let mut outcome = self.recorded.invoke_generator(registration, request)?;
         let scripted = self
-            .generator_contributions
+            .generator_typed_items
             .lock()
-            .expect("scripted contributions");
-        for (type_id, contributions) in scripted.iter() {
+            .expect("scripted typed items");
+        for (type_id, typed_items) in scripted.iter() {
             if registration.type_id == *type_id {
-                outcome.contributions.extend(contributions.iter().cloned());
+                outcome.typed_items.extend(typed_items.iter().cloned());
+            }
+        }
+        drop(scripted);
+        let scripted_code = self
+            .generator_code_outputs
+            .lock()
+            .expect("scripted code outputs");
+        for (type_id, code_outputs) in scripted_code.iter() {
+            if registration.type_id == *type_id {
+                outcome.code_outputs.extend(code_outputs.iter().cloned());
             }
         }
         Ok(outcome)
@@ -321,9 +413,10 @@ impl ContractInvoker for ScriptedContractInvoker {
     fn invoke_analyzer(
         &self,
         registration: &ContractRegistration,
+        request: &ModCollectRequest,
         snapshot: Option<&crate::services::SemanticSnapshot>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError> {
-        let mut outcome = self.recorded.invoke_analyzer(registration, snapshot)?;
+        let mut outcome = self.recorded.invoke_analyzer(registration, request, snapshot)?;
         let scripted = self
             .analyzer_diagnostics
             .lock()
@@ -339,13 +432,15 @@ impl ContractInvoker for ScriptedContractInvoker {
     fn invoke_rewriter(
         &self,
         registration: &ContractRegistration,
+        request: &ModCollectRequest,
     ) -> Result<RewriterOutcome, ContractInvocationError> {
-        self.recorded.invoke_rewriter(registration)
+        self.recorded.invoke_rewriter(registration, request)
     }
 }
 
-#[cfg(test)]
+/// MVP native invoker lives in [`super::native`]; re-exported from the mod_host crate root.
 mod tests {
+    use super::super::context::ModInvocationContext;
     use super::*;
 
     fn r(contract: &str, ty: &str, sym: &str) -> ContractRegistration {
@@ -356,20 +451,38 @@ mod tests {
         }
     }
 
+    fn empty_collect_request() -> ModInvocationContext {
+        ModInvocationContext::empty()
+    }
+
     #[test]
     fn stub_records_each_invocation_kind() {
         let invoker = StubContractInvoker::new();
+        let mut context = empty_collect_request();
         invoker
-            .invoke_collector(&r("Beskid.Compiler.Collect.Collector", "T1", "c"))
+            .invoke_collector(
+                &r("Beskid.Compiler.Collect.Collector", "T1", "c"),
+                &context.collect_request,
+            )
             .unwrap();
         invoker
-            .invoke_generator(&r("Beskid.Compiler.Collect.Generator", "T2", "g"))
+            .invoke_generator(
+                &r("Beskid.Compiler.Collect.Generator", "T2", "g"),
+                &context.generation_request(&[]),
+            )
             .unwrap();
         invoker
-            .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "T3", "a"), None)
+            .invoke_analyzer(
+                &r("Beskid.Compiler.Collect.Analyzer", "T3", "a"),
+                &context.collect_request,
+                None,
+            )
             .unwrap();
         invoker
-            .invoke_rewriter(&r("Beskid.Compiler.Collect.Rewriter", "T4", "r"))
+            .invoke_rewriter(
+                &r("Beskid.Compiler.Collect.Rewriter", "T4", "r"),
+                &context.collect_request,
+            )
             .unwrap();
         let log = invoker.invocations();
         assert_eq!(log.len(), 4);
@@ -385,10 +498,14 @@ mod tests {
             "T2",
             vec!["pub fn synthetic_generated() { return; }".into()],
         );
+        let mut context = empty_collect_request();
         let outcome = invoker
-            .invoke_generator(&r("Beskid.Compiler.Collect.Generator", "T2", "g"))
+            .invoke_generator(
+                &r("Beskid.Compiler.Collect.Generator", "T2", "g"),
+                &context.generation_request(&[]),
+            )
             .unwrap();
-        assert_eq!(outcome.contributions.len(), 1);
+        assert_eq!(outcome.typed_items.len(), 1);
     }
 
     #[test]
@@ -401,8 +518,13 @@ mod tests {
                 severity: AnalyzerSeverity::Warning,
             }],
         );
+        let context = empty_collect_request();
         let outcome = invoker
-            .invoke_analyzer(&r("Beskid.Compiler.Collect.Analyzer", "TA", "a"), None)
+            .invoke_analyzer(
+                &r("Beskid.Compiler.Collect.Analyzer", "TA", "a"),
+                &context.collect_request,
+                None,
+            )
             .unwrap();
         assert_eq!(outcome.diagnostics.len(), 1);
         assert_eq!(outcome.diagnostics[0].code, "ModA0001");

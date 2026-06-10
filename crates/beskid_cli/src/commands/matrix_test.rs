@@ -45,7 +45,7 @@ pub fn execute_all_targets(mut args: TestArgs) -> Result<()> {
 
         args.project.target = Some(target.clone());
         let start = Instant::now();
-        match execute_single_target(args.clone(), Some(&mut engine)) {
+        match execute_single_target(args.clone(), Some(&mut engine), None) {
             Ok(()) => {
                 let elapsed = start.elapsed();
                 eprintln!("PASS ({elapsed:.1?})");

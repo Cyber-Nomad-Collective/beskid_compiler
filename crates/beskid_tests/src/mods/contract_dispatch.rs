@@ -22,7 +22,7 @@ use beskid_pipeline::phases::{
 };
 use beskid_pipeline::{PipelineEvent, PipelineObserver};
 
-use super::fixture::ModFixtureWorkspace;
+use super::fixture::{ModFixtureWorkspace, typed_items_contain_function};
 
 #[derive(Default)]
 struct CapturePipeline {
@@ -62,6 +62,7 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
             source,
             pipeline: Some(&pipeline),
             invoker: Some(&invoker),
+        cached_target_fingerprint: None,
         },
     )
     .expect("mod host generate");
@@ -88,6 +89,7 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
         generated.program,
         &generated.session,
         Some(&invoker),
+        None,
         Some(&snapshot),
         Some(&pipeline),
     )
@@ -177,6 +179,7 @@ fn scripted_invoker_surfaces_analyzer_diagnostics_to_outcomes() {
             source,
             pipeline: Some(&pipeline),
             invoker: Some(&invoker),
+        cached_target_fingerprint: None,
         },
     )
     .expect("mod host generate");
@@ -185,11 +188,11 @@ fn scripted_invoker_surfaces_analyzer_diagnostics_to_outcomes() {
         .iter()
         .find(|outcome| outcome.type_id == "SampleMod.SampleGenerate")
         .expect("scripted generator outcome");
-    assert_eq!(synthetic.contributions.len(), 1);
-    assert!(
-        synthetic.contributions[0].contains("sample_synthetic_marker"),
-        "scripted generator contribution should be propagated to outcome"
-    );
+    assert_eq!(synthetic.typed_items.len(), 1);
+    assert!(matches!(
+        &synthetic.typed_items[0].node,
+        beskid_analysis::syntax::Node::Function(f) if f.node.name.node.name == "sample_synthetic_marker"
+    ));
 
     let snapshot =
         beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
@@ -198,6 +201,7 @@ fn scripted_invoker_surfaces_analyzer_diagnostics_to_outcomes() {
         generated.program,
         &generated.session,
         Some(&invoker),
+        None,
         Some(&snapshot),
         Some(&pipeline),
     )

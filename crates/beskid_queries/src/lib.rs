@@ -40,7 +40,7 @@ pub use graph_viz::{
 pub use inputs::{FileText, GrammarRevision, ProjectSession};
 pub use modhost::{
     CapabilitySetId, ManifestGenerationId, SyntaxGenerationId, bump_syntax_generation,
-    mod_generate, mod_generate_fingerprint,
+    mod_collect_target_fingerprint, mod_generate, mod_generate_fingerprint,
 };
 pub use output::{SharedFrontEnd, SharedResolution, SharedTypeResult};
 pub use persistence::{

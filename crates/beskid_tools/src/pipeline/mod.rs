@@ -9,6 +9,7 @@ pub mod tui;
 use std::borrow::Cow;
 use std::env;
 use std::io::{self, IsTerminal, Write, stderr};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -25,6 +26,8 @@ pub use resolve_options::{
     CliInputPipelineOptions, CliProjectPipelineOptions, CliResolveOptions,
     FrontendProjectPipelineOptions,
 };
+
+use crate::tui::shell::runtime::RuntimeOp;
 
 use tui::{
     count_severities, format_duration, format_phase_end, format_phase_start, format_severity_summary,
@@ -89,6 +92,8 @@ pub enum PipelineProgressKind {
 /// CLI adapter: maps [`PipelineEvent`] to Ratatui or plain `eprintln`.
 pub struct CliPipeline {
     plain: bool,
+    /// Progress is rendered by a parent `beskid hi` shell (non-blocking, no nested TUI).
+    hi_attached: bool,
     phase_total: u64,
     total_pos: Mutex<u64>,
     prepare_ui_finished: Mutex<bool>,
@@ -132,6 +137,7 @@ impl CliPipeline {
         });
         Self {
             plain,
+            hi_attached: false,
             phase_total,
             total_pos: Mutex::new(0),
             prepare_ui_finished: Mutex::new(false),
@@ -147,9 +153,38 @@ impl CliPipeline {
         }
     }
 
+    /// Pipeline observer that forwards progress into a running `beskid hi` shell.
+    pub fn for_attached(msg_tx: Sender<RuntimeOp>, kind: PipelineProgressKind) -> Self {
+        let phase_total = match kind {
+            PipelineProgressKind::FullBuild => FULL_BUILD_PHASE_ORDER.len(),
+            PipelineProgressKind::ModBuild => MOD_BUILD_PHASE_ORDER.len(),
+            PipelineProgressKind::PrepareAndRun => 4 + JIT_RUN_PHASE_ORDER.len(),
+        } as u64;
+        Self {
+            plain: false,
+            hi_attached: true,
+            phase_total,
+            total_pos: Mutex::new(0),
+            prepare_ui_finished: Mutex::new(false),
+            tui_suspended: Mutex::new(false),
+            tui: Mutex::new(TuiSession::try_attach(msg_tx)),
+            started_at: Instant::now(),
+            phase_stack: Mutex::new(Vec::new()),
+            work_unit_throttle: Mutex::new(WorkUnitThrottleState {
+                last_emit: None,
+                work_unit_events: 0,
+                pending_msg: None,
+            }),
+        }
+    }
+
+    pub fn is_hi_attached(&self) -> bool {
+        self.hi_attached
+    }
+
     /// Re-enter alternate screen after [`halt_progress_bars_for_output`](Self::halt_progress_bars_for_output).
     pub fn resume_after_output(&self) -> io::Result<()> {
-        if self.plain {
+        if self.plain || self.hi_attached {
             return Ok(());
         }
         let mut suspended = self
@@ -218,6 +253,7 @@ impl CliPipeline {
         if self.plain {
             return Ok(());
         }
+        self.resume_after_output()?;
         self.with_tui_result(|tui| tui.pump_interactive())
     }
 
@@ -239,7 +275,7 @@ impl CliPipeline {
 
     /// Leave alternate screen before writing to stderr (avoids TTY deadlocks with miette).
     pub fn halt_progress_bars_for_output(&self) {
-        if self.plain {
+        if self.plain || self.hi_attached {
             return;
         }
         let mut suspended = self
@@ -277,16 +313,27 @@ impl CliPipeline {
         diagnostics: &[SemanticDiagnostic],
     ) -> tui::SeverityCounts {
         let counts = count_severities(diagnostics);
-        self.halt_progress_bars_for_output();
+        if !self.hi_attached {
+            self.halt_progress_bars_for_output();
+        }
         if diagnostics.is_empty() {
             self.println_session("No diagnostics.");
             return counts;
         }
-        for diagnostic in diagnostics {
-            let rendered = crate::diagnostics::format_diagnostic(diagnostic);
-            eprint!("{rendered}");
+        if self.hi_attached {
+            for diagnostic in diagnostics {
+                let rendered = crate::diagnostics::format_diagnostic(diagnostic);
+                for line in rendered.lines() {
+                    self.println_session(line);
+                }
+            }
+        } else {
+            for diagnostic in diagnostics {
+                let rendered = crate::diagnostics::format_diagnostic(diagnostic);
+                eprint!("{rendered}");
+            }
+            let _ = stderr().flush();
         }
-        let _ = stderr().flush();
         self.println_session(format!("Analysis: {}", format_severity_summary(counts)));
         counts
     }
@@ -345,20 +392,26 @@ impl CliPipeline {
                 if let Ok(tui) = self.tui.lock() {
                     let _ = tui.stage_summary(panel);
                 }
-                if let Ok(tui) = self.tui.lock() {
-                    let _ = tui.wait_for(tui::NavTarget::Summary);
-                }
-                if let Ok(tui) = self.tui.lock() {
-                    let _ = tui.wait_for_dismiss();
+                if self.hi_attached {
+                    self.println_session(&headline);
+                } else {
+                    if let Ok(tui) = self.tui.lock() {
+                        let _ = tui.wait_for(tui::NavTarget::Summary);
+                    }
+                    if let Ok(tui) = self.tui.lock() {
+                        let _ = tui.wait_for_dismiss();
+                    }
+                    let mut suspended = self
+                        .tui_suspended
+                        .lock()
+                        .expect("tui_suspended mutex poisoned");
+                    *suspended = true;
                 }
             }
-            let mut suspended = self
-                .tui_suspended
-                .lock()
-                .expect("tui_suspended mutex poisoned");
-            *suspended = true;
         }
-        eprintln!("{headline}");
+        if !self.hi_attached {
+            eprintln!("{headline}");
+        }
     }
 
     pub fn finish_build(&self, message: impl Into<Cow<'static, str>>) {

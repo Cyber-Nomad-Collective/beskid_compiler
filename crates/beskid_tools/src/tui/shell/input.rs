@@ -275,6 +275,14 @@ fn handle_key(state: &mut ShellState, key: KeyEvent) -> InputAction {
             state.log_tab = LogTab::Semantic;
             InputAction::Redraw
         }
+        KeyCode::Char('i') if state.pane_focus == PaneFocus::Log => {
+            state.log_tab = LogTab::Incremental;
+            InputAction::Redraw
+        }
+        KeyCode::Char('t') if state.pane_focus == PaneFocus::Log => {
+            state.log_tab = LogTab::Traces;
+            InputAction::Redraw
+        }
         _ => InputAction::None,
     }
 }
@@ -347,11 +355,8 @@ fn log_tab_at(state: &ShellState, position: Position) -> Option<LogTab> {
         return None;
     }
     let inner_x = position.x.saturating_sub(log.x + 1);
-    if inner_x < log.width / 2 {
-        Some(LogTab::Build)
-    } else {
-        Some(LogTab::Semantic)
-    }
+    let slot = inner_x.saturating_mul(LogTab::ALL.len() as u16) / log.width.max(1);
+    LogTab::ALL.get(slot as usize).copied()
 }
 
 fn pane_at(state: &ShellState, position: Position) -> Option<PaneFocus> {
@@ -400,6 +405,38 @@ fn overlay_at(state: &ShellState, position: Position) -> Option<OverlayKind> {
     {
         return Some(OverlayKind::Templates);
     }
+    if state.overlay_visible(OverlayKind::CompileDebug)
+        && state
+            .layout_rects
+            .compile_debug_overlay
+            .is_some_and(|r| r.contains(position))
+    {
+        return Some(OverlayKind::CompileDebug);
+    }
+    if state.overlay_visible(OverlayKind::Graph)
+        && state
+            .layout_rects
+            .graph_overlay
+            .is_some_and(|r| r.contains(position))
+    {
+        return Some(OverlayKind::Graph);
+    }
+    if state.overlay_visible(OverlayKind::Settings)
+        && state
+            .layout_rects
+            .settings_overlay
+            .is_some_and(|r| r.contains(position))
+    {
+        return Some(OverlayKind::Settings);
+    }
+    if state.overlay_visible(OverlayKind::Analysis)
+        && state
+            .layout_rects
+            .analysis_overlay
+            .is_some_and(|r| r.contains(position))
+    {
+        return Some(OverlayKind::Analysis);
+    }
     None
 }
 
@@ -426,9 +463,9 @@ fn route_vertical(state: &mut ShellState, up: bool) {
 fn route_horizontal(state: &mut ShellState, left: bool) {
     if state.pane_focus == PaneFocus::Log {
         state.log_tab = if left {
-            LogTab::Semantic
+            state.log_tab.prev()
         } else {
-            LogTab::Build
+            state.log_tab.next()
         };
         return;
     }
@@ -487,6 +524,16 @@ fn step_list_selection(state: &mut ShellState, delta: i32) {
     };
     state.test_list_state.select(Some(next));
     state.test_list_user_selected = true;
+}
+
+pub fn handle_simple_overlay_input(event: &InputEvent, _state: &mut ShellState) -> InputResult {
+    if let InputEvent::Key(key) = event
+        && key.kind == KeyEventKind::Press
+        && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
+    {
+        return InputResult::CloseOverlay;
+    }
+    InputResult::Bubble
 }
 
 pub fn handle_pckg_overlay_input(event: &InputEvent, state: &mut ShellState) -> InputResult {

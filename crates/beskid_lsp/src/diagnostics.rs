@@ -12,9 +12,10 @@ use beskid_queries::BeskidDatabase;
 use tower_lsp_server::ls_types::*;
 
 use crate::features::project_manifest::api as project_manifest;
+use crate::manifest_uri::is_manifest_uri;
 use crate::position::offset_range_to_lsp;
 
-/// Produce LSP diagnostics for a `.bd`, `.proj`, or manifest buffer.
+/// Produce LSP diagnostics for a `.bd`, `.bproj`, `.bws`, or other manifest buffer.
 ///
 /// Project-backed `.bd` buffers use the Salsa prepare spine when a [`BeskidDatabase`] and
 /// [`CompilationContext`] are available; otherwise the server falls back to a warm
@@ -26,7 +27,7 @@ pub fn analyze_document(
     cached: Option<&DocumentAnalysisSnapshot>,
     compilation_context: Option<&CompilationContext>,
 ) -> Vec<Diagnostic> {
-    if is_project_manifest_uri(uri) {
+    if is_manifest_uri(uri) {
         return analyze_project_manifest(uri, source);
     }
 
@@ -162,10 +163,6 @@ fn analyze_project_manifest(uri: &Uri, source: &str) -> Vec<Diagnostic> {
             services::project_error_diagnostic(source_label, source, &error),
         )],
     }
-}
-
-fn is_project_manifest_uri(uri: &Uri) -> bool {
-    uri.to_string().to_lowercase().ends_with(".proj")
 }
 
 fn simple_error(code: &str, message: &str, range: Range) -> Diagnostic {

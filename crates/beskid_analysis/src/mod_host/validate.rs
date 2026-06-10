@@ -219,6 +219,7 @@ mod tests {
                         "query_semantic_snapshot".to_owned(),
                     ]),
                     artifact_policy: None,
+                    generated_outputs: None,
                 }),
             },
             descriptor: Some(ModArtifactDescriptor {

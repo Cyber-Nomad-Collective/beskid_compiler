@@ -1,8 +1,10 @@
 //! Register extension widgets with the shell host.
 
-use beskid_tools::shell::{WidgetDescriptor, WidgetRegistry};
+use beskid_tools::shell::{NavItemDescriptor, NavRegistry, WidgetDescriptor, WidgetRegistry};
+use beskid_tools::shell::nav::NavAction;
 
 use crate::models::descriptor::WIDGET_CATALOG;
+use crate::models::nav::NAV_CATALOG;
 use crate::widgets::HelloWidget;
 
 pub fn register_widgets(registry: &mut WidgetRegistry) {
@@ -16,6 +18,22 @@ pub fn register_widgets(registry: &mut WidgetRegistry) {
         ));
     }
     registry.register(Box::new(HelloWidget::new()));
+}
+
+pub fn register_nav(registry: &mut NavRegistry) {
+    for item in NAV_CATALOG {
+        registry.register(NavItemDescriptor {
+            id: item.id.into(),
+            label: item.label.into(),
+            action: match item.action {
+                crate::models::nav::ExtensionNavAction::Group => NavAction::Group,
+                crate::models::nav::ExtensionNavAction::Page(id) => NavAction::Page(id.into()),
+            },
+            parent: item.parent.map(str::to_string),
+            order: item.order,
+            icon: item.icon.map(str::to_string),
+        });
+    }
 }
 
 #[cfg(test)]

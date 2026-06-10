@@ -12,8 +12,11 @@ pub mod types;
 pub use common::{HasSpan, Identifier, SpanInfo, Spanned, Visibility};
 pub use expressions::{
     ArrayLiteralExpression, AssignExpression, AssignOp, BinaryExpression, BinaryOp,
-    BlockExpression, CallExpression, EnumConstructorExpression, EnumPattern, Expression,
-    GroupedExpression, IndexExpression, LambdaExpression, LambdaParameter, Literal,
+    BlockExpression, CallExpression, CodeStringLiteral, CodeStringSegment,
+    decode_string_literal_token, materialize_code_segments, parse_plain_code_body,
+    split_string_literal_parts, split_string_literal_token, try_decode_string_literal,
+    try_decode_string_literal_token, StringLiteralPart, EnumConstructorExpression, EnumPattern,
+    Expression, GroupedExpression, IndexExpression, LambdaExpression, LambdaParameter, Literal,
     LiteralExpression, MacroInvocation, MacroMetavariable, MatchArm, MatchExpression,
     MemberExpression, PathExpression, Pattern, SpawnExpression, StructLiteralExpression,
     StructLiteralField, TryExpression, UnaryExpression, UnaryOp,

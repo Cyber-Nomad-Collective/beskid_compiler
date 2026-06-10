@@ -1,4 +1,4 @@
-//! Process host builtins for corelib `System.Process`.
+//! Process host builtins for corelib `Core.Process`.
 
 /// Process id.
 #[unsafe(no_mangle)]

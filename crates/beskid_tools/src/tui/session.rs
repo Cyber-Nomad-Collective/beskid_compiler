@@ -1,6 +1,7 @@
 //! Public session facade for CLI commands.
 
 use std::io::{self, Write, stderr};
+use std::sync::mpsc::Sender;
 use std::time::Duration;
 
 use crate::pipeline::tui::{CommandSummary, TestReportSummary, TestRow};
@@ -26,6 +27,8 @@ pub fn reset_stderr_ansi() -> io::Result<()> {
 /// Interactive shell session (unified compile + overlay views).
 pub struct ShellSession {
     runtime: Option<ShellRuntime>,
+    /// Forward pipeline messages into a running `beskid hi` shell (no nested TUI runtime).
+    attached: Option<Sender<RuntimeOp>>,
     interrupt: InterruptFlag,
 }
 
@@ -34,6 +37,7 @@ impl ShellSession {
         if !interactive {
             return Ok(Self {
                 runtime: None,
+                attached: None,
                 interrupt: InterruptFlag::new(),
             });
         }
@@ -41,13 +45,24 @@ impl ShellSession {
         let interrupt = runtime.interrupt_flag();
         Ok(Self {
             runtime: Some(runtime),
+            attached: None,
             interrupt,
         })
+    }
+
+    /// Attach to an existing hi-shell message channel instead of spawning a nested runtime.
+    pub fn try_attach(tx: Sender<RuntimeOp>) -> Self {
+        Self {
+            runtime: None,
+            attached: Some(tx),
+            interrupt: InterruptFlag::new(),
+        }
     }
 
     pub fn try_open_plain() -> Self {
         Self {
             runtime: None,
+            attached: None,
             interrupt: InterruptFlag::new(),
         }
     }
@@ -57,7 +72,11 @@ impl ShellSession {
     }
 
     pub fn is_active(&self) -> bool {
-        self.runtime.is_some()
+        self.runtime.is_some() || self.attached.is_some()
+    }
+
+    pub fn is_attached(&self) -> bool {
+        self.attached.is_some()
     }
 
     pub fn tree_phase_start(&self, depth: usize, label: impl Into<String>) -> io::Result<()> {
@@ -235,38 +254,49 @@ impl ShellSession {
     }
 
     fn set_overlay_visible(&self, kind: OverlayKind, visible: bool) -> io::Result<()> {
-        let Some(runtime) = &self.runtime else {
+        if let Some(runtime) = &self.runtime {
+            let (ack_tx, ack_rx) = std::sync::mpsc::channel();
+            runtime.send(RuntimeOp::SetOverlayVisible {
+                kind,
+                visible,
+                ack: Some(ack_tx),
+            })?;
+            ack_rx
+                .recv()
+                .map_err(|_| io::Error::other("tui overlay update interrupted"))?;
             return Ok(());
-        };
-        let (ack_tx, ack_rx) = std::sync::mpsc::channel();
-        runtime.send(RuntimeOp::SetOverlayVisible {
-            kind,
-            visible,
-            ack: Some(ack_tx),
-        })?;
-        ack_rx
-            .recv()
-            .map_err(|_| io::Error::other("tui overlay update interrupted"))?;
+        }
+        if let Some(tx) = &self.attached {
+            tx.send(RuntimeOp::SetOverlayVisible {
+                kind,
+                visible,
+                ack: None,
+            })
+            .map_err(|_| io::Error::other("hi shell message channel closed"))?;
+        }
         Ok(())
     }
 
     fn dispatch(&self, msg: ShellMessage) -> io::Result<()> {
         if let Some(runtime) = &self.runtime {
             runtime.send_update(msg)?;
+        } else if let Some(tx) = &self.attached {
+            tx.send(RuntimeOp::Update(msg))
+                .map_err(|_| io::Error::other("hi shell message channel closed"))?;
         }
         Ok(())
     }
 
     fn dispatch_sync(&self, msg: ShellMessage) -> io::Result<()> {
-        let Some(runtime) = &self.runtime else {
+        if let Some(runtime) = &self.runtime {
+            let (ack_tx, ack_rx) = std::sync::mpsc::channel();
+            runtime.send(RuntimeOp::UpdateAndAck(msg, ack_tx))?;
+            ack_rx
+                .recv()
+                .map_err(|_| io::Error::other("tui runtime update interrupted"))?;
             return Ok(());
-        };
-        let (ack_tx, ack_rx) = std::sync::mpsc::channel();
-        runtime.send(RuntimeOp::UpdateAndAck(msg, ack_tx))?;
-        ack_rx
-            .recv()
-            .map_err(|_| io::Error::other("tui runtime update interrupted"))?;
-        Ok(())
+        }
+        self.dispatch(msg)
     }
 }
 

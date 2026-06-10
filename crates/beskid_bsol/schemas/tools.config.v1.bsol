@@ -1,0 +1,20 @@
+profile "tools.config.v1" {
+  rule "config" {
+    scope = top
+    match = keyword
+    keyword = config
+    label = forbidden
+    cardinality = one
+    field "version" { type = u32 required = false }
+  }
+  rule "setting" {
+    scope = top
+    match = keyword
+    keyword = setting
+    label = forbidden
+    cardinality = many
+    field "tool_id" { type = quoted required = true }
+    field "key" { type = quoted required = true }
+    field "value" { type = quoted required = true }
+  }
+}

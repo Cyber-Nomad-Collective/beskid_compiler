@@ -1,20 +1,12 @@
-use beskid_analysis::projects::{parse_bsol_document, BsolBlock, BsolDocument, BsolItem, BsolSpan, BsolValue};
+use beskid_analysis::projects::{parse_bsol_document, project_manifest_for_member_dir, BsolBlock, BsolDocument, BsolItem, BsolSpan, BsolValue};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tower_lsp_server::ls_types::*;
 
+pub use crate::manifest_uri::{is_manifest_uri, is_workspace_manifest_uri};
+
 use crate::position::offset_range_to_lsp;
-
-pub fn is_manifest_uri(uri: &Uri) -> bool {
-    uri.to_string().to_lowercase().ends_with(".proj")
-}
-
-pub fn is_workspace_manifest_uri(uri: &Uri) -> bool {
-    let path = uri.path().as_str();
-    path.rsplit_once('/')
-        .is_some_and(|(_, tail)| tail.eq_ignore_ascii_case("workspace.proj"))
-}
 
 fn is_ident_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_'
@@ -266,11 +258,6 @@ type CompletionTriple = (&'static str, CompletionItemKind, &'static str);
 
 const PROJECT_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
     (
-        "project",
-        CompletionItemKind::MODULE,
-        "Top-level project block",
-    ),
-    (
         "target",
         CompletionItemKind::MODULE,
         "Top-level target block",
@@ -281,12 +268,22 @@ const PROJECT_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
         "Top-level dependency block",
     ),
     (
+        "link",
+        CompletionItemKind::MODULE,
+        "Top-level link block",
+    ),
+    (
         "name",
         CompletionItemKind::FIELD,
         "Project or dependency name",
     ),
     ("version", CompletionItemKind::FIELD, "Version string"),
     ("root", CompletionItemKind::FIELD, "Source root folder"),
+    (
+        "type",
+        CompletionItemKind::FIELD,
+        "Project type: Mod, Meta, Template, Aggregate, or Bsol",
+    ),
     (
         "kind",
         CompletionItemKind::FIELD,
@@ -312,6 +309,11 @@ const PROJECT_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
         "Library target kind",
     ),
     ("Test", CompletionItemKind::ENUM_MEMBER, "Test target kind"),
+    ("Mod", CompletionItemKind::ENUM_MEMBER, "Mod project type"),
+    ("Meta", CompletionItemKind::ENUM_MEMBER, "Meta project type"),
+    ("Template", CompletionItemKind::ENUM_MEMBER, "Template project type"),
+    ("Aggregate", CompletionItemKind::ENUM_MEMBER, "Aggregate project type"),
+    ("Bsol", CompletionItemKind::ENUM_MEMBER, "Bsol project type"),
 ];
 
 const WORKSPACE_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
@@ -359,6 +361,7 @@ enum EnumFieldAtCursor {
     TargetKind,
     DependencySource,
     WorkspaceResolver,
+    ProjectType,
 }
 
 fn line_key_value_suffix<'a>(line: &'a str, key: &str) -> Option<&'a str> {
@@ -396,6 +399,12 @@ fn manifest_enum_field_at_cursor(text: &str, offset: usize) -> Option<EnumFieldA
             return Some(EnumFieldAtCursor::WorkspaceResolver);
         }
     }
+    if let Some(rest) = line_key_value_suffix(line, "type") {
+        let t = rest.trim_start();
+        if !t.starts_with('"') && (t.is_empty() || token_prefix_chars(t)) {
+            return Some(EnumFieldAtCursor::ProjectType);
+        }
+    }
     None
 }
 
@@ -417,6 +426,13 @@ pub fn manifest_enum_completion_items(text: &str, offset: usize) -> Option<Vec<C
             ("registry", "Registry dependency (schema only in v1)"),
         ],
         EnumFieldAtCursor::WorkspaceResolver => &[("v1", "Default workspace resolver")],
+        EnumFieldAtCursor::ProjectType => &[
+            ("Mod", "Compiler mod project"),
+            ("Meta", "Meta mod project"),
+            ("Template", "Template project"),
+            ("Aggregate", "Aggregate project"),
+            ("Bsol", "BSOL schema project"),
+        ],
     };
 
     let prefix = completion_prefix_at_offset(text, offset).to_lowercase();
@@ -441,12 +457,15 @@ pub fn manifest_enum_completion_items(text: &str, offset: usize) -> Option<Vec<C
 
 pub fn hover_markdown(token: &str) -> Option<&'static str> {
     match token {
-        "project" => Some("`project { ... }` defines project metadata."),
         "target" => Some("`target \"Name\" { ... }` defines a build target."),
         "dependency" => Some("`dependency \"Alias\" { ... }` defines a dependency."),
-        "name" => Some("`name` is required in the `project` block."),
-        "version" => Some("`version` is required in the `project` block."),
+        "link" => Some("`link { ... }` declares native library link metadata."),
+        "name" => Some("`name` is required in the project root block."),
+        "version" => Some("`version` is required in the project root block."),
         "root" => Some("`root` is optional and defaults to `Src`."),
+        "type" => Some(
+            "`type` is optional (`Mod`, `Meta`, `Template`, `Aggregate`, `Bsol`); Host is the default when omitted.",
+        ),
         "kind" => Some(
             "`kind` must be `App`, `Lib`, or `Test` (recommended: unquoted, e.g. `kind = Lib`).",
         ),
@@ -493,8 +512,9 @@ pub fn dependency_path_location(uri: &Uri, text: &str, offset: usize) -> Option<
 
             let current = file_path_from_uri(uri)?;
             let parent = current.parent()?;
-            let target = parent.join(&path_value.value).join("Project.proj");
-            let dep_uri = file_uri_from_path(&target)?;
+            let dep_dir = parent.join(&path_value.value);
+            let member_manifest = project_manifest_for_member_dir(&dep_dir).ok()?;
+            let dep_uri = file_uri_from_path(&member_manifest)?;
             return Some(Location {
                 uri: dep_uri,
                 range: Range::new(Position::new(0, 0), Position::new(0, 0)),

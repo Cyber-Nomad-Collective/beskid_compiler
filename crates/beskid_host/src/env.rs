@@ -1,4 +1,4 @@
-//! Environment host builtins for corelib `System.Environment`.
+//! Environment host builtins for corelib `Core.Environment`.
 
 use beskid_abi::BeskidStr;
 

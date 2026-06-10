@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::mpsc::Sender;
 
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
@@ -15,6 +16,7 @@ use beskid_pipeline::PipelineObserver;
 use crate::pipeline::{
     CliPipeline, CliResolveOptions, PipelineProgressKind, frontend, use_cli_spinner,
 };
+use crate::tui::shell::runtime::RuntimeOp;
 
 /// Project / lockfile inputs for [`CommandSession::resolve_input`].
 #[derive(Debug, Clone, Copy)]
@@ -57,6 +59,13 @@ impl CommandSession {
     pub fn with_progress(plain: bool, kind: PipelineProgressKind) -> Self {
         Self {
             pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)),
+        }
+    }
+
+    /// Session whose pipeline progress is rendered by a parent `beskid hi` shell.
+    pub fn with_attached_pipeline(msg_tx: Sender<RuntimeOp>, kind: PipelineProgressKind) -> Self {
+        Self {
+            pipeline: Arc::new(CliPipeline::for_attached(msg_tx, kind)),
         }
     }
 

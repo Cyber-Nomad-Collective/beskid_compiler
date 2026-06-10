@@ -3,7 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratkit::services::hotkey_service::Hotkey;
+use crate::shell::primitives::Hotkey;
 
 use crate::shell::context::WidgetContext;
 use crate::shell::input::ShellInput;

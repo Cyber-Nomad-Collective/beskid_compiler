@@ -1,4 +1,4 @@
-//! Walk workspace roots to index `.bd` / `.proj` files and publish disk-backed diagnostics.
+//! Walk workspace roots to index `.bd` / `.bproj` / `.bws` files and publish disk-backed diagnostics.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -13,13 +13,14 @@ use tower_lsp_server::ls_types::Uri;
 use url::Url;
 use walkdir::WalkDir;
 
+use crate::diagnostics::analyze_document;
 use crate::protocol::status::{idle_status, send_beskid_status, workspace_scan_status};
 use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::lifecycle::{
     build_document, rebuild_open_document_analysis, set_disk_snapshot,
 };
 use crate::session::project_context::{cached_compilation_context, invalidate_compilation_cache};
-use crate::session::store::State;
+use crate::session::store::{Document, State};
 
 const MAX_CONCURRENT_READS: usize = 24;
 const STATUS_EMIT_INTERVAL: Duration = Duration::from_millis(200);
@@ -34,6 +35,14 @@ pub(crate) fn should_skip_dir_for_scan(name: &str) -> bool {
         name,
         ".git" | "target" | "node_modules" | ".beskid" | "out" | "bin" | "obj" | ".vs"
     )
+}
+
+fn is_scannable_extension(ext: &str) -> bool {
+    matches!(ext, "bd" | "bproj" | "bws")
+}
+
+fn is_manifest_extension(ext: &str) -> bool {
+    matches!(ext, "bproj" | "bws")
 }
 
 async fn maybe_emit_scan_progress(
@@ -85,7 +94,8 @@ pub async fn scan_workspace(
         if entry
             .path()
             .extension()
-            .is_some_and(|ext| ext == "bd" || ext == "proj")
+            .and_then(|ext| ext.to_str())
+            .is_some_and(is_scannable_extension)
         {
             paths.push(entry.path().to_path_buf());
         }
@@ -98,15 +108,20 @@ pub async fn scan_workspace(
         b_focus
             .cmp(&a_focus)
             .then_with(|| {
-                let a_proj = a.extension().and_then(|e| e.to_str()) == Some("proj");
-                let b_proj = b.extension().and_then(|e| e.to_str()) == Some("proj");
-                b_proj.cmp(&a_proj)
+                let a_manifest = a
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(is_manifest_extension);
+                let b_manifest = b
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(is_manifest_extension);
+                b_manifest.cmp(&a_manifest)
             })
             .then_with(|| a.as_path().cmp(b.as_path()))
     });
 
     invalidate_compilation_cache(state).await;
-    rebuild_open_document_analysis(state).await;
 
     let total = paths.len() as u32;
     let mut last_emit = None;
@@ -148,23 +163,18 @@ pub async fn scan_workspace(
         let Ok(text) = tokio::fs::read_to_string(&path).await else {
             continue;
         };
-        let doc = build_document(state, &uri, 0, text).await;
-        let compilation_context = if path.extension().and_then(|e| e.to_str()) == Some("bd") {
-            cached_compilation_context(state, &path).await
-        } else {
-            None
+        let doc = Document {
+            version: 0,
+            text: text.clone(),
+            analysis_cache_version: 0,
+            analysis: None,
         };
-        let diagnostics = analyze_document_for_state(
-            state,
-            &uri,
-            &doc.text,
-            doc.analysis.as_ref(),
-            compilation_context.as_ref(),
-        )
-        .await;
+        let diagnostics = analyze_document(None, &uri, &text, None, None);
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;
     }
+
+    rebuild_open_document_analysis(state).await;
 
     let mut stale: Vec<Uri> = Vec::new();
     {
@@ -220,7 +230,7 @@ pub fn path_from_uri_string(uri: &str) -> Option<PathBuf> {
     Uri::from_str(uri).ok().and_then(|u| uri_to_path(&u))
 }
 
-/// Discover `Workspace.proj` manifests under workspace roots (sorted, deduplicated).
+/// Discover `.bws` workspace manifests under workspace roots (sorted, deduplicated).
 pub fn discover_workspace_manifest_paths(workspace_roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut manifests = Vec::new();
     let mut seen = HashSet::new();
@@ -278,7 +288,7 @@ pub async fn clear_closed_workspace_under_root(
     }
 }
 
-/// Re-read changed paths on disk when buffers are closed; may invalidate compilation cache on `.proj` edits.
+/// Re-read changed paths on disk when buffers are closed; may invalidate compilation cache on manifest edits.
 pub async fn refresh_after_disk_change(
     client: &Client,
     state: &RwLock<State>,
@@ -287,7 +297,7 @@ pub async fn refresh_after_disk_change(
     if changed_paths.iter().any(|p| {
         p.extension()
             .and_then(|e| e.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("proj"))
+            .is_some_and(is_manifest_extension)
     }) {
         invalidate_compilation_cache(state).await;
         rebuild_open_document_analysis(state).await;

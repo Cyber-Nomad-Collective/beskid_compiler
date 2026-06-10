@@ -1,8 +1,6 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
-use ratatui::widgets::{Block, Borders, Paragraph};
-use ratkit::services::hotkey_service::Hotkey;
+use crate::shell::primitives::Hotkey;
 
 use crate::pipeline::tui::widgets::draw_tabbed_log_panel;
 use crate::shell::context::WidgetContext;
@@ -29,21 +27,12 @@ impl BeskidWidget for LogWidget {
     }
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-        if ctx.shell_state.shell_mode == crate::tui::shell::pane_state::ShellMode::Hi {
-            frame.render_widget(
-                Paragraph::new("Session log (build/analyze output appears when commands run)")
-                    .style(Style::default().fg(Color::DarkGray))
-                    .block(Block::default().borders(Borders::ALL).title(" Log ")),
-                area,
-            );
-        } else {
-            draw_tabbed_log_panel(
-                frame,
-                area,
-                ctx.shell_state.log_tab,
-                &mut ctx.shell_state.log_states,
-            );
-        }
+        draw_tabbed_log_panel(
+            frame,
+            area,
+            ctx.shell_state.log_tab,
+            &mut ctx.shell_state.log_states,
+        );
     }
 }
 

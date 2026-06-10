@@ -1,5 +1,7 @@
-//! Command catalog: CLI subprocess commands and contextual in-shell commands.
+//! Command catalog: CLI subprocess commands, nav menu items, and contextual commands.
 
+use super::layout::pages::PagesDoc;
+use super::nav::{NavAction, NavItemDescriptor, NavRegistry};
 use super::scope::ShellScope;
 
 /// How a palette entry is executed.
@@ -7,6 +9,7 @@ use super::scope::ShellScope;
 pub enum CommandKind {
     Cli,
     Contextual,
+    Nav,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,9 +33,19 @@ pub struct ContextualCommand {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct NavCommandDef {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub icon: String,
+    pub action: NavAction,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum CommandItem {
     Cli(CliCommandDef),
     Contextual(ContextualCommand),
+    Nav(NavCommandDef),
 }
 
 impl CommandItem {
@@ -40,6 +53,7 @@ impl CommandItem {
         match self {
             Self::Cli(_) => CommandKind::Cli,
             Self::Contextual(_) => CommandKind::Contextual,
+            Self::Nav(_) => CommandKind::Nav,
         }
     }
 
@@ -47,6 +61,7 @@ impl CommandItem {
         match self {
             Self::Cli(c) => c.id,
             Self::Contextual(c) => c.id,
+            Self::Nav(c) => c.id.as_str(),
         }
     }
 
@@ -54,6 +69,7 @@ impl CommandItem {
         match self {
             Self::Cli(c) => c.name,
             Self::Contextual(c) => c.name,
+            Self::Nav(c) => c.name.as_str(),
         }
     }
 
@@ -61,6 +77,7 @@ impl CommandItem {
         match self {
             Self::Cli(c) => c.description,
             Self::Contextual(c) => c.description,
+            Self::Nav(c) => c.description.as_str(),
         }
     }
 
@@ -68,6 +85,7 @@ impl CommandItem {
         match self {
             Self::Cli(c) => c.icon,
             Self::Contextual(c) => c.icon,
+            Self::Nav(c) => c.icon.as_str(),
         }
     }
 
@@ -75,7 +93,70 @@ impl CommandItem {
         match self {
             Self::Cli(c) => Some(c.args_hint),
             Self::Contextual(c) => c.args_hint,
+            Self::Nav(_) => None,
         }
+    }
+}
+
+/// Flatten the navigation tree into palette entries (groups omitted).
+pub fn nav_palette_commands(registry: &NavRegistry, pages: &PagesDoc) -> Vec<CommandItem> {
+    let mut merged = NavRegistry::new();
+    merged.merge_pages(pages);
+    for item in registry.items() {
+        merged.register(item.clone());
+    }
+
+    let mut roots: Vec<_> = merged.roots().into_iter().cloned().collect();
+    roots.sort_by_key(|item| item.order);
+
+    let mut out = Vec::new();
+    for root in roots {
+        append_nav_palette(&mut out, &merged, &root, Vec::new());
+    }
+    out
+}
+
+fn append_nav_palette(
+    out: &mut Vec<CommandItem>,
+    registry: &NavRegistry,
+    item: &NavItemDescriptor,
+    trail: Vec<String>,
+) {
+    let mut path = trail;
+    path.push(item.label.clone());
+    if !matches!(item.action, NavAction::Group) {
+        let breadcrumb = path.join(" › ");
+        out.push(CommandItem::Nav(NavCommandDef {
+            id: format!("nav.{}", item.id),
+            name: breadcrumb,
+            description: item.label.clone(),
+            icon: item.icon.clone().unwrap_or_else(|| "›".into()),
+            action: item.action.clone(),
+        }));
+    }
+    let mut children: Vec<_> = registry
+        .children_of(&item.id)
+        .into_iter()
+        .cloned()
+        .collect();
+    children.sort_by_key(|child| child.order);
+    for child in children {
+        append_nav_palette(out, registry, &child, path.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shell::layout::pages::{parse_pages, EMBEDDED_HI_PAGES};
+
+    #[test]
+    fn nav_palette_includes_selectable_pages() {
+        let registry = NavRegistry::new();
+        let pages = parse_pages(EMBEDDED_HI_PAGES).expect("pages");
+        let items = nav_palette_commands(&registry, &pages);
+        assert!(items.iter().any(|item| item.name().contains("Graphs")));
+        assert!(!items.iter().any(|item| item.name() == "Beskid"));
     }
 }
 

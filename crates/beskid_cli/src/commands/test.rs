@@ -7,6 +7,7 @@ use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use clap::Args;
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
@@ -15,6 +16,7 @@ use beskid_tools::PipelineProgressKind;
 use beskid_tools::diagnostics;
 use beskid_tools::pipeline::{tui::FileLineLink, tui::TestRowState, tui::TestRunUi};
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
+use beskid_tools::tui::shell::runtime::RuntimeOp;
 
 #[derive(Args, Debug, Clone)]
 pub struct TestArgs {
@@ -89,10 +91,22 @@ pub fn execute(args: TestArgs) -> Result<()> {
     if args.all_targets {
         return super::matrix_test::execute_all_targets(args);
     }
-    execute_single_target(args, None)
+    execute_single_target(args, None, None)
 }
 
-pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut Engine>) -> Result<()> {
+/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
+pub fn execute_for_hi(msg_tx: Sender<RuntimeOp>, args: TestArgs) -> Result<()> {
+    if args.all_targets {
+        anyhow::bail!("`test --all-targets` is not supported from beskid hi yet");
+    }
+    execute_single_target(args, None, Some(msg_tx))
+}
+
+pub(crate) fn execute_single_target(
+    args: TestArgs,
+    shared_engine: Option<&mut Engine>,
+    hi_tx: Option<Sender<RuntimeOp>>,
+) -> Result<()> {
     let resolve_args = ResolveInputArgs {
         input: args.input.as_ref(),
         project: args.project.project.as_ref(),
@@ -101,11 +115,20 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
         frozen: args.lockfile.frozen,
         locked: args.lockfile.locked,
     };
-    let (session, resolved) = CommandSession::open_and_resolve(
-        args.plain,
-        PipelineProgressKind::PrepareAndRun,
-        &resolve_args,
-    )?;
+    let (session, resolved) = match hi_tx {
+        None => CommandSession::open_and_resolve(
+            args.plain,
+            PipelineProgressKind::PrepareAndRun,
+            &resolve_args,
+        )?,
+        Some(tx) => {
+            let session =
+                CommandSession::with_attached_pipeline(tx, PipelineProgressKind::PrepareAndRun);
+            let resolved = session.resolve_input(&resolve_args)?;
+            (session, resolved)
+        }
+    };
+    let hi_attached = session.pipeline().is_hi_attached();
     let prepared = session.executable_gate_prepared(
         &resolved,
         SemanticGateOptions {
@@ -169,9 +192,6 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
 
     if !args.json {
         test_ui.draw_initial()?;
-        if !args.plain {
-            session.pipeline().wait_for_tests_screen()?;
-        }
     }
 
     let mut executions = Vec::new();
@@ -294,8 +314,7 @@ pub(crate) fn execute_single_target(args: TestArgs, shared_engine: Option<&mut E
             summary.skipped,
             summary.filtered_out,
         )?;
-        if !args.plain {
-            session.pipeline().wait_for_summary_screen()?;
+        if !args.plain && !hi_attached {
             session.pipeline().wait_for_dismiss()?;
         }
     }

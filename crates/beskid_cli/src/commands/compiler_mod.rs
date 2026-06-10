@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
+use beskid_analysis::mod_host::extract_mod_contract_registrations;
 use beskid_analysis::projects::{
     ProjectKind, WorkspacePrepareOptions, build_compile_plan,
     discover_project_manifest_from_input_or_cwd, discover_project_manifest_in_dir,
@@ -96,38 +97,36 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
         .map_err(anyhow::Error::from)
     })?;
 
-    if args.clean {
+    let artifact_policy = resolved
+        .manifest
+        .project
+        .mod_section
+        .as_ref()
+        .map(|section| section.resolved_artifact_policy())
+        .unwrap_or("rebuild");
+
+    if args.clean || artifact_policy == "clean_rebuild" {
         remove_mod_cache_dir(&resolved.plan.project_root, &resolved.manifest.project.name)?;
     }
 
-    let source_path = discover_mod_entry_source(&resolved.plan.source_root)?;
-    let source = fs::read_to_string(&source_path)
-        .with_context(|| format!("failed to read mod source {}", source_path.display()))?;
-    let resolved_input = resolved_input_from_plan(
-        source_path.clone(),
-        source.clone(),
-        resolved.plan.clone(),
-        Some(prepared.clone()),
-        None,
-    );
-    let lowered = lower_resolved_input_with_pipeline(&resolved_input, false, pipeline)?;
-    let target = beskid_aot::target::detect_target(args.target_triple.as_deref())?;
-    let descriptor = observe_phase_result(pipeline, AOT_LINK, || {
-        build_mod_artifact(ModArtifactBuildRequest {
-            artifact: lowered.artifact,
-            workspace_root: resolved.plan.project_root.clone(),
-            project_root: resolved.plan.project_root.clone(),
-            manifest_path: resolved.plan.manifest_path.clone(),
-            source_root: resolved.plan.source_root.clone(),
-            lockfile_path: Some(prepared.lockfile_path.clone()),
-            package_id: resolved.manifest.project.name.clone(),
-            package_version: Some(resolved.manifest.project.version.clone()),
-            target_triple: target.triple.clone(),
-            compiler_version: env!("CARGO_PKG_VERSION").to_owned(),
-            registrations: Vec::new(),
-        })
-        .map_err(anyhow::Error::from)
-    })?;
+    if artifact_policy == "reuse"
+        && mod_artifact_descriptor_exists(&resolved.plan.project_root, &resolved.manifest.project.name)
+    {
+        pipeline_ui.finish_session_with_summary(
+            "Mod rebuild complete",
+            Some(CommandSummary::plain(
+                "Mod rebuild",
+                "Reused cached mod artifact",
+            )),
+        );
+        println!(
+            "mod artifact cache hit for {} (artifactPolicy = reuse)",
+            resolved.manifest.project.name
+        );
+        return Ok(());
+    };
+
+    let descriptor = build_mod_artifact_for_resolved(&resolved, &prepared, args.target_triple, pipeline)?;
 
     pipeline_ui.finish_session_with_summary(
         "Mod rebuild complete",
@@ -183,6 +182,53 @@ fn mod_pipeline(plain: bool) -> Arc<CliPipeline> {
     ))
 }
 
+fn build_mod_artifact_for_resolved(
+    resolved: &ResolvedModProject,
+    prepared: &beskid_analysis::projects::PreparedProjectWorkspace,
+    target_triple: Option<String>,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<beskid_aot::ModArtifactDescriptor> {
+    let source_path = discover_mod_entry_source(&resolved.plan.source_root)?;
+    let source = fs::read_to_string(&source_path)
+        .with_context(|| format!("failed to read mod source {}", source_path.display()))?;
+    let resolved_input = resolved_input_from_plan(
+        source_path.clone(),
+        source.clone(),
+        resolved.plan.clone(),
+        Some(prepared.clone()),
+        None,
+    );
+    let lowered = lower_resolved_input_with_pipeline(&resolved_input, false, pipeline)?;
+    let registrations = extract_mod_contract_registrations(
+        &resolved.manifest.project.name,
+        &lowered.resolution,
+    )
+    .into_iter()
+    .map(|registration| beskid_aot::mod_artifact::ContractRegistration {
+        contract_id: registration.contract_id,
+        type_id: registration.type_id,
+        entry_symbol: registration.entry_symbol,
+    })
+    .collect();
+    let target = beskid_aot::target::detect_target(target_triple.as_deref())?;
+    observe_phase_result(pipeline, AOT_LINK, || {
+        build_mod_artifact(ModArtifactBuildRequest {
+            artifact: lowered.artifact,
+            workspace_root: resolved.plan.project_root.clone(),
+            project_root: resolved.plan.project_root.clone(),
+            manifest_path: resolved.plan.manifest_path.clone(),
+            source_root: resolved.plan.source_root.clone(),
+            lockfile_path: Some(prepared.lockfile_path.clone()),
+            package_id: resolved.manifest.project.name.clone(),
+            package_version: Some(resolved.manifest.project.version.clone()),
+            target_triple: target.triple.clone(),
+            compiler_version: env!("CARGO_PKG_VERSION").to_owned(),
+            registrations,
+        })
+        .map_err(anyhow::Error::from)
+    })
+}
+
 fn resolve_mod_project(
     project: Option<&PathBuf>,
     pipeline: Option<&dyn PipelineObserver>,
@@ -193,7 +239,7 @@ fn resolve_mod_project(
     let manifest = load_manifest_from_path(&manifest_path).map_err(anyhow::Error::from)?;
     if manifest.project.kind != ProjectKind::Mod {
         return Err(anyhow!(
-            "`beskid mod` requires a `type = Mod` project, got `{}`",
+            "`beskid mod rebuild` requires a `type = Mod` project, got `{}`",
             manifest.project.name
         ));
     }
@@ -201,24 +247,30 @@ fn resolve_mod_project(
     let plan = observe_phase_result(pipeline, RESOLVE_GRAPH, || {
         build_compile_plan(&manifest_path, None).map_err(anyhow::Error::from)
     })?;
-    if !plan.unresolved_dependencies.is_empty() {
-        let unresolved = plan
-            .unresolved_dependencies
-            .iter()
-            .filter(|dependency| {
-                dependency.source != beskid_analysis::projects::DependencySource::Registry
-            })
-            .map(|dependency| dependency.dependency_name.as_str())
-            .collect::<Vec<_>>();
-        if !unresolved.is_empty() {
-            return Err(anyhow!(
-                "unresolved mod project dependencies: {}",
-                unresolved.join(", ")
-            ));
-        }
-    }
+    ensure_resolved_dependencies(&plan)?;
 
     Ok(ResolvedModProject { manifest, plan })
+}
+
+fn ensure_resolved_dependencies(plan: &beskid_analysis::projects::CompilePlan) -> Result<()> {
+    if plan.unresolved_dependencies.is_empty() {
+        return Ok(());
+    }
+    let unresolved = plan
+        .unresolved_dependencies
+        .iter()
+        .filter(|dependency| {
+            dependency.source != beskid_analysis::projects::DependencySource::Registry
+        })
+        .map(|dependency| dependency.dependency_name.as_str())
+        .collect::<Vec<_>>();
+    if unresolved.is_empty() {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "unresolved mod project dependencies: {}",
+        unresolved.join(", ")
+    ))
 }
 
 fn resolve_manifest_path(project: Option<&PathBuf>) -> Result<PathBuf> {
@@ -263,7 +315,7 @@ fn resolve_explicit_project_path(project: &Path) -> Result<PathBuf> {
 
 fn discover_mod_entry_source(source_root: &Path) -> Result<PathBuf> {
     for candidate in [
-        source_root.join("__mod__.bd"),
+        source_root.join("Mod.bd"),
         source_root.join("mod.bd"),
         source_root.join("Main.bd"),
         source_root.join("main.bd"),
@@ -288,9 +340,24 @@ fn discover_mod_entry_source(source_root: &Path) -> Result<PathBuf> {
     }
 
     Err(anyhow!(
-        "could not infer mod entry source under {} (expected __mod__.bd, mod.bd, Main.bd, main.bd, lib.bd, or exactly one .bd file)",
+        "could not infer mod entry source under {} (expected Mod.bd, mod.bd, Main.bd, main.bd, lib.bd, or exactly one .bd file)",
         source_root.display()
     ))
+}
+
+fn mod_artifact_descriptor_exists(project_root: &Path, package_id: &str) -> bool {
+    let cache_dir = project_root
+        .join(".beskid")
+        .join("obj")
+        .join("mods")
+        .join(package_id);
+    if !cache_dir.is_dir() {
+        return false;
+    }
+    WalkDir::new(&cache_dir)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .any(|entry| entry.file_name() == "mod.descriptor.json")
 }
 
 fn remove_mod_cache_dir(project_root: &Path, package_id: &str) -> Result<bool> {

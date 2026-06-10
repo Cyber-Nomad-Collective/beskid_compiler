@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use beskid_analysis::CompilationContext;
 use beskid_analysis::services::DocumentAnalysisSnapshot;
 use beskid_queries::BeskidDatabase;
+use tokio::sync::Mutex as AsyncMutex;
 use tower_lsp_server::ls_types::Uri;
+
+use super::db_access;
 
 /// One editor buffer or disk snapshot with optional precomputed analysis.
 #[derive(Debug, Clone)]
@@ -18,16 +21,20 @@ pub struct Document {
 
 /// In-memory LSP workspace: open docs, closed-but-indexed files, and compilation context cache.
 pub struct State {
-    /// Canonical `Project.proj` path from init options or `beskid.focusedProjectUri` configuration.
+    /// Canonical `.bproj` path from init options or `beskid.focusedProjectUri` configuration.
     pub focused_project: Option<PathBuf>,
     pub docs: HashMap<Uri, Document>,
     /// Closed files on disk that still receive diagnostics (not managed by the editor buffer).
     pub workspace_index: HashMap<Uri, Document>,
-    /// Key: canonical `Project.proj` path plus `workspace_member_for_meta_default` (from graph
+    /// Key: canonical `.bproj` path plus `workspace_member_for_meta_default` (from graph
     /// build options / env), so `attachTo: default` disambiguation cannot reuse a stale slice.
     pub compilation_context_cache: HashMap<(PathBuf, Option<String>), CompilationContext>,
     /// Salsa incremental database shared by IDE features and diagnostics.
-    pub compilation_db: Mutex<BeskidDatabase>,
+    pub compilation_db: Arc<Mutex<BeskidDatabase>>,
+    /// Canonical project root the Salsa database was configured for (avoids wholesale resets).
+    pub configured_project_root: Option<PathBuf>,
+    /// Serializes all Salsa database operations across concurrent LSP handlers.
+    pub(crate) db_gate: Arc<AsyncMutex<()>>,
     /// Coalesced typed-prepare schedule revision per open URI (debounced rebuild).
     pub typed_prepare_schedule_revision: HashMap<Uri, u64>,
 }
@@ -39,7 +46,9 @@ impl Default for State {
             docs: HashMap::new(),
             workspace_index: HashMap::new(),
             compilation_context_cache: HashMap::new(),
-            compilation_db: Mutex::new(BeskidDatabase::default()),
+            compilation_db: Arc::new(Mutex::new(BeskidDatabase::default())),
+            configured_project_root: None,
+            db_gate: db_access::new_db_gate(),
             typed_prepare_schedule_revision: HashMap::new(),
         }
     }
@@ -53,11 +62,21 @@ impl State {
             .or_else(|| self.workspace_index.get(uri).cloned())
     }
 
-    pub fn configure_db_for_project(&self, project_root: &std::path::Path) {
+    pub fn configure_db_for_project(&mut self, project_root: &std::path::Path) {
         let canonical = project_root
             .canonicalize()
             .unwrap_or_else(|_| project_root.to_path_buf());
+        if self.configured_project_root.as_ref() == Some(&canonical) {
+            return;
+        }
         let mut db = self.compilation_db.lock().expect("compilation db lock");
         *db = BeskidDatabase::with_persistence(&canonical);
+        self.configured_project_root = Some(canonical);
+    }
+
+    pub fn reset_compilation_db(&mut self) {
+        let mut db = self.compilation_db.lock().expect("compilation db lock");
+        *db = BeskidDatabase::default();
+        self.configured_project_root = None;
     }
 }

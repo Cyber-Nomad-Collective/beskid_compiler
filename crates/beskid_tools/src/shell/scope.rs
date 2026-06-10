@@ -31,11 +31,36 @@ impl ShellScope {
         Self::User
     }
 
+    /// Re-resolve when CLI params name an explicit project/workspace path.
+    pub fn resolve_for_cli(scope: &Self, params: &str) -> Self {
+        let trimmed = params.trim();
+        if !trimmed.is_empty() {
+            let first = trimmed.split_whitespace().next().unwrap_or(trimmed);
+            let path = Path::new(first);
+            if path.exists() {
+                return Self::resolve(path);
+            }
+        }
+        scope.clone()
+    }
+
     pub fn label(&self) -> String {
         match self {
             Self::User => "user".into(),
             Self::Project { manifest, .. } => format!("project:{}", manifest.display()),
             Self::Workspace { manifest, .. } => format!("workspace:{}", manifest.display()),
+        }
+    }
+
+    /// Short scope label for the pinned top bar.
+    pub fn chrome_title(&self) -> String {
+        match self {
+            Self::User => "user".into(),
+            Self::Project { manifest, .. } | Self::Workspace { manifest, .. } => manifest
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("project")
+                .to_string(),
         }
     }
 
@@ -54,6 +79,15 @@ impl ShellScope {
             }
         }
     }
+
+    pub fn pages_config_path(&self) -> PathBuf {
+        match self {
+            Self::User => user_pages_path(),
+            Self::Project { root, .. } | Self::Workspace { root, .. } => {
+                root.join(".beskid").join("pages.bsol")
+            }
+        }
+    }
 }
 
 pub fn user_board_path() -> PathBuf {
@@ -63,6 +97,15 @@ pub fn user_board_path() -> PathBuf {
         .join("data")
         .join("boards")
         .join("default.board.bsol")
+}
+
+pub fn user_pages_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".beskid")
+        .join("data")
+        .join("pages")
+        .join("default.pages.bsol")
 }
 
 pub fn user_data_dir() -> PathBuf {

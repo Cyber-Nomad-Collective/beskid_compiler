@@ -270,5 +270,6 @@ fn scan_expression_residuals(
                 scan_expression_residuals(source_name, source, elem, out);
             }
         }
+        Expression::CodeString(_) => {}
     }
 }

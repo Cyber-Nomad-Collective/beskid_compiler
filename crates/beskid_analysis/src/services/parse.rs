@@ -49,3 +49,21 @@ pub fn parse_program_with_source_name(source_name: &str, source: &str) -> Result
         anyhow::Error::new(MietteReportError::new(diagnostic))
     })
 }
+
+/// Parse a single expression subtree (used by `code` literal `@{}` holes).
+pub fn parse_expression_source(
+    source_name: &str,
+    source: &str,
+) -> Result<Spanned<crate::syntax::Expression>> {
+    let mut pairs = BeskidParser::parse(Rule::Expression, source.trim()).map_err(|err| {
+        let diagnostic = pest_error_diagnostic(source_name, source, &err);
+        anyhow::Error::new(MietteReportError::new(diagnostic))
+    })?;
+    let pair = pairs.next().ok_or_else(|| {
+        anyhow::anyhow!("no expression found in `{source_name}`")
+    })?;
+    crate::syntax::expressions::expression::parse_expression(pair).map_err(|err| {
+        let diagnostic = parse_error_diagnostic(source_name, source, &err);
+        anyhow::Error::new(MietteReportError::new(diagnostic))
+    })
+}

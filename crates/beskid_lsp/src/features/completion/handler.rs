@@ -4,7 +4,7 @@ use crate::adapters::completion::analysis_completion_kind_to_lsp;
 use crate::features::project_manifest::api as project_manifest;
 use crate::session::store::Document;
 
-/// Completion items at `offset`, including manifest-aware suggestions for `.proj` buffers.
+/// Completion items at `offset`, including manifest-aware suggestions for `.bproj`/`.bws` buffers.
 pub fn handle_completion(uri: &Uri, doc: &Document, offset: usize) -> CompletionResponse {
     let prefix = project_manifest::completion_prefix_at_offset(&doc.text, offset).to_lowercase();
 

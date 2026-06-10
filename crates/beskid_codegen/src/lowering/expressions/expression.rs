@@ -51,6 +51,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionNode {
             }),
             HirExpressionNode::IndexExpression(inner) => lower_node(inner, ctx),
             HirExpressionNode::ArrayLiteralExpression(inner) => lower_node(inner, ctx),
+            HirExpressionNode::CodeStringExpression(_) => Err(CodegenError::UnsupportedNode {
+                span: node.span,
+                node: "code string expression",
+            }),
         }
     }
 }

@@ -1,8 +1,4 @@
-//! Command palette: filter, param entry, CLI subprocess and contextual dispatch.
-
-use std::io::{self, Write};
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
+//! Command palette: filter, param entry, and contextual dispatch.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::Frame;
@@ -13,7 +9,6 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
 use ratatui::layout::{Constraint, Layout};
 
 use super::catalog::{CommandItem, CommandKind};
-use super::scope::ShellScope;
 use super::widget::ShellAction;
 use crate::tui::overlay_chrome::draw_backdrop;
 
@@ -157,13 +152,20 @@ impl CommandPaletteState {
     }
 
     fn select_item(&mut self, item: CommandItem) -> PaletteAction {
-        if item.args_hint().is_some_and(|h| !h.is_empty()) {
-            self.pending = Some(item);
-            self.mode = PaletteMode::Params;
-            self.filter.clear();
-            PaletteAction::Redraw
-        } else {
-            PaletteAction::Execute(item, String::new())
+        match &item {
+            CommandItem::Cli(cli) if !cli.args_hint.is_empty() => {
+                self.pending = Some(item);
+                self.mode = PaletteMode::Params;
+                self.filter.clear();
+                PaletteAction::Redraw
+            }
+            _ if item.args_hint().is_some_and(|h| !h.is_empty()) => {
+                self.pending = Some(item);
+                self.mode = PaletteMode::Params;
+                self.filter.clear();
+                PaletteAction::Redraw
+            }
+            _ => PaletteAction::Execute(item, String::new()),
         }
     }
 
@@ -208,6 +210,7 @@ impl CommandPaletteState {
                 let kind = match item.kind() {
                     CommandKind::Cli => "cli",
                     CommandKind::Contextual => "ctx",
+                    CommandKind::Nav => "nav",
                 };
                 let style = if index == self.selected {
                     Style::default().bg(Color::DarkGray).fg(Color::Cyan)
@@ -247,38 +250,6 @@ pub enum PaletteAction {
     Redraw,
     Close,
     Execute(CommandItem, String),
-}
-
-pub fn execute_cli_command(
-    exe: &PathBuf,
-    item: &CommandItem,
-    params: &str,
-    scope: &ShellScope,
-) -> io::Result<()> {
-    let CommandItem::Cli(cli) = item else {
-        return Ok(());
-    };
-    let mut args: Vec<String> = cli.argv_prefix.iter().map(|s| (*s).to_string()).collect();
-    if !params.trim().is_empty() {
-        args.extend(params.split_whitespace().map(str::to_string));
-    } else if let Some(root) = scope.root_dir() {
-        args.push(root.display().to_string());
-    }
-    let status = Command::new(exe)
-        .args(&args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()?;
-    if !status.success() {
-        writeln!(
-            io::stderr(),
-            "command `{}` exited with {}",
-            cli.name,
-            status.code().unwrap_or(-1)
-        )?;
-    }
-    Ok(())
 }
 
 pub fn contextual_to_shell_action(item: &CommandItem) -> ShellAction {

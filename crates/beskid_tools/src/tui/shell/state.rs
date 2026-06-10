@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
-use ratkit::widgets::{TreeNavigator, TreeNode, TreeViewState};
+use crate::shell::primitives::{TreeNavigator, TreeNode, TreeViewState};
 
 use crate::pipeline::tui::log_tabs::{LogTab, LogTabStates};
 use crate::pipeline::tui::{
@@ -36,6 +36,10 @@ pub struct LayoutRects {
     pub summary_overlay: Option<Rect>,
     pub pckg_overlay: Option<Rect>,
     pub templates_overlay: Option<Rect>,
+    pub compile_debug_overlay: Option<Rect>,
+    pub graph_overlay: Option<Rect>,
+    pub settings_overlay: Option<Rect>,
+    pub analysis_overlay: Option<Rect>,
 }
 
 /// Cross-thread navigation wait targets.
@@ -65,7 +69,7 @@ pub struct ShellState {
     pub tests_loaded: bool,
     pub summary_ready: bool,
     pub awaiting_nav: Option<NavTarget>,
-    pub overlay_visible: [bool; 4],
+    pub overlay_visible: [bool; 8],
     pub test_rows: Vec<TestRow>,
     pub test_title: Option<String>,
     pub test_list_state: ListState,
@@ -101,7 +105,7 @@ impl Default for ShellState {
             tests_loaded: false,
             summary_ready: false,
             awaiting_nav: None,
-            overlay_visible: [false; 4],
+            overlay_visible: [false; 8],
             test_rows: Vec::new(),
             test_title: None,
             test_list_state: ListState::default(),
@@ -123,6 +127,31 @@ impl Default for ShellState {
 }
 
 impl ShellState {
+    /// True while a pipeline run is actively reporting progress (hi shell idle guard).
+    pub fn pipeline_active(&self) -> bool {
+        !self.tree_nodes.is_empty()
+            || !self.pipeline.stage_label.is_empty()
+            || (self.pipeline.total_len > 1 && self.pipeline.total_pos < self.pipeline.total_len)
+    }
+
+    /// Clear compile/test UI state before an in-process build or test from `beskid hi`.
+    pub fn reset_compile_progress(&mut self) {
+        use crate::logging::clear_tui_log_buffer;
+        use crate::pipeline::tui::{PipelineProgress, PipelineTree};
+
+        self.compile_complete = false;
+        self.tests_loaded = false;
+        self.summary_ready = false;
+        self.pipeline = PipelineProgress::default();
+        self.tree = PipelineTree::default();
+        self.tree_nodes.clear();
+        self.tree_state = TreeViewState::new();
+        self.expanded_tree_paths.clear();
+        self.last_work_unit = None;
+        self.log_states.reset();
+        clear_tui_log_buffer();
+    }
+
     pub fn failed_test_indices(&self) -> Vec<usize> {
         self.test_rows
             .iter()
@@ -246,6 +275,10 @@ impl ShellState {
         self.overlay_visible[overlay_index(kind)]
     }
 
+    pub fn any_overlay_visible(&self) -> bool {
+        OverlayKind::ALL.iter().any(|kind| self.overlay_visible(*kind))
+    }
+
     pub fn set_overlay_visible(&mut self, kind: OverlayKind, visible: bool) {
         self.overlay_visible[overlay_index(kind)] = visible;
     }
@@ -338,6 +371,10 @@ fn overlay_index(kind: OverlayKind) -> usize {
         OverlayKind::Summary => 1,
         OverlayKind::Pckg => 2,
         OverlayKind::Templates => 3,
+        OverlayKind::CompileDebug => 4,
+        OverlayKind::Graph => 5,
+        OverlayKind::Settings => 6,
+        OverlayKind::Analysis => 7,
     }
 }
 

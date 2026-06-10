@@ -94,18 +94,58 @@ pub struct ProjectSchemasSection {
     pub exports: Vec<SchemaExport>,
 }
 
+/// Disk materialization entry from `project.mod.generatedOutput { ... }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModGeneratedOutput {
+    pub layout: String,
+    pub root: String,
+}
+
+impl ModGeneratedOutput {
+    pub fn resolved_root(&self) -> &str {
+        if self.root.is_empty() {
+            "Generated"
+        } else {
+            &self.root
+        }
+    }
+}
+
+/// One `grammarOutput { ... }` entry under `project.grammar`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrammarOutputEntry {
+    pub pest: String,
+    pub module: String,
+    pub package_id: String,
+}
+
+/// Nested `project.grammar { ... }` block declaring Pest roots and emit targets.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectGrammarSection {
+    pub roots: Vec<String>,
+    pub grammar_outputs: Vec<GrammarOutputEntry>,
+}
+
 /// Nested `project.mod { ... }` block for [`ProjectKind::Mod`] manifests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectModSection {
     pub max_generator_rounds: Option<u32>,
     pub capabilities: Option<Vec<String>>,
     pub artifact_policy: Option<String>,
+    pub generated_outputs: Option<Vec<ModGeneratedOutput>>,
 }
 
 impl ProjectModSection {
     /// Normative default when `maxGeneratorRounds` is omitted (project manifest contract).
     pub fn resolved_max_generator_rounds(&self) -> u32 {
         self.max_generator_rounds.unwrap_or(4)
+    }
+
+    /// Normative default when `artifactPolicy` is omitted (project manifest contract).
+    pub fn resolved_artifact_policy(&self) -> &str {
+        self.artifact_policy.as_deref().unwrap_or("rebuild")
     }
 }
 
@@ -119,6 +159,7 @@ pub struct ProjectSection {
     pub root_namespace: Option<String>,
     pub kind: ProjectKind,
     pub mod_section: Option<ProjectModSection>,
+    pub grammar_section: Option<ProjectGrammarSection>,
     pub template_section: Option<ProjectTemplateSection>,
     pub schemas_section: Option<ProjectSchemasSection>,
     pub readme: Option<String>,

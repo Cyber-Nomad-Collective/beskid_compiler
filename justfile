@@ -3,7 +3,7 @@
 #   just corelib    Run corelib_tests via release beskid_cli
 #   just compiler   Run cargo test for the workspace
 #   just tests      Run compiler and corelib tests
-#   just replace    Build release CLI and overwrite installed `beskid`
+#   just replace    Build release CLI + LSP and overwrite installed `beskid` / `beskid_lsp`
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
@@ -28,17 +28,24 @@ compiler:
 # Run compiler and corelib tests.
 tests: compiler corelib
 
-# Build release beskid_cli and replace the installed `beskid` binary.
+# Build release beskid_cli + beskid_lsp and replace installed toolchain binaries.
 replace:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
-    cargo build -p beskid_cli --release
-    built="{{root}}/target/release/beskid_cli"
-    dest="$(command -v beskid 2>/dev/null || true)"
-    if [[ -z "${dest}" ]]; then
-      dest="${HOME}/.beskid/bin/beskid"
+    cargo build -p beskid_cli -p beskid_lsp --release
+    cli_built="{{root}}/target/release/beskid_cli"
+    lsp_built="{{root}}/target/release/beskid_lsp"
+    cli_dest="$(command -v beskid 2>/dev/null || true)"
+    if [[ -z "${cli_dest}" ]]; then
+      cli_dest="${HOME}/.beskid/bin/beskid"
     fi
-    mkdir -p "$(dirname "${dest}")"
-    install -m 0755 "${built}" "${dest}"
-    echo "Replaced ${dest}"
+    lsp_dest="$(command -v beskid_lsp 2>/dev/null || true)"
+    if [[ -z "${lsp_dest}" ]]; then
+      lsp_dest="${HOME}/.beskid/bin/beskid_lsp"
+    fi
+    mkdir -p "$(dirname "${cli_dest}")" "$(dirname "${lsp_dest}")"
+    install -m 0755 "${cli_built}" "${cli_dest}"
+    install -m 0755 "${lsp_built}" "${lsp_dest}"
+    echo "Replaced ${cli_dest}"
+    echo "Replaced ${lsp_dest}"

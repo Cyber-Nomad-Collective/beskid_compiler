@@ -118,6 +118,8 @@ pub fn apply_pipeline_message(msg: &ShellMessage, state: &mut ShellState) {
             state.test_title = Some(title.clone());
             state.test_rows.clone_from(rows);
             state.tests_loaded = true;
+            state.set_overlay_visible(crate::tui::shell::focus::OverlayKind::Tests, true);
+            state.focus_overlay(crate::tui::shell::focus::OverlayKind::Tests);
             state.sync_code_viewer_for_selection();
         }
         ShellMessage::UpdateTestRows(rows) => {
@@ -131,6 +133,9 @@ pub fn apply_pipeline_message(msg: &ShellMessage, state: &mut ShellState) {
             state.test_title = Some(title.clone());
             state.command_summary = summary.into_command_summary(title.clone());
             state.summary_ready = true;
+            state.set_overlay_visible(crate::tui::shell::focus::OverlayKind::Summary, true);
+            state.focus_overlay(crate::tui::shell::focus::OverlayKind::Summary);
+            state.sync_summary_explorer();
         }
         ShellMessage::StageSummary(summary) => {
             state.command_summary = summary.clone();

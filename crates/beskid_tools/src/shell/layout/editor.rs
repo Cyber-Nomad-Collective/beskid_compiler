@@ -5,10 +5,55 @@ use std::time::{Duration, Instant};
 use panes::runtime::LayoutRuntime;
 use super::model::{BoardNode, BoardV2Doc, NodeKind};
 use super::load::save_for_scope;
+use super::pages::PagesDoc;
+use crate::shell::descriptor::is_layout_locked_widget;
 use crate::shell::registry::WidgetRegistry;
 use crate::shell::scope::ShellScope;
 
+fn focused_kind_locked(runtime: &LayoutRuntime) -> bool {
+    runtime
+        .focused_kind_arc()
+        .is_some_and(|k| is_layout_locked_widget(k.as_ref()))
+}
+
 const AUTOSAVE_DEBOUNCE: Duration = Duration::from_millis(500);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LayoutOverlayTab {
+    #[default]
+    Templates,
+    Widgets,
+    Layouts,
+    Structure,
+}
+
+impl LayoutOverlayTab {
+    pub const ALL: [Self; 4] = [
+        Self::Templates,
+        Self::Widgets,
+        Self::Layouts,
+        Self::Structure,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Templates => "Templates",
+            Self::Widgets => "Widgets",
+            Self::Layouts => "Layouts",
+            Self::Structure => "Structure",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        let idx = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
+        Self::ALL[(idx + 1) % Self::ALL.len()]
+    }
+
+    pub fn prev(self) -> Self {
+        let idx = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
+        Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LayoutEditCommand {
@@ -33,6 +78,9 @@ pub struct LayoutEditorState {
     pub dirty: bool,
     pub last_edit: Option<Instant>,
     pub pending_widget: Option<String>,
+    pub overlay_tab: LayoutOverlayTab,
+    /// Right-side widget/template drawer visible (toggle with `w` in edit mode).
+    pub drawer_visible: bool,
 }
 
 impl Default for LayoutEditorState {
@@ -42,6 +90,8 @@ impl Default for LayoutEditorState {
             dirty: false,
             last_edit: None,
             pending_widget: None,
+            overlay_tab: LayoutOverlayTab::default(),
+            drawer_visible: false,
         }
     }
 }
@@ -49,14 +99,19 @@ impl Default for LayoutEditorState {
 pub struct HiLayoutState {
     pub doc: BoardV2Doc,
     pub runtime: LayoutRuntime,
+    pub pages: PagesDoc,
+    pub active_page_id: String,
     pub editor: LayoutEditorState,
 }
 
 impl HiLayoutState {
-    pub fn new(doc: BoardV2Doc, runtime: LayoutRuntime) -> Self {
+    pub fn new(doc: BoardV2Doc, runtime: LayoutRuntime, pages: PagesDoc) -> Self {
+        let active_page_id = pages.default_page.clone();
         Self {
             doc,
             runtime,
+            pages,
+            active_page_id,
             editor: LayoutEditorState::default(),
         }
     }
@@ -99,22 +154,40 @@ impl HiLayoutState {
         match cmd {
             LayoutEditCommand::ToggleEdit => {
                 self.editor.active = !self.editor.active;
+                if self.editor.active {
+                    self.editor.drawer_visible = false;
+                    self.editor.overlay_tab = LayoutOverlayTab::Widgets;
+                } else {
+                    self.editor.drawer_visible = false;
+                }
                 self.runtime
                     .set_collect_boundaries(self.editor.active);
             }
             LayoutEditCommand::FocusNext => {
                 self.runtime.focus_next();
+                if focused_kind_locked(&self.runtime) {
+                    self.runtime.focus_next();
+                }
             }
             LayoutEditCommand::FocusPrev => {
                 self.runtime.focus_prev();
+                if focused_kind_locked(&self.runtime) {
+                    self.runtime.focus_prev();
+                }
             }
             LayoutEditCommand::ResizePlus => {
+                if focused_kind_locked(&self.runtime) {
+                    return Ok(());
+                }
                 if let Some(pid) = self.runtime.focused() {
                     self.runtime.resize_boundary(pid, 0.02).ok();
                     self.mark_dirty();
                 }
             }
             LayoutEditCommand::ResizeMinus => {
+                if focused_kind_locked(&self.runtime) {
+                    return Ok(());
+                }
                 if let Some(pid) = self.runtime.focused() {
                     self.runtime.resize_boundary(pid, -0.02).ok();
                     self.mark_dirty();
@@ -139,6 +212,9 @@ impl HiLayoutState {
                 self.mark_dirty();
             }
             LayoutEditCommand::RemovePanel => {
+                if focused_kind_locked(&self.runtime) {
+                    return Ok(());
+                }
                 if let Some(kind) = self.runtime.focused_kind_arc() {
                     let id = self
                         .doc
@@ -198,8 +274,11 @@ impl HiLayoutState {
             }
             LayoutEditCommand::Reset => {
                 let (doc, runtime) = super::load::embedded_default()?;
+                let pages = super::pages::embedded_default()?;
                 self.doc = doc;
                 self.runtime = runtime;
+                self.pages = pages;
+                self.active_page_id = self.pages.default_page.clone();
                 save_for_scope(scope, &self.doc)?;
                 self.editor.dirty = false;
             }

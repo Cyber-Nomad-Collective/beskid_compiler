@@ -15,87 +15,56 @@ The stable surface for dashboard widgets and shell chrome is **`beskid_tools::sh
 | `ShellScope` | `User`, `Project`, or `Workspace` — resolved from cwd or an explicit path |
 | `BeskidWidget` | Pluggable tile: metadata, hotkeys, input, render |
 | `WidgetRegistry` | Register built-in and extension widgets by string id |
+| `NavRegistry` / `NavRegistrar` | Hierarchical hamburger menu entries |
+| `ToolSettingsRegistry` / `ToolSettingsRegistrar` | Per-tool settings pages + BSOL persistence |
 | `ShellHost` | Ratkit runner for `beskid hi` |
-| `ShellChrome` | Permanent header/footer (palette shortcut always visible) |
-| `WidgetContext` | Scope, layout doc, shared `ShellState`, palette handle |
-| `HiLayoutState` | Panes `LayoutRuntime` + `board.v2` doc, editor, autosave |
+| `ShellChrome` | Footer hotkeys (shortcuts live here only) + header with menu affordance |
+| `PagesDoc` | `shell.pages.v1` — linked dashboards / page roots in one board file |
+| `HiLayoutState` | Panes runtime + board.v2 + pages + layout editor |
 | `CommandItem` | Palette entry: CLI subprocess or contextual in-shell action |
 
-### Widget contract
+### Extension registrars
 
 ```rust
-pub trait BeskidWidget: Send {
-    fn meta(&self) -> WidgetMeta;
-    fn hotkeys(&self, ctx: &WidgetContext<'_>) -> Vec<Hotkey>;
-    fn contextual_commands(&self, ctx: &WidgetContext<'_>) -> Vec<ContextualCommand> { ... }
-    fn on_input(&mut self, event: &ShellInput, ctx: &mut WidgetContext<'_>) -> ShellAction;
-    fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>);
-}
+ShellHost::run_hi_blocking(
+    scope,
+    plain,
+    &[my_crate::register_widgets],
+    &[my_crate::register_nav],
+    &[my_crate::register_settings],
+)?;
 ```
-
-Register widgets before launching the host:
-
-```rust
-pub type WidgetRegistrar = fn(&mut WidgetRegistry);
-
-fn register(registry: &mut WidgetRegistry) {
-    registry.register(Box::new(MyWidget));
-}
-
-ShellHost::run_hi_blocking(scope, plain, &[register])?;
-```
-
-`beskid hi` links `beskid_hi` at compile time and passes its registrar; dynamic `.so` loading is out of scope for v1.
 
 ### Board layout (`board.v2` BSOL)
 
-Layouts are flex trees lowered to [panes](https://docs.rs/panes/) and resolved with [panes-ratatui](https://docs.rs/panes-ratatui/). The footer chrome row stays outside the panes tree.
+Layouts are flex trees lowered to [panes](https://docs.rs/panes/) and resolved with [panes-ratatui](https://docs.rs/panes-ratatui/). Footer chrome stays **outside** the panes tree.
 
-| Scope | Path | Fallback |
-|-------|------|----------|
-| Workspace | `<ws>/.beskid/board.bsol` | embedded v2 default |
-| Project | `<proj>/.beskid/board.bsol` | embedded v2 default |
-| User | `~/.beskid/data/boards/default.board.bsol` | embedded `hi-default.board.v2.bsol` |
+| Scope | Board path | Pages path |
+|-------|------------|------------|
+| Workspace | `<ws>/.beskid/board.bsol` | `<ws>/.beskid/pages.bsol` |
+| Project | `<proj>/.beskid/board.bsol` | `<proj>/.beskid/pages.bsol` |
+| User | `~/.beskid/data/boards/default.board.bsol` | `~/.beskid/data/pages/default.pages.bsol` |
 
-On load, `board.v2` is parsed directly. Legacy `board.v1` files are imported once to a v2 tree. Saves always emit `board.v2`.
+Multi-page boards embed several root subtrees (`root`, `graphs_root`, …). `shell.pages.v1` maps page ids to `board_root` node ids.
 
-Example node kinds: `col`, `row`, `split`, `tabs`, `stack`, `panel` (leaf with `widget = "hi.welcome"`).
+### Navigation (`m` / `☰`)
+
+Hamburger menu merges built-in nav (`beskid > compiler > …`) with scope `pages.bsol` nav items and extension `NavRegistrar` entries. Selecting a page switches `doc.root` and rebuilds the panes runtime.
+
+Built-in pages: Home, Graphs, Compile/Debug, Analysis, Settings, Packages, New project, Debugger (reserved).
 
 ### Layout editor
 
-Palette command `Layout: Edit` toggles edit mode. While active:
+`Layout: Edit` opens a **non-blocking** right drawer (Templates / Widgets / Layouts / Structure tabs) while the dashboard stays interactive. Global keys (`Ctrl+P`, `q`, `m`, `+`/`-`, `Esc`) still work.
 
-- `+` / `-` resize the focused panel boundary
-- `Esc` exits (prompts if dirty)
-- Palette sub-commands: focus next/prev, add/remove panel, wrap column/row, convert to tabs/stack, set widget, save, reset
+Templates: holy-grail, sidebar-main, single-focus, dashboard-grid. Widget list uses `WidgetRegistry::descriptors()`.
 
-Edits auto-save to the scope path after ~500ms debounce. `Layout: Save` and `Layout: Reset` are explicit palette actions.
+### Tool settings
 
-### Scope picker
-
-`Open workspace` / `Open project` open a ratatui-explorer overlay filtered to `.bws` / `.bproj`. On confirm, scope reloads and the layout hot-swaps from the new scope's `board.bsol`.
-
-Workspace wins over project when both are discovered walking parents from cwd.
+`tools.config.v1` BSOL at `~/.beskid/config/tools.bsol` with optional `<root>/.beskid/tools.bsol` overrides. Built-in pages: shell, pckg, templates. Rendered by `shell.settings` widget.
 
 ### Command palette
 
-- **CLI commands** — run `beskid <subcommand>` in a subprocess (suspend/resume terminal).
-- **Contextual commands** — open overlays, focus widgets, or in-shell actions registered per scope.
+Global shortcuts are shown only in the **footer chrome**: `Ctrl+P` / `:`, `?`, `q`, `m` (menu). No separate shortcuts panel in the default board.
 
-Global shortcuts (footer chrome): `Ctrl+P` / `:`, `?` (help), `q` (quit). The same palette is available from the compile pipeline TUI footer.
-
-### Built-in widget ids
-
-| Id | Purpose |
-|----|---------|
-| `pipeline.compile` | Compile dashboard (build/analyze/test pipeline) |
-| `tests.runner` | Test overlay |
-| `pckg.browser` | Package registry browser |
-| `analysis.diagnostics` | Analyze / diagnostics |
-| `shell.scope` | Scope summary header |
-| `hi.welcome` | Hi dashboard welcome tile |
-| `shell.shortcuts` | Shortcut reference |
-| `shell.log` | Log panel |
-| `shell.chrome` | Footer status |
-
-Extension crates export `WIDGET_CATALOG` + `register_widgets`; see `beskid_hi` for `hi.hello` and a copyable `board.fragment.bsol` (v2 node snippet).
+See `beskid_hi` for extension widgets, nav catalog, and a copyable `board.fragment.bsol`.

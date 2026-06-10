@@ -1,8 +1,9 @@
 use anyhow::Result;
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::MOD_ANALYZE};
 
+use super::context::ModInvocationContext;
 use super::invoker::{AnalyzerOutcome, ContractInvocationError, ContractInvoker};
-use super::types::{AnalyzedContracts, ModHostSession};
+use super::types::{AnalyzedContracts, ModHostInput, ModHostSession};
 use crate::services::SemanticSnapshot;
 
 /// Run every Analyzer contract registered by `mod.load`. Diagnostics produced by each
@@ -10,12 +11,16 @@ use crate::services::SemanticSnapshot;
 /// merge them with host semantic diagnostics; fix targets feed `mod.rewrite`.
 pub(crate) fn run_analyzers(
     session: &ModHostSession,
+    input: Option<&ModHostInput<'_>>,
     invoker: &dyn ContractInvoker,
     snapshot: Option<&SemanticSnapshot>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<AnalyzedContracts> {
     observe_phase_result(pipeline, MOD_ANALYZE, || {
         let mut outcomes: Vec<AnalyzerOutcome> = Vec::new();
+        let context = input
+            .map(|host_input| ModInvocationContext::build(host_input, &[]))
+            .unwrap_or_else(ModInvocationContext::empty);
 
         for registration in session.registrations() {
             if !registration.contract_id.ends_with(".Analyzer") {
@@ -23,7 +28,7 @@ pub(crate) fn run_analyzers(
             }
             ensure_snapshot_for_analyzer(snapshot, registration)?;
             let outcome = invoker
-                .invoke_analyzer(registration, snapshot)
+                .invoke_analyzer(registration, &context.collect_request, snapshot)
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?;
             outcomes.push(outcome);
         }

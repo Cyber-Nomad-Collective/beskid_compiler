@@ -19,6 +19,7 @@ use crate::features::{
 use crate::logging::{ClientLogFilter, client_log};
 use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot_request};
 use crate::server::init::initialize_result;
+use crate::session::db_access::with_compilation_db;
 use crate::session::lifecycle::{
     publish_diagnostics_for_uri, remove_document, schedule_typed_prepare_rebuild, set_document,
 };
@@ -390,16 +391,15 @@ impl LanguageServer for Backend {
         {
             return Ok(Some(result));
         }
-        let explorer_result = {
-            let state = self.state.read().await;
-            let mut db = state.compilation_db.lock().expect("compilation db");
+        let explorer_result = with_compilation_db(&self.state, |db| {
             handle_project_explorer_command(
                 &params.command,
                 Some(params.arguments),
                 &roots,
-                Some(&mut *db),
-            )?
-        };
+                Some(db),
+            )
+        })
+        .await?;
         Ok(explorer_result)
     }
 

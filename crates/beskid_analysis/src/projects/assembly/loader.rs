@@ -191,9 +191,14 @@ pub fn assemble_program_with_materializer(
             }
 
             let mut paths: Vec<PathBuf> = Vec::new();
-            for root in &module_roots {
-                collect_bd_files(root, &mut paths);
+        for root in &module_roots {
+            collect_bd_files(root, &mut paths);
+            if let Some(generated_root) = root.parent().map(|parent| parent.join(".generated")) {
+                if generated_root.is_dir() {
+                    collect_bd_files(&generated_root, &mut paths);
+                }
             }
+        }
             paths.sort();
             for path in paths {
                 if discovered.len() >= options.max_units {
@@ -441,7 +446,7 @@ pub(crate) fn import_paths_from_source_full(source: &str) -> Vec<String> {
     paths
 }
 
-/// Module path prefixes from qualified references (`Core.Results.Result`, `System.Syscall.WriteWith`).
+/// Module path prefixes from qualified references (`Core.Results.Result`, `Core.Syscall.WriteWith`).
 pub(crate) fn module_paths_from_qualified_references(source: &str) -> Vec<String> {
     use std::collections::HashSet;
     let mut paths = HashSet::new();
@@ -520,9 +525,9 @@ fn parse_use_import_path(trimmed: &str) -> Option<String> {
     (!import_path.is_empty()).then(|| import_path.to_string())
 }
 
-/// When a unit imports nested symbols (`System.Syscall.ReadRequest`), also pull in the
-/// parent module facade (`System/Syscall.bd`) that hosts sibling functions referenced via
-/// qualified paths (`System.Syscall.ReadWith`) without an explicit `use`.
+/// When a unit imports nested symbols (`Core.Syscall.ReadRequest`), also pull in the
+/// parent module facade (`Core/Syscall/Syscall.bd`) that hosts sibling functions referenced via
+/// qualified paths (`Core.Syscall.ReadWith`) without an explicit `use`.
 pub(crate) fn parent_module_import_path(import_path: &str) -> Option<String> {
     let segments: Vec<&str> = import_path.split('.').filter(|segment| !segment.is_empty()).collect();
     if segments.len() <= 2 {
@@ -609,12 +614,11 @@ mod tests {
 
     #[test]
     fn qualified_reference_scan_finds_module_prefixes() {
-        let source = "Core.Results.Result<i64, SyscallError> Write() { System.Syscall.WriteWith(x); }";
+        let source = "Core.Results.Result<i64, SyscallError> Write() { Core.Syscall.WriteWith(x); }";
         let paths = super::module_paths_from_qualified_references(source);
         assert!(paths.contains(&"Core.Results".to_string()));
         assert!(paths.contains(&"Core".to_string()));
-        assert!(paths.contains(&"System.Syscall".to_string()));
-        assert!(paths.contains(&"System".to_string()));
+        assert!(paths.contains(&"Core.Syscall".to_string()));
     }
 
     #[test]

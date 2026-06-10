@@ -552,15 +552,7 @@ fn literal_string(expression: &Spanned<Expression>) -> Option<String> {
     let Expression::Literal(literal) = &expression.node else {
         return None;
     };
-    let Literal::String(raw) = &literal.node.literal.node else {
-        return None;
-    };
-    Some(
-        raw.strip_prefix('"')
-            .and_then(|trimmed| trimmed.strip_suffix('"'))
-            .unwrap_or(raw)
-            .to_string(),
-    )
+    crate::syntax::expressions::try_decode_string_literal(&literal.node.literal.node)
 }
 
 fn literal_tags(expression: &Spanned<Expression>) -> Vec<String> {

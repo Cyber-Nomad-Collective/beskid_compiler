@@ -1,10 +1,11 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
     ArrayLiteralExpression, AssignExpression, AssignOp, BinaryExpression, BinaryOp,
-    BlockExpression, CallExpression, EnumConstructorExpression, EnumPattern, Expression,
-    GroupedExpression, IndexExpression, LambdaExpression, LambdaParameter, Literal,
-    LiteralExpression, MatchArm, MatchExpression, MemberExpression, PathExpression, Pattern,
-    Spanned, StructLiteralExpression, StructLiteralField, TryExpression, UnaryExpression, UnaryOp,
+    BlockExpression, CallExpression, CodeStringLiteral, CodeStringSegment, EnumConstructorExpression,
+    EnumPattern, Expression, GroupedExpression, IndexExpression, LambdaExpression, LambdaParameter,
+    Literal, LiteralExpression, MatchArm, MatchExpression, MemberExpression, PathExpression,
+    Pattern, Spanned, StructLiteralExpression, StructLiteralField, TryExpression, UnaryExpression,
+    UnaryOp,
 };
 use std::fmt::Write;
 
@@ -474,6 +475,20 @@ impl Emit for Spanned<ArrayLiteralExpression> {
     }
 }
 
+impl Emit for Spanned<CodeStringLiteral> {
+    fn emit<W: Write>(&self, w: &mut W, _cx: &mut EmitCtx) -> Result<(), EmitError> {
+        write!(w, "code ```{}", self.node.language)?;
+        for segment in &self.node.segments {
+            match segment {
+                CodeStringSegment::Text(text) => w.write_str(text)?,
+                CodeStringSegment::Hole(source) => write!(w, "@{{{source}}}")?,
+            }
+        }
+        writeln!(w, "```")?;
+        Ok(())
+    }
+}
+
 impl Emit for Expression {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         match self {
@@ -496,6 +511,7 @@ impl Emit for Expression {
             Expression::MacroMetavariable(m) => m.emit(w, cx),
             Expression::Index(i) => i.emit(w, cx),
             Expression::ArrayLiteral(a) => a.emit(w, cx),
+            Expression::CodeString(c) => c.emit(w, cx),
         }
     }
 }

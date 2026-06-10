@@ -110,9 +110,12 @@ impl StageFocus {
         match state.focus {
             FocusTarget::Overlay(OverlayKind::Tests) => Self::Tests,
             FocusTarget::Overlay(OverlayKind::Summary) => Self::Summary,
-            FocusTarget::Overlay(OverlayKind::Pckg) | FocusTarget::Overlay(OverlayKind::Templates) => {
-                Self::Workspace
-            }
+            FocusTarget::Overlay(OverlayKind::Pckg)
+            | FocusTarget::Overlay(OverlayKind::Templates)
+            | FocusTarget::Overlay(OverlayKind::CompileDebug)
+            | FocusTarget::Overlay(OverlayKind::Graph)
+            | FocusTarget::Overlay(OverlayKind::Settings)
+            | FocusTarget::Overlay(OverlayKind::Analysis) => Self::Workspace,
             FocusTarget::Base(_) => Self::from_stage_label(&state.pipeline.stage_label),
         }
     }

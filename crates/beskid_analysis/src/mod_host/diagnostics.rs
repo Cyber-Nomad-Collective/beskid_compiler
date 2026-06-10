@@ -9,6 +9,13 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use miette::{NamedSource, SourceSpan};
+
+use crate::analysis::diagnostics::{SemanticDiagnostic, Severity};
+use crate::syntax::SpanInfo;
+
+use super::invoker::{AnalyzerDiagnostic, AnalyzerSeverity};
+
 /// A single mod-host issue surfaced by registration validation or scheduling.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModHostIssue {
@@ -39,6 +46,8 @@ pub enum ModHostIssue {
         capability: String,
         manifest: PathBuf,
     },
+    /// E1832 — `maxGeneratorRounds` exceeded during host mod.generate scheduling.
+    MaxGeneratorRoundsExceeded { limit: u32 },
     /// E1851 — Same `(contractId, typeId)` is provided by multiple mod artifacts. Hosts
     /// must reject this rather than picking a winner non-deterministically.
     ConflictingRegistrationAcrossArtifacts {
@@ -78,6 +87,7 @@ impl ModHostIssue {
             ModHostIssue::DuplicateRegistrationInArtifact { .. } => "E1829",
             ModHostIssue::EmptyRegistrationsForRequiredMod { .. } => "E1830",
             ModHostIssue::MissingCapability { .. } => "E1831",
+            ModHostIssue::MaxGeneratorRoundsExceeded { .. } => "E1832",
             ModHostIssue::ConflictingRegistrationAcrossArtifacts { .. } => "E1851",
             ModHostIssue::DuplicateEntrySymbolAcrossArtifacts { .. } => "E1852",
             ModHostIssue::UnknownContractId { .. } => "E1853",
@@ -114,6 +124,9 @@ impl ModHostIssue {
                 ..
             } => format!(
                 "mod `{package_id}` registers `{contract_id}` but is missing required capability `{capability}`"
+            ),
+            ModHostIssue::MaxGeneratorRoundsExceeded { limit } => format!(
+                "mod host exceeded `maxGeneratorRounds` limit of {limit} while merging generated syntax"
             ),
             ModHostIssue::ConflictingRegistrationAcrossArtifacts {
                 contract_id,
@@ -192,6 +205,30 @@ impl fmt::Display for ModHostDiagnostics {
 }
 
 impl std::error::Error for ModHostDiagnostics {}
+
+/// Bridge mod analyzer diagnostics into the semantic diagnostic stream during prepare.
+pub fn analyzer_diagnostic_to_semantic(
+    diagnostic: &AnalyzerDiagnostic,
+    type_id: &str,
+    source_name: &str,
+    source: &str,
+) -> SemanticDiagnostic {
+    let severity = match diagnostic.severity {
+        AnalyzerSeverity::Error => Severity::Error,
+        AnalyzerSeverity::Warning => Severity::Warning,
+        AnalyzerSeverity::Note => Severity::Note,
+    };
+    let span = SpanInfo::from_byte_range_in_source(source, 0, source.len().max(1));
+    SemanticDiagnostic {
+        src: NamedSource::new(source_name.to_owned(), source.to_owned()),
+        span: SourceSpan::new((span.start as usize).into(), (span.end - span.start).max(1)),
+        message: format!("{} ({})", diagnostic.message, type_id),
+        label: diagnostic.code.clone(),
+        help: Some(format!("mod analyzer contract `{type_id}`")),
+        code: Some(diagnostic.code.clone()),
+        severity,
+    }
+}
 
 #[cfg(test)]
 mod tests {

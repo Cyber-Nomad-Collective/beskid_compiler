@@ -1,4 +1,4 @@
-use Std.System.Output;
+use Std.Core.Output;
 use Std.Core.String;
 
 i32 Main() {

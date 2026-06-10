@@ -424,6 +424,7 @@ impl Resolver {
                 }
             }
             HirExpressionNode::MacroInvocation(_) | HirExpressionNode::MacroMetavariable(_) => {}
+            HirExpressionNode::CodeStringExpression(_) => {}
         }
     }
 

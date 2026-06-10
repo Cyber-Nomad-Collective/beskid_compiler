@@ -1,4 +1,4 @@
-//! Filesystem host builtins for corelib `System.FS`.
+//! Filesystem host builtins for corelib `Core.FS`.
 
 use beskid_abi::BeskidStr;
 

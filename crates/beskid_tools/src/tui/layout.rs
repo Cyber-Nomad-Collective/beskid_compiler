@@ -2,6 +2,7 @@
 
 use ratatui::layout::{Constraint, Layout, Rect};
 
+use crate::shell::chrome::PINNED_TOP_ROWS;
 use crate::tui::shell::state::LayoutRects;
 
 pub const PANEL_HEADER: &str = "header";
@@ -14,6 +15,10 @@ pub const OVERLAY_TESTS: &str = "tests";
 pub const OVERLAY_SUMMARY: &str = "summary";
 pub const OVERLAY_PCKG: &str = "pckg";
 pub const OVERLAY_TEMPLATES: &str = "templates";
+pub const OVERLAY_COMPILE_DEBUG: &str = "compile_debug";
+pub const OVERLAY_GRAPH: &str = "graph";
+pub const OVERLAY_SETTINGS: &str = "settings";
+pub const OVERLAY_ANALYSIS: &str = "analysis";
 
 const OVERLAY_TESTS_W: u16 = 72;
 const OVERLAY_TESTS_H: u16 = 20;
@@ -23,6 +28,14 @@ const OVERLAY_PCKG_W: u16 = 78;
 const OVERLAY_PCKG_H: u16 = 22;
 const OVERLAY_TEMPLATES_W: u16 = 78;
 const OVERLAY_TEMPLATES_H: u16 = 22;
+const OVERLAY_COMPILE_DEBUG_W: u16 = 80;
+const OVERLAY_COMPILE_DEBUG_H: u16 = 24;
+const OVERLAY_GRAPH_W: u16 = 72;
+const OVERLAY_GRAPH_H: u16 = 20;
+const OVERLAY_SETTINGS_W: u16 = 78;
+const OVERLAY_SETTINGS_H: u16 = 22;
+const OVERLAY_ANALYSIS_W: u16 = 72;
+const OVERLAY_ANALYSIS_H: u16 = 20;
 
 pub fn panel_kinds() -> [&'static str; 5] {
     [
@@ -37,7 +50,7 @@ pub fn panel_kinds() -> [&'static str; 5] {
 /// Base panels: header → stage|detail → log → footer.
 pub fn resolve_shell_layout(area: Rect) -> LayoutRects {
     let [header, body, log, footer_block] = Layout::vertical([
-        Constraint::Length(4),
+        Constraint::Length(PINNED_TOP_ROWS),
         Constraint::Min(0),
         Constraint::Length(8),
         Constraint::Length(6),
@@ -67,6 +80,10 @@ pub fn resolve_shell_layout(area: Rect) -> LayoutRects {
         summary_overlay: None,
         pckg_overlay: None,
         templates_overlay: None,
+        compile_debug_overlay: None,
+        graph_overlay: None,
+        settings_overlay: None,
+        analysis_overlay: None,
     }
 }
 
@@ -84,6 +101,12 @@ pub fn overlay_rect_for(kind: &str, area: Rect) -> Rect {
         OVERLAY_SUMMARY => overlay_rect(area, OVERLAY_SUMMARY_W, OVERLAY_SUMMARY_H),
         OVERLAY_PCKG => overlay_rect(area, OVERLAY_PCKG_W, OVERLAY_PCKG_H),
         OVERLAY_TEMPLATES => overlay_rect(area, OVERLAY_TEMPLATES_W, OVERLAY_TEMPLATES_H),
+        OVERLAY_COMPILE_DEBUG => {
+            overlay_rect(area, OVERLAY_COMPILE_DEBUG_W, OVERLAY_COMPILE_DEBUG_H)
+        }
+        OVERLAY_GRAPH => overlay_rect(area, OVERLAY_GRAPH_W, OVERLAY_GRAPH_H),
+        OVERLAY_SETTINGS => overlay_rect(area, OVERLAY_SETTINGS_W, OVERLAY_SETTINGS_H),
+        OVERLAY_ANALYSIS => overlay_rect(area, OVERLAY_ANALYSIS_W, OVERLAY_ANALYSIS_H),
         _ => overlay_rect(area, OVERLAY_SUMMARY_W, OVERLAY_SUMMARY_H),
     }
 }
@@ -96,7 +119,7 @@ mod tests {
     fn shell_layout_resolves_all_panels() {
         let area = Rect::new(0, 0, 80, 24);
         let rects = resolve_shell_layout(area);
-        assert_eq!(rects.header.height, 4);
+        assert_eq!(rects.header.height, PINNED_TOP_ROWS);
         assert_eq!(rects.log.height, 8);
         assert_eq!(rects.footer.height, 5);
         assert!(rects.stage.width + rects.detail.width <= area.width);

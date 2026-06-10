@@ -2,7 +2,8 @@
 
 use crate::syntax::{
     ArrayLiteralExpression, AssignExpression, AttributeDeclaration, BinaryExpression,
-    BlockExpression, BreakStatement, CallExpression, ContinueStatement, ContractDefinition,
+    BlockExpression, BreakStatement, CallExpression, CodeStringLiteral, ContinueStatement,
+    ContractDefinition,
     EnumConstructorExpression, EnumDefinition, ExpressionStatement, ExtendTypeDefinition,
     ForStatement, FunctionDefinition, GroupedExpression, HostDefinition, IfStatement,
     IndexExpression, InlineModule, LambdaExpression, LaunchStatement, LetStatement,
@@ -62,6 +63,7 @@ pub trait Phase {
     type StructLiteralExpression;
     type IndexExpression;
     type ArrayLiteralExpression;
+    type CodeStringLiteral;
     type EnumConstructorExpression;
     type BlockExpression;
     type GroupedExpression;
@@ -117,6 +119,7 @@ impl Phase for AstPhase {
     type StructLiteralExpression = StructLiteralExpression;
     type IndexExpression = IndexExpression;
     type ArrayLiteralExpression = ArrayLiteralExpression;
+    type CodeStringLiteral = CodeStringLiteral;
     type EnumConstructorExpression = EnumConstructorExpression;
     type BlockExpression = BlockExpression;
     type GroupedExpression = GroupedExpression;
@@ -164,6 +167,7 @@ impl Phase for HirPhase {
     type StructLiteralExpression = HirStructLiteralExpression;
     type IndexExpression = HirIndexExpression;
     type ArrayLiteralExpression = HirArrayLiteralExpression;
+    type CodeStringLiteral = CodeStringLiteral;
     type EnumConstructorExpression = HirEnumConstructorExpression;
     type BlockExpression = HirBlockExpression;
     type GroupedExpression = HirGroupedExpression;

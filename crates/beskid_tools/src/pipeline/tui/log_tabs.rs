@@ -12,15 +12,24 @@ pub enum LogTab {
     #[default]
     Build,
     Semantic,
+    Incremental,
+    Traces,
 }
 
 impl LogTab {
-    pub const ALL: [LogTab; 2] = [LogTab::Build, LogTab::Semantic];
+    pub const ALL: [LogTab; 4] = [
+        LogTab::Build,
+        LogTab::Semantic,
+        LogTab::Incremental,
+        LogTab::Traces,
+    ];
 
     pub fn index(self) -> usize {
         match self {
             Self::Build => 0,
             Self::Semantic => 1,
+            Self::Incremental => 2,
+            Self::Traces => 3,
         }
     }
 
@@ -28,6 +37,8 @@ impl LogTab {
         match self {
             Self::Build => "Build",
             Self::Semantic => "Semantic",
+            Self::Incremental => "Incremental",
+            Self::Traces => "Traces",
         }
     }
 
@@ -35,13 +46,25 @@ impl LogTab {
         match self {
             Self::Build => "Build log (↑↓ scroll · End tail)",
             Self::Semantic => "Semantic log (↑↓ scroll · End tail)",
+            Self::Incremental => "Incremental log (↑↓ scroll · End tail)",
+            Self::Traces => "Trace log (↑↓ scroll · End tail)",
         }
+    }
+
+    pub fn next(self) -> Self {
+        let idx = (self.index() + 1) % Self::ALL.len();
+        Self::ALL[idx]
+    }
+
+    pub fn prev(self) -> Self {
+        let idx = (self.index() + Self::ALL.len() - 1) % Self::ALL.len();
+        Self::ALL[idx]
     }
 }
 
 /// Per-tab scroll/filter state over one shared logger buffer.
 pub struct LogTabStates {
-    states: [TuiWidgetState; 2],
+    states: [TuiWidgetState; 4],
 }
 
 impl Default for LogTabStates {
@@ -53,7 +76,12 @@ impl Default for LogTabStates {
 impl LogTabStates {
     pub fn new() -> Self {
         Self {
-            states: [configured_state(LogTab::Build), configured_state(LogTab::Semantic)],
+            states: [
+                configured_state(LogTab::Build),
+                configured_state(LogTab::Semantic),
+                configured_state(LogTab::Incremental),
+                configured_state(LogTab::Traces),
+            ],
         }
     }
 
@@ -78,6 +106,11 @@ fn configured_state(tab: LogTab) -> TuiWidgetState {
             .set_level_for_target("beskid.pipeline", LevelFilter::Off)
             .set_level_for_target("beskid.tools.pipeline", LevelFilter::Off)
             .set_level_for_target("beskid.tools.pipeline.ui", LevelFilter::Off),
+        LogTab::Incremental => state
+            .set_level_for_target(BUILD_LOG_TARGET, LevelFilter::Off)
+            .set_level_for_target(SEMANTIC_LOG_TARGET, LevelFilter::Off)
+            .set_level_for_target("beskid.tools.pipeline.incremental", LevelFilter::Trace),
+        LogTab::Traces => state.set_default_display_level(LevelFilter::Trace),
     }
 }
 

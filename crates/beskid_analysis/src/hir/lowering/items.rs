@@ -8,6 +8,7 @@ use crate::hir::{
     HirUseDeclaration,
 };
 use crate::syntax::{self, Spanned};
+use crate::syntax::expressions::try_decode_string_literal;
 
 use super::Lowerable;
 
@@ -63,15 +64,7 @@ fn extract_string_literal(expression: &Spanned<syntax::Expression>) -> Option<St
     let syntax::Expression::Literal(literal_expr) = &expression.node else {
         return None;
     };
-    let syntax::Literal::String(raw) = &literal_expr.node.literal.node else {
-        return None;
-    };
-    let value = raw
-        .strip_prefix('"')
-        .and_then(|trimmed| trimmed.strip_suffix('"'))
-        .unwrap_or(raw)
-        .to_string();
-    Some(value)
+    try_decode_string_literal(&literal_expr.node.literal.node)
 }
 
 impl Lowerable for Spanned<AstProgram> {

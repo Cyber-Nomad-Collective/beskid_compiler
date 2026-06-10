@@ -3,8 +3,11 @@ use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::MOD_REWRIT
 
 use crate::syntax::{Program, Spanned};
 
+use super::context::ModInvocationContext;
 use super::invoker::{ContractInvoker, RewriterOutcome};
-use super::types::{AnalyzedContracts, ContractRegistration, ModHostSession, RewriteResult};
+use super::types::{
+    AnalyzedContracts, ContractRegistration, ModHostInput, ModHostSession, RewriteResult,
+};
 
 /// Run every Rewriter contract registered by `mod.load`, scheduled by analyzer fixes.
 /// Each invocation is dispatched through `invoker`; the returned `RewriteResult`
@@ -14,6 +17,7 @@ pub(crate) fn run_rewriters(
     program: Spanned<Program>,
     session: &ModHostSession,
     analyzed: &AnalyzedContracts,
+    input: Option<&ModHostInput<'_>>,
     invoker: &dyn ContractInvoker,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<RewriteResult> {
@@ -30,10 +34,13 @@ pub(crate) fn run_rewriters(
                 .then_with(|| left.entry_symbol.cmp(&right.entry_symbol))
         });
 
+        let context = input
+            .map(|host_input| ModInvocationContext::build(host_input, &[]))
+            .unwrap_or_else(ModInvocationContext::empty);
         let mut outcomes: Vec<RewriterOutcome> = Vec::with_capacity(registrations.len());
         for registration in &registrations {
             let outcome = invoker
-                .invoke_rewriter(registration)
+                .invoke_rewriter(registration, &context.collect_request)
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?;
             outcomes.push(outcome);
         }

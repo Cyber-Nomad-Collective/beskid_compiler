@@ -16,7 +16,8 @@ use beskid_pipeline::{
 use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
 use crate::analysis::rules::{RuleContext, resolve, types};
-use crate::mod_host::{ModHostInput, run_analyze_rewrite_after_composition, run_through_generate};
+use crate::mod_host::{ModHostInput, native_invoker_for_plan, run_analyze_rewrite_after_composition, run_through_generate};
+use crate::mod_host::diagnostics::analyzer_diagnostic_to_semantic;
 use crate::projects::{
     CompilePlan, PreparedProjectWorkspace, ProgramAssembly, assemble_program,
     assembly_options_for_prepare,
@@ -204,6 +205,9 @@ fn run_prepare_spine(
     let mut program = entry_unit.program.clone();
     observe_phase(pipeline, PARSE, || {});
 
+    let native_invoker = native_invoker_for_plan(plan, pipeline).ok().flatten();
+    let invoker_ref = native_invoker.as_ref().map(|invoker| invoker as &dyn crate::mod_host::ContractInvoker);
+
     let mut generated = run_through_generate(
         program.clone(),
         &ModHostInput {
@@ -211,7 +215,8 @@ fn run_prepare_spine(
             source_name: &entry_unit.logical_name,
             source: entry_source,
             pipeline,
-            invoker: None,
+            invoker: invoker_ref,
+            cached_target_fingerprint: None,
         },
     )?;
     program = generated.program;
@@ -273,10 +278,23 @@ fn run_prepare_spine(
         program.clone(),
         &generated.session,
         &session_fingerprint,
-        None,
+        invoker_ref,
         pipeline,
     )?;
     program = mod_rewrite.program;
+
+    if collect_diagnostics {
+        for outcome in &mod_rewrite.analyzer_outcomes {
+            for diagnostic in &outcome.diagnostics {
+                collected_diagnostics.push(analyzer_diagnostic_to_semantic(
+                    diagnostic,
+                    outcome.type_id.as_str(),
+                    entry_unit.logical_name.as_str(),
+                    entry_source,
+                ));
+            }
+        }
+    }
 
     if options.front_end.with_semantic_diagnostics && !collect_diagnostics {
         let composition_diagnostics = composition_result_to_diagnostics(

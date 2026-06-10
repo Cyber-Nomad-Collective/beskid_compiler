@@ -1,5 +1,6 @@
 //! Shell view modules (compile base + overlays).
 
+pub mod compile_debug_overlay;
 pub mod pckg_overlay;
 pub mod pipeline_compile;
 pub mod summary_overlay;

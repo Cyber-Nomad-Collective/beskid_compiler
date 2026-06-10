@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::mpsc::Sender;
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use crate::runtime_profile::CliRuntimeProfile;
@@ -18,6 +19,7 @@ use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
+use beskid_tools::tui::shell::runtime::RuntimeOp;
 use clap::{Args, ValueEnum};
 
 /// CLI-selected output artifact shape for [`BuildArgs::kind`].
@@ -104,6 +106,15 @@ pub struct BuildArgs {
 
 /// Resolve, lower, emit CLIF, and run the AOT/link pipeline according to `args`.
 pub fn execute(args: BuildArgs) -> Result<()> {
+    run_build(args, None)
+}
+
+/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
+pub fn execute_for_hi(msg_tx: Sender<RuntimeOp>, args: BuildArgs) -> Result<()> {
+    run_build(args, Some(msg_tx))
+}
+
+fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
     let resolve_args = ResolveInputArgs {
         input: args.input.as_ref(),
         project: args.project.project.as_ref(),
@@ -112,11 +123,20 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         frozen: args.lockfile.frozen,
         locked: args.lockfile.locked,
     };
-    let (session, resolved) = CommandSession::open_and_resolve(
-        args.plain,
-        PipelineProgressKind::FullBuild,
-        &resolve_args,
-    )?;
+    let (session, resolved) = match hi_tx {
+        None => CommandSession::open_and_resolve(
+            args.plain,
+            PipelineProgressKind::FullBuild,
+            &resolve_args,
+        )?,
+        Some(tx) => {
+            let session =
+                CommandSession::with_attached_pipeline(tx, PipelineProgressKind::FullBuild);
+            let resolved = session.resolve_input(&resolve_args)?;
+            (session, resolved)
+        }
+    };
+    let hi_attached = session.pipeline().is_hi_attached();
     let prepared = session.executable_gate_prepared(
         &resolved,
         SemanticGateOptions {
@@ -237,6 +257,7 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     );
 
     if args.plain
+        && !hi_attached
         && let Some(plan) = resolved.compile_plan.as_ref()
     {
         println!(
@@ -253,15 +274,27 @@ pub fn execute(args: BuildArgs) -> Result<()> {
         );
     }
 
-    println!();
-    println!("  object   {}", result.object_path.display());
-    if let Some(final_path) = result.final_path {
-        println!("  output   {}", final_path.display());
-    }
-    if args.verbose_link
-        && let Some(cmd) = result.linker_invocation
-    {
-        println!("  link     {cmd}");
+    if hi_attached {
+        session.pipeline().println_session(format!(
+            "object   {}",
+            result.object_path.display()
+        ));
+        if let Some(final_path) = result.final_path.as_ref() {
+            session
+                .pipeline()
+                .println_session(format!("output   {}", final_path.display()));
+        }
+    } else {
+        println!();
+        println!("  object   {}", result.object_path.display());
+        if let Some(final_path) = result.final_path {
+            println!("  output   {}", final_path.display());
+        }
+        if args.verbose_link
+            && let Some(cmd) = result.linker_invocation
+        {
+            println!("  link     {cmd}");
+        }
     }
 
     Ok(())

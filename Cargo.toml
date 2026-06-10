@@ -53,6 +53,7 @@ panes-ratatui = "0.5"
 ratatui-code-editor = "0.0.4"
 tachyonfx = "0.25"
 ratkit = { path = "vendor/ratkit", default-features = false }
+tuirealm = { version = "4.1.0", default-features = false, features = ["crossterm"] }
 
 cranelift-codegen = "0.128.3"
 cranelift-frontend = "0.128.3"

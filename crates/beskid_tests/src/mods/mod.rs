@@ -11,4 +11,7 @@ mod analyzer_coverage;
 mod conflicts;
 mod contract_dispatch;
 mod fixture;
+mod generate_output;
 mod incremental_replay;
+mod rebuild;
+mod typed_merge;

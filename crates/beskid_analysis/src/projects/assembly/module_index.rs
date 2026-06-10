@@ -387,11 +387,11 @@ fn prefetched_module_path_for_file(
     assembly: &super::ProgramAssembly,
 ) -> Option<Vec<String>> {
     if path.starts_with(&assembly.roots.host.source_root) {
-        return module_path_from_src_suffix(path, assembly.has_std_dependency);
+        return module_path_from_file_suffix(path, assembly.has_std_dependency);
     }
     for dep in &assembly.roots.dependencies {
         if path.starts_with(&dep.source_root) {
-            if let Some(segments) = module_path_from_src_suffix(path, assembly.has_std_dependency)
+            if let Some(segments) = module_path_from_file_suffix(path, assembly.has_std_dependency)
             {
                 return Some(segments);
             }
@@ -418,7 +418,7 @@ fn prefetched_module_path_for_file(
             return Some(segments);
         }
     }
-    module_path_from_src_suffix(path, assembly.has_std_dependency)
+    module_path_from_file_suffix(path, assembly.has_std_dependency)
 }
 
 /// Declaring package name for symbols collected from a compilation unit.
@@ -598,7 +598,12 @@ fn collect_prefetched_modules(
     prefetched_paths: &mut Vec<PathBuf>,
 ) {
     let mut bd_files = Vec::new();
-    collect_bd_files(source_root, &mut bd_files);
+    collect_source_files(source_root, &mut bd_files);
+    if let Some(generated_root) = source_root.parent().map(|parent| parent.join(".generated")) {
+        if generated_root.is_dir() {
+            collect_source_files(&generated_root, &mut bd_files);
+        }
+    }
     bd_files.sort();
     for path in bd_files {
         if unit_paths.contains(&path) {
@@ -634,7 +639,7 @@ fn prefetch_module_at_path(
     };
     let ast: crate::syntax::Spanned<crate::hir::AstProgram> = program.into();
     let hir = crate::hir::lower_program(&ast);
-    let module_path = module_path_from_src_suffix(path, has_std_dependency).or_else(|| {
+    let module_path = module_path_from_file_suffix(path, has_std_dependency).or_else(|| {
         let source_root = source_root?;
         let Ok(rel) = path.strip_prefix(source_root) else {
             return None;
@@ -669,18 +674,61 @@ fn prefetch_module_at_path(
     prefetched_paths.push(path.to_path_buf());
 }
 
-fn collect_bd_files(root: &Path, out: &mut Vec<PathBuf>) {
+fn collect_source_files(root: &Path, out: &mut Vec<PathBuf>) {
     let Ok(read_dir) = std::fs::read_dir(root) else {
         return;
     };
     for entry in read_dir.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            collect_bd_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("bd") {
+            collect_source_files(&path, out);
+        } else if is_bd_source_file(&path) {
             out.push(path);
         }
     }
+}
+
+fn is_bd_source_file(path: &Path) -> bool {
+    path.extension().and_then(|ext| ext.to_str()) == Some("bd")
+}
+
+fn module_path_from_file_suffix(path: &Path, has_std_dependency: bool) -> Option<Vec<String>> {
+    module_path_from_generated_suffix(path, has_std_dependency)
+        .or_else(|| module_path_from_src_suffix(path, has_std_dependency))
+}
+
+fn module_path_from_generated_suffix(path: &Path, has_std_dependency: bool) -> Option<Vec<String>> {
+    let path_str = path.to_string_lossy();
+    let marker = "/.generated/";
+    let idx = path_str.find(marker)?;
+    let rel = &path_str[idx + marker.len()..];
+    let rel_path = Path::new(rel);
+    let file_name = rel_path.file_name()?.to_str()?;
+    if !file_name.ends_with(".g.bd") {
+        return None;
+    }
+    let module_name = &file_name[..file_name.len().saturating_sub(6)];
+    let parent = rel_path.parent()?;
+    let mut segments: Vec<String> = parent
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect();
+    segments.push(module_name.to_string());
+    collapse_homonymous_module_segment(&mut segments);
+    if has_std_dependency {
+        let mut with_std = vec!["Std".to_string()];
+        with_std.extend(segments);
+        Some(with_std)
+    } else {
+        Some(segments)
+    }
+}
+
+fn collect_bd_files(root: &Path, out: &mut Vec<PathBuf>) {
+    collect_source_files(root, out);
 }
 
 fn module_path_from_src_suffix(

@@ -1,7 +1,11 @@
 //! Project graph and dependency execute-command payloads.
 
+use std::path::{Path, PathBuf};
+
+use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{
-    DependencySource, ProjectLockDependencyEntry, load_project_lock_dependencies, parse_manifest,
+    DependencySource, ProjectLockDependencyEntry, is_workspace_manifest_path,
+    load_project_lock_dependencies, parse_manifest, plan_entry_path,
 };
 use beskid_graph::{GraphKind, graph_tooling_payload};
 use beskid_queries::{GraphFetchRequest, get_graph_document, get_graph_document_simple};
@@ -18,17 +22,34 @@ pub(crate) fn get_graph(
     db: Option<&mut beskid_queries::BeskidDatabase>,
 ) -> Result<Value> {
     let manifest_path = super::manifest_path_from_uri(project_uri)?;
+    let workspace_manifest = resolve_workspace_manifest(&manifest_path, kind, workspace_uri)?;
+    let mut entry_path = entry_uri.and_then(|uri| {
+        crate::workspace_scan::path_from_uri_string(uri)
+            .map(|p| if p.is_file() { p } else { p.join("Main.bd") })
+    });
+    let mut compile_plan = None;
+
+    if matches!(
+        kind,
+        GraphKind::ModuleTree | GraphKind::ImportClosure | GraphKind::HostComposition
+    ) && !is_workspace_manifest_path(&manifest_path)
+    {
+        if let Some(ctx) = CompilationContext::try_for_analysis_path(&manifest_path, None) {
+            if let Some(plan) = ctx.compile_plan.clone() {
+                if entry_path.is_none() {
+                    entry_path = Some(plan_entry_path(&plan, &plan.source_root));
+                }
+                compile_plan = Some(plan);
+            }
+        }
+    }
+
     let request = GraphFetchRequest {
         kind,
         manifest_path: manifest_path.clone(),
-        workspace_manifest: workspace_uri
-            .map(super::manifest_path_from_uri)
-            .transpose()?,
-        compile_plan: None,
-        entry_path: entry_uri.and_then(|uri| {
-            crate::workspace_scan::path_from_uri_string(uri)
-                .map(|p| if p.is_file() { p } else { p.join("Main.bd") })
-        }),
+        workspace_manifest,
+        compile_plan,
+        entry_path,
         entry_source: None,
     };
 
@@ -40,6 +61,22 @@ pub(crate) fn get_graph(
     .map_err(|_| missing_args())?;
 
     Ok(graph_tooling_payload(&doc, kind, project_uri))
+}
+
+fn resolve_workspace_manifest(
+    manifest_path: &Path,
+    kind: GraphKind,
+    workspace_uri: Option<&str>,
+) -> Result<Option<PathBuf>> {
+    if is_workspace_manifest_path(manifest_path) {
+        return Ok(Some(manifest_path.to_path_buf()));
+    }
+    if kind == GraphKind::Workspace {
+        return Ok(Some(manifest_path.to_path_buf()));
+    }
+    workspace_uri
+        .map(super::manifest_path_from_uri)
+        .transpose()
 }
 
 pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {

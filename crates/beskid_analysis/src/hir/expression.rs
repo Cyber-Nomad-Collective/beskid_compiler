@@ -55,6 +55,8 @@ pub enum ExpressionNode<P: Phase> {
     IndexExpression(Spanned<P::IndexExpression>),
     #[phase(from = "ArrayLiteral")]
     ArrayLiteralExpression(Spanned<P::ArrayLiteralExpression>),
+    #[phase(from = "CodeString")]
+    CodeStringExpression(Spanned<P::CodeStringLiteral>),
 }
 
 #[derive(beskid_ast_derive::HirNode)]
@@ -99,6 +101,7 @@ impl HirNode for ExpressionNode<HirPhase> {
             ExpressionNode::SpawnExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::IndexExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::ArrayLiteralExpression(expr) => push(HirNodeRef(&expr.node)),
+            ExpressionNode::CodeStringExpression(_) => {}
             ExpressionNode::MacroInvocation(_) | ExpressionNode::MacroMetavariable(_) => {}
         }
     }

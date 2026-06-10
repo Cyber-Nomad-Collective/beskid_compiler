@@ -76,7 +76,7 @@ pub use lower::{
     lower_normalize_resolve_type_spanned, lower_normalize_resolve_type_spanned_with_assembly,
     typed_hir_from_lowered,
 };
-pub use parse::{parse_program, parse_program_with_source_name};
+pub use parse::{parse_expression_source, parse_program, parse_program_with_source_name};
 pub use prepare::{
     PrepareOptions, PreparedCompilation, prepare_compilation,
     prepare_compilation_diagnostics, resolved_input_from_plan,

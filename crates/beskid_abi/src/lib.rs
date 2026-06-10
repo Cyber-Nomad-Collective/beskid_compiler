@@ -1,6 +1,7 @@
 //! Host/runtime contract: C-layout string/array handles, builtin symbol names, and ABI version.
 
 pub mod abi_types;
+pub mod mod_contract;
 pub mod dispatch_tags {
     pub use crate::generated::dispatch_tags::*;
 }
@@ -46,6 +47,13 @@ pub use generated::symbols::{
     SYM_SYSCALL_READ, SYM_SYSCALL_READ_BYTES, SYM_SYSCALL_WRITE, SYM_SYSCALL_WRITE_BYTES,
     SYM_TEST_BYTES_LEN, SYM_TEST_BYTES_PTR, SYM_TTY_WINSIZE, SYM_WAIT_GROUP_ADD,
     SYM_WAIT_GROUP_CREATE, SYM_WAIT_GROUP_DONE, SYM_WAIT_GROUP_WAIT,
+};
+pub use mod_contract::{
+    ModAnalysisRequest, ModCatalog, ModCollectRequest, ModCollectTargetSet, ModCompilation,
+    ModContractRegistration, ModContractRegistrationSlice, ModGeneratedSyntaxContribution,
+    ModGenerationRequest, ModGeneratorEntryFn, ModPackage, ModPackageSlice, ModStrSlice,
+    ModSyntaxContributionItem, ModSyntaxContributionSlice, ModSyntaxContributionTag,
+    ModSyntaxNodeHandle, ModWorkspace, ModWorkspaceMember, ModWorkspaceMemberSlice,
 };
 pub use types::{BeskidArray, BeskidStr};
 pub use version::BESKID_RUNTIME_ABI_VERSION;

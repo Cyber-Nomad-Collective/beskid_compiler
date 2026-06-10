@@ -13,8 +13,8 @@ use crate::commands::pckg_registry::{
     CMD_GET_CONNECTION_STATUS, CMD_SET_REGISTRY, CMD_VALIDATE_CONNECTION,
 };
 use crate::commands::symbol_documentation::CMD_GET_DOCUMENTATION_URI;
+use crate::manifest_uri::manifest_path_from_uri_str;
 use crate::protocol::execute_args::{missing_args, required_uri_arg};
-use crate::workspace_scan::path_from_uri_string;
 
 const CMD_LIST_WORKSPACES: &str = "beskid.listWorkspaces";
 const CMD_GET_WORKSPACE_SUMMARY: &str = "beskid.getWorkspaceSummary";
@@ -41,7 +41,7 @@ pub fn focused_project_from_value(value: &Value) -> Option<PathBuf> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|s| !s.is_empty())?;
-    path_from_uri_string(uri)
+    manifest_path_from_uri_str(uri)
 }
 
 /// Extract optional `focusedProjectUri` from `didChangeConfiguration` settings.
@@ -91,7 +91,7 @@ pub fn handle_project_explorer_command(
 }
 
 pub(crate) fn manifest_path_from_uri(uri: &str) -> Result<PathBuf> {
-    path_from_uri_string(uri).ok_or_else(missing_args)
+    manifest_path_from_uri_str(uri).ok_or_else(missing_args)
 }
 
 #[cfg(test)]

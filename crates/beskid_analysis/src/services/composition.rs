@@ -26,6 +26,7 @@ pub fn prepare_program_for_composition(
             source,
             pipeline: None,
             invoker: None,
+            cached_target_fingerprint: None,
         },
     )
 }

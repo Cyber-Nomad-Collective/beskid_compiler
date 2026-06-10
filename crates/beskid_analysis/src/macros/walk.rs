@@ -122,6 +122,7 @@ pub fn map_expression(
                 .collect();
             Expression::ArrayLiteral(n)
         }
+        Expression::CodeString(c) => Expression::CodeString(c.clone()),
     };
     f(Spanned::new(mapped, span))
 }

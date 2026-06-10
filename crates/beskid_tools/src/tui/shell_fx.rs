@@ -7,7 +7,8 @@ use ratatui::style::{Color, Style};
 use tachyonfx::{fx, EffectManager, Interpolation};
 
 use crate::tui::layout::{
-    overlay_rect_for, OVERLAY_PCKG, OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS,
+    overlay_rect_for, OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, OVERLAY_PCKG,
+    OVERLAY_SETTINGS, OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS,
 };
 use crate::tui::message::ShellMessage;
 use crate::tui::shell::focus::OverlayKind;
@@ -117,6 +118,10 @@ fn overlay_rect(state: &ShellState, kind: OverlayKind) -> Option<Rect> {
         OverlayKind::Summary => state.layout_rects.summary_overlay,
         OverlayKind::Pckg => state.layout_rects.pckg_overlay,
         OverlayKind::Templates => state.layout_rects.templates_overlay,
+        OverlayKind::CompileDebug => state.layout_rects.compile_debug_overlay,
+        OverlayKind::Graph => state.layout_rects.graph_overlay,
+        OverlayKind::Settings => state.layout_rects.settings_overlay,
+        OverlayKind::Analysis => state.layout_rects.analysis_overlay,
     } {
         return Some(cached);
     }
@@ -126,6 +131,10 @@ fn overlay_rect(state: &ShellState, kind: OverlayKind) -> Option<Rect> {
         OverlayKind::Summary => overlay_rect_for(OVERLAY_SUMMARY, terminal),
         OverlayKind::Pckg => overlay_rect_for(OVERLAY_PCKG, terminal),
         OverlayKind::Templates => overlay_rect_for(OVERLAY_TEMPLATES, terminal),
+        OverlayKind::CompileDebug => overlay_rect_for(OVERLAY_COMPILE_DEBUG, terminal),
+        OverlayKind::Graph => overlay_rect_for(OVERLAY_GRAPH, terminal),
+        OverlayKind::Settings => overlay_rect_for(OVERLAY_SETTINGS, terminal),
+        OverlayKind::Analysis => overlay_rect_for(OVERLAY_ANALYSIS, terminal),
     })
 }
 

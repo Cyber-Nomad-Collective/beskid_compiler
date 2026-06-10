@@ -1,5 +1,7 @@
 //! Expression AST: operators, calls, control-flow expressions, literals, and patterns.
 
+pub mod string_decode;
+pub mod code_string;
 pub mod array_literal_expression;
 pub mod assign_expression;
 pub mod binary_expression;
@@ -26,6 +28,13 @@ pub mod struct_literal_field;
 pub mod try_expression;
 pub mod unary_expression;
 
+pub use string_decode::{
+    decode_string_literal_token, split_string_literal_parts, split_string_literal_token,
+    try_decode_string_literal, try_decode_string_literal_token, StringLiteralPart,
+};
+pub use code_string::{
+    materialize_code_segments, parse_plain_code_body, CodeStringLiteral, CodeStringSegment,
+};
 pub use array_literal_expression::ArrayLiteralExpression;
 pub use assign_expression::{AssignExpression, AssignOp};
 pub use binary_expression::{BinaryExpression, BinaryOp};

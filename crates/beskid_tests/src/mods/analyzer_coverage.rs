@@ -12,7 +12,7 @@ use beskid_analysis::mod_host::{
 };
 use beskid_analysis::services::parse_program_with_source_name;
 
-use super::fixture::ModFixtureWorkspace;
+use super::fixture::{ModFixtureWorkspace, program_contains_function, typed_items_contain_function};
 
 #[test]
 fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterwards() {
@@ -51,6 +51,7 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
             source,
             pipeline: None,
             invoker: Some(&invoker),
+        cached_target_fingerprint: None,
         },
     )
     .expect("generate with contributions");
@@ -61,12 +62,15 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
         generated.generator_outcomes[0].type_id,
         "SampleMod.SampleGenerate"
     );
-    let gen_contributions = &generated.generator_outcomes[0].contributions;
-    assert_eq!(gen_contributions.len(), 1);
+    let gen_items = &generated.generator_outcomes[0].typed_items;
+    assert_eq!(gen_items.len(), 1);
+    assert!(matches!(
+        &gen_items[0].node,
+        beskid_analysis::syntax::Node::Function(f) if f.node.name.node.name == "generated_func"
+    ));
     assert!(
-        gen_contributions[0].contains("generated_func"),
-        "generator must contribute `generated_func`; got {:?}",
-        gen_contributions
+        program_contains_function(&generated.program, "generated_func"),
+        "merged program must contain generated_func"
     );
 
     // Proceed through the semantic gate to analyze/rewrite.
@@ -77,6 +81,7 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
         generated.program,
         &generated.session,
         Some(&invoker),
+        None,
         Some(&snapshot),
         None,
     )
@@ -164,6 +169,7 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
             source,
             pipeline: None,
             invoker: Some(&invoker),
+        cached_target_fingerprint: None,
         },
     )
     .expect("generate");
@@ -183,16 +189,22 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
         .iter()
         .find(|o| o.type_id == "SampleMod.GenOne")
         .expect("GenOne outcome");
-    assert_eq!(gen_one.contributions.len(), 1);
-    assert!(gen_one.contributions[0].contains("from_gen_one"));
+    assert_eq!(gen_one.typed_items.len(), 1);
+    assert!(matches!(
+        &gen_one.typed_items[0].node,
+        beskid_analysis::syntax::Node::Function(f) if f.node.name.node.name == "from_gen_one"
+    ));
 
     let gen_two = generated
         .generator_outcomes
         .iter()
         .find(|o| o.type_id == "SampleMod.GenTwo")
         .expect("GenTwo outcome");
-    assert_eq!(gen_two.contributions.len(), 1);
-    assert!(gen_two.contributions[0].contains("from_gen_two"));
+    assert_eq!(gen_two.typed_items.len(), 1);
+    assert!(matches!(
+        &gen_two.typed_items[0].node,
+        beskid_analysis::syntax::Node::Function(f) if f.node.name.node.name == "from_gen_two"
+    ));
 
     // Proceed through the semantic gate to analyze.
     let snapshot =
@@ -202,6 +214,7 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
         generated.program,
         &generated.session,
         Some(&invoker),
+        None,
         Some(&snapshot),
         None,
     )

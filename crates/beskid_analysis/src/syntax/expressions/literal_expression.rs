@@ -6,6 +6,7 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::expressions::span::{remap_span, span_from_bounds};
+use crate::syntax::expressions::string_decode::{split_string_literal_parts, StringLiteralPart};
 use crate::syntax::{Expression, Literal, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
@@ -40,83 +41,31 @@ fn try_desugar_interpolated_string(
     input: &str,
     literal_span: SpanInfo,
 ) -> Option<Spanned<Expression>> {
-    if source.len() < 2 || !source.starts_with('"') || !source.ends_with('"') {
+    let parts = split_string_literal_parts(source, input, literal_span).ok()?;
+    if !parts
+        .iter()
+        .any(|part| matches!(part, StringLiteralPart::RuntimeInterpolation { .. }))
+    {
         return None;
     }
 
-    let mut parts = Vec::new();
-    let bytes = source.as_bytes();
-    let content_start = 1;
-    let content_end = source.len().saturating_sub(1);
-    let mut cursor = content_start;
-    let mut text_start = content_start;
-
-    while cursor < content_end {
-        if bytes.get(cursor) == Some(&b'\\') {
-            cursor = cursor.saturating_add(1);
-            if cursor < content_end {
-                cursor = cursor.saturating_add(1);
+    let mut interpolation_parts = Vec::new();
+    for part in parts {
+        match part {
+            StringLiteralPart::Text { value, span } => {
+                interpolation_parts.push(InterpolationPart::Text { text: value, span });
             }
-            continue;
+            StringLiteralPart::RuntimeInterpolation {
+                expression_source: _,
+                span,
+            } => {
+                let expression = parse_interpolation_expression(input, span)?;
+                interpolation_parts.push(InterpolationPart::Expr(expression));
+            }
         }
-
-        if bytes.get(cursor) == Some(&b'$') && bytes.get(cursor + 1) == Some(&b'{') {
-            if text_start < cursor {
-                let text = source.get(text_start..cursor)?;
-                let span = span_from_bounds(
-                    input,
-                    literal_span.start + text_start,
-                    literal_span.start + cursor,
-                )?;
-                parts.push(InterpolationPart::Text {
-                    text: text.to_string(),
-                    span,
-                });
-            }
-
-            let expr_start = cursor + 2;
-            let expr_end = find_interpolation_end(bytes, expr_start, content_end)?;
-
-            let expr_text = source.get(expr_start..expr_end)?;
-            let expr_trimmed = expr_text.trim();
-            if expr_trimmed.is_empty() {
-                return None;
-            }
-
-            let leading_trim = expr_text.len().saturating_sub(expr_text.trim_start().len());
-            let trailing_trim = expr_text.len().saturating_sub(expr_text.trim_end().len());
-            let expr_span_start = literal_span.start + expr_start + leading_trim;
-            let expr_span_end = literal_span.start + expr_start + expr_text.len() - trailing_trim;
-            let expression_span = span_from_bounds(input, expr_span_start, expr_span_end)?;
-            let expression = parse_interpolation_expression(input, expression_span)?;
-            parts.push(InterpolationPart::Expr(expression));
-
-            cursor = expr_end + 1;
-            text_start = cursor;
-            continue;
-        }
-
-        cursor += 1;
     }
 
-    if parts.is_empty() {
-        return None;
-    }
-
-    if text_start < content_end {
-        let text = source.get(text_start..content_end)?;
-        let span = span_from_bounds(
-            input,
-            literal_span.start + text_start,
-            literal_span.start + content_end,
-        )?;
-        parts.push(InterpolationPart::Text {
-            text: text.to_string(),
-            span,
-        });
-    }
-
-    build_interpolated_expression(parts)
+    build_interpolated_expression(interpolation_parts)
 }
 
 fn build_interpolated_expression(parts: Vec<InterpolationPart>) -> Option<Spanned<Expression>> {
@@ -296,7 +245,7 @@ fn remap_expression_spans(expression: &mut Spanned<Expression>, offset: usize, s
                 remap_expression_spans(element, offset, source);
             }
         }
-        Expression::MacroInvocation(_) | Expression::MacroMetavariable(_) => {}
+        Expression::MacroInvocation(_) | Expression::MacroMetavariable(_) | Expression::CodeString(_) => {}
     }
 }
 
@@ -433,63 +382,6 @@ fn remap_statement_spans(
         }
         Statement::With(_) | Statement::Launch(_) => {}
     }
-}
-
-fn find_interpolation_end(bytes: &[u8], expr_start: usize, content_end: usize) -> Option<usize> {
-    let mut cursor = expr_start;
-    let mut brace_depth = 0usize;
-    let mut in_string = false;
-    let mut in_char = false;
-    let mut escaped = false;
-
-    while cursor < content_end {
-        let byte = *bytes.get(cursor)?;
-
-        if escaped {
-            escaped = false;
-            cursor += 1;
-            continue;
-        }
-
-        if byte == b'\\' {
-            escaped = true;
-            cursor += 1;
-            continue;
-        }
-
-        if in_string {
-            if byte == b'"' {
-                in_string = false;
-            }
-            cursor += 1;
-            continue;
-        }
-
-        if in_char {
-            if byte == b'\'' {
-                in_char = false;
-            }
-            cursor += 1;
-            continue;
-        }
-
-        match byte {
-            b'"' => in_string = true,
-            b'\'' => in_char = true,
-            b'{' => brace_depth = brace_depth.saturating_add(1),
-            b'}' => {
-                if brace_depth == 0 {
-                    return Some(cursor);
-                }
-                brace_depth = brace_depth.saturating_sub(1);
-            }
-            _ => {}
-        }
-
-        cursor += 1;
-    }
-
-    None
 }
 
 enum InterpolationPart {

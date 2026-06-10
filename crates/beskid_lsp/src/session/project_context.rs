@@ -5,6 +5,7 @@ use beskid_analysis::ProjectGraphBuildOptions;
 use beskid_analysis::resolve_project_manifest_for_source_path;
 use tokio::sync::RwLock;
 
+use super::db_access::with_compilation_db_mut_state;
 use super::store::State;
 
 fn project_graph_options_from_env() -> ProjectGraphBuildOptions {
@@ -21,7 +22,7 @@ fn project_graph_options_from_env() -> ProjectGraphBuildOptions {
 }
 
 /// Returns a cached [`CompilationContext`] for `path`, or builds and inserts one keyed by the
-/// resolved `Project.proj` path.
+/// resolved `.bproj` path.
 pub async fn cached_compilation_context(
     state: &RwLock<State>,
     path: &Path,
@@ -81,11 +82,13 @@ pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
     {
         beskid_queries::invalidate_entry_sessions(root);
     }
-    let mut write = state.write().await;
-    write.compilation_context_cache.clear();
-    write.typed_prepare_schedule_revision.clear();
-    write.compilation_db = std::sync::Mutex::new(beskid_queries::BeskidDatabase::default());
-    for doc in write.docs.values_mut() {
-        doc.analysis_cache_version = super::lifecycle::ANALYSIS_CACHE_VERSION.saturating_sub(1);
-    }
+    with_compilation_db_mut_state(state, |_, write| {
+        write.compilation_context_cache.clear();
+        write.typed_prepare_schedule_revision.clear();
+        write.reset_compilation_db();
+        for doc in write.docs.values_mut() {
+            doc.analysis_cache_version = super::lifecycle::ANALYSIS_CACHE_VERSION.saturating_sub(1);
+        }
+    })
+    .await;
 }

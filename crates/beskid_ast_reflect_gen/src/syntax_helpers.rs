@@ -435,10 +435,10 @@ pub fn emit_list_enum(helper_name: &str, element_path: &str) -> String {
 /// @variant(Cons) Non-empty list: `head` is first (`{element_path}`), `tail` is the recursive remainder (`{tail_ty}`).
 pub enum {helper_name} {{
     Empty,
-    Cons {{
+    Cons(
         {element_path} head,
         {tail_ty} tail,
-    }},
+    ),
 }}
 "#
     )

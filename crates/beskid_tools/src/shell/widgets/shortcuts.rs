@@ -1,13 +1,14 @@
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
-use ratkit::services::hotkey_service::Hotkey;
+use ratatui::widgets::Paragraph;
+use crate::shell::primitives::Hotkey;
 
 use crate::shell::catalog::builtin_contextual_commands;
 use crate::shell::context::WidgetContext;
 use crate::shell::input::ShellInput;
+use crate::shell::panel_style::title_line;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
 
 pub struct ShortcutsWidget;
@@ -42,9 +43,9 @@ impl BeskidWidget for ShortcutsWidget {
                 lines.push(Line::from(format!("  {}  {}", c.icon, c.name)));
             }
         }
-        frame.render_widget(
-            Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" Shortcuts ")),
-            area,
-        );
+        let [title_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)])
+            .areas(area);
+        frame.render_widget(Paragraph::new(title_line("Shortcuts")), title_area);
+        frame.render_widget(Paragraph::new(lines), body);
     }
 }

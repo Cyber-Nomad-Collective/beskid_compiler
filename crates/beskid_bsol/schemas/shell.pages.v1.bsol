@@ -1,0 +1,34 @@
+profile "shell.pages.v1" {
+  rule "pages" {
+    scope = top
+    match = keyword
+    keyword = pages
+    label = required
+    cardinality = one
+    field "version" { type = u32 required = true }
+    field "default_page" { type = quoted required = true }
+    field "title" { type = quoted required = false }
+  }
+  rule "page" {
+    scope = top
+    match = keyword
+    keyword = page
+    label = required
+    cardinality = many
+    field "title" { type = quoted required = true }
+    field "board_root" { type = quoted required = false }
+  }
+  rule "nav_item" {
+    scope = top
+    match = keyword
+    keyword = nav_item
+    label = required
+    cardinality = many
+    field "label" { type = quoted required = true }
+    field "action" { type = enum_or_quoted values = [page, overlay, widget, cli, group] required = true }
+    field "target" { type = quoted required = false }
+    field "parent" { type = quoted required = false }
+    field "order" { type = u32 required = false }
+    field "icon" { type = quoted required = false }
+  }
+}

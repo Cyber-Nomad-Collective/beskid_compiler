@@ -178,7 +178,7 @@ fn mod_artifact_placeholder_target() -> Target {
     Target {
         name: "__mod__".to_string(),
         kind: TargetKind::Lib,
-        entry: Some("__mod__.bd".to_string()),
+        entry: Some("Mod.bd".to_string()),
     }
 }
 

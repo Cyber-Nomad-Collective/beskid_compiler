@@ -1,17 +1,19 @@
-//! Draw the Beskid shell using ratatui layout and ratkit overlay chrome.
+//! Draw the Beskid shell using ratatui layout and shell overlay chrome.
 
 use ratatui::Frame;
-use ratkit::widgets::HotkeyItem;
+use crate::shell::primitives::HotkeyItem;
 
 use crate::tui::layout::{
-    overlay_rect_for, resolve_shell_layout, OVERLAY_PCKG, OVERLAY_SUMMARY, OVERLAY_TEMPLATES,
-    OVERLAY_TESTS, PANEL_DETAIL, PANEL_FOOTER, PANEL_HEADER, PANEL_LOG, PANEL_STAGE,
+    overlay_rect_for, resolve_shell_layout, OVERLAY_COMPILE_DEBUG, OVERLAY_PCKG,
+    OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS, PANEL_DETAIL, PANEL_FOOTER, PANEL_LOG, PANEL_STAGE,
 };
 use crate::shell::chrome::ShellChrome;
+use crate::shell::top_menu::ShellTopMenu;
 use crate::shell::hotkeys::ShellHotkeys;
 use crate::tui::overlay_chrome::{draw_backdrop, hotkey, render_overlay_panel};
 use crate::tui::screens::{
-    pckg_overlay, pipeline_compile, summary_overlay, templates_overlay, tests_overlay,
+    compile_debug_overlay, pckg_overlay, pipeline_compile, summary_overlay, templates_overlay,
+    tests_overlay,
 };
 use crate::tui::shell::focus::OverlayKind;
 use crate::tui::shell::state::ShellState;
@@ -21,7 +23,17 @@ pub fn draw_shell(frame: &mut Frame, state: &mut ShellState) {
     let rects = resolve_shell_layout(area);
     state.layout_rects = rects;
 
-    pipeline_compile::render_panel(PANEL_HEADER, rects.header, frame, state);
+    let mut top_menu = ShellTopMenu::new();
+    ShellChrome::default().render_pinned_top_bar(
+        rects.header,
+        frame,
+        &crate::shell::scope::ShellScope::resolve(
+            &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+        ),
+        "Pipeline",
+        state,
+        &mut top_menu,
+    );
     pipeline_compile::render_panel(PANEL_STAGE, rects.stage, frame, state);
     pipeline_compile::render_panel(PANEL_DETAIL, rects.detail, frame, state);
     pipeline_compile::render_panel(PANEL_LOG, rects.log, frame, state);
@@ -32,13 +44,12 @@ pub fn draw_shell(frame: &mut Frame, state: &mut ShellState) {
         rects.chrome,
         frame,
         &hotkeys,
+        crate::shell::control_mode::HiControlMode::Normal,
         None,
+        false,
     );
 
-    let any_overlay = state.overlay_visible(OverlayKind::Tests)
-        || state.overlay_visible(OverlayKind::Summary)
-        || state.overlay_visible(OverlayKind::Pckg)
-        || state.overlay_visible(OverlayKind::Templates);
+    let any_overlay = OverlayKind::ALL.iter().any(|kind| state.overlay_visible(*kind));
     if any_overlay {
         draw_backdrop(frame, area);
     }
@@ -88,6 +99,21 @@ pub fn draw_shell(frame: &mut Frame, state: &mut ShellState) {
             |body, frame| templates_overlay::render(body, frame, state),
         );
     }
+    if state.overlay_visible(OverlayKind::CompileDebug) {
+        let overlay = overlay_rect_for(OVERLAY_COMPILE_DEBUG, area);
+        state.layout_rects.compile_debug_overlay = Some(overlay);
+        render_overlay_panel(
+            frame,
+            overlay,
+            "Compile debugger",
+            &simple_overlay_hotkeys(),
+            |body, frame| compile_debug_overlay::render(body, frame, state),
+        );
+    }
+}
+
+fn simple_overlay_hotkeys() -> Vec<HotkeyItem> {
+    vec![hotkey("q", "close")]
 }
 
 fn tests_title(state: &ShellState) -> String {

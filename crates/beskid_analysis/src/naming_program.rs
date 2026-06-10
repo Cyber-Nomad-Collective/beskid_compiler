@@ -452,7 +452,8 @@ fn walk_expression(expr: &Expression, visit: &mut impl FnMut(NamingRole, &Spanne
         Expression::Literal(_)
         | Expression::Path(_)
         | Expression::MacroInvocation(_)
-        | Expression::MacroMetavariable(_) => {}
+        | Expression::MacroMetavariable(_)
+        | Expression::CodeString(_) => {}
     }
 }
 
@@ -514,7 +515,8 @@ fn walk_expression_mut(expr: &mut Expression, visit: &mut impl FnMut(NamingRole,
         Expression::Literal(_)
         | Expression::Path(_)
         | Expression::MacroInvocation(_)
-        | Expression::MacroMetavariable(_) => {}
+        | Expression::MacroMetavariable(_)
+        | Expression::CodeString(_) => {}
     }
 }
 

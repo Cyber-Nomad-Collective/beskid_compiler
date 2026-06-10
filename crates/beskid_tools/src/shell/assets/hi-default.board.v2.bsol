@@ -4,37 +4,115 @@ board "hi-default" {
   scope = user
   root = "root"
 }
+
+node "log" {
+  kind = panel
+  widget = "shell.log"
+  grow = 1
+}
+
 node "root" {
   kind = col
-  children = ["header", "body", "log", "footer"]
+  children = ["home_body", "log"]
 }
-node "header" {
-  kind = panel
-  widget = "shell.scope"
-  fixed_height = 4
-}
-node "body" {
+
+node "home_body" {
   kind = row
   grow = 1
-  children = ["stage", "detail"]
+  children = ["stage"]
 }
+
 node "stage" {
   kind = panel
   widget = "hi.welcome"
   grow = 1
 }
-node "detail" {
-  kind = panel
-  widget = "shell.shortcuts"
-  grow = 2
+
+node "graphs_root" {
+  kind = col
+  children = ["graphs_body", "log"]
 }
-node "log" {
-  kind = panel
-  widget = "shell.log"
-  fixed_height = 8
+
+node "graphs_body" {
+  kind = row
+  grow = 1
+  children = ["graph_deps", "graph_compile"]
 }
-node "footer" {
+
+node "graph_deps" {
   kind = panel
-  widget = "shell.chrome"
-  fixed_height = 4
+  widget = "graph.deps"
+  grow = 1
+}
+
+node "graph_compile" {
+  kind = panel
+  widget = "graph.compile"
+  grow = 1
+}
+
+node "compile_debug_root" {
+  kind = col
+  children = ["compile_debug_main", "log"]
+}
+
+node "compile_debug_main" {
+  kind = panel
+  widget = "compile.debugger"
+  grow = 1
+}
+
+node "analysis_root" {
+  kind = col
+  children = ["analysis_main", "log"]
+}
+
+node "analysis_main" {
+  kind = panel
+  widget = "analysis.diagnostics"
+  grow = 1
+}
+
+node "settings_root" {
+  kind = col
+  children = ["settings_main", "log"]
+}
+
+node "settings_main" {
+  kind = panel
+  widget = "shell.settings"
+  grow = 1
+}
+
+node "pckg_root" {
+  kind = col
+  children = ["pckg_main", "log"]
+}
+
+node "pckg_main" {
+  kind = panel
+  widget = "pckg.browser"
+  grow = 1
+}
+
+node "new_project_root" {
+  kind = col
+  children = ["new_project_main", "log"]
+}
+
+node "new_project_main" {
+  kind = panel
+  widget = "hi.welcome"
+  grow = 1
+}
+
+node "debugger_root" {
+  kind = col
+  children = ["debugger_main", "log"]
+}
+
+node "debugger_main" {
+  kind = panel
+  widget = "debug.future"
+  grow = 1
 }

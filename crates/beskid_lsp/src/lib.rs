@@ -5,6 +5,7 @@ pub(crate) mod commands;
 pub(crate) mod diagnostics;
 pub(crate) mod features;
 pub(crate) mod logging;
+pub(crate) mod manifest_uri;
 pub(crate) mod position;
 pub(crate) mod protocol;
 pub mod server;

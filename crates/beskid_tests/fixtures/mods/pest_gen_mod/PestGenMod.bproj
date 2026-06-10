@@ -1,0 +1,13 @@
+# Minimal compiler-mod fixture for corelib_pest_gen Collector + Generator wiring.
+PestGenMod {
+  name = "PestGenMod"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    capabilities = [read_project_sources, emit_syntax]
+    generatedOutput {
+      layout = "generate.layout.json"
+      root = "Generated"
+    }
+  }
+}

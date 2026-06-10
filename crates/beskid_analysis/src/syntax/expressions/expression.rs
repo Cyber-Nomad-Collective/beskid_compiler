@@ -5,6 +5,7 @@ use crate::syntax::expressions::span::span_from_bounds;
 use crate::syntax::{SpanInfo, Spanned};
 use pest::iterators::Pair;
 
+use super::code_string::CodeStringLiteral;
 use super::array_literal_expression::parse_array_literal_expression;
 use super::assign_expression::AssignExpression;
 use super::binary_expression::{BinaryExpression, parse_binary_expression};
@@ -68,6 +69,8 @@ pub enum Expression {
     Index(Spanned<super::index_expression::IndexExpression>),
     #[ast(child)]
     ArrayLiteral(Spanned<super::array_literal_expression::ArrayLiteralExpression>),
+    #[ast(child)]
+    CodeString(Spanned<super::code_string::CodeStringLiteral>),
 }
 
 impl Parsable for Expression {
@@ -120,6 +123,10 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
         Rule::EnumConstructorExpression => parse_enum_constructor_expression(pair),
         Rule::StructLiteralExpression => parse_struct_literal_expression(pair),
         Rule::ArrayLiteralExpression => parse_array_literal_expression(pair),
+        Rule::CodeExpression => {
+            let node = CodeStringLiteral::parse(pair)?;
+            Ok(Spanned::new(Expression::CodeString(node), span))
+        }
         Rule::Literal => parse_literal_expression(pair),
         Rule::MacroInvocation => {
             let node = MacroInvocation::parse(pair)?;

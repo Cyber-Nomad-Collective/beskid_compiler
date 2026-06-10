@@ -5,6 +5,8 @@ use crate::syntax_query::{
 };
 use crate::syntax::{Program, SpanInfo, Spanned};
 
+use super::types::ProgramItem;
+
 /// Mod SDK `NodeRef` wire shape (`Beskid.Syntax.Nodes.NodeRef`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SdkNodeRef {
@@ -267,6 +269,20 @@ impl<'a> SdkSyntaxPipeline<'a> {
         }
     }
 
+    pub fn from_ops(
+        snapshot: &'a SyntaxSnapshot<'a>,
+        root: SdkNodeRef,
+        bounds: QueryBounds,
+        ops: Vec<PipelineOp>,
+    ) -> Self {
+        Self {
+            snapshot,
+            root,
+            bounds,
+            ops,
+        }
+    }
+
     pub fn replace(mut self, target: SdkNodeRef, replacement: SdkNodeRef) -> Self {
         self.ops.push(PipelineOp {
             kind: PipelineOpKind::Replace,
@@ -304,64 +320,245 @@ impl<'a> SdkSyntaxPipeline<'a> {
     }
 
     pub fn ordered_ops(&self) -> Vec<PipelineOp> {
-        let mut ordered = self.ops.clone();
-        ordered.sort_by_key(|op| {
-            let precedence = match op.kind {
-                PipelineOpKind::Remove => 0u8,
-                PipelineOpKind::Replace => 1u8,
-                PipelineOpKind::InsertBefore => 2u8,
-                PipelineOpKind::InsertAfter => 3u8,
-            };
-            (op.target.node_id, precedence)
-        });
-        ordered
+        ordered_ops(self.ops.clone())
     }
 
     pub fn validate(&self) -> Result<(), PipelineValidationError> {
-        let expected_gen = self.snapshot.generation_id();
-        if self.root.syntax_generation_id != expected_gen {
-            return Err(PipelineValidationError::StaleGeneration {
-                expected: expected_gen,
-                actual: self.root.syntax_generation_id,
-            });
-        }
-        let mut seen_targets = std::collections::HashSet::new();
-        for op in &self.ops {
-            if op.target.syntax_generation_id != expected_gen {
-                return Err(PipelineValidationError::StaleGeneration {
-                    expected: expected_gen,
-                    actual: op.target.syntax_generation_id,
-                });
-            }
-            if self.snapshot.node_at(op.target.node_id).is_none() {
-                return Err(PipelineValidationError::MissingNode { node: op.target });
-            }
-            if let Some(payload) = op.payload {
-                if payload.syntax_generation_id != expected_gen {
-                    return Err(PipelineValidationError::StaleGeneration {
-                        expected: expected_gen,
-                        actual: payload.syntax_generation_id,
-                    });
-                }
-                if self.snapshot.node_at(payload.node_id).is_none() {
-                    return Err(PipelineValidationError::MissingNode { node: payload });
-                }
-            }
-            if matches!(op.kind, PipelineOpKind::Replace | PipelineOpKind::Remove)
-                && !seen_targets.insert(op.target)
-            {
-                return Err(PipelineValidationError::Conflict { target: op.target });
-            }
-        }
-        Ok(())
+        validate_pipeline(self.snapshot, self.root, &self.ops)
     }
 
-    /// Temporary host behavior: validate and return the same root.
-    /// Full structural rewrite application is performed by native runtime shims.
-    pub fn apply(self) -> Result<SdkNodeRef, PipelineValidationError> {
-        self.validate()?;
-        Ok(self.root)
+    /// Validate queued ops and apply them structurally to top-level program items.
+    pub fn apply(self, program: &mut Spanned<Program>) -> Result<SdkNodeRef, PipelineValidationError> {
+        let SdkSyntaxPipeline {
+            snapshot,
+            root,
+            bounds: _,
+            ops,
+        } = self;
+        validate_pipeline(&snapshot, root, &ops)?;
+        let ordered = ordered_ops(ops);
+        let resolved = resolve_program_item_ops(program, &snapshot, &ordered)?;
+        apply_resolved_program_item_ops(program, resolved);
+        Ok(root)
     }
+}
+
+fn validate_pipeline(
+    snapshot: &SyntaxSnapshot<'_>,
+    root: SdkNodeRef,
+    ops: &[PipelineOp],
+) -> Result<(), PipelineValidationError> {
+    let expected_gen = snapshot.generation_id();
+    if root.syntax_generation_id != expected_gen {
+        return Err(PipelineValidationError::StaleGeneration {
+            expected: expected_gen,
+            actual: root.syntax_generation_id,
+        });
+    }
+    let mut seen_targets = std::collections::HashSet::new();
+    for op in ops {
+        if op.target.syntax_generation_id != expected_gen {
+            return Err(PipelineValidationError::StaleGeneration {
+                expected: expected_gen,
+                actual: op.target.syntax_generation_id,
+            });
+        }
+        if snapshot.node_at(op.target.node_id).is_none() {
+            return Err(PipelineValidationError::MissingNode { node: op.target });
+        }
+        if let Some(payload) = op.payload {
+            if payload.syntax_generation_id != expected_gen {
+                return Err(PipelineValidationError::StaleGeneration {
+                    expected: expected_gen,
+                    actual: payload.syntax_generation_id,
+                });
+            }
+            if snapshot.node_at(payload.node_id).is_none() {
+                return Err(PipelineValidationError::MissingNode { node: payload });
+            }
+        }
+        if matches!(op.kind, PipelineOpKind::Replace | PipelineOpKind::Remove)
+            && !seen_targets.insert(op.target)
+        {
+            return Err(PipelineValidationError::Conflict { target: op.target });
+        }
+    }
+    Ok(())
+}
+
+fn ordered_ops(mut ops: Vec<PipelineOp>) -> Vec<PipelineOp> {
+    ops.sort_by_key(|op| {
+        let precedence = match op.kind {
+            PipelineOpKind::Remove => 0u8,
+            PipelineOpKind::Replace => 1u8,
+            PipelineOpKind::InsertBefore => 2u8,
+            PipelineOpKind::InsertAfter => 3u8,
+        };
+        (op.target.node_id, precedence)
+    });
+    ops
+}
+
+struct ResolvedProgramItemOp {
+    kind: PipelineOpKind,
+    target_index: usize,
+    payload: Option<Spanned<ProgramItem>>,
+}
+
+fn resolve_program_item_ops(
+    program: &Spanned<Program>,
+    snapshot: &SyntaxSnapshot<'_>,
+    ops: &[PipelineOp],
+) -> Result<Vec<ResolvedProgramItemOp>, PipelineValidationError> {
+    let mut resolved = Vec::with_capacity(ops.len());
+    for op in ops {
+        let Some(target_index) = program_item_index(program, snapshot, op.target) else {
+            continue;
+        };
+        let payload = op
+            .payload
+            .and_then(|payload| clone_payload_item(program, snapshot, payload));
+        if matches!(
+            op.kind,
+            PipelineOpKind::Replace | PipelineOpKind::InsertBefore | PipelineOpKind::InsertAfter
+        ) && payload.is_none()
+        {
+            continue;
+        }
+        resolved.push(ResolvedProgramItemOp {
+            kind: op.kind,
+            target_index,
+            payload,
+        });
+    }
+    Ok(resolved)
+}
+
+fn apply_resolved_program_item_ops(
+    program: &mut Spanned<Program>,
+    ops: Vec<ResolvedProgramItemOp>,
+) {
+    for op in ops.into_iter().rev() {
+        match op.kind {
+            PipelineOpKind::Remove => {
+                if op.target_index < program.node.items.len() {
+                    program.node.items.remove(op.target_index);
+                    if op.target_index < program.node.leading_docs.len() {
+                        program.node.leading_docs.remove(op.target_index);
+                    }
+                }
+            }
+            PipelineOpKind::Replace => {
+                if let Some(replacement) = op.payload {
+                    if op.target_index < program.node.items.len() {
+                        program.node.items[op.target_index] = replacement;
+                    }
+                }
+            }
+            PipelineOpKind::InsertBefore => {
+                if let Some(item) = op.payload {
+                    program.node.items.insert(op.target_index, item);
+                    program.node.leading_docs.insert(op.target_index, None);
+                }
+            }
+            PipelineOpKind::InsertAfter => {
+                if let Some(item) = op.payload {
+                    program.node.items.insert(op.target_index + 1, item);
+                    program.node.leading_docs.insert(op.target_index + 1, None);
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn apply_program_item_op(
+    program: &mut Spanned<Program>,
+    generation_id: u64,
+    op: PipelineOp,
+) -> Result<(), PipelineValidationError> {
+    let (target_index, payload_item) = {
+        let snapshot = materialize_snapshot(program, generation_id);
+        let target_index = program_item_index(program, &snapshot, op.target);
+        let payload_item = op
+            .payload
+            .and_then(|payload| clone_payload_item(program, &snapshot, payload));
+        (target_index, payload_item)
+    };
+    let Some(index) = target_index else {
+        return Ok(());
+    };
+
+    match op.kind {
+        PipelineOpKind::Remove => {
+            program.node.items.remove(index);
+            if index < program.node.leading_docs.len() {
+                program.node.leading_docs.remove(index);
+            }
+        }
+        PipelineOpKind::Replace => {
+            if let Some(replacement) = payload_item {
+                program.node.items[index] = replacement;
+            }
+        }
+        PipelineOpKind::InsertBefore => {
+            if let Some(item) = payload_item {
+                program.node.items.insert(index, item);
+                program.node.leading_docs.insert(index, None);
+            }
+        }
+        PipelineOpKind::InsertAfter => {
+            if let Some(item) = payload_item {
+                program.node.items.insert(index + 1, item);
+                program.node.leading_docs.insert(index + 1, None);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn program_item_index(
+    program: &Spanned<Program>,
+    snapshot: &SyntaxSnapshot<'_>,
+    target: SdkNodeRef,
+) -> Option<usize> {
+    let target_stable = target.to_stable();
+    program.node.items.iter().position(|item| {
+        if snapshot.stable_id(DynNodeRef::from(item)) == Some(target_stable) {
+            return true;
+        }
+        if snapshot.stable_id(DynNodeRef::from(&item.node)) == Some(target_stable) {
+            return true;
+        }
+        item_matches_stable_id(snapshot, &item.node, target_stable)
+    })
+}
+
+fn item_matches_stable_id(
+    snapshot: &SyntaxSnapshot<'_>,
+    node: &ProgramItem,
+    target_stable: crate::syntax_query::SyntaxNodeId,
+) -> bool {
+    use crate::syntax::Node;
+    match node {
+        Node::Function(definition) => {
+            snapshot.stable_id(DynNodeRef::from(&definition.node)) == Some(target_stable)
+        }
+        Node::TypeDefinition(definition) => {
+            snapshot.stable_id(DynNodeRef::from(&definition.node)) == Some(target_stable)
+        }
+        Node::ContractDefinition(definition) => {
+            snapshot.stable_id(DynNodeRef::from(&definition.node)) == Some(target_stable)
+        }
+        _ => false,
+    }
+}
+
+fn clone_payload_item(
+    program: &Spanned<Program>,
+    snapshot: &SyntaxSnapshot<'_>,
+    payload: SdkNodeRef,
+) -> Option<Spanned<ProgramItem>> {
+    program_item_index(program, snapshot, payload).map(|index| program.node.items[index].clone())
 }
 
 /// Materialize a snapshot for the current syntax generation.
@@ -442,5 +639,31 @@ mod tests {
             pipeline.validate(),
             Err(PipelineValidationError::Conflict { .. })
         ));
+    }
+
+    #[test]
+    fn syntax_pipeline_applies_remove_on_program_items() {
+        let src = "pub fn keep() { }\npub fn drop() { }";
+        let mut program = parse_program(src).expect("parse");
+        let (drop_fn, root, ops) = {
+            let snap = materialize_snapshot(&program, 1);
+            let mut q = SdkSyntaxQuery::at_program(&snap, &program);
+            let drop_fn = q
+                .of_kind(NodeKind::FunctionDefinition)
+                .into_iter()
+                .nth(1)
+                .expect("second function");
+            let root = SdkNodeRef {
+                syntax_generation_id: 1,
+                node_id: snap.root_id(),
+            };
+            let ops = q.pipeline(root).remove(drop_fn).ordered_ops();
+            (drop_fn, root, ops)
+        };
+        let _ = (drop_fn, root);
+        for op in ops {
+            apply_program_item_op(&mut program, 1, op).expect("apply remove");
+        }
+        assert_eq!(program.node.items.len(), 1);
     }
 }

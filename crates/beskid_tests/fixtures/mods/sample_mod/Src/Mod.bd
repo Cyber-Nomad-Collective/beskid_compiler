@@ -1,58 +1,66 @@
-// Reference compiler-mod sources exercising all four contract kinds defined by
-// `compiler/corelib/packages/compiler-sdk/src/Beskid/Compiler/Collect.bd`. Each
-// implementation is a no-op stub so the host pipeline can dispatch through every
-// phase without needing to actually inspect typed syntax (the host pipeline does
-// the AOT dispatch through `ContractInvoker`).
+// Reference compiler-mod fixture: self-contained SDK-shaped contracts so rebuild
+// tests can lower without registry dependencies while still emitting the same
+// `(contractId, typeId, entrySymbol)` tuples as the compiler-sdk surface.
 
-use Beskid.Compiler.Collect.{
-    CollectRequest,
-    CollectTargetSet,
-    GenerationRequest,
-    GeneratedSyntaxContribution,
-    AnalysisRequest,
-    AnalysisResult,
-    AttributeGenerationRequest,
-    AttributeDeclarationSet,
-    FixError,
-    Collector,
-    Generator,
-    AttributeGenerator,
-    Analyzer,
-    Rewriter,
-};
+pub type CollectRequest {}
+pub type CollectTargetSet {}
+pub type GenerationRequest {}
+pub type GeneratedSyntaxContribution {
+    SyntaxContributionItem[] items,
+}
+pub type SyntaxContributionItem {}
+pub type AnalysisRequest {}
+pub type AnalysisResult {}
+pub type AttributeGenerationRequest {}
+pub type AttributeDeclarationSet {}
+pub type FixError {}
 
-pub type SampleCollect {}
-pub type SampleGenerate {}
-pub type SampleAttribute {}
-pub type SampleAnalyze {}
-pub type SampleRewrite {}
+pub contract Collector {
+    CollectTargetSet Collect(CollectRequest request);
+}
 
-contract Collector for SampleCollect {
+pub contract Generator {
+    GeneratedSyntaxContribution Generate(GenerationRequest request);
+}
+
+pub contract AttributeGenerator {
+    AttributeDeclarationSet Attributes(AttributeGenerationRequest request);
+}
+
+pub contract Analyzer {
+    AnalysisResult Analyze(AnalysisRequest request);
+}
+
+pub contract Rewriter {
+    CollectRequest Rewrite(CollectRequest sourceNode);
+}
+
+pub type SampleCollect : Collector {
     CollectTargetSet Collect(CollectRequest request) {
         return CollectTargetSet {};
     }
 }
 
-contract Generator for SampleGenerate {
+pub type SampleGenerate : Generator {
     GeneratedSyntaxContribution Generate(GenerationRequest request) {
-        return GeneratedSyntaxContribution {};
+        return GeneratedSyntaxContribution { items: [] };
     }
 }
 
-contract AttributeGenerator for SampleAttribute {
+pub type SampleAttribute : AttributeGenerator {
     AttributeDeclarationSet Attributes(AttributeGenerationRequest request) {
         return AttributeDeclarationSet {};
     }
 }
 
-contract Analyzer for SampleAnalyze {
+pub type SampleAnalyze : Analyzer {
     AnalysisResult Analyze(AnalysisRequest request) {
         return AnalysisResult {};
     }
 }
 
-contract Rewriter for SampleRewrite {
-    Result<TTargetNode, FixError> Rewrite(TSourceNode sourceNode) {
-        return Ok(sourceNode);
+pub type SampleRewrite : Rewriter {
+    CollectRequest Rewrite(CollectRequest sourceNode) {
+        return sourceNode;
     }
 }

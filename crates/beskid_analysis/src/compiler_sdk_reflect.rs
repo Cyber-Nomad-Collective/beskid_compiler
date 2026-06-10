@@ -57,6 +57,7 @@ pub enum ReflectSdkNodeKind {
     StructLiteralExpression,
     IndexExpression,
     ArrayLiteralExpression,
+    CodeStringLiteral,
     EnumConstructorExpression,
     BlockExpression,
     GroupedExpression,
@@ -148,6 +149,7 @@ pub enum ReflectSdkHirNodeKind {
     StructLiteralExpression,
     IndexExpression,
     ArrayLiteralExpression,
+    CodeStringLiteral,
     EnumConstructorExpression,
     BlockExpression,
     GroupedExpression,
@@ -177,6 +179,20 @@ pub enum ReflectSdkEmitContributionKind {
     Metadata,
     LoweringDirective,
     DiagnosticAttachment,
+}
+
+/// Top-level syntax item kinds a Generator may contribute (typed merge plane).
+#[beskid_ast_derive::beskid_reflect]
+pub enum ReflectSdkSyntaxContributionItem {
+    ContractDefinition,
+    TypeDefinition,
+    FunctionDefinition,
+}
+
+/// Internal mod entrypoint binding categories (`Beskid.Compiler.InternalSymbol`).
+#[beskid_ast_derive::beskid_reflect]
+pub enum ReflectSdkInternalSymbolType {
+    Callable,
 }
 
 /// Read-only compilation snapshot planes exposed to queries.

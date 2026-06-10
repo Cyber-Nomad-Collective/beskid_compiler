@@ -156,7 +156,12 @@ pub fn run() -> miette::Result<()> {
         Commands::Lsp(args) => lsp::execute(args),
         Commands::ValidateBsol(args) => validate_bsol::execute(args),
         Commands::Graph(args) => graph::execute(args),
-        Commands::Hi(args) => hi::execute(args, &[beskid_hi::register_widgets]),
+        Commands::Hi(args) => hi::execute(
+            args,
+            &[beskid_hi::register_widgets],
+            &[beskid_hi::register_nav],
+            &[],
+        ),
     };
 
     result.map_err(anyhow_to_miette)

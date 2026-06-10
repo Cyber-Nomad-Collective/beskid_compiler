@@ -1,6 +1,6 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratkit::services::hotkey_service::Hotkey;
+use crate::shell::primitives::Hotkey;
 
 use crate::shell::catalog::ContextualCommand;
 use crate::shell::context::WidgetContext;
@@ -40,9 +40,10 @@ impl BeskidWidget for PckgWidget {
     }
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-        if ctx.shell_state.overlay_visible(OverlayKind::Pckg) {
-            pckg_overlay::render(area, frame, ctx.shell_state);
+        if !ctx.shell_state.pckg.catalog_loaded {
+            ctx.shell_state.pckg.pending_catalog_refresh = true;
         }
+        pckg_overlay::render(area, frame, ctx.shell_state);
     }
 }
 

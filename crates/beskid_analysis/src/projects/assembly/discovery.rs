@@ -1,6 +1,6 @@
 //! On-disk Beskid module path resolution against effective source roots.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::roots::EffectiveCompilationRoots;
 
@@ -25,6 +25,23 @@ fn module_path_lookup_candidates(module_path: &str) -> Vec<String> {
     out
 }
 
+fn module_file_candidates(relative: &std::path::Path, source_root: &Path) -> Vec<PathBuf> {
+    let flat = relative.with_extension("bd");
+    let homonymous = relative
+        .file_name()
+        .map(|name| relative.join(name).with_extension("bd"))
+        .unwrap_or_else(|| relative.with_extension("bd"));
+    let mod_file = relative.join("mod.bd");
+    let mut out = vec![flat, homonymous, mod_file];
+    if let Some(generated_root) = source_root.parent().map(|parent| parent.join(".generated")) {
+        let generated = generated_root
+            .join(relative)
+            .with_extension("g.bd");
+        out.push(generated);
+    }
+    out
+}
+
 pub fn resolve_module_file(
     module_path: &str,
     roots: &EffectiveCompilationRoots,
@@ -33,15 +50,10 @@ pub fn resolve_module_file(
     for candidate in module_path_lookup_candidates(module_path) {
         let relative = module_path_to_relative_path(&candidate);
         if let Some(path) = roots_list.iter().find_map(|root| {
-            let file_candidate = root.join(relative.with_extension("bd"));
-            let mod_candidate = root.join(&relative).join("mod.bd");
-            if file_candidate.is_file() {
-                Some(file_candidate)
-            } else if mod_candidate.is_file() {
-                Some(mod_candidate)
-            } else {
-                None
-            }
+            module_file_candidates(&relative, root)
+                .into_iter()
+                .find(|candidate| root.join(candidate).is_file())
+                .map(|candidate| root.join(candidate))
         }) {
             return Some(path);
         }
@@ -58,9 +70,9 @@ pub fn module_path_exists_on_disk(module_path: &str, roots: &[PathBuf]) -> bool 
         return false;
     }
     roots.iter().any(|root| {
-        let file_candidate = root.join(relative.with_extension("bd"));
-        let mod_candidate = root.join(&relative).join("mod.bd");
-        file_candidate.is_file() || mod_candidate.is_file()
+        module_file_candidates(&relative, root)
+            .into_iter()
+            .any(|candidate| root.join(candidate).is_file())
     })
 }
 

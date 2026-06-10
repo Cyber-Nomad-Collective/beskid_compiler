@@ -44,6 +44,10 @@ pub enum OverlayKind {
     Summary,
     Pckg,
     Templates,
+    CompileDebug,
+    Graph,
+    Settings,
+    Analysis,
 }
 
 impl std::str::FromStr for OverlayKind {
@@ -55,6 +59,10 @@ impl std::str::FromStr for OverlayKind {
             "summary" => Ok(Self::Summary),
             "pckg" => Ok(Self::Pckg),
             "templates" => Ok(Self::Templates),
+            "compile_debug" => Ok(Self::CompileDebug),
+            "graph" => Ok(Self::Graph),
+            "settings" => Ok(Self::Settings),
+            "analysis" => Ok(Self::Analysis),
             _ => Err(()),
         }
     }
@@ -66,6 +74,10 @@ impl OverlayKind {
         Self::Summary,
         Self::Pckg,
         Self::Templates,
+        Self::CompileDebug,
+        Self::Graph,
+        Self::Settings,
+        Self::Analysis,
     ];
 
     pub fn kind_str(self) -> &'static str {
@@ -74,6 +86,10 @@ impl OverlayKind {
             Self::Summary => "summary",
             Self::Pckg => "pckg",
             Self::Templates => "templates",
+            Self::CompileDebug => "compile_debug",
+            Self::Graph => "graph",
+            Self::Settings => "settings",
+            Self::Analysis => "analysis",
         }
     }
 

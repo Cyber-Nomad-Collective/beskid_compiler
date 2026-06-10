@@ -268,10 +268,10 @@ pub fn emit_node_list_bd() -> String {
 /// @variant(Cons) Non-empty list: `head` is first (`{prefix}.NodeRef`), `tail` is the remainder (`{prefix}.NodeList`).
 pub enum NodeList {{
     Empty,
-    Cons {{
+    Cons(
         {prefix}.NodeRef head,
         {prefix}.NodeList tail,
-    }},
+    ),
 }}
 "#
     )

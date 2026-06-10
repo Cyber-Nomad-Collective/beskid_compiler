@@ -6,7 +6,8 @@ use crate::tui::effects::ShellEffect;
 use crate::tui::input::{InputEvent, InputResult};
 use crate::tui::message::ShellMessage;
 use crate::tui::screens::{
-    pckg_overlay, pipeline_compile, summary_overlay, templates_overlay, tests_overlay,
+    compile_debug_overlay, pckg_overlay, pipeline_compile, summary_overlay, templates_overlay,
+    tests_overlay,
 };
 use crate::tui::shell::focus::{FocusTarget, OverlayKind};
 use crate::tui::shell::state::ShellState;
@@ -17,6 +18,7 @@ pub fn update(msg: &ShellMessage, state: &mut ShellState) -> Vec<ShellEffect> {
     effects.extend(summary_overlay::update(msg, state));
     effects.extend(pckg_overlay::update(msg, state));
     effects.extend(templates_overlay::update(msg, state));
+    effects.extend(compile_debug_overlay::update(msg, state));
     effects
 }
 
@@ -27,6 +29,10 @@ pub fn on_input(event: &InputEvent, state: &mut ShellState) -> InputResult {
             OverlayKind::Summary => summary_overlay::on_input(event, state),
             OverlayKind::Pckg => pckg_overlay::on_input(event, state),
             OverlayKind::Templates => templates_overlay::on_input(event, state),
+            OverlayKind::CompileDebug => compile_debug_overlay::on_input(event, state),
+            OverlayKind::Graph | OverlayKind::Settings | OverlayKind::Analysis => {
+                crate::tui::shell::input::handle_simple_overlay_input(event, state)
+            }
         },
         FocusTarget::Base(_) => pipeline_compile::on_input(event, state),
     };

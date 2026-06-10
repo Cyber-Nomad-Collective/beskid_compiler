@@ -7,8 +7,8 @@ Reference extension crate for the pluggable `beskid hi` shell. Depends only on `
 ```
 src/
   lib.rs          # hub: mod + pub use only
-  register.rs     # register_widgets()
-  models/         # ExtensionWidgetDescriptor, board fragment
+  register.rs     # register_widgets(), register_nav()
+  models/         # WIDGET_CATALOG, NAV_CATALOG, board fragment
   widgets/        # BeskidWidget implementations
 assets/
   board.fragment.bsol
@@ -17,11 +17,12 @@ assets/
 ## Extension contract
 
 1. Declare widgets in `models/descriptor.rs` (`WIDGET_CATALOG`).
-2. Implement `BeskidWidget` under `widgets/`.
-3. Register via `register_widgets()` (descriptors + widget instances).
+2. Optional nav entries in `models/nav.rs` (`NAV_CATALOG`).
+3. Implement `BeskidWidget` under `widgets/`.
+4. Register via `register_widgets()` and `register_nav()`.
 
-`beskid_cli` links this crate and passes `beskid_hi::register_widgets` into `ShellHost::run_hi_blocking`.
+`beskid_cli` wires all registrars into `ShellHost::run_hi_blocking`.
 
 ## Board fragment
 
-Copy `assets/board.fragment.bsol` into your scope layout (`.beskid/board.bsol` or `~/.beskid/data/boards/default.board.bsol`) as a `node` block referencing `hi.hello`.
+Copy `assets/board.fragment.bsol` into your scope layout as a `node` block referencing `hi.hello`.

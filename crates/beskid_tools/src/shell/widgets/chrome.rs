@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::widgets::Paragraph;
-use ratkit::services::hotkey_service::Hotkey;
+use crate::shell::primitives::Hotkey;
 
 use crate::shell::context::WidgetContext;
 use crate::shell::input::ShellInput;

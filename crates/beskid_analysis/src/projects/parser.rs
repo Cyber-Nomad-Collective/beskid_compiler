@@ -8,10 +8,11 @@ use bsol::{
 
 use super::error::ProjectError;
 use super::model::{
-    Dependency, DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest,
-    ProjectModSection, ProjectSchemasSection, ProjectSection, ProjectTemplateSection, SchemaExport,
-    Target, TargetKind,
-    WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry, WorkspaceSection,
+    Dependency, DependencySource, GrammarOutputEntry, ProjectKind, ProjectLinkSection,
+    ProjectManifest, ModGeneratedOutput, ProjectGrammarSection, ProjectModSection,
+    ProjectSchemasSection, ProjectSection, ProjectTemplateSection, SchemaExport, Target,
+    TargetKind, WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry,
+    WorkspaceSection,
 };
 use super::validator::{validate_manifest, validate_workspace_manifest};
 
@@ -27,6 +28,8 @@ struct ParsedProjectBlock {
     fields: HashMap<String, String>,
     extras: HashMap<String, String>,
     mod_section: Option<HashMap<String, ModFieldValue>>,
+    mod_generated_outputs: Vec<ModGeneratedOutput>,
+    grammar_section: Option<ProjectGrammarSection>,
     template_section: Option<HashMap<String, String>>,
     schemas_section: Option<ProjectSchemasSection>,
 }
@@ -160,11 +163,17 @@ fn lower_workspace_document(
 fn lower_project_root_block(block: ValidatedBlock) -> Result<ParsedProjectBlock, ProjectError> {
     reject_corelib_opt_out_keys(&block.fields, &block.extras, block.span)?;
     let (fields, extras) = split_known_fields(block.fields, PROJECT_ROOT_FIELDS);
-    let mod_section = block
+    let mod_block = block.nested.iter().find(|n| n.rule_id == "mod");
+    let mod_section = mod_block.map(lower_mod_block).transpose()?;
+    let mod_generated_outputs = mod_block
+        .map(lower_mod_generated_outputs)
+        .transpose()?
+        .unwrap_or_default();
+    let grammar_section = block
         .nested
         .iter()
-        .find(|n| n.rule_id == "mod")
-        .map(lower_mod_block)
+        .find(|n| n.rule_id == "grammar")
+        .map(lower_grammar_block)
         .transpose()?;
     let template_section = block
         .nested
@@ -183,9 +192,45 @@ fn lower_project_root_block(block: ValidatedBlock) -> Result<ParsedProjectBlock,
         fields,
         extras,
         mod_section,
+        mod_generated_outputs,
+        grammar_section,
         template_section,
         schemas_section,
     })
+}
+
+fn lower_grammar_block(block: &ValidatedBlock) -> Result<ProjectGrammarSection, ProjectError> {
+    let roots = block.lists.get("roots").cloned().unwrap_or_default();
+    let grammar_outputs = block
+        .nested
+        .iter()
+        .filter(|nested| nested.rule_id == "grammarOutput")
+        .map(|nested| {
+            Ok(GrammarOutputEntry {
+                pest: required_field(&nested.fields, "pest")?,
+                module: required_field(&nested.fields, "module")?,
+                package_id: required_field(&nested.fields, "packageId")?,
+            })
+        })
+        .collect::<Result<Vec<_>, ProjectError>>()?;
+    Ok(ProjectGrammarSection {
+        roots,
+        grammar_outputs,
+    })
+}
+
+fn lower_mod_generated_outputs(block: &ValidatedBlock) -> Result<Vec<ModGeneratedOutput>, ProjectError> {
+    block
+        .nested
+        .iter()
+        .filter(|nested| nested.rule_id == "generatedOutput")
+        .map(|nested| {
+            Ok(ModGeneratedOutput {
+                layout: required_field(&nested.fields, "layout")?,
+                root: nested.fields.get("root").cloned().unwrap_or_default(),
+            })
+        })
+        .collect()
 }
 
 fn lower_schemas_block(block: &ValidatedBlock) -> Result<ProjectSchemasSection, ProjectError> {
@@ -332,6 +377,7 @@ fn build_project_kind(type_field: Option<&str>) -> Result<ProjectKind, ProjectEr
 
 fn build_project_mod_from_fields(
     mod_fields: &HashMap<String, ModFieldValue>,
+    generated_outputs: &[ModGeneratedOutput],
 ) -> Result<ProjectModSection, ProjectError> {
     let max_generator_rounds = match mod_fields.get("maxGeneratorRounds") {
         None => match mod_fields.get("maxMetaRounds") {
@@ -375,10 +421,17 @@ fn build_project_mod_from_fields(
         }
     };
 
+    let generated_outputs = if generated_outputs.is_empty() {
+        None
+    } else {
+        Some(generated_outputs.to_vec())
+    };
+
     Ok(ProjectModSection {
         max_generator_rounds,
         capabilities,
         artifact_policy,
+        generated_outputs,
     })
 }
 
@@ -405,7 +458,10 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
                 "`mod` is only allowed when `type = Mod`",
             ));
         }
-        (ProjectKind::Mod, Some(mod_fields)) => Some(build_project_mod_from_fields(mod_fields)?),
+        (ProjectKind::Mod, Some(mod_fields)) => Some(build_project_mod_from_fields(
+            mod_fields,
+            &project.mod_generated_outputs,
+        )?),
         _ => None,
     };
     let template_section = match (&kind, &project.template_section) {
@@ -449,6 +505,7 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
         root_namespace: project.fields.get("root_namespace").cloned(),
         kind,
         mod_section,
+        grammar_section: project.grammar_section.clone(),
         template_section,
         schemas_section,
         readme: project.fields.get("readme").cloned(),
@@ -787,5 +844,61 @@ member "corelib_tests" {
             w.workspace.extras.get("defaultTestMember").map(String::as_str),
             Some("corelib_tests")
         );
+    }
+
+    #[test]
+    fn parse_grammar_block_with_outputs() {
+        let src = r#"foundation {
+  name = "foundation"
+  version = "0.1.0"
+  root = "src"
+  grammar {
+    roots = [grammars]
+    grammarOutput {
+      pest = "grammars/regex.pest"
+      module = "Core.Text.Regex.Generated"
+      packageId = "corelib_foundation"
+    }
+  }
+}
+target "lib" {
+  kind = Lib
+}
+"#;
+        let manifest = parse_manifest(src).expect("parse grammar manifest");
+        let grammar = manifest
+            .project
+            .grammar_section
+            .expect("grammar section");
+        assert_eq!(grammar.roots, vec!["grammars"]);
+        assert_eq!(grammar.grammar_outputs.len(), 1);
+        assert_eq!(grammar.grammar_outputs[0].pest, "grammars/regex.pest");
+        assert_eq!(
+            grammar.grammar_outputs[0].module,
+            "Core.Text.Regex.Generated"
+        );
+        assert_eq!(grammar.grammar_outputs[0].package_id, "corelib_foundation");
+    }
+
+    #[test]
+    fn parse_mod_generated_output_blocks() {
+        let src = r#"my_mod {
+  name = "my_mod"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    generatedOutput {
+      layout = "generate.layout.json"
+      root = "Generated"
+    }
+  }
+}
+"#;
+        let manifest = parse_manifest(src).expect("parse mod manifest");
+        let mod_section = manifest.project.mod_section.expect("mod section");
+        let outputs = mod_section.generated_outputs.expect("generated outputs");
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].layout, "generate.layout.json");
+        assert_eq!(outputs[0].resolved_root(), "Generated");
     }
 }

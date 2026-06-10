@@ -2,8 +2,13 @@
 
 use std::collections::HashMap;
 
-use super::catalog::{CommandItem, builtin_cli_commands, builtin_contextual_commands, layout_editor_commands};
+use super::catalog::{
+    CommandItem, builtin_cli_commands, builtin_contextual_commands, layout_editor_commands,
+    nav_palette_commands,
+};
 use super::descriptor::{BUILTIN_DESCRIPTORS, WidgetDescriptor};
+use super::layout::pages::PagesDoc;
+use super::nav::NavRegistry;
 use super::scope::ShellScope;
 use super::widget::BeskidWidget;
 
@@ -58,8 +63,15 @@ impl WidgetRegistry {
         &self.order
     }
 
-    pub fn palette_commands(&self, scope: &ShellScope, layout_edit_active: bool) -> Vec<CommandItem> {
-        let mut items = builtin_cli_commands();
+    pub fn palette_commands(
+        &self,
+        scope: &ShellScope,
+        layout_edit_active: bool,
+        nav: &NavRegistry,
+        pages: &PagesDoc,
+    ) -> Vec<CommandItem> {
+        let mut items = nav_palette_commands(nav, pages);
+        items.extend(builtin_cli_commands());
         items.extend(builtin_contextual_commands(scope));
         items.extend(layout_editor_commands(layout_edit_active));
         items
