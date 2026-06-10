@@ -315,10 +315,10 @@ pub fn decl_names_from_files(files: &[(String, syn::File)]) -> BTreeSet<String> 
                         names.insert(s.ident.to_string());
                     }
                 }
-                syn::Item::Enum(e) if matches!(e.vis, Visibility::Public(_)) => {
-                    if e.generics.params.is_empty() {
-                        names.insert(e.ident.to_string());
-                    }
+                syn::Item::Enum(e) if matches!(e.vis, Visibility::Public(_))
+                    && e.generics.params.is_empty() =>
+                {
+                    names.insert(e.ident.to_string());
                 }
                 _ => {}
             }
