@@ -98,15 +98,11 @@ fn host_registers_callbacks_with_layout_band() -> Result<()> {
         userdata: std::ptr::null_mut(),
     }];
     assert_eq!(
-        unsafe {
-            beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND, table.as_ptr(), table.len())
-        },
+        beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND, table.as_ptr(), table.len()),
         0
     );
     assert_eq!(
-        unsafe {
-            beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND - 1, table.as_ptr(), table.len())
-        },
+        beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND - 1, table.as_ptr(), table.len()),
         1
     );
     Ok(())
