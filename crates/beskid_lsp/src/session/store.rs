@@ -69,13 +69,37 @@ impl State {
         if self.configured_project_root.as_ref() == Some(&canonical) {
             return;
         }
-        let mut db = self.compilation_db.lock().expect("compilation db lock");
+        {
+            let mut db = self.compilation_db.lock().expect("compilation db lock");
+            *db = BeskidDatabase::with_persistence(&canonical);
+        }
+        self.configured_project_root = Some(canonical);
+    }
+
+    pub fn configure_db_for_project_with_db(
+        &mut self,
+        db: &mut BeskidDatabase,
+        project_root: &std::path::Path,
+    ) {
+        let canonical = project_root
+            .canonicalize()
+            .unwrap_or_else(|_| project_root.to_path_buf());
+        if self.configured_project_root.as_ref() == Some(&canonical) {
+            return;
+        }
         *db = BeskidDatabase::with_persistence(&canonical);
         self.configured_project_root = Some(canonical);
     }
 
     pub fn reset_compilation_db(&mut self) {
-        let mut db = self.compilation_db.lock().expect("compilation db lock");
+        {
+            let mut db = self.compilation_db.lock().expect("compilation db lock");
+            *db = BeskidDatabase::default();
+        }
+        self.configured_project_root = None;
+    }
+
+    pub fn reset_compilation_db_with_db(&mut self, db: &mut BeskidDatabase) {
         *db = BeskidDatabase::default();
         self.configured_project_root = None;
     }

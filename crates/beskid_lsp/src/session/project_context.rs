@@ -82,10 +82,10 @@ pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
     {
         beskid_queries::invalidate_entry_sessions(root);
     }
-    with_compilation_db_mut_state(state, |_, write| {
+    with_compilation_db_mut_state(state, |db, write| {
         write.compilation_context_cache.clear();
         write.typed_prepare_schedule_revision.clear();
-        write.reset_compilation_db();
+        write.reset_compilation_db_with_db(db);
         for doc in write.docs.values_mut() {
             doc.analysis_cache_version = super::lifecycle::ANALYSIS_CACHE_VERSION.saturating_sub(1);
         }

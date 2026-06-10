@@ -255,6 +255,26 @@ corelib_typecheck_test!(
     "text/TextRegexTests.bd"
 );
 corelib_typecheck_test!(
+    text_casing_tests_front_end_typechecks,
+    "text/TextCasingTests.bd"
+);
+corelib_typecheck_test!(
+    text_parser_combinator_tests_front_end_typechecks,
+    "text/TextParserCombinatorTests.bd"
+);
+corelib_typecheck_test!(
+    pest_grammar_parse_tests_front_end_typechecks,
+    "text/PestGrammarParseTests.bd"
+);
+corelib_typecheck_test!(
+    pest_emit_golden_tests_front_end_typechecks,
+    "text/PestEmitGoldenTests.bd"
+);
+corelib_typecheck_test!(
+    text_regex_integration_tests_front_end_typechecks,
+    "text/TextRegexIntegrationTests.bd"
+);
+corelib_typecheck_test!(
     core_optional_tests_front_end_typechecks,
     "core/OptionalTests.bd"
 );

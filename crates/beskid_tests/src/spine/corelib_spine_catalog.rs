@@ -55,6 +55,11 @@ pub const CORELIB_TYPECHECK_ENTRIES: &[&str] = &[
     "text/TextCursorTests.bd",
     "text/TextParserTests.bd",
     "text/TextRegexTests.bd",
+    "text/TextCasingTests.bd",
+    "text/TextParserCombinatorTests.bd",
+    "text/PestGrammarParseTests.bd",
+    "text/PestEmitGoldenTests.bd",
+    "text/TextRegexIntegrationTests.bd",
 ];
 
 /// Fast local/CI-smoke subset (foundation + console + text parsing).

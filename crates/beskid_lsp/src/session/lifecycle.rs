@@ -138,7 +138,7 @@ async fn build_document_analysis(
 
     with_compilation_db_mut_state(state, |db, write| {
         if let Some(plan) = session.compile_plan.as_ref() {
-            write.configure_db_for_project(&plan.project_root);
+            write.configure_db_for_project_with_db(db, &plan.project_root);
         }
         db.ensure_file_text(path.clone(), text.to_string());
 
@@ -204,7 +204,7 @@ async fn touch_entry_file_revision_for_uri(state: &RwLock<State>, uri: &Uri, tex
     };
     with_compilation_db_mut_state(state, |db, write| {
         if let Some(plan) = resolved.compile_plan.as_ref() {
-            write.configure_db_for_project(&plan.project_root);
+            write.configure_db_for_project_with_db(db, &plan.project_root);
         }
         db.ensure_file_text(path, text.to_string());
         bump_entry_file_revision(db, &resolved);
@@ -233,7 +233,7 @@ async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
 
     with_compilation_db_mut_state(state, |db, write| {
         if let Some(plan) = resolved.compile_plan.as_ref() {
-            write.configure_db_for_project(&plan.project_root);
+            write.configure_db_for_project_with_db(db, &plan.project_root);
         }
         bump_entry_typed_prepare_revision(db, &resolved);
     })

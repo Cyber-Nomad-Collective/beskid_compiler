@@ -21,7 +21,7 @@ pub async fn analyze_document_for_state(
         if let Some(ctx) = compilation_context
             && let Some(plan) = ctx.compile_plan.as_ref()
         {
-            write.configure_db_for_project(&plan.project_root);
+            write.configure_db_for_project_with_db(db, &plan.project_root);
         }
         analyze_document(Some(db), uri, source, cached, compilation_context)
     })
