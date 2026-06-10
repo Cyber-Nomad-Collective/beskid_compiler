@@ -153,13 +153,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
             ctx.state.block_terminated = false;
             bind_match_pattern(ctx, scrutinee, scrutinee_type, item_id, variants, arm)?;
 
-            let value_block = if arm.node.guard.is_some() {
-                let guard_val = lower_node(arm.node.guard.as_ref().unwrap(), ctx)?.ok_or(
-                    CodegenError::UnsupportedNode {
-                        span: arm.node.guard.as_ref().unwrap().span,
-                        node: "unit-valued match guard",
-                    },
-                )?;
+            let value_block = if let Some(guard) = &arm.node.guard {
+                let guard_val = lower_node(guard, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                    span: guard.span,
+                    node: "unit-valued match guard",
+                })?;
                 let guard_block = ctx.builder.create_block();
                 ctx.builder
                     .ins()
@@ -277,13 +275,11 @@ fn lower_primitive_match(
         ctx.state.block_terminated = false;
         bind_primitive_match_pattern(ctx, arm, scrutinee)?;
 
-        let value_block = if arm.node.guard.is_some() {
-            let guard_val = lower_node(arm.node.guard.as_ref().unwrap(), ctx)?.ok_or(
-                CodegenError::UnsupportedNode {
-                    span: arm.node.guard.as_ref().unwrap().span,
-                    node: "unit-valued match guard",
-                },
-            )?;
+        let value_block = if let Some(guard) = &arm.node.guard {
+            let guard_val = lower_node(guard, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                span: guard.span,
+                node: "unit-valued match guard",
+            })?;
             let guard_block = ctx.builder.create_block();
             ctx.builder
                 .ins()
@@ -416,7 +412,7 @@ fn bind_match_pattern(
                 .items
                 .iter()
                 .zip(field_types.iter())
-                .zip(offsets.into_iter())
+                .zip(offsets)
             {
                 match &item.node {
                     HirPattern::Identifier(identifier) => {

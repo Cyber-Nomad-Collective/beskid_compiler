@@ -403,7 +403,7 @@ fn lower_lambda_to_symbol(
 
     let mut state = crate::lowering::function::FunctionLoweringState::default();
     let param_values = builder.block_params(entry).to_vec();
-    for (parameter, value) in lambda.node.parameters.iter().zip(param_values.into_iter()) {
+    for (parameter, value) in lambda.node.parameters.iter().zip(param_values) {
         let local_id = local_id_for_span(
             ctx.resolution,
             parameter.node.name.span,

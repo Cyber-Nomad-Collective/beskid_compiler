@@ -661,7 +661,7 @@ fn lower_function_with_name_body(
         .node
         .parameters
         .iter()
-        .zip(param_values.into_iter())
+        .zip(param_values)
         .enumerate()
     {
         let local_id = local_id_for_span(
