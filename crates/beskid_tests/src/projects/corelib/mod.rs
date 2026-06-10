@@ -29,10 +29,6 @@ pub(super) fn foundation_root() -> PathBuf {
     corelib_workspace_root().join("packages/foundation")
 }
 
-pub(super) fn runtime_src() -> PathBuf {
-    corelib_workspace_root().join("packages/runtime/src")
-}
-
 pub(super) fn compiler_sdk_src() -> PathBuf {
     corelib_workspace_root().join("packages/compiler-sdk/src")
 }

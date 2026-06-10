@@ -33,15 +33,13 @@ pub(crate) fn get_graph(
         kind,
         GraphKind::ModuleTree | GraphKind::ImportClosure | GraphKind::HostComposition
     ) && !is_workspace_manifest_path(&manifest_path)
+        && let Some(ctx) = CompilationContext::try_for_analysis_path(&manifest_path, None)
+        && let Some(plan) = ctx.compile_plan.clone()
     {
-        if let Some(ctx) = CompilationContext::try_for_analysis_path(&manifest_path, None) {
-            if let Some(plan) = ctx.compile_plan.clone() {
-                if entry_path.is_none() {
-                    entry_path = Some(plan_entry_path(&plan, &plan.source_root));
-                }
-                compile_plan = Some(plan);
-            }
+        if entry_path.is_none() {
+            entry_path = Some(plan_entry_path(&plan, &plan.source_root));
         }
+        compile_plan = Some(plan);
     }
 
     let request = GraphFetchRequest {

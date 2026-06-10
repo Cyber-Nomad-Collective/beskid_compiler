@@ -436,6 +436,7 @@ fn lower_lambda_to_symbol(
         state: &mut state,
         expected_return_type: Some(return_type),
         receiver_type: None,
+        expected_expr_type: None,
     };
 
     let lowered = lower_node(&lambda.node.body, &mut lambda_ctx)?;

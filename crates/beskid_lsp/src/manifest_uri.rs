@@ -19,10 +19,6 @@ pub fn is_manifest_uri(uri: &Uri) -> bool {
     is_project_manifest_uri(uri) || is_workspace_manifest_uri(uri)
 }
 
-pub fn manifest_path_from_uri(uri: &Uri) -> Option<PathBuf> {
-    uri_to_path(uri)
-}
-
 pub fn manifest_path_from_uri_str(uri: &str) -> Option<PathBuf> {
     path_from_uri_string(uri)
 }

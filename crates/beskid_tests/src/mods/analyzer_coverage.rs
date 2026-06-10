@@ -12,7 +12,7 @@ use beskid_analysis::mod_host::{
 };
 use beskid_analysis::services::parse_program_with_source_name;
 
-use super::fixture::{ModFixtureWorkspace, program_contains_function, typed_items_contain_function};
+use super::fixture::{ModFixtureWorkspace, program_contains_function};
 
 #[test]
 fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterwards() {

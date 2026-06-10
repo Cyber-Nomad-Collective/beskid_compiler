@@ -221,6 +221,7 @@ fn lower_method_body(
         state: &mut state,
         expected_return_type: return_type_id,
         receiver_type: Some(receiver_type_id),
+        expected_expr_type: None,
     };
 
     for statement in &def.node.body.node.statements {
@@ -339,6 +340,7 @@ fn lower_test_body(
         state: &mut state,
         expected_return_type,
         receiver_type: None,
+        expected_expr_type: None,
     };
 
     for statement in &def.node.body.node.statements {
@@ -709,6 +711,7 @@ fn lower_function_with_name_body(
         state: &mut state,
         expected_return_type,
         receiver_type: None,
+        expected_expr_type: None,
     };
 
     for statement in &def.node.body.node.statements {

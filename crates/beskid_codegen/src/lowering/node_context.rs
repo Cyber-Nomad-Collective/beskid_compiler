@@ -21,6 +21,7 @@ pub(crate) struct NodeLoweringContext<'a, 'b> {
     pub(crate) state: &'a mut FunctionLoweringState,
     pub(crate) expected_return_type: Option<TypeId>,
     pub(crate) receiver_type: Option<TypeId>,
+    pub(crate) expected_expr_type: Option<TypeId>,
 }
 
 impl NodeLoweringContext<'_, '_> {
@@ -46,6 +47,9 @@ impl NodeLoweringContext<'_, '_> {
             }
         }
         if let Some(type_id) = self.expr_type(span) {
+            return Ok(type_id);
+        }
+        if let Some(type_id) = self.expected_expr_type {
             return Ok(type_id);
         }
         require_expr_type(
@@ -103,6 +107,17 @@ impl NodeLoweringContext<'_, '_> {
             return Ok(type_id);
         }
         Err(CodegenError::MissingExpressionType { span: node.span })
+    }
+
+    pub(crate) fn with_expected_expr_type<R>(
+        &mut self,
+        expected: TypeId,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let previous = self.expected_expr_type.replace(expected);
+        let result = f(self);
+        self.expected_expr_type = previous;
+        result
     }
 }
 

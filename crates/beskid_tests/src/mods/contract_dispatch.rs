@@ -22,7 +22,7 @@ use beskid_pipeline::phases::{
 };
 use beskid_pipeline::{PipelineEvent, PipelineObserver};
 
-use super::fixture::{ModFixtureWorkspace, typed_items_contain_function};
+use super::fixture::ModFixtureWorkspace;
 
 #[derive(Default)]
 struct CapturePipeline {

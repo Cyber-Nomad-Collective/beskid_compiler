@@ -80,10 +80,7 @@ pub fn run_loop(session: &mut ReplSession, input: &mut dyn ReplInput) -> io::Res
         )?;
     }
 
-    loop {
-        let Some(line) = input.read_line("beskid> ")? else {
-            break;
-        };
+    while let Some(line) = input.read_line("beskid> ")? {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;

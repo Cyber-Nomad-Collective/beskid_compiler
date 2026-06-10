@@ -3,7 +3,9 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use bsol::{AnalysisOptions, AnalysisSession, BsolError, load_profile, parse_bsol_document, validate};
+use bsol::{AnalysisOptions, AnalysisSession};
+#[cfg(test)]
+use bsol::{load_profile, parse_bsol_document, validate};
 use bsol_beskid_bridge::PckgSchemaSource;
 use clap::Parser;
 

@@ -144,6 +144,7 @@ mod dynamic_clif_tests {
                 state: &mut state,
                 expected_return_type: None,
                 receiver_type: None,
+                expected_expr_type: None,
             };
             let _cell = emit_dynamic_cell_create(ctx.builder, 7, null_payload);
             ctx.builder.ins().return_(&[null_payload]);

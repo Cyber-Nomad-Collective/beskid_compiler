@@ -76,8 +76,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
                         span: field.node.name.span,
                         node: "struct literal field type",
                     })?;
-            let value =
-                lower_node(&field.node.value, ctx)?.ok_or(CodegenError::UnsupportedNode {
+            let value = ctx.with_expected_expr_type(field_type, |ctx| {
+                lower_node(&field.node.value, ctx)
+            })?
+            .ok_or(CodegenError::UnsupportedNode {
                     span: field.node.value.span,
                     node: "unit-valued struct field",
                 })?;
