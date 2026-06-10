@@ -4,6 +4,7 @@ use anyhow::Result;
 use beskid_codegen::services::lower_source;
 use beskid_engine::Engine;
 
+#[cfg(feature = "extern_dlopen")]
 const LIBC: &str = "libc.so.6";
 
 #[test]
