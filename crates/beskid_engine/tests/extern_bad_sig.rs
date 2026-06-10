@@ -1,4 +1,4 @@
-#![cfg(target_os = "linux")]
+#![cfg(all(target_os = "linux", feature = "extern_dlopen"))]
 
 use anyhow::Result;
 use beskid_codegen::{CodegenArtifact, ExternImport, LoweredFunction};
@@ -7,7 +7,6 @@ use cranelift_codegen::ir::{AbiParam, ExternalName, Function, Signature, types};
 use cranelift_codegen::isa::CallConv;
 
 #[test]
-#[cfg(feature = "extern_dlopen")]
 fn extern_signature_validation_rejects_disallowed_types() -> Result<()> {
     // Build a function that imports an extern symbol with a disallowed param type (i16),
     // without even calling it; the JIT validator scans ext_funcs and rejects the signature.
