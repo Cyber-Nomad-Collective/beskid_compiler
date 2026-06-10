@@ -42,11 +42,11 @@ impl UploadProgress {
             return;
         }
         *last = Instant::now();
-        let pct = if self.total == 0 {
-            100
-        } else {
-            ((done.saturating_mul(100)) / self.total).min(100)
-        };
+        let pct = done
+            .saturating_mul(100)
+            .checked_div(self.total)
+            .unwrap_or(100)
+            .min(100);
         let bar_width = 30usize;
         let filled = ((pct as usize).saturating_mul(bar_width)) / 100;
         let bar: String = "#".repeat(filled) + &"-".repeat(bar_width.saturating_sub(filled));
