@@ -114,7 +114,7 @@ impl ModuleIndex {
             .collect();
         let unit_paths: HashSet<PathBuf> = units
             .iter()
-            .map(|unit| unit.path.clone())
+            .map(|unit| normalize_assembly_path(&unit.path))
             .collect();
         let mut prefetched_paths = Vec::new();
         if prefetch_dependency_roots {
@@ -530,7 +530,8 @@ fn collect_prefetched_import_closure(
         let Some(path) = resolve_module_file(&import_path, roots) else {
             continue;
         };
-        if unit_paths.contains(&path) || !seen_paths.insert(path.clone()) {
+        let normalized = normalize_assembly_path(&path);
+        if unit_paths.contains(&normalized) || !seen_paths.insert(normalized) {
             continue;
         }
         if !path_in_dependency_roots(&path, roots) {
@@ -605,7 +606,7 @@ fn collect_prefetched_modules(
         }
     bd_files.sort();
     for path in bd_files {
-        if unit_paths.contains(&path) {
+        if unit_paths.contains(&normalize_assembly_path(&path)) {
             continue;
         }
         let Ok(source) = std::fs::read_to_string(&path) else {
@@ -670,7 +671,11 @@ fn prefetch_module_at_path(
         resolver.set_current_source_path(Some(path.to_path_buf()));
         resolver.collect_program(&hir);
     }
-    prefetched_paths.push(path.to_path_buf());
+    prefetched_paths.push(normalize_assembly_path(path));
+}
+
+fn normalize_assembly_path(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn collect_source_files(root: &Path, out: &mut Vec<PathBuf>) {

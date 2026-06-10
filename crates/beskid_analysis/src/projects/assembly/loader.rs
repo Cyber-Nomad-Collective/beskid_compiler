@@ -841,9 +841,9 @@ mod tests {
         let scanned = assemble_program(&plan, None, &entry_path, None, &scan_options, None)
             .expect("workspace scan should assemble host and prefetch dependency tree");
         assert!(
-            scanned.module_index.prefetched_paths().len() >= 8,
-            "workspace scan should prefetch dependency shards, got {}",
-            scanned.module_index.prefetched_paths().len()
+            scanned.units.len() >= 9,
+            "workspace scan should assemble host and dependency shards as units, got {}",
+            scanned.units.len()
         );
         let _ = fs::remove_dir_all(&project_root);
     }

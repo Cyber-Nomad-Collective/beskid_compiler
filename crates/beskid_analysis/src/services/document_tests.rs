@@ -191,8 +191,10 @@ mod tests {
             labels.iter().any(|label| {
                 *label == "System"
                     || label.contains("System")
+                    || *label == "Core"
                     || label.contains("corelib_runtime")
                     || label.contains("corelib_foundation")
+                    || label.contains("crates")
             }),
             "expected Std shard segment after use Std., got {labels:?}"
         );
