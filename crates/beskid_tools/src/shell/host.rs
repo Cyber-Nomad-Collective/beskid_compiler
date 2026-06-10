@@ -125,9 +125,11 @@ impl HiShellApp {
         compile_registrar: Option<HiCompileRegistrar>,
     ) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
-        let mut shell_state = ShellState::default();
-        shell_state.shell_mode = ShellMode::Hi;
-        shell_state.compile_complete = true;
+        let shell_state = ShellState {
+            shell_mode: ShellMode::Hi,
+            compile_complete: true,
+            ..Default::default()
+        };
         let active_page = layout.active_page_id.clone();
         let _ = switch_page(&mut layout, &active_page);
         let focused = layout
@@ -425,14 +427,13 @@ impl HiShellApp {
                 }
             }
             LayoutOverlayAction::FocusNode(node_id) => {
-                if let Some(node) = self.layout.doc.nodes.get(&node_id) {
-                    if let Some(widget) = &node.widget {
+                if let Some(node) = self.layout.doc.nodes.get(&node_id)
+                    && let Some(widget) = &node.widget {
                         let _ = super::layout::resolve::focus_panel_by_kind(
                             &mut self.layout.runtime,
                             widget,
                         );
                     }
-                }
             }
         }
     }
@@ -542,8 +543,8 @@ impl HiShellApp {
     }
 
     fn queue_compile_or_cli(&mut self, item: &super::catalog::CommandItem, params: &str) {
-        if let super::catalog::CommandItem::Cli(cli) = item {
-            if hi_compile::is_in_process_command(cli.id) && self.compile_registrar.is_some() {
+        if let super::catalog::CommandItem::Cli(cli) = item
+            && hi_compile::is_in_process_command(cli.id) && self.compile_registrar.is_some() {
                 self.prepare_compile_run(params);
                 self.pending_compile = Some(HiCompileJob {
                     command: cli.id.to_string(),
@@ -551,7 +552,6 @@ impl HiShellApp {
                 });
                 return;
             }
-        }
         self.queue_cli(item, params);
     }
 
@@ -679,11 +679,10 @@ impl HiShellApp {
 
     fn route_overlay_input(&mut self, event: ShellRealmEvent) -> ShellOutcome {
         if let ShellRealmEvent::Input(input) = event {
-            if let InputEvent::Key(key) = &input {
-                if let Some(action) = self.handle_global_key(*key) {
+            if let InputEvent::Key(key) = &input
+                && let Some(action) = self.handle_global_key(*key) {
                     return action;
                 }
-            }
             let result = views::on_input(&input, &mut self.shell_state);
             match result {
                 InputResult::Quit => {
@@ -840,13 +839,12 @@ impl HiShellApp {
             }
         }
 
-        if let ShellRealmEvent::Input(InputEvent::Key(key)) = &event {
-            if key.code == KeyCode::F(10) {
+        if let ShellRealmEvent::Input(InputEvent::Key(key)) = &event
+            && key.code == KeyCode::F(10) {
                 let menu_action = self.top_menu.handle_key(*key);
                 self.handle_top_menu_action(menu_action);
                 return ShellOutcome::Redraw;
             }
-        }
 
         if self.command_dialog.visible {
             if let ShellRealmEvent::Input(InputEvent::Key(key)) = event {
@@ -868,8 +866,8 @@ impl HiShellApp {
             return self.route_overlay_input(event);
         }
 
-        if self.layout.editor.active {
-            if let ShellRealmEvent::Input(InputEvent::Key(key)) = event {
+        if self.layout.editor.active
+            && let ShellRealmEvent::Input(InputEvent::Key(key)) = event {
                 if let Some(action) = self.handle_global_key(key) {
                     return action;
                 }
@@ -901,7 +899,6 @@ impl HiShellApp {
                 }
                 return ShellOutcome::Redraw;
             }
-        }
 
         match event {
             ShellRealmEvent::Input(InputEvent::Key(key)) => {
@@ -1015,7 +1012,7 @@ impl HiShellApp {
             if let Some(widget) = self.registry.get(&widget_id) {
                 widget.render(rect, frame, &mut ctx);
             }
-            if edit_active && highlight == entry.kind.as_ref() as &str {
+            if edit_active && highlight == entry.kind as &str {
                 render_edit_highlight(frame, rect);
             }
         }

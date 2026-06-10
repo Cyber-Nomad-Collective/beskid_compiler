@@ -145,21 +145,6 @@ fn append_nav_palette(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::shell::layout::pages::{parse_pages, EMBEDDED_HI_PAGES};
-
-    #[test]
-    fn nav_palette_includes_selectable_pages() {
-        let registry = NavRegistry::new();
-        let pages = parse_pages(EMBEDDED_HI_PAGES).expect("pages");
-        let items = nav_palette_commands(&registry, &pages);
-        assert!(items.iter().any(|item| item.name().contains("Graphs")));
-        assert!(!items.iter().any(|item| item.name() == "Beskid"));
-    }
-}
-
 /// Built-in CLI commands mirrored from `beskid_cli`.
 pub fn builtin_cli_commands() -> Vec<CommandItem> {
     vec![
@@ -322,5 +307,20 @@ fn contextual(
         icon,
         args_hint,
         widget_id,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shell::layout::pages::{parse_pages, EMBEDDED_HI_PAGES};
+
+    #[test]
+    fn nav_palette_includes_selectable_pages() {
+        let registry = NavRegistry::new();
+        let pages = parse_pages(EMBEDDED_HI_PAGES).expect("pages");
+        let items = nav_palette_commands(&registry, &pages);
+        assert!(items.iter().any(|item| item.name().contains("Graphs")));
+        assert!(!items.iter().any(|item| item.name() == "Beskid"));
     }
 }

@@ -78,8 +78,7 @@ impl ShellFx {
     pub fn process(&mut self, frame_area: Rect, buffer: &mut ratatui::buffer::Buffer) {
         let elapsed = self.last_frame.elapsed();
         self.last_frame = Instant::now();
-        let _ = self
-            .effects
+        self.effects
             .process_effects(elapsed.into(), buffer, frame_area);
     }
 

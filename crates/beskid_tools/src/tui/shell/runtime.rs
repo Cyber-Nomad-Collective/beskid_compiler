@@ -6,7 +6,6 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use tuirealm::application::{Application, PollStrategy};
-use tuirealm::component::AppComponent;
 use tuirealm::event::NoUserEvent;
 use tuirealm::listener::EventListenerCfg;
 use tuirealm::terminal::TerminalAdapter;
@@ -129,10 +128,10 @@ fn run_loop(
     interrupt: InterruptFlag,
     tx: Sender<RuntimeOp>,
 ) -> io::Result<()> {
-    let init_result = (|| -> io::Result<()> {
+    let init_result: io::Result<()> = {
         init_session_logger();
         Ok(())
-    })();
+    };
 
     if let Err(err) = init_result {
         let _ = ready.send(Err(io::Error::other(err.to_string())));

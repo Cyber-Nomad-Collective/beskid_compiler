@@ -183,19 +183,16 @@ pub fn load_config(scope: &ShellScope, registry: &ToolSettingsRegistry) -> Tools
         ..ToolsConfig::default()
     };
 
-    if user_config_path().is_file() {
-        if let Ok(parsed) = load_from_path(&user_config_path()) {
+    if user_config_path().is_file()
+        && let Ok(parsed) = load_from_path(&user_config_path()) {
             config.merge(&parsed);
         }
-    }
 
-    if let Some(path) = scope_config_path(scope) {
-        if path.is_file() {
-            if let Ok(parsed) = load_from_path(&path) {
+    if let Some(path) = scope_config_path(scope)
+        && path.is_file()
+            && let Ok(parsed) = load_from_path(&path) {
                 config.merge(&parsed);
             }
-        }
-    }
 
     apply_defaults(&mut config, registry);
     config
@@ -233,9 +230,7 @@ fn apply_defaults(config: &mut ToolsConfig, registry: &ToolSettingsRegistry) {
     for page in registry.pages() {
         for desc in page.settings {
             let key = (page.tool_id.to_string(), desc.key.to_string());
-            if !config.values.contains_key(&key) {
-                config.values.insert(key, desc.default.to_string());
-            }
+            config.values.entry(key).or_insert_with(|| desc.default.to_string());
         }
     }
 }

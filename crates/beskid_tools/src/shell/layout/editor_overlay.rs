@@ -16,24 +16,13 @@ use crate::shell::descriptor::WidgetDescriptor;
 use crate::shell::scope::{ShellScope, user_data_dir};
 use crate::tui::overlay_chrome::{draw_backdrop, hotkey, render_overlay_panel};
 
+#[derive(Default)]
 pub struct LayoutEditorOverlay {
     pub template_selected: usize,
     pub widget_selected: usize,
     pub layout_selected: usize,
     pub structure_selected: usize,
     saved_boards: Vec<PathBuf>,
-}
-
-impl Default for LayoutEditorOverlay {
-    fn default() -> Self {
-        Self {
-            template_selected: 0,
-            widget_selected: 0,
-            layout_selected: 0,
-            structure_selected: 0,
-            saved_boards: Vec::new(),
-        }
-    }
 }
 
 impl LayoutEditorOverlay {
@@ -101,7 +90,7 @@ impl LayoutEditorOverlay {
         &mut self,
         tab: LayoutOverlayTab,
         delta: usize,
-        doc: &BoardV2Doc,
+        _doc: &BoardV2Doc,
         structure_len: usize,
     ) {
         match tab {
@@ -416,8 +405,8 @@ fn list_saved_boards(scope: &ShellScope) -> Vec<PathBuf> {
         paths.push(scope_path);
     }
     let boards_dir = user_data_dir().join("boards");
-    if boards_dir.is_dir() {
-        if let Ok(entries) = fs::read_dir(&boards_dir) {
+    if boards_dir.is_dir()
+        && let Ok(entries) = fs::read_dir(&boards_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_file()
@@ -430,7 +419,6 @@ fn list_saved_boards(scope: &ShellScope) -> Vec<PathBuf> {
                 }
             }
         }
-    }
     paths.sort();
     paths.dedup();
     paths

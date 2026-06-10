@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::Frame;
 
 use crate::shell::catalog::{builtin_cli_commands, builtin_contextual_commands};
@@ -138,7 +138,7 @@ impl BeskidShellApp {
     fn apply_shell_action(&mut self, action: ShellAction) {
         match action {
             ShellAction::OpenPalette => self.open_palette(),
-            ShellAction::RunContextual(id) if id == "ctx.palette" => self.open_palette(),
+            ShellAction::RunContextual("ctx.palette") => self.open_palette(),
             ShellAction::OpenOverlay(widget_id) => match widget_id {
                 "pckg.browser" => {
                     self.state.set_overlay_visible(OverlayKind::Pckg, true);

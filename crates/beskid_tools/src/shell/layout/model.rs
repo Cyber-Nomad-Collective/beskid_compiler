@@ -14,7 +14,7 @@ pub enum NodeKind {
 }
 
 impl NodeKind {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_kind(s: &str) -> Option<Self> {
         match s {
             "col" => Some(Self::Col),
             "row" => Some(Self::Row),

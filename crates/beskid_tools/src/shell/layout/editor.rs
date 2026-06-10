@@ -73,6 +73,7 @@ pub enum LayoutEditCommand {
     SetWidget,
 }
 
+#[derive(Default)]
 pub struct LayoutEditorState {
     pub active: bool,
     pub dirty: bool,
@@ -81,19 +82,6 @@ pub struct LayoutEditorState {
     pub overlay_tab: LayoutOverlayTab,
     /// Right-side widget/template drawer visible (toggle with `w` in edit mode).
     pub drawer_visible: bool,
-}
-
-impl Default for LayoutEditorState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            dirty: false,
-            last_edit: None,
-            pending_widget: None,
-            overlay_tab: LayoutOverlayTab::default(),
-            drawer_visible: false,
-        }
-    }
 }
 
 pub struct HiLayoutState {

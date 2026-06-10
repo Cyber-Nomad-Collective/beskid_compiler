@@ -4,6 +4,7 @@
 //! Ratatui's built-in [`ratatui::init`] helpers target stdout; use this module for the
 //! stderr [`CrosstermBackend`].
 
+#![allow(dead_code)]
 use std::io::{self, Stderr, stderr};
 use std::sync::Once;
 

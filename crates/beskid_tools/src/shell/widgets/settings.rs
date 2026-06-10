@@ -145,12 +145,11 @@ impl BeskidWidget for SettingsWidget {
                 ShellAction::Redraw
             }
             KeyCode::Down if !state.editing => {
-                if let Some(page) = state.active_page() {
-                    if !page.settings.is_empty() {
+                if let Some(page) = state.active_page()
+                    && !page.settings.is_empty() {
                         state.focused_field =
                             (state.focused_field + 1).min(page.settings.len() - 1);
                     }
-                }
                 ShellAction::Redraw
             }
             KeyCode::Enter => {
@@ -186,7 +185,7 @@ impl BeskidWidget for SettingsWidget {
                 } else {
                     None
                 };
-                return action.unwrap_or(ShellAction::None);
+                action.unwrap_or(ShellAction::None)
             }
             KeyCode::Esc if state.editing => {
                 state.editing = false;

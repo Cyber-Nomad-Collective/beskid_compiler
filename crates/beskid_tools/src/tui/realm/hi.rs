@@ -134,8 +134,8 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
                 .downcast_mut::<HiShellComponent>()
                 .expect("hi shell component");
 
-            if let Some(handle) = compile_thread.as_ref() {
-                if handle.is_finished() {
+            if let Some(handle) = compile_thread.as_ref()
+                && handle.is_finished() {
                     let handle = compile_thread.take().expect("compile thread");
                     let result = handle
                         .join()
@@ -143,14 +143,12 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
                     inner.app.on_compile_finished(result);
                     dirty = true;
                 }
-            }
 
-            if compile_thread.is_none() {
-                if let Some(job) = inner.app.take_pending_compile() {
+            if compile_thread.is_none()
+                && let Some(job) = inner.app.take_pending_compile() {
                     compile_thread = inner.app.spawn_compile_job(job);
                     dirty = true;
                 }
-            }
 
             if let Some(plan) = inner.app.take_pending_cli() {
                 terminal

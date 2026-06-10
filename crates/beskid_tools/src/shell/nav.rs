@@ -56,7 +56,7 @@ pub struct NavItemDescriptor {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct BuiltinNavItem {
+pub struct BuiltinNavItem {
     id: &'static str,
     label: &'static str,
     action: BuiltinNavAction,
@@ -66,6 +66,7 @@ struct BuiltinNavItem {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 enum BuiltinNavAction {
     Group,
     Page(&'static str),

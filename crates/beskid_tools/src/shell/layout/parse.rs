@@ -125,6 +125,27 @@ fn lower_v2(doc: ValidatedDocument) -> Result<BoardV2Doc, String> {
     })
 }
 
+fn lower_node(block: &ValidatedBlock) -> Result<BoardNode, String> {
+    let kind = block
+        .fields
+        .get("kind")
+        .and_then(|k| NodeKind::parse_kind(k))
+        .ok_or_else(|| format!("node `{}` has invalid kind", block.label.as_deref().unwrap_or("?")))?;
+    let children = block.lists.get("children").cloned().unwrap_or_default();
+    Ok(BoardNode {
+        kind,
+        widget: block.fields.get("widget").cloned(),
+        grow: block.fields.get("grow").and_then(|v| v.parse().ok()),
+        min_width: block.fields.get("min_width").and_then(|v| v.parse().ok()),
+        min_height: block.fields.get("min_height").and_then(|v| v.parse().ok()),
+        fixed_width: block.fields.get("fixed_width").and_then(|v| v.parse().ok()),
+        fixed_height: block.fields.get("fixed_height").and_then(|v| v.parse().ok()),
+        ratio: block.fields.get("ratio").and_then(|v| v.parse().ok()),
+        children,
+        active: block.fields.get("active").cloned(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,25 +176,4 @@ mod tests {
         assert_eq!(again.root, doc.root);
         assert_eq!(again.nodes.len(), doc.nodes.len());
     }
-}
-
-fn lower_node(block: &ValidatedBlock) -> Result<BoardNode, String> {
-    let kind = block
-        .fields
-        .get("kind")
-        .and_then(|k| NodeKind::from_str(k))
-        .ok_or_else(|| format!("node `{}` has invalid kind", block.label.as_deref().unwrap_or("?")))?;
-    let children = block.lists.get("children").cloned().unwrap_or_default();
-    Ok(BoardNode {
-        kind,
-        widget: block.fields.get("widget").cloned(),
-        grow: block.fields.get("grow").and_then(|v| v.parse().ok()),
-        min_width: block.fields.get("min_width").and_then(|v| v.parse().ok()),
-        min_height: block.fields.get("min_height").and_then(|v| v.parse().ok()),
-        fixed_width: block.fields.get("fixed_width").and_then(|v| v.parse().ok()),
-        fixed_height: block.fields.get("fixed_height").and_then(|v| v.parse().ok()),
-        ratio: block.fields.get("ratio").and_then(|v| v.parse().ok()),
-        children,
-        active: block.fields.get("active").cloned(),
-    })
 }

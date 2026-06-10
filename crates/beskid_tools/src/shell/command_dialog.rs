@@ -134,7 +134,7 @@ impl CommandDialogOverlay {
         argv_override: Vec<String>,
         scope: &ShellScope,
     ) {
-        let title = leak_str(format!("{command_name}"));
+        let title = leak_str(command_name.to_string());
         let hint = args_hint.to_string();
         let scope_hint = scope
             .root_dir()

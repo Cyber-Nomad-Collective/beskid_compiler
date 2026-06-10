@@ -19,14 +19,9 @@ use crate::tui::shell::state::ShellState;
 /// Fixed height of the pinned top bar (not layout-editable).
 pub const PINNED_TOP_ROWS: u16 = 2;
 
+#[derive(Default)]
 pub struct ShellChrome {
     pub show_help: bool,
-}
-
-impl Default for ShellChrome {
-    fn default() -> Self {
-        Self { show_help: false }
-    }
 }
 
 impl ShellChrome {

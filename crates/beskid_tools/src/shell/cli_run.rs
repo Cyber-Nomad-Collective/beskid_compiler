@@ -1,7 +1,7 @@
 //! CLI subprocess planning and execution (TUI callers suspend the terminal first).
 
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::catalog::{CliCommandDef, CommandItem};
@@ -15,7 +15,7 @@ pub struct CliRunPlan {
 }
 
 pub fn plan_cli_command(
-    exe: &PathBuf,
+    exe: &Path,
     item: &CommandItem,
     params: &str,
     scope: &ShellScope,
@@ -24,7 +24,7 @@ pub fn plan_cli_command(
         return None;
     };
     Some(CliRunPlan {
-        exe: exe.clone(),
+        exe: exe.to_path_buf(),
         args: build_argv(cli, params, scope),
     })
 }

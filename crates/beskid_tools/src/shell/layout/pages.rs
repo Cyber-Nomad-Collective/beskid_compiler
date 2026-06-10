@@ -109,12 +109,11 @@ pub fn switch_page(state: &mut HiLayoutState, page_id: &str) -> Result<(), Strin
         .ok_or_else(|| format!("unknown page `{page_id}`"))?
         .clone();
     state.active_page_id = page_id.to_string();
-    if let Some(root) = page.board_root {
-        if state.doc.nodes.contains_key(&root) {
+    if let Some(root) = page.board_root
+        && state.doc.nodes.contains_key(&root) {
             state.doc.root = root;
             state.rebuild_runtime()?;
         }
-    }
     Ok(())
 }
 
