@@ -3,7 +3,8 @@
 use crate::linking::{FunctionDefIndex, LinkPlan, LinkSymbol};
 use crate::lowering::cast_intent::validate_cast_intents;
 use crate::lowering::context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport};
-use crate::lowering::expressions::export::{collect_exports, export_linker_name};
+use crate::lowering::expressions::export::collect_exports;
+use crate::lowering::function::linker_name_for_item_function;
 use crate::lowering::function::{
     generic_mapping_for_method_receiver, generic_mapping_from_mangled, is_self_parameter_function,
     lower_function, lower_function_with_name, lower_method, lower_test,
@@ -233,7 +234,9 @@ fn emit_function_item(
             {
                 return;
             }
-            let symbol_name = mangled.clone().unwrap_or_else(|| export_linker_name(def));
+            let symbol_name = mangled.clone().unwrap_or_else(|| {
+        linker_name_for_item_function(resolution, item, def)
+    });
             if ctx.symbol_emitted(&symbol_name) {
                 return;
             }
@@ -258,7 +261,9 @@ fn emit_function_item(
             && let Some(generic_args) =
                 generic_mapping_from_mangled(type_result, item, mangled_name)
         {
-            let symbol_name = mangled.clone().unwrap_or_else(|| export_linker_name(def));
+            let symbol_name = mangled.clone().unwrap_or_else(|| {
+        linker_name_for_item_function(resolution, item, def)
+    });
             if ctx.symbol_emitted(&symbol_name) {
                 return;
             }
@@ -280,7 +285,9 @@ fn emit_function_item(
         }
         return;
     }
-    let symbol_name = mangled.clone().unwrap_or_else(|| export_linker_name(def));
+    let symbol_name = mangled.clone().unwrap_or_else(|| {
+        linker_name_for_item_function(resolution, item, def)
+    });
     if ctx.symbol_emitted(&symbol_name) {
         return;
     }

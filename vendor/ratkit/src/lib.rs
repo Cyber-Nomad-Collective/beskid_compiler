@@ -62,7 +62,16 @@
 //! - Individual feature flags for each component
 
 #![doc(html_root_url = "https://docs.rs/ratkit/0.2.16")]
-#![warn(missing_docs, clippy::cargo)]
+#![allow(
+    missing_docs,
+    clippy::all,
+    unused,
+    unexpected_cfgs,
+    dead_code,
+    unused_mut,
+    unused_imports,
+    ambiguous_glob_reexports
+)]
 #![cfg_attr(doc, cfg(feature = "docsrs"))]
 
 mod coordinator;

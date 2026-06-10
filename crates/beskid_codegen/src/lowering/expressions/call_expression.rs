@@ -3,7 +3,8 @@ use crate::linking::resolve_item_call_id;
 use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
 use crate::lowering::dispatch::lower_dispatch_builtin_call;
 use crate::lowering::function::{
-    lower_function_with_name, mangle_generic_item_function, mangle_method_name,
+    lower_function_with_name, mangle_generic_item_function, mangle_item_function,
+    mangle_method_name,
 };
 use crate::lowering::locals::{canonicalize_call_kind, local_id_for_span, resolved_value_at};
 use crate::lowering::lowerable::{Lowerable, lower_node};
@@ -1825,6 +1826,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                             .monomorphized_functions
                             .insert(key, mangled.clone());
                         mangled
+                    } else if ctx.codegen.emitting_items.contains(&item_id) {
+                        mangled
                     } else {
                     let saved_source_path = ctx.codegen.current_source_path.clone();
                     ctx.codegen.current_source_path = ctx
@@ -1859,12 +1862,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                     item_info.name.clone()
                 }
             } else {
-                let symbol_name = item_info
-                    .name
-                    .rsplit("::")
-                    .next()
-                    .unwrap_or(&item_info.name)
-                    .to_string();
+                let symbol_name = mangle_item_function(ctx.resolution, item_id);
                 if !ctx.codegen.symbol_emitted(&symbol_name)
                     && !ctx.codegen.emitting_items.contains(&item_id)
                 {

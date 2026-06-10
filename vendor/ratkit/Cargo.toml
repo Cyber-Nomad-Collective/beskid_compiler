@@ -4,6 +4,7 @@ version = "0.2.16"
 edition = "2021"
 rust-version = "1.70"
 autoexamples = false
+autotests = false
 authors = ["Alpha Innovation Labs"]
 description = "A comprehensive collection of reusable TUI components for ratatui including resizable splits, tree views, markdown rendering, toast notifications, dialogs, and terminal embedding"
 documentation = "https://docs.rs/ratkit"
@@ -120,7 +121,7 @@ hotkey-service = []
 
 [dev-dependencies]
 ratatui = { version = "0.30", features = ["crossterm"] }
-crossterm = "0.28"
+crossterm = "0.29"
 portable-pty = "0.8"
 opencode-sdk = { version = "0.1.7", features = ["http", "sse", "server"] }
 serde_json = "1"

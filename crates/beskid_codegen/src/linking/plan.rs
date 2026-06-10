@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use beskid_analysis::hir::{HirItem, HirMethodDefinition, HirProgram};
 use beskid_analysis::paths::unit_path_key;
-use beskid_analysis::resolve::{ItemId, ItemInfo, ItemKind, Resolution};
+use beskid_analysis::resolve::{canonical_item_id, ItemId, ItemInfo, ItemKind, Resolution};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 
@@ -69,8 +69,8 @@ impl LinkPlan {
     ) -> Self {
         let mut entries = Vec::new();
         let mut callees = Vec::new();
-        let mut visited: HashSet<CalleeKey> = HashSet::new();
         let mut module_path = Vec::new();
+        let mut root_calls = Vec::new();
 
         walk_hir_items(
             &entry.node.items,
@@ -86,17 +86,20 @@ impl LinkPlan {
                     item: info.id,
                     name: test.node.name.node.name.clone(),
                 });
-                for call in collect_calls_in_body(&test.node.body, resolution, type_result, None) {
-                    visit_callee(
-                        call,
-                        resolution,
-                        type_result,
-                        def_index,
-                        &mut visited,
-                        &mut callees,
-                    );
-                }
+                root_calls.extend(collect_calls_in_body(
+                    &test.node.body,
+                    resolution,
+                    type_result,
+                    None,
+                ));
             },
+        );
+        visit_callees(
+            root_calls,
+            resolution,
+            type_result,
+            def_index,
+            &mut callees,
         );
 
         Self { callees, entries }
@@ -113,8 +116,8 @@ impl LinkPlan {
     ) -> Self {
         let mut entries = Vec::new();
         let mut callees = Vec::new();
-        let mut visited: HashSet<CalleeKey> = HashSet::new();
         let mut module_path = Vec::new();
+        let mut root_calls = Vec::new();
 
         walk_hir_items(
             &entry.node.items,
@@ -133,21 +136,12 @@ impl LinkPlan {
                             item: info.id,
                             name: short.to_string(),
                         });
-                        for call in collect_calls_in_body(
+                        root_calls.extend(collect_calls_in_body(
                             &test.node.body,
                             resolution,
                             type_result,
                             entry_source_path,
-                        ) {
-                            visit_callee(
-                                call,
-                                resolution,
-                                type_result,
-                                def_index,
-                                &mut visited,
-                                &mut callees,
-                            );
-                        }
+                        ));
                     }
                     HirItem::FunctionDefinition(def) => {
                         entries.push(LinkSymbol::Function {
@@ -155,25 +149,23 @@ impl LinkPlan {
                             mangled: None,
                             receiver_type: None,
                         });
-                        for call in collect_calls_in_body(
+                        root_calls.extend(collect_calls_in_body(
                             &def.node.body,
                             resolution,
                             type_result,
                             entry_source_path,
-                        ) {
-                            visit_callee(
-                                call,
-                                resolution,
-                                type_result,
-                                def_index,
-                                &mut visited,
-                                &mut callees,
-                            );
-                        }
+                        ));
                     }
                     _ => {}
                 }
             },
+        );
+        visit_callees(
+            root_calls,
+            resolution,
+            type_result,
+            def_index,
+            &mut callees,
         );
 
         Self { callees, entries }
@@ -310,91 +302,103 @@ fn qualified_item_name(module_path: &[String], short: &str) -> String {
     }
 }
 
-fn visit_callee(
-    call: ResolvedCall,
+fn visit_callees(
+    root_calls: Vec<ResolvedCall>,
     resolution: &Resolution,
     type_result: &TypeResult,
     def_index: &FunctionDefIndex,
-    visited: &mut HashSet<CalleeKey>,
     callees: &mut Vec<LinkSymbol>,
 ) {
-    let key = CalleeKey {
-        item: call.item_id,
-        mangled: call.mangled.clone(),
-    };
-    if !visited.insert(key) {
-        return;
-    }
-    if resolution.builtin_items.contains_key(&call.item_id) {
-        return;
-    }
+    let mut worklist = root_calls;
+    let mut emitted: HashSet<CalleeKey> = HashSet::new();
+    let mut walked_bodies: HashSet<ItemId> = HashSet::new();
 
-    if let Some(def) = def_index.function(call.item_id) {
-        let callee_path = def_index.source_path(call.item_id);
-        for inner in collect_calls_in_body(&def.node.body, resolution, type_result, callee_path) {
-            visit_callee(inner, resolution, type_result, def_index, visited, callees);
+    while let Some(call) = worklist.pop() {
+        let item_id = canonical_item_id(resolution, call.item_id);
+        if resolution.builtin_items.contains_key(&item_id) {
+            continue;
         }
-        callees.push(LinkSymbol::Function {
-            item: call.item_id,
-            mangled: call.mangled,
-            receiver_type: call.receiver_type,
-        });
-        return;
-    }
 
-    if let Some(def) = def_index.method(call.item_id) {
-        let mangled = call
-            .mangled
-            .clone()
-            .or_else(|| method_mangled_name(resolution, type_result, def))
-            .unwrap_or_else(|| {
-                resolution
-                    .items
-                    .get(call.item_id.0)
-                    .map(|i| i.name.clone())
-                    .unwrap_or_default()
-            });
-        let callee_path = def_index.source_path(call.item_id);
-        for inner in collect_calls_in_body(&def.node.body, resolution, type_result, callee_path) {
-            visit_callee(inner, resolution, type_result, def_index, visited, callees);
+        let emit_key = CalleeKey {
+            item: item_id,
+            mangled: call.mangled.clone(),
+        };
+        if emitted.insert(emit_key) {
+            if let Some(def) = def_index.method(item_id) {
+                let mangled = call
+                    .mangled
+                    .clone()
+                    .or_else(|| method_mangled_name(resolution, type_result, def))
+                    .unwrap_or_else(|| {
+                        resolution
+                            .items
+                            .get(item_id.0)
+                            .map(|i| i.name.clone())
+                            .unwrap_or_default()
+                    });
+                callees.push(LinkSymbol::Method { item: item_id, mangled });
+            } else {
+                callees.push(LinkSymbol::Function {
+                    item: item_id,
+                    mangled: call.mangled,
+                    receiver_type: call.receiver_type,
+                });
+            }
         }
-        callees.push(LinkSymbol::Method {
-            item: call.item_id,
-            mangled,
-        });
-        return;
-    }
 
-    if let Some(info) = resolution.items.get(call.item_id.0)
-        && matches!(info.kind, ItemKind::Function | ItemKind::Method)
-    {
-        visit_callee_body_from_source(info, resolution, type_result, def_index, visited, callees);
-        callees.push(LinkSymbol::Function {
-            item: call.item_id,
-            mangled: call.mangled,
-            receiver_type: call.receiver_type,
-        });
+        if !walked_bodies.insert(item_id) {
+            continue;
+        }
+
+        if let Some(def) = def_index.function(item_id) {
+            let callee_path = def_index.source_path(item_id);
+            worklist.extend(collect_calls_in_body(
+                &def.node.body,
+                resolution,
+                type_result,
+                callee_path,
+            ));
+            continue;
+        }
+
+        if let Some(def) = def_index.method(item_id) {
+            let callee_path = def_index.source_path(item_id);
+            worklist.extend(collect_calls_in_body(
+                &def.node.body,
+                resolution,
+                type_result,
+                callee_path,
+            ));
+            continue;
+        }
+
+        if let Some(info) = resolution.items.get(item_id.0)
+            && matches!(info.kind, ItemKind::Function | ItemKind::Method)
+        {
+            worklist.extend(calls_in_item_body_from_source(
+                info,
+                resolution,
+                type_result,
+            ));
+        }
     }
 }
 
-fn visit_callee_body_from_source(
+fn calls_in_item_body_from_source(
     info: &ItemInfo,
     resolution: &Resolution,
     type_result: &TypeResult,
-    def_index: &FunctionDefIndex,
-    visited: &mut HashSet<CalleeKey>,
-    callees: &mut Vec<LinkSymbol>,
-) {
+) -> Vec<ResolvedCall> {
     let Some(path) = info.source_path.as_ref() else {
-        return;
+        return Vec::new();
     };
     let Ok(source) = std::fs::read_to_string(path) else {
-        return;
+        return Vec::new();
     };
     let logical_name = path.display().to_string();
     let Ok(program) = beskid_analysis::services::parse_program_with_source_name(&logical_name, &source)
     else {
-        return;
+        return Vec::new();
     };
     let ast: beskid_analysis::syntax::Spanned<beskid_analysis::hir::AstProgram> = program.into();
     let hir = beskid_analysis::hir::lower_program(&ast);
@@ -410,18 +414,9 @@ fn visit_callee_body_from_source(
         _ => None,
     };
     let Some(body) = body else {
-        return;
+        return Vec::new();
     };
-    for call in collect_calls_in_body(body, resolution, type_result, Some(&source_path)) {
-        visit_callee(
-            call,
-            resolution,
-            type_result,
-            def_index,
-            visited,
-            callees,
-        );
-    }
+    collect_calls_in_body(body, resolution, type_result, Some(&source_path))
 }
 
 fn method_mangled_name(

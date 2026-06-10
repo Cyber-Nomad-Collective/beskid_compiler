@@ -1,6 +1,6 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::{CodegenContext, CodegenResult, LoweredFunction};
-use crate::lowering::expressions::export::{export_linker_name, validate_export_function};
+use crate::lowering::expressions::export::{export_linker_name, read_export_metadata, validate_export_function};
 use crate::lowering::locals::local_id_for_span;
 use crate::lowering::lowerable::lower_node;
 use crate::lowering::node_context::NodeLoweringContext;
@@ -426,6 +426,28 @@ pub(crate) fn mangle_function_name(base: &str, args: &[beskid_analysis::types::T
     format!("{base}#{suffix}")
 }
 
+/// Disambiguate non-generic link-plan functions that share a short name across modules (`Contains#42`).
+pub(crate) fn mangle_item_function(resolution: &Resolution, item_id: ItemId) -> String {
+    let info = resolution
+        .items
+        .get(item_id.0)
+        .unwrap_or_else(|| panic!("missing item for mangling: {:?}", item_id));
+    let short = info.name.rsplit("::").next().unwrap_or(info.name.as_str());
+    format!("{short}#{}", item_id.0)
+}
+
+pub(crate) fn linker_name_for_item_function(
+    resolution: &Resolution,
+    item_id: ItemId,
+    def: &Spanned<HirFunctionDefinition>,
+) -> String {
+    if read_export_metadata(def).is_some() {
+        export_linker_name(def)
+    } else {
+        mangle_item_function(resolution, item_id)
+    }
+}
+
 /// Stem-qualified mangling for generic factory functions on owning types (`Hub__Create#2`).
 pub(crate) fn mangle_generic_factory_name(
     owner_stem: &str,
@@ -719,7 +741,11 @@ fn lower_function_with_name_body(
     }
 
     ctx.functions_emitted += 1;
-    let function_name = name_override.unwrap_or_else(|| export_linker_name(def));
+    let function_name = name_override.unwrap_or_else(|| {
+        item_id
+            .map(|id| linker_name_for_item_function(resolution, id, def))
+            .unwrap_or_else(|| export_linker_name(def))
+    });
     ctx.lowered_functions.push(LoweredFunction {
         name: function_name,
         function,

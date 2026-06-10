@@ -72,7 +72,7 @@ pub fn mod_generate_fingerprint(
     entry: FileText,
     syntax_gen: SyntaxGenerationId,
     manifest_gen: ManifestGenerationId,
-    capability_set: CapabilitySetId,
+    _capability_set: CapabilitySetId,
     collect_targets: String,
 ) -> String {
     let _ = project;
