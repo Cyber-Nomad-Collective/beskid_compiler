@@ -5,7 +5,7 @@ use crate::parser::BeskidParser;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::expressions::span::{remap_span, span_from_bounds};
+use crate::syntax::expressions::span::remap_span;
 use crate::syntax::expressions::string_decode::{split_string_literal_parts, StringLiteralPart};
 use crate::syntax::{Expression, Literal, SpanInfo, Spanned};
 

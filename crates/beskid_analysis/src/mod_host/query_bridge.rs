@@ -335,9 +335,9 @@ impl<'a> SdkSyntaxPipeline<'a> {
             bounds: _,
             ops,
         } = self;
-        validate_pipeline(&snapshot, root, &ops)?;
+        validate_pipeline(snapshot, root, &ops)?;
         let ordered = ordered_ops(ops);
-        let resolved = resolve_program_item_ops(program, &snapshot, &ordered)?;
+        let resolved = resolve_program_item_ops(program, snapshot, &ordered)?;
         apply_resolved_program_item_ops(program, resolved);
         Ok(root)
     }
@@ -449,11 +449,10 @@ fn apply_resolved_program_item_ops(
                 }
             }
             PipelineOpKind::Replace => {
-                if let Some(replacement) = op.payload {
-                    if op.target_index < program.node.items.len() {
+                if let Some(replacement) = op.payload
+                    && op.target_index < program.node.items.len() {
                         program.node.items[op.target_index] = replacement;
                     }
-                }
             }
             PipelineOpKind::InsertBefore => {
                 if let Some(item) = op.payload {

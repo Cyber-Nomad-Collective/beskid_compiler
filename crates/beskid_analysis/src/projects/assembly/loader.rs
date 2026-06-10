@@ -193,11 +193,10 @@ pub fn assemble_program_with_materializer(
             let mut paths: Vec<PathBuf> = Vec::new();
         for root in &module_roots {
             collect_bd_files(root, &mut paths);
-            if let Some(generated_root) = root.parent().map(|parent| parent.join(".generated")) {
-                if generated_root.is_dir() {
+            if let Some(generated_root) = root.parent().map(|parent| parent.join(".generated"))
+                && generated_root.is_dir() {
                     collect_bd_files(&generated_root, &mut paths);
                 }
-            }
         }
             paths.sort();
             for path in paths {

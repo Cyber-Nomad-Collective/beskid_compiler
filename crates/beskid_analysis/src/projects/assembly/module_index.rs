@@ -599,11 +599,10 @@ fn collect_prefetched_modules(
 ) {
     let mut bd_files = Vec::new();
     collect_source_files(source_root, &mut bd_files);
-    if let Some(generated_root) = source_root.parent().map(|parent| parent.join(".generated")) {
-        if generated_root.is_dir() {
+    if let Some(generated_root) = source_root.parent().map(|parent| parent.join(".generated"))
+        && generated_root.is_dir() {
             collect_source_files(&generated_root, &mut bd_files);
         }
-    }
     bd_files.sort();
     for path in bd_files {
         if unit_paths.contains(&path) {
@@ -725,10 +724,6 @@ fn module_path_from_generated_suffix(path: &Path, has_std_dependency: bool) -> O
     } else {
         Some(segments)
     }
-}
-
-fn collect_bd_files(root: &Path, out: &mut Vec<PathBuf>) {
-    collect_source_files(root, out);
 }
 
 fn module_path_from_src_suffix(

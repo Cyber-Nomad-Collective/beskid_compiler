@@ -26,7 +26,6 @@ mod rewrite;
 mod types;
 mod validate;
 
-pub(crate) use context::ModInvocationContext;
 pub use api::{
     collect_mod_target_fingerprint, extract_mod_host_diagnostics, native_invoker_for_plan,
     run_analyze_rewrite, run_analyze_rewrite_after_composition, run_analyze_rewrite_with_invoker,

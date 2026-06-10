@@ -112,6 +112,7 @@ impl ModHostSession {
     }
 }
 
+#[derive(Default)]
 pub struct ModHostInput<'a> {
     pub compile_plan: Option<&'a CompilePlan>,
     pub source_name: &'a str,
@@ -127,18 +128,6 @@ pub struct ModHostInput<'a> {
     pub cached_target_fingerprint: Option<&'a str>,
 }
 
-impl<'a> Default for ModHostInput<'a> {
-    fn default() -> Self {
-        Self {
-            compile_plan: None,
-            source_name: "",
-            source: "",
-            pipeline: None,
-            invoker: None,
-            cached_target_fingerprint: None,
-        }
-    }
-}
 
 pub struct ModHostGenerateResult {
     pub program: crate::syntax::Spanned<crate::syntax::Program>,
@@ -171,6 +160,7 @@ pub(crate) struct CollectedContracts {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct GeneratedSyntax {
+    #[allow(dead_code)]
     pub(crate) registrations: Vec<ContractRegistration>,
     pub(crate) typed_items: Vec<Spanned<ProgramItem>>,
     pub(crate) pipeline_ops: Vec<PipelineOp>,

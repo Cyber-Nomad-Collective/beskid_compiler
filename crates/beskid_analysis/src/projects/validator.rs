@@ -93,13 +93,12 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
             ));
         }
         ProjectKind::Bsol => {
-            if let Some(schemas) = &manifest.project.schemas_section {
-                if schemas.exports.is_empty() {
+            if let Some(schemas) = &manifest.project.schemas_section
+                && schemas.exports.is_empty() {
                     return Err(ProjectError::Validation(
                         "`schemas` must declare at least one `export` block".to_string(),
                     ));
                 }
-            }
         }
         _ => {}
     }

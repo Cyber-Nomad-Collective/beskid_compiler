@@ -220,8 +220,8 @@ pub fn analyzer_diagnostic_to_semantic(
     };
     let span = SpanInfo::from_byte_range_in_source(source, 0, source.len().max(1));
     SemanticDiagnostic {
-        src: NamedSource::new(source_name.to_owned(), source.to_owned()),
-        span: SourceSpan::new((span.start as usize).into(), (span.end - span.start).max(1)),
+        src: NamedSource::new(source_name, source.to_owned()),
+        span: SourceSpan::new(span.start.into(), (span.end - span.start).max(1)),
         message: format!("{} ({})", diagnostic.message, type_id),
         label: diagnostic.code.clone(),
         help: Some(format!("mod analyzer contract `{type_id}`")),

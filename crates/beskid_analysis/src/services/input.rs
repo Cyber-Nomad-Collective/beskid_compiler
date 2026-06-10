@@ -116,13 +116,11 @@ pub fn resolve_input_with_policy(
     let prepared_workspace = resolved_project.prepared_workspace;
     let workspace_summary = resolved_project.workspace_summary;
 
-    if compile_plan.is_none() {
-        if let Some(input_path) = input {
-            if !input_is_manifest && input_path.is_file() {
+    if compile_plan.is_none()
+        && let Some(input_path) = input
+            && !input_is_manifest && input_path.is_file() {
                 compile_plan = Some(synthetic_compile_plan_for_source(input_path));
             }
-        }
-    }
 
     let source_path = match (
         input,

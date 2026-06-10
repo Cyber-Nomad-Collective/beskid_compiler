@@ -155,11 +155,10 @@ fn resolve_output_package_root(
     if file.package_id.is_empty() {
         return Ok(mod_project_root.to_path_buf());
     }
-    if let Some(plan) = plan {
-        if let Some(root) = resolve_package_root(plan, &file.package_id) {
+    if let Some(plan) = plan
+        && let Some(root) = resolve_package_root(plan, &file.package_id) {
             return Ok(root);
         }
-    }
     Err(format!(
         "unable to resolve package root for packageId `{}`",
         file.package_id

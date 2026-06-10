@@ -439,6 +439,7 @@ impl ContractInvoker for ScriptedContractInvoker {
 }
 
 /// MVP native invoker lives in [`super::native`]; re-exported from the mod_host crate root.
+#[cfg(test)]
 mod tests {
     use super::super::context::ModInvocationContext;
     use super::*;

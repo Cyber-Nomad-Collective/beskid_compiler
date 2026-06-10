@@ -11,7 +11,7 @@ use crate::syntax::{Node, Program, Spanned, TypeDefinition};
 
 use super::types::ContractRegistration;
 
-const SDK_CONTRACT_HUB: &str = "Beskid.Compiler.Collect";
+const _SDK_CONTRACT_HUB: &str = "Beskid.Compiler.Collect";
 
 struct SdkContractSpec {
     contract_id: &'static str,
@@ -74,12 +74,11 @@ pub fn extract_mod_contract_registrations_with_program(
         if item.kind != ItemKind::Contract {
             continue;
         }
-        if let Some(qualified) = qualified_name(resolution, item.id) {
-            if let Some(spec) = contract_specs_by_id.get(qualified.as_str()) {
+        if let Some(qualified) = qualified_name(resolution, item.id)
+            && let Some(spec) = contract_specs_by_id.get(qualified.as_str()) {
                 contract_item_specs.insert(item.id, spec);
                 continue;
             }
-        }
         if let Some(spec) = contract_specs_by_short.get(item.name.as_str()) {
             contract_item_specs.insert(item.id, spec);
         }

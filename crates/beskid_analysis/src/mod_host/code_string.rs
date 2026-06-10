@@ -42,7 +42,7 @@ fn eval_code_hole(source: &str) -> Result<String, String> {
 /// Build a disk materialization record from one SDK `CodeContribution` payload.
 pub fn code_generate_output(
     module_path: &str,
-    file_name: &str,
+    _file_name: &str,
     language: &str,
     body: &str,
 ) -> Result<CodeGenerateOutput, String> {
