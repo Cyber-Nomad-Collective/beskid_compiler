@@ -142,6 +142,10 @@ impl<'a> HirLegalityValidator<'a> {
             }
             HirItem::MethodDefinition(def) => {
                 self.check_span(def.span, "method_definition");
+                self.validate_applied_attributes(
+                    &def.node.attributes,
+                    AttributeTargetKind::MethodDeclaration.as_str(),
+                );
                 self.validate_type(&def.node.receiver_type);
                 self.validate_block(&def.node.body);
                 for parameter in &def.node.parameters {
@@ -157,6 +161,10 @@ impl<'a> HirLegalityValidator<'a> {
                 self.validate_type(&def.node.target_type);
                 for method in &def.node.methods {
                     self.check_span(method.span, "method_definition");
+                    self.validate_applied_attributes(
+                        &method.node.attributes,
+                        AttributeTargetKind::MethodDeclaration.as_str(),
+                    );
                     self.validate_type(&method.node.receiver_type);
                     self.validate_block(&method.node.body);
                     for parameter in &method.node.parameters {
@@ -188,6 +196,10 @@ impl<'a> HirLegalityValidator<'a> {
             }
             HirItem::TypeDefinition(def) => {
                 self.check_span(def.span, "type_definition");
+                self.validate_applied_attributes(
+                    &def.node.attributes,
+                    AttributeTargetKind::TypeDeclaration.as_str(),
+                );
                 for conformance in &def.node.conformances {
                     self.check_span(conformance.span, "type_conformance_path");
                     if !self
@@ -203,7 +215,27 @@ impl<'a> HirLegalityValidator<'a> {
                 }
                 for field in &def.node.fields {
                     self.check_span(field.span, "field");
+                    self.validate_applied_attributes(
+                        &field.node.attributes,
+                        AttributeTargetKind::FieldDeclaration.as_str(),
+                    );
                     self.validate_type(&field.node.ty);
+                }
+                for method in &def.node.methods {
+                    self.check_span(method.span, "method_definition");
+                    self.validate_applied_attributes(
+                        &method.node.attributes,
+                        AttributeTargetKind::MethodDeclaration.as_str(),
+                    );
+                    self.validate_type(&method.node.receiver_type);
+                    self.validate_block(&method.node.body);
+                    for parameter in &method.node.parameters {
+                        self.check_span(parameter.span, "parameter");
+                        self.validate_type(&parameter.node.ty);
+                    }
+                    if let Some(return_type) = &method.node.return_type {
+                        self.validate_type(return_type);
+                    }
                 }
             }
             HirItem::EnumDefinition(def) => {
@@ -224,6 +256,10 @@ impl<'a> HirLegalityValidator<'a> {
                     match &node.node {
                         HirContractNode::MethodSignature(signature) => {
                             self.check_span(signature.span, "contract_method_signature");
+                            self.validate_applied_attributes(
+                                &signature.node.attributes,
+                                AttributeTargetKind::ContractMethodDeclaration.as_str(),
+                            );
                             for parameter in &signature.node.parameters {
                                 self.check_span(parameter.span, "parameter");
                                 self.validate_type(&parameter.node.ty);

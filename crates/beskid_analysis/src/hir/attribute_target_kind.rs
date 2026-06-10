@@ -3,6 +3,7 @@ pub enum AttributeTargetKind {
     TypeDeclaration,
     EnumDeclaration,
     ContractDeclaration,
+    ContractMethodDeclaration,
     ModuleDeclaration,
     FunctionDeclaration,
     MethodDeclaration,
@@ -11,10 +12,11 @@ pub enum AttributeTargetKind {
 }
 
 impl AttributeTargetKind {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::TypeDeclaration,
         Self::EnumDeclaration,
         Self::ContractDeclaration,
+        Self::ContractMethodDeclaration,
         Self::ModuleDeclaration,
         Self::FunctionDeclaration,
         Self::MethodDeclaration,
@@ -27,6 +29,7 @@ impl AttributeTargetKind {
             Self::TypeDeclaration => "TypeDeclaration",
             Self::EnumDeclaration => "EnumDeclaration",
             Self::ContractDeclaration => "ContractDeclaration",
+            Self::ContractMethodDeclaration => "ContractMethodDeclaration",
             Self::ModuleDeclaration => "ModuleDeclaration",
             Self::FunctionDeclaration => "FunctionDeclaration",
             Self::MethodDeclaration => "MethodDeclaration",
@@ -37,13 +40,16 @@ impl AttributeTargetKind {
 
     pub fn parse(name: &str) -> Option<Self> {
         match name {
-            "TypeDeclaration" => Some(Self::TypeDeclaration),
+            "TypeDeclaration" | "TypeDefinition" => Some(Self::TypeDeclaration),
             "EnumDeclaration" => Some(Self::EnumDeclaration),
             "ContractDeclaration" => Some(Self::ContractDeclaration),
+            "ContractMethodDeclaration" | "ContractMethodSignature" => {
+                Some(Self::ContractMethodDeclaration)
+            }
             "ModuleDeclaration" => Some(Self::ModuleDeclaration),
             "FunctionDeclaration" => Some(Self::FunctionDeclaration),
-            "MethodDeclaration" => Some(Self::MethodDeclaration),
-            "FieldDeclaration" => Some(Self::FieldDeclaration),
+            "MethodDeclaration" | "MethodDefinition" => Some(Self::MethodDeclaration),
+            "FieldDeclaration" | "Field" => Some(Self::FieldDeclaration),
             "ParameterDeclaration" => Some(Self::ParameterDeclaration),
             _ => None,
         }

@@ -1,6 +1,7 @@
 use crate::syntax::{
-    Identifier, InjectQualifier, Parameter, PrimitiveType, Spanned, Type, Visibility,
+    Attribute, Identifier, InjectQualifier, Parameter, PrimitiveType, Spanned, Type, Visibility,
 };
+use crate::syntax::items::parse_helpers::parse_attributes;
 
 use beskid_ast_derive::AstNode;
 
@@ -15,6 +16,8 @@ pub enum FieldKind {
 /// Struct or enum variant field with name and type (and optional event capacity).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Field {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<Attribute>>,
     #[ast(child)]
     pub visibility: Spanned<Visibility>,
     #[ast(skip)]
@@ -42,6 +45,7 @@ impl crate::parsing::parsable::Parsable for Field {
 
         let span = crate::syntax::SpanInfo::from_span(&pair.as_span());
         let mut field_inner = pair.clone().into_inner().peekable();
+        let attributes = parse_attributes(&mut field_inner)?;
         let visibility = if field_inner
             .peek()
             .is_some_and(|item| item.as_rule() == crate::parser::Rule::Visibility)
@@ -200,6 +204,7 @@ impl crate::parsing::parsable::Parsable for Field {
 
         Ok(crate::syntax::Spanned::new(
             Self {
+                attributes,
                 visibility,
                 kind,
                 event_capacity,

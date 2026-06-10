@@ -43,7 +43,9 @@ fn lower_extern_interface(attributes: &[Spanned<syntax::Attribute>]) -> Option<H
     Some(HirExternInterface { abi, library })
 }
 
-fn lower_attributes(attributes: &[Spanned<syntax::Attribute>]) -> Vec<Spanned<HirAttribute>> {
+pub(crate) fn lower_attributes(
+    attributes: &[Spanned<syntax::Attribute>],
+) -> Vec<Spanned<HirAttribute>> {
     attributes
         .iter()
         .map(|attribute| {
@@ -151,6 +153,7 @@ impl Lowerable for Spanned<syntax::MethodDefinition> {
     fn lower(&self) -> Self::Output {
         Spanned::new(
             HirMethodDefinition {
+                attributes: lower_attributes(&self.node.attributes),
                 visibility: self.node.visibility.lower(),
                 receiver_type: self.node.receiver_type.lower(),
                 name: self.node.name.lower(),
@@ -246,6 +249,7 @@ impl Lowerable for Spanned<syntax::TypeDefinition> {
     fn lower(&self) -> Self::Output {
         Spanned::new(
             HirTypeDefinition {
+                attributes: lower_attributes(&self.node.attributes),
                 visibility: self.node.visibility.lower(),
                 name: self.node.name.lower(),
                 generics: self.node.generics.iter().map(Lowerable::lower).collect(),
@@ -332,6 +336,7 @@ impl Lowerable for Spanned<syntax::ContractMethodSignature> {
     fn lower(&self) -> Self::Output {
         Spanned::new(
             HirContractMethodSignature {
+                attributes: lower_attributes(&self.node.attributes),
                 name: self.node.name.lower(),
                 parameters: self.node.parameters.iter().map(Lowerable::lower).collect(),
                 return_type: self.node.return_type.as_ref().map(Lowerable::lower),

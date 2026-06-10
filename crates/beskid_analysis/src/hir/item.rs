@@ -20,7 +20,7 @@ pub struct HirExportInterface {
     pub symbol: Option<String>,
 }
 
-#[derive(beskid_ast_derive::HirNode)]
+#[derive(Debug, Clone, PartialEq, Eq, beskid_ast_derive::HirNode)]
 #[ast(kind = "Attribute")]
 pub struct HirAttribute {
     #[ast(child)]
@@ -113,6 +113,8 @@ pub struct HirFunctionDefinition {
 #[derive(beskid_ast_derive::HirNode)]
 #[ast(kind = "MethodDefinition")]
 pub struct HirMethodDefinition {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<HirAttribute>>,
     #[ast(child)]
     pub visibility: Spanned<HirVisibility>,
     #[ast(child)]
@@ -179,6 +181,8 @@ pub struct HirTestSkipEntry {
 #[derive(beskid_ast_derive::HirNode)]
 #[ast(kind = "TypeDefinition")]
 pub struct HirTypeDefinition {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<HirAttribute>>,
     #[ast(child)]
     pub visibility: Spanned<HirVisibility>,
     #[ast(child)]
@@ -242,6 +246,8 @@ pub enum HirContractNode {
 #[derive(beskid_ast_derive::HirNode)]
 #[ast(kind = "ContractMethodSignature")]
 pub struct HirContractMethodSignature {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<HirAttribute>>,
     #[ast(child)]
     pub name: Spanned<HirIdentifier>,
     #[ast(children)]

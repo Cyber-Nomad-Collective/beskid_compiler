@@ -17,7 +17,7 @@ pub mod macro_definition;
 pub mod method_definition;
 pub mod module_declaration;
 pub mod node;
-mod parse_helpers;
+pub mod parse_helpers;
 pub mod program;
 pub mod test_definition;
 pub mod type_definition;

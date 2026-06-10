@@ -1,6 +1,7 @@
 use crate::syntax::Spanned;
 
 use super::common::{HirIdentifier, HirPath, HirVisibility};
+use super::item::HirAttribute;
 
 /// Primitive types natively understood by the compiler and runtime.
 ///
@@ -67,6 +68,8 @@ pub enum HirType {
 #[derive(Debug, Clone, PartialEq, Eq, beskid_ast_derive::HirNode)]
 #[ast(kind = "Field")]
 pub struct HirField {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<HirAttribute>>,
     #[ast(child)]
     pub visibility: Spanned<HirVisibility>,
     #[ast(skip)]

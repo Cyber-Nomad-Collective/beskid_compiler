@@ -176,7 +176,9 @@ MacroParameter = { MacroFragmentKind ~ Identifier }
 MacroParameterList = { MacroParameter ~ ("," ~ MacroParameter)* }
 MacroDefinition = { Visibility? ~ "macro" ~ Identifier ~ "(" ~ MacroParameterList? ~ ")" ~ Block }
 ImplMethodWithDocs = { ((DocRun ~ ImplMethodDefinition) | ImplMethodDefinition) ~ DocGap* }
-ImplMethodDefinition = { Visibility? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ Block }
+MethodBody = { Block | ExpressionBody }
+ExpressionBody = { "=>" ~ Expression }
+ImplMethodDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ MethodBody ~ ";"? }
 ParameterList = { ParameterWithDocs ~ ("," ~ DocGap* ~ ParameterWithDocs)* }
 ParameterWithDocs = { (DocRun ~ Parameter) | Parameter }
 Parameter = { MutKeyword? ~ BeskidType ~ Identifier }
@@ -188,13 +190,13 @@ EventCapacity = { "{" ~ IntegerLiteral ~ "}" }
 EventField = { "event" ~ EventCapacity? ~ Identifier ~ "(" ~ ParameterList? ~ ")" }
 InjectQualifier = { ("global" | "parent") ~ "::" }
 InjectField = { "inject" ~ InjectQualifier? ~ BeskidType ~ Identifier }
-Field = { Visibility? ~ (InjectField | EventField | ValueField) }
+Field = { AttributeList? ~ Visibility? ~ (InjectField | EventField | ValueField) }
 
 TypeConformanceList = { ":" ~ PathList }
 // Fields are comma-separated; inline methods follow (commas inside method types must not split members).
 TypeFieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 TypeBody = { TypeFieldList? ~ ImplMethodWithDocs* }
-TypeDefinition = { Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ TypeBody? ~ "}" }
+TypeDefinition = { AttributeList? ~ Visibility? ~ "type" ~ Identifier ~ GenericParameters? ~ TypeConformanceList? ~ "{" ~ TypeBody? ~ "}" }
 
 EnumDefinition = { Visibility? ~ "enum" ~ Identifier ~ GenericParameters? ~ "{" ~ EnumVariantList? ~ "}" }
 EnumVariantList = { EnumVariantWithDocs ~ ("," ~ DocGap* ~ EnumVariantWithDocs)* ~ ","? }
@@ -204,7 +206,7 @@ EnumVariant = { Identifier ~ ("(" ~ FieldList? ~ ")")? }
 ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ "{" ~ ContractItemWithDocs* ~ "}" }
 ContractItemWithDocs = { ((DocRun ~ ContractItem) | ContractItem) ~ DocGap* }
 ContractItem = _{ ContractMethodSignature | ContractEmbedding }
-ContractMethodSignature = { BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
+ContractMethodSignature = { AttributeList? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
 ContractEmbedding = { Identifier ~ ";"? }
 
 RegistrationLifetime = { "single" | "transient" }

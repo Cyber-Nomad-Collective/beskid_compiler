@@ -4,6 +4,7 @@ use crate::hir::{
 };
 use crate::syntax::{self, Spanned};
 
+use super::items::lower_attributes;
 use super::Lowerable;
 
 impl Lowerable for Spanned<syntax::Type> {
@@ -32,6 +33,7 @@ impl Lowerable for Spanned<syntax::Field> {
     fn lower(&self) -> Self::Output {
         Spanned::new(
             HirField {
+                attributes: lower_attributes(&self.node.attributes),
                 visibility: self.node.visibility.lower(),
                 kind: match self.node.kind {
                     syntax::FieldKind::Value => HirFieldKind::Value,

@@ -6,16 +6,20 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::method_definition::MethodDefinition;
 use crate::syntax::items::parse_helpers::{
-    parse_doc_attached_list, parse_doc_attached_with, parse_identifier_list,
+    parse_attributes, parse_doc_attached_list, parse_doc_attached_with, parse_identifier_list,
     parse_visibility_or_default,
 };
-use crate::syntax::{Field, Identifier, Path, PathSegment, SpanInfo, Spanned, Type, Visibility};
+use crate::syntax::{
+    Attribute, Field, Identifier, Path, PathSegment, SpanInfo, Spanned, Type, Visibility,
+};
 
 use beskid_ast_derive::AstNode;
 
 /// `type` definition: name, generics, optional conformances, fields, and inline methods.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeDefinition {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<Attribute>>,
     #[ast(child)]
     pub visibility: Spanned<Visibility>,
     #[ast(child)]
@@ -80,6 +84,7 @@ impl Parsable for TypeDefinition {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.clone().into_inner().peekable();
+        let attributes = parse_attributes(&mut inner)?;
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
 
@@ -142,6 +147,7 @@ impl Parsable for TypeDefinition {
 
         Ok(Spanned::new(
             Self {
+                attributes,
                 visibility,
                 name,
                 generics,

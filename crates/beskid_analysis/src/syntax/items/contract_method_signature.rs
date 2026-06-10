@@ -4,14 +4,16 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::items::parse_helpers::parse_parameter_list_with_docs;
-use crate::syntax::{Identifier, Parameter, SpanInfo, Spanned, Type};
+use crate::syntax::items::parse_helpers::{parse_attributes, parse_parameter_list_with_docs};
+use crate::syntax::{Attribute, Identifier, Parameter, SpanInfo, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
 /// Abstract method signature inside a `contract` (no body).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContractMethodSignature {
+    #[ast(children)]
+    pub attributes: Vec<Spanned<Attribute>>,
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(children)]
@@ -25,7 +27,8 @@ pub struct ContractMethodSignature {
 impl Parsable for ContractMethodSignature {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
-        let mut inner = pair.into_inner();
+        let mut inner = pair.clone().into_inner().peekable();
+        let attributes = parse_attributes(&mut inner)?;
         let return_type = Some(Type::parse(
             inner.next().ok_or(ParseError::missing(Rule::BeskidType))?,
         )?);
@@ -47,6 +50,7 @@ impl Parsable for ContractMethodSignature {
 
         Ok(Spanned::new(
             Self {
+                attributes,
                 name,
                 parameters,
                 parameter_docs,
@@ -54,5 +58,24 @@ impl Parsable for ContractMethodSignature {
             },
             span,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::{BeskidParser, Rule};
+    use pest::Parser;
+
+    #[test]
+    fn contract_method_signature_parses_leading_attributes() {
+        let source = "[Export] ListStep Push(T value);";
+        let pair = BeskidParser::parse(Rule::ContractMethodSignature, source)
+            .expect("parse")
+            .next()
+            .expect("pair");
+        let signature = ContractMethodSignature::parse(pair).expect("signature");
+        assert_eq!(signature.node.attributes.len(), 1);
+        assert_eq!(signature.node.attributes[0].node.name.node.name, "Export");
     }
 }

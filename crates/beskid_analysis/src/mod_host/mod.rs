@@ -14,6 +14,7 @@ mod generate;
 pub mod invoker;
 mod load;
 mod merge;
+mod registrations;
 mod query_bridge;
 mod reparse;
 mod rewrite;
