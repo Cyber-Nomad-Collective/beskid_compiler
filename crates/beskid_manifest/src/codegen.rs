@@ -367,7 +367,7 @@ pub fn render_link_anchor(manifest: &ManifestRoot) -> String {
     for entry in &manifest.kernel {
         writeln!(
             &mut out,
-            "    let _ = beskid_runtime::{} as usize;",
+            "    let _ = beskid_runtime::{} as *const () as usize;",
             entry.symbol
         )
         .unwrap();
