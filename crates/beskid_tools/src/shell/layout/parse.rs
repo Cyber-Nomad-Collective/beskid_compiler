@@ -16,6 +16,7 @@ pub fn parse_v2(source: &str) -> Result<BoardV2Doc, String> {
     lower_v2(validated)
 }
 
+#[allow(dead_code)]
 pub fn parse_v3(source: &str) -> Result<BoardV2Doc, String> {
     let document = parse_bsol_document(source).map_err(|e| e.to_string())?;
     let profile = load_profile("board.v3").map_err(|e| e.to_string())?;
@@ -23,6 +24,7 @@ pub fn parse_v3(source: &str) -> Result<BoardV2Doc, String> {
     lower_v3(validated)
 }
 
+#[allow(dead_code)]
 pub fn parse_board(source: &str) -> Result<BoardV2Doc, String> {
     if source.contains("board.v3") || source.contains("version = 3") {
         parse_v3(source).or_else(|_| parse_v2(source))
@@ -137,6 +139,7 @@ fn lower_v2(doc: ValidatedDocument) -> Result<BoardV2Doc, String> {
     })
 }
 
+#[allow(dead_code)]
 fn lower_v3(doc: ValidatedDocument) -> Result<BoardV2Doc, String> {
     lower_v2(doc)
 }
