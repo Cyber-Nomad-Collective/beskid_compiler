@@ -4,7 +4,7 @@ use beskid_aot::{
     AotRunRequest, BuildProfile, RuntimeLinkProfile, RuntimeStrategy, build_and_run,
     default_runtime_strategy,
 };
-use beskid_codegen::lower_source;
+use beskid_codegen::{lower_source_for_entrypoint, validate_artifact};
 
 #[test]
 fn build_and_run_executes_linked_executable() {
@@ -13,8 +13,9 @@ fn build_and_run_executes_linked_executable() {
     let source = "i32 Main() { return 7; }";
     fs::write(&source_path, source).expect("write source");
 
-    let lowered = lower_source(&source_path, source, false).expect("lower fixture");
-    beskid_codegen::validate_artifact(&lowered.artifact).expect("validate link plan");
+    let lowered =
+        lower_source_for_entrypoint(&source_path, source, "Main", false).expect("lower fixture");
+    validate_artifact(&lowered.artifact).expect("validate link plan");
 
     let runtime = default_runtime_strategy(BuildProfile::Debug, None, RuntimeLinkProfile::Std)
         .unwrap_or(RuntimeStrategy::Standalone);
@@ -48,7 +49,8 @@ fn build_and_run_executes_str_len() {
     let source = "i64 Main() { return __str_len(\"hello\"); }";
     std::fs::write(&source_path, source).expect("write source");
 
-    let lowered = lower_source(&source_path, source, false).expect("lower fixture");
+    let lowered =
+        lower_source_for_entrypoint(&source_path, source, "Main", false).expect("lower fixture");
     let runtime = default_runtime_strategy(BuildProfile::Debug, None, RuntimeLinkProfile::Std)
         .unwrap_or(RuntimeStrategy::Standalone);
 
@@ -87,7 +89,8 @@ fn std_build_links_host_archive() {
     let source = "i32 Main() { return 7; }";
     fs::write(&source_path, source).expect("write source");
 
-    let lowered = lower_source(&source_path, source, false).expect("lower fixture");
+    let lowered =
+        lower_source_for_entrypoint(&source_path, source, "Main", false).expect("lower fixture");
     let runtime = default_runtime_strategy(BuildProfile::Debug, None, RuntimeLinkProfile::Std)
         .expect("runtime");
     let exe_path = temp.path().join("beskid_run");

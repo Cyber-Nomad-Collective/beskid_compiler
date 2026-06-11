@@ -279,7 +279,7 @@ fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]
     let native = native_link_entrypoint(&req.entrypoint);
     if exported_symbols
         .iter()
-        .any(|sym| sym == &req.entrypoint || sym == native)
+        .any(|sym| symbol_matches_entrypoint(sym, &req.entrypoint, native))
     {
         return Ok(());
     }
@@ -287,6 +287,14 @@ fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]
     Err(AotError::MissingEntrypoint {
         symbol: req.entrypoint.clone(),
     })
+}
+
+fn symbol_matches_entrypoint(symbol: &str, entrypoint: &str, native: &str) -> bool {
+    symbol == entrypoint
+        || symbol == native
+        || symbol
+            .strip_prefix(entrypoint)
+            .is_some_and(|suffix| suffix.starts_with('#'))
 }
 
 fn prepare_runtime_stage(req: &AotBuildRequest) -> AotResult<crate::runtime::RuntimeArtifact> {

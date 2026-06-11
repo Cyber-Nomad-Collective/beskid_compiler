@@ -33,5 +33,5 @@ pub use module_emission::{DescriptorHandles, emit_string_literals, emit_type_des
 pub use services::{
     LoweredProgram, entrypoint_artifact_from_front_end, lower_from_front_end,
     lower_resolved_entrypoint_with_pipeline, lower_resolved_input_with_pipeline, lower_source,
-    lower_source_with_pipeline, render_clif,
+    lower_source_for_entrypoint, lower_source_with_pipeline, render_clif,
 };

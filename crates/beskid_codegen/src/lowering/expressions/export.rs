@@ -104,10 +104,14 @@ pub fn export_linker_name(def: &Spanned<HirFunctionDefinition>) -> String {
 
 /// Native object-file symbol for AOT linking (`Main` maps to C `main` for executable entry).
 pub fn object_link_symbol(beskid_name: &str, exports: &[ExportEntry]) -> String {
-    if let Some(entry) = exports.iter().find(|e| e.beskid_name == beskid_name) {
+    let logical = beskid_name.split('#').next().unwrap_or(beskid_name);
+    if let Some(entry) = exports
+        .iter()
+        .find(|e| e.beskid_name == logical || e.beskid_name == beskid_name)
+    {
         return entry.exported_symbol.clone();
     }
-    if beskid_name == "Main" {
+    if logical == "Main" {
         return "main".to_string();
     }
     beskid_name.to_string()
@@ -121,6 +125,7 @@ mod tests {
     #[test]
     fn object_link_symbol_maps_main_entry_to_native_main() {
         assert_eq!(object_link_symbol("Main", &[]), "main");
+        assert_eq!(object_link_symbol("Main#74", &[]), "main");
         assert_eq!(object_link_symbol("Run", &[]), "Run");
     }
 

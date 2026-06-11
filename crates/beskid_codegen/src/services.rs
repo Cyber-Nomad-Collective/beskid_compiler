@@ -34,6 +34,30 @@ pub fn lower_source(path: &Path, source: &str, with_diagnostics: bool) -> Result
     lower_source_with_pipeline(path, source, with_diagnostics, None)
 }
 
+/// Like [`lower_source`], limiting the link plan to a single entry function or test name.
+pub fn lower_source_for_entrypoint(
+    path: &Path,
+    source: &str,
+    entrypoint: &str,
+    with_diagnostics: bool,
+) -> Result<LoweredProgram> {
+    let plan = compile_plan_for_input_path(path)
+        .unwrap_or_else(|| synthetic_compile_plan_for_source(path));
+    let resolved = resolved_input_from_plan(
+        path.to_path_buf(),
+        source.to_string(),
+        plan,
+        None,
+        None,
+    );
+    lower_resolved_entrypoint_with_pipeline(
+        &resolved,
+        Some(entrypoint),
+        with_diagnostics,
+        None,
+    )
+}
+
 /// End-to-end lowering from source via the shared analysis front-end spine.
 pub fn lower_source_with_pipeline(
     path: &Path,
