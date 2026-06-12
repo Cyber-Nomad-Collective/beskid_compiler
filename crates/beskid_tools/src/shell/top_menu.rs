@@ -10,6 +10,7 @@ use ratatui::widgets::{Clear, List, ListItem, Paragraph};
 use super::layout::pages::PagesDoc;
 use super::nav::{NavAction, NavItemDescriptor, NavRegistry};
 use super::panel_style::popover_block;
+use super::key_bindings::ShortcutBindings;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TopMenuAction {
@@ -82,16 +83,20 @@ impl ShellTopMenu {
         self.dropdown_open = false;
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) -> TopMenuAction {
+    fn toggle_menu_focus(&mut self) -> TopMenuAction {
+        self.menu_focused = !self.menu_focused;
+        if !self.menu_focused {
+            self.dropdown_open = false;
+        }
+        TopMenuAction::Redraw
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent, bindings: &ShortcutBindings) -> TopMenuAction {
         if key.kind != KeyEventKind::Press {
             return TopMenuAction::None;
         }
-        if key.code == KeyCode::F(10) {
-            self.menu_focused = !self.menu_focused;
-            if !self.menu_focused {
-                self.dropdown_open = false;
-            }
-            return TopMenuAction::Redraw;
+        if bindings.toggles_menu(&key) {
+            return self.toggle_menu_focus();
         }
         if !self.is_active() {
             return TopMenuAction::None;

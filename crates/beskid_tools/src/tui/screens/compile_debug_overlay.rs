@@ -29,5 +29,5 @@ pub fn on_input(event: &InputEvent, state: &mut ShellState) -> InputResult {
 }
 
 pub fn render(area: Rect, frame: &mut Frame, state: &mut ShellState) {
-    draw_compile_debug_panel(frame, area, state, CompileDebugTab::Timeline);
+    draw_compile_debug_panel(frame, area, None, state, CompileDebugTab::Timeline);
 }

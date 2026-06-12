@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use super::key_bindings::ShortcutBindings;
 use super::layout::BoardV2Doc;
 use super::palette::CommandPaletteState;
 use super::scope::ShellScope;
@@ -14,6 +15,7 @@ pub struct WidgetContext<'a> {
     pub palette: &'a mut CommandPaletteState,
     pub focused_widget: &'a str,
     pub beskid_exe: &'a PathBuf,
+    pub key_bindings: &'a mut ShortcutBindings,
 }
 
 impl<'a> WidgetContext<'a> {
@@ -24,6 +26,7 @@ impl<'a> WidgetContext<'a> {
         palette: &'a mut CommandPaletteState,
         focused_widget: &'a str,
         beskid_exe: &'a PathBuf,
+        key_bindings: &'a mut ShortcutBindings,
     ) -> Self {
         Self {
             scope,
@@ -32,6 +35,7 @@ impl<'a> WidgetContext<'a> {
             palette,
             focused_widget,
             beskid_exe,
+            key_bindings,
         }
     }
 }

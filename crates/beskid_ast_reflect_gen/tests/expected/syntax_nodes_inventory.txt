@@ -12,6 +12,8 @@ Block
 BlockExpression
 BreakStatement
 CallExpression
+CodeStringLiteral
+CodeStringSegment
 ContinueStatement
 ContractDefinition
 ContractEmbedding
@@ -71,6 +73,7 @@ ScopeHook
 ScopeHookKind
 SpawnExpression
 Statement
+StringLiteralPart
 StructLiteralExpression
 StructLiteralField
 TestDefinition

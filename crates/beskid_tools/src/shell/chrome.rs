@@ -12,6 +12,7 @@ pub type FooterHotkeyItem = HotkeyItem;
 use super::control_mode::HiControlMode;
 use super::hotkeys::ShellHotkeys;
 use super::phase::transition_label;
+use super::key_bindings::ShortcutBindings;
 use super::scope::ShellScope;
 use super::top_menu::ShellTopMenu;
 use crate::tui::shell::state::ShellState;
@@ -34,6 +35,7 @@ impl ShellChrome {
         page_title: &str,
         shell_state: &ShellState,
         menu: &mut ShellTopMenu,
+        bindings: &ShortcutBindings,
     ) {
         if area.height < 2 {
             return;
@@ -45,7 +47,7 @@ impl ShellChrome {
         .areas(area);
 
         let scope_label = scope.chrome_title();
-        let phase = transition_label(shell_state, page_title);
+        let phase = transition_label(shell_state, page_title, scope);
         let brand_line = Line::from(vec![
             Span::styled(
                 "Beskid",
@@ -56,7 +58,7 @@ impl ShellChrome {
             Span::raw("   "),
             Span::styled(scope_label, Style::default().fg(Color::DarkGray)),
             Span::raw("   "),
-            Span::styled("F10", Style::default().fg(Color::Cyan)),
+            Span::styled(bindings.menu_hint(), Style::default().fg(Color::Cyan)),
             Span::styled(" menu", Style::default().fg(Color::DarkGray)),
         ]);
         frame.render_widget(Paragraph::new(brand_line), brand_row);

@@ -82,6 +82,9 @@ const TEMPLATES_SETTINGS: &[ToolSettingDescriptor] = &[
     },
 ];
 
+/// Tool page with no scalar settings; shortcut rebinding is handled in the settings widget.
+const SHORTCUTS_SETTINGS: &[ToolSettingDescriptor] = &[];
+
 pub const BUILTIN_SETTINGS: &[ToolSettingsPage] = &[
     ToolSettingsPage {
         tool_id: "shell",
@@ -97,6 +100,11 @@ pub const BUILTIN_SETTINGS: &[ToolSettingsPage] = &[
         tool_id: "templates",
         title: "Templates",
         settings: TEMPLATES_SETTINGS,
+    },
+    ToolSettingsPage {
+        tool_id: "shortcuts",
+        title: "Shortcuts",
+        settings: SHORTCUTS_SETTINGS,
     },
 ];
 

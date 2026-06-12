@@ -31,11 +31,29 @@ impl BeskidWidget for ShortcutsWidget {
     }
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
+        let bindings = &*ctx.key_bindings;
         let mut lines = vec![
             Line::from(Span::styled("Global", Style::default().fg(Color::Yellow))),
-            Line::from("  Ctrl+P / :  command palette"),
-            Line::from("  ?           shortcut help"),
-            Line::from("  q           quit"),
+            Line::from(format!(
+                "  {}  command palette",
+                bindings.palette_hint()
+            )),
+            Line::from(format!(
+                "  {}  top menu",
+                bindings.menu_hint()
+            )),
+            Line::from(format!(
+                "  {}  shortcut help",
+                bindings.label_for("help")
+            )),
+            Line::from(format!(
+                "  {}  quit",
+                bindings.label_for("quit")
+            )),
+            Line::from(Span::styled(
+                "  Settings → Shortcuts tab to rebind",
+                Style::default().fg(Color::DarkGray),
+            )),
             Line::from(""),
         ];
         for cmd in builtin_contextual_commands(ctx.scope) {

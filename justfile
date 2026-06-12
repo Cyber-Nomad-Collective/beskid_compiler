@@ -4,10 +4,13 @@
 #   just compiler   Run cargo test for the workspace
 #   just tests      Run compiler and corelib tests
 #   just replace    Build release CLI + LSP and overwrite installed `beskid` / `beskid_lsp`
+#   just vscode     Build and reinstall the VS Code/Cursor extension from `beskid_vscode`
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 root := justfile_directory()
+
+vscode_dir := root + "/../beskid_vscode"
 
 corelib_tests_project := "corelib/beskid_corelib/tests/corelib_tests"
 
@@ -49,3 +52,29 @@ replace:
     install -m 0755 "${lsp_built}" "${lsp_dest}"
     echo "Replaced ${cli_dest}"
     echo "Replaced ${lsp_dest}"
+
+# Build beskid_vscode and reinstall into Cursor or VS Code (reload window after).
+vscode:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    vscode_dir="{{vscode_dir}}"
+    if [[ ! -f "${vscode_dir}/package.json" ]]; then
+      echo "beskid_vscode not found at ${vscode_dir} — run ./scripts/setup-environment.sh" >&2
+      exit 1
+    fi
+    cd "${vscode_dir}"
+    bun install
+    bun run build
+    mkdir -p dist
+    BESKID_VSCODE_SKIP_PREBUILD=1 bunx @vscode/vsce package --out dist/beskid-dev.vsix
+    vsix="${vscode_dir}/dist/beskid-dev.vsix"
+    if command -v cursor >/dev/null 2>&1; then
+      cursor --install-extension "${vsix}" --force
+      echo "Reinstalled Beskid extension in Cursor — Developer: Reload Window"
+    elif command -v code >/dev/null 2>&1; then
+      code --install-extension "${vsix}" --force
+      echo "Reinstalled Beskid extension in VS Code — Developer: Reload Window"
+    else
+      echo "Packaged ${vsix} but no cursor/code CLI on PATH" >&2
+      exit 1
+    fi

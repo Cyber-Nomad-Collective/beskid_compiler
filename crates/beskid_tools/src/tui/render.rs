@@ -8,6 +8,7 @@ use crate::tui::layout::{
     OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS, PANEL_DETAIL, PANEL_FOOTER, PANEL_LOG, PANEL_STAGE,
 };
 use crate::shell::chrome::ShellChrome;
+use crate::shell::key_bindings::ShortcutBindings;
 use crate::shell::top_menu::ShellTopMenu;
 use crate::shell::hotkeys::ShellHotkeys;
 use crate::tui::overlay_chrome::{draw_backdrop, hotkey, render_overlay_panel};
@@ -24,6 +25,7 @@ pub fn draw_shell(frame: &mut Frame, state: &mut ShellState) {
     state.layout_rects = rects;
 
     let mut top_menu = ShellTopMenu::new();
+    let bindings = ShortcutBindings::platform_defaults();
     ShellChrome::default().render_pinned_top_bar(
         rects.header,
         frame,
@@ -33,6 +35,7 @@ pub fn draw_shell(frame: &mut Frame, state: &mut ShellState) {
         "Pipeline",
         state,
         &mut top_menu,
+        &bindings,
     );
     pipeline_compile::render_panel(PANEL_STAGE, rects.stage, frame, state);
     pipeline_compile::render_panel(PANEL_DETAIL, rects.detail, frame, state);

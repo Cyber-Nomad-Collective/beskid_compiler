@@ -1,9 +1,11 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::widgets::Paragraph;
 use crate::shell::primitives::Hotkey;
 
 use crate::pipeline::tui::widgets::draw_tabbed_log_panel;
 use crate::shell::context::WidgetContext;
+use crate::shell::scope::ShellScope;
 use crate::shell::input::ShellInput;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
 
@@ -27,12 +29,7 @@ impl BeskidWidget for LogWidget {
     }
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-        draw_tabbed_log_panel(
-            frame,
-            area,
-            ctx.shell_state.log_tab,
-            &mut ctx.shell_state.log_states,
-        );
+        render_log_panel(area, frame, ctx);
     }
 }
 
@@ -56,11 +53,19 @@ impl BeskidWidget for LogPanelWidget {
     }
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-        draw_tabbed_log_panel(
-            frame,
-            area,
-            ctx.shell_state.log_tab,
-            &mut ctx.shell_state.log_states,
-        );
+        render_log_panel(area, frame, ctx);
     }
+}
+
+fn render_log_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
+    if ctx.scope.is_user() && !ctx.shell_state.pipeline_active() {
+        frame.render_widget(Paragraph::new(ShellScope::no_project_lines()), area);
+        return;
+    }
+    draw_tabbed_log_panel(
+        frame,
+        area,
+        ctx.shell_state.log_tab,
+        &mut ctx.shell_state.log_states,
+    );
 }

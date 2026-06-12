@@ -8,6 +8,7 @@ use crate::shell::primitives::Hotkey;
 use crate::shell::context::WidgetContext;
 use crate::shell::input::ShellInput;
 use crate::shell::panel_style::title_line;
+use crate::shell::platform_shortcuts;
 use crate::shell::scope::ShellScope;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
 
@@ -35,10 +36,32 @@ impl BeskidWidget for HiWelcomeWidget {
             .areas(area);
         frame.render_widget(Paragraph::new(title_line("Welcome")), title_area);
 
+        let user_scope_hint = format!(
+            "No project detected here. Use {} → Open workspace / Open project, or launch from a directory with a `.bws` / `.bproj`.",
+            platform_shortcuts::palette_hint()
+        );
         let scope_hint = match ctx.scope {
-            ShellScope::User => "Open a project or workspace via the command palette (ctx.open_project / ctx.open_workspace).",
-            ShellScope::Project { .. } => "Project scope — run analyze, test, and build from the palette or top menu.",
-            ShellScope::Workspace { .. } => "Workspace scope — inspect graphs, dependencies, and targets from the Compiler menu.",
+            ShellScope::User => user_scope_hint.as_str(),
+            ShellScope::Project { manifest, .. } => {
+                return render_scoped_welcome(
+                    frame,
+                    title_area,
+                    body,
+                    "Project",
+                    manifest.file_stem().and_then(|s| s.to_str()).unwrap_or("project"),
+                    "Run analyze, test, and build from the palette or Compiler menu.",
+                );
+            }
+            ShellScope::Workspace { manifest, .. } => {
+                return render_scoped_welcome(
+                    frame,
+                    title_area,
+                    body,
+                    "Workspace",
+                    manifest.file_stem().and_then(|s| s.to_str()).unwrap_or("workspace"),
+                    "Inspect graphs, dependencies, and targets from the Compiler menu.",
+                );
+            }
         };
         let lines = vec![
             Line::from(Span::styled(
@@ -48,13 +71,49 @@ impl BeskidWidget for HiWelcomeWidget {
             Line::from(""),
             Line::from(scope_hint),
             Line::from(""),
-            Line::from(Span::styled("F10", Style::default().fg(Color::Cyan))),
+            Line::from(Span::styled(
+                platform_shortcuts::menu_hint(),
+                Style::default().fg(Color::Cyan),
+            )),
             Line::from("  Top menu — pages and tools"),
-            Line::from(Span::styled("Ctrl+P / :", Style::default().fg(Color::Cyan))),
+            Line::from(Span::styled(
+                platform_shortcuts::palette_hint(),
+                Style::default().fg(Color::Cyan),
+            )),
             Line::from("  Command palette"),
             Line::from(Span::styled("?", Style::default().fg(Color::Cyan))),
             Line::from("  Shortcut reference"),
         ];
         frame.render_widget(Paragraph::new(lines), body);
     }
+}
+
+fn render_scoped_welcome(
+    frame: &mut Frame,
+    _title_area: Rect,
+    body: Rect,
+    kind: &str,
+    name: &str,
+    hint: &str,
+) {
+    let lines = vec![
+        Line::from(Span::styled(
+            format!("{kind}: {name}"),
+            Style::default().fg(Color::Cyan),
+        )),
+        Line::from(""),
+        Line::from(hint),
+        Line::from(""),
+        Line::from(Span::styled(
+            platform_shortcuts::menu_hint(),
+            Style::default().fg(Color::Cyan),
+        )),
+        Line::from("  Top menu — pages and tools"),
+        Line::from(Span::styled(
+            platform_shortcuts::palette_hint(),
+            Style::default().fg(Color::Cyan),
+        )),
+        Line::from("  Command palette"),
+    ];
+    frame.render_widget(Paragraph::new(lines), body);
 }

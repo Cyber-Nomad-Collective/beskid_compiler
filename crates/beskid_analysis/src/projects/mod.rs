@@ -26,10 +26,12 @@ pub use compile_plan::{
     load_manifest_from_path, plan_entry_path,
 };
 pub use discovery::{
-    LEGACY_PROJECT_FILE_NAME, LEGACY_WORKSPACE_FILE_NAME, PROJECT_MANIFEST_EXTENSION,
-    WORKSPACE_MANIFEST_EXTENSION, discover_project_file, discover_project_manifest_in_dir,
-    discover_workspace_file, discover_workspace_manifest_in_dir, is_project_manifest_path,
-    is_workspace_manifest_path, project_manifest_for_member_dir, reject_legacy_manifest_path,
+    DEFAULT_DESCENDANT_SEARCH_DEPTH, LEGACY_PROJECT_FILE_NAME, LEGACY_WORKSPACE_FILE_NAME,
+    PROJECT_MANIFEST_EXTENSION, WORKSPACE_MANIFEST_EXTENSION, discover_project_file,
+    discover_project_file_descendant, discover_project_manifest_in_dir, discover_workspace_file,
+    discover_workspace_file_descendant, discover_workspace_manifest_in_dir,
+    is_project_manifest_path, is_workspace_manifest_path, project_manifest_for_member_dir,
+    reject_legacy_manifest_path,
 };
 pub use error::ProjectError;
 pub use graph::{

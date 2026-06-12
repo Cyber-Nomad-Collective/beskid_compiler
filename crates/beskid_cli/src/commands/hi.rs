@@ -28,7 +28,7 @@ pub fn execute(
     let start = args
         .path
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    let scope = ShellScope::resolve(&start);
+    let scope = ShellScope::resolve_cwd(&start);
     if args.plain {
         println!("beskid hi scope: {}", scope.label());
         return Ok(());

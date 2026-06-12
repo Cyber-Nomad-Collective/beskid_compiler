@@ -53,6 +53,15 @@ impl BeskidWidget for AnalysisWidget {
 }
 
 pub fn draw_analysis_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
+    let [title_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)])
+        .areas(area);
+    frame.render_widget(Paragraph::new(title_line("Analysis")), title_area);
+
+    if ctx.scope.is_user() {
+        frame.render_widget(Paragraph::new(ShellScope::no_project_lines()), body);
+        return;
+    }
+
     let mut lines = Vec::new();
 
     if ctx.shell_state.compile_complete {
@@ -114,9 +123,6 @@ pub fn draw_analysis_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContex
         ));
     }
 
-    let [title_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)])
-        .areas(area);
-    frame.render_widget(Paragraph::new(title_line("Analysis")), title_area);
     frame.render_widget(Paragraph::new(lines), body);
 }
 

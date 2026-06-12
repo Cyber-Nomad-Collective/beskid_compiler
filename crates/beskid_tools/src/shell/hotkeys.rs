@@ -3,6 +3,7 @@
 use super::primitives::{Hotkey, HotkeyItem, HotkeyRegistry, HotkeyScope};
 
 use super::control_mode::HiControlMode;
+use super::platform_shortcuts;
 
 pub struct ShellHotkeys {
     registry: HotkeyRegistry,
@@ -13,9 +14,19 @@ impl Default for ShellHotkeys {
     fn default() -> Self {
         let mut registry = HotkeyRegistry::new();
         registry.register(
-            Hotkey::new("Ctrl+P", "Command palette")
+            Hotkey::new(platform_shortcuts::palette_label(), "Command palette")
                 .scope(HotkeyScope::Global),
         );
+        registry.register(
+            Hotkey::new(platform_shortcuts::menu_label(), "Top menu")
+                .scope(HotkeyScope::Global),
+        );
+        if platform_shortcuts::is_macos() {
+            registry.register(
+                Hotkey::new("⌘M", "Top menu")
+                    .scope(HotkeyScope::Global),
+            );
+        }
         registry.register(Hotkey::new(":", "Command palette").scope(HotkeyScope::Global));
         registry.register(Hotkey::new("?", "Shortcut help").scope(HotkeyScope::Global));
         registry.register(Hotkey::new("q", "Quit").scope(HotkeyScope::Global));

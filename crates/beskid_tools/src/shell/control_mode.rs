@@ -7,9 +7,9 @@ use super::primitives::HotkeyItem;
 pub enum HiControlMode {
     #[default]
     Normal,
-    /// Top menu bar (`F10`).
+    /// Top menu bar (`F10`; macOS: `⌘M` / `Fn+F10`).
     TopMenu,
-    /// Command palette (`Ctrl+P` / `:`).
+    /// Command palette (`Ctrl+P` / `⌘P` / `:`).
     Palette,
     /// Layout editor (`layout edit` contextual command).
     LayoutEdit,

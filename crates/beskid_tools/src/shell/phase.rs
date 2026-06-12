@@ -1,11 +1,12 @@
 //! Shell phase / screen-transition labels for the pinned top bar.
 
+use super::scope::ShellScope;
 use crate::tui::shell::focus::OverlayKind;
 use crate::tui::shell::pane_state::ShellMode;
 use crate::tui::shell::state::ShellState;
 
 /// Human-readable workflow position (compile → tests → summary, or page title).
-pub fn transition_label(state: &ShellState, page_title: &str) -> String {
+pub fn transition_label(state: &ShellState, page_title: &str, scope: &ShellScope) -> String {
     if state.overlay_visible(OverlayKind::Summary) {
         let failed = state.failed_test_indices().len();
         let total = state.test_rows.len();
@@ -49,6 +50,9 @@ pub fn transition_label(state: &ShellState, page_title: &str) -> String {
     }
     if let Some(hint) = state.navigation_hint() {
         return hint.to_string();
+    }
+    if state.shell_mode == ShellMode::Hi && scope.is_user() {
+        return "No project open".into();
     }
     page_title.to_string()
 }

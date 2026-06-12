@@ -11,6 +11,7 @@ use crate::shell::catalog::ContextualCommand;
 use crate::shell::context::WidgetContext;
 use crate::shell::input::ShellInput;
 use crate::shell::panel_style::title_line;
+use crate::shell::platform_shortcuts;
 use crate::shell::scope::ShellScope;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
 
@@ -55,6 +56,11 @@ impl BeskidWidget for GraphWidget {
             title_area,
         );
 
+        if ctx.scope.is_user() {
+            frame.render_widget(Paragraph::new(ShellScope::no_project_lines()), body);
+            return;
+        }
+
         let scope_label = ctx.scope.label();
         let phase_count = ctx.shell_state.tree_nodes.len();
         let lines = vec![
@@ -72,7 +78,7 @@ impl BeskidWidget for GraphWidget {
             },
             Line::from(""),
             Line::from(Span::styled(
-                "Ctrl+P → graph",
+                format!("{} → graph", platform_shortcuts::palette_hint()),
                 Style::default().fg(Color::DarkGray),
             )),
         ];
@@ -106,6 +112,11 @@ impl BeskidWidget for GraphCompileWidget {
             Paragraph::new(title_line("Compile graph")),
             title_area,
         );
+
+        if ctx.scope.is_user() {
+            frame.render_widget(Paragraph::new(ShellScope::no_project_lines()), body);
+            return;
+        }
 
         if ctx.shell_state.tree_nodes.is_empty() {
             frame.render_widget(

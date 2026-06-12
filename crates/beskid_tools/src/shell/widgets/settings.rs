@@ -10,6 +10,9 @@ use crate::shell::primitives::Hotkey;
 
 use crate::shell::context::WidgetContext;
 use crate::shell::input::ShellInput;
+use crate::shell::key_bindings::{
+    BINDABLE_ACTIONS, ShortcutBindings, chord_from_key, display_chord,
+};
 use crate::shell::settings::{
     SettingKind, ToolSettingsRegistry, ToolsConfig, get_value, load_config, save_config,
     save_path_for_scope, set_value,
@@ -20,10 +23,12 @@ struct SettingsWidgetState {
     registry: ToolSettingsRegistry,
     config: ToolsConfig,
     saved_config: ToolsConfig,
+    bindings: ShortcutBindings,
     active_page: usize,
     focused_field: usize,
     editing: bool,
     edit_buffer: String,
+    rebinding_action: Option<usize>,
     status: Option<String>,
     scope_key: String,
 }
@@ -34,10 +39,12 @@ impl Default for SettingsWidgetState {
             registry: ToolSettingsRegistry::with_builtins(),
             config: ToolsConfig::default(),
             saved_config: ToolsConfig::default(),
+            bindings: ShortcutBindings::platform_defaults(),
             active_page: 0,
             focused_field: 0,
             editing: false,
             edit_buffer: String::new(),
+            rebinding_action: None,
             status: None,
             scope_key: String::new(),
         }
@@ -53,32 +60,64 @@ impl SettingsWidgetState {
         self.scope_key = key;
         self.config = load_config(ctx.scope, &self.registry);
         self.saved_config = self.config.clone();
+        self.bindings = ShortcutBindings::load(&self.config, &self.registry);
         self.active_page = 0;
         self.focused_field = 0;
         self.editing = false;
         self.edit_buffer.clear();
+        self.rebinding_action = None;
         self.status = None;
+    }
+
+    fn sync_bindings_to_host(&self, ctx: &mut WidgetContext<'_>) {
+        *ctx.key_bindings = self.bindings.clone();
     }
 
     fn active_page(&self) -> Option<&crate::shell::settings::ToolSettingsPage> {
         self.registry.pages().get(self.active_page)
     }
 
-    fn save(&mut self, ctx: &WidgetContext<'_>) {
+    fn is_shortcuts_page(&self) -> bool {
+        self.active_page()
+            .is_some_and(|page| page.tool_id == "shortcuts")
+    }
+
+    fn field_count(&self) -> usize {
+        if self.is_shortcuts_page() {
+            BINDABLE_ACTIONS.len()
+        } else {
+            self.active_page().map(|p| p.settings.len()).unwrap_or(0)
+        }
+    }
+
+    fn save(&mut self, ctx: &mut WidgetContext<'_>) {
+        self.bindings.save(&mut self.config);
         match save_config(ctx.scope, &self.config) {
             Ok(()) => {
                 self.saved_config = self.config.clone();
+                self.sync_bindings_to_host(ctx);
                 self.status = Some(format!("Saved to {}", save_path_for_scope(ctx.scope).display()));
             }
             Err(err) => self.status = Some(format!("Save failed: {err}")),
         }
     }
 
-    fn reset(&mut self) {
+    fn reset(&mut self, ctx: &mut WidgetContext<'_>) {
         self.config = self.saved_config.clone();
+        self.bindings = ShortcutBindings::load(&self.config, &self.registry);
         self.editing = false;
         self.edit_buffer.clear();
+        self.rebinding_action = None;
+        self.sync_bindings_to_host(ctx);
         self.status = Some("Reset to last saved values".into());
+    }
+
+    fn reset_bindings_defaults(&mut self, ctx: &mut WidgetContext<'_>) {
+        self.bindings.reset_to_defaults();
+        self.bindings.save(&mut self.config);
+        self.sync_bindings_to_host(ctx);
+        self.rebinding_action = None;
+        self.status = Some("Shortcuts reset to platform defaults (save to persist)".into());
     }
 }
 
@@ -114,6 +153,29 @@ impl BeskidWidget for SettingsWidget {
             return ShellAction::None;
         };
 
+        if let Some(action_idx) = state.rebinding_action {
+            match key.code {
+                KeyCode::Esc => {
+                    state.rebinding_action = None;
+                    state.status = None;
+                    return ShellAction::Redraw;
+                }
+                _ => {
+                    let chord = chord_from_key(key);
+                    let action = BINDABLE_ACTIONS[action_idx];
+                    state.bindings.set_chord(action.id, chord);
+                    state.rebinding_action = None;
+                    state.sync_bindings_to_host(ctx);
+                    state.status = Some(format!(
+                        "Bound {} to {}",
+                        action.label,
+                        display_chord(chord)
+                    ));
+                    return ShellAction::Redraw;
+                }
+            }
+        }
+
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
             state.save(ctx);
             return ShellAction::Redraw;
@@ -125,7 +187,11 @@ impl BeskidWidget for SettingsWidget {
                 ShellAction::Redraw
             }
             KeyCode::Char('r') if !state.editing => {
-                state.reset();
+                if state.is_shortcuts_page() {
+                    state.reset_bindings_defaults(ctx);
+                } else {
+                    state.reset(ctx);
+                }
                 ShellAction::Redraw
             }
             KeyCode::Tab if !state.editing => {
@@ -145,14 +211,22 @@ impl BeskidWidget for SettingsWidget {
                 ShellAction::Redraw
             }
             KeyCode::Down if !state.editing => {
-                if let Some(page) = state.active_page()
-                    && !page.settings.is_empty() {
-                        state.focused_field =
-                            (state.focused_field + 1).min(page.settings.len() - 1);
-                    }
+                let count = state.field_count();
+                if count > 0 {
+                    state.focused_field = (state.focused_field + 1).min(count - 1);
+                }
                 ShellAction::Redraw
             }
             KeyCode::Enter => {
+                if state.is_shortcuts_page() {
+                    if state.focused_field < BINDABLE_ACTIONS.len() {
+                        state.rebinding_action = Some(state.focused_field);
+                        let label = BINDABLE_ACTIONS[state.focused_field].label;
+                        state.status = Some(format!("Press a key to bind {label} (Esc cancel)"));
+                        return ShellAction::Redraw;
+                    }
+                    return ShellAction::None;
+                }
                 let action = if let Some(page) = state.active_page() {
                     if let Some(desc) = page.settings.get(state.focused_field) {
                         let tool_id = page.tool_id;
@@ -231,48 +305,82 @@ impl BeskidWidget for SettingsWidget {
                     Style::default().fg(Color::Cyan),
                 ),
             ]),
-            Line::from(Span::styled(
-                "Tab — switch tool page   ↑↓ — focus   Enter — edit/toggle   s — save   r — reset",
-                Style::default().fg(Color::DarkGray),
-            )),
-            Line::from(""),
         ];
 
-        for (idx, desc) in page.settings.iter().enumerate() {
-            let value = if state.editing && idx == state.focused_field {
-                state.edit_buffer.clone()
-            } else {
-                get_value(&state.config, &state.registry, page.tool_id, desc.key)
-            };
-            let display = match desc.kind {
-                SettingKind::Bool => {
-                    if value == "true" {
-                        "[x]".into()
-                    } else {
-                        "[ ]".into()
-                    }
+        if state.is_shortcuts_page() {
+            lines.push(Line::from(Span::styled(
+                "Tab — switch page   ↑↓ — select   Enter — rebind   s — save   r — reset defaults",
+                Style::default().fg(Color::DarkGray),
+            )));
+        } else {
+            lines.push(Line::from(Span::styled(
+                "Tab — switch tool page   ↑↓ — focus   Enter — edit/toggle   s — save   r — reset",
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+        lines.push(Line::from(""));
+
+        if state.is_shortcuts_page() {
+            for (idx, action) in BINDABLE_ACTIONS.iter().enumerate() {
+                let focused = idx == state.focused_field;
+                let prefix = if focused { "> " } else { "  " };
+                let style = if focused {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let binding = state.bindings.label_for(action.id);
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, style),
+                    Span::styled(format!("{:<22}", action.label), style),
+                    Span::styled(binding, style),
+                ]));
+                if focused {
+                    lines.push(Line::from(Span::styled(
+                        format!("    {}", action.description),
+                        Style::default().fg(Color::DarkGray),
+                    )));
                 }
-                SettingKind::U32 | SettingKind::Quoted => value,
-            };
-            let focused = idx == state.focused_field;
-            let prefix = if focused { "> " } else { "  " };
-            let style = if focused {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-            lines.push(Line::from(vec![
-                Span::styled(prefix, style),
-                Span::styled(format!("{}: ", desc.label), style),
-                Span::styled(display, style),
-            ]));
-            if focused {
-                lines.push(Line::from(Span::styled(
-                    format!("    {}", desc.description),
-                    Style::default().fg(Color::DarkGray),
-                )));
+            }
+        } else {
+            for (idx, desc) in page.settings.iter().enumerate() {
+                let value = if state.editing && idx == state.focused_field {
+                    state.edit_buffer.clone()
+                } else {
+                    get_value(&state.config, &state.registry, page.tool_id, desc.key)
+                };
+                let display = match desc.kind {
+                    SettingKind::Bool => {
+                        if value == "true" {
+                            "[x]".into()
+                        } else {
+                            "[ ]".into()
+                        }
+                    }
+                    SettingKind::U32 | SettingKind::Quoted => value,
+                };
+                let focused = idx == state.focused_field;
+                let prefix = if focused { "> " } else { "  " };
+                let style = if focused {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, style),
+                    Span::styled(format!("{}: ", desc.label), style),
+                    Span::styled(display, style),
+                ]));
+                if focused {
+                    lines.push(Line::from(Span::styled(
+                        format!("    {}", desc.description),
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                }
             }
         }
 

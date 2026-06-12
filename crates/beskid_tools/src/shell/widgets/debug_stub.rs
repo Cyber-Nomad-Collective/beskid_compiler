@@ -28,6 +28,12 @@ impl BeskidWidget for DebugFutureWidget {
     }
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-        draw_compile_debug_panel(frame, area, ctx.shell_state, CompileDebugTab::Timeline);
+        draw_compile_debug_panel(
+            frame,
+            area,
+            Some(ctx.scope),
+            ctx.shell_state,
+            CompileDebugTab::Timeline,
+        );
     }
 }

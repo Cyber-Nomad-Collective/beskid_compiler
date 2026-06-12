@@ -12,11 +12,14 @@ pub mod context;
 pub mod hi_compile;
 pub mod host;
 pub mod hotkeys;
+pub mod key_bindings;
+pub mod layers;
 pub mod input;
 pub mod nav;
 pub mod phase;
 pub mod top_menu;
 pub mod panel_style;
+pub mod platform_shortcuts;
 pub mod palette;
 pub mod primitives;
 pub mod registry;
@@ -42,6 +45,11 @@ pub use hi_compile::{HiCompileJob, HiCompileRegistrar, HiCompileRequest, is_in_p
 pub use host::ShellHost;
 pub use host::WidgetRegistrar;
 pub use hotkeys::ShellHotkeys;
+pub use key_bindings::{
+    BindableAction, KeyChord, ShortcutBindings, BINDABLE_ACTIONS, chord_from_key, display_chord,
+    encode_chord, parse_chord,
+};
+pub use layers::ShellLayer;
 pub use input::ShellInput;
 pub use palette::CommandPaletteState;
 pub use registry::WidgetRegistry;

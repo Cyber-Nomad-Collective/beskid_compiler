@@ -4,7 +4,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols;
-use ratatui::widgets::Tabs;
+use ratatui::widgets::{Paragraph, Tabs};
 use crate::shell::primitives::Hotkey;
 
 use crate::pipeline::tui::log_tabs::LogTab;
@@ -14,6 +14,7 @@ use crate::pipeline::tui::widgets::{
 };
 use crate::shell::context::WidgetContext;
 use crate::shell::panel_style::toolbar_block;
+use crate::shell::scope::ShellScope;
 use crate::shell::input::ShellInput;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
 use crate::tui::shell::focus::OverlayKind;
@@ -89,18 +90,28 @@ impl BeskidWidget for CompileDebugWidget {
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
         let tab = self.state.borrow().active_tab;
-        draw_compile_debug_panel(frame, area, ctx.shell_state, tab);
+        draw_compile_debug_panel(frame, area, Some(ctx.scope), ctx.shell_state, tab);
     }
 }
 
 pub fn draw_compile_debug_panel(
     frame: &mut Frame,
     area: Rect,
+    scope: Option<&ShellScope>,
     state: &mut crate::tui::shell::state::ShellState,
     active_tab: CompileDebugTab,
 ) {
     let [tabs_area, body] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(4)]).areas(area);
+
+    if scope.is_some_and(|s| s.is_user()) && !state.pipeline_active() {
+        let tabs = Tabs::new(vec!["Timeline", "Incremental", "Traces"])
+            .block(toolbar_block("Compile debugger"))
+            .style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(tabs, tabs_area);
+        frame.render_widget(Paragraph::new(ShellScope::no_project_lines()), body);
+        return;
+    }
 
     let titles: Vec<&str> = CompileDebugTab::ALL.iter().map(|tab| tab.title()).collect();
     let tabs = Tabs::new(titles)
