@@ -37,10 +37,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
             let left_is_string = is_string_type(ctx, left_type);
             let right_is_string = is_string_type(ctx, right_type);
             let result_is_string = ctx
-                .expr_type(node.span)
+                .expr_type(node.id)
                 .is_some_and(|type_id| is_string_type(ctx, type_id));
             if result_is_string || left_is_string || right_is_string {
-                let string_type = [ctx.expr_type(node.span), Some(left_type), Some(right_type)]
+                let string_type = [ctx.expr_type(node.id), Some(left_type), Some(right_type)]
                     .into_iter()
                     .flatten()
                     .find(|type_id| is_string_type(ctx, *type_id))

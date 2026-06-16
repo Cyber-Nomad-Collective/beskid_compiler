@@ -111,7 +111,9 @@ fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecord
             front_end: FrontEndOptions {
                 with_semantic_diagnostics: true,
                 ..Default::default()
+
             },
+            ..Default::default()
         },
         Some(observer),
     )

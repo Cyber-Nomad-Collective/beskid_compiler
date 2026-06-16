@@ -1,6 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::CodegenResult;
 use crate::lowering::descriptor::get_or_compute_layout;
+use crate::lowering::type_surface::{contract_method_order, contract_signatures};
 use crate::lowering::expressions::mapping::lower_aot_object_mapping;
 use crate::lowering::expressions::serialize::{is_serializable_struct, mapping_pair_eligible};
 use crate::lowering::function::mangle_method_name;
@@ -186,15 +187,25 @@ pub(crate) fn ensure_type_compatibility_or_expected(
         span, expected, actual, type_result, resolution, builder, value,
     ) {
         Ok(value) => Ok(value),
-        Err(CodegenError::TypeMismatch { .. }) => ensure_type_compatibility(
-            span,
-            expected,
-            expected,
-            type_result,
-            resolution,
-            builder,
-            value,
-        ),
+        Err(CodegenError::TypeMismatch { span, expected, actual }) => {
+            if expected != actual {
+                ensure_type_compatibility(
+                    span,
+                    actual,
+                    actual,
+                    type_result,
+                    resolution,
+                    builder,
+                    value,
+                )
+            } else {
+                Err(CodegenError::TypeMismatch {
+                    span,
+                    expected,
+                    actual,
+                })
+            }
+        }
         Err(err) => Err(err),
     }
 }
@@ -270,8 +281,7 @@ fn lower_contract_compatibility(
         return Ok(None);
     }
 
-    let methods = type_result
-        .contract_method_order
+    let methods = contract_method_order(type_result)
         .get(&expected_item_id)
         .cloned()
         .unwrap_or_default();
@@ -284,8 +294,8 @@ fn lower_contract_compatibility(
         .map(|item| item.name.clone())
         .ok_or(CodegenError::MissingSymbol("contract receiver item"))?;
     for (index, method_name) in methods.iter().enumerate() {
-        let signature = type_result
-            .contract_signatures
+        let contract_sigs = contract_signatures(type_result);
+        let signature = contract_sigs
             .get(&(expected_item_id, method_name.clone()))
             .ok_or(CodegenError::MissingSymbol("contract method signature"))?;
 
@@ -423,7 +433,7 @@ pub(crate) fn validate_cast_intents(type_result: &TypeResult) -> Vec<CodegenErro
     let mut seen = HashSet::new();
     let mut reverse_seen = HashSet::new();
 
-    for intent in &type_result.cast_intents {
+    for intent in &type_result.lowering.cast_intents {
         let from_info = type_result.types.get(intent.from);
         let to_info = type_result.types.get(intent.to);
 
@@ -509,7 +519,7 @@ mod struct_mapping_clif_tests {
     use super::*;
     use beskid_analysis::hir::{HirPrimitiveType, HirVisibility};
     use beskid_analysis::resolve::{ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution};
-    use beskid_analysis::types::{TypeId, TypeInfo, TypeResult, TypeTable};
+    use beskid_analysis::types::{LoweringPrep, TypeId, TypeInfo, TypeResult, TypeTable};
     use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
     fn struct_mapping_type_context() -> (TypeResult, Resolution, TypeId, TypeId) {
@@ -527,20 +537,17 @@ mod struct_mapping_clif_tests {
         let type_result = TypeResult {
             types,
             named_type_names: HashMap::new(),
-            expr_types: HashMap::new(),
-            scoped_expr_types: HashMap::new(),
+            node_types: HashMap::new(),
             local_types: HashMap::new(),
+            unit_surfaces: HashMap::new(),
             function_signatures: HashMap::new(),
             method_function_signatures: HashMap::new(),
             struct_fields_ordered,
             struct_event_fields: HashMap::new(),
             enum_variants_ordered: HashMap::new(),
             generic_items: HashMap::new(),
-            call_kinds: HashMap::new(),
-            scoped_call_kinds: HashMap::new(),
-            contract_method_order: HashMap::new(),
             contract_signatures: HashMap::new(),
-            cast_intents: Vec::new(),
+            lowering: LoweringPrep::default(),
         };
         let resolution = Resolution {
             items: vec![

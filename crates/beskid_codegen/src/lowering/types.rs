@@ -4,6 +4,7 @@ use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 
 use crate::linking::resolve_path_item_id;
+use crate::lowering::type_surface::named_type_names;
 use cranelift_codegen::ir::types;
 use std::collections::HashMap;
 
@@ -327,7 +328,7 @@ pub(crate) fn resolve_type_path_item_id_for_codegen(
         }
     }
     let name = segments.last()?;
-    for (item_id, type_name) in &type_result.named_type_names {
+    for (item_id, type_name) in &named_type_names(type_result) {
         if (type_name.as_str() == name.as_str() || type_name.ends_with(&format!("::{name}")))
             && (type_result.enum_variants_ordered.contains_key(item_id)
                 || type_result.struct_fields_ordered.contains_key(item_id))

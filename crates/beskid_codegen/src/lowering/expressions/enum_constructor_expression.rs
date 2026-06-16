@@ -2,7 +2,7 @@ use crate::errors::CodegenError;
 use crate::lowering::descriptor::{
     enum_payload_start, enum_variant_field_offsets, is_pointer_like_type,
 };
-use crate::lowering::locals::{expr_type_at, type_id_for_item};
+use crate::lowering::locals::{expr_type_for_node, node_expr_type, type_id_for_item};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{
@@ -30,12 +30,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirEnumConstructorExpression {
             .filter(|type_id| enum_constructor_matches_type(ctx.type_result, *type_id, variant_name));
         let inferred_type_id = contextual_type
             .or_else(|| {
-                expr_type_at(
-                    ctx.type_result,
-                    node.span,
-                    ctx.codegen.current_source_path.as_ref(),
-                )
-                .filter(|type_id| enum_type_candidate(ctx.type_result, *type_id))
+                node_expr_type(ctx.type_result, node.id)
+                    .filter(|type_id| enum_type_candidate(ctx.type_result, *type_id))
             })
             .or_else(|| enum_constructor_type_from_context(ctx, node))
             .or_else(|| {

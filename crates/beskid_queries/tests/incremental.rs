@@ -1,6 +1,6 @@
 //! Incremental invalidation tests for Salsa-backed unit queries.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use beskid_analysis::services::{SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot};
 use beskid_analysis::services::{
@@ -9,6 +9,7 @@ use beskid_analysis::services::{
 use beskid_queries::{
     BeskidDatabase, Db, ProjectSession, fingerprint_key, parse_and_expand_unit, record_query_hit,
     reset, semantic_snapshot, snapshot, unit_content_fingerprint, unit_hir, unit_imports,
+    unit_type_surface,
 };
 
 fn fixture_source() -> String {
@@ -344,4 +345,159 @@ fn manifest_digest_changes_when_manifest_or_lock_changes() {
     std::fs::write(&lock, "lock v1").expect("lock");
     let digest_with_lock = manifest_digest(&manifest);
     assert_ne!(digest_v2, digest_with_lock);
+}
+
+fn test_session(db: &BeskidDatabase, entry_path: PathBuf) -> ProjectSession {
+    ProjectSession::new(
+        db,
+        PathBuf::from("/tmp/project"),
+        entry_path,
+        "App".to_string(),
+        "lock".to_string(),
+    )
+}
+
+fn register_test_session(db: &mut BeskidDatabase, session: ProjectSession, entry_path: &Path) {
+    db.project_registry()
+        .lock()
+        .expect("project registry")
+        .insert(
+            (
+                PathBuf::from("/tmp/project"),
+                entry_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| entry_path.to_path_buf()),
+                "App".to_string(),
+            ),
+            session,
+        );
+}
+
+const MODULE_INDEX_STUB: &str = "mi:test:0:0";
+
+#[test]
+fn unit_type_surface_populates_cache() {
+    reset();
+    let mut db = BeskidDatabase::default();
+    let path = PathBuf::from("/tmp/beskid_salsa_surface_populate.bd");
+    let source = "i32 Main() { return 0; }".to_string();
+    let fp = unit_content_fingerprint(&path, &source);
+    db.ensure_file_text(path.clone(), source);
+
+    let session = test_session(&db, path.clone());
+    let _ = unit_type_surface(&db, session, path.clone(), MODULE_INDEX_STUB);
+    assert!(
+        db.unit_cache()
+            .lock()
+            .expect("unit cache")
+            .unit_type_surfaces
+            .contains_key(&fp)
+    );
+}
+
+#[test]
+fn warm_second_type_surface_reuses_unit_cache() {
+    reset();
+    let mut db = BeskidDatabase::default();
+    let path = PathBuf::from("/tmp/beskid_salsa_surface_warm.bd");
+    let source = "i32 Main() { return 0; }".to_string();
+    let fp = unit_content_fingerprint(&path, &source);
+    db.ensure_file_text(path.clone(), source);
+
+    let session = test_session(&db, path.clone());
+    let _ = unit_type_surface(&db, session, path.clone(), MODULE_INDEX_STUB);
+    assert!(
+        db.unit_cache()
+            .lock()
+            .expect("unit cache")
+            .unit_type_surfaces
+            .contains_key(&fp)
+    );
+
+    reset();
+    let _ = unit_type_surface(&db, session, path.clone(), MODULE_INDEX_STUB);
+    let (hits, misses, _) = snapshot();
+    assert!(hits >= 1, "warm type surface should hit unit cache");
+    assert!(
+        misses <= 1,
+        "warm type surface should not recompute cached surface (misses={misses})"
+    );
+}
+
+#[test]
+fn file_edit_invalidates_type_surface_cache() {
+    reset();
+    let mut db = BeskidDatabase::default();
+    let path = PathBuf::from("/tmp/beskid_salsa_surface_edit.bd");
+    db.ensure_file_text(path.clone(), "i32 Main() { return 0; }".to_string());
+
+    let session = test_session(&db, path.clone());
+    let _ = unit_type_surface(&db, session, path.clone(), MODULE_INDEX_STUB);
+    assert!(
+        !db.unit_cache()
+            .lock()
+            .expect("unit cache")
+            .unit_type_surfaces
+            .is_empty()
+    );
+
+    db.set_file_text(path.clone(), "i32 Main() { return 42; }".to_string());
+    assert!(
+        db.unit_cache()
+            .lock()
+            .expect("unit cache")
+            .unit_type_surfaces
+            .is_empty()
+    );
+
+    let _ = unit_type_surface(&db, session, path.clone(), MODULE_INDEX_STUB);
+    let (_, misses, _) = snapshot();
+    assert!(misses >= 1);
+}
+
+#[test]
+fn import_edit_invalidates_dependent_type_surface_cache() {
+    reset();
+    let mut db = BeskidDatabase::default();
+    let dep_path = PathBuf::from("/tmp/beskid_salsa_test_dep.bd");
+    let main_path = PathBuf::from("/tmp/beskid_salsa_test_consumer.bd");
+    db.ensure_file_text(
+        dep_path.clone(),
+        "pub i32 Value() { return 1; }".to_string(),
+    );
+    db.ensure_file_text(main_path.clone(), "i32 Main() { return 0; }".to_string());
+
+    let session = test_session(&db, main_path.clone());
+    register_test_session(&mut db, session, &main_path);
+    let dep_fp = unit_content_fingerprint(&dep_path, "pub i32 Value() { return 1; }");
+    let main_fp = unit_content_fingerprint(&main_path, "i32 Main() { return 0; }");
+
+    let _ = unit_type_surface(&db, session, dep_path.clone(), MODULE_INDEX_STUB);
+    let _ = unit_type_surface(&db, session, main_path.clone(), MODULE_INDEX_STUB);
+    assert!(
+        db.unit_cache()
+            .lock()
+            .expect("unit cache")
+            .unit_type_surfaces
+            .contains_key(&dep_fp)
+    );
+    assert!(
+        db.unit_cache()
+            .lock()
+            .expect("unit cache")
+            .unit_type_surfaces
+            .contains_key(&main_fp)
+    );
+
+    db.invalidate_import_dependents(
+        session,
+        dep_path.clone(),
+        vec![main_path.clone(), dep_path.clone()],
+    );
+    let cache = db.unit_cache().lock().expect("unit cache");
+    assert!(!cache.unit_type_surfaces.contains_key(&dep_fp));
+    assert!(
+        cache.unit_type_surfaces.contains_key(&main_fp),
+        "units without import edges should keep cached surfaces"
+    );
 }

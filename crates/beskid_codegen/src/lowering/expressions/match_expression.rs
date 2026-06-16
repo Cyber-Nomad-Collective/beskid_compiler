@@ -1,7 +1,7 @@
 use crate::errors::CodegenError;
 use crate::lowering::cast_intent::ensure_value_clif_type;
 use crate::lowering::descriptor::{enum_payload_start, enum_variant_field_offsets};
-use crate::lowering::locals::{infer_match_expr_type, local_id_for_span};
+use crate::lowering::locals::local_id_for_span;
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -75,14 +75,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMatchExpression {
                 node: "match payload start",
             })?;
 
-        let result_type = infer_match_expr_type(
-            ctx.resolution,
-            ctx.type_result,
-            node,
-            ctx.codegen.current_source_path.as_ref(),
-            ctx.receiver_type,
-        )
-        .or_else(|| ctx.expr_type(node.span));
+        let result_type = ctx
+            .expr_type(node.id)
+            .or(ctx.expected_return_type)
+            .or(ctx.expected_expr_type);
         let result_clif = result_type.and_then(|ty| map_type_id_to_clif(ctx.type_result, ty));
         let produces_value = result_clif.is_some();
         let result_var = result_clif.map(|clif_ty| ctx.builder.declare_var(clif_ty));
@@ -227,14 +223,7 @@ fn lower_primitive_match(
             node: "match scrutinee clif type",
         },
     )?;
-    let result_type = infer_match_expr_type(
-        ctx.resolution,
-        ctx.type_result,
-        node,
-        ctx.codegen.current_source_path.as_ref(),
-        ctx.receiver_type,
-    )
-    .or_else(|| ctx.expr_type(node.span));
+    let result_type = ctx.expr_type(node.id);
     let result_clif = result_type.and_then(|ty| map_type_id_to_clif(ctx.type_result, ty));
     let produces_value = result_clif.is_some();
     let result_var = result_clif.map(|ty| ctx.builder.declare_var(ty));

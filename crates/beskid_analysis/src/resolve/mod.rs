@@ -13,7 +13,7 @@ pub mod symbol_lookup;
 pub mod tables;
 
 pub use errors::{ResolveError, ResolveResult, ResolveWarning};
-pub use ids::{ItemId, LocalId, ModuleId};
+pub use ids::{HirNodeId, ItemId, LocalId, ModuleId};
 pub use items::{ItemInfo, ItemKind};
 pub use module_graph::{ModuleGraph, ModuleInfo};
 pub use resolver::{Resolution, Resolver};

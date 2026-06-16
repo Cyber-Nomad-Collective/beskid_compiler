@@ -97,6 +97,7 @@ fn analyze_program_with_options_and_plan(
             with_semantic_diagnostics: true,
             ..Default::default()
         },
+        ..Default::default()
     };
 
     let (_prepared, diagnostics) =
@@ -145,7 +146,9 @@ pub fn analyze_source_with_compilation_context(
             with_semantic_diagnostics: true,
             module_level_meta_items_allowed: Some(ctx.module_level_meta_items_allowed()),
             ..Default::default()
+
         },
+        ..Default::default()
     };
 
     let (_prepared, mut diagnostics) =

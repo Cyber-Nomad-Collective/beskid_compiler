@@ -4,7 +4,7 @@ use crate::hir::{
     HirPathSegment, HirPattern, HirTryExpression,
 };
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::context::try_infer::TryDesugarTarget;
+use crate::types::try_desugar::TryDesugarTarget;
 
 const TRY_OK_BINDING_OFFSET: usize = 10;
 const TRY_OK_PATTERN_OFFSET: usize = 11;

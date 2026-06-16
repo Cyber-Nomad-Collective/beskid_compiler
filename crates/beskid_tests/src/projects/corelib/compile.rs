@@ -117,6 +117,7 @@ fn corelib_mvp_fixture_lowers_via_program_assembly() {
                 &assembly.entry_unit().program,
                 Some(&assembly),
                 None,
+                beskid_analysis::services::DependencyTypingPolicy::FullClosure,
             )
             .expect("corelib_mvp should resolve and type-check with use aliases");
         });

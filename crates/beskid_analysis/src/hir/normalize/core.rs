@@ -4,7 +4,7 @@ use std::fmt;
 use crate::hir::{HirBlock, HirExpressionNode, HirProgram};
 use crate::resolve::Resolution;
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::context::try_infer::{
+use crate::types::try_desugar::{
     TryDesugarTarget, collect_array_for_spans, try_desugar_targets_for_program,
 };
 

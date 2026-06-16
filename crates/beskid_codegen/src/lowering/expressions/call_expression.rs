@@ -6,7 +6,8 @@ use crate::lowering::function::{
     lower_function_with_name, mangle_generic_item_function, mangle_item_function,
     mangle_method_name,
 };
-use crate::lowering::locals::{canonicalize_call_kind, local_id_for_span, resolved_value_at};
+use crate::lowering::locals::{call_kind_for_call, canonicalize_call_kind, local_id_for_span, resolved_value_at};
+use crate::lowering::type_surface::{contract_method_order, contract_signatures};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
@@ -106,7 +107,12 @@ fn lambda_signature_type_ids(
         params.push(type_id);
     }
 
-    let return_type = ctx.require_expr_type(lambda.node.body.span)?;
+    let return_type = ctx
+        .type_result
+        .node_type(lambda.node.body.id)
+        .ok_or(CodegenError::MissingExpressionType {
+            span: lambda.node.body.span,
+        })?;
 
     Ok((params, return_type))
 }
@@ -249,7 +255,7 @@ fn lower_event_invoke_call(
                 span: arg.span,
                 node: "unit-valued event argument",
             })?;
-            let actual = ctx.require_expr_type_for_node(arg)?;
+            let actual = ctx.require_expr_type_for_node(arg).unwrap_or(*expected);
             ensure_type_compatibility_or_expected(
                 arg.span,
                 *expected,
@@ -638,7 +644,7 @@ fn lower_indirect_function_call_with_signature(
                 span: arg.span,
                 node: "unit-valued call argument",
             })?;
-            let actual = ctx.require_expr_type_for_node(arg)?;
+            let actual = ctx.require_expr_type_for_node(arg).unwrap_or(*expected);
             ensure_type_compatibility_or_expected(
                 arg.span,
                 *expected,
@@ -683,18 +689,16 @@ fn lower_contract_dispatch_call(
             span: node.node.callee.span,
             node: "contract dispatch callee",
         })?;
-    let method_order = ctx
-        .type_result
-        .contract_method_order
+    let contract_orders = contract_method_order(ctx.type_result);
+    let method_order = contract_orders
         .get(&contract_item_id)
         .ok_or(CodegenError::MissingSymbol("contract method order"))?;
     let method_index = method_order
         .iter()
         .position(|name| name == &method_name)
         .ok_or(CodegenError::MissingSymbol("contract method slot"))?;
-    let signature = ctx
-        .type_result
-        .contract_signatures
+    let contract_sigs = contract_signatures(ctx.type_result);
+    let signature = contract_sigs
         .get(&(contract_item_id, method_name.clone()))
         .ok_or(CodegenError::MissingSymbol("contract method signature"))?;
 
@@ -735,7 +739,7 @@ fn lower_contract_dispatch_call(
                     span: arg.span,
                     node: "unit-valued call argument",
                 })?;
-                let actual = ctx.require_expr_type_for_node(arg)?;
+                let actual = ctx.require_expr_type_for_node(arg).unwrap_or(*expected);
                 ensure_type_compatibility_or_expected(
                     arg.span,
                     *expected,
@@ -804,7 +808,7 @@ fn lower_contract_dispatch_call(
                         span: arg.span,
                         node: "unit-valued call argument",
                     })?;
-                    let actual = ctx.require_expr_type_for_node(arg)?;
+                    let actual = ctx.require_expr_type_for_node(arg).unwrap_or(*expected);
                     ensure_type_compatibility_or_expected(
                         arg.span,
                         *expected,
@@ -903,7 +907,7 @@ fn lower_contract_dispatch_call(
                 span: arg.span,
                 node: "unit-valued call argument",
             })?;
-            let actual = ctx.require_expr_type_for_node(arg)?;
+            let actual = ctx.require_expr_type_for_node(arg).unwrap_or(*expected);
             ensure_type_compatibility_or_expected(
                 arg.span,
                 *expected,
@@ -1153,16 +1157,7 @@ fn infer_generic_args_from_call(
         let type_id = ctx
             .require_expr_type_for_node(arg)
             .ok()
-            .or_else(|| {
-                crate::lowering::locals::infer_expr_type(
-                    ctx.resolution,
-                    ctx.type_result,
-                    arg,
-                    ctx.codegen.current_source_path.as_ref(),
-                    ctx.receiver_type,
-                )
-            })
-            .or_else(|| ctx.expr_type(arg.span))
+.or_else(|| ctx.expr_type_for_node(arg))
             .or_else(|| {
                 if let HirExpressionNode::PathExpression(path) = &arg.node {
                     crate::lowering::locals::local_id_for_span(
@@ -1329,7 +1324,7 @@ fn lower_method_dispatch_call(
                 span: arg.span,
                 node: "unit-valued call argument",
             })?;
-            let actual = ctx.require_expr_type_for_node(arg)?;
+            let actual = ctx.require_expr_type_for_node(arg).unwrap_or(*expected);
             ensure_type_compatibility_or_expected(
                 arg.span,
                 *expected,
@@ -1396,11 +1391,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let call_kind = crate::lowering::locals::call_kind_at(
-            ctx.type_result,
-            node.span,
-            ctx.codegen.current_source_path.as_ref(),
-        )
+        let call_kind = call_kind_for_call(ctx.type_result, node)
         .map(|kind| canonicalize_call_kind(ctx.resolution, kind));
         if let Some(CallLoweringKind::MethodDispatch {
             method_item_id,
@@ -1471,7 +1462,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
             return lower_local_lambda_call(node, lambda, ctx);
         }
 
-        if let Some(callee_type_id) = ctx.expr_type(node.node.callee.span)
+        if let Some(callee_type_id) = ctx.expr_type(node.node.callee.id)
             && let Some(TypeInfo::Function {
                 params,
                 return_type,
@@ -1611,7 +1602,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                     infer_generic_args_from_call_expr_type(
                         ctx.type_result,
                         item_id,
-                        ctx.expr_type(node.span),
+                        ctx.expr_type(node.id),
                     )
                 })
                 .ok_or(CodegenError::UnsupportedNode {

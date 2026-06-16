@@ -33,7 +33,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionNode {
             HirExpressionNode::TryExpression(inner) => {
                 // Invariant: normalization should always desugar try to match before codegen.
                 debug_assert!(
-                    ctx.expr_type(inner.node.expr.span).is_some(),
+                    ctx.expr_type(inner.node.expr.id).is_some(),
                     "unexpected raw TryExpression reached codegen; expected upstream desugaring"
                 );
                 Err(CodegenError::UnsupportedNode {

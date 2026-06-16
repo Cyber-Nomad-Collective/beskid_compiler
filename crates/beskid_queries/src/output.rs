@@ -8,7 +8,7 @@ use beskid_analysis::resolve::{
     qualified_name, symbol_for_item,
 };
 use beskid_analysis::services::FrontEndTypedResult;
-use beskid_analysis::types::TypeResult;
+use beskid_analysis::types::{TypeResult, UnitTypeSurface};
 
 #[derive(Debug, Clone)]
 pub struct SharedResolution(pub Arc<Resolution>);
@@ -56,6 +56,40 @@ pub struct SharedTypeResult(pub Arc<TypeResult>);
 
 impl std::ops::Deref for SharedTypeResult {
     type Target = TypeResult;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SharedUnitResolution(pub Arc<Resolution>);
+
+impl From<Arc<Resolution>> for SharedUnitResolution {
+    fn from(value: Arc<Resolution>) -> Self {
+        Self(value)
+    }
+}
+
+impl std::ops::Deref for SharedUnitResolution {
+    type Target = Resolution;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SharedUnitTypeSurface(pub Arc<UnitTypeSurface>);
+
+impl From<Arc<UnitTypeSurface>> for SharedUnitTypeSurface {
+    fn from(value: Arc<UnitTypeSurface>) -> Self {
+        Self(value)
+    }
+}
+
+impl std::ops::Deref for SharedUnitTypeSurface {
+    type Target = UnitTypeSurface;
 
     fn deref(&self) -> &Self::Target {
         &self.0

@@ -61,7 +61,9 @@ i32 Main() {
                 front_end: FrontEndOptions {
                     with_semantic_diagnostics: true,
                     ..Default::default()
+
                 },
+            ..Default::default()
             },
             None,
         )

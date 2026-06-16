@@ -7,10 +7,10 @@ use crate::hir::HirPath;
 use crate::paths;
 use crate::resolve::{ItemId, ItemKind, LocalId, Resolution, ResolvedValue};
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::context::context::TypeResult;
+use crate::types::result::TypeResult;
 use crate::types::{TypeId, TypeInfo, TypeTable};
 
-/// Read-only type environment for path field lookup (shared by [`TypeResult`] and [`TypeContext`](crate::types::context::TypeContext)).
+/// Read-only type environment for path field lookup via [`TypeResult`].
 pub struct PathTypeEnv<'a> {
     pub types: &'a TypeTable,
     pub local_types: &'a HashMap<LocalId, TypeId>,

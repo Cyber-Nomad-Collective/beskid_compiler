@@ -73,7 +73,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
                 node: "unit-valued let initializer",
             })?;
 
-            let actual_type = ctx.require_expr_type_for_node(&node.node.value)?;
+            let actual_type = ctx
+                .require_expr_type_for_node(&node.node.value)
+                .unwrap_or(type_id);
             let value = ensure_type_compatibility_or_expected(
                 node.node.value.span,
                 type_id,
@@ -96,7 +98,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLetStatement {
             node: "unit-valued let initializer",
         })?;
 
-        let actual_type = ctx.require_expr_type_for_node(&node.node.value)?;
+        let actual_type = ctx
+            .require_expr_type_for_node(&node.node.value)
+            .unwrap_or(type_id);
         let value = ensure_type_compatibility_or_expected(
             node.node.value.span,
             type_id,

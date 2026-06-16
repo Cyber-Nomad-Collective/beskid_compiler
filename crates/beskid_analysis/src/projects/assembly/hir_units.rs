@@ -2,7 +2,10 @@
 
 use std::path::PathBuf;
 
-use crate::hir::{AstProgram, HirProgram, lower_program as lower_hir_program};
+use crate::hir::{
+    AstProgram, HirProgram, index_program_from_base, lower_program as lower_hir_program,
+};
+use crate::hir::index::reset_program_node_ids;
 use crate::syntax::{Program, Spanned};
 
 use super::SourceUnit;
@@ -22,6 +25,15 @@ pub fn build_hir_units(units: &[SourceUnit]) -> Vec<UnitHir> {
             hir: unit_to_hir(&unit.program),
         })
         .collect()
+}
+
+/// Assign globally unique [`HirNodeId`] values across an assembled unit list.
+pub fn reindex_hir_units_in_place(units: &mut [UnitHir]) {
+    let mut base = 0u32;
+    for unit in units {
+        reset_program_node_ids(&mut unit.hir);
+        base = index_program_from_base(&mut unit.hir, base);
+    }
 }
 
 pub(crate) fn unit_to_hir(program: &Spanned<Program>) -> Spanned<HirProgram> {

@@ -84,17 +84,24 @@ pub trait HasSpan {
     fn span(&self) -> &SpanInfo;
 }
 
-/// AST node bundled with its source span.
+use crate::resolve::HirNodeId;
+
+/// AST node bundled with its source span and stable [`HirNodeId`].
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Spanned<T> {
     pub node: T,
     pub span: SpanInfo,
+    pub id: HirNodeId,
 }
 
 impl<T> Spanned<T> {
-    /// Wraps `node` with `span`.
+    /// Wraps `node` with `span` and an unset node id.
     pub fn new(node: T, span: SpanInfo) -> Self {
-        Self { node, span }
+        Self {
+            node,
+            span,
+            id: HirNodeId::INVALID,
+        }
     }
 }
 

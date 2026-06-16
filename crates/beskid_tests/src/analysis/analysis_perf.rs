@@ -27,6 +27,7 @@ fn analysis_perf_ansi_style_chain_tests() {
                 &resolved,
                 PrepareOptions {
                     front_end: Default::default(),
+                dependency_typing: beskid_analysis::services::DependencyTypingPolicy::FullClosure,
                 },
                 Some(&timer),
             )

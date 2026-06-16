@@ -4,7 +4,7 @@ use crate::analysis::rules::RuleContext;
 use crate::hir::HirProgram;
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
-use crate::types::context::try_infer::invalid_try_expression_spans;
+use crate::types::try_desugar::invalid_try_expression_spans;
 
 impl SemanticPipelineRule {
     pub(super) fn stage7_error_handling(

@@ -411,7 +411,7 @@ fn resolve_member_method_call(
         return None;
     };
     let method_name = member.node.member.node.name.as_str();
-    let receiver_type = type_result.expr_type_at(member.node.target.span, source_path)?;
+    let receiver_type = type_result.expr_type(&member.node.target)?;
     let method_item_id = canonical_item_id(
         resolution,
         method_item_for_receiver_type(resolution, type_result, receiver_type, method_name)?,
@@ -437,7 +437,9 @@ fn resolve_call(
     source_path: Option<&PathBuf>,
 ) -> Option<ResolvedCall> {
     let kind = if let Some(kind) = type_result
-        .call_kind_at(call.span, source_path)
+        .lowering
+        .call_kind_at(call.id)
+        .copied()
         .map(|kind| crate::lowering::locals::canonicalize_call_kind(resolution, kind))
     {
         kind
@@ -741,7 +743,7 @@ fn infer_generic_type_args_for_call(
         return Some(Vec::new());
     }
 
-    if let Some(expr_type) = type_result.expr_type_at(call.span, source_path)
+    if let Some(expr_type) = type_result.node_type(call.id)
         && let Some(args) = infer_generic_args_from_call_expr_type(type_result, item_id, expr_type)
     {
         return Some(args);
@@ -838,7 +840,7 @@ fn expr_type_for_call_arg(
     type_result: &TypeResult,
     source_path: Option<&PathBuf>,
 ) -> Option<TypeId> {
-    if let Some(type_id) = type_result.expr_type_at(arg.span, source_path) {
+    if let Some(type_id) = type_result.node_type(arg.id) {
         return Some(type_id);
     }
     if let HirExpressionNode::PathExpression(path) = &arg.node {

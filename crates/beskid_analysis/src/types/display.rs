@@ -96,20 +96,17 @@ mod tests {
         let result = TypeResult {
             types,
             named_type_names: HashMap::new(),
-            expr_types: HashMap::new(),
-            scoped_expr_types: HashMap::new(),
+            node_types: HashMap::new(),
             local_types: HashMap::new(),
+            unit_surfaces: HashMap::new(),
             function_signatures: HashMap::new(),
             method_function_signatures: HashMap::new(),
             struct_fields_ordered: HashMap::new(),
             struct_event_fields: HashMap::new(),
             enum_variants_ordered: HashMap::new(),
             generic_items: HashMap::new(),
-            call_kinds: HashMap::new(),
-            scoped_call_kinds: HashMap::new(),
-            contract_method_order: HashMap::new(),
             contract_signatures: HashMap::new(),
-            cast_intents: Vec::new(),
+            lowering: crate::types::LoweringPrep::default(),
         };
         (result, string, i32)
     }

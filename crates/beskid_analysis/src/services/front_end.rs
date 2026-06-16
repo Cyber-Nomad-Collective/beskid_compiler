@@ -91,7 +91,10 @@ pub fn compile_front_end_with_pipeline(
 
     let prepared = prepare_compilation(
         &resolved,
-        PrepareOptions { front_end: options },
+        PrepareOptions {
+            front_end: options,
+            ..Default::default()
+        },
         pipeline,
     )?;
 

@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use beskid_analysis::projects::CompilePlan;
-use beskid_analysis::projects::assembly::{SourceUnit, UnitHir};
+use beskid_analysis::projects::assembly::{ModuleIndex, SourceUnit, UnitHir};
+use beskid_analysis::resolve::Resolution;
+use beskid_analysis::types::UnitTypeSurface;
 use salsa::Setter;
 
 use crate::inputs::{FileText, GrammarRevision, ProjectSession};
@@ -13,12 +15,15 @@ use crate::stats::record_revision_bump;
 use crate::typed_entry_bundle::reset_typed_entry_inputs;
 
 type ProjectRegistry = HashMap<(PathBuf, PathBuf, String), ProjectSession>;
+type ModuleIndexCache = HashMap<String, Arc<ModuleIndex>>;
 
 /// Cached heavy artifacts keyed by content fingerprint (invalidated via Salsa inputs).
 #[derive(Default)]
 pub struct UnitArtifactCache {
     pub source_units: HashMap<String, Arc<SourceUnit>>,
     pub unit_hir: HashMap<String, Arc<UnitHir>>,
+    pub unit_resolutions: HashMap<String, Arc<Resolution>>,
+    pub unit_type_surfaces: HashMap<String, Arc<UnitTypeSurface>>,
 }
 
 /// Salsa database trait extended by tracked query groups.
@@ -28,6 +33,7 @@ pub trait Db: salsa::Database {
     fn project_registry(&self) -> &Mutex<ProjectRegistry>;
     fn unit_cache(&self) -> &Mutex<UnitArtifactCache>;
     fn grammar_revision_input(&self) -> GrammarRevision;
+    fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>>;
 }
 
 /// Process/workspace-scoped incremental compilation database.
@@ -38,6 +44,7 @@ pub struct BeskidDatabase {
     file_registry: Arc<Mutex<HashMap<PathBuf, FileText>>>,
     project_registry: Arc<Mutex<ProjectRegistry>>,
     unit_cache: Arc<Mutex<UnitArtifactCache>>,
+    module_index_cache: Arc<Mutex<ModuleIndexCache>>,
     persistence_root: Option<PathBuf>,
     grammar_revision: Option<GrammarRevision>,
 }
@@ -55,6 +62,7 @@ impl BeskidDatabase {
             file_registry: Arc::new(Mutex::new(HashMap::new())),
             project_registry: Arc::new(Mutex::new(HashMap::new())),
             unit_cache: Arc::new(Mutex::new(UnitArtifactCache::default())),
+            module_index_cache: Arc::new(Mutex::new(ModuleIndexCache::new())),
             persistence_root: persistence_root.clone(),
             grammar_revision: None,
         };
@@ -123,6 +131,24 @@ impl BeskidDatabase {
         let mut cache = self.unit_cache.lock().expect("unit cache");
         cache.source_units.clear();
         cache.unit_hir.clear();
+        cache.unit_resolutions.clear();
+        cache.unit_type_surfaces.clear();
+    }
+
+    /// Register a module index snapshot for per-unit resolution queries.
+    pub fn cache_module_index(&self, fingerprint: String, index: Arc<ModuleIndex>) {
+        self.module_index_cache
+            .lock()
+            .expect("module index cache")
+            .insert(fingerprint, index);
+    }
+
+    pub fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>> {
+        self.module_index_cache
+            .lock()
+            .expect("module index cache")
+            .get(fingerprint)
+            .cloned()
     }
 
     fn invalidate_unit_fingerprints(&self, fingerprints: &[String]) {
@@ -133,6 +159,8 @@ impl BeskidDatabase {
         for fp in fingerprints {
             cache.source_units.remove(fp);
             cache.unit_hir.remove(fp);
+            cache.unit_resolutions.remove(fp);
+            cache.unit_type_surfaces.remove(fp);
         }
     }
 
@@ -293,5 +321,9 @@ impl Db for BeskidDatabase {
 
     fn grammar_revision_input(&self) -> GrammarRevision {
         self.grammar_revision_ref()
+    }
+
+    fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>> {
+        self.module_index_cached(fingerprint)
     }
 }

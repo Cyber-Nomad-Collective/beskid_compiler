@@ -25,7 +25,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
             ctx.resolution,
             ctx.type_result,
             &node.node.path,
-            node.span,
+            node.id,
             ctx.codegen.current_source_path.as_ref(),
         )
         .ok_or(CodegenError::MissingExpressionType { span: node.span })?;

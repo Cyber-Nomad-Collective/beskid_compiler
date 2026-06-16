@@ -13,6 +13,7 @@ pub(crate) mod memory;
 pub mod lowerable;
 mod node_context;
 mod statements;
+mod type_surface;
 pub mod types;
 
 pub use context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport, LoweredFunction};

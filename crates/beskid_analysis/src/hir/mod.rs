@@ -19,6 +19,8 @@ pub mod statement;
 pub mod struct_literal_field;
 pub mod types;
 
+pub mod index;
+
 pub mod normalize;
 
 pub use attribute_target_kind::AttributeTargetKind;
@@ -43,6 +45,7 @@ pub use item::{
 pub use legality::{HirLegalityError, validate_hir_program};
 pub use literal::{HirLiteral, integer_literal_magnitude, integer_literal_primitive_type};
 pub use lowering::lower_program;
+pub use index::{index_program, index_program_from_base, max_hir_node_id, reindex_programs_in_place};
 pub use match_arm::HirMatchArm;
 pub use module::Module;
 pub use normalize::{HirNormalizeError, normalize_program, normalize_program_with_resolution};

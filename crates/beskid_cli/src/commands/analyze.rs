@@ -43,6 +43,7 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
             with_semantic_diagnostics: true,
             ..Default::default()
         },
+        ..Default::default()
     };
     let diagnostics = if resolved.compile_plan.is_some() {
         let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(

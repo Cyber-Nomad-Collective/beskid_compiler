@@ -94,7 +94,9 @@ pub fn run_semantic_analysis_gate(
                     front_end: services::FrontEndOptions {
                         with_semantic_diagnostics: true,
                         ..Default::default()
+
                     },
+                    dependency_typing: services::DependencyTypingPolicy::FullClosure,
                 },
                 pipeline,
             )?;

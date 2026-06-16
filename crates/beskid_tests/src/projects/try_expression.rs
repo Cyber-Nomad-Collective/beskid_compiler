@@ -14,6 +14,7 @@ fn try_expression_fixture_lowers_via_program_assembly() {
             &assembly.entry_unit().program,
             Some(&assembly),
             None,
+            beskid_analysis::services::DependencyTypingPolicy::FullClosure,
         )
         .expect("try_expression should resolve and type-check with implicit Std assembly");
     });

@@ -13,6 +13,7 @@ use crate::db::BeskidDatabase;
 use crate::graph::program_assembly;
 use crate::output::{SharedFrontEnd, SharedResolution};
 use crate::stats::{emit_salsa_stats, record_revision_bump, trace_query};
+use crate::unit::{cache_module_index_for_assembly, warm_prefetched_unit_type_surfaces};
 
 pub(crate) fn session_fingerprint(resolved: &ResolvedInput) -> Option<SessionFingerprint> {
     let plan = resolved.compile_plan.as_ref()?;
@@ -127,7 +128,9 @@ pub fn typed_entry_bundle(
         front_end: FrontEndOptions {
             with_semantic_diagnostics: false,
             ..Default::default()
+
         },
+        ..Default::default()
     };
     crate::typed_entry_bundle::typed_entry_bundle_with_db(db, resolved, &options, pipeline)
 }
@@ -145,6 +148,12 @@ pub fn entry_resolution_with_db(
         .assembly
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("entry resolution requires assembled program"))?;
+    cache_module_index_for_assembly(db, assembly);
+    if let Some(plan) = resolved.compile_plan.as_ref() {
+        let lockfile_digest = lockfile_digest_for_plan(plan);
+        let session = db.ensure_project_session(plan, &resolved.source_path, lockfile_digest);
+        warm_prefetched_unit_type_surfaces(db, session, assembly);
+    }
     let resolution = beskid_analysis::services::resolve_entry(
         assembly.entry_hir(),
         &assembly.module_index,
@@ -190,6 +199,19 @@ fn clone_resolved(resolved: &ResolvedInput) -> ResolvedInput {
         workspace_summary: resolved.workspace_summary.clone(),
         assembly: resolved.assembly.clone(),
     }
+}
+
+fn lockfile_digest_for_plan(plan: &beskid_analysis::projects::CompilePlan) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    plan.project_root.hash(&mut hasher);
+    plan.target.entry.hash(&mut hasher);
+    plan.target.name.hash(&mut hasher);
+    if let Ok(bytes) = std::fs::read(plan.project_root.join("Project.lock")) {
+        bytes.hash(&mut hasher);
+    }
+    format!("{:016x}", hasher.finish())
 }
 
 /// Clear entry-session registry slices for a project root (LSP / workspace invalidation).

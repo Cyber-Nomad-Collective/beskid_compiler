@@ -5,3 +5,6 @@ pub mod pipeline;
 
 #[cfg(test)]
 pub mod runtime;
+
+#[cfg(test)]
+pub mod type_result;

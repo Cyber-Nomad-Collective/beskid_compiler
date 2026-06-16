@@ -31,16 +31,30 @@ use super::entry_session::{
 };
 use super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::input::ResolvedInput;
-use super::lower::{LowerResolveTypeError, lower_normalize_resolve_type_spanned_with_assembly};
+use super::lower::{
+    DependencyTypingPolicy, LowerResolveTypeError,
+    lower_normalize_resolve_type_spanned_with_assembly,
+};
 use super::semantic::{
     require_no_semantic_errors, semantic_rule_diagnostics_for_program_with_pipeline,
 };
 use super::session::{SemanticSnapshot, SessionFingerprint, session_for_assembly};
 
 /// Options for [`prepare_compilation`].
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PrepareOptions {
     pub front_end: FrontEndOptions,
+    /// Whether dependency unit bodies are fully type-checked or only signatures prefetched.
+    pub dependency_typing: DependencyTypingPolicy,
+}
+
+impl Default for PrepareOptions {
+    fn default() -> Self {
+        Self {
+            front_end: FrontEndOptions::default(),
+            dependency_typing: DependencyTypingPolicy::FullClosure,
+        }
+    }
 }
 
 /// Result of the unified prepare spine (typed HIR when lower succeeds).
@@ -325,7 +339,12 @@ fn run_prepare_spine(
     observe_phase(pipeline, LOWER_READY, || {});
 
     let typed = match observe_phase_result(pipeline, LOWER, || {
-        lower_normalize_resolve_type_spanned_with_assembly(&program, Some(&assembly), pipeline)
+        lower_normalize_resolve_type_spanned_with_assembly(
+            &program,
+            Some(&assembly),
+            pipeline,
+            options.dependency_typing,
+        )
     }) {
         Ok((hir, resolution, typed)) => {
             let resolution_fingerprint = typed_fingerprint(&resolution);
@@ -430,7 +449,7 @@ fn typed_fingerprint_types(typed: &crate::types::TypeResult) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
-    typed.expr_types.len().hash(&mut hasher);
-    typed.cast_intents.len().hash(&mut hasher);
+    typed.node_types.len().hash(&mut hasher);
+    typed.lowering.cast_intents.len().hash(&mut hasher);
     hasher.finish()
 }

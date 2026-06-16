@@ -82,7 +82,11 @@ pub fn compile_front_end_from_resolved_input(
 ) -> Result<FrontEndTypedResult> {
     let prepared = prepare_compilation(
         resolved,
-        PrepareOptions { front_end: options },
+        PrepareOptions {
+            front_end: options,
+            ..Default::default()
+
+        },
         pipeline,
     )?;
     prepared.into_executable()

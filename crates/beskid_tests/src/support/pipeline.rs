@@ -30,14 +30,14 @@ pub fn resolve(source: &str) -> Result<Resolution, Vec<ResolveError>> {
 }
 
 pub fn typecheck(source: &str) -> Result<TypeResult, Vec<TypeError>> {
-    let hir = lower_to_hir(source);
+    let mut hir = lower_to_hir(source);
     let resolution =
         Resolver::new()
             .resolve_program(&hir)
             .unwrap_or_else(|errors: Vec<ResolveError>| {
                 panic!("expected resolver to succeed, got errors: {errors:?}")
             });
-    type_program(&hir, &resolution)
+    type_program(&mut hir, &resolution)
 }
 
 pub fn typecheck_hir(source: &str) -> (Spanned<HirProgram>, Resolution, TypeResult) {

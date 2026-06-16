@@ -12,7 +12,29 @@ use crate::services::lower::{
     DependencyTypingPolicy, LowerResolveTypeError, TypedHirResolution, typed_hir_from_lowered,
 };
 use crate::syntax::Spanned;
-use crate::types::TypeResult;
+use crate::types::{CheckerResult, TypeChecker, TypeResult};
+use crate::types::surface::{UnitTypeSurface, build_unit_type_surface};
+
+/// Query: exported signatures and layouts for one unit (EntryOnly surface pass).
+pub fn type_unit_signatures(
+    hir: &Spanned<HirProgram>,
+    resolution: &Resolution,
+    source_path: &Path,
+) -> UnitTypeSurface {
+    build_unit_type_surface(hir, resolution, source_path)
+}
+
+/// Query: type callable bodies in one unit using a pre-built surface (FullClosure body slice).
+pub fn type_unit_body(
+    hir: &Spanned<HirProgram>,
+    resolution: &Resolution,
+    surface: &UnitTypeSurface,
+    source_path: &Path,
+) -> CheckerResult {
+    let mut checker = TypeChecker::new(resolution, surface).with_source_path(source_path);
+    checker.type_callable_items(&hir.node.items);
+    checker.finish()
+}
 
 /// Query: assemble one unit's HIR from source (invalidated by content hash).
 pub fn assemble_unit(source_unit: &SourceUnit) -> UnitHir {

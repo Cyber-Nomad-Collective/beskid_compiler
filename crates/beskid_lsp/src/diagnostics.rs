@@ -51,7 +51,9 @@ pub fn analyze_document(
                     front_end: FrontEndOptions {
                         with_semantic_diagnostics: true,
                         ..Default::default()
+
                     },
+                    ..Default::default()
                 },
                 None,
             ) {

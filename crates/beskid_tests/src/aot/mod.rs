@@ -75,6 +75,6 @@ fn lower_sample_artifact() -> beskid_codegen::CodegenArtifact {
     let resolution = Resolver::new()
         .resolve_program(&hir)
         .expect("resolve program");
-    let typed = type_program(&hir, &resolution).expect("type program");
+    let typed = type_program(&mut hir, &resolution).expect("type program");
     lower_program(&hir, &resolution, &typed).expect("lower program")
 }

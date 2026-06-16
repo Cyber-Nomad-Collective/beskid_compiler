@@ -2,7 +2,7 @@ use crate::errors::CodegenError;
 use crate::lowering::context::CodegenContext;
 use crate::lowering::context::CodegenResult;
 use crate::lowering::dispatch::emit_dispatch_call;
-use crate::lowering::locals::expr_type_at;
+use crate::lowering::locals::node_expr_type;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_abi::{DispatchReturnGroup, DispatchRoute, TAG_STR_NEW};
 use beskid_analysis::hir::{
@@ -15,16 +15,12 @@ use cranelift_frontend::FunctionBuilder;
 
 pub(crate) fn lower_literal(
     literal: &Spanned<HirLiteral>,
-    expression_span: SpanInfo,
+    expression_id: beskid_analysis::resolve::HirNodeId,
     type_result: &TypeResult,
     codegen: &mut CodegenContext,
     builder: &mut FunctionBuilder,
 ) -> CodegenResult<Value> {
-    let type_id = expr_type_at(
-        type_result,
-        expression_span,
-        codegen.current_source_path.as_ref(),
-    )
+    let type_id = node_expr_type(type_result, expression_id)
     .or_else(|| match &literal.node {
         HirLiteral::Integer(text) => {
             find_literal_type(type_result, integer_literal_primitive_type(text))
@@ -35,12 +31,12 @@ pub(crate) fn lower_literal(
         HirLiteral::Char(_) => find_literal_type(type_result, HirPrimitiveType::Char),
     })
     .ok_or(CodegenError::UnsupportedNode {
-        span: expression_span,
+        span: literal.span,
         node: "literal type",
     })?;
     let clif_ty =
         map_type_id_to_clif(type_result, type_id).ok_or(CodegenError::UnsupportedNode {
-            span: expression_span,
+            span: literal.span,
             node: "literal type",
         })?;
 

@@ -11,7 +11,7 @@ mod unit_cache;
 pub use discovery::{
     module_path_exists_on_disk, module_path_to_relative_path, resolve_module_file,
 };
-pub use hir_units::{UnitHir, build_hir_units};
+pub use hir_units::{UnitHir, build_hir_units, reindex_hir_units_in_place};
 pub use loader::{
     AssemblyError, UnitMaterializer, assembly_options_for_plan, assembly_options_for_prepare,
 };

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::Result;
-use beskid_analysis::services::{FrontEndOptions, PrepareOptions, ResolvedInput};
+use beskid_analysis::services::{DependencyTypingPolicy, FrontEndOptions, PrepareOptions, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
 use salsa::Setter;
 
@@ -131,8 +131,10 @@ pub fn is_typed_bundle_stale(db: &dyn Db, entry_key: &str) -> bool {
 
 fn prepare_options_fingerprint(options: &PrepareOptions) -> String {
     format!(
-        "discovery={:?}:semantic={}",
-        options.front_end.assembly_discovery, options.front_end.with_semantic_diagnostics
+        "discovery={:?}:semantic={}:typing={:?}",
+        options.front_end.assembly_discovery,
+        options.front_end.with_semantic_diagnostics,
+        options.dependency_typing,
     )
 }
 
@@ -171,7 +173,9 @@ fn materialize_typed_bundle(
             front_end: FrontEndOptions {
                 with_semantic_diagnostics: false,
                 ..Default::default()
+
             },
+            dependency_typing: DependencyTypingPolicy::FullClosure,
         },
         pipeline,
     )?;

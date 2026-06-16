@@ -6,6 +6,7 @@ use crate::lowering::locals::{local_type_id, resolved_value_at};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::memory::store_typed_value;
+use crate::lowering::type_surface::struct_event_fields;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_abi::dispatch_route_for_symbol;
 use beskid_analysis::hir::{HirAssignExpression, HirAssignOp, HirExpressionNode, HirPrimitiveType};
@@ -34,7 +35,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
         })?;
 
         let expected_type = target.expected_type;
-        let actual_type = ctx.require_expr_type(node.node.value.span)?;
+        let actual_type = ctx.require_expr_type_for_node(&node.node.value)?;
         let value = ensure_type_compatibility_or_expected(
             node.node.value.span,
             expected_type,
@@ -315,7 +316,7 @@ fn resolve_assign_target(
                     node: "unit-valued assignment receiver",
                 },
             )?;
-            let receiver_type = ctx.require_expr_type(member_expr.node.target.span)?;
+            let receiver_type = ctx.require_expr_type_for_node(&member_expr.node.target)?;
             resolve_event_member_target(
                 node.span,
                 receiver_ptr,
@@ -336,7 +337,7 @@ fn resolve_assign_target(
                     span: index_expr.node.index.span,
                     node: "unit-valued index",
                 })?;
-            let target_type = ctx.require_expr_type(index_expr.node.target.span)?;
+            let target_type = ctx.require_expr_type_for_node(&index_expr.node.target)?;
             let elem_type = match ctx.type_result.types.get(target_type) {
                 Some(TypeInfo::Array(elem)) => *elem,
                 Some(TypeInfo::Primitive(HirPrimitiveType::String)) => {
@@ -480,9 +481,8 @@ fn resolve_event_member_target(
             span,
             node: "event assignment field type",
         })?;
-    let capacity = ctx
-        .type_result
-        .struct_event_fields
+    let event_fields = struct_event_fields(ctx.type_result);
+    let capacity = event_fields
         .get(&item_id)
         .and_then(|fields| fields.get(field_name));
     let Some(capacity) = capacity else {

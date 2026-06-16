@@ -1,5 +1,7 @@
 //! Canonical [`TypeId`] assignment: structural equality deduplicates primitives, named types, arrays, and functions.
 
+use std::collections::HashMap;
+
 use crate::hir::HirPrimitiveType;
 use crate::resolve::ItemId;
 
@@ -27,8 +29,8 @@ pub enum TypeInfo {
     Fiber(TypeId),
 }
 
-/// Intern table for [`TypeInfo`] used by [`crate::types::context::TypeContext`].
-#[derive(Debug, Default)]
+/// Intern table for [`TypeInfo`] used by [`crate::types::TypeChecker`].
+#[derive(Debug, Default, Clone)]
 pub struct TypeTable {
     types: Vec<TypeInfo>,
 }
@@ -64,5 +66,64 @@ impl TypeTable {
         self.types.iter().enumerate().find_map(|(i, info)| {
             matches!(info, TypeInfo::Primitive(p) if *p == primitive).then_some(TypeId(i))
         })
+    }
+
+    /// Import all types from `other`, remapping ids. References between imported types are preserved.
+    pub fn import_from(&mut self, other: &TypeTable) -> HashMap<TypeId, TypeId> {
+        let mut remap = HashMap::new();
+        for index in 0..other.types.len() {
+            let old_id = TypeId(index);
+            self.import_type_id(old_id, other, &mut remap);
+        }
+        remap
+    }
+
+    fn import_type_id(
+        &mut self,
+        old_id: TypeId,
+        other: &TypeTable,
+        remap: &mut HashMap<TypeId, TypeId>,
+    ) -> TypeId {
+        if let Some(new_id) = remap.get(&old_id) {
+            return *new_id;
+        }
+        let Some(info) = other.get(old_id).cloned() else {
+            return old_id;
+        };
+        let remapped = self.remap_type_info_for_import(&info, other, remap);
+        let new_id = self.intern(remapped);
+        remap.insert(old_id, new_id);
+        new_id
+    }
+
+    fn remap_type_info_for_import(
+        &mut self,
+        info: &TypeInfo,
+        other: &TypeTable,
+        remap: &mut HashMap<TypeId, TypeId>,
+    ) -> TypeInfo {
+        match info {
+            TypeInfo::Primitive(_) | TypeInfo::Named(_) | TypeInfo::GenericParam(_) => info.clone(),
+            TypeInfo::Applied { base, args } => TypeInfo::Applied {
+                base: *base,
+                args: args
+                    .iter()
+                    .map(|arg| self.import_type_id(*arg, other, remap))
+                    .collect(),
+            },
+            TypeInfo::Function { params, return_type } => TypeInfo::Function {
+                params: params
+                    .iter()
+                    .map(|param| self.import_type_id(*param, other, remap))
+                    .collect(),
+                return_type: self.import_type_id(*return_type, other, remap),
+            },
+            TypeInfo::Array(element) => {
+                TypeInfo::Array(self.import_type_id(*element, other, remap))
+            }
+            TypeInfo::Fiber(payload) => {
+                TypeInfo::Fiber(self.import_type_id(*payload, other, remap))
+            }
+        }
     }
 }

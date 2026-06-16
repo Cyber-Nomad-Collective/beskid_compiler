@@ -2,6 +2,7 @@ use crate::errors::CodegenError;
 use crate::lowering::context::{CodegenContext, CodegenResult, LoweredFunction};
 use crate::lowering::expressions::export::{export_linker_name, read_export_metadata, validate_export_function};
 use crate::lowering::locals::local_id_for_span;
+use crate::lowering::type_surface::named_type_names;
 use crate::lowering::lowerable::lower_node;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{
@@ -930,7 +931,7 @@ fn find_primitive_type_id(type_result: &TypeResult, primitive: HirPrimitiveType)
 }
 
 fn find_named_type_by_leaf(type_result: &TypeResult, leaf: &str) -> Option<TypeId> {
-    for (item_id, name) in &type_result.named_type_names {
+    for (item_id, name) in &named_type_names(type_result) {
         if name.as_str() == leaf || name.ends_with(&format!("::{leaf}")) {
             let mut index = 0usize;
             loop {

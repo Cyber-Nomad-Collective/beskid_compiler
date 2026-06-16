@@ -380,6 +380,8 @@ pub fn assemble_program_with_materializer(
         hir_units_vec.push(hir);
     }
 
+    super::reindex_hir_units_in_place(&mut hir_units_vec);
+
     if units.is_empty() {
         return Err(AssemblyError::EntryNotFound {
             path: entry_path.to_path_buf(),

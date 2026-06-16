@@ -15,7 +15,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirIndexExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let target_type = ctx.require_expr_type(node.node.target.span)?;
+        let target_type = ctx.require_expr_type_for_node(&node.node.target)?;
         let handle = lower_node(&node.node.target, ctx)?.ok_or(CodegenError::UnsupportedNode {
             span: node.node.target.span,
             node: "unit-valued index target",
