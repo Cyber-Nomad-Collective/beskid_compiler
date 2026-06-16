@@ -59,7 +59,10 @@ impl BeskidWidget for LogPanelWidget {
 
 fn render_log_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
     if ctx.scope.is_user() && !ctx.shell_state.pipeline_active() {
-        frame.render_widget(Paragraph::new(ShellScope::no_project_lines()), area);
+        frame.render_widget(
+            Paragraph::new(ShellScope::no_project_lines(&ctx.key_bindings.palette_hint())),
+            area,
+        );
         return;
     }
     draw_tabbed_log_panel(

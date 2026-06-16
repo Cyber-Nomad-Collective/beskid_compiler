@@ -92,7 +92,6 @@ pub(super) fn expected_corelib_workspace_sources() -> &'static [&'static str] {
         "packages/foundation/src/Query/Query.bd",
         "packages/foundation/src/Query/QueryState.bd",
         "packages/foundation/src/Testing/Assert.bd",
-        "packages/foundation/src/Testing/Assert/Assert.bd",
         "packages/foundation/src/Testing/Contracts.bd",
         "packages/foundation/src/Testing/Testing.bd",
         "packages/foundation/src/Core/Environment/Environment.bd",

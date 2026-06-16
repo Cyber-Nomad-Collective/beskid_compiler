@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
-use beskid_analysis::resolve::ItemId;
+use beskid_analysis::resolve::{ItemId, Resolution};
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
+use beskid_analysis::types::path_value::struct_fields_for_item;
 
 const HEADER_SIZE: usize = std::mem::size_of::<usize>();
 const HEADER_ALIGN: usize = std::mem::align_of::<usize>();
@@ -187,10 +189,13 @@ pub(crate) fn struct_item_id(type_result: &TypeResult, type_id: TypeId) -> Optio
 }
 
 pub(crate) fn struct_field_offsets(
+    resolution: &Resolution,
     type_result: &TypeResult,
     item_id: ItemId,
+    source_path: Option<&PathBuf>,
 ) -> Option<HashMap<String, usize>> {
-    let fields = type_result.struct_fields_ordered.get(&item_id)?;
+    let env = type_result.path_env();
+    let fields = struct_fields_for_item(&env, resolution, item_id, source_path)?;
     let mut offset = HEADER_SIZE;
     let mut offsets = HashMap::new();
 

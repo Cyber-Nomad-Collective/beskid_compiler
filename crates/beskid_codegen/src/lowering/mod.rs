@@ -9,6 +9,7 @@ pub(crate) mod dispatch;
 pub mod expressions;
 pub(crate) mod function;
 pub(crate) mod locals;
+pub(crate) mod memory;
 pub mod lowerable;
 mod node_context;
 mod statements;

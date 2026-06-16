@@ -20,6 +20,7 @@ use crate::session::lifecycle::{
     build_document, rebuild_open_document_analysis, set_disk_snapshot,
 };
 use crate::session::project_context::{cached_compilation_context, invalidate_compilation_cache};
+use crate::session::startup::signal_initial_scan_complete;
 use crate::session::store::{Document, State};
 
 const MAX_CONCURRENT_READS: usize = 24;
@@ -173,6 +174,8 @@ pub async fn scan_workspace(
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;
     }
+
+    signal_initial_scan_complete(state).await;
 
     rebuild_open_document_analysis(state).await;
 

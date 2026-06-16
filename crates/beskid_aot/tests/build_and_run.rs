@@ -14,7 +14,7 @@ fn build_and_run_executes_linked_executable() {
     fs::write(&source_path, source).expect("write source");
 
     let lowered =
-        lower_source_for_entrypoint(&source_path, source, "Main", false).expect("lower fixture");
+        lower_source_for_entrypoint(&source_path, source, "Main", false, None).expect("lower fixture");
     validate_artifact(&lowered.artifact).expect("validate link plan");
 
     let runtime = default_runtime_strategy(BuildProfile::Debug, None, RuntimeLinkProfile::Std)
@@ -50,7 +50,7 @@ fn build_and_run_executes_str_len() {
     std::fs::write(&source_path, source).expect("write source");
 
     let lowered =
-        lower_source_for_entrypoint(&source_path, source, "Main", false).expect("lower fixture");
+        lower_source_for_entrypoint(&source_path, source, "Main", false, None).expect("lower fixture");
     let runtime = default_runtime_strategy(BuildProfile::Debug, None, RuntimeLinkProfile::Std)
         .unwrap_or(RuntimeStrategy::Standalone);
 
@@ -95,7 +95,7 @@ fn std_build_links_host_archive() {
     fs::write(&source_path, source).expect("write source");
 
     let lowered =
-        lower_source_for_entrypoint(&source_path, source, "Main", false).expect("lower fixture");
+        lower_source_for_entrypoint(&source_path, source, "Main", false, None).expect("lower fixture");
     let runtime = default_runtime_strategy(BuildProfile::Debug, None, RuntimeLinkProfile::Std)
         .expect("runtime");
     let exe_path = temp.path().join("beskid_run");

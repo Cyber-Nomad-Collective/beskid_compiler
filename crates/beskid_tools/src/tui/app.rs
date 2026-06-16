@@ -95,7 +95,11 @@ impl BeskidShellApp {
         views::render(frame, &mut self.state);
         let area = frame.area();
         if self.palette.visible {
-            self.palette.render(area, frame);
+            self.palette.render(
+                area,
+                frame,
+                &crate::shell::key_bindings::ShortcutBindings::platform_defaults().palette_hint(),
+            );
         }
         self.fx.process(area, frame.buffer_mut());
     }

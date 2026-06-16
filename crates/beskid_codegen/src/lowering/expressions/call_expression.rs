@@ -215,7 +215,12 @@ fn lower_event_invoke_call(
         }
     };
 
-    let offsets = crate::lowering::descriptor::struct_field_offsets(ctx.type_result, item_id)
+    let offsets = crate::lowering::descriptor::struct_field_offsets(
+        ctx.resolution,
+        ctx.type_result,
+        item_id,
+        ctx.codegen.current_source_path.as_ref(),
+    )
         .ok_or(CodegenError::UnsupportedNode {
             span: node.span,
             node: "event invoke offsets",

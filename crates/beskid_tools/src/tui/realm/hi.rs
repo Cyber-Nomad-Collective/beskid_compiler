@@ -27,6 +27,7 @@ enum HiShellId {
 enum HiShellMsg {
     Redraw,
     Quit,
+    Continue,
 }
 
 struct HiShellComponent {
@@ -37,7 +38,8 @@ impl HiShellComponent {
     fn handle_shell_event(&mut self, event: ShellRealmEvent) -> HiShellMsg {
         match self.app.handle_shell_event(event) {
             ShellOutcome::Quit => HiShellMsg::Quit,
-            ShellOutcome::Redraw | ShellOutcome::Continue => HiShellMsg::Redraw,
+            ShellOutcome::Redraw => HiShellMsg::Redraw,
+            ShellOutcome::Continue => HiShellMsg::Continue,
         }
     }
 }
@@ -119,10 +121,11 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
         match application.tick(PollStrategy::TryFor(TICK)) {
             Ok(messages) => {
                 for msg in messages {
-                    if msg == HiShellMsg::Quit {
-                        quitting = true;
+                    match msg {
+                        HiShellMsg::Quit => quitting = true,
+                        HiShellMsg::Redraw => dirty = true,
+                        HiShellMsg::Continue => {}
                     }
-                    dirty = true;
                 }
             }
             Err(err) => return Err(io::Error::other(err.to_string())),
@@ -155,6 +158,9 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
                     .suspend_for_subprocess()
                     .map_err(|err| io::Error::other(err.to_string()))?;
                 let _ = run_cli_plan(&plan);
+                terminal
+                    .clear_screen()
+                    .map_err(|err| io::Error::other(err.to_string()))?;
                 terminal
                     .resume_after_subprocess()
                     .map_err(|err| io::Error::other(err.to_string()))?;

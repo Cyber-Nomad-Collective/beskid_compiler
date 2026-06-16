@@ -11,6 +11,8 @@ use super::layout::pages::PagesDoc;
 use super::nav::{NavAction, NavItemDescriptor, NavRegistry};
 use super::panel_style::popover_block;
 use super::key_bindings::ShortcutBindings;
+use crate::shell::layout::overlays::overlay_rect;
+use crate::tui::overlay_chrome::{draw_backdrop, render_overlay_panel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TopMenuAction {
@@ -85,10 +87,20 @@ impl ShellTopMenu {
 
     fn toggle_menu_focus(&mut self) -> TopMenuAction {
         self.menu_focused = !self.menu_focused;
-        if !self.menu_focused {
+        if self.menu_focused {
+            self.dropdown_selected = 0;
+            self.dropdown_open = self
+                .entries
+                .get(self.selected)
+                .is_some_and(|entry| !entry.children.is_empty());
+        } else {
             self.dropdown_open = false;
         }
         TopMenuAction::Redraw
+    }
+
+    pub fn toggle_focus(&mut self) -> TopMenuAction {
+        self.toggle_menu_focus()
     }
 
     pub fn handle_key(&mut self, key: KeyEvent, bindings: &ShortcutBindings) -> TopMenuAction {
@@ -274,6 +286,60 @@ impl ShellTopMenu {
             x = x.saturating_add(width + 2);
         }
         frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    }
+
+    /// Modal top menu (palette-primary shell; no pinned nav row).
+    pub fn render_menu_overlay(&mut self, frame_area: Rect, frame: &mut Frame) {
+        if !self.is_active() {
+            self.dropdown_rect = None;
+            return;
+        }
+        draw_backdrop(frame, frame_area);
+        let overlay = overlay_rect(frame_area, 56, 16);
+        let hotkeys = [
+            crate::shell::primitives::HotkeyItem::new("←/→", "section"),
+            crate::shell::primitives::HotkeyItem::new("↓/Enter", "open"),
+            crate::shell::primitives::HotkeyItem::new("Esc", "close"),
+        ];
+        render_overlay_panel(frame, overlay, "Menu", &hotkeys, |body, frame| {
+            let [tabs, list] = ratatui::layout::Layout::vertical([
+                ratatui::layout::Constraint::Length(1),
+                ratatui::layout::Constraint::Min(1),
+            ])
+            .areas(body);
+            self.bar_rect = tabs;
+            self.render_menu_row(tabs, frame);
+            if self.dropdown_open {
+                self.render_dropdown_list(list, frame);
+            }
+        });
+    }
+
+    fn render_dropdown_list(&mut self, area: Rect, frame: &mut Frame) {
+        self.dropdown_rect = Some(area);
+        let Some(entry) = self.entries.get(self.selected) else {
+            return;
+        };
+        if entry.children.is_empty() {
+            return;
+        }
+        let items: Vec<ListItem> = entry
+            .children
+            .iter()
+            .enumerate()
+            .map(|(idx, child)| {
+                let style = if idx == self.dropdown_selected {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                ListItem::new(child.label.as_str()).style(style)
+            })
+            .collect();
+        frame.render_widget(List::new(items), area);
     }
 
     /// Render dropdown above all other content (call last in draw pass).

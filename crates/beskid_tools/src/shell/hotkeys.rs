@@ -1,9 +1,9 @@
 //! Scoped hotkey registry for shell chrome and widgets.
 
+use super::key_bindings::ShortcutBindings;
 use super::primitives::{Hotkey, HotkeyItem, HotkeyRegistry, HotkeyScope};
 
 use super::control_mode::HiControlMode;
-use super::platform_shortcuts;
 
 pub struct ShellHotkeys {
     registry: HotkeyRegistry,
@@ -12,32 +12,50 @@ pub struct ShellHotkeys {
 
 impl Default for ShellHotkeys {
     fn default() -> Self {
+        Self::from_bindings(&ShortcutBindings::platform_defaults())
+    }
+}
+
+impl ShellHotkeys {
+    pub fn from_bindings(bindings: &ShortcutBindings) -> Self {
         let mut registry = HotkeyRegistry::new();
         registry.register(
-            Hotkey::new(platform_shortcuts::palette_label(), "Command palette")
+            Hotkey::new(leak_static(&bindings.palette_hint()), "Command palette")
                 .scope(HotkeyScope::Global),
         );
         registry.register(
-            Hotkey::new(platform_shortcuts::menu_label(), "Top menu")
+            Hotkey::new(leak_static(&bindings.menu_hint()), "Top menu")
                 .scope(HotkeyScope::Global),
         );
-        if platform_shortcuts::is_macos() {
-            registry.register(
-                Hotkey::new("⌘M", "Top menu")
-                    .scope(HotkeyScope::Global),
-            );
-        }
-        registry.register(Hotkey::new(":", "Command palette").scope(HotkeyScope::Global));
-        registry.register(Hotkey::new("?", "Shortcut help").scope(HotkeyScope::Global));
-        registry.register(Hotkey::new("q", "Quit").scope(HotkeyScope::Global));
+        registry.register(
+            Hotkey::new(leak_static(&bindings.label_for("help")), "Shortcut help")
+                .scope(HotkeyScope::Global),
+        );
+        registry.register(
+            Hotkey::new(leak_static(&bindings.label_for("quit")), "Quit")
+                .scope(HotkeyScope::Global),
+        );
         Self {
             registry,
             active_scope: HotkeyScope::Global,
         }
     }
-}
 
-impl ShellHotkeys {
+    pub fn rebuild_from_bindings(&mut self, bindings: &ShortcutBindings) {
+        let widget_hotkeys: Vec<Hotkey> = self
+            .registry
+            .get_hotkeys()
+            .iter()
+            .filter(|hk| !matches!(hk.scope, HotkeyScope::Global))
+            .cloned()
+            .collect();
+        *self = Self::from_bindings(bindings);
+        for hk in widget_hotkeys {
+            self.registry.register(hk);
+        }
+        self.active_scope = HotkeyScope::Global;
+    }
+
     pub fn registry(&self) -> &HotkeyRegistry {
         &self.registry
     }
@@ -99,4 +117,26 @@ impl ShellHotkeys {
 
 fn leak_static(value: &str) -> &'static str {
     Box::leak(value.to_string().into_boxed_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    #[test]
+    fn footer_reflects_rebound_palette_label() {
+        let mut bindings = ShortcutBindings::platform_defaults();
+        bindings.palette = super::super::key_bindings::KeyChord {
+            code: KeyCode::Char('k'),
+            modifiers: KeyModifiers::CONTROL,
+        };
+        let hotkeys = ShellHotkeys::from_bindings(&bindings);
+        let palette = hotkeys
+            .footer_items(None)
+            .into_iter()
+            .find(|item| item.description == "Command palette")
+            .expect("palette footer item");
+        assert!(palette.key.contains('k'));
+    }
 }

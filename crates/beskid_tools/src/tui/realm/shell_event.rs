@@ -54,6 +54,13 @@ pub fn mouse_is_click(mouse: &CrosstermMouseEvent) -> bool {
     )
 }
 
+pub fn mouse_is_move_or_drag(mouse: &CrosstermMouseEvent) -> bool {
+    matches!(
+        mouse.kind,
+        MouseEventKind::Moved | MouseEventKind::Drag(_)
+    )
+}
+
 pub fn mouse_is_inside(mouse: &CrosstermMouseEvent, rect: ratatui::layout::Rect) -> bool {
     mouse.column >= rect.x
         && mouse.column < rect.x.saturating_add(rect.width)

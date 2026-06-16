@@ -4,7 +4,9 @@ use crate::lowering::dispatch::lower_dispatch_builtin_call;
 use crate::lowering::expressions::call_expression::{
     lower_spawn_lambda_target, type_returns_runtime_value,
 };
-use crate::lowering::function::lower_function_with_name;
+use crate::lowering::function::{
+    linker_name_for_item_function, lower_function_with_name, mangle_item_function,
+};
 use crate::lowering::locals::resolved_value_at;
 use crate::lowering::lowerable::Lowerable;
 use crate::lowering::node_context::NodeLoweringContext;
@@ -183,17 +185,14 @@ fn resolve_spawn_path_target(
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<(String, Signature, bool), CodegenError> {
     let item_id = canonical_item_id(ctx.resolution, item_id);
-    let item_info = ctx
-        .resolution
-        .items
-        .get(item_id.0)
-        .ok_or(CodegenError::MissingSymbol("spawn entry function"))?;
-    let symbol_name = item_info
-        .name
-        .rsplit("::")
-        .next()
-        .unwrap_or(&item_info.name)
-        .to_string();
+    if ctx.resolution.items.get(item_id.0).is_none() {
+        return Err(CodegenError::MissingSymbol("spawn entry function"));
+    }
+    let symbol_name = ctx
+        .function_defs
+        .get(&item_id)
+        .map(|def| linker_name_for_item_function(ctx.resolution, item_id, def))
+        .unwrap_or_else(|| mangle_item_function(ctx.resolution, item_id));
     ensure_spawn_path_target_emitted(item_id, &symbol_name, ctx)?;
     if !ctx.codegen.symbol_emitted(&symbol_name) {
         return Err(CodegenError::VerificationFailed {

@@ -6,6 +6,7 @@ use super::key_bindings::ShortcutBindings;
 use super::layout::BoardV2Doc;
 use super::palette::CommandPaletteState;
 use super::scope::ShellScope;
+use super::shortcut_clicks::ShortcutClickTargets;
 use crate::tui::shell::state::ShellState;
 
 pub struct WidgetContext<'a> {
@@ -16,9 +17,12 @@ pub struct WidgetContext<'a> {
     pub focused_widget: &'a str,
     pub beskid_exe: &'a PathBuf,
     pub key_bindings: &'a mut ShortcutBindings,
+    pub shortcut_clicks: &'a mut ShortcutClickTargets,
+    pub pending_shortcut_rebind: &'a mut Option<usize>,
 }
 
 impl<'a> WidgetContext<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         scope: &'a ShellScope,
         layout: &'a BoardV2Doc,
@@ -27,6 +31,8 @@ impl<'a> WidgetContext<'a> {
         focused_widget: &'a str,
         beskid_exe: &'a PathBuf,
         key_bindings: &'a mut ShortcutBindings,
+        shortcut_clicks: &'a mut ShortcutClickTargets,
+        pending_shortcut_rebind: &'a mut Option<usize>,
     ) -> Self {
         Self {
             scope,
@@ -36,6 +42,8 @@ impl<'a> WidgetContext<'a> {
             focused_widget,
             beskid_exe,
             key_bindings,
+            shortcut_clicks,
+            pending_shortcut_rebind,
         }
     }
 }

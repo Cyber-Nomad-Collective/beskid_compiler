@@ -274,6 +274,20 @@ pub fn layout_editor_commands(edit_active: bool) -> Vec<CommandItem> {
     ]
 }
 
+/// Shared palette and demoted top-menu command list.
+pub fn command_catalog(
+    scope: &ShellScope,
+    layout_edit_active: bool,
+    nav: &NavRegistry,
+    pages: &PagesDoc,
+) -> Vec<CommandItem> {
+    let mut items = nav_palette_commands(nav, pages);
+    items.extend(builtin_cli_commands());
+    items.extend(builtin_contextual_commands(scope));
+    items.extend(layout_editor_commands(layout_edit_active));
+    items
+}
+
 fn cli(
     id: &'static str,
     name: &'static str,
@@ -314,6 +328,18 @@ fn contextual(
 mod tests {
     use super::*;
     use crate::shell::layout::pages::{parse_pages, EMBEDDED_HI_PAGES};
+    use crate::shell::nav::NavRegistry;
+    use crate::shell::scope::ShellScope;
+
+    #[test]
+    fn command_catalog_includes_nav_and_cli() {
+        let registry = NavRegistry::new();
+        let pages = parse_pages(EMBEDDED_HI_PAGES).expect("pages");
+        let scope = ShellScope::User;
+        let items = command_catalog(&scope, false, &registry, &pages);
+        assert!(items.iter().any(|item| item.name().contains("Graphs")));
+        assert!(items.iter().any(|item| item.id() == "build"));
+    }
 
     #[test]
     fn nav_palette_includes_selectable_pages() {

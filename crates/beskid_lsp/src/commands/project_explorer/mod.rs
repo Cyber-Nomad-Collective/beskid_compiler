@@ -175,6 +175,57 @@ dependencies:
         (temp, root)
     }
 
+    fn multi_member_workspace_fixture() -> (TempDir, PathBuf) {
+        let temp = TempDir::new().expect("tempdir");
+        let root = temp.path().to_path_buf();
+        write(
+            &root.join("Superrepo.bws"),
+            r#"
+workspace {
+  name = "Superrepo"
+  resolver = v1
+}
+
+member "compiler" {
+  path = "compiler"
+}
+
+member "vscode" {
+  path = "beskid_vscode"
+}
+"#,
+        );
+        write(
+            &root.join("compiler/compiler.bproj"),
+            r#"
+compiler {
+  name = "compiler"
+  version = "0.1.0"
+}
+
+target "Cli" {
+  kind = App
+  entry = "Main.bd"
+}
+"#,
+        );
+        write(
+            &root.join("beskid_vscode/vscode.bproj"),
+            r#"
+vscode {
+  name = "vscode"
+  version = "0.1.0"
+}
+
+target "Ext" {
+  kind = Lib
+  entry = "Ext.bd"
+}
+"#,
+        );
+        (temp, root)
+    }
+
     #[test]
     fn list_workspaces_json_shape() {
         let (_temp, root) = workspace_fixture();
@@ -185,7 +236,31 @@ dependencies:
         let members = workspaces[0]["members"].as_array().expect("members");
         assert_eq!(members.len(), 1);
         assert_eq!(members[0]["name"], "app");
+        assert_eq!(members[0]["memberId"], "app");
         assert!(members[0]["uri"].as_str().is_some());
+    }
+
+    #[test]
+    fn list_workspaces_emits_member_id_for_each_bsol_member() {
+        let (_temp, root) = multi_member_workspace_fixture();
+        let value = workspaces::list_workspaces(&[root]).expect("list");
+        let workspaces = value["workspaces"].as_array().expect("array");
+        assert_eq!(workspaces.len(), 1);
+        assert_eq!(workspaces[0]["name"], "Superrepo");
+        let members = workspaces[0]["members"].as_array().expect("members");
+        assert_eq!(members.len(), 2);
+
+        let compiler = &members[0];
+        assert_eq!(compiler["memberId"], "compiler");
+        assert_eq!(compiler["name"], "compiler");
+        assert_eq!(compiler["path"], "compiler");
+        assert!(compiler["uri"].as_str().is_some());
+
+        let vscode = &members[1];
+        assert_eq!(vscode["memberId"], "vscode");
+        assert_eq!(vscode["name"], "vscode");
+        assert_eq!(vscode["path"], "beskid_vscode");
+        assert!(vscode["uri"].as_str().is_some());
     }
 
     #[test]
@@ -194,9 +269,25 @@ dependencies:
         let uri = path_to_uri_string(&root.join("Demo.bws"));
         let value = workspaces::get_workspace_summary(&uri).expect("summary");
         assert_eq!(value["name"], "Demo");
+        let members = value["members"].as_array().expect("members");
+        assert_eq!(members[0]["memberId"], "app");
         let registries = value["registries"].as_array().expect("registries");
         assert_eq!(registries.len(), 1);
         assert_eq!(registries[0]["name"], "default");
+    }
+
+    #[test]
+    fn get_workspace_summary_emits_member_id_for_multi_member_workspace() {
+        let (_temp, root) = multi_member_workspace_fixture();
+        let uri = path_to_uri_string(&root.join("Superrepo.bws"));
+        let value = workspaces::get_workspace_summary(&uri).expect("summary");
+        assert_eq!(value["name"], "Superrepo");
+        let members = value["members"].as_array().expect("members");
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0]["memberId"], "compiler");
+        assert_eq!(members[1]["memberId"], "vscode");
+        assert!(members[0]["uri"].as_str().is_some());
+        assert!(members[1]["uri"].as_str().is_some());
     }
 
     #[test]
@@ -224,6 +315,68 @@ dependencies:
         let locked = value["locked"].as_array().expect("locked");
         assert_eq!(locked.len(), 1);
         assert_eq!(locked[0]["resolvedVersion"], "1.0.0");
+        let unresolved = value["unresolved"].as_array().expect("unresolved");
+        assert!(unresolved.is_empty());
+    }
+
+    #[test]
+    fn get_project_dependencies_reports_unresolved_when_lock_missing_entry() {
+        let (_temp, root) = workspace_fixture();
+        let project = root.join("apps/demo/demo.bproj");
+        write(
+            &project,
+            r#"
+demo {
+  name = "demo"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = App
+  entry = "Main.bd"
+}
+
+dependency "lib" {
+  source = path
+  path = "../lib"
+}
+
+dependency "missing" {
+  source = registry
+  version = "1.0.0"
+}
+"#,
+        );
+        let uri = path_to_uri_string(&project);
+        let value = graph::get_project_dependencies(&uri).expect("deps");
+        let unresolved = value["unresolved"]
+            .as_array()
+            .expect("unresolved")
+            .iter()
+            .map(|entry| entry.as_str().expect("name").to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(unresolved, vec!["missing".to_string()]);
+    }
+
+    #[test]
+    fn project_explorer_command_contract_matches_snapshot() {
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let snapshot_path = manifest_dir
+            .join("../../../beskid_vscode/test/fixtures/lsp-project-explorer-commands.json");
+        let text = fs::read_to_string(&snapshot_path)
+            .unwrap_or_else(|err| panic!("read contract snapshot at {}: {err}", snapshot_path.display()));
+        let snapshot: Value = serde_json::from_str(&text).expect("parse contract snapshot");
+        let expected = snapshot["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .map(|entry| entry.as_str().expect("command name").to_string())
+            .collect::<Vec<_>>();
+        let actual = PROJECT_EXPLORER_COMMANDS
+            .iter()
+            .map(|command| (*command).to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "update beskid_vscode/test/fixtures/lsp-project-explorer-commands.json");
     }
 
     #[test]
@@ -268,6 +421,14 @@ dependencies:
             serde_json::json!({ "beskid": { "selectedProjectUri": uri.clone() } });
         assert!(
             focused_project_from_configuration(&settings_legacy)
+                .expect("some")
+                .is_some()
+        );
+        let settings_nested = serde_json::json!({
+            "beskid": { "project": { "focusedProjectUri": uri } }
+        });
+        assert!(
+            focused_project_from_configuration(&settings_nested)
                 .expect("some")
                 .is_some()
         );

@@ -52,7 +52,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMemberExpression {
                 span: node.node.target.span,
                 node: "member target type",
             })?;
-        let offsets = struct_field_offsets(ctx.type_result, item_id).ok_or(
+        let offsets = struct_field_offsets(
+            ctx.resolution,
+            ctx.type_result,
+            item_id,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .ok_or(
             CodegenError::UnsupportedNode {
                 span: node.span,
                 node: "member offsets",

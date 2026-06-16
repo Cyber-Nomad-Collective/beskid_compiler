@@ -80,7 +80,20 @@ pub fn lower_program_with_assembly_for_entrypoint(
     if let Some(assembly) = assembly {
         let def_index = FunctionDefIndex::build(resolution, &assembly.hir_units);
         let entry_source_path = assembly.entry_unit().path.clone();
-        let plan = if let Some(entrypoint) = link_entrypoint {
+        let effective_entry = match link_entrypoint {
+            Some(name) => Some(name),
+            None => {
+                let has_tests = program.node.items.iter().any(|item| {
+                    matches!(item.node, HirItem::TestDefinition(_))
+                });
+                if has_tests {
+                    None
+                } else {
+                    Some("Main")
+                }
+            }
+        };
+        let plan = if let Some(entrypoint) = effective_entry {
             LinkPlan::build_for_entrypoint(
                 program,
                 entrypoint,

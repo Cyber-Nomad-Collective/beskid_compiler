@@ -11,7 +11,6 @@ use crate::shell::catalog::ContextualCommand;
 use crate::shell::context::WidgetContext;
 use crate::shell::input::ShellInput;
 use crate::shell::panel_style::title_line;
-use crate::shell::platform_shortcuts;
 use crate::shell::scope::ShellScope;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
 
@@ -49,41 +48,49 @@ impl BeskidWidget for GraphWidget {
     }
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-        let [title_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)])
-            .areas(area);
-        frame.render_widget(
-            Paragraph::new(title_line("Dependency graph")),
-            title_area,
-        );
-
-        if ctx.scope.is_user() {
-            frame.render_widget(Paragraph::new(ShellScope::no_project_lines()), body);
-            return;
-        }
-
-        let scope_label = ctx.scope.label();
-        let phase_count = ctx.shell_state.tree_nodes.len();
-        let lines = vec![
-            Line::from(vec![
-                Span::styled("Scope ", Style::default().fg(Color::DarkGray)),
-                Span::styled(scope_label, Style::default().fg(Color::Cyan)),
-            ]),
-            Line::from(""),
-            if phase_count > 0 {
-                Line::from(format!(
-                    "Pipeline tree has {phase_count} nodes — run `beskid graph` for the interactive graph TUI."
-                ))
-            } else {
-                Line::from("Run `graph` from the command palette to explore workspace dependencies.")
-            },
-            Line::from(""),
-            Line::from(Span::styled(
-                format!("{} → graph", platform_shortcuts::palette_hint()),
-                Style::default().fg(Color::DarkGray),
-            )),
-        ];
-        frame.render_widget(Paragraph::new(lines), body);
+        draw_graph_deps_panel(area, frame, ctx);
     }
+}
+
+pub fn draw_graph_deps_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
+    let [title_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)])
+        .areas(area);
+    frame.render_widget(
+        Paragraph::new(title_line("Dependency graph")),
+        title_area,
+    );
+
+    if ctx.scope.is_user() {
+        frame.render_widget(
+            Paragraph::new(ShellScope::no_project_lines(&ctx.key_bindings.palette_hint())),
+            body,
+        );
+        return;
+    }
+
+    let scope_label = ctx.scope.label();
+    let phase_count = ctx.shell_state.tree_nodes.len();
+    let palette_hint = ctx.key_bindings.palette_hint();
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("Scope ", Style::default().fg(Color::DarkGray)),
+            Span::styled(scope_label, Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(""),
+        if phase_count > 0 {
+            Line::from(format!(
+                "Pipeline tree has {phase_count} nodes — run `beskid graph` for the interactive graph TUI."
+            ))
+        } else {
+            Line::from("Run `graph` from the command palette to explore workspace dependencies.")
+        },
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("{palette_hint} → graph"),
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+    frame.render_widget(Paragraph::new(lines), body);
 }
 
 pub struct GraphCompileWidget;
@@ -106,15 +113,11 @@ impl BeskidWidget for GraphCompileWidget {
     }
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-        let [title_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)])
-            .areas(area);
-        frame.render_widget(
-            Paragraph::new(title_line("Compile graph")),
-            title_area,
-        );
-
         if ctx.scope.is_user() {
-            frame.render_widget(Paragraph::new(ShellScope::no_project_lines()), body);
+            frame.render_widget(
+                Paragraph::new(ShellScope::no_project_lines(&ctx.key_bindings.palette_hint())),
+                area,
+            );
             return;
         }
 
@@ -124,7 +127,7 @@ impl BeskidWidget for GraphCompileWidget {
                     "Run `build` or `test` to populate the compilation phase tree.",
                 )
                 .style(Style::default().fg(Color::DarkGray)),
-                body,
+                area,
             );
             return;
         }
@@ -132,10 +135,20 @@ impl BeskidWidget for GraphCompileWidget {
         let focus = StageFocus::from_shell_state(ctx.shell_state);
         draw_pipeline_tree(
             frame,
-            body,
+            area,
             &ctx.shell_state.tree_nodes,
             &mut ctx.shell_state.tree_state,
             focus.title(),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn compile_graph_uses_full_area_for_pipeline_tree() {
+        let source = include_str!("graph.rs");
+        assert!(source.contains("draw_pipeline_tree(\n            frame,\n            area,"));
+        assert!(!source.contains("title_line(\"Compile graph\")"));
     }
 }

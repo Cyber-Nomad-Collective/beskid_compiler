@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use beskid_analysis::CompilationContext;
 use beskid_analysis::services::DocumentAnalysisSnapshot;
-use beskid_queries::BeskidDatabase;
-use tokio::sync::Mutex as AsyncMutex;
+use beskid_queries::{
+    BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database,
+};
+use tokio::sync::{Mutex as AsyncMutex, Notify};
 use tower_lsp_server::ls_types::Uri;
 
 use super::db_access;
@@ -37,6 +40,10 @@ pub struct State {
     pub(crate) db_gate: Arc<AsyncMutex<()>>,
     /// Coalesced typed-prepare schedule revision per open URI (debounced rebuild).
     pub typed_prepare_schedule_revision: HashMap<Uri, u64>,
+    /// Set after the first workspace scan finishes (gates Salsa work during startup).
+    pub(crate) initial_scan_complete: Arc<AtomicBool>,
+    /// Wakes tasks waiting on [`initial_scan_complete`].
+    pub(crate) scan_barrier: Arc<Notify>,
 }
 
 impl Default for State {
@@ -50,6 +57,8 @@ impl Default for State {
             configured_project_root: None,
             db_gate: db_access::new_db_gate(),
             typed_prepare_schedule_revision: HashMap::new(),
+            initial_scan_complete: Arc::new(AtomicBool::new(false)),
+            scan_barrier: Arc::new(Notify::new()),
         }
     }
 }
@@ -73,12 +82,17 @@ impl State {
         if self.configured_project_root.as_ref() == Some(&canonical) {
             return;
         }
-        *db = BeskidDatabase::with_persistence(&canonical);
+        configure_compilation_database_for_project(db, &canonical);
         self.configured_project_root = Some(canonical);
     }
 
     pub fn reset_compilation_db_with_db(&mut self, db: &mut BeskidDatabase) {
-        *db = BeskidDatabase::default();
+        reset_compilation_database(db);
         self.configured_project_root = None;
+    }
+
+    pub(crate) fn mark_initial_scan_complete(&self) {
+        self.initial_scan_complete.store(true, Ordering::Release);
+        self.scan_barrier.notify_waiters();
     }
 }

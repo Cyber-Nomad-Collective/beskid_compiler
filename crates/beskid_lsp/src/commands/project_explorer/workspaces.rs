@@ -67,6 +67,7 @@ pub(crate) fn get_workspace_summary(workspace_uri: &str) -> Result<Value> {
             .ok()
             .map(|member_manifest| path_to_uri_string(&member_manifest));
         members.push(json!({
+            "memberId": member.name,
             "name": member.name,
             "path": member.path,
             "uri": member_uri,
@@ -103,6 +104,7 @@ fn workspace_entry(workspace_manifest_path: &Path) -> Option<Value> {
             .ok()
             .map(|member_manifest| path_to_uri_string(&member_manifest));
         members.push(json!({
+            "memberId": member.name,
             "name": member.name,
             "path": member.path,
             "uri": member_uri,

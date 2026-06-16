@@ -1,5 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Result;
 use beskid_analysis::hir::HirProgram;
@@ -29,6 +30,31 @@ pub struct LoweredProgram {
     pub artifact: CodegenArtifact,
 }
 
+static SCRATCH_FILE_ID: AtomicU64 = AtomicU64::new(0);
+
+/// Ensure `source` is readable from disk for assembly discovery (`<memory>` and missing paths).
+pub fn materialize_source_path_for_lowering(path: &Path, source: &str) -> Result<PathBuf> {
+    if path.is_file() {
+        return Ok(path.to_path_buf());
+    }
+    let dir = std::env::temp_dir().join("beskid_codegen_scratch");
+    std::fs::create_dir_all(&dir)?;
+    let id = SCRATCH_FILE_ID.fetch_add(1, Ordering::Relaxed);
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|name| !name.is_empty() && *name != "<memory>")
+        .unwrap_or("main.bd");
+    let file = dir.join(format!("{id}_{file_name}"));
+    std::fs::write(&file, source)?;
+    Ok(file)
+}
+
+/// Cranelift linker symbol for a resolved function or test item.
+pub fn jit_symbol_for_item(resolution: &beskid_analysis::resolve::Resolution, item_id: beskid_analysis::resolve::ItemId) -> String {
+    crate::lowering::function::mangle_item_function(resolution, item_id)
+}
+
 /// Parse, optionally run semantic diagnostics, lower to HIR, and codegen to CLIF without pipeline hooks.
 pub fn lower_source(path: &Path, source: &str, with_diagnostics: bool) -> Result<LoweredProgram> {
     lower_source_with_pipeline(path, source, with_diagnostics, None)
@@ -40,11 +66,13 @@ pub fn lower_source_for_entrypoint(
     source: &str,
     entrypoint: &str,
     with_diagnostics: bool,
+    pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    let plan = compile_plan_for_input_path(path)
-        .unwrap_or_else(|| synthetic_compile_plan_for_source(path));
+    let path = materialize_source_path_for_lowering(path, source)?;
+    let plan = compile_plan_for_input_path(&path)
+        .unwrap_or_else(|| synthetic_compile_plan_for_source(&path));
     let resolved = resolved_input_from_plan(
-        path.to_path_buf(),
+        path,
         source.to_string(),
         plan,
         None,
@@ -54,7 +82,7 @@ pub fn lower_source_for_entrypoint(
         &resolved,
         Some(entrypoint),
         with_diagnostics,
-        None,
+        pipeline,
     )
 }
 
@@ -65,10 +93,11 @@ pub fn lower_source_with_pipeline(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    let plan = compile_plan_for_input_path(path)
-        .unwrap_or_else(|| synthetic_compile_plan_for_source(path));
+    let path = materialize_source_path_for_lowering(path, source)?;
+    let plan = compile_plan_for_input_path(&path)
+        .unwrap_or_else(|| synthetic_compile_plan_for_source(&path));
     let resolved = resolved_input_from_plan(
-        path.to_path_buf(),
+        path,
         source.to_string(),
         plan,
         None,
@@ -112,9 +141,11 @@ pub fn lower_resolved_entrypoint_with_pipeline(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
     if resolved.compile_plan.is_none() {
-        return lower_source_with_pipeline(
+        let entry = link_entrypoint.unwrap_or("Main");
+        return lower_source_for_entrypoint(
             &resolved.source_path,
             &resolved.source,
+            entry,
             with_diagnostics,
             pipeline,
         );

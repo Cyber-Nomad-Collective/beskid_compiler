@@ -11,7 +11,7 @@ use beskid_analysis::services::{
 };
 use beskid_pipeline::PipelineObserver;
 
-use crate::db::BeskidDatabase;
+use crate::db::{BeskidDatabase, configure_compilation_database_for_project};
 use crate::entry::{prepare_compilation_diagnostics_with_db, prepare_compilation_with_db};
 
 thread_local! {
@@ -33,7 +33,7 @@ fn configure_db_in_place(db: &mut BeskidDatabase, project_root: &Path) {
     if already_configured {
         return;
     }
-    *db = BeskidDatabase::with_persistence(&canonical);
+    configure_compilation_database_for_project(db, &canonical);
     CONFIGURED_ROOT.with(|configured| {
         *configured.borrow_mut() = Some(canonical);
     });

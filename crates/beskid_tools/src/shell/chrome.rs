@@ -1,7 +1,7 @@
 //! Permanent shell chrome: pinned top bar + footer hotkeys.
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -11,14 +11,13 @@ pub type FooterHotkeyItem = HotkeyItem;
 
 use super::control_mode::HiControlMode;
 use super::hotkeys::ShellHotkeys;
-use super::phase::transition_label;
-use super::key_bindings::ShortcutBindings;
 use super::scope::ShellScope;
-use super::top_menu::ShellTopMenu;
-use crate::tui::shell::state::ShellState;
+use super::shortcut_clicks::{
+    ShortcutClickTargets, register_footer_clicks, register_help_overlay_clicks,
+};
 
 /// Fixed height of the pinned top bar (not layout-editable).
-pub const PINNED_TOP_ROWS: u16 = 2;
+pub const PINNED_TOP_ROWS: u16 = 1;
 
 #[derive(Default)]
 pub struct ShellChrome {
@@ -26,45 +25,29 @@ pub struct ShellChrome {
 }
 
 impl ShellChrome {
-    /// Pinned top bar: Beskid branding, workflow phase, scope, and horizontal menu.
+    /// Pinned top bar: welcome label and opened workspace/project scope.
     pub fn render_pinned_top_bar(
         &self,
         area: Rect,
         frame: &mut Frame,
         scope: &ShellScope,
-        page_title: &str,
-        shell_state: &ShellState,
-        menu: &mut ShellTopMenu,
-        bindings: &ShortcutBindings,
     ) {
-        if area.height < 2 {
+        if area.height == 0 {
             return;
         }
-        let [brand_row, menu_row] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .areas(area);
-
         let scope_label = scope.chrome_title();
-        let phase = transition_label(shell_state, page_title, scope);
-        let brand_line = Line::from(vec![
+        let line = Line::from(vec![
             Span::styled(
-                "Beskid",
+                "Welcome",
                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
             ),
             Span::raw("   "),
-            Span::styled(phase, Style::default().fg(Color::Yellow)),
-            Span::raw("   "),
             Span::styled(scope_label, Style::default().fg(Color::DarkGray)),
-            Span::raw("   "),
-            Span::styled(bindings.menu_hint(), Style::default().fg(Color::Cyan)),
-            Span::styled(" menu", Style::default().fg(Color::DarkGray)),
         ]);
-        frame.render_widget(Paragraph::new(brand_line), brand_row);
-        menu.render_menu_row(menu_row, frame);
+        frame.render_widget(Paragraph::new(line), area);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render_footer(
         &self,
         area: Rect,
@@ -73,8 +56,10 @@ impl ShellChrome {
         mode: HiControlMode,
         focused_widget: Option<&str>,
         layout_drawer_visible: bool,
+        click_targets: &mut ShortcutClickTargets,
     ) {
         let items = hotkeys.footer_for_mode(mode, focused_widget, layout_drawer_visible);
+        register_footer_clicks(click_targets, area, &items);
         let footer = HotkeyFooter::new(items)
             .key_color(Color::Cyan)
             .description_color(Color::DarkGray)
@@ -82,15 +67,24 @@ impl ShellChrome {
         frame.render_widget(footer, area);
     }
 
-    pub fn render_help_overlay(&self, area: Rect, frame: &mut Frame, items: &[HotkeyItem]) {
+    pub fn render_help_overlay(
+        &self,
+        area: Rect,
+        frame: &mut Frame,
+        items: &[HotkeyItem],
+        click_targets: &mut ShortcutClickTargets,
+    ) {
         use ratatui::widgets::{Block, Borders};
+        register_help_overlay_clicks(click_targets, area, items);
         let lines: Vec<Line> = items
             .iter()
             .map(|item| {
                 Line::from(vec![
                     Span::styled(
                         format!("{}  ", item.key),
-                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
                     ),
                     Span::styled(item.description.clone(), Style::default().fg(Color::Gray)),
                 ])
@@ -101,5 +95,50 @@ impl ShellChrome {
             .title(" Shortcuts ")
             .style(Style::default().bg(Color::Indexed(234)));
         frame.render_widget(Paragraph::new(lines).block(block), area);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    use crate::shell::layout::load::load_from_source;
+    use crate::shell::layout::{resolve::resolve_panels, EMBEDDED_HI_V2};
+
+    #[test]
+    fn pinned_chrome_single_row() {
+        assert_eq!(PINNED_TOP_ROWS, 1);
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let (_doc, mut runtime) = load_from_source(EMBEDDED_HI_V2).expect("layout");
+        let resolved = resolve_panels(&mut runtime, area).expect("resolve");
+        assert_eq!(resolved.header_area.height, 1);
+    }
+
+    #[test]
+    fn chrome_renders_welcome_and_scope() {
+        let backend = TestBackend::new(80, 10);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let scope = ShellScope::Workspace {
+            root: "/tmp/ws".into(),
+            manifest: "/tmp/ws/CoreLib.bws".into(),
+        };
+        terminal
+            .draw(|frame| {
+                ShellChrome::default().render_pinned_top_bar(frame.area(), frame, &scope);
+            })
+            .expect("draw");
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("Welcome"));
+        assert!(text.contains("CoreLib"));
+        assert!(!text.contains("Compiling"));
+        assert!(!text.contains("Boards"));
     }
 }

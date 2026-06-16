@@ -122,22 +122,23 @@ pub fn resolve_input_with_policy(
                 compile_plan = Some(synthetic_compile_plan_for_source(input_path));
             }
 
-    let source_path = match (
-        input,
-        input_is_manifest,
-        compile_plan.as_ref(),
-        prepared_workspace.as_ref(),
-    ) {
-        (Some(input), false, _, _) => input.clone(),
-        (_, _, Some(plan), Some(workspace)) => {
-            plan_entry_path(plan, &workspace.materialized_source_root)
-        }
-        (_, _, Some(plan), None) => plan_entry_path(plan, &plan.source_root),
-        (_, _, None, _) => {
+    let source_path = if let Some(plan) = compile_plan.as_ref() {
+        let root = prepared_workspace
+            .as_ref()
+            .map(|workspace| workspace.materialized_source_root.as_path())
+            .unwrap_or(plan.source_root.as_path());
+        plan_entry_path(plan, root)
+    } else if let Some(input_path) = input {
+        if input_is_manifest || !input_path.is_file() {
             return Err(anyhow::anyhow!(
                 "no input file provided and no `.bproj` manifest discovered"
             ));
         }
+        input_path.clone()
+    } else {
+        return Err(anyhow::anyhow!(
+            "no input file provided and no `.bproj` manifest discovered"
+        ));
     };
 
     let source = if source_path.is_file() {
@@ -161,4 +162,50 @@ pub fn resolve_input_with_policy(
         workspace_summary,
         assembly: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::resolve_input;
+
+    fn compiler_workspace_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("compiler workspace root")
+            .to_path_buf()
+    }
+
+    #[test]
+    fn resolve_input_directory_with_compile_plan_uses_entry_file() {
+        let root = compiler_workspace_root();
+        let workspace_root = root.join("corelib");
+        let manifest = workspace_root.join("CoreLib.bws");
+        if !manifest.is_file() {
+            eprintln!(
+                "skip resolve_input_directory_with_compile_plan_uses_entry_file: {manifest:?} missing"
+            );
+            return;
+        }
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(&workspace_root).expect("chdir");
+        let resolved = resolve_input(
+            Some(&workspace_root),
+            None,
+            None,
+            None,
+            false,
+            false,
+        )
+        .expect("resolve directory input");
+        std::env::set_current_dir(previous).expect("restore cwd");
+        assert!(
+            resolved.source_path.is_file(),
+            "expected entry file, got {}",
+            resolved.source_path.display()
+        );
+        assert!(resolved.compile_plan.is_some());
+    }
 }

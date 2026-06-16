@@ -326,3 +326,17 @@ pub fn clear_typed_entry_cache() {
         .bundles
         .clear();
 }
+
+/// Clear process-global typed-entry Salsa inputs and side cache before replacing
+/// [`BeskidDatabase`] storage (LSP invalidation, project-root switch, CLI reconfigure).
+pub fn reset_typed_entry_inputs() {
+    file_revision_registry()
+        .lock()
+        .expect("file revision registry")
+        .clear();
+    typed_prepare_revision_registry()
+        .lock()
+        .expect("typed prepare revision registry")
+        .clear();
+    clear_typed_entry_cache();
+}

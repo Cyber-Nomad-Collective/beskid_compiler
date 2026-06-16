@@ -58,7 +58,10 @@ pub fn draw_analysis_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContex
     frame.render_widget(Paragraph::new(title_line("Analysis")), title_area);
 
     if ctx.scope.is_user() {
-        frame.render_widget(Paragraph::new(ShellScope::no_project_lines()), body);
+        frame.render_widget(
+            Paragraph::new(ShellScope::no_project_lines(&ctx.key_bindings.palette_hint())),
+            body,
+        );
         return;
     }
 

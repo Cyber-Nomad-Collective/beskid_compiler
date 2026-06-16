@@ -35,6 +35,9 @@ pub fn resolve_panels<'a>(
         x: area.x,
         y: area.y + header_h,
     };
+    if main_area.width == 0 || main_area.height == 0 {
+        return Err("terminal too small for panel layout".into());
+    }
     let chrome_area = Rect {
         width: area.width,
         height: chrome_h,
@@ -98,4 +101,21 @@ pub fn focus_panel_by_kind(runtime: &mut LayoutRuntime, kind: &str) -> bool {
 
 pub fn panel_id_for_kind(runtime: &LayoutRuntime, kind: &str) -> Option<PanelId> {
     runtime.tree().panels_by_kind(kind).first().copied()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shell::layout::load::load_from_source;
+    use crate::shell::layout::EMBEDDED_HI_V2;
+
+    #[test]
+    fn resolve_panels_rejects_zero_main_height() {
+        let (_doc, mut runtime) = load_from_source(EMBEDDED_HI_V2).expect("layout");
+        let area = Rect::new(0, 0, 40, 2);
+        match resolve_panels(&mut runtime, area) {
+            Err(message) => assert!(message.contains("too small")),
+            Ok(_) => panic!("expected resolve failure for zero-height main area"),
+        }
+    }
 }

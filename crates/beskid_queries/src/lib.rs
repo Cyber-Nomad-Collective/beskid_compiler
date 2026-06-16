@@ -16,7 +16,10 @@ mod stats;
 mod unit;
 
 pub use beskid_graph::GraphKind;
-pub use db::{BeskidDatabase, Db, UnitArtifactCache};
+pub use db::{
+    BeskidDatabase, Db, UnitArtifactCache, configure_compilation_database_for_project,
+    replace_compilation_database, reset_compilation_database,
+};
 pub use entry::{
     cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key,
     invalidate_entry_sessions, prepare_compilation_diagnostics_with_db,
@@ -24,7 +27,7 @@ pub use entry::{
 };
 pub use typed_entry_bundle::{
     FileRevision, TypedEntryState, TypedPrepareRevision, bump_file_revision,
-    bump_typed_prepare_revision, clear_typed_entry_cache, file_revision_for,
+    bump_typed_prepare_revision, clear_typed_entry_cache, file_revision_for, reset_typed_entry_inputs,
     is_typed_bundle_stale, typed_entry_bundle_tracked, typed_entry_bundle_with_db,
     typed_entry_state_with_db, typed_prepare_revision_for,
 };

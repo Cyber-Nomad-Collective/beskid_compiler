@@ -176,7 +176,7 @@ fn item_id_for_name(
     }
 }
 
-fn struct_fields_for_item<'a>(
+pub fn struct_fields_for_item<'a>(
     env: &'a PathTypeEnv<'_>,
     resolution: &Resolution,
     item_id: ItemId,

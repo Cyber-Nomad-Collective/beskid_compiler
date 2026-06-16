@@ -58,21 +58,14 @@ pub struct ShortcutBindings {
 
 impl ShortcutBindings {
     pub fn platform_defaults() -> Self {
-        let palette = if platform_shortcuts::is_macos() {
-            KeyChord {
-                code: KeyCode::Char('p'),
-                modifiers: KeyModifiers::SUPER,
-            }
-        } else {
-            KeyChord {
-                code: KeyCode::Char('p'),
-                modifiers: KeyModifiers::CONTROL,
-            }
+        let palette = KeyChord {
+            code: KeyCode::Char('p'),
+            modifiers: KeyModifiers::CONTROL,
         };
         let menu = if platform_shortcuts::is_macos() {
             KeyChord {
                 code: KeyCode::Char('m'),
-                modifiers: KeyModifiers::SUPER,
+                modifiers: KeyModifiers::CONTROL,
             }
         } else {
             KeyChord {
@@ -155,11 +148,8 @@ impl ShortcutBindings {
         if chord_matches(&self.menu, key) {
             return true;
         }
-        // Built-in alternate when default menu chord is ⌘M on macOS.
-        if platform_shortcuts::is_macos() && key.code == KeyCode::F(10) {
-            return true;
-        }
-        false
+        // Fn+F10 alternate on macOS (F-keys are often media keys without Fn).
+        platform_shortcuts::is_macos() && key.code == KeyCode::F(10)
     }
 
     pub fn toggles_help(&self, key: &KeyEvent) -> bool {
@@ -192,6 +182,13 @@ fn load_chord(
     let raw = get_value(config, registry, TOOL_ID, key);
     if raw.is_empty() {
         return default;
+    }
+    if platform_shortcuts::is_macos() {
+        match (key, raw.as_str()) {
+            ("bind_palette", "super+p" | "cmd+p" | "command+p") => return default,
+            ("bind_menu", "super+m" | "cmd+m" | "command+m") => return default,
+            _ => {}
+        }
     }
     parse_chord(&raw).unwrap_or(default)
 }

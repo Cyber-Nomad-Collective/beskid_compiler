@@ -10,6 +10,7 @@ use salsa::Setter;
 
 use crate::inputs::{FileText, GrammarRevision, ProjectSession};
 use crate::stats::record_revision_bump;
+use crate::typed_entry_bundle::reset_typed_entry_inputs;
 
 type ProjectRegistry = HashMap<(PathBuf, PathBuf, String), ProjectSession>;
 
@@ -252,6 +253,25 @@ impl BeskidDatabase {
             .insert(key, session);
         session
     }
+}
+
+/// Replace Salsa storage after clearing typed-entry input registries tied to the old storage.
+pub fn replace_compilation_database(target: &mut BeskidDatabase, replacement: BeskidDatabase) {
+    reset_typed_entry_inputs();
+    *target = replacement;
+}
+
+/// Reset to an in-memory database (no on-disk persistence).
+pub fn reset_compilation_database(target: &mut BeskidDatabase) {
+    replace_compilation_database(target, BeskidDatabase::default());
+}
+
+/// Reconfigure persistence for `project_root`, replacing storage when the root changes.
+pub fn configure_compilation_database_for_project(
+    target: &mut BeskidDatabase,
+    project_root: &Path,
+) {
+    replace_compilation_database(target, BeskidDatabase::with_persistence(project_root));
 }
 
 #[salsa::db]

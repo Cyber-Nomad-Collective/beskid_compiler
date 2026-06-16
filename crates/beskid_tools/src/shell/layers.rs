@@ -38,3 +38,25 @@ impl ShellLayer {
         ShellLayer::TopMenuDropdown,
     ];
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn input_priority_topmost_wins() {
+        assert_eq!(ShellLayer::INPUT_PRIORITY[0], ShellLayer::TopMenuDropdown);
+        assert_eq!(
+            ShellLayer::INPUT_PRIORITY.last(),
+            Some(&ShellLayer::Base)
+        );
+    }
+
+    #[test]
+    fn draw_order_topmost_is_menu_dropdown() {
+        assert_eq!(
+            ShellLayer::DRAW_ORDER.last(),
+            Some(&ShellLayer::TopMenuDropdown)
+        );
+    }
+}

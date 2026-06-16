@@ -1,5 +1,6 @@
 //! Project graph and dependency execute-command payloads.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use beskid_analysis::CompilationContext;
@@ -99,13 +100,23 @@ pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {
         .collect();
 
     let project_root = manifest_path.parent().ok_or_else(missing_args)?;
-    let locked = load_project_lock_dependencies(project_root)
-        .unwrap_or_default()
+    let lock_entries = load_project_lock_dependencies(project_root).unwrap_or_default();
+    let locked = lock_entries
         .iter()
         .map(serialize_lock_entry)
         .collect::<Vec<_>>();
 
-    let unresolved: Vec<Value> = Vec::new();
+    let declared_names: HashSet<&str> = manifest.dependencies.iter().map(|dep| dep.name.as_str()).collect();
+    let locked_names: HashSet<&str> = lock_entries.iter().map(|entry| entry.name()).collect();
+    let mut unresolved: Vec<Value> = declared_names
+        .difference(&locked_names)
+        .map(|name| json!(name))
+        .collect();
+    unresolved.sort_by(|left, right| {
+        left.as_str()
+            .unwrap_or_default()
+            .cmp(right.as_str().unwrap_or_default())
+    });
 
     Ok(json!({
         "projectUri": project_uri,

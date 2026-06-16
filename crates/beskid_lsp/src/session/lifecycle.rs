@@ -23,6 +23,7 @@ use crate::manifest_uri::is_manifest_uri;
 use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::project_context::cached_compilation_context;
+use crate::session::startup::wait_for_initial_scan;
 use crate::session::store::{Document, State};
 use crate::workspace_scan::uri_to_path;
 
@@ -114,6 +115,8 @@ async fn build_document_analysis(
     uri: &Uri,
     text: &str,
 ) -> Option<beskid_analysis::services::DocumentAnalysisSnapshot> {
+    wait_for_initial_scan(state).await;
+
     if is_manifest_uri(uri) {
         return None;
     }
@@ -196,6 +199,8 @@ pub async fn set_disk_snapshot(state: &RwLock<State>, uri: Uri, doc: Document) {
 }
 
 async fn touch_entry_file_revision_for_uri(state: &RwLock<State>, uri: &Uri, text: &str) {
+    wait_for_initial_scan(state).await;
+
     let Some(path) = uri_to_path(uri) else {
         return;
     };
@@ -213,6 +218,8 @@ async fn touch_entry_file_revision_for_uri(state: &RwLock<State>, uri: &Uri, tex
 }
 
 async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
+    wait_for_initial_scan(state).await;
+
     let text = {
         let read = state.read().await;
         read.docs

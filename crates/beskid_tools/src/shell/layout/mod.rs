@@ -6,6 +6,7 @@ mod emit;
 pub mod load;
 mod lower;
 mod model;
+pub mod overlays;
 pub mod pages;
 mod parse;
 pub mod resolve;
@@ -17,7 +18,7 @@ pub use editor::{
 pub use editor_overlay::{LayoutEditorOverlay, LayoutOverlayAction};
 pub use model::{BoardNode, BoardV2Doc, NodeKind};
 pub use pages::{PagesDoc, switch_page, EMBEDDED_HI_PAGES};
-pub use parse::EMBEDDED_HI_V2;
+pub use parse::{parse_v2, EMBEDDED_HI_V2};
 pub use resolve::ResolvedPanels;
 pub use templates::{LayoutTemplate, LAYOUT_TEMPLATES, template_by_id};
 

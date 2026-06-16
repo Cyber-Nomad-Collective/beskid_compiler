@@ -1,22 +1,16 @@
 //! Draw the Beskid shell using ratatui layout and shell overlay chrome.
 
 use ratatui::Frame;
-use crate::shell::primitives::HotkeyItem;
 
-use crate::tui::layout::{
-    overlay_rect_for, resolve_shell_layout, OVERLAY_COMPILE_DEBUG, OVERLAY_PCKG,
-    OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS, PANEL_DETAIL, PANEL_FOOTER, PANEL_LOG, PANEL_STAGE,
-};
 use crate::shell::chrome::ShellChrome;
-use crate::shell::key_bindings::ShortcutBindings;
-use crate::shell::top_menu::ShellTopMenu;
 use crate::shell::hotkeys::ShellHotkeys;
-use crate::tui::overlay_chrome::{draw_backdrop, hotkey, render_overlay_panel};
-use crate::tui::screens::{
-    compile_debug_overlay, pckg_overlay, pipeline_compile, summary_overlay, templates_overlay,
-    tests_overlay,
+use crate::shell::key_bindings::ShortcutBindings;
+use crate::shell::overlay_render::{render_panel_overlays, OverlayRenderContext};
+use crate::shell::shortcut_clicks::ShortcutClickTargets;
+use crate::tui::layout::{
+    resolve_shell_layout, PANEL_DETAIL, PANEL_FOOTER, PANEL_LOG, PANEL_STAGE,
 };
-use crate::tui::shell::focus::OverlayKind;
+use crate::tui::screens::pipeline_compile;
 use crate::tui::shell::state::ShellState;
 
 pub fn draw_shell(frame: &mut Frame, state: &mut ShellState) {
@@ -24,25 +18,18 @@ pub fn draw_shell(frame: &mut Frame, state: &mut ShellState) {
     let rects = resolve_shell_layout(area);
     state.layout_rects = rects;
 
-    let mut top_menu = ShellTopMenu::new();
     let bindings = ShortcutBindings::platform_defaults();
-    ShellChrome::default().render_pinned_top_bar(
-        rects.header,
-        frame,
-        &crate::shell::scope::ShellScope::resolve(
-            &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
-        ),
-        "Pipeline",
-        state,
-        &mut top_menu,
-        &bindings,
+    let scope = crate::shell::scope::ShellScope::resolve(
+        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
     );
+    ShellChrome::default().render_pinned_top_bar(rects.header, frame, &scope);
     pipeline_compile::render_panel(PANEL_STAGE, rects.stage, frame, state);
     pipeline_compile::render_panel(PANEL_DETAIL, rects.detail, frame, state);
     pipeline_compile::render_panel(PANEL_LOG, rects.log, frame, state);
     pipeline_compile::render_panel(PANEL_FOOTER, rects.footer, frame, state);
 
-    let hotkeys = ShellHotkeys::default();
+    let hotkeys = ShellHotkeys::from_bindings(&bindings);
+    let mut click_targets = ShortcutClickTargets::default();
     ShellChrome::default().render_footer(
         rects.chrome,
         frame,
@@ -50,131 +37,12 @@ pub fn draw_shell(frame: &mut Frame, state: &mut ShellState) {
         crate::shell::control_mode::HiControlMode::Normal,
         None,
         false,
+        &mut click_targets,
     );
 
-    let any_overlay = OverlayKind::ALL.iter().any(|kind| state.overlay_visible(*kind));
-    if any_overlay {
-        draw_backdrop(frame, area);
-    }
-
-    if state.overlay_visible(OverlayKind::Tests) {
-        let overlay = overlay_rect_for(OVERLAY_TESTS, area);
-        state.layout_rects.tests_overlay = Some(overlay);
-        let title = tests_title(state);
-        render_overlay_panel(
-            frame,
-            overlay,
-            &title,
-            &tests_hotkeys(state),
-            |body, frame| tests_overlay::render(body, frame, state),
-        );
-    }
-    if state.overlay_visible(OverlayKind::Summary) {
-        let overlay = overlay_rect_for(OVERLAY_SUMMARY, area);
-        state.layout_rects.summary_overlay = Some(overlay);
-        render_overlay_panel(
-            frame,
-            overlay,
-            "Run summary",
-            &summary_hotkeys(),
-            |body, frame| summary_overlay::render(body, frame, state),
-        );
-    }
-    if state.overlay_visible(OverlayKind::Pckg) {
-        let overlay = overlay_rect_for(OVERLAY_PCKG, area);
-        state.layout_rects.pckg_overlay = Some(overlay);
-        render_overlay_panel(
-            frame,
-            overlay,
-            "pckg registry",
-            &pckg_hotkeys(),
-            |body, frame| pckg_overlay::render(body, frame, state),
-        );
-    }
-    if state.overlay_visible(OverlayKind::Templates) {
-        let overlay = overlay_rect_for(OVERLAY_TEMPLATES, area);
-        state.layout_rects.templates_overlay = Some(overlay);
-        render_overlay_panel(
-            frame,
-            overlay,
-            templates_title(state),
-            &templates_hotkeys(state),
-            |body, frame| templates_overlay::render(body, frame, state),
-        );
-    }
-    if state.overlay_visible(OverlayKind::CompileDebug) {
-        let overlay = overlay_rect_for(OVERLAY_COMPILE_DEBUG, area);
-        state.layout_rects.compile_debug_overlay = Some(overlay);
-        render_overlay_panel(
-            frame,
-            overlay,
-            "Compile debugger",
-            &simple_overlay_hotkeys(),
-            |body, frame| compile_debug_overlay::render(body, frame, state),
-        );
-    }
-}
-
-fn simple_overlay_hotkeys() -> Vec<HotkeyItem> {
-    vec![hotkey("q", "close")]
-}
-
-fn tests_title(state: &ShellState) -> String {
-    state
-        .test_title
-        .as_deref()
-        .map(|title| format!("{title} ({})", state.test_rows.len()))
-        .unwrap_or_else(|| format!("Tests ({})", state.test_rows.len()))
-}
-
-fn tests_hotkeys(state: &ShellState) -> Vec<HotkeyItem> {
-    let mut keys = vec![
-        hotkey("q", "close"),
-        hotkey("Tab", "list/code"),
-        hotkey("↑↓", "navigate"),
-    ];
-    if state.navigation_hint().is_some() {
-        keys.push(hotkey("Space", "summary"));
-    }
-    keys
-}
-
-fn summary_hotkeys() -> Vec<HotkeyItem> {
-    vec![
-        hotkey("Space", "exit"),
-        hotkey("q", "close"),
-        hotkey("Tab", "list/code"),
-        hotkey("↑↓", "failed tests"),
-    ]
-}
-
-fn pckg_hotkeys() -> Vec<HotkeyItem> {
-    vec![
-        hotkey("q", "close"),
-        hotkey("r", "refresh"),
-        hotkey("Tab", "list/readme"),
-        hotkey("↑↓", "packages"),
-    ]
-}
-
-fn templates_title(state: &ShellState) -> &'static str {
-    if state.shell_mode == crate::tui::shell::pane_state::ShellMode::ProjectWizard {
-        "New project"
-    } else {
-        "Templates"
-    }
-}
-
-fn templates_hotkeys(state: &ShellState) -> Vec<HotkeyItem> {
-    let mut keys = vec![
-        hotkey("q", "close"),
-        hotkey("Tab", "installed/registry"),
-        hotkey("i", "install"),
-        hotkey("r", "refresh"),
-        hotkey("↑↓", "select"),
-    ];
-    if state.shell_mode == crate::tui::shell::pane_state::ShellMode::ProjectWizard {
-        keys.push(hotkey("Enter", "scaffold"));
-    }
-    keys
+    render_panel_overlays(
+        frame,
+        area,
+        OverlayRenderContext::Pipeline(state),
+    );
 }

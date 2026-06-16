@@ -13,6 +13,7 @@ use crate::shell::input::ShellInput;
 use crate::shell::key_bindings::{
     BINDABLE_ACTIONS, ShortcutBindings, chord_from_key, display_chord,
 };
+use crate::shell::shortcut_clicks::ShortcutClickAction;
 use crate::shell::settings::{
     SettingKind, ToolSettingsRegistry, ToolsConfig, get_value, load_config, save_config,
     save_path_for_scope, set_value,
@@ -281,6 +282,14 @@ impl BeskidWidget for SettingsWidget {
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
         let mut state = self.state.borrow_mut();
         state.ensure_loaded(ctx);
+        if let Some(index) = ctx.pending_shortcut_rebind.take()
+            && index < BINDABLE_ACTIONS.len()
+        {
+            state.rebinding_action = Some(index);
+            state.focused_field = index;
+            let label = BINDABLE_ACTIONS[index].label;
+            state.status = Some(format!("Press a key to bind {label} (Esc cancel)"));
+        }
 
         let page = state
             .registry
@@ -309,7 +318,7 @@ impl BeskidWidget for SettingsWidget {
 
         if state.is_shortcuts_page() {
             lines.push(Line::from(Span::styled(
-                "Tab — switch page   ↑↓ — select   Enter — rebind   s — save   r — reset defaults",
+                "Tab — switch page   ↑↓ — select   Enter/click — rebind   s — save   r — reset defaults",
                 Style::default().fg(Color::DarkGray),
             )));
         } else {
@@ -320,16 +329,20 @@ impl BeskidWidget for SettingsWidget {
         }
         lines.push(Line::from(""));
 
+        let mut shortcut_click_rows: Vec<(u16, usize)> = Vec::new();
+        let mut line_row: u16 = 0;
+
         if state.is_shortcuts_page() {
             for (idx, action) in BINDABLE_ACTIONS.iter().enumerate() {
                 let focused = idx == state.focused_field;
+                shortcut_click_rows.push((line_row, idx));
                 let prefix = if focused { "> " } else { "  " };
                 let style = if focused {
                     Style::default()
                         .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
                 } else {
-                    Style::default()
+                    Style::default().add_modifier(Modifier::UNDERLINED)
                 };
                 let binding = state.bindings.label_for(action.id);
                 lines.push(Line::from(vec![
@@ -337,11 +350,13 @@ impl BeskidWidget for SettingsWidget {
                     Span::styled(format!("{:<22}", action.label), style),
                     Span::styled(binding, style),
                 ]));
+                line_row += 1;
                 if focused {
                     lines.push(Line::from(Span::styled(
                         format!("    {}", action.description),
                         Style::default().fg(Color::DarkGray),
                     )));
+                    line_row += 1;
                 }
             }
         } else {
@@ -414,5 +429,21 @@ impl BeskidWidget for SettingsWidget {
             ),
             area,
         );
+
+        if state.is_shortcuts_page() {
+            let content = Rect {
+                x: area.x.saturating_add(1),
+                y: area.y.saturating_add(1),
+                width: area.width.saturating_sub(2),
+                height: area.height.saturating_sub(2),
+            };
+            for (row, index) in shortcut_click_rows {
+                ctx.shortcut_clicks.add_row(
+                    content,
+                    row,
+                    ShortcutClickAction::RebindShortcut(index),
+                );
+            }
+        }
     }
 }

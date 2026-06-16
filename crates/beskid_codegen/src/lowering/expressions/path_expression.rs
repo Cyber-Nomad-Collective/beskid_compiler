@@ -8,6 +8,7 @@ use crate::lowering::types::{is_fiber_handle_type, map_type_id_to_clif, pointer_
 use beskid_analysis::hir::HirPathExpression;
 use beskid_analysis::resolve::ResolvedValue;
 use beskid_analysis::syntax::Spanned;
+use beskid_analysis::types::path_value::field_type_on_receiver;
 use cranelift_codegen::ir::{InstBuilder, MemFlags, Value};
 
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
@@ -51,58 +52,66 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                 let mut value = ctx.builder.use_var(var);
                 if segments.len() == 1 {
                     let field_name = segments[0].node.name.node.name.as_str();
-                    if let Some(current_type) = local_type_id(ctx.type_result, ctx.state, local_id)
-                        && let Some(item_id) = struct_item_id(ctx.type_result, current_type)
-                        && let Some(offsets) = struct_field_offsets(ctx.type_result, item_id)
-                    {
-                        if let Some(offset) = offsets.get(field_name) {
-                            if field_name == "handle"
-                                && is_fiber_handle_type(
-                                    ctx.type_result,
-                                    ctx.resolution,
-                                    current_type,
-                                )
-                            {
-                                return Ok(Some(value));
-                            }
-                            let field_type = ctx
-                                .type_result
-                                .struct_fields_ordered
-                                .get(&item_id)
-                                .and_then(|fields| {
-                                    fields
-                                        .iter()
-                                        .find(|(name, _)| name == field_name)
-                                        .map(|(_, ty)| *ty)
-                                })
-                                .ok_or(CodegenError::UnsupportedNode {
-                                    span: node.node.path.span,
-                                    node: "member field type",
-                                })?;
-                            let clif_ty = map_type_id_to_clif(ctx.type_result, field_type).ok_or(
-                                CodegenError::UnsupportedNode {
-                                    span: node.node.path.span,
-                                    node: "member field clif type",
-                                },
-                            )?;
-                            let offset_val =
-                                ctx.builder.ins().iconst(pointer_type(), *offset as i64);
-                            let addr = ctx.builder.ins().iadd(value, offset_val);
-                            value = ctx.builder.ins().load(clif_ty, MemFlags::new(), addr, 0);
-                            return Ok(Some(value));
-                        }
+                    if let Some(current_type) = local_type_id(ctx.type_result, ctx.state, local_id) {
                         let local_name = ctx
                             .resolution
                             .tables
                             .local_info(local_id)
                             .map(|info| info.name.as_str())
                             .unwrap_or("");
-                        if field_name != local_name {
-                            return Err(CodegenError::UnsupportedNode {
-                                span: node.node.path.span,
-                                node: "member field offset",
-                            });
+                        if field_name == local_name {
+                            return Ok(Some(value));
                         }
+                        let env = ctx.type_result.path_env();
+                        let Some(field_type) = field_type_on_receiver(
+                            ctx.resolution,
+                            &env,
+                            current_type,
+                            field_name,
+                            ctx.codegen.current_source_path.as_ref(),
+                        ) else {
+                            return Ok(Some(value));
+                        };
+                        let item_id =
+                            struct_item_id(ctx.type_result, current_type).ok_or(
+                                CodegenError::UnsupportedNode {
+                                    span: node.node.path.span,
+                                    node: "member target type",
+                                },
+                            )?;
+                        let offsets = struct_field_offsets(
+                            ctx.resolution,
+                            ctx.type_result,
+                            item_id,
+                            ctx.codegen.current_source_path.as_ref(),
+                        )
+                        .ok_or(CodegenError::UnsupportedNode {
+                            span: node.node.path.span,
+                            node: "member offsets",
+                        })?;
+                        let offset = offsets
+                            .get(field_name)
+                            .copied()
+                            .ok_or(CodegenError::UnsupportedNode {
+                                span: node.node.path.span,
+                                node: "member offset",
+                            })?;
+                        if field_name == "handle"
+                            && is_fiber_handle_type(ctx.type_result, ctx.resolution, current_type)
+                        {
+                            return Ok(Some(value));
+                        }
+                        let clif_ty = map_type_id_to_clif(ctx.type_result, field_type).ok_or(
+                            CodegenError::UnsupportedNode {
+                                span: node.node.path.span,
+                                node: "member field clif type",
+                            },
+                        )?;
+                        let offset_val =
+                            ctx.builder.ins().iconst(pointer_type(), offset as i64);
+                        let addr = ctx.builder.ins().iadd(value, offset_val);
+                        value = ctx.builder.ins().load(clif_ty, MemFlags::new(), addr, 0);
+                        return Ok(Some(value));
                     }
                     return Ok(Some(value));
                 }
@@ -118,7 +127,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                             node: "member target type",
                         },
                     )?;
-                    let offsets = struct_field_offsets(ctx.type_result, item_id).ok_or(
+                    let offsets = struct_field_offsets(
+                        ctx.resolution,
+                        ctx.type_result,
+                        item_id,
+                        ctx.codegen.current_source_path.as_ref(),
+                    )
+                    .ok_or(
                         CodegenError::UnsupportedNode {
                             span: segment.span,
                             node: "member offsets",

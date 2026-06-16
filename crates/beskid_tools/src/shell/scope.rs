@@ -115,7 +115,7 @@ impl ShellScope {
     }
 
     /// Shared empty-state copy when compiler panels need an open scope.
-    pub fn no_project_lines() -> Vec<Line<'static>> {
+    pub fn no_project_lines(palette_hint: &str) -> Vec<Line<'static>> {
         vec![
             Line::from(Span::styled(
                 "No project or workspace is open.",
@@ -125,10 +125,7 @@ impl ShellScope {
             Line::from("Open a `.bws` or `.bproj` manifest, or run from a directory that contains one."),
             Line::from(""),
             Line::from(vec![
-                Span::styled(
-                    super::platform_shortcuts::palette_hint(),
-                    Style::default().fg(Color::Cyan),
-                ),
+                Span::styled(palette_hint.to_string(), Style::default().fg(Color::Cyan)),
                 Span::raw("  Open workspace / Open project"),
             ]),
         ]
@@ -138,6 +135,23 @@ impl ShellScope {
         match self {
             Self::User => None,
             Self::Project { root, .. } | Self::Workspace { root, .. } => Some(root.as_path()),
+        }
+    }
+
+    pub fn manifest_path(&self) -> Option<&Path> {
+        match self {
+            Self::User => None,
+            Self::Project { manifest, .. } | Self::Workspace { manifest, .. } => {
+                Some(manifest.as_path())
+            }
+        }
+    }
+
+    /// Append `--project <manifest>` when a workspace or project scope is open.
+    pub fn append_project_argv(&self, argv: &mut Vec<String>) {
+        if let Some(manifest) = self.manifest_path() {
+            argv.push("--project".into());
+            argv.push(manifest.display().to_string());
         }
     }
 

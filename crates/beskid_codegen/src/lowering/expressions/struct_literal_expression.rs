@@ -8,6 +8,7 @@ use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use crate::module_emission::descriptor_symbol_name;
 use beskid_analysis::hir::HirStructLiteralExpression;
 use beskid_analysis::syntax::Spanned;
+use crate::lowering::memory::store_typed_value;
 use cranelift_codegen::ir::{
     AbiParam, ExternalName, GlobalValueData, InstBuilder, MemFlags, Signature, Value,
 };
@@ -40,7 +41,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
                 node: "struct literal layout",
             },
         )?;
-        let offsets = struct_field_offsets(ctx.type_result, item_id).ok_or(
+        let offsets = struct_field_offsets(
+            ctx.resolution,
+            ctx.type_result,
+            item_id,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .ok_or(
             CodegenError::UnsupportedNode {
                 span: node.span,
                 node: "struct literal offsets",
@@ -106,9 +113,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
                     node: "struct literal field clif type",
                 },
             )?;
-            ctx.builder
-                .ins()
-                .store(MemFlags::new(), value, field_addr, 0);
+            store_typed_value(
+                ctx.builder,
+                _store_ty,
+                value,
+                field_addr,
+                MemFlags::new(),
+            );
         }
 
         Ok(Some(alloc_ptr))

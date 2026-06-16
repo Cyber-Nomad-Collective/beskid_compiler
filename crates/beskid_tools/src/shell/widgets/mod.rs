@@ -22,7 +22,7 @@ pub use compile_debug::{
     draw_compile_debug_panel, open_compile_debug, CompileDebugTab, CompileDebugWidget,
 };
 pub use debug_stub::DebugFutureWidget;
-pub use graph::{GraphCompileWidget, GraphWidget};
+pub use graph::{draw_graph_deps_panel, GraphCompileWidget, GraphWidget};
 pub use hi_welcome::HiWelcomeWidget;
 pub use log::LogWidget;
 pub use pckg::PckgWidget;

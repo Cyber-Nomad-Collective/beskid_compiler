@@ -109,7 +109,12 @@ pub fn draw_compile_debug_panel(
             .block(toolbar_block("Compile debugger"))
             .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(tabs, tabs_area);
-        frame.render_widget(Paragraph::new(ShellScope::no_project_lines()), body);
+        frame.render_widget(
+            Paragraph::new(ShellScope::no_project_lines(
+                &crate::shell::key_bindings::ShortcutBindings::platform_defaults().palette_hint(),
+            )),
+            body,
+        );
         return;
     }
 

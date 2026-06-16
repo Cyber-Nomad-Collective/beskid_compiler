@@ -37,11 +37,18 @@ pub i64 Main() { return __str_len(Repeat("-", 4)); }
 "#;
     let lowered =
         beskid_codegen::lower_source(Path::new("repeat.bd"), source, false).expect("lower");
+    let main_symbol = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|f| f.name.starts_with("Main#"))
+        .map(|f| f.name.as_str())
+        .expect("main function");
     let mut engine = Engine::new();
     engine
         .compile_artifact(&lowered.artifact)
         .expect("jit compile");
-    let ptr = unsafe { engine.entrypoint_ptr("Main") }.expect("main ptr");
+    let ptr = unsafe { engine.entrypoint_ptr(main_symbol) }.expect("main ptr");
     let len = engine.with_runtime(|_, _| {
         let main: extern "C" fn() -> i64 = unsafe { std::mem::transmute(ptr) };
         main()

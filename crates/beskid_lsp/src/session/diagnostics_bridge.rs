@@ -8,6 +8,7 @@ use beskid_analysis::services::DocumentAnalysisSnapshot;
 
 use crate::diagnostics::analyze_document;
 use crate::session::db_access::with_compilation_db_mut_state;
+use crate::session::startup::wait_for_initial_scan;
 use crate::session::store::State;
 
 pub async fn analyze_document_for_state(
@@ -17,6 +18,8 @@ pub async fn analyze_document_for_state(
     cached: Option<&DocumentAnalysisSnapshot>,
     compilation_context: Option<&CompilationContext>,
 ) -> Vec<tower_lsp_server::ls_types::Diagnostic> {
+    wait_for_initial_scan(state).await;
+
     with_compilation_db_mut_state(state, |db, write| {
         if let Some(ctx) = compilation_context
             && let Some(plan) = ctx.compile_plan.as_ref()

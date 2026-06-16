@@ -646,13 +646,18 @@ fn map_path_type(
                 .map(|s| s.ident.to_string())
                 .collect::<Vec<_>>()
                 .join("::");
-            if fq.contains("LeadingDocComment") || fq.contains("SpanInfo") {
+            if fq.contains("LeadingDocComment") {
                 return TypeMirror {
                     beskid_ty: stub_path.into(),
                     stub_note: Some(
-                        "LeadingDocComment / SpanInfo are host-only and not modeled as syntax nodes"
-                            .into(),
+                        "LeadingDocComment is host-only and not modeled as a syntax node".into(),
                     ),
+                };
+            }
+            if fq.contains("SpanInfo") {
+                return TypeMirror {
+                    beskid_ty: format!("{}.NodeSpan", SYNTAX_NODES_MODULE_PREFIX),
+                    stub_note: None,
                 };
             }
             TypeMirror {

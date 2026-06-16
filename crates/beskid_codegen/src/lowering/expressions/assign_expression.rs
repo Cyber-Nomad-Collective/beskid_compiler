@@ -5,6 +5,7 @@ use crate::lowering::dispatch::lower_dispatch_builtin_call;
 use crate::lowering::locals::{local_type_id, resolved_value_at};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
+use crate::lowering::memory::store_typed_value;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_abi::dispatch_route_for_symbol;
 use beskid_analysis::hir::{HirAssignExpression, HirAssignOp, HirExpressionNode, HirPrimitiveType};
@@ -48,9 +49,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
             HirAssignOp::Assign => match target.kind {
                 AssignTargetKind::Local { .. } => value,
                 AssignTargetKind::EventMember { field_addr, .. } => {
-                    ctx.builder
-                        .ins()
-                        .store(MemFlags::new(), value, field_addr, 0);
+                    store_typed_value(
+                        ctx.builder,
+                        pointer_type(),
+                        value,
+                        field_addr,
+                        MemFlags::new(),
+                    );
                     value
                 }
                 AssignTargetKind::IndexElement {
@@ -388,7 +393,13 @@ fn load_path_field_chain(
                 span: segment.span,
                 node: "member target type",
             })?;
-        let offsets = struct_field_offsets(ctx.type_result, item_id).ok_or(
+        let offsets = struct_field_offsets(
+            ctx.resolution,
+            ctx.type_result,
+            item_id,
+            ctx.codegen.current_source_path.as_ref(),
+        )
+        .ok_or(
             CodegenError::UnsupportedNode {
                 span: segment.span,
                 node: "member offsets",
@@ -442,8 +453,13 @@ fn resolve_event_member_target(
             });
         }
     };
-    let offsets =
-        struct_field_offsets(ctx.type_result, item_id).ok_or(CodegenError::UnsupportedNode {
+    let offsets = struct_field_offsets(
+        ctx.resolution,
+        ctx.type_result,
+        item_id,
+        ctx.codegen.current_source_path.as_ref(),
+    )
+    .ok_or(CodegenError::UnsupportedNode {
             span,
             node: "event assignment offsets",
         })?;
@@ -580,7 +596,12 @@ fn store_at_index(
         call_write_barrier(ctx, array_handle, value);
     }
 
-    ctx.builder.ins().store(MemFlags::new(), value, addr, 0);
+    let clif_ty =
+        map_type_id_to_clif(ctx.type_result, elem_type).ok_or(CodegenError::UnsupportedNode {
+            span,
+            node: "array element clif type for index store",
+        })?;
+    store_typed_value(ctx.builder, clif_ty, value, addr, MemFlags::new());
 
     Ok(())
 }

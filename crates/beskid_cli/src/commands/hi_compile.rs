@@ -54,11 +54,70 @@ fn parse_test_args(params: &str, scope: &ShellScope) -> Result<TestArgs> {
 fn argv_for_subcommand(subcmd: &str, params: &str, scope: &ShellScope) -> Vec<String> {
     let mut argv = vec!["beskid".to_string(), subcmd.to_string()];
     if params.trim().is_empty() {
-        if let Some(root) = scope.root_dir() {
-            argv.push(root.display().to_string());
-        }
+        scope.append_project_argv(&mut argv);
     } else {
         argv.extend(params.split_whitespace().map(str::to_string));
     }
     argv
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::mpsc;
+
+    use beskid_tools::pipeline::PipelineProgressKind;
+    use beskid_tools::session::{CommandSession, ResolveInputArgs};
+
+    use super::*;
+
+    #[test]
+    fn argv_for_build_with_scope_uses_project_flag() {
+        let scope = ShellScope::Project {
+            root: PathBuf::from("/tmp/myproj"),
+            manifest: PathBuf::from("/tmp/myproj/app.bproj"),
+        };
+        let argv = argv_for_subcommand("build", "", &scope);
+        assert!(argv.windows(2).any(|w| w == ["--project", "/tmp/myproj/app.bproj"]));
+        assert!(!argv.iter().any(|a| a == "/tmp/myproj"));
+    }
+
+    #[test]
+    fn hi_compile_corelib_mvp_resolve_uses_entry_file() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let manifest = manifest_dir.join("../beskid_e2e_tests/fixtures/corelib_mvp/CorelibMvp.bproj");
+        if !manifest.is_file() {
+            eprintln!("skip hi_compile_corelib_mvp_resolve_uses_entry_file: {manifest:?} missing");
+            return;
+        }
+        let root = manifest.parent().expect("fixture root").to_path_buf();
+        let scope = ShellScope::Project {
+            root: root.clone(),
+            manifest: manifest.clone(),
+        };
+        let args = parse_build_args("", &scope).expect("parse build args");
+        let resolve_args = ResolveInputArgs {
+            input: args.input.as_ref(),
+            project: args.project.project.as_ref(),
+            target: args.project.target.as_deref(),
+            workspace_member: args.project.workspace_member.as_deref(),
+            frozen: args.lockfile.frozen,
+            locked: args.lockfile.locked,
+        };
+        let (tx, _rx) = mpsc::channel();
+        let session = CommandSession::with_attached_pipeline(tx, PipelineProgressKind::FullBuild);
+        let resolved = session.resolve_input(&resolve_args).expect("resolve");
+        assert!(
+            resolved.source_path.is_file(),
+            "expected entry file, got {}",
+            resolved.source_path.display()
+        );
+        assert!(
+            !resolved
+                .source_path
+                .to_string_lossy()
+                .contains("Failed to read file"),
+            "resolve should not treat workspace root as source"
+        );
+    }
 }

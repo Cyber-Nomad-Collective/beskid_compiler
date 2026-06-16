@@ -26,6 +26,7 @@
 /// @variant(MacroMetavariable) tuple (payload: Beskid.Syntax.Nodes.MacroMetavariable)
 /// @variant(Index) tuple (payload: Beskid.Syntax.Nodes.IndexExpression)
 /// @variant(ArrayLiteral) tuple (payload: Beskid.Syntax.Nodes.ArrayLiteralExpression)
+/// @variant(CodeString) tuple (payload: Beskid.Syntax.Nodes.CodeStringLiteral)
 pub enum Expression
 {
     /// @variant(Match) tuple payload: payload (Beskid.Syntax.Nodes.MatchExpression).
@@ -103,5 +104,9 @@ pub enum Expression
     /// @variant(ArrayLiteral) tuple payload: payload (Beskid.Syntax.Nodes.ArrayLiteralExpression).
     ArrayLiteral(
         Beskid.Syntax.Nodes.ArrayLiteralExpression payload,
+    ),
+    /// @variant(CodeString) tuple payload: payload (Beskid.Syntax.Nodes.CodeStringLiteral).
+    CodeString(
+        Beskid.Syntax.Nodes.CodeStringLiteral payload,
     ),
 }

@@ -23,11 +23,19 @@ pub fn run_entrypoint_with_pipeline(
     entrypoint: &str,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
+    let source_path =
+        beskid_codegen::materialize_source_path_for_lowering(source_path, source)?;
+    let compile_plan = beskid_analysis::services::compile_plan_for_input_path(&source_path)
+        .or_else(|| {
+            Some(beskid_analysis::services::synthetic_compile_plan_for_source(
+                &source_path,
+            ))
+        });
     run_resolved_entrypoint_with_pipeline(
         &ResolvedInput {
-            source_path: source_path.to_path_buf(),
+            source_path,
             source: source.to_string(),
-            compile_plan: beskid_analysis::services::compile_plan_for_input_path(source_path),
+            compile_plan,
             prepared_workspace: None,
             workspace_summary: None,
             assembly: None,
@@ -146,7 +154,7 @@ fn run_jitted_entrypoint(
         })
         .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
 
-    let jit_symbol = entrypoint_info.name.clone();
+    let jit_symbol = beskid_codegen::jit_symbol_for_item(resolution, entrypoint_info.id);
 
     let signature = typed
         .function_signatures

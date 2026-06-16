@@ -27,14 +27,18 @@ use super::hi_compile::{self, HiCompileJob, HiCompileRegistrar, HiCompileRequest
 use super::palette::{self, CommandPaletteState, PaletteAction};
 use super::key_bindings::ShortcutBindings;
 use super::layers::ShellLayer;
+use super::overlay_render::{self, HiOverlayWidgets, OverlayRenderContext};
 use super::registry::WidgetRegistry;
 use super::scope::ShellScope;
 use super::scope_picker::{ScopePickerAction, ScopePickerMode, ScopePickerOverlay, resolve_picked_scope};
 use super::settings::{ToolSettingsRegistrar, ToolSettingsRegistry, load_config};
-use super::widget::{BeskidWidget, ShellAction};
+use super::shortcut_clicks::{ShortcutClickAction, ShortcutClickTargets};
+use super::widget::ShellAction;
 use super::widgets::{self, open_analysis, open_compile_debug, open_pckg, open_tests};
 use crate::tui::input::{InputEvent, InputResult};
-use crate::tui::realm::shell_event::{ShellOutcome, ShellRealmEvent, mouse_is_click, mouse_is_inside};
+use crate::tui::realm::shell_event::{
+    ShellOutcome, ShellRealmEvent, mouse_is_click, mouse_is_inside, mouse_is_move_or_drag,
+};
 use crate::tui::shell::effects::{apply_effects, drain_pending_work};
 use crate::tui::shell::focus::OverlayKind;
 use crate::tui::shell::pane_state::ShellMode;
@@ -108,6 +112,8 @@ pub struct HiShellApp {
     pub layout_editor: LayoutEditorOverlay,
     pub command_dialog: CommandDialogOverlay,
     key_bindings: ShortcutBindings,
+    shortcut_clicks: ShortcutClickTargets,
+    pending_shortcut_rebind: Option<usize>,
     pending_cli: Option<CliRunPlan>,
     pending_compile: Option<HiCompileJob>,
     compile_registrar: Option<HiCompileRegistrar>,
@@ -129,10 +135,10 @@ impl HiShellApp {
     ) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
         let mut scope = scope;
-        if scope.is_user() {
-            if let Ok(cwd) = env::current_dir() {
-                scope = ShellScope::resolve_cwd(&cwd);
-            }
+        if scope.is_user()
+            && let Ok(cwd) = env::current_dir()
+        {
+            scope = ShellScope::resolve_cwd(&cwd);
         }
         let shell_state = ShellState {
             shell_mode: ShellMode::Hi,
@@ -147,9 +153,9 @@ impl HiShellApp {
             .values()
             .find_map(|n| n.widget.clone())
             .unwrap_or_else(|| "hi.welcome".into());
-        let hotkeys = ShellHotkeys::default();
         let config = load_config(&scope, &settings);
         let key_bindings = ShortcutBindings::load(&config, &settings);
+        let hotkeys = ShellHotkeys::from_bindings(&key_bindings);
         let mut top_menu = ShellTopMenu::new();
         top_menu.rebuild(&nav, &layout.pages);
         Self {
@@ -170,6 +176,8 @@ impl HiShellApp {
             layout_editor: LayoutEditorOverlay::default(),
             command_dialog: CommandDialogOverlay::default(),
             key_bindings,
+            shortcut_clicks: ShortcutClickTargets::default(),
+            pending_shortcut_rebind: None,
             pending_cli: None,
             pending_compile: None,
             compile_registrar,
@@ -203,7 +211,169 @@ impl HiShellApp {
     }
 
     fn sync_hotkey_scope(&mut self) {
+        self.hotkeys.rebuild_from_bindings(&self.key_bindings);
         self.hotkeys.set_control_mode(self.control_mode());
+    }
+
+    fn layer_is_active(&self, layer: ShellLayer) -> bool {
+        match layer {
+            ShellLayer::TopMenuDropdown => {
+                self.top_menu.dropdown_open() || self.top_menu.is_active()
+            }
+            ShellLayer::CommandDialog => self.command_dialog.visible,
+            ShellLayer::Palette => self.palette.visible,
+            ShellLayer::ScopePicker => self.scope_picker.is_some(),
+            ShellLayer::LayoutEditor => self.layout.editor.active,
+            ShellLayer::PanelOverlay => {
+                self.shell_state.focus.is_overlay() || self.shell_state.any_overlay_visible()
+            }
+            ShellLayer::Help => self.chrome.show_help,
+            ShellLayer::Base => false,
+        }
+    }
+
+    fn layer_blocks_mouse(&self, layer: ShellLayer) -> bool {
+        match layer {
+            ShellLayer::TopMenuDropdown => self.top_menu.dropdown_open(),
+            other => self.layer_is_active(other),
+        }
+    }
+
+    fn top_input_layer(&self) -> Option<ShellLayer> {
+        ShellLayer::INPUT_PRIORITY
+            .iter()
+            .copied()
+            .find(|layer| self.layer_is_active(*layer))
+    }
+
+    fn top_mouse_layer(&self) -> Option<ShellLayer> {
+        ShellLayer::INPUT_PRIORITY
+            .iter()
+            .copied()
+            .find(|layer| self.layer_blocks_mouse(*layer))
+    }
+
+    fn handle_modal_mouse(&mut self, mouse: &MouseEvent) -> Option<ShellOutcome> {
+        match self.top_mouse_layer()? {
+            ShellLayer::TopMenuDropdown => {
+                let action = self.top_menu.handle_mouse(mouse.column, mouse.row);
+                if action != TopMenuAction::None {
+                    self.handle_top_menu_action(action);
+                }
+                Some(ShellOutcome::Redraw)
+            }
+            ShellLayer::CommandDialog
+            | ShellLayer::Palette
+            | ShellLayer::ScopePicker
+            | ShellLayer::PanelOverlay => Some(ShellOutcome::Redraw),
+            ShellLayer::LayoutEditor | ShellLayer::Help | ShellLayer::Base => None,
+        }
+    }
+
+    fn modal_mouse_outcome(&self, mouse: &MouseEvent) -> Option<ShellOutcome> {
+        if mouse_is_move_or_drag(mouse) {
+            None
+        } else {
+            Some(ShellOutcome::Redraw)
+        }
+    }
+
+    fn handle_modal_input(&mut self, event: &ShellRealmEvent) -> Option<ShellOutcome> {
+        let layer = self.top_input_layer()?;
+        match layer {
+            ShellLayer::TopMenuDropdown => match event {
+                ShellRealmEvent::Input(InputEvent::Key(key)) => {
+                    if let Some(action) = self.handle_global_key(*key) {
+                        return Some(action);
+                    }
+                    let menu_action = self.top_menu.handle_key(*key, &self.key_bindings);
+                    self.handle_top_menu_action(menu_action);
+                    Some(ShellOutcome::Redraw)
+                }
+                ShellRealmEvent::Input(InputEvent::Mouse(mouse)) => {
+                    self.modal_mouse_outcome(mouse)
+                }
+                _ => None,
+            },
+            ShellLayer::CommandDialog => match event {
+                ShellRealmEvent::Input(InputEvent::Key(key)) => {
+                    Some(self.handle_command_dialog_key(*key))
+                }
+                ShellRealmEvent::Input(InputEvent::Mouse(mouse)) => {
+                    self.modal_mouse_outcome(mouse)
+                }
+                _ => Some(ShellOutcome::Redraw),
+            },
+            ShellLayer::Palette => match event {
+                ShellRealmEvent::Input(InputEvent::Key(key)) => {
+                    let action = self.palette.handle_key(*key);
+                    self.handle_palette_action(action);
+                    Some(ShellOutcome::Redraw)
+                }
+                ShellRealmEvent::Input(InputEvent::Mouse(mouse)) => {
+                    self.modal_mouse_outcome(mouse)
+                }
+                _ => Some(ShellOutcome::Redraw),
+            },
+            ShellLayer::ScopePicker => {
+                let picker = self.scope_picker.as_mut()?;
+                match event {
+                    ShellRealmEvent::Input(InputEvent::Key(key)) => {
+                        match picker.handle_key(*key) {
+                            ScopePickerAction::Close => self.scope_picker = None,
+                            ScopePickerAction::Redraw => {}
+                            ScopePickerAction::Selected(path) => {
+                                let scope = resolve_picked_scope(&path);
+                                self.reload_scope(scope);
+                                self.scope_picker = None;
+                            }
+                        }
+                        Some(ShellOutcome::Redraw)
+                    }
+                    ShellRealmEvent::Input(InputEvent::Mouse(mouse)) => {
+                        self.modal_mouse_outcome(mouse)
+                    }
+                    _ => Some(ShellOutcome::Redraw),
+                }
+            }
+            ShellLayer::LayoutEditor => {
+                let ShellRealmEvent::Input(InputEvent::Key(key)) = event else {
+                    return None;
+                };
+                if let Some(action) = self.handle_global_key(*key) {
+                    return Some(action);
+                }
+                if self.layout.editor.drawer_visible {
+                    let overlay_action = self.layout_editor.handle_key(
+                        *key,
+                        &mut self.layout.editor,
+                        &self.layout.doc,
+                    );
+                    self.handle_layout_overlay_action(overlay_action);
+                } else {
+                    match key.code {
+                        KeyCode::Tab | KeyCode::Down => {
+                            let _ = self.layout.apply_command(
+                                LayoutEditCommand::FocusNext,
+                                &self.scope,
+                                None,
+                            );
+                        }
+                        KeyCode::BackTab | KeyCode::Up => {
+                            let _ = self.layout.apply_command(
+                                LayoutEditCommand::FocusPrev,
+                                &self.scope,
+                                None,
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+                Some(ShellOutcome::Redraw)
+            }
+            ShellLayer::PanelOverlay => Some(self.route_overlay_input(event.clone())),
+            ShellLayer::Help | ShellLayer::Base => None,
+        }
     }
 
     fn toggle_layout_drawer(&mut self) {
@@ -229,20 +399,12 @@ impl HiShellApp {
             return ShellOutcome::Continue;
         }
 
-        if self.top_menu.dropdown_open() {
-            let action = self.top_menu.handle_mouse(mouse.column, mouse.row);
-            if action != TopMenuAction::None {
-                self.handle_top_menu_action(action);
-            }
-            return ShellOutcome::Redraw;
+        if let Some(outcome) = self.handle_modal_mouse(mouse) {
+            return outcome;
         }
 
-        if self.command_dialog.visible || self.palette.visible {
-            return ShellOutcome::Redraw;
-        }
-
-        if self.scope_picker.is_some() {
-            return ShellOutcome::Redraw;
+        if let Some(action) = self.shortcut_clicks.hit(mouse.column, mouse.row) {
+            return self.dispatch_shortcut_click(action);
         }
 
         if mouse_is_click(mouse)
@@ -304,18 +466,49 @@ impl HiShellApp {
             &self.focused_widget,
             &self.beskid_exe,
             &mut self.key_bindings,
+            &mut self.shortcut_clicks,
+            &mut self.pending_shortcut_rebind,
         )
     }
 
-    fn drain_messages(&mut self) {
+    fn dispatch_shortcut_click(&mut self, action: ShortcutClickAction) -> ShellOutcome {
+        match action {
+            ShortcutClickAction::OpenPalette => {
+                self.open_palette();
+                ShellOutcome::Redraw
+            }
+            ShortcutClickAction::ToggleMenu => {
+                let action = self.top_menu.toggle_focus();
+                self.handle_top_menu_action(action);
+                ShellOutcome::Redraw
+            }
+            ShortcutClickAction::ToggleHelp => {
+                self.chrome.show_help = !self.chrome.show_help;
+                ShellOutcome::Redraw
+            }
+            ShortcutClickAction::Quit => {
+                self.quit_requested = true;
+                ShellOutcome::Quit
+            }
+            ShortcutClickAction::RebindShortcut(index) => {
+                self.pending_shortcut_rebind = Some(index);
+                ShellOutcome::Redraw
+            }
+        }
+    }
+
+    fn drain_messages(&mut self) -> bool {
+        let mut changed = false;
         while let Ok(op) = self.msg_rx.try_recv() {
             if let RuntimeOp::Update(msg) = op {
                 let effects = views::update(&msg, &mut self.shell_state);
                 apply_effects(effects, &self.msg_tx, &mut self.shell_state);
+                changed = true;
             }
         }
         drain_pending_work(&self.msg_tx, &mut self.shell_state);
         let _ = self.layout.maybe_autosave(&self.scope);
+        changed
     }
 
     fn open_palette(&mut self) {
@@ -722,6 +915,7 @@ impl HiShellApp {
                 .unwrap_or_else(|| "hi.welcome".into());
             let config = load_config(&self.scope, &self.settings);
             self.key_bindings = ShortcutBindings::load(&config, &self.settings);
+            self.hotkeys.rebuild_from_bindings(&self.key_bindings);
         }
     }
 
@@ -808,6 +1002,8 @@ impl HiShellApp {
             let focused = &self.focused_widget;
             let beskid_exe = &self.beskid_exe;
             let key_bindings = &mut self.key_bindings;
+            let shortcut_clicks = &mut self.shortcut_clicks;
+            let pending_shortcut_rebind = &mut self.pending_shortcut_rebind;
             if let Some(widget) = self.registry.get_mut(&widget_id) {
                 let mut ctx = WidgetContext::new(
                     scope,
@@ -817,6 +1013,8 @@ impl HiShellApp {
                     focused,
                     beskid_exe,
                     key_bindings,
+                    shortcut_clicks,
+                    pending_shortcut_rebind,
                 );
                 widget.on_input(&super::input::ShellInput::Key(key), &mut ctx)
             } else {
@@ -857,100 +1055,18 @@ impl HiShellApp {
             }
         }
 
-        if self.top_menu.is_active() || self.top_menu.dropdown_open() {
-            if let ShellRealmEvent::Input(InputEvent::Key(key)) = event {
-                if let Some(action) = self.handle_global_key(key) {
-                    return action;
-                }
-                let menu_action = self.top_menu.handle_key(key, &self.key_bindings);
-                self.handle_top_menu_action(menu_action);
-                return ShellOutcome::Redraw;
-            }
-            if let ShellRealmEvent::Input(InputEvent::Mouse(_)) = event {
-                return ShellOutcome::Redraw;
-            }
-        }
-
-        if self.command_dialog.visible {
-            if let ShellRealmEvent::Input(InputEvent::Key(key)) = event {
-                return self.handle_command_dialog_key(key);
-            }
-            return ShellOutcome::Redraw;
-        }
-
-        if self.palette.visible {
-            if let ShellRealmEvent::Input(InputEvent::Key(key)) = event {
-                let action = self.palette.handle_key(key);
-                self.handle_palette_action(action);
-                return ShellOutcome::Redraw;
-            }
-            return ShellOutcome::Redraw;
-        }
-
-        if let Some(picker) = self.scope_picker.as_mut() {
-            if let ShellRealmEvent::Input(InputEvent::Key(key)) = event {
-                match picker.handle_key(key) {
-                    ScopePickerAction::Close => self.scope_picker = None,
-                    ScopePickerAction::Redraw => {}
-                    ScopePickerAction::Selected(path) => {
-                        let scope = resolve_picked_scope(&path);
-                        self.reload_scope(scope);
-                        self.scope_picker = None;
-                    }
-                }
-                return ShellOutcome::Redraw;
-            }
-            return ShellOutcome::Redraw;
+        if let Some(outcome) = self.handle_modal_input(&event) {
+            return outcome;
         }
 
         if let ShellRealmEvent::Input(InputEvent::Key(key)) = &event
+            && self.top_input_layer().is_none()
             && self.key_bindings.toggles_menu(key)
-            && !self.command_dialog.visible
-            && !self.palette.visible
-            && self.scope_picker.is_none()
         {
             let menu_action = self.top_menu.handle_key(*key, &self.key_bindings);
             self.handle_top_menu_action(menu_action);
             return ShellOutcome::Redraw;
         }
-
-        if self.shell_state.focus.is_overlay() || self.shell_state.any_overlay_visible() {
-            return self.route_overlay_input(event);
-        }
-
-        if self.layout.editor.active
-            && let ShellRealmEvent::Input(InputEvent::Key(key)) = event {
-                if let Some(action) = self.handle_global_key(key) {
-                    return action;
-                }
-                if self.layout.editor.drawer_visible {
-                    let overlay_action = self.layout_editor.handle_key(
-                        key,
-                        &mut self.layout.editor,
-                        &self.layout.doc,
-                    );
-                    self.handle_layout_overlay_action(overlay_action);
-                } else {
-                    match key.code {
-                        KeyCode::Tab | KeyCode::Down => {
-                            let _ = self.layout.apply_command(
-                                LayoutEditCommand::FocusNext,
-                                &self.scope,
-                                None,
-                            );
-                        }
-                        KeyCode::BackTab | KeyCode::Up => {
-                            let _ = self.layout.apply_command(
-                                LayoutEditCommand::FocusPrev,
-                                &self.scope,
-                                None,
-                            );
-                        }
-                        _ => {}
-                    }
-                }
-                return ShellOutcome::Redraw;
-            }
 
         match event {
             ShellRealmEvent::Input(InputEvent::Key(key)) => {
@@ -974,8 +1090,12 @@ impl HiShellApp {
                 }
             }
             ShellRealmEvent::Tick => {
-                self.drain_messages();
-                ShellOutcome::Redraw
+                let changed = self.drain_messages();
+                if changed || self.shell_state.pipeline_active() {
+                    ShellOutcome::Redraw
+                } else {
+                    ShellOutcome::Continue
+                }
             }
             ShellRealmEvent::Resize { width, height } => {
                 self.set_frame_area(Rect {
@@ -1016,6 +1136,7 @@ impl HiShellApp {
 
     pub(crate) fn draw_shell(&mut self, frame: &mut Frame) {
         self.drain_messages();
+        self.shortcut_clicks.clear();
         self.shell_state.tick = self.shell_state.tick.wrapping_add(1);
         if self.shell_state.tick.is_multiple_of(40) {
             self.try_refresh_scope();
@@ -1027,7 +1148,7 @@ impl HiShellApp {
         }
         let edit_active = self.layout.editor.active;
         let highlight = self.focused_widget.clone();
-        let page_title = self
+        let _page_title = self
             .layout
             .pages
             .page(&self.layout.active_page_id)
@@ -1035,22 +1156,61 @@ impl HiShellApp {
             .unwrap_or("Beskid Hi");
 
         let control_mode = self.control_mode();
+        let header_h = super::chrome::PINNED_TOP_ROWS.min(area.height);
+        let chrome_h = 1u16.min(area.height.saturating_sub(header_h));
+        let main_h = area.height.saturating_sub(header_h).saturating_sub(chrome_h);
+        let header_area = ratatui::layout::Rect {
+            width: area.width,
+            height: header_h,
+            x: area.x,
+            y: area.y,
+        };
+        let main_area = ratatui::layout::Rect {
+            width: area.width,
+            height: main_h,
+            x: area.x,
+            y: area.y + header_h,
+        };
+        let chrome_area = ratatui::layout::Rect {
+            width: area.width,
+            height: chrome_h,
+            x: area.x,
+            y: area.y + header_h + main_h,
+        };
+
         let resolved = match super::layout::resolve::resolve_panels(&mut self.layout.runtime, area)
         {
             Ok(r) => r,
-            Err(_) => return,
+            Err(message) => {
+                self.pinned_header = header_area;
+                self.chrome
+                    .render_pinned_top_bar(header_area, frame, &self.scope);
+                let error_area = if main_area.width == 0 || main_area.height == 0 {
+                    area
+                } else {
+                    main_area
+                };
+                frame.render_widget(
+                    ratatui::widgets::Paragraph::new(format!("Layout error: {message}"))
+                        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Red)),
+                    error_area,
+                );
+                self.chrome.render_footer(
+                    chrome_area,
+                    frame,
+                    &self.hotkeys,
+                    control_mode,
+                    Some(self.focused_widget.as_str()),
+                    self.layout.editor.drawer_visible,
+                    &mut self.shortcut_clicks,
+                );
+                return;
+            }
         };
 
         self.pinned_header = resolved.header_area;
-        self.chrome.render_pinned_top_bar(
-            resolved.header_area,
-            frame,
-            &self.scope,
-            page_title,
-            &self.shell_state,
-            &mut self.top_menu,
-            &self.key_bindings,
-        );
+        self.chrome
+            .render_pinned_top_bar(resolved.header_area, frame, &self.scope);
 
         for entry in resolved.frame.panels() {
             let rect = entry.rect;
@@ -1058,6 +1218,9 @@ impl HiShellApp {
             if widget_id == "shell.scope" {
                 continue;
             }
+            let key_bindings = &mut self.key_bindings;
+            let shortcut_clicks = &mut self.shortcut_clicks;
+            let pending_shortcut_rebind = &mut self.pending_shortcut_rebind;
             let mut ctx = WidgetContext::new(
                 &self.scope,
                 &self.layout.doc,
@@ -1065,7 +1228,9 @@ impl HiShellApp {
                 &mut self.palette,
                 &self.focused_widget,
                 &self.beskid_exe,
-                &mut self.key_bindings,
+                key_bindings,
+                shortcut_clicks,
+                pending_shortcut_rebind,
             );
             if let Some(widget) = self.registry.get(&widget_id) {
                 widget.render(rect, frame, &mut ctx);
@@ -1082,116 +1247,96 @@ impl HiShellApp {
             control_mode,
             Some(self.focused_widget.as_str()),
             self.layout.editor.drawer_visible,
+            &mut self.shortcut_clicks,
         );
 
-        if self.shell_state.overlay_visible(OverlayKind::Tests) {
-            let overlay =
-                crate::tui::layout::overlay_rect_for(crate::tui::layout::OVERLAY_TESTS, area);
-            self.shell_state.layout_rects.tests_overlay = Some(overlay);
-            crate::tui::screens::tests_overlay::render(overlay, frame, &mut self.shell_state);
-        }
-        if self.shell_state.overlay_visible(OverlayKind::Pckg) {
-            let overlay =
-                crate::tui::layout::overlay_rect_for(crate::tui::layout::OVERLAY_PCKG, area);
-            self.shell_state.layout_rects.pckg_overlay = Some(overlay);
-            crate::tui::screens::pckg_overlay::render(overlay, frame, &mut self.shell_state);
-        }
-        if self.shell_state.overlay_visible(OverlayKind::Templates) {
-            let overlay =
-                crate::tui::layout::overlay_rect_for(crate::tui::layout::OVERLAY_TEMPLATES, area);
-            self.shell_state.layout_rects.templates_overlay = Some(overlay);
-            crate::tui::screens::templates_overlay::render(overlay, frame, &mut self.shell_state);
-        }
-        if self.shell_state.overlay_visible(OverlayKind::CompileDebug) {
-            let overlay = crate::tui::layout::overlay_rect_for(
-                crate::tui::layout::OVERLAY_COMPILE_DEBUG,
-                area,
-            );
-            self.shell_state.layout_rects.compile_debug_overlay = Some(overlay);
-            crate::tui::screens::compile_debug_overlay::render(
-                overlay,
-                frame,
-                &mut self.shell_state,
-            );
-        }
-        if self.shell_state.overlay_visible(OverlayKind::Graph) {
-            let overlay =
-                crate::tui::layout::overlay_rect_for(crate::tui::layout::OVERLAY_GRAPH, area);
-            self.shell_state.layout_rects.graph_overlay = Some(overlay);
-            let mut ctx = self.widget_context();
-            widgets::GraphWidget.render(overlay, frame, &mut ctx);
-        }
-        if self.shell_state.overlay_visible(OverlayKind::Settings) {
-            let overlay =
-                crate::tui::layout::overlay_rect_for(crate::tui::layout::OVERLAY_SETTINGS, area);
-            self.shell_state.layout_rects.settings_overlay = Some(overlay);
-            let scope = &self.scope;
-            let layout_doc = &self.layout.doc;
-            let shell_state = &mut self.shell_state;
-            let palette = &mut self.palette;
-            let focused_widget = &self.focused_widget;
-            let beskid_exe = &self.beskid_exe;
-            let key_bindings = &mut self.key_bindings;
-            let mut ctx = WidgetContext::new(
-                scope,
-                layout_doc,
-                shell_state,
-                palette,
-                focused_widget,
-                beskid_exe,
-                key_bindings,
-            );
-            if let Some(widget) = self.registry.get("shell.settings") {
-                widget.render(overlay, frame, &mut ctx);
+        for layer in ShellLayer::DRAW_ORDER {
+            match layer {
+                ShellLayer::Base => {}
+                ShellLayer::PanelOverlay => {
+                    let scope = &self.scope;
+                    let layout_doc = &self.layout.doc;
+                    let shell_state = &mut self.shell_state;
+                    let palette = &mut self.palette;
+                    let focused_widget = &self.focused_widget;
+                    let beskid_exe = &self.beskid_exe;
+                    let key_bindings = &mut self.key_bindings;
+                    let shortcut_clicks = &mut self.shortcut_clicks;
+                    let pending_shortcut_rebind = &mut self.pending_shortcut_rebind;
+                    let registry = &self.registry;
+                    let mut ctx = WidgetContext::new(
+                        scope,
+                        layout_doc,
+                        shell_state,
+                        palette,
+                        focused_widget,
+                        beskid_exe,
+                        key_bindings,
+                        shortcut_clicks,
+                        pending_shortcut_rebind,
+                    );
+                    overlay_render::render_panel_overlays(
+                        frame,
+                        area,
+                        OverlayRenderContext::Hi(HiOverlayWidgets {
+                            ctx: &mut ctx,
+                            registry,
+                        }),
+                    );
+                }
+                ShellLayer::Help => {
+                    if self.chrome.show_help {
+                        let help_area = crate::tui::layout::overlay_rect_for(
+                            crate::tui::layout::OVERLAY_TESTS,
+                            area,
+                        );
+                        let help_items =
+                            self.hotkeys.footer_items(Some(&self.focused_widget));
+                        self.chrome.render_help_overlay(
+                            help_area,
+                            frame,
+                            &help_items,
+                            &mut self.shortcut_clicks,
+                        );
+                    }
+                }
+                ShellLayer::LayoutEditor => {
+                    if self.layout.editor.active {
+                        self.layout_editor.render(
+                            area,
+                            frame,
+                            &self.layout.editor,
+                            &self.layout.doc,
+                            self.registry.descriptors(),
+                        );
+                    }
+                }
+                ShellLayer::ScopePicker => {
+                    if let Some(picker) = &self.scope_picker {
+                        let overlay = crate::tui::layout::overlay_rect_for(
+                            crate::tui::layout::OVERLAY_PCKG,
+                            area,
+                        );
+                        picker.render(overlay, frame);
+                    }
+                }
+                ShellLayer::Palette => {
+                    if self.palette.visible {
+                        self.palette.render(area, frame, &self.key_bindings.palette_hint());
+                    }
+                }
+                ShellLayer::CommandDialog => {
+                    if self.command_dialog.visible {
+                        self.command_dialog.render(area, frame);
+                    }
+                }
+                ShellLayer::TopMenuDropdown => {
+                    if self.top_menu.is_active() {
+                        self.top_menu.render_menu_overlay(area, frame);
+                    }
+                }
             }
         }
-        if self.shell_state.overlay_visible(OverlayKind::Analysis) {
-            let overlay =
-                crate::tui::layout::overlay_rect_for(crate::tui::layout::OVERLAY_ANALYSIS, area);
-            self.shell_state.layout_rects.analysis_overlay = Some(overlay);
-            let mut ctx = self.widget_context();
-            widgets::draw_analysis_panel(overlay, frame, &mut ctx);
-        }
-
-        if self.chrome.show_help {
-            let help_area =
-                crate::tui::layout::overlay_rect_for(crate::tui::layout::OVERLAY_TESTS, area);
-            self.chrome.render_help_overlay(
-                help_area,
-                frame,
-                &self.hotkeys.footer_items(Some(&self.focused_widget)),
-            );
-        }
-
-        if self.layout.editor.active {
-            self.layout_editor.render(
-                area,
-                frame,
-                &self.layout.editor,
-                &self.layout.doc,
-                self.registry.descriptors(),
-            );
-        }
-
-        if let Some(picker) = &self.scope_picker {
-            let overlay =
-                crate::tui::layout::overlay_rect_for(crate::tui::layout::OVERLAY_PCKG, area);
-            picker.render(overlay, frame);
-        }
-
-        if self.palette.visible {
-            self.palette.render(area, frame);
-        }
-
-        if self.command_dialog.visible {
-            self.command_dialog.render(area, frame);
-        }
-
-        if self.top_menu.dropdown_open() {
-            self.top_menu.render_dropdown(area, frame);
-        }
-
-        debug_assert_eq!(ShellLayer::DRAW_ORDER.last(), Some(&ShellLayer::TopMenuDropdown));
     }
 }
 
@@ -1206,5 +1351,68 @@ fn render_edit_highlight(frame: &mut Frame, area: Rect) {
                 cell.set_style(style);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+    use ratatui::Terminal;
+
+    use super::*;
+    use crate::shell::layout;
+    use crate::shell::widgets;
+    use crate::tui::realm::shell_event::{ShellOutcome, ShellRealmEvent};
+
+    fn test_app() -> HiShellApp {
+        let scope = ShellScope::User;
+        let layout_state = layout::load_for_scope(&scope).expect("layout");
+        let mut registry = WidgetRegistry::new();
+        widgets::register_builtins(&mut registry);
+        let mut nav = NavRegistry::new();
+        nav.merge_pages(&layout_state.pages);
+        let settings = ToolSettingsRegistry::with_builtins();
+        HiShellApp::new(
+            scope,
+            layout_state,
+            registry,
+            nav,
+            settings,
+            PathBuf::from("beskid"),
+            None,
+        )
+    }
+
+    #[test]
+    fn tick_idle_returns_continue() {
+        let mut app = test_app();
+        assert_eq!(
+            app.handle_shell_event(ShellRealmEvent::Tick),
+            ShellOutcome::Continue
+        );
+    }
+
+    #[test]
+    fn layout_resolve_error_shows_fallback() {
+        let mut app = test_app();
+        app.set_frame_area(Rect::new(0, 0, 40, 2));
+
+        let backend = TestBackend::new(40, 2);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| app.draw_shell(frame)).expect("draw");
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            text.contains("Layout error"),
+            "expected fallback message in buffer: {text:?}"
+        );
     }
 }

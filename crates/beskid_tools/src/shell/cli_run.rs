@@ -47,8 +47,8 @@ fn build_argv(cli: &CliCommandDef, params: &str, scope: &ShellScope) -> Vec<Stri
     let mut args: Vec<String> = cli.argv_prefix.iter().map(|s| (*s).to_string()).collect();
     if !params.trim().is_empty() {
         args.extend(params.split_whitespace().map(str::to_string));
-    } else if let Some(root) = scope.root_dir() {
-        args.push(root.display().to_string());
+    } else {
+        scope.append_project_argv(&mut args);
     }
     args
 }
@@ -73,4 +73,30 @@ pub fn run_cli_plan(plan: &CliRunPlan) -> io::Result<()> {
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::shell::catalog::{builtin_cli_commands, CommandItem};
+
+    #[test]
+    fn build_argv_subprocess_uses_project_flag() {
+        let scope = ShellScope::Workspace {
+            root: PathBuf::from("/tmp/ws"),
+            manifest: PathBuf::from("/tmp/ws/CoreLib.bws"),
+        };
+        let build = builtin_cli_commands()
+            .into_iter()
+            .find(|item| item.id() == "build")
+            .expect("build command");
+        let CommandItem::Cli(cli) = build else {
+            panic!("expected cli command");
+        };
+        let args = build_argv(&cli, "", &scope);
+        assert!(args.windows(2).any(|w| w == ["--project", "/tmp/ws/CoreLib.bws"]));
+        assert!(!args.iter().any(|a| a == "/tmp/ws"));
+    }
 }

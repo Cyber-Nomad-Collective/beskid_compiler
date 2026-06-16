@@ -20,11 +20,13 @@ pub mod phase;
 pub mod top_menu;
 pub mod panel_style;
 pub mod platform_shortcuts;
+pub mod overlay_render;
 pub mod palette;
 pub mod primitives;
 pub mod registry;
 pub mod scope;
 pub mod scope_picker;
+pub mod shortcut_clicks;
 pub mod settings;
 pub mod widget;
 pub mod widgets;
@@ -49,6 +51,7 @@ pub use key_bindings::{
     BindableAction, KeyChord, ShortcutBindings, BINDABLE_ACTIONS, chord_from_key, display_chord,
     encode_chord, parse_chord,
 };
+pub use shortcut_clicks::{ShortcutClickAction, ShortcutClickTargets};
 pub use layers::ShellLayer;
 pub use input::ShellInput;
 pub use palette::CommandPaletteState;

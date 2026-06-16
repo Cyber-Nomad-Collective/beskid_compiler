@@ -169,7 +169,7 @@ impl CommandPaletteState {
         }
     }
 
-    pub fn render(&self, terminal: Rect, frame: &mut Frame) {
+    pub fn render(&self, terminal: Rect, frame: &mut Frame, palette_hint: &str) {
         draw_backdrop(frame, terminal);
         let overlay = centered_rect(60, 70, terminal);
         frame.render_widget(Clear, overlay);
@@ -233,7 +233,7 @@ impl CommandPaletteState {
         );
 
         let hint = Line::from(vec![
-            Span::styled("Ctrl+P", Style::default().fg(Color::Cyan)),
+            Span::styled(palette_hint, Style::default().fg(Color::Cyan)),
             Span::raw(" palette · "),
             Span::styled("Enter", Style::default().fg(Color::Cyan)),
             Span::raw(" select · "),

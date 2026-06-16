@@ -363,7 +363,9 @@ fn lower_test_body(
     drop(node_ctx);
     builder.finalize();
 
-    let function_name = def.node.name.node.name.clone();
+    let function_name = item_id
+        .map(|id| mangle_item_function(resolution, id))
+        .unwrap_or_else(|| def.node.name.node.name.clone());
     let flags = settings::Flags::new(settings::builder());
     if let Err(err) = verify_function(&function, &flags) {
         return Err(CodegenError::VerificationFailed {
