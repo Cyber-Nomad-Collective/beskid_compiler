@@ -198,6 +198,8 @@ fn typed_hir_from_lowered_with_assembly_inner(
         entry_source_path,
         policy,
         assembly.map(|a| a.module_index.as_ref()),
+        assembly,
+        None,
         pipeline,
     )
 }
@@ -237,6 +239,8 @@ fn typed_hir_from_lowered_with_module_index_inner(
         entry_source_path,
         policy,
         Some(module_index),
+        None,
+        None,
         pipeline,
     )
 }
@@ -266,6 +270,8 @@ fn typed_hir_from_lowered_after_resolution_inner(
         None,
         policy,
         None,
+        None,
+        None,
         pipeline,
     )
 }
@@ -278,6 +284,11 @@ fn type_check_lowered_hir(
     entry_source_path: Option<std::path::PathBuf>,
     policy: DependencyTypingPolicy,
     module_index: Option<&ModuleIndex>,
+    assembly: Option<&ProgramAssembly>,
+    prefetched_surfaces: Option<&std::collections::HashMap<
+        std::path::PathBuf,
+        std::sync::Arc<crate::types::surface::UnitTypeSurface>,
+    >>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
     observe_phase_result(pipeline, phases::LOWER_TYPE_CHECK, || {
@@ -290,6 +301,8 @@ fn type_check_lowered_hir(
             entry_source_path,
             policy.type_dependency_bodies(),
             module_index,
+            assembly,
+            prefetched_surfaces,
             progress,
         );
         if !type_errors.is_empty() {

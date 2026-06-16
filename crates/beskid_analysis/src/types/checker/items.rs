@@ -11,25 +11,6 @@ impl<'a> TypeChecker<'a> {
         self.type_dependency_function_items(items);
     }
 
-    pub(super) fn seed_definitions_from_source_path(&mut self, path: &std::path::Path) {
-        let Ok(source) = std::fs::read_to_string(path) else {
-            return;
-        };
-        let logical_name = path.display().to_string();
-        let Ok(program) = crate::services::parse_program_with_source_name(&logical_name, &source)
-        else {
-            return;
-        };
-        let ast: crate::syntax::Spanned<crate::hir::AstProgram> = program.into();
-        let hir = crate::hir::lower_program(&ast);
-        self.current_source_path = Some(crate::paths::unit_path_key(path));
-        let errors_before = self.errors.len();
-        self.seed_enum_definitions(&hir);
-        self.seed_struct_definitions(&hir);
-        self.register_foreign_function_signatures(&hir);
-        self.errors.truncate(errors_before);
-    }
-
     /// Populate struct field layout from type items without typing bodies.
     pub(super) fn seed_struct_definitions(&mut self, program: &Spanned<HirProgram>) {
         for item in &program.node.items {

@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::hir::HirProgram;
 use crate::resolve::{
@@ -19,7 +20,7 @@ use super::roots::EffectiveCompilationRoots;
 use crate::projects::CompilePlan;
 
 /// Items and module paths collected from non-entry compilation units.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ModuleIndex {
     items: Vec<ItemInfo>,
     module_graph: ModuleGraph,
@@ -29,6 +30,18 @@ pub struct ModuleIndex {
     entry_project_name: String,
     dependency_packages: HashMap<String, String>,
     prefetched_paths: Vec<PathBuf>,
+    /// Lowered HIR for prefetch-only sources (built during index construction, not re-read from disk).
+    prefetched_hir: HashMap<PathBuf, Arc<Spanned<HirProgram>>>,
+}
+
+impl std::fmt::Debug for ModuleIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModuleIndex")
+            .field("items", &self.items.len())
+            .field("prefetched_paths", &self.prefetched_paths.len())
+            .field("prefetched_hir", &self.prefetched_hir.len())
+            .finish()
+    }
 }
 
 impl ModuleIndex {
@@ -42,12 +55,22 @@ impl ModuleIndex {
             entry_project_name: String::new(),
             dependency_packages: HashMap::new(),
             prefetched_paths: Vec::new(),
+            prefetched_hir: HashMap::new(),
         }
     }
 
     /// Source paths scanned from dependency roots but not in the import-closure assembly.
     pub fn prefetched_paths(&self) -> &[PathBuf] {
         &self.prefetched_paths
+    }
+
+    /// Lowered HIR for a prefetch-only path (when present).
+    pub fn prefetched_hir(&self, path: &Path) -> Option<&Spanned<HirProgram>> {
+        let key = normalize_assembly_path(path);
+        self.prefetched_hir
+            .get(&key)
+            .or_else(|| self.prefetched_hir.get(path))
+            .map(|hir| hir.as_ref())
     }
 
     pub fn module_graph(&self) -> &ModuleGraph {
@@ -117,6 +140,7 @@ impl ModuleIndex {
             .map(|unit| normalize_assembly_path(&unit.path))
             .collect();
         let mut prefetched_paths = Vec::new();
+        let mut prefetched_hir = HashMap::new();
         if prefetch_dependency_roots {
             for dep in &roots.dependencies {
                 let declaring_package = dep
@@ -133,6 +157,7 @@ impl ModuleIndex {
                     &declaring_package,
                     plan.has_std_dependency,
                     &mut prefetched_paths,
+                    &mut prefetched_hir,
                 );
             }
         } else {
@@ -144,6 +169,7 @@ impl ModuleIndex {
                 &dependency_packages,
                 plan,
                 &mut prefetched_paths,
+                &mut prefetched_hir,
             );
         }
 
@@ -159,6 +185,7 @@ impl ModuleIndex {
             entry_project_name: plan.project_name.clone(),
             dependency_packages,
             prefetched_paths,
+            prefetched_hir,
         }
     }
 
@@ -325,17 +352,9 @@ impl ModuleIndex {
             {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(path) else {
+            let Some(hir) = self.prefetched_hir(path) else {
                 continue;
             };
-            let logical_name = path.display().to_string();
-            let Ok(program) =
-                crate::services::parse_program_with_source_name(&logical_name, &source)
-            else {
-                continue;
-            };
-            let ast: crate::syntax::Spanned<crate::hir::AstProgram> = program.into();
-            let hir = crate::hir::lower_program(&ast);
             let key = crate::paths::unit_path_key(path);
             let declaring_package =
                 declaring_package_for_prefetched_path(path, assembly, &self.entry_project_name, &self.dependency_packages);
@@ -359,6 +378,7 @@ impl ModuleIndex {
                 .resolve_collected_program_for_api_documentation(&hir, module_path.as_deref());
             resolution.tables.merge_from(&unit_resolution.tables, key);
         }
+        resolution.rebuild_span_index();
     }
 }
 
@@ -494,6 +514,7 @@ fn collect_prefetched_import_closure(
     dependency_packages: &HashMap<String, String>,
     plan: &CompilePlan,
     prefetched_paths: &mut Vec<PathBuf>,
+    prefetched_hir: &mut HashMap<PathBuf, Arc<Spanned<HirProgram>>>,
 ) {
     if roots.dependencies.is_empty() {
         return;
@@ -553,6 +574,7 @@ fn collect_prefetched_import_closure(
             &declaring_package,
             plan.has_std_dependency,
             prefetched_paths,
+            prefetched_hir,
             None,
         );
         enqueue_module_paths(&mut queue, &mut seen_imports, &source);
@@ -597,6 +619,7 @@ fn collect_prefetched_modules(
     declaring_package: &str,
     has_std_dependency: bool,
     prefetched_paths: &mut Vec<PathBuf>,
+    prefetched_hir: &mut HashMap<PathBuf, Arc<Spanned<HirProgram>>>,
 ) {
     let mut bd_files = Vec::new();
     collect_source_files(source_root, &mut bd_files);
@@ -619,6 +642,7 @@ fn collect_prefetched_modules(
             declaring_package,
             has_std_dependency,
             prefetched_paths,
+            prefetched_hir,
             Some(source_root),
         );
     }
@@ -631,6 +655,7 @@ fn prefetch_module_at_path(
     declaring_package: &str,
     has_std_dependency: bool,
     prefetched_paths: &mut Vec<PathBuf>,
+    prefetched_hir: &mut HashMap<PathBuf, Arc<Spanned<HirProgram>>>,
     source_root: Option<&Path>,
 ) {
     let logical_name = path.display().to_string();
@@ -672,6 +697,7 @@ fn prefetch_module_at_path(
         resolver.collect_program(&hir);
     }
     prefetched_paths.push(normalize_assembly_path(path));
+    prefetched_hir.insert(normalize_assembly_path(path), Arc::new(hir));
 }
 
 fn normalize_assembly_path(path: &Path) -> PathBuf {

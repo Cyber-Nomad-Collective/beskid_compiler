@@ -12,6 +12,7 @@ use super::items::ItemInfo;
 use super::module_graph::ModuleGraph;
 use super::symbol::{SymbolId, SymbolRegistry};
 use super::tables::ResolutionTables;
+use super::span_index::SpanIndex;
 
 #[derive(Debug, Default)]
 pub struct Resolver {
@@ -110,9 +111,32 @@ pub struct Resolution {
     pub items: Vec<ItemInfo>,
     pub module_graph: ModuleGraph,
     pub tables: ResolutionTables,
+    pub span_index: SpanIndex,
     pub warnings: Vec<ResolveWarning>,
     pub builtin_items: HashMap<ItemId, usize>,
     pub module_imports: HashMap<String, Vec<String>>,
     pub symbols: SymbolRegistry,
     pub by_symbol: HashMap<SymbolId, ItemId>,
+}
+
+impl Resolution {
+    pub fn rebuild_span_index(&mut self) {
+        self.span_index = super::span_index::span_index_from_tables(&self.tables);
+    }
+}
+
+impl Default for Resolution {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            module_graph: ModuleGraph::new_root(),
+            tables: ResolutionTables::default(),
+            span_index: SpanIndex::default(),
+            warnings: Vec::new(),
+            builtin_items: HashMap::new(),
+            module_imports: HashMap::new(),
+            symbols: SymbolRegistry::default(),
+            by_symbol: HashMap::new(),
+        }
+    }
 }

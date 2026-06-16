@@ -40,7 +40,10 @@ pub struct TypedEntryState {
 
 #[derive(Default)]
 struct TypedEntryCache {
-    bundles: HashMap<String, (u64, SharedFrontEnd)>,
+    /// Full executable prepare (keyed by debounced `typed_prepare_revision`).
+    full_bundles: HashMap<String, (u64, SharedFrontEnd)>,
+    /// EntryOnly gate prepare while file edits are ahead of debounced prepare (keyed by `file_revision`).
+    gate_bundles: HashMap<String, (u64, SharedFrontEnd)>,
 }
 
 static FILE_REVISION_REGISTRY: OnceLock<Mutex<HashMap<String, FileRevision>>> = OnceLock::new();
@@ -91,7 +94,7 @@ pub fn bump_file_revision(db: &mut BeskidDatabase, entry_key: &str) -> u64 {
     typed_entry_cache()
         .lock()
         .expect("typed entry cache")
-        .bundles
+        .gate_bundles
         .remove(entry_key);
     next
 }
@@ -164,6 +167,7 @@ fn lockfile_digest_for_plan(plan: &beskid_analysis::projects::CompilePlan) -> St
 fn materialize_typed_bundle(
     db: &mut BeskidDatabase,
     resolved: &ResolvedInput,
+    dependency_typing: DependencyTypingPolicy,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
     let prepared = prepare_compilation_with_db(
@@ -175,7 +179,7 @@ fn materialize_typed_bundle(
                 ..Default::default()
 
             },
-            dependency_typing: DependencyTypingPolicy::FullClosure,
+            dependency_typing,
         },
         pipeline,
     )?;
@@ -208,7 +212,7 @@ fn run_tracked_typed_prepare(
     let cache_hit = typed_entry_cache()
         .lock()
         .expect("typed entry cache")
-        .bundles
+        .full_bundles
         .get(entry_key)
         .is_some_and(|(generation, _)| *generation == typed_prepare_revision);
     trace_query_with_reason(
@@ -222,7 +226,12 @@ fn run_tracked_typed_prepare(
     );
 
     let Some(project) = project_session_for_resolved(db, resolved) else {
-        return materialize_typed_bundle(db, resolved, pipeline);
+        return materialize_typed_bundle(
+            db,
+            resolved,
+            DependencyTypingPolicy::FullClosure,
+            pipeline,
+        );
     };
     let grammar = db.grammar_revision();
     let options_fingerprint = prepare_options_fingerprint(options);
@@ -238,7 +247,7 @@ fn run_tracked_typed_prepare(
     if let Some((generation, front)) = typed_entry_cache()
         .lock()
         .expect("typed entry cache")
-        .bundles
+        .full_bundles
         .get(entry_key)
         .filter(|(generation, _)| *generation == typed_prepare_revision)
         .map(|(generation, front)| (*generation, front.clone()))
@@ -247,12 +256,66 @@ fn run_tracked_typed_prepare(
         return Ok(front);
     }
 
-    let front = materialize_typed_bundle(db, resolved, pipeline)?;
+    let front = materialize_typed_bundle(
+        db,
+        resolved,
+        DependencyTypingPolicy::FullClosure,
+        pipeline,
+    )?;
     typed_entry_cache()
         .lock()
         .expect("typed entry cache")
-        .bundles
+        .full_bundles
         .insert(entry_key.to_string(), (typed_prepare_revision, front.clone()));
+    Ok(front)
+}
+
+fn run_tracked_entry_gate_prepare(
+    db: &mut BeskidDatabase,
+    resolved: &ResolvedInput,
+    entry_key: &str,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<SharedFrontEnd> {
+    let file_revision = file_revision_for(db, entry_key);
+    let cache_hit = typed_entry_cache()
+        .lock()
+        .expect("typed entry cache")
+        .gate_bundles
+        .get(entry_key)
+        .is_some_and(|(generation, _)| *generation == file_revision);
+    trace_query_with_reason(
+        "typed_entry_gate_bundle",
+        cache_hit,
+        if cache_hit {
+            Some("file_revision")
+        } else {
+            None
+        },
+    );
+
+    if let Some((generation, front)) = typed_entry_cache()
+        .lock()
+        .expect("typed entry cache")
+        .gate_bundles
+        .get(entry_key)
+        .filter(|(generation, _)| *generation == file_revision)
+        .map(|(generation, front)| (*generation, front.clone()))
+    {
+        let _ = generation;
+        return Ok(front);
+    }
+
+    let front = materialize_typed_bundle(
+        db,
+        resolved,
+        DependencyTypingPolicy::EntryOnly,
+        pipeline,
+    )?;
+    typed_entry_cache()
+        .lock()
+        .expect("typed entry cache")
+        .gate_bundles
+        .insert(entry_key.to_string(), (file_revision, front.clone()));
     Ok(front)
 }
 
@@ -272,7 +335,12 @@ pub fn typed_entry_state_with_db(
 
     let resolution = entry_resolution_with_db(db, resolved, options)?;
     let typed = if stale {
-        None
+        Some(run_tracked_entry_gate_prepare(
+            db,
+            resolved,
+            &entry_key,
+            pipeline,
+        )?)
     } else {
         Some(run_tracked_typed_prepare(
             db,
@@ -316,19 +384,15 @@ pub fn typed_entry_bundle_with_db(
 }
 
 pub fn clear_typed_entry_cache_for_entry(entry_key: &str) {
-    typed_entry_cache()
-        .lock()
-        .expect("typed entry cache")
-        .bundles
-        .remove(entry_key);
+    let mut cache = typed_entry_cache().lock().expect("typed entry cache");
+    cache.full_bundles.remove(entry_key);
+    cache.gate_bundles.remove(entry_key);
 }
 
 pub fn clear_typed_entry_cache() {
-    typed_entry_cache()
-        .lock()
-        .expect("typed entry cache")
-        .bundles
-        .clear();
+    let mut cache = typed_entry_cache().lock().expect("typed entry cache");
+    cache.full_bundles.clear();
+    cache.gate_bundles.clear();
 }
 
 /// Clear process-global typed-entry Salsa inputs and side cache before replacing

@@ -23,7 +23,8 @@ pub use db::{
 pub use entry::{
     cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key,
     invalidate_entry_sessions, prepare_compilation_diagnostics_with_db,
-    prepare_compilation_with_db, semantic_gate_diagnostics, semantic_snapshot, typed_entry_bundle,
+    prepare_compilation_with_db, semantic_gate_diagnostics, semantic_snapshot,
+    session_fingerprint, typed_entry_bundle,
 };
 pub use typed_entry_bundle::{
     FileRevision, TypedEntryState, TypedPrepareRevision, bump_file_revision,

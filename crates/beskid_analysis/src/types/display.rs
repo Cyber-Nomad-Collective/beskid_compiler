@@ -105,7 +105,6 @@ mod tests {
             struct_event_fields: HashMap::new(),
             enum_variants_ordered: HashMap::new(),
             generic_items: HashMap::new(),
-            contract_signatures: HashMap::new(),
             lowering: crate::types::LoweringPrep::default(),
         };
         (result, string, i32)

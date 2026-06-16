@@ -15,7 +15,7 @@ use crate::output::{SharedFrontEnd, SharedResolution};
 use crate::stats::{emit_salsa_stats, record_revision_bump, trace_query};
 use crate::unit::{cache_module_index_for_assembly, warm_prefetched_unit_type_surfaces};
 
-pub(crate) fn session_fingerprint(resolved: &ResolvedInput) -> Option<SessionFingerprint> {
+pub fn session_fingerprint(resolved: &ResolvedInput) -> Option<SessionFingerprint> {
     let plan = resolved.compile_plan.as_ref()?;
     Some(SessionFingerprint::for_entry(plan, &resolved.source_path))
 }

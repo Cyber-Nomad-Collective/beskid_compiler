@@ -583,8 +583,8 @@ fn typing_string_interpolation_succeeds() {
 fn typing_records_cast_intent_for_numeric_mismatch() {
     let result = resolve_and_type("unit Main() { i32 x = 1; i64 y = x; }")
         .expect("expected typing to succeed with cast intent");
-    assert_eq!(result.lowering.cast_intents.len(), 1);
-    let intent = &result.lowering.cast_intents[0];
+    assert_eq!(result.cast_intents().len(), 1);
+    let intent = &result.cast_intents()[0];
     assert_eq!(
         result.types.get(intent.from),
         Some(&TypeInfo::Primitive(HirPrimitiveType::I32))
@@ -593,14 +593,15 @@ fn typing_records_cast_intent_for_numeric_mismatch() {
         result.types.get(intent.to),
         Some(&TypeInfo::Primitive(HirPrimitiveType::I64))
     );
+    assert_eq!(result.cast_intents_for_node(intent.node_id).count(), 1);
 }
 
 #[test]
 fn typing_cast_intents_are_sorted_by_source_span() {
     let result = resolve_and_type("unit Main() { i32 a = 1; i64 b = a; i32 c = 2; i64 d = c; }")
         .expect("expected typing to succeed with cast intents");
-    assert!(result.lowering.cast_intents.len() >= 2);
-    for pair in result.lowering.cast_intents.windows(2) {
+    assert!(result.cast_intents().len() >= 2);
+    for pair in result.cast_intents().windows(2) {
         assert!(pair[0].span.start <= pair[1].span.start);
     }
 }
@@ -612,8 +613,7 @@ fn typing_cast_intents_preserve_source_line_spans() {
     )
     .expect("expected typing to succeed with cast intents");
     let lines: Vec<usize> = result
-        .lowering
-        .cast_intents
+        .cast_intents()
         .iter()
         .map(|intent| intent.span.line_col_start.0)
         .collect();
@@ -626,22 +626,22 @@ fn typing_records_cast_intent_for_numeric_call_argument_mismatch() {
         "i64 take(i64 v) { return v; } unit Main() { i32 x = 1; i64 y = take(x); }",
     )
     .expect("expected typing to succeed with cast intent in call argument");
-    assert!(!result.lowering.cast_intents.is_empty());
+    assert!(!result.cast_intents().is_empty());
 }
 
 #[test]
 fn typing_records_cast_intent_for_numeric_return_mismatch() {
     let result = resolve_and_type("i64 Main() { i32 x = 1; return x; }")
         .expect("expected typing to succeed with cast intent in return");
-    assert!(!result.lowering.cast_intents.is_empty());
+    assert!(!result.cast_intents().is_empty());
 }
 
 #[test]
-fn typing_cast_intent_accessor_finds_intent_by_span() {
+fn typing_cast_intent_accessor_finds_intent_by_node() {
     let result = resolve_and_type("unit Main() { i32 x = 1; i64 y = x; }")
         .expect("expected typing to succeed with cast intent");
-    let span = result.lowering.cast_intents[0].span;
-    assert!(result.cast_intent_for_span(span).is_some());
+    let intent = &result.cast_intents()[0];
+    assert!(result.cast_intents_for_node(intent.node_id).any(|found| found == intent));
 }
 
 #[test]

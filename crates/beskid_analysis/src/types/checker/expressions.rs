@@ -723,6 +723,20 @@ impl<'a> TypeChecker<'a> {
                 }
                 None => {
                     if expected != 0 {
+                        let arg_types = call
+                            .node
+                            .args
+                            .iter()
+                            .filter_map(|arg| self.type_expression(arg))
+                            .collect::<Vec<_>>();
+                        if let Some(item_id) = callee_item_id {
+                            self.record_generic_call_constraints(
+                                item_id,
+                                &arg_types,
+                                expected,
+                                call.span,
+                            );
+                        }
                         if let Some(inferred) =
                             self.infer_generic_args_from_call(callee_item_id, &call.node.args)
                         {

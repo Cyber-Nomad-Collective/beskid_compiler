@@ -95,7 +95,6 @@ mod dynamic_clif_tests {
             struct_event_fields: HashMap::new(),
             enum_variants_ordered: HashMap::new(),
             generic_items: HashMap::new(),
-            contract_signatures: HashMap::new(),
             lowering: LoweringPrep::default(),
         }
     }
@@ -107,6 +106,7 @@ mod dynamic_clif_tests {
             items: Vec::new(),
             module_graph: ModuleGraph::new_root(),
             tables: Default::default(),
+            span_index: Default::default(),
             warnings: Vec::new(),
             builtin_items: HashMap::new(),
             module_imports: HashMap::new(),

@@ -5,5 +5,5 @@ TestHarness {
 
 target "Harness" {
   kind = Test
-  entry = "Src/Harness.bd"
+  entry = "Harness.bd"
 }

@@ -46,6 +46,14 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn resolved_value_at(&self, span: SpanInfo) -> Option<ResolvedValue> {
+        if let Some(value) = self.resolution.span_index.lookup_value(span) {
+            return Some(match value {
+                ResolvedValue::Item(item_id) => {
+                    ResolvedValue::Item(canonical_item_id(self.resolution, item_id))
+                }
+                other => other,
+            });
+        }
         let value = self
             .resolution
             .tables
@@ -59,6 +67,9 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn resolved_type_at(&self, span: SpanInfo) -> Option<ResolvedType> {
+        if let Some(resolved_type) = self.resolution.span_index.lookup_type(span) {
+            return Some(resolved_type);
+        }
         self.resolution
             .tables
             .resolved_type_at(span, self.current_source_path.as_ref())
@@ -84,19 +95,7 @@ impl<'a> TypeChecker<'a> {
         crate::types::inference::infer_generic_args_from_call_types(
             &self.type_table,
             &self.generic_items,
-            &self
-                .function_signatures
-                .iter()
-                .map(|(id, sig)| {
-                    (
-                        *id,
-                        crate::types::inference::FunctionSignature {
-                            params: sig.params.clone(),
-                            return_type: sig.return_type,
-                        },
-                    )
-                })
-                .collect::<std::collections::HashMap<_, _>>(),
+            &self.function_signatures,
             item_id,
             &arg_types,
         )
@@ -504,5 +503,35 @@ impl<'a> TypeChecker<'a> {
 
     pub(super) fn map_primitive(&self, primitive: HirPrimitiveType) -> HirPrimitiveType {
         primitive
+    }
+
+    pub(super) fn record_numeric_operand_constraint(
+        &mut self,
+        operand_type: Option<TypeId>,
+        span: SpanInfo,
+        name: &str,
+    ) {
+        if operand_type.is_some() {
+            return;
+        }
+        let var = self.constraints.fresh_var();
+        self.constraints.is_numeric(var, span, name);
+    }
+
+    pub(super) fn record_generic_call_constraints(
+        &mut self,
+        callee: ItemId,
+        arg_types: &[TypeId],
+        generic_param_count: usize,
+        span: SpanInfo,
+    ) {
+        if generic_param_count == 0 {
+            return;
+        }
+        let result_vars = (0..generic_param_count)
+            .map(|_| self.constraints.fresh_var())
+            .collect::<Vec<_>>();
+        self.constraints
+            .apply_generic(callee, arg_types.to_vec(), result_vars, span);
     }
 }

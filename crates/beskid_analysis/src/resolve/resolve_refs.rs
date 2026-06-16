@@ -11,6 +11,7 @@ use super::ids::{ItemId, LocalId};
 use super::items::ItemKind;
 use super::module_graph::ModuleGraph;
 use super::resolver::{self, Resolution, Resolver};
+use super::span_index::span_index_from_tables;
 use super::tables::{ResolutionTables, ResolvedType, ResolvedValue};
 
 enum ModulePathLookup {
@@ -77,10 +78,13 @@ impl Resolver {
     }
 
     fn take_resolution(&mut self) -> Resolution {
+        let tables = std::mem::take(&mut self.tables);
+        let span_index = span_index_from_tables(&tables);
         Resolution {
             items: std::mem::take(&mut self.items),
             module_graph: std::mem::take(&mut self.module_graph),
-            tables: std::mem::take(&mut self.tables),
+            tables,
+            span_index,
             warnings: std::mem::take(&mut self.warnings),
             builtin_items: std::mem::take(&mut self.builtin_items),
             module_imports: std::mem::take(&mut self.module_imports),

@@ -9,12 +9,7 @@ use crate::syntax::SpanInfo;
 use super::ids::{ItemId, LocalId};
 
 fn value_at_span<T: Copy>(values: &HashMap<SpanInfo, T>, span: SpanInfo) -> Option<T> {
-    values.get(&span).copied().or_else(|| {
-        values
-            .iter()
-            .find(|(stored, _)| stored.start == span.start)
-            .map(|(_, value)| *value)
-    })
+    values.get(&span).copied()
 }
 
 /// Result of resolving a value-position path or identifier.

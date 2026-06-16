@@ -75,6 +75,22 @@ pub fn build_unit_type_surface(
     builder.finish()
 }
 
+/// Contract method signatures from unit surfaces, remapped into `target_types`.
+pub fn contract_signatures_for_types<'a>(
+    target_types: &TypeTable,
+    unit_surfaces: impl IntoIterator<Item = &'a UnitTypeSurface>,
+) -> HashMap<(ItemId, String), FunctionSignature> {
+    let mut types = target_types.clone();
+    let mut merged = HashMap::new();
+    for surface in unit_surfaces {
+        let remap = types.import_from(&surface.types);
+        for (key, signature) in &surface.contract_signatures {
+            merged.insert(key.clone(), remap_signature(&remap, signature));
+        }
+    }
+    merged
+}
+
 /// Merge dependency unit surfaces; `entry_surface` wins on key conflicts.
 pub fn merge_unit_surfaces(
     dependency_surfaces: impl Iterator<Item = (PathBuf, Arc<UnitTypeSurface>)>,

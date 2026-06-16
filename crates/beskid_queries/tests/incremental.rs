@@ -295,8 +295,8 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
         let state = typed_entry_state_with_db(&mut db, &resolved, &options, None)
             .expect("typed entry state");
         assert!(
-            state.typed.is_none(),
-            "stale typed bundle should skip executable prepare"
+            state.typed.is_some(),
+            "stale typed bundle should run EntryOnly gate prepare"
         );
         assert!(
             !state.resolution.by_symbol().is_empty(),
@@ -450,9 +450,16 @@ fn file_edit_invalidates_type_surface_cache() {
             .is_empty()
     );
 
+    let fp_after = unit_content_fingerprint(&path, "i32 Main() { return 42; }");
     let _ = unit_type_surface(&db, session, path.clone(), MODULE_INDEX_STUB);
-    let (_, misses, _) = snapshot();
-    assert!(misses >= 1);
+    assert!(
+        db.unit_cache()
+            .lock()
+            .expect("unit cache")
+            .unit_type_surfaces
+            .contains_key(&fp_after),
+        "edited source should rebuild and cache a fresh type surface"
+    );
 }
 
 #[test]

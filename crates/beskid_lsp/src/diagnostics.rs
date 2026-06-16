@@ -4,7 +4,8 @@ use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{parse_bsol_document, parse_manifest, parse_workspace_manifest, ProjectError};
 use beskid_analysis::services::{
-    self, DocumentAnalysisSnapshot, FrontEndOptions, PrepareOptions, resolved_input_from_plan,
+    self, DependencyTypingPolicy, DocumentAnalysisSnapshot, FrontEndOptions, PrepareOptions,
+    resolved_input_from_plan,
 };
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity};
@@ -44,6 +45,10 @@ pub fn analyze_document(
                 None,
                 None,
             );
+            let entry_key = beskid_queries::session_fingerprint(&resolved)
+                .map(|fp| beskid_queries::fingerprint_key(&fp))
+                .unwrap_or_else(|| path.display().to_string());
+            let stale = beskid_queries::is_typed_bundle_stale(db, &entry_key);
             if let Ok((_, mut diags)) = beskid_queries::prepare_compilation_diagnostics_with_db(
                 db,
                 &resolved,
@@ -53,7 +58,11 @@ pub fn analyze_document(
                         ..Default::default()
 
                     },
-                    ..Default::default()
+                    dependency_typing: if stale {
+                        DependencyTypingPolicy::EntryOnly
+                    } else {
+                        DependencyTypingPolicy::FullClosure
+                    },
                 },
                 None,
             ) {

@@ -423,7 +423,6 @@ pub struct TypeResult {
     pub struct_event_fields: HashMap<ItemId, HashMap<String, Option<usize>>>,
     pub enum_variants_ordered: HashMap<ItemId, Vec<(String, Vec<TypeId>)>>,
     pub generic_items: HashMap<ItemId, Vec<String>>,
-    pub contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
     pub lowering: LoweringPrep,
 }
 
@@ -436,6 +435,15 @@ impl TypeResult {
         self.node_type(node.id)
     }
 
+    pub fn cast_intents(&self) -> &[CastIntent] {
+        &self.lowering.cast_intents
+    }
+
+    pub fn cast_intents_for_node(&self, node_id: HirNodeId) -> impl Iterator<Item = &CastIntent> {
+        self.lowering.cast_intents_for_node(node_id)
+    }
+
+    #[deprecated(note = "use cast_intents_for_node(HirNodeId) instead")]
     pub fn cast_intent_for_span(&self, span: SpanInfo) -> Option<&CastIntent> {
         self.lowering
             .cast_intents
@@ -479,26 +487,10 @@ impl TypeResult {
         item_id: ItemId,
         arg_types: &[TypeId],
     ) -> Option<Vec<TypeId>> {
-        let inference_sigs: std::collections::HashMap<
-            ItemId,
-            crate::types::inference::FunctionSignature,
-        > = self
-            .function_signatures
-            .iter()
-            .map(|(id, sig)| {
-                (
-                    *id,
-                    crate::types::inference::FunctionSignature {
-                        params: sig.params.clone(),
-                        return_type: sig.return_type,
-                    },
-                )
-            })
-            .collect();
         crate::types::inference::infer_generic_args_from_call_types(
             &self.types,
             &self.generic_items,
-            &inference_sigs,
+            &self.function_signatures,
             item_id,
             arg_types,
         )
@@ -530,6 +522,8 @@ pub fn type_program_with_errors(
         None,
         None,
         true,
+        None,
+        None,
         None,
         None,
     )

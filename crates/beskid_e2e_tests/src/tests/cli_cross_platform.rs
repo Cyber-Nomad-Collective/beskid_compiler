@@ -63,7 +63,6 @@ fn parse_succeeds_on_valid_source() {
 fn test_command_runs_and_filters_test_items() {
     let workspace = E2eWorkspace::from_fixture("test_harness");
     let project_root = workspace.join(".");
-    let source = workspace.join("Src/Harness.bd");
     let cli = BeskidCliInvoker::new();
 
     let manifest = project_root.join("TestHarness.bproj");
@@ -73,7 +72,6 @@ fn test_command_runs_and_filters_test_items() {
             "test",
             "--project",
             manifest.to_str().expect("manifest path str"),
-            source.to_str().expect("source path str"),
         ],
     );
     assert_success(&output, "run test harness fixture");
@@ -97,7 +95,6 @@ fn test_command_runs_and_filters_test_items() {
             "test",
             "--project",
             manifest.to_str().expect("manifest path str"),
-            source.to_str().expect("source path str"),
             "--include-tag",
             "fast",
             "--group",

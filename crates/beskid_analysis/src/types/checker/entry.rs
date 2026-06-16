@@ -7,7 +7,7 @@ use std::sync::Arc;
 use beskid_pipeline::report_progress;
 
 use crate::hir::{HirItem, HirProgram};
-use crate::projects::assembly::ModuleIndex;
+use crate::projects::assembly::{ModuleIndex, ProgramAssembly};
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
 use crate::types::lowering_prep::{LoweringPrep, LoweringPrepSurfaces};
@@ -26,6 +26,8 @@ impl TypeChecker<'_> {
         entry_source_path: Option<PathBuf>,
         type_dependency_bodies: bool,
         module_index: Option<&ModuleIndex>,
+        assembly: Option<&ProgramAssembly>,
+        prefetched_surfaces: Option<&HashMap<PathBuf, Arc<crate::types::surface::UnitTypeSurface>>>,
         progress: Option<(&dyn beskid_pipeline::PipelineObserver, &'static str)>,
     ) -> (TypeResult, Vec<TypeError>) {
         let _types_guard = tracing::info_span!(
@@ -63,6 +65,41 @@ impl TypeChecker<'_> {
             unit_surfaces.insert(key, Arc::new(entry_surface.clone()));
         }
 
+        if let Some(index) = module_index {
+            for path in index.prefetched_paths() {
+                let key = crate::paths::unit_path_key(path);
+                if unit_surfaces.contains_key(&key) {
+                    continue;
+                }
+                let surface = assembly
+                    .and_then(|assembly| {
+                        assembly
+                            .hir_units
+                            .iter()
+                            .find(|unit| crate::paths::same_file(&unit.path, path))
+                            .map(|unit| {
+                                Arc::new(build_unit_type_surface(&unit.hir, resolution, path))
+                            })
+                    })
+                    .or_else(|| {
+                        index.prefetched_hir(path).map(|hir| {
+                            Arc::new(build_unit_type_surface(hir, resolution, path))
+                        })
+                    })
+                    .or_else(|| {
+                        prefetched_surfaces.and_then(|surfaces| {
+                            surfaces
+                                .get(&key)
+                                .or_else(|| surfaces.get(path))
+                                .cloned()
+                        })
+                    });
+                if let Some(surface) = surface {
+                    unit_surfaces.insert(key, surface);
+                }
+            }
+        }
+
         let (merged_types, merged) = merge_unit_surfaces_with_types(
             unit_surfaces
                 .iter()
@@ -77,12 +114,6 @@ impl TypeChecker<'_> {
         );
 
         let mut checker = TypeChecker::from_merged(resolution, &merged, merged_types);
-
-        if let Some(index) = module_index {
-            for path in index.prefetched_paths() {
-                checker.seed_definitions_from_source_path(path);
-            }
-        }
 
         let dependency_errors_before = checker.errors.len();
         for (index, dependency) in dependency_programs.iter().enumerate() {
@@ -191,7 +222,6 @@ impl TypeChecker<'_> {
             struct_event_fields: checker_result.struct_event_fields,
             enum_variants_ordered: checker_result.enum_variants_ordered,
             generic_items: checker_result.generic_items,
-            contract_signatures: checker_result.contract_signatures,
             lowering,
         };
         (result, checker_result.errors)

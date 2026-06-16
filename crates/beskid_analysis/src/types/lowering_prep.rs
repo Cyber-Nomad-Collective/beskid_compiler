@@ -1070,6 +1070,7 @@ mod tests {
             items: Vec::new(),
             module_graph: ModuleGraph::default(),
             tables: crate::resolve::ResolutionTables::new(),
+            span_index: Default::default(),
             warnings: Vec::new(),
             builtin_items: HashMap::new(),
             module_imports: HashMap::new(),

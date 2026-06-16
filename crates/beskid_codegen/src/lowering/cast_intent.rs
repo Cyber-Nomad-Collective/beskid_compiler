@@ -546,7 +546,6 @@ mod struct_mapping_clif_tests {
             struct_event_fields: HashMap::new(),
             enum_variants_ordered: HashMap::new(),
             generic_items: HashMap::new(),
-            contract_signatures: HashMap::new(),
             lowering: LoweringPrep::default(),
         };
         let resolution = Resolution {
@@ -584,6 +583,7 @@ mod struct_mapping_clif_tests {
             ],
             module_graph: ModuleGraph::new_root(),
             tables: Default::default(),
+            span_index: Default::default(),
             warnings: Vec::new(),
             builtin_items: HashMap::new(),
             module_imports: HashMap::new(),

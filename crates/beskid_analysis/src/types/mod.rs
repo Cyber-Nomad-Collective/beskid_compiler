@@ -10,13 +10,13 @@ pub mod surface;
 pub mod table;
 pub mod try_desugar;
 
-pub use checker::{CheckerResult, TypeChecker};
+pub use checker::{CheckerResult, TryDesugarTarget, TypeChecker};
 pub use display::format_type_id;
 pub use lowering_prep::{CastIntent as LoweringCastIntent, LoweringPrep, LoweringPrepSurfaces};
 pub use inference::{
-    Constraint, ConstraintSet, FunctionSignature as InferenceFunctionSignature, InferenceResult,
-    TypeEnv, TypeVar, infer_generic_args_from_call_types, is_numeric, solve_constraints,
-    unify_numeric_types, unify_types,
+    Constraint, ConstraintSet, InferenceResult, TypeEnv, TypeVar,
+    infer_generic_args_from_call_types, is_numeric, solve_constraints, unify_numeric_types,
+    unify_types,
 };
 pub use path_value::{
     PathTypeEnv, field_segments_before_method, field_type_for_value_path, field_type_on_receiver,
@@ -27,6 +27,9 @@ pub use result::{
     CallLoweringKind, FunctionSignature, MethodReceiverSource, TypeError, TypeResult,
     type_program, type_program_with_errors,
 };
-pub use surface::{UnitTypeSurface, build_unit_type_surface, merge_unit_surfaces, MergedTypeEnv};
+pub use surface::{
+    UnitTypeSurface, build_unit_type_surface, contract_signatures_for_types, merge_unit_surfaces,
+    MergedTypeEnv,
+};
 pub use table::{TypeId, TypeInfo, TypeTable};
-pub use try_desugar::{TryDesugarTarget, try_desugar_target_for_operand};
+pub use try_desugar::try_desugar_target_for_operand;

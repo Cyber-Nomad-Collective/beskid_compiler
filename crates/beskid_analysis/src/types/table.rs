@@ -10,7 +10,7 @@ use crate::resolve::ItemId;
 pub struct TypeId(pub usize);
 
 /// Structural description interned into a [`TypeId`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeInfo {
     Primitive(HirPrimitiveType),
     Named(ItemId),
@@ -30,23 +30,47 @@ pub enum TypeInfo {
 }
 
 /// Intern table for [`TypeInfo`] used by [`crate::types::TypeChecker`].
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct TypeTable {
     types: Vec<TypeInfo>,
+    intern_map: HashMap<TypeInfo, TypeId>,
+    primitive_ids: HashMap<HirPrimitiveType, TypeId>,
+    array_ids: HashMap<TypeId, TypeId>,
+}
+
+impl Default for TypeTable {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TypeTable {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            types: Vec::new(),
+            intern_map: HashMap::new(),
+            primitive_ids: HashMap::new(),
+            array_ids: HashMap::new(),
+        }
     }
 
     /// Return an existing id when `info` is already present (structural hash-consing).
     pub fn intern(&mut self, info: TypeInfo) -> TypeId {
-        if let Some(existing) = self.types.iter().position(|entry| *entry == info) {
-            return TypeId(existing);
+        if let Some(&existing) = self.intern_map.get(&info) {
+            return existing;
         }
         let id = TypeId(self.types.len());
-        self.types.push(info);
+        self.types.push(info.clone());
+        self.intern_map.insert(info.clone(), id);
+        match &info {
+            TypeInfo::Primitive(primitive) => {
+                self.primitive_ids.insert(*primitive, id);
+            }
+            TypeInfo::Array(element) => {
+                self.array_ids.insert(*element, id);
+            }
+            _ => {}
+        }
         id
     }
 
@@ -56,16 +80,12 @@ impl TypeTable {
 
     /// Returns an existing `TypeInfo::Array` for `element`, if already interned.
     pub fn find_array_of(&self, element: TypeId) -> Option<TypeId> {
-        self.types.iter().enumerate().find_map(|(i, info)| {
-            matches!(info, TypeInfo::Array(e) if *e == element).then_some(TypeId(i))
-        })
+        self.array_ids.get(&element).copied()
     }
 
     /// Returns an existing primitive type id when already interned.
     pub fn find_primitive(&self, primitive: HirPrimitiveType) -> Option<TypeId> {
-        self.types.iter().enumerate().find_map(|(i, info)| {
-            matches!(info, TypeInfo::Primitive(p) if *p == primitive).then_some(TypeId(i))
-        })
+        self.primitive_ids.get(&primitive).copied()
     }
 
     /// Import all types from `other`, remapping ids. References between imported types are preserved.

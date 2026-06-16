@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::resolve::ItemId;
 use crate::types::{TypeId, TypeInfo, TypeTable};
 
-use super::signature::FunctionSignature;
+use crate::types::result::FunctionSignature;
 use super::unify::unify_numeric_types;
 
 pub fn infer_generic_args_from_call_types(

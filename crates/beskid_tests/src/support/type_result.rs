@@ -17,13 +17,13 @@ pub fn empty_type_result() -> (TypeResult, Resolution) {
         struct_event_fields: std::collections::HashMap::new(),
         enum_variants_ordered: std::collections::HashMap::new(),
         generic_items: std::collections::HashMap::new(),
-        contract_signatures: std::collections::HashMap::new(),
         lowering: LoweringPrep::default(),
     };
     let resolution = Resolution {
         items: Vec::new(),
         module_graph: ModuleGraph::new_root(),
         tables: Default::default(),
+        span_index: Default::default(),
         warnings: Vec::new(),
         builtin_items: std::collections::HashMap::new(),
         module_imports: std::collections::HashMap::new(),

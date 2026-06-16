@@ -5,9 +5,12 @@ mod expressions;
 mod helpers;
 mod items;
 mod iterable;
+pub(crate) mod precheck;
 mod spawn;
 mod statements;
 mod types;
+
+pub use precheck::TryDesugarTarget;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -17,8 +20,7 @@ use crate::hir::{HirBlock, HirPrimitiveType, HirProgram};
 use crate::resolve::{HirNodeId, ItemId, LocalId, Resolution};
 use crate::syntax::Spanned;
 use crate::types::inference::{
-    ConstraintSet, FunctionSignature as InferenceFunctionSignature, InferenceResult, TypeEnv,
-    solve_constraints,
+    ConstraintSet, InferenceResult, TypeEnv, solve_constraints,
 };
 use crate::types::result::{CallLoweringKind, FunctionSignature, TypeError};
 use crate::types::surface::{MergedTypeEnv, UnitTypeSurface};
@@ -172,27 +174,21 @@ impl<'a> TypeChecker<'a> {
             enum_variants,
             ..
         } = self;
-        let inference_fn_sigs = function_signatures
-            .iter()
-            .map(|(id, sig)| {
-                (
-                    *id,
-                    InferenceFunctionSignature {
-                        params: sig.params.clone(),
-                        return_type: sig.return_type,
-                    },
-                )
-            })
-            .collect();
-        let inference = solve_constraints(
+        let mut errors = errors;
+        let inference = match solve_constraints(
             constraints,
             &TypeEnv::new(&type_table)
-                .with_generics(&generic_items, &inference_fn_sigs)
+                .with_generics(&generic_items, &function_signatures)
                 .with_enum_variants(&enum_variants)
                 .with_named_types(&named_types),
             crate::syntax::SpanInfo::default(),
-        )
-        .unwrap_or_default();
+        ) {
+            Ok(result) => result,
+            Err(solver_errors) => {
+                errors.extend(solver_errors);
+                InferenceResult::default()
+            }
+        };
         CheckerResult {
             types: type_table,
             node_types,

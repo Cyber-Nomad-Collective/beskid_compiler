@@ -160,6 +160,7 @@ mod tests {
             }],
             module_graph: ModuleGraph::new_root(),
             tables: ResolutionTables::new(),
+            span_index: Default::default(),
             warnings: vec![],
             builtin_items: HashMap::new(),
             module_imports: HashMap::new(),

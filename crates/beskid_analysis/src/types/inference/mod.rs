@@ -2,7 +2,6 @@
 
 pub mod constraint;
 pub mod generic;
-pub mod signature;
 pub mod solve;
 pub mod unify;
 
@@ -15,8 +14,8 @@ use crate::resolve::ItemId;
 use crate::types::{TypeId, TypeTable};
 
 pub use constraint::{Constraint, ConstraintSet, TypeVar};
+pub use crate::types::result::FunctionSignature;
 pub use generic::infer_generic_args_from_call_types;
-pub use signature::FunctionSignature;
 pub use solve::solve_constraints;
 pub use unify::{is_numeric, unify_numeric_types, unify_types};
 
