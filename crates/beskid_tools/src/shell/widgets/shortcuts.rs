@@ -45,11 +45,6 @@ impl BeskidWidget for ShortcutsWidget {
             ]),
             Line::from(vec![
                 Span::raw("  "),
-                Span::styled(bindings.menu_hint(), click_style),
-                Span::raw("  top menu"),
-            ]),
-            Line::from(vec![
-                Span::raw("  "),
                 Span::styled(bindings.label_for("help"), click_style),
                 Span::raw("  shortcut help"),
             ]),
@@ -74,8 +69,7 @@ impl BeskidWidget for ShortcutsWidget {
         frame.render_widget(Paragraph::new(title_line("Shortcuts")), title_area);
         frame.render_widget(Paragraph::new(lines), body);
         ctx.shortcut_clicks.add_row(body, 1, ShortcutClickAction::OpenPalette);
-        ctx.shortcut_clicks.add_row(body, 2, ShortcutClickAction::ToggleMenu);
-        ctx.shortcut_clicks.add_row(body, 3, ShortcutClickAction::ToggleHelp);
-        ctx.shortcut_clicks.add_row(body, 4, ShortcutClickAction::Quit);
+        ctx.shortcut_clicks.add_row(body, 2, ShortcutClickAction::ToggleHelp);
+        ctx.shortcut_clicks.add_row(body, 3, ShortcutClickAction::Quit);
     }
 }

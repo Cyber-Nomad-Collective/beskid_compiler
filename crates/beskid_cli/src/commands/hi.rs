@@ -39,7 +39,6 @@ pub fn execute(
         widget_registrars,
         nav_registrars,
         settings_registrars,
-        Some(super::hi_compile::run_hi_compile),
     )?;
     Ok(())
 }

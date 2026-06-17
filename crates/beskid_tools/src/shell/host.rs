@@ -2,7 +2,6 @@
 
 use std::env;
 use std::io::{self, IsTerminal, stderr};
-use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
@@ -11,7 +10,6 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 
 use super::chrome::ShellChrome;
-use super::command_dialog::{CommandDialogAction, CommandDialogOverlay};
 use super::context::WidgetContext;
 use super::control_mode::HiControlMode;
 use super::hotkeys::ShellHotkeys;
@@ -21,9 +19,7 @@ use super::layout::{
     switch_page, template_by_id,
 };
 use super::nav::{NavRegistrar, NavRegistry};
-use super::top_menu::{ShellTopMenu, TopMenuAction};
-use super::cli_run::{plan_cli_command, CliRunPlan};
-use super::hi_compile::{self, HiCompileJob, HiCompileRegistrar, HiCompileRequest};
+use super::workflow::{WorkflowCommand, WorkflowEngine, WorkflowStage};
 use super::palette::{self, CommandPaletteState, PaletteAction};
 use super::key_bindings::ShortcutBindings;
 use super::layers::ShellLayer;
@@ -43,7 +39,6 @@ use crate::tui::shell::effects::{apply_effects, drain_pending_work};
 use crate::tui::shell::focus::OverlayKind;
 use crate::tui::shell::pane_state::ShellMode;
 use crate::pipeline::tui::widgets::init_session_logger;
-use crate::tui::message::ShellMessage;
 use crate::tui::shell::runtime::RuntimeOp;
 use crate::tui::shell::state::ShellState;
 use crate::tui::views;
@@ -63,7 +58,6 @@ impl ShellHost {
         widget_registrars: &[WidgetRegistrar],
         nav_registrars: &[NavRegistrar],
         settings_registrars: &[ToolSettingsRegistrar],
-        compile_registrar: Option<HiCompileRegistrar>,
     ) -> io::Result<()> {
         if !Self::interactive_available(plain) {
             eprintln!("beskid hi: terminal UI requires an interactive stderr TTY");
@@ -84,8 +78,7 @@ impl ShellHost {
         for register in settings_registrars {
             register(&mut settings);
         }
-        let exe = env::current_exe().unwrap_or_else(|_| PathBuf::from("beskid"));
-        let app = HiShellApp::new(scope, layout, registry, nav, settings, exe, compile_registrar);
+        let app = HiShellApp::new(scope, layout, registry, nav, settings);
         crate::tui::realm::run_hi(app)
     }
 }
@@ -105,21 +98,16 @@ pub struct HiShellApp {
     pub chrome: ShellChrome,
     pub hotkeys: ShellHotkeys,
     pub focused_widget: String,
-    pub beskid_exe: PathBuf,
     pub quit_requested: bool,
     pub scope_picker: Option<ScopePickerOverlay>,
-    pub top_menu: ShellTopMenu,
     pub layout_editor: LayoutEditorOverlay,
-    pub command_dialog: CommandDialogOverlay,
+    pub workflow_engine: WorkflowEngine,
     key_bindings: ShortcutBindings,
     shortcut_clicks: ShortcutClickTargets,
     pending_shortcut_rebind: Option<usize>,
-    pending_cli: Option<CliRunPlan>,
-    pending_compile: Option<HiCompileJob>,
-    compile_registrar: Option<HiCompileRegistrar>,
     pinned_header: Rect,
     frame_area: Rect,
-    msg_tx: Sender<RuntimeOp>,
+    pub(crate) msg_tx: Sender<RuntimeOp>,
     msg_rx: Receiver<RuntimeOp>,
 }
 
@@ -130,8 +118,6 @@ impl HiShellApp {
         registry: WidgetRegistry,
         nav: NavRegistry,
         settings: ToolSettingsRegistry,
-        beskid_exe: PathBuf,
-        compile_registrar: Option<HiCompileRegistrar>,
     ) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
         let mut scope = scope;
@@ -156,8 +142,6 @@ impl HiShellApp {
         let config = load_config(&scope, &settings);
         let key_bindings = ShortcutBindings::load(&config, &settings);
         let hotkeys = ShellHotkeys::from_bindings(&key_bindings);
-        let mut top_menu = ShellTopMenu::new();
-        top_menu.rebuild(&nav, &layout.pages);
         Self {
             scope,
             layout,
@@ -169,18 +153,13 @@ impl HiShellApp {
             chrome: ShellChrome::default(),
             hotkeys,
             focused_widget: focused,
-            beskid_exe,
             quit_requested: false,
             scope_picker: None,
-            top_menu,
             layout_editor: LayoutEditorOverlay::default(),
-            command_dialog: CommandDialogOverlay::default(),
+            workflow_engine: WorkflowEngine::default(),
             key_bindings,
             shortcut_clicks: ShortcutClickTargets::default(),
             pending_shortcut_rebind: None,
-            pending_cli: None,
-            pending_compile: None,
-            compile_registrar,
             pinned_header: Rect::default(),
             frame_area: Rect::default(),
             msg_tx,
@@ -197,12 +176,8 @@ impl HiShellApp {
     }
 
     fn control_mode(&self) -> HiControlMode {
-        if self.command_dialog.visible {
-            HiControlMode::CommandDialog
-        } else if self.palette.visible {
+        if self.palette.visible {
             HiControlMode::Palette
-        } else if self.top_menu.is_active() {
-            HiControlMode::TopMenu
         } else if self.layout.editor.active {
             HiControlMode::LayoutEdit
         } else {
@@ -217,10 +192,6 @@ impl HiShellApp {
 
     fn layer_is_active(&self, layer: ShellLayer) -> bool {
         match layer {
-            ShellLayer::TopMenuDropdown => {
-                self.top_menu.dropdown_open() || self.top_menu.is_active()
-            }
-            ShellLayer::CommandDialog => self.command_dialog.visible,
             ShellLayer::Palette => self.palette.visible,
             ShellLayer::ScopePicker => self.scope_picker.is_some(),
             ShellLayer::LayoutEditor => self.layout.editor.active,
@@ -233,10 +204,7 @@ impl HiShellApp {
     }
 
     fn layer_blocks_mouse(&self, layer: ShellLayer) -> bool {
-        match layer {
-            ShellLayer::TopMenuDropdown => self.top_menu.dropdown_open(),
-            other => self.layer_is_active(other),
-        }
+        self.layer_is_active(layer)
     }
 
     fn top_input_layer(&self) -> Option<ShellLayer> {
@@ -255,17 +223,7 @@ impl HiShellApp {
 
     fn handle_modal_mouse(&mut self, mouse: &MouseEvent) -> Option<ShellOutcome> {
         match self.top_mouse_layer()? {
-            ShellLayer::TopMenuDropdown => {
-                let action = self.top_menu.handle_mouse(mouse.column, mouse.row);
-                if action != TopMenuAction::None {
-                    self.handle_top_menu_action(action);
-                }
-                Some(ShellOutcome::Redraw)
-            }
-            ShellLayer::CommandDialog
-            | ShellLayer::Palette
-            | ShellLayer::ScopePicker
-            | ShellLayer::PanelOverlay => Some(ShellOutcome::Redraw),
+            ShellLayer::Palette | ShellLayer::ScopePicker | ShellLayer::PanelOverlay => Some(ShellOutcome::Redraw),
             ShellLayer::LayoutEditor | ShellLayer::Help | ShellLayer::Base => None,
         }
     }
@@ -281,29 +239,6 @@ impl HiShellApp {
     fn handle_modal_input(&mut self, event: &ShellRealmEvent) -> Option<ShellOutcome> {
         let layer = self.top_input_layer()?;
         match layer {
-            ShellLayer::TopMenuDropdown => match event {
-                ShellRealmEvent::Input(InputEvent::Key(key)) => {
-                    if let Some(action) = self.handle_global_key(*key) {
-                        return Some(action);
-                    }
-                    let menu_action = self.top_menu.handle_key(*key, &self.key_bindings);
-                    self.handle_top_menu_action(menu_action);
-                    Some(ShellOutcome::Redraw)
-                }
-                ShellRealmEvent::Input(InputEvent::Mouse(mouse)) => {
-                    self.modal_mouse_outcome(mouse)
-                }
-                _ => None,
-            },
-            ShellLayer::CommandDialog => match event {
-                ShellRealmEvent::Input(InputEvent::Key(key)) => {
-                    Some(self.handle_command_dialog_key(*key))
-                }
-                ShellRealmEvent::Input(InputEvent::Mouse(mouse)) => {
-                    self.modal_mouse_outcome(mouse)
-                }
-                _ => Some(ShellOutcome::Redraw),
-            },
             ShellLayer::Palette => match event {
                 ShellRealmEvent::Input(InputEvent::Key(key)) => {
                     let action = self.palette.handle_key(*key);
@@ -407,16 +342,6 @@ impl HiShellApp {
             return self.dispatch_shortcut_click(action);
         }
 
-        if mouse_is_click(mouse)
-            && (mouse_is_inside(mouse, self.pinned_header) || self.top_menu.is_active())
-        {
-            let action = self.top_menu.handle_mouse(mouse.column, mouse.row);
-            if action != TopMenuAction::None {
-                self.handle_top_menu_action(action);
-                return ShellOutcome::Redraw;
-            }
-        }
-
         if self.layout.editor.active {
             if self.layout.editor.drawer_visible {
                 let drawer = self.layout_drawer_rect(area);
@@ -464,7 +389,6 @@ impl HiShellApp {
             &mut self.shell_state,
             &mut self.palette,
             &self.focused_widget,
-            &self.beskid_exe,
             &mut self.key_bindings,
             &mut self.shortcut_clicks,
             &mut self.pending_shortcut_rebind,
@@ -475,11 +399,6 @@ impl HiShellApp {
         match action {
             ShortcutClickAction::OpenPalette => {
                 self.open_palette();
-                ShellOutcome::Redraw
-            }
-            ShortcutClickAction::ToggleMenu => {
-                let action = self.top_menu.toggle_focus();
-                self.handle_top_menu_action(action);
                 ShellOutcome::Redraw
             }
             ShortcutClickAction::ToggleHelp => {
@@ -546,11 +465,7 @@ impl HiShellApp {
             NavAction::Overlay(widget_id) | NavAction::Widget(widget_id) => {
                 self.open_overlay(&widget_id);
             }
-            NavAction::Cli(argv) => {
-                self.command_dialog.open_external(argv, &self.scope);
-                self.sync_hotkey_scope();
-            }
-            NavAction::Group => {}
+            NavAction::Group | NavAction::Cli(_) => {}
         }
     }
 
@@ -588,20 +503,6 @@ impl HiShellApp {
             }
             _ => {}
         }
-    }
-
-    fn handle_top_menu_action(&mut self, action: TopMenuAction) {
-        match action {
-            TopMenuAction::None | TopMenuAction::Redraw => {}
-            TopMenuAction::SwitchPage(page_id) => {
-                self.dispatch_nav_action(NavAction::Page(page_id));
-            }
-            TopMenuAction::OpenOverlay(widget_id) => self.open_overlay(&widget_id),
-            TopMenuAction::RunCli(argv) => {
-                self.dispatch_nav_action(NavAction::Cli(argv));
-            }
-        }
-        self.sync_hotkey_scope();
     }
 
     fn handle_layout_overlay_action(&mut self, action: LayoutOverlayAction) {
@@ -743,12 +644,6 @@ impl HiShellApp {
         }
     }
 
-    fn queue_cli(&mut self, item: &super::catalog::CommandItem, params: &str) {
-        if let Some(plan) = plan_cli_command(&self.beskid_exe, item, params, &self.scope) {
-            self.pending_cli = Some(plan);
-        }
-    }
-
     fn try_refresh_scope(&mut self) {
         let Ok(cwd) = env::current_dir() else {
             return;
@@ -759,80 +654,15 @@ impl HiShellApp {
         }
     }
 
-    fn prepare_compile_run(&mut self, params: &str) {
-        self.try_refresh_scope();
-        let scope = ShellScope::resolve_for_cli(&self.scope, params);
-        if scope != self.scope {
-            self.reload_scope(scope);
+    fn submit_workflow(&mut self, command: WorkflowCommand) {
+        if matches!(command, WorkflowCommand::Build { .. } | WorkflowCommand::Test { .. }) {
+            self.try_refresh_scope();
+            self.shell_state.reset_compile_progress();
+            let _ = switch_page(&mut self.layout, "compile_debug");
+            self.sync_focus_after_page_switch();
+            init_session_logger();
         }
-        self.shell_state.reset_compile_progress();
-        let _ = switch_page(&mut self.layout, "compile_debug");
-        self.sync_focus_after_page_switch();
-        self.top_menu.rebuild(&self.nav, &self.layout.pages);
-        init_session_logger();
-    }
-
-    fn queue_compile_or_cli(&mut self, item: &super::catalog::CommandItem, params: &str) {
-        if let super::catalog::CommandItem::Cli(cli) = item
-            && hi_compile::is_in_process_command(cli.id)
-            && self.compile_registrar.is_some()
-        {
-            self.prepare_compile_run(params);
-            if self.scope.is_user() {
-                let _ = self.msg_tx.send(RuntimeOp::Update(ShellMessage::PushLog(
-                    "Open a workspace (.bws) or project (.bproj) before building.".into(),
-                )));
-                self.drain_messages();
-                return;
-            }
-            self.pending_compile = Some(HiCompileJob {
-                command: cli.id.to_string(),
-                params: params.to_string(),
-            });
-            return;
-        }
-        self.queue_cli(item, params);
-    }
-
-    pub(crate) fn take_pending_cli(&mut self) -> Option<CliRunPlan> {
-        self.pending_cli.take()
-    }
-
-    pub(crate) fn take_pending_compile(&mut self) -> Option<HiCompileJob> {
-        self.pending_compile.take()
-    }
-
-    pub(crate) fn spawn_compile_job(
-        &mut self,
-        job: HiCompileJob,
-    ) -> Option<std::thread::JoinHandle<anyhow::Result<()>>> {
-        let registrar = self.compile_registrar?;
-        let msg_tx = self.msg_tx.clone();
-        let scope = self.scope.clone();
-        let command = job.command;
-        let params = job.params;
-        Some(std::thread::spawn(move || {
-            registrar(HiCompileRequest {
-                command: &command,
-                params: &params,
-                scope: &scope,
-                msg_tx,
-            })
-        }))
-    }
-
-    pub(crate) fn on_compile_finished(&mut self, result: anyhow::Result<()>) {
-        if let Err(err) = result {
-            let _ = self.msg_tx.send(RuntimeOp::Update(ShellMessage::PushLog(
-                err.to_string(),
-            )));
-        }
-        if !self.shell_state.compile_complete {
-            let _ = self
-                .msg_tx
-                .send(RuntimeOp::Update(ShellMessage::CompileComplete));
-        }
-        self.drain_messages();
+        self.workflow_engine.submit(command, self.scope.clone());
     }
 
     fn handle_palette_action(&mut self, action: PaletteAction) {
@@ -873,29 +703,18 @@ impl HiShellApp {
                             self.handle_shell_action(palette::contextual_to_shell_action(&item));
                         }
                     }
-                    super::catalog::CommandItem::Cli(_) => {
-                        self.queue_compile_or_cli(&item, &params);
+                    super::catalog::CommandItem::Workflow(wf) => {
+                        let command = match wf.stage {
+                            WorkflowStage::Build => WorkflowCommand::Build { params: params.clone() },
+                            WorkflowStage::Test => WorkflowCommand::Test { params: params.clone() },
+                            WorkflowStage::Run => WorkflowCommand::Run { target: params.clone(), args: vec![] },
+                            WorkflowStage::Analyze => WorkflowCommand::Analyze { params: params.clone() },
+                            WorkflowStage::Graph => WorkflowCommand::Graph { params: params.clone() },
+                        };
+                        self.submit_workflow(command);
                     }
                 }
                 self.sync_hotkey_scope();
-            }
-        }
-    }
-
-    fn handle_command_dialog_key(&mut self, key: KeyEvent) -> ShellOutcome {
-        match self.command_dialog.handle_key(key) {
-            CommandDialogAction::None => ShellOutcome::Continue,
-            CommandDialogAction::Redraw => ShellOutcome::Redraw,
-            CommandDialogAction::Close => {
-                self.sync_hotkey_scope();
-                ShellOutcome::Redraw
-            }
-            CommandDialogAction::Run => {
-                if let Some(plan) = self.command_dialog.take_run_plan(&self.beskid_exe, &self.scope) {
-                    self.pending_cli = Some(plan);
-                }
-                self.sync_hotkey_scope();
-                ShellOutcome::Redraw
             }
         }
     }
@@ -905,7 +724,6 @@ impl HiShellApp {
             self.scope = scope;
             self.layout = layout;
             self.nav.merge_pages(&self.layout.pages);
-            self.top_menu.rebuild(&self.nav, &self.layout.pages);
             self.focused_widget = self
                 .layout
                 .doc
@@ -1000,7 +818,6 @@ impl HiShellApp {
             let shell_state = &mut self.shell_state;
             let palette = &mut self.palette;
             let focused = &self.focused_widget;
-            let beskid_exe = &self.beskid_exe;
             let key_bindings = &mut self.key_bindings;
             let shortcut_clicks = &mut self.shortcut_clicks;
             let pending_shortcut_rebind = &mut self.pending_shortcut_rebind;
@@ -1011,7 +828,6 @@ impl HiShellApp {
                     shell_state,
                     palette,
                     focused,
-                    beskid_exe,
                     key_bindings,
                     shortcut_clicks,
                     pending_shortcut_rebind,
@@ -1057,15 +873,6 @@ impl HiShellApp {
 
         if let Some(outcome) = self.handle_modal_input(&event) {
             return outcome;
-        }
-
-        if let ShellRealmEvent::Input(InputEvent::Key(key)) = &event
-            && self.top_input_layer().is_none()
-            && self.key_bindings.toggles_menu(key)
-        {
-            let menu_action = self.top_menu.handle_key(*key, &self.key_bindings);
-            self.handle_top_menu_action(menu_action);
-            return ShellOutcome::Redraw;
         }
 
         match event {
@@ -1227,7 +1034,6 @@ impl HiShellApp {
                 &mut self.shell_state,
                 &mut self.palette,
                 &self.focused_widget,
-                &self.beskid_exe,
                 key_bindings,
                 shortcut_clicks,
                 pending_shortcut_rebind,
@@ -1259,7 +1065,6 @@ impl HiShellApp {
                     let shell_state = &mut self.shell_state;
                     let palette = &mut self.palette;
                     let focused_widget = &self.focused_widget;
-                    let beskid_exe = &self.beskid_exe;
                     let key_bindings = &mut self.key_bindings;
                     let shortcut_clicks = &mut self.shortcut_clicks;
                     let pending_shortcut_rebind = &mut self.pending_shortcut_rebind;
@@ -1270,7 +1075,6 @@ impl HiShellApp {
                         shell_state,
                         palette,
                         focused_widget,
-                        beskid_exe,
                         key_bindings,
                         shortcut_clicks,
                         pending_shortcut_rebind,
@@ -1325,16 +1129,6 @@ impl HiShellApp {
                         self.palette.render(area, frame, &self.key_bindings.palette_hint());
                     }
                 }
-                ShellLayer::CommandDialog => {
-                    if self.command_dialog.visible {
-                        self.command_dialog.render(area, frame);
-                    }
-                }
-                ShellLayer::TopMenuDropdown => {
-                    if self.top_menu.is_active() {
-                        self.top_menu.render_menu_overlay(area, frame);
-                    }
-                }
             }
         }
     }
@@ -1356,8 +1150,6 @@ fn render_edit_highlight(frame: &mut Frame, area: Rect) {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;
     use ratatui::Terminal;
@@ -1375,15 +1167,7 @@ mod tests {
         let mut nav = NavRegistry::new();
         nav.merge_pages(&layout_state.pages);
         let settings = ToolSettingsRegistry::with_builtins();
-        HiShellApp::new(
-            scope,
-            layout_state,
-            registry,
-            nav,
-            settings,
-            PathBuf::from("beskid"),
-            None,
-        )
+        HiShellApp::new(scope, layout_state, registry, nav, settings)
     }
 
     #[test]

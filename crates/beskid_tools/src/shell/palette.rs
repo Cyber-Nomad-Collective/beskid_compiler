@@ -208,7 +208,7 @@ impl CommandPaletteState {
             .enumerate()
             .map(|(index, item)| {
                 let kind = match item.kind() {
-                    CommandKind::Cli => "cli",
+                    CommandKind::Workflow => "wf",
                     CommandKind::Contextual => "ctx",
                     CommandKind::Nav => "nav",
                 };

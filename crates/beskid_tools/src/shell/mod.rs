@@ -27,13 +27,14 @@ pub mod shortcut_clicks;
 pub mod settings;
 pub mod widget;
 pub mod widgets;
+pub mod workflow;
 
 pub use board::{BoardLayout, BoardRegion, BoardTile};
 pub use descriptor::WidgetDescriptor;
 pub use layout::{BoardV2Doc, HiLayoutState, LayoutEditCommand, PagesDoc, switch_page};
 pub use nav::{NavAction, NavItemDescriptor, NavRegistrar, NavRegistry, BUILTIN_NAV};
 pub use phase::transition_label;
-pub use catalog::{CliCommandDef, CommandItem, CommandKind, ContextualCommand, NavCommandDef};
+pub use catalog::{CommandItem, CommandKind, ContextualCommand, NavCommandDef, WorkflowCommandDef};
 pub use control_mode::HiControlMode;
 pub use chrome::ShellChrome;
 pub use context::WidgetContext;

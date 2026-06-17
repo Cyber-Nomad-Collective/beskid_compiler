@@ -1,18 +1,15 @@
 //! `beskid hi` tuirealm event loop on stderr.
 
 use std::io;
-use std::thread::JoinHandle;
 use std::time::Duration;
-
-use anyhow::Result;
 
 use tuirealm::application::{Application, PollStrategy};
 use tuirealm::event::NoUserEvent;
 use tuirealm::listener::EventListenerCfg;
 use tuirealm::terminal::TerminalAdapter;
 
-use crate::shell::cli_run::run_cli_plan;
 use crate::shell::host::HiShellApp;
+use crate::shell::workflow::{WorkflowEngine, WorkflowEvent, WorkflowStage};
 use crate::tui::realm::shell_event::{ShellOutcome, ShellRealmEvent};
 use crate::tui::realm::stderr_adapter::StderrTerminalAdapter;
 
@@ -115,7 +112,6 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
 
     let mut quitting = false;
     let mut dirty = true;
-    let mut compile_thread: Option<JoinHandle<Result<()>>> = None;
 
     while !quitting {
         match application.tick(PollStrategy::TryFor(TICK)) {
@@ -137,40 +133,39 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
                 .downcast_mut::<HiShellComponent>()
                 .expect("hi shell component");
 
-            if let Some(handle) = compile_thread.as_ref()
-                && handle.is_finished() {
-                    let handle = compile_thread.take().expect("compile thread");
-                    let result = handle
-                        .join()
-                        .unwrap_or_else(|_| Err(anyhow::anyhow!("compile thread panicked")));
-                    inner.app.on_compile_finished(result);
-                    dirty = true;
+            // Poll workflow engine for events
+            let events = inner.app.workflow_engine.drain_events();
+            let has_events = !events.is_empty();
+            for event in &events {
+                match event {
+                    WorkflowEvent::StageStarted(stage) => {
+                        // Stage started - UI will reflect new progress
+                    }
+                    WorkflowEvent::Progress(_, pct, msg) => {
+                        // Optional: update progress in shell_state if available
+                    }
+                    WorkflowEvent::Log(stage, msg) => {
+                        // Pipeline messages
+                    }
+                    WorkflowEvent::StageCompleted(stage) => {
+                        inner.app.shell_state.compile_complete = true;
+                        // Trigger compile complete message
+                        let _ = inner.app.msg_tx.send(crate::tui::shell::runtime::RuntimeOp::Update(
+                            crate::tui::message::ShellMessage::CompileComplete,
+                        ));
+                    }
+                    WorkflowEvent::StageFailed(stage, err) => {
+                        let _ = inner.app.msg_tx.send(crate::tui::shell::runtime::RuntimeOp::Update(
+                            crate::tui::message::ShellMessage::PushLog(err.clone()),
+                        ));
+                    }
+                    WorkflowEvent::Cancelled => {
+                        // Stage was cancelled
+                    }
+                    WorkflowEvent::AllComplete => {}
                 }
-
-            if compile_thread.is_none()
-                && let Some(job) = inner.app.take_pending_compile() {
-                    compile_thread = inner.app.spawn_compile_job(job);
-                    dirty = true;
-                }
-
-            if let Some(plan) = inner.app.take_pending_cli() {
-                terminal
-                    .suspend_for_subprocess()
-                    .map_err(|err| io::Error::other(err.to_string()))?;
-                let _ = run_cli_plan(&plan);
-                terminal
-                    .clear_screen()
-                    .map_err(|err| io::Error::other(err.to_string()))?;
-                terminal
-                    .resume_after_subprocess()
-                    .map_err(|err| io::Error::other(err.to_string()))?;
-                let size = terminal.raw().size().map_err(io::Error::other)?;
-                let _ = inner.handle_shell_event(ShellRealmEvent::Resize {
-                    width: size.width,
-                    height: size.height,
-                });
-                dirty = true;
             }
+            dirty = dirty || has_events;
         }
 
         if dirty {

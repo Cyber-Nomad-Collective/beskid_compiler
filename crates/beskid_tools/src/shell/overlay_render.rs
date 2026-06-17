@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn graph_overlay_renders_pane_title() {
-        use std::path::PathBuf;
+
 
         use crate::shell::context::WidgetContext;
         use crate::shell::key_bindings::ShortcutBindings;
@@ -298,7 +298,6 @@ mod tests {
         let scope = ShellScope::User;
         let layout = parse_v2(EMBEDDED_HI_V2).expect("board");
         let mut palette = CommandPaletteState::default();
-        let beskid_exe = PathBuf::from("beskid");
         let mut key_bindings = ShortcutBindings::platform_defaults();
         let mut shortcut_clicks = ShortcutClickTargets::default();
         let mut pending_shortcut_rebind = None;
@@ -309,7 +308,6 @@ mod tests {
             &mut shell_state,
             &mut palette,
             "",
-            &beskid_exe,
             &mut key_bindings,
             &mut shortcut_clicks,
             &mut pending_shortcut_rebind,

@@ -5,8 +5,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::Frame;
 
-use crate::shell::catalog::{builtin_cli_commands, builtin_contextual_commands};
-use crate::shell::cli_run::{plan_cli_command, CliRunPlan};
+use crate::shell::catalog::builtin_contextual_commands;
 use crate::shell::palette::{self, CommandPaletteState, PaletteAction};
 use crate::shell::scope::ShellScope;
 use crate::shell::widget::ShellAction;
@@ -30,7 +29,6 @@ pub struct BeskidShellApp {
     palette: CommandPaletteState,
     scope: ShellScope,
     beskid_exe: PathBuf,
-    pending_cli: Option<CliRunPlan>,
 }
 
 impl BeskidShellApp {
@@ -45,12 +43,7 @@ impl BeskidShellApp {
             palette: CommandPaletteState::default(),
             scope: ShellScope::resolve(&cwd),
             beskid_exe: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("beskid")),
-            pending_cli: None,
         }
-    }
-
-    pub fn take_pending_cli(&mut self) -> Option<CliRunPlan> {
-        self.pending_cli.take()
     }
 
     pub fn handle_shell_event(&mut self, event: ShellRealmEvent) -> ShellOutcome {
@@ -115,26 +108,16 @@ impl BeskidShellApp {
     }
 
     fn open_palette(&mut self) {
-        let mut items = builtin_cli_commands();
-        items.extend(builtin_contextual_commands(&self.scope));
-        self.palette.open(items);
+        self.palette.open(builtin_contextual_commands(&self.scope));
     }
 
     fn handle_palette_action(&mut self, action: PaletteAction) {
         match action {
             PaletteAction::None | PaletteAction::Redraw => {}
             PaletteAction::Close => {}
-            PaletteAction::Execute(item, params) => {
+            PaletteAction::Execute(item, _params) => {
                 self.palette.close();
-                if item.kind() == crate::shell::catalog::CommandKind::Cli {
-                    if let Some(plan) =
-                        plan_cli_command(&self.beskid_exe, &item, &params, &self.scope)
-                    {
-                        self.pending_cli = Some(plan);
-                    }
-                } else {
-                    self.apply_shell_action(palette::contextual_to_shell_action(&item));
-                }
+                self.apply_shell_action(palette::contextual_to_shell_action(&item));
             }
         }
     }

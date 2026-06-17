@@ -11,7 +11,6 @@ use tuirealm::listener::EventListenerCfg;
 use tuirealm::terminal::TerminalAdapter;
 
 use crate::pipeline::tui::widgets::{init_session_logger, shutdown_session_logger};
-use crate::shell::cli_run::run_cli_plan;
 use crate::tui::app::BeskidShellApp;
 use crate::tui::input::{InputAction, InputResult};
 use crate::tui::signals::RedrawSignal;
@@ -362,25 +361,6 @@ fn event_loop(
                 dirty = true;
             }
 
-            if let Some(plan) = shell_mut(application).app.take_pending_cli() {
-                let _ = application.lock_ports();
-                terminal.disable_mouse_capture().map_err(runtime_err)?;
-                terminal.leave_alternate_screen().map_err(runtime_err)?;
-                terminal.disable_raw_mode().map_err(runtime_err)?;
-                shutdown_session_logger();
-                let _ = run_cli_plan(&plan);
-                terminal.enable_raw_mode().map_err(runtime_err)?;
-                terminal.enter_alternate_screen().map_err(runtime_err)?;
-                terminal.enable_mouse_capture().map_err(runtime_err)?;
-                let _ = application.unlock_ports();
-                init_session_logger();
-                let size = terminal.raw().size().map_err(io::Error::other)?;
-                shell_mut(application).handle_shell_event(ShellRealmEvent::Resize {
-                    width: size.width,
-                    height: size.height,
-                });
-                dirty = true;
-            }
         } else {
             thread::sleep(TICK);
         }

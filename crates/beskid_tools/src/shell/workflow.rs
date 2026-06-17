@@ -8,14 +8,13 @@
 //! with lifecycle management (run, stop, join, stop_and_join) and a stop-signal channel.
 //! Progress is reported via `Sender<WorkflowEvent>` back to the shell for UI updates.
 
-use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
-use std::thread;
+use std::sync::mpsc;
 
-use workflow_task::{Task, TaskResult, task};
+use async_channel::Receiver as StopReceiver;
+use workflow_task::{task, Task, TaskResult};
 
 use super::hi_compile::{HiCompileRegistrar, HiCompileRequest};
+use super::scope::ShellScope;
 
 /// Pipeline stages the workflow engine can run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -95,19 +94,19 @@ pub struct StageRunner {
 
 struct StageInput {
     params: String,
-    tx: Sender<WorkflowEvent>,
+    scope: ShellScope,
+    tx: mpsc::Sender<WorkflowEvent>,
 }
 
 impl StageRunner {
     /// Create a new stage runner with the given async worker function.
-    /// The worker receives (StageInput, Receiver<()>) and returns StageOutput.
+    /// The worker receives (StageInput, StopReceiver<()>) and returns StageOutput.
     pub fn new<F>(stage: WorkflowStage, worker: F) -> Self
     where
-        F: Fn(StageInput, Receiver<()>) -> StageOutput + Send + Sync + 'static,
+        F: Fn(StageInput, StopReceiver<()>) -> StageOutput + Send + Sync + 'static,
     {
         let stage_id = stage;
-        let task = task!(move |input: StageInput, stop: Receiver<()>| async move {
-            // Check for immediate cancellation
+        let task = task!(move |input: StageInput, stop: StopReceiver<()>| async move {
             if stop.try_recv().is_ok() {
                 let _ = input.tx.send(WorkflowEvent::Cancelled);
                 return StageOutput {
@@ -117,26 +116,14 @@ impl StageRunner {
                 };
             }
             let _ = input.tx.send(WorkflowEvent::StageStarted(stage_id));
-            let result = worker(input, stop);
-            match result.success {
-                true => {
-                    let _ = result.tx.clone();
-                    let stage = result.stage;
-                    let _ = result.tx;
-                    // tx is consumed; we send the event here via the stage runner's own reference
-                }
-                false => {
-                    let _ = result.tx;
-                }
-            }
-            result
+            worker(input, stop)
         });
         Self { stage, task }
     }
 
-    /// Run the stage with the given parameters and event channel.
-    pub fn run(&self, params: String, tx: Sender<WorkflowEvent>) -> TaskResult<&Self> {
-        self.task.run(StageInput { params, tx })
+    /// Run the stage with the given input.
+    pub fn run(&self, input: StageInput) -> TaskResult<&Self> {
+        self.task.run(input).map(|_| self)
     }
 
     /// Signal the stage to stop (cancellation).
@@ -165,7 +152,7 @@ impl StageRunner {
 // ---------------------------------------------------------------------------
 
 /// Build stage: delegates to the registered compile handler (build::execute_for_hi).
-fn build_worker(input: StageInput, _stop: Receiver<()>) -> StageOutput {
+fn build_worker(input: StageInput, _stop: StopReceiver<()>) -> StageOutput {
     let _ = input.tx.send(WorkflowEvent::Log(
         WorkflowStage::Build,
         "Starting build...".into(),
@@ -182,7 +169,7 @@ fn build_worker(input: StageInput, _stop: Receiver<()>) -> StageOutput {
 }
 
 /// Test stage: delegates to the registered compile handler (test::execute_for_hi).
-fn test_worker(input: StageInput, _stop: Receiver<()>) -> StageOutput {
+fn test_worker(input: StageInput, _stop: StopReceiver<()>) -> StageOutput {
     let _ = input.tx.send(WorkflowEvent::Log(
         WorkflowStage::Test,
         "Starting tests...".into(),
@@ -210,8 +197,8 @@ fn test_worker(input: StageInput, _stop: Receiver<()>) -> StageOutput {
 pub struct WorkflowEngine {
     build_runner: StageRunner,
     test_runner: StageRunner,
-    event_tx: Sender<WorkflowEvent>,
-    event_rx: Receiver<WorkflowEvent>,
+    event_tx: mpsc::Sender<WorkflowEvent>,
+    event_rx: mpsc::Receiver<WorkflowEvent>,
     current_stage: Option<WorkflowStage>,
     compile_registrar: Option<HiCompileRegistrar>,
 }
@@ -223,7 +210,7 @@ impl WorkflowEngine {
         // Build the stage runners with the compile_registrar wired in
         let registrar = compile_registrar;
         let build_runner = StageRunner::new(WorkflowStage::Build, {
-            move |input: StageInput, stop: Receiver<()>| {
+            move |input: StageInput, stop: StopReceiver<()>| {
                 if stop.try_recv().is_ok() {
                     return StageOutput {
                         stage: WorkflowStage::Build,
@@ -239,7 +226,7 @@ impl WorkflowEngine {
                     let result = reg(HiCompileRequest {
                         command: "build",
                         params: &input.params,
-                        scope: &input.params, // scope handled before submit
+                        scope: &input.scope,
                         msg_tx: mpsc::channel().0, // TODO: bridge RuntimeOp -> WorkflowEvent
                     });
                     match result {
@@ -267,7 +254,7 @@ impl WorkflowEngine {
         // For now, test runner just delegates to the compile_registrar too
         let test_registrar = compile_registrar;
         let test_runner = StageRunner::new(WorkflowStage::Test, {
-            move |input: StageInput, stop: Receiver<()>| {
+            move |input: StageInput, stop: StopReceiver<()>| {
                 if stop.try_recv().is_ok() {
                     return StageOutput {
                         stage: WorkflowStage::Test,
@@ -279,7 +266,7 @@ impl WorkflowEngine {
                     let result = reg(HiCompileRequest {
                         command: "test",
                         params: &input.params,
-                        scope: &input.params,
+                        scope: &input.scope,
                         msg_tx: mpsc::channel().0,
                     });
                     match result {
@@ -315,18 +302,18 @@ impl WorkflowEngine {
     }
 
     /// Submit a command to the workflow engine.
-    pub fn submit(&mut self, command: WorkflowCommand) {
+    pub fn submit(&mut self, command: WorkflowCommand, scope: ShellScope) {
         if self.is_running() {
             return; // Cannot run parallel stages
         }
         let tx = self.event_tx.clone();
         match command {
             WorkflowCommand::Build { params } => {
-                let _ = self.build_runner.run(params, tx);
+                let _ = self.build_runner.run(StageInput { params, scope, tx });
                 self.current_stage = Some(WorkflowStage::Build);
             }
             WorkflowCommand::Test { params } => {
-                let _ = self.test_runner.run(params, tx);
+                let _ = self.test_runner.run(StageInput { params, scope, tx });
                 self.current_stage = Some(WorkflowStage::Test);
             }
             WorkflowCommand::Cancel => {
