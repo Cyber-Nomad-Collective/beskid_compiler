@@ -8,7 +8,7 @@ use beskid_abi::{DispatchReturnGroup, DispatchRoute, TAG_STR_NEW};
 use beskid_analysis::hir::{
     HirLiteral, HirPrimitiveType, integer_literal_magnitude, integer_literal_primitive_type,
 };
-use beskid_analysis::syntax::{SpanInfo, Spanned};
+use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use cranelift_codegen::ir::{ExternalName, GlobalValueData, InstBuilder, Value};
 use cranelift_frontend::FunctionBuilder;

@@ -505,19 +505,6 @@ impl<'a> TypeChecker<'a> {
         primitive
     }
 
-    pub(super) fn record_numeric_operand_constraint(
-        &mut self,
-        operand_type: Option<TypeId>,
-        span: SpanInfo,
-        name: &str,
-    ) {
-        if operand_type.is_some() {
-            return;
-        }
-        let var = self.constraints.fresh_var();
-        self.constraints.is_numeric(var, span, name);
-    }
-
     pub(super) fn record_generic_call_constraints(
         &mut self,
         callee: ItemId,

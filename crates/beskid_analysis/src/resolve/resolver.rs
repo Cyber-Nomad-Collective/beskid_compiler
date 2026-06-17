@@ -106,7 +106,7 @@ pub(super) fn file_scoped_module_path(
     Some(path_segments(&def.node.path))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Resolution {
     pub items: Vec<ItemInfo>,
     pub module_graph: ModuleGraph,
@@ -125,18 +125,3 @@ impl Resolution {
     }
 }
 
-impl Default for Resolution {
-    fn default() -> Self {
-        Self {
-            items: Vec::new(),
-            module_graph: ModuleGraph::new_root(),
-            tables: ResolutionTables::default(),
-            span_index: SpanIndex::default(),
-            warnings: Vec::new(),
-            builtin_items: HashMap::new(),
-            module_imports: HashMap::new(),
-            symbols: SymbolRegistry::default(),
-            by_symbol: HashMap::new(),
-        }
-    }
-}

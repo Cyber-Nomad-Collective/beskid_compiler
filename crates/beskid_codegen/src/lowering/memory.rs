@@ -36,12 +36,4 @@ pub(crate) fn store_typed_value(
     builder.ins().store(flags, coerced, addr, 0);
 }
 
-/// Load a value of `clif_ty` from `addr`.
-pub(crate) fn load_typed_value(
-    builder: &mut FunctionBuilder,
-    clif_ty: Type,
-    addr: Value,
-    flags: MemFlags,
-) -> Value {
-    builder.ins().load(clif_ty, flags, addr, 0)
-}
+

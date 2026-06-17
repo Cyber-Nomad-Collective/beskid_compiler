@@ -19,7 +19,6 @@ pub(crate) struct NodeLoweringContext<'a, 'b> {
     pub(crate) builder: &'a mut FunctionBuilder<'b>,
     pub(crate) state: &'a mut FunctionLoweringState,
     pub(crate) expected_return_type: Option<TypeId>,
-    pub(crate) receiver_type: Option<TypeId>,
     pub(crate) expected_expr_type: Option<TypeId>,
 }
 

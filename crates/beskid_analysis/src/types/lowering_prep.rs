@@ -860,15 +860,10 @@ impl<'a> PrepWalker<'a> {
             }
             _ => return None,
         };
-        if !self
-            .surfaces
+        self.surfaces
             .struct_event_fields
             .get(&item)
-            .and_then(|f| f.get(&field))
-            .is_some()
-        {
-            return None;
-        }
+            .and_then(|f| f.get(&field))?;
         field_type_on_receiver(
             self.resolution,
             &self.surfaces.path_env(),
@@ -918,37 +913,19 @@ fn primitive_type_id(types: &TypeTable, p: HirPrimitiveType) -> Option<TypeId> {
 }
 
 fn lookup_function_type(types: &TypeTable, params: &[TypeId], ret: TypeId) -> Option<TypeId> {
-    (0..).map(TypeId).find_map(|id| match types.get(id) {
-        Some(TypeInfo::Function {
-            params: ps,
-            return_type,
-        }) if ps == params && *return_type == ret => Some(id),
-        Some(_) | None => None,
-    })
+    (0..).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Function { params: ps, return_type, }) if ps == params && *return_type == ret))
 }
 
 fn find_named_type(types: &TypeTable, item: ItemId) -> Option<TypeId> {
-    (0..).map(TypeId).find_map(|id| match types.get(id) {
-        Some(TypeInfo::Named(i)) if *i == item => Some(id),
-        _ => None,
-    })
+    (0..).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Named(i)) if *i == item))
 }
 
 fn find_generic_param(types: &TypeTable, name: &str) -> Option<TypeId> {
-    (0..).map(TypeId).find_map(|id| match types.get(id) {
-        Some(TypeInfo::GenericParam(n)) if n == name => Some(id),
-        _ => None,
-    })
+    (0..).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::GenericParam(n)) if n == name))
 }
 
 fn find_applied_type(types: &TypeTable, base: ItemId, args: &[TypeId]) -> Option<TypeId> {
-    (0..).map(TypeId).find_map(|id| match types.get(id) {
-        Some(TypeInfo::Applied {
-            base: b,
-            args: a,
-        }) if *b == base && a == args => Some(id),
-        _ => None,
-    })
+    (0..).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Applied { base: b, args: a, }) if *b == base && a == args))
 }
 
 fn is_numeric(types: &TypeTable, id: TypeId) -> bool {

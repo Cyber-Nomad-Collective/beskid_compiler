@@ -221,7 +221,6 @@ fn lower_method_body(
         builder: &mut builder,
         state: &mut state,
         expected_return_type: return_type_id,
-        receiver_type: Some(receiver_type_id),
         expected_expr_type: None,
     };
 
@@ -340,7 +339,6 @@ fn lower_test_body(
         builder: &mut builder,
         state: &mut state,
         expected_return_type,
-        receiver_type: None,
         expected_expr_type: None,
     };
 
@@ -713,7 +711,6 @@ fn lower_function_with_name_body(
         builder: &mut builder,
         state: &mut state,
         expected_return_type,
-        receiver_type: None,
         expected_expr_type: None,
     };
 

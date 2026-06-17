@@ -446,7 +446,6 @@ fn lower_lambda_to_symbol(
         builder: &mut builder,
         state: &mut state,
         expected_return_type: Some(return_type),
-        receiver_type: None,
         expected_expr_type: None,
     };
 

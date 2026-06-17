@@ -5,7 +5,7 @@ mod def_index;
 mod plan;
 mod validate;
 
-pub(crate) use call_graph::{resolve_item_call_id, return_type_for_module_path_call};
+pub(crate) use call_graph::resolve_item_call_id;
 pub use call_graph::resolve_path_item_id;
 pub use def_index::{load_hir_program_for_item, FunctionDefIndex};
 pub(crate) use def_index::{

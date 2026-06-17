@@ -2,7 +2,7 @@ use crate::errors::CodegenError;
 use crate::lowering::descriptor::{
     enum_payload_start, enum_variant_field_offsets, is_pointer_like_type,
 };
-use crate::lowering::locals::{expr_type_for_node, node_expr_type, type_id_for_item};
+use crate::lowering::locals::{node_expr_type, type_id_for_item};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{

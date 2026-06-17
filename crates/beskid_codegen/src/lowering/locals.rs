@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
-use beskid_analysis::hir::{HirExpressionNode, HirPrimitiveType};
+use beskid_analysis::hir::HirExpressionNode;
 use beskid_analysis::resolve::{HirNodeId, LocalId, Resolution, ResolvedValue, canonical_item_id};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
-use beskid_analysis::types::{CallLoweringKind, TypeId, TypeInfo, TypeResult, field_type_on_receiver};
+use beskid_analysis::types::{CallLoweringKind, TypeId, TypeInfo, TypeResult};
 
 use crate::errors::CodegenError;
 
@@ -51,13 +51,6 @@ pub(crate) fn require_expr_type(
         .ok_or(CodegenError::MissingExpressionType { span: node.span })
 }
 
-pub(crate) fn primitive_type_id(
-    type_result: &TypeResult,
-    primitive: HirPrimitiveType,
-) -> Option<TypeId> {
-    type_result.types.find_primitive(primitive)
-}
-
 pub(crate) fn type_id_for_item(
     type_result: &TypeResult,
     item_id: beskid_analysis::resolve::ItemId,
@@ -95,22 +88,6 @@ pub(crate) fn struct_literal_type_id(
         .collect();
     crate::lowering::types::resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
         .and_then(|item_id| type_id_for_item(type_result, item_id))
-}
-
-pub(crate) fn struct_field_type_for_receiver(
-    resolution: &Resolution,
-    type_result: &TypeResult,
-    receiver_type: TypeId,
-    field_name: &str,
-    source_path: Option<&PathBuf>,
-) -> Option<TypeId> {
-    field_type_on_receiver(
-        resolution,
-        &type_result.path_env(),
-        receiver_type,
-        field_name,
-        source_path,
-    )
 }
 
 pub(crate) fn resolved_value_at(

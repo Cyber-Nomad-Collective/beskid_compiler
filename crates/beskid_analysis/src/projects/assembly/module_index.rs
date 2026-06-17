@@ -370,12 +370,12 @@ impl ModuleIndex {
             unit_resolver.set_declaring_package(declaring_package);
             unit_resolver.set_current_source_path(Some(key.clone()));
             if let Some(ref module_path) = module_path {
-                unit_resolver.collect_program_in_module(&hir, module_path, Some(path));
+                unit_resolver.collect_program_in_module(hir, module_path, Some(path));
             } else {
-                unit_resolver.collect_program(&hir);
+                unit_resolver.collect_program(hir);
             }
             let unit_resolution = unit_resolver
-                .resolve_collected_program_for_api_documentation(&hir, module_path.as_deref());
+                .resolve_collected_program_for_api_documentation(hir, module_path.as_deref());
             resolution.tables.merge_from(&unit_resolution.tables, key);
         }
         resolution.rebuild_span_index();

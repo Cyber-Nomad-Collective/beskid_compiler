@@ -333,19 +333,6 @@ pub fn resolve_path_item_id(resolution: &Resolution, segments: &[String]) -> Opt
         .map(|item_id| canonical_item_id(resolution, item_id))
 }
 
-pub(crate) fn return_type_for_module_path_call(
-    resolution: &Resolution,
-    type_result: &TypeResult,
-    call: &Spanned<HirCallExpression>,
-) -> Option<TypeId> {
-    let segments = path_segments_from_call(call)?;
-    let item_id = canonical_item_id(resolution, item_id_from_module_graph(resolution, &segments)?);
-    type_result
-        .function_signatures
-        .get(&item_id)
-        .map(|signature| signature.return_type)
-}
-
 pub(crate) fn resolve_item_call_id(
     call: &Spanned<HirCallExpression>,
     resolution: &Resolution,
@@ -405,7 +392,7 @@ fn resolve_member_method_call(
     call: &Spanned<HirCallExpression>,
     resolution: &Resolution,
     type_result: &TypeResult,
-    source_path: Option<&PathBuf>,
+    _source_path: Option<&PathBuf>,
 ) -> Option<ResolvedCall> {
     let HirExpressionNode::MemberExpression(member) = &call.node.callee.node else {
         return None;

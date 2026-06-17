@@ -191,37 +191,6 @@ fn remap_signature(remap: &HashMap<TypeId, TypeId>, signature: &FunctionSignatur
     }
 }
 
-fn merge_surface_into(target: &mut MergedTypeEnv, surface: &UnitTypeSurface) {
-    target
-        .function_signatures
-        .extend(surface.function_signatures.clone());
-    target
-        .method_function_signatures
-        .extend(surface.method_function_signatures.clone());
-    target
-        .struct_fields_ordered
-        .extend(surface.struct_fields_ordered.clone());
-    target
-        .enum_variants_ordered
-        .extend(surface.enum_variants_ordered.clone());
-    target.generic_items.extend(surface.generic_items.clone());
-    target
-        .struct_event_fields
-        .extend(surface.struct_event_fields.clone());
-    target
-        .contract_signatures
-        .extend(surface.contract_signatures.clone());
-    target
-        .contract_method_order
-        .extend(surface.contract_method_order.clone());
-    target
-        .methods_by_receiver
-        .extend(surface.methods_by_receiver.clone());
-    target
-        .named_type_names
-        .extend(surface.named_type_names.clone());
-}
-
 struct TypeSurfaceBuilder<'a> {
     resolution: &'a Resolution,
     source_path: PathBuf,
