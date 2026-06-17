@@ -3,22 +3,23 @@
 use super::layout::pages::PagesDoc;
 use super::nav::{NavAction, NavItemDescriptor, NavRegistry};
 use super::scope::ShellScope;
+use super::workflow::WorkflowStage;
 
 /// How a palette entry is executed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandKind {
-    Cli,
+    Workflow,
     Contextual,
     Nav,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CliCommandDef {
+pub struct WorkflowCommandDef {
     pub id: &'static str,
     pub name: &'static str,
     pub description: &'static str,
     pub icon: &'static str,
-    pub argv_prefix: &'static [&'static str],
+    pub stage: WorkflowStage,
     pub args_hint: &'static str,
 }
 
@@ -43,7 +44,7 @@ pub struct NavCommandDef {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandItem {
-    Cli(CliCommandDef),
+    Workflow(WorkflowCommandDef),
     Contextual(ContextualCommand),
     Nav(NavCommandDef),
 }
@@ -51,7 +52,7 @@ pub enum CommandItem {
 impl CommandItem {
     pub fn kind(&self) -> CommandKind {
         match self {
-            Self::Cli(_) => CommandKind::Cli,
+            Self::Workflow(_) => CommandKind::Workflow,
             Self::Contextual(_) => CommandKind::Contextual,
             Self::Nav(_) => CommandKind::Nav,
         }
@@ -59,7 +60,7 @@ impl CommandItem {
 
     pub fn id(&self) -> &str {
         match self {
-            Self::Cli(c) => c.id,
+            Self::Workflow(c) => c.id,
             Self::Contextual(c) => c.id,
             Self::Nav(c) => c.id.as_str(),
         }
@@ -67,7 +68,7 @@ impl CommandItem {
 
     pub fn name(&self) -> &str {
         match self {
-            Self::Cli(c) => c.name,
+            Self::Workflow(c) => c.name,
             Self::Contextual(c) => c.name,
             Self::Nav(c) => c.name.as_str(),
         }
@@ -75,7 +76,7 @@ impl CommandItem {
 
     pub fn description(&self) -> &str {
         match self {
-            Self::Cli(c) => c.description,
+            Self::Workflow(c) => c.description,
             Self::Contextual(c) => c.description,
             Self::Nav(c) => c.description.as_str(),
         }
@@ -83,7 +84,7 @@ impl CommandItem {
 
     pub fn icon(&self) -> &str {
         match self {
-            Self::Cli(c) => c.icon,
+            Self::Workflow(c) => c.icon,
             Self::Contextual(c) => c.icon,
             Self::Nav(c) => c.icon.as_str(),
         }
@@ -91,7 +92,7 @@ impl CommandItem {
 
     pub fn args_hint(&self) -> Option<&str> {
         match self {
-            Self::Cli(c) => Some(c.args_hint),
+            Self::Workflow(c) => Some(c.args_hint),
             Self::Contextual(c) => c.args_hint,
             Self::Nav(_) => None,
         }
@@ -145,22 +146,49 @@ fn append_nav_palette(
     }
 }
 
-/// Built-in CLI commands mirrored from `beskid_cli`.
-pub fn builtin_cli_commands() -> Vec<CommandItem> {
+/// Built-in workflow commands.
+pub fn builtin_workflow_commands() -> Vec<CommandItem> {
     vec![
-        cli("analyze", "analyze", "Semantic analysis", "◇", &["analyze"], "[file]"),
-        cli("build", "build", "AOT compile and link", "⚙", &["build"], "[file]"),
-        cli("run", "run", "Compile and execute", "▶", &["run"], "[file]"),
-        cli("test", "test", "Run test targets", "✓", &["test"], "[file]"),
-        cli("fetch", "fetch", "Resolve dependencies", "↓", &["fetch"], ""),
-        cli("lock", "lock", "Sync lockfile", "⎘", &["lock"], ""),
-        cli("update", "update", "Update dependencies", "↻", &["update"], ""),
-        cli("graph", "graph", "Dependency graph", "◎", &["graph"], ""),
-        cli("pckg", "pckg", "Package registry", "📦", &["pckg"], "subcommand"),
-        cli("new", "new", "Scaffold from template", "＋", &["new"], "[name]"),
-        cli("fmt", "fmt", "Format sources", "≡", &["fmt"], "[path]"),
-        cli("repl", "repl", "Interactive REPL", "❯", &["repl"], ""),
-        cli("lsp", "lsp", "Language server", "⌁", &["lsp"], ""),
+        CommandItem::Workflow(WorkflowCommandDef {
+            id: "build",
+            name: "build",
+            description: "AOT compile",
+            icon: "⚙",
+            stage: WorkflowStage::Build,
+            args_hint: "[file]",
+        }),
+        CommandItem::Workflow(WorkflowCommandDef {
+            id: "test",
+            name: "test",
+            description: "Run test targets",
+            icon: "✓",
+            stage: WorkflowStage::Test,
+            args_hint: "[file]",
+        }),
+        CommandItem::Workflow(WorkflowCommandDef {
+            id: "run",
+            name: "run",
+            description: "Compile and execute",
+            icon: "▶",
+            stage: WorkflowStage::Run,
+            args_hint: "[file]",
+        }),
+        CommandItem::Workflow(WorkflowCommandDef {
+            id: "analyze",
+            name: "analyze",
+            description: "Semantic analysis",
+            icon: "◇",
+            stage: WorkflowStage::Analyze,
+            args_hint: "[file]",
+        }),
+        CommandItem::Workflow(WorkflowCommandDef {
+            id: "graph",
+            name: "graph",
+            description: "Dependency graph",
+            icon: "◎",
+            stage: WorkflowStage::Graph,
+            args_hint: "",
+        }),
     ]
 }
 
@@ -282,28 +310,10 @@ pub fn command_catalog(
     pages: &PagesDoc,
 ) -> Vec<CommandItem> {
     let mut items = nav_palette_commands(nav, pages);
-    items.extend(builtin_cli_commands());
+    items.extend(builtin_workflow_commands());
     items.extend(builtin_contextual_commands(scope));
     items.extend(layout_editor_commands(layout_edit_active));
     items
-}
-
-fn cli(
-    id: &'static str,
-    name: &'static str,
-    description: &'static str,
-    icon: &'static str,
-    argv_prefix: &'static [&'static str],
-    args_hint: &'static str,
-) -> CommandItem {
-    CommandItem::Cli(CliCommandDef {
-        id,
-        name,
-        description,
-        icon,
-        argv_prefix,
-        args_hint,
-    })
 }
 
 fn contextual(
@@ -332,7 +342,7 @@ mod tests {
     use crate::shell::scope::ShellScope;
 
     #[test]
-    fn command_catalog_includes_nav_and_cli() {
+    fn command_catalog_includes_nav_and_workflow() {
         let registry = NavRegistry::new();
         let pages = parse_pages(EMBEDDED_HI_PAGES).expect("pages");
         let scope = ShellScope::User;

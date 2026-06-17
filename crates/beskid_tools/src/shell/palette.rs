@@ -153,7 +153,7 @@ impl CommandPaletteState {
 
     fn select_item(&mut self, item: CommandItem) -> PaletteAction {
         match &item {
-            CommandItem::Cli(cli) if !cli.args_hint.is_empty() => {
+            CommandItem::Workflow(wf) if !wf.args_hint.is_empty() => {
                 self.pending = Some(item);
                 self.mode = PaletteMode::Params;
                 self.filter.clear();

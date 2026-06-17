@@ -10,15 +10,11 @@ pub enum ShellLayer {
     LayoutEditor = 30,
     ScopePicker = 40,
     Palette = 50,
-    CommandDialog = 60,
-    TopMenuDropdown = 70,
 }
 
 impl ShellLayer {
     /// Layers that consume keyboard input, highest priority first.
     pub const INPUT_PRIORITY: &'static [ShellLayer] = &[
-        ShellLayer::TopMenuDropdown,
-        ShellLayer::CommandDialog,
         ShellLayer::Palette,
         ShellLayer::ScopePicker,
         ShellLayer::LayoutEditor,
@@ -34,8 +30,6 @@ impl ShellLayer {
         ShellLayer::LayoutEditor,
         ShellLayer::ScopePicker,
         ShellLayer::Palette,
-        ShellLayer::CommandDialog,
-        ShellLayer::TopMenuDropdown,
     ];
 }
 
@@ -45,7 +39,7 @@ mod tests {
 
     #[test]
     fn input_priority_topmost_wins() {
-        assert_eq!(ShellLayer::INPUT_PRIORITY[0], ShellLayer::TopMenuDropdown);
+        assert_eq!(ShellLayer::INPUT_PRIORITY[0], ShellLayer::Palette);
         assert_eq!(
             ShellLayer::INPUT_PRIORITY.last(),
             Some(&ShellLayer::Base)
@@ -53,10 +47,10 @@ mod tests {
     }
 
     #[test]
-    fn draw_order_topmost_is_menu_dropdown() {
+    fn draw_order_topmost_is_palette() {
         assert_eq!(
             ShellLayer::DRAW_ORDER.last(),
-            Some(&ShellLayer::TopMenuDropdown)
+            Some(&ShellLayer::Palette)
         );
     }
 }

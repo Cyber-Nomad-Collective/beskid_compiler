@@ -29,12 +29,6 @@ pub const BINDABLE_ACTIONS: &[BindableAction] = &[
         config_key: "bind_palette",
     },
     BindableAction {
-        id: "menu",
-        label: "Top menu",
-        description: "Toggle pinned workflow menu",
-        config_key: "bind_menu",
-    },
-    BindableAction {
         id: "help",
         label: "Shortcut help",
         description: "Toggle footer shortcut overlay",
@@ -51,7 +45,6 @@ pub const BINDABLE_ACTIONS: &[BindableAction] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShortcutBindings {
     pub palette: KeyChord,
-    pub menu: KeyChord,
     pub help: KeyChord,
     pub quit: KeyChord,
 }
@@ -62,20 +55,8 @@ impl ShortcutBindings {
             code: KeyCode::Char('p'),
             modifiers: KeyModifiers::CONTROL,
         };
-        let menu = if platform_shortcuts::is_macos() {
-            KeyChord {
-                code: KeyCode::Char('m'),
-                modifiers: KeyModifiers::CONTROL,
-            }
-        } else {
-            KeyChord {
-                code: KeyCode::F(10),
-                modifiers: KeyModifiers::NONE,
-            }
-        };
         Self {
             palette,
-            menu,
             help: KeyChord {
                 code: KeyCode::Char('?'),
                 modifiers: KeyModifiers::NONE,
@@ -91,7 +72,6 @@ impl ShortcutBindings {
         let defaults = Self::platform_defaults();
         Self {
             palette: load_chord(config, registry, "bind_palette", defaults.palette),
-            menu: load_chord(config, registry, "bind_menu", defaults.menu),
             help: load_chord(config, registry, "bind_help", defaults.help),
             quit: load_chord(config, registry, "bind_quit", defaults.quit),
         }
@@ -116,7 +96,6 @@ impl ShortcutBindings {
     pub fn chord_for(&self, action_id: &str) -> KeyChord {
         match action_id {
             "palette" => self.palette,
-            "menu" => self.menu,
             "help" => self.help,
             "quit" => self.quit,
             _ => self.palette,
@@ -126,7 +105,6 @@ impl ShortcutBindings {
     pub fn set_chord(&mut self, action_id: &str, chord: KeyChord) {
         match action_id {
             "palette" => self.palette = chord,
-            "menu" => self.menu = chord,
             "help" => self.help = chord,
             "quit" => self.quit = chord,
             _ => {}
@@ -144,14 +122,6 @@ impl ShortcutBindings {
         chord_matches(&self.palette, key)
     }
 
-    pub fn toggles_menu(&self, key: &KeyEvent) -> bool {
-        if chord_matches(&self.menu, key) {
-            return true;
-        }
-        // Fn+F10 alternate on macOS (F-keys are often media keys without Fn).
-        platform_shortcuts::is_macos() && key.code == KeyCode::F(10)
-    }
-
     pub fn toggles_help(&self, key: &KeyEvent) -> bool {
         chord_matches(&self.help, key)
     }
@@ -164,13 +134,6 @@ impl ShortcutBindings {
         format!("{} / :", display_chord(self.palette))
     }
 
-    pub fn menu_hint(&self) -> String {
-        if platform_shortcuts::is_macos() {
-            format!("{} / Fn+F10", display_chord(self.menu))
-        } else {
-            display_chord(self.menu)
-        }
-    }
 }
 
 fn load_chord(
@@ -186,7 +149,6 @@ fn load_chord(
     if platform_shortcuts::is_macos() {
         match (key, raw.as_str()) {
             ("bind_palette", "super+p" | "cmd+p" | "command+p") => return default,
-            ("bind_menu", "super+m" | "cmd+m" | "command+m") => return default,
             _ => {}
         }
     }

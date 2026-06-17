@@ -2,8 +2,6 @@
 
 pub mod board;
 pub mod catalog;
-pub mod cli_run;
-pub mod command_dialog;
 pub mod control_mode;
 pub mod descriptor;
 pub mod layout;
@@ -17,7 +15,6 @@ pub mod layers;
 pub mod input;
 pub mod nav;
 pub mod phase;
-pub mod top_menu;
 pub mod panel_style;
 pub mod platform_shortcuts;
 pub mod overlay_render;
@@ -36,10 +33,7 @@ pub use descriptor::WidgetDescriptor;
 pub use layout::{BoardV2Doc, HiLayoutState, LayoutEditCommand, PagesDoc, switch_page};
 pub use nav::{NavAction, NavItemDescriptor, NavRegistrar, NavRegistry, BUILTIN_NAV};
 pub use phase::transition_label;
-pub use top_menu::{ShellTopMenu, TopMenuAction};
 pub use catalog::{CliCommandDef, CommandItem, CommandKind, ContextualCommand, NavCommandDef};
-pub use cli_run::{plan_cli_command, plan_external_command, run_cli_plan, CliRunPlan};
-pub use command_dialog::{CommandDialogAction, CommandDialogOverlay};
 pub use control_mode::HiControlMode;
 pub use chrome::ShellChrome;
 pub use context::WidgetContext;

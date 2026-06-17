@@ -2,13 +2,11 @@
 
 use ratatui::layout::Rect;
 
-use super::key_bindings::ShortcutBindings;
 use super::primitives::HotkeyItem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShortcutClickAction {
     OpenPalette,
-    ToggleMenu,
     ToggleHelp,
     Quit,
     RebindShortcut(usize),
@@ -60,7 +58,6 @@ impl ShortcutClickTargets {
 pub fn action_for_hotkey_description(description: &str) -> Option<ShortcutClickAction> {
     match description {
         "Command palette" => Some(ShortcutClickAction::OpenPalette),
-        "Top menu" => Some(ShortcutClickAction::ToggleMenu),
         "Shortcut help" => Some(ShortcutClickAction::ToggleHelp),
         "Quit" => Some(ShortcutClickAction::Quit),
         _ => None,
@@ -116,35 +113,6 @@ pub fn register_help_overlay_clicks(
             );
         }
     }
-}
-
-pub fn register_menu_hint_click(
-    targets: &mut ShortcutClickTargets,
-    row: Rect,
-    phase: &str,
-    scope_label: &str,
-    bindings: &ShortcutBindings,
-) {
-    let prefix_chars = "Beskid   ".chars().count()
-        + phase.chars().count()
-        + 3
-        + scope_label.chars().count()
-        + 3;
-    let hint = bindings.menu_hint();
-    let hint_x = row.x.saturating_add(prefix_chars as u16);
-    let width = hint
-        .chars()
-        .count()
-        .saturating_add(" menu".chars().count()) as u16;
-    targets.add_rect(
-        Rect {
-            x: hint_x,
-            y: row.y,
-            width: width.min(row.width.saturating_sub(hint_x.saturating_sub(row.x))),
-            height: 1,
-        },
-        ShortcutClickAction::ToggleMenu,
-    );
 }
 
 fn point_in_rect(column: u16, row: u16, rect: Rect) -> bool {

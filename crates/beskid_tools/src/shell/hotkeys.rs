@@ -24,10 +24,6 @@ impl ShellHotkeys {
                 .scope(HotkeyScope::Global),
         );
         registry.register(
-            Hotkey::new(leak_static(&bindings.menu_hint()), "Top menu")
-                .scope(HotkeyScope::Global),
-        );
-        registry.register(
             Hotkey::new(leak_static(&bindings.label_for("help")), "Shortcut help")
                 .scope(HotkeyScope::Global),
         );
@@ -75,10 +71,8 @@ impl ShellHotkeys {
     pub fn set_control_mode(&mut self, mode: HiControlMode) {
         self.active_scope = match mode {
             HiControlMode::Normal => HotkeyScope::Global,
-            HiControlMode::TopMenu => HotkeyScope::Modal("menu"),
             HiControlMode::Palette => HotkeyScope::Modal("palette"),
             HiControlMode::LayoutEdit => HotkeyScope::Modal("layout-edit"),
-            HiControlMode::CommandDialog => HotkeyScope::Modal("command"),
         };
     }
 

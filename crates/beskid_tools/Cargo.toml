@@ -35,5 +35,7 @@ tokio = { version = "1.48", features = ["rt-multi-thread"] }
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 ratatui-code-editor = { workspace = true }
 tachyonfx = { workspace = true, features = ["sendable"] }
+workflow-core = { workspace = true }
+workflow-task = { workspace = true }
 dirs = "6"
 zip = "2"
