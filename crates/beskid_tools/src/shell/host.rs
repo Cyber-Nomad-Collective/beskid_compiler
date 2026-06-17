@@ -221,7 +221,7 @@ impl HiShellApp {
             .find(|layer| self.layer_blocks_mouse(*layer))
     }
 
-    fn handle_modal_mouse(&mut self, mouse: &MouseEvent) -> Option<ShellOutcome> {
+    fn handle_modal_mouse(&mut self, _mouse: &MouseEvent) -> Option<ShellOutcome> {
         match self.top_mouse_layer()? {
             ShellLayer::Palette | ShellLayer::ScopePicker | ShellLayer::PanelOverlay => Some(ShellOutcome::Redraw),
             ShellLayer::LayoutEditor | ShellLayer::Help | ShellLayer::Base => None,

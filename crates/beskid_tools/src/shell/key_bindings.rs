@@ -146,12 +146,7 @@ fn load_chord(
     if raw.is_empty() {
         return default;
     }
-    if platform_shortcuts::is_macos() {
-        match (key, raw.as_str()) {
-            ("bind_palette", "super+p" | "cmd+p" | "command+p") => return default,
-            _ => {}
-        }
-    }
+    if platform_shortcuts::is_macos() && let ("bind_palette", "super+p" | "cmd+p" | "command+p") = (key, raw.as_str()) { return default }
     parse_chord(&raw).unwrap_or(default)
 }
 

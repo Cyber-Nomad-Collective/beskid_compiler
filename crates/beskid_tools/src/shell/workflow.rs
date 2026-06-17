@@ -11,7 +11,7 @@
 use std::sync::mpsc;
 
 use async_channel::Receiver as StopReceiver;
-use workflow_task::{task, Task, TaskResult};
+use workflow_task::{Task, TaskResult};
 
 use super::hi_compile::{HiCompileRegistrar, HiCompileRequest};
 use super::scope::ShellScope;
@@ -88,11 +88,10 @@ pub struct StageOutput {
 /// - A progress channel (`Sender<WorkflowEvent>`) for UI updates
 /// - A return value (`StageOutput`) on completion
 pub struct StageRunner {
-    stage: WorkflowStage,
     task: Task<StageInput, StageOutput>,
 }
 
-struct StageInput {
+pub struct StageInput {
     params: String,
     scope: ShellScope,
     tx: mpsc::Sender<WorkflowEvent>,
@@ -103,22 +102,26 @@ impl StageRunner {
     /// The worker receives (StageInput, StopReceiver<()>) and returns StageOutput.
     pub fn new<F>(stage: WorkflowStage, worker: F) -> Self
     where
-        F: Fn(StageInput, StopReceiver<()>) -> StageOutput + Send + Sync + 'static,
+        F: Fn(StageInput, StopReceiver<()>) -> StageOutput + Clone + Send + Sync + 'static,
     {
-        let stage_id = stage;
-        let task = task!(move |input: StageInput, stop: StopReceiver<()>| async move {
-            if stop.try_recv().is_ok() {
-                let _ = input.tx.send(WorkflowEvent::Cancelled);
-                return StageOutput {
-                    stage: stage_id,
-                    success: false,
-                    message: "Cancelled".into(),
-                };
-            }
-            let _ = input.tx.send(WorkflowEvent::StageStarted(stage_id));
-            worker(input, stop)
-        });
-        Self { stage, task }
+        let task = Task::new(
+            move |input: StageInput, stop: StopReceiver<()>| {
+                let worker = worker.clone();
+                Box::pin(async move {
+                    if stop.try_recv().is_ok() {
+                        let _ = input.tx.send(WorkflowEvent::Cancelled);
+                        return StageOutput {
+                            stage,
+                            success: false,
+                            message: "Cancelled".into(),
+                        };
+                    }
+                    let _ = input.tx.send(WorkflowEvent::StageStarted(stage));
+                    worker(input, stop)
+                })
+            },
+        );
+        Self { task }
     }
 
     /// Run the stage with the given input.
@@ -148,49 +151,14 @@ impl StageRunner {
 }
 
 // ---------------------------------------------------------------------------
-// Stage worker implementations
-// ---------------------------------------------------------------------------
-
-/// Build stage: delegates to the registered compile handler (build::execute_for_hi).
-fn build_worker(input: StageInput, _stop: StopReceiver<()>) -> StageOutput {
-    let _ = input.tx.send(WorkflowEvent::Log(
-        WorkflowStage::Build,
-        "Starting build...".into(),
-    ));
-
-    // The actual build is managed by the WorkflowEngine which holds the compile_registrar.
-    // This worker will be swapped with the real build call at engine construction time.
-    let _ = input.tx.send(WorkflowEvent::Progress(WorkflowStage::Build, 1.0, "Build complete".into()));
-    StageOutput {
-        stage: WorkflowStage::Build,
-        success: true,
-        message: "Build complete".into(),
-    }
-}
-
-/// Test stage: delegates to the registered compile handler (test::execute_for_hi).
-fn test_worker(input: StageInput, _stop: StopReceiver<()>) -> StageOutput {
-    let _ = input.tx.send(WorkflowEvent::Log(
-        WorkflowStage::Test,
-        "Starting tests...".into(),
-    ));
-    StageOutput {
-        stage: WorkflowStage::Test,
-        success: true,
-        message: "Tests complete".into(),
-    }
-}
-
-// ---------------------------------------------------------------------------
 // WorkflowEngine
 // ---------------------------------------------------------------------------
 
 /// Central workflow coordinator that owns stage runners and manages execution.
 ///
-/// Usage:
-/// ```
-/// let mut engine = WorkflowEngine::new(Some(compile_registrar));
-/// engine.submit(WorkflowCommand::Build { params: "".into() });
+/// Usage (inside a shell app that owns both):
+/// ```ignore
+/// engine.submit(WorkflowCommand::Build { params: "".into() }, scope.clone());
 /// // In the event loop tick:
 /// for event in engine.drain_events() { /* update UI */ }
 /// ```
@@ -200,7 +168,6 @@ pub struct WorkflowEngine {
     event_tx: mpsc::Sender<WorkflowEvent>,
     event_rx: mpsc::Receiver<WorkflowEvent>,
     current_stage: Option<WorkflowStage>,
-    compile_registrar: Option<HiCompileRegistrar>,
 }
 
 impl WorkflowEngine {
@@ -297,7 +264,6 @@ impl WorkflowEngine {
             event_tx,
             event_rx,
             current_stage: None,
-            compile_registrar: None, // moved into closures
         }
     }
 
@@ -381,25 +347,23 @@ impl WorkflowEngine {
     }
 
     /// Join the current stage (blocking wait). Call from the event loop thread.
+    #[allow(unused_variables)]
     pub fn join_current_stage(&mut self) {
-        let stage = match self.current_stage {
+        let _stage = match self.current_stage {
             Some(s) => s,
             None => return,
         };
-        let result = match stage {
+        match _stage {
             WorkflowStage::Build => {
                 // We can't block on async in the sync event loop, so we use the
                 // compile_registrar approach directly for now.
                 self.current_stage = None;
-                return;
             }
             WorkflowStage::Test => {
                 self.current_stage = None;
-                return;
             }
             _ => {
                 self.current_stage = None;
-                return;
             }
         };
     }

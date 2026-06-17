@@ -9,7 +9,7 @@ use tuirealm::listener::EventListenerCfg;
 use tuirealm::terminal::TerminalAdapter;
 
 use crate::shell::host::HiShellApp;
-use crate::shell::workflow::{WorkflowEngine, WorkflowEvent, WorkflowStage};
+use crate::shell::workflow::WorkflowEvent;
 use crate::tui::realm::shell_event::{ShellOutcome, ShellRealmEvent};
 use crate::tui::realm::stderr_adapter::StderrTerminalAdapter;
 
@@ -138,23 +138,23 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
             let has_events = !events.is_empty();
             for event in &events {
                 match event {
-                    WorkflowEvent::StageStarted(stage) => {
+                    WorkflowEvent::StageStarted(_stage) => {
                         // Stage started - UI will reflect new progress
                     }
-                    WorkflowEvent::Progress(_, pct, msg) => {
+                    WorkflowEvent::Progress(_, _pct, _msg) => {
                         // Optional: update progress in shell_state if available
                     }
-                    WorkflowEvent::Log(stage, msg) => {
+                    WorkflowEvent::Log(_stage, _msg) => {
                         // Pipeline messages
                     }
-                    WorkflowEvent::StageCompleted(stage) => {
+                    WorkflowEvent::StageCompleted(_stage) => {
                         inner.app.shell_state.compile_complete = true;
                         // Trigger compile complete message
                         let _ = inner.app.msg_tx.send(crate::tui::shell::runtime::RuntimeOp::Update(
                             crate::tui::message::ShellMessage::CompileComplete,
                         ));
                     }
-                    WorkflowEvent::StageFailed(stage, err) => {
+                    WorkflowEvent::StageFailed(_stage, err) => {
                         let _ = inner.app.msg_tx.send(crate::tui::shell::runtime::RuntimeOp::Update(
                             crate::tui::message::ShellMessage::PushLog(err.clone()),
                         ));

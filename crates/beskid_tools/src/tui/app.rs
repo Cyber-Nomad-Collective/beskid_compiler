@@ -28,7 +28,6 @@ pub struct BeskidShellApp {
     pub quit_requested: bool,
     palette: CommandPaletteState,
     scope: ShellScope,
-    beskid_exe: PathBuf,
 }
 
 impl BeskidShellApp {
@@ -42,7 +41,6 @@ impl BeskidShellApp {
             quit_requested: false,
             palette: CommandPaletteState::default(),
             scope: ShellScope::resolve(&cwd),
-            beskid_exe: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("beskid")),
         }
     }
 
