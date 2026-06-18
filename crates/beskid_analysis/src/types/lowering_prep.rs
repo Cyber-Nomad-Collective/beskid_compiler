@@ -912,20 +912,25 @@ fn primitive_type_id(types: &TypeTable, p: HirPrimitiveType) -> Option<TypeId> {
     types.find_primitive(p)
 }
 
+// NOTE: these scan the dense TypeId space and MUST stop at `types.len()`.
+// An unbounded `(0..)` iterator never terminates when the target type was never
+// interned, because `types.get(id)` returning `None` makes the `find` predicate
+// `false` rather than ending iteration (this caused multi-hour CI hangs while
+// resolving a named return type that was absent from the lowering surface).
 fn lookup_function_type(types: &TypeTable, params: &[TypeId], ret: TypeId) -> Option<TypeId> {
-    (0..).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Function { params: ps, return_type, }) if ps == params && *return_type == ret))
+    (0..types.len()).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Function { params: ps, return_type, }) if ps == params && *return_type == ret))
 }
 
 fn find_named_type(types: &TypeTable, item: ItemId) -> Option<TypeId> {
-    (0..).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Named(i)) if *i == item))
+    (0..types.len()).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Named(i)) if *i == item))
 }
 
 fn find_generic_param(types: &TypeTable, name: &str) -> Option<TypeId> {
-    (0..).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::GenericParam(n)) if n == name))
+    (0..types.len()).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::GenericParam(n)) if n == name))
 }
 
 fn find_applied_type(types: &TypeTable, base: ItemId, args: &[TypeId]) -> Option<TypeId> {
-    (0..).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Applied { base: b, args: a, }) if *b == base && a == args))
+    (0..types.len()).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Applied { base: b, args: a, }) if *b == base && a == args))
 }
 
 fn is_numeric(types: &TypeTable, id: TypeId) -> bool {

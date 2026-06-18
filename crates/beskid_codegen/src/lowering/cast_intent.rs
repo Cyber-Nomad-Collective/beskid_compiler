@@ -444,13 +444,19 @@ pub(crate) fn validate_cast_intents(type_result: &TypeResult) -> Vec<CodegenErro
             });
         }
 
+        // Cast intents are span-keyed per unit, but spans are file-relative byte
+        // offsets, so the same offset+cast in two different units is NOT a
+        // duplicate. Include source_path so cross-unit collisions in an assembled
+        // multi-file program are not flagged as duplicates.
         let key = (
+            intent.source_path.clone(),
             intent.span.start,
             intent.span.end,
             intent.from.0,
             intent.to.0,
         );
         let reverse_key = (
+            intent.source_path.clone(),
             intent.span.start,
             intent.span.end,
             intent.to.0,
