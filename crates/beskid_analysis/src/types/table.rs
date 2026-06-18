@@ -78,6 +78,16 @@ impl TypeTable {
         self.types.get(id.0)
     }
 
+    /// Number of interned types. Bounds linear scans over [`TypeId`] space so a
+    /// lookup for an un-interned type returns `None` instead of scanning forever.
+    pub fn len(&self) -> usize {
+        self.types.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.types.is_empty()
+    }
+
     /// Returns an existing `TypeInfo::Array` for `element`, if already interned.
     pub fn find_array_of(&self, element: TypeId) -> Option<TypeId> {
         self.array_ids.get(&element).copied()
