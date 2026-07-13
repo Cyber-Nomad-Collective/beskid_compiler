@@ -1,4 +1,10 @@
 //! Generated ISLE selection for Beskid's stock CLIF lowering path.
+//!
+//! Raw constructors are an implementation detail of [`FunctionEmitter`]:
+//!
+//! ```compile_fail
+//! use beskid_isle::generated;
+//! ```
 
 pub use beskid_queries::AstNodeKey;
 use cranelift_codegen::ir::InstBuilder;
@@ -10,21 +16,6 @@ use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_frontend::FunctionBuilderContext;
-
-pub const ISLE_INPUTS: &[&str] = &[
-    "types.isle",
-    "ast.isle",
-    "expressions.isle",
-    "literals.isle",
-    "binary.isle",
-    "unary_casts.isle",
-    "calls.isle",
-    "statements.isle",
-    "control_flow.isle",
-    "memory.isle",
-    "runtime_intrinsics.isle",
-    "items.isle",
-];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeKind {
@@ -76,6 +67,7 @@ pub enum CallKind {
 pub type Unit = ();
 
 #[allow(
+    dead_code,
     unused_imports,
     unreachable_patterns,
     clippy::collapsible_if,
@@ -84,7 +76,7 @@ pub type Unit = ();
     clippy::let_unit_value,
     clippy::match_ref_pats
 )]
-pub mod generated {
+mod generated {
     use super::{AstNodeKey, CallKind, LiteralKind, NodeKind, OperatorFact, Unit, Value};
 
     include!(concat!(env!("OUT_DIR"), "/beskid_lower.rs"));
@@ -276,7 +268,7 @@ impl generated::Context for IsleContext<'_, '_, '_> {
     }
 
     fn clif_bnot(&mut self, value: Value) -> Value {
-        self.builder.ins().bnot(value)
+        self.builder.ins().icmp_imm(IntCC::Equal, value, 0)
     }
 
     fn emit_direct_call(&mut self, key: AstNodeKey) -> Option<Value> {

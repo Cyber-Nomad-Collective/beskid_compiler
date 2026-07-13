@@ -50,7 +50,10 @@ fn main() {
     std::fs::write(out_dir.join("beskid_lower.rs"), generated).expect("write generated ISLE Rust");
     std::fs::write(
         out_dir.join("beskid_isle_metadata.rs"),
-        format!("pub const RULE_COUNT: usize = {rule_count};\n"),
+        format!(
+            "pub const RULE_COUNT: usize = {rule_count};\n\
+             pub const ISLE_INPUTS: &[&str] = &{INPUTS:?};\n"
+        ),
     )
     .expect("write generated ISLE metadata");
 }

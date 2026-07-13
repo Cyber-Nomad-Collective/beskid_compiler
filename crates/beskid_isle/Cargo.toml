@@ -12,4 +12,6 @@ cranelift-frontend = { workspace = true }
 cranelift-isle = { workspace = true }
 
 [dev-dependencies]
+cranelift-jit = { workspace = true }
+cranelift-module = { workspace = true }
 target-lexicon = "0.13"

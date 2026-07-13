@@ -9,6 +9,8 @@ use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+use cranelift_jit::{JITBuilder, JITModule};
+use cranelift_module::{Linkage, Module, default_libcall_names};
 use target_lexicon::Triple;
 
 struct IntegerFacts {
@@ -192,4 +194,83 @@ fn binary_rule_recurses_through_ast_keys_and_emits_iadd() {
     assert!(clif.contains("iadd"), "{clif}");
     assert!(clif.contains("iconst.i32 20"), "{clif}");
     assert!(clif.contains("iconst.i32 22"), "{clif}");
+}
+
+#[test]
+fn boolean_not_executes_with_canonical_zero_or_one_result() {
+    struct NotFacts {
+        root: AstNodeKey,
+        value: AstNodeKey,
+    }
+    impl NodeFacts for NotFacts {
+        fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+            if key == self.root {
+                Some(NodeKind::UnaryExpression)
+            } else if key == self.value {
+                Some(NodeKind::LiteralExpression)
+            } else {
+                None
+            }
+        }
+
+        fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+            (key == self.value).then_some(LiteralKind::Boolean)
+        }
+
+        fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
+            (key == self.root).then_some(OperatorFact::Not)
+        }
+
+        fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+            (key == self.root && index == 0).then_some(self.value)
+        }
+
+        fn integer_literal(&self, _key: AstNodeKey) -> Option<i64> {
+            None
+        }
+
+        fn boolean_literal(&self, key: AstNodeKey) -> Option<bool> {
+            (key == self.value).then_some(true)
+        }
+
+        fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+            (key == self.root || key == self.value).then_some(types::I8)
+        }
+    }
+
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Main.bd"));
+    let node = |id| AstNodeKey {
+        unit,
+        generation: SyntaxGenerationId(4),
+        node: AstNodeId(id),
+    };
+    let facts = NotFacts {
+        root: node(1),
+        value: node(2),
+    };
+    let mut module = JITModule::new(JITBuilder::new(default_libcall_names()).expect("JIT"));
+    let emitter = beskid_isle::FunctionEmitter::new(module.isa());
+    let signature = emitter.signature([], [types::I8]);
+    let function = emitter
+        .emit_expression(
+            cranelift_codegen::ir::UserFuncName::user(0, 7),
+            signature.clone(),
+            &facts,
+            facts.root,
+        )
+        .expect("verified bool not");
+    let function_id = module
+        .declare_function("bool_not", Linkage::Local, &signature)
+        .expect("declare");
+    let mut context = module.make_context();
+    context.func = function;
+    module
+        .define_function(function_id, &mut context)
+        .expect("define");
+    module.finalize_definitions().expect("finalize");
+    let code = module.get_finalized_function(function_id);
+    let run: extern "C" fn() -> u8 = unsafe { std::mem::transmute(code) };
+
+    assert_eq!(run(), 0);
 }
