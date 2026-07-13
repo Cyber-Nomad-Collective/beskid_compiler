@@ -17,7 +17,7 @@ use crate::typed_entry_bundle::reset_typed_entry_inputs;
 
 type ProjectRegistry = HashMap<(PathBuf, PathBuf, String), ProjectSession>;
 type ModuleIndexCache = HashMap<String, Arc<ModuleIndex>>;
-pub type SyntaxUnitRegistry = HashMap<SourceUnitId, SyntaxUnitInput>;
+type SyntaxUnitRegistry = HashMap<SourceUnitId, SyntaxUnitInput>;
 
 /// Cached heavy artifacts keyed by content fingerprint (invalidated via Salsa inputs).
 #[derive(Default)]
@@ -33,18 +33,10 @@ pub struct UnitArtifactCache {
 pub trait Db: salsa::Database {
     fn file_registry(&self) -> &Mutex<HashMap<PathBuf, FileText>>;
     fn project_registry(&self) -> &Mutex<ProjectRegistry>;
-    fn syntax_unit_registry(&self) -> &Mutex<SyntaxUnitRegistry>;
     fn unit_cache(&self) -> &Mutex<UnitArtifactCache>;
     fn grammar_revision_input(&self) -> GrammarRevision;
     fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>>;
-
-    fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput> {
-        self.syntax_unit_registry()
-            .lock()
-            .expect("syntax unit registry")
-            .get(&unit)
-            .copied()
-    }
+    fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput>;
 }
 
 /// Process/workspace-scoped incremental compilation database.
@@ -363,8 +355,12 @@ impl Db for BeskidDatabase {
         &self.project_registry
     }
 
-    fn syntax_unit_registry(&self) -> &Mutex<SyntaxUnitRegistry> {
-        &self.syntax_unit_registry
+    fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput> {
+        self.syntax_unit_registry
+            .lock()
+            .expect("syntax unit registry")
+            .get(&unit)
+            .copied()
     }
 
     fn unit_cache(&self) -> &Mutex<UnitArtifactCache> {

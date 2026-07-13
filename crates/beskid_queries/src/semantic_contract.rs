@@ -75,8 +75,8 @@ pub struct TypedProgram {
 /// Authoritative Salsa input for the current syntax generation of one source unit.
 #[salsa::input]
 pub struct SyntaxUnitInput {
-    pub unit: SourceUnitId,
-    pub generation: SyntaxGenerationId,
+    pub(crate) unit: SourceUnitId,
+    pub(crate) generation: SyntaxGenerationId,
 }
 
 impl SyntaxUnitInput {

@@ -1,4 +1,28 @@
 //! Salsa incremental query database for Beskid compilation.
+//!
+//! Syntax revision authority is intentionally opaque to callers:
+//!
+//! ```compile_fail
+//! use beskid_queries::SyntaxUnitInput;
+//! ```
+//!
+//! ```compile_fail
+//! use beskid_queries::Db;
+//!
+//! fn replace_registered_authority(db: &dyn Db) {
+//!     db.syntax_unit_registry().lock().unwrap().clear();
+//! }
+//! ```
+//!
+//! ```compile_fail
+//! use std::path::PathBuf;
+//! use beskid_queries::{BeskidDatabase, SourceUnitId, SyntaxGenerationId};
+//!
+//! let mut db = BeskidDatabase::default();
+//! let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Main.bd"));
+//! let authority = db.ensure_syntax_unit(unit, SyntaxGenerationId(1));
+//! let _ = authority.set_generation(&mut db);
+//! ```
 
 mod db;
 mod entry;
@@ -50,8 +74,8 @@ pub use modhost::{
 pub use semantic_contract::{
     AstNodeKey, CallLowering, CastIntent, ControlFlow, ItemSignature, ResolvedItem, ResolvedLocal,
     RuntimeIntrinsic, SemanticQueryResult, SemanticQueryUnavailable, SemanticTypeId, SourceUnitId,
-    SyntaxUnitInput, TypedProgram, call_lowering, cast_intents, control_flow, item_signature,
-    node_type, resolved_item, resolved_local, runtime_intrinsic,
+    TypedProgram, call_lowering, cast_intents, control_flow, item_signature, node_type,
+    resolved_item, resolved_local, runtime_intrinsic,
 };
 pub use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 pub use output::{
