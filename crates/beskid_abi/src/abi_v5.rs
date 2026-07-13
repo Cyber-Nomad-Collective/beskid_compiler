@@ -86,6 +86,7 @@ pub enum CallingConvention {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TargetMetadata {
     pub triple: TargetTriple,
     pub endianness: Endianness,
@@ -196,13 +197,17 @@ impl AbiType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AbiFunction {
     pub symbol: String,
+    pub param_names: Vec<String>,
     pub params: Vec<AbiType>,
     pub result: AbiType,
+    pub noreturn: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AbiFieldLayout {
     pub name: String,
     pub offset: u64,
@@ -210,6 +215,7 @@ pub struct AbiFieldLayout {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AbiLayout {
     pub name: String,
     pub size: u64,
@@ -218,19 +224,25 @@ pub struct AbiLayout {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeIntrinsic {
     pub name: String,
     pub capability: String,
+    pub param_names: Vec<String>,
     pub params: Vec<AbiType>,
     pub result: AbiType,
+    pub noreturn: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PlatformImport {
     pub symbol: String,
     pub library: String,
+    pub param_names: Vec<String>,
     pub params: Vec<AbiType>,
     pub result: AbiType,
+    pub noreturn: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -292,87 +304,20 @@ pub enum AssemblyRegister {
     Aarch64V15,
 }
 
-const SYSV_X86_64_PRESERVED: &[AssemblyRegister] = &[
-    AssemblyRegister::X86_64Rbx,
-    AssemblyRegister::X86_64Rbp,
-    AssemblyRegister::X86_64R12,
-    AssemblyRegister::X86_64R13,
-    AssemblyRegister::X86_64R14,
-    AssemblyRegister::X86_64R15,
-];
-const WINDOWS_X86_64_PRESERVED: &[AssemblyRegister] = &[
-    AssemblyRegister::X86_64Rbx,
-    AssemblyRegister::X86_64Rbp,
-    AssemblyRegister::X86_64Rdi,
-    AssemblyRegister::X86_64Rsi,
-    AssemblyRegister::X86_64R12,
-    AssemblyRegister::X86_64R13,
-    AssemblyRegister::X86_64R14,
-    AssemblyRegister::X86_64R15,
-    AssemblyRegister::X86_64Xmm6,
-    AssemblyRegister::X86_64Xmm7,
-    AssemblyRegister::X86_64Xmm8,
-    AssemblyRegister::X86_64Xmm9,
-    AssemblyRegister::X86_64Xmm10,
-    AssemblyRegister::X86_64Xmm11,
-    AssemblyRegister::X86_64Xmm12,
-    AssemblyRegister::X86_64Xmm13,
-    AssemblyRegister::X86_64Xmm14,
-    AssemblyRegister::X86_64Xmm15,
-];
-const APPLE_AARCH64_PRESERVED: &[AssemblyRegister] = &[
-    AssemblyRegister::Aarch64X19,
-    AssemblyRegister::Aarch64X20,
-    AssemblyRegister::Aarch64X21,
-    AssemblyRegister::Aarch64X22,
-    AssemblyRegister::Aarch64X23,
-    AssemblyRegister::Aarch64X24,
-    AssemblyRegister::Aarch64X25,
-    AssemblyRegister::Aarch64X26,
-    AssemblyRegister::Aarch64X27,
-    AssemblyRegister::Aarch64X28,
-    AssemblyRegister::Aarch64X29,
-    AssemblyRegister::Aarch64V8,
-    AssemblyRegister::Aarch64V9,
-    AssemblyRegister::Aarch64V10,
-    AssemblyRegister::Aarch64V11,
-    AssemblyRegister::Aarch64V12,
-    AssemblyRegister::Aarch64V13,
-    AssemblyRegister::Aarch64V14,
-    AssemblyRegister::Aarch64V15,
-];
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AssemblyExport {
     pub symbol: AssemblySymbol,
+    pub param_names: Vec<String>,
     pub params: Vec<AbiType>,
+    pub parameter_locations: Vec<String>,
     pub result: AbiType,
     pub preserved_registers: Vec<AssemblyRegister>,
 }
 
 impl AssemblyExport {
     pub fn required_for_target(target: &TargetMetadata) -> Vec<Self> {
-        let preserved_registers = match target.triple {
-            TargetTriple::X86_64UnknownLinuxGnu => SYSV_X86_64_PRESERVED,
-            TargetTriple::Aarch64AppleDarwin => APPLE_AARCH64_PRESERVED,
-            TargetTriple::X86_64PcWindowsMsvc => WINDOWS_X86_64_PRESERVED,
-            TargetTriple::Other(_) => &[],
-        };
-        [
-            (AssemblySymbol::ContextInit, vec![AbiType::Pointer; 5]),
-            (
-                AssemblySymbol::ContextSwitch,
-                vec![AbiType::Pointer, AbiType::Pointer],
-            ),
-        ]
-        .into_iter()
-        .map(|(symbol, params)| Self {
-            symbol,
-            params,
-            result: AbiType::Void,
-            preserved_registers: preserved_registers.to_vec(),
-        })
-        .collect()
+        AbiManifestV5::canonical_runtime(target.clone()).assembly_exports
     }
 }
 
@@ -428,8 +373,11 @@ impl TryFrom<u8> for TrapCode {
 pub struct InvalidTrapCode(pub u8);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AbiManifestV5 {
     pub abi_version: u32,
+    pub trap_exit_status: u8,
+    pub trap_diagnostic: String,
     pub target: TargetMetadata,
     pub imports: Vec<AbiFunction>,
     pub exports: Vec<AbiFunction>,
@@ -446,6 +394,11 @@ impl AbiManifestV5 {
     pub fn validate(&self) -> Result<(), ManifestValidationError> {
         if self.abi_version != ABI_V5 {
             return Err(ManifestValidationError::WrongAbiVersion(self.abi_version));
+        }
+        if self.trap_exit_status != TRAP_EXIT_STATUS
+            || self.trap_diagnostic != TRAP_DIAGNOSTIC_PREFIX
+        {
+            return Err(ManifestValidationError::InvalidTrapContract);
         }
         self.target
             .validate()
@@ -486,6 +439,14 @@ impl AbiManifestV5 {
                 });
             }
             self.validate_canonical_bootstrap_contract()?;
+            let trap = self
+                .exports
+                .iter()
+                .find(|function| function.symbol == "beskid_rt_v5_trap");
+            if !matches!(trap, Some(function) if function.noreturn && function.result == AbiType::Void)
+            {
+                return Err(ManifestValidationError::InvalidTrapContract);
+            }
         }
 
         if !assembly_exports_are_valid(&self.target, &self.assembly_exports) {
@@ -508,19 +469,12 @@ impl AbiManifestV5 {
         canonical_layout_hash(&self.layouts)
     }
 
-    pub fn runtime_intrinsic(
-        &self,
-        package: &RuntimePackageIdentity,
-        name: &str,
-    ) -> Option<&RuntimeIntrinsic> {
-        (self.trusted_runtime_package.as_ref() == Some(package)
-            && package == &canonical_runtime_package())
-            .then(|| {
-                self.trusted_runtime_intrinsics
-                    .iter()
-                    .find(|intrinsic| intrinsic.name == name)
-            })
-            .flatten()
+    /// Typed manifest metadata only. Intrinsic legality is decided by the
+    /// DB-owned `beskid_queries::runtime_intrinsic` provenance query.
+    pub fn intrinsic_metadata(&self, name: &str) -> Option<&RuntimeIntrinsic> {
+        self.trusted_runtime_intrinsics
+            .iter()
+            .find(|intrinsic| intrinsic.name == name)
     }
 }
 
@@ -530,7 +484,7 @@ fn assembly_exports_are_valid(target: &TargetMetadata, exports: &[AssemblyExport
     }
     let mut actual = exports.to_vec();
     actual.sort_unstable_by_key(|export| export.symbol.as_str());
-    let mut expected = AssemblyExport::required_for_target(target);
+    let mut expected = AbiManifestV5::canonical_runtime(target.clone()).assembly_exports;
     expected.sort_unstable_by_key(|export| export.symbol.as_str());
     actual == expected
 }
@@ -593,6 +547,7 @@ pub enum ManifestValidationError {
     InvalidLayout { name: String },
     InvalidAssemblyExports { actual: Vec<AssemblyExport> },
     InvalidTrapSet { actual: Vec<u8> },
+    InvalidTrapContract,
     DuplicateSourcePath { logical_path: String },
     UnauthorizedRuntimePackage { actual: RuntimePackageIdentity },
     InvalidRuntimeImportSet { actual: Vec<AbiFunction> },

@@ -1,1068 +1,122 @@
+# Sole source of truth for the Beskid native runtime ABI.
+# All Rust, C, GNU-as, MASM, abi.json, and audit artifacts are generated from this file.
 manifest {
-  abi_version = 4
+  abi_version = 5
+  schema_version = 1
+  runtime_publisher = "beskid-lang.org"
+  runtime_package = "beskid-runtime-native"
+  trap_exit_status = 101
+  trap_diagnostic = "beskid runtime trap v5"
 }
 
-profile "minimal" {
-  owners = [language]
+target "x86_64-unknown-linux-gnu" {
+  endianness = little
+  pointer_width = 64
+  calling_convention = system_v
+  object_format = elf
+  symbol_prefix = ""
+}
+target "aarch64-apple-darwin" {
+  endianness = little
+  pointer_width = 64
+  calling_convention = apple_aarch64
+  object_format = macho
+  symbol_prefix = "_"
+}
+target "x86_64-pc-windows-msvc" {
+  endianness = little
+  pointer_width = 64
+  calling_convention = windows_x64
+  object_format = coff
+  symbol_prefix = ""
 }
 
-profile "std" {
-  owners = [language, host]
-}
-
-kernel {
-  symbol = alloc
-  name = Alloc
-  params = [usize, ptr]
-  returns = ptr
-  injected = true
-  beskid_path = [__alloc]
-}
-
-kernel {
-  symbol = beskid_register_callbacks
-  name = BeskidRegisterCallbacks
-  params = [i64, ptr, i64]
-  returns = i32
-  injected = false
-}
-
-kernel {
-  symbol = beskid_register_handlers
-  name = BeskidRegisterHandlers
-  params = [u64, ptr, u64]
-  returns = i32
-  injected = true
-  beskid_path = [__beskid_register_handlers]
-}
-
-kernel {
-  symbol = beskid_runtime_abi_version
-  name = BeskidRuntimeAbiVersion
-  params = []
-  returns = i64
-  injected = false
-}
-
-kernel {
-  symbol = composition_bind_plural
-  name = CompositionBindPlural
-  params = [ptr, i64, ptr, i64]
-  returns = i32
-  injected = false
-}
-
-kernel {
-  symbol = composition_container_create
-  name = CompositionContainerCreate
-  params = []
-  returns = ptr
-  injected = false
-}
-
-kernel {
-  symbol = composition_container_drop
-  name = CompositionContainerDrop
-  params = [ptr]
-  returns = unit
-  injected = false
-}
-
-kernel {
-  symbol = composition_launch
-  name = CompositionLaunch
-  params = [ptr]
-  returns = i32
-  injected = false
-}
-
-kernel {
-  symbol = composition_register
-  name = CompositionRegister
-  params = [ptr, i64, i64, i64]
-  returns = i32
-  injected = false
-}
-
-kernel {
-  symbol = composition_resolve
-  name = CompositionResolve
-  params = [ptr, i64]
-  returns = ptr
-  injected = false
-}
-
-kernel {
-  symbol = composition_resolve_plural
-  name = CompositionResolvePlural
-  params = [ptr, i64, ptr, i64]
-  returns = i64
-  injected = false
-}
-
-kernel {
-  symbol = composition_scope_depth
-  name = CompositionScopeDepth
-  params = [ptr]
-  returns = i64
-  injected = false
-}
-
-kernel {
-  symbol = composition_scope_enter
-  name = CompositionScopeEnter
-  params = [ptr, i64]
-  returns = i32
-  injected = false
-}
-
-kernel {
-  symbol = composition_scope_leave
-  name = CompositionScopeLeave
-  params = [ptr, i64]
-  returns = i32
-  injected = false
-}
-
-kernel {
-  symbol = composition_shutdown
-  name = CompositionShutdown
-  params = [ptr]
-  returns = i32
-  injected = false
-}
-
-kernel {
-  symbol = dynamic_cast_checked
-  name = DynamicCastChecked
-  params = [ptr, i64]
-  returns = i32
-  injected = false
-}
-
-kernel {
-  symbol = dynamic_cell_create
-  name = DynamicCellCreate
-  params = [i64, ptr]
-  returns = ptr
-  injected = false
-}
-
-kernel {
-  symbol = dynamic_cell_wrap
-  name = DynamicCellWrap
-  params = [i64, ptr]
-  returns = ptr
-  injected = false
-}
-
-kernel {
-  symbol = dynamic_map_aot
-  name = DynamicMapAot
-  params = [i64, i64, ptr, ptr]
-  returns = i32
-  injected = false
-}
-
-kernel {
-  symbol = dynamic_map_fallback
-  name = DynamicMapFallback
-  params = [ptr, i64, ptr]
-  returns = i32
-  injected = false
-}
-
-kernel {
-  symbol = dynamic_object_alloc
-  name = DynamicObjectAlloc
-  params = [ptr]
-  returns = ptr
-  injected = false
-}
-
-kernel {
-  symbol = fiber_yield
-  name = FiberYield
-  params = []
-  returns = unit
-  injected = true
-  beskid_path = [__fiber_yield]
-}
-
-kernel {
-  symbol = gc_register_root
-  name = GcRegisterRoot
-  params = [ptr]
-  returns = unit
-  injected = true
-  beskid_path = [__gc_register_root]
-}
-
-kernel {
-  symbol = gc_root_handle
-  name = GcRootHandle
-  params = [ptr]
-  returns = i64
-  injected = true
-  beskid_path = [__gc_root_handle]
-}
-
-kernel {
-  symbol = gc_unregister_root
-  name = GcUnregisterRoot
-  params = [ptr]
-  returns = unit
-  injected = true
-  beskid_path = [__gc_unregister_root]
-}
-
-kernel {
-  symbol = gc_unroot_handle
-  name = GcUnrootHandle
-  params = [u64]
-  returns = unit
-  injected = true
-  beskid_path = [__gc_unroot_handle]
-}
-
-kernel {
-  symbol = gc_write_barrier
-  name = GcWriteBarrier
-  params = [ptr, ptr]
-  returns = unit
-  injected = true
-  beskid_path = [__gc_write_barrier]
-}
-
-kernel {
-  symbol = interop_dispatch_ptr
-  name = InteropDispatchPtr
-  params = [ptr]
-  returns = ptr
-  injected = true
-  beskid_path = [__interop_dispatch_ptr]
-}
-
-kernel {
-  symbol = interop_dispatch_unit
-  name = InteropDispatchUnit
-  params = [ptr]
-  returns = unit
-  injected = true
-  beskid_path = [__interop_dispatch_unit]
-}
-
-kernel {
-  symbol = interop_dispatch_usize
-  name = InteropDispatchUsize
-  params = [ptr]
-  returns = i64
-  injected = true
-  beskid_path = [__interop_dispatch_usize]
-}
-
-kernel {
-  symbol = interop_dispatch_i64
-  name = InteropDispatchI64
-  params = [ptr]
-  returns = i64
-  injected = true
-  beskid_path = [__interop_dispatch_i64]
-}
-
-kernel {
-  symbol = panic
-  name = Panic
-  params = [ptr, ptr]
+export "beskid_rt_v5_abi_version" { params = [] returns = u32 }
+export "beskid_library_attach_v5" { params = [{ name = runtime, type = pointer }] returns = i32 }
+export "beskid_library_detach_v5" { params = [{ name = runtime, type = pointer }] returns = void }
+export "beskid_rt_v5_process_init" { params = [{ name = config, type = pointer }] returns = pointer }
+export "beskid_rt_v5_process_shutdown" { params = [{ name = runtime, type = pointer }] returns = void }
+export "beskid_rt_v5_thread_attach" { params = [{ name = runtime, type = pointer }] returns = pointer }
+export "beskid_rt_v5_thread_detach" { params = [{ name = thread, type = pointer }] returns = void }
+export "beskid_rt_v5_trap" {
+  params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }]
   returns = never
-  injected = false
 }
 
-kernel {
-  symbol = panic_str
-  name = PanicStr
-  params = [string]
-  returns = never
-  injected = true
-  beskid_path = [__panic_str]
-}
-
-kernel {
-  symbol = runtime_preempt_check
-  name = RuntimePreemptCheck
-  params = []
-  returns = unit
-  injected = false
-}
-
-dispatch_usize {
-  tag = 0
-  dispatch_key = array_len
-  name = ArrayLen
-  params = [ptr]
-  returns = usize
-  injected = true
-  beskid_path = [__array_len]
-}
-
-dispatch_usize {
-  tag = 1
-  dispatch_key = fs_write_text
-  name = FsWriteText
-  params = [string, string]
-  returns = usize
-  injected = true
-  beskid_path = [__fs_write_text]
-  owner = host
-}
-
-dispatch_usize {
-  tag = 2
-  dispatch_key = str_len
-  name = StrLen
-  params = [string]
-  returns = usize
-  injected = true
-  beskid_path = [__str_len]
-}
-
-dispatch_usize {
-  tag = 3
-  dispatch_key = syscall_write
-  name = SyscallWrite
-  params = [u64, string]
-  returns = usize
-  injected = true
-  beskid_path = [__syscall_write]
-}
-
-dispatch_usize {
-  tag = 4
-  dispatch_key = syscall_write_bytes
-  name = SyscallWriteBytes
-  params = [u64, ptr]
-  returns = usize
-  injected = true
-  beskid_path = [__syscall_write_bytes]
-}
-
-dispatch_ptr {
-  tag = 0
-  dispatch_key = array_new
-  name = ArrayNew
-  params = [usize, usize]
-  returns = ptr
-  injected = true
-  beskid_path = [__array_new]
-}
-
-dispatch_ptr {
-  tag = 1
-  dispatch_key = bytes_from_str
-  name = BytesFromStr
-  params = [string]
-  returns = ptr
-  injected = true
-  beskid_path = [__bytes_from_str]
-}
-
-dispatch_ptr {
-  tag = 2
-  dispatch_key = bytes_set
-  name = BytesSet
-  params = [ptr, u64, u64]
-  returns = ptr
-  injected = true
-  beskid_path = [__bytes_set]
-}
-
-dispatch_ptr {
-  tag = 3
-  dispatch_key = env_get
-  name = EnvGet
-  params = [string]
-  returns = string
-  injected = true
-  beskid_path = [__env_get]
-  owner = host
-}
-
-dispatch_ptr {
-  tag = 4
-  dispatch_key = env_getcwd
-  name = EnvGetcwd
-  params = []
-  returns = string
-  injected = true
-  beskid_path = [__env_getcwd]
-  owner = host
-}
-
-dispatch_ptr {
-  tag = 5
-  dispatch_key = fs_read_text
-  name = FsReadText
-  params = [string]
-  returns = string
-  injected = true
-  beskid_path = [__fs_read_text]
-  owner = host
-}
-
-dispatch_ptr {
-  tag = 6
-  dispatch_key = str_concat
-  name = StrConcat
-  params = [ptr, ptr]
-  returns = ptr
-  injected = true
-}
-
-dispatch_ptr {
-  tag = 7
-  dispatch_key = str_from_bytes_utf8
-  name = StrFromBytesUtf8
-  params = [ptr]
-  returns = string
-  injected = true
-  beskid_path = [__str_from_bytes_utf8]
-}
-
-dispatch_ptr {
-  tag = 8
-  dispatch_key = str_from_i64
-  name = StrFromI64
-  params = [u64]
-  returns = ptr
-  injected = true
-}
-
-dispatch_ptr {
-  tag = 9
-  dispatch_key = str_new
-  name = StrNew
-  params = [ptr, usize]
-  returns = ptr
-  injected = true
-  beskid_path = [__str_new]
-}
-
-dispatch_ptr {
-  tag = 10
-  dispatch_key = str_slice
-  name = StrSlice
-  params = [string, u64, u64]
-  returns = string
-  injected = true
-  beskid_path = [__str_slice]
-}
-
-dispatch_ptr {
-  tag = 11
-  dispatch_key = syscall_read
-  name = SyscallRead
-  params = [u64, u64]
-  returns = string
-  injected = true
-  beskid_path = [__syscall_read]
-}
-
-dispatch_ptr {
-  tag = 12
-  dispatch_key = syscall_read_bytes
-  name = SyscallReadBytes
-  params = [u64, u64]
-  returns = ptr
-  injected = true
-  beskid_path = [__syscall_read_bytes]
-}
-
-dispatch_unit {
-  tag = 0
-  dispatch_key = bytes_copy
-  name = BytesCopy
-  params = [ptr, u64, ptr, u64, u64]
-  returns = unit
-  injected = true
-  beskid_path = [__bytes_copy]
-}
-
-dispatch_unit {
-  tag = 1
-  dispatch_key = channel_close
-  name = ChannelClose
-  params = [u64]
-  returns = unit
-  injected = true
-  beskid_path = [__channel_close]
-}
-
-dispatch_unit {
-  tag = 2
-  dispatch_key = fiber_cancel
-  name = FiberCancel
-  params = [u64]
-  returns = unit
-  injected = true
-  beskid_path = [__fiber_cancel]
-}
-
-dispatch_unit {
-  tag = 3
-  dispatch_key = fiber_detach
-  name = FiberDetach
-  params = [u64]
-  returns = unit
-  injected = true
-  beskid_path = [__fiber_detach]
-}
-
-dispatch_unit {
-  tag = 4
-  dispatch_key = mutex_unlock
-  name = MutexUnlock
-  params = [u64]
-  returns = unit
-  injected = true
-  beskid_path = [__mutex_unlock]
-}
-
-dispatch_unit {
-  tag = 5
-  dispatch_key = wait_group_add
-  name = WaitGroupAdd
-  params = [u64, u64]
-  returns = unit
-  injected = true
-  beskid_path = [__wait_group_add]
-}
-
-dispatch_unit {
-  tag = 6
-  dispatch_key = wait_group_done
-  name = WaitGroupDone
-  params = [u64]
-  returns = unit
-  injected = true
-  beskid_path = [__wait_group_done]
-}
-
-dispatch_i64 {
-  tag = 0
-  dispatch_key = bytes_compare
-  name = BytesCompare
-  params = [ptr, ptr]
-  returns = u64
-  injected = true
-  beskid_path = [__bytes_compare]
-}
-
-dispatch_i64 {
-  tag = 1
-  dispatch_key = bytes_get
-  name = BytesGet
-  params = [ptr, u64]
-  returns = u64
-  injected = true
-  beskid_path = [__bytes_get]
-}
-
-dispatch_i64 {
-  tag = 2
-  dispatch_key = channel_create
-  name = ChannelCreate
-  params = [u64, u64]
-  returns = u64
-  injected = true
-  beskid_path = [__channel_create]
-}
-
-dispatch_i64 {
-  tag = 3
-  dispatch_key = channel_receive_ptr
-  name = ChannelReceivePtr
-  params = [u64, ptr]
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 4
-  dispatch_key = channel_receive_status
-  name = ChannelReceiveStatus
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__channel_receive]
-}
-
-dispatch_i64 {
-  tag = 5
-  dispatch_key = channel_receive_value
-  name = ChannelReceiveValue
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__channel_receive_value]
-}
-
-dispatch_i64 {
-  tag = 6
-  dispatch_key = channel_send
-  name = ChannelSend
-  params = [u64, u64]
-  returns = u64
-  injected = true
-  beskid_path = [__channel_send]
-}
-
-dispatch_i64 {
-  tag = 7
-  dispatch_key = channel_send_ptr
-  name = ChannelSendPtr
-  params = [u64, ptr]
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 8
-  dispatch_key = channel_try_receive
-  name = ChannelTryReceive
-  params = [u64, ptr]
-  returns = u64
-  injected = true
-  beskid_path = [__channel_try_receive]
-}
-
-dispatch_i64 {
-  tag = 9
-  dispatch_key = channel_try_receive_ptr
-  name = ChannelTryReceivePtr
-  params = [u64, ptr]
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 10
-  dispatch_key = channel_try_send
-  name = ChannelTrySend
-  params = [u64, u64]
-  returns = u64
-  injected = true
-  beskid_path = [__channel_try_send]
-}
-
-dispatch_i64 {
-  tag = 11
-  dispatch_key = channel_try_send_ptr
-  name = ChannelTrySendPtr
-  params = [u64, ptr]
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 12
-  dispatch_key = clock_monotonic_nanos
-  name = ClockMonotonicNanos
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__clock_monotonic_nanos]
-}
-
-dispatch_i64 {
-  tag = 13
-  dispatch_key = clock_realtime_nanos
-  name = ClockRealtimeNanos
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__clock_realtime_nanos]
-}
-
-dispatch_i64 {
-  tag = 14
-  dispatch_key = env_set
-  name = EnvSet
-  params = [string, string]
-  returns = u64
-  injected = true
-  beskid_path = [__env_set]
-  owner = host
-}
-
-dispatch_i64 {
-  tag = 15
-  dispatch_key = fiber_current_id
-  name = FiberCurrentId
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__fiber_current_id]
-}
-
-dispatch_i64 {
-  tag = 16
-  dispatch_key = fiber_join_status
-  name = FiberJoinStatus
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__fiber_join]
-}
-
-dispatch_i64 {
-  tag = 17
-  dispatch_key = fiber_join_value
-  name = FiberJoinValue
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__fiber_join_value]
-}
-
-dispatch_i64 {
-  tag = 18
-  dispatch_key = fiber_now_millis
-  name = FiberNowMillis
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__fiber_now_millis]
-}
-
-dispatch_i64 {
-  tag = 19
-  dispatch_key = fiber_processor_count
-  name = FiberProcessorCount
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__fiber_processor_count]
-}
-
-dispatch_i64 {
-  tag = 20
-  dispatch_key = fiber_spawn
-  name = FiberSpawn
-  params = [ptr, ptr]
-  returns = u64
-  injected = true
-  beskid_path = [__fiber_spawn]
-}
-
-dispatch_i64 {
-  tag = 21
-  dispatch_key = fiber_spawn_with_cancel_slot
-  name = FiberSpawnWithCancelSlot
-  params = [ptr, ptr, ptr]
-  returns = u64
-  injected = true
-  beskid_path = [__fiber_spawn_with_cancel_slot]
-}
-
-dispatch_i64 {
-  tag = 22
-  dispatch_key = fs_delete
-  name = FsDelete
-  params = [string]
-  returns = u64
-  injected = true
-  beskid_path = [__fs_delete]
-  owner = host
-}
-
-dispatch_i64 {
-  tag = 23
-  dispatch_key = fs_exists
-  name = FsExists
-  params = [string]
-  returns = u64
-  injected = true
-  beskid_path = [__fs_exists]
-  owner = host
-}
-
-dispatch_i64 {
-  tag = 24
-  dispatch_key = fs_mkdir
-  name = FsMkdir
-  params = [string]
-  returns = u64
-  injected = true
-  beskid_path = [__fs_mkdir]
-  owner = host
-}
-
-dispatch_i64 {
-  tag = 25
-  dispatch_key = gc_bytes_allocated
-  name = GcBytesAllocated
-  params = []
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 26
-  dispatch_key = gc_collect
-  name = GcCollect
-  params = []
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 27
-  dispatch_key = gc_collect_if_needed
-  name = GcCollectIfNeeded
-  params = []
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 28
-  dispatch_key = gc_external_root_count
-  name = GcExternalRootCount
-  params = []
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 29
-  dispatch_key = gc_object_count
-  name = GcObjectCount
-  params = []
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 30
-  dispatch_key = gc_phase
-  name = GcPhase
-  params = []
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 31
-  dispatch_key = hub_create
-  name = HubCreate
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__hub_create]
-}
-
-dispatch_i64 {
-  tag = 32
-  dispatch_key = hub_register
-  name = HubRegister
-  params = [u64, u64, u64]
-  returns = u64
-  injected = true
-  beskid_path = [__hub_register]
-}
-
-dispatch_i64 {
-  tag = 33
-  dispatch_key = hub_unregister
-  name = HubUnregister
-  params = [u64, u64]
-  returns = u64
-  injected = true
-  beskid_path = [__hub_unregister]
-}
-
-dispatch_i64 {
-  tag = 34
-  dispatch_key = hub_wait_receive_index
-  name = HubWaitReceiveIndex
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__hub_wait_receive_index]
-}
-
-dispatch_i64 {
-  tag = 35
-  dispatch_key = hub_wait_receive_status
-  name = HubWaitReceiveStatus
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__hub_wait_receive]
-}
-
-dispatch_i64 {
-  tag = 36
-  dispatch_key = hub_wait_receive_value
-  name = HubWaitReceiveValue
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__hub_wait_receive_value]
-}
-
-dispatch_i64 {
-  tag = 37
-  dispatch_key = mutex_create
-  name = MutexCreate
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__mutex_create]
-}
-
-dispatch_i64 {
-  tag = 38
-  dispatch_key = mutex_lock
-  name = MutexLock
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__mutex_lock]
-}
-
-dispatch_i64 {
-  tag = 39
-  dispatch_key = mutex_try_lock
-  name = MutexTryLock
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__mutex_try_lock]
-}
-
-dispatch_i64 {
-  tag = 40
-  dispatch_key = process_exit
-  name = ProcessExit
-  params = [u64]
-  returns = never
-  injected = true
-  beskid_path = [__process_exit]
-  owner = host
-}
-
-dispatch_i64 {
-  tag = 41
-  dispatch_key = process_getpid
-  name = ProcessGetpid
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__process_getpid]
-  owner = host
-}
-
-dispatch_i64 {
-  tag = 42
-  dispatch_key = str_eq
-  name = StrEq
-  params = [ptr, ptr]
-  returns = u64
-  injected = true
-}
-
-dispatch_i64 {
-  tag = 43
-  dispatch_key = test_bytes_len
-  name = TestBytesLen
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__test_bytes_len]
-}
-
-dispatch_i64 {
-  tag = 44
-  dispatch_key = test_bytes_ptr
-  name = TestBytesPtr
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__test_bytes_ptr]
-}
-
-dispatch_i64 {
-  tag = 45
-  dispatch_key = tty_winsize
-  name = TtyWinsize
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__tty_winsize]
-  owner = host
-}
-
-dispatch_i64 {
-  tag = 46
-  dispatch_key = wait_group_create
-  name = WaitGroupCreate
-  params = []
-  returns = u64
-  injected = true
-  beskid_path = [__wait_group_create]
-}
-
-dispatch_i64 {
-  tag = 47
-  dispatch_key = wait_group_wait
-  name = WaitGroupWait
-  params = [u64]
-  returns = u64
-  injected = true
-  beskid_path = [__wait_group_wait]
-}
-
-dispatch_i64 {
-  tag = 48
-  dispatch_key = event_subscribe
-  name = EventSubscribe
-  params = [ptr, ptr]
-  returns = u64
-  injected = false
-}
-
-dispatch_i64 {
-  tag = 49
-  dispatch_key = event_unsubscribe_first
-  name = EventUnsubscribeFirst
-  params = [ptr, ptr]
-  returns = u64
-  injected = false
-}
-
-dispatch_i64 {
-  tag = 50
-  dispatch_key = event_len
-  name = EventLen
-  params = [ptr]
-  returns = u64
-  injected = false
-}
-
-dispatch_i64 {
-  tag = 51
-  dispatch_key = event_get_handler
-  name = EventGetHandler
-  params = [ptr, u64]
-  returns = u64
-  injected = false
-}
-
-intrinsic {
-  symbol = range
-  path = [range]
-  params = [u64, u64]
-  returns = unit
-  injected = false
+intrinsic "native_word_from_pointer" { capability = "runtime.bootstrap.native_word_from_pointer" params = [{ name = value, type = pointer }] returns = usize }
+intrinsic "pointer_from_native_word" { capability = "runtime.bootstrap.pointer_from_native_word" params = [{ name = value, type = usize }] returns = pointer }
+intrinsic "pointer_add" { capability = "runtime.bootstrap.pointer_add" params = [{ name = base, type = pointer }, { name = offset, type = usize }] returns = pointer }
+intrinsic "raw_word_load" { capability = "runtime.bootstrap.raw_word_load" params = [{ name = address, type = pointer }] returns = usize }
+intrinsic "raw_word_store" { capability = "runtime.bootstrap.raw_word_store" params = [{ name = address, type = pointer }, { name = value, type = usize }] returns = void }
+intrinsic "raw_byte_load" { capability = "runtime.bootstrap.raw_byte_load" params = [{ name = address, type = pointer }] returns = u8 }
+intrinsic "raw_byte_store" { capability = "runtime.bootstrap.raw_byte_store" params = [{ name = address, type = pointer }, { name = value, type = u8 }] returns = void }
+intrinsic "memory_set" { capability = "runtime.bootstrap.memory_set" params = [{ name = destination, type = pointer }, { name = byte, type = u8 }, { name = length, type = usize }] returns = void }
+intrinsic "memory_copy" { capability = "runtime.bootstrap.memory_copy" params = [{ name = destination, type = pointer }, { name = source, type = pointer }, { name = length, type = usize }] returns = void }
+intrinsic "memory_compare" { capability = "runtime.bootstrap.memory_compare" params = [{ name = left, type = pointer }, { name = right, type = pointer }, { name = length, type = usize }] returns = i32 }
+intrinsic "system_allocate" { capability = "runtime.bootstrap.system_allocate" params = [{ name = size, type = usize }, { name = alignment, type = usize }] returns = pointer }
+intrinsic "system_free" { capability = "runtime.bootstrap.system_free" params = [{ name = address, type = pointer }, { name = size, type = usize }] returns = void }
+intrinsic "tls_get" { capability = "runtime.bootstrap.tls_get" params = [] returns = pointer }
+intrinsic "tls_set" { capability = "runtime.bootstrap.tls_set" params = [{ name = value, type = pointer }] returns = void }
+intrinsic "trap" { capability = "runtime.bootstrap.trap" params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }] returns = never }
+
+layout "BeskidAllocationRequest" { size = 24 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = descriptor, offset = 16, type = pointer }] }
+layout "BeskidHandle" { size = 16 alignment = 8 fields = [{ name = slot, offset = 0, type = u32 }, { name = generation, offset = 4, type = u32 }, { name = owner_cookie, offset = 8, type = u64 }] }
+layout "BeskidObjectHeader" { size = 16 alignment = 8 fields = [{ name = descriptor, offset = 0, type = pointer }, { name = gc_word, offset = 8, type = usize }] }
+layout "BeskidRootFrame" { size = 24 alignment = 8 fields = [{ name = previous, offset = 0, type = pointer }, { name = slots, offset = 8, type = pointer }, { name = slot_count, offset = 16, type = usize }] }
+layout "BeskidRootSlot" { size = 8 alignment = 8 fields = [{ name = value, offset = 0, type = pointer }] }
+layout "BeskidRuntimeState" { size = 64 alignment = 8 fields = [{ name = abi_version, offset = 0, type = u32 }, { name = flags, offset = 4, type = u32 }, { name = current_thread, offset = 8, type = pointer }, { name = heap, offset = 16, type = pointer }, { name = handles, offset = 24, type = pointer }, { name = scheduler, offset = 32, type = pointer }, { name = root_frame, offset = 40, type = pointer }, { name = tls_key, offset = 48, type = usize }, { name = corruption_cookie, offset = 56, type = u64 }] }
+layout "BeskidTlsState" { size = 32 alignment = 8 fields = [{ name = runtime, offset = 0, type = pointer }, { name = root_frame, offset = 8, type = pointer }, { name = current_fiber, offset = 16, type = pointer }, { name = attach_depth, offset = 24, type = usize }] }
+layout "BeskidTypeDescriptor" { size = 40 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = pointer_map, offset = 16, type = pointer }, { name = pointer_count, offset = 24, type = usize }, { name = flags, offset = 32, type = u32 }, { name = reserved, offset = 36, type = u32 }] }
+layout "BeskidArchContextX86_64SysV" { target = "x86_64-unknown-linux-gnu" size = 64 alignment = 16 fields = [{ name = rbx, offset = 0, type = u64 }, { name = rbp, offset = 8, type = u64 }, { name = r12, offset = 16, type = u64 }, { name = r13, offset = 24, type = u64 }, { name = r14, offset = 32, type = u64 }, { name = r15, offset = 40, type = u64 }, { name = rsp, offset = 48, type = u64 }, { name = rip, offset = 56, type = u64 }] }
+layout "BeskidArchContextAarch64Darwin" { target = "aarch64-apple-darwin" size = 176 alignment = 16 fields = [{ name = x19, offset = 0, type = u64 }, { name = x20, offset = 8, type = u64 }, { name = x21, offset = 16, type = u64 }, { name = x22, offset = 24, type = u64 }, { name = x23, offset = 32, type = u64 }, { name = x24, offset = 40, type = u64 }, { name = x25, offset = 48, type = u64 }, { name = x26, offset = 56, type = u64 }, { name = x27, offset = 64, type = u64 }, { name = x28, offset = 72, type = u64 }, { name = x29, offset = 80, type = u64 }, { name = x30, offset = 88, type = u64 }, { name = sp, offset = 96, type = u64 }, { name = pc, offset = 104, type = u64 }, { name = d8, offset = 112, type = f64 }, { name = d9, offset = 120, type = f64 }, { name = d10, offset = 128, type = f64 }, { name = d11, offset = 136, type = f64 }, { name = d12, offset = 144, type = f64 }, { name = d13, offset = 152, type = f64 }, { name = d14, offset = 160, type = f64 }, { name = d15, offset = 168, type = f64 }] }
+layout "BeskidArchContextX86_64Windows" { target = "x86_64-pc-windows-msvc" size = 240 alignment = 16 fields = [{ name = rbx, offset = 0, type = u64 }, { name = rbp, offset = 8, type = u64 }, { name = rdi, offset = 16, type = u64 }, { name = rsi, offset = 24, type = u64 }, { name = r12, offset = 32, type = u64 }, { name = r13, offset = 40, type = u64 }, { name = r14, offset = 48, type = u64 }, { name = r15, offset = 56, type = u64 }, { name = rsp, offset = 64, type = u64 }, { name = rip, offset = 72, type = u64 }, { name = xmm6, offset = 80, type = v128 }, { name = xmm7, offset = 96, type = v128 }, { name = xmm8, offset = 112, type = v128 }, { name = xmm9, offset = 128, type = v128 }, { name = xmm10, offset = 144, type = v128 }, { name = xmm11, offset = 160, type = v128 }, { name = xmm12, offset = 176, type = v128 }, { name = xmm13, offset = 192, type = v128 }, { name = xmm14, offset = 208, type = v128 }, { name = xmm15, offset = 224, type = v128 }] }
+
+platform_import "_exit" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = status, type = i32 }] returns = never }
+platform_import "mmap" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }, { name = flags, type = i32 }, { name = fd, type = i32 }, { name = offset, type = i64 }] returns = pointer }
+platform_import "munmap" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = address, type = pointer }, { name = length, type = usize }] returns = i32 }
+platform_import "write" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
+platform_import "_exit" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = status, type = i32 }] returns = never }
+platform_import "mmap" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }, { name = flags, type = i32 }, { name = fd, type = i32 }, { name = offset, type = i64 }] returns = pointer }
+platform_import "munmap" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = address, type = pointer }, { name = length, type = usize }] returns = i32 }
+platform_import "write" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
+platform_import "ExitProcess" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = status, type = u32 }] returns = never }
+platform_import "GetStdHandle" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = selector, type = i32 }] returns = pointer }
+platform_import "VirtualAlloc" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = address, type = pointer }, { name = size, type = usize }, { name = allocation_type, type = u32 }, { name = protection, type = u32 }] returns = pointer }
+platform_import "VirtualFree" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = address, type = pointer }, { name = size, type = usize }, { name = free_type, type = u32 }] returns = i32 }
+platform_import "WriteFile" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = handle, type = pointer }, { name = buffer, type = pointer }, { name = length, type = u32 }, { name = written, type = pointer }, { name = overlapped, type = pointer }] returns = i32 }
+
+assembly "beskid_arch_v5_context_init" {
+  params = [{ name = context, type = pointer }, { name = stack_top, type = pointer }, { name = entry, type = pointer }, { name = argument, type = pointer }, { name = return_trampoline, type = pointer }]
+  returns = void
+  x86_64_unknown_linux_gnu_preserved = [rbx, rbp, r12, r13, r14, r15]
+  x86_64_unknown_linux_gnu_locations = [rdi, rsi, rdx, rcx, r8]
+  aarch64_apple_darwin_preserved = [x19, x20, x21, x22, x23, x24, x25, x26, x27, x28, x29, v8, v9, v10, v11, v12, v13, v14, v15]
+  aarch64_apple_darwin_locations = [x0, x1, x2, x3, x4]
+  x86_64_pc_windows_msvc_preserved = [rbx, rbp, rdi, rsi, r12, r13, r14, r15, xmm6, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15]
+  x86_64_pc_windows_msvc_locations = [rcx, rdx, r8, r9, "stack+40"]
+}
+assembly "beskid_arch_v5_context_switch" {
+  params = [{ name = from, type = pointer }, { name = to, type = pointer }]
+  returns = void
+  x86_64_unknown_linux_gnu_preserved = [rbx, rbp, r12, r13, r14, r15]
+  x86_64_unknown_linux_gnu_locations = [rdi, rsi]
+  aarch64_apple_darwin_preserved = [x19, x20, x21, x22, x23, x24, x25, x26, x27, x28, x29, v8, v9, v10, v11, v12, v13, v14, v15]
+  aarch64_apple_darwin_locations = [x0, x1]
+  x86_64_pc_windows_msvc_preserved = [rbx, rbp, rdi, rsi, r12, r13, r14, r15, xmm6, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15]
+  x86_64_pc_windows_msvc_locations = [rcx, rdx]
+}
+
+trap "null_reference" { code = 1 }
+trap "bounds" { code = 2 }
+trap "arithmetic_overflow" { code = 3 }
+trap "invalid_utf8" { code = 4 }
+trap "out_of_memory" { code = 5 }
+trap "invalid_or_stale_handle" { code = 6 }
+trap "scheduler_deadlock" { code = 7 }
+trap "abi_or_layout_mismatch" { code = 8 }
+trap "unreachable_or_isle_invariant" { code = 9 }
+trap "runtime_internal_corruption" { code = 10 }
+
+audit {
+  forbidden_symbol_families = [rust, _rust, __rust, "core::panicking", "std::panicking", "alloc::alloc", panic, _Unwind, __Unwind, eh_personality, gcc_personality, abfall, corosensei]
 }

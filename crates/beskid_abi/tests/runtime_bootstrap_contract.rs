@@ -48,7 +48,6 @@ fn canonical_contract_has_the_exact_lifecycle_and_trap_exports() {
     assert_eq!(
         actual,
         vec![
-            ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
             (
                 "beskid_library_attach_v5",
                 &[AbiType::Pointer][..],
@@ -59,6 +58,7 @@ fn canonical_contract_has_the_exact_lifecycle_and_trap_exports() {
                 &[AbiType::Pointer][..],
                 AbiType::Void,
             ),
+            ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
             (
                 "beskid_rt_v5_process_init",
                 &[AbiType::Pointer][..],
@@ -88,16 +88,21 @@ fn canonical_contract_has_the_exact_lifecycle_and_trap_exports() {
     );
     assert_eq!(TRAP_EXIT_STATUS, 101);
     assert_eq!(TRAP_DIAGNOSTIC_PREFIX, "beskid runtime trap v5");
+    let trap = manifest
+        .exports
+        .iter()
+        .find(|entry| entry.symbol == "beskid_rt_v5_trap")
+        .unwrap();
+    assert!(trap.noreturn);
 }
 
 #[test]
 fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
     let package = canonical_runtime_package();
-    assert_eq!(package.publisher, CANONICAL_RUNTIME_PACKAGE_PUBLISHER);
-    assert_eq!(package.name, CANONICAL_RUNTIME_PACKAGE_NAME);
-    assert_eq!(package.abi_version, ABI_V5);
-
+    assert_eq!(package.publisher(), CANONICAL_RUNTIME_PACKAGE_PUBLISHER);
+    assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
+    assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest
         .trusted_runtime_intrinsics
         .iter()
@@ -109,25 +114,15 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"system_allocate"));
     assert!(names.contains(&"tls_get"));
     assert!(names.contains(&"trap"));
-    assert!(
-        manifest
-            .runtime_intrinsic(&package, "pointer_add")
-            .is_some()
-    );
-
-    let attacker = RuntimePackageIdentity {
-        publisher: package.publisher.clone(),
-        name: "user-runtime-lookalike".into(),
-        abi_version: ABI_V5,
-    };
-    assert!(
-        manifest
-            .runtime_intrinsic(&attacker, "pointer_add")
-            .is_none()
-    );
+    assert!(manifest.intrinsic_metadata("pointer_add").is_some());
 
     let mut unauthorized = manifest.clone();
-    unauthorized.trusted_runtime_package = Some(attacker);
+    unauthorized.trusted_runtime_package = Some(
+        serde_json::from_str::<RuntimePackageIdentity>(
+            r#"{"publisher":"beskid-lang.org","name":"user-runtime-lookalike","abi_version":5}"#,
+        )
+        .unwrap(),
+    );
     assert!(matches!(
         unauthorized.validate(),
         Err(ManifestValidationError::UnauthorizedRuntimePackage { .. })
@@ -262,17 +257,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
 
 #[test]
 fn generated_headers_are_deterministic_fresh_and_include_contract_constants() {
-    let expected_asm_symbols = [
-        "beskid_arch_v5_context_init",
-        "_beskid_arch_v5_context_init",
-        "beskid_arch_v5_context_init",
-    ];
-    let expected_shadow_space = [0, 0, 32];
-    for ((target, expected_symbol), expected_shadow_space) in supported_targets()
-        .into_iter()
-        .zip(expected_asm_symbols)
-        .zip(expected_shadow_space)
-    {
+    for target in supported_targets() {
         let manifest = AbiManifestV5::canonical_runtime(target);
         let c_header = render_runtime_c_header(&manifest).unwrap();
         let asm_include = render_runtime_asm_include(&manifest).unwrap();
@@ -288,23 +273,16 @@ fn generated_headers_are_deterministic_fresh_and_include_contract_constants() {
         assert!(c_header.contains("beskid_rt_v5_process_init"));
         assert!(
             c_header.contains(
-                "void beskid_arch_v5_context_init(void *, void *, void *, void *, void *);"
+                "void beskid_arch_v5_context_init(void * context, void * stack_top, void * entry, void * argument, void * return_trampoline);"
             )
         );
-        assert!(c_header.contains("void beskid_arch_v5_context_switch(void *, void *);"));
-        assert!(asm_include.contains("BESKID_STACK_ALIGNMENT = 16"));
-        assert!(asm_include.contains("BESKID_ARCH_CONTEXT_SIZE"));
-        assert!(asm_include.contains("beskid_arch_v5_context_init"));
-        assert!(asm_include.contains("BESKID_CONTEXT_INIT_PARAM_COUNT = 5"));
-        assert!(asm_include.contains("BESKID_CONTEXT_SWITCH_PARAM_COUNT = 2"));
-        assert!(
-            asm_include
-                .contains("# signature (pointer, pointer, pointer, pointer, pointer) -> void")
-        );
-        assert!(asm_include.contains(&format!("BESKID_CONTEXT_INIT_SYMBOL = {expected_symbol}")));
-        assert!(asm_include.contains(&format!(
-            "BESKID_CALL_SHADOW_SPACE = {expected_shadow_space}"
-        )));
+        assert!(c_header.contains("void beskid_arch_v5_context_switch(void * from, void * to);"));
+        assert!(asm_include.contains("BESKID_X86_64_UNKNOWN_LINUX_GNU_STACK_ALIGNMENT = 16"));
+        assert!(asm_include.contains("BESKID_AARCH64_APPLE_DARWIN_CONTEXT_SIZE = 176"));
+        assert!(asm_include.contains("BESKID_X86_64_PC_WINDOWS_MSVC_SHADOW_SPACE = 32"));
+        assert!(asm_include.contains(
+            "BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_INIT_RETURN_TRAMPOLINE_REGISTER = stack+40"
+        ));
     }
 }
 
@@ -356,6 +334,10 @@ fn runtime_kit() -> RuntimeKitMetadata {
 fn runtime_kit_abi_json_embeds_the_single_contract_and_generated_audit_metadata() {
     let metadata = runtime_kit();
     metadata.validate().expect("coherent runtime kit");
+    assert_eq!(
+        metadata.canonical_abi_json().unwrap(),
+        metadata.canonical_abi_json().unwrap()
+    );
     let json = serde_json::to_value(&metadata).unwrap();
     assert_eq!(json["abi_contract"]["abi_version"], ABI_V5);
     assert_eq!(
@@ -368,7 +350,7 @@ fn runtime_kit_abi_json_embeds_the_single_contract_and_generated_audit_metadata(
         metadata
             .audit
             .forbidden_rust_symbols
-            .contains(&"rust_eh_personality".into())
+            .contains(&"rust".into())
     );
     assert!(
         metadata
@@ -399,6 +381,13 @@ fn runtime_kit_abi_json_embeds_the_single_contract_and_generated_audit_metadata(
         source_drift.validate(),
         Err(RuntimeKitValidationError::ContractSourceHashMismatch { .. })
     ));
+
+    let mut missing_trust = runtime_kit();
+    missing_trust.abi_contract.trusted_runtime_package = None;
+    assert!(matches!(
+        missing_trust.validate(),
+        Err(RuntimeKitValidationError::InvalidAbiContract)
+    ));
 }
 
 #[test]
@@ -424,6 +413,51 @@ fn audit_metadata_rejects_unknown_duplicate_and_rust_provenance_contracts() {
     let mut missing_rust_guard = audit;
     missing_rust_guard
         .forbidden_rust_symbols
-        .retain(|symbol| symbol != "rust_eh_personality");
+        .retain(|symbol| symbol != "rust");
     assert!(missing_rust_guard.validate(&manifest).is_err());
+
+    let macho = AbiManifestV5::canonical_runtime(supported_targets()[1].clone());
+    let macho_audit = RuntimeAuditMetadata::for_manifest(
+        &macho,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    )
+    .unwrap();
+    assert!(
+        macho_audit
+            .audit_object_symbols(["_beskid_rt_v5_process_init", "_write"])
+            .is_ok()
+    );
+    assert!(macho_audit.audit_object_symbols(["___rust_alloc"]).is_err());
+    assert!(
+        macho_audit
+            .audit_object_symbols(["_core::panicking::panic_fmt"])
+            .is_err()
+    );
+    assert!(
+        macho_audit
+            .audit_object_symbols(["_rust_eh_personality"])
+            .is_err()
+    );
+    assert!(
+        macho_audit
+            .audit_object_symbols(["_abfall_switch"])
+            .is_err()
+    );
+}
+
+#[test]
+fn abi_json_rejects_unknown_fields() {
+    let metadata = runtime_kit();
+    let mut json = serde_json::to_value(&metadata).unwrap();
+    json.as_object_mut()
+        .unwrap()
+        .insert("surprise".into(), serde_json::Value::Bool(true));
+    assert!(serde_json::from_value::<RuntimeKitMetadata>(json).is_err());
+
+    let mut contract = serde_json::to_value(&metadata.abi_contract).unwrap();
+    contract
+        .as_object_mut()
+        .unwrap()
+        .insert("surprise".into(), serde_json::Value::Bool(true));
+    assert!(serde_json::from_value::<AbiManifestV5>(contract).is_err());
 }

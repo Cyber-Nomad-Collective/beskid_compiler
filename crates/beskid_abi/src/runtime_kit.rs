@@ -25,12 +25,14 @@ pub enum BuildProfile {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeArtifact {
     pub relative_path: String,
     pub sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeArtifacts {
     pub static_library: RuntimeArtifact,
     pub shared_library: RuntimeArtifact,
@@ -47,6 +49,7 @@ impl RuntimeArtifacts {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeKitMetadata {
     pub schema_version: u32,
     pub abi_version: u32,
@@ -62,6 +65,14 @@ pub struct RuntimeKitMetadata {
 }
 
 impl RuntimeKitMetadata {
+    pub fn canonical_abi_json(&self) -> Result<String, RuntimeKitValidationError> {
+        self.validate()?;
+        let mut output = serde_json::to_string_pretty(self)
+            .map_err(|_| RuntimeKitValidationError::InvalidAbiContract)?;
+        output.push('\n');
+        Ok(output)
+    }
+
     pub fn validate(&self) -> Result<(), RuntimeKitValidationError> {
         if self.schema_version != RUNTIME_KIT_SCHEMA_VERSION {
             return Err(RuntimeKitValidationError::WrongSchemaVersion(
@@ -81,6 +92,9 @@ impl RuntimeKitMetadata {
             || self.abi_contract.abi_version != self.abi_version
         {
             return Err(RuntimeKitValidationError::ContractTargetMismatch);
+        }
+        if self.abi_contract != AbiManifestV5::canonical_runtime(self.target.clone()) {
+            return Err(RuntimeKitValidationError::InvalidAbiContract);
         }
         for (name, hash) in [
             ("layout_hash", &self.layout_hash),

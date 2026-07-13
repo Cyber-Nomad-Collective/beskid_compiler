@@ -3,8 +3,13 @@
 mod codegen;
 mod lower;
 mod model;
+mod v5;
 
 pub use model::ManifestRoot;
+pub use v5::{
+    GeneratedV5Artifacts, RuntimeManifestV5, generate_v5_artifacts, load_v5_manifest_source,
+    write_v5_artifacts,
+};
 
 use std::fs;
 use std::path::{Path, PathBuf};

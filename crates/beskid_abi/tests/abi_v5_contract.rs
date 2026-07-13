@@ -27,8 +27,10 @@ fn target(triple: TargetTriple, calling_convention: CallingConvention) -> Target
 fn function(symbol: &str) -> AbiFunction {
     AbiFunction {
         symbol: symbol.into(),
+        param_names: vec!["pointer".into(), "length".into()],
         params: vec![AbiType::Pointer, AbiType::USize],
         result: AbiType::I32,
+        noreturn: false,
     }
 }
 
@@ -56,6 +58,8 @@ fn valid_manifest() -> AbiManifestV5 {
     let target = linux_target();
     AbiManifestV5 {
         abi_version: ABI_V5,
+        trap_exit_status: 101,
+        trap_diagnostic: "beskid runtime trap v5".into(),
         imports: vec![function("beskid_rt_v5_alloc")],
         exports: vec![function("beskid_rt_v5_entry")],
         layouts: vec![layout("BeskidSlice", 8)],
@@ -63,14 +67,18 @@ fn valid_manifest() -> AbiManifestV5 {
         trusted_runtime_intrinsics: vec![RuntimeIntrinsic {
             name: "gc_write_barrier".into(),
             capability: "runtime.gc".into(),
+            param_names: vec!["owner".into(), "value".into()],
             params: vec![AbiType::Pointer, AbiType::Pointer],
             result: AbiType::Void,
+            noreturn: false,
         }],
         platform_imports: vec![PlatformImport {
             symbol: "clock_gettime".into(),
             library: "libc".into(),
+            param_names: vec!["clock".into(), "timespec".into()],
             params: vec![AbiType::I32, AbiType::Pointer],
             result: AbiType::I32,
+            noreturn: false,
         }],
         assembly_exports: AssemblyExport::required_for_target(&target),
         traps: TrapCode::ALL.to_vec(),

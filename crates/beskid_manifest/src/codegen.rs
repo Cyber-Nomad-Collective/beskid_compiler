@@ -1206,29 +1206,17 @@ fn format_param_array(params: &[AbiParamKind]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
 
     #[test]
-    fn manifest_loads_and_generates() {
+    fn legacy_v4_codegen_rejects_the_v5_authority() {
         let manifest_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime_manifest.bsol");
-        let manifest = crate::load_manifest(&manifest_path).expect("manifest parse");
-        assert_eq!(manifest.manifest.abi_version, 4);
-        assert!(!manifest.kernel.is_empty());
-        let abi = render_abi_builtins(&manifest);
-        assert!(abi.contains("BUILTIN_SPECS"));
-        assert!(abi.contains("SYM_ALLOC"));
-        let dispatch = render_runtime_dispatch_table(&manifest);
-        assert!(dispatch.contains("dispatch_usize"));
-        assert!(dispatch.contains("TAG_STR_LEN"));
-        assert!(dispatch.contains("VALID_TAGS_USIZE"));
-        let symbols = render_abi_symbols(&manifest);
-        assert!(symbols.contains("RUNTIME_EXPORT_SYMBOLS"));
-        assert!(symbols.contains("SYM_STR_LEN"));
-        assert!(!symbols.contains("RUNTIME_EXPORT_SYMBOLS: &[&str] = &[\n    SYM_STR_LEN"));
-        assert!(!symbols.contains("Legacy runtime symbol"));
-        assert!(!symbols.contains("legacy handler"));
+        let error = match crate::load_manifest(&manifest_path) {
+            Ok(_) => panic!("v5 cannot enter v4 codegen"),
+            Err(error) => error,
+        };
+        assert!(error.contains("unknown field `schema_version`"));
     }
 
     #[test]

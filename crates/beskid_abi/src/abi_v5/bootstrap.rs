@@ -1,4 +1,4 @@
-use std::fmt::Write as _;
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -8,27 +8,31 @@ use super::{
     TrapCode,
 };
 
-pub const CANONICAL_RUNTIME_PACKAGE_PUBLISHER: &str = "beskid-lang.org";
-pub const CANONICAL_RUNTIME_PACKAGE_NAME: &str = "beskid-runtime-native";
-pub const TRAP_EXIT_STATUS: u8 = 101;
-pub const TRAP_DIAGNOSTIC_PREFIX: &str = "beskid runtime trap v5";
-const STACK_ALIGNMENT: u64 = 16;
-const FORBIDDEN_RUST_SYMBOLS: &[&str] = &[
-    "__rust_alloc",
-    "__rust_dealloc",
-    "_Unwind_Resume",
-    "abfall",
-    "corosensei",
-    "panic_unwind",
-    "rust_begin_unwind",
-    "rust_eh_personality",
-];
+pub const CANONICAL_RUNTIME_PACKAGE_PUBLISHER: &str =
+    crate::generated::abi_v5_contract::ABI_V5_RUNTIME_PUBLISHER;
+pub const CANONICAL_RUNTIME_PACKAGE_NAME: &str =
+    crate::generated::abi_v5_contract::ABI_V5_RUNTIME_PACKAGE;
+pub const TRAP_EXIT_STATUS: u8 = crate::generated::abi_v5_contract::ABI_V5_TRAP_EXIT_STATUS as u8;
+pub const TRAP_DIAGNOSTIC_PREFIX: &str = crate::generated::abi_v5_contract::ABI_V5_TRAP_DIAGNOSTIC;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimePackageIdentity {
-    pub publisher: String,
-    pub name: String,
-    pub abi_version: u32,
+    publisher: String,
+    name: String,
+    abi_version: u32,
+}
+
+impl RuntimePackageIdentity {
+    pub fn publisher(&self) -> &str {
+        &self.publisher
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn abi_version(&self) -> u32 {
+        self.abi_version
+    }
 }
 
 pub fn canonical_runtime_package() -> RuntimePackageIdentity {
@@ -40,10 +44,13 @@ pub fn canonical_runtime_package() -> RuntimePackageIdentity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeAuditMetadata {
     pub allowed_imports: Vec<String>,
     pub allowed_exports: Vec<String>,
     pub forbidden_rust_symbols: Vec<String>,
+    pub object_format: String,
+    pub symbol_prefix: String,
     pub layout_hash: String,
     pub runtime_source_hash: String,
 }
@@ -73,10 +80,9 @@ impl RuntimeAuditMetadata {
                 .iter()
                 .map(|entry| entry.symbol.clone())
                 .collect(),
-            forbidden_rust_symbols: FORBIDDEN_RUST_SYMBOLS
-                .iter()
-                .map(|symbol| (*symbol).into())
-                .collect(),
+            forbidden_rust_symbols: forbidden_symbol_families(),
+            object_format: object_format(&manifest.target).into(),
+            symbol_prefix: symbol_prefix(&manifest.target).into(),
             layout_hash: manifest.layout_hash(),
             runtime_source_hash: runtime_source_hash.into(),
         })
@@ -90,20 +96,102 @@ impl RuntimeAuditMetadata {
             Err(ManifestValidationError::InvalidRuntimeAuditMetadata)
         }
     }
+
+    pub fn audit_object_symbols<'a>(
+        &self,
+        symbols: impl IntoIterator<Item = &'a str>,
+    ) -> Result<(), String> {
+        for raw in symbols {
+            let symbol = raw.strip_prefix(&self.symbol_prefix).unwrap_or(raw);
+            if self
+                .forbidden_rust_symbols
+                .iter()
+                .any(|family| symbol.contains(family))
+            {
+                return Err(format!("forbidden runtime provenance symbol `{raw}`"));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SourceAudit {
+    forbidden_symbol_families: Vec<String>,
+}
+
+fn forbidden_symbol_families() -> Vec<String> {
+    serde_json::from_str::<SourceAudit>(include_str!(concat!(
+        env!("OUT_DIR"),
+        "/abi-v5-audit.json"
+    )))
+    .expect("build-validated audit source")
+    .forbidden_symbol_families
+}
+
+fn object_format(target: &TargetMetadata) -> &'static str {
+    match target.triple {
+        TargetTriple::X86_64UnknownLinuxGnu => "elf",
+        TargetTriple::Aarch64AppleDarwin => "macho",
+        TargetTriple::X86_64PcWindowsMsvc => "coff",
+        TargetTriple::Other(_) => "unsupported",
+    }
+}
+fn symbol_prefix(target: &TargetMetadata) -> &'static str {
+    if matches!(target.triple, TargetTriple::Aarch64AppleDarwin) {
+        "_"
+    } else {
+        ""
+    }
 }
 
 impl AbiManifestV5 {
     pub fn canonical_runtime(target: TargetMetadata) -> Self {
+        let source: SourceContract =
+            serde_json::from_str(crate::generated::abi_v5_contract::ABI_V5_SOURCE_JSON)
+                .expect("build-validated ABI-v5 generated source");
+        let _target_source = source
+            .targets
+            .iter()
+            .find(|entry| entry.triple == target.triple.as_str())
+            .expect("target validation and generated source agree");
+        let target_slug = target.triple.as_str();
         Self {
             abi_version: ABI_V5,
+            trap_exit_status: TRAP_EXIT_STATUS,
+            trap_diagnostic: TRAP_DIAGNOSTIC_PREFIX.into(),
             imports: Vec::new(),
-            exports: lifecycle_exports(),
-            layouts: canonical_layouts(&target),
+            exports: source.exports.iter().map(source_function).collect(),
+            layouts: source
+                .layouts
+                .iter()
+                .filter(|layout| {
+                    layout
+                        .target
+                        .as_deref()
+                        .is_none_or(|value| value == target_slug)
+                })
+                .map(source_layout)
+                .collect(),
             trusted_runtime_package: Some(canonical_runtime_package()),
-            trusted_runtime_intrinsics: bootstrap_intrinsics(),
-            platform_imports: platform_imports(&target),
-            assembly_exports: AssemblyExport::required_for_target(&target),
-            traps: TrapCode::ALL.to_vec(),
+            trusted_runtime_intrinsics: source.intrinsics.iter().map(source_intrinsic).collect(),
+            platform_imports: source
+                .platform_imports
+                .iter()
+                .filter(|entry| entry.target == target_slug)
+                .map(source_platform_import)
+                .collect(),
+            assembly_exports: source
+                .assembly
+                .iter()
+                .map(|entry| source_assembly(entry, target_slug))
+                .collect(),
+            traps: source
+                .traps
+                .iter()
+                .map(|trap| TrapCode::try_from(trap.code).expect("validated trap code"))
+                .collect(),
             target,
         }
     }
@@ -116,22 +204,23 @@ impl AbiManifestV5 {
                 actual: self.imports.clone(),
             });
         }
-        if self.exports != lifecycle_exports() {
+        let canonical = Self::canonical_runtime(self.target.clone());
+        if self.exports != canonical.exports {
             return Err(ManifestValidationError::InvalidRuntimeExportSet {
                 actual: self.exports.clone(),
             });
         }
-        if self.trusted_runtime_intrinsics != bootstrap_intrinsics() {
+        if self.trusted_runtime_intrinsics != canonical.trusted_runtime_intrinsics {
             return Err(ManifestValidationError::InvalidRuntimeIntrinsicSet {
                 actual: self.trusted_runtime_intrinsics.clone(),
             });
         }
-        if self.platform_imports != platform_imports(&self.target) {
+        if self.platform_imports != canonical.platform_imports {
             return Err(ManifestValidationError::InvalidPlatformImportSet {
                 actual: self.platform_imports.clone(),
             });
         }
-        if self.layouts != canonical_layouts(&self.target) {
+        if self.layouts != canonical.layouts {
             return Err(ManifestValidationError::InvalidRuntimeLayoutSet {
                 actual: self.layouts.clone(),
             });
@@ -140,543 +229,249 @@ impl AbiManifestV5 {
     }
 }
 
-fn function(symbol: &str, params: &[AbiType], result: AbiType) -> AbiFunction {
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SourceContract {
+    targets: Vec<SourceTarget>,
+    exports: Vec<SourceFunction>,
+    intrinsics: Vec<SourceIntrinsic>,
+    layouts: Vec<SourceLayout>,
+    platform_imports: Vec<SourcePlatformImport>,
+    assembly: Vec<SourceAssembly>,
+    traps: Vec<SourceTrap>,
+    #[serde(rename = "meta")]
+    _meta: serde_json::Value,
+    #[serde(rename = "audit")]
+    _audit: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SourceTarget {
+    triple: String,
+    #[serde(rename = "endianness")]
+    _endianness: String,
+    #[serde(rename = "pointerWidth")]
+    _pointer_width: u8,
+    #[serde(rename = "callingConvention")]
+    _calling_convention: String,
+    #[serde(rename = "objectFormat")]
+    _object_format: String,
+    #[serde(rename = "symbolPrefix")]
+    _symbol_prefix: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceParameter {
+    name: String,
+    #[serde(rename = "type")]
+    ty: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceFunction {
+    symbol: String,
+    params: Vec<SourceParameter>,
+    result: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceIntrinsic {
+    name: String,
+    capability: String,
+    params: Vec<SourceParameter>,
+    result: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceField {
+    name: String,
+    offset: u64,
+    #[serde(rename = "type")]
+    ty: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceLayout {
+    name: String,
+    target: Option<String>,
+    size: u64,
+    alignment: u64,
+    fields: Vec<SourceField>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourcePlatformImport {
+    symbol: String,
+    target: String,
+    library: String,
+    params: Vec<SourceParameter>,
+    result: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceAssembly {
+    symbol: String,
+    params: Vec<SourceParameter>,
+    result: String,
+    preserved: BTreeMap<String, Vec<String>>,
+    locations: BTreeMap<String, Vec<String>>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceTrap {
+    #[serde(rename = "name")]
+    _name: String,
+    code: u8,
+}
+
+fn source_type(value: &str) -> AbiType {
+    match value {
+        "void" | "never" => AbiType::Void,
+        "pointer" => AbiType::Pointer,
+        "usize" => AbiType::USize,
+        "isize" => AbiType::ISize,
+        "i8" => AbiType::I8,
+        "u8" => AbiType::U8,
+        "i16" => AbiType::I16,
+        "u16" => AbiType::U16,
+        "i32" => AbiType::I32,
+        "u32" => AbiType::U32,
+        "i64" => AbiType::I64,
+        "u64" => AbiType::U64,
+        "v128" => AbiType::V128,
+        "f32" => AbiType::F32,
+        "f64" => AbiType::F64,
+        _ => unreachable!("build validates ABI types"),
+    }
+}
+fn source_params(params: &[SourceParameter]) -> (Vec<String>, Vec<AbiType>) {
+    (
+        params.iter().map(|entry| entry.name.clone()).collect(),
+        params.iter().map(|entry| source_type(&entry.ty)).collect(),
+    )
+}
+fn source_function(entry: &SourceFunction) -> AbiFunction {
+    let (param_names, params) = source_params(&entry.params);
     AbiFunction {
-        symbol: symbol.into(),
-        params: params.to_vec(),
-        result,
+        symbol: entry.symbol.clone(),
+        param_names,
+        params,
+        result: source_type(&entry.result),
+        noreturn: entry.result == "never",
     }
 }
-
-fn lifecycle_exports() -> Vec<AbiFunction> {
-    vec![
-        function("beskid_rt_v5_abi_version", &[], AbiType::U32),
-        function(
-            "beskid_library_attach_v5",
-            &[AbiType::Pointer],
-            AbiType::I32,
-        ),
-        function(
-            "beskid_library_detach_v5",
-            &[AbiType::Pointer],
-            AbiType::Void,
-        ),
-        function(
-            "beskid_rt_v5_process_init",
-            &[AbiType::Pointer],
-            AbiType::Pointer,
-        ),
-        function(
-            "beskid_rt_v5_process_shutdown",
-            &[AbiType::Pointer],
-            AbiType::Void,
-        ),
-        function(
-            "beskid_rt_v5_thread_attach",
-            &[AbiType::Pointer],
-            AbiType::Pointer,
-        ),
-        function(
-            "beskid_rt_v5_thread_detach",
-            &[AbiType::Pointer],
-            AbiType::Void,
-        ),
-        function(
-            "beskid_rt_v5_trap",
-            &[AbiType::U8, AbiType::Pointer, AbiType::USize],
-            AbiType::Void,
-        ),
-    ]
-}
-
-fn intrinsic(name: &str, params: &[AbiType], result: AbiType) -> RuntimeIntrinsic {
+fn source_intrinsic(entry: &SourceIntrinsic) -> RuntimeIntrinsic {
+    let (param_names, params) = source_params(&entry.params);
     RuntimeIntrinsic {
-        name: name.into(),
-        capability: format!("runtime.bootstrap.{name}"),
-        params: params.to_vec(),
-        result,
+        name: entry.name.clone(),
+        capability: entry.capability.clone(),
+        param_names,
+        params,
+        result: source_type(&entry.result),
+        noreturn: entry.result == "never",
     }
 }
-
-fn bootstrap_intrinsics() -> Vec<RuntimeIntrinsic> {
-    vec![
-        intrinsic(
-            "native_word_from_pointer",
-            &[AbiType::Pointer],
-            AbiType::USize,
-        ),
-        intrinsic(
-            "pointer_from_native_word",
-            &[AbiType::USize],
-            AbiType::Pointer,
-        ),
-        intrinsic(
-            "pointer_add",
-            &[AbiType::Pointer, AbiType::USize],
-            AbiType::Pointer,
-        ),
-        intrinsic("raw_word_load", &[AbiType::Pointer], AbiType::USize),
-        intrinsic(
-            "raw_word_store",
-            &[AbiType::Pointer, AbiType::USize],
-            AbiType::Void,
-        ),
-        intrinsic("raw_byte_load", &[AbiType::Pointer], AbiType::U8),
-        intrinsic(
-            "raw_byte_store",
-            &[AbiType::Pointer, AbiType::U8],
-            AbiType::Void,
-        ),
-        intrinsic(
-            "memory_set",
-            &[AbiType::Pointer, AbiType::U8, AbiType::USize],
-            AbiType::Void,
-        ),
-        intrinsic(
-            "memory_copy",
-            &[AbiType::Pointer, AbiType::Pointer, AbiType::USize],
-            AbiType::Void,
-        ),
-        intrinsic(
-            "memory_compare",
-            &[AbiType::Pointer, AbiType::Pointer, AbiType::USize],
-            AbiType::I32,
-        ),
-        intrinsic(
-            "system_allocate",
-            &[AbiType::USize, AbiType::USize],
-            AbiType::Pointer,
-        ),
-        intrinsic(
-            "system_free",
-            &[AbiType::Pointer, AbiType::USize],
-            AbiType::Void,
-        ),
-        intrinsic("tls_get", &[], AbiType::Pointer),
-        intrinsic("tls_set", &[AbiType::Pointer], AbiType::Void),
-        intrinsic(
-            "trap",
-            &[AbiType::U8, AbiType::Pointer, AbiType::USize],
-            AbiType::Void,
-        ),
-    ]
-}
-
-fn platform_import(
-    symbol: &str,
-    library: &str,
-    params: &[AbiType],
-    result: AbiType,
-) -> PlatformImport {
+fn source_platform_import(entry: &SourcePlatformImport) -> PlatformImport {
+    let (param_names, params) = source_params(&entry.params);
     PlatformImport {
-        symbol: symbol.into(),
-        library: library.into(),
-        params: params.to_vec(),
-        result,
+        symbol: entry.symbol.clone(),
+        library: entry.library.clone(),
+        param_names,
+        params,
+        result: source_type(&entry.result),
+        noreturn: entry.result == "never",
     }
 }
-
-fn platform_imports(target: &TargetMetadata) -> Vec<PlatformImport> {
-    match target.triple {
-        TargetTriple::X86_64UnknownLinuxGnu => posix_platform_imports("libc"),
-        TargetTriple::Aarch64AppleDarwin => posix_platform_imports("libSystem"),
-        TargetTriple::X86_64PcWindowsMsvc => vec![
-            platform_import("ExitProcess", "kernel32", &[AbiType::U32], AbiType::Void),
-            platform_import(
-                "GetStdHandle",
-                "kernel32",
-                &[AbiType::I32],
-                AbiType::Pointer,
-            ),
-            platform_import(
-                "VirtualAlloc",
-                "kernel32",
-                &[AbiType::Pointer, AbiType::USize, AbiType::U32, AbiType::U32],
-                AbiType::Pointer,
-            ),
-            platform_import(
-                "VirtualFree",
-                "kernel32",
-                &[AbiType::Pointer, AbiType::USize, AbiType::U32],
-                AbiType::I32,
-            ),
-            platform_import(
-                "WriteFile",
-                "kernel32",
-                &[
-                    AbiType::Pointer,
-                    AbiType::Pointer,
-                    AbiType::U32,
-                    AbiType::Pointer,
-                    AbiType::Pointer,
-                ],
-                AbiType::I32,
-            ),
-        ],
-        TargetTriple::Other(_) => Vec::new(),
-    }
-}
-
-fn posix_platform_imports(library: &str) -> Vec<PlatformImport> {
-    vec![
-        platform_import("_exit", library, &[AbiType::I32], AbiType::Void),
-        platform_import(
-            "mmap",
-            library,
-            &[
-                AbiType::Pointer,
-                AbiType::USize,
-                AbiType::I32,
-                AbiType::I32,
-                AbiType::I32,
-                AbiType::I64,
-            ],
-            AbiType::Pointer,
-        ),
-        platform_import(
-            "munmap",
-            library,
-            &[AbiType::Pointer, AbiType::USize],
-            AbiType::I32,
-        ),
-        platform_import(
-            "write",
-            library,
-            &[AbiType::I32, AbiType::Pointer, AbiType::USize],
-            AbiType::ISize,
-        ),
-    ]
-}
-
-fn field(name: &str, offset: u64, ty: AbiType) -> AbiFieldLayout {
-    AbiFieldLayout {
-        name: name.into(),
-        offset,
-        ty,
-    }
-}
-
-fn layout(name: &str, size: u64, alignment: u64, fields: Vec<AbiFieldLayout>) -> AbiLayout {
+fn source_layout(entry: &SourceLayout) -> AbiLayout {
     AbiLayout {
-        name: name.into(),
-        size,
-        alignment,
-        fields,
+        name: entry.name.clone(),
+        size: entry.size,
+        alignment: entry.alignment,
+        fields: entry
+            .fields
+            .iter()
+            .map(|field| AbiFieldLayout {
+                name: field.name.clone(),
+                offset: field.offset,
+                ty: source_type(&field.ty),
+            })
+            .collect(),
     }
 }
-
-fn canonical_layouts(target: &TargetMetadata) -> Vec<AbiLayout> {
-    let mut layouts = vec![
-        layout(
-            "BeskidAllocationRequest",
-            24,
-            8,
-            vec![
-                field("size", 0, AbiType::USize),
-                field("alignment", 8, AbiType::USize),
-                field("descriptor", 16, AbiType::Pointer),
-            ],
-        ),
-        layout(
-            "BeskidHandle",
-            16,
-            8,
-            vec![
-                field("slot", 0, AbiType::U32),
-                field("generation", 4, AbiType::U32),
-                field("owner_cookie", 8, AbiType::U64),
-            ],
-        ),
-        layout(
-            "BeskidObjectHeader",
-            16,
-            8,
-            vec![
-                field("descriptor", 0, AbiType::Pointer),
-                field("gc_word", 8, AbiType::USize),
-            ],
-        ),
-        layout(
-            "BeskidRootFrame",
-            24,
-            8,
-            vec![
-                field("previous", 0, AbiType::Pointer),
-                field("slots", 8, AbiType::Pointer),
-                field("slot_count", 16, AbiType::USize),
-            ],
-        ),
-        layout(
-            "BeskidRootSlot",
-            8,
-            8,
-            vec![field("value", 0, AbiType::Pointer)],
-        ),
-        layout(
-            "BeskidRuntimeState",
-            64,
-            8,
-            vec![
-                field("abi_version", 0, AbiType::U32),
-                field("flags", 4, AbiType::U32),
-                field("current_thread", 8, AbiType::Pointer),
-                field("heap", 16, AbiType::Pointer),
-                field("handles", 24, AbiType::Pointer),
-                field("scheduler", 32, AbiType::Pointer),
-                field("root_frame", 40, AbiType::Pointer),
-                field("tls_key", 48, AbiType::USize),
-                field("corruption_cookie", 56, AbiType::U64),
-            ],
-        ),
-        layout(
-            "BeskidTlsState",
-            32,
-            8,
-            vec![
-                field("runtime", 0, AbiType::Pointer),
-                field("root_frame", 8, AbiType::Pointer),
-                field("current_fiber", 16, AbiType::Pointer),
-                field("attach_depth", 24, AbiType::USize),
-            ],
-        ),
-        layout(
-            "BeskidTypeDescriptor",
-            40,
-            8,
-            vec![
-                field("size", 0, AbiType::USize),
-                field("alignment", 8, AbiType::USize),
-                field("pointer_map", 16, AbiType::Pointer),
-                field("pointer_count", 24, AbiType::USize),
-                field("flags", 32, AbiType::U32),
-                field("reserved", 36, AbiType::U32),
-            ],
-        ),
-    ];
-    layouts.push(context_layout(target));
-    layouts
-}
-
-fn context_layout(target: &TargetMetadata) -> AbiLayout {
-    match target.triple {
-        TargetTriple::X86_64UnknownLinuxGnu => layout(
-            "BeskidArchContextX86_64SysV",
-            64,
-            16,
-            ["rbx", "rbp", "r12", "r13", "r14", "r15", "rsp", "rip"]
-                .into_iter()
-                .enumerate()
-                .map(|(index, name)| field(name, index as u64 * 8, AbiType::U64))
-                .collect(),
-        ),
-        TargetTriple::Aarch64AppleDarwin => {
-            let mut fields = (19..=30)
-                .enumerate()
-                .map(|(index, register)| {
-                    field(&format!("x{register}"), index as u64 * 8, AbiType::U64)
-                })
-                .collect::<Vec<_>>();
-            fields.push(field("sp", 96, AbiType::U64));
-            fields.push(field("pc", 104, AbiType::U64));
-            fields.extend((8..=15).enumerate().map(|(index, register)| {
-                field(
-                    &format!("d{register}"),
-                    112 + index as u64 * 8,
-                    AbiType::F64,
-                )
-            }));
-            layout("BeskidArchContextAarch64Darwin", 176, 16, fields)
-        }
-        TargetTriple::X86_64PcWindowsMsvc => {
-            let mut fields = ["rbx", "rbp", "rdi", "rsi", "r12", "r13", "r14", "r15"]
-                .into_iter()
-                .enumerate()
-                .map(|(index, name)| field(name, index as u64 * 8, AbiType::U64))
-                .collect::<Vec<_>>();
-            fields.push(field("rsp", 64, AbiType::U64));
-            fields.push(field("rip", 72, AbiType::U64));
-            fields.extend((6..=15).enumerate().map(|(index, register)| {
-                field(
-                    &format!("xmm{register}"),
-                    80 + index as u64 * 16,
-                    AbiType::V128,
-                )
-            }));
-            layout("BeskidArchContextX86_64Windows", 240, 16, fields)
-        }
-        TargetTriple::Other(_) => layout("UnsupportedContext", 1, 1, vec![]),
+fn source_register(value: &str) -> super::AssemblyRegister {
+    use super::AssemblyRegister::*;
+    match value {
+        "rbx" => X86_64Rbx,
+        "rbp" => X86_64Rbp,
+        "rdi" => X86_64Rdi,
+        "rsi" => X86_64Rsi,
+        "r12" => X86_64R12,
+        "r13" => X86_64R13,
+        "r14" => X86_64R14,
+        "r15" => X86_64R15,
+        "xmm6" => X86_64Xmm6,
+        "xmm7" => X86_64Xmm7,
+        "xmm8" => X86_64Xmm8,
+        "xmm9" => X86_64Xmm9,
+        "xmm10" => X86_64Xmm10,
+        "xmm11" => X86_64Xmm11,
+        "xmm12" => X86_64Xmm12,
+        "xmm13" => X86_64Xmm13,
+        "xmm14" => X86_64Xmm14,
+        "xmm15" => X86_64Xmm15,
+        "x19" => Aarch64X19,
+        "x20" => Aarch64X20,
+        "x21" => Aarch64X21,
+        "x22" => Aarch64X22,
+        "x23" => Aarch64X23,
+        "x24" => Aarch64X24,
+        "x25" => Aarch64X25,
+        "x26" => Aarch64X26,
+        "x27" => Aarch64X27,
+        "x28" => Aarch64X28,
+        "x29" => Aarch64X29,
+        "v8" => Aarch64V8,
+        "v9" => Aarch64V9,
+        "v10" => Aarch64V10,
+        "v11" => Aarch64V11,
+        "v12" => Aarch64V12,
+        "v13" => Aarch64V13,
+        "v14" => Aarch64V14,
+        "v15" => Aarch64V15,
+        _ => unreachable!("build validates preserved registers"),
     }
 }
-
-fn macro_name(value: &str) -> String {
-    value
-        .chars()
-        .enumerate()
-        .flat_map(|(index, character)| {
-            let separator = index > 0 && character.is_ascii_uppercase();
-            separator
-                .then_some('_')
-                .into_iter()
-                .chain(character.to_ascii_uppercase().to_string().chars())
-                .collect::<Vec<_>>()
-        })
-        .collect()
+fn source_assembly(entry: &SourceAssembly, target: &str) -> AssemblyExport {
+    let (param_names, params) = source_params(&entry.params);
+    AssemblyExport {
+        symbol: match entry.symbol.as_str() {
+            "beskid_arch_v5_context_init" => super::AssemblySymbol::ContextInit,
+            "beskid_arch_v5_context_switch" => super::AssemblySymbol::ContextSwitch,
+            _ => unreachable!(),
+        },
+        param_names,
+        params,
+        parameter_locations: entry.locations[target].clone(),
+        result: source_type(&entry.result),
+        preserved_registers: entry.preserved[target]
+            .iter()
+            .map(|value| source_register(value))
+            .collect(),
+    }
 }
 
 pub fn render_runtime_c_header(
     manifest: &AbiManifestV5,
 ) -> Result<String, ManifestValidationError> {
     manifest.validate()?;
-    let mut output = String::from(
-        "/* @generated from the Beskid ABI-v5 manifest; do not edit. */\n#ifndef BESKID_RUNTIME_ABI_V5_H\n#define BESKID_RUNTIME_ABI_V5_H\n",
-    );
-    writeln!(output, "#define BESKID_RUNTIME_ABI_VERSION {ABI_V5}").unwrap();
-    writeln!(output, "#define BESKID_TRAP_EXIT_STATUS {TRAP_EXIT_STATUS}").unwrap();
-    writeln!(output, "#define BESKID_STACK_ALIGNMENT {STACK_ALIGNMENT}").unwrap();
-    render_layout_defines(&mut output, manifest, "#define ", " ");
-    for function in &manifest.exports {
-        writeln!(
-            output,
-            "#define BESKID_SYMBOL_{} \"{}\"",
-            macro_name(&function.symbol),
-            function.symbol
-        )
-        .unwrap();
-    }
-    for export in &manifest.assembly_exports {
-        writeln!(
-            output,
-            "{} {}({});",
-            c_type(export.result),
-            export.symbol.as_str(),
-            export
-                .params
-                .iter()
-                .map(|ty| c_type(*ty))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-        .unwrap();
-    }
-    output.push_str("#endif\n");
-    Ok(output)
+    Ok(include_str!(concat!(env!("OUT_DIR"), "/beskid_runtime_abi_v5.h")).into())
 }
 
 pub fn render_runtime_asm_include(
     manifest: &AbiManifestV5,
 ) -> Result<String, ManifestValidationError> {
     manifest.validate()?;
-    let mut output = String::from("# @generated from the Beskid ABI-v5 manifest; do not edit.\n");
-    writeln!(output, "BESKID_RUNTIME_ABI_VERSION = {ABI_V5}").unwrap();
-    writeln!(output, "BESKID_TRAP_EXIT_STATUS = {TRAP_EXIT_STATUS}").unwrap();
-    writeln!(output, "BESKID_STACK_ALIGNMENT = {STACK_ALIGNMENT}").unwrap();
-    writeln!(
-        output,
-        "BESKID_CALL_SHADOW_SPACE = {}",
-        if matches!(target_triple(manifest), TargetTriple::X86_64PcWindowsMsvc) {
-            32
-        } else {
-            0
-        }
-    )
-    .unwrap();
-    render_layout_defines(&mut output, manifest, "", " = ");
-    let context = manifest
-        .layouts
-        .last()
-        .expect("canonical layout has context");
-    writeln!(output, "BESKID_ARCH_CONTEXT_SIZE = {}", context.size).unwrap();
-    for export in &manifest.assembly_exports {
-        let name = match export.symbol {
-            super::AssemblySymbol::ContextInit => "CONTEXT_INIT",
-            super::AssemblySymbol::ContextSwitch => "CONTEXT_SWITCH",
-        };
-        writeln!(
-            output,
-            "BESKID_{}_PARAM_COUNT = {}",
-            name,
-            export.params.len()
-        )
-        .unwrap();
-        writeln!(
-            output,
-            "# signature ({}) -> {}",
-            export
-                .params
-                .iter()
-                .map(|ty| ty.canonical_name())
-                .collect::<Vec<_>>()
-                .join(", "),
-            export.result.canonical_name()
-        )
-        .unwrap();
-        writeln!(
-            output,
-            "BESKID_{name}_SYMBOL = {}{}",
-            if matches!(target_triple(manifest), TargetTriple::Aarch64AppleDarwin) {
-                "_"
-            } else {
-                ""
-            },
-            export.symbol.as_str()
-        )
-        .unwrap();
-    }
-    Ok(output)
-}
-
-fn c_type(ty: AbiType) -> &'static str {
-    match ty {
-        AbiType::Void => "void",
-        AbiType::Pointer => "void *",
-        AbiType::USize => "size_t",
-        AbiType::ISize => "ptrdiff_t",
-        AbiType::I8 => "int8_t",
-        AbiType::U8 => "uint8_t",
-        AbiType::I16 => "int16_t",
-        AbiType::U16 => "uint16_t",
-        AbiType::I32 => "int32_t",
-        AbiType::U32 => "uint32_t",
-        AbiType::I64 => "int64_t",
-        AbiType::U64 => "uint64_t",
-        AbiType::V128 => "beskid_v128_t",
-        AbiType::F32 => "float",
-        AbiType::F64 => "double",
-    }
-}
-
-fn target_triple(manifest: &AbiManifestV5) -> &TargetTriple {
-    &manifest.target.triple
-}
-
-fn render_layout_defines(
-    output: &mut String,
-    manifest: &AbiManifestV5,
-    prefix: &str,
-    separator: &str,
-) {
-    for layout in &manifest.layouts {
-        let layout_name = macro_name(layout.name.strip_prefix("Beskid").unwrap_or(&layout.name));
-        writeln!(
-            output,
-            "{prefix}BESKID_{layout_name}_SIZE{separator}{}",
-            layout.size
-        )
-        .unwrap();
-        writeln!(
-            output,
-            "{prefix}BESKID_{layout_name}_ALIGNMENT{separator}{}",
-            layout.alignment
-        )
-        .unwrap();
-        for field in &layout.fields {
-            writeln!(
-                output,
-                "{prefix}BESKID_{layout_name}_{}_OFFSET{separator}{}",
-                macro_name(&field.name),
-                field.offset
-            )
-            .unwrap();
-        }
-    }
+    Ok(include_str!(concat!(env!("OUT_DIR"), "/beskid_runtime_abi_v5.inc")).into())
 }
