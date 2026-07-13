@@ -28,6 +28,8 @@ pub struct TargetV5 {
     pub calling_convention: String,
     pub object_format: String,
     pub symbol_prefix: String,
+    pub stack_alignment: u32,
+    pub shadow_space: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -84,7 +86,14 @@ pub struct AssemblyV5 {
     pub params: Vec<ParameterV5>,
     pub result: String,
     pub preserved: BTreeMap<String, Vec<String>>,
-    pub locations: BTreeMap<String, Vec<String>>,
+    pub locations: BTreeMap<String, Vec<ParameterLocationV5>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ParameterLocationV5 {
+    Register { register: String },
+    Stack { base: String, offset: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -176,6 +185,8 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
                     "calling_convention",
                     "object_format",
                     "symbol_prefix",
+                    "stack_alignment",
+                    "shadow_space",
                 ],
             )?;
             Ok(TargetV5 {
@@ -185,6 +196,8 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
                 calling_convention: string_field(block, "calling_convention")?,
                 object_format: string_field(block, "object_format")?,
                 symbol_prefix: string_field(block, "symbol_prefix")?,
+                stack_alignment: u32_field(block, "stack_alignment")?,
+                shadow_space: u32_field(block, "shadow_space")?,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -230,7 +243,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         })
         .collect::<Result<Vec<_>, String>>()?;
     let assembly = blocks(&document.blocks, "assembly")
-        .map(parse_assembly)
+        .map(|block| parse_assembly(block, &targets))
         .collect::<Result<Vec<_>, _>>()?;
     let traps = blocks(&document.blocks, "trap")
         .map(|block| {
@@ -275,6 +288,7 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             || target.pointer_width != 64
             || target.calling_convention.is_empty()
             || target.object_format.is_empty()
+            || target.stack_alignment == 0
             || !matches!(target.symbol_prefix.as_str(), "" | "_")
         {
             return Err(format!(
@@ -475,7 +489,10 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         for target in &manifest.targets {
             let locations = &entry.locations[&target.triple];
             if locations.len() != entry.params.len()
-                || locations.iter().any(String::is_empty)
+                || locations.iter().any(|location| match location {
+                    ParameterLocationV5::Register { register } => register.is_empty(),
+                    ParameterLocationV5::Stack { base, .. } => base.is_empty(),
+                })
                 || entry.preserved[&target.triple].iter().any(String::is_empty)
             {
                 return Err(format!(
@@ -502,31 +519,33 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
 pub fn generate_v5_artifacts(manifest: &RuntimeManifestV5) -> Result<GeneratedV5Artifacts, String> {
     validate(manifest)?;
     let manifest = canonicalized(manifest);
+    let gnu_asm = manifest
+        .targets
+        .iter()
+        .filter(|target| target.object_format != "coff")
+        .map(|target| {
+            (
+                target.triple.clone(),
+                render_asm_target(&manifest, target, false),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let masm = manifest
+        .targets
+        .iter()
+        .filter(|target| target.object_format == "coff")
+        .map(|target| {
+            (
+                target.triple.clone(),
+                render_asm_target(&manifest, target, true),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     Ok(GeneratedV5Artifacts {
-        rust: render_rust(&manifest),
+        rust: render_rust(&manifest, &gnu_asm, &masm),
         c_header: render_c_header(&manifest),
-        gnu_asm: manifest
-            .targets
-            .iter()
-            .filter(|target| target.object_format != "coff")
-            .map(|target| {
-                (
-                    target.triple.clone(),
-                    render_asm_target(&manifest, target, false),
-                )
-            })
-            .collect(),
-        masm: manifest
-            .targets
-            .iter()
-            .filter(|target| target.object_format == "coff")
-            .map(|target| {
-                (
-                    target.triple.clone(),
-                    render_asm_target(&manifest, target, true),
-                )
-            })
-            .collect(),
+        gnu_asm,
+        masm,
         abi_json: canonical_json(&manifest)?,
         audit_json: canonical_json(&manifest.audit)?,
     })
@@ -565,38 +584,38 @@ fn canonical_json(value: &impl Serialize) -> Result<String, String> {
     Ok(output)
 }
 
-fn render_rust(manifest: &RuntimeManifestV5) -> String {
+fn render_rust(
+    manifest: &RuntimeManifestV5,
+    gnu_asm: &BTreeMap<String, String>,
+    masm: &BTreeMap<String, String>,
+) -> String {
     let json = serde_json::to_string(manifest).expect("serializable manifest");
-    let mut registers = manifest
-        .assembly
-        .iter()
-        .flat_map(|entry| entry.preserved.values().flatten())
-        .collect::<BTreeSet<_>>();
-    let register_rows = registers
-        .iter()
-        .map(|register| {
-            format!(
-                "    ({register:?}, crate::abi_v5::AssemblyRegister::{}),\n",
-                rust_register_variant(register)
-            )
-        })
-        .collect::<String>();
-    registers.clear();
-    let assembly_rows = manifest
-        .assembly
-        .iter()
-        .map(|entry| {
-            format!(
-                "    ({:?}, crate::abi_v5::AssemblySymbol::{}),\n",
-                entry.symbol,
-                rust_assembly_symbol_variant(&entry.symbol)
-            )
-        })
-        .collect::<String>();
     let trap_rows = manifest
         .traps
         .iter()
         .map(|trap| format!("    ({:?}, {}),\n", trap.name, trap.code))
+        .collect::<String>();
+    let target_rows = manifest
+        .targets
+        .iter()
+        .map(|target| {
+            format!(
+                "    GeneratedTarget {{ triple: {:?}, endianness: {:?}, pointer_width: {}, calling_convention: {:?}, object_format: {:?}, symbol_prefix: {:?}, stack_alignment: {}, shadow_space: {} }},\n",
+                target.triple,
+                target.endianness,
+                target.pointer_width,
+                target.calling_convention,
+                target.object_format,
+                target.symbol_prefix,
+                target.stack_alignment,
+                target.shadow_space,
+            )
+        })
+        .collect::<String>();
+    let asm_rows = gnu_asm
+        .iter()
+        .chain(masm)
+        .map(|(target, source)| format!("    ({target:?}, {source:?}),\n"))
         .collect::<String>();
     format!(
         "// @generated from runtime_manifest.bsol; do not edit.\n\
@@ -605,6 +624,19 @@ pub const ABI_V5_RUNTIME_PUBLISHER: &str = {:?};\n\
 pub const ABI_V5_RUNTIME_PACKAGE: &str = {:?};\n\
 pub const ABI_V5_TRAP_EXIT_STATUS: u32 = {};\n\
 pub const ABI_V5_TRAP_DIAGNOSTIC: &str = {:?};\n\
+#[derive(Debug, Clone, Copy)]\n\
+pub struct GeneratedTarget {{\n\
+    pub triple: &'static str,\n\
+    pub endianness: &'static str,\n\
+    pub pointer_width: u8,\n\
+    pub calling_convention: &'static str,\n\
+    pub object_format: &'static str,\n\
+    pub symbol_prefix: &'static str,\n\
+    pub stack_alignment: u32,\n\
+    pub shadow_space: u32,\n\
+}}\n\
+pub const ABI_V5_TARGETS: &[GeneratedTarget] = &[\n{target_rows}];\n\
+pub const ABI_V5_ASM_INCLUDES: &[(&str, &str)] = &[\n{asm_rows}];\n\
 pub const ABI_V5_TYPES: &[(&str, crate::abi_v5::AbiType)] = &[\n\
     (\"void\", crate::abi_v5::AbiType::Void),\n\
     (\"never\", crate::abi_v5::AbiType::Void),\n\
@@ -623,48 +655,12 @@ pub const ABI_V5_TYPES: &[(&str, crate::abi_v5::AbiType)] = &[\n\
     (\"f32\", crate::abi_v5::AbiType::F32),\n\
     (\"f64\", crate::abi_v5::AbiType::F64),\n\
 ];\n\
-pub const ABI_V5_ASSEMBLY_REGISTERS: &[(&str, crate::abi_v5::AssemblyRegister)] = &[\n{register_rows}];\n\
-pub const ABI_V5_ASSEMBLY_SYMBOLS: &[(&str, crate::abi_v5::AssemblySymbol)] = &[\n{assembly_rows}];\n\
 pub const ABI_V5_TRAPS: &[(&str, u8)] = &[\n{trap_rows}];\n",
         manifest.meta.runtime_publisher,
         manifest.meta.runtime_package,
         manifest.meta.trap_exit_status,
         manifest.meta.trap_diagnostic
     )
-}
-
-fn rust_register_variant(register: &str) -> String {
-    if let Some(number) = register.strip_prefix("xmm") {
-        return format!("X86_64Xmm{number}");
-    }
-    if let Some(number) = register.strip_prefix('x') {
-        return format!("Aarch64X{number}");
-    }
-    if let Some(number) = register.strip_prefix('v') {
-        return format!("Aarch64V{number}");
-    }
-    format!("X86_64{}", pascal_case(register))
-}
-
-fn rust_assembly_symbol_variant(symbol: &str) -> String {
-    pascal_case(
-        symbol
-            .strip_prefix("beskid_arch_v5_")
-            .expect("validated assembly symbol prefix"),
-    )
-}
-
-fn pascal_case(value: &str) -> String {
-    value
-        .split('_')
-        .map(|part| {
-            let mut chars = part.chars();
-            chars
-                .next()
-                .map(|first| first.to_ascii_uppercase().to_string() + chars.as_str())
-                .unwrap_or_default()
-        })
-        .collect()
 }
 
 fn render_c_header(manifest: &RuntimeManifestV5) -> String {
@@ -777,15 +773,16 @@ fn render_asm_target(manifest: &RuntimeManifestV5, target: &TargetV5, masm: bool
             )
             .unwrap();
         }
-        writeln!(out, "BESKID_{target_name}_STACK_ALIGNMENT{separator}16").unwrap();
+        writeln!(
+            out,
+            "BESKID_{target_name}_STACK_ALIGNMENT{separator}{}",
+            target.stack_alignment
+        )
+        .unwrap();
         writeln!(
             out,
             "BESKID_{target_name}_SHADOW_SPACE{separator}{}",
-            if target.triple == "x86_64-pc-windows-msvc" {
-                32
-            } else {
-                0
-            }
+            target.shadow_space
         )
         .unwrap();
         for layout in manifest
@@ -819,16 +816,27 @@ fn render_asm_target(manifest: &RuntimeManifestV5, target: &TargetV5, masm: bool
                 .iter()
                 .zip(&function.locations[&target.triple])
             {
-                let location = location.as_str();
+                let (kind, operand) = match location {
+                    ParameterLocationV5::Register { register } => ("REGISTER", register.clone()),
+                    ParameterLocationV5::Stack { base, offset } => {
+                        let operand = if masm {
+                            format!("[{base} + {offset}]")
+                        } else {
+                            format!("{offset}(%{base})")
+                        };
+                        ("STACK_OPERAND", operand)
+                    }
+                };
                 let key = format!(
-                    "BESKID_{}_{}_REGISTER",
+                    "BESKID_{}_{}_{}",
                     macro_name(function_name),
-                    macro_name(&param.name)
+                    macro_name(&param.name),
+                    kind,
                 );
                 if masm {
-                    writeln!(out, "{key} TEXTEQU <{location}>").unwrap();
+                    writeln!(out, "{key} TEXTEQU <{operand}>").unwrap();
                 } else {
-                    writeln!(out, "#define {key} {location}").unwrap();
+                    writeln!(out, "#define {key} {operand}").unwrap();
                 }
             }
             if masm {
@@ -1072,14 +1080,10 @@ fn function(block: &BsolBlock) -> Result<FunctionV5, String> {
         result: string_field(block, "returns")?,
     })
 }
-fn parse_assembly(block: &BsolBlock) -> Result<AssemblyV5, String> {
+fn parse_assembly(block: &BsolBlock, targets: &[TargetV5]) -> Result<AssemblyV5, String> {
     let mut allowed = vec!["params".to_string(), "returns".to_string()];
-    for target in [
-        "x86_64-unknown-linux-gnu",
-        "aarch64-apple-darwin",
-        "x86_64-pc-windows-msvc",
-    ] {
-        let slug = target.replace('-', "_");
+    for target in targets {
+        let slug = target.triple.replace('-', "_");
         allowed.push(format!("{slug}_preserved"));
         allowed.push(format!("{slug}_locations"));
     }
@@ -1089,19 +1093,15 @@ fn parse_assembly(block: &BsolBlock) -> Result<AssemblyV5, String> {
     )?;
     let mut preserved = BTreeMap::new();
     let mut locations = BTreeMap::new();
-    for target in [
-        "x86_64-unknown-linux-gnu",
-        "aarch64-apple-darwin",
-        "x86_64-pc-windows-msvc",
-    ] {
-        let slug = target.replace('-', "_");
+    for target in targets {
+        let slug = target.triple.replace('-', "_");
         preserved.insert(
-            target.into(),
+            target.triple.clone(),
             list_field(block, &format!("{slug}_preserved"))?,
         );
         locations.insert(
-            target.into(),
-            list_field(block, &format!("{slug}_locations"))?,
+            target.triple.clone(),
+            parameter_locations(block, &format!("{slug}_locations"))?,
         );
     }
     Ok(AssemblyV5 {
@@ -1111,6 +1111,41 @@ fn parse_assembly(block: &BsolBlock) -> Result<AssemblyV5, String> {
         preserved,
         locations,
     })
+}
+
+fn parameter_locations(block: &BsolBlock, key: &str) -> Result<Vec<ParameterLocationV5>, String> {
+    list_items(block, key)?
+        .iter()
+        .map(|item| match item {
+            BsolListItem::InlineMap(map) => {
+                let has_register = map.entries.iter().any(|entry| entry.key == "register");
+                let has_stack = map
+                    .entries
+                    .iter()
+                    .any(|entry| entry.key == "stack_base" || entry.key == "stack_offset");
+                match (has_register, has_stack) {
+                    (true, false) => {
+                        ensure_map_fields(map, &["register"])?;
+                        Ok(ParameterLocationV5::Register {
+                            register: map_string(map, "register")?,
+                        })
+                    }
+                    (false, true) => {
+                        ensure_map_fields(map, &["stack_base", "stack_offset"])?;
+                        let offset = map_string(map, "stack_offset")?
+                            .parse::<u64>()
+                            .map_err(|_| "`stack_offset` must be u64")?;
+                        Ok(ParameterLocationV5::Stack {
+                            base: map_string(map, "stack_base")?,
+                            offset,
+                        })
+                    }
+                    _ => Err("parameter location must be exactly register or stack".into()),
+                }
+            }
+            _ => Err(format!("`{key}` entries must be typed inline maps")),
+        })
+        .collect()
 }
 fn unique<T: Ord>(items: impl IntoIterator<Item = T>, what: &str) -> Result<(), String> {
     let mut set = BTreeSet::new();

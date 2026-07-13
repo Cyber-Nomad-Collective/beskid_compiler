@@ -9,19 +9,14 @@ use beskid_abi::runtime_kit::{
 };
 
 fn linux_target() -> TargetMetadata {
-    target(
-        TargetTriple::X86_64UnknownLinuxGnu,
-        CallingConvention::SystemV,
-    )
+    target("x86_64-unknown-linux-gnu")
 }
 
-fn target(triple: TargetTriple, calling_convention: CallingConvention) -> TargetMetadata {
-    TargetMetadata {
-        triple,
-        endianness: Endianness::Little,
-        pointer_width: 64,
-        calling_convention,
-    }
+fn target(triple: &str) -> TargetMetadata {
+    TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == triple)
+        .unwrap()
 }
 
 fn function(symbol: &str) -> AbiFunction {
@@ -81,7 +76,7 @@ fn valid_manifest() -> AbiManifestV5 {
             noreturn: false,
         }],
         assembly_exports: AssemblyExport::required_for_target(&target),
-        traps: TrapCode::ALL.to_vec(),
+        traps: TrapCode::all(),
         target,
     }
 }
@@ -93,8 +88,8 @@ fn abi_version_contract_is_v5() {
 
 #[test]
 fn supported_targets_are_little_endian_64_bit_with_target_owned_calling_conventions() {
-    for target in TargetMetadata::SUPPORTED {
-        assert_eq!(target.endianness, Endianness::Little);
+    for target in TargetMetadata::supported() {
+        assert_eq!(target.endianness.as_str(), "little");
         assert_eq!(target.pointer_width, 64);
         target.validate().expect("supported target must validate");
         let json = serde_json::to_string(&target.triple).unwrap();
@@ -106,7 +101,7 @@ fn supported_targets_are_little_endian_64_bit_with_target_owned_calling_conventi
     }
 
     let mut unsupported = linux_target();
-    unsupported.triple = TargetTriple::Other("x86_64-unknown-freebsd".into());
+    unsupported.triple = TargetTriple::new("x86_64-unknown-freebsd");
     assert!(unsupported.validate().is_err());
 
     let mut wrong_width = linux_target();
@@ -114,11 +109,11 @@ fn supported_targets_are_little_endian_64_bit_with_target_owned_calling_conventi
     assert!(wrong_width.validate().is_err());
 
     let mut wrong_endian = linux_target();
-    wrong_endian.endianness = Endianness::Big;
+    wrong_endian.endianness = Endianness::new("big");
     assert!(wrong_endian.validate().is_err());
 
     let mut wrong_convention = linux_target();
-    wrong_convention.calling_convention = CallingConvention::WindowsX64;
+    wrong_convention.calling_convention = CallingConvention::new("windows_x64");
     assert!(wrong_convention.validate().is_err());
 }
 
@@ -170,18 +165,21 @@ fn manifest_rejects_wrong_assembly_symbol_set_and_invalid_traps() {
         assert_eq!(u8::from(TrapCode::try_from(code).unwrap()), code);
     }
     assert_eq!(
-        TrapCode::ALL,
-        [
-            TrapCode::NullReference,
-            TrapCode::Bounds,
-            TrapCode::ArithmeticOverflow,
-            TrapCode::InvalidUtf8,
-            TrapCode::OutOfMemory,
-            TrapCode::InvalidOrStaleHandle,
-            TrapCode::SchedulerDeadlock,
-            TrapCode::AbiOrLayoutMismatch,
-            TrapCode::UnreachableOrIsleInvariant,
-            TrapCode::RuntimeInternalCorruption,
+        TrapCode::all()
+            .iter()
+            .map(|trap| (trap.name.as_str(), trap.code))
+            .collect::<Vec<_>>(),
+        vec![
+            ("null_reference", 1),
+            ("bounds", 2),
+            ("arithmetic_overflow", 3),
+            ("invalid_utf8", 4),
+            ("out_of_memory", 5),
+            ("invalid_or_stale_handle", 6),
+            ("scheduler_deadlock", 7),
+            ("abi_or_layout_mismatch", 8),
+            ("unreachable_or_isle_invariant", 9),
+            ("runtime_internal_corruption", 10),
         ]
     );
 }
@@ -334,10 +332,7 @@ fn runtime_kit_metadata_is_serializable_and_requires_the_exact_target_artifacts(
     ));
 
     runtime_kit(
-        target(
-            TargetTriple::Aarch64AppleDarwin,
-            CallingConvention::AppleAarch64,
-        ),
+        target("aarch64-apple-darwin"),
         BuildProfile::Release,
         RuntimeArtifacts {
             static_library: artifact("static/libbeskid_runtime.a"),
@@ -349,10 +344,7 @@ fn runtime_kit_metadata_is_serializable_and_requires_the_exact_target_artifacts(
     .expect("macOS artifact contract");
 
     let windows = runtime_kit(
-        target(
-            TargetTriple::X86_64PcWindowsMsvc,
-            CallingConvention::WindowsX64,
-        ),
+        target("x86_64-pc-windows-msvc"),
         BuildProfile::Release,
         RuntimeArtifacts {
             static_library: artifact("static/beskid_runtime.lib"),

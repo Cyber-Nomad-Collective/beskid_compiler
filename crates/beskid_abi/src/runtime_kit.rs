@@ -9,8 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::abi_v5::{
-    ABI_V5, AbiManifestV5, RuntimeAuditMetadata, TargetMetadata, TargetTriple,
-    TargetValidationError,
+    ABI_V5, AbiManifestV5, RuntimeAuditMetadata, TargetMetadata, TargetValidationError,
 };
 
 pub const RUNTIME_KIT_SCHEMA_VERSION: u32 = 1;
@@ -112,23 +111,23 @@ impl RuntimeKitMetadata {
             validate_sha256("artifact.sha256", &artifact.sha256)?;
         }
 
-        let (static_path, shared_path, import_path) = match self.target.triple {
-            TargetTriple::X86_64UnknownLinuxGnu => (
+        let (static_path, shared_path, import_path) = match self.target.object_format.as_str() {
+            "elf" => (
                 "static/libbeskid_runtime.a",
                 "shared/libbeskid_runtime.so",
                 None,
             ),
-            TargetTriple::Aarch64AppleDarwin => (
+            "macho" => (
                 "static/libbeskid_runtime.a",
                 "shared/libbeskid_runtime.dylib",
                 None,
             ),
-            TargetTriple::X86_64PcWindowsMsvc => (
+            "coff" => (
                 "static/beskid_runtime.lib",
                 "shared/beskid_runtime.dll",
                 Some("shared/beskid_runtime_import.lib"),
             ),
-            TargetTriple::Other(_) => unreachable!("target validation rejects unsupported triples"),
+            _ => unreachable!("target validation rejects unsupported object formats"),
         };
         let actual_import_path = self
             .artifacts

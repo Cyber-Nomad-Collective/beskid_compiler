@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod bootstrap;
@@ -22,68 +22,34 @@ pub const ABI_V5: u32 = 5;
 pub const RUNTIME_SYMBOL_PREFIX: &str = "beskid_rt_v5_";
 pub const LIBRARY_LIFECYCLE_SYMBOLS: [&str; 2] =
     ["beskid_library_attach_v5", "beskid_library_detach_v5"];
-pub const APPROVED_ASSEMBLY_SYMBOLS: [&str; 2] = [
-    "beskid_arch_v5_context_init",
-    "beskid_arch_v5_context_switch",
-];
+macro_rules! string_contract_type {
+    ($name:ident) => {
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+        #[serde(transparent)]
+        pub struct $name(String);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TargetTriple {
-    X86_64UnknownLinuxGnu,
-    Aarch64AppleDarwin,
-    X86_64PcWindowsMsvc,
-    Other(String),
-}
+        impl $name {
+            pub fn new(value: impl Into<String>) -> Self {
+                Self(value.into())
+            }
 
-impl Serialize for TargetTriple {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for TargetTriple {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        Ok(match value.as_str() {
-            "x86_64-unknown-linux-gnu" => Self::X86_64UnknownLinuxGnu,
-            "aarch64-apple-darwin" => Self::Aarch64AppleDarwin,
-            "x86_64-pc-windows-msvc" => Self::X86_64PcWindowsMsvc,
-            _ => Self::Other(value),
-        })
-    }
-}
-
-impl TargetTriple {
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::X86_64UnknownLinuxGnu => "x86_64-unknown-linux-gnu",
-            Self::Aarch64AppleDarwin => "aarch64-apple-darwin",
-            Self::X86_64PcWindowsMsvc => "x86_64-pc-windows-msvc",
-            Self::Other(value) => value,
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
         }
-    }
+
+        impl From<&str> for $name {
+            fn from(value: &str) -> Self {
+                Self::new(value)
+            }
+        }
+    };
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Endianness {
-    Little,
-    Big,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CallingConvention {
-    SystemV,
-    AppleAarch64,
-    WindowsX64,
-}
+string_contract_type!(TargetTriple);
+string_contract_type!(Endianness);
+string_contract_type!(CallingConvention);
+string_contract_type!(ObjectFormat);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,50 +58,37 @@ pub struct TargetMetadata {
     pub endianness: Endianness,
     pub pointer_width: u8,
     pub calling_convention: CallingConvention,
+    pub object_format: ObjectFormat,
+    pub symbol_prefix: String,
+    pub stack_alignment: u32,
+    pub shadow_space: u32,
 }
 
 impl TargetMetadata {
-    pub const SUPPORTED: [Self; 3] = [
-        Self {
-            triple: TargetTriple::X86_64UnknownLinuxGnu,
-            endianness: Endianness::Little,
-            pointer_width: 64,
-            calling_convention: CallingConvention::SystemV,
-        },
-        Self {
-            triple: TargetTriple::Aarch64AppleDarwin,
-            endianness: Endianness::Little,
-            pointer_width: 64,
-            calling_convention: CallingConvention::AppleAarch64,
-        },
-        Self {
-            triple: TargetTriple::X86_64PcWindowsMsvc,
-            endianness: Endianness::Little,
-            pointer_width: 64,
-            calling_convention: CallingConvention::WindowsX64,
-        },
-    ];
+    pub fn supported() -> Vec<Self> {
+        crate::generated::abi_v5_contract::ABI_V5_TARGETS
+            .iter()
+            .map(|target| Self {
+                triple: target.triple.into(),
+                endianness: target.endianness.into(),
+                pointer_width: target.pointer_width,
+                calling_convention: target.calling_convention.into(),
+                object_format: target.object_format.into(),
+                symbol_prefix: target.symbol_prefix.into(),
+                stack_alignment: target.stack_alignment,
+                shadow_space: target.shadow_space,
+            })
+            .collect()
+    }
 
     pub fn validate(&self) -> Result<(), TargetValidationError> {
-        let expected = Self::SUPPORTED
+        let expected = Self::supported()
             .into_iter()
             .find(|candidate| candidate.triple == self.triple)
             .ok_or_else(|| TargetValidationError::UnsupportedTriple(self.triple.as_str().into()))?;
-        if self.endianness != Endianness::Little {
-            return Err(TargetValidationError::UnsupportedEndianness(
-                self.endianness,
-            ));
-        }
-        if self.pointer_width != 64 {
-            return Err(TargetValidationError::UnsupportedPointerWidth(
-                self.pointer_width,
-            ));
-        }
-        if self.calling_convention != expected.calling_convention {
-            return Err(TargetValidationError::CallingConventionMismatch {
+        if self != &expected {
+            return Err(TargetValidationError::MetadataMismatch {
                 triple: self.triple.as_str().into(),
-                expected: expected.calling_convention,
-                actual: self.calling_convention,
             });
         }
         Ok(())
@@ -145,13 +98,7 @@ impl TargetMetadata {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetValidationError {
     UnsupportedTriple(String),
-    UnsupportedEndianness(Endianness),
-    UnsupportedPointerWidth(u8),
-    CallingConventionMismatch {
-        triple: String,
-        expected: CallingConvention,
-        actual: CallingConvention,
-    },
+    MetadataMismatch { triple: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -245,63 +192,14 @@ pub struct PlatformImport {
     pub noreturn: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum AssemblySymbol {
-    #[serde(rename = "beskid_arch_v5_context_init")]
-    ContextInit,
-    #[serde(rename = "beskid_arch_v5_context_switch")]
-    ContextSwitch,
-}
+string_contract_type!(AssemblySymbol);
+string_contract_type!(AssemblyRegister);
 
-impl AssemblySymbol {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ContextInit => APPROVED_ASSEMBLY_SYMBOLS[0],
-            Self::ContextSwitch => APPROVED_ASSEMBLY_SYMBOLS[1],
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AssemblyRegister {
-    X86_64Rbx,
-    X86_64Rbp,
-    X86_64Rdi,
-    X86_64Rsi,
-    X86_64R12,
-    X86_64R13,
-    X86_64R14,
-    X86_64R15,
-    X86_64Xmm6,
-    X86_64Xmm7,
-    X86_64Xmm8,
-    X86_64Xmm9,
-    X86_64Xmm10,
-    X86_64Xmm11,
-    X86_64Xmm12,
-    X86_64Xmm13,
-    X86_64Xmm14,
-    X86_64Xmm15,
-    Aarch64X19,
-    Aarch64X20,
-    Aarch64X21,
-    Aarch64X22,
-    Aarch64X23,
-    Aarch64X24,
-    Aarch64X25,
-    Aarch64X26,
-    Aarch64X27,
-    Aarch64X28,
-    Aarch64X29,
-    Aarch64V8,
-    Aarch64V9,
-    Aarch64V10,
-    Aarch64V11,
-    Aarch64V12,
-    Aarch64V13,
-    Aarch64V14,
-    Aarch64V15,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AssemblyParameterLocation {
+    Register { register: AssemblyRegister },
+    Stack { base: AssemblyRegister, offset: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -310,7 +208,7 @@ pub struct AssemblyExport {
     pub symbol: AssemblySymbol,
     pub param_names: Vec<String>,
     pub params: Vec<AbiType>,
-    pub parameter_locations: Vec<String>,
+    pub parameter_locations: Vec<AssemblyParameterLocation>,
     pub result: AbiType,
     pub preserved_registers: Vec<AssemblyRegister>,
 }
@@ -321,40 +219,28 @@ impl AssemblyExport {
     }
 }
 
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TrapCode {
-    NullReference = 1,
-    Bounds = 2,
-    ArithmeticOverflow = 3,
-    InvalidUtf8 = 4,
-    OutOfMemory = 5,
-    InvalidOrStaleHandle = 6,
-    SchedulerDeadlock = 7,
-    AbiOrLayoutMismatch = 8,
-    UnreachableOrIsleInvariant = 9,
-    RuntimeInternalCorruption = 10,
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrapCode {
+    pub name: String,
+    pub code: u8,
 }
 
 impl TrapCode {
-    pub const ALL: [Self; 10] = [
-        Self::NullReference,
-        Self::Bounds,
-        Self::ArithmeticOverflow,
-        Self::InvalidUtf8,
-        Self::OutOfMemory,
-        Self::InvalidOrStaleHandle,
-        Self::SchedulerDeadlock,
-        Self::AbiOrLayoutMismatch,
-        Self::UnreachableOrIsleInvariant,
-        Self::RuntimeInternalCorruption,
-    ];
+    pub fn all() -> Vec<Self> {
+        crate::generated::abi_v5_contract::ABI_V5_TRAPS
+            .iter()
+            .map(|(name, code)| Self {
+                name: (*name).into(),
+                code: *code,
+            })
+            .collect()
+    }
 }
 
 impl From<TrapCode> for u8 {
     fn from(value: TrapCode) -> Self {
-        value as Self
+        value.code
     }
 }
 
@@ -362,9 +248,9 @@ impl TryFrom<u8> for TrapCode {
     type Error = InvalidTrapCode;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Self::ALL
+        Self::all()
             .into_iter()
-            .find(|code| u8::from(*code) == value)
+            .find(|code| code.code == value)
             .ok_or(InvalidTrapCode(value))
     }
 }
@@ -455,11 +341,12 @@ impl AbiManifestV5 {
             });
         }
 
-        let actual_traps: HashSet<_> = self.traps.iter().copied().collect();
-        let expected_traps: HashSet<_> = TrapCode::ALL.into_iter().collect();
-        if self.traps.len() != TrapCode::ALL.len() || actual_traps != expected_traps {
+        let expected = TrapCode::all();
+        let actual_traps: HashSet<_> = self.traps.iter().cloned().collect();
+        let expected_traps: HashSet<_> = expected.iter().cloned().collect();
+        if self.traps.len() != expected.len() || actual_traps != expected_traps {
             return Err(ManifestValidationError::InvalidTrapSet {
-                actual: self.traps.iter().copied().map(u8::from).collect(),
+                actual: self.traps.iter().cloned().map(u8::from).collect(),
             });
         }
         Ok(())
@@ -479,13 +366,10 @@ impl AbiManifestV5 {
 }
 
 fn assembly_exports_are_valid(target: &TargetMetadata, exports: &[AssemblyExport]) -> bool {
-    if exports.len() != APPROVED_ASSEMBLY_SYMBOLS.len() {
-        return false;
-    }
     let mut actual = exports.to_vec();
-    actual.sort_unstable_by_key(|export| export.symbol.as_str());
+    actual.sort_unstable_by(|left, right| left.symbol.cmp(&right.symbol));
     let mut expected = AbiManifestV5::canonical_runtime(target.clone()).assembly_exports;
-    expected.sort_unstable_by_key(|export| export.symbol.as_str());
+    expected.sort_unstable_by(|left, right| left.symbol.cmp(&right.symbol));
     actual == expected
 }
 

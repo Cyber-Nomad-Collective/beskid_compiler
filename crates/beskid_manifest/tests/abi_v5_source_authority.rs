@@ -240,6 +240,55 @@ fn parser_rejects_unknown_duplicate_and_invalid_contract_fields() {
         ))
         .is_err()
     );
+    assert!(
+        load_v5_manifest_source(&source.replacen(
+            "{ stack_base = rsp, stack_offset = 40 }",
+            "{ register = rsp, stack_offset = 40 }",
+            1,
+        ))
+        .is_err()
+    );
+    assert!(
+        load_v5_manifest_source(&source.replacen(
+            "{ stack_base = rsp, stack_offset = 40 }",
+            "{ stack_base = rsp, stack_offset = 40, surprise = nope }",
+            1,
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+fn generated_target_and_trap_tables_follow_manifest_facts() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let changed = source
+        .replacen("object_format = elf", "object_format = elf_test", 1)
+        .replacen("symbol_prefix = \"\"", "symbol_prefix = \"_\"", 1)
+        .replacen(
+            "trap \"null_reference\" { code = 1 }",
+            "trap \"changed_null\" { code = 1 }",
+            1,
+        );
+    let artifacts = generate_v5_artifacts(&load_v5_manifest_source(&changed).unwrap()).unwrap();
+    assert!(artifacts.rust.contains("ABI_V5_TARGETS"));
+    assert!(artifacts.rust.contains("elf_test"));
+    assert!(artifacts.rust.contains("elf_test"));
+    assert!(artifacts.rust.contains("changed_null"));
+}
+
+#[test]
+fn windows_stack_parameter_is_typed_and_renders_as_a_masm_operand() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let artifacts = generate_v5_artifacts(&load_v5_manifest_source(&source).unwrap()).unwrap();
+    let windows = &artifacts.masm["x86_64-pc-windows-msvc"];
+    assert!(
+        windows
+            .contains("BESKID_CONTEXT_INIT_RETURN_TRAMPOLINE_STACK_OPERAND TEXTEQU <[rsp + 40]>")
+    );
+    assert!(!windows.contains("stack+40"));
+    assert!(!windows.contains("RETURN_TRAMPOLINE_REGISTER"));
 }
 
 #[test]
@@ -286,10 +335,13 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
     );
     let _ = fs::remove_file(c_source);
     let _ = fs::remove_file(c_object);
-    assert!(!linux.contains("xmm6") && !linux.contains("x19") && !linux.contains("stack+40"));
-    assert!(!darwin.contains("rdi") && !darwin.contains("xmm6") && !darwin.contains("stack+40"));
+    assert!(!linux.contains("xmm6") && !linux.contains("x19") && !linux.contains("STACK_OPERAND"));
+    assert!(
+        !darwin.contains("rdi") && !darwin.contains("xmm6") && !darwin.contains("STACK_OPERAND")
+    );
     assert!(!windows.contains("x19") && !windows.contains("BESKID_AARCH64"));
-    assert!(windows.contains("RETURN_TRAMPOLINE_REGISTER TEXTEQU <stack+40>"));
+    assert!(windows.contains("RETURN_TRAMPOLINE_STACK_OPERAND TEXTEQU <[rsp + 40]>"));
+    assert!(!windows.contains("stack+40"));
     let mut lhs = std::collections::BTreeSet::new();
     for line in windows
         .lines()
@@ -308,10 +360,11 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
         .expect("numeric Windows shadow space");
     let stack_location = windows
         .lines()
-        .find(|line| line.contains("RETURN_TRAMPOLINE_REGISTER TEXTEQU"))
+        .find(|line| line.contains("RETURN_TRAMPOLINE_STACK_OPERAND TEXTEQU"))
         .and_then(|line| line.split('<').nth(1))
         .and_then(|value| value.strip_suffix('>'))
-        .and_then(|value| value.strip_prefix("stack+"))
+        .and_then(|value| value.strip_prefix("[rsp + "))
+        .and_then(|value| value.strip_suffix(']'))
         .and_then(|value| value.parse::<u64>().ok())
         .expect("typed Windows stack parameter offset");
     assert_eq!(stack_location, shadow_space + 8);
@@ -325,11 +378,6 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
             "arm64-apple-macos11",
             darwin.as_str(),
             ".text\n.globl _smoke\n_smoke:\n  mov x9, BESKID_CONTEXT_SWITCH_FROM_REGISTER\n  ret\n",
-        ),
-        (
-            "x86_64-pc-windows-msvc",
-            "",
-            ".text\n.globl smoke\nsmoke:\n  mov %rcx, %rax\n  mov 40(%rsp), %r10\n  ret\n",
         ),
     ] {
         let temp =
@@ -358,7 +406,6 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
         let expected_magic: &[u8] = match triple {
             "x86_64-unknown-linux-gnu" => b"\x7fELF",
             "arm64-apple-macos11" => b"\xcf\xfa\xed\xfe",
-            "x86_64-pc-windows-msvc" => b"\x64\x86",
             _ => unreachable!(),
         };
         assert!(
@@ -368,4 +415,74 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
         let _ = fs::remove_file(temp);
         let _ = fs::remove_file(object);
     }
+
+    let llvm_ml = std::env::var_os("LLVM_ML")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            [
+                std::path::PathBuf::from("llvm-ml"),
+                std::path::PathBuf::from("/opt/homebrew/opt/llvm/bin/llvm-ml"),
+            ]
+            .into_iter()
+            .find(|candidate| {
+                std::process::Command::new(candidate)
+                    .arg("--version")
+                    .output()
+                    .is_ok_and(|output| output.status.success())
+            })
+        })
+        .expect("LLVM_ML or an llvm-ml executable is required for the MASM contract test");
+    let temp_dir = std::env::temp_dir().join(format!("beskid-v5-masm-{}", std::process::id()));
+    fs::create_dir_all(&temp_dir).unwrap();
+    let include_path = temp_dir.join("beskid_runtime_abi_v5_windows.inc");
+    let source_path = temp_dir.join("consumer.asm");
+    let object_path = temp_dir.join("consumer.obj");
+    fs::write(&include_path, windows).unwrap();
+    fs::write(
+        &source_path,
+        "INCLUDE beskid_runtime_abi_v5_windows.inc\n.code\nsmoke PROC\n mov rax, BESKID_CONTEXT_INIT_CONTEXT_REGISTER\n mov r10, QWORD PTR BESKID_CONTEXT_INIT_RETURN_TRAMPOLINE_STACK_OPERAND\n mov r11, BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_RIP_OFFSET\n ret\nsmoke ENDP\nEND\n",
+    )
+    .unwrap();
+    let output = std::process::Command::new(&llvm_ml)
+        .arg("-m64")
+        .arg("/c")
+        .arg("--fatal-warnings")
+        .arg("/I")
+        .arg(&temp_dir)
+        .arg(format!("/Fo{}", object_path.display()))
+        .arg(&source_path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "llvm-ml rejected generated MASM include: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let object = fs::read(&object_path).unwrap();
+    assert!(
+        object.starts_with(b"\x64\x86"),
+        "llvm-ml did not emit AMD64 COFF"
+    );
+    let llvm_dir = llvm_ml.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let readobj = std::process::Command::new(llvm_dir.join("llvm-readobj"))
+        .args(["--file-headers", "--relocations"])
+        .arg(&object_path)
+        .output()
+        .expect("llvm-readobj must accompany llvm-ml");
+    let readobj = String::from_utf8_lossy(&readobj.stdout);
+    assert!(readobj.contains("IMAGE_FILE_MACHINE_AMD64"));
+    assert!(
+        !readobj.contains("IMAGE_REL_AMD64"),
+        "generated include consumer must not leave relocations: {readobj}"
+    );
+    let objdump = std::process::Command::new(llvm_dir.join("llvm-objdump"))
+        .arg("-d")
+        .arg(&object_path)
+        .output()
+        .expect("llvm-objdump must accompany llvm-ml");
+    let disassembly = String::from_utf8_lossy(&objdump.stdout);
+    assert!(disassembly.contains("%rcx"));
+    assert!(disassembly.contains("0x28(%rsp)"));
+    assert!(disassembly.contains("$0x48"));
+    let _ = fs::remove_dir_all(temp_dir);
 }

@@ -15,6 +15,8 @@ target "x86_64-unknown-linux-gnu" {
   calling_convention = system_v
   object_format = elf
   symbol_prefix = ""
+  stack_alignment = 16
+  shadow_space = 0
 }
 target "aarch64-apple-darwin" {
   endianness = little
@@ -22,6 +24,8 @@ target "aarch64-apple-darwin" {
   calling_convention = apple_aarch64
   object_format = macho
   symbol_prefix = "_"
+  stack_alignment = 16
+  shadow_space = 0
 }
 target "x86_64-pc-windows-msvc" {
   endianness = little
@@ -29,6 +33,8 @@ target "x86_64-pc-windows-msvc" {
   calling_convention = windows_x64
   object_format = coff
   symbol_prefix = ""
+  stack_alignment = 16
+  shadow_space = 32
 }
 
 export "beskid_rt_v5_abi_version" { params = [] returns = u32 }
@@ -89,21 +95,21 @@ assembly "beskid_arch_v5_context_init" {
   params = [{ name = context, type = pointer }, { name = stack_top, type = pointer }, { name = entry, type = pointer }, { name = argument, type = pointer }, { name = return_trampoline, type = pointer }]
   returns = void
   x86_64_unknown_linux_gnu_preserved = [rbx, rbp, r12, r13, r14, r15]
-  x86_64_unknown_linux_gnu_locations = [rdi, rsi, rdx, rcx, r8]
+  x86_64_unknown_linux_gnu_locations = [{ register = rdi }, { register = rsi }, { register = rdx }, { register = rcx }, { register = r8 }]
   aarch64_apple_darwin_preserved = [x19, x20, x21, x22, x23, x24, x25, x26, x27, x28, x29, v8, v9, v10, v11, v12, v13, v14, v15]
-  aarch64_apple_darwin_locations = [x0, x1, x2, x3, x4]
+  aarch64_apple_darwin_locations = [{ register = x0 }, { register = x1 }, { register = x2 }, { register = x3 }, { register = x4 }]
   x86_64_pc_windows_msvc_preserved = [rbx, rbp, rdi, rsi, r12, r13, r14, r15, xmm6, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15]
-  x86_64_pc_windows_msvc_locations = [rcx, rdx, r8, r9, "stack+40"]
+  x86_64_pc_windows_msvc_locations = [{ register = rcx }, { register = rdx }, { register = r8 }, { register = r9 }, { stack_base = rsp, stack_offset = 40 }]
 }
 assembly "beskid_arch_v5_context_switch" {
   params = [{ name = from, type = pointer }, { name = to, type = pointer }]
   returns = void
   x86_64_unknown_linux_gnu_preserved = [rbx, rbp, r12, r13, r14, r15]
-  x86_64_unknown_linux_gnu_locations = [rdi, rsi]
+  x86_64_unknown_linux_gnu_locations = [{ register = rdi }, { register = rsi }]
   aarch64_apple_darwin_preserved = [x19, x20, x21, x22, x23, x24, x25, x26, x27, x28, x29, v8, v9, v10, v11, v12, v13, v14, v15]
-  aarch64_apple_darwin_locations = [x0, x1]
+  aarch64_apple_darwin_locations = [{ register = x0 }, { register = x1 }]
   x86_64_pc_windows_msvc_preserved = [rbx, rbp, rdi, rsi, r12, r13, r14, r15, xmm6, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15]
-  x86_64_pc_windows_msvc_locations = [rcx, rdx]
+  x86_64_pc_windows_msvc_locations = [{ register = rcx }, { register = rdx }]
 }
 
 trap "null_reference" { code = 1 }

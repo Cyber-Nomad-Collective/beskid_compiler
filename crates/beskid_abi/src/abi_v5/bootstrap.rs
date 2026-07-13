@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     ABI_V5, AbiFieldLayout, AbiFunction, AbiLayout, AbiManifestV5, AbiType, AssemblyExport,
-    ManifestValidationError, PlatformImport, RuntimeIntrinsic, TargetMetadata, TargetTriple,
-    TrapCode,
+    AssemblyParameterLocation, AssemblyRegister, AssemblySymbol, ManifestValidationError,
+    PlatformImport, RuntimeIntrinsic, TargetMetadata, TrapCode,
 };
 
 pub const CANONICAL_RUNTIME_PACKAGE_PUBLISHER: &str =
@@ -84,8 +84,8 @@ impl RuntimeAuditMetadata {
             allowed_imports,
             allowed_exports,
             forbidden_rust_symbols: forbidden_symbol_families(),
-            object_format: object_format(&manifest.target).into(),
-            symbol_prefix: symbol_prefix(&manifest.target).into(),
+            object_format: manifest.target.object_format.as_str().into(),
+            symbol_prefix: manifest.target.symbol_prefix.clone(),
             layout_hash: manifest.layout_hash(),
             runtime_source_hash: runtime_source_hash.into(),
         })
@@ -191,22 +191,6 @@ fn forbidden_symbol_families() -> Vec<String> {
     )))
     .expect("build-validated audit source")
     .forbidden_symbol_families
-}
-
-fn object_format(target: &TargetMetadata) -> &'static str {
-    match target.triple {
-        TargetTriple::X86_64UnknownLinuxGnu => "elf",
-        TargetTriple::Aarch64AppleDarwin => "macho",
-        TargetTriple::X86_64PcWindowsMsvc => "coff",
-        TargetTriple::Other(_) => "unsupported",
-    }
-}
-fn symbol_prefix(target: &TargetMetadata) -> &'static str {
-    if matches!(target.triple, TargetTriple::Aarch64AppleDarwin) {
-        "_"
-    } else {
-        ""
-    }
 }
 
 impl AbiManifestV5 {
@@ -322,6 +306,10 @@ struct SourceTarget {
     _object_format: String,
     #[serde(rename = "symbolPrefix")]
     _symbol_prefix: String,
+    #[serde(rename = "stackAlignment")]
+    _stack_alignment: u32,
+    #[serde(rename = "shadowSpace")]
+    _shadow_space: u32,
 }
 
 #[derive(Deserialize)]
@@ -379,7 +367,13 @@ struct SourceAssembly {
     params: Vec<SourceParameter>,
     result: String,
     preserved: BTreeMap<String, Vec<String>>,
-    locations: BTreeMap<String, Vec<String>>,
+    locations: BTreeMap<String, Vec<SourceParameterLocation>>,
+}
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum SourceParameterLocation {
+    Register { register: String },
+    Stack { base: String, offset: u64 },
 }
 fn source_type(value: &str) -> AbiType {
     crate::generated::abi_v5_contract::ABI_V5_TYPES
@@ -442,21 +436,30 @@ fn source_layout(entry: &SourceLayout) -> AbiLayout {
     }
 }
 fn source_register(value: &str) -> super::AssemblyRegister {
-    crate::generated::abi_v5_contract::ABI_V5_ASSEMBLY_REGISTERS
-        .iter()
-        .find_map(|(name, register)| (*name == value).then_some(*register))
-        .expect("build validates preserved registers")
+    AssemblyRegister::new(value)
 }
 fn source_assembly(entry: &SourceAssembly, target: &str) -> AssemblyExport {
     let (param_names, params) = source_params(&entry.params);
     AssemblyExport {
-        symbol: crate::generated::abi_v5_contract::ABI_V5_ASSEMBLY_SYMBOLS
-            .iter()
-            .find_map(|(name, symbol)| (*name == entry.symbol).then_some(*symbol))
-            .expect("build validates assembly symbols"),
+        symbol: AssemblySymbol::new(&entry.symbol),
         param_names,
         params,
-        parameter_locations: entry.locations[target].clone(),
+        parameter_locations: entry.locations[target]
+            .iter()
+            .map(|location| match location {
+                SourceParameterLocation::Register { register } => {
+                    AssemblyParameterLocation::Register {
+                        register: AssemblyRegister::new(register),
+                    }
+                }
+                SourceParameterLocation::Stack { base, offset } => {
+                    AssemblyParameterLocation::Stack {
+                        base: AssemblyRegister::new(base),
+                        offset: *offset,
+                    }
+                }
+            })
+            .collect(),
         result: source_type(&entry.result),
         preserved_registers: entry.preserved[target]
             .iter()
@@ -476,20 +479,10 @@ pub fn render_runtime_asm_include(
     manifest: &AbiManifestV5,
 ) -> Result<String, ManifestValidationError> {
     manifest.validate()?;
-    Ok(match manifest.target.triple {
-        TargetTriple::X86_64UnknownLinuxGnu => include_str!(concat!(
-            env!("OUT_DIR"),
-            "/beskid_runtime_abi_v5_x86_64_unknown_linux_gnu.inc"
-        )),
-        TargetTriple::Aarch64AppleDarwin => include_str!(concat!(
-            env!("OUT_DIR"),
-            "/beskid_runtime_abi_v5_aarch64_apple_darwin.inc"
-        )),
-        TargetTriple::X86_64PcWindowsMsvc => include_str!(concat!(
-            env!("OUT_DIR"),
-            "/beskid_runtime_abi_v5_x86_64_pc_windows_msvc.inc"
-        )),
-        TargetTriple::Other(_) => unreachable!("manifest validation rejects unsupported targets"),
-    }
-    .into())
+    crate::generated::abi_v5_contract::ABI_V5_ASM_INCLUDES
+        .iter()
+        .find_map(|(target, source)| {
+            (*target == manifest.target.triple.as_str()).then(|| (*source).into())
+        })
+        .ok_or(ManifestValidationError::InvalidRuntimeAuditMetadata)
 }

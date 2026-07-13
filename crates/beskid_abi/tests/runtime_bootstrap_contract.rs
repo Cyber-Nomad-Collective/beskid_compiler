@@ -1,38 +1,29 @@
 use beskid_abi::abi_v5::{
     ABI_V5, AbiManifestV5, AbiType, AssemblySymbol, CANONICAL_RUNTIME_PACKAGE_NAME,
-    CANONICAL_RUNTIME_PACKAGE_PUBLISHER, CallingConvention, Endianness, ManifestValidationError,
-    RuntimeAuditMetadata, RuntimePackageIdentity, TRAP_DIAGNOSTIC_PREFIX, TRAP_EXIT_STATUS,
-    TargetMetadata, TargetTriple, canonical_runtime_package, render_runtime_asm_include,
-    render_runtime_c_header,
+    CANONICAL_RUNTIME_PACKAGE_PUBLISHER, ManifestValidationError, RuntimeAuditMetadata,
+    RuntimePackageIdentity, TRAP_DIAGNOSTIC_PREFIX, TRAP_EXIT_STATUS, TargetMetadata,
+    canonical_runtime_package, render_runtime_asm_include, render_runtime_c_header,
 };
 use beskid_abi::runtime_kit::{
     BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata, RuntimeKitValidationError,
 };
 
-fn target(triple: TargetTriple, calling_convention: CallingConvention) -> TargetMetadata {
-    TargetMetadata {
-        triple,
-        endianness: Endianness::Little,
-        pointer_width: 64,
-        calling_convention,
-    }
-}
-
-fn supported_targets() -> [TargetMetadata; 3] {
+fn supported_targets() -> Vec<TargetMetadata> {
+    let targets = TargetMetadata::supported();
     [
-        target(
-            TargetTriple::X86_64UnknownLinuxGnu,
-            CallingConvention::SystemV,
-        ),
-        target(
-            TargetTriple::Aarch64AppleDarwin,
-            CallingConvention::AppleAarch64,
-        ),
-        target(
-            TargetTriple::X86_64PcWindowsMsvc,
-            CallingConvention::WindowsX64,
-        ),
+        "x86_64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-msvc",
     ]
+    .into_iter()
+    .map(|triple| {
+        targets
+            .iter()
+            .find(|target| target.triple.as_str() == triple)
+            .unwrap()
+            .clone()
+    })
+    .collect()
 }
 
 #[test]
@@ -137,7 +128,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
         ("BeskidArchContextX86_64Windows", 240, 16, "xmm15", 224),
     ];
     for (target, expected) in supported_targets().into_iter().zip(expected_contexts) {
-        let is_windows = target.triple == TargetTriple::X86_64PcWindowsMsvc;
+        let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
         let manifest = AbiManifestV5::canonical_runtime(target);
         manifest.validate().expect("canonical target layout");
         let names = manifest
@@ -277,29 +268,27 @@ fn generated_headers_are_deterministic_fresh_and_include_contract_constants() {
             )
         );
         assert!(c_header.contains("void beskid_arch_v5_context_switch(void * from, void * to);"));
-        match manifest.target.triple {
-            TargetTriple::X86_64UnknownLinuxGnu => {
+        match manifest.target.triple.as_str() {
+            "x86_64-unknown-linux-gnu" => {
                 assert!(
                     asm_include.contains("BESKID_X86_64_UNKNOWN_LINUX_GNU_STACK_ALIGNMENT = 16")
                 );
                 assert!(!asm_include.contains("AARCH64"));
                 assert!(!asm_include.contains("WINDOWS"));
             }
-            TargetTriple::Aarch64AppleDarwin => {
+            "aarch64-apple-darwin" => {
                 assert!(asm_include.contains("BESKID_AARCH64_APPLE_DARWIN_CONTEXT_SIZE = 176"));
                 assert!(!asm_include.contains("X86_64"));
                 assert!(!asm_include.contains("stack+40"));
             }
-            TargetTriple::X86_64PcWindowsMsvc => {
+            "x86_64-pc-windows-msvc" => {
                 assert!(asm_include.contains("BESKID_X86_64_PC_WINDOWS_MSVC_SHADOW_SPACE EQU 32"));
-                assert!(
-                    asm_include.contains(
-                        "BESKID_CONTEXT_INIT_RETURN_TRAMPOLINE_REGISTER TEXTEQU <stack+40>"
-                    )
-                );
+                assert!(asm_include.contains(
+                    "BESKID_CONTEXT_INIT_RETURN_TRAMPOLINE_STACK_OPERAND TEXTEQU <[rsp + 40]>"
+                ));
                 assert!(!asm_include.contains("AARCH64"));
             }
-            TargetTriple::Other(_) => unreachable!(),
+            _ => unreachable!(),
         }
     }
 }
@@ -311,7 +300,7 @@ fn assembly_init_signature_uses_stack_top_not_a_hardcoded_size() {
         let init = manifest
             .assembly_exports
             .iter()
-            .find(|entry| entry.symbol == AssemblySymbol::ContextInit)
+            .find(|entry| entry.symbol == AssemblySymbol::new("beskid_arch_v5_context_init"))
             .unwrap();
         assert_eq!(init.params, vec![AbiType::Pointer; 5]);
         assert_eq!(init.result, AbiType::Void);
