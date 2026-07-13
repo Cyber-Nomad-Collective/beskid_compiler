@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::abi_v5::{
-    ABI_V5, RUNTIME_SYMBOL_PREFIX, TargetMetadata, TargetTriple, TargetValidationError,
+    ABI_V5, AbiManifestV5, LIBRARY_LIFECYCLE_SYMBOLS, RUNTIME_SYMBOL_PREFIX, RuntimeAuditMetadata,
+    TargetMetadata, TargetTriple, TargetValidationError,
 };
 
 pub const RUNTIME_KIT_SCHEMA_VERSION: u32 = 1;
@@ -56,6 +57,8 @@ pub struct RuntimeKitMetadata {
     pub artifacts: RuntimeArtifacts,
     pub import_allowlist: Vec<String>,
     pub export_allowlist: Vec<String>,
+    pub abi_contract: AbiManifestV5,
+    pub audit: RuntimeAuditMetadata,
 }
 
 impl RuntimeKitMetadata {
@@ -71,6 +74,14 @@ impl RuntimeKitMetadata {
         self.target
             .validate()
             .map_err(RuntimeKitValidationError::InvalidTarget)?;
+        self.abi_contract
+            .validate()
+            .map_err(|_| RuntimeKitValidationError::InvalidAbiContract)?;
+        if self.abi_contract.target != self.target
+            || self.abi_contract.abi_version != self.abi_version
+        {
+            return Err(RuntimeKitValidationError::ContractTargetMismatch);
+        }
         for (name, hash) in [
             ("layout_hash", &self.layout_hash),
             ("source_hash", &self.source_hash),
@@ -121,11 +132,37 @@ impl RuntimeKitMetadata {
 
         validate_allowlist(&self.import_allowlist)?;
         validate_allowlist(&self.export_allowlist)?;
-        if let Some(symbol) = self
-            .export_allowlist
-            .iter()
-            .find(|symbol| !symbol.starts_with(RUNTIME_SYMBOL_PREFIX))
+        if self.layout_hash != self.abi_contract.layout_hash()
+            || self.layout_hash != self.audit.layout_hash
         {
+            return Err(RuntimeKitValidationError::ContractLayoutHashMismatch {
+                actual: self.layout_hash.clone(),
+            });
+        }
+        if self.source_hash != self.audit.runtime_source_hash {
+            return Err(RuntimeKitValidationError::ContractSourceHashMismatch {
+                actual: self.source_hash.clone(),
+            });
+        }
+        self.audit.validate(&self.abi_contract).map_err(|_| {
+            RuntimeKitValidationError::ContractAuditMismatch {
+                field: "audit".into(),
+            }
+        })?;
+        if self.import_allowlist != self.audit.allowed_imports {
+            return Err(RuntimeKitValidationError::ContractAuditMismatch {
+                field: "import_allowlist".into(),
+            });
+        }
+        if self.export_allowlist != self.audit.allowed_exports {
+            return Err(RuntimeKitValidationError::ContractAuditMismatch {
+                field: "export_allowlist".into(),
+            });
+        }
+        if let Some(symbol) = self.export_allowlist.iter().find(|symbol| {
+            !symbol.starts_with(RUNTIME_SYMBOL_PREFIX)
+                && !LIBRARY_LIFECYCLE_SYMBOLS.contains(&symbol.as_str())
+        }) {
             return Err(RuntimeKitValidationError::UnversionedExportSymbol(
                 symbol.clone(),
             ));
@@ -181,6 +218,11 @@ pub enum RuntimeKitValidationError {
     InvalidArtifactPath(String),
     DuplicateAllowlistSymbol { symbol: String },
     UnversionedExportSymbol(String),
+    InvalidAbiContract,
+    ContractTargetMismatch,
+    ContractLayoutHashMismatch { actual: String },
+    ContractSourceHashMismatch { actual: String },
+    ContractAuditMismatch { field: String },
 }
 
 #[derive(Debug)]

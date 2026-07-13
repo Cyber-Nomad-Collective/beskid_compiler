@@ -10,8 +10,18 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
+mod bootstrap;
+
+pub use bootstrap::{
+    CANONICAL_RUNTIME_PACKAGE_NAME, CANONICAL_RUNTIME_PACKAGE_PUBLISHER, RuntimeAuditMetadata,
+    RuntimePackageIdentity, TRAP_DIAGNOSTIC_PREFIX, TRAP_EXIT_STATUS, canonical_runtime_package,
+    render_runtime_asm_include, render_runtime_c_header,
+};
+
 pub const ABI_V5: u32 = 5;
 pub const RUNTIME_SYMBOL_PREFIX: &str = "beskid_rt_v5_";
+pub const LIBRARY_LIFECYCLE_SYMBOLS: [&str; 2] =
+    ["beskid_library_attach_v5", "beskid_library_detach_v5"];
 pub const APPROVED_ASSEMBLY_SYMBOLS: [&str; 2] = [
     "beskid_arch_v5_context_init",
     "beskid_arch_v5_context_switch",
@@ -149,6 +159,7 @@ pub enum AbiType {
     Void,
     Pointer,
     USize,
+    ISize,
     I8,
     U8,
     I16,
@@ -157,6 +168,7 @@ pub enum AbiType {
     U32,
     I64,
     U64,
+    V128,
     F32,
     F64,
 }
@@ -167,6 +179,7 @@ impl AbiType {
             Self::Void => "void",
             Self::Pointer => "pointer",
             Self::USize => "usize",
+            Self::ISize => "isize",
             Self::I8 => "i8",
             Self::U8 => "u8",
             Self::I16 => "i16",
@@ -175,6 +188,7 @@ impl AbiType {
             Self::U32 => "u32",
             Self::I64 => "i64",
             Self::U64 => "u64",
+            Self::V128 => "v128",
             Self::F32 => "f32",
             Self::F64 => "f64",
         }
@@ -345,16 +359,7 @@ impl AssemblyExport {
             TargetTriple::Other(_) => &[],
         };
         [
-            (
-                AssemblySymbol::ContextInit,
-                vec![
-                    AbiType::Pointer,
-                    AbiType::Pointer,
-                    AbiType::USize,
-                    AbiType::Pointer,
-                    AbiType::Pointer,
-                ],
-            ),
+            (AssemblySymbol::ContextInit, vec![AbiType::Pointer; 5]),
             (
                 AssemblySymbol::ContextSwitch,
                 vec![AbiType::Pointer, AbiType::Pointer],
@@ -429,6 +434,8 @@ pub struct AbiManifestV5 {
     pub imports: Vec<AbiFunction>,
     pub exports: Vec<AbiFunction>,
     pub layouts: Vec<AbiLayout>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trusted_runtime_package: Option<RuntimePackageIdentity>,
     pub trusted_runtime_intrinsics: Vec<RuntimeIntrinsic>,
     pub platform_imports: Vec<PlatformImport>,
     pub assembly_exports: Vec<AssemblyExport>,
@@ -446,7 +453,9 @@ impl AbiManifestV5 {
 
         let mut symbols = HashSet::new();
         for function in self.imports.iter().chain(&self.exports) {
-            if !function.symbol.starts_with(RUNTIME_SYMBOL_PREFIX) {
+            if !function.symbol.starts_with(RUNTIME_SYMBOL_PREFIX)
+                && !LIBRARY_LIFECYCLE_SYMBOLS.contains(&function.symbol.as_str())
+            {
                 return Err(ManifestValidationError::UnversionedRuntimeSymbol {
                     symbol: function.symbol.clone(),
                 });
@@ -470,6 +479,15 @@ impl AbiManifestV5 {
         )?;
         validate_layouts(&self.layouts)?;
 
+        if let Some(package) = &self.trusted_runtime_package {
+            if package != &canonical_runtime_package() {
+                return Err(ManifestValidationError::UnauthorizedRuntimePackage {
+                    actual: package.clone(),
+                });
+            }
+            self.validate_canonical_bootstrap_contract()?;
+        }
+
         if !assembly_exports_are_valid(&self.target, &self.assembly_exports) {
             return Err(ManifestValidationError::InvalidAssemblyExports {
                 actual: self.assembly_exports.clone(),
@@ -488,6 +506,21 @@ impl AbiManifestV5 {
 
     pub fn layout_hash(&self) -> String {
         canonical_layout_hash(&self.layouts)
+    }
+
+    pub fn runtime_intrinsic(
+        &self,
+        package: &RuntimePackageIdentity,
+        name: &str,
+    ) -> Option<&RuntimeIntrinsic> {
+        (self.trusted_runtime_package.as_ref() == Some(package)
+            && package == &canonical_runtime_package())
+            .then(|| {
+                self.trusted_runtime_intrinsics
+                    .iter()
+                    .find(|intrinsic| intrinsic.name == name)
+            })
+            .flatten()
     }
 }
 
@@ -561,6 +594,13 @@ pub enum ManifestValidationError {
     InvalidAssemblyExports { actual: Vec<AssemblyExport> },
     InvalidTrapSet { actual: Vec<u8> },
     DuplicateSourcePath { logical_path: String },
+    UnauthorizedRuntimePackage { actual: RuntimePackageIdentity },
+    InvalidRuntimeImportSet { actual: Vec<AbiFunction> },
+    InvalidRuntimeExportSet { actual: Vec<AbiFunction> },
+    InvalidRuntimeIntrinsicSet { actual: Vec<RuntimeIntrinsic> },
+    InvalidPlatformImportSet { actual: Vec<PlatformImport> },
+    InvalidRuntimeLayoutSet { actual: Vec<AbiLayout> },
+    InvalidRuntimeAuditMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

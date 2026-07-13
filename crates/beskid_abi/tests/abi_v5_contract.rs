@@ -1,8 +1,8 @@
 use beskid_abi::BESKID_RUNTIME_ABI_VERSION;
 use beskid_abi::abi_v5::{
     ABI_V5, AbiFieldLayout, AbiFunction, AbiLayout, AbiManifestV5, AbiType, AssemblyExport,
-    CallingConvention, Endianness, ManifestValidationError, PlatformImport, RuntimeIntrinsic,
-    SourceUnit, TargetMetadata, TargetTriple, TrapCode, canonical_source_hash,
+    CallingConvention, Endianness, ManifestValidationError, PlatformImport, RuntimeAuditMetadata,
+    RuntimeIntrinsic, SourceUnit, TargetMetadata, TargetTriple, TrapCode, canonical_source_hash,
 };
 use beskid_abi::runtime_kit::{
     BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata, RuntimeKitValidationError,
@@ -59,6 +59,7 @@ fn valid_manifest() -> AbiManifestV5 {
         imports: vec![function("beskid_rt_v5_alloc")],
         exports: vec![function("beskid_rt_v5_entry")],
         layouts: vec![layout("BeskidSlice", 8)],
+        trusted_runtime_package: None,
         trusted_runtime_intrinsics: vec![RuntimeIntrinsic {
             name: "gc_write_barrier".into(),
             capability: "runtime.gc".into(),
@@ -282,16 +283,21 @@ fn runtime_kit(
     profile: BuildProfile,
     artifacts: RuntimeArtifacts,
 ) -> RuntimeKitMetadata {
+    let abi_contract = AbiManifestV5::canonical_runtime(target.clone());
+    let source_hash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let audit = RuntimeAuditMetadata::for_manifest(&abi_contract, source_hash).unwrap();
     RuntimeKitMetadata {
         schema_version: 1,
         abi_version: ABI_V5,
         target,
         profile,
-        layout_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-        source_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+        layout_hash: abi_contract.layout_hash(),
+        source_hash: source_hash.into(),
         artifacts,
-        import_allowlist: vec!["clock_gettime".into()],
-        export_allowlist: vec!["beskid_rt_v5_entry".into()],
+        import_allowlist: audit.allowed_imports.clone(),
+        export_allowlist: audit.allowed_exports.clone(),
+        abi_contract,
+        audit,
     }
 }
 
@@ -313,7 +319,7 @@ fn runtime_kit_metadata_is_serializable_and_requires_the_exact_target_artifacts(
     let mut duplicate_export = valid_runtime_kit();
     duplicate_export
         .export_allowlist
-        .push("beskid_rt_v5_entry".into());
+        .push("beskid_rt_v5_abi_version".into());
     assert!(matches!(
         duplicate_export.validate(),
         Err(RuntimeKitValidationError::DuplicateAllowlistSymbol { .. })
