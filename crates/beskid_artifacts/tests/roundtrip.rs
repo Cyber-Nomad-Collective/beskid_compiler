@@ -57,3 +57,31 @@ fn artifact_store_writes_and_reads() {
     assert!(files.contains(&"ast.bin".into()));
     assert!(files.contains(&"meta.json".into()));
 }
+
+#[test]
+fn writing_schema_v2_removes_legacy_hir_payload() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = ArtifactStore::new(dir.path());
+    let fp = content_fingerprint("migrated unit");
+    let paths = store.unit_paths(&fp);
+    std::fs::create_dir_all(&paths.unit_dir).expect("legacy unit directory");
+    std::fs::write(paths.unit_dir.join("hir.bin"), b"legacy hir").expect("legacy payload");
+    let ast = AstUnitSnapshot::new(
+        UnitArtifactMeta {
+            content_fingerprint: fp,
+            schema_version: ARTIFACT_SCHEMA_VERSION,
+            grammar_rev: grammar_revision().to_string(),
+            logical_name: "Migrated.bd".into(),
+            source_path: dir.path().join("Migrated.bd"),
+            source_len: 13,
+            imports: vec![],
+        },
+        vec![1, 2, 3],
+    );
+
+    store.write_unit(&ast).expect("schema-v2 write");
+
+    assert!(!paths.unit_dir.join("hir.bin").exists());
+    assert!(paths.ast.exists());
+    assert!(paths.meta.exists());
+}
