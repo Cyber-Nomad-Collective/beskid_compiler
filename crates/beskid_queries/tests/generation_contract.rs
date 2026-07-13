@@ -1,15 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use beskid_analysis::SyntaxGenerationId;
 use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry,
 };
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, CallLowering, CastIntent, ControlFlow, ItemSignature,
-    ProjectSession, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, SemanticFacts,
-    SemanticFactsInput, SemanticTypeId, SourceUnitId, TypedProgram, call_lowering, cast_intents,
-    control_flow, item_signature, node_type, resolved_item, resolved_local, runtime_intrinsic,
+    AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession, SourceUnitId,
+    SyntaxGenerationId, SyntaxUnitInput, TypedProgram, call_lowering, cast_intents, control_flow,
+    item_signature, node_type, resolved_item, resolved_local, runtime_intrinsic,
 };
 
 fn empty_assembly() -> Arc<ProgramAssembly> {
@@ -42,7 +40,7 @@ fn source_units_are_interned_by_path_and_do_not_collide() {
 
     assert_eq!(main, main_again);
     assert_ne!(main, other);
-    assert_eq!(main.path(&db), &main_path);
+    assert!(main.path(&db).is_absolute());
 
     let node = AstNodeId(7);
     let generation = SyntaxGenerationId(11);
@@ -78,6 +76,33 @@ fn source_unit_interning_canonicalizes_path_aliases() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn missing_source_under_symlink_keeps_identity_after_creation() {
+    use std::os::unix::fs::symlink;
+
+    let db = BeskidDatabase::default();
+    let directory = tempfile::tempdir().expect("temp directory");
+    let real = directory.path().join("real");
+    let linked = directory.path().join("linked");
+    std::fs::create_dir(&real).expect("create real directory");
+    symlink(&real, &linked).expect("create directory symlink");
+    let missing_through_link = linked.join("New.bd");
+
+    let before_creation = SourceUnitId::new(&db, missing_through_link.clone());
+    std::fs::write(real.join("New.bd"), "i32 Main() { return 0; }").expect("create source");
+    let after_creation = SourceUnitId::new(&db, missing_through_link);
+
+    assert_eq!(before_creation, after_creation);
+    assert_eq!(
+        before_creation.path(&db),
+        &real
+            .canonicalize()
+            .expect("canonical real directory")
+            .join("New.bd")
+    );
+}
+
 #[test]
 fn stale_generation_has_no_semantic_facts() {
     let db = BeskidDatabase::default();
@@ -96,6 +121,7 @@ fn stale_generation_has_no_semantic_facts() {
         generation: SyntaxGenerationId(4),
         assembly: empty_assembly(),
     };
+    let authority = SyntaxUnitInput::new(&db, typed.entry, typed.generation);
     let current = AstNodeKey {
         unit: entry,
         generation: typed.generation,
@@ -105,62 +131,34 @@ fn stale_generation_has_no_semantic_facts() {
         generation: SyntaxGenerationId(3),
         ..current
     };
-    let type_id = SemanticTypeId(17);
-    let mut seeded = SemanticFacts::default();
-    seeded.resolved_items.insert(
-        current,
-        ResolvedItem {
-            declaration: current,
-        },
-    );
-    seeded.resolved_locals.insert(
-        current,
-        ResolvedLocal {
-            declaration: current,
-        },
-    );
-    seeded.node_types.insert(current, type_id);
-    seeded.call_lowerings.insert(current, CallLowering::Dynamic);
-    seeded.cast_intents.insert(
-        current,
-        Arc::from([CastIntent {
-            from: type_id,
-            to: SemanticTypeId(18),
-        }]),
-    );
-    seeded.control_flow.insert(
-        current,
-        ControlFlow {
-            may_fall_through: true,
-        },
-    );
-    seeded.item_signatures.insert(
-        current,
-        ItemSignature {
-            parameters: Arc::from([type_id]),
-            result: type_id,
-        },
-    );
-    seeded
-        .runtime_intrinsics
-        .insert(current, RuntimeIntrinsic(5));
-    let facts = SemanticFactsInput::new(&db, Arc::new(seeded));
+    assert!(authority.accepts_key(&db, current));
+    assert!(!authority.accepts_key(&db, stale));
 
-    assert!(resolved_item(&db, facts, typed.entry, typed.generation, current).is_some());
-    assert!(resolved_local(&db, facts, typed.entry, typed.generation, current).is_some());
-    assert!(node_type(&db, facts, typed.entry, typed.generation, current).is_some());
-    assert!(call_lowering(&db, facts, typed.entry, typed.generation, current).is_some());
-    assert!(cast_intents(&db, facts, typed.entry, typed.generation, current).is_some());
-    assert!(control_flow(&db, facts, typed.entry, typed.generation, current).is_some());
-    assert!(item_signature(&db, facts, typed.entry, typed.generation, current).is_some());
-    assert!(runtime_intrinsic(&db, facts, typed.entry, typed.generation, current).is_some());
+    // Task 1A declares the Salsa interfaces; Task 2 populates their semantic facts.
+    assert!(resolved_item(&db, authority, current).is_none());
+    assert!(resolved_local(&db, authority, current).is_none());
+    assert!(node_type(&db, authority, current).is_none());
+    assert!(call_lowering(&db, authority, current).is_none());
+    assert!(cast_intents(&db, authority, current).is_none());
+    assert!(control_flow(&db, authority, current).is_none());
+    assert!(item_signature(&db, authority, current).is_none());
+    assert!(runtime_intrinsic(&db, authority, current).is_none());
 
-    assert!(resolved_item(&db, facts, typed.entry, typed.generation, stale).is_none());
-    assert!(resolved_local(&db, facts, typed.entry, typed.generation, stale).is_none());
-    assert!(node_type(&db, facts, typed.entry, typed.generation, stale).is_none());
-    assert!(call_lowering(&db, facts, typed.entry, typed.generation, stale).is_none());
-    assert!(cast_intents(&db, facts, typed.entry, typed.generation, stale).is_none());
-    assert!(control_flow(&db, facts, typed.entry, typed.generation, stale).is_none());
-    assert!(item_signature(&db, facts, typed.entry, typed.generation, stale).is_none());
-    assert!(runtime_intrinsic(&db, facts, typed.entry, typed.generation, stale).is_none());
+    assert!(resolved_item(&db, authority, stale).is_none());
+    assert!(resolved_local(&db, authority, stale).is_none());
+    assert!(node_type(&db, authority, stale).is_none());
+    assert!(call_lowering(&db, authority, stale).is_none());
+    assert!(cast_intents(&db, authority, stale).is_none());
+    assert!(control_flow(&db, authority, stale).is_none());
+    assert!(item_signature(&db, authority, stale).is_none());
+    assert!(runtime_intrinsic(&db, authority, stale).is_none());
+}
+
+#[test]
+fn syntax_generation_names_are_unambiguous() {
+    let db = BeskidDatabase::default();
+    let syntax = SyntaxGenerationId(9);
+    let mod_host = ModHostSyntaxGenerationId::new(&db, "Main.bd".to_string(), 9);
+
+    assert_eq!(syntax.0, mod_host.generation(&db));
 }

@@ -44,16 +44,16 @@ pub use graph_viz::{
 };
 pub use inputs::{FileText, GrammarRevision, ProjectSession};
 pub use modhost::{
-    CapabilitySetId, ManifestGenerationId, SyntaxGenerationId, bump_syntax_generation,
+    CapabilitySetId, ManifestGenerationId, ModHostSyntaxGenerationId, bump_syntax_generation,
     mod_collect_target_fingerprint, mod_generate, mod_generate_fingerprint,
 };
 pub use semantic_contract::{
     AstNodeKey, CallLowering, CastIntent, ControlFlow, ItemSignature, ResolvedItem, ResolvedLocal,
-    RuntimeIntrinsic, SemanticFacts, SemanticFactsInput, SemanticTypeId, SourceUnitId, TypedProgram,
-    call_lowering, cast_intents, control_flow, item_signature, node_type, resolved_item,
-    resolved_local, runtime_intrinsic,
+    RuntimeIntrinsic, SemanticTypeId, SourceUnitId, SyntaxUnitInput, TypedProgram, call_lowering,
+    cast_intents, control_flow, item_signature, node_type, resolved_item, resolved_local,
+    runtime_intrinsic,
 };
-pub use beskid_analysis::syntax::AstNodeId;
+pub use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 pub use output::{
     SharedFrontEnd, SharedResolution, SharedTypeResult, SharedUnitResolution,
     SharedUnitTypeSurface,
