@@ -1,0 +1,2 @@
+(decl node_kind (NodeKind) AstNodeKey)
+(extern extractor node_kind node_kind)

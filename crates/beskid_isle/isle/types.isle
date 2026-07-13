@@ -1,0 +1,3 @@
+(type AstNodeKey (primitive AstNodeKey))
+(type Value (primitive Value))
+(type NodeKind extern (enum IntegerLiteral Unsupported))
