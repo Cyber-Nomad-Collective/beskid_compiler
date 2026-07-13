@@ -1,1 +1,10 @@
-;; Statement lowering is selected here rather than by a Rust dispatcher.
+(decl discard_value (Value) Unit)
+(extern constructor discard_value discard_value)
+(decl partial emit_return (AstNodeKey) Unit)
+(extern constructor emit_return emit_return)
+(decl partial lower_statement (AstNodeKey) Unit)
+
+(rule (lower_statement key @ (node_kind (NodeKind.ExpressionStatement)))
+      (discard_value (lower_expression (child_at key 0))))
+(rule (lower_statement key @ (node_kind (NodeKind.ReturnStatement)))
+      (emit_return key))

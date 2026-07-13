@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use beskid_isle::{AstNodeKey, IsleContext, NodeFacts, NodeKind, lower_expression};
+use beskid_isle::{
+    AstNodeKey, IsleContext, LiteralKind, NodeFacts, NodeKind, OperatorFact, lower_expression,
+};
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, Signature, types};
 use cranelift_codegen::isa::CallConv;
@@ -15,7 +17,11 @@ struct IntegerFacts {
 
 impl NodeFacts for IntegerFacts {
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
-        (key == self.key).then_some(NodeKind::IntegerLiteral)
+        (key == self.key).then_some(NodeKind::LiteralExpression)
+    }
+
+    fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+        (key == self.key).then_some(LiteralKind::Integer)
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
@@ -75,7 +81,11 @@ fn missing_leaf_fact_is_a_keyed_lowering_error() {
     struct MissingFacts;
     impl NodeFacts for MissingFacts {
         fn node_kind(&self, _key: AstNodeKey) -> Option<NodeKind> {
-            Some(NodeKind::IntegerLiteral)
+            Some(NodeKind::LiteralExpression)
+        }
+
+        fn literal_kind(&self, _key: AstNodeKey) -> Option<LiteralKind> {
+            Some(LiteralKind::Integer)
         }
 
         fn integer_literal(&self, _key: AstNodeKey) -> Option<i64> {
@@ -113,12 +123,20 @@ fn binary_rule_recurses_through_ast_keys_and_emits_iadd() {
     impl NodeFacts for BinaryFacts {
         fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
             if key == self.root {
-                Some(NodeKind::BinaryAdd)
+                Some(NodeKind::BinaryExpression)
             } else if key == self.left || key == self.right {
-                Some(NodeKind::IntegerLiteral)
+                Some(NodeKind::LiteralExpression)
             } else {
                 None
             }
+        }
+
+        fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+            (key == self.left || key == self.right).then_some(LiteralKind::Integer)
+        }
+
+        fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
+            (key == self.root).then_some(OperatorFact::Add)
         }
 
         fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {

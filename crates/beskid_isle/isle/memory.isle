@@ -1,1 +1,5 @@
-;; Memory selection emits stock CLIF constructors through Context.
+(decl partial emit_local_read (AstNodeKey) Value)
+(extern constructor emit_local_read emit_local_read)
+
+(rule (lower_expression key @ (node_kind (NodeKind.PathExpression)))
+      (emit_local_read key))

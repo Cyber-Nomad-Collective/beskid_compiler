@@ -4,7 +4,11 @@
 (decl partial emit_boolean (AstNodeKey) Value)
 (extern constructor emit_boolean emit_boolean)
 
-(rule (lower_expression key @ (node_kind (NodeKind.IntegerLiteral)))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.LiteralExpression))
+        (literal_kind (LiteralKind.Integer))))
       (emit_integer key))
-(rule (lower_expression key @ (node_kind (NodeKind.BooleanLiteral)))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.LiteralExpression))
+        (literal_kind (LiteralKind.Boolean))))
       (emit_boolean key))

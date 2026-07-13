@@ -1,1 +1,8 @@
-;; Control-flow selection consumes typed Salsa classifications.
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Or))))
+      (clif_short_circuit_or key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.And))))
+      (clif_short_circuit_and key))

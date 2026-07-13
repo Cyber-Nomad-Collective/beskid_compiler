@@ -1,7 +1,82 @@
 (decl clif_iadd (Value Value) Value)
 (extern constructor clif_iadd clif_iadd)
+(decl clif_isub (Value Value) Value)
+(extern constructor clif_isub clif_isub)
+(decl clif_imul (Value Value) Value)
+(extern constructor clif_imul clif_imul)
+(decl clif_sdiv (Value Value) Value)
+(extern constructor clif_sdiv clif_sdiv)
+(decl clif_srem (Value Value) Value)
+(extern constructor clif_srem clif_srem)
+(decl clif_eq (Value Value) Value)
+(extern constructor clif_eq clif_eq)
+(decl clif_ne (Value Value) Value)
+(extern constructor clif_ne clif_ne)
+(decl clif_slt (Value Value) Value)
+(extern constructor clif_slt clif_slt)
+(decl clif_sle (Value Value) Value)
+(extern constructor clif_sle clif_sle)
+(decl clif_sgt (Value Value) Value)
+(extern constructor clif_sgt clif_sgt)
+(decl clif_sge (Value Value) Value)
+(extern constructor clif_sge clif_sge)
+(decl partial clif_short_circuit_or (AstNodeKey) Value)
+(extern constructor clif_short_circuit_or clif_short_circuit_or)
+(decl partial clif_short_circuit_and (AstNodeKey) Value)
+(extern constructor clif_short_circuit_and clif_short_circuit_and)
 
-(rule (lower_expression key @ (node_kind (NodeKind.BinaryAdd)))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.IdentityEq))))
+      (clif_eq (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.IdentityNotEq))))
+      (clif_ne (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Eq))))
+      (clif_eq (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.NotEq))))
+      (clif_ne (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Lt))))
+      (clif_slt (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Lte))))
+      (clif_sle (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Gt))))
+      (clif_sgt (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Gte))))
+      (clif_sge (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Add))))
       (clif_iadd
         (lower_expression (child_at key 0))
         (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Sub))))
+      (clif_isub (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Mul))))
+      (clif_imul (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Div))))
+      (clif_sdiv (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Mod))))
+      (clif_srem (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))

@@ -1,1 +1,7 @@
-;; Runtime intrinsic selection is restricted to trusted ABI-v5 facts.
+(decl partial emit_runtime_intrinsic (AstNodeKey) Value)
+(extern constructor emit_runtime_intrinsic emit_runtime_intrinsic)
+
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.CallExpression))
+        (call_kind (CallKind.RuntimeIntrinsic))))
+      (emit_runtime_intrinsic key))

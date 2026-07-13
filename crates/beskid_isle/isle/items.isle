@@ -1,1 +1,3 @@
-;; Item rules share one ISA-aware function emitter.
+(decl partial item_body (AstNodeKey) AstNodeKey)
+(rule (item_body key @ (node_kind (NodeKind.FunctionDefinition)))
+      (child_at key 0))

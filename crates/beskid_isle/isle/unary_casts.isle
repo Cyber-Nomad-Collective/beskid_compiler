@@ -4,7 +4,11 @@
 (decl clif_bnot (Value) Value)
 (extern constructor clif_bnot clif_bnot)
 
-(rule (lower_expression key @ (node_kind (NodeKind.UnaryNeg)))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.UnaryExpression))
+        (operator_fact (OperatorFact.Neg))))
       (clif_ineg (lower_expression (child_at key 0))))
-(rule (lower_expression key @ (node_kind (NodeKind.UnaryNot)))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.UnaryExpression))
+        (operator_fact (OperatorFact.Not))))
       (clif_bnot (lower_expression (child_at key 0))))

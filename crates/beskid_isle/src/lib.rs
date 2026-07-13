@@ -2,9 +2,14 @@
 
 pub use beskid_queries::AstNodeKey;
 use cranelift_codegen::ir::InstBuilder;
-pub use cranelift_codegen::ir::{AbiParam, Signature, Type, Value};
+use cranelift_codegen::ir::condcodes::IntCC;
+pub use cranelift_codegen::ir::{
+    AbiParam, FuncRef, Function, Signature, Type, UserFuncName, Value,
+};
 use cranelift_codegen::isa::TargetIsa;
+use cranelift_codegen::verify_function;
 use cranelift_frontend::FunctionBuilder;
+use cranelift_frontend::FunctionBuilderContext;
 
 pub const ISLE_INPUTS: &[&str] = &[
     "types.isle",
@@ -23,24 +28,64 @@ pub const ISLE_INPUTS: &[&str] = &[
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeKind {
-    IntegerLiteral,
-    BooleanLiteral,
-    Grouped,
-    UnaryNeg,
-    UnaryNot,
-    BinaryAdd,
-    Unsupported,
+    Program,
+    FunctionDefinition,
+    ExpressionStatement,
+    ReturnStatement,
+    LiteralExpression,
+    GroupedExpression,
+    UnaryExpression,
+    BinaryExpression,
+    CallExpression,
+    PathExpression,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LiteralKind {
+    Integer,
+    Boolean,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OperatorFact {
+    Or,
+    And,
+    IdentityEq,
+    IdentityNotEq,
+    Eq,
+    NotEq,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Neg,
+    Not,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallKind {
+    Direct,
+    RuntimeIntrinsic,
+}
+
+pub type Unit = ();
 
 #[allow(
     unused_imports,
+    unreachable_patterns,
     clippy::collapsible_if,
     clippy::collapsible_match,
     clippy::len_without_is_empty,
+    clippy::let_unit_value,
     clippy::match_ref_pats
 )]
 pub mod generated {
-    use super::{AstNodeKey, NodeKind, Value};
+    use super::{AstNodeKey, CallKind, LiteralKind, NodeKind, OperatorFact, Unit, Value};
 
     include!(concat!(env!("OUT_DIR"), "/beskid_lower.rs"));
 }
@@ -53,6 +98,15 @@ include!(concat!(env!("OUT_DIR"), "/beskid_isle_metadata.rs"));
 /// compile-time boundary while those queries are integrated, not a second semantic model.
 pub trait NodeFacts {
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind>;
+    fn literal_kind(&self, _key: AstNodeKey) -> Option<LiteralKind> {
+        None
+    }
+    fn operator_fact(&self, _key: AstNodeKey) -> Option<OperatorFact> {
+        None
+    }
+    fn call_kind(&self, _key: AstNodeKey) -> Option<CallKind> {
+        None
+    }
     fn child(&self, _key: AstNodeKey, _index: u8) -> Option<AstNodeKey> {
         None
     }
@@ -61,6 +115,15 @@ pub trait NodeFacts {
         None
     }
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type>;
+    fn call_target(&self, _key: AstNodeKey) -> Option<FuncRef> {
+        None
+    }
+    fn call_arguments(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        None
+    }
+    fn local_value(&self, _key: AstNodeKey) -> Option<Value> {
+        None
+    }
 }
 
 /// Thin host for generated ISLE selection and stock CLIF instruction construction.
@@ -76,11 +139,62 @@ impl<'builder, 'function, 'facts> IsleContext<'builder, 'function, 'facts> {
     ) -> Self {
         Self { builder, facts }
     }
+
+    fn short_circuit(&mut self, key: AstNodeKey, branch_on_true: bool) -> Option<Value> {
+        let left_key = self.facts.child(key, 0)?;
+        let right_key = self.facts.child(key, 1)?;
+        let left = generated::constructor_lower_expression(self, left_key)?;
+        let value_type = self.builder.func.dfg.value_type(left);
+        let right_block = self.builder.create_block();
+        let merge_block = self.builder.create_block();
+        self.builder.append_block_param(merge_block, value_type);
+
+        if branch_on_true {
+            self.builder
+                .ins()
+                .brif(left, merge_block, &[left.into()], right_block, &[]);
+        } else {
+            self.builder
+                .ins()
+                .brif(left, right_block, &[], merge_block, &[left.into()]);
+        }
+
+        self.builder.switch_to_block(right_block);
+        self.builder.seal_block(right_block);
+        let right = generated::constructor_lower_expression(self, right_key)?;
+        self.builder.ins().jump(merge_block, &[right.into()]);
+        self.builder.switch_to_block(merge_block);
+        self.builder.seal_block(merge_block);
+        self.builder.block_params(merge_block).first().copied()
+    }
+
+    fn direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
+        let function = self.facts.call_target(key)?;
+        let argument_keys = self.facts.call_arguments(key)?;
+        let mut arguments = Vec::with_capacity(argument_keys.len());
+        for argument in argument_keys {
+            arguments.push(generated::constructor_lower_expression(self, argument)?);
+        }
+        let call = self.builder.ins().call(function, &arguments);
+        self.builder.inst_results(call).first().copied()
+    }
 }
 
 impl generated::Context for IsleContext<'_, '_, '_> {
     fn node_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {
         self.facts.node_kind(key)
+    }
+
+    fn literal_kind(&mut self, key: AstNodeKey) -> Option<LiteralKind> {
+        self.facts.literal_kind(key)
+    }
+
+    fn operator_fact(&mut self, key: AstNodeKey) -> Option<OperatorFact> {
+        self.facts.operator_fact(key)
+    }
+
+    fn call_kind(&mut self, key: AstNodeKey) -> Option<CallKind> {
+        self.facts.call_kind(key)
     }
 
     fn child_at(&mut self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
@@ -103,12 +217,90 @@ impl generated::Context for IsleContext<'_, '_, '_> {
         self.builder.ins().iadd(left, right)
     }
 
+    fn clif_isub(&mut self, left: Value, right: Value) -> Value {
+        self.builder.ins().isub(left, right)
+    }
+
+    fn clif_imul(&mut self, left: Value, right: Value) -> Value {
+        self.builder.ins().imul(left, right)
+    }
+
+    fn clif_sdiv(&mut self, left: Value, right: Value) -> Value {
+        self.builder.ins().sdiv(left, right)
+    }
+
+    fn clif_srem(&mut self, left: Value, right: Value) -> Value {
+        self.builder.ins().srem(left, right)
+    }
+
+    fn clif_eq(&mut self, left: Value, right: Value) -> Value {
+        self.builder.ins().icmp(IntCC::Equal, left, right)
+    }
+
+    fn clif_ne(&mut self, left: Value, right: Value) -> Value {
+        self.builder.ins().icmp(IntCC::NotEqual, left, right)
+    }
+
+    fn clif_slt(&mut self, left: Value, right: Value) -> Value {
+        self.builder.ins().icmp(IntCC::SignedLessThan, left, right)
+    }
+
+    fn clif_sle(&mut self, left: Value, right: Value) -> Value {
+        self.builder
+            .ins()
+            .icmp(IntCC::SignedLessThanOrEqual, left, right)
+    }
+
+    fn clif_sgt(&mut self, left: Value, right: Value) -> Value {
+        self.builder
+            .ins()
+            .icmp(IntCC::SignedGreaterThan, left, right)
+    }
+
+    fn clif_sge(&mut self, left: Value, right: Value) -> Value {
+        self.builder
+            .ins()
+            .icmp(IntCC::SignedGreaterThanOrEqual, left, right)
+    }
+
+    fn clif_short_circuit_or(&mut self, key: AstNodeKey) -> Option<Value> {
+        self.short_circuit(key, true)
+    }
+
+    fn clif_short_circuit_and(&mut self, key: AstNodeKey) -> Option<Value> {
+        self.short_circuit(key, false)
+    }
+
     fn clif_ineg(&mut self, value: Value) -> Value {
         self.builder.ins().ineg(value)
     }
 
     fn clif_bnot(&mut self, value: Value) -> Value {
         self.builder.ins().bnot(value)
+    }
+
+    fn emit_direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
+        self.direct_call(key)
+    }
+
+    fn emit_runtime_intrinsic(&mut self, key: AstNodeKey) -> Option<Value> {
+        self.direct_call(key)
+    }
+
+    fn discard_value(&mut self, _value: Value) {}
+
+    fn emit_return(&mut self, key: AstNodeKey) -> Option<()> {
+        if let Some(value_key) = self.facts.child(key, 0) {
+            let value = generated::constructor_lower_expression(self, value_key)?;
+            self.builder.ins().return_(&[value]);
+        } else {
+            self.builder.ins().return_(&[]);
+        }
+        Some(())
+    }
+
+    fn emit_local_read(&mut self, key: AstNodeKey) -> Option<Value> {
+        self.facts.local_value(key)
     }
 }
 
@@ -158,4 +350,34 @@ impl<'isa> FunctionEmitter<'isa> {
             .extend(returns.into_iter().map(AbiParam::new));
         signature
     }
+
+    pub fn emit_expression(
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        body: AstNodeKey,
+    ) -> Result<Function, FunctionEmissionError> {
+        let mut function = Function::with_name_signature(name, signature);
+        let mut builder_context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+            let entry = builder.create_block();
+            builder.switch_to_block(entry);
+            builder.seal_block(entry);
+            let value = lower_expression(&mut IsleContext::new(&mut builder, facts), body)
+                .map_err(FunctionEmissionError::Lowering)?;
+            builder.ins().return_(&[value]);
+            builder.finalize();
+        }
+        verify_function(&function, self.isa.flags())
+            .map_err(|error| FunctionEmissionError::Verification(error.to_string()))?;
+        Ok(function)
+    }
+}
+
+#[derive(Debug)]
+pub enum FunctionEmissionError {
+    Lowering(LoweringError),
+    Verification(String),
 }
