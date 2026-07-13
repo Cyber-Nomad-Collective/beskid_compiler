@@ -410,6 +410,9 @@ name = "beskid_abi"
 version = "0.1.0"
 dependencies = [
  "beskid_manifest",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
