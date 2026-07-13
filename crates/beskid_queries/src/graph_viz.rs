@@ -5,7 +5,10 @@ use std::sync::Arc;
 
 use beskid_analysis::projects::graph::build_project_graph_with_options;
 use beskid_analysis::projects::model::AssemblyOptions;
-use beskid_analysis::projects::{CompilePlan, ProjectGraphBuildOptions, parse_workspace_manifest, project_manifest_for_member_dir};
+use beskid_analysis::projects::{
+    CompilePlan, ProjectGraphBuildOptions, parse_workspace_manifest,
+    project_manifest_for_member_dir,
+};
 use beskid_analysis::services::{parse_program_with_source_name, resolve_program_composition};
 use beskid_graph::{
     GraphDocument, GraphKind, from_composition, from_import_closure, from_module_graph,

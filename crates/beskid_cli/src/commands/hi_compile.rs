@@ -36,19 +36,19 @@ pub fn run_hi_compile(req: HiCompileRequest<'_>) -> Result<()> {
 }
 
 fn parse_build_args(params: &str, scope: &ShellScope) -> Result<BuildArgs> {
-  let argv = argv_for_subcommand("build", params, scope);
-  match CliWrap::try_parse_from(argv)?.command {
-    HiSubcommand::Build(args) => Ok(args),
-    HiSubcommand::Test(_) => anyhow::bail!("expected build subcommand"),
-  }
+    let argv = argv_for_subcommand("build", params, scope);
+    match CliWrap::try_parse_from(argv)?.command {
+        HiSubcommand::Build(args) => Ok(args),
+        HiSubcommand::Test(_) => anyhow::bail!("expected build subcommand"),
+    }
 }
 
 fn parse_test_args(params: &str, scope: &ShellScope) -> Result<TestArgs> {
-  let argv = argv_for_subcommand("test", params, scope);
-  match CliWrap::try_parse_from(argv)?.command {
-    HiSubcommand::Test(args) => Ok(args),
-    HiSubcommand::Build(_) => anyhow::bail!("expected test subcommand"),
-  }
+    let argv = argv_for_subcommand("test", params, scope);
+    match CliWrap::try_parse_from(argv)?.command {
+        HiSubcommand::Test(args) => Ok(args),
+        HiSubcommand::Build(_) => anyhow::bail!("expected test subcommand"),
+    }
 }
 
 fn argv_for_subcommand(subcmd: &str, params: &str, scope: &ShellScope) -> Vec<String> {
@@ -78,14 +78,18 @@ mod tests {
             manifest: PathBuf::from("/tmp/myproj/app.bproj"),
         };
         let argv = argv_for_subcommand("build", "", &scope);
-        assert!(argv.windows(2).any(|w| w == ["--project", "/tmp/myproj/app.bproj"]));
+        assert!(
+            argv.windows(2)
+                .any(|w| w == ["--project", "/tmp/myproj/app.bproj"])
+        );
         assert!(!argv.iter().any(|a| a == "/tmp/myproj"));
     }
 
     #[test]
     fn hi_compile_corelib_mvp_resolve_uses_entry_file() {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let manifest = manifest_dir.join("../beskid_e2e_tests/fixtures/corelib_mvp/CorelibMvp.bproj");
+        let manifest =
+            manifest_dir.join("../beskid_e2e_tests/fixtures/corelib_mvp/CorelibMvp.bproj");
         if !manifest.is_file() {
             eprintln!("skip hi_compile_corelib_mvp_resolve_uses_entry_file: {manifest:?} missing");
             return;

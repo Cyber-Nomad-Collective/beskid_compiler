@@ -25,9 +25,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirEnumConstructorExpression {
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
         let variant_name = node.node.path.node.variant.node.name.as_str();
-        let contextual_type = ctx
-            .expected_return_type
-            .filter(|type_id| enum_constructor_matches_type(ctx.type_result, *type_id, variant_name));
+        let contextual_type = ctx.expected_return_type.filter(|type_id| {
+            enum_constructor_matches_type(ctx.type_result, *type_id, variant_name)
+        });
         let inferred_type_id = contextual_type
             .or_else(|| {
                 node_expr_type(ctx.type_result, node.id)
@@ -104,12 +104,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirEnumConstructorExpression {
             .ins()
             .store(MemFlags::new(), tag_val, tag_addr, 0);
 
-        for ((arg, field_type), offset) in node
-            .node
-            .args
-            .iter()
-            .zip(field_types.iter())
-            .zip(offsets)
+        for ((arg, field_type), offset) in
+            node.node.args.iter().zip(field_types.iter()).zip(offsets)
         {
             let mut value = lower_node(arg, ctx)?.ok_or(CodegenError::UnsupportedNode {
                 span: arg.span,

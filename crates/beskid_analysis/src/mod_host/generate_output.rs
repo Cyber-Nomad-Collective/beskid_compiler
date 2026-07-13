@@ -65,11 +65,7 @@ pub fn load_generate_output_layout(path: &Path) -> Result<GenerateOutputLayout, 
 }
 
 /// Resolve `.generated/{modulePathDirs}/{fileName}.g.bd` under a package root.
-pub fn resolve_generated_path(
-    package_root: &Path,
-    module_path: &str,
-    file_name: &str,
-) -> PathBuf {
+pub fn resolve_generated_path(package_root: &Path, module_path: &str, file_name: &str) -> PathBuf {
     let segments: Vec<&str> = module_path
         .split('.')
         .filter(|segment| !segment.is_empty())
@@ -156,9 +152,10 @@ fn resolve_output_package_root(
         return Ok(mod_project_root.to_path_buf());
     }
     if let Some(plan) = plan
-        && let Some(root) = resolve_package_root(plan, &file.package_id) {
-            return Ok(root);
-        }
+        && let Some(root) = resolve_package_root(plan, &file.package_id)
+    {
+        return Ok(root);
+    }
     Err(format!(
         "unable to resolve package root for packageId `{}`",
         file.package_id
@@ -340,10 +337,8 @@ mod tests {
             }],
         )
         .expect("write");
-        let written = fs::read_to_string(
-            package.join(".generated/Core/Text/Regex/Generated.g.bd"),
-        )
-        .expect("read");
+        let written = fs::read_to_string(package.join(".generated/Core/Text/Regex/Generated.g.bd"))
+            .expect("read");
         assert!(written.starts_with("// generated\n"));
         assert!(written.contains("pub i64 Demo()"));
         let _ = fs::remove_dir_all(package);

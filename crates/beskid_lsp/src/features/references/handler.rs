@@ -30,11 +30,8 @@ pub fn handle_references(
         None => return Vec::new(),
     };
 
-    let references = beskid_analysis::services::references_at_offset(
-        analysis,
-        offset,
-        include_declaration,
-    );
+    let references =
+        beskid_analysis::services::references_at_offset(analysis, offset, include_declaration);
 
     references
         .into_iter()

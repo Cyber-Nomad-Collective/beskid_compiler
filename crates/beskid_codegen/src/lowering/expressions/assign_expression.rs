@@ -4,8 +4,8 @@ use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
 use crate::lowering::dispatch::lower_dispatch_builtin_call;
 use crate::lowering::locals::{local_type_id, resolved_value_at};
 use crate::lowering::lowerable::{Lowerable, lower_node};
-use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::memory::store_typed_value;
+use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::type_surface::struct_event_fields;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_abi::dispatch_route_for_symbol;
@@ -400,12 +400,10 @@ fn load_path_field_chain(
             item_id,
             ctx.codegen.current_source_path.as_ref(),
         )
-        .ok_or(
-            CodegenError::UnsupportedNode {
-                span: segment.span,
-                node: "member offsets",
-            },
-        )?;
+        .ok_or(CodegenError::UnsupportedNode {
+            span: segment.span,
+            node: "member offsets",
+        })?;
         let field_name = segment.node.name.node.name.as_str();
         let offset = offsets
             .get(field_name)
@@ -461,9 +459,9 @@ fn resolve_event_member_target(
         ctx.codegen.current_source_path.as_ref(),
     )
     .ok_or(CodegenError::UnsupportedNode {
-            span,
-            node: "event assignment offsets",
-        })?;
+        span,
+        node: "event assignment offsets",
+    })?;
     let offset = offsets
         .get(field_name)
         .copied()
@@ -669,9 +667,10 @@ fn lower_string_concat(
 ) -> Result<Value, CodegenError> {
     let route = dispatch_route_for_symbol("str_concat")
         .ok_or(CodegenError::MissingSymbol("str_concat dispatch route"))?;
-    lower_dispatch_builtin_call(span, route, &[left, right], true, ctx)?
-        .ok_or(CodegenError::UnsupportedNode {
+    lower_dispatch_builtin_call(span, route, &[left, right], true, ctx)?.ok_or(
+        CodegenError::UnsupportedNode {
             span,
             node: "string concat result",
-        })
+        },
+    )
 }

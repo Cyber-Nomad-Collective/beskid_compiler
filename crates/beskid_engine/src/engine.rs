@@ -30,6 +30,7 @@ impl Engine {
         bootstrap_dispatch_handlers();
         if profile == RuntimeLinkProfile::Std {
             let _ = beskid_host::beskid_host_register_all();
+            let _ = beskid_runtime_handlers::beskid_language_register_all();
         }
         let heap = Heap::with_options(beskid_heap_options_for_engine());
         let runtime_root = RuntimeRoot::new(Arc::clone(&heap));

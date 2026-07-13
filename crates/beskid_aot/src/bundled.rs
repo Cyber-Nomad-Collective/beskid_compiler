@@ -121,9 +121,7 @@ pub fn resolve_bundled_runtime_archive(
 
 fn runtime_archive_build_hint(link_profile: RuntimeLinkProfile) -> &'static str {
     match link_profile {
-        RuntimeLinkProfile::Std => {
-            "cargo build -p beskid_runtime_bridge in the compiler workspace"
-        }
+        RuntimeLinkProfile::Std => "cargo build -p beskid_runtime_bridge in the compiler workspace",
         RuntimeLinkProfile::Minimal => {
             "cargo build -p beskid_runtime_bridge --no-default-features && \
              cp target/debug/libbeskid_runtime_bridge.a target/debug/libbeskid_runtime_minimal.a && \

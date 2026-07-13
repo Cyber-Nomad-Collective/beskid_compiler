@@ -13,6 +13,7 @@ use crate::commands::hi::HiArgs;
 use crate::commands::import::ImportArgs;
 use crate::commands::lock::LockArgs;
 use crate::commands::lsp::LspArgs;
+use crate::commands::migrate_bsol::MigrateBsolArgs;
 use crate::commands::new::NewArgs;
 use crate::commands::parse::ParseArgs;
 use crate::commands::repl::ReplArgs;
@@ -21,10 +22,9 @@ use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::validate_bsol::ValidateBsolArgs;
-use crate::commands::migrate_bsol::MigrateBsolArgs;
 use crate::commands::{
-    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp, migrate_bsol, new,
-    parse, repl, run, test, tree, update, validate_bsol,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp,
+    migrate_bsol, new, parse, repl, run, test, tree, update, validate_bsol,
 };
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_pckg::PckgArgs;

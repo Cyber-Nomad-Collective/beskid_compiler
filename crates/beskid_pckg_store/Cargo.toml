@@ -1,0 +1,12 @@
+[package]
+name = "beskid_pckg_store"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+async-trait = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "derive"] }
+uuid = { version = "1", features = ["v4"] }

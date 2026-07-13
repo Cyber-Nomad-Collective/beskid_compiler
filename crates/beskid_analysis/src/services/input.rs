@@ -118,9 +118,11 @@ pub fn resolve_input_with_policy(
 
     if compile_plan.is_none()
         && let Some(input_path) = input
-            && !input_is_manifest && input_path.is_file() {
-                compile_plan = Some(synthetic_compile_plan_for_source(input_path));
-            }
+        && !input_is_manifest
+        && input_path.is_file()
+    {
+        compile_plan = Some(synthetic_compile_plan_for_source(input_path));
+    }
 
     let source_path = if let Some(plan) = compile_plan.as_ref() {
         let root = prepared_workspace
@@ -191,15 +193,8 @@ mod tests {
         }
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&workspace_root).expect("chdir");
-        let resolved = resolve_input(
-            Some(&workspace_root),
-            None,
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve directory input");
+        let resolved = resolve_input(Some(&workspace_root), None, None, None, false, false)
+            .expect("resolve directory input");
         std::env::set_current_dir(previous).expect("restore cwd");
         assert!(
             resolved.source_path.is_file(),

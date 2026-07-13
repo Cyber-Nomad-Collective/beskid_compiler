@@ -1,11 +1,11 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::CodegenResult;
 use crate::lowering::descriptor::get_or_compute_layout;
-use crate::lowering::type_surface::{contract_method_order, contract_signatures};
+use crate::lowering::dispatch::emit_str_from_i64_dispatch;
 use crate::lowering::expressions::mapping::lower_aot_object_mapping;
 use crate::lowering::expressions::serialize::{is_serializable_struct, mapping_pair_eligible};
 use crate::lowering::function::mangle_method_name;
-use crate::lowering::dispatch::emit_str_from_i64_dispatch;
+use crate::lowering::type_surface::{contract_method_order, contract_signatures};
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_analysis::hir::HirPrimitiveType;
 use beskid_analysis::resolve::{ItemId, ItemKind, Resolution, canonical_item_id};
@@ -184,10 +184,20 @@ pub(crate) fn ensure_type_compatibility_or_expected(
     value: Value,
 ) -> CodegenResult<Value> {
     match ensure_type_compatibility(
-        span, expected, actual, type_result, resolution, builder, value,
+        span,
+        expected,
+        actual,
+        type_result,
+        resolution,
+        builder,
+        value,
     ) {
         Ok(value) => Ok(value),
-        Err(CodegenError::TypeMismatch { span, expected, actual }) => {
+        Err(CodegenError::TypeMismatch {
+            span,
+            expected,
+            actual,
+        }) => {
             if expected != actual {
                 ensure_type_compatibility(
                     span,
@@ -241,10 +251,8 @@ fn coerce_numeric_to_string(
         }
     };
 
-    emit_str_from_i64_dispatch(builder, value).map_err(|node| CodegenError::UnsupportedNode {
-        span,
-        node,
-    })
+    emit_str_from_i64_dispatch(builder, value)
+        .map_err(|node| CodegenError::UnsupportedNode { span, node })
 }
 
 fn lower_contract_compatibility(

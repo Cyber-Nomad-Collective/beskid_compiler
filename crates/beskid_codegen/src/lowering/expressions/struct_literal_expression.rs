@@ -3,12 +3,12 @@ use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
 use crate::lowering::descriptor::{is_pointer_like_type, struct_field_offsets, struct_item_id};
 use crate::lowering::locals::struct_literal_type_id;
 use crate::lowering::lowerable::{Lowerable, lower_node};
+use crate::lowering::memory::store_typed_value;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use crate::module_emission::descriptor_symbol_name;
 use beskid_analysis::hir::HirStructLiteralExpression;
 use beskid_analysis::syntax::Spanned;
-use crate::lowering::memory::store_typed_value;
 use cranelift_codegen::ir::{
     AbiParam, ExternalName, GlobalValueData, InstBuilder, MemFlags, Signature, Value,
 };
@@ -29,12 +29,11 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
             ctx.codegen.current_source_path.as_ref(),
         )
         .ok_or(CodegenError::MissingExpressionType { span: node.span })?;
-        let item_id = struct_item_id(ctx.type_result, type_id).ok_or(
-            CodegenError::UnsupportedNode {
+        let item_id =
+            struct_item_id(ctx.type_result, type_id).ok_or(CodegenError::UnsupportedNode {
                 span: node.span,
                 node: "struct literal type",
-            },
-        )?;
+            })?;
         let layout = ctx.codegen.type_layout(ctx.type_result, type_id).ok_or(
             CodegenError::UnsupportedNode {
                 span: node.span,
@@ -47,12 +46,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
             item_id,
             ctx.codegen.current_source_path.as_ref(),
         )
-        .ok_or(
-            CodegenError::UnsupportedNode {
-                span: node.span,
-                node: "struct literal offsets",
-            },
-        )?;
+        .ok_or(CodegenError::UnsupportedNode {
+            span: node.span,
+            node: "struct literal offsets",
+        })?;
         let fields = ctx.type_result.struct_fields_ordered.get(&item_id).ok_or(
             CodegenError::UnsupportedNode {
                 span: node.span,
@@ -83,10 +80,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
                         span: field.node.name.span,
                         node: "struct literal field type",
                     })?;
-            let value = ctx.with_expected_expr_type(field_type, |ctx| {
-                lower_node(&field.node.value, ctx)
-            })?
-            .ok_or(CodegenError::UnsupportedNode {
+            let value = ctx
+                .with_expected_expr_type(field_type, |ctx| lower_node(&field.node.value, ctx))?
+                .ok_or(CodegenError::UnsupportedNode {
                     span: field.node.value.span,
                     node: "unit-valued struct field",
                 })?;
@@ -113,13 +109,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirStructLiteralExpression {
                     node: "struct literal field clif type",
                 },
             )?;
-            store_typed_value(
-                ctx.builder,
-                _store_ty,
-                value,
-                field_addr,
-                MemFlags::new(),
-            );
+            store_typed_value(ctx.builder, _store_ty, value, field_addr, MemFlags::new());
         }
 
         Ok(Some(alloc_ptr))

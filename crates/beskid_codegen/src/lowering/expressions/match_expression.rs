@@ -333,9 +333,9 @@ fn literal_value(
             let value: i64 = beskid_analysis::hir::integer_literal_magnitude(raw)
                 .parse()
                 .map_err(|_| CodegenError::UnsupportedNode {
-                span: literal.span,
-                node: "match literal integer",
-            })?;
+                    span: literal.span,
+                    node: "match literal integer",
+                })?;
             Ok(ctx.builder.ins().iconst(clif_ty, value))
         }
         HirLiteral::Bool(value) => Ok(ctx

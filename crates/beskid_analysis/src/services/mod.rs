@@ -52,11 +52,10 @@ pub use document::{
     DocumentSymbolInfo, HoverInfo, ReferenceInfo, SymbolLocation, TestCaseInfo,
     assemble_for_api_documentation, build_api_documentation_snapshot, build_document_analysis,
     build_document_analysis_for_resolved, build_document_analysis_from_resolution,
-    build_document_analysis_with_context,
-    collect_document_symbols, collect_test_cases,
+    build_document_analysis_with_context, collect_document_symbols, collect_test_cases,
     completion_candidates, definition_at_offset, hover_at_offset, item_id_at_offset,
-    references_at_offset,
-    references_at_offset_workspace, resolve_assembly_for_api_documentation, symbol_kind_name,
+    references_at_offset, references_at_offset_workspace, resolve_assembly_for_api_documentation,
+    symbol_kind_name,
 };
 pub use entry_session::{
     composition_fingerprint, current_syntax_generation_id, get_or_insert_assembly,
@@ -78,18 +77,14 @@ pub use lower::{
 };
 pub use parse::{parse_expression_source, parse_program, parse_program_with_source_name};
 pub use prepare::{
-    PrepareOptions, PreparedCompilation, prepare_compilation,
-    prepare_compilation_diagnostics, resolved_input_from_plan,
+    PrepareOptions, PreparedCompilation, prepare_compilation, prepare_compilation_diagnostics,
+    resolved_input_from_plan,
 };
 pub use project::{ResolvedProject, resolve_project, resolve_project_with_policy};
-pub use unit_ops::{
-    assemble_unit, invalidate_dependents, module_index_query, resolve_entry, type_dep_signatures,
-    type_entry, type_entry_gate,
-};
 pub use render::render_program_tree;
 pub use semantic::{
-    SemanticDiagnosticsError, require_no_semantic_errors,
-    semantic_rule_diagnostics_for_program, semantic_rule_diagnostics_for_program_with_pipeline,
+    SemanticDiagnosticsError, require_no_semantic_errors, semantic_rule_diagnostics_for_program,
+    semantic_rule_diagnostics_for_program_with_pipeline,
 };
 pub use session::{
     CompilationSession, SEMANTIC_SNAPSHOT_VERSION, SemanticSnapshot, SessionFingerprint,
@@ -97,3 +92,7 @@ pub use session::{
     store_executable_on_session,
 };
 pub use synthetic_plan::synthetic_compile_plan_for_source;
+pub use unit_ops::{
+    assemble_unit, invalidate_dependents, module_index_query, resolve_entry, type_dep_signatures,
+    type_entry, type_entry_gate,
+};

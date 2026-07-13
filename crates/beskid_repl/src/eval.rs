@@ -142,8 +142,7 @@ fn run_wrapped(
         .get(signature.return_type)
         .ok_or_else(|| format!("missing return type for `{entrypoint}`"))?;
 
-    let jit_symbol =
-        beskid_codegen::jit_symbol_for_item(&lowered.resolution, entrypoint_info.id);
+    let jit_symbol = beskid_codegen::jit_symbol_for_item(&lowered.resolution, entrypoint_info.id);
     let ptr = unsafe { engine.entrypoint_ptr(&jit_symbol) }
         .map_err(|err| format!("entrypoint lookup failed: {err}"))?;
     if ptr.is_null() {

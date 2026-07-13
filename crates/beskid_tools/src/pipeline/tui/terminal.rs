@@ -159,6 +159,4 @@ impl TuiSession {
     pub fn finish(self, summary: &str) -> io::Result<()> {
         self.inner.finish(summary)
     }
-
 }
-

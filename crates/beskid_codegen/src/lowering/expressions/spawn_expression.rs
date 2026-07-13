@@ -100,10 +100,7 @@ fn emit_fiber_entry_trampoline(
         function,
     });
 
-    let sig_ref = ctx
-        .builder
-        .func
-        .import_signature(fiber_entry_signature());
+    let sig_ref = ctx.builder.func.import_signature(fiber_entry_signature());
     let func_ref = ctx.builder.func.import_function(ExtFuncData {
         name: ExternalName::testcase(trampoline_name.as_bytes()),
         signature: sig_ref,
@@ -125,12 +122,11 @@ fn function_signature_for_item(
         .ok_or(CodegenError::MissingSymbol("spawn entry signature"))?;
     let mut signature = Signature::new(CallConv::SystemV);
     for param in &signature_types.params {
-        let clif_ty = map_type_id_to_clif(ctx.type_result, *param).ok_or(
-            CodegenError::UnsupportedNode {
+        let clif_ty =
+            map_type_id_to_clif(ctx.type_result, *param).ok_or(CodegenError::UnsupportedNode {
                 span,
                 node: "spawn entry parameter type",
-            },
-        )?;
+            })?;
         signature.params.push(AbiParam::new(clif_ty));
     }
     let returns_value = type_returns_runtime_value(ctx.type_result, signature_types.return_type);
@@ -157,7 +153,9 @@ fn ensure_spawn_path_target_emitted(
     let def = ctx
         .function_defs
         .get(&item_id)
-        .ok_or(CodegenError::MissingSymbol("spawn entry function definition"))?;
+        .ok_or(CodegenError::MissingSymbol(
+            "spawn entry function definition",
+        ))?;
     let saved_source_path = ctx.codegen.current_source_path.clone();
     ctx.codegen.current_source_path = ctx
         .resolution

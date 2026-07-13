@@ -270,7 +270,8 @@ impl ContractInvoker for StubContractInvoker {
 pub struct ScriptedContractInvoker {
     pub collector_narrowed_targets: Mutex<Vec<(String, Vec<String>)>>,
     pub generator_typed_items: Mutex<Vec<(String, Vec<Spanned<ProgramItem>>)>>,
-    pub generator_code_outputs: Mutex<Vec<(String, Vec<super::generate_output::CodeGenerateOutput>)>>,
+    pub generator_code_outputs:
+        Mutex<Vec<(String, Vec<super::generate_output::CodeGenerateOutput>)>>,
     pub analyzer_diagnostics: Mutex<Vec<(String, Vec<AnalyzerDiagnostic>)>>,
     pub recorded: StubContractInvoker,
 }
@@ -376,7 +377,9 @@ impl ContractInvoker for ScriptedContractInvoker {
             .expect("scripted collector targets");
         for (type_id, narrowed_targets) in scripted.iter() {
             if registration.type_id == *type_id {
-                outcome.narrowed_targets.extend(narrowed_targets.iter().cloned());
+                outcome
+                    .narrowed_targets
+                    .extend(narrowed_targets.iter().cloned());
             }
         }
         Ok(outcome)
@@ -416,7 +419,9 @@ impl ContractInvoker for ScriptedContractInvoker {
         request: &ModCollectRequest,
         snapshot: Option<&crate::services::SemanticSnapshot>,
     ) -> Result<AnalyzerOutcome, ContractInvocationError> {
-        let mut outcome = self.recorded.invoke_analyzer(registration, request, snapshot)?;
+        let mut outcome = self
+            .recorded
+            .invoke_analyzer(registration, request, snapshot)?;
         let scripted = self
             .analyzer_diagnostics
             .lock()

@@ -30,8 +30,8 @@ pub use resolve_options::{
 use crate::tui::shell::runtime::RuntimeOp;
 
 use tui::{
-    count_severities, format_duration, format_phase_end, format_phase_start, format_severity_summary,
-    format_work_unit, TestReportSummary, TestRow, TuiSession,
+    TestReportSummary, TestRow, TuiSession, count_severities, format_duration, format_phase_end,
+    format_phase_start, format_severity_summary, format_work_unit,
 };
 
 const WORK_UNIT_UI_MIN_INTERVAL: Duration = Duration::from_millis(60);
@@ -202,11 +202,7 @@ impl CliPipeline {
     }
 
     /// Transition the shared shell from pipeline prepare to live test execution.
-    pub fn begin_test_run(
-        &self,
-        title: impl Into<String>,
-        rows: Vec<TestRow>,
-    ) -> io::Result<()> {
+    pub fn begin_test_run(&self, title: impl Into<String>, rows: Vec<TestRow>) -> io::Result<()> {
         self.resume_after_output()?;
         self.with_tui_result(|tui| tui.begin_tests(title, rows))
     }
@@ -222,9 +218,7 @@ impl CliPipeline {
         summary: TestReportSummary,
         title: impl Into<String>,
     ) -> io::Result<()> {
-        self.with_tui_result(|tui| {
-            tui.show_test_report(summary, title)
-        })
+        self.with_tui_result(|tui| tui.show_test_report(summary, title))
     }
 
     /// Mark compile/prepare complete; pipeline tree remains until Space.
@@ -382,10 +376,7 @@ impl CliPipeline {
         let elapsed = self.started_at.elapsed();
         let headline = format!("{msg} in {}", format_duration(elapsed));
         if !self.plain {
-            let active = self
-                .tui
-                .lock()
-                .is_ok_and(|tui| tui.is_active());
+            let active = self.tui.lock().is_ok_and(|tui| tui.is_active());
             if active {
                 let panel = summary
                     .unwrap_or_else(|| tui::CommandSummary::plain("Result", headline.clone()));
@@ -477,12 +468,7 @@ impl CliPipeline {
         (0, 1, label)
     }
 
-    fn refresh_progress_bars(
-        &self,
-        stage_pos: u64,
-        stage_len: u64,
-        stage_label: &str,
-    ) {
+    fn refresh_progress_bars(&self, stage_pos: u64, stage_len: u64, stage_label: &str) {
         if !self.tui_active() {
             return;
         }
@@ -526,14 +512,7 @@ impl CliPipeline {
         Ok(())
     }
 
-    fn emit_work_unit_if_due(
-        &self,
-        msg: String,
-        depth: usize,
-        done: u64,
-        total: u64,
-        label: &str,
-    ) {
+    fn emit_work_unit_if_due(&self, msg: String, depth: usize, done: u64, total: u64, label: &str) {
         self.refresh_progress_bars(done, total.max(1), label);
         if self.should_use_tui() {
             self.with_tui(|tui| {
@@ -642,10 +621,7 @@ pub fn resolve_input_with_cli_pipeline_kind(
         use_cli_spinner(resolve.plain),
         progress_kind,
     ));
-    let resolved = frontend::resolve_input_with_pipeline(
-        resolve,
-        Some(pipeline_ui.as_ref()),
-    )?;
+    let resolved = frontend::resolve_input_with_pipeline(resolve, Some(pipeline_ui.as_ref()))?;
     Ok((pipeline_ui, resolved))
 }
 

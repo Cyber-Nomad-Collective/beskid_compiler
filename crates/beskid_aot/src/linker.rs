@@ -38,11 +38,7 @@ fn detect_c_compiler() -> String {
     }
 }
 
-fn append_static_archive(
-    cmd: &mut Command,
-    target: &str,
-    archive: &std::path::Path,
-) {
+fn append_static_archive(cmd: &mut Command, target: &str, archive: &std::path::Path) {
     if target.contains("darwin") || target.contains("macos") {
         cmd.arg("-Wl,-force_load").arg(archive);
     } else {
@@ -50,11 +46,7 @@ fn append_static_archive(
     }
 }
 
-fn format_link_command(
-    compiler: &str,
-    req: &LinkRequest,
-    target: &str,
-) -> String {
+fn format_link_command(compiler: &str, req: &LinkRequest, target: &str) -> String {
     let mut command_line = format!("{} {}", compiler, req.object_path.display());
     if let Some(runtime_staticlib) = &req.runtime_staticlib {
         if target.contains("darwin") || target.contains("macos") {

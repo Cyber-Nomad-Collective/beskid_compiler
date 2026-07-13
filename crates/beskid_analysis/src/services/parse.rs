@@ -59,9 +59,9 @@ pub fn parse_expression_source(
         let diagnostic = pest_error_diagnostic(source_name, source, &err);
         anyhow::Error::new(MietteReportError::new(diagnostic))
     })?;
-    let pair = pairs.next().ok_or_else(|| {
-        anyhow::anyhow!("no expression found in `{source_name}`")
-    })?;
+    let pair = pairs
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("no expression found in `{source_name}`"))?;
     crate::syntax::expressions::expression::parse_expression(pair).map_err(|err| {
         let diagnostic = parse_error_diagnostic(source_name, source, &err);
         anyhow::Error::new(MietteReportError::new(diagnostic))

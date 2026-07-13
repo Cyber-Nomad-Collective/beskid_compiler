@@ -1,7 +1,7 @@
 use std::any::Any;
 
-use crate::syntax_query::{DynNodeRef, NodeKind};
 use crate::syntax::{SpanInfo, Spanned};
+use crate::syntax_query::{DynNodeRef, NodeKind};
 
 pub trait AstNode: Any {
     fn as_any(&self) -> &dyn Any;

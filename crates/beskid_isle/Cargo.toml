@@ -1,0 +1,15 @@
+[package]
+name = "beskid_isle"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cranelift-codegen = { workspace = true }
+cranelift-frontend = { workspace = true }
+
+[build-dependencies]
+cranelift-isle = "0.128.3"
+
+[features]
+default = ["isle_primitives"]
+isle_primitives = []

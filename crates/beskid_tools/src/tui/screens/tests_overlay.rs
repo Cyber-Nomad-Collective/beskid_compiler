@@ -37,18 +37,15 @@ pub fn on_input(event: &InputEvent, state: &mut ShellState) -> InputResult {
 }
 
 pub fn render(area: Rect, frame: &mut Frame, state: &mut ShellState) {
-        let [list_area, code_area] = Layout::horizontal([
-            Constraint::Percentage(38),
-            Constraint::Percentage(62),
-        ])
-        .areas(area);
+    let [list_area, code_area] =
+        Layout::horizontal([Constraint::Percentage(38), Constraint::Percentage(62)]).areas(area);
 
-        draw_test_list(frame, list_area, state);
-        let title = state
-            .test_rows
-            .get(state.test_list_state.selected().unwrap_or(0))
-            .map(|row| row.qualified_name.as_str());
-        state.code_viewer.draw(frame, code_area, title);
+    draw_test_list(frame, list_area, state);
+    let title = state
+        .test_rows
+        .get(state.test_list_state.selected().unwrap_or(0))
+        .map(|row| row.qualified_name.as_str());
+    state.code_viewer.draw(frame, code_area, title);
 }
 
 fn draw_test_list(frame: &mut Frame, area: Rect, state: &mut ShellState) {
@@ -80,7 +77,10 @@ fn selected_test_index(rows: &[TestRow]) -> Option<usize> {
     Some(
         rows.iter()
             .position(|row| row.state == TestRowState::Running)
-            .or_else(|| rows.iter().rposition(|row| row.state != TestRowState::Pending))
+            .or_else(|| {
+                rows.iter()
+                    .rposition(|row| row.state != TestRowState::Pending)
+            })
             .unwrap_or(0),
     )
 }
@@ -101,6 +101,10 @@ fn format_test_row(row: &TestRow) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!("{status:<8}"), style),
         Span::raw(format!("{time:>8}  ")),
-        Span::raw(maybe_link_label(row.link.as_ref(), &row.qualified_name, false)),
+        Span::raw(maybe_link_label(
+            row.link.as_ref(),
+            &row.qualified_name,
+            false,
+        )),
     ])
 }

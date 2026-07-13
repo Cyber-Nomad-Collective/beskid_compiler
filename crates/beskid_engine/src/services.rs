@@ -23,13 +23,10 @@ pub fn run_entrypoint_with_pipeline(
     entrypoint: &str,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
-    let source_path =
-        beskid_codegen::materialize_source_path_for_lowering(source_path, source)?;
+    let source_path = beskid_codegen::materialize_source_path_for_lowering(source_path, source)?;
     let compile_plan = beskid_analysis::services::compile_plan_for_input_path(&source_path)
         .or_else(|| {
-            Some(beskid_analysis::services::synthetic_compile_plan_for_source(
-                &source_path,
-            ))
+            Some(beskid_analysis::services::synthetic_compile_plan_for_source(&source_path))
         });
     run_resolved_entrypoint_with_pipeline(
         &ResolvedInput {
@@ -185,7 +182,9 @@ fn run_jitted_entrypoint(
     let output = engine.with_runtime(|_, _| {
         if artifact_needs_fiber_scheduler(artifact) {
             let ptr_addr = ptr as usize;
-            run_closure_as_main(move || JitCallable::execute_as_i64(ptr_addr as *const u8, return_kind))
+            run_closure_as_main(move || {
+                JitCallable::execute_as_i64(ptr_addr as *const u8, return_kind)
+            })
         } else {
             JitCallable::execute_as_i64(ptr, return_kind)
         }
@@ -211,14 +210,14 @@ fn artifact_needs_fiber_scheduler(artifact: &beskid_codegen::CodegenArtifact) ->
         "channel_send",
         "channel_receive",
     ];
-    artifact.extern_imports.iter().any(|imp| {
-        FIBER_SYMBOLS
-            .iter()
-            .any(|symbol| imp.symbol == *symbol)
-    }) || artifact
-        .functions
+    artifact
+        .extern_imports
         .iter()
-        .any(|func| func.name.starts_with("__beskid_spawn_entry_"))
+        .any(|imp| FIBER_SYMBOLS.iter().any(|symbol| imp.symbol == *symbol))
+        || artifact
+            .functions
+            .iter()
+            .any(|func| func.name.starts_with("__beskid_spawn_entry_"))
 }
 
 fn entrypoint_matches_item(item: &beskid_analysis::resolve::ItemInfo, entrypoint: &str) -> bool {

@@ -35,5 +35,3 @@ pub(crate) fn store_typed_value(
     let coerced = coerce_value_to_clif_type(builder, value, clif_ty);
     builder.ins().store(flags, coerced, addr, 0);
 }
-
-

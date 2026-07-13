@@ -1,8 +1,8 @@
 use crate::hir::{HirItem, HirPrimitiveType, HirProgram, HirType, HirTypeDefinition};
 use crate::resolve::ItemId;
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::result::{FunctionSignature, TypeError};
 use crate::types::TypeId;
+use crate::types::result::{FunctionSignature, TypeError};
 
 use super::TypeChecker;
 
@@ -141,16 +141,14 @@ impl<'a> TypeChecker<'a> {
         let HirType::Complex(path) = &ty.node else {
             return None;
         };
-        let applied = self
-            .intern_foreign_applied_type(path)
-            .or_else(|| {
-                let errors_before = self.errors.len();
-                let id = self.type_id_for_path_with_args(path);
-                if id.is_none() {
-                    self.errors.truncate(errors_before);
-                }
-                id
-            });
+        let applied = self.intern_foreign_applied_type(path).or_else(|| {
+            let errors_before = self.errors.len();
+            let id = self.type_id_for_path_with_args(path);
+            if id.is_none() {
+                self.errors.truncate(errors_before);
+            }
+            id
+        });
         if applied.is_none() {
             self.errors.truncate(errors_before);
         }

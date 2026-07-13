@@ -1,7 +1,7 @@
 //! Register extension widgets with the shell host.
 
-use beskid_tools::shell::{NavItemDescriptor, NavRegistry, WidgetDescriptor, WidgetRegistry};
 use beskid_tools::shell::nav::NavAction;
+use beskid_tools::shell::{NavItemDescriptor, NavRegistry, WidgetDescriptor, WidgetRegistry};
 
 use crate::models::descriptor::WIDGET_CATALOG;
 use crate::models::nav::NAV_CATALOG;

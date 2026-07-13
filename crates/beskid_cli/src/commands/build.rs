@@ -253,7 +253,8 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
     let result = build(build_request)?;
     session.pipeline().finish_build_with_summary(
         "Build complete",
-        CommandSummary::plain("Build", "Build complete").with_stat("output", output.display().to_string()),
+        CommandSummary::plain("Build", "Build complete")
+            .with_stat("output", output.display().to_string()),
     );
 
     if args.plain
@@ -275,10 +276,9 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
     }
 
     if hi_attached {
-        session.pipeline().println_session(format!(
-            "object   {}",
-            result.object_path.display()
-        ));
+        session
+            .pipeline()
+            .println_session(format!("object   {}", result.object_path.display()));
         if let Some(final_path) = result.final_path.as_ref() {
             session
                 .pipeline()

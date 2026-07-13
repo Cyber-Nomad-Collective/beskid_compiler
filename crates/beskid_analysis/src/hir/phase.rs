@@ -3,10 +3,9 @@
 use crate::syntax::{
     ArrayLiteralExpression, AssignExpression, AttributeDeclaration, BinaryExpression,
     BlockExpression, BreakStatement, CallExpression, CodeStringLiteral, ContinueStatement,
-    ContractDefinition,
-    EnumConstructorExpression, EnumDefinition, ExpressionStatement, ExtendTypeDefinition,
-    ForStatement, FunctionDefinition, GroupedExpression, HostDefinition, IfStatement,
-    IndexExpression, InlineModule, LambdaExpression, LaunchStatement, LetStatement,
+    ContractDefinition, EnumConstructorExpression, EnumDefinition, ExpressionStatement,
+    ExtendTypeDefinition, ForStatement, FunctionDefinition, GroupedExpression, HostDefinition,
+    IfStatement, IndexExpression, InlineModule, LambdaExpression, LaunchStatement, LetStatement,
     LiteralExpression, MacroDefinition, MacroInvocation, MacroMetavariable, MatchExpression,
     MemberExpression, MethodDefinition, ModuleDeclaration, PathExpression, ReturnStatement,
     SpawnExpression, StructLiteralExpression, TestDefinition, TryExpression, TypeDefinition,

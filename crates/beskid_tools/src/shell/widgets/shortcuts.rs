@@ -1,9 +1,9 @@
+use crate::shell::primitives::Hotkey;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use crate::shell::primitives::Hotkey;
 
 use crate::shell::catalog::builtin_contextual_commands;
 use crate::shell::context::WidgetContext;
@@ -64,12 +64,15 @@ impl BeskidWidget for ShortcutsWidget {
                 lines.push(Line::from(format!("  {}  {}", c.icon, c.name)));
             }
         }
-        let [title_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)])
-            .areas(area);
+        let [title_area, body] =
+            Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
         frame.render_widget(Paragraph::new(title_line("Shortcuts")), title_area);
         frame.render_widget(Paragraph::new(lines), body);
-        ctx.shortcut_clicks.add_row(body, 1, ShortcutClickAction::OpenPalette);
-        ctx.shortcut_clicks.add_row(body, 2, ShortcutClickAction::ToggleHelp);
-        ctx.shortcut_clicks.add_row(body, 3, ShortcutClickAction::Quit);
+        ctx.shortcut_clicks
+            .add_row(body, 1, ShortcutClickAction::OpenPalette);
+        ctx.shortcut_clicks
+            .add_row(body, 2, ShortcutClickAction::ToggleHelp);
+        ctx.shortcut_clicks
+            .add_row(body, 3, ShortcutClickAction::Quit);
     }
 }

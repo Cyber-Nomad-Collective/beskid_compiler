@@ -122,7 +122,9 @@ impl ShellScope {
                 Style::default().fg(Color::Yellow),
             )),
             Line::from(""),
-            Line::from("Open a `.bws` or `.bproj` manifest, or run from a directory that contains one."),
+            Line::from(
+                "Open a `.bws` or `.bproj` manifest, or run from a directory that contains one.",
+            ),
             Line::from(""),
             Line::from(vec![
                 Span::styled(palette_hint.to_string(), Style::default().fg(Color::Cyan)),

@@ -2,7 +2,9 @@
 
 use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
-use beskid_analysis::projects::{parse_bsol_document, parse_manifest, parse_workspace_manifest, ProjectError};
+use beskid_analysis::projects::{
+    ProjectError, parse_bsol_document, parse_manifest, parse_workspace_manifest,
+};
 use beskid_analysis::services::{
     self, DependencyTypingPolicy, DocumentAnalysisSnapshot, FrontEndOptions, PrepareOptions,
     resolved_input_from_plan,
@@ -56,7 +58,6 @@ pub fn analyze_document(
                     front_end: FrontEndOptions {
                         with_semantic_diagnostics: true,
                         ..Default::default()
-
                     },
                     dependency_typing: if stale {
                         DependencyTypingPolicy::EntryOnly

@@ -6,9 +6,7 @@ pub enum ShellEffect {
     Quit,
     CloseOverlay,
     FetchPckgCatalog,
-    FetchPckgDetails {
-        package_id: String,
-    },
+    FetchPckgDetails { package_id: String },
     FetchTemplates,
     InstallSelectedTemplate,
 }

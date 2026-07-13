@@ -555,6 +555,7 @@ dispatch_i64 {
   returns = u64
   injected = true
   beskid_path = [__bytes_compare]
+  language_handler = true
 }
 
 dispatch_i64 {
@@ -565,6 +566,7 @@ dispatch_i64 {
   returns = u64
   injected = true
   beskid_path = [__bytes_get]
+  language_handler = true
 }
 
 dispatch_i64 {
@@ -970,6 +972,8 @@ dispatch_i64 {
   params = [ptr, ptr]
   returns = u64
   injected = true
+  beskid_path = [__str_eq]
+  language_handler = true
 }
 
 dispatch_i64 {
@@ -980,6 +984,7 @@ dispatch_i64 {
   returns = u64
   injected = true
   beskid_path = [__test_bytes_len]
+  language_handler = true
 }
 
 dispatch_i64 {
@@ -990,6 +995,7 @@ dispatch_i64 {
   returns = u64
   injected = true
   beskid_path = [__test_bytes_ptr]
+  language_handler = true
 }
 
 dispatch_i64 {

@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use panes::{ContainerCtx, LayoutBuilder, fixed, grow};
 use panes::runtime::LayoutRuntime;
+use panes::{ContainerCtx, LayoutBuilder, fixed, grow};
 use panes::{Layout, PaneError};
 
 use super::model::{BoardNode, BoardV2Doc, NodeKind};
@@ -14,7 +14,9 @@ pub fn lower_runtime(doc: &BoardV2Doc) -> Result<LayoutRuntime, String> {
 }
 
 pub fn lower_layout(doc: &BoardV2Doc) -> Result<Layout, String> {
-    let root = doc.node(&doc.root).ok_or_else(|| "root node missing".to_string())?;
+    let root = doc
+        .node(&doc.root)
+        .ok_or_else(|| "root node missing".to_string())?;
     match root.kind {
         NodeKind::Tabs => lower_tabbed(doc, root),
         NodeKind::Stack => lower_stacked(doc, root),
@@ -51,14 +53,24 @@ fn lower_split_preset(doc: &BoardV2Doc, root: &BoardNode) -> Result<Layout, Stri
     split.build().map_err(map_err)
 }
 
-fn build_into_root(builder: &mut LayoutBuilder, doc: &BoardV2Doc, node_id: &str) -> Result<(), String> {
-    let node = doc.node(node_id).ok_or_else(|| format!("node `{node_id}` missing"))?;
+fn build_into_root(
+    builder: &mut LayoutBuilder,
+    doc: &BoardV2Doc,
+    node_id: &str,
+) -> Result<(), String> {
+    let node = doc
+        .node(node_id)
+        .ok_or_else(|| format!("node `{node_id}` missing"))?;
     match node.kind {
         NodeKind::Col => {
-            builder.col(|ctx| build_children(ctx, doc, node)).map_err(map_err)?;
+            builder
+                .col(|ctx| build_children(ctx, doc, node))
+                .map_err(map_err)?;
         }
         NodeKind::Row => {
-            builder.row(|ctx| build_children(ctx, doc, node)).map_err(map_err)?;
+            builder
+                .row(|ctx| build_children(ctx, doc, node))
+                .map_err(map_err)?;
         }
         NodeKind::Panel => {
             let widget = node
@@ -84,8 +96,14 @@ fn build_children(ctx: &mut ContainerCtx<'_>, doc: &BoardV2Doc, parent: &BoardNo
     }
 }
 
-fn build_into_container(ctx: &mut ContainerCtx<'_>, doc: &BoardV2Doc, node_id: &str) -> Result<(), String> {
-    let node = doc.node(node_id).ok_or_else(|| format!("node `{node_id}` missing"))?;
+fn build_into_container(
+    ctx: &mut ContainerCtx<'_>,
+    doc: &BoardV2Doc,
+    node_id: &str,
+) -> Result<(), String> {
+    let node = doc
+        .node(node_id)
+        .ok_or_else(|| format!("node `{node_id}` missing"))?;
     match node.kind {
         NodeKind::Col => {
             ctx.col(|c| build_children(c, doc, node));
@@ -125,7 +143,9 @@ fn panel_kinds_for_children(doc: &BoardV2Doc, root: &BoardNode) -> Result<Vec<Ar
 }
 
 fn widget_kind(doc: &BoardV2Doc, node_id: &str) -> Result<String, String> {
-    let node = doc.node(node_id).ok_or_else(|| format!("node `{node_id}` missing"))?;
+    let node = doc
+        .node(node_id)
+        .ok_or_else(|| format!("node `{node_id}` missing"))?;
     node.widget
         .clone()
         .ok_or_else(|| format!("node `{node_id}` missing widget"))

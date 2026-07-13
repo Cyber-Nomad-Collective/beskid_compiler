@@ -31,8 +31,8 @@ pub use lowering::{
 };
 pub use module_emission::{DescriptorHandles, emit_string_literals, emit_type_descriptors};
 pub use services::{
-    LoweredProgram, entrypoint_artifact_from_front_end, lower_from_front_end,
+    LoweredProgram, entrypoint_artifact_from_front_end, jit_symbol_for_item, lower_from_front_end,
     lower_resolved_entrypoint_with_pipeline, lower_resolved_input_with_pipeline, lower_source,
     lower_source_for_entrypoint, lower_source_with_pipeline, materialize_source_path_for_lowering,
-    jit_symbol_for_item, render_clif,
+    render_clif,
 };

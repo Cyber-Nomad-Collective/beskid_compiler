@@ -5,6 +5,7 @@ use crate::hir::{
     HirIfStatement, HirItem, HirPattern, HirProgram, HirStatementNode, HirType,
 };
 use crate::resolve::Resolution;
+use crate::runtime_registration::{RUNTIME_HANDLER_SPECS, runtime_return_group_label};
 use crate::syntax::{SpanInfo, Spanned};
 use std::collections::HashMap;
 
@@ -39,6 +40,10 @@ pub enum HirLegalityError {
         name: String,
         target: AttributeTargetKind,
         allowed: Vec<AttributeTargetKind>,
+    },
+    InvalidRuntimeHandler {
+        span: SpanInfo,
+        message: String,
     },
 }
 
@@ -138,6 +143,9 @@ impl<'a> HirLegalityValidator<'a> {
                 }
                 if let Some(return_type) = &def.node.return_type {
                     self.validate_type(return_type);
+                }
+                if let Some(runtime_handler) = &def.node.runtime_handler {
+                    self.validate_runtime_handler_metadata(def.span, runtime_handler);
                 }
             }
             HirItem::MethodDefinition(def) => {
@@ -592,6 +600,40 @@ impl<'a> HirLegalityValidator<'a> {
                     self.validate_type(parameter);
                 }
             }
+        }
+    }
+
+    fn validate_runtime_handler_metadata(
+        &mut self,
+        span: SpanInfo,
+        runtime_handler: &crate::hir::HirRuntimeHandler,
+    ) {
+        let Some(spec) = RUNTIME_HANDLER_SPECS
+            .iter()
+            .find(|spec| spec.tag == runtime_handler.dispatch_tag)
+        else {
+            self.errors.push(HirLegalityError::InvalidRuntimeHandler {
+                span,
+                message: format!(
+                    "unknown runtime dispatch tag `{}`",
+                    runtime_handler.dispatch_tag
+                ),
+            });
+            return;
+        };
+
+        let expected_returns = runtime_return_group_label(spec.return_group);
+        if !runtime_handler
+            .returns
+            .eq_ignore_ascii_case(expected_returns)
+        {
+            self.errors.push(HirLegalityError::InvalidRuntimeHandler {
+                span,
+                message: format!(
+                    "runtime handler return group `{}` does not match manifest `{}` for tag {}",
+                    runtime_handler.returns, expected_returns, runtime_handler.dispatch_tag
+                ),
+            });
         }
     }
 

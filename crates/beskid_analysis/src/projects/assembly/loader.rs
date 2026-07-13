@@ -191,13 +191,14 @@ pub fn assemble_program_with_materializer(
             }
 
             let mut paths: Vec<PathBuf> = Vec::new();
-        for root in &module_roots {
-            collect_bd_files(root, &mut paths);
-            if let Some(generated_root) = root.parent().map(|parent| parent.join(".generated"))
-                && generated_root.is_dir() {
+            for root in &module_roots {
+                collect_bd_files(root, &mut paths);
+                if let Some(generated_root) = root.parent().map(|parent| parent.join(".generated"))
+                    && generated_root.is_dir()
+                {
                     collect_bd_files(&generated_root, &mut paths);
                 }
-        }
+            }
             paths.sort();
             for path in paths {
                 if discovered.len() >= options.max_units {
@@ -530,7 +531,10 @@ fn parse_use_import_path(trimmed: &str) -> Option<String> {
 /// parent module facade (`Core/Syscall/Syscall.bd`) that hosts sibling functions referenced via
 /// qualified paths (`Core.Syscall.ReadWith`) without an explicit `use`.
 pub(crate) fn parent_module_import_path(import_path: &str) -> Option<String> {
-    let segments: Vec<&str> = import_path.split('.').filter(|segment| !segment.is_empty()).collect();
+    let segments: Vec<&str> = import_path
+        .split('.')
+        .filter(|segment| !segment.is_empty())
+        .collect();
     if segments.len() <= 2 {
         return None;
     }
@@ -551,8 +555,8 @@ mod tests {
 
     use crate::projects::{
         AssemblyDiscovery, AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject,
-        Target, TargetKind, assembly_options_for_plan, assembly_options_for_prepare,
-        assemble_program, plan_entry_path,
+        Target, TargetKind, assemble_program, assembly_options_for_plan,
+        assembly_options_for_prepare, plan_entry_path,
     };
 
     fn temp_project_root(label: &str) -> PathBuf {
@@ -615,7 +619,8 @@ mod tests {
 
     #[test]
     fn qualified_reference_scan_finds_module_prefixes() {
-        let source = "Core.Results.Result<i64, SyscallError> Write() { Core.Syscall.WriteWith(x); }";
+        let source =
+            "Core.Results.Result<i64, SyscallError> Write() { Core.Syscall.WriteWith(x); }";
         let paths = super::module_paths_from_qualified_references(source);
         assert!(paths.contains(&"Core.Results".to_string()));
         assert!(paths.contains(&"Core".to_string()));
@@ -669,8 +674,7 @@ mod tests {
     fn prepare_options_honor_explicit_front_end_override() {
         let (mut plan, _) = no_entry_plan_with_source("pub fn Main() { }");
         plan.target.entry = Some("Main.bd".to_string());
-        let options =
-            assembly_options_for_prepare(&plan, AssemblyDiscovery::WorkspaceScan);
+        let options = assembly_options_for_prepare(&plan, AssemblyDiscovery::WorkspaceScan);
         assert_eq!(options.discovery, AssemblyDiscovery::WorkspaceScan);
         let _ = fs::remove_dir_all(&plan.project_root);
     }
@@ -702,10 +706,9 @@ mod tests {
         assert_eq!(assembly.units.len(), 1);
         assert_eq!(assembly.discovery, AssemblyDiscovery::ImportClosure);
         assert!(
-            assembly
-                .units
-                .iter()
-                .all(|unit| unit.path.file_name().and_then(|name| name.to_str()) == Some("Entry.bd")),
+            assembly.units.iter().all(
+                |unit| unit.path.file_name().and_then(|name| name.to_str()) == Some("Entry.bd")
+            ),
             "unexpected units: {:?}",
             assembly
                 .units
@@ -725,7 +728,11 @@ mod tests {
             "Entry.bd",
             "use Lib.A;\npub fn Entry() { Lib.A.Run(); }",
         );
-        write_bd(&source_root, "Lib/A.bd", "use Lib.B;\npub fn Run() { Lib.B.Run(); }");
+        write_bd(
+            &source_root,
+            "Lib/A.bd",
+            "use Lib.B;\npub fn Run() { Lib.B.Run(); }",
+        );
         write_bd(&source_root, "Lib/B.bd", "pub fn Run() { }");
         write_bd(&source_root, "Unused.bd", "pub fn Unused() { }");
         let plan = CompilePlan {
@@ -749,7 +756,13 @@ mod tests {
         let names: Vec<String> = assembly
             .units
             .iter()
-            .map(|unit| unit.path.file_name().unwrap().to_string_lossy().into_owned())
+            .map(|unit| {
+                unit.path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
             .collect();
         assert_eq!(names.len(), 3);
         assert!(names.iter().any(|name| name == "Entry.bd"));

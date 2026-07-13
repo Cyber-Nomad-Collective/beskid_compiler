@@ -32,12 +32,8 @@ pub fn validate_lowered(source: &str) {
 pub fn build_aot_exe(source: &str, case_name: &str) -> (PathBuf, beskid_aot::AotRunResult) {
     let artifact = compile_artifact(source);
     let output_dir = temp_case_dir(case_name);
-    let runtime = default_runtime_strategy(
-        BuildProfile::Debug,
-        None,
-        RuntimeLinkProfile::Std,
-    )
-    .unwrap_or(RuntimeStrategy::Standalone);
+    let runtime = default_runtime_strategy(BuildProfile::Debug, None, RuntimeLinkProfile::Std)
+        .unwrap_or(RuntimeStrategy::Standalone);
     let result = build_and_run(AotRunRequest {
         artifact,
         entrypoint: "Main".to_owned(),

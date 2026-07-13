@@ -37,8 +37,7 @@ pub struct TestRunUi<'a> {
 impl<'a> TestRunUi<'a> {
     /// When `pipeline` is `Some` and not plain, reuses its [`TuiSession`](super::terminal::TuiSession).
     pub fn new(plain: bool, pipeline: Option<&'a CliPipeline>) -> Self {
-        let interactive = !plain
-            && pipeline.is_some_and(|pipeline| pipeline.is_spinner_enabled());
+        let interactive = !plain && pipeline.is_some_and(|pipeline| pipeline.is_spinner_enabled());
         Self {
             plain: !interactive,
             rows: Vec::new(),

@@ -48,8 +48,8 @@ impl CodeViewerPanel {
     }
 
     pub fn load_file(&mut self, path: &Path, highlight_line: Option<usize>) -> Result<()> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("read {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
         let lang = get_lang(&path.to_string_lossy());
         let mut editor = Editor::new(&lang, &text, vesper())?;
         editor.show_line_numbers(true);
@@ -165,7 +165,9 @@ fn highlight_line_region(editor: &mut Editor, line: usize, color: &'static str) 
 fn scroll_to_line(editor: &mut Editor, line: usize) {
     let line_idx = line.saturating_sub(1);
     editor.set_offset_y(line_idx.saturating_sub(2));
-    let cursor = editor.code_ref().line_to_char(line_idx.min(editor.code_ref().len_lines().saturating_sub(1)));
+    let cursor = editor
+        .code_ref()
+        .line_to_char(line_idx.min(editor.code_ref().len_lines().saturating_sub(1)));
     editor.set_cursor(cursor);
     editor.fit_cursor();
 }

@@ -83,14 +83,12 @@ pub fn lower_program_with_assembly_for_entrypoint(
         let effective_entry = match link_entrypoint {
             Some(name) => Some(name),
             None => {
-                let has_tests = program.node.items.iter().any(|item| {
-                    matches!(item.node, HirItem::TestDefinition(_))
-                });
-                if has_tests {
-                    None
-                } else {
-                    Some("Main")
-                }
+                let has_tests = program
+                    .node
+                    .items
+                    .iter()
+                    .any(|item| matches!(item.node, HirItem::TestDefinition(_)));
+                if has_tests { None } else { Some("Main") }
             }
         };
         let plan = if let Some(entrypoint) = effective_entry {
@@ -247,9 +245,9 @@ fn emit_function_item(
             {
                 return;
             }
-            let symbol_name = mangled.clone().unwrap_or_else(|| {
-        linker_name_for_item_function(resolution, item, def)
-    });
+            let symbol_name = mangled
+                .clone()
+                .unwrap_or_else(|| linker_name_for_item_function(resolution, item, def));
             if ctx.symbol_emitted(&symbol_name) {
                 return;
             }
@@ -274,9 +272,9 @@ fn emit_function_item(
             && let Some(generic_args) =
                 generic_mapping_from_mangled(type_result, item, mangled_name)
         {
-            let symbol_name = mangled.clone().unwrap_or_else(|| {
-        linker_name_for_item_function(resolution, item, def)
-    });
+            let symbol_name = mangled
+                .clone()
+                .unwrap_or_else(|| linker_name_for_item_function(resolution, item, def));
             if ctx.symbol_emitted(&symbol_name) {
                 return;
             }
@@ -298,9 +296,9 @@ fn emit_function_item(
         }
         return;
     }
-    let symbol_name = mangled.clone().unwrap_or_else(|| {
-        linker_name_for_item_function(resolution, item, def)
-    });
+    let symbol_name = mangled
+        .clone()
+        .unwrap_or_else(|| linker_name_for_item_function(resolution, item, def));
     if ctx.symbol_emitted(&symbol_name) {
         return;
     }

@@ -47,11 +47,7 @@ mod tests {
         super::super::test_support::with_cwd(root, f)
     }
 
-    fn assemble_corelib_mvp(
-        path: &Path,
-        source: &str,
-        project_root: &Path,
-    ) -> ProgramAssembly {
+    fn assemble_corelib_mvp(path: &Path, source: &str, project_root: &Path) -> ProgramAssembly {
         let resolved = resolve_input(
             Some(&path.to_path_buf()),
             Some(&project_root.to_path_buf()),
@@ -90,11 +86,9 @@ mod tests {
         assembly: &ProgramAssembly,
         fixture: &CorelibMvpFixture,
     ) -> crate::services::DocumentAnalysisSnapshot {
-        let program = parse_program_with_source_name(
-            &fixture.main_path.to_string_lossy(),
-            &fixture.source,
-        )
-        .expect("parse Main.bd");
+        let program =
+            parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
+                .expect("parse Main.bd");
         let resolution = resolve_entry(
             assembly.entry_hir(),
             &assembly.module_index,
@@ -162,7 +156,10 @@ mod tests {
                 snapshot
                     .resolution
                     .as_ref()
-                    .is_some_and(|resolution| resolution.items.iter().any(|item| item.name == "WriteLine")),
+                    .is_some_and(|resolution| resolution
+                        .items
+                        .iter()
+                        .any(|item| item.name == "WriteLine")),
                 "expected WriteLine in resolution when cross-file definition is unavailable"
             );
         }
@@ -211,7 +208,10 @@ mod tests {
                 snapshot
                     .resolution
                     .as_ref()
-                    .is_some_and(|resolution| resolution.items.iter().any(|item| item.name == "WriteLine")),
+                    .is_some_and(|resolution| resolution
+                        .items
+                        .iter()
+                        .any(|item| item.name == "WriteLine")),
                 "expected WriteLine in resolution when workspace references are unavailable"
             );
         } else {

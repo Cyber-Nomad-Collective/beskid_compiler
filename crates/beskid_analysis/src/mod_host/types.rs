@@ -128,7 +128,6 @@ pub struct ModHostInput<'a> {
     pub cached_target_fingerprint: Option<&'a str>,
 }
 
-
 pub struct ModHostGenerateResult {
     pub program: crate::syntax::Spanned<crate::syntax::Program>,
     pub session: ModHostSession,

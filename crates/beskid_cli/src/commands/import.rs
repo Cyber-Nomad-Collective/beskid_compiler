@@ -175,12 +175,7 @@ fn expand_to_project_manifest(path: &Path) -> Result<PathBuf> {
     if path.is_dir() {
         return beskid_analysis::projects::discover_project_manifest_in_dir(path)
             .map_err(anyhow::Error::from)?
-            .ok_or_else(|| {
-                anyhow!(
-                    "no `.bproj` manifest found in {}",
-                    path.display()
-                )
-            });
+            .ok_or_else(|| anyhow!("no `.bproj` manifest found in {}", path.display()));
     }
     Ok(path.to_path_buf())
 }

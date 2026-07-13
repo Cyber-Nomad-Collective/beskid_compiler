@@ -9,9 +9,7 @@ use crate::projects::fixture_harness::{
     corelib_tests_project_root, typecheck_corelib_tests_entry, with_project_test_env,
 };
 
-use super::corelib_spine_catalog::{
-    CORELIB_TYPECHECK_ENTRIES, CORELIB_TYPECHECK_SMOKE_ENTRIES,
-};
+use super::corelib_spine_catalog::{CORELIB_TYPECHECK_ENTRIES, CORELIB_TYPECHECK_SMOKE_ENTRIES};
 
 /// Per-entry semantic gate budget (gate mode; full executable prepare can take 20+ minutes).
 pub const CORELIB_SPINE_ENTRY_TIMEOUT: Duration = Duration::from_secs(600);
@@ -48,7 +46,11 @@ fn filter_entries_by_env(entries: &[&'static str]) -> Vec<&'static str> {
     if raw.is_empty() {
         return entries.to_vec();
     }
-    let wanted: HashSet<&str> = raw.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+    let wanted: HashSet<&str> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
     if wanted.is_empty() {
         return entries.to_vec();
     }
@@ -59,9 +61,7 @@ fn filter_entries_by_env(entries: &[&'static str]) -> Vec<&'static str> {
         }
     }
     if selected.is_empty() {
-        panic!(
-            "BESKID_CORELIB_SPINE_ENTRIES matched no catalog entries; wanted: {raw}"
-        );
+        panic!("BESKID_CORELIB_SPINE_ENTRIES matched no catalog entries; wanted: {raw}");
     }
     for wanted_entry in &wanted {
         if !entries.contains(wanted_entry) {
@@ -105,29 +105,33 @@ pub fn run_corelib_typecheck_matrix() {
         return;
     }
     let root = corelib_tests_project_root();
-    run_with_timeout("corelib_tests_front_end_typechecks_matrix", CORELIB_SPINE_MATRIX_TIMEOUT, move || {
-        with_project_test_env(&root, || {
-            let matrix_started = Instant::now();
-            eprintln!(
-                "corelib spine matrix: {} entr{}",
-                entries.len(),
-                if entries.len() == 1 { "y" } else { "ies" }
-            );
-            for entry in entries {
-                if !root.join("src").join(entry).is_file() {
-                    eprintln!("corelib spine matrix: skip missing {entry}");
-                    continue;
-                }
-                run_with_timeout(
-                    &format!("corelib typecheck {entry}"),
-                    CORELIB_SPINE_ENTRY_TIMEOUT,
-                    || typecheck_corelib_tests_entry(entry),
+    run_with_timeout(
+        "corelib_tests_front_end_typechecks_matrix",
+        CORELIB_SPINE_MATRIX_TIMEOUT,
+        move || {
+            with_project_test_env(&root, || {
+                let matrix_started = Instant::now();
+                eprintln!(
+                    "corelib spine matrix: {} entr{}",
+                    entries.len(),
+                    if entries.len() == 1 { "y" } else { "ies" }
                 );
-            }
-            eprintln!(
-                "corelib spine matrix: finished in {:.1}s",
-                matrix_started.elapsed().as_secs_f64()
-            );
-        });
-    });
+                for entry in entries {
+                    if !root.join("src").join(entry).is_file() {
+                        eprintln!("corelib spine matrix: skip missing {entry}");
+                        continue;
+                    }
+                    run_with_timeout(
+                        &format!("corelib typecheck {entry}"),
+                        CORELIB_SPINE_ENTRY_TIMEOUT,
+                        || typecheck_corelib_tests_entry(entry),
+                    );
+                }
+                eprintln!(
+                    "corelib spine matrix: finished in {:.1}s",
+                    matrix_started.elapsed().as_secs_f64()
+                );
+            });
+        },
+    );
 }

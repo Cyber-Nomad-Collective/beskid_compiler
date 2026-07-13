@@ -363,8 +363,12 @@ dependency "missing" {
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let snapshot_path = manifest_dir
             .join("../../../beskid_vscode/test/fixtures/lsp-project-explorer-commands.json");
-        let text = fs::read_to_string(&snapshot_path)
-            .unwrap_or_else(|err| panic!("read contract snapshot at {}: {err}", snapshot_path.display()));
+        let text = fs::read_to_string(&snapshot_path).unwrap_or_else(|err| {
+            panic!(
+                "read contract snapshot at {}: {err}",
+                snapshot_path.display()
+            )
+        });
         let snapshot: Value = serde_json::from_str(&text).expect("parse contract snapshot");
         let expected = snapshot["commands"]
             .as_array()
@@ -376,7 +380,10 @@ dependency "missing" {
             .iter()
             .map(|command| (*command).to_string())
             .collect::<Vec<_>>();
-        assert_eq!(actual, expected, "update beskid_vscode/test/fixtures/lsp-project-explorer-commands.json");
+        assert_eq!(
+            actual, expected,
+            "update beskid_vscode/test/fixtures/lsp-project-explorer-commands.json"
+        );
     }
 
     #[test]

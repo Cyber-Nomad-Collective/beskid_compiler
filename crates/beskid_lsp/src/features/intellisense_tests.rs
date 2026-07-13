@@ -56,7 +56,8 @@ mod tests {
         }
     }
 
-    fn corelib_mvp_document_with_entry_resolution() -> (Uri, Document, CorelibMvpFixture, BeskidDatabase) {
+    fn corelib_mvp_document_with_entry_resolution()
+    -> (Uri, Document, CorelibMvpFixture, BeskidDatabase) {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
@@ -84,13 +85,18 @@ mod tests {
             options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
             let shared =
                 entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
-            let module_paths = shared.module_graph.modules().iter().filter_map(|module| {
-                if module.path.is_empty() {
-                    None
-                } else {
-                    Some(module.path.join("::"))
-                }
-            }).collect();
+            let module_paths = shared
+                .module_graph
+                .modules()
+                .iter()
+                .filter_map(|module| {
+                    if module.path.is_empty() {
+                        None
+                    } else {
+                        Some(module.path.join("::"))
+                    }
+                })
+                .collect();
             let analysis = build_document_analysis_from_resolution(
                 &program,
                 fixture.main_path.to_string_lossy(),
@@ -274,12 +280,9 @@ mod tests {
                 .path
                 .to_string_lossy()
                 .contains("Output")
-                || analysis
-                    .resolution
-                    .as_ref()
-                    .is_some_and(|resolution| {
-                        resolution.items.iter().any(|item| item.name == "WriteLine")
-                    }),
+                || analysis.resolution.as_ref().is_some_and(|resolution| {
+                    resolution.items.iter().any(|item| item.name == "WriteLine")
+                }),
             "hover target should be Output module file or resolve WriteLine"
         );
         let dependency_source =

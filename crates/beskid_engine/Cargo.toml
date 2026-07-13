@@ -17,6 +17,7 @@ beskid_codegen = { path = "../beskid_codegen" }
 beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_runtime = { path = "../beskid_runtime" }
 beskid_host = { path = "../beskid_host" }
+beskid_runtime_handlers = { path = "../beskid_runtime_handlers" }
 anyhow = "1"
 
 [build-dependencies]

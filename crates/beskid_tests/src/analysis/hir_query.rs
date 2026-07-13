@@ -2,8 +2,8 @@ use beskid_analysis::hir::{
     AstProgram, HirContractMethodSignature, HirExpressionNode, HirMethodDefinition, HirProgram,
     HirType, lower_program,
 };
-use beskid_analysis::syntax_query::{HirNodeKind, HirQuery};
 use beskid_analysis::syntax::Spanned;
+use beskid_analysis::syntax_query::{HirNodeKind, HirQuery};
 
 use crate::surface::ast::parse_program_ast;
 

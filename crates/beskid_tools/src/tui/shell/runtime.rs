@@ -13,8 +13,8 @@ use tuirealm::terminal::TerminalAdapter;
 use crate::pipeline::tui::widgets::{init_session_logger, shutdown_session_logger};
 use crate::tui::app::BeskidShellApp;
 use crate::tui::input::{InputAction, InputResult};
-use crate::tui::signals::RedrawSignal;
 use crate::tui::message::ShellMessage;
+use crate::tui::realm::shell_event::ShellRealmEvent;
 use crate::tui::realm::{
     PipelineShellComponent, PipelineShellId, PipelineShellMsg, StderrTerminalAdapter,
 };
@@ -22,7 +22,7 @@ use crate::tui::shell::effects::{apply_effects, drain_pending_work};
 use crate::tui::shell::focus::{FocusTarget, OverlayKind, PaneFocus};
 use crate::tui::shell::interrupt::InterruptFlag;
 use crate::tui::shell::state::NavTarget;
-use crate::tui::realm::shell_event::ShellRealmEvent;
+use crate::tui::signals::RedrawSignal;
 
 const TICK: Duration = Duration::from_millis(80);
 
@@ -90,10 +90,7 @@ impl ShellRuntime {
         F: FnOnce(Sender<()>) -> RuntimeOp,
     {
         if self.interrupt.is_set() {
-            return Err(io::Error::new(
-                io::ErrorKind::Interrupted,
-                "interrupted",
-            ));
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "interrupted"));
         }
         let (ack_tx, ack_rx) = mpsc::channel();
         self.send(build(ack_tx))?;
@@ -101,10 +98,7 @@ impl ShellRuntime {
             .recv()
             .map_err(|_| io::Error::other("tui runtime wait interrupted"))?;
         if self.interrupt.is_set() {
-            return Err(io::Error::new(
-                io::ErrorKind::Interrupted,
-                "interrupted",
-            ));
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "interrupted"));
         }
         Ok(())
     }
@@ -145,11 +139,7 @@ fn run_loop(
     let redraw_signal = RedrawSignal::new();
     let shell_component = PipelineShellComponent::new(BeskidShellApp::new(redraw_signal.clone()));
     application
-        .mount(
-            PipelineShellId::Root,
-            Box::new(shell_component),
-            Vec::new(),
-        )
+        .mount(PipelineShellId::Root, Box::new(shell_component), Vec::new())
         .map_err(runtime_err)?;
     application
         .active(&PipelineShellId::Root)
@@ -284,7 +274,10 @@ fn event_loop(
                 RuntimeOp::WaitDismiss(ack) => {
                     {
                         let shell = shell_mut(application);
-                        shell.app.state.set_overlay_visible(OverlayKind::Summary, true);
+                        shell
+                            .app
+                            .state
+                            .set_overlay_visible(OverlayKind::Summary, true);
                         shell.app.state.focus_overlay(OverlayKind::Summary);
                         shell.app.state.sync_summary_explorer();
                     }
@@ -357,10 +350,13 @@ fn event_loop(
 
             drain_pending_work(&tx, &mut shell_mut(application).app.state);
 
-            if shell_mut(application).app.redraw_signal.take_redraw_request() {
+            if shell_mut(application)
+                .app
+                .redraw_signal
+                .take_redraw_request()
+            {
                 dirty = true;
             }
-
         } else {
             thread::sleep(TICK);
         }
@@ -368,12 +364,7 @@ fn event_loop(
         {
             let state = &mut shell_mut(application).app.state;
             if input_action == InputAction::Quit {
-                request_quit(
-                    &interrupt,
-                    state,
-                    &mut pending_focus,
-                    &mut pending_dismiss,
-                );
+                request_quit(&interrupt, state, &mut pending_focus, &mut pending_dismiss);
                 quitting = true;
                 dirty = true;
             } else {

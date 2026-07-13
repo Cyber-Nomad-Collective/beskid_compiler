@@ -115,7 +115,9 @@ pub(crate) fn type_id_for_type(
 ) -> Option<TypeId> {
     match &ty.node {
         HirType::Primitive(primitive) => find_primitive_type_id(type_result, primitive.node),
-        HirType::Complex(path) => type_id_for_complex_type(resolution, type_result, source_path, path),
+        HirType::Complex(path) => {
+            type_id_for_complex_type(resolution, type_result, source_path, path)
+        }
         HirType::Array(inner) => {
             let inner_id = type_id_for_type(resolution, type_result, source_path, inner)?;
             type_result.types.find_array_of(inner_id)
@@ -216,7 +218,8 @@ fn type_id_for_complex_type(
         for arg in &last_segment.node.type_args {
             args.push(type_id_for_type(resolution, type_result, source_path, arg)?);
         }
-        if let Some(base) = resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
+        if let Some(base) =
+            resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
             && let Some(applied) = find_applied_type_id(type_result, base, &args)
         {
             return Some(applied);
@@ -244,7 +247,8 @@ fn type_id_for_complex_type(
                     .or_else(|| find_applied_type_id_for_base(type_result, item_id))
             })
             .or_else(|| {
-                if path.node.segments.len() == 1 && path.node.segments[0].node.type_args.is_empty() {
+                if path.node.segments.len() == 1 && path.node.segments[0].node.type_args.is_empty()
+                {
                     let name = path.node.segments[0].node.name.node.name.as_str();
                     primitive_type_id_for_name(type_result, name)
                 } else {
@@ -272,11 +276,7 @@ fn find_applied_type_id_by_args(type_result: &TypeResult, args: &[TypeId]) -> Op
     }
 }
 
-fn find_applied_type_id(
-    type_result: &TypeResult,
-    base: ItemId,
-    args: &[TypeId],
-) -> Option<TypeId> {
+fn find_applied_type_id(type_result: &TypeResult, base: ItemId, args: &[TypeId]) -> Option<TypeId> {
     let mut index = 0usize;
     loop {
         let type_id = TypeId(index);
@@ -374,16 +374,17 @@ pub(crate) fn method_receiver_type_id(
         return Some(type_id);
     }
     if let HirType::Complex(path) = &def.node
-        && let Some(segment) = path.node.segments.last() {
-            let name = &segment.node.name.node.name;
-            if let Some(item) = resolution
-                .items
-                .iter()
-                .find(|info| info.name == *name && info.kind == ItemKind::Type)
-            {
-                return find_named_type_id(type_result, item.id);
-            }
+        && let Some(segment) = path.node.segments.last()
+    {
+        let name = &segment.node.name.node.name;
+        if let Some(item) = resolution
+            .items
+            .iter()
+            .find(|info| info.name == *name && info.kind == ItemKind::Type)
+        {
+            return find_named_type_id(type_result, item.id);
         }
+    }
     let info = resolution.items.get(method_item_id.0)?;
     let (receiver_name, _) = info.name.split_once("::")?;
     let receiver_item = resolution

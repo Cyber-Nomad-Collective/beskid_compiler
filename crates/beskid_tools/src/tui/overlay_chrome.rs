@@ -1,19 +1,16 @@
 //! Shell Pane + HotkeyFooter chrome for modal overlays.
 
+use crate::shell::primitives::{HotkeyFooter, HotkeyItem};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Clear};
-use crate::shell::primitives::{HotkeyFooter, HotkeyItem};
 use ratkit::widgets::Pane;
 
 /// Dim the terminal behind an overlay.
 pub fn draw_backdrop(frame: &mut Frame, area: Rect) {
-    let block = Block::default().style(
-        Style::default()
-            .bg(Color::Indexed(234))
-            .fg(Color::DarkGray),
-    );
+    let block =
+        Block::default().style(Style::default().bg(Color::Indexed(234)).fg(Color::DarkGray));
     frame.render_widget(block, area);
 }
 

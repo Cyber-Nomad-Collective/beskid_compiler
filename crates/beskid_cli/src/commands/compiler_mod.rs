@@ -25,7 +25,9 @@ use clap::{Args, Subcommand};
 use walkdir::WalkDir;
 
 use crate::project_args::LockfilePolicyArgs;
-use beskid_tools::pipeline::{CliPipeline, PipelineProgressKind, tui::CommandSummary, use_cli_spinner};
+use beskid_tools::pipeline::{
+    CliPipeline, PipelineProgressKind, tui::CommandSummary, use_cli_spinner,
+};
 
 #[derive(Args, Debug)]
 pub struct ModArgs {
@@ -110,7 +112,10 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
     }
 
     if artifact_policy == "reuse"
-        && mod_artifact_descriptor_exists(&resolved.plan.project_root, &resolved.manifest.project.name)
+        && mod_artifact_descriptor_exists(
+            &resolved.plan.project_root,
+            &resolved.manifest.project.name,
+        )
     {
         pipeline_ui.finish_session_with_summary(
             "Mod rebuild complete",
@@ -126,15 +131,14 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
         return Ok(());
     };
 
-    let descriptor = build_mod_artifact_for_resolved(&resolved, &prepared, args.target_triple, pipeline)?;
+    let descriptor =
+        build_mod_artifact_for_resolved(&resolved, &prepared, args.target_triple, pipeline)?;
 
     pipeline_ui.finish_session_with_summary(
         "Mod rebuild complete",
         Some(
-            CommandSummary::plain("Mod rebuild", "Mod rebuild complete").with_stat(
-                "artifact",
-                descriptor.artifact_dir.display().to_string(),
-            ),
+            CommandSummary::plain("Mod rebuild", "Mod rebuild complete")
+                .with_stat("artifact", descriptor.artifact_dir.display().to_string()),
         ),
     );
     println!("mod artifact: {}", descriptor.artifact_dir.display());
@@ -199,17 +203,17 @@ fn build_mod_artifact_for_resolved(
         None,
     );
     let lowered = lower_resolved_input_with_pipeline(&resolved_input, false, pipeline)?;
-    let registrations = extract_mod_contract_registrations(
-        &resolved.manifest.project.name,
-        &lowered.resolution,
-    )
-    .into_iter()
-    .map(|registration| beskid_aot::mod_artifact::ContractRegistration {
-        contract_id: registration.contract_id,
-        type_id: registration.type_id,
-        entry_symbol: registration.entry_symbol,
-    })
-    .collect();
+    let registrations =
+        extract_mod_contract_registrations(&resolved.manifest.project.name, &lowered.resolution)
+            .into_iter()
+            .map(
+                |registration| beskid_aot::mod_artifact::ContractRegistration {
+                    contract_id: registration.contract_id,
+                    type_id: registration.type_id,
+                    entry_symbol: registration.entry_symbol,
+                },
+            )
+            .collect();
     let target = beskid_aot::target::detect_target(target_triple.as_deref())?;
     observe_phase_result(pipeline, AOT_LINK, || {
         build_mod_artifact(ModArtifactBuildRequest {

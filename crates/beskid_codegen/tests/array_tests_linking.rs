@@ -137,7 +137,10 @@ fn lower_collections_array_tests_artifact_without_jit() {
         None,
     )
     .expect("front-end");
-    assert!(front.assembly.hir_units.len() > 1, "expected dependency units");
+    assert!(
+        front.assembly.hir_units.len() > 1,
+        "expected dependency units"
+    );
 
     let assembly = &front.assembly;
     let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);

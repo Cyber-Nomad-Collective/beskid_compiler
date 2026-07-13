@@ -132,10 +132,7 @@ impl MethodDefinition {
     }
 }
 
-fn parse_method_body(
-    pair: Pair<Rule>,
-    span: SpanInfo,
-) -> Result<Spanned<Block>, ParseError> {
+fn parse_method_body(pair: Pair<Rule>, span: SpanInfo) -> Result<Spanned<Block>, ParseError> {
     match pair.as_rule() {
         Rule::Block => Block::parse(pair),
         Rule::ExpressionBody => parse_expression_body(pair, span),

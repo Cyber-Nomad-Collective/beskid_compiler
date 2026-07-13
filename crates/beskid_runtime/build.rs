@@ -6,6 +6,11 @@ fn main() {
     println!("cargo:rerun-if-changed={}", manifest_path.display());
     println!("cargo:rerun-if-changed=build.rs");
 
-    beskid_manifest::generate_runtime_from_path(&manifest_path, &generated_dir)
-        .unwrap_or_else(|err| panic!("beskid_runtime build: generate dispatch table: {err}"));
+    let rust_fallback_handlers = std::env::var("CARGO_FEATURE_RUST_FALLBACK_HANDLERS").is_ok();
+    beskid_manifest::generate_runtime_from_path(
+        &manifest_path,
+        &generated_dir,
+        rust_fallback_handlers,
+    )
+    .unwrap_or_else(|err| panic!("beskid_runtime build: generate dispatch table: {err}"));
 }

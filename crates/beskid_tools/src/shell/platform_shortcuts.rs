@@ -97,9 +97,8 @@ mod tests {
 
     #[test]
     fn super_m_does_not_toggle_menu() {
-        assert!(!toggles_menu(&key(
-            KeyModifiers::SUPER,
-            KeyCode::Char('m'),
-        )));
+        assert!(!toggles_menu(
+            &key(KeyModifiers::SUPER, KeyCode::Char('m'),)
+        ));
     }
 }

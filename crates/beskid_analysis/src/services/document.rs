@@ -430,8 +430,12 @@ pub fn build_document_analysis_for_resolved(
 ) -> DocumentAnalysisSnapshot {
     let (resolution, assembly_module_paths) = assembly
         .and_then(|asm| {
-            resolve_assembly_for_api_documentation(asm, path)
-                .map(|resolution| (Some(resolution), asm.module_index.known_module_path_strings()))
+            resolve_assembly_for_api_documentation(asm, path).map(|resolution| {
+                (
+                    Some(resolution),
+                    asm.module_index.known_module_path_strings(),
+                )
+            })
         })
         .unwrap_or((None, HashSet::new()));
 
@@ -835,10 +839,9 @@ pub fn references_at_offset_workspace(
         if index == assembly.entry_index {
             continue;
         }
-        let Ok(unit_resolution) =
-            assembly
-                .module_index
-                .resolve_unit_hir(&unit_hir.hir, &unit_hir.path)
+        let Ok(unit_resolution) = assembly
+            .module_index
+            .resolve_unit_hir(&unit_hir.hir, &unit_hir.path)
         else {
             continue;
         };

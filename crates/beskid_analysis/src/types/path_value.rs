@@ -168,9 +168,10 @@ fn item_id_for_name(
                     info.source_path
                         .as_ref()
                         .is_some_and(|source| paths::same_file(source, path))
-                }) {
-                    return Some(info.id);
-                }
+                })
+            {
+                return Some(info.id);
+            }
             many.last().map(|info| info.id)
         }
     }

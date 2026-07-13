@@ -4,7 +4,9 @@ use crate::lowering::function::FunctionLoweringState;
 use crate::lowering::locals::{
     expr_type_for_node, node_expr_type, require_expr_type, resolved_value_at,
 };
-use beskid_analysis::hir::{HirBinaryOp, HirExpressionNode, HirFunctionDefinition, HirPrimitiveType};
+use beskid_analysis::hir::{
+    HirBinaryOp, HirExpressionNode, HirFunctionDefinition, HirPrimitiveType,
+};
 use beskid_analysis::resolve::{HirNodeId, ItemId, Resolution, ResolvedValue};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeResult, resolve_path_base_local};
@@ -27,10 +29,7 @@ impl NodeLoweringContext<'_, '_> {
         node_expr_type(self.type_result, node_id)
     }
 
-    pub(crate) fn expr_type_for_node(
-        &self,
-        node: &Spanned<HirExpressionNode>,
-    ) -> Option<TypeId> {
+    pub(crate) fn expr_type_for_node(&self, node: &Spanned<HirExpressionNode>) -> Option<TypeId> {
         expr_type_for_node(self.type_result, node)
     }
 
@@ -51,15 +50,10 @@ impl NodeLoweringContext<'_, '_> {
             let segments = &path.node.path.node.segments;
             if segments.len() == 1 {
                 let name = segments[0].node.name.node.name.as_str();
-                for source_path in [
-                    self.codegen.current_source_path.as_ref(),
-                    None,
-                ] {
-                    if let Some(ResolvedValue::Local(local_id)) = resolved_value_at(
-                        self.resolution,
-                        path.node.path.span,
-                        source_path,
-                    ) {
+                for source_path in [self.codegen.current_source_path.as_ref(), None] {
+                    if let Some(ResolvedValue::Local(local_id)) =
+                        resolved_value_at(self.resolution, path.node.path.span, source_path)
+                    {
                         if let Some(type_id) = self.state.local_type_overrides.get(&local_id) {
                             return Ok(*type_id);
                         }

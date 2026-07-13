@@ -22,6 +22,8 @@ pub fn execute(args: ReplArgs) -> Result<()> {
     let mut session = beskid_repl::ReplSession::with_link_profile(args.runtime_profile.into());
     if args.plain || !std::io::stdin().is_terminal() {
         let mut input = beskid_repl::readline::StdioInput::new();
-        beskid_repl::run(&mut session, &mut input)} else {
-        beskid_repl::run_tui(&mut session)}
+        beskid_repl::run(&mut session, &mut input)
+    } else {
+        beskid_repl::run_tui(&mut session)
+    }
 }

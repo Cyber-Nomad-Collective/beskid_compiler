@@ -1,6 +1,5 @@
 use beskid_analysis::hir::{
-    HirExpressionNode, HirItem, HirLegalityError, HirStatementNode,
-    validate_hir_program,
+    HirExpressionNode, HirItem, HirLegalityError, HirStatementNode, validate_hir_program,
 };
 
 use crate::support::pipeline::lower_resolve as lower_and_resolve;

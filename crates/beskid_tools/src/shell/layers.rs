@@ -40,17 +40,11 @@ mod tests {
     #[test]
     fn input_priority_topmost_wins() {
         assert_eq!(ShellLayer::INPUT_PRIORITY[0], ShellLayer::Palette);
-        assert_eq!(
-            ShellLayer::INPUT_PRIORITY.last(),
-            Some(&ShellLayer::Base)
-        );
+        assert_eq!(ShellLayer::INPUT_PRIORITY.last(), Some(&ShellLayer::Base));
     }
 
     #[test]
     fn draw_order_topmost_is_palette() {
-        assert_eq!(
-            ShellLayer::DRAW_ORDER.last(),
-            Some(&ShellLayer::Palette)
-        );
+        assert_eq!(ShellLayer::DRAW_ORDER.last(), Some(&ShellLayer::Palette));
     }
 }

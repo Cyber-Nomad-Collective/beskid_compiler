@@ -1,11 +1,11 @@
 //! Permanent shell chrome: pinned top bar + footer hotkeys.
 
+use super::primitives::{HotkeyFooter, HotkeyItem};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use super::primitives::{HotkeyFooter, HotkeyItem};
 
 pub type FooterHotkeyItem = HotkeyItem;
 
@@ -26,12 +26,7 @@ pub struct ShellChrome {
 
 impl ShellChrome {
     /// Pinned top bar: welcome label and opened workspace/project scope.
-    pub fn render_pinned_top_bar(
-        &self,
-        area: Rect,
-        frame: &mut Frame,
-        scope: &ShellScope,
-    ) {
+    pub fn render_pinned_top_bar(&self, area: Rect, frame: &mut Frame, scope: &ShellScope) {
         if area.height == 0 {
             return;
         }
@@ -39,7 +34,9 @@ impl ShellChrome {
         let line = Line::from(vec![
             Span::styled(
                 "Welcome",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw("   "),
             Span::styled(scope_label, Style::default().fg(Color::DarkGray)),
@@ -101,11 +98,11 @@ impl ShellChrome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     use crate::shell::layout::load::load_from_source;
-    use crate::shell::layout::{resolve::resolve_panels, EMBEDDED_HI_V2};
+    use crate::shell::layout::{EMBEDDED_HI_V2, resolve::resolve_panels};
 
     #[test]
     fn pinned_chrome_single_row() {

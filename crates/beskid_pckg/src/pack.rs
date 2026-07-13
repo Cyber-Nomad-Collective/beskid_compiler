@@ -82,24 +82,20 @@ pub fn detect_pack_profile_with_override(
     source_root: &Path,
     override_kind: PackProfileOverride,
 ) -> Result<PackProfile, PckgError> {
-    let manifest_path = discover_project_manifest_in_dir(source_root).map_err(|err| {
-        PckgError::Api {
+    let manifest_path =
+        discover_project_manifest_in_dir(source_root).map_err(|err| PckgError::Api {
             status: reqwest::StatusCode::BAD_REQUEST,
             message: format!(
                 "failed to discover `.bproj` manifest in {}: {err}",
                 source_root.display()
             ),
             body: None,
-        }
-    })?;
+        })?;
 
     let manifest = if let Some(manifest_path) = manifest_path {
         let source = fs::read_to_string(&manifest_path).map_err(|err| PckgError::Api {
             status: reqwest::StatusCode::BAD_REQUEST,
-            message: format!(
-                "failed to read {}: {err}",
-                manifest_path.display()
-            ),
+            message: format!("failed to read {}: {err}", manifest_path.display()),
             body: None,
         })?;
 

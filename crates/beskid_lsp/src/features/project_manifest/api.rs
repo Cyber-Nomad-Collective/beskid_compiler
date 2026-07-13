@@ -1,4 +1,7 @@
-use beskid_analysis::projects::{parse_bsol_document, project_manifest_for_member_dir, BsolBlock, BsolDocument, BsolItem, BsolSpan, BsolValue};
+use beskid_analysis::projects::{
+    BsolBlock, BsolDocument, BsolItem, BsolSpan, BsolValue, parse_bsol_document,
+    project_manifest_for_member_dir,
+};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -96,7 +99,14 @@ fn span_to_range(text: &str, span: BsolSpan) -> Range {
 }
 
 const PROJECT_RESERVED: &[&str] = &[
-    "target", "dependency", "link", "workspace", "member", "override", "registry", "project",
+    "target",
+    "dependency",
+    "link",
+    "workspace",
+    "member",
+    "override",
+    "registry",
+    "project",
 ];
 
 fn is_project_root_block(kind: &str) -> bool {
@@ -163,8 +173,7 @@ fn project_document_symbols_from_ast(text: &str, document: &BsolDocument) -> Vec
     for block in &document.blocks {
         let range = span_to_range(text, block.span);
         if is_project_root_block(&block.kind) {
-            let name = assignment_string_value(block, "name")
-                .unwrap_or_else(|| block.kind.clone());
+            let name = assignment_string_value(block, "name").unwrap_or_else(|| block.kind.clone());
             symbols.push(build_document_symbol(
                 name,
                 Some("project".to_string()),
@@ -267,11 +276,7 @@ const PROJECT_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
         CompletionItemKind::MODULE,
         "Top-level dependency block",
     ),
-    (
-        "link",
-        CompletionItemKind::MODULE,
-        "Top-level link block",
-    ),
+    ("link", CompletionItemKind::MODULE, "Top-level link block"),
     (
         "name",
         CompletionItemKind::FIELD,
@@ -311,8 +316,16 @@ const PROJECT_MANIFEST_KEYWORDS: &[CompletionTriple] = &[
     ("Test", CompletionItemKind::ENUM_MEMBER, "Test target kind"),
     ("Mod", CompletionItemKind::ENUM_MEMBER, "Mod project type"),
     ("Meta", CompletionItemKind::ENUM_MEMBER, "Meta project type"),
-    ("Template", CompletionItemKind::ENUM_MEMBER, "Template project type"),
-    ("Aggregate", CompletionItemKind::ENUM_MEMBER, "Aggregate project type"),
+    (
+        "Template",
+        CompletionItemKind::ENUM_MEMBER,
+        "Template project type",
+    ),
+    (
+        "Aggregate",
+        CompletionItemKind::ENUM_MEMBER,
+        "Aggregate project type",
+    ),
     ("Bsol", CompletionItemKind::ENUM_MEMBER, "Bsol project type"),
 ];
 

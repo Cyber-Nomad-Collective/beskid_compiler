@@ -75,10 +75,11 @@ pub fn extract_mod_contract_registrations_with_program(
             continue;
         }
         if let Some(qualified) = qualified_name(resolution, item.id)
-            && let Some(spec) = contract_specs_by_id.get(qualified.as_str()) {
-                contract_item_specs.insert(item.id, spec);
-                continue;
-            }
+            && let Some(spec) = contract_specs_by_id.get(qualified.as_str())
+        {
+            contract_item_specs.insert(item.id, spec);
+            continue;
+        }
         if let Some(spec) = contract_specs_by_short.get(item.name.as_str()) {
             contract_item_specs.insert(item.id, spec);
         }
@@ -165,10 +166,7 @@ fn collect_internal_symbol_entry_methods_from_type(
     }
 }
 
-fn method_has_attribute(
-    attributes: &[Spanned<crate::syntax::Attribute>],
-    name: &str,
-) -> bool {
+fn method_has_attribute(attributes: &[Spanned<crate::syntax::Attribute>], name: &str) -> bool {
     attributes
         .iter()
         .any(|attribute| attribute.node.name.node.name == name)
@@ -189,9 +187,7 @@ pub fn mod_contract_entry_symbol(package_id: &str, entry_method: &str) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::{
-        lower_normalize_resolve_type_spanned, parse_program_with_source_name,
-    };
+    use crate::services::{lower_normalize_resolve_type_spanned, parse_program_with_source_name};
 
     #[test]
     fn extracts_sdk_contract_registrations_from_type_conformances() {
@@ -240,7 +236,10 @@ type DemoCollect : Collector {
 "#;
         let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
         let symbols = collect_internal_symbol_entry_methods(&program).expect("scan");
-        assert_eq!(symbols.get(&("DemoCollect".to_string(), "Collect".to_string())), Some(&"Collect".to_string()));
+        assert_eq!(
+            symbols.get(&("DemoCollect".to_string(), "Collect".to_string())),
+            Some(&"Collect".to_string())
+        );
         let (_hir, resolution, _typed) =
             lower_normalize_resolve_type_spanned(&program).expect("lower mod registration fixture");
         let registrations =

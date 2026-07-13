@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use beskid_analysis::hir::{HirItem, HirMethodDefinition, HirProgram};
 use beskid_analysis::paths::unit_path_key;
-use beskid_analysis::resolve::{canonical_item_id, ItemId, ItemInfo, ItemKind, Resolution};
+use beskid_analysis::resolve::{ItemId, ItemInfo, ItemKind, Resolution, canonical_item_id};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 
@@ -14,8 +14,8 @@ use crate::lowering::types::type_id_for_type;
 
 use super::call_graph::collect_calls_in_body;
 use super::def_index::{
-    find_function_by_name, find_function_by_span, find_method_by_name, find_method_by_span,
-    FunctionDefIndex,
+    FunctionDefIndex, find_function_by_name, find_function_by_span, find_method_by_name,
+    find_method_by_span,
 };
 
 /// One symbol to emit in the link plan.
@@ -94,13 +94,7 @@ impl LinkPlan {
                 ));
             },
         );
-        visit_callees(
-            root_calls,
-            resolution,
-            type_result,
-            def_index,
-            &mut callees,
-        );
+        visit_callees(root_calls, resolution, type_result, def_index, &mut callees);
 
         Self { callees, entries }
     }
@@ -160,13 +154,7 @@ impl LinkPlan {
                 }
             },
         );
-        visit_callees(
-            root_calls,
-            resolution,
-            type_result,
-            def_index,
-            &mut callees,
-        );
+        visit_callees(root_calls, resolution, type_result, def_index, &mut callees);
 
         Self { callees, entries }
     }
@@ -336,7 +324,10 @@ fn visit_callees(
                             .map(|i| i.name.clone())
                             .unwrap_or_default()
                     });
-                callees.push(LinkSymbol::Method { item: item_id, mangled });
+                callees.push(LinkSymbol::Method {
+                    item: item_id,
+                    mangled,
+                });
             } else {
                 callees.push(LinkSymbol::Function {
                     item: item_id,
@@ -396,7 +387,8 @@ fn calls_in_item_body_from_source(
         return Vec::new();
     };
     let logical_name = path.display().to_string();
-    let Ok(program) = beskid_analysis::services::parse_program_with_source_name(&logical_name, &source)
+    let Ok(program) =
+        beskid_analysis::services::parse_program_with_source_name(&logical_name, &source)
     else {
         return Vec::new();
     };
@@ -424,7 +416,8 @@ fn method_mangled_name(
     type_result: &TypeResult,
     def: &Spanned<HirMethodDefinition>,
 ) -> Option<String> {
-    let receiver_type_id = type_id_for_type(resolution, type_result, None, &def.node.receiver_type)?;
+    let receiver_type_id =
+        type_id_for_type(resolution, type_result, None, &def.node.receiver_type)?;
     let receiver_item = match type_result.types.get(receiver_type_id) {
         Some(TypeInfo::Named(item_id)) => *item_id,
         Some(TypeInfo::Applied { base, .. }) => *base,
@@ -450,9 +443,10 @@ fn item_info_for_span<'a>(
                     .source_path
                     .as_ref()
                     .is_some_and(|source| beskid_analysis::paths::same_file(source, path))
-        }) {
-            return Some(info);
-        }
+        })
+    {
+        return Some(info);
+    }
 
     let matches: Vec<_> = resolution
         .items

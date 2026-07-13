@@ -80,28 +80,24 @@ pub extern "C-unwind" fn beskid_register_handlers(
         }
         match entry.group {
             DISPATCH_GROUP_USIZE => {
-                overrides.usize_handlers.insert(
-                    entry.tag,
-                    unsafe { std::mem::transmute::<*const u8, UsizeHandler>(handler) },
-                );
+                overrides.usize_handlers.insert(entry.tag, unsafe {
+                    std::mem::transmute::<*const u8, UsizeHandler>(handler)
+                });
             }
             DISPATCH_GROUP_PTR => {
-                overrides.ptr_handlers.insert(
-                    entry.tag,
-                    unsafe { std::mem::transmute::<*const u8, PtrHandler>(handler) },
-                );
+                overrides.ptr_handlers.insert(entry.tag, unsafe {
+                    std::mem::transmute::<*const u8, PtrHandler>(handler)
+                });
             }
             DISPATCH_GROUP_UNIT => {
-                overrides.unit_handlers.insert(
-                    entry.tag,
-                    unsafe { std::mem::transmute::<*const u8, UnitHandler>(handler) },
-                );
+                overrides.unit_handlers.insert(entry.tag, unsafe {
+                    std::mem::transmute::<*const u8, UnitHandler>(handler)
+                });
             }
             DISPATCH_GROUP_I64 => {
-                overrides.i64_handlers.insert(
-                    entry.tag,
-                    unsafe { std::mem::transmute::<*const u8, I64Handler>(handler) },
-                );
+                overrides.i64_handlers.insert(entry.tag, unsafe {
+                    std::mem::transmute::<*const u8, I64Handler>(handler)
+                });
             }
             _ => {}
         }

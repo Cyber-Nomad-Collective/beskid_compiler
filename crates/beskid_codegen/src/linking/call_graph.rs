@@ -288,12 +288,7 @@ fn collect_calls_in_expression(
             );
         }
         HirExpressionNode::SpawnExpression(spawn) => {
-            collect_spawn_entry_callees(
-                &spawn.node.callee,
-                resolution,
-                source_path,
-                out,
-            );
+            collect_spawn_entry_callees(&spawn.node.callee, resolution, source_path, out);
         }
         _ => {}
     }
@@ -382,8 +377,7 @@ fn method_item_for_receiver_type(
         .iter()
         .find(|info| {
             info.kind == ItemKind::Method
-                && (info.name == qualified
-                    || info.name.ends_with(&format!("::{method_name}")))
+                && (info.name == qualified || info.name.ends_with(&format!("::{method_name}")))
         })
         .map(|info| info.id)
 }
@@ -403,12 +397,8 @@ fn resolve_member_method_call(
         resolution,
         method_item_for_receiver_type(resolution, type_result, receiver_type, method_name)?,
     );
-    let mangled = method_mangled_from_receiver(
-        method_item_id,
-        receiver_type,
-        resolution,
-        type_result,
-    );
+    let mangled =
+        method_mangled_from_receiver(method_item_id, receiver_type, resolution, type_result);
     Some(ResolvedCall {
         item_id: method_item_id,
         symbol: symbol_for_call(resolution, method_item_id),
@@ -453,9 +443,10 @@ fn resolve_call(
                     resolution,
                     type_result,
                     source_path,
-                ) {
-                    generic_args = inferred;
-                }
+                )
+            {
+                generic_args = inferred;
+            }
             let mangled = build_function_mangled(item_id, &generic_args, resolution, type_result);
             Some(ResolvedCall {
                 item_id,
@@ -635,9 +626,10 @@ fn item_id_for_call_path(
                             .as_ref()
                             .is_some_and(|source| beskid_analysis::paths::same_file(source, path))
                     })
-                }) {
-                    return Some(*item);
-                }
+                })
+            {
+                return Some(*item);
+            }
             many.last().copied()
         }
     }
@@ -833,9 +825,10 @@ fn expr_type_for_call_arg(
     if let HirExpressionNode::PathExpression(path) = &arg.node {
         let span = path.node.path.span;
         if let Some(local_id) = resolution.tables.local_id_for_span(span, source_path)
-            && let Some(type_id) = type_result.local_types.get(&local_id) {
-                return Some(*type_id);
-            }
+            && let Some(type_id) = type_result.local_types.get(&local_id)
+        {
+            return Some(*type_id);
+        }
     }
     None
 }

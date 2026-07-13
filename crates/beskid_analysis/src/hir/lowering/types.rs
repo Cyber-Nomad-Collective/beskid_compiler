@@ -4,8 +4,8 @@ use crate::hir::{
 };
 use crate::syntax::{self, Spanned};
 
-use super::items::lower_attributes;
 use super::Lowerable;
+use super::items::lower_attributes;
 
 impl Lowerable for Spanned<syntax::Type> {
     type Output = Spanned<HirType>;

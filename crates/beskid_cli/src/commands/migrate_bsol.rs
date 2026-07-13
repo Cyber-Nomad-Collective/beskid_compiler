@@ -35,8 +35,8 @@ pub fn execute(args: MigrateBsolArgs) -> Result<()> {
         }
     };
 
-    let (migrated, _validated) = migrate_document(&source, &args.to)
-        .map_err(|err| anyhow::Error::msg(err.to_string()))?;
+    let (migrated, _validated) =
+        migrate_document(&source, &args.to).map_err(|err| anyhow::Error::msg(err.to_string()))?;
 
     match &args.output {
         Some(path) => std::fs::write(path, &migrated)

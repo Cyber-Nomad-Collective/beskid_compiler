@@ -5,10 +5,10 @@ use ratatui::Frame;
 use crate::shell::chrome::ShellChrome;
 use crate::shell::hotkeys::ShellHotkeys;
 use crate::shell::key_bindings::ShortcutBindings;
-use crate::shell::overlay_render::{render_panel_overlays, OverlayRenderContext};
+use crate::shell::overlay_render::{OverlayRenderContext, render_panel_overlays};
 use crate::shell::shortcut_clicks::ShortcutClickTargets;
 use crate::tui::layout::{
-    resolve_shell_layout, PANEL_DETAIL, PANEL_FOOTER, PANEL_LOG, PANEL_STAGE,
+    PANEL_DETAIL, PANEL_FOOTER, PANEL_LOG, PANEL_STAGE, resolve_shell_layout,
 };
 use crate::tui::screens::pipeline_compile;
 use crate::tui::shell::state::ShellState;
@@ -40,9 +40,5 @@ pub fn draw_shell(frame: &mut Frame, state: &mut ShellState) {
         &mut click_targets,
     );
 
-    render_panel_overlays(
-        frame,
-        area,
-        OverlayRenderContext::Pipeline(state),
-    );
+    render_panel_overlays(frame, area, OverlayRenderContext::Pipeline(state));
 }

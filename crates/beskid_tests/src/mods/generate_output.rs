@@ -33,8 +33,8 @@ fn write_code_generate_output_honors_layout_manifest() {
         }],
     )
     .expect("write");
-    let written =
-        fs::read_to_string(package.join(".generated/Core/Text/Regex/Generated.g.bd")).expect("read");
+    let written = fs::read_to_string(package.join(".generated/Core/Text/Regex/Generated.g.bd"))
+        .expect("read");
     assert!(written.starts_with("// layout test\n"));
     assert!(written.contains("pub i64 Demo()"));
     let _ = fs::remove_dir_all(package);

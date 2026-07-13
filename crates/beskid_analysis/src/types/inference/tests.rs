@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use crate::hir::HirPrimitiveType;
 use crate::resolve::ItemId;
 use crate::syntax::SpanInfo;
-use crate::types::result::TypeError;
 use crate::types::inference::{
     ConstraintSet, FunctionSignature, InferenceResult, TypeEnv, TypeVar,
     infer_generic_args_from_call_types, is_numeric, solve_constraints, unify_numeric_types,
     unify_types,
 };
+use crate::types::result::TypeError;
 use crate::types::{TypeId, TypeInfo, TypeTable};
 
 fn i64_id(table: &mut TypeTable) -> TypeId {

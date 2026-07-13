@@ -7,8 +7,8 @@
 mod analyze;
 mod api;
 mod capabilities;
-mod collect;
 mod code_string;
+mod collect;
 mod context;
 pub mod diagnostics;
 mod discovery;
@@ -19,8 +19,8 @@ pub mod invoker;
 mod load;
 mod merge;
 mod native;
-mod registrations;
 mod query_bridge;
+mod registrations;
 mod reparse;
 mod rewrite;
 mod types;
@@ -34,8 +34,8 @@ pub use api::{
 pub use collect::{capture_target_fingerprint, targets_changed};
 pub use diagnostics::{ModHostDiagnostics, ModHostIssue, analyzer_diagnostic_to_semantic};
 pub use emit_bridge::{
-    materialize_contract_definition, materialize_function_definition,
-    materialize_program_item, materialize_program_items, materialize_type_definition,
+    materialize_contract_definition, materialize_function_definition, materialize_program_item,
+    materialize_program_items, materialize_type_definition,
 };
 pub use generate_output::{
     CodeGenerateOutput, GenerateOutputFile, GenerateOutputLayout, load_generate_output_layout,
@@ -44,8 +44,8 @@ pub use generate_output::{
 };
 pub use invoker::{
     AnalyzerDiagnostic, AnalyzerOutcome, AnalyzerSeverity, CollectorOutcome,
-    ContractInvocationError, ContractInvoker, GeneratorOutcome, InvocationKind,
-    RewriterOutcome, ScriptedContractInvoker, StubContractInvoker,
+    ContractInvocationError, ContractInvoker, GeneratorOutcome, InvocationKind, RewriterOutcome,
+    ScriptedContractInvoker, StubContractInvoker,
 };
 pub use native::NativeContractInvoker;
 pub use query_bridge::{
@@ -53,9 +53,7 @@ pub use query_bridge::{
     SdkSyntaxPipeline, SdkSyntaxQuery, SdkSyntaxSelection, downcast_node, materialize_snapshot,
     query_at,
 };
-pub use registrations::{
-    extract_mod_contract_registrations, mod_contract_entry_symbol,
-};
+pub use registrations::{extract_mod_contract_registrations, mod_contract_entry_symbol};
 pub use types::{
     ContractRegistration, ModArtifactDescriptor, ModHostAnalyzeResult, ModHostGenerateResult,
     ModHostInput, ModHostSession, ProgramItem,

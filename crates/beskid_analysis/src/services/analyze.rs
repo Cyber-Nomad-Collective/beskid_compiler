@@ -146,7 +146,6 @@ pub fn analyze_source_with_compilation_context(
             with_semantic_diagnostics: true,
             module_level_meta_items_allowed: Some(ctx.module_level_meta_items_allowed()),
             ..Default::default()
-
         },
         ..Default::default()
     };

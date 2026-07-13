@@ -133,10 +133,7 @@ mod tests {
 
     #[test]
     fn camel_case_composition_keyword_prefixes() {
-        assert_eq!(
-            rust_snake_to_beskid_field_camel("scope_name"),
-            "scopeName"
-        );
+        assert_eq!(rust_snake_to_beskid_field_camel("scope_name"), "scopeName");
         assert_eq!(rust_snake_to_beskid_field_camel("host_name"), "hostName");
     }
 

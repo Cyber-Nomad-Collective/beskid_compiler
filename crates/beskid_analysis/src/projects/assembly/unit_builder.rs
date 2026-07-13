@@ -51,12 +51,12 @@ impl<'a> UnitBuilder<'a> {
         if let (Some(ast_snap), Some(hir_snap)) =
             (self.store.read_ast(&fp), self.store.read_hir(&fp))
             && ast_snap.meta.source_len == source.len()
-                && let Ok(unit) = source_unit_from_ast_snapshot(&ast_snap, source)
-                && let Ok(hir) = unit_hir_from_hir_snapshot(path.to_path_buf(), &unit, &hir_snap)
-            {
-                crate::projects::assembly::unit_cache::record_disk_hit();
-                return Ok((unit, hir));
-            }
+            && let Ok(unit) = source_unit_from_ast_snapshot(&ast_snap, source)
+            && let Ok(hir) = unit_hir_from_hir_snapshot(path.to_path_buf(), &unit, &hir_snap)
+        {
+            crate::projects::assembly::unit_cache::record_disk_hit();
+            return Ok((unit, hir));
+        }
 
         if let Some(build) = self.salsa_build {
             crate::projects::assembly::unit_cache::record_disk_miss();

@@ -174,9 +174,7 @@ fn entry_resolution_with_db_populates_symbol_registry() {
 
     use beskid_analysis::projects::AssemblyDiscovery;
     use beskid_analysis::services::{PrepareOptions, resolve_input};
-    use beskid_queries::{
-        BeskidDatabase, configure_db_for_project, entry_resolution_with_db,
-    };
+    use beskid_queries::{BeskidDatabase, configure_db_for_project, entry_resolution_with_db};
 
     let compiler_root = {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -186,13 +184,11 @@ fn entry_resolution_with_db_populates_symbol_registry() {
             .expect("compiler root")
             .to_path_buf()
     };
-    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../beskid_e2e_tests/fixtures/corelib_mvp");
+    let fixture_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
     let main_path = fixture_root.join("Src/Main.bd");
     let _source = std::fs::read_to_string(&main_path).expect("read Main.bd");
-    let project_root = fixture_root
-        .canonicalize()
-        .unwrap_or(fixture_root.clone());
+    let project_root = fixture_root.canonicalize().unwrap_or(fixture_root.clone());
 
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(&compiler_root).expect("chdir");
@@ -256,12 +252,10 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
             .expect("compiler root")
             .to_path_buf()
     };
-    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../beskid_e2e_tests/fixtures/corelib_mvp");
+    let fixture_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
     let main_path = fixture_root.join("Src/Main.bd");
-    let project_root = fixture_root
-        .canonicalize()
-        .unwrap_or(fixture_root.clone());
+    let project_root = fixture_root.canonicalize().unwrap_or(fixture_root.clone());
 
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(&compiler_root).expect("chdir");

@@ -23,7 +23,9 @@ pub fn lower_runtime_manifest(document: ValidatedDocument) -> Result<ManifestRoo
                 manifest.abi_version = parse_u32_field(&block, "abi_version")?;
             }
             "profile" => {
-                let label = block.label.ok_or_else(|| "profile block requires label".to_string())?;
+                let label = block
+                    .label
+                    .ok_or_else(|| "profile block requires label".to_string())?;
                 let owners = block.lists.get("owners").cloned().unwrap_or_default();
                 let entry = ProfileEntry { owners };
                 match label.as_str() {
@@ -85,6 +87,7 @@ fn lower_dispatch(block: ValidatedBlock) -> Result<DispatchEntry, String> {
             .get("owner")
             .cloned()
             .unwrap_or_else(|| "language".to_string()),
+        language_handler: bool_field(&block, "language_handler").unwrap_or(false),
     })
 }
 

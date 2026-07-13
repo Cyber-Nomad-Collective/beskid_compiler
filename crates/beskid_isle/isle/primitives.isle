@@ -1,0 +1,38 @@
+;; Trusted runtime primitives lowering to stock Cranelift CLIF.
+;; Context extern constructors bridge to FunctionBuilder in src/context.rs.
+
+(type Value (primitive Value))
+
+(decl partial iconst_i64 (i64) Value)
+(extern constructor iconst_i64 iconst_i64)
+
+(decl partial load_i64 (Value i64) Value)
+(extern constructor load_i64 load_i64)
+
+(decl partial store_i64 (Value i64 Value) Value)
+(extern constructor store_i64 store_i64)
+
+(decl partial load_i8_zext (Value i64) Value)
+(extern constructor load_i8_zext load_i8_zext)
+
+(decl partial ptr_add (Value i64) Value)
+(extern constructor ptr_add ptr_add)
+
+(decl partial icmp_eq (Value Value) Value)
+(extern constructor icmp_eq icmp_eq)
+
+(decl partial icmp_ne (Value Value) Value)
+(extern constructor icmp_ne icmp_ne)
+
+(decl partial icmp_slt (Value Value) Value)
+(extern constructor icmp_slt icmp_slt)
+
+;; Envelope payload slots use the same stock `load_i64` primitive at byte offsets.
+
+;; Compare two bytes at offsets within bounded regions (caller proves len).
+(decl partial icmp_byte_ne (Value Value i64 i64) Value)
+(extern constructor icmp_byte_ne icmp_byte_ne)
+
+;; Bounded lexicographic compare over `len` bytes; returns -1/0/1 as i64.
+(decl partial bounded_memcmp (Value Value Value) Value)
+(extern constructor bounded_memcmp bounded_memcmp)

@@ -167,9 +167,8 @@ pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
                 front_end: FrontEndOptions {
                     with_semantic_diagnostics: true,
                     ..Default::default()
-
                 },
-            ..Default::default()
+                ..Default::default()
             },
             None,
         )

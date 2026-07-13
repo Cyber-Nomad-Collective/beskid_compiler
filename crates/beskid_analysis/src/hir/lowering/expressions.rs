@@ -81,9 +81,7 @@ impl Lowerable for Spanned<syntax::Expression> {
     }
 }
 
-fn lower_code_string_expression(
-    code: &Spanned<syntax::CodeStringLiteral>,
-) -> HirExpressionNode {
+fn lower_code_string_expression(code: &Spanned<syntax::CodeStringLiteral>) -> HirExpressionNode {
     use super::Lowerable;
     use crate::hir::{HirBinaryExpression, HirBinaryOp, HirLiteral, HirLiteralExpression};
     use crate::services::parse_expression_source;
@@ -91,23 +89,25 @@ fn lower_code_string_expression(
     let mut expr: Option<Spanned<HirExpressionNode>> = None;
     for segment in &code.node.segments {
         let part = match segment {
-            syntax::CodeStringSegment::Text(text) => HirExpressionNode::LiteralExpression(
-                Spanned::new(
+            syntax::CodeStringSegment::Text(text) => {
+                HirExpressionNode::LiteralExpression(Spanned::new(
                     HirLiteralExpression {
                         literal: Spanned::new(HirLiteral::String(text.clone()), code.span),
                     },
                     code.span,
-                ),
-            ),
-            syntax::CodeStringSegment::Hole(source) => match parse_expression_source("@code-hole", source) {
-                Ok(parsed) => parsed.lower().node,
-                Err(_) => HirExpressionNode::LiteralExpression(Spanned::new(
-                    HirLiteralExpression {
-                        literal: Spanned::new(HirLiteral::String(String::new()), code.span),
-                    },
-                    code.span,
-                )),
-            },
+                ))
+            }
+            syntax::CodeStringSegment::Hole(source) => {
+                match parse_expression_source("@code-hole", source) {
+                    Ok(parsed) => parsed.lower().node,
+                    Err(_) => HirExpressionNode::LiteralExpression(Spanned::new(
+                        HirLiteralExpression {
+                            literal: Spanned::new(HirLiteral::String(String::new()), code.span),
+                        },
+                        code.span,
+                    )),
+                }
+            }
         };
         expr = Some(match expr {
             None => Spanned::new(part, code.span),

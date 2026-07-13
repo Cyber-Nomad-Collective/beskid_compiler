@@ -5,9 +5,9 @@ use crate::hir::{
     HirBlock, HirExpressionNode, HirForStatement, HirItem, HirLegalityError, HirLetStatement,
     HirPath, HirProgram, HirStatementNode, HirUseDeclaration, validate_hir_program,
 };
-use crate::syntax_query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
 use crate::resolve::{Resolution, Resolver};
 use crate::syntax::{SpanInfo, Spanned};
+use crate::syntax_query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
 use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
@@ -116,6 +116,14 @@ impl SemanticPipelineRule {
                         attribute: name,
                         target: target.as_str().to_string(),
                         allowed: self.attribute_target_names(allowed),
+                    },
+                );
+            }
+            HirLegalityError::InvalidRuntimeHandler { span, message } => {
+                ctx.emit_issue(
+                    span,
+                    SemanticIssueKind::NonNormalizedHirControlFlow {
+                        message: format!("invalid runtime handler: {message}"),
                     },
                 );
             }

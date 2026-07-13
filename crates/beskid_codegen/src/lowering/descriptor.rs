@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use beskid_analysis::resolve::{ItemId, Resolution};
-use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 use beskid_analysis::types::path_value::struct_fields_for_item;
+use beskid_analysis::types::{TypeId, TypeInfo, TypeResult};
 
 const HEADER_SIZE: usize = std::mem::size_of::<usize>();
 const HEADER_ALIGN: usize = std::mem::align_of::<usize>();

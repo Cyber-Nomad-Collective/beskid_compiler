@@ -47,7 +47,9 @@ fn entry_key_for_resolved(resolved: &ResolvedInput) -> Option<String> {
     )))
 }
 
-fn module_paths_from_resolution(resolution: &beskid_analysis::resolve::Resolution) -> HashSet<String> {
+fn module_paths_from_resolution(
+    resolution: &beskid_analysis::resolve::Resolution,
+) -> HashSet<String> {
     resolution
         .module_graph
         .modules()
@@ -62,10 +64,7 @@ fn module_paths_from_resolution(resolution: &beskid_analysis::resolve::Resolutio
         .collect()
 }
 
-fn bump_entry_file_revision(
-    db: &mut beskid_queries::BeskidDatabase,
-    resolved: &ResolvedInput,
-) {
+fn bump_entry_file_revision(db: &mut beskid_queries::BeskidDatabase, resolved: &ResolvedInput) {
     if let Some(entry_key) = entry_key_for_resolved(resolved) {
         bump_file_revision(db, &entry_key);
     }
@@ -87,25 +86,18 @@ async fn resolved_input_for_path(
 ) -> Option<(ResolvedInput, beskid_analysis::CompilationContext)> {
     let session = cached_compilation_context(state, path).await?;
     session.compile_plan.as_ref()?;
-    let mut resolved = resolve_input(
-        Some(&path.to_path_buf()),
-        None,
-        None,
-        None,
-        false,
-        false,
-    )
-    .ok()
-    .or_else(|| {
-        let plan = session.compile_plan.clone()?;
-        Some(resolved_input_from_plan(
-            path.to_path_buf(),
-            text.to_string(),
-            plan,
-            None,
-            None,
-        ))
-    })?;
+    let mut resolved = resolve_input(Some(&path.to_path_buf()), None, None, None, false, false)
+        .ok()
+        .or_else(|| {
+            let plan = session.compile_plan.clone()?;
+            Some(resolved_input_from_plan(
+                path.to_path_buf(),
+                text.to_string(),
+                plan,
+                None,
+                None,
+            ))
+        })?;
     resolved.source = text.to_string();
     Some((resolved, session))
 }
@@ -122,8 +114,7 @@ async fn build_document_analysis(
     }
 
     let path = uri_to_path(uri)?;
-    let program =
-        parse_program_with_source_name(&uri.to_string(), text).ok()?;
+    let program = parse_program_with_source_name(&uri.to_string(), text).ok()?;
 
     let (resolved, session) = match resolved_input_for_path(state, &path, text).await {
         Some(pair) => pair,
@@ -271,7 +262,9 @@ pub async fn schedule_typed_prepare_rebuild(state: Arc<RwLock<State>>, uri: Uri)
             .copied()
             .unwrap_or(0)
             .saturating_add(1);
-        write.typed_prepare_schedule_revision.insert(uri.clone(), next);
+        write
+            .typed_prepare_schedule_revision
+            .insert(uri.clone(), next);
         next
     };
 

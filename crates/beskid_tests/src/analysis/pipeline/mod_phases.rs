@@ -4,9 +4,7 @@ use std::sync::Mutex;
 use beskid_analysis::mod_host::{
     ModHostInput, run_analyze_rewrite_with_invoker, run_through_generate,
 };
-use beskid_analysis::projects::{
-    CompilePlan, ResolvedDependencyProject, Target, TargetKind,
-};
+use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
 use beskid_analysis::services::SemanticSnapshot;
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_pipeline::phases::{
@@ -112,7 +110,7 @@ project {
             source,
             pipeline: Some(&pipeline),
             invoker: None,
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     )
     .expect("mod host generate");

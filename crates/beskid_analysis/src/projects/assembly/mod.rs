@@ -12,11 +12,11 @@ pub use discovery::{
     module_path_exists_on_disk, module_path_to_relative_path, resolve_module_file,
 };
 pub use hir_units::{UnitHir, build_hir_units, reindex_hir_units_in_place};
+pub(crate) use loader::assemble_program;
+pub use loader::assemble_program_with_materializer;
 pub use loader::{
     AssemblyError, UnitMaterializer, assembly_options_for_plan, assembly_options_for_prepare,
 };
-pub use loader::assemble_program_with_materializer;
-pub(crate) use loader::assemble_program;
 pub use module_index::{ModuleIndex, infer_logical_module_path};
 pub use roots::{
     EffectiveCompilationRoots, RootEntry, effective_roots_for_plan, effective_roots_from_lockfile,

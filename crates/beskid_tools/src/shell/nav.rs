@@ -210,9 +210,7 @@ impl NavRegistry {
     }
 
     pub fn roots(&self) -> Vec<&NavItemDescriptor> {
-        self.items()
-            .filter(|item| item.parent.is_none())
-            .collect()
+        self.items().filter(|item| item.parent.is_none()).collect()
     }
 
     pub fn children_of(&self, parent_id: &str) -> Vec<&NavItemDescriptor> {
@@ -232,7 +230,9 @@ impl From<BuiltinNavItem> for NavItemDescriptor {
             BuiltinNavAction::Page(id) => NavAction::Page(id.into()),
             BuiltinNavAction::Overlay(id) => NavAction::Overlay(id.into()),
             BuiltinNavAction::Widget(id) => NavAction::Widget(id.into()),
-            BuiltinNavAction::Cli(argv) => NavAction::Cli(argv.iter().map(|s| (*s).into()).collect()),
+            BuiltinNavAction::Cli(argv) => {
+                NavAction::Cli(argv.iter().map(|s| (*s).into()).collect())
+            }
         };
         Self {
             id: value.id.into(),

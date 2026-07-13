@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use bsol::{load_profile, parse_bsol_document, validate, ValidatedDocument};
+use bsol::{ValidatedDocument, load_profile, parse_bsol_document, validate};
 
 use super::scope::ShellScope;
 
@@ -139,10 +139,7 @@ impl ToolSettingsRegistry {
     }
 
     pub fn descriptor(&self, tool_id: &str, key: &str) -> Option<&ToolSettingDescriptor> {
-        self.page(tool_id)?
-            .settings
-            .iter()
-            .find(|s| s.key == key)
+        self.page(tool_id)?.settings.iter().find(|s| s.key == key)
     }
 
     pub fn default_value(&self, tool_id: &str, key: &str) -> Option<&str> {
@@ -192,15 +189,17 @@ pub fn load_config(scope: &ShellScope, registry: &ToolSettingsRegistry) -> Tools
     };
 
     if user_config_path().is_file()
-        && let Ok(parsed) = load_from_path(&user_config_path()) {
-            config.merge(&parsed);
-        }
+        && let Ok(parsed) = load_from_path(&user_config_path())
+    {
+        config.merge(&parsed);
+    }
 
     if let Some(path) = scope_config_path(scope)
         && path.is_file()
-            && let Ok(parsed) = load_from_path(&path) {
-                config.merge(&parsed);
-            }
+        && let Ok(parsed) = load_from_path(&path)
+    {
+        config.merge(&parsed);
+    }
 
     apply_defaults(&mut config, registry);
     config
@@ -238,7 +237,10 @@ fn apply_defaults(config: &mut ToolsConfig, registry: &ToolSettingsRegistry) {
     for page in registry.pages() {
         for desc in page.settings {
             let key = (page.tool_id.to_string(), desc.key.to_string());
-            config.values.entry(key).or_insert_with(|| desc.default.to_string());
+            config
+                .values
+                .entry(key)
+                .or_insert_with(|| desc.default.to_string());
         }
     }
 }

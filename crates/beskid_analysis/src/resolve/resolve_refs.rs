@@ -704,14 +704,15 @@ impl Resolver {
 
         // `use Console.Controls.ProgressBar; ProgressBar.ProgressBar.New()` — member in aliased module.
         if original_segments.len() >= 3
-            && let Some(base_module) = self.module_imports.get(&original_segments[0]) {
-                let member = &original_segments[original_segments.len() - 1];
-                if let ModulePathLookup::Found(item) =
-                    self.lookup_named_item_in_module(base_module, member)
-                {
-                    return ModulePathLookup::Found(item);
-                }
+            && let Some(base_module) = self.module_imports.get(&original_segments[0])
+        {
+            let member = &original_segments[original_segments.len() - 1];
+            if let ModulePathLookup::Found(item) =
+                self.lookup_named_item_in_module(base_module, member)
+            {
+                return ModulePathLookup::Found(item);
             }
+        }
 
         // `Console.Controls.Panel.Panel.Render` — skip homonymous type segment in fully qualified paths.
         if original_segments.len() >= 4 {

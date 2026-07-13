@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::hir::{
-    HirContractNode, HirFieldKind, HirFunctionDefinition, HirItem, HirMethodDefinition,
-    HirPath, HirPrimitiveType, HirProgram, HirType, HirTypeDefinition,
+    HirContractNode, HirFieldKind, HirFunctionDefinition, HirItem, HirMethodDefinition, HirPath,
+    HirPrimitiveType, HirProgram, HirType, HirTypeDefinition,
 };
 use crate::paths;
 use crate::resolve::{ItemId, ItemKind, Resolution, ResolvedType};
@@ -180,7 +180,10 @@ fn remap_type_id(remap: &HashMap<TypeId, TypeId>, type_id: TypeId) -> TypeId {
     remap.get(&type_id).copied().unwrap_or(type_id)
 }
 
-fn remap_signature(remap: &HashMap<TypeId, TypeId>, signature: &FunctionSignature) -> FunctionSignature {
+fn remap_signature(
+    remap: &HashMap<TypeId, TypeId>,
+    signature: &FunctionSignature,
+) -> FunctionSignature {
     FunctionSignature {
         params: signature
             .params
@@ -356,7 +359,9 @@ impl<'a> TypeSurfaceBuilder<'a> {
         if let Some(item_id) = item_id {
             self.surface.struct_fields_ordered.insert(item_id, ordered);
             if !event_fields.is_empty() {
-                self.surface.struct_event_fields.insert(item_id, event_fields);
+                self.surface
+                    .struct_event_fields
+                    .insert(item_id, event_fields);
             }
         }
     }
@@ -369,9 +374,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         let mut inserted = Vec::new();
         for generic in &def.generics {
             let name = generic.node.name.clone();
-            let type_id = self
-                .types
-                .intern(TypeInfo::GenericParam(name.clone()));
+            let type_id = self.types.intern(TypeInfo::GenericParam(name.clone()));
             self.generic_params.insert(name.clone(), type_id);
             inserted.push(name);
         }
@@ -401,9 +404,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         let mut inserted = Vec::new();
         for generic in &def.generics {
             let name = generic.node.name.clone();
-            let type_id = self
-                .types
-                .intern(TypeInfo::GenericParam(name.clone()));
+            let type_id = self.types.intern(TypeInfo::GenericParam(name.clone()));
             self.generic_params.insert(name.clone(), type_id);
             inserted.push(name);
         }
@@ -485,10 +486,9 @@ impl<'a> TypeSurfaceBuilder<'a> {
         let Some(receiver_item) = self.named_item_id(receiver_type_id) else {
             return;
         };
-        self.surface.methods_by_receiver.insert(
-            (receiver_item, def.name.node.name.clone()),
-            method_item_id,
-        );
+        self.surface
+            .methods_by_receiver
+            .insert((receiver_item, def.name.node.name.clone()), method_item_id);
         self.surface.method_function_signatures.insert(
             method_item_id,
             FunctionSignature {
@@ -533,8 +533,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 &mut cache,
                 &mut HashSet::new(),
             );
-            let Some(contract_item_id) =
-                self.item_id_for_name(&contract_name, ItemKind::Contract)
+            let Some(contract_item_id) = self.item_id_for_name(&contract_name, ItemKind::Contract)
             else {
                 continue;
             };
@@ -717,13 +716,10 @@ impl<'a> TypeSurfaceBuilder<'a> {
         for arg in &last.node.type_args {
             args.push(self.type_id_for_type(arg)?);
         }
-        Some(
-            self.types
-                .intern(TypeInfo::Applied {
-                    base: item_id,
-                    args,
-                }),
-        )
+        Some(self.types.intern(TypeInfo::Applied {
+            base: item_id,
+            args,
+        }))
     }
 
     fn item_id_for_type_path(&self, path: &Spanned<HirPath>) -> Option<ItemId> {

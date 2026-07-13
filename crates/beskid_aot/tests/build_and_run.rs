@@ -13,8 +13,8 @@ fn build_and_run_executes_linked_executable() {
     let source = "i32 Main() { return 7; }";
     fs::write(&source_path, source).expect("write source");
 
-    let lowered =
-        lower_source_for_entrypoint(&source_path, source, "Main", false, None).expect("lower fixture");
+    let lowered = lower_source_for_entrypoint(&source_path, source, "Main", false, None)
+        .expect("lower fixture");
     validate_artifact(&lowered.artifact).expect("validate link plan");
 
     let runtime = default_runtime_strategy(BuildProfile::Debug, None, RuntimeLinkProfile::Std)
@@ -49,8 +49,8 @@ fn build_and_run_executes_str_len() {
     let source = "i64 Main() { return __str_len(\"hello\"); }";
     std::fs::write(&source_path, source).expect("write source");
 
-    let lowered =
-        lower_source_for_entrypoint(&source_path, source, "Main", false, None).expect("lower fixture");
+    let lowered = lower_source_for_entrypoint(&source_path, source, "Main", false, None)
+        .expect("lower fixture");
     let runtime = default_runtime_strategy(BuildProfile::Debug, None, RuntimeLinkProfile::Std)
         .unwrap_or(RuntimeStrategy::Standalone);
 
@@ -71,7 +71,7 @@ fn build_and_run_executes_str_len() {
 
 #[test]
 fn host_archive_resolves_in_dev() {
-    use beskid_aot::{resolve_bundled_host_archive, BuildProfile};
+    use beskid_aot::{BuildProfile, resolve_bundled_host_archive};
     let path = match resolve_bundled_host_archive(BuildProfile::Debug, None) {
         Ok(path) => path,
         Err(_) => {
@@ -94,8 +94,8 @@ fn std_build_links_host_archive() {
     let source = "i32 Main() { return 7; }";
     fs::write(&source_path, source).expect("write source");
 
-    let lowered =
-        lower_source_for_entrypoint(&source_path, source, "Main", false, None).expect("lower fixture");
+    let lowered = lower_source_for_entrypoint(&source_path, source, "Main", false, None)
+        .expect("lower fixture");
     let runtime = default_runtime_strategy(BuildProfile::Debug, None, RuntimeLinkProfile::Std)
         .expect("runtime");
     let exe_path = temp.path().join("beskid_run");
@@ -120,5 +120,9 @@ fn std_build_links_host_archive() {
         invocation.contains("libbeskid_runtime_bridge"),
         "expected runtime bridge in link line, got: {invocation}"
     );
-    assert!(exe_path.is_file(), "expected executable at {}", exe_path.display());
+    assert!(
+        exe_path.is_file(),
+        "expected executable at {}",
+        exe_path.display()
+    );
 }
