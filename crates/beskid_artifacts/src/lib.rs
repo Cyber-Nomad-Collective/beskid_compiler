@@ -9,7 +9,4 @@ pub mod snapshot;
 pub use fingerprint::{content_fingerprint, grammar_revision};
 pub use manifest::{ARTIFACT_SCHEMA_VERSION, ArtifactManifest, UnitArtifactMeta};
 pub use persistence::{ArtifactStore, UnitArtifactPaths};
-pub use snapshot::{
-    AstUnitSnapshot, HirUnitSnapshot, UnitArtifactRecord, decode_ast, decode_hir, encode_ast,
-    encode_hir,
-};
+pub use snapshot::{AstUnitSnapshot, UnitArtifactRecord, decode_ast, encode_ast};

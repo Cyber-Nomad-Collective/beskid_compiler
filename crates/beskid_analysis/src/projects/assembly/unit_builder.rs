@@ -4,10 +4,7 @@ use std::path::{Path, PathBuf};
 
 use beskid_artifacts::{ArtifactStore, content_fingerprint};
 
-use crate::artifacts::{
-    hir_unit_snapshot, source_unit_from_ast_snapshot, source_unit_snapshot,
-    unit_hir_from_hir_snapshot,
-};
+use crate::artifacts::{source_unit_from_ast_snapshot, source_unit_snapshot};
 use crate::projects::assembly::loader::import_paths_from_source_full;
 
 use super::loader::AssemblyError;
@@ -48,15 +45,17 @@ impl<'a> UnitBuilder<'a> {
         source: &str,
     ) -> Result<(SourceUnit, UnitHir), AssemblyError> {
         let fp = content_fingerprint(source);
-        if let (Some(ast_snap), Some(hir_snap)) =
-            (self.store.read_ast(&fp), self.store.read_hir(&fp))
+        if let Some(ast_snap) = self.store.read_ast(&fp)
             && ast_snap.meta.source_len == source.len()
-                && let Ok(unit) = source_unit_from_ast_snapshot(&ast_snap, source)
-                && let Ok(hir) = unit_hir_from_hir_snapshot(path.to_path_buf(), &unit, &hir_snap)
-            {
-                crate::projects::assembly::unit_cache::record_disk_hit();
-                return Ok((unit, hir));
-            }
+            && let Ok(unit) = source_unit_from_ast_snapshot(&ast_snap, source)
+        {
+            let hir = build_hir_units(std::slice::from_ref(&unit))
+                .into_iter()
+                .next()
+                .expect("unit hir");
+            crate::projects::assembly::unit_cache::record_disk_hit();
+            return Ok((unit, hir));
+        }
 
         if let Some(build) = self.salsa_build {
             crate::projects::assembly::unit_cache::record_disk_miss();
@@ -81,27 +80,17 @@ impl<'a> UnitBuilder<'a> {
             .into_iter()
             .next()
             .expect("unit hir");
-        self.write_artifacts(&unit, &hir, source)?;
+        self.write_artifacts(&unit, source)?;
         Ok((unit, hir))
     }
 
-    fn write_artifacts(
-        &self,
-        unit: &SourceUnit,
-        hir: &UnitHir,
-        source: &str,
-    ) -> Result<(), AssemblyError> {
-        let fp = content_fingerprint(source);
+    fn write_artifacts(&self, unit: &SourceUnit, source: &str) -> Result<(), AssemblyError> {
         let imports = import_paths_from_source_full(source);
         let ast = source_unit_snapshot(unit, &imports).map_err(|err| AssemblyError::Parse {
             path: unit.path.clone(),
             message: err.to_string(),
         })?;
-        let hir_snap = hir_unit_snapshot(&fp, hir).map_err(|err| AssemblyError::Parse {
-            path: unit.path.clone(),
-            message: err.to_string(),
-        })?;
-        if let Err(err) = self.store.write_unit(&ast, &hir_snap) {
+        if let Err(err) = self.store.write_unit(&ast) {
             log::warn!(
                 "failed to write unit artifact for {}: {err}",
                 unit.path.display()

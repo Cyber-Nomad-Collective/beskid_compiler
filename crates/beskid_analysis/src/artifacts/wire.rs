@@ -1,14 +1,9 @@
-//! Postcard encode/decode for `SourceUnit` and `UnitHir` snapshots.
+//! Postcard encode/decode for expanded syntax unit snapshots.
 
-use beskid_artifacts::{
-    AstUnitSnapshot, HirUnitSnapshot, UnitArtifactMeta, content_fingerprint, grammar_revision,
-};
+use beskid_artifacts::{AstUnitSnapshot, UnitArtifactMeta, content_fingerprint, grammar_revision};
 use postcard::Error as PostcardError;
 
-use crate::artifacts::hir_wire::{
-    decode_hir_program as decode_hir_marker, encode_hir_program as encode_hir_marker,
-};
-use crate::projects::assembly::{SourceUnit, UnitHir};
+use crate::projects::assembly::SourceUnit;
 use crate::syntax::{Program, Spanned};
 
 pub fn encode_syntax_program(program: &Spanned<Program>) -> Result<Vec<u8>, PostcardError> {
@@ -39,17 +34,6 @@ pub fn source_unit_snapshot(
     ))
 }
 
-pub fn hir_unit_snapshot(
-    content_fingerprint: &str,
-    hir_unit: &UnitHir,
-) -> Result<HirUnitSnapshot, PostcardError> {
-    let hir_wire = encode_hir_marker(&hir_unit.hir, content_fingerprint)?;
-    Ok(HirUnitSnapshot::new(
-        content_fingerprint.to_string(),
-        hir_wire,
-    ))
-}
-
 pub fn source_unit_from_ast_snapshot(
     snapshot: &AstUnitSnapshot,
     source: &str,
@@ -60,21 +44,5 @@ pub fn source_unit_from_ast_snapshot(
         path: crate::paths::unit_path_key(&snapshot.meta.source_path),
         source: source.to_string(),
         program,
-    })
-}
-
-pub fn unit_hir_from_hir_snapshot(
-    path: std::path::PathBuf,
-    source_unit: &SourceUnit,
-    snapshot: &HirUnitSnapshot,
-) -> Result<UnitHir, String> {
-    let hir = decode_hir_marker(
-        &snapshot.hir_wire,
-        source_unit,
-        &snapshot.content_fingerprint,
-    )?;
-    Ok(UnitHir {
-        path: crate::paths::unit_path_key(&path),
-        hir,
     })
 }

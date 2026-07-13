@@ -1,4 +1,4 @@
-//! On-disk layout: `{cache_root}/units/{content_fp}/{meta.json, ast.bin, hir.bin}`.
+//! On-disk layout: `{cache_root}/units/{content_fp}/{meta.json, ast.bin}`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,16 +8,13 @@ static ARTIFACT_STORE_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 use crate::fingerprint::grammar_revision;
 use crate::manifest::{ARTIFACT_SCHEMA_VERSION, ArtifactManifest};
-use crate::snapshot::{
-    AstUnitSnapshot, HirUnitSnapshot, decode_ast, decode_hir, encode_ast, encode_hir,
-};
+use crate::snapshot::{AstUnitSnapshot, decode_ast, encode_ast};
 
 #[derive(Debug, Clone)]
 pub struct UnitArtifactPaths {
     pub unit_dir: PathBuf,
     pub meta: PathBuf,
     pub ast: PathBuf,
-    pub hir: PathBuf,
 }
 
 pub struct ArtifactStore {
@@ -68,7 +65,6 @@ impl ArtifactStore {
         UnitArtifactPaths {
             meta: unit_dir.join("meta.json"),
             ast: unit_dir.join("ast.bin"),
-            hir: unit_dir.join("hir.bin"),
             unit_dir,
         }
     }
@@ -88,20 +84,7 @@ impl ArtifactStore {
         Some(snapshot)
     }
 
-    pub fn read_hir(&self, content_fingerprint: &str) -> Option<HirUnitSnapshot> {
-        if !self.is_manifest_current() {
-            return None;
-        }
-        let paths = self.unit_paths(content_fingerprint);
-        let bytes = fs::read(paths.hir).ok()?;
-        let snapshot = decode_hir(&bytes).ok()?;
-        if snapshot.schema_version != ARTIFACT_SCHEMA_VERSION {
-            return None;
-        }
-        Some(snapshot)
-    }
-
-    pub fn write_unit(&self, ast: &AstUnitSnapshot, hir: &HirUnitSnapshot) -> std::io::Result<()> {
+    pub fn write_unit(&self, ast: &AstUnitSnapshot) -> std::io::Result<()> {
         let _guard = ARTIFACT_STORE_WRITE_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -114,7 +97,6 @@ impl ArtifactStore {
             serde_json::to_string_pretty(&ast.meta)?.as_bytes(),
         )?;
         write_atomically(&paths.ast, &encode_ast(ast).map_err(io_err)?)?;
-        write_atomically(&paths.hir, &encode_hir(hir).map_err(io_err)?)?;
         Ok(())
     }
 

@@ -46,8 +46,14 @@ fn artifact_store_writes_and_reads() {
         },
         vec![9, 8, 7],
     );
-    let hir = beskid_artifacts::HirUnitSnapshot::new(fp.clone(), vec![5, 4, 3]);
-    store.write_unit(&ast, &hir).expect("write");
+    store.write_unit(&ast).expect("write");
     assert!(store.read_ast(&fp).is_some());
-    assert!(store.read_hir(&fp).is_some());
+    let unit_dir = store.unit_paths(&fp).unit_dir;
+    let files = std::fs::read_dir(unit_dir)
+        .expect("unit directory")
+        .map(|entry| entry.expect("entry").file_name())
+        .collect::<Vec<_>>();
+    assert_eq!(files.len(), 2, "only syntax and metadata are persisted");
+    assert!(files.contains(&"ast.bin".into()));
+    assert!(files.contains(&"meta.json".into()));
 }
