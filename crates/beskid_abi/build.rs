@@ -15,12 +15,15 @@ fn main() {
     for (name, contents) in [
         ("abi_v5_contract.rs", artifacts.rust),
         ("beskid_runtime_abi_v5.h", artifacts.c_header),
-        ("beskid_runtime_abi_v5.inc", artifacts.gnu_asm),
-        ("beskid_runtime_abi_v5_masm.inc", artifacts.masm),
         ("abi-v5.json", artifacts.abi_json),
         ("abi-v5-audit.json", artifacts.audit_json),
     ] {
         std::fs::write(out_dir.join(name), contents)
+            .unwrap_or_else(|err| panic!("beskid_abi build: write generated `{name}`: {err}"));
+    }
+    for (target, contents) in artifacts.gnu_asm.into_iter().chain(artifacts.masm) {
+        let name = format!("beskid_runtime_abi_v5_{}.inc", target.replace('-', "_"));
+        std::fs::write(out_dir.join(&name), contents)
             .unwrap_or_else(|err| panic!("beskid_abi build: write generated `{name}`: {err}"));
     }
 }

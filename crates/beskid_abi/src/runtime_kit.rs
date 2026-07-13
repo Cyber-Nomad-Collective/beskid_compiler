@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::abi_v5::{
-    ABI_V5, AbiManifestV5, LIBRARY_LIFECYCLE_SYMBOLS, RUNTIME_SYMBOL_PREFIX, RuntimeAuditMetadata,
-    TargetMetadata, TargetTriple, TargetValidationError,
+    ABI_V5, AbiManifestV5, RuntimeAuditMetadata, TargetMetadata, TargetTriple,
+    TargetValidationError,
 };
 
 pub const RUNTIME_KIT_SCHEMA_VERSION: u32 = 1;
@@ -173,14 +173,6 @@ impl RuntimeKitMetadata {
                 field: "export_allowlist".into(),
             });
         }
-        if let Some(symbol) = self.export_allowlist.iter().find(|symbol| {
-            !symbol.starts_with(RUNTIME_SYMBOL_PREFIX)
-                && !LIBRARY_LIFECYCLE_SYMBOLS.contains(&symbol.as_str())
-        }) {
-            return Err(RuntimeKitValidationError::UnversionedExportSymbol(
-                symbol.clone(),
-            ));
-        }
         Ok(())
     }
 }
@@ -231,7 +223,6 @@ pub enum RuntimeKitValidationError {
     InvalidArtifactSet { target: String },
     InvalidArtifactPath(String),
     DuplicateAllowlistSymbol { symbol: String },
-    UnversionedExportSymbol(String),
     InvalidAbiContract,
     ContractTargetMismatch,
     ContractLayoutHashMismatch { actual: String },

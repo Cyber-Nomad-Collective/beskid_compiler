@@ -277,12 +277,30 @@ fn generated_headers_are_deterministic_fresh_and_include_contract_constants() {
             )
         );
         assert!(c_header.contains("void beskid_arch_v5_context_switch(void * from, void * to);"));
-        assert!(asm_include.contains("BESKID_X86_64_UNKNOWN_LINUX_GNU_STACK_ALIGNMENT = 16"));
-        assert!(asm_include.contains("BESKID_AARCH64_APPLE_DARWIN_CONTEXT_SIZE = 176"));
-        assert!(asm_include.contains("BESKID_X86_64_PC_WINDOWS_MSVC_SHADOW_SPACE = 32"));
-        assert!(asm_include.contains(
-            "BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_INIT_RETURN_TRAMPOLINE_REGISTER = stack+40"
-        ));
+        match manifest.target.triple {
+            TargetTriple::X86_64UnknownLinuxGnu => {
+                assert!(
+                    asm_include.contains("BESKID_X86_64_UNKNOWN_LINUX_GNU_STACK_ALIGNMENT = 16")
+                );
+                assert!(!asm_include.contains("AARCH64"));
+                assert!(!asm_include.contains("WINDOWS"));
+            }
+            TargetTriple::Aarch64AppleDarwin => {
+                assert!(asm_include.contains("BESKID_AARCH64_APPLE_DARWIN_CONTEXT_SIZE = 176"));
+                assert!(!asm_include.contains("X86_64"));
+                assert!(!asm_include.contains("stack+40"));
+            }
+            TargetTriple::X86_64PcWindowsMsvc => {
+                assert!(asm_include.contains("BESKID_X86_64_PC_WINDOWS_MSVC_SHADOW_SPACE EQU 32"));
+                assert!(
+                    asm_include.contains(
+                        "BESKID_CONTEXT_INIT_RETURN_TRAMPOLINE_REGISTER TEXTEQU <stack+40>"
+                    )
+                );
+                assert!(!asm_include.contains("AARCH64"));
+            }
+            TargetTriple::Other(_) => unreachable!(),
+        }
     }
 }
 
@@ -355,7 +373,7 @@ fn runtime_kit_abi_json_embeds_the_single_contract_and_generated_audit_metadata(
     assert!(
         metadata
             .audit
-            .allowed_imports
+            .allowed_exports
             .contains(&"beskid_arch_v5_context_switch".into())
     );
 
@@ -410,6 +428,20 @@ fn audit_metadata_rejects_unknown_duplicate_and_rust_provenance_contracts() {
     unknown.allowed_imports.push("mystery_allocator".into());
     assert!(unknown.validate(&manifest).is_err());
 
+    let elf_undefined = audit
+        .allowed_imports
+        .iter()
+        .map(|symbol| format!("{symbol}@GLIBC_2.2.5"))
+        .collect::<Vec<_>>();
+    assert!(
+        audit
+            .audit_object_symbol_tables(
+                audit.allowed_exports.iter().map(String::as_str),
+                elf_undefined.iter().map(String::as_str),
+            )
+            .is_ok()
+    );
+
     let mut missing_rust_guard = audit;
     missing_rust_guard
         .forbidden_rust_symbols
@@ -422,26 +454,73 @@ fn audit_metadata_rejects_unknown_duplicate_and_rust_provenance_contracts() {
         "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
     )
     .unwrap();
+    let macho_defined = macho_audit
+        .allowed_exports
+        .iter()
+        .map(|symbol| format!("_{symbol}"))
+        .collect::<Vec<_>>();
+    let macho_undefined = macho_audit
+        .allowed_imports
+        .iter()
+        .map(|symbol| format!("_{symbol}"))
+        .collect::<Vec<_>>();
     assert!(
         macho_audit
-            .audit_object_symbols(["_beskid_rt_v5_process_init", "_write"])
+            .audit_object_symbol_tables(
+                macho_defined.iter().map(String::as_str),
+                macho_undefined.iter().map(String::as_str),
+            )
             .is_ok()
     );
-    assert!(macho_audit.audit_object_symbols(["___rust_alloc"]).is_err());
+    for forbidden in [
+        "___rust_alloc",
+        "_core::panicking::panic_fmt",
+        "_rust_eh_personality",
+        "_abfall_switch",
+        "__RNvCs1234_4core9panicking9panic_fmt",
+        "__ZN4core9panicking9panic_fmt17h0123456789abcdefE",
+    ] {
+        let mut defined = macho_defined.clone();
+        defined.push(forbidden.into());
+        assert!(
+            macho_audit
+                .audit_object_symbol_tables(
+                    defined.iter().map(String::as_str),
+                    macho_undefined.iter().map(String::as_str),
+                )
+                .is_err()
+        );
+    }
+
+    let mut missing = macho_defined.clone();
+    missing.pop();
     assert!(
         macho_audit
-            .audit_object_symbols(["_core::panicking::panic_fmt"])
+            .audit_object_symbol_tables(
+                missing.iter().map(String::as_str),
+                macho_undefined.iter().map(String::as_str),
+            )
             .is_err()
     );
+
+    let windows = AbiManifestV5::canonical_runtime(supported_targets()[2].clone());
+    let windows_audit = RuntimeAuditMetadata::for_manifest(
+        &windows,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    )
+    .unwrap();
+    let windows_undefined = windows_audit
+        .allowed_imports
+        .iter()
+        .map(|symbol| format!("__imp_{symbol}"))
+        .collect::<Vec<_>>();
     assert!(
-        macho_audit
-            .audit_object_symbols(["_rust_eh_personality"])
-            .is_err()
-    );
-    assert!(
-        macho_audit
-            .audit_object_symbols(["_abfall_switch"])
-            .is_err()
+        windows_audit
+            .audit_object_symbol_tables(
+                windows_audit.allowed_exports.iter().map(String::as_str),
+                windows_undefined.iter().map(String::as_str),
+            )
+            .is_ok()
     );
 }
 

@@ -117,8 +117,8 @@ pub struct RuntimeManifestV5 {
 pub struct GeneratedV5Artifacts {
     pub rust: String,
     pub c_header: String,
-    pub gnu_asm: String,
-    pub masm: String,
+    pub gnu_asm: BTreeMap<String, String>,
+    pub masm: BTreeMap<String, String>,
     pub abi_json: String,
     pub audit_json: String,
 }
@@ -262,39 +262,43 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
 }
 
 fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
-    let expected_targets = [
-        "aarch64-apple-darwin",
-        "x86_64-pc-windows-msvc",
-        "x86_64-unknown-linux-gnu",
-    ];
-    let actual = manifest
+    if manifest.targets.is_empty() {
+        return Err("manifest must define at least one target".into());
+    }
+    unique(
+        manifest.targets.iter().map(|target| target.triple.as_str()),
+        "target",
+    )?;
+    for target in &manifest.targets {
+        if target.triple.is_empty()
+            || target.endianness != "little"
+            || target.pointer_width != 64
+            || target.calling_convention.is_empty()
+            || target.object_format.is_empty()
+            || !matches!(target.symbol_prefix.as_str(), "" | "_")
+        {
+            return Err(format!(
+                "target {} violates generic ABI-v5 target invariants",
+                target.triple
+            ));
+        }
+    }
+    let target_names = manifest
         .targets
         .iter()
         .map(|target| target.triple.as_str())
         .collect::<BTreeSet<_>>();
-    if actual != expected_targets.into_iter().collect() {
-        return Err("manifest must define exactly the three ABI-v5 targets".into());
-    }
-    for target in &manifest.targets {
-        let expected = match target.triple.as_str() {
-            "x86_64-unknown-linux-gnu" => ("little", 64, "system_v", "elf", ""),
-            "aarch64-apple-darwin" => ("little", 64, "apple_aarch64", "macho", "_"),
-            "x86_64-pc-windows-msvc" => ("little", 64, "windows_x64", "coff", ""),
-            _ => unreachable!(),
-        };
-        if (
-            target.endianness.as_str(),
-            target.pointer_width,
-            target.calling_convention.as_str(),
-            target.object_format.as_str(),
-            target.symbol_prefix.as_str(),
-        ) != expected
-        {
-            return Err(format!(
-                "target `{}` properties do not match the ABI-v5 contract",
-                target.triple
-            ));
-        }
+    if manifest
+        .layouts
+        .iter()
+        .filter_map(|layout| layout.target.as_deref())
+        .any(|target| !target_names.contains(target))
+        || manifest
+            .platform_imports
+            .iter()
+            .any(|import| !target_names.contains(import.target.as_str()))
+    {
+        return Err("target-specific contract entry references an unknown target".into());
     }
     if manifest.meta.runtime_publisher != "beskid-lang.org"
         || manifest.meta.runtime_package != "beskid-runtime-native"
@@ -322,6 +326,10 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     if trap_codes != (1..=10).collect() {
         return Err("trap codes must be exactly 1 through 10".into());
     }
+    unique(manifest.traps.iter().map(|trap| trap.name.as_str()), "trap")?;
+    if manifest.traps.iter().any(|trap| trap.name.is_empty()) {
+        return Err("trap names must not be empty".into());
+    }
     unique(
         manifest.exports.iter().map(|entry| entry.symbol.as_str()),
         "export",
@@ -337,89 +345,20 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             .map(|entry| (entry.target.as_deref(), entry.name.as_str())),
         "layout",
     )?;
-    let expected_exports = [
-        "beskid_library_attach_v5",
-        "beskid_library_detach_v5",
-        "beskid_rt_v5_abi_version",
-        "beskid_rt_v5_process_init",
-        "beskid_rt_v5_process_shutdown",
-        "beskid_rt_v5_thread_attach",
-        "beskid_rt_v5_thread_detach",
-        "beskid_rt_v5_trap",
-    ];
-    if manifest
-        .exports
-        .iter()
-        .map(|entry| entry.symbol.as_str())
-        .collect::<BTreeSet<_>>()
-        != expected_exports.into_iter().collect()
-    {
-        return Err("runtime export set is not exact".into());
-    }
-    let expected_intrinsics = [
-        "memory_compare",
-        "memory_copy",
-        "memory_set",
-        "native_word_from_pointer",
-        "pointer_add",
-        "pointer_from_native_word",
-        "raw_byte_load",
-        "raw_byte_store",
-        "raw_word_load",
-        "raw_word_store",
-        "system_allocate",
-        "system_free",
-        "tls_get",
-        "tls_set",
-        "trap",
-    ];
-    if manifest
-        .intrinsics
-        .iter()
-        .map(|entry| entry.name.as_str())
-        .collect::<BTreeSet<_>>()
-        != expected_intrinsics.into_iter().collect()
-    {
-        return Err("runtime intrinsic set is not exact".into());
-    }
     for entry in &manifest.exports {
-        let expected = match entry.symbol.as_str() {
-            "beskid_rt_v5_abi_version" => "->u32",
-            "beskid_library_attach_v5" => "pointer->i32",
-            "beskid_library_detach_v5"
-            | "beskid_rt_v5_process_shutdown"
-            | "beskid_rt_v5_thread_detach" => "pointer->void",
-            "beskid_rt_v5_process_init" | "beskid_rt_v5_thread_attach" => "pointer->pointer",
-            "beskid_rt_v5_trap" => "u8,pointer,usize->never",
-            _ => unreachable!(),
-        };
-        if signature(&entry.params, &entry.result) != expected {
-            return Err(format!("export `{}` signature is not exact", entry.symbol));
+        if entry.symbol.is_empty()
+            || (!entry.symbol.contains("_v5_") && !entry.symbol.ends_with("_v5"))
+        {
+            return Err(format!("export {} is not ABI-v5 versioned", entry.symbol));
         }
     }
     for entry in &manifest.intrinsics {
-        let expected = match entry.name.as_str() {
-            "native_word_from_pointer" => "pointer->usize",
-            "pointer_from_native_word" => "usize->pointer",
-            "pointer_add" => "pointer,usize->pointer",
-            "raw_word_load" => "pointer->usize",
-            "raw_word_store" => "pointer,usize->void",
-            "raw_byte_load" => "pointer->u8",
-            "raw_byte_store" => "pointer,u8->void",
-            "memory_set" => "pointer,u8,usize->void",
-            "memory_copy" => "pointer,pointer,usize->void",
-            "memory_compare" => "pointer,pointer,usize->i32",
-            "system_allocate" => "usize,usize->pointer",
-            "system_free" => "pointer,usize->void",
-            "tls_get" => "->pointer",
-            "tls_set" => "pointer->void",
-            "trap" => "u8,pointer,usize->never",
-            _ => unreachable!(),
-        };
-        if signature(&entry.params, &entry.result) != expected
-            || entry.capability != format!("runtime.bootstrap.{}", entry.name)
+        if entry.name.is_empty() || entry.capability != format!("runtime.bootstrap.{}", entry.name)
         {
-            return Err(format!("intrinsic `{}` contract is not exact", entry.name));
+            return Err(format!(
+                "intrinsic {} has an invalid capability id",
+                entry.name
+            ));
         }
     }
     unique(
@@ -429,64 +368,9 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             .map(|entry| (entry.target.as_str(), entry.symbol.as_str())),
         "platform import",
     )?;
-    if manifest.platform_imports.len() != 13 {
-        return Err("platform import set is not exact".into());
-    }
     for entry in &manifest.platform_imports {
-        let (library, expected) = match (entry.target.as_str(), entry.symbol.as_str()) {
-            ("x86_64-unknown-linux-gnu", "_exit") | ("aarch64-apple-darwin", "_exit") => (
-                if entry.target.starts_with("aarch64") {
-                    "libSystem"
-                } else {
-                    "libc"
-                },
-                "i32->never",
-            ),
-            ("x86_64-unknown-linux-gnu", "mmap") | ("aarch64-apple-darwin", "mmap") => (
-                if entry.target.starts_with("aarch64") {
-                    "libSystem"
-                } else {
-                    "libc"
-                },
-                "pointer,usize,i32,i32,i32,i64->pointer",
-            ),
-            ("x86_64-unknown-linux-gnu", "munmap") | ("aarch64-apple-darwin", "munmap") => (
-                if entry.target.starts_with("aarch64") {
-                    "libSystem"
-                } else {
-                    "libc"
-                },
-                "pointer,usize->i32",
-            ),
-            ("x86_64-unknown-linux-gnu", "write") | ("aarch64-apple-darwin", "write") => (
-                if entry.target.starts_with("aarch64") {
-                    "libSystem"
-                } else {
-                    "libc"
-                },
-                "i32,pointer,usize->isize",
-            ),
-            ("x86_64-pc-windows-msvc", "ExitProcess") => ("kernel32", "u32->never"),
-            ("x86_64-pc-windows-msvc", "GetStdHandle") => ("kernel32", "i32->pointer"),
-            ("x86_64-pc-windows-msvc", "VirtualAlloc") => {
-                ("kernel32", "pointer,usize,u32,u32->pointer")
-            }
-            ("x86_64-pc-windows-msvc", "VirtualFree") => ("kernel32", "pointer,usize,u32->i32"),
-            ("x86_64-pc-windows-msvc", "WriteFile") => {
-                ("kernel32", "pointer,pointer,u32,pointer,pointer->i32")
-            }
-            _ => {
-                return Err(format!(
-                    "unknown platform import `{}` for `{}`",
-                    entry.symbol, entry.target
-                ));
-            }
-        };
-        if entry.library != library || signature(&entry.params, &entry.result) != expected {
-            return Err(format!(
-                "platform import `{}` contract is not exact",
-                entry.symbol
-            ));
+        if entry.symbol.is_empty() || entry.library.is_empty() {
+            return Err("platform import symbol/library cannot be empty".into());
         }
     }
     let known_types = [
@@ -555,112 +439,63 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             return Err(format!("layout `{}` has overlapping fields", layout.name));
         }
     }
-    if manifest.assembly.len() != 2 {
-        return Err("exactly two assembly functions are permitted".into());
-    }
+    unique(
+        manifest.assembly.iter().map(|entry| entry.symbol.as_str()),
+        "assembly export",
+    )?;
     for entry in &manifest.assembly {
-        let expected_names: &[&str] = match entry.symbol.as_str() {
-            "beskid_arch_v5_context_init" => &[
-                "context",
-                "stack_top",
-                "entry",
-                "argument",
-                "return_trampoline",
-            ],
-            "beskid_arch_v5_context_switch" => &["from", "to"],
-            _ => return Err("only the two approved assembly symbols are permitted".into()),
-        };
+        if !entry.symbol.starts_with("beskid_arch_v5_") || entry.params.is_empty() {
+            return Err(format!(
+                "assembly {} violates generic ABI-v5 invariants",
+                entry.symbol
+            ));
+        }
+        unique(
+            entry.params.iter().map(|param| param.name.as_str()),
+            "assembly parameter",
+        )?;
         if entry
-            .params
-            .iter()
-            .map(|param| param.name.as_str())
-            .collect::<Vec<_>>()
-            != expected_names
+            .preserved
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>()
+            != target_names
+            || entry
+                .locations
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>()
+                != target_names
         {
             return Err(format!(
-                "assembly `{}` has an invalid named parameter contract",
+                "assembly {} target mappings are incomplete",
                 entry.symbol
             ));
         }
         for target in &manifest.targets {
-            if !entry.preserved.contains_key(&target.triple)
-                || entry.locations.get(&target.triple).map(Vec::len) != Some(entry.params.len())
+            let locations = &entry.locations[&target.triple];
+            if locations.len() != entry.params.len()
+                || locations.iter().any(String::is_empty)
+                || entry.preserved[&target.triple].iter().any(String::is_empty)
             {
                 return Err(format!(
-                    "assembly `{}` lacks exact `{}` preserved/location mapping",
-                    entry.symbol, target.triple
-                ));
-            }
-            let expected_preserved: &[&str] = match target.triple.as_str() {
-                "x86_64-unknown-linux-gnu" => &["rbx", "rbp", "r12", "r13", "r14", "r15"],
-                "aarch64-apple-darwin" => &[
-                    "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29",
-                    "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15",
-                ],
-                "x86_64-pc-windows-msvc" => &[
-                    "rbx", "rbp", "rdi", "rsi", "r12", "r13", "r14", "r15", "xmm6", "xmm7", "xmm8",
-                    "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
-                ],
-                _ => unreachable!(),
-            };
-            let expected_locations: &[&str] = match (target.triple.as_str(), entry.symbol.as_str())
-            {
-                ("x86_64-unknown-linux-gnu", "beskid_arch_v5_context_init") => {
-                    &["rdi", "rsi", "rdx", "rcx", "r8"]
-                }
-                ("x86_64-unknown-linux-gnu", _) => &["rdi", "rsi"],
-                ("aarch64-apple-darwin", "beskid_arch_v5_context_init") => {
-                    &["x0", "x1", "x2", "x3", "x4"]
-                }
-                ("aarch64-apple-darwin", _) => &["x0", "x1"],
-                ("x86_64-pc-windows-msvc", "beskid_arch_v5_context_init") => {
-                    &["rcx", "rdx", "r8", "r9", "stack+40"]
-                }
-                ("x86_64-pc-windows-msvc", _) => &["rcx", "rdx"],
-                _ => unreachable!(),
-            };
-            if entry.preserved[&target.triple]
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>()
-                != expected_preserved
-                || entry.locations[&target.triple]
-                    .iter()
-                    .map(String::as_str)
-                    .collect::<Vec<_>>()
-                    != expected_locations
-            {
-                return Err(format!(
-                    "assembly `{}` has invalid `{}` ABI mapping",
+                    "assembly {} has an invalid {} mapping",
                     entry.symbol, target.triple
                 ));
             }
         }
     }
-    let required_forbidden = [
-        "rust",
-        "_rust",
-        "__rust",
-        "core::panicking",
-        "std::panicking",
-        "alloc::alloc",
-        "panic",
-        "_Unwind",
-        "__Unwind",
-        "eh_personality",
-        "gcc_personality",
-        "abfall",
-        "corosensei",
-    ];
-    if required_forbidden.iter().any(|family| {
-        !manifest
+    if manifest.audit.forbidden_symbol_families.is_empty() {
+        return Err("audit policy must define forbidden provenance families".into());
+    }
+    unique(
+        manifest
             .audit
             .forbidden_symbol_families
             .iter()
-            .any(|actual| actual == family)
-    }) {
-        return Err("audit policy omits a forbidden Rust/runtime provenance family".into());
-    }
+            .map(String::as_str),
+        "forbidden provenance family",
+    )?;
     Ok(())
 }
 
@@ -670,8 +505,28 @@ pub fn generate_v5_artifacts(manifest: &RuntimeManifestV5) -> Result<GeneratedV5
     Ok(GeneratedV5Artifacts {
         rust: render_rust(&manifest),
         c_header: render_c_header(&manifest),
-        gnu_asm: render_asm(&manifest, false),
-        masm: render_asm(&manifest, true),
+        gnu_asm: manifest
+            .targets
+            .iter()
+            .filter(|target| target.object_format != "coff")
+            .map(|target| {
+                (
+                    target.triple.clone(),
+                    render_asm_target(&manifest, target, false),
+                )
+            })
+            .collect(),
+        masm: manifest
+            .targets
+            .iter()
+            .filter(|target| target.object_format == "coff")
+            .map(|target| {
+                (
+                    target.triple.clone(),
+                    render_asm_target(&manifest, target, true),
+                )
+            })
+            .collect(),
         abi_json: canonical_json(&manifest)?,
         audit_json: canonical_json(&manifest.audit)?,
     })
@@ -686,15 +541,20 @@ pub fn write_v5_artifacts(manifest: &RuntimeManifestV5, workspace: &Path) -> Res
     for (path, contents) in [
         (generated.join("abi_v5_contract.rs"), artifacts.rust),
         (include.join("beskid_runtime_abi_v5.h"), artifacts.c_header),
-        (include.join("beskid_runtime_abi_v5.inc"), artifacts.gnu_asm),
-        (
-            include.join("beskid_runtime_abi_v5_masm.inc"),
-            artifacts.masm,
-        ),
         (include.join("abi-v5.json"), artifacts.abi_json),
         (include.join("abi-v5-audit.json"), artifacts.audit_json),
     ] {
         fs::write(path, contents).map_err(|error| error.to_string())?;
+    }
+    for (target, contents) in artifacts.gnu_asm.into_iter().chain(artifacts.masm) {
+        fs::write(
+            include.join(format!(
+                "beskid_runtime_abi_v5_{}.inc",
+                target.replace('-', "_")
+            )),
+            contents,
+        )
+        .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -707,18 +567,104 @@ fn canonical_json(value: &impl Serialize) -> Result<String, String> {
 
 fn render_rust(manifest: &RuntimeManifestV5) -> String {
     let json = serde_json::to_string(manifest).expect("serializable manifest");
+    let mut registers = manifest
+        .assembly
+        .iter()
+        .flat_map(|entry| entry.preserved.values().flatten())
+        .collect::<BTreeSet<_>>();
+    let register_rows = registers
+        .iter()
+        .map(|register| {
+            format!(
+                "    ({register:?}, crate::abi_v5::AssemblyRegister::{}),\n",
+                rust_register_variant(register)
+            )
+        })
+        .collect::<String>();
+    registers.clear();
+    let assembly_rows = manifest
+        .assembly
+        .iter()
+        .map(|entry| {
+            format!(
+                "    ({:?}, crate::abi_v5::AssemblySymbol::{}),\n",
+                entry.symbol,
+                rust_assembly_symbol_variant(&entry.symbol)
+            )
+        })
+        .collect::<String>();
+    let trap_rows = manifest
+        .traps
+        .iter()
+        .map(|trap| format!("    ({:?}, {}),\n", trap.name, trap.code))
+        .collect::<String>();
     format!(
         "// @generated from runtime_manifest.bsol; do not edit.\n\
 pub const ABI_V5_SOURCE_JSON: &str = r#\"{json}\"#;\n\
 pub const ABI_V5_RUNTIME_PUBLISHER: &str = {:?};\n\
 pub const ABI_V5_RUNTIME_PACKAGE: &str = {:?};\n\
 pub const ABI_V5_TRAP_EXIT_STATUS: u32 = {};\n\
-pub const ABI_V5_TRAP_DIAGNOSTIC: &str = {:?};\n",
+pub const ABI_V5_TRAP_DIAGNOSTIC: &str = {:?};\n\
+pub const ABI_V5_TYPES: &[(&str, crate::abi_v5::AbiType)] = &[\n\
+    (\"void\", crate::abi_v5::AbiType::Void),\n\
+    (\"never\", crate::abi_v5::AbiType::Void),\n\
+    (\"pointer\", crate::abi_v5::AbiType::Pointer),\n\
+    (\"usize\", crate::abi_v5::AbiType::USize),\n\
+    (\"isize\", crate::abi_v5::AbiType::ISize),\n\
+    (\"i8\", crate::abi_v5::AbiType::I8),\n\
+    (\"u8\", crate::abi_v5::AbiType::U8),\n\
+    (\"i16\", crate::abi_v5::AbiType::I16),\n\
+    (\"u16\", crate::abi_v5::AbiType::U16),\n\
+    (\"i32\", crate::abi_v5::AbiType::I32),\n\
+    (\"u32\", crate::abi_v5::AbiType::U32),\n\
+    (\"i64\", crate::abi_v5::AbiType::I64),\n\
+    (\"u64\", crate::abi_v5::AbiType::U64),\n\
+    (\"v128\", crate::abi_v5::AbiType::V128),\n\
+    (\"f32\", crate::abi_v5::AbiType::F32),\n\
+    (\"f64\", crate::abi_v5::AbiType::F64),\n\
+];\n\
+pub const ABI_V5_ASSEMBLY_REGISTERS: &[(&str, crate::abi_v5::AssemblyRegister)] = &[\n{register_rows}];\n\
+pub const ABI_V5_ASSEMBLY_SYMBOLS: &[(&str, crate::abi_v5::AssemblySymbol)] = &[\n{assembly_rows}];\n\
+pub const ABI_V5_TRAPS: &[(&str, u8)] = &[\n{trap_rows}];\n",
         manifest.meta.runtime_publisher,
         manifest.meta.runtime_package,
         manifest.meta.trap_exit_status,
         manifest.meta.trap_diagnostic
     )
+}
+
+fn rust_register_variant(register: &str) -> String {
+    if let Some(number) = register.strip_prefix("xmm") {
+        return format!("X86_64Xmm{number}");
+    }
+    if let Some(number) = register.strip_prefix('x') {
+        return format!("Aarch64X{number}");
+    }
+    if let Some(number) = register.strip_prefix('v') {
+        return format!("Aarch64V{number}");
+    }
+    format!("X86_64{}", pascal_case(register))
+}
+
+fn rust_assembly_symbol_variant(symbol: &str) -> String {
+    pascal_case(
+        symbol
+            .strip_prefix("beskid_arch_v5_")
+            .expect("validated assembly symbol prefix"),
+    )
+}
+
+fn pascal_case(value: &str) -> String {
+    value
+        .split('_')
+        .map(|part| {
+            let mut chars = part.chars();
+            chars
+                .next()
+                .map(|first| first.to_ascii_uppercase().to_string() + chars.as_str())
+                .unwrap_or_default()
+        })
+        .collect()
 }
 
 fn render_c_header(manifest: &RuntimeManifestV5) -> String {
@@ -763,17 +709,22 @@ fn render_c_header(manifest: &RuntimeManifestV5) -> String {
         } else {
             ""
         };
-        writeln!(
-            out,
-            "{noreturn}{} {}({});",
-            c_type(&function.result),
-            function.symbol,
+        let params = if function.params.is_empty() {
+            "void".into()
+        } else {
             function
                 .params
                 .iter()
                 .map(|param| format!("{} {}", c_type(&param.ty), param.name))
                 .collect::<Vec<_>>()
                 .join(", ")
+        };
+        writeln!(
+            out,
+            "{noreturn}{} {}({});",
+            c_type(&function.result),
+            function.symbol,
+            params
         )
         .unwrap();
     }
@@ -796,21 +747,20 @@ fn render_c_header(manifest: &RuntimeManifestV5) -> String {
     out
 }
 
-fn render_asm(manifest: &RuntimeManifestV5, masm: bool) -> String {
+fn render_asm_target(manifest: &RuntimeManifestV5, target: &TargetV5, masm: bool) -> String {
     let mut out: String = if masm {
         "; @generated from runtime_manifest.bsol; do not edit.\n".into()
     } else {
-        "# @generated from runtime_manifest.bsol; do not edit.\n".into()
+        "/* @generated from runtime_manifest.bsol; do not edit. */\n".into()
     };
     let separator = if masm { " EQU " } else { " = " };
-    let comment = if masm { ";" } else { "#" };
     writeln!(
         out,
         "BESKID_RUNTIME_ABI_VERSION{separator}{}",
         manifest.meta.abi_version
     )
     .unwrap();
-    for target in &manifest.targets {
+    {
         let target_name = macro_name(&target.triple);
         if masm {
             writeln!(
@@ -822,7 +772,7 @@ fn render_asm(manifest: &RuntimeManifestV5, masm: bool) -> String {
         } else {
             writeln!(
                 out,
-                "{comment} BESKID_{target_name}_SYMBOL_PREFIX = {:?}",
+                "/* BESKID_{target_name}_SYMBOL_PREFIX = {:?} */",
                 target.symbol_prefix
             )
             .unwrap();
@@ -871,23 +821,33 @@ fn render_asm(manifest: &RuntimeManifestV5, masm: bool) -> String {
             {
                 let location = location.as_str();
                 let key = format!(
-                    "BESKID_{target_name}_{}_{}_REGISTER",
+                    "BESKID_{}_{}_REGISTER",
                     macro_name(function_name),
                     macro_name(&param.name)
                 );
                 if masm {
                     writeln!(out, "{key} TEXTEQU <{location}>").unwrap();
                 } else {
-                    writeln!(out, "{key}{separator}{location}").unwrap();
+                    writeln!(out, "#define {key} {location}").unwrap();
                 }
             }
-            writeln!(
-                out,
-                "{comment} {} preserved: {}",
-                function.symbol,
-                function.preserved[&target.triple].join(",")
-            )
-            .unwrap();
+            if masm {
+                writeln!(
+                    out,
+                    "; {} preserved: {}",
+                    function.symbol,
+                    function.preserved[&target.triple].join(",")
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    out,
+                    "/* {} preserved: {} */",
+                    function.symbol,
+                    function.preserved[&target.triple].join(",")
+                )
+                .unwrap();
+            }
         }
     }
     out
@@ -919,16 +879,6 @@ fn macro_name(value: &str) -> String {
         });
     }
     output
-}
-fn signature(params: &[ParameterV5], result: &str) -> String {
-    format!(
-        "{}->{result}",
-        params
-            .iter()
-            .map(|param| param.ty.as_str())
-            .collect::<Vec<_>>()
-            .join(",")
-    )
 }
 fn abi_width(ty: &str) -> Option<u64> {
     Some(match ty {
@@ -1027,10 +977,15 @@ fn string_field(block: &BsolBlock, key: &str) -> Result<String, String> {
     string_value(value(block, key)?)
 }
 fn optional_string_field(block: &BsolBlock, key: &str) -> Result<Option<String>, String> {
-    match value(block, key) {
-        Ok(value) => string_value(value).map(Some),
-        Err(_) => Ok(None),
-    }
+    block
+        .items
+        .iter()
+        .find_map(|item| match item {
+            BsolItem::Assignment(entry) if entry.key == key => Some(&entry.value),
+            _ => None,
+        })
+        .map(string_value)
+        .transpose()
 }
 fn u32_field(block: &BsolBlock, key: &str) -> Result<u32, String> {
     string_field(block, key)?
@@ -1062,10 +1017,13 @@ fn parameters(block: &BsolBlock, key: &str) -> Result<Vec<ParameterV5>, String> 
     list_items(block, key)?
         .iter()
         .map(|item| match item {
-            BsolListItem::InlineMap(map) => Ok(ParameterV5 {
-                name: map_string(map, "name")?,
-                ty: map_string(map, "type")?,
-            }),
+            BsolListItem::InlineMap(map) => {
+                ensure_map_fields(map, &["name", "type"])?;
+                Ok(ParameterV5 {
+                    name: map_string(map, "name")?,
+                    ty: map_string(map, "type")?,
+                })
+            }
             _ => Err(format!("`{key}` entries must be inline maps")),
         })
         .collect()
@@ -1074,13 +1032,16 @@ fn fields(block: &BsolBlock) -> Result<Vec<FieldV5>, String> {
     list_items(block, "fields")?
         .iter()
         .map(|item| match item {
-            BsolListItem::InlineMap(map) => Ok(FieldV5 {
-                name: map_string(map, "name")?,
-                offset: map_string(map, "offset")?
-                    .parse()
-                    .map_err(|_| "field offset must be u64")?,
-                ty: map_string(map, "type")?,
-            }),
+            BsolListItem::InlineMap(map) => {
+                ensure_map_fields(map, &["name", "offset", "type"])?;
+                Ok(FieldV5 {
+                    name: map_string(map, "name")?,
+                    offset: map_string(map, "offset")?
+                        .parse()
+                        .map_err(|_| "field offset must be u64")?,
+                    ty: map_string(map, "type")?,
+                })
+            }
             _ => Err("fields entries must be inline maps".into()),
         })
         .collect()
@@ -1091,6 +1052,18 @@ fn map_string(map: &bsol::BsolInlineMap, key: &str) -> Result<String, String> {
         .find(|entry| entry.key == key)
         .ok_or_else(|| format!("inline map missing `{key}`"))
         .and_then(|entry| string_value(&entry.value))
+}
+fn ensure_map_fields(map: &bsol::BsolInlineMap, allowed: &[&str]) -> Result<(), String> {
+    let mut seen = BTreeSet::new();
+    for entry in &map.entries {
+        if !allowed.contains(&entry.key.as_str()) {
+            return Err(format!("unknown inline-map field `{}`", entry.key));
+        }
+        if !seen.insert(entry.key.as_str()) {
+            return Err(format!("duplicate inline-map field `{}`", entry.key));
+        }
+    }
+    Ok(())
 }
 fn function(block: &BsolBlock) -> Result<FunctionV5, String> {
     Ok(FunctionV5 {

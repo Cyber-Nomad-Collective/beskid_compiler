@@ -1,5 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use rustc_demangle::try_demangle;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -65,6 +66,12 @@ impl RuntimeAuditMetadata {
             .platform_imports
             .iter()
             .map(|entry| entry.symbol.clone())
+            .collect::<Vec<_>>();
+        allowed_imports.sort();
+        let mut allowed_exports = manifest
+            .exports
+            .iter()
+            .map(|entry| entry.symbol.clone())
             .chain(
                 manifest
                     .assembly_exports
@@ -72,14 +79,10 @@ impl RuntimeAuditMetadata {
                     .map(|entry| entry.symbol.as_str().into()),
             )
             .collect::<Vec<_>>();
-        allowed_imports.sort();
+        allowed_exports.sort();
         Ok(Self {
             allowed_imports,
-            allowed_exports: manifest
-                .exports
-                .iter()
-                .map(|entry| entry.symbol.clone())
-                .collect(),
+            allowed_exports,
             forbidden_rust_symbols: forbidden_symbol_families(),
             object_format: object_format(&manifest.target).into(),
             symbol_prefix: symbol_prefix(&manifest.target).into(),
@@ -97,20 +100,80 @@ impl RuntimeAuditMetadata {
         }
     }
 
-    pub fn audit_object_symbols<'a>(
+    pub fn audit_object_symbol_tables<'a>(
         &self,
-        symbols: impl IntoIterator<Item = &'a str>,
+        defined: impl IntoIterator<Item = &'a str>,
+        undefined: impl IntoIterator<Item = &'a str>,
     ) -> Result<(), String> {
+        let defined = self.normalized_symbol_set("defined", defined)?;
+        let undefined = self.normalized_symbol_set("undefined", undefined)?;
+        exact_symbol_set("defined", &self.allowed_exports, &defined)?;
+        exact_symbol_set("undefined", &self.allowed_imports, &undefined)?;
+        Ok(())
+    }
+
+    fn normalized_symbol_set<'a>(
+        &self,
+        table: &str,
+        symbols: impl IntoIterator<Item = &'a str>,
+    ) -> Result<BTreeSet<String>, String> {
+        let mut normalized = BTreeSet::new();
         for raw in symbols {
-            let symbol = raw.strip_prefix(&self.symbol_prefix).unwrap_or(raw);
-            if self
-                .forbidden_rust_symbols
-                .iter()
-                .any(|family| symbol.contains(family))
-            {
-                return Err(format!("forbidden runtime provenance symbol `{raw}`"));
+            reject_forbidden_provenance(raw, &self.forbidden_rust_symbols)?;
+            let symbol = normalize_object_symbol(raw, &self.object_format, &self.symbol_prefix);
+            if !normalized.insert(symbol.clone()) {
+                return Err(format!("duplicate {table} symbol `{symbol}`"));
             }
         }
+        Ok(normalized)
+    }
+}
+
+fn exact_symbol_set(
+    table: &str,
+    expected: &[String],
+    actual: &BTreeSet<String>,
+) -> Result<(), String> {
+    let expected = expected.iter().cloned().collect::<BTreeSet<_>>();
+    if expected == *actual {
+        return Ok(());
+    }
+    let missing = expected.difference(actual).cloned().collect::<Vec<_>>();
+    let unexpected = actual.difference(&expected).cloned().collect::<Vec<_>>();
+    Err(format!(
+        "{table} symbol table mismatch: missing={missing:?}, unexpected={unexpected:?}"
+    ))
+}
+
+fn normalize_object_symbol(raw: &str, object_format: &str, symbol_prefix: &str) -> String {
+    let mut symbol = raw;
+    if object_format == "coff" {
+        symbol = symbol.strip_prefix("__imp_").unwrap_or(symbol);
+    }
+    symbol = symbol.strip_prefix(symbol_prefix).unwrap_or(symbol);
+    if object_format == "elf" {
+        symbol = symbol.split_once('@').map_or(symbol, |(base, _)| base);
+    }
+    symbol.into()
+}
+
+fn reject_forbidden_provenance(raw: &str, forbidden: &[String]) -> Result<(), String> {
+    let unprefixed = raw.strip_prefix('_').unwrap_or(raw);
+    let rust_mangled =
+        unprefixed.starts_with('R') || (unprefixed.starts_with("ZN") && unprefixed.ends_with('E'));
+    let demangled = try_demangle(raw)
+        .or_else(|_| try_demangle(unprefixed))
+        .ok()
+        .map(|symbol| symbol.to_string());
+    let forbidden_family = forbidden.iter().any(|family| {
+        raw.contains(family)
+            || demangled
+                .as_deref()
+                .is_some_and(|symbol| symbol.contains(family))
+    });
+    if rust_mangled || demangled.is_some() || forbidden_family {
+        Err(format!("forbidden runtime provenance symbol `{raw}`"))
+    } else {
         Ok(())
     }
 }
@@ -187,10 +250,9 @@ impl AbiManifestV5 {
                 .iter()
                 .map(|entry| source_assembly(entry, target_slug))
                 .collect(),
-            traps: source
-                .traps
+            traps: crate::generated::abi_v5_contract::ABI_V5_TRAPS
                 .iter()
-                .map(|trap| TrapCode::try_from(trap.code).expect("validated trap code"))
+                .map(|(_, code)| TrapCode::try_from(*code).expect("validated trap code"))
                 .collect(),
             target,
         }
@@ -238,7 +300,8 @@ struct SourceContract {
     layouts: Vec<SourceLayout>,
     platform_imports: Vec<SourcePlatformImport>,
     assembly: Vec<SourceAssembly>,
-    traps: Vec<SourceTrap>,
+    #[serde(rename = "traps")]
+    _traps: serde_json::Value,
     #[serde(rename = "meta")]
     _meta: serde_json::Value,
     #[serde(rename = "audit")]
@@ -318,33 +381,11 @@ struct SourceAssembly {
     preserved: BTreeMap<String, Vec<String>>,
     locations: BTreeMap<String, Vec<String>>,
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SourceTrap {
-    #[serde(rename = "name")]
-    _name: String,
-    code: u8,
-}
-
 fn source_type(value: &str) -> AbiType {
-    match value {
-        "void" | "never" => AbiType::Void,
-        "pointer" => AbiType::Pointer,
-        "usize" => AbiType::USize,
-        "isize" => AbiType::ISize,
-        "i8" => AbiType::I8,
-        "u8" => AbiType::U8,
-        "i16" => AbiType::I16,
-        "u16" => AbiType::U16,
-        "i32" => AbiType::I32,
-        "u32" => AbiType::U32,
-        "i64" => AbiType::I64,
-        "u64" => AbiType::U64,
-        "v128" => AbiType::V128,
-        "f32" => AbiType::F32,
-        "f64" => AbiType::F64,
-        _ => unreachable!("build validates ABI types"),
-    }
+    crate::generated::abi_v5_contract::ABI_V5_TYPES
+        .iter()
+        .find_map(|(name, ty)| (*name == value).then_some(*ty))
+        .expect("build validates ABI types")
 }
 fn source_params(params: &[SourceParameter]) -> (Vec<String>, Vec<AbiType>) {
     (
@@ -401,56 +442,18 @@ fn source_layout(entry: &SourceLayout) -> AbiLayout {
     }
 }
 fn source_register(value: &str) -> super::AssemblyRegister {
-    use super::AssemblyRegister::*;
-    match value {
-        "rbx" => X86_64Rbx,
-        "rbp" => X86_64Rbp,
-        "rdi" => X86_64Rdi,
-        "rsi" => X86_64Rsi,
-        "r12" => X86_64R12,
-        "r13" => X86_64R13,
-        "r14" => X86_64R14,
-        "r15" => X86_64R15,
-        "xmm6" => X86_64Xmm6,
-        "xmm7" => X86_64Xmm7,
-        "xmm8" => X86_64Xmm8,
-        "xmm9" => X86_64Xmm9,
-        "xmm10" => X86_64Xmm10,
-        "xmm11" => X86_64Xmm11,
-        "xmm12" => X86_64Xmm12,
-        "xmm13" => X86_64Xmm13,
-        "xmm14" => X86_64Xmm14,
-        "xmm15" => X86_64Xmm15,
-        "x19" => Aarch64X19,
-        "x20" => Aarch64X20,
-        "x21" => Aarch64X21,
-        "x22" => Aarch64X22,
-        "x23" => Aarch64X23,
-        "x24" => Aarch64X24,
-        "x25" => Aarch64X25,
-        "x26" => Aarch64X26,
-        "x27" => Aarch64X27,
-        "x28" => Aarch64X28,
-        "x29" => Aarch64X29,
-        "v8" => Aarch64V8,
-        "v9" => Aarch64V9,
-        "v10" => Aarch64V10,
-        "v11" => Aarch64V11,
-        "v12" => Aarch64V12,
-        "v13" => Aarch64V13,
-        "v14" => Aarch64V14,
-        "v15" => Aarch64V15,
-        _ => unreachable!("build validates preserved registers"),
-    }
+    crate::generated::abi_v5_contract::ABI_V5_ASSEMBLY_REGISTERS
+        .iter()
+        .find_map(|(name, register)| (*name == value).then_some(*register))
+        .expect("build validates preserved registers")
 }
 fn source_assembly(entry: &SourceAssembly, target: &str) -> AssemblyExport {
     let (param_names, params) = source_params(&entry.params);
     AssemblyExport {
-        symbol: match entry.symbol.as_str() {
-            "beskid_arch_v5_context_init" => super::AssemblySymbol::ContextInit,
-            "beskid_arch_v5_context_switch" => super::AssemblySymbol::ContextSwitch,
-            _ => unreachable!(),
-        },
+        symbol: crate::generated::abi_v5_contract::ABI_V5_ASSEMBLY_SYMBOLS
+            .iter()
+            .find_map(|(name, symbol)| (*name == entry.symbol).then_some(*symbol))
+            .expect("build validates assembly symbols"),
         param_names,
         params,
         parameter_locations: entry.locations[target].clone(),
@@ -473,5 +476,20 @@ pub fn render_runtime_asm_include(
     manifest: &AbiManifestV5,
 ) -> Result<String, ManifestValidationError> {
     manifest.validate()?;
-    Ok(include_str!(concat!(env!("OUT_DIR"), "/beskid_runtime_abi_v5.inc")).into())
+    Ok(match manifest.target.triple {
+        TargetTriple::X86_64UnknownLinuxGnu => include_str!(concat!(
+            env!("OUT_DIR"),
+            "/beskid_runtime_abi_v5_x86_64_unknown_linux_gnu.inc"
+        )),
+        TargetTriple::Aarch64AppleDarwin => include_str!(concat!(
+            env!("OUT_DIR"),
+            "/beskid_runtime_abi_v5_aarch64_apple_darwin.inc"
+        )),
+        TargetTriple::X86_64PcWindowsMsvc => include_str!(concat!(
+            env!("OUT_DIR"),
+            "/beskid_runtime_abi_v5_x86_64_pc_windows_msvc.inc"
+        )),
+        TargetTriple::Other(_) => unreachable!("manifest validation rejects unsupported targets"),
+    }
+    .into())
 }
