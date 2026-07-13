@@ -106,7 +106,9 @@ pub fn render_abi_builtins(manifest: &ManifestRoot) -> String {
         specs.push((symbol_const_suffix(&entry.symbol), name, returns));
     }
 
-    for (params, name) in param_arrays.iter() {
+    let mut param_declarations = param_arrays.iter().collect::<Vec<_>>();
+    param_declarations.sort_unstable_by_key(|(_, name)| *name);
+    for (params, name) in param_declarations {
         let formatted = format_param_array(params);
         writeln!(
             &mut out,
@@ -1227,5 +1229,21 @@ mod tests {
         assert!(!symbols.contains("RUNTIME_EXPORT_SYMBOLS: &[&str] = &[\n    SYM_STR_LEN"));
         assert!(!symbols.contains("Legacy runtime symbol"));
         assert!(!symbols.contains("legacy handler"));
+    }
+
+    #[test]
+    fn abi_builtin_parameter_declarations_are_sorted() {
+        let manifest_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime_manifest.bsol");
+        let manifest = crate::load_manifest(&manifest_path).expect("manifest parse");
+        let generated = render_abi_builtins(&manifest);
+        let declarations = generated
+            .lines()
+            .filter_map(|line| line.strip_prefix("const "))
+            .map(|line| line.split_once(':').expect("const declaration").0)
+            .collect::<Vec<_>>();
+        let mut sorted = declarations.clone();
+        sorted.sort_unstable();
+        assert_eq!(declarations, sorted);
     }
 }
