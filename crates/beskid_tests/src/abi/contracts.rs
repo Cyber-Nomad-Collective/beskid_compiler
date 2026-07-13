@@ -55,8 +55,8 @@ fn corelib_i64_constant(source: &str, name: &str) -> i64 {
 }
 
 #[test]
-fn abi_version_is_v4() {
-    assert_eq!(BESKID_RUNTIME_ABI_VERSION, 4);
+fn abi_version_is_v5() {
+    assert_eq!(BESKID_RUNTIME_ABI_VERSION, 5);
 }
 
 #[test]
