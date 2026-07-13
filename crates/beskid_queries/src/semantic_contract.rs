@@ -75,11 +75,47 @@ pub struct TypedProgram {
 /// Authoritative Salsa input for the current syntax generation of one source unit.
 #[salsa::input]
 pub struct SyntaxUnitInput {
+    pub(crate) project: ProjectSession,
     pub(crate) unit: SourceUnitId,
+    #[returns(ref)]
+    pub(crate) revision: Arc<SyntaxUnitRevision>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxUnitRevision {
     pub(crate) generation: SyntaxGenerationId,
+    pub(crate) expanded_program:
+        Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
+    pub(crate) syntax_index: Arc<beskid_analysis::syntax_query::SyntaxIndex>,
+    pub(crate) source_fingerprint: Arc<str>,
+    pub(crate) tree_fingerprint: Arc<str>,
+    pub(crate) source_fingerprint_history: Arc<[Arc<str>]>,
+    pub(crate) tree_fingerprint_history: Arc<[Arc<str>]>,
 }
 
 impl SyntaxUnitInput {
+    pub(crate) fn generation(self, db: &dyn Db) -> SyntaxGenerationId {
+        self.revision(db).generation
+    }
+
+    pub(crate) fn expanded_program(
+        self,
+        db: &dyn Db,
+    ) -> &Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>> {
+        &self.revision(db).expanded_program
+    }
+
+    pub(crate) fn syntax_index(
+        self,
+        db: &dyn Db,
+    ) -> &Arc<beskid_analysis::syntax_query::SyntaxIndex> {
+        &self.revision(db).syntax_index
+    }
+
+    pub(crate) fn source_fingerprint(self, db: &dyn Db) -> &Arc<str> {
+        &self.revision(db).source_fingerprint
+    }
+
     /// Whether `key` belongs to this authoritative unit revision.
     pub fn accepts_key(self, db: &dyn Db, key: AstNodeKey) -> bool {
         key.is_current(self.unit(db), self.generation(db))
@@ -101,6 +137,17 @@ pub struct ResolvedLocal {
 /// Opaque semantic type identity owned by the query layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SemanticTypeId(pub u32);
+
+impl SemanticTypeId {
+    pub const UNIT: Self = Self(0);
+    pub const BOOL: Self = Self(1);
+    pub const I32: Self = Self(2);
+    pub const I64: Self = Self(3);
+    pub const U8: Self = Self(4);
+    pub const F64: Self = Self(5);
+    pub const CHAR: Self = Self(6);
+    pub const STRING: Self = Self(7);
+}
 
 /// Backend-relevant call classification, detached from legacy HIR nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -134,22 +181,112 @@ pub struct ItemSignature {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RuntimeIntrinsic(pub u32);
 
-/// The query contract exists, but Task 2 has not installed semantic production yet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SemanticQueryUnavailable;
+pub type IndexedNodeKind = beskid_analysis::syntax_query::NodeKind;
+pub type SourceSpan = beskid_analysis::syntax::SpanInfo;
 
-pub type SemanticQueryResult<T> = Result<Option<T>, SemanticQueryUnavailable>;
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LiteralFact {
+    Integer(Arc<str>),
+    Float(Arc<str>),
+    String(Arc<str>),
+    Char(Arc<str>),
+    Bool(bool),
+}
 
-fn unavailable_or_absent<T>(
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OperatorFact {
+    Or,
+    And,
+    IdentityEq,
+    IdentityNotEq,
+    Eq,
+    NotEq,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Neg,
+    Not,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
+pub struct SemanticError {
+    message: Arc<str>,
+    diagnostics: Arc<[Arc<str>]>,
+    unavailable: bool,
+}
+
+impl SemanticError {
+    pub(crate) fn new(message: impl Into<Arc<str>>) -> Self {
+        let message = message.into();
+        Self {
+            diagnostics: Arc::from([Arc::clone(&message)]),
+            message,
+            unavailable: false,
+        }
+    }
+
+    pub(crate) fn from_diagnostics(messages: impl IntoIterator<Item = String>) -> Self {
+        let diagnostics = messages
+            .into_iter()
+            .map(Arc::<str>::from)
+            .collect::<Vec<_>>();
+        let message = diagnostics
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>()
+            .join("\n");
+        Self {
+            message: Arc::from(message),
+            diagnostics: diagnostics.into(),
+            unavailable: false,
+        }
+    }
+
+    pub fn unavailable(query: &str) -> Self {
+        let message = Arc::<str>::from(format!(
+            "semantic query `{query}` is unavailable until its AST/Salsa port is complete"
+        ));
+        Self {
+            diagnostics: Arc::from([Arc::clone(&message)]),
+            message,
+            unavailable: true,
+        }
+    }
+
+    pub fn is_unavailable(&self) -> bool {
+        self.unavailable
+    }
+
+    pub fn diagnostics(&self) -> &[Arc<str>] {
+        &self.diagnostics
+    }
+}
+
+fn unavailable_for_current_key<T>(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
+    query: &str,
 ) -> SemanticQueryResult<T> {
-    if !syntax.accepts_key(db, key) {
+    if !syntax.accepts_key(db, key)
+        || syntax
+            .syntax_index(db)
+            .metadata_for(key.generation, key.node)
+            .is_none()
+    {
         return Ok(None);
     }
-    Err(SemanticQueryUnavailable)
+    Err(SemanticError::unavailable(query))
 }
+
+pub type SemanticQueryResult<T> = Result<Option<T>, SemanticError>;
 
 fn with_registered_syntax<T>(
     db: &dyn Db,
@@ -168,7 +305,7 @@ fn resolved_item_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ResolvedItem> {
-    unavailable_or_absent(db, syntax, key)
+    unavailable_for_current_key(db, syntax, key, "resolved_item")
 }
 
 #[salsa::tracked]
@@ -177,7 +314,7 @@ fn resolved_local_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ResolvedLocal> {
-    unavailable_or_absent(db, syntax, key)
+    unavailable_for_current_key(db, syntax, key, "resolved_local")
 }
 
 #[salsa::tracked]
@@ -186,7 +323,7 @@ fn node_type_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
-    unavailable_or_absent(db, syntax, key)
+    unavailable_for_current_key(db, syntax, key, "node_type")
 }
 
 #[salsa::tracked]
@@ -195,7 +332,7 @@ fn call_lowering_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<CallLowering> {
-    unavailable_or_absent(db, syntax, key)
+    unavailable_for_current_key(db, syntax, key, "call_lowering")
 }
 
 #[salsa::tracked]
@@ -204,7 +341,7 @@ fn cast_intents_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[CastIntent]>> {
-    unavailable_or_absent(db, syntax, key)
+    unavailable_for_current_key(db, syntax, key, "cast_intents")
 }
 
 #[salsa::tracked]
@@ -213,7 +350,7 @@ fn control_flow_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ControlFlow> {
-    unavailable_or_absent(db, syntax, key)
+    unavailable_for_current_key(db, syntax, key, "control_flow")
 }
 
 #[salsa::tracked]
@@ -222,7 +359,7 @@ fn item_signature_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ItemSignature> {
-    unavailable_or_absent(db, syntax, key)
+    unavailable_for_current_key(db, syntax, key, "item_signature")
 }
 
 #[salsa::tracked]
@@ -231,20 +368,223 @@ fn runtime_intrinsic_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<RuntimeIntrinsic> {
-    unavailable_or_absent(db, syntax, key)
+    unavailable_for_current_key(db, syntax, key, "runtime_intrinsic")
 }
 
-/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+#[salsa::tracked]
+fn node_kind_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<IndexedNodeKind> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        Some(node.node_kind())
+    })
+}
+
+#[salsa::tracked]
+fn child_nodes_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_node(db, syntax, key, |_program, index, _node| {
+        Some(
+            index
+                .children(key.node)?
+                .iter()
+                .map(|node| AstNodeKey { node: *node, ..key })
+                .collect::<Vec<_>>()
+                .into(),
+        )
+    })
+}
+
+#[salsa::tracked]
+fn literal_fact_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<LiteralFact> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        let literal = node.of::<beskid_analysis::syntax::Literal>()?;
+        Some(match literal {
+            beskid_analysis::syntax::Literal::Integer(value) => {
+                LiteralFact::Integer(Arc::from(value.as_str()))
+            }
+            beskid_analysis::syntax::Literal::Float(value) => {
+                LiteralFact::Float(Arc::from(value.as_str()))
+            }
+            beskid_analysis::syntax::Literal::String(value) => {
+                LiteralFact::String(Arc::from(value.as_str()))
+            }
+            beskid_analysis::syntax::Literal::Char(value) => {
+                LiteralFact::Char(Arc::from(value.as_str()))
+            }
+            beskid_analysis::syntax::Literal::Bool(value) => LiteralFact::Bool(*value),
+        })
+    })
+}
+
+#[salsa::tracked]
+fn node_span_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SourceSpan> {
+    with_node(db, syntax, key, |_program, _index, node| node.span())
+}
+
+#[salsa::tracked]
+fn operator_fact_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<OperatorFact> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
+            return Some(binary_operator(binary.op.node));
+        }
+        if let Some(unary) = node.of::<beskid_analysis::syntax::UnaryExpression>() {
+            return Some(unary_operator(unary.op.node));
+        }
+        if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryOp>() {
+            return Some(binary_operator(*binary));
+        }
+        node.of::<beskid_analysis::syntax::UnaryOp>()
+            .copied()
+            .map(unary_operator)
+    })
+}
+
+fn binary_operator(operator: beskid_analysis::syntax::BinaryOp) -> OperatorFact {
+    match operator {
+        beskid_analysis::syntax::BinaryOp::Or => OperatorFact::Or,
+        beskid_analysis::syntax::BinaryOp::And => OperatorFact::And,
+        beskid_analysis::syntax::BinaryOp::IdentityEq => OperatorFact::IdentityEq,
+        beskid_analysis::syntax::BinaryOp::IdentityNotEq => OperatorFact::IdentityNotEq,
+        beskid_analysis::syntax::BinaryOp::Eq => OperatorFact::Eq,
+        beskid_analysis::syntax::BinaryOp::NotEq => OperatorFact::NotEq,
+        beskid_analysis::syntax::BinaryOp::Lt => OperatorFact::Lt,
+        beskid_analysis::syntax::BinaryOp::Lte => OperatorFact::Lte,
+        beskid_analysis::syntax::BinaryOp::Gt => OperatorFact::Gt,
+        beskid_analysis::syntax::BinaryOp::Gte => OperatorFact::Gte,
+        beskid_analysis::syntax::BinaryOp::Add => OperatorFact::Add,
+        beskid_analysis::syntax::BinaryOp::Sub => OperatorFact::Sub,
+        beskid_analysis::syntax::BinaryOp::Mul => OperatorFact::Mul,
+        beskid_analysis::syntax::BinaryOp::Div => OperatorFact::Div,
+        beskid_analysis::syntax::BinaryOp::Mod => OperatorFact::Mod,
+    }
+}
+
+fn unary_operator(operator: beskid_analysis::syntax::UnaryOp) -> OperatorFact {
+    match operator {
+        beskid_analysis::syntax::UnaryOp::Neg => OperatorFact::Neg,
+        beskid_analysis::syntax::UnaryOp::Not => OperatorFact::Not,
+    }
+}
+
+#[salsa::tracked]
+fn item_body_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<AstNodeKey> {
+    with_node(db, syntax, key, |program, index, node| {
+        if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+            return index
+                .direct_child_id(
+                    program,
+                    key.node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(&function.body),
+                )
+                .map(|node| AstNodeKey { node, ..key });
+        }
+        if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
+            return index
+                .direct_child_id(
+                    program,
+                    key.node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(&method.body),
+                )
+                .map(|node| AstNodeKey { node, ..key });
+        }
+        None
+    })
+}
+
+#[salsa::tracked]
+fn direct_callees_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    unavailable_for_current_key(db, syntax, key, "direct_callees")
+}
+
+#[salsa::tracked]
+fn reachable_items_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    program: AstNodeKey,
+    entry: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    if !syntax.accepts_key(db, program)
+        || syntax
+            .syntax_index(db)
+            .metadata_for(program.generation, program.node)
+            .is_none()
+    {
+        return Ok(None);
+    }
+    let Some(entry_syntax) = db.syntax_unit(entry.unit) else {
+        return Ok(None);
+    };
+    if !entry_syntax.accepts_key(db, entry)
+        || entry_syntax
+            .syntax_index(db)
+            .metadata_for(entry.generation, entry.node)
+            .is_none()
+    {
+        return Ok(None);
+    }
+    Err(SemanticError::unavailable("reachable_items"))
+}
+
+fn with_node<T>(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+    query: impl FnOnce(
+        &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+        &beskid_analysis::syntax_query::SyntaxIndex,
+        beskid_analysis::syntax_query::DynNodeRef<'_>,
+    ) -> Option<T>,
+) -> SemanticQueryResult<T> {
+    if !syntax.accepts_key(db, key) {
+        return Ok(None);
+    }
+    let expanded = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    if index.generation() != key.generation
+        || index.metadata_for(key.generation, key.node).is_none()
+    {
+        return Ok(None);
+    }
+    let Some(node) = index.node_at(expanded, key.node) else {
+        return Ok(None);
+    };
+    Ok(query(expanded, index, node))
+}
+
 pub fn resolved_item(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ResolvedItem> {
     with_registered_syntax(db, key, resolved_item_tracked)
 }
 
-/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
 pub fn resolved_local(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ResolvedLocal> {
     with_registered_syntax(db, key, resolved_local_tracked)
 }
 
-/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
 pub fn node_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, node_type_tracked)
 }
@@ -272,4 +612,43 @@ pub fn item_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ItemS
 /// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
 pub fn runtime_intrinsic(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<RuntimeIntrinsic> {
     with_registered_syntax(db, key, runtime_intrinsic_tracked)
+}
+
+pub fn node_kind(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<IndexedNodeKind> {
+    with_registered_syntax(db, key, node_kind_tracked)
+}
+
+pub fn child_nodes(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_registered_syntax(db, key, child_nodes_tracked)
+}
+
+pub fn literal_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<LiteralFact> {
+    with_registered_syntax(db, key, literal_fact_tracked)
+}
+
+pub fn node_span(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SourceSpan> {
+    with_registered_syntax(db, key, node_span_tracked)
+}
+
+pub fn operator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<OperatorFact> {
+    with_registered_syntax(db, key, operator_fact_tracked)
+}
+
+pub fn item_body(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
+    with_registered_syntax(db, key, item_body_tracked)
+}
+
+pub fn direct_callees(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_registered_syntax(db, key, direct_callees_tracked)
+}
+
+pub fn reachable_items(
+    db: &dyn Db,
+    program: AstNodeKey,
+    entry: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    let Some(syntax) = db.syntax_unit(program.unit) else {
+        return Ok(None);
+    };
+    reachable_items_tracked(db, syntax, program, entry)
 }

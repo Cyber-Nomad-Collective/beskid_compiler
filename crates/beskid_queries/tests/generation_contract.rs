@@ -6,10 +6,17 @@ use beskid_analysis::projects::{
 };
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession,
-    SemanticQueryUnavailable, SourceUnitId, SyntaxGenerationId, TypedProgram, call_lowering,
-    cast_intents, control_flow, item_signature, node_type, resolved_item, resolved_local,
-    runtime_intrinsic,
+    SemanticError, SourceUnitId, SyntaxGenerationId, TypedProgram, call_lowering, cast_intents,
+    control_flow, item_signature, node_type, resolved_item, resolved_local, runtime_intrinsic,
 };
+
+fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
+    let error = match result {
+        Ok(_) => panic!("current unported semantic query must fail explicitly"),
+        Err(error) => error,
+    };
+    assert!(error.is_unavailable(), "{error:?}");
+}
 
 fn empty_assembly() -> Arc<ProgramAssembly> {
     Arc::new(ProgramAssembly {
@@ -151,7 +158,13 @@ fn stale_generation_has_no_semantic_facts() {
         generation: SyntaxGenerationId(4),
         assembly: empty_assembly(),
     };
-    let authority = db.ensure_syntax_unit(typed.entry, typed.generation);
+    db.ensure_file_text(
+        typed.entry.path(&db).clone(),
+        "i32 Main() { return 0; }".to_string(),
+    );
+    let authority = db
+        .ensure_syntax_unit(typed.project, typed.entry, typed.generation)
+        .expect("syntax registration");
     let current = AstNodeKey {
         unit: entry,
         generation: typed.generation,
@@ -163,18 +176,14 @@ fn stale_generation_has_no_semantic_facts() {
     };
     assert!(db.syntax_unit(typed.entry) == Some(authority));
 
-    // Task 1A declares the Salsa interfaces; Task 2 populates their semantic facts.
-    assert_eq!(resolved_item(&db, current), Err(SemanticQueryUnavailable));
-    assert_eq!(resolved_local(&db, current), Err(SemanticQueryUnavailable));
-    assert_eq!(node_type(&db, current), Err(SemanticQueryUnavailable));
-    assert_eq!(call_lowering(&db, current), Err(SemanticQueryUnavailable));
-    assert_eq!(cast_intents(&db, current), Err(SemanticQueryUnavailable));
-    assert_eq!(control_flow(&db, current), Err(SemanticQueryUnavailable));
-    assert_eq!(item_signature(&db, current), Err(SemanticQueryUnavailable));
-    assert_eq!(
-        runtime_intrinsic(&db, current),
-        Err(SemanticQueryUnavailable)
-    );
+    assert_unavailable(resolved_item(&db, current));
+    assert_unavailable(resolved_local(&db, current));
+    assert_unavailable(node_type(&db, current));
+    assert_unavailable(call_lowering(&db, current));
+    assert_unavailable(cast_intents(&db, current));
+    assert_unavailable(control_flow(&db, current));
+    assert_unavailable(item_signature(&db, current));
+    assert_unavailable(runtime_intrinsic(&db, current));
 
     assert_eq!(resolved_item(&db, stale), Ok(None));
     assert_eq!(resolved_local(&db, stale), Ok(None));
@@ -193,18 +202,273 @@ fn stale_generation_has_no_semantic_facts() {
     assert_eq!(resolved_item(&db, unregistered), Ok(None));
 
     let same_authority = db
-        .update_syntax_unit(typed.entry, SyntaxGenerationId(5))
-        .expect("registered syntax unit");
+        .update_syntax_source(
+            typed.project,
+            typed.entry,
+            SyntaxGenerationId(5),
+            "i32 Main() { return 1; }".to_string(),
+        )
+        .expect("registered syntax edit");
     assert!(same_authority == authority);
     assert_eq!(resolved_item(&db, current), Ok(None));
     let current_after_update = AstNodeKey {
         generation: SyntaxGenerationId(5),
         ..current
     };
-    assert_eq!(
-        resolved_item(&db, current_after_update),
-        Err(SemanticQueryUnavailable)
+    assert_unavailable(resolved_item(&db, current_after_update));
+}
+
+#[test]
+fn unchanged_ensure_is_idempotent_without_parse_or_index_rebuild() {
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Stable.bd"));
+    let project = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
     );
+    db.ensure_file_text(
+        entry.path(&db).clone(),
+        "i32 Main() { return 0; }".to_string(),
+    );
+
+    let first = db
+        .ensure_syntax_unit(project, entry, SyntaxGenerationId(1))
+        .expect("first registration");
+    let second = db
+        .ensure_syntax_unit(project, entry, SyntaxGenerationId(1))
+        .expect("idempotent registration");
+
+    assert!(first == second);
+    assert_eq!(db.syntax_authority_counts(), (1, 1));
+}
+
+#[test]
+fn generations_are_monotonic_and_bound_to_source_content() {
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Generation.bd"));
+    let project = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    db.update_syntax_source(
+        project,
+        entry,
+        SyntaxGenerationId(4),
+        "i32 Main() { return 0; }".to_string(),
+    )
+    .expect("initial source");
+
+    assert!(
+        db.update_syntax_source(
+            project,
+            entry,
+            SyntaxGenerationId(4),
+            "i32 Main() { return 1; }".to_string(),
+        )
+        .is_err(),
+        "changed syntax cannot reuse a generation"
+    );
+    assert!(
+        db.update_syntax_source(
+            project,
+            entry,
+            SyntaxGenerationId(3),
+            "i32 Main() { return 2; }".to_string(),
+        )
+        .is_err(),
+        "generation cannot regress"
+    );
+    assert!(
+        db.update_syntax_source(
+            project,
+            entry,
+            SyntaxGenerationId(5),
+            "i32 Main() { return 0; }".to_string(),
+        )
+        .is_err(),
+        "unchanged syntax cannot be blindly relabeled"
+    );
+    assert_eq!(db.syntax_authority_counts(), (1, 1));
+}
+
+#[test]
+fn source_fingerprint_cannot_be_resurrected_in_a_later_generation() {
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/History.bd"));
+    let project = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let source_a = "i32 Main() { return 1; }";
+    let source_b = "i32 Main() { return 2; }";
+    db.update_syntax_source(project, entry, SyntaxGenerationId(4), source_a.to_string())
+        .expect("generation A");
+    db.update_syntax_source(project, entry, SyntaxGenerationId(5), source_b.to_string())
+        .expect("generation B");
+
+    assert!(
+        db.update_syntax_source(project, entry, SyntaxGenerationId(6), source_a.to_string())
+            .is_err(),
+        "A@g4 -> B@g5 -> A@g6 must not resurrect an old fingerprint"
+    );
+    assert_eq!(db.syntax_authority_counts(), (2, 2));
+}
+
+#[test]
+fn trivia_only_edit_cannot_relabel_the_same_expanded_tree() {
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Trivia.bd"));
+    let project = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let compact = "i32 Main() { return 1; }";
+    let spaced = "i32   Main()   {   return 1;   }";
+    db.update_syntax_source(project, entry, SyntaxGenerationId(4), compact.to_string())
+        .expect("initial syntax");
+
+    assert!(
+        db.update_syntax_source(project, entry, SyntaxGenerationId(5), spaced.to_string())
+            .is_err(),
+        "trivia-only edits must not assign a new generation to the same expanded tree"
+    );
+    assert_eq!(db.syntax_authority_counts(), (2, 1));
+    assert_eq!(
+        db.file_text(entry.path(&db))
+            .expect("original file input")
+            .text(&db),
+        compact
+    );
+}
+
+#[test]
+fn source_unit_cannot_be_reassigned_between_project_sessions() {
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Owned.bd"));
+    let first = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "First".to_string(),
+        "lock-a".to_string(),
+    );
+    let second = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/other"),
+        entry.path(&db).clone(),
+        "Second".to_string(),
+        "lock-b".to_string(),
+    );
+    db.update_syntax_source(
+        first,
+        entry,
+        SyntaxGenerationId(1),
+        "i32 Main() { return 0; }".to_string(),
+    )
+    .expect("first project owns source");
+
+    assert!(
+        db.update_syntax_source(
+            second,
+            entry,
+            SyntaxGenerationId(2),
+            "i32 Main() { return 1; }".to_string(),
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn expansion_error_preserves_every_macro_diagnostic() {
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Macros.bd"));
+    let project = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let error = match db.update_syntax_source(
+        project,
+        entry,
+        SyntaxGenerationId(1),
+        "unit Main() { missing_one!(1); missing_two!(2); return; }".to_string(),
+    ) {
+        Ok(_) => panic!("unknown macros must fail expansion"),
+        Err(error) => error,
+    };
+
+    assert!(error.diagnostics().len() >= 2, "{error:?}");
+    assert!(db.syntax_unit(entry).is_none());
+}
+
+#[test]
+fn failed_edit_keeps_previous_source_and_syntax_authority() {
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Atomic.bd"));
+    let project = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let source = "i32 Main() { return 0; }";
+    let authority = db
+        .update_syntax_source(project, entry, SyntaxGenerationId(1), source.to_string())
+        .expect("initial source");
+
+    assert!(
+        db.update_syntax_source(
+            project,
+            entry,
+            SyntaxGenerationId(2),
+            "not valid Beskid".to_string(),
+        )
+        .is_err()
+    );
+
+    assert!(db.syntax_unit(entry) == Some(authority));
+    assert_eq!(
+        db.file_text(entry.path(&db))
+            .expect("previous file input")
+            .text(&db),
+        source
+    );
+    assert_eq!(db.syntax_authority_counts(), (2, 1));
+}
+
+#[test]
+fn syntax_registration_reports_parse_failure_instead_of_inventing_empty_program() {
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Broken.bd"));
+    let project = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    db.ensure_file_text(entry.path(&db).clone(), "not valid Beskid".to_string());
+
+    assert!(
+        db.ensure_syntax_unit(project, entry, SyntaxGenerationId(1))
+            .is_err()
+    );
+    assert!(db.syntax_unit(entry).is_none());
 }
 
 #[test]
