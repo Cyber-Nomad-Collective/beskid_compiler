@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
 pub const ABI_V5: u32 = 5;
@@ -17,13 +17,36 @@ pub const APPROVED_ASSEMBLY_SYMBOLS: [&str; 2] = [
     "beskid_arch_v5_context_switch",
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TargetTriple {
     X86_64UnknownLinuxGnu,
     Aarch64AppleDarwin,
     X86_64PcWindowsMsvc,
     Other(String),
+}
+
+impl Serialize for TargetTriple {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for TargetTriple {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(match value.as_str() {
+            "x86_64-unknown-linux-gnu" => Self::X86_64UnknownLinuxGnu,
+            "aarch64-apple-darwin" => Self::Aarch64AppleDarwin,
+            "x86_64-pc-windows-msvc" => Self::X86_64PcWindowsMsvc,
+            _ => Self::Other(value),
+        })
+    }
 }
 
 impl TargetTriple {
@@ -196,34 +219,186 @@ pub struct PlatformImport {
     pub result: AbiType,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AssemblySymbol {
+    #[serde(rename = "beskid_arch_v5_context_init")]
+    ContextInit,
+    #[serde(rename = "beskid_arch_v5_context_switch")]
+    ContextSwitch,
+}
+
+impl AssemblySymbol {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ContextInit => APPROVED_ASSEMBLY_SYMBOLS[0],
+            Self::ContextSwitch => APPROVED_ASSEMBLY_SYMBOLS[1],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssemblyRegister {
+    X86_64Rbx,
+    X86_64Rbp,
+    X86_64Rdi,
+    X86_64Rsi,
+    X86_64R12,
+    X86_64R13,
+    X86_64R14,
+    X86_64R15,
+    X86_64Xmm6,
+    X86_64Xmm7,
+    X86_64Xmm8,
+    X86_64Xmm9,
+    X86_64Xmm10,
+    X86_64Xmm11,
+    X86_64Xmm12,
+    X86_64Xmm13,
+    X86_64Xmm14,
+    X86_64Xmm15,
+    Aarch64X19,
+    Aarch64X20,
+    Aarch64X21,
+    Aarch64X22,
+    Aarch64X23,
+    Aarch64X24,
+    Aarch64X25,
+    Aarch64X26,
+    Aarch64X27,
+    Aarch64X28,
+    Aarch64X29,
+    Aarch64V8,
+    Aarch64V9,
+    Aarch64V10,
+    Aarch64V11,
+    Aarch64V12,
+    Aarch64V13,
+    Aarch64V14,
+    Aarch64V15,
+}
+
+const SYSV_X86_64_PRESERVED: &[AssemblyRegister] = &[
+    AssemblyRegister::X86_64Rbx,
+    AssemblyRegister::X86_64Rbp,
+    AssemblyRegister::X86_64R12,
+    AssemblyRegister::X86_64R13,
+    AssemblyRegister::X86_64R14,
+    AssemblyRegister::X86_64R15,
+];
+const WINDOWS_X86_64_PRESERVED: &[AssemblyRegister] = &[
+    AssemblyRegister::X86_64Rbx,
+    AssemblyRegister::X86_64Rbp,
+    AssemblyRegister::X86_64Rdi,
+    AssemblyRegister::X86_64Rsi,
+    AssemblyRegister::X86_64R12,
+    AssemblyRegister::X86_64R13,
+    AssemblyRegister::X86_64R14,
+    AssemblyRegister::X86_64R15,
+    AssemblyRegister::X86_64Xmm6,
+    AssemblyRegister::X86_64Xmm7,
+    AssemblyRegister::X86_64Xmm8,
+    AssemblyRegister::X86_64Xmm9,
+    AssemblyRegister::X86_64Xmm10,
+    AssemblyRegister::X86_64Xmm11,
+    AssemblyRegister::X86_64Xmm12,
+    AssemblyRegister::X86_64Xmm13,
+    AssemblyRegister::X86_64Xmm14,
+    AssemblyRegister::X86_64Xmm15,
+];
+const APPLE_AARCH64_PRESERVED: &[AssemblyRegister] = &[
+    AssemblyRegister::Aarch64X19,
+    AssemblyRegister::Aarch64X20,
+    AssemblyRegister::Aarch64X21,
+    AssemblyRegister::Aarch64X22,
+    AssemblyRegister::Aarch64X23,
+    AssemblyRegister::Aarch64X24,
+    AssemblyRegister::Aarch64X25,
+    AssemblyRegister::Aarch64X26,
+    AssemblyRegister::Aarch64X27,
+    AssemblyRegister::Aarch64X28,
+    AssemblyRegister::Aarch64X29,
+    AssemblyRegister::Aarch64V8,
+    AssemblyRegister::Aarch64V9,
+    AssemblyRegister::Aarch64V10,
+    AssemblyRegister::Aarch64V11,
+    AssemblyRegister::Aarch64V12,
+    AssemblyRegister::Aarch64V13,
+    AssemblyRegister::Aarch64V14,
+    AssemblyRegister::Aarch64V15,
+];
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssemblyExport {
+    pub symbol: AssemblySymbol,
+    pub params: Vec<AbiType>,
+    pub result: AbiType,
+    pub preserved_registers: Vec<AssemblyRegister>,
+}
+
+impl AssemblyExport {
+    pub fn required_for_target(target: &TargetMetadata) -> Vec<Self> {
+        let preserved_registers = match target.triple {
+            TargetTriple::X86_64UnknownLinuxGnu => SYSV_X86_64_PRESERVED,
+            TargetTriple::Aarch64AppleDarwin => APPLE_AARCH64_PRESERVED,
+            TargetTriple::X86_64PcWindowsMsvc => WINDOWS_X86_64_PRESERVED,
+            TargetTriple::Other(_) => &[],
+        };
+        [
+            (
+                AssemblySymbol::ContextInit,
+                vec![
+                    AbiType::Pointer,
+                    AbiType::Pointer,
+                    AbiType::USize,
+                    AbiType::Pointer,
+                    AbiType::Pointer,
+                ],
+            ),
+            (
+                AssemblySymbol::ContextSwitch,
+                vec![AbiType::Pointer, AbiType::Pointer],
+            ),
+        ]
+        .into_iter()
+        .map(|(symbol, params)| Self {
+            symbol,
+            params,
+            result: AbiType::Void,
+            preserved_registers: preserved_registers.to_vec(),
+        })
+        .collect()
+    }
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrapCode {
-    NullDereference = 1,
-    BoundsViolation = 2,
-    IntegerDivisionByZero = 3,
-    IntegerOverflow = 4,
-    InvalidCast = 5,
-    OutOfMemory = 6,
-    StackOverflow = 7,
-    AssertionFailed = 8,
-    Unreachable = 9,
-    PlatformError = 10,
+    NullReference = 1,
+    Bounds = 2,
+    ArithmeticOverflow = 3,
+    InvalidUtf8 = 4,
+    OutOfMemory = 5,
+    InvalidOrStaleHandle = 6,
+    SchedulerDeadlock = 7,
+    AbiOrLayoutMismatch = 8,
+    UnreachableOrIsleInvariant = 9,
+    RuntimeInternalCorruption = 10,
 }
 
 impl TrapCode {
     pub const ALL: [Self; 10] = [
-        Self::NullDereference,
-        Self::BoundsViolation,
-        Self::IntegerDivisionByZero,
-        Self::IntegerOverflow,
-        Self::InvalidCast,
+        Self::NullReference,
+        Self::Bounds,
+        Self::ArithmeticOverflow,
+        Self::InvalidUtf8,
         Self::OutOfMemory,
-        Self::StackOverflow,
-        Self::AssertionFailed,
-        Self::Unreachable,
-        Self::PlatformError,
+        Self::InvalidOrStaleHandle,
+        Self::SchedulerDeadlock,
+        Self::AbiOrLayoutMismatch,
+        Self::UnreachableOrIsleInvariant,
+        Self::RuntimeInternalCorruption,
     ];
 }
 
@@ -256,7 +431,7 @@ pub struct AbiManifestV5 {
     pub layouts: Vec<AbiLayout>,
     pub trusted_runtime_intrinsics: Vec<RuntimeIntrinsic>,
     pub platform_imports: Vec<PlatformImport>,
-    pub assembly_symbols: Vec<String>,
+    pub assembly_exports: Vec<AssemblyExport>,
     pub traps: Vec<TrapCode>,
 }
 
@@ -295,14 +470,9 @@ impl AbiManifestV5 {
         )?;
         validate_layouts(&self.layouts)?;
 
-        let actual_assembly: HashSet<_> =
-            self.assembly_symbols.iter().map(String::as_str).collect();
-        let expected_assembly: HashSet<_> = APPROVED_ASSEMBLY_SYMBOLS.into_iter().collect();
-        if self.assembly_symbols.len() != APPROVED_ASSEMBLY_SYMBOLS.len()
-            || actual_assembly != expected_assembly
-        {
-            return Err(ManifestValidationError::InvalidAssemblySymbols {
-                actual: self.assembly_symbols.clone(),
+        if !assembly_exports_are_valid(&self.target, &self.assembly_exports) {
+            return Err(ManifestValidationError::InvalidAssemblyExports {
+                actual: self.assembly_exports.clone(),
             });
         }
 
@@ -319,6 +489,30 @@ impl AbiManifestV5 {
     pub fn layout_hash(&self) -> String {
         canonical_layout_hash(&self.layouts)
     }
+}
+
+fn assembly_exports_are_valid(target: &TargetMetadata, exports: &[AssemblyExport]) -> bool {
+    if exports.len() != APPROVED_ASSEMBLY_SYMBOLS.len() {
+        return false;
+    }
+    let symbols: HashSet<_> = exports.iter().map(|export| export.symbol).collect();
+    if symbols != HashSet::from([AssemblySymbol::ContextInit, AssemblySymbol::ContextSwitch]) {
+        return false;
+    }
+    let register_matches_target = |register: AssemblyRegister| match target.triple {
+        TargetTriple::X86_64UnknownLinuxGnu => SYSV_X86_64_PRESERVED.contains(&register),
+        TargetTriple::X86_64PcWindowsMsvc => WINDOWS_X86_64_PRESERVED.contains(&register),
+        TargetTriple::Aarch64AppleDarwin => APPLE_AARCH64_PRESERVED.contains(&register),
+        TargetTriple::Other(_) => false,
+    };
+    exports.iter().all(|export| {
+        let registers: HashSet<_> = export.preserved_registers.iter().copied().collect();
+        !export.params.contains(&AbiType::Void)
+            && export.result == AbiType::Void
+            && !registers.is_empty()
+            && registers.len() == export.preserved_registers.len()
+            && registers.into_iter().all(register_matches_target)
+    })
 }
 
 fn validate_named_contracts<'a>(
@@ -377,8 +571,9 @@ pub enum ManifestValidationError {
     DuplicateSymbol { symbol: String },
     DuplicateLayout { name: String },
     InvalidLayout { name: String },
-    InvalidAssemblySymbols { actual: Vec<String> },
+    InvalidAssemblyExports { actual: Vec<AssemblyExport> },
     InvalidTrapSet { actual: Vec<u8> },
+    DuplicateSourcePath { logical_path: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -412,15 +607,22 @@ pub fn canonical_layout_hash(layouts: &[AbiLayout]) -> String {
     hex_digest(hasher.finalize())
 }
 
-pub fn canonical_source_hash(units: &[SourceUnit]) -> String {
+pub fn canonical_source_hash(units: &[SourceUnit]) -> Result<String, ManifestValidationError> {
     let mut canonical = units.to_vec();
     canonical.sort_by(|left, right| left.logical_path.cmp(&right.logical_path));
+    for pair in canonical.windows(2) {
+        if pair[0].logical_path == pair[1].logical_path {
+            return Err(ManifestValidationError::DuplicateSourcePath {
+                logical_path: pair[0].logical_path.clone(),
+            });
+        }
+    }
     let mut hasher = Sha256::new();
     for unit in canonical {
         hash_str(&mut hasher, &unit.logical_path);
         hash_str(&mut hasher, &unit.source);
     }
-    hex_digest(hasher.finalize())
+    Ok(hex_digest(hasher.finalize()))
 }
 
 fn hash_str(hasher: &mut Sha256, value: &str) {

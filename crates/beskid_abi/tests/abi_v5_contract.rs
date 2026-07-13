@@ -1,11 +1,11 @@
 use beskid_abi::BESKID_RUNTIME_ABI_VERSION;
 use beskid_abi::abi_v5::{
-    ABI_V5, APPROVED_ASSEMBLY_SYMBOLS, AbiFieldLayout, AbiFunction, AbiLayout, AbiManifestV5,
-    AbiType, CallingConvention, Endianness, ManifestValidationError, PlatformImport,
-    RuntimeIntrinsic, SourceUnit, TargetMetadata, TargetTriple, TrapCode, canonical_source_hash,
+    ABI_V5, AbiFieldLayout, AbiFunction, AbiLayout, AbiManifestV5, AbiType, AssemblyExport,
+    CallingConvention, Endianness, ManifestValidationError, PlatformImport, RuntimeIntrinsic,
+    SourceUnit, TargetMetadata, TargetTriple, TrapCode, canonical_source_hash,
 };
 use beskid_abi::runtime_kit::{
-    ArtifactLinkage, BuildProfile, RuntimeArtifact, RuntimeKitMetadata, RuntimeKitValidationError,
+    BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata, RuntimeKitValidationError,
 };
 
 fn linux_target() -> TargetMetadata {
@@ -46,9 +46,9 @@ fn layout(name: &str, second_offset: u64) -> AbiLayout {
 }
 
 fn valid_manifest() -> AbiManifestV5 {
+    let target = linux_target();
     AbiManifestV5 {
         abi_version: ABI_V5,
-        target: linux_target(),
         imports: vec![function("beskid_rt_v5_alloc")],
         exports: vec![function("beskid_rt_v5_entry")],
         layouts: vec![layout("BeskidSlice", 8)],
@@ -64,8 +64,9 @@ fn valid_manifest() -> AbiManifestV5 {
             params: vec![AbiType::I32, AbiType::Pointer],
             result: AbiType::I32,
         }],
-        assembly_symbols: APPROVED_ASSEMBLY_SYMBOLS.map(str::to_owned).to_vec(),
+        assembly_exports: AssemblyExport::required_for_target(&target),
         traps: TrapCode::ALL.to_vec(),
+        target,
     }
 }
 
@@ -121,17 +122,17 @@ fn manifest_accepts_only_unique_direct_v5_symbols() {
 #[test]
 fn manifest_rejects_wrong_assembly_symbol_set_and_invalid_traps() {
     let mut wrong_assembly = valid_manifest();
-    wrong_assembly.assembly_symbols.pop();
+    wrong_assembly.assembly_exports.pop();
     assert!(matches!(
         wrong_assembly.validate(),
-        Err(ManifestValidationError::InvalidAssemblySymbols { .. })
+        Err(ManifestValidationError::InvalidAssemblyExports { .. })
     ));
 
     let mut duplicated_assembly = valid_manifest();
-    duplicated_assembly.assembly_symbols[1] = duplicated_assembly.assembly_symbols[0].clone();
+    duplicated_assembly.assembly_exports[1] = duplicated_assembly.assembly_exports[0].clone();
     assert!(matches!(
         duplicated_assembly.validate(),
-        Err(ManifestValidationError::InvalidAssemblySymbols { .. })
+        Err(ManifestValidationError::InvalidAssemblyExports { .. })
     ));
 
     let mut incomplete_traps = valid_manifest();
@@ -168,11 +169,11 @@ fn layout_and_source_hashes_are_canonical_and_sensitive() {
         source: "pub ptr Alloc(usize size) {}".into(),
     };
     assert_eq!(
-        canonical_source_hash(&[source_a.clone(), source_b.clone()]),
-        canonical_source_hash(&[source_b.clone(), source_a.clone()])
+        canonical_source_hash(&[source_a.clone(), source_b.clone()]).unwrap(),
+        canonical_source_hash(&[source_b.clone(), source_a.clone()]).unwrap()
     );
     assert_ne!(
-        canonical_source_hash(&[source_a.clone(), source_b.clone()]),
+        canonical_source_hash(&[source_a.clone(), source_b.clone()]).unwrap(),
         canonical_source_hash(&[
             source_a,
             SourceUnit {
@@ -180,13 +181,12 @@ fn layout_and_source_hashes_are_canonical_and_sensitive() {
                 ..source_b
             },
         ])
+        .unwrap()
     );
 }
 
-fn artifact(profile: BuildProfile, linkage: ArtifactLinkage, path: &str) -> RuntimeArtifact {
+fn artifact(path: &str) -> RuntimeArtifact {
     RuntimeArtifact {
-        profile,
-        linkage,
         relative_path: path.into(),
         sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
     }
@@ -197,48 +197,32 @@ fn valid_runtime_kit() -> RuntimeKitMetadata {
         schema_version: 1,
         abi_version: ABI_V5,
         target: linux_target(),
+        profile: BuildProfile::Debug,
         layout_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
         source_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
-        artifacts: vec![
-            artifact(
-                BuildProfile::Debug,
-                ArtifactLinkage::Static,
-                "debug/libbeskid_rt.a",
-            ),
-            artifact(
-                BuildProfile::Debug,
-                ArtifactLinkage::Shared,
-                "debug/libbeskid_rt.so",
-            ),
-            artifact(
-                BuildProfile::Release,
-                ArtifactLinkage::Static,
-                "release/libbeskid_rt.a",
-            ),
-            artifact(
-                BuildProfile::Release,
-                ArtifactLinkage::Shared,
-                "release/libbeskid_rt.so",
-            ),
-        ],
+        artifacts: RuntimeArtifacts {
+            static_library: artifact("static/libbeskid_runtime.a"),
+            shared_library: artifact("shared/libbeskid_runtime.so"),
+            shared_import_library: None,
+        },
         import_allowlist: vec!["clock_gettime".into()],
         export_allowlist: vec!["beskid_rt_v5_entry".into()],
     }
 }
 
 #[test]
-fn runtime_kit_metadata_is_serializable_and_requires_the_complete_artifact_matrix() {
+fn runtime_kit_metadata_is_serializable_and_requires_the_exact_target_artifacts() {
     let metadata = valid_runtime_kit();
     metadata.validate().expect("valid runtime kit");
     let json = serde_json::to_string(&metadata).expect("serialize runtime-kit metadata");
     let decoded: RuntimeKitMetadata = serde_json::from_str(&json).expect("deserialize metadata");
     assert_eq!(decoded, metadata);
 
-    let mut missing = valid_runtime_kit();
-    missing.artifacts.pop();
+    let mut wrong_artifact = valid_runtime_kit();
+    wrong_artifact.artifacts.shared_library.relative_path = "shared/libbeskid_runtime.dylib".into();
     assert!(matches!(
-        missing.validate(),
-        Err(RuntimeKitValidationError::InvalidArtifactMatrix { .. })
+        wrong_artifact.validate(),
+        Err(RuntimeKitValidationError::InvalidArtifactSet { .. })
     ));
 
     let mut duplicate_export = valid_runtime_kit();
