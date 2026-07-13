@@ -49,9 +49,9 @@ pub use modhost::{
 };
 pub use semantic_contract::{
     AstNodeKey, CallLowering, CastIntent, ControlFlow, ItemSignature, ResolvedItem, ResolvedLocal,
-    RuntimeIntrinsic, SemanticTypeId, SourceUnitId, SyntaxUnitInput, TypedProgram, call_lowering,
-    cast_intents, control_flow, item_signature, node_type, resolved_item, resolved_local,
-    runtime_intrinsic,
+    RuntimeIntrinsic, SemanticQueryResult, SemanticQueryUnavailable, SemanticTypeId, SourceUnitId,
+    SyntaxUnitInput, TypedProgram, call_lowering, cast_intents, control_flow, item_signature,
+    node_type, resolved_item, resolved_local, runtime_intrinsic,
 };
 pub use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 pub use output::{

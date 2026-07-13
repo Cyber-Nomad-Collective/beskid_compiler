@@ -1,7 +1,7 @@
 //! Public AST/Salsa semantic contracts used by later frontend and codegen replacement slices.
 
 use std::ffi::OsString;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use beskid_analysis::projects::ProgramAssembly;
@@ -40,8 +40,7 @@ fn normalized_source_path(path: &Path) -> PathBuf {
             .unwrap_or_else(|_| PathBuf::from("."))
             .join(path)
     };
-    let logical = lexically_normalize(&absolute);
-    let mut ancestor = logical.clone();
+    let mut ancestor = absolute.clone();
     let mut suffix = Vec::<OsString>::new();
 
     loop {
@@ -52,27 +51,13 @@ fn normalized_source_path(path: &Path) -> PathBuf {
             return canonical;
         }
         let Some(leaf) = ancestor.file_name().map(ToOwned::to_owned) else {
-            return logical;
+            return absolute;
         };
         suffix.push(leaf);
         if !ancestor.pop() {
-            return logical;
+            return absolute;
         }
     }
-}
-
-fn lexically_normalize(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    normalized
 }
 
 /// Generation-safe key for a syntax node in an interned source unit.
@@ -149,86 +134,142 @@ pub struct ItemSignature {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RuntimeIntrinsic(pub u32);
 
-fn require_current(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> Option<()> {
-    syntax.accepts_key(db, key).then_some(())
-}
+/// The query contract exists, but Task 2 has not installed semantic production yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SemanticQueryUnavailable;
 
-/// Declared for Task 2 semantic production; currently unavailable for current keys and rejects stale keys.
-#[salsa::tracked]
-pub fn resolved_item(
+pub type SemanticQueryResult<T> = Result<Option<T>, SemanticQueryUnavailable>;
+
+fn unavailable_or_absent<T>(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
-) -> Option<ResolvedItem> {
-    require_current(db, syntax, key)?;
-    None
+) -> SemanticQueryResult<T> {
+    if !syntax.accepts_key(db, key) {
+        return Ok(None);
+    }
+    Err(SemanticQueryUnavailable)
 }
 
-/// Declared for Task 2 semantic production; currently unavailable for current keys and rejects stale keys.
+fn with_registered_syntax<T>(
+    db: &dyn Db,
+    key: AstNodeKey,
+    query: impl FnOnce(&dyn Db, SyntaxUnitInput, AstNodeKey) -> SemanticQueryResult<T>,
+) -> SemanticQueryResult<T> {
+    let Some(syntax) = db.syntax_unit(key.unit) else {
+        return Ok(None);
+    };
+    query(db, syntax, key)
+}
+
 #[salsa::tracked]
-pub fn resolved_local(
+fn resolved_item_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
-) -> Option<ResolvedLocal> {
-    require_current(db, syntax, key)?;
-    None
+) -> SemanticQueryResult<ResolvedItem> {
+    unavailable_or_absent(db, syntax, key)
 }
 
-/// Declared for Task 2 semantic production; currently unavailable for current keys and rejects stale keys.
 #[salsa::tracked]
-pub fn node_type(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> Option<SemanticTypeId> {
-    require_current(db, syntax, key)?;
-    None
-}
-
-/// Declared for Task 2 semantic production; currently unavailable for current keys and rejects stale keys.
-#[salsa::tracked]
-pub fn call_lowering(
+fn resolved_local_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
-) -> Option<CallLowering> {
-    require_current(db, syntax, key)?;
-    None
+) -> SemanticQueryResult<ResolvedLocal> {
+    unavailable_or_absent(db, syntax, key)
 }
 
-/// Declared for Task 2 semantic production; currently unavailable for current keys and rejects stale keys.
 #[salsa::tracked]
-pub fn cast_intents(
+fn node_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
-) -> Option<Arc<[CastIntent]>> {
-    require_current(db, syntax, key)?;
-    None
+) -> SemanticQueryResult<SemanticTypeId> {
+    unavailable_or_absent(db, syntax, key)
 }
 
-/// Declared for Task 2 semantic production; currently unavailable for current keys and rejects stale keys.
 #[salsa::tracked]
-pub fn control_flow(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> Option<ControlFlow> {
-    require_current(db, syntax, key)?;
-    None
-}
-
-/// Declared for Task 2 semantic production; currently unavailable for current keys and rejects stale keys.
-#[salsa::tracked]
-pub fn item_signature(
+fn call_lowering_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
-) -> Option<ItemSignature> {
-    require_current(db, syntax, key)?;
-    None
+) -> SemanticQueryResult<CallLowering> {
+    unavailable_or_absent(db, syntax, key)
 }
 
-/// Declared for Task 2 trusted selection; there is deliberately no caller-injected intrinsic seam.
 #[salsa::tracked]
-pub fn runtime_intrinsic(
+fn cast_intents_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
-) -> Option<RuntimeIntrinsic> {
-    require_current(db, syntax, key)?;
-    None
+) -> SemanticQueryResult<Arc<[CastIntent]>> {
+    unavailable_or_absent(db, syntax, key)
+}
+
+#[salsa::tracked]
+fn control_flow_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ControlFlow> {
+    unavailable_or_absent(db, syntax, key)
+}
+
+#[salsa::tracked]
+fn item_signature_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ItemSignature> {
+    unavailable_or_absent(db, syntax, key)
+}
+
+#[salsa::tracked]
+fn runtime_intrinsic_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<RuntimeIntrinsic> {
+    unavailable_or_absent(db, syntax, key)
+}
+
+/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+pub fn resolved_item(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ResolvedItem> {
+    with_registered_syntax(db, key, resolved_item_tracked)
+}
+
+/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+pub fn resolved_local(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ResolvedLocal> {
+    with_registered_syntax(db, key, resolved_local_tracked)
+}
+
+/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+pub fn node_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    with_registered_syntax(db, key, node_type_tracked)
+}
+
+/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+pub fn call_lowering(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallLowering> {
+    with_registered_syntax(db, key, call_lowering_tracked)
+}
+
+/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+pub fn cast_intents(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[CastIntent]>> {
+    with_registered_syntax(db, key, cast_intents_tracked)
+}
+
+/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+pub fn control_flow(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ControlFlow> {
+    with_registered_syntax(db, key, control_flow_tracked)
+}
+
+/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+pub fn item_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ItemSignature> {
+    with_registered_syntax(db, key, item_signature_tracked)
+}
+
+/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+pub fn runtime_intrinsic(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<RuntimeIntrinsic> {
+    with_registered_syntax(db, key, runtime_intrinsic_tracked)
 }

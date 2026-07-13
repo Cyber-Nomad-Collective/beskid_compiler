@@ -11,11 +11,13 @@ use beskid_analysis::types::UnitTypeSurface;
 use salsa::Setter;
 
 use crate::inputs::{FileText, GrammarRevision, ProjectSession};
+use crate::semantic_contract::{SourceUnitId, SyntaxUnitInput};
 use crate::stats::record_revision_bump;
 use crate::typed_entry_bundle::reset_typed_entry_inputs;
 
 type ProjectRegistry = HashMap<(PathBuf, PathBuf, String), ProjectSession>;
 type ModuleIndexCache = HashMap<String, Arc<ModuleIndex>>;
+pub type SyntaxUnitRegistry = HashMap<SourceUnitId, SyntaxUnitInput>;
 
 /// Cached heavy artifacts keyed by content fingerprint (invalidated via Salsa inputs).
 #[derive(Default)]
@@ -31,9 +33,18 @@ pub struct UnitArtifactCache {
 pub trait Db: salsa::Database {
     fn file_registry(&self) -> &Mutex<HashMap<PathBuf, FileText>>;
     fn project_registry(&self) -> &Mutex<ProjectRegistry>;
+    fn syntax_unit_registry(&self) -> &Mutex<SyntaxUnitRegistry>;
     fn unit_cache(&self) -> &Mutex<UnitArtifactCache>;
     fn grammar_revision_input(&self) -> GrammarRevision;
     fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>>;
+
+    fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput> {
+        self.syntax_unit_registry()
+            .lock()
+            .expect("syntax unit registry")
+            .get(&unit)
+            .copied()
+    }
 }
 
 /// Process/workspace-scoped incremental compilation database.
@@ -43,6 +54,7 @@ pub struct BeskidDatabase {
     storage: salsa::Storage<Self>,
     file_registry: Arc<Mutex<HashMap<PathBuf, FileText>>>,
     project_registry: Arc<Mutex<ProjectRegistry>>,
+    syntax_unit_registry: Arc<Mutex<SyntaxUnitRegistry>>,
     unit_cache: Arc<Mutex<UnitArtifactCache>>,
     module_index_cache: Arc<Mutex<ModuleIndexCache>>,
     persistence_root: Option<PathBuf>,
@@ -61,6 +73,7 @@ impl BeskidDatabase {
             storage: salsa::Storage::default(),
             file_registry: Arc::new(Mutex::new(HashMap::new())),
             project_registry: Arc::new(Mutex::new(HashMap::new())),
+            syntax_unit_registry: Arc::new(Mutex::new(HashMap::new())),
             unit_cache: Arc::new(Mutex::new(UnitArtifactCache::default())),
             module_index_cache: Arc::new(Mutex::new(ModuleIndexCache::new())),
             persistence_root: persistence_root.clone(),
@@ -100,6 +113,41 @@ impl BeskidDatabase {
     pub fn grammar_revision_ref(&self) -> GrammarRevision {
         self.grammar_revision
             .expect("grammar revision initialized in BeskidDatabase::new")
+    }
+
+    /// Return the single registered Salsa revision input for `unit`.
+    pub fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput> {
+        Db::syntax_unit(self, unit)
+    }
+
+    /// Return the registered input for `unit`, creating it when first observed.
+    pub fn ensure_syntax_unit(
+        &mut self,
+        unit: SourceUnitId,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+    ) -> SyntaxUnitInput {
+        let registry = Arc::clone(&self.syntax_unit_registry);
+        let mut registry = registry.lock().expect("syntax unit registry");
+        if let Some(input) = registry.get(&unit).copied() {
+            if input.generation(self) != generation {
+                input.set_generation(self).to(generation);
+            }
+            return input;
+        }
+        let input = SyntaxUnitInput::new(self, unit, generation);
+        registry.insert(unit, input);
+        input
+    }
+
+    /// Update the generation of the existing registered input without replacing its Salsa id.
+    pub fn update_syntax_unit(
+        &mut self,
+        unit: SourceUnitId,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+    ) -> Option<SyntaxUnitInput> {
+        let input = self.syntax_unit(unit)?;
+        input.set_generation(self).to(generation);
+        Some(input)
     }
 
     /// Invalidate units that import `changed_path` (fine-grained edit propagation).
@@ -313,6 +361,10 @@ impl Db for BeskidDatabase {
 
     fn project_registry(&self) -> &Mutex<HashMap<(PathBuf, PathBuf, String), ProjectSession>> {
         &self.project_registry
+    }
+
+    fn syntax_unit_registry(&self) -> &Mutex<SyntaxUnitRegistry> {
+        &self.syntax_unit_registry
     }
 
     fn unit_cache(&self) -> &Mutex<UnitArtifactCache> {
