@@ -495,24 +495,11 @@ fn assembly_exports_are_valid(target: &TargetMetadata, exports: &[AssemblyExport
     if exports.len() != APPROVED_ASSEMBLY_SYMBOLS.len() {
         return false;
     }
-    let symbols: HashSet<_> = exports.iter().map(|export| export.symbol).collect();
-    if symbols != HashSet::from([AssemblySymbol::ContextInit, AssemblySymbol::ContextSwitch]) {
-        return false;
-    }
-    let register_matches_target = |register: AssemblyRegister| match target.triple {
-        TargetTriple::X86_64UnknownLinuxGnu => SYSV_X86_64_PRESERVED.contains(&register),
-        TargetTriple::X86_64PcWindowsMsvc => WINDOWS_X86_64_PRESERVED.contains(&register),
-        TargetTriple::Aarch64AppleDarwin => APPLE_AARCH64_PRESERVED.contains(&register),
-        TargetTriple::Other(_) => false,
-    };
-    exports.iter().all(|export| {
-        let registers: HashSet<_> = export.preserved_registers.iter().copied().collect();
-        !export.params.contains(&AbiType::Void)
-            && export.result == AbiType::Void
-            && !registers.is_empty()
-            && registers.len() == export.preserved_registers.len()
-            && registers.into_iter().all(register_matches_target)
-    })
+    let mut actual = exports.to_vec();
+    actual.sort_unstable_by_key(|export| export.symbol.as_str());
+    let mut expected = AssemblyExport::required_for_target(target);
+    expected.sort_unstable_by_key(|export| export.symbol.as_str());
+    actual == expected
 }
 
 fn validate_named_contracts<'a>(

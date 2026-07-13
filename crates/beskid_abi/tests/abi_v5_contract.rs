@@ -9,11 +9,18 @@ use beskid_abi::runtime_kit::{
 };
 
 fn linux_target() -> TargetMetadata {
+    target(
+        TargetTriple::X86_64UnknownLinuxGnu,
+        CallingConvention::SystemV,
+    )
+}
+
+fn target(triple: TargetTriple, calling_convention: CallingConvention) -> TargetMetadata {
     TargetMetadata {
-        triple: TargetTriple::X86_64UnknownLinuxGnu,
+        triple,
         endianness: Endianness::Little,
         pointer_width: 64,
-        calling_convention: CallingConvention::SystemV,
+        calling_convention,
     }
 }
 
@@ -81,6 +88,12 @@ fn supported_targets_are_little_endian_64_bit_with_target_owned_calling_conventi
         assert_eq!(target.endianness, Endianness::Little);
         assert_eq!(target.pointer_width, 64);
         target.validate().expect("supported target must validate");
+        let json = serde_json::to_string(&target.triple).unwrap();
+        assert_eq!(json, format!("\"{}\"", target.triple.as_str()));
+        assert_eq!(
+            serde_json::from_str::<TargetTriple>(&json).unwrap(),
+            target.triple
+        );
     }
 
     let mut unsupported = linux_target();
@@ -147,6 +160,51 @@ fn manifest_rejects_wrong_assembly_symbol_set_and_invalid_traps() {
     for code in 1..=10 {
         assert_eq!(u8::from(TrapCode::try_from(code).unwrap()), code);
     }
+    assert_eq!(
+        TrapCode::ALL,
+        [
+            TrapCode::NullReference,
+            TrapCode::Bounds,
+            TrapCode::ArithmeticOverflow,
+            TrapCode::InvalidUtf8,
+            TrapCode::OutOfMemory,
+            TrapCode::InvalidOrStaleHandle,
+            TrapCode::SchedulerDeadlock,
+            TrapCode::AbiOrLayoutMismatch,
+            TrapCode::UnreachableOrIsleInvariant,
+            TrapCode::RuntimeInternalCorruption,
+        ]
+    );
+}
+
+#[test]
+fn assembly_contract_rejects_signature_and_preserved_register_drift() {
+    let mut reordered = valid_manifest();
+    reordered.assembly_exports.reverse();
+    reordered
+        .validate()
+        .expect("assembly export list order is not normative");
+    let json = serde_json::to_value(valid_manifest()).unwrap();
+    assert_eq!(
+        json["assembly_exports"][0]["symbol"],
+        "beskid_arch_v5_context_init"
+    );
+
+    let mut wrong_params = valid_manifest();
+    wrong_params.assembly_exports[0].params = vec![AbiType::I8];
+    assert!(matches!(
+        wrong_params.validate(),
+        Err(ManifestValidationError::InvalidAssemblyExports { .. })
+    ));
+
+    let mut missing_register = valid_manifest();
+    missing_register.assembly_exports[0]
+        .preserved_registers
+        .pop();
+    assert!(matches!(
+        missing_register.validate(),
+        Err(ManifestValidationError::InvalidAssemblyExports { .. })
+    ));
 }
 
 #[test]
@@ -183,6 +241,21 @@ fn layout_and_source_hashes_are_canonical_and_sensitive() {
         ])
         .unwrap()
     );
+
+    let duplicates = [
+        SourceUnit {
+            logical_path: "Runtime/Gc.bd".into(),
+            source: "first".into(),
+        },
+        SourceUnit {
+            logical_path: "Runtime/Gc.bd".into(),
+            source: "second".into(),
+        },
+    ];
+    assert!(matches!(
+        canonical_source_hash(&duplicates),
+        Err(ManifestValidationError::DuplicateSourcePath { .. })
+    ));
 }
 
 fn artifact(path: &str) -> RuntimeArtifact {
@@ -193,18 +266,30 @@ fn artifact(path: &str) -> RuntimeArtifact {
 }
 
 fn valid_runtime_kit() -> RuntimeKitMetadata {
-    RuntimeKitMetadata {
-        schema_version: 1,
-        abi_version: ABI_V5,
-        target: linux_target(),
-        profile: BuildProfile::Debug,
-        layout_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-        source_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
-        artifacts: RuntimeArtifacts {
+    runtime_kit(
+        linux_target(),
+        BuildProfile::Debug,
+        RuntimeArtifacts {
             static_library: artifact("static/libbeskid_runtime.a"),
             shared_library: artifact("shared/libbeskid_runtime.so"),
             shared_import_library: None,
         },
+    )
+}
+
+fn runtime_kit(
+    target: TargetMetadata,
+    profile: BuildProfile,
+    artifacts: RuntimeArtifacts,
+) -> RuntimeKitMetadata {
+    RuntimeKitMetadata {
+        schema_version: 1,
+        abi_version: ABI_V5,
+        target,
+        profile,
+        layout_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+        source_hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+        artifacts,
         import_allowlist: vec!["clock_gettime".into()],
         export_allowlist: vec!["beskid_rt_v5_entry".into()],
     }
@@ -233,4 +318,65 @@ fn runtime_kit_metadata_is_serializable_and_requires_the_exact_target_artifacts(
         duplicate_export.validate(),
         Err(RuntimeKitValidationError::DuplicateAllowlistSymbol { .. })
     ));
+
+    runtime_kit(
+        target(
+            TargetTriple::Aarch64AppleDarwin,
+            CallingConvention::AppleAarch64,
+        ),
+        BuildProfile::Release,
+        RuntimeArtifacts {
+            static_library: artifact("static/libbeskid_runtime.a"),
+            shared_library: artifact("shared/libbeskid_runtime.dylib"),
+            shared_import_library: None,
+        },
+    )
+    .validate()
+    .expect("macOS artifact contract");
+
+    let windows = runtime_kit(
+        target(
+            TargetTriple::X86_64PcWindowsMsvc,
+            CallingConvention::WindowsX64,
+        ),
+        BuildProfile::Release,
+        RuntimeArtifacts {
+            static_library: artifact("static/beskid_runtime.lib"),
+            shared_library: artifact("shared/beskid_runtime.dll"),
+            shared_import_library: Some(artifact("shared/beskid_runtime_import.lib")),
+        },
+    );
+    windows.validate().expect("Windows artifact contract");
+    let mut missing_import_library = windows;
+    missing_import_library.artifacts.shared_import_library = None;
+    assert!(matches!(
+        missing_import_library.validate(),
+        Err(RuntimeKitValidationError::InvalidArtifactSet { .. })
+    ));
+}
+
+#[test]
+fn runtime_kit_rejects_non_portable_artifact_paths() {
+    for invalid in [
+        "/absolute/file",
+        "C:/absolute/file",
+        "C:\\absolute\\file",
+        "\\\\server\\share\\file",
+        "../file",
+        "./file",
+        "shared/../file",
+        "shared/./file",
+        "shared//file",
+        "shared\\file",
+    ] {
+        let mut metadata = valid_runtime_kit();
+        metadata.artifacts.static_library.relative_path = invalid.into();
+        assert!(
+            matches!(
+                metadata.validate(),
+                Err(RuntimeKitValidationError::InvalidArtifactPath(_))
+            ),
+            "portable validation accepted `{invalid}`"
+        );
+    }
 }
