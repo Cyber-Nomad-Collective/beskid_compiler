@@ -5,6 +5,7 @@
 
 pub mod common;
 pub mod expressions;
+mod identity;
 pub mod items;
 pub mod statements;
 pub mod types;
@@ -21,6 +22,7 @@ pub use expressions::{
     MemberExpression, PathExpression, Pattern, SpawnExpression, StructLiteralExpression,
     StructLiteralField, TryExpression, UnaryExpression, UnaryOp,
 };
+pub use identity::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use items::{
     Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
     ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition,

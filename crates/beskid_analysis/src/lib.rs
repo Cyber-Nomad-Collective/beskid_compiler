@@ -59,6 +59,7 @@ pub use projects::{
 pub use projects::{
     ProjectGraphBuildOptions, WorkspaceResolutionSummary, resolve_project_manifest_for_source_path,
 };
+pub use syntax::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use syntax_query::{
     Ancestors, AstNode, Descendants, DynNodeRef, HirDescendants, HirNode, HirNodeKind, HirNodeRef,
     HirQuery, HirVisit, HirWalker, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,

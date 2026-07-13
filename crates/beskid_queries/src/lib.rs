@@ -11,6 +11,7 @@ mod materializer;
 mod modhost;
 mod output;
 mod persistence;
+mod semantic_contract;
 mod session;
 mod stats;
 mod unit;
@@ -46,6 +47,13 @@ pub use modhost::{
     CapabilitySetId, ManifestGenerationId, SyntaxGenerationId, bump_syntax_generation,
     mod_collect_target_fingerprint, mod_generate, mod_generate_fingerprint,
 };
+pub use semantic_contract::{
+    AstNodeKey, CallLowering, CastIntent, ControlFlow, ItemSignature, ResolvedItem, ResolvedLocal,
+    RuntimeIntrinsic, SemanticFacts, SemanticFactsInput, SemanticTypeId, SourceUnitId, TypedProgram,
+    call_lowering, cast_intents, control_flow, item_signature, node_type, resolved_item,
+    resolved_local, runtime_intrinsic,
+};
+pub use beskid_analysis::syntax::AstNodeId;
 pub use output::{
     SharedFrontEnd, SharedResolution, SharedTypeResult, SharedUnitResolution,
     SharedUnitTypeSurface,
