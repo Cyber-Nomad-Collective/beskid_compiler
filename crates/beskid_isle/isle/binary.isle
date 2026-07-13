@@ -1,1 +1,7 @@
-;; Binary selection rules are added independently of Rust lowering.
+(decl clif_iadd (Value Value) Value)
+(extern constructor clif_iadd clif_iadd)
+
+(rule (lower_expression key @ (node_kind (NodeKind.BinaryAdd)))
+      (clif_iadd
+        (lower_expression (child_at key 0))
+        (lower_expression (child_at key 1))))

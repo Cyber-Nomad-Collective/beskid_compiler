@@ -1,1 +1,10 @@
-;; Unary and cast selection consumes authoritative semantic facts.
+(decl clif_ineg (Value) Value)
+(extern constructor clif_ineg clif_ineg)
+
+(decl clif_bnot (Value) Value)
+(extern constructor clif_bnot clif_bnot)
+
+(rule (lower_expression key @ (node_kind (NodeKind.UnaryNeg)))
+      (clif_ineg (lower_expression (child_at key 0))))
+(rule (lower_expression key @ (node_kind (NodeKind.UnaryNot)))
+      (clif_bnot (lower_expression (child_at key 0))))

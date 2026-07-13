@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 beskid_queries = { path = "../beskid_queries" }
-cranelift-codegen = { workspace = true }
+cranelift-codegen = { workspace = true, features = ["arm64", "x86"] }
 cranelift-frontend = { workspace = true }
 
 [build-dependencies]

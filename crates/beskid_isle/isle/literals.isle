@@ -1,1 +1,10 @@
-;; Literal rules are rooted by `lower_expression` and emit stock CLIF through Context.
+(decl partial emit_integer (AstNodeKey) Value)
+(extern constructor emit_integer emit_integer)
+
+(decl partial emit_boolean (AstNodeKey) Value)
+(extern constructor emit_boolean emit_boolean)
+
+(rule (lower_expression key @ (node_kind (NodeKind.IntegerLiteral)))
+      (emit_integer key))
+(rule (lower_expression key @ (node_kind (NodeKind.BooleanLiteral)))
+      (emit_boolean key))

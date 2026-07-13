@@ -13,8 +13,28 @@ fn generated_isle_has_real_rules_and_a_context() {
             None
         }
 
-        fn emit_integer(&mut self, _key: AstNodeKey) -> Value {
-            Value::from_u32(0)
+        fn child_at(&mut self, _key: AstNodeKey, _index: u8) -> Option<AstNodeKey> {
+            None
+        }
+
+        fn emit_integer(&mut self, _key: AstNodeKey) -> Option<Value> {
+            Some(Value::from_u32(0))
+        }
+
+        fn emit_boolean(&mut self, _key: AstNodeKey) -> Option<Value> {
+            Some(Value::from_u32(0))
+        }
+
+        fn clif_iadd(&mut self, left: Value, _right: Value) -> Value {
+            left
+        }
+
+        fn clif_ineg(&mut self, value: Value) -> Value {
+            value
+        }
+
+        fn clif_bnot(&mut self, value: Value) -> Value {
+            value
         }
     }
 
@@ -33,8 +53,28 @@ fn partial_expression_constructor_returns_none_when_no_rule_matches() {
             Some(self.0)
         }
 
-        fn emit_integer(&mut self, _key: AstNodeKey) -> Value {
-            Value::from_u32(7)
+        fn child_at(&mut self, _key: AstNodeKey, _index: u8) -> Option<AstNodeKey> {
+            None
+        }
+
+        fn emit_integer(&mut self, _key: AstNodeKey) -> Option<Value> {
+            Some(Value::from_u32(7))
+        }
+
+        fn emit_boolean(&mut self, _key: AstNodeKey) -> Option<Value> {
+            Some(Value::from_u32(7))
+        }
+
+        fn clif_iadd(&mut self, left: Value, _right: Value) -> Value {
+            left
+        }
+
+        fn clif_ineg(&mut self, value: Value) -> Value {
+            value
+        }
+
+        fn clif_bnot(&mut self, value: Value) -> Value {
+            value
         }
     }
 

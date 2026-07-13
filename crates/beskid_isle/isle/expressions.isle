@@ -1,6 +1,3 @@
-(decl emit_integer (AstNodeKey) Value)
-(extern constructor emit_integer emit_integer)
-
 (decl partial lower_expression (AstNodeKey) Value)
-(rule (lower_expression key @ (node_kind (NodeKind.IntegerLiteral)))
-      (emit_integer key))
+(rule (lower_expression key @ (node_kind (NodeKind.Grouped)))
+      (lower_expression (child_at key 0)))

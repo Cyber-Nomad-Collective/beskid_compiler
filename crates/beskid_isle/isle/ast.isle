@@ -1,2 +1,5 @@
 (decl node_kind (NodeKind) AstNodeKey)
 (extern extractor node_kind node_kind)
+
+(decl partial child_at (AstNodeKey u8) AstNodeKey)
+(extern constructor child_at child_at)
