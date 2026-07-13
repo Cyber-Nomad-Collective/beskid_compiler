@@ -892,7 +892,7 @@ impl<'a> TypeChecker<'a> {
             }
         }
 
-        for (name, _) in fields.iter() {
+        for name in fields.keys() {
             if seen.contains(name) {
                 continue;
             }
