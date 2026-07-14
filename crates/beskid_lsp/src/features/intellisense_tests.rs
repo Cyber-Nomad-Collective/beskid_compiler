@@ -10,10 +10,10 @@ mod tests {
     use std::str::FromStr;
     use tower_lsp_server::ls_types::{GotoDefinitionResponse, Hover, Uri};
 
-    use crate::features::{definition, hover, references};
+    use crate::features::{definition, hover, references, signature_help};
     use crate::position::position_to_offset;
     use crate::session::lifecycle::{ANALYSIS_CACHE_VERSION, build_document};
-    use crate::session::store::{Document, State, SyntaxDefinition};
+    use crate::session::store::{Document, State, SyntaxDefinition, SyntaxHover};
     use crate::workspace_scan::path_to_uri;
 
     struct CorelibMvpFixture {
@@ -178,6 +178,36 @@ mod tests {
         assert_eq!(location.uri, uri);
         assert_eq!(location.range.start.line, 1);
         assert_eq!(location.range.start.character, 4);
+    }
+
+    #[test]
+    fn documentation_and_signature_help_use_syntax_hover_without_analysis() {
+        let uri = Uri::from_str("file:///tmp/syntax-docs.bd").expect("uri");
+        let source = "i32 Main() { return helper(); }".to_string();
+        let doc = Document {
+            version: 1,
+            text: source.clone(),
+            analysis_cache_version: ANALYSIS_CACHE_VERSION,
+            analysis: None,
+            syntax_definitions: Vec::new(),
+            syntax_hovers: vec![SyntaxHover {
+                reference_start: 20,
+                reference_end: 26,
+                markdown: "**function** `helper`".to_string(),
+                location_path: PathBuf::from("/tmp/syntax-docs.bd"),
+                location_start: 20,
+                location_end: 26,
+            }],
+        };
+        let documentation = crate::commands::symbol_documentation::documentation_uri_for_document(
+            &doc, 22,
+        )
+        .expect("syntax documentation URL");
+        assert!(documentation.contains("helper"));
+        let call_offset = source.find("helper(").expect("helper call") + "helper(".len();
+        let signature = signature_help::handler::handle_signature_help(&uri, &doc, call_offset)
+            .expect("syntax signature help");
+        assert_eq!(signature.signatures[0].label, "**function** `helper`");
     }
 
     #[tokio::test]
