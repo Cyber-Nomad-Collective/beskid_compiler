@@ -43,6 +43,8 @@ pub enum NodeKind {
     PathExpression,
     IndexExpression,
     ArrayLiteralExpression,
+    FieldExpression,
+    StructLiteralExpression,
     BlockExpression,
 }
 
@@ -151,6 +153,61 @@ impl ArrayLayout {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FieldLayout {
+    value_type: Type,
+    offset: u32,
+}
+
+impl FieldLayout {
+    pub const fn new(value_type: Type, offset: u32) -> Self {
+        Self { value_type, offset }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StructLayout {
+    size: u32,
+    align_shift: u8,
+    fields: Vec<FieldLayout>,
+}
+
+impl StructLayout {
+    pub fn new(size: u32, align_shift: u8, fields: Vec<FieldLayout>) -> Self {
+        Self {
+            size,
+            align_shift,
+            fields,
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        let Some(alignment) = 1_u32.checked_shl(u32::from(self.align_shift)) else {
+            return false;
+        };
+        if self.size == 0 || self.size > i32::MAX as u32 || !self.size.is_multiple_of(alignment) {
+            return false;
+        }
+        for (index, field) in self.fields.iter().enumerate() {
+            let field_size = field.value_type.bytes();
+            let Some(end) = field.offset.checked_add(field_size) else {
+                return false;
+            };
+            let field_alignment = field_size.next_power_of_two().min(alignment);
+            if field_size == 0 || end > self.size || !field.offset.is_multiple_of(field_alignment) {
+                return false;
+            }
+            if self.fields[..index].iter().any(|other| {
+                let other_end = other.offset + other.value_type.bytes();
+                field.offset < other_end && other.offset < end
+            }) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 pub type Unit = ();
 
 #[allow(
@@ -227,6 +284,15 @@ pub trait NodeFacts {
     fn array_layout(&self, _key: AstNodeKey) -> Option<ArrayLayout> {
         None
     }
+    fn struct_fields(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        None
+    }
+    fn struct_layout(&self, _key: AstNodeKey) -> Option<StructLayout> {
+        None
+    }
+    fn field_index(&self, _key: AstNodeKey) -> Option<u32> {
+        None
+    }
     fn local_slot(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
@@ -257,6 +323,8 @@ pub enum LoweringErrorKind {
     MissingRuleOrFact,
     UnknownCallee(DirectCallee),
     InvalidArrayLayout,
+    InvalidStructLayout,
+    InvalidStructField(u32),
 }
 
 /// Thin host for generated ISLE selection and stock CLIF instruction construction.
@@ -417,6 +485,12 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn call_kind(&mut self, key: AstNodeKey) -> Option<CallKind> {
         self.facts.call_kind(key)
+    }
+
+    fn assignment_target_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {
+        self.facts
+            .child(key, 0)
+            .and_then(|target| self.facts.node_kind(target))
     }
 
     fn child_at(&mut self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
@@ -759,6 +833,131 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 .ins()
                 .load(layout.element_type, MemFlags::new(), address, 0),
         )
+    }
+
+    fn emit_struct_literal(&mut self, key: AstNodeKey) -> Option<Value> {
+        let fields = self.facts.struct_fields(key)?;
+        let layout = self.facts.struct_layout(key)?;
+        if !layout.is_valid() || fields.len() != layout.fields.len() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidStructLayout,
+            });
+            return None;
+        }
+        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            layout.size,
+            layout.align_shift,
+        ));
+        for (field_key, field_layout) in fields.into_iter().zip(layout.fields) {
+            let value = generated::constructor_lower_expression(self, field_key)?;
+            if self.builder.func.dfg.value_type(value) != field_layout.value_type {
+                self.pending_error = Some(LoweringError {
+                    key,
+                    kind: LoweringErrorKind::InvalidStructLayout,
+                });
+                return None;
+            }
+            self.builder
+                .ins()
+                .stack_store(value, slot, i32::try_from(field_layout.offset).ok()?);
+        }
+        let pointer_type = self.facts.scalar_type(key)?;
+        if !pointer_type.is_int() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidStructLayout,
+            });
+            return None;
+        }
+        Some(self.builder.ins().stack_addr(pointer_type, slot, 0))
+    }
+
+    fn emit_field_read(&mut self, key: AstNodeKey) -> Option<Value> {
+        let layout = self.facts.struct_layout(key)?;
+        if !layout.is_valid() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidStructLayout,
+            });
+            return None;
+        }
+        let field_index = self.facts.field_index(key)?;
+        let Some(field) = usize::try_from(field_index)
+            .ok()
+            .and_then(|index| layout.fields.get(index))
+            .copied()
+        else {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidStructField(field_index),
+            });
+            return None;
+        };
+        if self.facts.scalar_type(key)? != field.value_type {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidStructLayout,
+            });
+            return None;
+        }
+        let base_key = self.facts.child(key, 0)?;
+        let base = generated::constructor_lower_expression(self, base_key)?;
+        if !self.builder.func.dfg.value_type(base).is_int() {
+            return None;
+        }
+        Some(self.builder.ins().load(
+            field.value_type,
+            MemFlags::new(),
+            base,
+            i32::try_from(field.offset).ok()?,
+        ))
+    }
+
+    fn emit_field_assign(&mut self, key: AstNodeKey) -> Option<Value> {
+        let target = self.facts.child(key, 0)?;
+        let value_key = self.facts.child(key, 1)?;
+        let layout = self.facts.struct_layout(target)?;
+        if !layout.is_valid() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidStructLayout,
+            });
+            return None;
+        }
+        let field_index = self.facts.field_index(target)?;
+        let Some(field) = usize::try_from(field_index)
+            .ok()
+            .and_then(|index| layout.fields.get(index))
+            .copied()
+        else {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidStructField(field_index),
+            });
+            return None;
+        };
+        let base_key = self.facts.child(target, 0)?;
+        let base = generated::constructor_lower_expression(self, base_key)?;
+        let value = generated::constructor_lower_expression(self, value_key)?;
+        if !self.builder.func.dfg.value_type(base).is_int()
+            || self.builder.func.dfg.value_type(value) != field.value_type
+            || self.facts.scalar_type(key)? != field.value_type
+        {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidStructLayout,
+            });
+            return None;
+        }
+        self.builder.ins().store(
+            MemFlags::new(),
+            value,
+            base,
+            i32::try_from(field.offset).ok()?,
+        );
+        Some(value)
     }
 }
 

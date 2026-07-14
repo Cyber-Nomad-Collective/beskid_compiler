@@ -12,3 +12,6 @@
 
 (decl partial child_at (AstNodeKey u8) AstNodeKey)
 (extern constructor child_at child_at)
+
+(decl partial assignment_target_kind (NodeKind) AstNodeKey)
+(extern extractor assignment_target_kind assignment_target_kind)
