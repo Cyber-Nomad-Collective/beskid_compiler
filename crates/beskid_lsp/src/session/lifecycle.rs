@@ -407,6 +407,7 @@ mod tests {
     #[tokio::test]
     async fn set_document_ignores_stale_versions() {
         let state = tokio::sync::RwLock::new(State::default());
+        state.read().await.mark_initial_scan_complete();
         let file_uri = uri();
         set_document(&state, file_uri.clone(), 2, source()).await;
         set_document(
@@ -438,6 +439,7 @@ mod tests {
             },
         );
 
+        state.mark_initial_scan_complete();
         let state = tokio::sync::RwLock::new(state);
         set_document(&state, file_uri.clone(), 2, text).await;
 

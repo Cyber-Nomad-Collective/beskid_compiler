@@ -157,6 +157,7 @@ mod tests {
         let fixture = corelib_mvp_paths();
         let uri = fixture.uri.clone();
         let state = tokio::sync::RwLock::new(State::default());
+        state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
         let analysis = doc
@@ -185,6 +186,7 @@ mod tests {
             (fixture.uri.clone(), fixture)
         });
         let state = tokio::sync::RwLock::new(State::default());
+        state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         let analysis = doc
             .analysis

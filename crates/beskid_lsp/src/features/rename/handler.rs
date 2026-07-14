@@ -119,21 +119,46 @@ fn is_valid_identifier(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::fs;
 
-    use tower_lsp_server::ls_types::Uri;
+    use tempfile::TempDir;
 
     use super::*;
     use crate::session::lifecycle::build_document;
+    use crate::workspace_scan::path_to_uri;
 
     fn source() -> &'static str {
         "i32 add(i32 lhs, i32 rhs) {\n    return lhs + rhs;\n}\n\ni32 main() {\n    return add(1, 2);\n}\n"
     }
 
+    fn project_fixture() -> (TempDir, Uri) {
+        let root = tempfile::tempdir().expect("temporary project");
+        let source_dir = root.path().join("Src");
+        fs::create_dir_all(&source_dir).expect("source directory");
+        fs::write(source_dir.join("Main.bd"), source()).expect("source file");
+        fs::write(
+            root.path().join("RenameProject.bproj"),
+            r#"RenameProject {
+  name = "RenameProject"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+"#,
+        )
+        .expect("project manifest");
+        let uri = path_to_uri(&source_dir.join("Main.bd")).expect("file uri");
+        (root, uri)
+    }
+
     #[tokio::test]
     async fn prepare_rename_for_resolved_symbol_returns_selection() {
         let state = tokio::sync::RwLock::new(crate::session::store::State::default());
-        let uri = Uri::from_str("file:///rename_test.bd").expect("valid uri");
+        state.read().await.mark_initial_scan_complete();
+        let (_root, uri) = project_fixture();
         let doc = build_document(&state, &uri, 1, source().to_string()).await;
         let offset = source().find("lhs +").expect("lhs");
         let response = handle_prepare_rename(&uri, &doc, offset).expect("prepare rename");
@@ -146,7 +171,8 @@ mod tests {
     #[tokio::test]
     async fn rename_updates_definition_and_references() {
         let state = tokio::sync::RwLock::new(crate::session::store::State::default());
-        let uri = Uri::from_str("file:///rename_test.bd").expect("valid uri");
+        state.read().await.mark_initial_scan_complete();
+        let (_root, uri) = project_fixture();
         let doc = build_document(&state, &uri, 1, source().to_string()).await;
         let position = Position::new(1, 11);
         let edit = handle_rename(&uri, &doc, position, "left").expect("workspace edit");
