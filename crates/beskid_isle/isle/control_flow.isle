@@ -19,6 +19,8 @@
 (extern constructor emit_break emit_break)
 (decl partial emit_continue (AstNodeKey) Unit)
 (extern constructor emit_continue emit_continue)
+(decl partial emit_range_for (AstNodeKey) Unit)
+(extern constructor emit_range_for emit_range_for)
 
 (rule (lower_statement key @ (node_kind (NodeKind.WhileStatement)))
       (emit_while key))
@@ -26,3 +28,7 @@
       (emit_break key))
 (rule (lower_statement key @ (node_kind (NodeKind.ContinueStatement)))
       (emit_continue key))
+(rule (lower_statement key @ (and
+        (node_kind (NodeKind.ForStatement))
+        (for_iterable_kind (NodeKind.RangeExpression))))
+      (emit_range_for key))

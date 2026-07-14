@@ -1,3 +1,8 @@
 (decl partial lower_expression (AstNodeKey) Value)
+(decl partial emit_block_expression (AstNodeKey) Value)
+(extern constructor emit_block_expression emit_block_expression)
+
 (rule (lower_expression key @ (node_kind (NodeKind.GroupedExpression)))
       (lower_expression (child_at key 0)))
+(rule (lower_expression key @ (node_kind (NodeKind.BlockExpression)))
+      (emit_block_expression key))

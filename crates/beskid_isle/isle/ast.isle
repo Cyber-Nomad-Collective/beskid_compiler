@@ -15,3 +15,6 @@
 
 (decl partial assignment_target_kind (NodeKind) AstNodeKey)
 (extern extractor assignment_target_kind assignment_target_kind)
+
+(decl partial for_iterable_kind (NodeKind) AstNodeKey)
+(extern extractor for_iterable_kind for_iterable_kind)

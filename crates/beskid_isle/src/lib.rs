@@ -48,7 +48,9 @@ pub enum NodeKind {
     StructLiteralExpression,
     EnumLiteralExpression,
     MatchExpression,
+    RangeExpression,
     BlockExpression,
+    ForStatement,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -310,6 +312,25 @@ impl MatchArmFact {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RangeFact {
+    start: AstNodeKey,
+    end: AstNodeKey,
+    step: i64,
+    inclusive: bool,
+}
+
+impl RangeFact {
+    pub const fn new(start: AstNodeKey, end: AstNodeKey, step: i64, inclusive: bool) -> Self {
+        Self {
+            start,
+            end,
+            step,
+            inclusive,
+        }
+    }
+}
+
 pub type Unit = ();
 
 #[allow(
@@ -352,6 +373,9 @@ pub trait NodeFacts {
         None
     }
     fn statement_count(&self, _key: AstNodeKey) -> Option<u8> {
+        None
+    }
+    fn block_result(&self, _key: AstNodeKey) -> Option<AstNodeKey> {
         None
     }
     fn let_initializer(&self, _key: AstNodeKey) -> Option<AstNodeKey> {
@@ -407,6 +431,9 @@ pub trait NodeFacts {
     fn match_arms(&self, _key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
         None
     }
+    fn range_fact(&self, _key: AstNodeKey) -> Option<RangeFact> {
+        None
+    }
     fn local_slot(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
@@ -443,6 +470,8 @@ pub enum LoweringErrorKind {
     InvalidEnumVariant(u32),
     InvalidMatchArms,
     NonExhaustiveMatch,
+    InvalidBlockExpression,
+    InvalidRangeFor,
 }
 
 /// Thin host for generated ISLE selection and stock CLIF instruction construction.
@@ -611,6 +640,12 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             .and_then(|target| self.facts.node_kind(target))
     }
 
+    fn for_iterable_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {
+        self.facts
+            .child(key, 0)
+            .and_then(|iterable| self.facts.node_kind(iterable))
+    }
+
     fn child_at(&mut self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
         self.facts.child(key, index)
     }
@@ -729,6 +764,37 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn discard_value(&mut self, _value: Value) {}
 
+    fn emit_block_expression(&mut self, key: AstNodeKey) -> Option<Value> {
+        let saved_locals = self.locals.clone();
+        let lowered = (|| {
+            let count = self.facts.statement_count(key)?;
+            for index in 0..count {
+                let statement = self.facts.child(key, index)?;
+                generated::constructor_lower_statement(self, statement)?;
+                let current = self.builder.current_block()?;
+                if block_is_terminated(self.builder, current) {
+                    self.pending_error = Some(LoweringError {
+                        key,
+                        kind: LoweringErrorKind::InvalidBlockExpression,
+                    });
+                    return None;
+                }
+            }
+            let result_key = self.facts.block_result(key)?;
+            let value = generated::constructor_lower_expression(self, result_key)?;
+            if self.builder.func.dfg.value_type(value) != self.facts.scalar_type(key)? {
+                self.pending_error = Some(LoweringError {
+                    key,
+                    kind: LoweringErrorKind::InvalidBlockExpression,
+                });
+                return None;
+            }
+            Some(value)
+        })();
+        self.locals = saved_locals;
+        lowered
+    }
+
     fn emit_return(&mut self, key: AstNodeKey) -> Option<()> {
         if let Some(value_key) = self.facts.child(key, 0) {
             let value = generated::constructor_lower_expression(self, value_key)?;
@@ -805,6 +871,89 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.builder.seal_block(header);
         self.builder.switch_to_block(exit);
         self.builder.seal_block(exit);
+        Some(())
+    }
+
+    fn emit_range_for(&mut self, key: AstNodeKey) -> Option<()> {
+        let iterable = self.facts.child(key, 0)?;
+        let body_key = self.facts.child(key, 1)?;
+        let range = self.facts.range_fact(iterable)?;
+        let iterator_type = self.facts.scalar_type(key)?;
+        let slot = self.facts.local_slot(key)?;
+        if range.step == 0 || !iterator_type.is_int() || self.locals.contains_key(&slot) {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidRangeFor,
+            });
+            return None;
+        }
+        let start = generated::constructor_lower_expression(self, range.start)?;
+        let end = generated::constructor_lower_expression(self, range.end)?;
+        if self.builder.func.dfg.value_type(start) != iterator_type
+            || self.builder.func.dfg.value_type(end) != iterator_type
+        {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidRangeFor,
+            });
+            return None;
+        }
+        let iterator = self.builder.declare_var(iterator_type);
+        self.builder.def_var(iterator, start);
+        self.locals.insert(slot, (iterator, iterator_type));
+
+        let header = self.builder.create_block();
+        let body = self.builder.create_block();
+        let latch = self.builder.create_block();
+        let exit = self.builder.create_block();
+        self.builder.ins().jump(header, &[]);
+
+        self.builder.switch_to_block(header);
+        let current = self.builder.use_var(iterator);
+        let condition = match (range.step.is_positive(), range.inclusive) {
+            (true, false) => self.builder.ins().icmp(IntCC::SignedLessThan, current, end),
+            (true, true) => self
+                .builder
+                .ins()
+                .icmp(IntCC::SignedLessThanOrEqual, current, end),
+            (false, false) => self
+                .builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThan, current, end),
+            (false, true) => self
+                .builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThanOrEqual, current, end),
+        };
+        self.builder.ins().brif(condition, body, &[], exit, &[]);
+
+        self.builder.switch_to_block(body);
+        self.builder.seal_block(body);
+        self.loop_stack.push(LoopTargets {
+            continue_block: latch,
+            break_block: exit,
+        });
+        let lowered = generated::constructor_lower_statement(self, body_key);
+        self.loop_stack.pop();
+        if lowered.is_none() {
+            self.locals.remove(&slot);
+            return None;
+        }
+        if !block_is_terminated(self.builder, body) {
+            self.builder.ins().jump(latch, &[]);
+        }
+
+        self.builder.switch_to_block(latch);
+        self.builder.seal_block(latch);
+        let current = self.builder.use_var(iterator);
+        let next = self.builder.ins().iadd_imm(current, range.step);
+        self.builder.def_var(iterator, next);
+        self.builder.ins().jump(header, &[]);
+
+        self.builder.seal_block(header);
+        self.builder.switch_to_block(exit);
+        self.builder.seal_block(exit);
+        self.locals.remove(&slot);
         Some(())
     }
 
