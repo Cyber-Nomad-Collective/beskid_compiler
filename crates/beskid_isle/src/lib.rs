@@ -14,7 +14,8 @@ use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
 pub use cranelift_codegen::ir::{
-    AbiParam, Block, FuncRef, Function, Signature, Type, UserFuncName, Value,
+    AbiParam, Block, FuncRef, Function, MemFlags, Signature, StackSlotData, StackSlotKind,
+    TrapCode, Type, UserFuncName, Value,
 };
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
@@ -40,6 +41,8 @@ pub enum NodeKind {
     AssignExpression,
     CallExpression,
     PathExpression,
+    IndexExpression,
+    ArrayLiteralExpression,
     BlockExpression,
 }
 
@@ -115,6 +118,39 @@ pub enum CallImportError {
     UnknownCallee,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArrayLayout {
+    element_type: Type,
+    stride: u32,
+    length: u32,
+    align_shift: u8,
+}
+
+impl ArrayLayout {
+    pub const fn new(element_type: Type, stride: u32, length: u32, align_shift: u8) -> Self {
+        Self {
+            element_type,
+            stride,
+            length,
+            align_shift,
+        }
+    }
+
+    fn byte_size(self) -> Option<u32> {
+        self.stride.checked_mul(self.length)
+    }
+
+    fn is_valid(self) -> bool {
+        let Some(alignment) = 1_u32.checked_shl(u32::from(self.align_shift)) else {
+            return false;
+        };
+        self.element_type.bytes() > 0
+            && self.stride >= self.element_type.bytes()
+            && self.stride.is_multiple_of(alignment)
+            && self.byte_size().is_some_and(|size| size <= i32::MAX as u32)
+    }
+}
+
 pub type Unit = ();
 
 #[allow(
@@ -185,6 +221,12 @@ pub trait NodeFacts {
     fn call_arguments(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         None
     }
+    fn array_elements(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        None
+    }
+    fn array_layout(&self, _key: AstNodeKey) -> Option<ArrayLayout> {
+        None
+    }
     fn local_slot(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
@@ -214,6 +256,7 @@ pub trait CallImporter {
 pub enum LoweringErrorKind {
     MissingRuleOrFact,
     UnknownCallee(DirectCallee),
+    InvalidArrayLayout,
 }
 
 /// Thin host for generated ISLE selection and stock CLIF instruction construction.
@@ -224,7 +267,7 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     call_importer: Option<&'interner mut dyn CallImporter>,
     loop_stack: Vec<LoopTargets>,
     locals: HashMap<u32, (Variable, Type)>,
-    pending_error: Option<LoweringErrorKind>,
+    pending_error: Option<LoweringError>,
 }
 
 impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'facts, 'interner> {
@@ -335,7 +378,10 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             {
                 Ok(function) => function,
                 Err(CallImportError::UnknownCallee) => {
-                    self.pending_error = Some(LoweringErrorKind::UnknownCallee(callee));
+                    self.pending_error = Some(LoweringError {
+                        key,
+                        kind: LoweringErrorKind::UnknownCallee(callee),
+                    });
                     return None;
                 }
             };
@@ -632,6 +678,88 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.builder.def_var(variable, value);
         Some(value)
     }
+
+    fn emit_array_literal(&mut self, key: AstNodeKey) -> Option<Value> {
+        let elements = self.facts.array_elements(key)?;
+        let layout = self.facts.array_layout(key)?;
+        if !layout.is_valid() || usize::try_from(layout.length).ok()? != elements.len() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidArrayLayout,
+            });
+            return None;
+        }
+        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            layout.byte_size()?.max(1),
+            layout.align_shift,
+        ));
+        for (index, element) in elements.into_iter().enumerate() {
+            let value = generated::constructor_lower_expression(self, element)?;
+            if self.builder.func.dfg.value_type(value) != layout.element_type {
+                self.pending_error = Some(LoweringError {
+                    key,
+                    kind: LoweringErrorKind::InvalidArrayLayout,
+                });
+                return None;
+            }
+            let offset = u32::try_from(index)
+                .ok()?
+                .checked_mul(layout.stride)
+                .and_then(|offset| i32::try_from(offset).ok())?;
+            self.builder.ins().stack_store(value, slot, offset);
+        }
+        let pointer_type = self.facts.scalar_type(key)?;
+        Some(self.builder.ins().stack_addr(pointer_type, slot, 0))
+    }
+
+    fn emit_index_read(&mut self, key: AstNodeKey) -> Option<Value> {
+        let layout = self.facts.array_layout(key)?;
+        if !layout.is_valid() || self.facts.scalar_type(key)? != layout.element_type {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidArrayLayout,
+            });
+            return None;
+        }
+        let base_key = self.facts.child(key, 0)?;
+        let index_key = self.facts.child(key, 1)?;
+        let base = generated::constructor_lower_expression(self, base_key)?;
+        let index = generated::constructor_lower_expression(self, index_key)?;
+        let index_type = self.builder.func.dfg.value_type(index);
+        let pointer_type = self.builder.func.dfg.value_type(base);
+        if !index_type.is_int() || !pointer_type.is_int() {
+            return None;
+        }
+        let out_of_bounds = self.builder.ins().icmp_imm(
+            IntCC::UnsignedGreaterThanOrEqual,
+            index,
+            i64::from(layout.length),
+        );
+        self.builder
+            .ins()
+            .trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
+        let pointer_index = if index_type.bits() < pointer_type.bits() {
+            self.builder.ins().uextend(pointer_type, index)
+        } else if index_type.bits() > pointer_type.bits() {
+            self.builder.ins().ireduce(pointer_type, index)
+        } else {
+            index
+        };
+        let offset = if layout.stride == 1 {
+            pointer_index
+        } else {
+            self.builder
+                .ins()
+                .imul_imm(pointer_index, i64::from(layout.stride))
+        };
+        let address = self.builder.ins().iadd(base, offset);
+        Some(
+            self.builder
+                .ins()
+                .load(layout.element_type, MemFlags::new(), address, 0),
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -654,12 +782,11 @@ pub fn lower_expression(
     context: &mut IsleContext<'_, '_, '_, '_>,
     key: AstNodeKey,
 ) -> Result<Value, LoweringError> {
-    generated::constructor_lower_expression(context, key).ok_or_else(|| LoweringError {
-        key,
-        kind: context
-            .pending_error
-            .take()
-            .unwrap_or(LoweringErrorKind::MissingRuleOrFact),
+    generated::constructor_lower_expression(context, key).ok_or_else(|| {
+        context.pending_error.take().unwrap_or(LoweringError {
+            key,
+            kind: LoweringErrorKind::MissingRuleOrFact,
+        })
     })
 }
 
@@ -667,12 +794,11 @@ pub fn lower_statement(
     context: &mut IsleContext<'_, '_, '_, '_>,
     key: AstNodeKey,
 ) -> Result<(), LoweringError> {
-    generated::constructor_lower_statement(context, key).ok_or_else(|| LoweringError {
-        key,
-        kind: context
-            .pending_error
-            .take()
-            .unwrap_or(LoweringErrorKind::MissingRuleOrFact),
+    generated::constructor_lower_statement(context, key).ok_or_else(|| {
+        context.pending_error.take().unwrap_or(LoweringError {
+            key,
+            kind: LoweringErrorKind::MissingRuleOrFact,
+        })
     })
 }
 
