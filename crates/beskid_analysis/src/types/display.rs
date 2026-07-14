@@ -10,6 +10,7 @@ fn primitive_type_name(primitive: HirPrimitiveType) -> &'static str {
         HirPrimitiveType::I32 => "i32",
         HirPrimitiveType::I64 => "i64",
         HirPrimitiveType::U8 => "u8",
+        HirPrimitiveType::Word => "word",
         HirPrimitiveType::F64 => "f64",
         HirPrimitiveType::Char => "char",
         HirPrimitiveType::String => "string",

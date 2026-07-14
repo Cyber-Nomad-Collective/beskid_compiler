@@ -157,7 +157,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
-        self.scalar_semantic_type(key).and_then(map_scalar_type)
+        let semantic = self.scalar_semantic_type(key)?;
+        if semantic == SemanticTypeId::WORD {
+            return self.isa.map(|isa| isa.pointer_type());
+        }
+        map_scalar_type(semantic)
     }
 }
 
@@ -309,11 +313,11 @@ fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid
         .parameters
         .iter()
         .copied()
-        .map(map_scalar_type)
+        .map(|semantic| map_signature_type(isa, semantic))
         .collect::<Option<Vec<_>>>()?;
     let returns = match item.result {
         SemanticTypeId::UNIT => Vec::new(),
-        result => vec![map_scalar_type(result)?],
+        result => vec![map_signature_type(isa, result)?],
     };
     Some(emitter.signature(parameters, returns))
 }
@@ -381,9 +385,18 @@ fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
         SemanticTypeId::BOOL | SemanticTypeId::U8 => types::I8,
         SemanticTypeId::I32 => types::I32,
         SemanticTypeId::I64 => types::I64,
+        SemanticTypeId::WORD => return None,
         SemanticTypeId::F64 => types::F64,
         SemanticTypeId::CHAR => types::I32,
         SemanticTypeId::UNIT | SemanticTypeId::STRING => return None,
         _ => return None,
     })
+}
+
+fn map_signature_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
+    if semantic == SemanticTypeId::WORD {
+        Some(isa.pointer_type())
+    } else {
+        map_scalar_type(semantic)
+    }
 }

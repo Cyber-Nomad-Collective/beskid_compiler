@@ -175,6 +175,8 @@ impl SemanticTypeId {
     pub const F64: Self = Self(5);
     pub const CHAR: Self = Self(6);
     pub const STRING: Self = Self(7);
+    /// Pointer-width unsigned integer in Beskid source, represented as ABI `usize`.
+    pub const WORD: Self = Self(8);
 }
 
 /// Backend-relevant call classification, detached from legacy HIR nodes.
@@ -1118,6 +1120,7 @@ fn semantic_type_from_syntax(
             PrimitiveType::I32 => SemanticTypeId::I32,
             PrimitiveType::I64 => SemanticTypeId::I64,
             PrimitiveType::U8 => SemanticTypeId::U8,
+            PrimitiveType::Word => SemanticTypeId::WORD,
             PrimitiveType::F64 => SemanticTypeId::F64,
             PrimitiveType::Char => SemanticTypeId::CHAR,
             PrimitiveType::String => SemanticTypeId::STRING,

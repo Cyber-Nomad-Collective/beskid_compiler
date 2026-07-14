@@ -44,6 +44,7 @@ impl Emit for PrimitiveType {
             PrimitiveType::I32 => "i32",
             PrimitiveType::I64 => "i64",
             PrimitiveType::U8 => "u8",
+            PrimitiveType::Word => "word",
             PrimitiveType::F64 => "f64",
             PrimitiveType::Char => "char",
             PrimitiveType::String => "string",

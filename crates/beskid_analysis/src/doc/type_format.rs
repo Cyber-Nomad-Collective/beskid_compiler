@@ -16,6 +16,7 @@ pub fn format_hir_type(ty: &Spanned<HirType>) -> String {
             HirPrimitiveType::I32 => "i32".to_string(),
             HirPrimitiveType::I64 => "i64".to_string(),
             HirPrimitiveType::U8 => "u8".to_string(),
+            HirPrimitiveType::Word => "word".to_string(),
             HirPrimitiveType::F64 => "f64".to_string(),
             HirPrimitiveType::Char => "char".to_string(),
             HirPrimitiveType::String => "string".to_string(),

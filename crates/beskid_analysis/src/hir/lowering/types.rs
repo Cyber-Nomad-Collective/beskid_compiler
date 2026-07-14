@@ -157,6 +157,7 @@ impl Lowerable for Spanned<syntax::PrimitiveType> {
                 syntax::PrimitiveType::I32 => HirPrimitiveType::I32,
                 syntax::PrimitiveType::I64 => HirPrimitiveType::I64,
                 syntax::PrimitiveType::U8 => HirPrimitiveType::U8,
+                syntax::PrimitiveType::Word => HirPrimitiveType::Word,
                 syntax::PrimitiveType::F64 => HirPrimitiveType::F64,
                 syntax::PrimitiveType::Char => HirPrimitiveType::Char,
                 syntax::PrimitiveType::String => HirPrimitiveType::String,
