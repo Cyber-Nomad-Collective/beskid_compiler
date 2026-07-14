@@ -3,9 +3,14 @@
 //! This module grants no ambient or serializable package capability. The frontend may use the
 //! returned token only for AST nodes from the exact embedded source corpus.
 
+use std::path::Path;
+
 use crate::abi_v5::{
     AbiManifestV5, RuntimeIntrinsic, RuntimePackageIdentity, SourceUnit, canonical_runtime_package,
     canonical_source_hash,
+};
+use crate::runtime_kit::{
+    BuildProfile, ResolvedRuntimeKit, RuntimeKitResolutionError, resolve_installed_runtime_kit,
 };
 
 pub const CANONICAL_BOOTSTRAP_SOURCE_PATH: &str = "src/Runtime/Bootstrap.bd";
@@ -63,6 +68,31 @@ pub enum RuntimeCapabilityError {
     UnauthorizedPackage,
     SourceSetMismatch,
     InvalidManifest,
+}
+
+#[derive(Debug)]
+pub enum CanonicalRuntimeKitError {
+    Resolution(RuntimeKitResolutionError),
+    SourceHashMismatch { compiler: String, kit: String },
+}
+
+/// Resolve a validated installed kit whose source corpus exactly matches this compiler.
+pub fn resolve_canonical_runtime_kit(
+    prefix: &Path,
+    target: &crate::abi_v5::TargetMetadata,
+    profile: BuildProfile,
+) -> Result<ResolvedRuntimeKit, CanonicalRuntimeKitError> {
+    let kit = resolve_installed_runtime_kit(prefix, target, profile)
+        .map_err(CanonicalRuntimeKitError::Resolution)?;
+    let compiler = canonical_source_hash(&canonical_runtime_sources())
+        .expect("compiler-embedded runtime source paths are unique");
+    if kit.metadata.source_hash != compiler {
+        return Err(CanonicalRuntimeKitError::SourceHashMismatch {
+            compiler,
+            kit: kit.metadata.source_hash,
+        });
+    }
+    Ok(kit)
 }
 
 /// Grant trusted intrinsic selection only to the exact embedded runtime sources and manifest.

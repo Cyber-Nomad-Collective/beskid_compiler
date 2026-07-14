@@ -2,9 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use beskid_abi::abi_v5::{TargetMetadata, canonical_source_hash};
-use beskid_abi::runtime_kit::{BuildProfile as RuntimeKitProfile, resolve_installed_runtime_kit};
-use beskid_abi::runtime_source::canonical_runtime_sources;
+use beskid_abi::abi_v5::TargetMetadata;
+use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
+use beskid_abi::runtime_source::resolve_canonical_runtime_kit;
 
 use crate::api::{BuildProfile, RuntimeLinkProfile, RuntimeStrategy};
 use crate::error::{AotError, AotResult};
@@ -122,7 +122,7 @@ pub(crate) fn resolve_aot_runtime_kit(
     target: &TargetMetadata,
     profile: RuntimeKitProfile,
 ) -> AotResult<beskid_abi::runtime_kit::ResolvedRuntimeKit> {
-    let kit = resolve_installed_runtime_kit(prefix, target, profile).map_err(|error| {
+    let kit = resolve_canonical_runtime_kit(prefix, target, profile).map_err(|error| {
         AotError::RuntimeBuild {
             message: format!(
                 "ABI-v5 runtime kit validation failed for `{}`: {error:?}",
@@ -130,16 +130,6 @@ pub(crate) fn resolve_aot_runtime_kit(
             ),
         }
     })?;
-    let compiler_source_hash = canonical_source_hash(&canonical_runtime_sources())
-        .expect("compiler-embedded runtime source paths are unique");
-    if kit.metadata.source_hash != compiler_source_hash {
-        return Err(AotError::RuntimeBuild {
-            message: format!(
-                "ABI-v5 runtime source hash mismatch: compiler={compiler_source_hash}, kit={}",
-                kit.metadata.source_hash
-            ),
-        });
-    }
     Ok(kit)
 }
 

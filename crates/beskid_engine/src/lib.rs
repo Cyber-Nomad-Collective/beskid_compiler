@@ -9,6 +9,7 @@ mod generated;
 mod jit_callable;
 mod jit_module;
 pub mod link_libraries;
+mod runtime_kit;
 pub mod services;
 
 pub use engine::Engine;
@@ -17,4 +18,5 @@ pub use engine::resolve_for_tests;
 #[cfg(feature = "extern_dlopen")]
 pub use engine::set_security_policies_for_tests;
 pub use jit_module::{BeskidJitModule, JitError};
+pub use runtime_kit::JitRuntimeKit;
 pub use services::run_resolved_entrypoint_with_pipeline;
