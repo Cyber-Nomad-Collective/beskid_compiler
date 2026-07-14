@@ -54,14 +54,20 @@ fn warm_point_query_uses_registered_expanded_syntax_without_reparse() {
     let (mut db, _project, unit, generation, index) = setup("i32 Main() { return 7; }");
     let literal = key(unit, generation, &index, NodeKind::Literal, 0);
     assert!(literal_fact(&db, literal).expect("cold literal").is_some());
-    assert_unavailable(node_type(&db, literal));
+    assert_eq!(
+        node_type(&db, literal).expect("cold type"),
+        Some(beskid_queries::SemanticTypeId::I32)
+    );
 
     db.ensure_file_text(
         unit.path(&db).clone(),
         "this is deliberately invalid Beskid source".to_string(),
     );
     assert!(literal_fact(&db, literal).expect("warm literal").is_some());
-    assert_unavailable(node_type(&db, literal));
+    assert_eq!(
+        node_type(&db, literal).expect("warm type"),
+        Some(beskid_queries::SemanticTypeId::I32)
+    );
     assert_eq!(db.syntax_authority_counts(), (1, 1));
 }
 
@@ -137,7 +143,10 @@ i32 Main() {
     assert!(literal_fact(&db, integer).expect("literal").is_some());
     assert!(item_body(&db, main).expect("body").is_some());
 
-    assert_unavailable(node_type(&db, integer));
+    assert_eq!(
+        node_type(&db, integer).expect("integer type"),
+        Some(beskid_queries::SemanticTypeId::I32)
+    );
     assert_eq!(
         item_signature(&db, helper).expect("helper signature"),
         Some(beskid_queries::ItemSignature {
@@ -169,6 +178,79 @@ i32 Main() {
     assert_unavailable(direct_callees(&db, main));
     assert_unavailable(reachable_items(&db, main, main));
     assert_unavailable(runtime_intrinsic(&db, call));
+}
+
+#[test]
+fn node_type_derives_primitive_literals_and_annotated_local_references() {
+    let source = r#"unit Main(i64 input) {
+    i64 local = input;
+    let flag = true;
+    let ratio = 1.5;
+    let text = "text";
+    let letter = 'x';
+    let byte = 1_u8;
+}"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let input_reference = key(unit, generation, &index, NodeKind::PathExpression, 0);
+    assert_eq!(
+        node_type(&db, input_reference).expect("input type"),
+        Some(beskid_queries::SemanticTypeId::I64)
+    );
+    let expected = [
+        beskid_queries::SemanticTypeId::BOOL,
+        beskid_queries::SemanticTypeId::F64,
+        beskid_queries::SemanticTypeId::STRING,
+        beskid_queries::SemanticTypeId::CHAR,
+        beskid_queries::SemanticTypeId::U8,
+    ];
+    for (occurrence, expected) in expected.into_iter().enumerate() {
+        let literal = key(unit, generation, &index, NodeKind::Literal, occurrence);
+        assert_eq!(
+            node_type(&db, literal).expect("literal type"),
+            Some(expected)
+        );
+    }
+}
+
+#[test]
+fn node_type_does_not_guess_complex_local_types() {
+    let source = "Value Identity(Value input) { return input; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let input = key(unit, generation, &index, NodeKind::PathExpression, 0);
+    assert_unavailable(node_type(&db, input));
+}
+
+#[test]
+fn cast_intents_use_exact_typed_let_constraints_and_local_types() {
+    let source = r#"unit Main() {
+    i64 widenedLiteral = 1;
+    i32 source = 2;
+    i64 widenedLocal = source;
+}"#;
+    let (mut db, project, unit, generation, index) = setup(source);
+    let literal = key(unit, generation, &index, NodeKind::Literal, 0);
+    let source_reference = key(unit, generation, &index, NodeKind::PathExpression, 0);
+    let expected = Arc::from([beskid_queries::CastIntent {
+        from: beskid_queries::SemanticTypeId::I32,
+        to: beskid_queries::SemanticTypeId::I64,
+    }]);
+    assert_eq!(
+        cast_intents(&db, literal).expect("literal cast"),
+        Some(Arc::clone(&expected))
+    );
+    assert_eq!(
+        cast_intents(&db, source_reference).expect("local cast"),
+        Some(expected)
+    );
+
+    db.update_syntax_source(
+        project,
+        unit,
+        SyntaxGenerationId(generation.0 + 1),
+        "unit Main() { i64 replacement = 1_i64; }".to_string(),
+    )
+    .expect("syntax update");
+    assert_eq!(cast_intents(&db, literal).expect("stale cast"), None);
 }
 
 #[test]
@@ -280,7 +362,10 @@ i32 MayFallThrough(bool condition) {
 fn stale_generation_never_observes_semantic_facts() {
     let (mut db, project, unit, generation, index) = setup("i32 Main() { return 0; }");
     let current = key(unit, generation, &index, NodeKind::Literal, 0);
-    assert_unavailable(node_type(&db, current));
+    assert_eq!(
+        node_type(&db, current).expect("current type"),
+        Some(beskid_queries::SemanticTypeId::I32)
+    );
 
     db.update_syntax_source(
         project,

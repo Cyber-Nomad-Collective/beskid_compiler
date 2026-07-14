@@ -471,7 +471,136 @@ fn node_type_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
-    unavailable_for_current_key(db, syntax, key, "node_type")
+    with_node(db, syntax, key, |program, index, node| {
+        semantic_type_for_node(program, index, key.node, node)
+    })?
+    .transpose()
+}
+
+fn semantic_type_for_node(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    reference: beskid_analysis::syntax::AstNodeId,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<Result<SemanticTypeId, SemanticError>> {
+    if let Some(literal) = node.of::<beskid_analysis::syntax::Literal>() {
+        return Some(Ok(semantic_type_for_literal(literal)));
+    }
+    if let Some(literal) = node.of::<beskid_analysis::syntax::LiteralExpression>() {
+        return Some(Ok(semantic_type_for_literal(&literal.literal.node)));
+    }
+    if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
+        return Some(semantic_type_for_local_path(
+            program,
+            index,
+            reference,
+            &path.path.node,
+        ));
+    }
+    if let Some(expression) = node.of::<beskid_analysis::syntax::Expression>() {
+        return Some(semantic_type_for_expression(
+            program, index, reference, expression,
+        ));
+    }
+    if let Some(syntax_type) = node.of::<beskid_analysis::syntax::Type>() {
+        return Some(semantic_type_from_syntax(syntax_type));
+    }
+    if node.of::<beskid_analysis::syntax::Identifier>().is_some() {
+        return local_declaration_type(program, index, reference);
+    }
+    expression_fact_target(node.node_kind()).then(|| Err(SemanticError::unavailable("node_type")))
+}
+
+fn semantic_type_for_expression(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    reference: beskid_analysis::syntax::AstNodeId,
+    expression: &beskid_analysis::syntax::Expression,
+) -> Result<SemanticTypeId, SemanticError> {
+    match expression {
+        beskid_analysis::syntax::Expression::Literal(literal) => {
+            Ok(semantic_type_for_literal(&literal.node.literal.node))
+        }
+        beskid_analysis::syntax::Expression::Path(path) => {
+            semantic_type_for_local_path(program, index, reference, &path.node.path.node)
+        }
+        beskid_analysis::syntax::Expression::Grouped(grouped) => {
+            semantic_type_for_expression(program, index, reference, &grouped.node.expr.node)
+        }
+        _ => Err(SemanticError::unavailable("node_type")),
+    }
+}
+
+fn semantic_type_for_local_path(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    reference: beskid_analysis::syntax::AstNodeId,
+    path: &beskid_analysis::syntax::Path,
+) -> Result<SemanticTypeId, SemanticError> {
+    let [segment] = path.segments.as_slice() else {
+        return Err(SemanticError::unavailable("node_type"));
+    };
+    if !segment.node.type_args.is_empty() {
+        return Err(SemanticError::unavailable("node_type"));
+    }
+    let declaration = resolve_lexical_declaration(
+        program,
+        index,
+        reference,
+        segment.node.name.node.name.as_str(),
+    )
+    .ok_or_else(|| SemanticError::unavailable("node_type"))?;
+    local_declaration_type(program, index, declaration)
+        .unwrap_or_else(|| Err(SemanticError::unavailable("node_type")))
+}
+
+fn local_declaration_type(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> Option<Result<SemanticTypeId, SemanticError>> {
+    let parent = parent_node(index, declaration)?;
+    match index.kind(parent)? {
+        beskid_analysis::syntax_query::NodeKind::Parameter => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::Parameter>()
+            .map(|parameter| semantic_type_from_syntax(&parameter.ty.node)),
+        beskid_analysis::syntax_query::NodeKind::LambdaParameter => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::LambdaParameter>()
+            .map(|parameter| {
+                parameter.ty.as_ref().map_or_else(
+                    || Err(SemanticError::unavailable("node_type")),
+                    |syntax_type| semantic_type_from_syntax(&syntax_type.node),
+                )
+            }),
+        beskid_analysis::syntax_query::NodeKind::LetStatement => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::LetStatement>()
+            .map(|statement| {
+                statement.type_annotation.as_ref().map_or_else(
+                    || semantic_type_for_expression(program, index, parent, &statement.value.node),
+                    |syntax_type| semantic_type_from_syntax(&syntax_type.node),
+                )
+            }),
+        _ => None,
+    }
+}
+
+fn semantic_type_for_literal(literal: &beskid_analysis::syntax::Literal) -> SemanticTypeId {
+    match literal {
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i64") => {
+            SemanticTypeId::I64
+        }
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u8") => {
+            SemanticTypeId::U8
+        }
+        beskid_analysis::syntax::Literal::Integer(_) => SemanticTypeId::I32,
+        beskid_analysis::syntax::Literal::Float(_) => SemanticTypeId::F64,
+        beskid_analysis::syntax::Literal::String(_) => SemanticTypeId::STRING,
+        beskid_analysis::syntax::Literal::Char(_) => SemanticTypeId::CHAR,
+        beskid_analysis::syntax::Literal::Bool(_) => SemanticTypeId::BOOL,
+    }
 }
 
 #[salsa::tracked]
@@ -513,7 +642,95 @@ fn cast_intents_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[CastIntent]>> {
-    unavailable_for_current_key(db, syntax, key, "cast_intents")
+    with_node(db, syntax, key, |program, index, node| {
+        cast_intents_for_node(program, index, key.node, node)
+    })?
+    .transpose()
+}
+
+fn cast_intents_for_node(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    node_id: beskid_analysis::syntax::AstNodeId,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<Result<Arc<[CastIntent]>, SemanticError>> {
+    if !expression_fact_target(node.node_kind()) {
+        return None;
+    }
+    let Some(statement_id) = nearest_ancestor(index, node_id, |kind| {
+        kind == beskid_analysis::syntax_query::NodeKind::LetStatement
+    }) else {
+        return Some(Err(SemanticError::unavailable("cast_intents")));
+    };
+    let statement = index
+        .node_at(program, statement_id)?
+        .of::<beskid_analysis::syntax::LetStatement>()?;
+    let value_id = index
+        .children(statement_id)?
+        .iter()
+        .copied()
+        .find(|child| {
+            index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Expression)
+        })?;
+    if !is_ancestor(index, value_id, node_id) {
+        return None;
+    }
+    let Some(expected) = statement.type_annotation.as_ref() else {
+        return Some(Err(SemanticError::unavailable("cast_intents")));
+    };
+    let actual = match semantic_type_for_node(program, index, node_id, node)? {
+        Ok(actual) => actual,
+        Err(_) => return Some(Err(SemanticError::unavailable("cast_intents"))),
+    };
+    let expected = match semantic_type_from_syntax(&expected.node) {
+        Ok(expected) => expected,
+        Err(_) => return Some(Err(SemanticError::unavailable("cast_intents"))),
+    };
+    if actual == expected {
+        return Some(Ok(Arc::from([])));
+    }
+    if primitive_numeric(actual) && primitive_numeric(expected) {
+        return Some(Ok(Arc::from([CastIntent {
+            from: actual,
+            to: expected,
+        }])));
+    }
+    Some(Err(SemanticError::unavailable("cast_intents")))
+}
+
+fn primitive_numeric(semantic_type: SemanticTypeId) -> bool {
+    matches!(
+        semantic_type,
+        SemanticTypeId::I32 | SemanticTypeId::I64 | SemanticTypeId::U8 | SemanticTypeId::F64
+    )
+}
+
+fn expression_fact_target(kind: beskid_analysis::syntax_query::NodeKind) -> bool {
+    use beskid_analysis::syntax_query::NodeKind;
+
+    matches!(
+        kind,
+        NodeKind::Expression
+            | NodeKind::AssignExpression
+            | NodeKind::BinaryExpression
+            | NodeKind::UnaryExpression
+            | NodeKind::CallExpression
+            | NodeKind::MemberExpression
+            | NodeKind::LiteralExpression
+            | NodeKind::PathExpression
+            | NodeKind::StructLiteralExpression
+            | NodeKind::IndexExpression
+            | NodeKind::ArrayLiteralExpression
+            | NodeKind::CodeStringLiteral
+            | NodeKind::EnumConstructorExpression
+            | NodeKind::BlockExpression
+            | NodeKind::GroupedExpression
+            | NodeKind::TryExpression
+            | NodeKind::SpawnExpression
+            | NodeKind::LambdaExpression
+            | NodeKind::MatchExpression
+            | NodeKind::Literal
+    )
 }
 
 #[salsa::tracked]
@@ -911,6 +1128,10 @@ pub fn resolved_local(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Resol
     with_registered_syntax(db, key, resolved_local_tracked)
 }
 
+/// Return primitive types proven by literals, explicit syntax, or exact lexical declarations.
+///
+/// Complex declarations and expression shapes requiring inference remain explicitly unavailable.
+/// Stale, unregistered, and non-typable nodes contain no fact.
 pub fn node_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, node_type_tracked)
 }
@@ -924,7 +1145,10 @@ pub fn call_lowering(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallLo
     with_registered_syntax(db, key, call_lowering_tracked)
 }
 
-/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+/// Return numeric cast intents proven by an exact typed-let constraint.
+///
+/// Inferred, complex, non-numeric, and other unported coercion contexts remain explicitly
+/// unavailable. Stale, unregistered, and non-expression nodes contain no fact.
 pub fn cast_intents(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[CastIntent]>> {
     with_registered_syntax(db, key, cast_intents_tracked)
 }
