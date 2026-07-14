@@ -37,7 +37,7 @@ pub fn execute_all_targets(mut args: TestArgs) -> Result<()> {
     let mut failures = Vec::new();
     let mut passed = 0usize;
     let total = test_targets.len();
-    let mut engine = Engine::with_link_profile(args.runtime_profile.into());
+    let mut engine = Engine::new();
 
     for target in test_targets {
         eprint!("Running {target}... ");

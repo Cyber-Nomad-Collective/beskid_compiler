@@ -11,7 +11,6 @@ use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
-use crate::runtime_profile::CliRuntimeProfile;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::diagnostics;
 use beskid_tools::pipeline::{tui::FileLineLink, tui::TestRowState, tui::TestRunUi};
@@ -48,10 +47,6 @@ pub struct TestArgs {
     /// Disable animated progress and graph output
     #[arg(long)]
     pub plain: bool,
-
-    /// Runtime link profile: `std` links `beskid_host`; `minimal` is language runtime only
-    #[arg(long, value_enum, default_value_t = CliRuntimeProfile::Std)]
-    pub runtime_profile: CliRuntimeProfile,
 
     /// Run every Test target in the project manifest in one process (shared session).
     #[arg(long)]
@@ -196,7 +191,7 @@ pub(crate) fn execute_single_target(
 
     let mut executions = Vec::new();
     let mut summary = TestSummary::default();
-    let mut owned_engine = Engine::with_link_profile(args.runtime_profile.into());
+    let mut owned_engine = Engine::new();
     let engine = shared_engine.unwrap_or(&mut owned_engine);
     for (test, row_index, initial) in planned {
         if !args.plain && session.pipeline().interrupted() {

@@ -5,7 +5,6 @@ use beskid_pipeline::PipelineObserver;
 
 use crate::Engine;
 use crate::jit_callable::{EntryReturnKind, JitCallable};
-use beskid_runtime::run_closure_as_main;
 
 /// Parse, lower, JIT-compile, and run `entrypoint` (no-arg function or test); returns a string summary of the return value.
 pub fn run_entrypoint(
@@ -53,7 +52,7 @@ pub fn run_entrypoint_from_front_end_with_pipeline(
     entrypoint: &str,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
-    let mut engine = Engine::new();
+    let mut engine = Engine::try_new()?;
     run_entrypoint_from_front_end_with_engine(
         &mut engine,
         front,
@@ -122,7 +121,7 @@ fn run_resolved_entrypoint_with_pipeline_inner(
         pipeline,
     )?;
 
-    let mut engine = Engine::new();
+    let mut engine = Engine::try_new()?;
     run_jitted_entrypoint(
         &mut engine,
         &lowered.resolution,
@@ -182,43 +181,9 @@ fn run_jitted_entrypoint(
 
     let return_kind = EntryReturnKind::from_type_info(return_info);
 
-    let output = engine.with_runtime(|_, _| {
-        if artifact_needs_fiber_scheduler(artifact) {
-            let ptr_addr = ptr as usize;
-            run_closure_as_main(move || JitCallable::execute_as_i64(ptr_addr as *const u8, return_kind))
-        } else {
-            JitCallable::execute_as_i64(ptr, return_kind)
-        }
-    });
+    let output = JitCallable::execute_as_i64(ptr, return_kind);
 
     Ok(JitCallable::format_i64_result(output, return_kind))
-}
-
-fn artifact_needs_fiber_scheduler(artifact: &beskid_codegen::CodegenArtifact) -> bool {
-    const FIBER_SYMBOLS: &[&str] = &[
-        "fiber_spawn",
-        "fiber_spawn_with_cancel_slot",
-        "fiber_join",
-        "fiber_join_value",
-        "fiber_join_status",
-        "fiber_yield",
-        "fiber_cancel",
-        "fiber_detach",
-        "hub_create",
-        "hub_register",
-        "hub_wait_receive",
-        "channel_create",
-        "channel_send",
-        "channel_receive",
-    ];
-    artifact.extern_imports.iter().any(|imp| {
-        FIBER_SYMBOLS
-            .iter()
-            .any(|symbol| imp.symbol == *symbol)
-    }) || artifact
-        .functions
-        .iter()
-        .any(|func| func.name.starts_with("__beskid_spawn_entry_"))
 }
 
 fn entrypoint_matches_item(item: &beskid_analysis::resolve::ItemInfo, entrypoint: &str) -> bool {

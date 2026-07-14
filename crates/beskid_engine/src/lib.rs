@@ -5,7 +5,6 @@
 //! until a multi-entrypoint AOT test runner lands in phase 2.
 
 mod engine;
-mod generated;
 mod jit_callable;
 mod jit_module;
 pub mod link_libraries;

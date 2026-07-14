@@ -150,7 +150,7 @@ fn run_wrapped(
         return Err(format!("entrypoint `{entrypoint}` returned null pointer"));
     }
 
-    Ok(engine.with_runtime(|_, _| format_return_value(ptr, return_info)))
+    Ok(format_return_value(ptr, return_info))
 }
 
 fn find_entrypoint<'a>(

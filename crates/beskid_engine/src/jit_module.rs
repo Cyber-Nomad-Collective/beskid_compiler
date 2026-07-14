@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::generated::kernel_registration::register_kernel_exports;
 use crate::runtime_kit::JitRuntimeKit;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
@@ -78,38 +77,11 @@ pub struct BeskidJitModule {
     module: JITModule,
     func_ids: HashMap<String, FuncId>,
     builtins_declared: bool,
-    _runtime_kit: Option<JitRuntimeKit>,
-    exact_symbols: Option<HashSet<String>>,
+    _runtime_kit: JitRuntimeKit,
+    exact_symbols: HashSet<String>,
 }
 
 impl BeskidJitModule {
-    /// JIT module with only built-in runtime symbols (no extra `dlopen` addresses).
-    pub fn new() -> Result<Self, JitError> {
-        let builder = new_builder(&[], true)?;
-
-        let module = JITModule::new(builder);
-        Ok(Self {
-            module,
-            func_ids: HashMap::new(),
-            builtins_declared: false,
-            _runtime_kit: None,
-            exact_symbols: None,
-        })
-    }
-
-    /// JIT module that also registers `extras` as raw symbol addresses (for resolved extern imports).
-    pub fn new_with_symbols(extras: &[(String, *const u8)]) -> Result<Self, JitError> {
-        let builder = new_builder(extras, true)?;
-        let module = JITModule::new(builder);
-        Ok(Self {
-            module,
-            func_ids: HashMap::new(),
-            builtins_declared: false,
-            _runtime_kit: None,
-            exact_symbols: None,
-        })
-    }
-
     /// JIT module backed only by an exact shared ABI-v5 runtime kit.
     pub fn new_with_runtime_kit(
         prefix: &std::path::Path,
@@ -129,13 +101,13 @@ impl BeskidJitModule {
         let mut symbols = runtime.symbols().to_vec();
         symbols.extend_from_slice(extras);
         let exact_symbols = symbols.iter().map(|(name, _)| name.clone()).collect();
-        let builder = new_builder(&symbols, false)?;
+        let builder = new_builder(&symbols)?;
         Ok(Self {
             module: JITModule::new(builder),
             func_ids: HashMap::new(),
             builtins_declared: false,
-            _runtime_kit: Some(runtime),
-            exact_symbols: Some(exact_symbols),
+            _runtime_kit: runtime,
+            exact_symbols,
         })
     }
 
@@ -150,9 +122,7 @@ impl BeskidJitModule {
         artifact: &CodegenArtifact,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> Result<(), JitError> {
-        if let Some(approved) = &self.exact_symbols {
-            validate_exact_symbol_references(artifact, approved)?;
-        }
+        validate_exact_symbol_references(artifact, &self.exact_symbols)?;
         if !self.builtins_declared {
             declare_builtin_imports(&mut self.module, &mut self.func_ids)?;
             self.builtins_declared = true;
@@ -242,18 +212,12 @@ fn validate_exact_symbol_references(
     Ok(())
 }
 
-fn new_builder(
-    extras: &[(String, *const u8)],
-    register_legacy_rust_runtime: bool,
-) -> Result<JITBuilder, JitError> {
+fn new_builder(extras: &[(String, *const u8)]) -> Result<JITBuilder, JitError> {
     let isa_builder = cranelift_native::builder().map_err(|err| JitError::Isa(err.to_string()))?;
     let isa = isa_builder
         .finish(settings::Flags::new(settings::builder()))
         .map_err(|err| JitError::Isa(err.to_string()))?;
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
-    if register_legacy_rust_runtime {
-        register_kernel_exports(&mut builder);
-    }
     for (sym, addr) in extras {
         builder.symbol(sym, *addr);
     }

@@ -10,7 +10,7 @@ use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, canonical_source_hash};
 use beskid_abi::runtime_kit::{BuildProfile, RuntimeKitBuildRequest, build_runtime_kit};
 use beskid_abi::runtime_source::canonical_runtime_sources;
 use beskid_codegen::{CodegenArtifact, LoweredFunction};
-use beskid_engine::{BeskidJitModule, JitRuntimeKit};
+use beskid_engine::{BeskidJitModule, Engine, JitRuntimeKit};
 use cranelift_codegen::ir::{ExternalName, Function, Signature};
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -231,5 +231,38 @@ fn unapproved_runtime_reference_is_rejected_before_process_symbol_fallback() {
     let error = jit
         .compile(&artifact)
         .expect_err("legacy Rust runtime symbol");
+    assert!(error.to_string().contains("not approved"));
+}
+
+#[test]
+fn engine_uses_only_the_configured_exact_runtime_kit() {
+    let Some(target) = host_target() else {
+        return;
+    };
+    let temp = TestDir::new();
+    install_kit(temp.path(), &target, true, false, canonical_hash());
+    let mut engine = Engine::with_runtime_kit(temp.path(), target, BuildProfile::Debug)
+        .expect("construct exact-kit Engine");
+
+    let mut function = Function::new();
+    let signature =
+        function.import_signature(Signature::new(cranelift_codegen::isa::CallConv::SystemV));
+    function.import_function(cranelift_codegen::ir::ExtFuncData {
+        name: ExternalName::testcase(beskid_abi::SYM_ALLOC.as_bytes()),
+        signature,
+        colocated: false,
+        patchable: false,
+    });
+    let artifact = CodegenArtifact {
+        functions: vec![LoweredFunction {
+            name: "Main".into(),
+            function,
+        }],
+        ..Default::default()
+    };
+
+    let error = engine
+        .compile_artifact(&artifact)
+        .expect_err("Engine must not register the legacy Rust runtime");
     assert!(error.to_string().contains("not approved"));
 }

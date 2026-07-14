@@ -49,10 +49,8 @@ pub i64 Main() { return __str_len(Repeat("-", 4)); }
         .compile_artifact(&lowered.artifact)
         .expect("jit compile");
     let ptr = unsafe { engine.entrypoint_ptr(main_symbol) }.expect("main ptr");
-    let len = engine.with_runtime(|_, _| {
-        let main: extern "C" fn() -> i64 = unsafe { std::mem::transmute(ptr) };
-        main()
-    });
+    let main: extern "C" fn() -> i64 = unsafe { std::mem::transmute(ptr) };
+    let len = main();
     assert_eq!(len, 4, "expected repeat length 4, got {len}");
 }
 
