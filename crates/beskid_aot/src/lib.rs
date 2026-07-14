@@ -24,6 +24,7 @@ pub use beskid_abi::BESKID_RUNTIME_ABI_VERSION;
 pub use beskid_pipeline::SharedPipelineObserver;
 pub use bundled::{
     default_runtime_strategy, resolve_bundled_host_archive, resolve_bundled_runtime_archive,
+    resolve_runtime_kit_archive_at_prefix,
 };
 pub use error::{AotError, AotResult};
 pub use export_table::{ExportTable, ExportTableEntry};

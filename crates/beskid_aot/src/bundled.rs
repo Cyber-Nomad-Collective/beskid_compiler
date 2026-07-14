@@ -1,17 +1,45 @@
 //! Resolve prebuilt Beskid runtime static libraries shipped with the toolchain.
 //!
-//! Prebuilt archives are laid out under `lib/beskid-runtime/abi-{version}/` where
-//! `{version}` matches [`beskid_abi::BESKID_RUNTIME_ABI_VERSION`] (currently **4**).
+//! Installed archives are resolved through validated ABI-v5 runtime-kit metadata.
 
 use std::path::{Path, PathBuf};
 
 use beskid_abi::BESKID_RUNTIME_ABI_VERSION;
+use beskid_abi::abi_v5::TargetMetadata;
+use beskid_abi::runtime_kit::{
+    BuildProfile as RuntimeKitProfile, resolve_installed_runtime_kit,
+};
 
 use crate::api::{BuildProfile, RuntimeLinkProfile, RuntimeStrategy};
 use crate::error::{AotError, AotResult};
 use crate::target::detect_target;
 
 const ENV_RUNTIME_ARCHIVE: &str = "BESKID_RUNTIME_ARCHIVE";
+
+/// Resolve the static archive from one exact, metadata-validated ABI-v5 runtime kit.
+pub fn resolve_runtime_kit_archive_at_prefix(
+    prefix: &Path,
+    profile: BuildProfile,
+    target_triple: &str,
+) -> AotResult<PathBuf> {
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == target_triple)
+        .ok_or_else(|| AotError::RuntimeBuild {
+            message: format!("unsupported ABI-v5 runtime kit target `{target_triple}`"),
+        })?;
+    let kit_profile = match profile {
+        BuildProfile::Debug => RuntimeKitProfile::Debug,
+        BuildProfile::Release => RuntimeKitProfile::Release,
+    };
+    resolve_installed_runtime_kit(prefix, &target, kit_profile)
+        .map(|kit| kit.static_library)
+        .map_err(|error| AotError::RuntimeBuild {
+            message: format!(
+                "failed to resolve exact ABI-v5 runtime kit for `{target_triple}`: {error:?}"
+            ),
+        })
+}
 
 /// Default AOT runtime strategy: bundled prebuilt archive for the host target and profile.
 pub fn default_runtime_strategy(
@@ -135,27 +163,18 @@ fn runtime_archive_build_hint(link_profile: RuntimeLinkProfile) -> &'static str 
 fn install_layout_runtime_archive(
     profile: BuildProfile,
     target_triple: Option<&str>,
-    link_profile: RuntimeLinkProfile,
+    _link_profile: RuntimeLinkProfile,
 ) -> AotResult<Option<PathBuf>> {
     let Ok(exe) = std::env::current_exe() else {
         return Ok(None);
     };
     let target = detect_target(target_triple)?;
-    let lib_name = runtime_archive_library_name(target.static_lib_ext, link_profile);
-    let profile_dir = profile_dir_name(profile);
-    let link_dir = runtime_link_profile_dir(link_profile);
 
     for ancestor in exe.ancestors() {
-        let candidate = ancestor
-            .join("lib")
-            .join("beskid-runtime")
-            .join(format!("abi-{BESKID_RUNTIME_ABI_VERSION}"))
-            .join(&target.triple)
-            .join(link_dir)
-            .join(profile_dir)
-            .join(&lib_name);
-        if candidate.is_file() {
-            return Ok(Some(candidate));
+        if let Ok(archive) =
+            resolve_runtime_kit_archive_at_prefix(ancestor, profile, &target.triple)
+        {
+            return Ok(Some(archive));
         }
     }
 
@@ -199,13 +218,6 @@ fn workspace_dev_runtime_archive(
     }
 
     candidates.into_iter().find(|path| path.is_file())
-}
-
-fn runtime_link_profile_dir(link_profile: RuntimeLinkProfile) -> &'static str {
-    match link_profile {
-        RuntimeLinkProfile::Std => "std",
-        RuntimeLinkProfile::Minimal => "minimal",
-    }
 }
 
 fn runtime_archive_library_name(static_lib_ext: &str, link_profile: RuntimeLinkProfile) -> String {
