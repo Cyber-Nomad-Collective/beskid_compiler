@@ -150,6 +150,38 @@ impl BeskidDatabase {
         )
     }
 
+    /// Register an already expanded source unit without reparsing away mod rewrites.
+    pub fn ensure_expanded_syntax_unit(
+        &mut self,
+        project: ProjectSession,
+        unit: SourceUnitId,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+        source: String,
+        expanded_program: Arc<
+            beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+        >,
+    ) -> Result<SyntaxUnitInput, SemanticError> {
+        let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(&source));
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&expanded_program)?);
+        if let Some(input) = self.syntax_unit(unit) {
+            self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
+            if input.source_fingerprint(self) == &source_fingerprint
+                && input.revision(self).tree_fingerprint == tree_fingerprint
+            {
+                return Ok(input);
+            }
+        }
+        let input = self.register_expanded_syntax(
+            project,
+            unit,
+            generation,
+            source_fingerprint,
+            expanded_program,
+        )?;
+        self.ensure_file_text(unit.path(self).clone(), source);
+        Ok(input)
+    }
+
     /// Parse, expand, register, and invalidate one edited source as a single semantic update.
     pub fn update_syntax_source(
         &mut self,

@@ -38,6 +38,7 @@ mod semantic_contract;
 mod session;
 mod stats;
 mod typed_entry_bundle;
+mod typed_program;
 mod unit;
 
 pub use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
@@ -93,6 +94,7 @@ pub use typed_entry_bundle::{
     reset_typed_entry_inputs, typed_entry_bundle_tracked, typed_entry_bundle_with_db,
     typed_entry_state_with_db, typed_prepare_revision_for,
 };
+pub use typed_program::build_typed_program;
 pub use unit::{
     cache_module_index_for_assembly, module_index_fingerprint_for_assembly, parse_and_expand_unit,
     parse_and_expand_unit_tracked, parse_and_expand_unit_with_source, seed_file_from_disk,

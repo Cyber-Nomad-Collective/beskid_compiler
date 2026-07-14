@@ -8,7 +8,7 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    TypedProgram,
+    TypedProgram, build_typed_program,
 };
 use beskid_codegen::{CodegenInput, CodegenInputError};
 
@@ -29,9 +29,6 @@ fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata)
         "lock".into(),
     );
     let generation = SyntaxGenerationId(1);
-    db.ensure_file_text(source_path.clone(), source.into());
-    db.ensure_syntax_unit(project, entry, generation)
-        .expect("syntax authority");
     let assembly = Arc::new(SyntaxProgramAssembly {
         roots: EffectiveCompilationRoots {
             host: RootEntry {
@@ -51,12 +48,8 @@ fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata)
         module_index: Arc::new(ModuleIndex::empty()),
         has_std_dependency: false,
     });
-    let typed = TypedProgram {
-        project,
-        entry,
-        generation,
-        assembly,
-    };
+    let typed = build_typed_program(&mut db, project, generation, assembly)
+        .expect("typed program");
     let root = AstNodeKey {
         unit: entry,
         generation,
