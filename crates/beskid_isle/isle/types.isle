@@ -2,7 +2,7 @@
 (type StatementCursor (primitive StatementCursor))
 (type Value (primitive Value))
 (type Unit (primitive Unit))
-(type NodeKind extern (enum Program FunctionDefinition ExpressionStatement ReturnStatement IfStatement WhileStatement BreakStatement ContinueStatement LiteralExpression GroupedExpression UnaryExpression BinaryExpression CallExpression PathExpression BlockExpression))
+(type NodeKind extern (enum Program FunctionDefinition ExpressionStatement ReturnStatement LetStatement IfStatement WhileStatement BreakStatement ContinueStatement LiteralExpression GroupedExpression UnaryExpression BinaryExpression AssignExpression CallExpression PathExpression BlockExpression))
 (type CursorKind extern (enum More End))
 (type LiteralKind extern (enum Integer Float String Char Boolean))
 (type OperatorFact extern (enum Or And IdentityEq IdentityNotEq Eq NotEq Lt Lte Gt Gte Add Sub Mul Div Mod Neg Not))

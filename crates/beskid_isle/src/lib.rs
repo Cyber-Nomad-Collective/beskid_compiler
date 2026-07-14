@@ -6,6 +6,8 @@
 //! use beskid_isle::generated;
 //! ```
 
+use std::collections::HashMap;
+
 pub use beskid_queries::AstNodeKey;
 use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::condcodes::IntCC;
@@ -18,6 +20,7 @@ use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_frontend::FunctionBuilderContext;
+use cranelift_frontend::Variable;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeKind {
@@ -25,6 +28,7 @@ pub enum NodeKind {
     FunctionDefinition,
     ExpressionStatement,
     ReturnStatement,
+    LetStatement,
     IfStatement,
     WhileStatement,
     BreakStatement,
@@ -33,6 +37,7 @@ pub enum NodeKind {
     GroupedExpression,
     UnaryExpression,
     BinaryExpression,
+    AssignExpression,
     CallExpression,
     PathExpression,
     BlockExpression,
@@ -136,6 +141,9 @@ pub trait NodeFacts {
     fn statement_count(&self, _key: AstNodeKey) -> Option<u8> {
         None
     }
+    fn let_initializer(&self, _key: AstNodeKey) -> Option<AstNodeKey> {
+        None
+    }
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64>;
     fn boolean_literal(&self, _key: AstNodeKey) -> Option<bool> {
         None
@@ -156,7 +164,7 @@ pub trait NodeFacts {
     fn call_arguments(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         None
     }
-    fn local_value(&self, _key: AstNodeKey) -> Option<Value> {
+    fn local_slot(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
 }
@@ -177,6 +185,7 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     facts: &'facts dyn NodeFacts,
     string_interner: Option<&'interner mut dyn StringInterner>,
     loop_stack: Vec<LoopTargets>,
+    locals: HashMap<u32, (Variable, Type)>,
 }
 
 impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'facts, 'interner> {
@@ -189,6 +198,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             facts,
             string_interner: None,
             loop_stack: Vec::new(),
+            locals: HashMap::new(),
         }
     }
 
@@ -202,6 +212,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             facts,
             string_interner: Some(string_interner),
             loop_stack: Vec::new(),
+            locals: HashMap::new(),
         }
     }
 
@@ -390,6 +401,23 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         Some(())
     }
 
+    fn emit_local_let(&mut self, key: AstNodeKey) -> Option<()> {
+        let slot = self.facts.local_slot(key)?;
+        if self.locals.contains_key(&slot) {
+            return None;
+        }
+        let initializer = self.facts.let_initializer(key)?;
+        let value = generated::constructor_lower_expression(self, initializer)?;
+        let value_type = self.facts.scalar_type(key)?;
+        if self.builder.func.dfg.value_type(value) != value_type {
+            return None;
+        }
+        let variable = self.builder.declare_var(value_type);
+        self.builder.def_var(variable, value);
+        self.locals.insert(slot, (variable, value_type));
+        Some(())
+    }
+
     fn emit_if_else(&mut self, key: AstNodeKey) -> Option<()> {
         let condition_key = self.facts.child(key, 0)?;
         let then_key = self.facts.child(key, 1)?;
@@ -487,7 +515,22 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn sequence_statements(&mut self, _head: (), _tail: ()) {}
 
     fn emit_local_read(&mut self, key: AstNodeKey) -> Option<Value> {
-        self.facts.local_value(key)
+        let slot = self.facts.local_slot(key)?;
+        let (variable, _) = self.locals.get(&slot).copied()?;
+        Some(self.builder.use_var(variable))
+    }
+
+    fn emit_local_assign(&mut self, key: AstNodeKey) -> Option<Value> {
+        let target = self.facts.child(key, 0)?;
+        let value_key = self.facts.child(key, 1)?;
+        let slot = self.facts.local_slot(target)?;
+        let (variable, expected_type) = self.locals.get(&slot).copied()?;
+        let value = generated::constructor_lower_expression(self, value_key)?;
+        if self.builder.func.dfg.value_type(value) != expected_type {
+            return None;
+        }
+        self.builder.def_var(variable, value);
+        Some(value)
     }
 }
 
