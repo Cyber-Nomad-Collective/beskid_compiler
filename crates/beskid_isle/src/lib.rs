@@ -12,7 +12,7 @@ use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
 pub use cranelift_codegen::ir::{
-    AbiParam, FuncRef, Function, Signature, Type, UserFuncName, Value,
+    AbiParam, Block, FuncRef, Function, Signature, Type, UserFuncName, Value,
 };
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
@@ -26,6 +26,9 @@ pub enum NodeKind {
     ExpressionStatement,
     ReturnStatement,
     IfStatement,
+    WhileStatement,
+    BreakStatement,
+    ContinueStatement,
     LiteralExpression,
     GroupedExpression,
     UnaryExpression,
@@ -45,6 +48,12 @@ struct StatementCursor {
 enum CursorKind {
     More,
     End,
+}
+
+#[derive(Clone, Copy)]
+struct LoopTargets {
+    continue_block: Block,
+    break_block: Block,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,6 +176,7 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     builder: &'builder mut FunctionBuilder<'function>,
     facts: &'facts dyn NodeFacts,
     string_interner: Option<&'interner mut dyn StringInterner>,
+    loop_stack: Vec<LoopTargets>,
 }
 
 impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'facts, 'interner> {
@@ -178,6 +188,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             builder,
             facts,
             string_interner: None,
+            loop_stack: Vec::new(),
         }
     }
 
@@ -190,6 +201,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             builder,
             facts,
             string_interner: Some(string_interner),
+            loop_stack: Vec::new(),
         }
     }
 
@@ -399,6 +411,49 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         Some(())
     }
 
+    fn emit_while(&mut self, key: AstNodeKey) -> Option<()> {
+        let condition_key = self.facts.child(key, 0)?;
+        let body_key = self.facts.child(key, 1)?;
+        let header = self.builder.create_block();
+        let body = self.builder.create_block();
+        let exit = self.builder.create_block();
+        self.builder.ins().jump(header, &[]);
+
+        self.builder.switch_to_block(header);
+        let condition = generated::constructor_lower_expression(self, condition_key)?;
+        self.builder.ins().brif(condition, body, &[], exit, &[]);
+
+        self.builder.switch_to_block(body);
+        self.builder.seal_block(body);
+        self.loop_stack.push(LoopTargets {
+            continue_block: header,
+            break_block: exit,
+        });
+        let lowered = generated::constructor_lower_statement(self, body_key);
+        self.loop_stack.pop();
+        lowered?;
+        if !block_is_terminated(self.builder, body) {
+            self.builder.ins().jump(header, &[]);
+        }
+
+        self.builder.seal_block(header);
+        self.builder.switch_to_block(exit);
+        self.builder.seal_block(exit);
+        Some(())
+    }
+
+    fn emit_break(&mut self, _key: AstNodeKey) -> Option<()> {
+        let target = self.loop_stack.last()?.break_block;
+        self.builder.ins().jump(target, &[]);
+        Some(())
+    }
+
+    fn emit_continue(&mut self, _key: AstNodeKey) -> Option<()> {
+        let target = self.loop_stack.last()?.continue_block;
+        self.builder.ins().jump(target, &[]);
+        Some(())
+    }
+
     fn statement_cursor(&mut self, key: AstNodeKey) -> Option<StatementCursor> {
         self.facts.statement_count(key)?;
         Some(StatementCursor {
@@ -527,11 +582,7 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.seal_block(entry);
             lower_statement(&mut IsleContext::new(&mut builder, facts), body)
                 .map_err(FunctionEmissionError::Lowering)?;
-            let terminated = builder
-                .func
-                .layout
-                .last_inst(entry)
-                .is_some_and(|inst| builder.func.dfg.insts[inst].opcode().is_terminator());
+            let terminated = block_is_terminated(&builder, entry);
             if !terminated {
                 return Err(FunctionEmissionError::Verification(
                     "generated statement body did not terminate its entry block".to_owned(),
@@ -574,6 +625,14 @@ impl<'isa> FunctionEmitter<'isa> {
             .map_err(|error| FunctionEmissionError::Verification(error.to_string()))?;
         Ok(function)
     }
+}
+
+fn block_is_terminated(builder: &FunctionBuilder<'_>, block: Block) -> bool {
+    builder
+        .func
+        .layout
+        .last_inst(block)
+        .is_some_and(|inst| builder.func.dfg.insts[inst].opcode().is_terminator())
 }
 
 #[derive(Debug)]

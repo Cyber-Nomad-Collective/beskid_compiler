@@ -12,3 +12,17 @@
 
 (rule (lower_statement key @ (node_kind (NodeKind.IfStatement)))
       (emit_if_else key))
+
+(decl partial emit_while (AstNodeKey) Unit)
+(extern constructor emit_while emit_while)
+(decl partial emit_break (AstNodeKey) Unit)
+(extern constructor emit_break emit_break)
+(decl partial emit_continue (AstNodeKey) Unit)
+(extern constructor emit_continue emit_continue)
+
+(rule (lower_statement key @ (node_kind (NodeKind.WhileStatement)))
+      (emit_while key))
+(rule (lower_statement key @ (node_kind (NodeKind.BreakStatement)))
+      (emit_break key))
+(rule (lower_statement key @ (node_kind (NodeKind.ContinueStatement)))
+      (emit_continue key))
