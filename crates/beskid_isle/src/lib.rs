@@ -381,6 +381,13 @@ pub fn lower_expression(
     generated::constructor_lower_expression(context, key).ok_or(LoweringError { key })
 }
 
+pub fn lower_statement(
+    context: &mut IsleContext<'_, '_, '_, '_>,
+    key: AstNodeKey,
+) -> Result<(), LoweringError> {
+    generated::constructor_lower_statement(context, key).ok_or(LoweringError { key })
+}
+
 /// ISA-owned signature construction shared by every generated function kind.
 pub struct FunctionEmitter<'isa> {
     isa: &'isa dyn TargetIsa,
@@ -429,6 +436,39 @@ impl<'isa> FunctionEmitter<'isa> {
         string_interner: &mut dyn StringInterner,
     ) -> Result<Function, FunctionEmissionError> {
         self.emit_expression_inner(name, signature, facts, body, Some(string_interner))
+    }
+
+    pub fn emit_statement(
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        body: AstNodeKey,
+    ) -> Result<Function, FunctionEmissionError> {
+        let mut function = Function::with_name_signature(name, signature);
+        let mut builder_context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+            let entry = builder.create_block();
+            builder.switch_to_block(entry);
+            builder.seal_block(entry);
+            lower_statement(&mut IsleContext::new(&mut builder, facts), body)
+                .map_err(FunctionEmissionError::Lowering)?;
+            let terminated = builder
+                .func
+                .layout
+                .last_inst(entry)
+                .is_some_and(|inst| builder.func.dfg.insts[inst].opcode().is_terminator());
+            if !terminated {
+                return Err(FunctionEmissionError::Verification(
+                    "generated statement body did not terminate its entry block".to_owned(),
+                ));
+            }
+            builder.finalize();
+        }
+        verify_function(&function, self.isa.flags())
+            .map_err(|error| FunctionEmissionError::Verification(error.to_string()))?;
+        Ok(function)
     }
 
     fn emit_expression_inner(
