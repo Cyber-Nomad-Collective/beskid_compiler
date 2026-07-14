@@ -42,6 +42,7 @@ mod tests {
             analysis: None,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
         }
     }
 

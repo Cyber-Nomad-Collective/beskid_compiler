@@ -109,6 +109,7 @@ mod tests {
                 analysis: Some(analysis),
                 syntax_definitions: Vec::new(),
                 syntax_hovers: Vec::new(),
+                syntax_symbols: Vec::new(),
             };
             (fixture.uri.clone(), doc, fixture, db)
         })
@@ -169,6 +170,7 @@ mod tests {
                 declaration_end: 42,
             }],
             syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
         };
         let response = definition::handler::handle_definition(&uri, &doc, 22)
             .expect("syntax fact definition");
@@ -197,6 +199,7 @@ mod tests {
                 declaration_end: 10,
             }],
             syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
         };
         let locations = references::handler::handle_references(&uri, &doc, 24, true, None);
         assert_eq!(locations.len(), 2);
@@ -220,6 +223,7 @@ mod tests {
                 location_start: 20,
                 location_end: 26,
             }],
+            syntax_symbols: Vec::new(),
         };
         let documentation = crate::commands::symbol_documentation::documentation_uri_for_document(
             &doc, 22,

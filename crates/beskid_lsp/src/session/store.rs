@@ -27,6 +27,7 @@ pub struct Document {
     pub syntax_definitions: Vec<SyntaxDefinition>,
     /// Generation-safe syntax/Salsa hover facts for this exact buffer revision.
     pub syntax_hovers: Vec<SyntaxHover>,
+    pub syntax_symbols: Vec<SyntaxSymbol>,
 }
 
 /// One resolved syntax reference and its declaration location.
@@ -48,6 +49,14 @@ pub struct SyntaxHover {
     pub location_path: PathBuf,
     pub location_start: usize,
     pub location_end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxSymbol {
+    pub name: String,
+    pub kind: beskid_analysis::services::AnalysisSymbolKind,
+    pub start: usize,
+    pub end: usize,
 }
 
 /// In-memory LSP workspace: open docs, closed-but-indexed files, and compilation context cache.

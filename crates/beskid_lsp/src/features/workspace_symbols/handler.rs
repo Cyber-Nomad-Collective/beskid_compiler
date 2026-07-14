@@ -19,17 +19,14 @@ pub fn handle_workspace_symbols(
         if project_manifest::is_manifest_uri(uri) {
             continue;
         }
-        let Some(analysis) = doc.analysis.as_ref() else {
-            continue;
-        };
-        for sym in beskid_analysis::services::collect_document_symbols(analysis) {
+        for sym in &doc.syntax_symbols {
             if !query.is_empty() && !sym.name.to_lowercase().contains(&query) {
                 continue;
             }
-            let range = offset_range_to_lsp(&doc.text, sym.selection_start, sym.selection_end);
+            let range = offset_range_to_lsp(&doc.text, sym.start, sym.end);
             #[allow(deprecated)]
             out.push(SymbolInformation {
-                name: sym.name,
+                name: sym.name.clone(),
                 kind: analysis_symbol_kind_to_lsp(sym.kind),
                 tags: None,
                 deprecated: None,
