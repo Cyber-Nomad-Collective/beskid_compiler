@@ -5,7 +5,8 @@ use beskid_isle::{
     OperatorFact,
 };
 use beskid_queries::{
-    Db, LiteralFact, SemanticTypeId, child_nodes, literal_fact, node_kind, node_type, operator_fact,
+    Db, ItemSignature, LiteralFact, SemanticTypeId, child_nodes, item_body, item_signature,
+    literal_fact, node_kind, node_type, operator_fact,
 };
 use cranelift_codegen::ir::{Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
@@ -39,14 +40,13 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
-        self.query(literal_fact(self.db, key))
-            .map(|fact| match fact {
-                LiteralFact::Integer(_) => LiteralKind::Integer,
-                LiteralFact::Float(_) => LiteralKind::Float,
-                LiteralFact::String(_) => LiteralKind::String,
-                LiteralFact::Char(_) => LiteralKind::Char,
-                LiteralFact::Bool(_) => LiteralKind::Boolean,
-            })
+        self.literal(key).map(|fact| match fact {
+            LiteralFact::Integer(_) => LiteralKind::Integer,
+            LiteralFact::Float(_) => LiteralKind::Float,
+            LiteralFact::String(_) => LiteralKind::String,
+            LiteralFact::Char(_) => LiteralKind::Char,
+            LiteralFact::Bool(_) => LiteralKind::Boolean,
+        })
     }
 
     fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
@@ -55,12 +55,16 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
-        self.query(child_nodes(self.db, key))
-            .and_then(|children| children.get(usize::from(index)).copied())
+        self.children(key).get(usize::from(index)).copied()
+    }
+
+    fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
+        (self.node_kind(key) == Some(NodeKind::BlockExpression))
+            .then(|| u8::try_from(self.children(key).len()).ok())?
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
-        let LiteralFact::Integer(text) = self.query(literal_fact(self.db, key))? else {
+        let LiteralFact::Integer(text) = self.literal(key)? else {
             return None;
         };
         text.split_once('_')
@@ -70,21 +74,21 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn boolean_literal(&self, key: AstNodeKey) -> Option<bool> {
-        match self.query(literal_fact(self.db, key))? {
+        match self.literal(key)? {
             LiteralFact::Bool(value) => Some(value),
             _ => None,
         }
     }
 
     fn float_literal(&self, key: AstNodeKey) -> Option<f64> {
-        let LiteralFact::Float(text) = self.query(literal_fact(self.db, key))? else {
+        let LiteralFact::Float(text) = self.literal(key)? else {
             return None;
         };
         text.parse().ok()
     }
 
     fn char_literal(&self, key: AstNodeKey) -> Option<char> {
-        let LiteralFact::Char(text) = self.query(literal_fact(self.db, key))? else {
+        let LiteralFact::Char(text) = self.literal(key)? else {
             return None;
         };
         text.trim_matches('\'').chars().next()
@@ -93,6 +97,41 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
         self.query(node_type(self.db, key))
             .and_then(map_scalar_type)
+    }
+}
+
+impl SyntaxNodeFacts<'_> {
+    fn literal(&self, key: AstNodeKey) -> Option<LiteralFact> {
+        self.query(literal_fact(self.db, key)).or_else(|| {
+            self.query(child_nodes(self.db, key))?
+                .iter()
+                .find_map(|child| self.query(literal_fact(self.db, *child)))
+        })
+    }
+
+    fn children(&self, key: AstNodeKey) -> Vec<AstNodeKey> {
+        self.query(child_nodes(self.db, key))
+            .as_deref()
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter_map(|child| self.unwrap_transparent(child))
+            .collect()
+    }
+
+    fn unwrap_transparent(&self, mut key: AstNodeKey) -> Option<AstNodeKey> {
+        loop {
+            let kind = self.query(node_kind(self.db, key))?;
+            if !matches!(
+                kind,
+                beskid_queries::IndexedNodeKind::Statement
+                    | beskid_queries::IndexedNodeKind::Expression
+            ) {
+                return Some(key);
+            }
+            let children = self.query(child_nodes(self.db, key))?;
+            key = *children.first()?;
+        }
     }
 }
 
@@ -113,11 +152,60 @@ pub fn emit_isle_expression(
     )
 }
 
+/// Emit a zero-argument parsed function body through generated ISLE statement selection.
+///
+/// Parameters are intentionally rejected until local parameter materialization is represented by
+/// the syntax facts, rather than falling back to the legacy HIR lowering context.
+pub fn emit_isle_item(
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    item: AstNodeKey,
+) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
+    let db = input.database();
+    let body = item_body(db, item)
+        .ok()
+        .flatten()
+        .ok_or_else(|| FunctionEmissionError::Verification("item has no syntax body".to_owned()))?;
+    let signature = item_signature(db, item)
+        .ok()
+        .flatten()
+        .and_then(|signature| signature_for_item(isa, signature))
+        .ok_or_else(|| {
+            FunctionEmissionError::Verification(
+                "item signature is unavailable to syntax-only ISLE emission".to_owned(),
+            )
+        })?;
+    if !signature.params.is_empty() {
+        return Err(FunctionEmissionError::Verification(
+            "syntax-only ISLE item emission does not yet materialize parameters".to_owned(),
+        ));
+    }
+    let emitter = FunctionEmitter::new(isa);
+    let facts = SyntaxNodeFacts::new(input);
+    emitter.emit_statement(UserFuncName::user(0, 0), signature, &facts, body)
+}
+
+fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid_isle::Signature> {
+    let emitter = FunctionEmitter::new(isa);
+    let parameters = item
+        .parameters
+        .iter()
+        .copied()
+        .map(map_scalar_type)
+        .collect::<Option<Vec<_>>>()?;
+    let returns = match item.result {
+        SemanticTypeId::UNIT => Vec::new(),
+        result => vec![map_scalar_type(result)?],
+    };
+    Some(emitter.signature(parameters, returns))
+}
+
 fn map_node_kind(kind: beskid_queries::IndexedNodeKind) -> Option<NodeKind> {
     use beskid_queries::IndexedNodeKind as Syntax;
 
     Some(match kind {
         Syntax::Program => NodeKind::Program,
+        Syntax::Block => NodeKind::BlockExpression,
         Syntax::FunctionDefinition => NodeKind::FunctionDefinition,
         Syntax::ExpressionStatement => NodeKind::ExpressionStatement,
         Syntax::ReturnStatement => NodeKind::ReturnStatement,
