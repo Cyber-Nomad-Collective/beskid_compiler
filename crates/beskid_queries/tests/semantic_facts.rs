@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
 use beskid_analysis::services::parse_program;
@@ -116,8 +117,20 @@ i32 Main() {
     assert!(item_body(&db, main).expect("body").is_some());
 
     assert_unavailable(node_type(&db, integer));
-    assert_unavailable(item_signature(&db, helper));
-    assert_unavailable(item_signature(&db, main));
+    assert_eq!(
+        item_signature(&db, helper).expect("helper signature"),
+        Some(beskid_queries::ItemSignature {
+            parameters: [beskid_queries::SemanticTypeId::I64].into(),
+            result: beskid_queries::SemanticTypeId::I32,
+        })
+    );
+    assert_eq!(
+        item_signature(&db, main).expect("main signature"),
+        Some(beskid_queries::ItemSignature {
+            parameters: Arc::from([]),
+            result: beskid_queries::SemanticTypeId::I32,
+        })
+    );
     assert_eq!(
         control_flow(&db, main).expect("control flow"),
         Some(beskid_queries::ControlFlow {
@@ -131,6 +144,60 @@ i32 Main() {
     assert_unavailable(direct_callees(&db, main));
     assert_unavailable(reachable_items(&db, main, main));
     assert_unavailable(runtime_intrinsic(&db, call));
+}
+
+#[test]
+fn item_signatures_cover_primitive_functions_methods_and_contracts() {
+    let source = r#"
+i64 Convert(i32 value, bool checked) { return value; }
+type Counter { i64 value }
+impl Counter { bool IsPositive(u8 threshold) { return true; } }
+contract Converter { string Format(char value); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let function = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let contract = key(
+        unit,
+        generation,
+        &index,
+        NodeKind::ContractMethodSignature,
+        0,
+    );
+
+    assert_eq!(
+        item_signature(&db, function).expect("function signature"),
+        Some(beskid_queries::ItemSignature {
+            parameters: [
+                beskid_queries::SemanticTypeId::I32,
+                beskid_queries::SemanticTypeId::BOOL,
+            ]
+            .into(),
+            result: beskid_queries::SemanticTypeId::I64,
+        })
+    );
+    assert_eq!(
+        item_signature(&db, method).expect("method signature"),
+        Some(beskid_queries::ItemSignature {
+            parameters: [beskid_queries::SemanticTypeId::U8].into(),
+            result: beskid_queries::SemanticTypeId::BOOL,
+        })
+    );
+    assert_eq!(
+        item_signature(&db, contract).expect("contract signature"),
+        Some(beskid_queries::ItemSignature {
+            parameters: [beskid_queries::SemanticTypeId::CHAR].into(),
+            result: beskid_queries::SemanticTypeId::STRING,
+        })
+    );
+}
+
+#[test]
+fn item_signature_does_not_guess_complex_type_identity() {
+    let source = "Value Identity(Value value) { return value; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let function = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    assert_unavailable(item_signature(&db, function));
 }
 
 #[test]

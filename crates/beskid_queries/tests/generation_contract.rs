@@ -182,7 +182,7 @@ fn stale_generation_has_no_semantic_facts() {
     assert_unavailable(call_lowering(&db, current));
     assert_unavailable(cast_intents(&db, current));
     assert_eq!(control_flow(&db, current), Ok(None));
-    assert_unavailable(item_signature(&db, current));
+    assert_eq!(item_signature(&db, current), Ok(None));
     assert_unavailable(runtime_intrinsic(&db, current));
 
     assert_eq!(resolved_item(&db, stale), Ok(None));

@@ -442,7 +442,73 @@ fn item_signature_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ItemSignature> {
-    unavailable_for_current_key(db, syntax, key, "item_signature")
+    with_node(db, syntax, key, |_program, _index, node| {
+        item_signature_for_node(node)
+    })?
+    .transpose()
+}
+
+fn item_signature_for_node(
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<Result<ItemSignature, SemanticError>> {
+    if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+        return Some(signature_from_syntax(
+            &function.parameters,
+            function.return_type.as_ref(),
+        ));
+    }
+    if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
+        return Some(signature_from_syntax(
+            &method.parameters,
+            method.return_type.as_ref(),
+        ));
+    }
+    if let Some(contract) = node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
+        return Some(signature_from_syntax(
+            &contract.parameters,
+            contract.return_type.as_ref(),
+        ));
+    }
+    None
+}
+
+fn signature_from_syntax(
+    parameters: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Parameter>],
+    return_type: Option<&beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>>,
+) -> Result<ItemSignature, SemanticError> {
+    let parameters = parameters
+        .iter()
+        .map(|parameter| semantic_type_from_syntax(&parameter.node.ty.node))
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = return_type.map_or(Ok(SemanticTypeId::UNIT), |return_type| {
+        semantic_type_from_syntax(&return_type.node)
+    })?;
+    Ok(ItemSignature {
+        parameters: parameters.into(),
+        result,
+    })
+}
+
+fn semantic_type_from_syntax(
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> Result<SemanticTypeId, SemanticError> {
+    use beskid_analysis::syntax::{PrimitiveType, Type};
+
+    match syntax_type {
+        Type::Primitive(primitive) => Ok(match primitive.node {
+            PrimitiveType::Bool => SemanticTypeId::BOOL,
+            PrimitiveType::I32 => SemanticTypeId::I32,
+            PrimitiveType::I64 => SemanticTypeId::I64,
+            PrimitiveType::U8 => SemanticTypeId::U8,
+            PrimitiveType::F64 => SemanticTypeId::F64,
+            PrimitiveType::Char => SemanticTypeId::CHAR,
+            PrimitiveType::String => SemanticTypeId::STRING,
+            PrimitiveType::Unit => SemanticTypeId::UNIT,
+        }),
+        Type::Complex(_) | Type::Array(_) | Type::Function { .. } => {
+            Err(SemanticError::unavailable("item_signature"))
+        }
+    }
 }
 
 #[salsa::tracked]
@@ -690,7 +756,10 @@ pub fn control_flow(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Control
     with_registered_syntax(db, key, control_flow_tracked)
 }
 
-/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+/// Return exact callable signatures whose types have generation-independent primitive identities.
+///
+/// Complex, array, and function types remain unavailable until their Salsa type identities are
+/// ported. Stale, unregistered, and non-callable nodes contain no fact.
 pub fn item_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ItemSignature> {
     with_registered_syntax(db, key, item_signature_tracked)
 }
