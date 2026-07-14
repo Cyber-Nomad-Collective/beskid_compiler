@@ -10,6 +10,7 @@
 //! work so observers match [`beskid_pipeline::phases::JIT_RUN_PHASE_ORDER`] when mods are active.
 
 pub mod cranelift_host;
+pub mod codegen_input;
 pub mod diagnostics;
 pub mod errors;
 pub mod linking;
@@ -18,6 +19,7 @@ pub mod module_emission;
 pub mod services;
 
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
+pub use codegen_input::{CodegenInput, CodegenInputError};
 pub use errors::CodegenError;
 pub use linking::{
     FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, referenced_extern_imports,

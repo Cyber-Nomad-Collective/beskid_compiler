@@ -21,3 +21,4 @@ thiserror = "2"
 
 [dev-dependencies]
 pest = { workspace = true }
+tempfile = "3"
