@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -111,24 +112,7 @@ impl RuntimeKitMetadata {
             validate_sha256("artifact.sha256", &artifact.sha256)?;
         }
 
-        let (static_path, shared_path, import_path) = match self.target.object_format.as_str() {
-            "elf" => (
-                "static/libbeskid_runtime.a",
-                "shared/libbeskid_runtime.so",
-                None,
-            ),
-            "macho" => (
-                "static/libbeskid_runtime.a",
-                "shared/libbeskid_runtime.dylib",
-                None,
-            ),
-            "coff" => (
-                "static/beskid_runtime.lib",
-                "shared/beskid_runtime.dll",
-                Some("shared/beskid_runtime_import.lib"),
-            ),
-            _ => unreachable!("target validation rejects unsupported object formats"),
-        };
+        let (static_path, shared_path, import_path) = artifact_paths_for_target(&self.target);
         let actual_import_path = self
             .artifacts
             .shared_import_library
@@ -272,6 +256,171 @@ pub enum RuntimeKitResolutionError {
     },
 }
 
+#[derive(Debug, Clone)]
+pub struct RuntimeKitBuildRequest {
+    pub prefix: PathBuf,
+    pub target: TargetMetadata,
+    pub profile: BuildProfile,
+    pub runtime_source_hash: String,
+    pub static_library: PathBuf,
+    pub shared_library: PathBuf,
+    pub shared_import_library: Option<PathBuf>,
+}
+
+#[derive(Debug)]
+pub enum RuntimeKitBuildError {
+    InvalidTarget(TargetValidationError),
+    InvalidSourceHash,
+    InvalidArtifactSet {
+        target: String,
+    },
+    SourceArtifactRead {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    SourceArtifactNotRegularFile {
+        path: PathBuf,
+    },
+    DestinationExists {
+        path: PathBuf,
+    },
+    DestinationWrite {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    CopiedArtifactHashMismatch {
+        path: PathBuf,
+        expected: String,
+        actual: String,
+    },
+    Metadata(RuntimeKitValidationError),
+    Resolution(RuntimeKitResolutionError),
+}
+
+pub fn build_runtime_kit(
+    request: &RuntimeKitBuildRequest,
+) -> Result<ResolvedRuntimeKit, RuntimeKitBuildError> {
+    request
+        .target
+        .validate()
+        .map_err(RuntimeKitBuildError::InvalidTarget)?;
+    validate_sha256("runtime_source_hash", &request.runtime_source_hash)
+        .map_err(|_| RuntimeKitBuildError::InvalidSourceHash)?;
+
+    let (static_relative, shared_relative, import_relative) =
+        artifact_paths_for_target(&request.target);
+    if request.shared_import_library.is_some() != import_relative.is_some() {
+        return Err(RuntimeKitBuildError::InvalidArtifactSet {
+            target: request.target.triple.as_str().into(),
+        });
+    }
+
+    let static_hash = source_artifact_hash(&request.static_library)?;
+    let shared_hash = source_artifact_hash(&request.shared_library)?;
+    let import_hash = request
+        .shared_import_library
+        .as_ref()
+        .map(|path| source_artifact_hash(path))
+        .transpose()?;
+    let artifacts = RuntimeArtifacts {
+        static_library: RuntimeArtifact {
+            relative_path: static_relative.into(),
+            sha256: static_hash,
+        },
+        shared_library: RuntimeArtifact {
+            relative_path: shared_relative.into(),
+            sha256: shared_hash,
+        },
+        shared_import_library: import_relative
+            .zip(import_hash)
+            .map(|(relative_path, sha256)| RuntimeArtifact {
+                relative_path: relative_path.into(),
+                sha256,
+            }),
+    };
+    let abi_contract = AbiManifestV5::canonical_runtime(request.target.clone());
+    let audit = RuntimeAuditMetadata::for_manifest(&abi_contract, &request.runtime_source_hash)
+        .map_err(|_| {
+            RuntimeKitBuildError::Metadata(RuntimeKitValidationError::InvalidAbiContract)
+        })?;
+    let metadata = RuntimeKitMetadata {
+        schema_version: RUNTIME_KIT_SCHEMA_VERSION,
+        abi_version: ABI_V5,
+        target: request.target.clone(),
+        profile: request.profile,
+        layout_hash: abi_contract.layout_hash(),
+        source_hash: request.runtime_source_hash.clone(),
+        artifacts,
+        import_allowlist: audit.allowed_imports.clone(),
+        export_allowlist: audit.allowed_exports.clone(),
+        abi_contract,
+        audit,
+    };
+    let abi_json = metadata
+        .canonical_abi_json()
+        .map_err(RuntimeKitBuildError::Metadata)?;
+
+    let profile_directory = profile_directory(request.profile);
+    let parent = request
+        .prefix
+        .join(INSTALLED_RUNTIME_ROOT)
+        .join(request.target.triple.as_str());
+    let destination = parent.join(profile_directory);
+    if destination.exists() {
+        return Err(RuntimeKitBuildError::DestinationExists { path: destination });
+    }
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let staging = parent.join(format!(
+        ".{profile_directory}.staging-{}-{nonce}",
+        std::process::id()
+    ));
+    let publish_result = (|| {
+        copy_artifact(
+            &request.static_library,
+            &staging.join(static_relative),
+            &metadata.artifacts.static_library.sha256,
+        )?;
+        copy_artifact(
+            &request.shared_library,
+            &staging.join(shared_relative),
+            &metadata.artifacts.shared_library.sha256,
+        )?;
+        if let (Some(source), Some(relative)) = (&request.shared_import_library, import_relative) {
+            let expected = &metadata
+                .artifacts
+                .shared_import_library
+                .as_ref()
+                .expect("validated import artifact")
+                .sha256;
+            copy_artifact(source, &staging.join(relative), expected)?;
+        }
+        let metadata_path = staging.join("abi.json");
+        fs::write(&metadata_path, abi_json).map_err(|source| {
+            RuntimeKitBuildError::DestinationWrite {
+                path: metadata_path,
+                source,
+            }
+        })?;
+        fs::rename(&staging, &destination).map_err(|source| {
+            RuntimeKitBuildError::DestinationWrite {
+                path: destination.clone(),
+                source,
+            }
+        })?;
+        Ok::<(), RuntimeKitBuildError>(())
+    })();
+    if publish_result.is_err() {
+        let _ = fs::remove_dir_all(&staging);
+    }
+    publish_result?;
+
+    resolve_installed_runtime_kit(&request.prefix, &request.target, request.profile)
+        .map_err(RuntimeKitBuildError::Resolution)
+}
+
 pub fn resolve_installed_runtime_kit(
     prefix: &Path,
     target: &TargetMetadata,
@@ -280,10 +429,7 @@ pub fn resolve_installed_runtime_kit(
     target
         .validate()
         .map_err(RuntimeKitResolutionError::RequestedTarget)?;
-    let profile_directory = match profile {
-        BuildProfile::Debug => "debug",
-        BuildProfile::Release => "release",
-    };
+    let profile_directory = profile_directory(profile);
     let root = prefix
         .join(INSTALLED_RUNTIME_ROOT)
         .join(target.triple.as_str())
@@ -349,25 +495,10 @@ fn verify_artifact(
     if !file_type.is_file() {
         return Err(RuntimeKitResolutionError::ArtifactNotRegularFile { path });
     }
-    let mut file = File::open(&path).map_err(|source| RuntimeKitResolutionError::ArtifactRead {
+    let actual = sha256_file(&path).map_err(|source| RuntimeKitResolutionError::ArtifactRead {
         path: path.clone(),
         source,
     })?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read =
-            file.read(&mut buffer)
-                .map_err(|source| RuntimeKitResolutionError::ArtifactRead {
-                    path: path.clone(),
-                    source,
-                })?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    let actual = format!("{:x}", hasher.finalize());
     if actual != artifact.sha256 {
         return Err(RuntimeKitResolutionError::ArtifactHashMismatch {
             path,
@@ -376,4 +507,95 @@ fn verify_artifact(
         });
     }
     Ok(path)
+}
+
+fn profile_directory(profile: BuildProfile) -> &'static str {
+    match profile {
+        BuildProfile::Debug => "debug",
+        BuildProfile::Release => "release",
+    }
+}
+
+fn artifact_paths_for_target(
+    target: &TargetMetadata,
+) -> (&'static str, &'static str, Option<&'static str>) {
+    match target.object_format.as_str() {
+        "elf" => (
+            "static/libbeskid_runtime.a",
+            "shared/libbeskid_runtime.so",
+            None,
+        ),
+        "macho" => (
+            "static/libbeskid_runtime.a",
+            "shared/libbeskid_runtime.dylib",
+            None,
+        ),
+        "coff" => (
+            "static/beskid_runtime.lib",
+            "shared/beskid_runtime.dll",
+            Some("shared/beskid_runtime_import.lib"),
+        ),
+        _ => unreachable!("target validation rejects unsupported object formats"),
+    }
+}
+
+fn source_artifact_hash(path: &Path) -> Result<String, RuntimeKitBuildError> {
+    let file_type = fs::symlink_metadata(path)
+        .map_err(|source| RuntimeKitBuildError::SourceArtifactRead {
+            path: path.to_path_buf(),
+            source,
+        })?
+        .file_type();
+    if !file_type.is_file() {
+        return Err(RuntimeKitBuildError::SourceArtifactNotRegularFile {
+            path: path.to_path_buf(),
+        });
+    }
+    sha256_file(path).map_err(|source| RuntimeKitBuildError::SourceArtifactRead {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn copy_artifact(
+    source: &Path,
+    destination: &Path,
+    expected_hash: &str,
+) -> Result<(), RuntimeKitBuildError> {
+    let parent = destination.parent().expect("artifact path has a parent");
+    fs::create_dir_all(parent).map_err(|source| RuntimeKitBuildError::DestinationWrite {
+        path: parent.to_path_buf(),
+        source,
+    })?;
+    fs::copy(source, destination).map_err(|source| RuntimeKitBuildError::DestinationWrite {
+        path: destination.to_path_buf(),
+        source,
+    })?;
+    let actual_hash =
+        sha256_file(destination).map_err(|source| RuntimeKitBuildError::DestinationWrite {
+            path: destination.to_path_buf(),
+            source,
+        })?;
+    if actual_hash != expected_hash {
+        return Err(RuntimeKitBuildError::CopiedArtifactHashMismatch {
+            path: destination.to_path_buf(),
+            expected: expected_hash.into(),
+            actual: actual_hash,
+        });
+    }
+    Ok(())
+}
+
+fn sha256_file(path: &Path) -> std::io::Result<String> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
