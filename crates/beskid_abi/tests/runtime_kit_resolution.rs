@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_abi::abi_v5::{ABI_V5, AbiManifestV5, RuntimeAuditMetadata, TargetMetadata};
@@ -11,14 +12,17 @@ use sha2::{Digest, Sha256};
 
 struct TempPrefix(PathBuf);
 
+static TEMP_PREFIX_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 impl TempPrefix {
     fn new() -> Self {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let sequence = TEMP_PREFIX_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "beskid-runtime-kit-resolution-{}-{nonce}",
+            "beskid-runtime-kit-resolution-{}-{nonce}-{sequence}",
             std::process::id()
         ));
         fs::create_dir_all(&path).unwrap();

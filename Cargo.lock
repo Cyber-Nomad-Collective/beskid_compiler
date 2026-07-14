@@ -410,6 +410,7 @@ name = "beskid_abi"
 version = "0.1.0"
 dependencies = [
  "beskid_manifest",
+ "rustc-demangle",
  "serde",
  "serde_json",
  "sha2",
@@ -605,6 +606,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "beskid_isle"
+version = "0.1.0"
+dependencies = [
+ "beskid_queries",
+ "cranelift-codegen",
+ "cranelift-frontend",
+ "cranelift-isle",
+ "cranelift-jit",
+ "cranelift-module",
+ "target-lexicon",
+]
+
+[[package]]
 name = "beskid_lsp"
 version = "0.1.0"
 dependencies = [
@@ -630,6 +644,7 @@ version = "0.1.0"
 dependencies = [
  "bsol",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

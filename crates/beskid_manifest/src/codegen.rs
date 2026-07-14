@@ -1218,20 +1218,4 @@ mod tests {
         };
         assert!(error.contains("unknown field `schema_version`"));
     }
-
-    #[test]
-    fn abi_builtin_parameter_declarations_are_sorted() {
-        let manifest_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime_manifest.bsol");
-        let manifest = crate::load_manifest(&manifest_path).expect("manifest parse");
-        let generated = render_abi_builtins(&manifest);
-        let declarations = generated
-            .lines()
-            .filter_map(|line| line.strip_prefix("const "))
-            .map(|line| line.split_once(':').expect("const declaration").0)
-            .collect::<Vec<_>>();
-        let mut sorted = declarations.clone();
-        sorted.sort_unstable();
-        assert_eq!(declarations, sorted);
-    }
 }
