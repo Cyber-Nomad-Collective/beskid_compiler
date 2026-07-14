@@ -3,9 +3,8 @@
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{
-    FrontEndOptions, PrepareOptions, PreparedCompilation, ResolvedInput,
-    SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot,
-    invalidate_entry_sessions_for_project,
+    FrontEndOptions, PrepareOptions, PreparedCompilation, ResolvedInput, SemanticSnapshot,
+    SessionFingerprint, cached_semantic_snapshot, invalidate_entry_sessions_for_project,
 };
 use beskid_pipeline::{PipelineObserver, observe_phase, phases};
 
@@ -128,7 +127,6 @@ pub fn typed_entry_bundle(
         front_end: FrontEndOptions {
             with_semantic_diagnostics: false,
             ..Default::default()
-
         },
         ..Default::default()
     };

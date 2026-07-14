@@ -197,8 +197,7 @@ fn find_function_in_unit<'a>(
     span: SpanInfo,
     short_name: &str,
 ) -> Option<&'a Spanned<HirFunctionDefinition>> {
-    find_function_by_span(program, span)
-        .or_else(|| find_function_by_name(program, short_name))
+    find_function_by_span(program, span).or_else(|| find_function_by_name(program, short_name))
 }
 
 fn find_method_in_unit<'a>(
@@ -206,8 +205,7 @@ fn find_method_in_unit<'a>(
     span: SpanInfo,
     short_name: &str,
 ) -> Option<&'a Spanned<HirMethodDefinition>> {
-    find_method_by_span(program, span)
-        .or_else(|| find_method_by_name(program, short_name))
+    find_method_by_span(program, span).or_else(|| find_method_by_name(program, short_name))
 }
 
 pub(crate) fn find_function_by_span(
@@ -253,12 +251,13 @@ fn find_function_by_name_in_items<'a>(
     let mut match_def: Option<&'a Spanned<HirFunctionDefinition>> = None;
     for item in items {
         if let HirItem::FunctionDefinition(def) = &item.node
-            && def.node.name.node.name == name {
-                if match_def.is_some() {
-                    return None;
-                }
-                match_def = Some(def);
+            && def.node.name.node.name == name
+        {
+            if match_def.is_some() {
+                return None;
             }
+            match_def = Some(def);
+        }
         if let HirItem::InlineModule(module) = &item.node {
             let ptr = module.node.items.as_ptr() as usize;
             if modules.insert(ptr) {
@@ -282,9 +281,10 @@ fn find_function_in_items_inner<'a>(
 ) -> Option<&'a Spanned<HirFunctionDefinition>> {
     for item in items {
         if spans_match(item.span, span)
-            && let HirItem::FunctionDefinition(def) = &item.node {
-                return Some(def);
-            }
+            && let HirItem::FunctionDefinition(def) = &item.node
+        {
+            return Some(def);
+        }
         if let HirItem::InlineModule(module) = &item.node {
             let ptr = module.node.items.as_ptr() as usize;
             if modules.insert(ptr)
@@ -336,12 +336,13 @@ fn find_method_by_name_in_items<'a>(
             }
         }
         if let HirItem::MethodDefinition(def) = &item.node
-            && def.node.name.node.name == name {
-                if match_def.is_some() {
-                    return None;
-                }
-                match_def = Some(def);
+            && def.node.name.node.name == name
+        {
+            if match_def.is_some() {
+                return None;
             }
+            match_def = Some(def);
+        }
         if let HirItem::InlineModule(module) = &item.node {
             let ptr = module.node.items.as_ptr() as usize;
             if modules.insert(ptr) {

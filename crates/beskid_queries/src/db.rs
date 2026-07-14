@@ -8,17 +8,40 @@ use std::sync::{Arc, Mutex};
 use beskid_analysis::projects::CompilePlan;
 use beskid_analysis::projects::assembly::{ModuleIndex, SourceUnit, UnitHir};
 use beskid_analysis::resolve::Resolution;
+use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::types::UnitTypeSurface;
 use salsa::Setter;
 
 use crate::inputs::{FileText, GrammarRevision, ProjectSession};
-use crate::semantic_contract::{SemanticError, SourceUnitId, SyntaxUnitInput, SyntaxUnitRevision};
+use crate::semantic_contract::{
+    SemanticError, SourceUnitId, SyntaxUnitInput, SyntaxUnitRevision,
+};
 use crate::stats::record_revision_bump;
 use crate::typed_entry_bundle::reset_typed_entry_inputs;
 
 type ProjectRegistry = HashMap<(PathBuf, PathBuf, String), ProjectSession>;
 type ModuleIndexCache = HashMap<String, Arc<ModuleIndex>>;
 type SyntaxUnitRegistry = HashMap<SourceUnitId, SyntaxUnitInput>;
+
+/// Assembly-scoped import/module authority for generation-safe cross-unit syntax facts.
+pub struct SyntaxDependencyRegistry {
+    pub(crate) imports: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<SyntaxImport>>,
+}
+
+/// One explicit module import resolved to an assembled syntax unit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxImport {
+    pub(crate) path: Vec<String>,
+    pub(crate) target: SourceUnitId,
+}
+
+impl Default for SyntaxDependencyRegistry {
+    fn default() -> Self {
+        Self {
+            imports: HashMap::new(),
+        }
+    }
+}
 
 /// Cached heavy artifacts keyed by content fingerprint (invalidated via Salsa inputs).
 #[derive(Default)]
@@ -38,6 +61,7 @@ pub trait Db: salsa::Database {
     fn grammar_revision_input(&self) -> GrammarRevision;
     fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>>;
     fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput>;
+    fn syntax_dependency_registry(&self) -> &Mutex<SyntaxDependencyRegistry>;
 }
 
 /// Process/workspace-scoped incremental compilation database.
@@ -48,6 +72,7 @@ pub struct BeskidDatabase {
     file_registry: Arc<Mutex<HashMap<PathBuf, FileText>>>,
     project_registry: Arc<Mutex<ProjectRegistry>>,
     syntax_unit_registry: Arc<Mutex<SyntaxUnitRegistry>>,
+    syntax_dependency_registry: Arc<Mutex<SyntaxDependencyRegistry>>,
     unit_cache: Arc<Mutex<UnitArtifactCache>>,
     module_index_cache: Arc<Mutex<ModuleIndexCache>>,
     persistence_root: Option<PathBuf>,
@@ -69,6 +94,7 @@ impl BeskidDatabase {
             file_registry: Arc::new(Mutex::new(HashMap::new())),
             project_registry: Arc::new(Mutex::new(HashMap::new())),
             syntax_unit_registry: Arc::new(Mutex::new(HashMap::new())),
+            syntax_dependency_registry: Arc::new(Mutex::new(SyntaxDependencyRegistry::default())),
             unit_cache: Arc::new(Mutex::new(UnitArtifactCache::default())),
             module_index_cache: Arc::new(Mutex::new(ModuleIndexCache::new())),
             persistence_root: persistence_root.clone(),
@@ -157,9 +183,7 @@ impl BeskidDatabase {
         unit: SourceUnitId,
         generation: beskid_analysis::syntax::SyntaxGenerationId,
         source: String,
-        expanded_program: Arc<
-            beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-        >,
+        expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
     ) -> Result<SyntaxUnitInput, SemanticError> {
         let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(&source));
         let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&expanded_program)?);
@@ -606,6 +630,10 @@ impl Db for BeskidDatabase {
             .expect("syntax unit registry")
             .get(&unit)
             .copied()
+    }
+
+    fn syntax_dependency_registry(&self) -> &Mutex<SyntaxDependencyRegistry> {
+        &self.syntax_dependency_registry
     }
 
     fn unit_cache(&self) -> &Mutex<UnitArtifactCache> {

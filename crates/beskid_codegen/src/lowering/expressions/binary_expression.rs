@@ -354,7 +354,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 if (matches!(
                     operand_info,
                     Some(TypeInfo::Primitive(HirPrimitiveType::String))
-                ) || is_string_type(ctx, left_type) || is_string_type(ctx, right_type))
+                ) || is_string_type(ctx, left_type)
+                    || is_string_type(ctx, right_type))
                     && matches!(node.node.op.node, HirBinaryOp::Eq | HirBinaryOp::NotEq)
                 {
                     if !is_string_type(ctx, left_type) {
@@ -429,13 +430,14 @@ fn lower_string_eq(
     right: Value,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<Value>, CodegenError> {
-    let route =
-        dispatch_route_for_symbol("str_eq").ok_or(CodegenError::MissingSymbol("str_eq dispatch route"))?;
-    let eq_flag = lower_dispatch_builtin_call(node.span, route, &[left, right], true, ctx)?
-        .ok_or(CodegenError::UnsupportedNode {
+    let route = dispatch_route_for_symbol("str_eq")
+        .ok_or(CodegenError::MissingSymbol("str_eq dispatch route"))?;
+    let eq_flag = lower_dispatch_builtin_call(node.span, route, &[left, right], true, ctx)?.ok_or(
+        CodegenError::UnsupportedNode {
             span: node.span,
             node: "string eq result",
-        })?;
+        },
+    )?;
     let zero = ctx.builder.ins().iconst(clif_types::I64, 0);
     let value = match node.node.op.node {
         HirBinaryOp::Eq => ctx.builder.ins().icmp(IntCC::NotEqual, eq_flag, zero),
@@ -451,9 +453,8 @@ fn lower_string_concat(
     right: Value,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<Value>, CodegenError> {
-    let route = dispatch_route_for_symbol("str_concat").ok_or(CodegenError::MissingSymbol(
-        "str_concat dispatch route",
-    ))?;
+    let route = dispatch_route_for_symbol("str_concat")
+        .ok_or(CodegenError::MissingSymbol("str_concat dispatch route"))?;
     lower_dispatch_builtin_call(node.span, route, &[left, right], true, ctx)
 }
 
@@ -512,10 +513,8 @@ fn lower_str_from_i64(
     span: SpanInfo,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Value, CodegenError> {
-    emit_str_from_i64_dispatch(ctx.builder, value).map_err(|node| CodegenError::UnsupportedNode {
-        span,
-        node,
-    })
+    emit_str_from_i64_dispatch(ctx.builder, value)
+        .map_err(|node| CodegenError::UnsupportedNode { span, node })
 }
 
 fn is_numeric_type(info: Option<&TypeInfo>) -> bool {

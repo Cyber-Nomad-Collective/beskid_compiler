@@ -2,7 +2,9 @@ use crate::errors::CodegenError;
 use crate::lowering::descriptor::{struct_field_offsets, struct_item_id};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
-use crate::lowering::types::{is_fiber_handle_type, map_type_id_to_clif, pointer_type, resolve_monomorph_type_id};
+use crate::lowering::types::{
+    is_fiber_handle_type, map_type_id_to_clif, pointer_type, resolve_monomorph_type_id,
+};
 use beskid_analysis::hir::HirMemberExpression;
 use beskid_analysis::syntax::Spanned;
 use cranelift_codegen::ir::{InstBuilder, MemFlags, Value};
@@ -42,12 +44,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirMemberExpression {
             item_id,
             ctx.codegen.current_source_path.as_ref(),
         )
-        .ok_or(
-            CodegenError::UnsupportedNode {
-                span: node.span,
-                node: "member offsets",
-            },
-        )?;
+        .ok_or(CodegenError::UnsupportedNode {
+            span: node.span,
+            node: "member offsets",
+        })?;
         let offset = offsets
             .get(field_name)
             .copied()

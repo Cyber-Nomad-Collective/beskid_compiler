@@ -7,8 +7,8 @@ use std::path::PathBuf;
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_tools::pipeline::{
-    CliResolveOptions, resolve_input_with_cli_pipeline,
-    tui::format_severity_summary, tui::severity_command_summary,
+    CliResolveOptions, resolve_input_with_cli_pipeline, tui::format_severity_summary,
+    tui::severity_command_summary,
 };
 
 #[derive(Args, Debug)]
@@ -76,9 +76,7 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
         format!("Analyze complete ({severity_line})"),
         counts,
     );
-    pipeline_ui.finish_session_with_summary(
-        format!("Analyze complete ({severity_line})"),
-        Some(summary),
-    );
+    pipeline_ui
+        .finish_session_with_summary(format!("Analyze complete ({severity_line})"), Some(summary));
     Ok(())
 }

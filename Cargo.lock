@@ -536,6 +536,7 @@ dependencies = [
  "anyhow",
  "beskid_abi",
  "beskid_analysis",
+ "beskid_isle",
  "beskid_pipeline",
  "beskid_queries",
  "beskid_runtime",
@@ -558,14 +559,11 @@ dependencies = [
 name = "beskid_engine"
 version = "0.1.0"
 dependencies = [
- "abfall",
  "anyhow",
  "beskid_abi",
  "beskid_analysis",
  "beskid_aot",
  "beskid_codegen",
- "beskid_host",
- "beskid_manifest",
  "beskid_pipeline",
  "beskid_queries",
  "beskid_runtime",
@@ -707,7 +705,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "beskid_analysis",
- "beskid_aot",
  "beskid_codegen",
  "beskid_engine",
  "beskid_pipeline",

@@ -6,10 +6,12 @@ use crate::lowering::function::{
     lower_function_with_name, mangle_generic_item_function, mangle_item_function,
     mangle_method_name,
 };
-use crate::lowering::locals::{call_kind_for_call, canonicalize_call_kind, local_id_for_span, resolved_value_at};
-use crate::lowering::type_surface::{contract_method_order, contract_signatures};
+use crate::lowering::locals::{
+    call_kind_for_call, canonicalize_call_kind, local_id_for_span, resolved_value_at,
+};
 use crate::lowering::lowerable::{Lowerable, lower_node};
 use crate::lowering::node_context::NodeLoweringContext;
+use crate::lowering::type_surface::{contract_method_order, contract_signatures};
 use crate::lowering::types::{map_type_id_to_clif, pointer_type};
 use beskid_abi::{
     DispatchReturnGroup, DispatchRoute, TAG_EVENT_GET_HANDLER, TAG_EVENT_LEN,
@@ -107,12 +109,11 @@ fn lambda_signature_type_ids(
         params.push(type_id);
     }
 
-    let return_type = ctx
-        .type_result
-        .node_type(lambda.node.body.id)
-        .ok_or(CodegenError::MissingExpressionType {
+    let return_type = ctx.type_result.node_type(lambda.node.body.id).ok_or(
+        CodegenError::MissingExpressionType {
             span: lambda.node.body.span,
-        })?;
+        },
+    )?;
 
     Ok((params, return_type))
 }
@@ -227,10 +228,10 @@ fn lower_event_invoke_call(
         item_id,
         ctx.codegen.current_source_path.as_ref(),
     )
-        .ok_or(CodegenError::UnsupportedNode {
-            span: node.span,
-            node: "event invoke offsets",
-        })?;
+    .ok_or(CodegenError::UnsupportedNode {
+        span: node.span,
+        node: "event invoke offsets",
+    })?;
     let offset =
         offsets
             .get(field_name.as_str())
@@ -1140,23 +1141,22 @@ fn infer_generic_args_from_call(
                     path.node.path.span,
                     name,
                     ctx.codegen.current_source_path.as_ref(),
-                )
-                    && let Some(type_id) = ctx
-                        .state
-                        .local_type_overrides
-                        .get(&local_id)
-                        .copied()
-                        .or_else(|| ctx.type_result.local_types.get(&local_id).copied())
-                    {
-                        arg_types.push(type_id);
-                        continue;
-                    }
+                ) && let Some(type_id) = ctx
+                    .state
+                    .local_type_overrides
+                    .get(&local_id)
+                    .copied()
+                    .or_else(|| ctx.type_result.local_types.get(&local_id).copied())
+                {
+                    arg_types.push(type_id);
+                    continue;
+                }
             }
         }
         let type_id = ctx
             .require_expr_type_for_node(arg)
             .ok()
-.or_else(|| ctx.expr_type_for_node(arg))
+            .or_else(|| ctx.expr_type_for_node(arg))
             .or_else(|| {
                 if let HirExpressionNode::PathExpression(path) = &arg.node {
                     crate::lowering::locals::local_id_for_span(
@@ -1391,7 +1391,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
         let call_kind = call_kind_for_call(ctx.type_result, node)
-        .map(|kind| canonicalize_call_kind(ctx.resolution, kind));
+            .map(|kind| canonicalize_call_kind(ctx.resolution, kind));
         if let Some(CallLoweringKind::MethodDispatch {
             method_item_id,
             receiver_source,
@@ -1591,23 +1591,19 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
 
         if expected_generics != generic_args.len() {
             if generic_args.is_empty() && expected_generics > 0 {
-                generic_args = infer_generic_args_from_call(
-                    ctx.type_result,
-                    item_id,
-                    &node.node.args,
-                    ctx,
-                )
-                .or_else(|| {
-                    infer_generic_args_from_call_expr_type(
-                        ctx.type_result,
-                        item_id,
-                        ctx.expr_type(node.id),
-                    )
-                })
-                .ok_or(CodegenError::UnsupportedNode {
-                    span: node.span,
-                    node: "generic argument mismatch",
-                })?;
+                generic_args =
+                    infer_generic_args_from_call(ctx.type_result, item_id, &node.node.args, ctx)
+                        .or_else(|| {
+                            infer_generic_args_from_call_expr_type(
+                                ctx.type_result,
+                                item_id,
+                                ctx.expr_type(node.id),
+                            )
+                        })
+                        .ok_or(CodegenError::UnsupportedNode {
+                            span: node.span,
+                            node: "generic argument mismatch",
+                        })?;
             } else {
                 return Err(CodegenError::UnsupportedNode {
                     span: node.span,
@@ -1825,29 +1821,29 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                     } else if ctx.codegen.emitting_items.contains(&item_id) {
                         mangled
                     } else {
-                    let saved_source_path = ctx.codegen.current_source_path.clone();
-                    ctx.codegen.current_source_path = ctx
-                        .resolution
-                        .items
-                        .get(item_id.0)
-                        .and_then(|info| info.source_path.clone())
-                        .or_else(|| saved_source_path.clone());
-                    let lower_result = lower_function_with_name(
-                        def,
-                        ctx.resolution,
-                        ctx.type_result,
-                        ctx.function_defs,
-                        ctx.codegen,
-                        Some(mangled.clone()),
-                        Some(mapping.clone()),
-                        Some(item_id),
-                    );
-                    ctx.codegen.current_source_path = saved_source_path;
-                    lower_result?;
-                    ctx.codegen
-                        .monomorphized_functions
-                        .insert(key, mangled.clone());
-                    mangled
+                        let saved_source_path = ctx.codegen.current_source_path.clone();
+                        ctx.codegen.current_source_path = ctx
+                            .resolution
+                            .items
+                            .get(item_id.0)
+                            .and_then(|info| info.source_path.clone())
+                            .or_else(|| saved_source_path.clone());
+                        let lower_result = lower_function_with_name(
+                            def,
+                            ctx.resolution,
+                            ctx.type_result,
+                            ctx.function_defs,
+                            ctx.codegen,
+                            Some(mangled.clone()),
+                            Some(mapping.clone()),
+                            Some(item_id),
+                        );
+                        ctx.codegen.current_source_path = saved_source_path;
+                        lower_result?;
+                        ctx.codegen
+                            .monomorphized_functions
+                            .insert(key, mangled.clone());
+                        mangled
                     }
                 }
             } else if item_info.kind == ItemKind::Method {

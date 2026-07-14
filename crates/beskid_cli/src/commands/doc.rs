@@ -12,9 +12,9 @@ use beskid_analysis::doc::{
 use beskid_analysis::hir::HirVisibility;
 use beskid_analysis::projects::assembly::ProgramAssembly;
 use beskid_analysis::projects::{assembly_options_for_prepare, load_manifest_from_path};
-use beskid_analysis::services::PrepareOptions;
 use beskid_analysis::resolve::ItemInfo;
 use beskid_analysis::services;
+use beskid_analysis::services::PrepareOptions;
 use beskid_analysis::syntax::SpanInfo;
 use clap::Args;
 use std::collections::BTreeMap;
@@ -105,10 +105,7 @@ fn build_doc_snapshot(
     resolved: &services::ResolvedInput,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     docs_ref: Option<&DocRefLinkContext>,
-) -> Result<(
-    services::DocumentAnalysisSnapshot,
-    Option<ProgramAssembly>,
-)> {
+) -> Result<(services::DocumentAnalysisSnapshot, Option<ProgramAssembly>)> {
     let spanned = program;
     let source_name = resolved.source_path.display().to_string();
 

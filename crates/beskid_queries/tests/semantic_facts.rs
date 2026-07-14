@@ -2,6 +2,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
+use beskid_analysis::projects::{
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
+    SyntaxProgramAssembly,
+};
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSnapshot};
 use beskid_queries::{
@@ -10,6 +14,7 @@ use beskid_queries::{
     child_nodes, closure_environment, control_flow, direct_callees, item_body, item_signature,
     literal_fact, local_slot, node_kind, node_span, node_type, operator_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, spawn_target,
+    build_typed_program,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -108,6 +113,87 @@ fn key_at_start(
             .unwrap_or_else(|| panic!("missing {kind:?} at byte {start}"))
             .id,
     }
+}
+
+#[test]
+fn qualified_import_resolution_uses_registered_dependency_syntax() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/qualified-import/project/src");
+    let main_path = root.join("Main.bd");
+    let tools_path = root.join("Lib/Tools.bd");
+    let main_source = "use Lib.Tools;\ni32 Main() { return Tools.Helper(); }";
+    let tools_source = "i32 Helper() { return 1; }";
+    let main_program = expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let tools_program = expand_program(parse_program(tools_source).expect("tools parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let assembly = Arc::new(SyntaxProgramAssembly {
+        roots: EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        units: Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: tools_path.display().to_string(),
+                path: tools_path.clone(),
+                source: tools_source.to_string(),
+                program: tools_program.clone(),
+            },
+        ]),
+        entry_index: 0,
+        discovery: AssemblyDiscovery::ImportClosure,
+        module_index: Arc::new(ModuleIndex::empty()),
+        has_std_dependency: false,
+    });
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let tools_unit = SourceUnitId::new(&db, tools_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(17);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let tools_index = SyntaxIndex::from_program(&tools_program, generation);
+    let reference = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::PathExpression,
+        main_source.find("Tools.Helper").expect("qualified call"),
+    );
+    let declaration = key(tools_unit, generation, &tools_index, NodeKind::FunctionDefinition, 0);
+
+    assert_eq!(
+        resolved_item(&db, reference).expect("qualified resolution"),
+        Some(beskid_queries::ResolvedItem { declaration })
+    );
+    let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
+    assert_eq!(
+        call_lowering(&db, call).expect("qualified direct call"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        resolved_item(
+            &db,
+            AstNodeKey {
+                generation: SyntaxGenerationId(16),
+                ..reference
+            }
+        )
+        .expect("stale generation"),
+        None
+    );
 }
 
 #[test]

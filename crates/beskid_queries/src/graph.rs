@@ -157,9 +157,7 @@ pub fn program_assembly(
 fn assembly_options_fingerprint(options: &AssemblyOptions) -> String {
     format!(
         "discovery={:?}:skip_parse={}:max_units={:?}",
-        options.discovery,
-        options.skip_parse_errors,
-        options.max_units,
+        options.discovery, options.skip_parse_errors, options.max_units,
     )
 }
 

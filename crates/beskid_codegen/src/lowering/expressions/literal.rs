@@ -21,19 +21,19 @@ pub(crate) fn lower_literal(
     builder: &mut FunctionBuilder,
 ) -> CodegenResult<Value> {
     let type_id = node_expr_type(type_result, expression_id)
-    .or_else(|| match &literal.node {
-        HirLiteral::Integer(text) => {
-            find_literal_type(type_result, integer_literal_primitive_type(text))
-        }
-        HirLiteral::Float(_) => find_literal_type(type_result, HirPrimitiveType::F64),
-        HirLiteral::Bool(_) => find_literal_type(type_result, HirPrimitiveType::Bool),
-        HirLiteral::String(_) => find_literal_type(type_result, HirPrimitiveType::String),
-        HirLiteral::Char(_) => find_literal_type(type_result, HirPrimitiveType::Char),
-    })
-    .ok_or(CodegenError::UnsupportedNode {
-        span: literal.span,
-        node: "literal type",
-    })?;
+        .or_else(|| match &literal.node {
+            HirLiteral::Integer(text) => {
+                find_literal_type(type_result, integer_literal_primitive_type(text))
+            }
+            HirLiteral::Float(_) => find_literal_type(type_result, HirPrimitiveType::F64),
+            HirLiteral::Bool(_) => find_literal_type(type_result, HirPrimitiveType::Bool),
+            HirLiteral::String(_) => find_literal_type(type_result, HirPrimitiveType::String),
+            HirLiteral::Char(_) => find_literal_type(type_result, HirPrimitiveType::Char),
+        })
+        .ok_or(CodegenError::UnsupportedNode {
+            span: literal.span,
+            node: "literal type",
+        })?;
     let clif_ty =
         map_type_id_to_clif(type_result, type_id).ok_or(CodegenError::UnsupportedNode {
             span: literal.span,

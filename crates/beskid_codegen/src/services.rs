@@ -7,9 +7,8 @@ use beskid_analysis::hir::HirProgram;
 use beskid_analysis::resolve::Resolution;
 use beskid_analysis::services::{
     FrontEndOptions, FrontEndTypedResult, ResolvedInput, SemanticDiagnosticsError,
-    SessionFingerprint, cached_executable, cached_semantic_snapshot,
-    compile_plan_for_input_path, current_syntax_generation_id, resolved_input_from_plan,
-    synthetic_compile_plan_for_source,
+    SessionFingerprint, cached_executable, cached_semantic_snapshot, compile_plan_for_input_path,
+    current_syntax_generation_id, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeResult;
@@ -51,7 +50,10 @@ pub fn materialize_source_path_for_lowering(path: &Path, source: &str) -> Result
 }
 
 /// Cranelift linker symbol for a resolved function or test item.
-pub fn jit_symbol_for_item(resolution: &beskid_analysis::resolve::Resolution, item_id: beskid_analysis::resolve::ItemId) -> String {
+pub fn jit_symbol_for_item(
+    resolution: &beskid_analysis::resolve::Resolution,
+    item_id: beskid_analysis::resolve::ItemId,
+) -> String {
     crate::lowering::function::mangle_item_function(resolution, item_id)
 }
 
@@ -71,19 +73,8 @@ pub fn lower_source_for_entrypoint(
     let path = materialize_source_path_for_lowering(path, source)?;
     let plan = compile_plan_for_input_path(&path)
         .unwrap_or_else(|| synthetic_compile_plan_for_source(&path));
-    let resolved = resolved_input_from_plan(
-        path,
-        source.to_string(),
-        plan,
-        None,
-        None,
-    );
-    lower_resolved_entrypoint_with_pipeline(
-        &resolved,
-        Some(entrypoint),
-        with_diagnostics,
-        pipeline,
-    )
+    let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
+    lower_resolved_entrypoint_with_pipeline(&resolved, Some(entrypoint), with_diagnostics, pipeline)
 }
 
 /// End-to-end lowering from source via the shared analysis front-end spine.
@@ -96,13 +87,7 @@ pub fn lower_source_with_pipeline(
     let path = materialize_source_path_for_lowering(path, source)?;
     let plan = compile_plan_for_input_path(&path)
         .unwrap_or_else(|| synthetic_compile_plan_for_source(&path));
-    let resolved = resolved_input_from_plan(
-        path,
-        source.to_string(),
-        plan,
-        None,
-        None,
-    );
+    let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
     lower_resolved_input_with_pipeline(&resolved, with_diagnostics, pipeline)
 }
 
@@ -151,13 +136,7 @@ pub fn lower_resolved_entrypoint_with_pipeline(
         );
     }
 
-    lower_from_prepared_or_cache(
-        resolved,
-        None,
-        link_entrypoint,
-        with_diagnostics,
-        pipeline,
-    )
+    lower_from_prepared_or_cache(resolved, None, link_entrypoint, with_diagnostics, pipeline)
 }
 
 fn resolve_front_end_for_lowering(

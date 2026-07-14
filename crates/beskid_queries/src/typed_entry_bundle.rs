@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::Result;
-use beskid_analysis::services::{DependencyTypingPolicy, FrontEndOptions, PrepareOptions, ResolvedInput};
+use beskid_analysis::services::{
+    DependencyTypingPolicy, FrontEndOptions, PrepareOptions, ResolvedInput,
+};
 use beskid_pipeline::PipelineObserver;
 use salsa::Setter;
 
@@ -64,7 +66,9 @@ fn typed_entry_cache() -> &'static Mutex<TypedEntryCache> {
 }
 
 fn ensure_file_revision(db: &mut BeskidDatabase, entry_key: &str) -> FileRevision {
-    let mut registry = file_revision_registry().lock().expect("file revision registry");
+    let mut registry = file_revision_registry()
+        .lock()
+        .expect("file revision registry");
     if let Some(revision) = registry.get(entry_key) {
         return *revision;
     }
@@ -141,14 +145,13 @@ fn prepare_options_fingerprint(options: &PrepareOptions) -> String {
     )
 }
 
-fn project_session_for_resolved(db: &mut BeskidDatabase, resolved: &ResolvedInput) -> Option<ProjectSession> {
+fn project_session_for_resolved(
+    db: &mut BeskidDatabase,
+    resolved: &ResolvedInput,
+) -> Option<ProjectSession> {
     let plan = resolved.compile_plan.as_ref()?;
     let lockfile_digest = lockfile_digest_for_plan(plan);
-    Some(db.ensure_project_session(
-        plan,
-        &resolved.source_path,
-        lockfile_digest,
-    ))
+    Some(db.ensure_project_session(plan, &resolved.source_path, lockfile_digest))
 }
 
 fn lockfile_digest_for_plan(plan: &beskid_analysis::projects::CompilePlan) -> String {
@@ -177,7 +180,6 @@ fn materialize_typed_bundle(
             front_end: FrontEndOptions {
                 with_semantic_diagnostics: false,
                 ..Default::default()
-
             },
             dependency_typing,
         },
@@ -256,17 +258,16 @@ fn run_tracked_typed_prepare(
         return Ok(front);
     }
 
-    let front = materialize_typed_bundle(
-        db,
-        resolved,
-        DependencyTypingPolicy::FullClosure,
-        pipeline,
-    )?;
+    let front =
+        materialize_typed_bundle(db, resolved, DependencyTypingPolicy::FullClosure, pipeline)?;
     typed_entry_cache()
         .lock()
         .expect("typed entry cache")
         .full_bundles
-        .insert(entry_key.to_string(), (typed_prepare_revision, front.clone()));
+        .insert(
+            entry_key.to_string(),
+            (typed_prepare_revision, front.clone()),
+        );
     Ok(front)
 }
 
@@ -305,12 +306,8 @@ fn run_tracked_entry_gate_prepare(
         return Ok(front);
     }
 
-    let front = materialize_typed_bundle(
-        db,
-        resolved,
-        DependencyTypingPolicy::EntryOnly,
-        pipeline,
-    )?;
+    let front =
+        materialize_typed_bundle(db, resolved, DependencyTypingPolicy::EntryOnly, pipeline)?;
     typed_entry_cache()
         .lock()
         .expect("typed entry cache")
@@ -336,18 +333,11 @@ pub fn typed_entry_state_with_db(
     let resolution = entry_resolution_with_db(db, resolved, options)?;
     let typed = if stale {
         Some(run_tracked_entry_gate_prepare(
-            db,
-            resolved,
-            &entry_key,
-            pipeline,
+            db, resolved, &entry_key, pipeline,
         )?)
     } else {
         Some(run_tracked_typed_prepare(
-            db,
-            resolved,
-            &entry_key,
-            options,
-            pipeline,
+            db, resolved, &entry_key, options, pipeline,
         )?)
     };
     Ok(TypedEntryState {

@@ -18,7 +18,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirArrayLiteralExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, CodegenError> {
-        let type_id = ctx.expr_type(node.id).ok_or(CodegenError::MissingExpressionType { span: node.span })?;
+        let type_id = ctx
+            .expr_type(node.id)
+            .ok_or(CodegenError::MissingExpressionType { span: node.span })?;
         let elem_type = match ctx.type_result.types.get(type_id) {
             Some(TypeInfo::Array(elem)) => *elem,
             _ => {

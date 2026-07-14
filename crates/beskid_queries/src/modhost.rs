@@ -3,9 +3,7 @@
 use beskid_analysis::mod_host::{
     ModHostInput, collect_mod_target_fingerprint, native_invoker_for_plan, run_through_generate,
 };
-use beskid_analysis::projects::{
-    build_compile_plan, discover_project_manifest_in_dir,
-};
+use beskid_analysis::projects::{build_compile_plan, discover_project_manifest_in_dir};
 
 use crate::db::Db;
 use crate::inputs::{FileText, ProjectSession};

@@ -318,38 +318,85 @@ fn resolved_item_tracked(
 ) -> SemanticQueryResult<ResolvedItem> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
-        let declaration = resolve_item_declaration(program, index, key.node, &path.path.node)?;
-        Some(ResolvedItem {
-            declaration: AstNodeKey {
-                node: declaration,
-                ..key
-            },
-        })
+        resolve_item_declaration(db, program, index, key, &path.path.node)
+            .map(|declaration| ResolvedItem { declaration })
     })
 }
 
 fn resolve_item_declaration(
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
-    reference: beskid_analysis::syntax::AstNodeId,
+    key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
-) -> Option<beskid_analysis::syntax::AstNodeId> {
-    let [segment] = path.segments.as_slice() else {
+) -> Option<AstNodeKey> {
+    if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
+        return None;
+    }
+    let (name, module_path) = path.segments.split_last()?;
+    if module_path.is_empty() {
+        return resolve_unqualified_item_declaration(program, index, key, &name.node.name.node.name);
+    }
+    let module_path = module_path
+        .iter()
+        .map(|segment| segment.node.name.node.name.clone())
+        .collect::<Vec<_>>();
+    let registry = db
+        .syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry");
+    let candidates = registry
+        .imports
+        .get(&(key.unit, key.generation))?
+        .iter()
+        .filter(|import| {
+            import.path == module_path
+                || (import.path.len() >= module_path.len()
+                    && import.path[import.path.len() - module_path.len()..] == module_path)
+        })
+        .map(|import| import.target)
+        .collect::<Vec<_>>();
+    let [target_unit] = candidates.as_slice() else {
         return None;
     };
-    if !segment.node.type_args.is_empty()
-        || resolve_lexical_declaration(
-            program,
-            index,
-            reference,
-            segment.node.name.node.name.as_str(),
-        )
-        .is_some()
-    {
+    let target_unit = *target_unit;
+    drop(registry);
+    let target_syntax = db.syntax_unit(target_unit)?;
+    if target_syntax.generation(db) != key.generation {
+        return None;
+    }
+    let target_program = target_syntax.expanded_program(db);
+    let target_index = target_syntax.syntax_index(db);
+    let candidates = target_index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+        .filter(|candidate| {
+            target_index
+                .node_at(&target_program, *candidate)
+                .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+                .is_some_and(|function| function.name.node.name == name.node.name.node.name)
+        })
+        .collect::<Vec<_>>();
+    let [declaration] = candidates.as_slice() else {
+        return None;
+    };
+    Some(AstNodeKey {
+        unit: target_unit,
+        generation: key.generation,
+        node: *declaration,
+    })
+}
+
+fn resolve_unqualified_item_declaration(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    name: &str,
+) -> Option<AstNodeKey> {
+    if resolve_lexical_declaration(program, index, key.node, name).is_some() {
         return None;
     }
 
-    let mut scope = module_scope(index, reference)?;
+    let mut scope = module_scope(index, key.node)?;
     loop {
         let candidates = index
             .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
@@ -359,12 +406,17 @@ fn resolve_item_declaration(
                         .node_at(program, *candidate)
                         .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
                         .is_some_and(|function| {
-                            function.name.node.name == segment.node.name.node.name
+                            function.name.node.name == name
                         })
             })
             .collect::<Vec<_>>();
         match candidates.as_slice() {
-            [declaration] => return Some(*declaration),
+            [declaration] => {
+                return Some(AstNodeKey {
+                    node: *declaration,
+                    ..key
+                });
+            }
             [] => {}
             _ => return None,
         }
@@ -751,7 +803,7 @@ fn call_lowering_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<CallLowering> {
     with_node(db, syntax, key, |program, index, node| {
-        call_lowering_for_node(program, index, key, node)
+        call_lowering_for_node(db, program, index, key, node)
     })?
     .transpose()
 }
@@ -785,6 +837,7 @@ fn call_arguments_tracked(
 }
 
 fn call_lowering_for_node(
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
@@ -794,8 +847,8 @@ fn call_lowering_for_node(
     Some(match &call.callee.node {
         expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
         beskid_analysis::syntax::Expression::Path(path) => {
-            resolve_item_declaration(program, index, key.node, &path.node.path.node)
-                .map(|node| CallLowering::Direct(AstNodeKey { node, ..key }))
+            resolve_item_declaration(db, program, index, key, &path.node.path.node)
+                .map(CallLowering::Direct)
                 .ok_or_else(|| SemanticError::unavailable("call_lowering"))
         }
         _ => Err(SemanticError::unavailable("call_lowering")),
@@ -1430,12 +1483,13 @@ fn direct_callees_tracked(
 ) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_node(db, syntax, key, |program, index, node| {
         node.of::<beskid_analysis::syntax::FunctionDefinition>()?;
-        Some(direct_callees_for_item(program, index, key))
+        Some(direct_callees_for_item(db, program, index, key))
     })?
     .transpose()
 }
 
 fn direct_callees_for_item(
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     item: AstNodeKey,
@@ -1449,6 +1503,7 @@ fn direct_callees_for_item(
             .node_at(program, call_id)
             .ok_or_else(|| SemanticError::unavailable("direct_callees"))?;
         let lowering = call_lowering_for_node(
+            db,
             program,
             index,
             AstNodeKey {

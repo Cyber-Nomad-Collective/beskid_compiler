@@ -1,10 +1,12 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::{CodegenContext, CodegenResult, LoweredFunction};
-use crate::lowering::expressions::export::{export_linker_name, read_export_metadata, validate_export_function};
+use crate::lowering::expressions::export::{
+    export_linker_name, read_export_metadata, validate_export_function,
+};
 use crate::lowering::locals::local_id_for_span;
-use crate::lowering::type_surface::named_type_names;
 use crate::lowering::lowerable::lower_node;
 use crate::lowering::node_context::NodeLoweringContext;
+use crate::lowering::type_surface::named_type_names;
 use crate::lowering::types::{
     map_type_id_to_clif, method_receiver_type_id, resolve_type_path_item_id_for_codegen,
     type_id_for_type,
@@ -483,11 +485,7 @@ pub(crate) fn owner_stem_for_generic_factory(
     ) {
         return None;
     }
-    owner_info
-        .name
-        .rsplit("::")
-        .next()
-        .map(str::to_string)
+    owner_info.name.rsplit("::").next().map(str::to_string)
 }
 
 pub(crate) fn mangle_generic_item_function(
@@ -525,13 +523,7 @@ pub(crate) fn generic_mapping_from_mangled(
     if type_ids.len() != generic_names.len() {
         return None;
     }
-    Some(
-        generic_names
-            .iter()
-            .cloned()
-            .zip(type_ids)
-            .collect(),
-    )
+    Some(generic_names.iter().cloned().zip(type_ids).collect())
 }
 
 fn substitute_type_id(
@@ -660,13 +652,7 @@ fn lower_function_with_name_body(
 
     let mut state = FunctionLoweringState::default();
     let param_values = builder.block_params(entry).to_vec();
-    for (index, (param, value)) in def
-        .node
-        .parameters
-        .iter()
-        .zip(param_values)
-        .enumerate()
-    {
+    for (index, (param, value)) in def.node.parameters.iter().zip(param_values).enumerate() {
         let local_id = local_id_for_span(
             resolution,
             param.node.name.span,
@@ -800,15 +786,13 @@ fn resolve_return_type_id(
     return_type: Option<&Spanned<HirType>>,
     signature_return: Option<TypeId>,
 ) -> Option<TypeId> {
-    if let Some(annotated) = return_type
-        .and_then(|ty| type_id_for_type(resolution, type_result, source_path, ty))
+    if let Some(annotated) =
+        return_type.and_then(|ty| type_id_for_type(resolution, type_result, source_path, ty))
     {
         return Some(annotated);
     }
     return_type
-        .and_then(|ty| {
-            fallback_applied_return_type(resolution, type_result, source_path, ty)
-        })
+        .and_then(|ty| fallback_applied_return_type(resolution, type_result, source_path, ty))
         .or_else(|| {
             signature_return.filter(|sig| {
                 !matches!(
@@ -840,31 +824,34 @@ fn fallback_applied_return_type(
         .collect();
     let mut arg_ids = Vec::with_capacity(last.node.type_args.len());
     for arg in &last.node.type_args {
-        let type_id = type_id_for_type(resolution, type_result, source_path, arg).or_else(|| {
-            match &arg.node {
-                HirType::Primitive(primitive) => {
-                    find_primitive_type_id(type_result, primitive.node)
-                }
-                HirType::Complex(path) => {
-                    let name = path.node.segments.last()?.node.name.node.name.as_str();
-                    match name {
-                        "i64" => find_primitive_type_id(type_result, HirPrimitiveType::I64),
-                        "string" => find_primitive_type_id(type_result, HirPrimitiveType::String),
-                        _ => find_named_type_by_leaf(type_result, name),
+        let type_id =
+            type_id_for_type(resolution, type_result, source_path, arg).or_else(|| {
+                match &arg.node {
+                    HirType::Primitive(primitive) => {
+                        find_primitive_type_id(type_result, primitive.node)
                     }
+                    HirType::Complex(path) => {
+                        let name = path.node.segments.last()?.node.name.node.name.as_str();
+                        match name {
+                            "i64" => find_primitive_type_id(type_result, HirPrimitiveType::I64),
+                            "string" => {
+                                find_primitive_type_id(type_result, HirPrimitiveType::String)
+                            }
+                            _ => find_named_type_by_leaf(type_result, name),
+                        }
+                    }
+                    _ => None,
                 }
-                _ => None,
-            }
-        })?;
+            })?;
         arg_ids.push(type_id);
     }
     if let Some(base) = resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
-        && let Some(applied) = find_applied_type_id_by_base_and_args(type_result, base, &arg_ids) {
-            return Some(applied);
-        }
-    find_applied_type_id_by_args(type_result, &arg_ids).or_else(|| {
-        find_applied_type_id_by_ok_arg(type_result, arg_ids.first().copied())
-    })
+        && let Some(applied) = find_applied_type_id_by_base_and_args(type_result, base, &arg_ids)
+    {
+        return Some(applied);
+    }
+    find_applied_type_id_by_args(type_result, &arg_ids)
+        .or_else(|| find_applied_type_id_by_ok_arg(type_result, arg_ids.first().copied()))
 }
 
 fn find_applied_type_id_by_base_and_args(
@@ -974,9 +961,9 @@ pub(crate) fn item_id_for_item_span(
             .items
             .iter()
             .find(|info| info.span == span && same_file_opt(info.source_path.as_ref(), Some(path)))
-        {
-            return Some(info.id);
-        }
+    {
+        return Some(info.id);
+    }
 
     let matches: Vec<_> = resolution
         .items

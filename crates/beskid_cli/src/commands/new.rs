@@ -141,7 +141,11 @@ pub struct UninstallArgs {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct RegistryConnectArgs {
-    #[arg(long, env = "BESKID_PCKG_URL", default_value = "https://pckg.beskid-lang.org")]
+    #[arg(
+        long,
+        env = "BESKID_PCKG_URL",
+        default_value = "https://pckg.beskid-lang.org"
+    )]
     pub registry_url: String,
 
     #[arg(long, env = "BESKID_PCKG_TOKEN")]

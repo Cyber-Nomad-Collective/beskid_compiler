@@ -10,8 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Make the exact installed ABI-v5 runtime kit the sole Engine, JIT, REPL, and in-process test runtime authority.
+- Require linked AOT artifacts to use one hash-validated ABI-v5 runtime kit while retaining runtime-free object emission.
+- Derive lambda capture environments, spawn operands, and manifest-owned runtime intrinsics from expanded AST/Salsa facts.
 - Add a generation-safe expanded-syntax to generated-ISLE adapter for production expression emission.
+- Emit zero-parameter parsed function bodies through syntax-only generated ISLE statement rules.
 
 ### Removed
+
+- Remove AOT prebuilt-archive and standalone fallbacks, runtime link profiles, and host-archive lookup.
 
 - Remove legacy Rust runtime registration, Engine-owned Rust runtime state, scheduler/TLS wrappers, and JIT `std`/`minimal` profile selection.

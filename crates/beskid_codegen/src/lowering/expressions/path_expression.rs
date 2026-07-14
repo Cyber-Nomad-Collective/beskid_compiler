@@ -52,7 +52,8 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                 let mut value = ctx.builder.use_var(var);
                 if segments.len() == 1 {
                     let field_name = segments[0].node.name.node.name.as_str();
-                    if let Some(current_type) = local_type_id(ctx.type_result, ctx.state, local_id) {
+                    if let Some(current_type) = local_type_id(ctx.type_result, ctx.state, local_id)
+                    {
                         let local_name = ctx
                             .resolution
                             .tables
@@ -72,13 +73,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                         ) else {
                             return Ok(Some(value));
                         };
-                        let item_id =
-                            struct_item_id(ctx.type_result, current_type).ok_or(
-                                CodegenError::UnsupportedNode {
-                                    span: node.node.path.span,
-                                    node: "member target type",
-                                },
-                            )?;
+                        let item_id = struct_item_id(ctx.type_result, current_type).ok_or(
+                            CodegenError::UnsupportedNode {
+                                span: node.node.path.span,
+                                node: "member target type",
+                            },
+                        )?;
                         let offsets = struct_field_offsets(
                             ctx.resolution,
                             ctx.type_result,
@@ -89,13 +89,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                             span: node.node.path.span,
                             node: "member offsets",
                         })?;
-                        let offset = offsets
-                            .get(field_name)
-                            .copied()
-                            .ok_or(CodegenError::UnsupportedNode {
+                        let offset = offsets.get(field_name).copied().ok_or(
+                            CodegenError::UnsupportedNode {
                                 span: node.node.path.span,
                                 node: "member offset",
-                            })?;
+                            },
+                        )?;
                         if field_name == "handle"
                             && is_fiber_handle_type(ctx.type_result, ctx.resolution, current_type)
                         {
@@ -107,8 +106,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                                 node: "member field clif type",
                             },
                         )?;
-                        let offset_val =
-                            ctx.builder.ins().iconst(pointer_type(), offset as i64);
+                        let offset_val = ctx.builder.ins().iconst(pointer_type(), offset as i64);
                         let addr = ctx.builder.ins().iadd(value, offset_val);
                         value = ctx.builder.ins().load(clif_ty, MemFlags::new(), addr, 0);
                         return Ok(Some(value));
@@ -133,12 +131,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirPathExpression {
                         item_id,
                         ctx.codegen.current_source_path.as_ref(),
                     )
-                    .ok_or(
-                        CodegenError::UnsupportedNode {
-                            span: segment.span,
-                            node: "member offsets",
-                        },
-                    )?;
+                    .ok_or(CodegenError::UnsupportedNode {
+                        span: segment.span,
+                        node: "member offsets",
+                    })?;
                     let field_name = segment.node.name.node.name.as_str();
                     if field_name == "handle"
                         && is_fiber_handle_type(ctx.type_result, ctx.resolution, current_type)

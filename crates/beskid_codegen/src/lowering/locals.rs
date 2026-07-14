@@ -36,10 +36,7 @@ pub(crate) fn call_kind_for_call(
     type_result: &TypeResult,
     call: &Spanned<beskid_analysis::hir::HirCallExpression>,
 ) -> Option<CallLoweringKind> {
-    type_result
-        .lowering
-        .call_kind_at(call.id)
-        .copied()
+    type_result.lowering.call_kind_at(call.id).copied()
 }
 
 pub(crate) fn require_expr_type(
@@ -86,8 +83,12 @@ pub(crate) fn struct_literal_type_id(
         .iter()
         .map(|segment| segment.node.name.node.name.clone())
         .collect();
-    crate::lowering::types::resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
-        .and_then(|item_id| type_id_for_item(type_result, item_id))
+    crate::lowering::types::resolve_type_path_item_id_for_codegen(
+        resolution,
+        type_result,
+        &segments,
+    )
+    .and_then(|item_id| type_id_for_item(type_result, item_id))
 }
 
 pub(crate) fn resolved_value_at(

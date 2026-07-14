@@ -114,9 +114,8 @@ fn resolve_manifest_path(args: &TestArgs) -> Result<PathBuf> {
         {
             return Ok(project.clone());
         }
-        if let Some(manifest) =
-            beskid_analysis::projects::discover_project_manifest_in_dir(project)
-                .map_err(anyhow::Error::from)?
+        if let Some(manifest) = beskid_analysis::projects::discover_project_manifest_in_dir(project)
+            .map_err(anyhow::Error::from)?
         {
             return Ok(manifest);
         }
