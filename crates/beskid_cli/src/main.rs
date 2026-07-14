@@ -3,7 +3,6 @@
 pub mod cli;
 pub mod commands;
 pub mod project_args;
-pub mod runtime_profile;
 
 fn main() {
     if let Err(report) = cli::run() {

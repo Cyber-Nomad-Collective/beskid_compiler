@@ -36,21 +36,11 @@ pub enum ProjectTargetKind {
     Test,
 }
 
-/// Optimization profile for selecting a matching prebuilt runtime archive.
+/// Optimization profile for selecting a matching installed runtime kit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildProfile {
     Debug,
     Release,
-}
-
-/// Which runtime/host artifacts to link for AOT and JIT startup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RuntimeLinkProfile {
-    /// Language runtime only (`beskid_runtime`); host dispatch tags trap.
-    Minimal,
-    /// Language runtime plus `beskid_host` (default).
-    #[default]
-    Std,
 }
 
 /// Hint for shared-library link lines (`-Wl,-Bstatic` / `-Wl,-Bdynamic`); ignored for other kinds.
@@ -61,19 +51,12 @@ pub enum LinkMode {
     PreferDynamic,
 }
 
-/// How the AOT pipeline obtains a runtime static library to link against.
+/// Identity of the one exact ABI-v5 runtime kit linked into a final artifact.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RuntimeStrategy {
-    UseInstalledKit {
-        prefix: PathBuf,
-        target: TargetMetadata,
-        profile: RuntimeKitProfile,
-    },
-    UsePrebuilt {
-        path: PathBuf,
-        abi_version: u32,
-    },
-    Standalone,
+pub struct RuntimeKitRequest {
+    pub prefix: PathBuf,
+    pub target: TargetMetadata,
+    pub profile: RuntimeKitProfile,
 }
 
 /// Which symbols from the object file participate in export lists / entrypoint checks.
@@ -96,8 +79,8 @@ pub struct AotBuildRequest {
     pub entrypoint: String,
     pub export_policy: ExportPolicy,
     pub link_mode: LinkMode,
-    pub runtime: RuntimeStrategy,
-    pub runtime_link_profile: RuntimeLinkProfile,
+    /// Required for linked output; object-only emission deliberately has no runtime dependency.
+    pub runtime: Option<RuntimeKitRequest>,
     pub verbose_link: bool,
     /// Logical library names (for example `"c"`, `"m"`) passed as `-l<name>` to the host linker.
     pub external_libraries: Vec<String>,
@@ -119,7 +102,6 @@ impl std::fmt::Debug for AotBuildRequest {
             .field("export_policy", &self.export_policy)
             .field("link_mode", &self.link_mode)
             .field("runtime", &self.runtime)
-            .field("runtime_link_profile", &self.runtime_link_profile)
             .field("verbose_link", &self.verbose_link)
             .field("pipeline", &self.pipeline.is_some())
             .finish_non_exhaustive()
@@ -130,9 +112,8 @@ impl AotBuildRequest {
     /// Build request with defaults shared by integration tests and ad hoc tooling runs.
     ///
     /// Sets [`BuildProfile::Debug`], [`ExportPolicy::PublicOnly`], [`LinkMode::Auto`],
-    /// bundled prebuilt [`RuntimeStrategy::UsePrebuilt`], no pipeline observer, and no explicit
-    /// target triple or secondary object path. Override any field with struct update syntax, for
-    /// example `AotBuildRequest { runtime: RuntimeStrategy::Standalone, ..AotBuildRequest::with_defaults(...) }`.
+    /// exact installed ABI-v5 kit for linked outputs, no pipeline observer, and no explicit
+    /// target triple or secondary object path. Object-only output has no runtime dependency.
     pub fn with_defaults(
         artifact: CodegenArtifact,
         output_kind: BuildOutputKind,
@@ -140,17 +121,11 @@ impl AotBuildRequest {
         entrypoint: impl Into<String>,
     ) -> Self {
         let profile = BuildProfile::Debug;
-        let runtime = crate::bundled::default_runtime_strategy(
-            profile,
-            None,
-            RuntimeLinkProfile::Std,
-        )
-        .unwrap_or_else(|err| {
-                panic!(
-                    "with_defaults requires a prebuilt runtime archive (build beskid_runtime_bridge): {err}"
-                )
-            },
-        );
+        let runtime = (output_kind != BuildOutputKind::ObjectOnly).then(|| {
+            crate::bundled::default_runtime_strategy(profile, None).unwrap_or_else(|err| {
+                panic!("with_defaults requires an exact installed ABI-v5 runtime kit: {err}")
+            })
+        });
         Self {
             artifact,
             output_kind,
@@ -162,7 +137,6 @@ impl AotBuildRequest {
             export_policy: ExportPolicy::PublicOnly,
             link_mode: LinkMode::Auto,
             runtime,
-            runtime_link_profile: RuntimeLinkProfile::Std,
             verbose_link: false,
             external_libraries: Vec::new(),
             library_search_paths: Vec::new(),
@@ -311,7 +285,10 @@ fn prepare_runtime_stage(req: &AotBuildRequest) -> AotResult<crate::runtime::Run
     let obs = req.pipeline.as_deref();
     observe_phase_result(obs, AOT_RUNTIME, || {
         prepare_runtime(&RuntimeBuildRequest {
-            strategy: req.runtime.clone(),
+            kit: req
+                .runtime
+                .clone()
+                .expect("validated linked output runtime kit"),
         })
     })
 }
@@ -328,7 +305,7 @@ fn link_stage(
             output_kind: req.output_kind,
             output_path: req.output_path.clone(),
             object_path: object_stage.object_path.clone(),
-            runtime_staticlib: runtime.staticlib_path.clone(),
+            runtime_staticlib: Some(runtime.staticlib_path.clone()),
             host_staticlib: None,
             entrypoint_symbol: native_link_entrypoint(&req.entrypoint).to_owned(),
             exported_symbols: object_stage.exported_symbols.clone(),
@@ -351,6 +328,11 @@ fn validate_request(req: &AotBuildRequest) -> AotResult<()> {
     if requires_entrypoint(req.output_kind) && req.entrypoint.trim().is_empty() {
         return Err(AotError::InvalidRequest {
             message: "entrypoint must not be empty".to_owned(),
+        });
+    }
+    if req.output_kind != BuildOutputKind::ObjectOnly && req.runtime.is_none() {
+        return Err(AotError::InvalidRequest {
+            message: "linked output requires an exact installed ABI-v5 runtime kit".to_owned(),
         });
     }
     Ok(())
@@ -433,13 +415,36 @@ mod with_defaults_tests {
         assert_eq!(req.entrypoint, "Main");
         assert_eq!(req.export_policy, ExportPolicy::PublicOnly);
         assert_eq!(req.link_mode, LinkMode::Auto);
-        assert!(matches!(
-            req.runtime,
-            RuntimeStrategy::UseInstalledKit { .. }
-        ));
+        assert!(req.runtime.is_none());
         assert!(!req.verbose_link);
         assert!(req.external_libraries.is_empty());
         assert!(req.library_search_paths.is_empty());
         assert!(req.pipeline.is_none());
+    }
+
+    #[test]
+    fn object_only_defaults_do_not_require_a_runtime_kit() {
+        let req = AotBuildRequest::with_defaults(
+            CodegenArtifact::default(),
+            BuildOutputKind::ObjectOnly,
+            PathBuf::from("/tmp/out.o"),
+            "Main",
+        );
+
+        assert!(req.runtime.is_none());
+    }
+
+    #[test]
+    fn linked_artifacts_require_an_exact_runtime_kit() {
+        let mut req = AotBuildRequest::with_defaults(
+            CodegenArtifact::default(),
+            BuildOutputKind::StaticLib,
+            PathBuf::from("/tmp/out.a"),
+            "Main",
+        );
+        req.runtime = None;
+
+        let error = validate_request(&req).expect_err("linked output must require a runtime kit");
+        assert!(matches!(error, AotError::InvalidRequest { .. }));
     }
 }

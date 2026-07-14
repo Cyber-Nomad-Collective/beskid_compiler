@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 use beskid_codegen::CodegenArtifact;
 
 use crate::api::{
-    AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, RuntimeStrategy, build,
+    AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, RuntimeKitRequest,
+    build,
 };
 use crate::error::{AotError, AotResult};
 use crate::target::{detect_target, output_filename};
@@ -22,7 +23,7 @@ pub struct AotRunRequest {
     pub artifact: CodegenArtifact,
     pub entrypoint: String,
     pub output_dir: PathBuf,
-    pub runtime: RuntimeStrategy,
+    pub runtime: RuntimeKitRequest,
 }
 
 /// Linked executable path plus captured subprocess outcome.
@@ -64,8 +65,7 @@ pub fn build_and_run(request: AotRunRequest) -> AotResult<AotRunResult> {
         entrypoint: request.entrypoint,
         export_policy: ExportPolicy::PublicOnly,
         link_mode: LinkMode::Auto,
-        runtime: request.runtime,
-        runtime_link_profile: crate::api::RuntimeLinkProfile::Std,
+        runtime: Some(request.runtime),
         verbose_link: false,
         external_libraries: Vec::new(),
         library_search_paths: Vec::new(),

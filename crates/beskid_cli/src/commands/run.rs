@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
-use crate::runtime_profile::CliRuntimeProfile;
 use anyhow::Result;
 use beskid_aot::{
     AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, build,
@@ -37,10 +36,6 @@ pub struct RunArgs {
     /// Disable animated progress and graph output
     #[arg(long)]
     pub plain: bool,
-
-    /// Runtime link profile: `std` links `beskid_host`; `minimal` is language runtime only
-    #[arg(long, value_enum, default_value_t = CliRuntimeProfile::Std)]
-    pub runtime_profile: CliRuntimeProfile,
 }
 
 /// Resolve, AOT-link, and run `args.entrypoint` in a subprocess with pipeline progress on stderr when enabled.
@@ -92,12 +87,8 @@ pub fn execute(args: RunArgs) -> Result<()> {
         &target,
     ));
 
-    let runtime = default_runtime_strategy(
-        BuildProfile::Debug,
-        None,
-        args.runtime_profile.into(),
-    )
-    .map_err(|err| anyhow::anyhow!("{err}"))?;
+    let runtime = default_runtime_strategy(BuildProfile::Debug, None)
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
 
     let link_inputs = link_libraries_for_artifact(&artifact, resolved.compile_plan.as_ref());
     let pipeline_arc: Arc<dyn PipelineObserver> = session.pipeline_arc();
@@ -111,8 +102,7 @@ pub fn execute(args: RunArgs) -> Result<()> {
         entrypoint: args.entrypoint.clone(),
         export_policy: ExportPolicy::PublicOnly,
         link_mode: LinkMode::Auto,
-        runtime,
-        runtime_link_profile: args.runtime_profile.into(),
+        runtime: Some(runtime),
         verbose_link: false,
         external_libraries: Vec::new(),
         library_search_paths: Vec::new(),
@@ -124,15 +114,13 @@ pub fn execute(args: RunArgs) -> Result<()> {
     let exe_path = build_result.final_path.unwrap_or(exe_path);
 
     let run_result = run_linked_executable(&exe_path).map_err(|err| anyhow::anyhow!("{err}"))?;
-    session
-        .pipeline()
-        .finish_session_with_summary(
-            "Run complete",
-            Some(
-                CommandSummary::plain("Run", "Run complete")
-                    .with_stat("exit", run_result.exit_code.to_string()),
-            ),
-        );
+    session.pipeline().finish_session_with_summary(
+        "Run complete",
+        Some(
+            CommandSummary::plain("Run", "Run complete")
+                .with_stat("exit", run_result.exit_code.to_string()),
+        ),
+    );
 
     if !run_result.stdout.is_empty() {
         io::stdout().write_all(&run_result.stdout)?;

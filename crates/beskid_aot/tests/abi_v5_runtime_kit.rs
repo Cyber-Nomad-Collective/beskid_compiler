@@ -5,7 +5,7 @@ use beskid_abi::runtime_kit::{
     BuildProfile as KitProfile, RuntimeKitBuildRequest, build_runtime_kit,
 };
 use beskid_abi::runtime_source::canonical_runtime_sources;
-use beskid_aot::api::{BuildProfile, RuntimeLinkProfile, RuntimeStrategy};
+use beskid_aot::api::BuildProfile;
 use beskid_aot::bundled::{installed_runtime_strategy, resolve_installed_runtime_archive};
 use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
 
@@ -50,19 +50,17 @@ fn aot_preparation_resolves_only_the_validated_static_artifact_and_allowlist() {
         temp.path(),
         BuildProfile::Debug,
         Some("x86_64-unknown-linux-gnu"),
-        RuntimeLinkProfile::Std,
     )
     .expect("exact kit strategy");
-    let prepared = prepare_runtime(&RuntimeBuildRequest { strategy }).expect("validated kit");
+    let prepared = prepare_runtime(&RuntimeBuildRequest { kit: strategy }).expect("validated kit");
     let resolved = resolve_installed_runtime_archive(
         temp.path(),
         BuildProfile::Debug,
         Some("x86_64-unknown-linux-gnu"),
-        RuntimeLinkProfile::Std,
     )
     .expect("validated static library");
 
-    assert_eq!(prepared.staticlib_path.as_deref(), Some(resolved.as_path()));
+    assert_eq!(prepared.staticlib_path, resolved);
     assert!(
         prepared
             .exported_symbols
@@ -83,48 +81,33 @@ fn tampered_or_wrong_profile_kits_fail_without_archive_fallback() {
         temp.path(),
         BuildProfile::Debug,
         Some("x86_64-unknown-linux-gnu"),
-        RuntimeLinkProfile::Std,
     )
     .unwrap();
-    let RuntimeStrategy::UseInstalledKit { ref prefix, .. } = debug else {
-        panic!("default installed strategy must retain kit identity");
-    };
-    assert_eq!(prefix, temp.path());
+    assert_eq!(debug.prefix, temp.path());
 
     let static_path = temp
         .path()
         .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu/debug/static/libbeskid_runtime.a");
     fs::write(&static_path, b"tampered").unwrap();
-    assert!(prepare_runtime(&RuntimeBuildRequest { strategy: debug }).is_err());
+    assert!(prepare_runtime(&RuntimeBuildRequest { kit: debug }).is_err());
 
     let release = installed_runtime_strategy(
         temp.path(),
         BuildProfile::Release,
         Some("x86_64-unknown-linux-gnu"),
-        RuntimeLinkProfile::Std,
     )
     .unwrap();
-    assert!(prepare_runtime(&RuntimeBuildRequest { strategy: release }).is_err());
+    assert!(prepare_runtime(&RuntimeBuildRequest { kit: release }).is_err());
 }
 
 #[test]
-fn legacy_minimal_profile_and_noncanonical_targets_are_rejected() {
+fn noncanonical_targets_are_rejected() {
     let temp = tempfile::tempdir().unwrap();
     assert!(
         installed_runtime_strategy(
             temp.path(),
             BuildProfile::Debug,
-            Some("x86_64-unknown-linux-gnu"),
-            RuntimeLinkProfile::Minimal,
-        )
-        .is_err()
-    );
-    assert!(
-        installed_runtime_strategy(
-            temp.path(),
-            BuildProfile::Debug,
             Some("x86_64-unknown-linux-musl"),
-            RuntimeLinkProfile::Std,
         )
         .is_err()
     );
@@ -138,8 +121,7 @@ fn internally_valid_kit_for_another_runtime_source_is_rejected() {
         temp.path(),
         BuildProfile::Debug,
         Some("x86_64-unknown-linux-gnu"),
-        RuntimeLinkProfile::Std,
     )
     .unwrap();
-    assert!(prepare_runtime(&RuntimeBuildRequest { strategy }).is_err());
+    assert!(prepare_runtime(&RuntimeBuildRequest { kit: strategy }).is_err());
 }

@@ -12,14 +12,12 @@ use beskid_abi::{
     SYM_DYNAMIC_CAST_CHECKED, SYM_DYNAMIC_CELL_CREATE, SYM_DYNAMIC_CELL_WRAP, SYM_DYNAMIC_MAP_AOT,
     SYM_DYNAMIC_MAP_FALLBACK, SYM_DYNAMIC_OBJECT_ALLOC, SYM_FIBER_YIELD, SYM_GC_REGISTER_ROOT,
     SYM_GC_ROOT_HANDLE, SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER,
-    SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE,
-    SYM_INTEROP_DISPATCH_I64, SYM_PANIC,
-    SYM_PANIC_STR, SYM_RUNTIME_PREEMPT_CHECK, SYM_STR_LEN, SYM_SYSCALL_READ, SYM_SYSCALL_WRITE,
-    TAG_FIBER_PROCESSOR_COUNT, TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, TAG_FS_WRITE_TEXT,
-    dispatch_route_for_symbol, is_dispatch_symbol,
+    SYM_INTEROP_DISPATCH_I64, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
+    SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR, SYM_RUNTIME_PREEMPT_CHECK, SYM_STR_LEN,
+    SYM_SYSCALL_READ, SYM_SYSCALL_WRITE, TAG_FIBER_PROCESSOR_COUNT,
+    TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, TAG_FS_WRITE_TEXT, dispatch_route_for_symbol,
+    is_dispatch_symbol,
 };
-use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
-use beskid_aot::{AotError, RuntimeStrategy};
 use beskid_pipeline::phases::{
     MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE, SEMANTIC_SNAPSHOT,
     SYNTAX_GENERATION,
@@ -216,40 +214,6 @@ fn mvp_corelib_ops_route_through_dispatch_or_kernel() {
         RUNTIME_EXPORT_SYMBOLS.contains(&SYM_INTEROP_DISPATCH_PTR),
         "kernel must export ptr dispatch entrypoint"
     );
-}
-
-#[test]
-fn prebuilt_runtime_rejects_wrong_abi_version() {
-    let path = PathBuf::from("/tmp/nonexistent-runtime-archive.a");
-    let request = RuntimeBuildRequest {
-        strategy: RuntimeStrategy::UsePrebuilt {
-            path,
-            abi_version: BESKID_RUNTIME_ABI_VERSION + 1,
-        },
-    };
-
-    let err = prepare_runtime(&request).expect_err("expected ABI mismatch failure");
-    assert!(matches!(
-        err,
-        AotError::RuntimeAbiMismatch {
-            expected,
-            actual
-        } if expected == BESKID_RUNTIME_ABI_VERSION && actual == BESKID_RUNTIME_ABI_VERSION + 1
-    ));
-}
-
-#[test]
-fn prebuilt_runtime_missing_archive_fails() {
-    let path = PathBuf::from("/tmp/missing-beskid-runtime-archive.a");
-    let request = RuntimeBuildRequest {
-        strategy: RuntimeStrategy::UsePrebuilt {
-            path: path.clone(),
-            abi_version: BESKID_RUNTIME_ABI_VERSION,
-        },
-    };
-
-    let err = prepare_runtime(&request).expect_err("expected missing archive failure");
-    assert!(matches!(err, AotError::RuntimeArchiveMissing { path: missing } if missing == path));
 }
 
 #[test]
