@@ -17,6 +17,7 @@ graphs-tui = { workspace = true }
 beskid_pckg = { path = "../beskid_pckg" }
 beskid_template = { path = "../beskid_template" }
 beskid_lsp = { path = "../beskid_lsp" }
+beskid_up = { path = "../beskid_up" }
 beskid_repl = { path = "../beskid_repl" }
 bsol = { workspace = true }
 bsol-beskid-bridge = { workspace = true }
