@@ -74,11 +74,11 @@ pub use persistence::{
     SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_manifest,
 };
 pub use semantic_contract::{
-    AstNodeKey, CallLowering, CastIntent, ClosureCapture, ClosureEnvironment, ControlFlow,
+    AstNodeKey, CallLowering, CastIntent, ClosureCapture, ClosureEnvironment, CompletionCandidate, CompletionContext, CompletionKind, ControlFlow,
     IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, OperatorFact, ResolvedItem,
     ResolvedLocal, RuntimeIntrinsic, SemanticError, SemanticQueryResult, SemanticTypeId,
     SourceSpan, SourceUnitId, SpawnTarget, TypedProgram, call_arguments, call_lowering,
-    cast_intents, child_nodes, closure_environment, control_flow, direct_callees, item_body,
+    cast_intents, child_nodes, closure_environment, completion_candidates, control_flow, direct_callees, item_body,
     item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, spawn_target,
 };

@@ -9,11 +9,11 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSnapshot};
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, ClosureCapture, LocalSlot, OperatorFact, ProjectSession,
+    AstNodeKey, BeskidDatabase, ClosureCapture, CompletionContext, LocalSlot, OperatorFact, ProjectSession,
     SemanticError, SourceUnitId, SyntaxGenerationId, call_arguments, call_lowering, cast_intents,
     child_nodes, closure_environment, control_flow, direct_callees, item_body, item_signature,
     literal_fact, local_slot, node_kind, node_span, node_type, operator_fact, reachable_items,
-    resolved_item, resolved_local, runtime_intrinsic, spawn_target,
+    completion_candidates, resolved_item, resolved_local, runtime_intrinsic, spawn_target,
     build_typed_program,
 };
 
@@ -116,6 +116,27 @@ fn key_at_start(
 }
 
 #[test]
+fn completion_candidates_are_generation_safe_and_deterministic() {
+    let source = "i32 Zebra() { return 0; } i32 Alpha() { return Zebra(); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let program = key(unit, generation, &index, NodeKind::Program, 0);
+    let cursor = source.find("Zebra();").expect("call");
+    let candidates = completion_candidates(&db, program, CompletionContext {
+        cursor,
+        replacement_start: cursor,
+        replacement_end: cursor + 1,
+    }).expect("completion").expect("current generation");
+    assert_eq!(candidates.iter().map(|candidate| candidate.label.as_ref()).collect::<Vec<_>>(), vec!["Zebra"]);
+    assert_eq!((candidates[0].replacement_start, candidates[0].replacement_end), (cursor, cursor + 1));
+    assert_eq!(completion_candidates(&db, AstNodeKey { generation: SyntaxGenerationId(generation.0 - 1), ..program }, CompletionContext { cursor, replacement_start: cursor, replacement_end: cursor }), Ok(None));
+    let unicode = "i32 Main() { return \"é\"; }";
+    let (db, _project, unit, generation, index) = setup(unicode);
+    let program = key(unit, generation, &index, NodeKind::Program, 0);
+    let invalid = unicode.find('é').expect("unicode") + 1;
+    assert_eq!(completion_candidates(&db, program, CompletionContext { cursor: invalid, replacement_start: invalid, replacement_end: invalid }), Ok(None));
+}
+
+#[test]
 fn qualified_import_resolution_uses_registered_dependency_syntax() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/qualified-import/project/src");
@@ -183,6 +204,14 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
         call_lowering(&db, call).expect("qualified direct call"),
         Some(beskid_queries::CallLowering::Direct(declaration))
     );
+    let member_cursor = main_source.find("Tools.Helper").expect("qualified call") + "Tools.".len();
+    let completion_key = key(main_unit, generation, &main_index, NodeKind::Program, 0);
+    let members = completion_candidates(&db, completion_key, CompletionContext {
+        cursor: member_cursor,
+        replacement_start: member_cursor,
+        replacement_end: member_cursor + "Helper".len(),
+    }).expect("member completion").expect("member candidates");
+    assert_eq!(members.iter().map(|candidate| candidate.label.as_ref()).collect::<Vec<_>>(), vec!["Helper"]);
     assert_eq!(
         resolved_item(
             &db,

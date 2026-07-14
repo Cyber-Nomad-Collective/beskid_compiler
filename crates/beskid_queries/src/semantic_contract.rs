@@ -211,6 +211,29 @@ pub struct ItemSignature {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RuntimeIntrinsic(pub u32);
 
+/// A deterministic completion replacement range in the current source unit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CompletionContext {
+    pub cursor: usize,
+    pub replacement_start: usize,
+    pub replacement_end: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CompletionKind {
+    Function,
+    Module,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CompletionCandidate {
+    pub label: Arc<str>,
+    pub kind: CompletionKind,
+    pub detail: Option<Arc<str>>,
+    pub replacement_start: usize,
+    pub replacement_end: usize,
+}
+
 pub type IndexedNodeKind = beskid_analysis::syntax_query::NodeKind;
 pub type SourceSpan = beskid_analysis::syntax::SpanInfo;
 
@@ -1617,6 +1640,64 @@ fn with_node<T>(
 /// contain no item fact. Stale, unregistered, and non-path nodes also contain no fact.
 pub fn resolved_item(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ResolvedItem> {
     with_registered_syntax(db, key, resolved_item_tracked)
+}
+
+/// Enumerate exact syntax-backed callable completion candidates for one current generation.
+///
+/// Supports imported module members after a dot and top-level functions in the current unit.
+/// Local, type, field, and inferred receiver candidates are deliberately unavailable.
+pub fn completion_candidates(
+    db: &dyn Db,
+    key: AstNodeKey,
+    context: CompletionContext,
+) -> SemanticQueryResult<Arc<[CompletionCandidate]>> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None); };
+    if !syntax.accepts_key(db, key) { return Ok(None); }
+    let Some(file) = db
+        .file_registry()
+        .lock()
+        .expect("file registry")
+        .get(key.unit.path(db))
+        .copied() else { return Ok(None); };
+    let source = file.text(db);
+    if context.cursor > source.len()
+        || context.replacement_start > context.replacement_end
+        || context.replacement_end > source.len()
+        || !source.is_char_boundary(context.cursor)
+        || !source.is_char_boundary(context.replacement_start)
+        || !source.is_char_boundary(context.replacement_end)
+    { return Ok(None); }
+    let prefix = &source[context.replacement_start..context.replacement_end];
+    let before = &source[..context.replacement_start];
+    let mut candidates = Vec::new();
+    if before.ends_with('.') {
+        let alias = before[..before.len() - 1].rsplit(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_').next().unwrap_or_default();
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let Some(target) = registry.imports.get(&(key.unit, key.generation)).and_then(|imports| imports.iter().find(|import| import.path.last().is_some_and(|segment| segment == alias))).map(|import| import.target) else { return Ok(None); };
+        drop(registry);
+        let Some(target_syntax) = db.syntax_unit(target) else { return Ok(None); };
+        if target_syntax.generation(db) != key.generation { return Ok(None); }
+        let program = target_syntax.expanded_program(db);
+        let index = target_syntax.syntax_index(db);
+        for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
+            if let Some(function) = index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>()) {
+                let label: Arc<str> = Arc::from(function.name.node.name.as_str());
+                if label.starts_with(prefix) { candidates.push(CompletionCandidate { label, kind: CompletionKind::Function, detail: None, replacement_start: context.replacement_start, replacement_end: context.replacement_end }); }
+            }
+        }
+    } else {
+        let program = syntax.expanded_program(db);
+        let index = syntax.syntax_index(db);
+        for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
+            if let Some(function) = index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>()) {
+                let label: Arc<str> = Arc::from(function.name.node.name.as_str());
+                if label.starts_with(prefix) { candidates.push(CompletionCandidate { label, kind: CompletionKind::Function, detail: None, replacement_start: context.replacement_start, replacement_end: context.replacement_end }); }
+            }
+        }
+    }
+    candidates.sort_by(|left, right| left.label.cmp(&right.label));
+    candidates.dedup_by(|left, right| left.label == right.label && left.kind == right.kind);
+    Ok(Some(candidates.into()))
 }
 
 /// Resolve a single-segment value path to its generation-safe lexical declaration key.
