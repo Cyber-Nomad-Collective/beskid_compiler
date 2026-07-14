@@ -97,6 +97,24 @@ pub enum CallKind {
     RuntimeIntrinsic,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DirectCallee(u32);
+
+impl DirectCallee {
+    pub const fn new(index: u32) -> Self {
+        Self(index)
+    }
+
+    pub const fn index(self) -> u32 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallImportError {
+    UnknownCallee,
+}
+
 pub type Unit = ();
 
 #[allow(
@@ -158,7 +176,10 @@ pub trait NodeFacts {
         None
     }
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type>;
-    fn call_target(&self, _key: AstNodeKey) -> Option<FuncRef> {
+    fn direct_callee(&self, _key: AstNodeKey) -> Option<DirectCallee> {
+        None
+    }
+    fn call_signature(&self, _key: AstNodeKey) -> Option<Signature> {
         None
     }
     fn call_arguments(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -179,13 +200,31 @@ pub trait StringInterner {
     ) -> Option<Value>;
 }
 
+/// Caller-local import of a semantic callee after generated ISLE selection.
+pub trait CallImporter {
+    fn import(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        callee: DirectCallee,
+        signature: &Signature,
+    ) -> Result<FuncRef, CallImportError>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoweringErrorKind {
+    MissingRuleOrFact,
+    UnknownCallee(DirectCallee),
+}
+
 /// Thin host for generated ISLE selection and stock CLIF instruction construction.
 pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     builder: &'builder mut FunctionBuilder<'function>,
     facts: &'facts dyn NodeFacts,
     string_interner: Option<&'interner mut dyn StringInterner>,
+    call_importer: Option<&'interner mut dyn CallImporter>,
     loop_stack: Vec<LoopTargets>,
     locals: HashMap<u32, (Variable, Type)>,
+    pending_error: Option<LoweringErrorKind>,
 }
 
 impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'facts, 'interner> {
@@ -197,8 +236,10 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             builder,
             facts,
             string_interner: None,
+            call_importer: None,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            pending_error: None,
         }
     }
 
@@ -211,8 +252,43 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             builder,
             facts,
             string_interner: Some(string_interner),
+            call_importer: None,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            pending_error: None,
+        }
+    }
+
+    pub fn new_with_call_importer(
+        builder: &'builder mut FunctionBuilder<'function>,
+        facts: &'facts dyn NodeFacts,
+        call_importer: &'interner mut dyn CallImporter,
+    ) -> Self {
+        Self {
+            builder,
+            facts,
+            string_interner: None,
+            call_importer: Some(call_importer),
+            loop_stack: Vec::new(),
+            locals: HashMap::new(),
+            pending_error: None,
+        }
+    }
+
+    fn new_with_services(
+        builder: &'builder mut FunctionBuilder<'function>,
+        facts: &'facts dyn NodeFacts,
+        string_interner: Option<&'interner mut dyn StringInterner>,
+        call_importer: Option<&'interner mut dyn CallImporter>,
+    ) -> Self {
+        Self {
+            builder,
+            facts,
+            string_interner,
+            call_importer,
+            loop_stack: Vec::new(),
+            locals: HashMap::new(),
+            pending_error: None,
         }
     }
 
@@ -245,11 +321,35 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
     }
 
     fn direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
-        let function = self.facts.call_target(key)?;
+        let callee = self.facts.direct_callee(key)?;
+        let signature = self.facts.call_signature(key)?;
+        let result_type = self.facts.scalar_type(key)?;
+        if signature.returns.len() != 1 || signature.returns[0].value_type != result_type {
+            return None;
+        }
+        let function =
+            match self
+                .call_importer
+                .as_deref_mut()?
+                .import(self.builder, callee, &signature)
+            {
+                Ok(function) => function,
+                Err(CallImportError::UnknownCallee) => {
+                    self.pending_error = Some(LoweringErrorKind::UnknownCallee(callee));
+                    return None;
+                }
+            };
         let argument_keys = self.facts.call_arguments(key)?;
+        if argument_keys.len() != signature.params.len() {
+            return None;
+        }
         let mut arguments = Vec::with_capacity(argument_keys.len());
-        for argument in argument_keys {
-            arguments.push(generated::constructor_lower_expression(self, argument)?);
+        for (argument, parameter) in argument_keys.into_iter().zip(&signature.params) {
+            let value = generated::constructor_lower_expression(self, argument)?;
+            if self.builder.func.dfg.value_type(value) != parameter.value_type {
+                return None;
+            }
+            arguments.push(value);
         }
         let call = self.builder.ins().call(function, &arguments);
         self.builder.inst_results(call).first().copied()
@@ -537,11 +637,16 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LoweringError {
     key: AstNodeKey,
+    kind: LoweringErrorKind,
 }
 
 impl LoweringError {
     pub fn key(self) -> AstNodeKey {
         self.key
+    }
+
+    pub fn kind(self) -> LoweringErrorKind {
+        self.kind
     }
 }
 
@@ -549,14 +654,26 @@ pub fn lower_expression(
     context: &mut IsleContext<'_, '_, '_, '_>,
     key: AstNodeKey,
 ) -> Result<Value, LoweringError> {
-    generated::constructor_lower_expression(context, key).ok_or(LoweringError { key })
+    generated::constructor_lower_expression(context, key).ok_or_else(|| LoweringError {
+        key,
+        kind: context
+            .pending_error
+            .take()
+            .unwrap_or(LoweringErrorKind::MissingRuleOrFact),
+    })
 }
 
 pub fn lower_statement(
     context: &mut IsleContext<'_, '_, '_, '_>,
     key: AstNodeKey,
 ) -> Result<(), LoweringError> {
-    generated::constructor_lower_statement(context, key).ok_or(LoweringError { key })
+    generated::constructor_lower_statement(context, key).ok_or_else(|| LoweringError {
+        key,
+        kind: context
+            .pending_error
+            .take()
+            .unwrap_or(LoweringErrorKind::MissingRuleOrFact),
+    })
 }
 
 /// ISA-owned signature construction shared by every generated function kind.
@@ -595,7 +712,7 @@ impl<'isa> FunctionEmitter<'isa> {
         facts: &dyn NodeFacts,
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_expression_inner(name, signature, facts, body, None)
+        self.emit_expression_inner(name, signature, facts, body, None, None)
     }
 
     pub fn emit_expression_with_string_interner(
@@ -606,7 +723,18 @@ impl<'isa> FunctionEmitter<'isa> {
         body: AstNodeKey,
         string_interner: &mut dyn StringInterner,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_expression_inner(name, signature, facts, body, Some(string_interner))
+        self.emit_expression_inner(name, signature, facts, body, Some(string_interner), None)
+    }
+
+    pub fn emit_expression_with_call_importer(
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        body: AstNodeKey,
+        call_importer: &mut dyn CallImporter,
+    ) -> Result<Function, FunctionEmissionError> {
+        self.emit_expression_inner(name, signature, facts, body, None, Some(call_importer))
     }
 
     pub fn emit_statement(
@@ -638,13 +766,14 @@ impl<'isa> FunctionEmitter<'isa> {
         Ok(function)
     }
 
-    fn emit_expression_inner(
+    fn emit_expression_inner<'services>(
         &self,
         name: UserFuncName,
         signature: Signature,
         facts: &dyn NodeFacts,
         body: AstNodeKey,
-        string_interner: Option<&mut dyn StringInterner>,
+        string_interner: Option<&'services mut dyn StringInterner>,
+        call_importer: Option<&'services mut dyn CallImporter>,
     ) -> Result<Function, FunctionEmissionError> {
         let mut function = Function::with_name_signature(name, signature);
         let mut builder_context = FunctionBuilderContext::new();
@@ -653,13 +782,15 @@ impl<'isa> FunctionEmitter<'isa> {
             let entry = builder.create_block();
             builder.switch_to_block(entry);
             builder.seal_block(entry);
-            let value = match string_interner {
-                Some(interner) => lower_expression(
-                    &mut IsleContext::new_with_string_interner(&mut builder, facts, interner),
-                    body,
+            let value = lower_expression(
+                &mut IsleContext::new_with_services(
+                    &mut builder,
+                    facts,
+                    string_interner,
+                    call_importer,
                 ),
-                None => lower_expression(&mut IsleContext::new(&mut builder, facts), body),
-            }
+                body,
+            )
             .map_err(FunctionEmissionError::Lowering)?;
             builder.ins().return_(&[value]);
             builder.finalize();

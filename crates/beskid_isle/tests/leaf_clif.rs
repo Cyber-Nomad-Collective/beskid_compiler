@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use beskid_isle::{
-    AstNodeKey, IsleContext, LiteralKind, NodeFacts, NodeKind, OperatorFact, lower_expression,
+    AstNodeKey, IsleContext, LiteralKind, LoweringErrorKind, NodeFacts, NodeKind, OperatorFact,
+    lower_expression,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, Signature, types};
@@ -216,6 +217,7 @@ fn missing_leaf_fact_is_a_keyed_lowering_error() {
         .expect_err("missing fact must not fall back");
 
     assert_eq!(error.key(), key);
+    assert_eq!(error.kind(), LoweringErrorKind::MissingRuleOrFact);
 }
 
 #[test]
