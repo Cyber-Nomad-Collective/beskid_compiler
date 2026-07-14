@@ -32,6 +32,19 @@ pub enum NodeKind {
     BinaryExpression,
     CallExpression,
     PathExpression,
+    BlockExpression,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct StatementCursor {
+    block: AstNodeKey,
+    index: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CursorKind {
+    More,
+    End,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,7 +96,10 @@ pub type Unit = ();
     clippy::match_ref_pats
 )]
 mod generated {
-    use super::{AstNodeKey, CallKind, LiteralKind, NodeKind, OperatorFact, Unit, Value};
+    use super::{
+        AstNodeKey, CallKind, CursorKind, LiteralKind, NodeKind, OperatorFact, StatementCursor,
+        Unit, Value,
+    };
 
     include!(concat!(env!("OUT_DIR"), "/beskid_lower.rs"));
 }
@@ -106,6 +122,9 @@ pub trait NodeFacts {
         None
     }
     fn child(&self, _key: AstNodeKey, _index: u8) -> Option<AstNodeKey> {
+        None
+    }
+    fn statement_count(&self, _key: AstNodeKey) -> Option<u8> {
         None
     }
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64>;
@@ -379,6 +398,38 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         generated::constructor_lower_statement(self, else_key)?;
         Some(())
     }
+
+    fn statement_cursor(&mut self, key: AstNodeKey) -> Option<StatementCursor> {
+        self.facts.statement_count(key)?;
+        Some(StatementCursor {
+            block: key,
+            index: 0,
+        })
+    }
+
+    fn cursor_kind(&mut self, cursor: StatementCursor) -> Option<CursorKind> {
+        let count = self.facts.statement_count(cursor.block)?;
+        Some(if cursor.index < count {
+            CursorKind::More
+        } else {
+            CursorKind::End
+        })
+    }
+
+    fn cursor_head(&mut self, cursor: StatementCursor) -> Option<AstNodeKey> {
+        self.facts.child(cursor.block, cursor.index)
+    }
+
+    fn cursor_tail(&mut self, cursor: StatementCursor) -> StatementCursor {
+        StatementCursor {
+            block: cursor.block,
+            index: cursor.index.saturating_add(1),
+        }
+    }
+
+    fn finish_statements(&mut self) {}
+
+    fn sequence_statements(&mut self, _head: (), _tail: ()) {}
 
     fn emit_local_read(&mut self, key: AstNodeKey) -> Option<Value> {
         self.facts.local_value(key)
