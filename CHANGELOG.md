@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Make the exact installed ABI-v5 runtime kit the sole Engine, JIT, REPL, and in-process test runtime authority.
+- Add a generation-safe expanded-syntax to generated-ISLE adapter for production expression emission.
 
 ### Removed
 

@@ -9,18 +9,20 @@
 //! hosts that run the mod SDK and should call [`beskid_pipeline::observe_phase`] around real mod
 //! work so observers match [`beskid_pipeline::phases::JIT_RUN_PHASE_ORDER`] when mods are active.
 
-pub mod cranelift_host;
 pub mod codegen_input;
+pub mod cranelift_host;
 pub mod diagnostics;
 pub mod errors;
+pub mod isle_adapter;
 pub mod linking;
 pub mod lowering;
 pub mod module_emission;
 pub mod services;
 
-pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
 pub use codegen_input::{CodegenInput, CodegenInputError};
+pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
 pub use errors::CodegenError;
+pub use isle_adapter::{SyntaxNodeFacts, emit_isle_expression};
 pub use linking::{
     FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, referenced_extern_imports,
     validate_artifact,
@@ -33,8 +35,8 @@ pub use lowering::{
 };
 pub use module_emission::{DescriptorHandles, emit_string_literals, emit_type_descriptors};
 pub use services::{
-    LoweredProgram, entrypoint_artifact_from_front_end, lower_from_front_end,
+    LoweredProgram, entrypoint_artifact_from_front_end, jit_symbol_for_item, lower_from_front_end,
     lower_resolved_entrypoint_with_pipeline, lower_resolved_input_with_pipeline, lower_source,
     lower_source_for_entrypoint, lower_source_with_pipeline, materialize_source_path_for_lowering,
-    jit_symbol_for_item, render_clif,
+    render_clif,
 };
