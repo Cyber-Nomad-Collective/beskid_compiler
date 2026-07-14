@@ -176,7 +176,8 @@ fn field_assignment_emits_stock_clif_store_and_executes() {
     let (result, clif) = run(Root::Write, 1, 23);
     assert_eq!(result, 99);
     assert!(
-        clif.lines().any(|line| line.trim_start().starts_with("store ")),
+        clif.lines()
+            .any(|line| line.trim_start().starts_with("store ")),
         "{clif}"
     );
 }

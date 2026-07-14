@@ -6,7 +6,7 @@
 //! use beskid_isle::generated;
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub use beskid_queries::AstNodeKey;
 use cranelift_codegen::ir::InstBuilder;
@@ -21,6 +21,7 @@ use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_frontend::FunctionBuilderContext;
+use cranelift_frontend::Switch;
 use cranelift_frontend::Variable;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,6 +46,8 @@ pub enum NodeKind {
     ArrayLiteralExpression,
     FieldExpression,
     StructLiteralExpression,
+    EnumLiteralExpression,
+    MatchExpression,
     BlockExpression,
 }
 
@@ -165,6 +168,21 @@ impl FieldLayout {
     }
 }
 
+fn aggregate_field_is_valid(size: u32, alignment: u32, field: FieldLayout) -> bool {
+    let field_size = field.value_type.bytes();
+    let Some(end) = field.offset.checked_add(field_size) else {
+        return false;
+    };
+    let field_alignment = field_size.next_power_of_two().min(alignment);
+    field_size > 0 && end <= size && field.offset.is_multiple_of(field_alignment)
+}
+
+fn aggregate_fields_overlap(left: FieldLayout, right: FieldLayout) -> bool {
+    let left_end = left.offset + left.value_type.bytes();
+    let right_end = right.offset + right.value_type.bytes();
+    left.offset < right_end && right.offset < left_end
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StructLayout {
     size: u32,
@@ -189,22 +207,106 @@ impl StructLayout {
             return false;
         }
         for (index, field) in self.fields.iter().enumerate() {
-            let field_size = field.value_type.bytes();
-            let Some(end) = field.offset.checked_add(field_size) else {
-                return false;
-            };
-            let field_alignment = field_size.next_power_of_two().min(alignment);
-            if field_size == 0 || end > self.size || !field.offset.is_multiple_of(field_alignment) {
+            if !aggregate_field_is_valid(self.size, alignment, *field) {
                 return false;
             }
-            if self.fields[..index].iter().any(|other| {
-                let other_end = other.offset + other.value_type.bytes();
-                field.offset < other_end && other.offset < end
-            }) {
+            if self.fields[..index]
+                .iter()
+                .any(|other| aggregate_fields_overlap(*field, *other))
+            {
                 return false;
             }
         }
         true
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnumVariantLayout {
+    discriminant: u64,
+    payload: Option<FieldLayout>,
+}
+
+impl EnumVariantLayout {
+    pub const fn new(discriminant: u64, payload: Option<FieldLayout>) -> Self {
+        Self {
+            discriminant,
+            payload,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EnumLayout {
+    size: u32,
+    align_shift: u8,
+    tag: FieldLayout,
+    variants: Vec<EnumVariantLayout>,
+}
+
+impl EnumLayout {
+    pub fn new(
+        size: u32,
+        align_shift: u8,
+        tag: FieldLayout,
+        variants: Vec<EnumVariantLayout>,
+    ) -> Self {
+        Self {
+            size,
+            align_shift,
+            tag,
+            variants,
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        let Some(alignment) = 1_u32.checked_shl(u32::from(self.align_shift)) else {
+            return false;
+        };
+        if self.size == 0
+            || self.size > i32::MAX as u32
+            || !self.size.is_multiple_of(alignment)
+            || !self.tag.value_type.is_int()
+            || !aggregate_field_is_valid(self.size, alignment, self.tag)
+            || self.variants.is_empty()
+        {
+            return false;
+        }
+        let tag_bits = self.tag.value_type.bits();
+        if tag_bits > 64 {
+            return false;
+        }
+        let mut discriminants = HashSet::with_capacity(self.variants.len());
+        self.variants.iter().all(|variant| {
+            let discriminant_fits = tag_bits == 64 || variant.discriminant < (1_u64 << tag_bits);
+            let payload_is_valid = variant.payload.is_none_or(|payload| {
+                aggregate_field_is_valid(self.size, alignment, payload)
+                    && !aggregate_fields_overlap(self.tag, payload)
+            });
+            discriminant_fits && payload_is_valid && discriminants.insert(variant.discriminant)
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MatchArmFact {
+    discriminant: Option<u64>,
+    body: AstNodeKey,
+}
+
+impl MatchArmFact {
+    pub const fn variant(discriminant: u64, body: AstNodeKey) -> Self {
+        Self {
+            discriminant: Some(discriminant),
+            body,
+        }
+    }
+
+    pub const fn wildcard(body: AstNodeKey) -> Self {
+        Self {
+            discriminant: None,
+            body,
+        }
     }
 }
 
@@ -293,6 +395,18 @@ pub trait NodeFacts {
     fn field_index(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
+    fn enum_layout(&self, _key: AstNodeKey) -> Option<EnumLayout> {
+        None
+    }
+    fn enum_variant_index(&self, _key: AstNodeKey) -> Option<u32> {
+        None
+    }
+    fn enum_payload(&self, _key: AstNodeKey) -> Option<AstNodeKey> {
+        None
+    }
+    fn match_arms(&self, _key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
+        None
+    }
     fn local_slot(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
@@ -325,6 +439,10 @@ pub enum LoweringErrorKind {
     InvalidArrayLayout,
     InvalidStructLayout,
     InvalidStructField(u32),
+    InvalidEnumLayout,
+    InvalidEnumVariant(u32),
+    InvalidMatchArms,
+    NonExhaustiveMatch,
 }
 
 /// Thin host for generated ISLE selection and stock CLIF instruction construction.
@@ -958,6 +1076,180 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             i32::try_from(field.offset).ok()?,
         );
         Some(value)
+    }
+
+    fn emit_enum_literal(&mut self, key: AstNodeKey) -> Option<Value> {
+        let layout = self.facts.enum_layout(key)?;
+        if !layout.is_valid() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidEnumLayout,
+            });
+            return None;
+        }
+        let variant_index = self.facts.enum_variant_index(key)?;
+        let Some(variant) = usize::try_from(variant_index)
+            .ok()
+            .and_then(|index| layout.variants.get(index))
+            .copied()
+        else {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidEnumVariant(variant_index),
+            });
+            return None;
+        };
+        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            layout.size,
+            layout.align_shift,
+        ));
+        let tag = self
+            .builder
+            .ins()
+            .iconst(layout.tag.value_type, variant.discriminant as i64);
+        self.builder
+            .ins()
+            .stack_store(tag, slot, i32::try_from(layout.tag.offset).ok()?);
+        match (variant.payload, self.facts.enum_payload(key)) {
+            (Some(payload_layout), Some(payload_key)) => {
+                let payload = generated::constructor_lower_expression(self, payload_key)?;
+                if self.builder.func.dfg.value_type(payload) != payload_layout.value_type {
+                    self.pending_error = Some(LoweringError {
+                        key,
+                        kind: LoweringErrorKind::InvalidEnumLayout,
+                    });
+                    return None;
+                }
+                self.builder.ins().stack_store(
+                    payload,
+                    slot,
+                    i32::try_from(payload_layout.offset).ok()?,
+                );
+            }
+            (None, None) => {}
+            _ => {
+                self.pending_error = Some(LoweringError {
+                    key,
+                    kind: LoweringErrorKind::InvalidEnumLayout,
+                });
+                return None;
+            }
+        }
+        let pointer_type = self.facts.scalar_type(key)?;
+        if !pointer_type.is_int() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidEnumLayout,
+            });
+            return None;
+        }
+        Some(self.builder.ins().stack_addr(pointer_type, slot, 0))
+    }
+
+    fn emit_match(&mut self, key: AstNodeKey) -> Option<Value> {
+        let layout = self.facts.enum_layout(key)?;
+        if !layout.is_valid() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidEnumLayout,
+            });
+            return None;
+        }
+        let arms = self.facts.match_arms(key)?;
+        if arms.is_empty() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidMatchArms,
+            });
+            return None;
+        }
+        let layout_discriminants = layout
+            .variants
+            .iter()
+            .map(|variant| variant.discriminant)
+            .collect::<HashSet<_>>();
+        let mut covered = HashSet::with_capacity(arms.len());
+        let wildcard_index = arms.iter().position(|arm| arm.discriminant.is_none());
+        if wildcard_index.is_some_and(|index| index + 1 != arms.len())
+            || arms.iter().filter(|arm| arm.discriminant.is_none()).count() > 1
+            || arms
+                .iter()
+                .filter_map(|arm| arm.discriminant)
+                .any(|tag| !layout_discriminants.contains(&tag) || !covered.insert(tag))
+        {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidMatchArms,
+            });
+            return None;
+        }
+        if wildcard_index.is_none() && covered != layout_discriminants {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::NonExhaustiveMatch,
+            });
+            return None;
+        }
+
+        let scrutinee_key = self.facts.child(key, 0)?;
+        let scrutinee = generated::constructor_lower_expression(self, scrutinee_key)?;
+        if !self.builder.func.dfg.value_type(scrutinee).is_int() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidEnumLayout,
+            });
+            return None;
+        }
+        let tag = self.builder.ins().load(
+            layout.tag.value_type,
+            MemFlags::new(),
+            scrutinee,
+            i32::try_from(layout.tag.offset).ok()?,
+        );
+        let result_type = self.facts.scalar_type(key)?;
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, result_type);
+        let arm_blocks = arms
+            .iter()
+            .map(|_| self.builder.create_block())
+            .collect::<Vec<_>>();
+        let trap = wildcard_index
+            .is_none()
+            .then(|| self.builder.create_block());
+        let default = wildcard_index.map_or_else(
+            || trap.expect("trap block exists without wildcard"),
+            |index| arm_blocks[index],
+        );
+        let mut switch = Switch::new();
+        for (arm, block) in arms.iter().zip(&arm_blocks) {
+            if let Some(discriminant) = arm.discriminant {
+                switch.set_entry(u128::from(discriminant), *block);
+            }
+        }
+        switch.emit(self.builder, tag, default);
+
+        for (arm, block) in arms.into_iter().zip(arm_blocks) {
+            self.builder.switch_to_block(block);
+            self.builder.seal_block(block);
+            let value = generated::constructor_lower_expression(self, arm.body)?;
+            if self.builder.func.dfg.value_type(value) != result_type {
+                self.pending_error = Some(LoweringError {
+                    key,
+                    kind: LoweringErrorKind::InvalidMatchArms,
+                });
+                return None;
+            }
+            self.builder.ins().jump(merge, &[value.into()]);
+        }
+        if let Some(trap) = trap {
+            self.builder.switch_to_block(trap);
+            self.builder.seal_block(trap);
+            self.builder.ins().trap(TrapCode::unwrap_user(1));
+        }
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge).first().copied()
     }
 }
 
