@@ -13,18 +13,19 @@ use crate::commands::hi::HiArgs;
 use crate::commands::import::ImportArgs;
 use crate::commands::lock::LockArgs;
 use crate::commands::lsp::LspArgs;
+use crate::commands::migrate_bsol::MigrateBsolArgs;
 use crate::commands::new::NewArgs;
 use crate::commands::parse::ParseArgs;
 use crate::commands::repl::ReplArgs;
 use crate::commands::run::RunArgs;
+use crate::commands::runtime_kit::RuntimeKitArgs;
 use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::validate_bsol::ValidateBsolArgs;
-use crate::commands::migrate_bsol::MigrateBsolArgs;
 use crate::commands::{
-    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp, migrate_bsol, new,
-    parse, repl, run, test, tree, update, validate_bsol,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp,
+    migrate_bsol, new, parse, repl, run, runtime_kit, test, tree, update, validate_bsol,
 };
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_pckg::PckgArgs;
@@ -105,6 +106,9 @@ pub enum Commands {
     /// Materialize the checked-in Beskid corelib project template
     Corelib(CorelibArgs),
 
+    /// Build and install target/profile-specific ABI-v5 native runtime kits
+    RuntimeKit(RuntimeKitArgs),
+
     /// Scaffold projects from templates (`list`, `install`, `uninstall`, or `<shortName>`)
     New(Box<NewArgs>),
 
@@ -136,7 +140,9 @@ pub fn run() -> miette::Result<()> {
         argfile::expand_args_from(os_args, argfile::parse_fromfile, argfile::PREFIX).unwrap();
     let cli = Cli::parse_from(all_args);
     beskid_tools::logging::init(cli.log_cranelift);
-    ensure_corelib_ready().map_err(anyhow_to_miette)?;
+    if !matches!(&cli.command, Commands::RuntimeKit(_)) {
+        ensure_corelib_ready().map_err(anyhow_to_miette)?;
+    }
 
     let result = match cli.command {
         Commands::Parse(args) => parse::execute(args),
@@ -155,6 +161,7 @@ pub fn run() -> miette::Result<()> {
         Commands::Lock(args) => lock::execute(args),
         Commands::Update(args) => update::execute(args),
         Commands::Corelib(args) => corelib::execute(args),
+        Commands::RuntimeKit(args) => runtime_kit::execute(args),
         Commands::New(args) => new::execute(*args),
         Commands::Pckg(args) => maybe_generate_docs_for_pack(&args)
             .and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into)),
@@ -352,5 +359,61 @@ mod tests {
             panic!("expected clean command");
         };
         assert_eq!(args.project.as_deref(), Some(Path::new("mods/MyMod")));
+    }
+
+    #[test]
+    fn parses_runtime_kit_build_contract() {
+        let cli = Cli::try_parse_from([
+            "beskid",
+            "runtime-kit",
+            "build",
+            "--prefix",
+            "/opt/beskid",
+            "--target",
+            "x86_64-unknown-linux-gnu",
+            "--profile",
+            "release",
+            "--source-hash",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "--static-library",
+            "out/libbeskid_runtime.a",
+            "--shared-library",
+            "out/libbeskid_runtime.so",
+        ])
+        .expect("parse runtime-kit build");
+
+        let Commands::RuntimeKit(args) = cli.command else {
+            panic!("expected runtime-kit command");
+        };
+        let crate::commands::runtime_kit::RuntimeKitCommand::Build(args) = args.command;
+        assert_eq!(args.prefix, Path::new("/opt/beskid"));
+        assert_eq!(args.target, "x86_64-unknown-linux-gnu");
+        assert_eq!(args.profile.as_str(), "release");
+        assert_eq!(args.static_library, Path::new("out/libbeskid_runtime.a"));
+        assert_eq!(args.shared_library, Path::new("out/libbeskid_runtime.so"));
+        assert!(args.shared_import_library.is_none());
+    }
+
+    #[test]
+    fn runtime_kit_build_requires_both_primary_artifacts() {
+        let error = match Cli::try_parse_from([
+            "beskid",
+            "runtime-kit",
+            "build",
+            "--prefix",
+            "/opt/beskid",
+            "--target",
+            "x86_64-unknown-linux-gnu",
+            "--profile",
+            "debug",
+            "--source-hash",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "--static-library",
+            "out/libbeskid_runtime.a",
+        ]) {
+            Ok(_) => panic!("missing shared library must fail parsing"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("--shared-library"));
     }
 }
