@@ -41,6 +41,7 @@ mod tests {
             analysis_cache_version: 0,
             analysis: None,
             syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
         }
     }
 

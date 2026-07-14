@@ -26,7 +26,7 @@ use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::project_context::cached_compilation_context;
 use crate::session::startup::wait_for_initial_scan;
-use crate::session::store::{Document, State, SyntaxDefinition};
+use crate::session::store::{Document, State, SyntaxDefinition, SyntaxHover};
 use crate::workspace_scan::uri_to_path;
 
 /// Document analysis snapshot shape; bump when snapshot fields change.
@@ -75,16 +75,16 @@ fn lockfile_digest_for_plan(plan: &beskid_analysis::projects::CompilePlan) -> St
     format!("{:016x}", hasher.finish())
 }
 
-fn syntax_definitions_for_entry(
+fn syntax_facts_for_entry(
     db: &mut beskid_queries::BeskidDatabase,
     resolved: &ResolvedInput,
     entry_state: &beskid_queries::TypedEntryState,
-) -> Vec<SyntaxDefinition> {
+) -> (Vec<SyntaxDefinition>, Vec<SyntaxHover>) {
     let Some(plan) = resolved.compile_plan.as_ref() else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let Some(front_end) = entry_state.typed.as_ref() else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let project = db.ensure_project_session(
         plan,
@@ -96,44 +96,104 @@ fn syntax_definitions_for_entry(
     ));
     let generation = SyntaxGenerationId(entry_state.generation);
     let Ok(typed) = build_typed_program(db, project, generation, assembly) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let unit = typed.entry;
     let Some(entry) = typed.assembly.units.get(typed.assembly.entry_index) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&entry.program, generation);
 
-    index
-        .metadata()
-        .iter()
-        .filter_map(|metadata| {
-            let reference = AstNodeKey {
-                unit,
-                generation,
-                node: metadata.id,
-            };
-            let declaration = resolved_local(db, reference)
-                .ok()
-                .flatten()
-                .map(|resolved| resolved.declaration)
-                .or_else(|| {
-                    resolved_item(db, reference)
-                        .ok()
-                        .flatten()
-                        .map(|resolved| resolved.declaration)
-                })?;
-            let reference_span = node_span(db, reference).ok().flatten()?;
-            let declaration_span = node_span(db, declaration).ok().flatten()?;
-            Some(SyntaxDefinition {
+    let mut definitions = Vec::new();
+    let mut hovers = Vec::new();
+    for metadata in index.metadata() {
+        let reference = AstNodeKey {
+            unit,
+            generation,
+            node: metadata.id,
+        };
+        let local = resolved_local(db, reference).ok().flatten();
+        let declaration = local
+            .map(|resolved| resolved.declaration)
+            .or_else(|| {
+                resolved_item(db, reference)
+                    .ok()
+                    .flatten()
+                    .map(|resolved| resolved.declaration)
+            });
+        let Some(declaration) = declaration else {
+            continue;
+        };
+        let Some(reference_span) = node_span(db, reference).ok().flatten() else {
+            continue;
+        };
+        let Some(declaration_span) = node_span(db, declaration).ok().flatten() else {
+            continue;
+        };
+        let declaration_path = declaration.unit.path(db).clone();
+        definitions.push(SyntaxDefinition {
+            reference_start: reference_span.start,
+            reference_end: reference_span.end,
+            declaration_path: declaration_path.clone(),
+            declaration_start: declaration_span.start,
+            declaration_end: declaration_span.end,
+        });
+        let Some(target_unit) = typed
+            .assembly
+            .units
+            .iter()
+            .find(|candidate| candidate.path == declaration_path)
+        else {
+            continue;
+        };
+        let target_index = beskid_analysis::syntax_query::SyntaxIndex::from_program(
+            &target_unit.program,
+            generation,
+        );
+        let (location_start, location_end, name, kind) = target_index
+            .node_at(&target_unit.program, declaration.node)
+            .and_then(|node| {
+                node.of::<beskid_analysis::syntax::FunctionDefinition>()
+                    .map(|function| {
+                        (
+                            function.name.span.start,
+                            function.name.span.end,
+                            function.name.node.name.clone(),
+                            "function",
+                        )
+                    })
+            })
+            .unwrap_or_else(|| {
+                let name = entry
+                    .source
+                    .get(reference_span.start..reference_span.end)
+                    .unwrap_or_default()
+                    .to_string();
+                (
+                    declaration_span.start,
+                    declaration_span.end,
+                    name,
+                    "local",
+                )
+            });
+        if !name.is_empty() {
+            hovers.push(SyntaxHover {
                 reference_start: reference_span.start,
                 reference_end: reference_span.end,
-                declaration_path: declaration.unit.path(db).clone(),
-                declaration_start: declaration_span.start,
-                declaration_end: declaration_span.end,
-            })
-        })
-        .collect()
+                markdown: format!("**{kind}** `{name}`"),
+                location_path: declaration_path,
+                location_start,
+                location_end,
+            });
+        }
+    }
+    definitions.sort_by_key(|definition| {
+        (definition.reference_start, definition.reference_end, definition.declaration_path.clone())
+    });
+    definitions.dedup();
+    hovers.sort_by_key(|hover| (hover.reference_start, hover.reference_end, hover.location_path.clone()));
+    hovers.dedup();
+    (definitions, hovers)
 }
 
 fn bump_entry_file_revision(
@@ -247,20 +307,20 @@ async fn build_document_analysis(
     .await
 }
 
-async fn build_syntax_definitions(
+async fn build_syntax_facts(
     state: &RwLock<State>,
     uri: &Uri,
     text: &str,
-) -> Vec<SyntaxDefinition> {
+) -> (Vec<SyntaxDefinition>, Vec<SyntaxHover>) {
     wait_for_initial_scan(state).await;
     if is_manifest_uri(uri) {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
     let Some(path) = uri_to_path(uri) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     with_compilation_db_mut_state(state, |db, write| {
         if let Some(plan) = session.compile_plan.as_ref() {
@@ -269,9 +329,9 @@ async fn build_syntax_definitions(
         db.ensure_file_text(path, text.to_string());
         let options = PrepareOptions::default();
         let Ok(entry_state) = typed_entry_state_with_db(db, &resolved, &options, None) else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
-        syntax_definitions_for_entry(db, &resolved, &entry_state)
+        syntax_facts_for_entry(db, &resolved, &entry_state)
     })
     .await
 }
@@ -284,13 +344,14 @@ pub async fn build_document(
     text: String,
 ) -> Document {
     let analysis = build_document_analysis(state, uri, &text).await;
-    let syntax_definitions = build_syntax_definitions(state, uri, &text).await;
+    let (syntax_definitions, syntax_hovers) = build_syntax_facts(state, uri, &text).await;
     Document {
         version,
         text,
         analysis_cache_version: ANALYSIS_CACHE_VERSION,
         analysis,
         syntax_definitions,
+        syntax_hovers,
     }
 }
 
@@ -352,19 +413,21 @@ async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
     .await;
 
     let analysis = build_document_analysis(state, uri, &text).await;
-    let syntax_definitions = build_syntax_definitions(state, uri, &text).await;
+    let (syntax_definitions, syntax_hovers) = build_syntax_facts(state, uri, &text).await;
     let mut write = state.write().await;
     if let Some(doc) = write.docs.get_mut(uri)
         && doc.text == text
     {
         doc.analysis = analysis;
         doc.syntax_definitions = syntax_definitions;
+        doc.syntax_hovers = syntax_hovers;
         doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
     } else if let Some(doc) = write.workspace_index.get_mut(uri)
         && doc.text == text
     {
         doc.analysis = analysis;
         doc.syntax_definitions = syntax_definitions;
+        doc.syntax_hovers = syntax_hovers;
         doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
     }
 }
@@ -423,7 +486,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
     drop(write_state);
     touch_entry_file_revision_for_uri(state, &uri, &text).await;
     let analysis = build_document_analysis(state, &uri, &text).await;
-    let syntax_definitions = build_syntax_definitions(state, &uri, &text).await;
+    let (syntax_definitions, syntax_hovers) = build_syntax_facts(state, &uri, &text).await;
 
     let mut write_state = state.write().await;
     write_state.docs.insert(
@@ -434,6 +497,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
             analysis,
             syntax_definitions,
+            syntax_hovers,
         },
     );
 }
@@ -458,13 +522,14 @@ pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
 
     for (uri, text) in entries {
         let analysis = build_document_analysis(state, &uri, &text).await;
-        let syntax_definitions = build_syntax_definitions(state, &uri, &text).await;
+        let (syntax_definitions, syntax_hovers) = build_syntax_facts(state, &uri, &text).await;
         let mut write = state.write().await;
         if let Some(doc) = write.docs.get_mut(&uri)
             && doc.text == text
         {
             doc.analysis = analysis;
             doc.syntax_definitions = syntax_definitions;
+            doc.syntax_hovers = syntax_hovers;
             doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
         }
     }
@@ -549,6 +614,7 @@ mod tests {
                 analysis_cache_version: ANALYSIS_CACHE_VERSION.saturating_sub(1),
                 analysis: None,
                 syntax_definitions: Vec::new(),
+                syntax_hovers: Vec::new(),
             },
         );
 

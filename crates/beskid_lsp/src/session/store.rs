@@ -25,6 +25,8 @@ pub struct Document {
     /// Definition handling consumes this index instead of reaching back into the legacy
     /// HIR-backed analysis snapshot.
     pub syntax_definitions: Vec<SyntaxDefinition>,
+    /// Generation-safe syntax/Salsa hover facts for this exact buffer revision.
+    pub syntax_hovers: Vec<SyntaxHover>,
 }
 
 /// One resolved syntax reference and its declaration location.
@@ -35,6 +37,17 @@ pub struct SyntaxDefinition {
     pub declaration_path: PathBuf,
     pub declaration_start: usize,
     pub declaration_end: usize,
+}
+
+/// Markdown hover content and the declaration span it describes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxHover {
+    pub reference_start: usize,
+    pub reference_end: usize,
+    pub markdown: String,
+    pub location_path: PathBuf,
+    pub location_start: usize,
+    pub location_end: usize,
 }
 
 /// In-memory LSP workspace: open docs, closed-but-indexed files, and compilation context cache.

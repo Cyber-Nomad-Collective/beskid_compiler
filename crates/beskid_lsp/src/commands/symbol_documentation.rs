@@ -47,6 +47,7 @@ pub fn handle_symbol_documentation_command(
     Ok(Some(json!({ "url": url })))
 }
 
+#[allow(dead_code)]
 pub fn documentation_uri_for_document(document: &Document, offset: usize) -> Option<String> {
     documentation_uri_for_offset(document, offset)
 }

@@ -108,6 +108,7 @@ mod tests {
                 analysis_cache_version: ANALYSIS_CACHE_VERSION,
                 analysis: Some(analysis),
                 syntax_definitions: Vec::new(),
+                syntax_hovers: Vec::new(),
             };
             (fixture.uri.clone(), doc, fixture, db)
         })
@@ -167,6 +168,7 @@ mod tests {
                 declaration_start: 36,
                 declaration_end: 42,
             }],
+            syntax_hovers: Vec::new(),
         };
         let response = definition::handler::handle_definition(&uri, &doc, 22)
             .expect("syntax fact definition");
@@ -289,32 +291,39 @@ mod tests {
         }
     }
 
-    #[test]
-    fn hover_on_printline_range_in_dependency_file() {
-        let (uri, doc, fixture, _db) = corelib_mvp_document_with_entry_resolution();
+    #[tokio::test]
+    async fn hover_on_printline_range_in_dependency_file() {
+        let root = compiler_workspace_root();
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(&root).expect("chdir");
+        let fixture = corelib_mvp_paths();
+        let uri = fixture.uri.clone();
+        let state = tokio::sync::RwLock::new(State::default());
+        state.read().await.mark_initial_scan_complete();
+        let mut doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
+        std::env::set_current_dir(previous).expect("restore cwd");
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
+        let syntax_hover = doc
+            .syntax_hovers
+            .iter()
+            .find(|hover| hover.reference_start <= offset && offset <= hover.reference_end)
+            .expect("syntax hover fact")
+            .clone();
+        // The hover handler must rely only on generation-safe syntax facts.
+        doc.analysis = None;
         let hover = hover::handler::handle_hover(&uri, &doc, offset).expect("hover");
         let Hover { range, .. } = hover;
         let range = range.expect("hover range");
-        let analysis = doc.analysis.as_ref().expect("analysis");
-        let hover_info =
-            beskid_analysis::services::hover_at_offset(analysis, offset).expect("hover info");
         assert!(
-            hover_info
-                .location
-                .path
+            syntax_hover
+                .location_path
                 .to_string_lossy()
                 .contains("Output")
-                || analysis
-                    .resolution
-                    .as_ref()
-                    .is_some_and(|resolution| {
-                        resolution.items.iter().any(|item| item.name == "WriteLine")
-                    }),
-            "hover target should be Output module file or resolve WriteLine"
+                || syntax_hover.markdown.contains("WriteLine"),
+            "hover target should preserve the resolved WriteLine declaration"
         );
         let dependency_source =
-            std::fs::read_to_string(&hover_info.location.path).expect("read dependency source");
+            std::fs::read_to_string(&syntax_hover.location_path).expect("read dependency source");
         let start = position_to_offset(&dependency_source, range.start);
         let end = position_to_offset(&dependency_source, range.end);
         assert!(
