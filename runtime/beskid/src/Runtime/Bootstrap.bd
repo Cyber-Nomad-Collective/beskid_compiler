@@ -1,0 +1,5 @@
+/// Returns the native runtime ABI implemented by this canonical source corpus.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_abi_version")]
+pub i32 AbiVersion() {
+    return 5;
+}
