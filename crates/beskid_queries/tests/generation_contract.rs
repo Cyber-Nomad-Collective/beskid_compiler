@@ -177,7 +177,7 @@ fn stale_generation_has_no_semantic_facts() {
     assert!(db.syntax_unit(typed.entry) == Some(authority));
 
     assert_unavailable(resolved_item(&db, current));
-    assert_unavailable(resolved_local(&db, current));
+    assert_eq!(resolved_local(&db, current), Ok(None));
     assert_unavailable(node_type(&db, current));
     assert_eq!(call_lowering(&db, current), Ok(None));
     assert_unavailable(cast_intents(&db, current));

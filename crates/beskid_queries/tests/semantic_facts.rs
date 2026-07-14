@@ -82,6 +82,27 @@ fn key(
     }
 }
 
+fn key_at_start(
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    index: &SyntaxIndex,
+    kind: NodeKind,
+    start: usize,
+) -> AstNodeKey {
+    AstNodeKey {
+        unit,
+        generation,
+        node: index
+            .metadata()
+            .iter()
+            .find(|metadata| {
+                metadata.kind == kind && metadata.span.is_some_and(|span| span.start == start)
+            })
+            .unwrap_or_else(|| panic!("missing {kind:?} at byte {start}"))
+            .id,
+    }
+}
+
 #[test]
 fn structural_facts_survive_while_unported_semantics_are_unavailable() {
     let source = r#"
@@ -137,7 +158,11 @@ i32 Main() {
             may_fall_through: false,
         })
     );
-    assert_unavailable(resolved_local(&db, local_reference));
+    assert!(
+        resolved_local(&db, local_reference)
+            .expect("local resolution")
+            .is_some()
+    );
     assert_unavailable(resolved_item(&db, item_reference));
     assert_unavailable(call_lowering(&db, call));
     assert_unavailable(cast_intents(&db, call));
@@ -277,8 +302,166 @@ i32 Second() { return hidden; }
     let first_reference = key(unit, generation, &index, NodeKind::PathExpression, 0);
     let second_reference = key(unit, generation, &index, NodeKind::PathExpression, 1);
 
-    assert_unavailable(resolved_local(&db, first_reference));
-    assert_unavailable(resolved_local(&db, second_reference));
+    assert!(
+        resolved_local(&db, first_reference)
+            .expect("first local")
+            .is_some()
+    );
+    assert_eq!(
+        resolved_local(&db, second_reference).expect("out-of-scope local"),
+        None
+    );
+}
+
+#[test]
+fn local_resolution_uses_generation_safe_declarations_and_lexical_shadowing() {
+    let source = r#"i32 Main(i32 value) {
+    let first = value;
+    if true {
+        let value = 2;
+        let nested = value;
+    }
+    return value;
+}"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let value_offsets = source
+        .match_indices("value")
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    assert_eq!(value_offsets.len(), 5);
+
+    let parameter = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        value_offsets[0],
+    );
+    let inner_declaration = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        value_offsets[2],
+    );
+    let parameter_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        value_offsets[1],
+    );
+    let inner_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        value_offsets[3],
+    );
+    let outer_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        value_offsets[4],
+    );
+
+    assert_eq!(
+        resolved_local(&db, parameter_reference).expect("parameter reference"),
+        Some(beskid_queries::ResolvedLocal {
+            declaration: parameter,
+        })
+    );
+    assert_eq!(
+        resolved_local(&db, inner_reference).expect("shadowed reference"),
+        Some(beskid_queries::ResolvedLocal {
+            declaration: inner_declaration,
+        })
+    );
+    assert_eq!(
+        resolved_local(&db, outer_reference).expect("outer reference"),
+        Some(beskid_queries::ResolvedLocal {
+            declaration: parameter,
+        })
+    );
+}
+
+#[test]
+fn local_resolution_covers_lambda_for_and_match_bindings() {
+    for source in [
+        "i32 Main() { let apply = (i32 value) => value; return apply(1); }",
+        "unit Main() { for item in [1] { let copy = item; } }",
+        "enum Choice { Some(i32 value), None } i32 Main() { Choice choice = Choice::Some(1); return match choice { Choice::Some(bound) => bound, Choice::None => 0, }; }",
+    ] {
+        let (db, _project, unit, generation, index) = setup(source);
+        let binding_name = if source.contains("value) =>") {
+            "value"
+        } else if source.contains("for item") {
+            "item"
+        } else {
+            "bound"
+        };
+        let offsets = source
+            .match_indices(binding_name)
+            .map(|(offset, _)| offset)
+            .collect::<Vec<_>>();
+        assert_eq!(offsets.len(), 2, "{binding_name} occurrences in {source}");
+        let declaration = key_at_start(unit, generation, &index, NodeKind::Identifier, offsets[0]);
+        let reference = key_at_start(
+            unit,
+            generation,
+            &index,
+            NodeKind::PathExpression,
+            offsets[1],
+        );
+        assert_eq!(
+            resolved_local(&db, reference).expect("binding reference"),
+            Some(beskid_queries::ResolvedLocal { declaration }),
+            "binding {binding_name} in {source}"
+        );
+    }
+}
+
+#[test]
+fn local_declaration_is_not_visible_in_its_own_initializer() {
+    let source = "i32 Main() { let value = value; return 0; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let offsets = source
+        .match_indices("value")
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    let initializer_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        offsets[1],
+    );
+    assert_eq!(
+        resolved_local(&db, initializer_reference).expect("initializer local"),
+        None
+    );
+}
+
+#[test]
+fn stale_generation_cannot_reuse_a_local_slot_identity() {
+    let source = "i32 Main() { let value = 1; return value; }";
+    let (mut db, project, unit, generation, index) = setup(source);
+    let reference = key(unit, generation, &index, NodeKind::PathExpression, 0);
+    assert!(
+        resolved_local(&db, reference)
+            .expect("current local")
+            .is_some()
+    );
+
+    db.update_syntax_source(
+        project,
+        unit,
+        SyntaxGenerationId(generation.0 + 1),
+        "i32 Main() { let other = 1; return other; }".to_string(),
+    )
+    .expect("syntax update");
+    assert_eq!(resolved_local(&db, reference).expect("stale local"), None);
 }
 
 #[test]

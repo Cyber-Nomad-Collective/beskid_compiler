@@ -314,7 +314,155 @@ fn resolved_local_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ResolvedLocal> {
-    unavailable_for_current_key(db, syntax, key, "resolved_local")
+    with_node(db, syntax, key, |program, index, node| {
+        let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
+        let [segment] = path.path.node.segments.as_slice() else {
+            return None;
+        };
+        if !segment.node.type_args.is_empty() {
+            return None;
+        }
+        let declaration = resolve_lexical_declaration(
+            program,
+            index,
+            key.node,
+            segment.node.name.node.name.as_str(),
+        )?;
+        Some(ResolvedLocal {
+            declaration: AstNodeKey {
+                node: declaration,
+                ..key
+            },
+        })
+    })
+}
+
+fn resolve_lexical_declaration(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    reference: beskid_analysis::syntax::AstNodeId,
+    name: &str,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    let mut best: Option<(usize, u32, beskid_analysis::syntax::AstNodeId)> = None;
+    for declaration in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::Identifier) {
+        let Some(identifier) = index
+            .node_at(program, declaration)
+            .and_then(|node| node.of::<beskid_analysis::syntax::Identifier>())
+        else {
+            continue;
+        };
+        if identifier.name != name {
+            continue;
+        }
+        let Some(scope) = local_declaration_scope(index, declaration, reference) else {
+            continue;
+        };
+        let Some(distance) = ancestor_distance(index, scope, reference) else {
+            continue;
+        };
+        let rank = (distance, u32::MAX - declaration.0, declaration);
+        if best.is_none_or(|current| rank < current) {
+            best = Some(rank);
+        }
+    }
+    best.map(|(_, _, declaration)| declaration)
+}
+
+fn local_declaration_scope(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: beskid_analysis::syntax::AstNodeId,
+    reference: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    let parent = parent_node(index, declaration)?;
+    match index.kind(parent)? {
+        beskid_analysis::syntax_query::NodeKind::LetStatement => {
+            if declaration.0 >= reference.0 || is_ancestor(index, parent, reference) {
+                return None;
+            }
+            nearest_ancestor(index, parent, |kind| {
+                kind == beskid_analysis::syntax_query::NodeKind::Block
+            })
+            .filter(|scope| is_ancestor(index, *scope, reference))
+        }
+        beskid_analysis::syntax_query::NodeKind::Parameter => {
+            nearest_ancestor(index, parent, |kind| {
+                matches!(
+                    kind,
+                    beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                        | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+                )
+            })
+            .filter(|scope| is_ancestor(index, *scope, reference))
+        }
+        beskid_analysis::syntax_query::NodeKind::LambdaParameter => {
+            nearest_ancestor(index, parent, |kind| {
+                kind == beskid_analysis::syntax_query::NodeKind::LambdaExpression
+            })
+            .filter(|scope| is_ancestor(index, *scope, reference))
+        }
+        beskid_analysis::syntax_query::NodeKind::ForStatement => index
+            .children(parent)?
+            .iter()
+            .copied()
+            .find(|child| {
+                index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Block)
+            })
+            .filter(|scope| is_ancestor(index, *scope, reference)),
+        beskid_analysis::syntax_query::NodeKind::Pattern => {
+            nearest_ancestor(index, parent, |kind| {
+                kind == beskid_analysis::syntax_query::NodeKind::MatchArm
+            })
+            .filter(|scope| is_ancestor(index, *scope, reference))
+        }
+        _ => None,
+    }
+}
+
+fn parent_node(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    node: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    index.metadata().get(node.0 as usize)?.parent
+}
+
+fn nearest_ancestor(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    node: beskid_analysis::syntax::AstNodeId,
+    predicate: impl Fn(beskid_analysis::syntax_query::NodeKind) -> bool,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        if index.kind(candidate).is_some_and(&predicate) {
+            return Some(candidate);
+        }
+        current = parent_node(index, candidate);
+    }
+    None
+}
+
+fn is_ancestor(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    ancestor: beskid_analysis::syntax::AstNodeId,
+    node: beskid_analysis::syntax::AstNodeId,
+) -> bool {
+    ancestor_distance(index, ancestor, node).is_some()
+}
+
+fn ancestor_distance(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    ancestor: beskid_analysis::syntax::AstNodeId,
+    node: beskid_analysis::syntax::AstNodeId,
+) -> Option<usize> {
+    let mut current = Some(node);
+    let mut distance = 0usize;
+    while let Some(candidate) = current {
+        if candidate == ancestor {
+            return Some(distance);
+        }
+        current = parent_node(index, candidate);
+        distance += 1;
+    }
+    None
 }
 
 #[salsa::tracked]
@@ -754,6 +902,11 @@ pub fn resolved_item(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Resolv
     with_registered_syntax(db, key, resolved_item_tracked)
 }
 
+/// Resolve a single-segment value path to its generation-safe lexical declaration key.
+///
+/// Function and method parameters, lets, lambda parameters, for iterators, and match bindings are
+/// supported. Out-of-scope, self-initializing, qualified, generic, and unresolved paths contain no
+/// local fact.
 pub fn resolved_local(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ResolvedLocal> {
     with_registered_syntax(db, key, resolved_local_tracked)
 }
