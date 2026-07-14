@@ -1,12 +1,13 @@
 //! Generation-safe Salsa facts consumed by the generated ISLE lowering boundary.
 
 use beskid_isle::{
-    AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, NodeFacts, NodeKind,
-    OperatorFact,
+    AstNodeKey, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
+    LiteralKind, NodeFacts, NodeKind, OperatorFact, Signature,
 };
 use beskid_queries::{
-    Db, ItemSignature, LiteralFact, SemanticTypeId, child_nodes, item_body, item_signature,
-    literal_fact, node_kind, node_type, operator_fact,
+    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, call_arguments, call_lowering,
+    child_nodes, item_body, item_signature, literal_fact, local_slot, node_kind, node_type,
+    operator_fact, resolved_local,
 };
 use cranelift_codegen::ir::{Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
@@ -20,12 +21,21 @@ use crate::CodegenInput;
 /// to HIR or hand-built test facts.
 pub struct SyntaxNodeFacts<'db> {
     db: &'db dyn Db,
+    isa: Option<&'db dyn TargetIsa>,
 }
 
 impl<'db> SyntaxNodeFacts<'db> {
     pub fn new(input: &CodegenInput<'db>) -> Self {
         Self {
             db: input.database(),
+            isa: None,
+        }
+    }
+
+    fn new_with_isa(input: &'db CodegenInput<'db>, isa: &'db dyn TargetIsa) -> Self {
+        Self {
+            db: input.database(),
+            isa: Some(isa),
         }
     }
 
@@ -63,6 +73,58 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             .then(|| u8::try_from(self.children(key).len()).ok())?
     }
 
+    fn let_initializer(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        (self.node_kind(key) == Some(NodeKind::LetStatement))
+            .then(|| self.children(key).last().copied())?
+    }
+
+    fn local_slot(&self, key: AstNodeKey) -> Option<u32> {
+        match self.query(node_kind(self.db, key))? {
+            beskid_queries::IndexedNodeKind::PathExpression => {
+                let declaration = self.query(resolved_local(self.db, key))?.declaration;
+                self.query(local_slot(self.db, declaration))
+                    .map(|slot| slot.index)
+            }
+            beskid_queries::IndexedNodeKind::LetStatement => self
+                .raw_children(key)
+                .into_iter()
+                .find(|child| {
+                    self.query(node_kind(self.db, *child))
+                        == Some(beskid_queries::IndexedNodeKind::Identifier)
+                })
+                .and_then(|identifier| self.query(local_slot(self.db, identifier)))
+                .map(|slot| slot.index),
+            _ => None,
+        }
+    }
+
+    fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
+        matches!(
+            self.query(call_lowering(self.db, key)),
+            Some(CallLowering::Direct(_))
+        )
+        .then_some(CallKind::Direct)
+    }
+
+    fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
+        let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
+            return None;
+        };
+        Some(DirectCallee::new(declaration.node.0))
+    }
+
+    fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
+        let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
+            return None;
+        };
+        signature_for_item(self.isa?, self.query(item_signature(self.db, declaration))?)
+    }
+
+    fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        self.query(call_arguments(self.db, key))
+            .map(|arguments| arguments.to_vec())
+    }
+
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
         let LiteralFact::Integer(text) = self.literal(key)? else {
             return None;
@@ -95,12 +157,27 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
-        self.query(node_type(self.db, key))
-            .and_then(map_scalar_type)
+        self.scalar_semantic_type(key).and_then(map_scalar_type)
     }
 }
 
 impl SyntaxNodeFacts<'_> {
+    fn scalar_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        self.query(node_type(self.db, key)).or_else(|| {
+            (self.query(node_kind(self.db, key))
+                == Some(beskid_queries::IndexedNodeKind::LetStatement))
+            .then(|| {
+                self.raw_children(key)
+                    .into_iter()
+                    .find(|child| {
+                        self.query(node_kind(self.db, *child))
+                            == Some(beskid_queries::IndexedNodeKind::Identifier)
+                    })
+                    .and_then(|identifier| self.query(node_type(self.db, identifier)))
+            })?
+        })
+    }
+
     fn literal(&self, key: AstNodeKey) -> Option<LiteralFact> {
         self.query(literal_fact(self.db, key)).or_else(|| {
             self.query(child_nodes(self.db, key))?
@@ -110,12 +187,18 @@ impl SyntaxNodeFacts<'_> {
     }
 
     fn children(&self, key: AstNodeKey) -> Vec<AstNodeKey> {
+        self.raw_children(key)
+            .into_iter()
+            .filter_map(|child| self.unwrap_transparent(child))
+            .collect()
+    }
+
+    fn raw_children(&self, key: AstNodeKey) -> Vec<AstNodeKey> {
         self.query(child_nodes(self.db, key))
             .as_deref()
             .into_iter()
             .flatten()
             .copied()
-            .filter_map(|child| self.unwrap_transparent(child))
             .collect()
     }
 
@@ -183,6 +266,41 @@ pub fn emit_isle_item(
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new(input);
     emitter.emit_statement(UserFuncName::user(0, 0), signature, &facts, body)
+}
+
+/// Emit a syntax-only item with an explicit semantic-call importer.
+pub fn emit_isle_item_with_call_importer(
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    item: AstNodeKey,
+    importer: &mut dyn CallImporter,
+) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
+    let db = input.database();
+    let body = item_body(db, item)
+        .ok()
+        .flatten()
+        .ok_or_else(|| FunctionEmissionError::Verification("item has no syntax body".to_owned()))?;
+    let signature = item_signature(db, item)
+        .ok()
+        .flatten()
+        .and_then(|signature| signature_for_item(isa, signature))
+        .ok_or_else(|| {
+            FunctionEmissionError::Verification("item signature unavailable".to_owned())
+        })?;
+    if !signature.params.is_empty() {
+        return Err(FunctionEmissionError::Verification(
+            "syntax-only ISLE item emission does not yet materialize parameters".to_owned(),
+        ));
+    }
+    let emitter = FunctionEmitter::new(isa);
+    let facts = SyntaxNodeFacts::new_with_isa(input, isa);
+    emitter.emit_statement_with_call_importer(
+        UserFuncName::user(0, 0),
+        signature,
+        &facts,
+        body,
+        importer,
+    )
 }
 
 fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid_isle::Signature> {

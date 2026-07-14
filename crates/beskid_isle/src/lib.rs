@@ -1532,6 +1532,38 @@ impl<'isa> FunctionEmitter<'isa> {
         Ok(function)
     }
 
+    pub fn emit_statement_with_call_importer(
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        body: AstNodeKey,
+        call_importer: &mut dyn CallImporter,
+    ) -> Result<Function, FunctionEmissionError> {
+        let mut function = Function::with_name_signature(name, signature);
+        let mut builder_context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+            let entry = builder.create_block();
+            builder.switch_to_block(entry);
+            builder.seal_block(entry);
+            lower_statement(
+                &mut IsleContext::new_with_call_importer(&mut builder, facts, call_importer),
+                body,
+            )
+            .map_err(FunctionEmissionError::Lowering)?;
+            if !block_is_terminated(&builder, entry) {
+                return Err(FunctionEmissionError::Verification(
+                    "generated statement body did not terminate its entry block".to_owned(),
+                ));
+            }
+            builder.finalize();
+        }
+        verify_function(&function, self.isa.flags())
+            .map_err(|error| FunctionEmissionError::Verification(error.to_string()))?;
+        Ok(function)
+    }
+
     fn emit_expression_inner<'services>(
         &self,
         name: UserFuncName,
