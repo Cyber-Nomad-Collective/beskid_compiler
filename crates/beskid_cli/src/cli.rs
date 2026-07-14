@@ -23,6 +23,7 @@ use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::validate_bsol::ValidateBsolArgs;
+use beskid_up::UpArgs;
 use crate::commands::{
     analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp,
     migrate_bsol, new, parse, repl, run, runtime_kit, test, tree, update, validate_bsol,
@@ -124,6 +125,9 @@ pub enum Commands {
     /// Run the Beskid language server on stdio, or install a release binary (`beskid lsp install`)
     Lsp(LspArgs),
 
+    /// Check and manage direct-download Beskid toolchain versions
+    Up(UpArgs),
+
     /// Validate a BSOL document against a schema profile
     #[command(name = "validate-bsol")]
     ValidateBsol(ValidateBsolArgs),
@@ -166,6 +170,7 @@ pub fn run() -> miette::Result<()> {
         Commands::Pckg(args) => maybe_generate_docs_for_pack(&args)
             .and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into)),
         Commands::Lsp(args) => lsp::execute(args),
+        Commands::Up(args) => beskid_up::execute(args).map_err(anyhow::Error::from),
         Commands::ValidateBsol(args) => validate_bsol::execute(args),
         Commands::MigrateBsol(args) => migrate_bsol::execute(args),
         Commands::Graph(args) => graph::execute(args),
@@ -278,6 +283,12 @@ fn resolve_doc_entrypoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_up_list() {
+        let parsed = Cli::try_parse_from(["beskid", "up", "list"]).unwrap();
+        assert!(matches!(parsed.command, Commands::Up(_)));
+    }
 
     #[test]
     fn parses_mod_rebuild_with_clean_project_and_target() {
