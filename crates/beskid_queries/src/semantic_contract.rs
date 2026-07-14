@@ -332,7 +332,31 @@ fn call_lowering_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<CallLowering> {
-    unavailable_for_current_key(db, syntax, key, "call_lowering")
+    with_node(db, syntax, key, |_program, _index, node| {
+        call_lowering_for_node(node)
+    })?
+    .transpose()
+}
+
+fn call_lowering_for_node(
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<Result<CallLowering, SemanticError>> {
+    let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+    Some(if expression_is_lambda(&call.callee.node) {
+        Ok(CallLowering::Dynamic)
+    } else {
+        Err(SemanticError::unavailable("call_lowering"))
+    })
+}
+
+fn expression_is_lambda(expression: &beskid_analysis::syntax::Expression) -> bool {
+    match expression {
+        beskid_analysis::syntax::Expression::Lambda(_) => true,
+        beskid_analysis::syntax::Expression::Grouped(grouped) => {
+            expression_is_lambda(&grouped.node.expr.node)
+        }
+        _ => false,
+    }
 }
 
 #[salsa::tracked]
@@ -738,7 +762,11 @@ pub fn node_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTy
     with_registered_syntax(db, key, node_type_tracked)
 }
 
-/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+/// Classify call shapes whose lowering is certain from expanded syntax alone.
+///
+/// Immediate lambda calls are dynamic. Named, member, runtime, and other call shapes remain
+/// unavailable until their resolution and type facts are ported. Stale, unregistered, and
+/// non-call nodes contain no fact.
 pub fn call_lowering(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallLowering> {
     with_registered_syntax(db, key, call_lowering_tracked)
 }

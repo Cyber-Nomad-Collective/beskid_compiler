@@ -201,6 +201,29 @@ fn item_signature_does_not_guess_complex_type_identity() {
 }
 
 #[test]
+fn call_lowering_classifies_immediate_lambda_without_name_resolution() {
+    let source = "i64 Main() { return ((i64 value) => value)(1); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(
+        call_lowering(&db, call).expect("lambda call lowering"),
+        Some(beskid_queries::CallLowering::Dynamic)
+    );
+}
+
+#[test]
+fn call_lowering_does_not_guess_named_targets() {
+    let source = r#"
+i64 Helper() { return 1; }
+i64 Main() { return Helper(); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let named_call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    assert_unavailable(call_lowering(&db, named_call));
+}
+
+#[test]
 fn control_flow_facts_follow_ast_branch_termination() {
     let source = r#"
 i32 AlwaysReturns(bool condition) {
