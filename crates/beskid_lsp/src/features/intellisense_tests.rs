@@ -181,6 +181,28 @@ mod tests {
     }
 
     #[test]
+    fn references_use_syntax_facts_without_legacy_analysis() {
+        let uri = Uri::from_str("file:///tmp/syntax-references.bd").expect("uri");
+        let declaration_path = PathBuf::from("/tmp/syntax-references.bd");
+        let doc = Document {
+            version: 1,
+            text: "i32 helper() { return helper(); }".to_string(),
+            analysis_cache_version: ANALYSIS_CACHE_VERSION,
+            analysis: None,
+            syntax_definitions: vec![SyntaxDefinition {
+                reference_start: 22,
+                reference_end: 28,
+                declaration_path,
+                declaration_start: 4,
+                declaration_end: 10,
+            }],
+            syntax_hovers: Vec::new(),
+        };
+        let locations = references::handler::handle_references(&uri, &doc, 24, true, None);
+        assert_eq!(locations.len(), 2);
+    }
+
+    #[test]
     fn documentation_and_signature_help_use_syntax_hover_without_analysis() {
         let uri = Uri::from_str("file:///tmp/syntax-docs.bd").expect("uri");
         let source = "i32 Main() { return helper(); }".to_string();
