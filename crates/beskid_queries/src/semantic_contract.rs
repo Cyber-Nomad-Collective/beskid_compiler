@@ -305,7 +305,80 @@ fn resolved_item_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ResolvedItem> {
-    unavailable_for_current_key(db, syntax, key, "resolved_item")
+    with_node(db, syntax, key, |program, index, node| {
+        let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
+        let declaration = resolve_item_declaration(program, index, key.node, &path.path.node)?;
+        Some(ResolvedItem {
+            declaration: AstNodeKey {
+                node: declaration,
+                ..key
+            },
+        })
+    })
+}
+
+fn resolve_item_declaration(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    reference: beskid_analysis::syntax::AstNodeId,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    let [segment] = path.segments.as_slice() else {
+        return None;
+    };
+    if !segment.node.type_args.is_empty()
+        || resolve_lexical_declaration(
+            program,
+            index,
+            reference,
+            segment.node.name.node.name.as_str(),
+        )
+        .is_some()
+    {
+        return None;
+    }
+
+    let mut scope = module_scope(index, reference)?;
+    loop {
+        let candidates = index
+            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+            .filter(|candidate| {
+                module_scope(index, *candidate) == Some(scope)
+                    && index
+                        .node_at(program, *candidate)
+                        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+                        .is_some_and(|function| {
+                            function.name.node.name == segment.node.name.node.name
+                        })
+            })
+            .collect::<Vec<_>>();
+        match candidates.as_slice() {
+            [declaration] => return Some(*declaration),
+            [] => {}
+            _ => return None,
+        }
+        scope = outer_module_scope(index, scope)?;
+    }
+}
+
+fn module_scope(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    node: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    nearest_ancestor(index, node, |kind| {
+        matches!(
+            kind,
+            beskid_analysis::syntax_query::NodeKind::InlineModule
+                | beskid_analysis::syntax_query::NodeKind::Program
+        )
+    })
+}
+
+fn outer_module_scope(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    scope: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    module_scope(index, parent_node(index, scope)?)
 }
 
 #[salsa::tracked]
@@ -609,20 +682,27 @@ fn call_lowering_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<CallLowering> {
-    with_node(db, syntax, key, |_program, _index, node| {
-        call_lowering_for_node(node)
+    with_node(db, syntax, key, |program, index, node| {
+        call_lowering_for_node(program, index, key, node)
     })?
     .transpose()
 }
 
 fn call_lowering_for_node(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Option<Result<CallLowering, SemanticError>> {
     let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-    Some(if expression_is_lambda(&call.callee.node) {
-        Ok(CallLowering::Dynamic)
-    } else {
-        Err(SemanticError::unavailable("call_lowering"))
+    Some(match &call.callee.node {
+        expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
+        beskid_analysis::syntax::Expression::Path(path) => {
+            resolve_item_declaration(program, index, key.node, &path.node.path.node)
+                .map(|node| CallLowering::Direct(AstNodeKey { node, ..key }))
+                .ok_or_else(|| SemanticError::unavailable("call_lowering"))
+        }
+        _ => Err(SemanticError::unavailable("call_lowering")),
     })
 }
 
@@ -1057,7 +1137,43 @@ fn direct_callees_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
-    unavailable_for_current_key(db, syntax, key, "direct_callees")
+    with_node(db, syntax, key, |program, index, node| {
+        node.of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        Some(direct_callees_for_item(program, index, key))
+    })?
+    .transpose()
+}
+
+fn direct_callees_for_item(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    item: AstNodeKey,
+) -> Result<Arc<[AstNodeKey]>, SemanticError> {
+    let mut callees = Vec::new();
+    for call_id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::CallExpression) {
+        if !is_ancestor(index, item.node, call_id) {
+            continue;
+        }
+        let call_node = index
+            .node_at(program, call_id)
+            .ok_or_else(|| SemanticError::unavailable("direct_callees"))?;
+        let lowering = call_lowering_for_node(
+            program,
+            index,
+            AstNodeKey {
+                node: call_id,
+                ..item
+            },
+            call_node,
+        )
+        .ok_or_else(|| SemanticError::unavailable("direct_callees"))??;
+        if let CallLowering::Direct(declaration) = lowering
+            && !callees.contains(&declaration)
+        {
+            callees.push(declaration);
+        }
+    }
+    Ok(callees.into())
 }
 
 #[salsa::tracked]
@@ -1086,7 +1202,38 @@ fn reachable_items_tracked(
     {
         return Ok(None);
     }
-    Err(SemanticError::unavailable("reachable_items"))
+    if program.unit != entry.unit || program.generation != entry.generation {
+        return Err(SemanticError::unavailable("reachable_items"));
+    }
+    if syntax.syntax_index(db).kind(program.node)
+        != Some(beskid_analysis::syntax_query::NodeKind::Program)
+        || entry_syntax.syntax_index(db).kind(entry.node)
+            != Some(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+    {
+        return Ok(None);
+    }
+
+    fn visit(
+        db: &dyn Db,
+        syntax: SyntaxUnitInput,
+        item: AstNodeKey,
+        reachable: &mut Vec<AstNodeKey>,
+    ) -> Result<(), SemanticError> {
+        if reachable.contains(&item) {
+            return Ok(());
+        }
+        reachable.push(item);
+        let callees = direct_callees_tracked(db, syntax, item)?
+            .ok_or_else(|| SemanticError::unavailable("reachable_items"))?;
+        for callee in callees.iter().copied() {
+            visit(db, syntax, callee, reachable)?;
+        }
+        Ok(())
+    }
+
+    let mut reachable = Vec::new();
+    visit(db, syntax, entry, &mut reachable)?;
+    Ok(Some(reachable.into()))
 }
 
 fn with_node<T>(
@@ -1115,6 +1262,10 @@ fn with_node<T>(
     Ok(query(expanded, index, node))
 }
 
+/// Resolve a single-segment value path to an exact function declaration in lexical module scope.
+///
+/// Local declarations shadow item names. Ambiguous, qualified, generic, and unresolved paths
+/// contain no item fact. Stale, unregistered, and non-path nodes also contain no fact.
 pub fn resolved_item(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ResolvedItem> {
     with_registered_syntax(db, key, resolved_item_tracked)
 }
@@ -1138,9 +1289,9 @@ pub fn node_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTy
 
 /// Classify call shapes whose lowering is certain from expanded syntax alone.
 ///
-/// Immediate lambda calls are dynamic. Named, member, runtime, and other call shapes remain
-/// unavailable until their resolution and type facts are ported. Stale, unregistered, and
-/// non-call nodes contain no fact.
+/// Immediate lambda calls are dynamic. Exactly resolved single-segment function calls are direct.
+/// Ambiguous, shadowed, unresolved, member, runtime, and other call shapes remain explicitly
+/// unavailable. Stale, unregistered, and non-call nodes contain no fact.
 pub fn call_lowering(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallLowering> {
     with_registered_syntax(db, key, call_lowering_tracked)
 }
@@ -1198,10 +1349,18 @@ pub fn item_body(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey
     with_registered_syntax(db, key, item_body_tracked)
 }
 
+/// Return unique direct function callees in expanded-syntax order.
+///
+/// Dynamic calls do not add an edge. Any unresolved call makes the result explicitly unavailable
+/// so an incomplete graph cannot masquerade as complete.
 pub fn direct_callees(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_registered_syntax(db, key, direct_callees_tracked)
 }
 
+/// Traverse direct function calls from an entry using generation-safe declaration keys.
+///
+/// The result is deterministic depth-first preorder and includes the entry. Recursive cycles are
+/// visited once. Missing or unresolved call facts propagate explicit unavailability.
 pub fn reachable_items(
     db: &dyn Db,
     program: AstNodeKey,

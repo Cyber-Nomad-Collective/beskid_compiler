@@ -175,7 +175,7 @@ fn stale_generation_has_no_semantic_facts() {
     };
     assert!(db.syntax_unit(typed.entry) == Some(authority));
 
-    assert_unavailable(resolved_item(&db, current));
+    assert_eq!(resolved_item(&db, current), Ok(None));
     assert_eq!(resolved_local(&db, current), Ok(None));
     assert_eq!(node_type(&db, current), Ok(None));
     assert_eq!(call_lowering(&db, current), Ok(None));
@@ -214,7 +214,7 @@ fn stale_generation_has_no_semantic_facts() {
         generation: SyntaxGenerationId(5),
         ..current
     };
-    assert_unavailable(resolved_item(&db, current_after_update));
+    assert_eq!(resolved_item(&db, current_after_update), Ok(None));
 }
 
 #[test]

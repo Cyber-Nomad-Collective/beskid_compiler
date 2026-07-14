@@ -123,6 +123,7 @@ i32 Main() {
 
     let helper = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
     let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let program = key(unit, generation, &index, NodeKind::Program, 0);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
     let local_reference = key(unit, generation, &index, NodeKind::PathExpression, 2);
     let integer = key(unit, generation, &index, NodeKind::Literal, 0);
@@ -172,11 +173,25 @@ i32 Main() {
             .expect("local resolution")
             .is_some()
     );
-    assert_unavailable(resolved_item(&db, item_reference));
-    assert_unavailable(call_lowering(&db, call));
+    assert_eq!(
+        resolved_item(&db, item_reference).expect("item resolution"),
+        Some(beskid_queries::ResolvedItem {
+            declaration: helper,
+        })
+    );
+    assert_eq!(
+        call_lowering(&db, call).expect("call lowering"),
+        Some(beskid_queries::CallLowering::Direct(helper))
+    );
     assert_unavailable(cast_intents(&db, call));
-    assert_unavailable(direct_callees(&db, main));
-    assert_unavailable(reachable_items(&db, main, main));
+    assert_eq!(
+        direct_callees(&db, main).expect("direct callees"),
+        Some(Arc::from([helper]))
+    );
+    assert_eq!(
+        reachable_items(&db, program, main).expect("reachable items"),
+        Some(Arc::from([main, helper]))
+    );
     assert_unavailable(runtime_intrinsic(&db, call));
 }
 
@@ -320,14 +335,179 @@ fn call_lowering_classifies_immediate_lambda_without_name_resolution() {
 }
 
 #[test]
-fn call_lowering_does_not_guess_named_targets() {
+fn call_lowering_resolves_named_targets() {
     let source = r#"
 i64 Helper() { return 1; }
 i64 Main() { return Helper(); }
 "#;
     let (db, _project, unit, generation, index) = setup(source);
+    let helper = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
     let named_call = key(unit, generation, &index, NodeKind::CallExpression, 0);
-    assert_unavailable(call_lowering(&db, named_call));
+    assert_eq!(
+        call_lowering(&db, named_call).expect("named call"),
+        Some(beskid_queries::CallLowering::Direct(helper))
+    );
+}
+
+#[test]
+fn item_and_call_graph_facts_resolve_named_calls_and_recursion() {
+    let source = r#"i32 Leaf() { return 1; }
+i32 Recur(i32 count) {
+    if count == 0 { return 0; }
+    return Recur(count - 1);
+}
+i32 Main() {
+    Leaf();
+    return Recur(1);
+}"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let program = key(unit, generation, &index, NodeKind::Program, 0);
+    let leaf = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let recur = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 2);
+    let leaf_call_offset = source.find("Leaf();").expect("leaf call");
+    let leaf_path = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        leaf_call_offset,
+    );
+    let recursive_call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let main_recur_call = key(unit, generation, &index, NodeKind::CallExpression, 2);
+
+    assert_eq!(
+        resolved_item(&db, leaf_path).expect("leaf item"),
+        Some(beskid_queries::ResolvedItem { declaration: leaf })
+    );
+    assert_eq!(
+        call_lowering(&db, recursive_call).expect("recursive lowering"),
+        Some(beskid_queries::CallLowering::Direct(recur))
+    );
+    assert_eq!(
+        call_lowering(&db, main_recur_call).expect("main recur lowering"),
+        Some(beskid_queries::CallLowering::Direct(recur))
+    );
+    assert_eq!(
+        direct_callees(&db, recur).expect("recursive callees"),
+        Some(Arc::from([recur]))
+    );
+    assert_eq!(
+        direct_callees(&db, main).expect("main callees"),
+        Some(Arc::from([leaf, recur]))
+    );
+    let reachable = reachable_items(&db, program, main)
+        .expect("reachable query")
+        .expect("reachable facts");
+    assert_eq!(reachable.as_ref(), &[main, leaf, recur]);
+}
+
+#[test]
+fn item_resolution_does_not_cross_local_shadowing_or_unresolved_names() {
+    let shadowed_source = r#"i32 Helper() { return 1; }
+i32 Main() {
+    let Helper = (i32 value) => value;
+    return Helper(1);
+}"#;
+    let (db, _project, unit, generation, index) = setup(shadowed_source);
+    let shadowed_offset = shadowed_source.rfind("Helper(1)").expect("shadowed call");
+    let shadowed_path = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        shadowed_offset,
+    );
+    let shadowed_call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    assert_eq!(
+        resolved_item(&db, shadowed_path).expect("shadowed item"),
+        None
+    );
+    assert_unavailable(call_lowering(&db, shadowed_call));
+
+    let unresolved_source = "i32 Main() { return Missing(); }";
+    let (db, _project, unit, generation, index) = setup(unresolved_source);
+    let unresolved_path = key(unit, generation, &index, NodeKind::PathExpression, 0);
+    let unresolved_call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let unresolved_main = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let unresolved_program = key(unit, generation, &index, NodeKind::Program, 0);
+    assert_eq!(
+        resolved_item(&db, unresolved_path).expect("unresolved item"),
+        None
+    );
+    assert_unavailable(call_lowering(&db, unresolved_call));
+    assert_unavailable(direct_callees(&db, unresolved_main));
+    assert_unavailable(reachable_items(&db, unresolved_program, unresolved_main));
+}
+
+#[test]
+fn item_resolution_prefers_the_nearest_module_and_falls_back_lexically() {
+    let source = r#"i32 Helper() { return 0; }
+mod Inner {
+    i32 Helper() { return 1; }
+    i32 Main() { return Helper(); }
+    i32 Fallback() { return OuterOnly(); }
+}
+i32 OuterOnly() { return 2; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let inner_helper = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let outer_only = key(unit, generation, &index, NodeKind::FunctionDefinition, 4);
+    let inner_helper_path = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.rfind("Helper();").expect("inner helper call"),
+    );
+    let outer_only_path = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.rfind("OuterOnly();").expect("outer fallback call"),
+    );
+
+    assert_eq!(
+        resolved_item(&db, inner_helper_path).expect("nearest module item"),
+        Some(beskid_queries::ResolvedItem {
+            declaration: inner_helper,
+        })
+    );
+    assert_eq!(
+        resolved_item(&db, outer_only_path).expect("outer module fallback"),
+        Some(beskid_queries::ResolvedItem {
+            declaration: outer_only,
+        })
+    );
+}
+
+#[test]
+fn stale_generation_cannot_reuse_item_or_call_graph_facts() {
+    let source = "i32 Helper() { return 1; } i32 Main() { return Helper(); }";
+    let (mut db, project, unit, generation, index) = setup(source);
+    let helper_path = key(unit, generation, &index, NodeKind::PathExpression, 0);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    assert!(
+        resolved_item(&db, helper_path)
+            .expect("current item")
+            .is_some()
+    );
+    assert!(
+        direct_callees(&db, main)
+            .expect("current callees")
+            .is_some()
+    );
+
+    db.update_syntax_source(
+        project,
+        unit,
+        SyntaxGenerationId(generation.0 + 1),
+        "i32 Main() { return 0; }".to_string(),
+    )
+    .expect("syntax update");
+    assert_eq!(resolved_item(&db, helper_path).expect("stale item"), None);
+    assert_eq!(direct_callees(&db, main).expect("stale callees"), None);
 }
 
 #[test]
