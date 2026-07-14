@@ -25,6 +25,7 @@ pub enum NodeKind {
     FunctionDefinition,
     ExpressionStatement,
     ReturnStatement,
+    IfStatement,
     LiteralExpression,
     GroupedExpression,
     UnaryExpression,
@@ -355,6 +356,27 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         } else {
             self.builder.ins().return_(&[]);
         }
+        Some(())
+    }
+
+    fn emit_if_else(&mut self, key: AstNodeKey) -> Option<()> {
+        let condition_key = self.facts.child(key, 0)?;
+        let then_key = self.facts.child(key, 1)?;
+        let else_key = self.facts.child(key, 2)?;
+        let condition = generated::constructor_lower_expression(self, condition_key)?;
+        let then_block = self.builder.create_block();
+        let else_block = self.builder.create_block();
+        self.builder
+            .ins()
+            .brif(condition, then_block, &[], else_block, &[]);
+
+        self.builder.switch_to_block(then_block);
+        self.builder.seal_block(then_block);
+        generated::constructor_lower_statement(self, then_key)?;
+
+        self.builder.switch_to_block(else_block);
+        self.builder.seal_block(else_block);
+        generated::constructor_lower_statement(self, else_key)?;
         Some(())
     }
 

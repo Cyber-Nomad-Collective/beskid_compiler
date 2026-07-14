@@ -6,3 +6,9 @@
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.And))))
       (clif_short_circuit_and key))
+
+(decl partial emit_if_else (AstNodeKey) Unit)
+(extern constructor emit_if_else emit_if_else)
+
+(rule (lower_statement key @ (node_kind (NodeKind.IfStatement)))
+      (emit_if_else key))

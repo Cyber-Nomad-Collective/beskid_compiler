@@ -1,7 +1,7 @@
 (type AstNodeKey (primitive AstNodeKey))
 (type Value (primitive Value))
 (type Unit (primitive Unit))
-(type NodeKind extern (enum Program FunctionDefinition ExpressionStatement ReturnStatement LiteralExpression GroupedExpression UnaryExpression BinaryExpression CallExpression PathExpression))
+(type NodeKind extern (enum Program FunctionDefinition ExpressionStatement ReturnStatement IfStatement LiteralExpression GroupedExpression UnaryExpression BinaryExpression CallExpression PathExpression))
 (type LiteralKind extern (enum Integer Float String Char Boolean))
 (type OperatorFact extern (enum Or And IdentityEq IdentityNotEq Eq NotEq Lt Lte Gt Gte Add Sub Mul Div Mod Neg Not))
 (type CallKind extern (enum Direct RuntimeIntrinsic))
