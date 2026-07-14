@@ -1,56 +1,39 @@
-//! Resolve prebuilt Beskid runtime static libraries shipped with the toolchain.
-//!
-//! Installed archives are resolved through validated ABI-v5 runtime-kit metadata.
+//! Resolve the exact validated ABI-v5 runtime kit shipped with the toolchain.
 
 use std::path::{Path, PathBuf};
 
-use beskid_abi::BESKID_RUNTIME_ABI_VERSION;
-use beskid_abi::abi_v5::TargetMetadata;
-use beskid_abi::runtime_kit::{
-    BuildProfile as RuntimeKitProfile, resolve_installed_runtime_kit,
-};
+use beskid_abi::abi_v5::{TargetMetadata, canonical_source_hash};
+use beskid_abi::runtime_kit::{BuildProfile as RuntimeKitProfile, resolve_installed_runtime_kit};
+use beskid_abi::runtime_source::canonical_runtime_sources;
 
 use crate::api::{BuildProfile, RuntimeLinkProfile, RuntimeStrategy};
 use crate::error::{AotError, AotResult};
 use crate::target::detect_target;
 
-const ENV_RUNTIME_ARCHIVE: &str = "BESKID_RUNTIME_ARCHIVE";
+const ENV_RUNTIME_PREFIX: &str = "BESKID_RUNTIME_PREFIX";
 
-/// Resolve the static archive from one exact, metadata-validated ABI-v5 runtime kit.
-pub fn resolve_runtime_kit_archive_at_prefix(
-    prefix: &Path,
-    profile: BuildProfile,
-    target_triple: &str,
-) -> AotResult<PathBuf> {
-    let target = TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == target_triple)
-        .ok_or_else(|| AotError::RuntimeBuild {
-            message: format!("unsupported ABI-v5 runtime kit target `{target_triple}`"),
-        })?;
-    let kit_profile = match profile {
-        BuildProfile::Debug => RuntimeKitProfile::Debug,
-        BuildProfile::Release => RuntimeKitProfile::Release,
-    };
-    resolve_installed_runtime_kit(prefix, &target, kit_profile)
-        .map(|kit| kit.static_library)
-        .map_err(|error| AotError::RuntimeBuild {
-            message: format!(
-                "failed to resolve exact ABI-v5 runtime kit for `{target_triple}`: {error:?}"
-            ),
-        })
-}
-
-/// Default AOT runtime strategy: bundled prebuilt archive for the host target and profile.
+/// Default AOT runtime strategy: one exact installed ABI-v5 kit.
 pub fn default_runtime_strategy(
     profile: BuildProfile,
     target_triple: Option<&str>,
     link_profile: RuntimeLinkProfile,
 ) -> AotResult<RuntimeStrategy> {
-    let path = resolve_bundled_runtime_archive(profile, target_triple, link_profile)?;
-    Ok(RuntimeStrategy::UsePrebuilt {
-        path,
-        abi_version: BESKID_RUNTIME_ABI_VERSION,
+    let prefix = runtime_prefix()?;
+    installed_runtime_strategy(&prefix, profile, target_triple, link_profile)
+}
+
+/// Construct an exact installed-kit request without probing alternate archives or profiles.
+pub fn installed_runtime_strategy(
+    prefix: &Path,
+    profile: BuildProfile,
+    target_triple: Option<&str>,
+    link_profile: RuntimeLinkProfile,
+) -> AotResult<RuntimeStrategy> {
+    require_single_runtime_profile(link_profile)?;
+    Ok(RuntimeStrategy::UseInstalledKit {
+        prefix: prefix.to_path_buf(),
+        target: runtime_target(target_triple)?,
+        profile: kit_profile(profile),
     })
 }
 
@@ -112,125 +95,106 @@ fn workspace_dev_host_archive(profile: BuildProfile) -> Option<PathBuf> {
     candidates.into_iter().find(|path| path.is_file())
 }
 
-/// Locate a prebuilt `beskid_runtime_bridge` static library.
+/// Resolve the static artifact from the toolchain's exact ABI-v5 kit.
 pub fn resolve_bundled_runtime_archive(
     profile: BuildProfile,
     target_triple: Option<&str>,
     link_profile: RuntimeLinkProfile,
 ) -> AotResult<PathBuf> {
-    if let Ok(path) = std::env::var(ENV_RUNTIME_ARCHIVE) {
-        let path = PathBuf::from(path.trim());
-        if path.is_file() {
-            return Ok(path);
-        }
-        return Err(AotError::RuntimeArchiveMissing { path });
-    }
-
-    if let Some(path) = install_layout_runtime_archive(profile, target_triple, link_profile)? {
-        return Ok(path);
-    }
-
-    if let Some(path) = workspace_dev_runtime_archive(profile, link_profile) {
-        return Ok(path);
-    }
-
-    let target = detect_target(target_triple)?;
-    let archive_hint = runtime_archive_build_hint(link_profile);
-    Err(AotError::RuntimeBuild {
-        message: format!(
-            "prebuilt Beskid runtime archive not found for target `{}`, profile `{:?}`, and link profile `{link_profile:?}`. \
-             Install a Beskid toolchain that includes `lib/beskid-runtime/abi-{BESKID_RUNTIME_ABI_VERSION}/`, \
-             set `{ENV_RUNTIME_ARCHIVE}` to a runtime bridge static library, \
-             or run `{archive_hint}`.",
-            target.triple, profile
-        ),
-    })
+    resolve_installed_runtime_archive(&runtime_prefix()?, profile, target_triple, link_profile)
 }
 
-fn runtime_archive_build_hint(link_profile: RuntimeLinkProfile) -> &'static str {
-    match link_profile {
-        RuntimeLinkProfile::Std => {
-            "cargo build -p beskid_runtime_bridge in the compiler workspace"
-        }
-        RuntimeLinkProfile::Minimal => {
-            "cargo build -p beskid_runtime_bridge --no-default-features && \
-             cp target/debug/libbeskid_runtime_bridge.a target/debug/libbeskid_runtime_minimal.a && \
-             cargo build -p beskid_runtime_bridge"
-        }
-    }
-}
-
-fn install_layout_runtime_archive(
+/// Resolve one exact prefix/target/profile and return its hash-verified static artifact.
+pub fn resolve_installed_runtime_archive(
+    prefix: &Path,
     profile: BuildProfile,
     target_triple: Option<&str>,
-    _link_profile: RuntimeLinkProfile,
-) -> AotResult<Option<PathBuf>> {
-    let Ok(exe) = std::env::current_exe() else {
-        return Ok(None);
-    };
-    let target = detect_target(target_triple)?;
-
-    for ancestor in exe.ancestors() {
-        if let Ok(archive) =
-            resolve_runtime_kit_archive_at_prefix(ancestor, profile, &target.triple)
-        {
-            return Ok(Some(archive));
-        }
-    }
-
-    Ok(None)
-}
-
-fn workspace_dev_runtime_archive(
-    profile: BuildProfile,
     link_profile: RuntimeLinkProfile,
-) -> Option<PathBuf> {
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let lib_name = runtime_archive_library_name(
-        if cfg!(target_os = "windows") {
-            "lib"
-        } else {
-            "a"
-        },
-        link_profile,
-    );
-    let profile_dir = profile_dir_name(profile);
-    let target_root = std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| workspace.join("target"));
-
-    let mut candidates = vec![target_root.join(profile_dir).join(&lib_name)];
-    if let Ok(host_triple) = std::env::var("HOST") {
-        candidates.push(
-            target_root
-                .join(&host_triple)
-                .join(profile_dir)
-                .join(&lib_name),
-        );
-    }
-    if let Ok(build_target) = std::env::var("CARGO_BUILD_TARGET") {
-        candidates.push(
-            target_root
-                .join(build_target)
-                .join(profile_dir)
-                .join(&lib_name),
-        );
-    }
-
-    candidates.into_iter().find(|path| path.is_file())
+) -> AotResult<PathBuf> {
+    require_single_runtime_profile(link_profile)?;
+    let target = runtime_target(target_triple)?;
+    let kit = resolve_aot_runtime_kit(prefix, &target, kit_profile(profile))?;
+    Ok(kit.static_library)
 }
 
-fn runtime_archive_library_name(static_lib_ext: &str, link_profile: RuntimeLinkProfile) -> String {
-    match link_profile {
-        RuntimeLinkProfile::Std => runtime_bridge_library_name(static_lib_ext).to_owned(),
-        RuntimeLinkProfile::Minimal => {
-            if static_lib_ext == "lib" {
-                "beskid_runtime_minimal.lib".to_owned()
-            } else {
-                "libbeskid_runtime_minimal.a".to_owned()
-            }
+pub(crate) fn resolve_aot_runtime_kit(
+    prefix: &Path,
+    target: &TargetMetadata,
+    profile: RuntimeKitProfile,
+) -> AotResult<beskid_abi::runtime_kit::ResolvedRuntimeKit> {
+    let kit = resolve_installed_runtime_kit(prefix, target, profile).map_err(|error| {
+        AotError::RuntimeBuild {
+            message: format!(
+                "ABI-v5 runtime kit validation failed for `{}`: {error:?}",
+                prefix.display()
+            ),
         }
+    })?;
+    let compiler_source_hash = canonical_source_hash(&canonical_runtime_sources())
+        .expect("compiler-embedded runtime source paths are unique");
+    if kit.metadata.source_hash != compiler_source_hash {
+        return Err(AotError::RuntimeBuild {
+            message: format!(
+                "ABI-v5 runtime source hash mismatch: compiler={compiler_source_hash}, kit={}",
+                kit.metadata.source_hash
+            ),
+        });
     }
+    Ok(kit)
+}
+
+fn runtime_prefix() -> AotResult<PathBuf> {
+    if let Some(prefix) = std::env::var_os(ENV_RUNTIME_PREFIX) {
+        return Ok(PathBuf::from(prefix));
+    }
+    let executable = std::env::current_exe().map_err(|error| AotError::RuntimeBuild {
+        message: format!("cannot locate current executable for ABI-v5 runtime prefix: {error}"),
+    })?;
+    let bin = executable.parent().ok_or_else(|| AotError::RuntimeBuild {
+        message: format!(
+            "current executable has no parent: `{}`",
+            executable.display()
+        ),
+    })?;
+    bin.parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| AotError::RuntimeBuild {
+            message: format!(
+                "current executable has no install prefix: `{}`",
+                executable.display()
+            ),
+        })
+}
+
+fn require_single_runtime_profile(link_profile: RuntimeLinkProfile) -> AotResult<()> {
+    if link_profile == RuntimeLinkProfile::Minimal {
+        return Err(AotError::InvalidRequest {
+            message:
+                "ABI v5 has one hosted runtime; the legacy minimal runtime profile is unavailable"
+                    .into(),
+        });
+    }
+    Ok(())
+}
+
+fn runtime_target(target_triple: Option<&str>) -> AotResult<TargetMetadata> {
+    let triple = target_triple.map_or_else(host_runtime_triple, str::to_owned);
+    TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == triple)
+        .ok_or_else(|| AotError::RuntimeBuild {
+            message: format!("unsupported ABI-v5 runtime target `{triple}`"),
+        })
+}
+
+fn host_runtime_triple() -> String {
+    match (std::env::consts::ARCH, std::env::consts::OS) {
+        ("x86_64", "linux") => "x86_64-unknown-linux-gnu",
+        ("aarch64", "macos") => "aarch64-apple-darwin",
+        ("x86_64", "windows") => "x86_64-pc-windows-msvc",
+        (arch, os) => return format!("{arch}-unsupported-{os}"),
+    }
+    .into()
 }
 
 fn profile_dir_name(profile: BuildProfile) -> &'static str {
@@ -240,10 +204,9 @@ fn profile_dir_name(profile: BuildProfile) -> &'static str {
     }
 }
 
-fn runtime_bridge_library_name(static_lib_ext: &str) -> &'static str {
-    if static_lib_ext == "lib" {
-        "beskid_runtime_bridge.lib"
-    } else {
-        "libbeskid_runtime_bridge.a"
+fn kit_profile(profile: BuildProfile) -> RuntimeKitProfile {
+    match profile {
+        BuildProfile::Debug => RuntimeKitProfile::Debug,
+        BuildProfile::Release => RuntimeKitProfile::Release,
     }
 }

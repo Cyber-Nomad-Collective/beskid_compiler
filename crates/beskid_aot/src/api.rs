@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use beskid_abi::abi_v5::TargetMetadata;
+use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_codegen::CodegenArtifact;
 use beskid_pipeline::{
     SharedPipelineObserver, observe_phase_result,
@@ -62,7 +64,15 @@ pub enum LinkMode {
 /// How the AOT pipeline obtains a runtime static library to link against.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeStrategy {
-    UsePrebuilt { path: PathBuf, abi_version: u32 },
+    UseInstalledKit {
+        prefix: PathBuf,
+        target: TargetMetadata,
+        profile: RuntimeKitProfile,
+    },
+    UsePrebuilt {
+        path: PathBuf,
+        abi_version: u32,
+    },
     Standalone,
 }
 
@@ -423,7 +433,10 @@ mod with_defaults_tests {
         assert_eq!(req.entrypoint, "Main");
         assert_eq!(req.export_policy, ExportPolicy::PublicOnly);
         assert_eq!(req.link_mode, LinkMode::Auto);
-        assert!(matches!(req.runtime, RuntimeStrategy::UsePrebuilt { .. }));
+        assert!(matches!(
+            req.runtime,
+            RuntimeStrategy::UseInstalledKit { .. }
+        ));
         assert!(!req.verbose_link);
         assert!(req.external_libraries.is_empty());
         assert!(req.library_search_paths.is_empty());

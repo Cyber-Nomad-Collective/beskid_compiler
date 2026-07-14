@@ -107,6 +107,18 @@ pub fn prepare_runtime(req: &RuntimeBuildRequest) -> AotResult<RuntimeArtifact> 
             host_staticlib_path: None,
             exported_symbols: Vec::new(),
         }),
+        RuntimeStrategy::UseInstalledKit {
+            prefix,
+            target,
+            profile,
+        } => {
+            let kit = crate::bundled::resolve_aot_runtime_kit(prefix, target, *profile)?;
+            Ok(RuntimeArtifact {
+                staticlib_path: Some(kit.static_library),
+                host_staticlib_path: None,
+                exported_symbols: kit.metadata.export_allowlist,
+            })
+        }
         RuntimeStrategy::UsePrebuilt { path, abi_version } => {
             if *abi_version != BESKID_RUNTIME_ABI_VERSION {
                 return Err(AotError::RuntimeAbiMismatch {
