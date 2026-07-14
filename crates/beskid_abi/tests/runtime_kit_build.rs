@@ -7,6 +7,9 @@ use beskid_abi::runtime_kit::{
     BuildProfile, RuntimeKitBuildError, RuntimeKitBuildRequest, build_runtime_kit,
     resolve_installed_runtime_kit,
 };
+use beskid_abi::runtime_source::{
+    CanonicalRuntimeKitBuildError, build_canonical_runtime_kit, canonical_runtime_source_hash,
+};
 
 struct TempDir(PathBuf);
 
@@ -93,4 +96,32 @@ fn failed_input_validation_publishes_no_partial_kit_or_metadata() {
         .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu/release");
     assert!(!expected_root.exists());
     assert!(!expected_root.join("abi.json").exists());
+}
+
+#[test]
+fn canonical_runtime_kit_builder_denies_noncanonical_source_hashes() {
+    let prefix = TempDir::new("canonical-source-denial");
+    let inputs = TempDir::new("canonical-source-denial-inputs");
+    let request = request(&prefix, &inputs);
+
+    assert!(matches!(
+        build_canonical_runtime_kit(&request),
+        Err(CanonicalRuntimeKitBuildError::SourceHashMismatch { .. })
+    ));
+
+    let expected_root = prefix
+        .0
+        .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu/release");
+    assert!(!expected_root.exists());
+}
+
+#[test]
+fn canonical_runtime_kit_builder_publishes_the_embedded_corpus_hash() {
+    let prefix = TempDir::new("canonical-source");
+    let inputs = TempDir::new("canonical-source-inputs");
+    let mut request = request(&prefix, &inputs);
+    request.runtime_source_hash = canonical_runtime_source_hash();
+
+    let built = build_canonical_runtime_kit(&request).expect("canonical runtime kit");
+    assert_eq!(built.metadata.source_hash, canonical_runtime_source_hash());
 }

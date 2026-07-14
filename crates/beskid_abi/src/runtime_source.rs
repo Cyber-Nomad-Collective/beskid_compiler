@@ -10,7 +10,8 @@ use crate::abi_v5::{
     canonical_source_hash,
 };
 use crate::runtime_kit::{
-    BuildProfile, ResolvedRuntimeKit, RuntimeKitResolutionError, resolve_installed_runtime_kit,
+    BuildProfile, ResolvedRuntimeKit, RuntimeKitBuildError, RuntimeKitBuildRequest,
+    RuntimeKitResolutionError, build_runtime_kit, resolve_installed_runtime_kit,
 };
 
 pub const CANONICAL_BOOTSTRAP_SOURCE_PATH: &str = "src/Runtime/Bootstrap.bd";
@@ -76,6 +77,35 @@ pub enum CanonicalRuntimeKitError {
     SourceHashMismatch { compiler: String, kit: String },
 }
 
+#[derive(Debug)]
+pub enum CanonicalRuntimeKitBuildError {
+    SourceHashMismatch { compiler: String, requested: String },
+    Build(RuntimeKitBuildError),
+}
+
+/// Publish a runtime kit only when it declares the exact embedded Beskid runtime corpus.
+///
+/// Tooling may build artifacts for any supported target/profile, but it must not publish a kit
+/// under the canonical ABI-v5 identity with an unrelated source hash.
+pub fn build_canonical_runtime_kit(
+    request: &RuntimeKitBuildRequest,
+) -> Result<ResolvedRuntimeKit, CanonicalRuntimeKitBuildError> {
+    let compiler = canonical_runtime_source_hash();
+    if request.runtime_source_hash != compiler {
+        return Err(CanonicalRuntimeKitBuildError::SourceHashMismatch {
+            compiler,
+            requested: request.runtime_source_hash.clone(),
+        });
+    }
+    build_runtime_kit(request).map_err(CanonicalRuntimeKitBuildError::Build)
+}
+
+/// Hash of the corpus embedded in this compiler and eligible for ABI-v5 runtime authority.
+pub fn canonical_runtime_source_hash() -> String {
+    canonical_source_hash(&canonical_runtime_sources())
+        .expect("embedded runtime source paths are unique")
+}
+
 /// Resolve a validated installed kit whose source corpus exactly matches this compiler.
 pub fn resolve_canonical_runtime_kit(
     prefix: &Path,
@@ -84,8 +114,7 @@ pub fn resolve_canonical_runtime_kit(
 ) -> Result<ResolvedRuntimeKit, CanonicalRuntimeKitError> {
     let kit = resolve_installed_runtime_kit(prefix, target, profile)
         .map_err(CanonicalRuntimeKitError::Resolution)?;
-    let compiler = canonical_source_hash(&canonical_runtime_sources())
-        .expect("compiler-embedded runtime source paths are unique");
+    let compiler = canonical_runtime_source_hash();
     if kit.metadata.source_hash != compiler {
         return Err(CanonicalRuntimeKitError::SourceHashMismatch {
             compiler,
@@ -112,8 +141,7 @@ pub fn grant_runtime_intrinsics(
     }
 
     let expected_sources = canonical_runtime_sources();
-    let expected_hash =
-        canonical_source_hash(&expected_sources).expect("embedded runtime source paths are unique");
+    let expected_hash = canonical_runtime_source_hash();
     let actual_hash =
         canonical_source_hash(sources).map_err(|_| RuntimeCapabilityError::SourceSetMismatch)?;
     if sources.len() != expected_sources.len() || actual_hash != expected_hash {
