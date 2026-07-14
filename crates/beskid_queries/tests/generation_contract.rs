@@ -6,8 +6,9 @@ use beskid_analysis::projects::{
 };
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession,
-    SemanticError, SourceUnitId, SyntaxGenerationId, TypedProgram, call_lowering, cast_intents,
-    control_flow, item_signature, node_type, resolved_item, resolved_local, runtime_intrinsic,
+    SemanticError, SourceUnitId, SyntaxGenerationId, TypedProgram, call_arguments, call_lowering,
+    cast_intents, control_flow, item_signature, local_slot, node_type, resolved_item,
+    resolved_local, runtime_intrinsic,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -177,7 +178,9 @@ fn stale_generation_has_no_semantic_facts() {
 
     assert_eq!(resolved_item(&db, current), Ok(None));
     assert_eq!(resolved_local(&db, current), Ok(None));
+    assert_eq!(local_slot(&db, current), Ok(None));
     assert_eq!(node_type(&db, current), Ok(None));
+    assert_eq!(call_arguments(&db, current), Ok(None));
     assert_eq!(call_lowering(&db, current), Ok(None));
     assert_eq!(cast_intents(&db, current), Ok(None));
     assert_eq!(control_flow(&db, current), Ok(None));
@@ -186,7 +189,9 @@ fn stale_generation_has_no_semantic_facts() {
 
     assert_eq!(resolved_item(&db, stale), Ok(None));
     assert_eq!(resolved_local(&db, stale), Ok(None));
+    assert_eq!(local_slot(&db, stale), Ok(None));
     assert_eq!(node_type(&db, stale), Ok(None));
+    assert_eq!(call_arguments(&db, stale), Ok(None));
     assert_eq!(call_lowering(&db, stale), Ok(None));
     assert_eq!(cast_intents(&db, stale), Ok(None));
     assert_eq!(control_flow(&db, stale), Ok(None));

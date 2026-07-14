@@ -75,11 +75,11 @@ pub use persistence::{
 };
 pub use semantic_contract::{
     AstNodeKey, CallLowering, CastIntent, ControlFlow, IndexedNodeKind, ItemSignature, LiteralFact,
-    OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, SemanticError,
-    SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, TypedProgram, call_lowering,
-    cast_intents, child_nodes, control_flow, direct_callees, item_body, item_signature,
-    literal_fact, node_kind, node_span, node_type, operator_fact, reachable_items, resolved_item,
-    resolved_local, runtime_intrinsic,
+    LocalSlot, OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, SemanticError,
+    SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, TypedProgram, call_arguments,
+    call_lowering, cast_intents, child_nodes, control_flow, direct_callees, item_body,
+    item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
+    reachable_items, resolved_item, resolved_local, runtime_intrinsic,
 };
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,

@@ -134,6 +134,13 @@ pub struct ResolvedLocal {
     pub declaration: AstNodeKey,
 }
 
+/// Owner-qualified backend slot for an exact local declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LocalSlot {
+    pub owner: AstNodeKey,
+    pub index: u32,
+}
+
 /// Opaque semantic type identity owned by the query layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SemanticTypeId(pub u32);
@@ -407,6 +414,56 @@ fn resolved_local_tracked(
                 ..key
             },
         })
+    })
+}
+
+#[salsa::tracked]
+fn local_slot_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<LocalSlot> {
+    with_node(db, syntax, key, |_program, index, node| {
+        node.of::<beskid_analysis::syntax::Identifier>()?;
+        let owner = local_declaration_owner(index, key.node)?;
+        let slot = index
+            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::Identifier)
+            .filter(|declaration| local_declaration_owner(index, *declaration) == Some(owner))
+            .position(|declaration| declaration == key.node)?;
+        Some(
+            u32::try_from(slot)
+                .map(|index| LocalSlot {
+                    owner: AstNodeKey { node: owner, ..key },
+                    index,
+                })
+                .map_err(|_| SemanticError::unavailable("local_slot")),
+        )
+    })?
+    .transpose()
+}
+
+fn local_declaration_owner(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    let parent = parent_node(index, declaration)?;
+    if !matches!(
+        index.kind(parent)?,
+        beskid_analysis::syntax_query::NodeKind::Parameter
+            | beskid_analysis::syntax_query::NodeKind::LetStatement
+            | beskid_analysis::syntax_query::NodeKind::LambdaParameter
+            | beskid_analysis::syntax_query::NodeKind::ForStatement
+            | beskid_analysis::syntax_query::NodeKind::Pattern
+    ) {
+        return None;
+    }
+    nearest_ancestor(index, parent, |kind| {
+        matches!(
+            kind,
+            beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+                | beskid_analysis::syntax_query::NodeKind::LambdaExpression
+        )
     })
 }
 
@@ -684,6 +741,34 @@ fn call_lowering_tracked(
 ) -> SemanticQueryResult<CallLowering> {
     with_node(db, syntax, key, |program, index, node| {
         call_lowering_for_node(program, index, key, node)
+    })?
+    .transpose()
+}
+
+#[salsa::tracked]
+fn call_arguments_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_node(db, syntax, key, |program, index, node| {
+        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+        Some(
+            call.args
+                .iter()
+                .map(|argument| {
+                    index
+                        .direct_child_id(
+                            program,
+                            key.node,
+                            beskid_analysis::syntax_query::DynNodeRef::from(argument),
+                        )
+                        .map(|node| AstNodeKey { node, ..key })
+                        .ok_or_else(|| SemanticError::unavailable("call_arguments"))
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Arc::from),
+        )
     })?
     .transpose()
 }
@@ -1279,12 +1364,30 @@ pub fn resolved_local(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Resol
     with_registered_syntax(db, key, resolved_local_tracked)
 }
 
+/// Return the deterministic owner-qualified slot for an exact local declaration identifier.
+///
+/// Function and method parameters precede body declarations in expanded-AST order. Lambda frames
+/// have distinct owner keys. Stale, unregistered, ownerless, and non-declaration identifiers
+/// contain no fact.
+pub fn local_slot(db: &dyn Db, declaration: AstNodeKey) -> SemanticQueryResult<LocalSlot> {
+    with_registered_syntax(db, declaration, local_slot_tracked)
+}
+
 /// Return primitive types proven by literals, explicit syntax, or exact lexical declarations.
 ///
 /// Complex declarations and expression shapes requiring inference remain explicitly unavailable.
 /// Stale, unregistered, and non-typable nodes contain no fact.
 pub fn node_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, node_type_tracked)
+}
+
+/// Return the exact root expression keys of positional call arguments in source order.
+///
+/// Empty calls contain an empty fact. Stale, unregistered, and non-call nodes contain no fact.
+/// A current argument that cannot be mapped through the authoritative syntax index is explicitly
+/// unavailable.
+pub fn call_arguments(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_registered_syntax(db, key, call_arguments_tracked)
 }
 
 /// Classify call shapes whose lowering is certain from expanded syntax alone.

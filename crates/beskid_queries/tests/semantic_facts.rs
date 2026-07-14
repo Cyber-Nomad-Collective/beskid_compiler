@@ -5,10 +5,11 @@ use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program}
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSnapshot};
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, OperatorFact, ProjectSession, SemanticError, SourceUnitId,
-    SyntaxGenerationId, call_lowering, cast_intents, child_nodes, control_flow, direct_callees,
-    item_body, item_signature, literal_fact, node_kind, node_span, node_type, operator_fact,
-    reachable_items, resolved_item, resolved_local, runtime_intrinsic,
+    AstNodeKey, BeskidDatabase, LocalSlot, OperatorFact, ProjectSession, SemanticError,
+    SourceUnitId, SyntaxGenerationId, call_arguments, call_lowering, cast_intents, child_nodes,
+    control_flow, direct_callees, item_body, item_signature, literal_fact, local_slot, node_kind,
+    node_span, node_type, operator_fact, reachable_items, resolved_item, resolved_local,
+    runtime_intrinsic,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -331,6 +332,81 @@ fn call_lowering_classifies_immediate_lambda_without_name_resolution() {
     assert_eq!(
         call_lowering(&db, call).expect("lambda call lowering"),
         Some(beskid_queries::CallLowering::Dynamic)
+    );
+}
+
+#[test]
+fn call_arguments_preserve_exact_root_keys_and_source_order() {
+    let source = r#"i32 Target(i32 first, i32 second, i32 third) { return first; }
+i32 Main() {
+    let value = 4;
+    Target(1, Target(2, 3, 4), value);
+    Target();
+    return 0;
+}"#;
+    let (mut db, project, unit, generation, index) = setup(source);
+    let outer_call_offset = source.find("Target(1").expect("outer call");
+    let nested_call_offset = source.find("Target(2").expect("nested call");
+    let empty_call_offset = source.find("Target();").expect("empty call");
+    let outer_call = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::CallExpression,
+        outer_call_offset + "Target".len(),
+    );
+    let empty_call = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::CallExpression,
+        empty_call_offset + "Target".len(),
+    );
+    let expected = [
+        key_at_start(
+            unit,
+            generation,
+            &index,
+            NodeKind::Expression,
+            source.find("1,").expect("first argument"),
+        ),
+        key_at_start(
+            unit,
+            generation,
+            &index,
+            NodeKind::Expression,
+            nested_call_offset,
+        ),
+        key_at_start(
+            unit,
+            generation,
+            &index,
+            NodeKind::Expression,
+            source.find("value);").expect("value argument"),
+        ),
+    ];
+
+    assert_eq!(
+        call_arguments(&db, outer_call).expect("outer arguments"),
+        Some(Arc::from(expected))
+    );
+    assert_eq!(
+        call_arguments(&db, empty_call).expect("empty arguments"),
+        Some(Arc::from([]))
+    );
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    assert_eq!(call_arguments(&db, main).expect("non-call"), None);
+
+    db.update_syntax_source(
+        project,
+        unit,
+        SyntaxGenerationId(generation.0 + 1),
+        "i32 Main() { return 0; }".to_string(),
+    )
+    .expect("syntax update");
+    assert_eq!(
+        call_arguments(&db, outer_call).expect("stale arguments"),
+        None
     );
 }
 
@@ -709,14 +785,164 @@ fn local_declaration_is_not_visible_in_its_own_initializer() {
 }
 
 #[test]
+fn local_slots_are_stable_within_function_and_distinct_for_lambda_frames() {
+    let source = r#"i32 Main(i32 value) {
+    let outer = value;
+    if true { let outer = 1; }
+    let apply = (i32 inner) => inner;
+    return outer;
+}"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let owner = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let lambda_owner = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
+    let value_offsets = source
+        .match_indices("value")
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    let outer_offsets = source
+        .match_indices("outer")
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    let declarations = [
+        key_at_start(
+            unit,
+            generation,
+            &index,
+            NodeKind::Identifier,
+            value_offsets[0],
+        ),
+        key_at_start(
+            unit,
+            generation,
+            &index,
+            NodeKind::Identifier,
+            outer_offsets[0],
+        ),
+        key_at_start(
+            unit,
+            generation,
+            &index,
+            NodeKind::Identifier,
+            outer_offsets[1],
+        ),
+        key_at_start(
+            unit,
+            generation,
+            &index,
+            NodeKind::Identifier,
+            source.find("apply").expect("apply declaration"),
+        ),
+    ];
+    for (slot_index, declaration) in declarations.into_iter().enumerate() {
+        assert_eq!(
+            local_slot(&db, declaration).expect("function local slot"),
+            Some(LocalSlot {
+                owner,
+                index: u32::try_from(slot_index).expect("slot index"),
+            })
+        );
+    }
+
+    let inner = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        source.find("inner").expect("lambda parameter"),
+    );
+    assert_eq!(
+        local_slot(&db, inner).expect("lambda local slot"),
+        Some(LocalSlot {
+            owner: lambda_owner,
+            index: 0,
+        })
+    );
+    let function_name = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        source.find("Main").expect("function name"),
+    );
+    assert_eq!(local_slot(&db, function_name).expect("ordinary name"), None);
+}
+
+#[test]
+fn local_slots_cover_methods_for_iterators_and_match_bindings() {
+    let method_source = r#"type Value { i32 raw }
+impl Value { i32 Sum(i32 first) { let local = first; return local; } }"#;
+    let (db, _project, unit, generation, index) = setup(method_source);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    for (name, expected_index) in [("first", 0), ("local", 1)] {
+        let declaration = key_at_start(
+            unit,
+            generation,
+            &index,
+            NodeKind::Identifier,
+            method_source.find(name).expect("method declaration"),
+        );
+        assert_eq!(
+            local_slot(&db, declaration).expect("method local slot"),
+            Some(LocalSlot {
+                owner: method,
+                index: expected_index,
+            })
+        );
+    }
+
+    for (source, declarations) in [
+        (
+            "unit Main() { for item in [1] { let copy = item; } }",
+            [("item", 0), ("copy", 1)],
+        ),
+        (
+            "enum Choice { Some(i32 value), None } i32 Main() { Choice choice = Choice::Some(1); return match choice { Choice::Some(bound) => bound, Choice::None => 0, }; }",
+            [("choice", 0), ("bound", 1)],
+        ),
+    ] {
+        let (db, _project, unit, generation, index) = setup(source);
+        let owner = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+        for (name, expected_index) in declarations {
+            let declaration = key_at_start(
+                unit,
+                generation,
+                &index,
+                NodeKind::Identifier,
+                source.find(name).expect("binding declaration"),
+            );
+            assert_eq!(
+                local_slot(&db, declaration).expect("binding local slot"),
+                Some(LocalSlot {
+                    owner,
+                    index: expected_index,
+                }),
+                "binding {name} in {source}"
+            );
+        }
+    }
+}
+
+#[test]
 fn stale_generation_cannot_reuse_a_local_slot_identity() {
     let source = "i32 Main() { let value = 1; return value; }";
     let (mut db, project, unit, generation, index) = setup(source);
+    let declaration = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        source.find("value").expect("local declaration"),
+    );
+    let owner = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
     let reference = key(unit, generation, &index, NodeKind::PathExpression, 0);
     assert!(
         resolved_local(&db, reference)
             .expect("current local")
             .is_some()
+    );
+    assert_eq!(
+        local_slot(&db, declaration).expect("current local slot"),
+        Some(LocalSlot { owner, index: 0 })
     );
 
     db.update_syntax_source(
@@ -727,6 +953,7 @@ fn stale_generation_cannot_reuse_a_local_slot_identity() {
     )
     .expect("syntax update");
     assert_eq!(resolved_local(&db, reference).expect("stale local"), None);
+    assert_eq!(local_slot(&db, declaration).expect("stale slot"), None);
 }
 
 #[test]
