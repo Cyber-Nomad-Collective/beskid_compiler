@@ -9,6 +9,8 @@
 pub use beskid_queries::AstNodeKey;
 use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
+use cranelift_codegen::ir::types;
 pub use cranelift_codegen::ir::{
     AbiParam, FuncRef, Function, Signature, Type, UserFuncName, Value,
 };
@@ -34,6 +36,8 @@ pub enum NodeKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LiteralKind {
     Integer,
+    Float,
+    Char,
     Boolean,
 }
 
@@ -104,6 +108,12 @@ pub trait NodeFacts {
     }
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64>;
     fn boolean_literal(&self, _key: AstNodeKey) -> Option<bool> {
+        None
+    }
+    fn float_literal(&self, _key: AstNodeKey) -> Option<f64> {
+        None
+    }
+    fn char_literal(&self, _key: AstNodeKey) -> Option<char> {
         None
     }
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type>;
@@ -201,6 +211,25 @@ impl generated::Context for IsleContext<'_, '_, '_> {
 
     fn emit_boolean(&mut self, key: AstNodeKey) -> Option<Value> {
         let immediate = i64::from(self.facts.boolean_literal(key)?);
+        let value_type = self.facts.scalar_type(key)?;
+        Some(self.builder.ins().iconst(value_type, immediate))
+    }
+
+    fn emit_float(&mut self, key: AstNodeKey) -> Option<Value> {
+        let immediate = self.facts.float_literal(key)?;
+        match self.facts.scalar_type(key)? {
+            types::F32 => Some(
+                self.builder
+                    .ins()
+                    .f32const(Ieee32::with_float(immediate as f32)),
+            ),
+            types::F64 => Some(self.builder.ins().f64const(Ieee64::with_float(immediate))),
+            _ => None,
+        }
+    }
+
+    fn emit_char(&mut self, key: AstNodeKey) -> Option<Value> {
+        let immediate = i64::from(u32::from(self.facts.char_literal(key)?));
         let value_type = self.facts.scalar_type(key)?;
         Some(self.builder.ins().iconst(value_type, immediate))
     }
