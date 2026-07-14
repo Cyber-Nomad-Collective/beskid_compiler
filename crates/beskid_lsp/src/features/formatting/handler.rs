@@ -40,6 +40,7 @@ mod tests {
             text: text.to_string(),
             analysis_cache_version: 0,
             analysis: None,
+            syntax_definitions: Vec::new(),
         }
     }
 

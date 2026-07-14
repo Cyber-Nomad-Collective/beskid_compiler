@@ -17,19 +17,34 @@ pub fn handle_definition(
     }
 
     let entry_path = uri_to_path(uri);
-    let analysis = doc.analysis.as_ref()?;
-    if let Some(definition) = beskid_analysis::services::definition_at_offset(analysis, offset) {
-        let target_uri = path_to_uri(&definition.location.path).unwrap_or_else(|| uri.clone());
+    if let Some(definition) = doc
+        .syntax_definitions
+        .iter()
+        .filter(|definition| {
+            definition.reference_start <= offset && offset <= definition.reference_end
+        })
+        .min_by_key(|definition| {
+            definition
+                .reference_end
+                .saturating_sub(definition.reference_start)
+        })
+    {
+        let target_uri = path_to_uri(&definition.declaration_path).unwrap_or_else(|| uri.clone());
         return Some(GotoDefinitionResponse::Scalar(Location {
             uri: target_uri,
             range: symbol_location_to_lsp_range(
-                &definition.location,
+                &beskid_analysis::services::SymbolLocation {
+                    path: definition.declaration_path.clone(),
+                    start: definition.declaration_start,
+                    end: definition.declaration_end,
+                },
                 entry_path.as_deref(),
                 &doc.text,
             ),
         }));
     }
 
+    let analysis = doc.analysis.as_ref()?;
     let symbols = beskid_analysis::services::collect_document_symbols(analysis);
     symbols
         .iter()

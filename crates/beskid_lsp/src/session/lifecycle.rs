@@ -16,7 +16,9 @@ use beskid_analysis::services::{
     resolved_input_from_plan,
 };
 use beskid_queries::{
-    bump_file_revision, bump_typed_prepare_revision, fingerprint_key, typed_entry_state_with_db,
+    AstNodeKey, SyntaxGenerationId, build_typed_program, bump_file_revision,
+    bump_typed_prepare_revision, fingerprint_key, node_span, resolved_item, resolved_local,
+    typed_entry_state_with_db,
 };
 
 use crate::manifest_uri::is_manifest_uri;
@@ -24,11 +26,11 @@ use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::project_context::cached_compilation_context;
 use crate::session::startup::wait_for_initial_scan;
-use crate::session::store::{Document, State};
+use crate::session::store::{Document, State, SyntaxDefinition};
 use crate::workspace_scan::uri_to_path;
 
 /// Document analysis snapshot shape; bump when snapshot fields change.
-pub const ANALYSIS_CACHE_VERSION: u32 = 4;
+pub const ANALYSIS_CACHE_VERSION: u32 = 5;
 
 /// Debounce window for typed executable prepare (coalesced with diagnostic publish).
 const TYPED_PREPARE_DEBOUNCE_MS: u64 = 120;
@@ -58,6 +60,78 @@ fn module_paths_from_resolution(resolution: &beskid_analysis::resolve::Resolutio
             } else {
                 Some(module.path.join("::"))
             }
+        })
+        .collect()
+}
+
+fn lockfile_digest_for_plan(plan: &beskid_analysis::projects::CompilePlan) -> String {
+    let mut hasher = DefaultHasher::new();
+    plan.project_root.hash(&mut hasher);
+    plan.target.entry.hash(&mut hasher);
+    plan.target.name.hash(&mut hasher);
+    if let Ok(bytes) = std::fs::read(plan.project_root.join("Project.lock")) {
+        bytes.hash(&mut hasher);
+    }
+    format!("{:016x}", hasher.finish())
+}
+
+fn syntax_definitions_for_entry(
+    db: &mut beskid_queries::BeskidDatabase,
+    resolved: &ResolvedInput,
+    entry_state: &beskid_queries::TypedEntryState,
+) -> Vec<SyntaxDefinition> {
+    let Some(plan) = resolved.compile_plan.as_ref() else {
+        return Vec::new();
+    };
+    let Some(front_end) = entry_state.typed.as_ref() else {
+        return Vec::new();
+    };
+    let project = db.ensure_project_session(
+        plan,
+        &resolved.source_path,
+        lockfile_digest_for_plan(plan),
+    );
+    let assembly = Arc::new(beskid_analysis::projects::SyntaxProgramAssembly::from(
+        &front_end.assembly,
+    ));
+    let generation = SyntaxGenerationId(entry_state.generation);
+    let Ok(typed) = build_typed_program(db, project, generation, assembly) else {
+        return Vec::new();
+    };
+    let unit = typed.entry;
+    let Some(entry) = typed.assembly.units.get(typed.assembly.entry_index) else {
+        return Vec::new();
+    };
+    let index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&entry.program, generation);
+
+    index
+        .metadata()
+        .iter()
+        .filter_map(|metadata| {
+            let reference = AstNodeKey {
+                unit,
+                generation,
+                node: metadata.id,
+            };
+            let declaration = resolved_local(db, reference)
+                .ok()
+                .flatten()
+                .map(|resolved| resolved.declaration)
+                .or_else(|| {
+                    resolved_item(db, reference)
+                        .ok()
+                        .flatten()
+                        .map(|resolved| resolved.declaration)
+                })?;
+            let reference_span = node_span(db, reference).ok().flatten()?;
+            let declaration_span = node_span(db, declaration).ok().flatten()?;
+            Some(SyntaxDefinition {
+                reference_start: reference_span.start,
+                reference_end: reference_span.end,
+                declaration_path: declaration.unit.path(db).clone(),
+                declaration_start: declaration_span.start,
+                declaration_end: declaration_span.end,
+            })
         })
         .collect()
 }
@@ -173,6 +247,35 @@ async fn build_document_analysis(
     .await
 }
 
+async fn build_syntax_definitions(
+    state: &RwLock<State>,
+    uri: &Uri,
+    text: &str,
+) -> Vec<SyntaxDefinition> {
+    wait_for_initial_scan(state).await;
+    if is_manifest_uri(uri) {
+        return Vec::new();
+    }
+    let Some(path) = uri_to_path(uri) else {
+        return Vec::new();
+    };
+    let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
+        return Vec::new();
+    };
+    with_compilation_db_mut_state(state, |db, write| {
+        if let Some(plan) = session.compile_plan.as_ref() {
+            write.configure_db_for_project_with_db(db, &plan.project_root);
+        }
+        db.ensure_file_text(path, text.to_string());
+        let options = PrepareOptions::default();
+        let Ok(entry_state) = typed_entry_state_with_db(db, &resolved, &options, None) else {
+            return Vec::new();
+        };
+        syntax_definitions_for_entry(db, &resolved, &entry_state)
+    })
+    .await
+}
+
 /// Build a [`Document`] for `uri`, attaching a fresh analysis snapshot when possible.
 pub async fn build_document(
     state: &RwLock<State>,
@@ -181,11 +284,13 @@ pub async fn build_document(
     text: String,
 ) -> Document {
     let analysis = build_document_analysis(state, uri, &text).await;
+    let syntax_definitions = build_syntax_definitions(state, uri, &text).await;
     Document {
         version,
         text,
         analysis_cache_version: ANALYSIS_CACHE_VERSION,
         analysis,
+        syntax_definitions,
     }
 }
 
@@ -247,16 +352,19 @@ async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
     .await;
 
     let analysis = build_document_analysis(state, uri, &text).await;
+    let syntax_definitions = build_syntax_definitions(state, uri, &text).await;
     let mut write = state.write().await;
     if let Some(doc) = write.docs.get_mut(uri)
         && doc.text == text
     {
         doc.analysis = analysis;
+        doc.syntax_definitions = syntax_definitions;
         doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
     } else if let Some(doc) = write.workspace_index.get_mut(uri)
         && doc.text == text
     {
         doc.analysis = analysis;
+        doc.syntax_definitions = syntax_definitions;
         doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
     }
 }
@@ -315,6 +423,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
     drop(write_state);
     touch_entry_file_revision_for_uri(state, &uri, &text).await;
     let analysis = build_document_analysis(state, &uri, &text).await;
+    let syntax_definitions = build_syntax_definitions(state, &uri, &text).await;
 
     let mut write_state = state.write().await;
     write_state.docs.insert(
@@ -324,6 +433,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
             text,
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
             analysis,
+            syntax_definitions,
         },
     );
 }
@@ -348,11 +458,13 @@ pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
 
     for (uri, text) in entries {
         let analysis = build_document_analysis(state, &uri, &text).await;
+        let syntax_definitions = build_syntax_definitions(state, &uri, &text).await;
         let mut write = state.write().await;
         if let Some(doc) = write.docs.get_mut(&uri)
             && doc.text == text
         {
             doc.analysis = analysis;
+            doc.syntax_definitions = syntax_definitions;
             doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
         }
     }
@@ -436,6 +548,7 @@ mod tests {
                 text: text.clone(),
                 analysis_cache_version: ANALYSIS_CACHE_VERSION.saturating_sub(1),
                 analysis: None,
+                syntax_definitions: Vec::new(),
             },
         );
 

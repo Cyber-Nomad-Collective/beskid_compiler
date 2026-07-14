@@ -20,6 +20,21 @@ pub struct Document {
     pub text: String,
     pub analysis_cache_version: u32,
     pub analysis: Option<DocumentAnalysisSnapshot>,
+    /// Generation-safe syntax/Salsa definition facts for this exact buffer revision.
+    ///
+    /// Definition handling consumes this index instead of reaching back into the legacy
+    /// HIR-backed analysis snapshot.
+    pub syntax_definitions: Vec<SyntaxDefinition>,
+}
+
+/// One resolved syntax reference and its declaration location.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxDefinition {
+    pub reference_start: usize,
+    pub reference_end: usize,
+    pub declaration_path: PathBuf,
+    pub declaration_start: usize,
+    pub declaration_end: usize,
 }
 
 /// In-memory LSP workspace: open docs, closed-but-indexed files, and compilation context cache.

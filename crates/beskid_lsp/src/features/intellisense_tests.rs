@@ -7,12 +7,13 @@ mod tests {
     };
     use beskid_queries::{BeskidDatabase, configure_db_for_project, entry_resolution_with_db};
     use std::path::PathBuf;
+    use std::str::FromStr;
     use tower_lsp_server::ls_types::{GotoDefinitionResponse, Hover, Uri};
 
     use crate::features::{definition, hover, references};
     use crate::position::position_to_offset;
     use crate::session::lifecycle::{ANALYSIS_CACHE_VERSION, build_document};
-    use crate::session::store::{Document, State};
+    use crate::session::store::{Document, State, SyntaxDefinition};
     use crate::workspace_scan::path_to_uri;
 
     struct CorelibMvpFixture {
@@ -106,6 +107,7 @@ mod tests {
                 text: fixture.source.clone(),
                 analysis_cache_version: ANALYSIS_CACHE_VERSION,
                 analysis: Some(analysis),
+                syntax_definitions: Vec::new(),
             };
             (fixture.uri.clone(), doc, fixture, db)
         })
@@ -147,6 +149,33 @@ mod tests {
                 "expected WriteLine in resolution when definition is unavailable"
             );
         }
+    }
+
+    #[test]
+    fn definition_uses_syntax_fact_without_legacy_analysis() {
+        let uri = Uri::from_str("file:///tmp/syntax-fact.bd").expect("uri");
+        let declaration_path = PathBuf::from("/tmp/syntax-fact.bd");
+        let doc = Document {
+            version: 1,
+            text: "i32 Main() { return helper(); }\ni32 helper() { return 0; }".to_string(),
+            analysis_cache_version: ANALYSIS_CACHE_VERSION,
+            analysis: None,
+            syntax_definitions: vec![SyntaxDefinition {
+                reference_start: 20,
+                reference_end: 26,
+                declaration_path,
+                declaration_start: 36,
+                declaration_end: 42,
+            }],
+        };
+        let response = definition::handler::handle_definition(&uri, &doc, 22)
+            .expect("syntax fact definition");
+        let GotoDefinitionResponse::Scalar(location) = response else {
+            panic!("expected scalar definition");
+        };
+        assert_eq!(location.uri, uri);
+        assert_eq!(location.range.start.line, 1);
+        assert_eq!(location.range.start.character, 4);
     }
 
     #[tokio::test]
