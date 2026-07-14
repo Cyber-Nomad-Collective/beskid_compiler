@@ -37,6 +37,7 @@ pub enum NodeKind {
 pub enum LiteralKind {
     Integer,
     Float,
+    String,
     Char,
     Boolean,
 }
@@ -116,6 +117,9 @@ pub trait NodeFacts {
     fn char_literal(&self, _key: AstNodeKey) -> Option<char> {
         None
     }
+    fn string_literal(&self, _key: AstNodeKey) -> Option<&str> {
+        None
+    }
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type>;
     fn call_target(&self, _key: AstNodeKey) -> Option<FuncRef> {
         None
@@ -128,18 +132,45 @@ pub trait NodeFacts {
     }
 }
 
-/// Thin host for generated ISLE selection and stock CLIF instruction construction.
-pub struct IsleContext<'builder, 'function, 'facts> {
-    builder: &'builder mut FunctionBuilder<'function>,
-    facts: &'facts dyn NodeFacts,
+/// Artifact-owned string materialization invoked only after generated ISLE selection.
+pub trait StringInterner {
+    fn intern(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        key: AstNodeKey,
+        text: &str,
+    ) -> Option<Value>;
 }
 
-impl<'builder, 'function, 'facts> IsleContext<'builder, 'function, 'facts> {
+/// Thin host for generated ISLE selection and stock CLIF instruction construction.
+pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
+    builder: &'builder mut FunctionBuilder<'function>,
+    facts: &'facts dyn NodeFacts,
+    string_interner: Option<&'interner mut dyn StringInterner>,
+}
+
+impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'facts, 'interner> {
     pub fn new(
         builder: &'builder mut FunctionBuilder<'function>,
         facts: &'facts dyn NodeFacts,
     ) -> Self {
-        Self { builder, facts }
+        Self {
+            builder,
+            facts,
+            string_interner: None,
+        }
+    }
+
+    pub fn new_with_string_interner(
+        builder: &'builder mut FunctionBuilder<'function>,
+        facts: &'facts dyn NodeFacts,
+        string_interner: &'interner mut dyn StringInterner,
+    ) -> Self {
+        Self {
+            builder,
+            facts,
+            string_interner: Some(string_interner),
+        }
     }
 
     fn short_circuit(&mut self, key: AstNodeKey, branch_on_true: bool) -> Option<Value> {
@@ -182,7 +213,7 @@ impl<'builder, 'function, 'facts> IsleContext<'builder, 'function, 'facts> {
     }
 }
 
-impl generated::Context for IsleContext<'_, '_, '_> {
+impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn node_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {
         self.facts.node_kind(key)
     }
@@ -232,6 +263,13 @@ impl generated::Context for IsleContext<'_, '_, '_> {
         let immediate = i64::from(u32::from(self.facts.char_literal(key)?));
         let value_type = self.facts.scalar_type(key)?;
         Some(self.builder.ins().iconst(value_type, immediate))
+    }
+
+    fn emit_string(&mut self, key: AstNodeKey) -> Option<Value> {
+        let text = self.facts.string_literal(key)?;
+        self.string_interner
+            .as_deref_mut()?
+            .intern(self.builder, key, text)
     }
 
     fn clif_iadd(&mut self, left: Value, right: Value) -> Value {
@@ -337,7 +375,7 @@ impl LoweringError {
 }
 
 pub fn lower_expression(
-    context: &mut IsleContext<'_, '_, '_>,
+    context: &mut IsleContext<'_, '_, '_, '_>,
     key: AstNodeKey,
 ) -> Result<Value, LoweringError> {
     generated::constructor_lower_expression(context, key).ok_or(LoweringError { key })
@@ -379,6 +417,28 @@ impl<'isa> FunctionEmitter<'isa> {
         facts: &dyn NodeFacts,
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
+        self.emit_expression_inner(name, signature, facts, body, None)
+    }
+
+    pub fn emit_expression_with_string_interner(
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        body: AstNodeKey,
+        string_interner: &mut dyn StringInterner,
+    ) -> Result<Function, FunctionEmissionError> {
+        self.emit_expression_inner(name, signature, facts, body, Some(string_interner))
+    }
+
+    fn emit_expression_inner(
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        body: AstNodeKey,
+        string_interner: Option<&mut dyn StringInterner>,
+    ) -> Result<Function, FunctionEmissionError> {
         let mut function = Function::with_name_signature(name, signature);
         let mut builder_context = FunctionBuilderContext::new();
         {
@@ -386,8 +446,14 @@ impl<'isa> FunctionEmitter<'isa> {
             let entry = builder.create_block();
             builder.switch_to_block(entry);
             builder.seal_block(entry);
-            let value = lower_expression(&mut IsleContext::new(&mut builder, facts), body)
-                .map_err(FunctionEmissionError::Lowering)?;
+            let value = match string_interner {
+                Some(interner) => lower_expression(
+                    &mut IsleContext::new_with_string_interner(&mut builder, facts, interner),
+                    body,
+                ),
+                None => lower_expression(&mut IsleContext::new(&mut builder, facts), body),
+            }
+            .map_err(FunctionEmissionError::Lowering)?;
             builder.ins().return_(&[value]);
             builder.finalize();
         }
