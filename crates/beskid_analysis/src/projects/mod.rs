@@ -14,7 +14,7 @@ pub mod workflow;
 
 pub use assembly::{
     AssemblyError, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
-    UnitHir, UnitMaterializer, assemble_program_with_materializer, assembly_options_for_plan,
+    SyntaxProgramAssembly, UnitHir, UnitMaterializer, assemble_program_with_materializer, assembly_options_for_plan,
     assembly_options_for_prepare, build_hir_units, effective_roots_for_plan,
     effective_roots_from_lockfile, effective_roots_from_plan_and_workspace,
     infer_logical_module_path, module_path_exists_on_disk, module_path_to_relative_path,

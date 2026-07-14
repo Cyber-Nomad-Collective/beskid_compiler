@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use beskid_analysis::projects::ProgramAssembly;
+use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 
 use crate::db::Db;
@@ -69,7 +69,7 @@ pub struct TypedProgram {
     pub project: ProjectSession,
     pub entry: SourceUnitId,
     pub generation: SyntaxGenerationId,
-    pub assembly: Arc<ProgramAssembly>,
+    pub assembly: Arc<SyntaxProgramAssembly>,
 }
 
 /// Authoritative Salsa input for the current syntax generation of one source unit.

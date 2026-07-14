@@ -56,6 +56,36 @@ pub struct ProgramAssembly {
     pub has_std_dependency: bool,
 }
 
+/// HIR-free multi-module input retained by generation-safe semantic and codegen boundaries.
+#[derive(Debug, Clone)]
+pub struct SyntaxProgramAssembly {
+    pub roots: EffectiveCompilationRoots,
+    pub units: Arc<Vec<SourceUnit>>,
+    pub entry_index: usize,
+    pub discovery: AssemblyDiscovery,
+    pub module_index: Arc<ModuleIndex>,
+    pub has_std_dependency: bool,
+}
+
+impl SyntaxProgramAssembly {
+    pub fn entry_unit(&self) -> &SourceUnit {
+        &self.units[self.entry_index]
+    }
+}
+
+impl From<&ProgramAssembly> for SyntaxProgramAssembly {
+    fn from(assembly: &ProgramAssembly) -> Self {
+        Self {
+            roots: assembly.roots.clone(),
+            units: Arc::clone(&assembly.units),
+            entry_index: assembly.entry_index,
+            discovery: assembly.discovery,
+            module_index: Arc::clone(&assembly.module_index),
+            has_std_dependency: assembly.has_std_dependency,
+        }
+    }
+}
+
 impl std::fmt::Debug for ProgramAssembly {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ProgramAssembly")

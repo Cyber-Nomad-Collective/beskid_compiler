@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SyntaxProgramAssembly,
 };
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession,
@@ -18,8 +18,8 @@ fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
     assert!(error.is_unavailable(), "{error:?}");
 }
 
-fn empty_assembly() -> Arc<ProgramAssembly> {
-    Arc::new(ProgramAssembly {
+fn empty_assembly() -> Arc<SyntaxProgramAssembly> {
+    Arc::new(SyntaxProgramAssembly {
         roots: EffectiveCompilationRoots {
             host: RootEntry {
                 dependency_name: None,
@@ -28,7 +28,6 @@ fn empty_assembly() -> Arc<ProgramAssembly> {
             dependencies: Vec::new(),
         },
         units: Arc::new(Vec::new()),
-        hir_units: Arc::new(Vec::new()),
         entry_index: 0,
         discovery: AssemblyDiscovery::ImportClosure,
         module_index: Arc::new(ModuleIndex::empty()),
