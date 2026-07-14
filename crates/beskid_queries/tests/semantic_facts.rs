@@ -118,7 +118,12 @@ i32 Main() {
     assert_unavailable(node_type(&db, integer));
     assert_unavailable(item_signature(&db, helper));
     assert_unavailable(item_signature(&db, main));
-    assert_unavailable(control_flow(&db, main));
+    assert_eq!(
+        control_flow(&db, main).expect("control flow"),
+        Some(beskid_queries::ControlFlow {
+            may_fall_through: false,
+        })
+    );
     assert_unavailable(resolved_local(&db, local_reference));
     assert_unavailable(resolved_item(&db, item_reference));
     assert_unavailable(call_lowering(&db, call));
@@ -126,6 +131,34 @@ i32 Main() {
     assert_unavailable(direct_callees(&db, main));
     assert_unavailable(reachable_items(&db, main, main));
     assert_unavailable(runtime_intrinsic(&db, call));
+}
+
+#[test]
+fn control_flow_facts_follow_ast_branch_termination() {
+    let source = r#"
+i32 AlwaysReturns(bool condition) {
+    if condition { return 1; } else { return 2; }
+}
+i32 MayFallThrough(bool condition) {
+    if condition { return 1; }
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let always_returns = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let may_fall_through = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+
+    assert_eq!(
+        control_flow(&db, always_returns).expect("always-returning flow"),
+        Some(beskid_queries::ControlFlow {
+            may_fall_through: false,
+        })
+    );
+    assert_eq!(
+        control_flow(&db, may_fall_through).expect("fall-through flow"),
+        Some(beskid_queries::ControlFlow {
+            may_fall_through: true,
+        })
+    );
 }
 
 #[test]
