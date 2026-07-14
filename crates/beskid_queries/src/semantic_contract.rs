@@ -141,6 +141,27 @@ pub struct LocalSlot {
     pub index: u32,
 }
 
+/// One exact outer lexical declaration captured by a lambda or spawned lambda.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ClosureCapture {
+    pub declaration: AstNodeKey,
+    pub slot: LocalSlot,
+}
+
+/// Backend-relevant closure environment facts derived from one lambda expression.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClosureEnvironment {
+    pub parameters: Arc<[AstNodeKey]>,
+    pub captures: Arc<[ClosureCapture]>,
+}
+
+/// Exact callable operand and captures selected by a `spawn` expression.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SpawnTarget {
+    pub callee: AstNodeKey,
+    pub captures: Arc<[ClosureCapture]>,
+}
+
 /// Opaque semantic type identity owned by the query layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SemanticTypeId(pub u32);
@@ -276,23 +297,6 @@ impl SemanticError {
     }
 }
 
-fn unavailable_for_current_key<T>(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-    query: &str,
-) -> SemanticQueryResult<T> {
-    if !syntax.accepts_key(db, key)
-        || syntax
-            .syntax_index(db)
-            .metadata_for(key.generation, key.node)
-            .is_none()
-    {
-        return Ok(None);
-    }
-    Err(SemanticError::unavailable(query))
-}
-
 pub type SemanticQueryResult<T> = Result<Option<T>, SemanticError>;
 
 fn with_registered_syntax<T>(
@@ -425,21 +429,28 @@ fn local_slot_tracked(
 ) -> SemanticQueryResult<LocalSlot> {
     with_node(db, syntax, key, |_program, index, node| {
         node.of::<beskid_analysis::syntax::Identifier>()?;
-        let owner = local_declaration_owner(index, key.node)?;
-        let slot = index
-            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::Identifier)
-            .filter(|declaration| local_declaration_owner(index, *declaration) == Some(owner))
-            .position(|declaration| declaration == key.node)?;
-        Some(
-            u32::try_from(slot)
-                .map(|index| LocalSlot {
-                    owner: AstNodeKey { node: owner, ..key },
-                    index,
-                })
-                .map_err(|_| SemanticError::unavailable("local_slot")),
-        )
+        local_slot_for_declaration(index, key)
     })?
     .transpose()
+}
+
+fn local_slot_for_declaration(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+) -> Option<Result<LocalSlot, SemanticError>> {
+    let owner = local_declaration_owner(index, key.node)?;
+    let slot = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::Identifier)
+        .filter(|declaration| local_declaration_owner(index, *declaration) == Some(owner))
+        .position(|declaration| declaration == key.node)?;
+    Some(
+        u32::try_from(slot)
+            .map(|index| LocalSlot {
+                owner: AstNodeKey { node: owner, ..key },
+                index,
+            })
+            .map_err(|_| SemanticError::unavailable("local_slot")),
+    )
 }
 
 fn local_declaration_owner(
@@ -1066,12 +1077,207 @@ fn semantic_type_from_syntax(
 }
 
 #[salsa::tracked]
+fn closure_environment_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ClosureEnvironment> {
+    with_node(db, syntax, key, |program, index, node| {
+        closure_environment_for_node(program, index, key, node)
+    })?
+    .transpose()
+}
+
+fn closure_environment_for_node(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<Result<ClosureEnvironment, SemanticError>> {
+    let lambda = node.of::<beskid_analysis::syntax::LambdaExpression>()?;
+    let parameters = match lambda
+        .parameters
+        .iter()
+        .map(|parameter| {
+            index
+                .direct_child_id(
+                    program,
+                    key.node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(parameter),
+                )
+                .ok_or_else(|| SemanticError::unavailable("closure_environment"))
+                .and_then(|parameter| {
+                    index
+                        .children(parameter)
+                        .and_then(|children| {
+                            children.iter().copied().find(|child| {
+                                index.kind(*child)
+                                    == Some(beskid_analysis::syntax_query::NodeKind::Identifier)
+                            })
+                        })
+                        .map(|node| AstNodeKey { node, ..key })
+                        .ok_or_else(|| SemanticError::unavailable("closure_environment"))
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(parameters) => parameters,
+        Err(error) => return Some(Err(error)),
+    };
+    let captures = match closure_captures(program, index, key) {
+        Ok(captures) => captures.into(),
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(ClosureEnvironment {
+        parameters: parameters.into(),
+        captures,
+    }))
+}
+
+fn closure_captures(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    lambda: AstNodeKey,
+) -> Result<Vec<ClosureCapture>, SemanticError> {
+    let mut captures = Vec::new();
+    for path_id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::PathExpression) {
+        if !is_ancestor(index, lambda.node, path_id) {
+            continue;
+        }
+        let Some(path) = index
+            .node_at(program, path_id)
+            .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
+        else {
+            return Err(SemanticError::unavailable("closure_environment"));
+        };
+        let Some(declaration) = resolve_lexical_declaration(
+            program,
+            index,
+            path_id,
+            path.path
+                .node
+                .segments
+                .first()
+                .map(|segment| segment.node.name.node.name.as_str())
+                .unwrap_or_default(),
+        ) else {
+            continue;
+        };
+        if path.path.node.segments.len() != 1 || is_ancestor(index, lambda.node, declaration) {
+            continue;
+        }
+        let declaration = AstNodeKey {
+            node: declaration,
+            ..lambda
+        };
+        let Some(slot) = local_slot_for_declaration(index, declaration) else {
+            return Err(SemanticError::unavailable("closure_environment"));
+        };
+        let capture = ClosureCapture {
+            declaration,
+            slot: slot?,
+        };
+        if !captures.contains(&capture) {
+            captures.push(capture);
+        }
+    }
+    Ok(captures)
+}
+
+#[salsa::tracked]
+fn spawn_target_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SpawnTarget> {
+    with_node(db, syntax, key, |program, index, node| {
+        let spawn = node.of::<beskid_analysis::syntax::SpawnExpression>()?;
+        let callee = index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(spawn.callee.as_ref()),
+        )?;
+        let callee = AstNodeKey {
+            node: normalized_expression_node(index, callee),
+            ..key
+        };
+        let captures = if index.kind(callee.node)
+            == Some(beskid_analysis::syntax_query::NodeKind::LambdaExpression)
+        {
+            match closure_captures(program, index, callee) {
+                Ok(captures) => captures.into(),
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            Arc::from([])
+        };
+        Some(Ok(SpawnTarget { callee, captures }))
+    })?
+    .transpose()
+}
+
+fn normalized_expression_node(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    mut node: beskid_analysis::syntax::AstNodeId,
+) -> beskid_analysis::syntax::AstNodeId {
+    while matches!(
+        index.kind(node),
+        Some(
+            beskid_analysis::syntax_query::NodeKind::Expression
+                | beskid_analysis::syntax_query::NodeKind::GroupedExpression
+        )
+    ) {
+        let Some(child) = index
+            .children(node)
+            .and_then(|children| children.first())
+            .copied()
+        else {
+            break;
+        };
+        node = child;
+    }
+    node
+}
+
+#[salsa::tracked]
 fn runtime_intrinsic_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<RuntimeIntrinsic> {
-    unavailable_for_current_key(db, syntax, key, "runtime_intrinsic")
+    with_node(db, syntax, key, |program, index, node| {
+        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return Some(Err(SemanticError::unavailable("runtime_intrinsic")));
+        };
+        if path.node.path.node.segments.len() == 1
+            && resolve_lexical_declaration(
+                program,
+                index,
+                key.node,
+                path.node.path.node.segments[0].node.name.node.name.as_str(),
+            )
+            .is_some()
+        {
+            return Some(Err(SemanticError::unavailable("runtime_intrinsic")));
+        }
+        let segments = path
+            .node
+            .path
+            .node
+            .segments
+            .iter()
+            .map(|segment| segment.node.name.node.name.clone())
+            .collect::<Vec<_>>();
+        beskid_analysis::builtins::builtin_for_path(&segments)
+            .map(|(index, _)| {
+                u32::try_from(index)
+                    .map(RuntimeIntrinsic)
+                    .map_err(|_| SemanticError::unavailable("runtime_intrinsic"))
+            })
+            .or_else(|| Some(Err(SemanticError::unavailable("runtime_intrinsic"))))
+    })?
+    .transpose()
 }
 
 #[salsa::tracked]
@@ -1423,7 +1629,28 @@ pub fn item_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ItemS
     with_registered_syntax(db, key, item_signature_tracked)
 }
 
-/// Current keys report Task-2 unavailability; stale or unregistered keys contain no fact.
+/// Return the exact lambda parameters and outer lexical captures in source order.
+///
+/// Captures never include declarations owned by the lambda itself. Stale, unregistered, and
+/// non-lambda nodes contain no fact.
+pub fn closure_environment(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ClosureEnvironment> {
+    with_registered_syntax(db, key, closure_environment_tracked)
+}
+
+/// Return the exact spawn operand and any captures required when it is a lambda expression.
+///
+/// Stale, unregistered, and non-spawn nodes contain no fact.
+pub fn spawn_target(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnTarget> {
+    with_registered_syntax(db, key, spawn_target_tracked)
+}
+
+/// Return the manifest-owned intrinsic index for an exact, unshadowed builtin call.
+///
+/// Unknown, dynamic, and lexically shadowed calls remain explicitly unavailable. Stale or
+/// unregistered keys contain no fact.
 pub fn runtime_intrinsic(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<RuntimeIntrinsic> {
     with_registered_syntax(db, key, runtime_intrinsic_tracked)
 }

@@ -5,11 +5,11 @@ use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program}
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSnapshot};
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, LocalSlot, OperatorFact, ProjectSession, SemanticError,
-    SourceUnitId, SyntaxGenerationId, call_arguments, call_lowering, cast_intents, child_nodes,
-    control_flow, direct_callees, item_body, item_signature, literal_fact, local_slot, node_kind,
-    node_span, node_type, operator_fact, reachable_items, resolved_item, resolved_local,
-    runtime_intrinsic,
+    AstNodeKey, BeskidDatabase, ClosureCapture, LocalSlot, OperatorFact, ProjectSession,
+    SemanticError, SourceUnitId, SyntaxGenerationId, call_arguments, call_lowering, cast_intents,
+    child_nodes, closure_environment, control_flow, direct_callees, item_body, item_signature,
+    literal_fact, local_slot, node_kind, node_span, node_type, operator_fact, reachable_items,
+    resolved_item, resolved_local, runtime_intrinsic, spawn_target,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -865,6 +865,83 @@ fn local_slots_are_stable_within_function_and_distinct_for_lambda_frames() {
         source.find("Main").expect("function name"),
     );
     assert_eq!(local_slot(&db, function_name).expect("ordinary name"), None);
+}
+
+#[test]
+fn closure_environment_reports_only_outer_lexical_captures() {
+    let source = r#"i32 Main(i32 outer) {
+    let copied = outer;
+    let apply = (i32 inner) => copied + inner;
+    return apply(1);
+}"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
+    let copied_offset = source.find("copied =").expect("copied declaration");
+    let copied = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        copied_offset,
+    );
+    let inner_offset = source.find("inner) =>").expect("lambda parameter");
+    let inner = key_at_start(unit, generation, &index, NodeKind::Identifier, inner_offset);
+
+    let closure = closure_environment(&db, lambda)
+        .expect("closure environment")
+        .expect("lambda fact");
+    assert_eq!(closure.parameters.as_ref(), &[inner]);
+    assert_eq!(
+        closure.captures.as_ref(),
+        &[ClosureCapture {
+            declaration: copied,
+            slot: local_slot(&db, copied)
+                .expect("outer local slot")
+                .expect("outer local slot fact"),
+        }]
+    );
+}
+
+#[test]
+fn spawn_target_preserves_lambda_operand_and_capture_environment() {
+    let source = r#"i32 Main(i32 outer) {
+    let task = spawn ((i32 inner) => outer + inner);
+    return outer;
+}"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    let lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
+    let outer_offset = source.find("outer)").expect("parameter declaration");
+    let outer = key_at_start(unit, generation, &index, NodeKind::Identifier, outer_offset);
+
+    let spawn = spawn_target(&db, spawn)
+        .expect("spawn target")
+        .expect("spawn fact");
+    assert_eq!(spawn.callee, lambda);
+    assert_eq!(
+        spawn.captures.as_ref(),
+        &[ClosureCapture {
+            declaration: outer,
+            slot: local_slot(&db, outer)
+                .expect("parameter slot")
+                .expect("parameter slot fact"),
+        }]
+    );
+}
+
+#[test]
+fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {
+    let source = "i32 Main() { __str_len(\"value\"); return 0; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let expected = beskid_analysis::builtins::builtin_for_path(&["__str_len".to_string()])
+        .expect("generated builtin")
+        .0;
+
+    assert_eq!(
+        runtime_intrinsic(&db, call).expect("runtime intrinsic"),
+        Some(beskid_queries::RuntimeIntrinsic(expected as u32))
+    );
 }
 
 #[test]

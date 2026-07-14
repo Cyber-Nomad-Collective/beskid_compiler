@@ -6,18 +6,10 @@ use beskid_analysis::projects::{
 };
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession,
-    SemanticError, SourceUnitId, SyntaxGenerationId, TypedProgram, call_arguments, call_lowering,
+    SourceUnitId, SyntaxGenerationId, TypedProgram, call_arguments, call_lowering,
     cast_intents, control_flow, item_signature, local_slot, node_type, resolved_item,
     resolved_local, runtime_intrinsic,
 };
-
-fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
-    let error = match result {
-        Ok(_) => panic!("current unported semantic query must fail explicitly"),
-        Err(error) => error,
-    };
-    assert!(error.is_unavailable(), "{error:?}");
-}
 
 fn empty_assembly() -> Arc<SyntaxProgramAssembly> {
     Arc::new(SyntaxProgramAssembly {
@@ -185,7 +177,7 @@ fn stale_generation_has_no_semantic_facts() {
     assert_eq!(cast_intents(&db, current), Ok(None));
     assert_eq!(control_flow(&db, current), Ok(None));
     assert_eq!(item_signature(&db, current), Ok(None));
-    assert_unavailable(runtime_intrinsic(&db, current));
+    assert_eq!(runtime_intrinsic(&db, current), Ok(None));
 
     assert_eq!(resolved_item(&db, stale), Ok(None));
     assert_eq!(resolved_local(&db, stale), Ok(None));
