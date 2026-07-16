@@ -80,41 +80,85 @@ pub fn lower_prepared_syntax_entrypoint(
     let items = reachable
         .iter()
         .copied()
-        .map(|key| syntax_item_symbol(db, &input, key).map(|symbol| SyntaxModuleItem { key, symbol }))
+        .map(|key| {
+            syntax_item_symbol(db, &input, key).map(|symbol| SyntaxModuleItem { key, symbol })
+        })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("reachable item is not a syntax function or test"))?;
-    let symbol = syntax_item_symbol(db, &input, entry)
-        .ok_or_else(|| anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test"))?;
+    let symbol = syntax_item_symbol(db, &input, entry).ok_or_else(|| {
+        anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test")
+    })?;
     let artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| anyhow::anyhow!("syntax ISLE lowering failed: {error}"))?;
-    Ok(PreparedSyntaxEntrypoint { artifact, symbol, return_type: signature.result })
+    Ok(PreparedSyntaxEntrypoint {
+        artifact,
+        symbol,
+        return_type: signature.result,
+    })
 }
 
-fn syntax_assembly_from_front_end(front: &FrontEndTypedResult) -> beskid_analysis::projects::SyntaxProgramAssembly {
+fn syntax_assembly_from_front_end(
+    front: &FrontEndTypedResult,
+) -> beskid_analysis::projects::SyntaxProgramAssembly {
     let assembly = &front.assembly;
     let mut units = assembly.units.as_ref().clone();
     units[assembly.entry_index].program = front.program.clone();
     beskid_analysis::projects::SyntaxProgramAssembly::new(
-        assembly.roots.clone(), Arc::new(units), assembly.entry_index, assembly.discovery,
-        Arc::clone(&assembly.module_index), assembly.has_std_dependency,
+        assembly.roots.clone(),
+        Arc::new(units),
+        assembly.entry_index,
+        assembly.discovery,
+        Arc::clone(&assembly.module_index),
+        assembly.has_std_dependency,
     )
 }
 
-fn find_entrypoint(db: &BeskidDatabase, input: &CodegenInput<'_>, entrypoint: &str) -> Option<AstNodeKey> {
-    input.roots().iter().copied().find_map(|root| find_item(db, root, entrypoint))
+fn find_entrypoint(
+    db: &BeskidDatabase,
+    input: &CodegenInput<'_>,
+    entrypoint: &str,
+) -> Option<AstNodeKey> {
+    input
+        .roots()
+        .iter()
+        .copied()
+        .find_map(|root| find_item(db, root, entrypoint))
 }
 
 fn find_item(db: &BeskidDatabase, key: AstNodeKey, entrypoint: &str) -> Option<AstNodeKey> {
-    if item_name(db, key).ok().flatten().as_deref() == Some(entrypoint) { return Some(key); }
-    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_item(db, child, entrypoint))
+    if item_name(db, key).ok().flatten().as_deref() == Some(entrypoint) {
+        return Some(key);
+    }
+    child_nodes(db, key)
+        .ok()
+        .flatten()?
+        .iter()
+        .copied()
+        .find_map(|child| find_item(db, child, entrypoint))
 }
 
-fn syntax_item_symbol(db: &BeskidDatabase, input: &CodegenInput<'_>, key: AstNodeKey) -> Option<String> {
+fn syntax_item_symbol(
+    db: &BeskidDatabase,
+    input: &CodegenInput<'_>,
+    key: AstNodeKey,
+) -> Option<String> {
     let name = item_name(db, key).ok().flatten()?;
-    let unit = input.typed_program().assembly.units().iter()
+    let unit = input
+        .typed_program()
+        .assembly
+        .units()
+        .iter()
         .find(|unit| SourceUnitId::new(db, unit.path.clone()) == key.unit)?;
-    let logical = unit.logical_name.chars().map(|character| {
-        if character.is_ascii_alphanumeric() { character } else { '_' }
-    }).collect::<String>();
+    let logical = unit
+        .logical_name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
     Some(format!("{name}#syntax_{logical}_{}", key.node.0))
 }
