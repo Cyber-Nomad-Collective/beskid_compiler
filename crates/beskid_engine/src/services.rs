@@ -4,12 +4,15 @@ use anyhow::Result;
 use beskid_analysis::resolve::ItemKind;
 use beskid_analysis::services::ResolvedInput;
 use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
+#[cfg(test)]
 use beskid_codegen::module_emission::{SyntaxModuleItem, lower_syntax_program};
 use beskid_pipeline::PipelineObserver;
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, build_typed_program, child_nodes,
-    item_name, item_signature, reachable_items, test_item, with_db,
+    item_name, item_signature, test_item, with_db,
 };
+#[cfg(test)]
+use beskid_queries::reachable_items;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 
@@ -244,10 +247,20 @@ fn lower_syntax_entrypoint_from_front_end(
     target: beskid_abi::abi_v5::TargetMetadata,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SyntaxEntrypointArtifact> {
-    let syntax_assembly = Arc::new(syntax_assembly_from_front_end(front));
-    lower_syntax_entrypoint(db, syntax_assembly, entrypoint, target, pipeline)
+    let isa = native_isa()?;
+    let lowered = beskid_pipeline::observe_phase_result(
+        pipeline,
+        beskid_pipeline::phases::CODEGEN_CLIF,
+        || beskid_codegen::lower_prepared_syntax_entrypoint(db, front, entrypoint, target, isa.as_ref()),
+    )?;
+    Ok(SyntaxEntrypointArtifact {
+        artifact: lowered.artifact,
+        symbol: lowered.symbol,
+        return_type: lowered.return_type,
+    })
 }
 
+#[cfg(test)]
 fn lower_syntax_entrypoint(
     db: &mut BeskidDatabase,
     syntax_assembly: Arc<beskid_analysis::projects::SyntaxProgramAssembly>,
@@ -479,6 +492,7 @@ fn native_isa() -> Result<Arc<dyn TargetIsa>> {
         .map_err(|error| anyhow::anyhow!("native ISA construction failed: {error}"))
 }
 
+#[cfg(test)]
 fn find_syntax_entrypoint(
     db: &dyn beskid_queries::Db,
     input: &beskid_codegen::CodegenInput<'_>,
@@ -507,6 +521,7 @@ fn find_syntax_item(
         .find_map(|child| find_syntax_item(db, child, entrypoint))
 }
 
+#[cfg(test)]
 fn syntax_item_symbol(
     db: &dyn beskid_queries::Db,
     input: &beskid_codegen::CodegenInput<'_>,

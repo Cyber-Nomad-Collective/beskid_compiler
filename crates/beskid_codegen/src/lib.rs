@@ -17,6 +17,7 @@ pub mod isle_adapter;
 pub mod linking;
 pub mod lowering;
 pub mod module_emission;
+pub mod prepared_syntax;
 pub mod services;
 
 pub use codegen_input::{CodegenInput, CodegenInputError};
@@ -36,7 +37,8 @@ pub use lowering::{
     map_type_id_to_clif_with_dynamic, mapping_pair_eligible, object_link_symbol, pointer_type,
     require_mapping_eligible, shape_id_for_item,
 };
-pub use module_emission::{DescriptorHandles, emit_string_literals, emit_type_descriptors};
+pub use module_emission::{DescriptorHandles, SyntaxModuleItem, emit_string_literals, emit_type_descriptors, lower_syntax_program};
+pub use prepared_syntax::{PreparedSyntaxEntrypoint, lower_prepared_syntax_entrypoint};
 pub use services::{
     LoweredProgram, jit_symbol_for_item, lower_from_front_end,
     lower_resolved_entrypoint_with_pipeline, lower_resolved_input_with_pipeline, lower_source,
