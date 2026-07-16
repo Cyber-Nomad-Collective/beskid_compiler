@@ -181,6 +181,7 @@ fn format_return_value(ptr: *const u8, return_info: &TypeInfo) -> String {
             callable()
         }
         TypeInfo::Primitive(HirPrimitiveType::String)
+        | TypeInfo::Primitive(HirPrimitiveType::Word)
         | TypeInfo::Named(_)
         | TypeInfo::GenericParam(_)
         | TypeInfo::Applied { .. }
@@ -269,5 +270,18 @@ mod tests {
         let mut engine = Engine::new();
         let outcome = eval_snippet(&mut engine, "let x = true + 1;");
         assert!(matches!(outcome, EvalOutcome::Error(_)));
+    }
+
+    #[test]
+    fn formats_word_return_as_pointer_width_hex() {
+        extern "C" fn returns_word() -> usize {
+            0x42
+        }
+
+        let pointer = returns_word as *const () as *const u8;
+        assert_eq!(
+            format_return_value(pointer, &TypeInfo::Primitive(HirPrimitiveType::Word)),
+            "0x0000000000000042"
+        );
     }
 }
