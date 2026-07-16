@@ -27,6 +27,58 @@ impl GrayQueue {
     }
 }
 
+/// Ownership index for opaque Beskid allocations.
+///
+/// GC headers own allocation lifetime; generated code only receives payload pointers. Keeping
+/// the two directions together makes pointer-map tracing and sweep cleanup share one authority.
+#[derive(Default)]
+struct BeskidAllocationRegistry {
+    mappings: parking_lot::Mutex<BeskidAllocationMappings>,
+}
+
+#[derive(Default)]
+struct BeskidAllocationMappings {
+    payload_to_header: HashMap<usize, usize>,
+    header_to_payload: HashMap<usize, usize>,
+}
+
+impl BeskidAllocationRegistry {
+    fn register(&self, payload: *mut u8, header: *mut GcHeader) {
+        let mut mappings = self.mappings.lock();
+        mappings
+            .payload_to_header
+            .insert(payload as usize, header as usize);
+        mappings
+            .header_to_payload
+            .insert(header as usize, payload as usize);
+    }
+
+    fn unregister(&self, header: *mut GcHeader) {
+        let mut mappings = self.mappings.lock();
+        if let Some(payload) = mappings.header_to_payload.remove(&(header as usize)) {
+            mappings.payload_to_header.remove(&payload);
+        }
+    }
+
+    fn header_for(&self, payload: *mut u8) -> Option<*mut GcHeader> {
+        self.mappings
+            .lock()
+            .payload_to_header
+            .get(&(payload as usize))
+            .copied()
+            .map(|header| header as *mut GcHeader)
+    }
+
+    fn owns(&self, payload: *mut u8) -> bool {
+        !payload.is_null()
+            && self
+                .mappings
+                .lock()
+                .payload_to_header
+                .contains_key(&(payload as usize))
+    }
+}
+
 struct StartStopJoinHandle {
     mutex: parking_lot::Mutex<(usize, Option<JoinHandle<()>>)>,
     condvar: parking_lot::Condvar,
@@ -157,10 +209,8 @@ pub struct Heap {
     busy_marking_count: std::sync::atomic::AtomicUsize,
     /// Runtime-registered roots and temporary handles.
     external_roots: ExternalRootSet,
-    /// Mapping from payload pointer (`*mut u8`) to owning GC header.
-    payload_to_header: parking_lot::Mutex<HashMap<usize, usize>>,
-    /// Reverse mapping used to clean up payload map entries on sweep.
-    header_to_payload: parking_lot::Mutex<HashMap<usize, usize>>,
+    /// Ownership and pointer-to-header lookup for opaque Beskid payloads.
+    beskid_allocations: BeskidAllocationRegistry,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -326,8 +376,7 @@ impl Heap {
             bg_thread: StartStopJoinHandle::new(),
             busy_marking_count: std::sync::atomic::AtomicUsize::new(0),
             external_roots: ExternalRootSet::default(),
-            payload_to_header: parking_lot::Mutex::new(HashMap::new()),
-            header_to_payload: parking_lot::Mutex::new(HashMap::new()),
+            beskid_allocations: BeskidAllocationRegistry::default(),
         });
 
         heap.start_background_collection();
@@ -377,12 +426,7 @@ impl Heap {
             }
         }
 
-        self.payload_to_header
-            .lock()
-            .insert(payload_ptr as usize, header_ptr as usize);
-        self.header_to_payload
-            .lock()
-            .insert(header_ptr as usize, payload_ptr as usize);
+        self.beskid_allocations.register(payload_ptr, header_ptr);
 
         payload_ptr
     }
@@ -415,6 +459,13 @@ impl Heap {
         &self.external_roots
     }
 
+    /// Whether this heap currently owns an opaque Beskid payload pointer.
+    ///
+    /// This is an ownership query only; it neither roots nor dereferences the payload.
+    pub fn owns_beskid_payload(&self, payload_ptr: *mut u8) -> bool {
+        self.beskid_allocations.owns(payload_ptr)
+    }
+
     fn update_threshold(&self, live_bytes: usize) {
         let old_threshold = self.current_threshold.load(Ordering::Relaxed);
         let new_threshold = self.options.calculate_threshold(old_threshold, live_bytes);
@@ -442,15 +493,11 @@ impl Heap {
         if payload_ptr.is_null() {
             return;
         }
-        let header = self
-            .payload_to_header
-            .lock()
-            .get(&(payload_ptr as usize))
-            .copied();
+        let header = self.beskid_allocations.header_for(payload_ptr);
         if let Some(header_ptr) = header {
             // SAFETY: header pointers are inserted at allocation and removed on sweep.
             unsafe {
-                tracer.mark_header(&*(header_ptr as *const GcHeader));
+                tracer.mark_header(&*header_ptr);
             }
         }
     }
@@ -699,10 +746,7 @@ impl Heap {
 
                 // Check if object should be collected
                 if header.is_white() {
-                    if let Some(payload) = self.header_to_payload.lock().remove(&(current as usize))
-                    {
-                        self.payload_to_header.lock().remove(&payload);
-                    }
+                    self.beskid_allocations.unregister(current);
                     // Remove from list by updating previous node's next pointer
                     (*prev_next).store(next, Ordering::Release);
 

@@ -15,12 +15,16 @@ pub struct TypeDescriptor {
 }
 
 impl TypeDescriptor {
+    /// Return the descriptor's exact pointer map.
+    ///
+    /// The descriptor and offset table must be static codegen data and must remain valid for the
+    /// returned lifetime. This is the only layout authority used to scan opaque heap payloads.
     #[inline]
-    fn pointer_offsets(self) -> &'static [usize] {
+    pub unsafe fn pointer_map(&self) -> &[usize] {
         if self.pointer_count == 0 || self.pointer_offsets.is_null() {
             return &[];
         }
-        // SAFETY: descriptor/offsets are static data emitted by JIT/AOT module emission.
+        // SAFETY: upheld by the caller; see this method's contract.
         unsafe { std::slice::from_raw_parts(self.pointer_offsets, self.pointer_count as usize) }
     }
 }
@@ -39,7 +43,8 @@ unsafe impl Trace for BeskidObject {
         }
         // SAFETY: `type_desc` points to static descriptor data emitted by codegen.
         let descriptor = unsafe { *self.type_desc };
-        for offset in descriptor.pointer_offsets() {
+        // SAFETY: `type_desc` is codegen-emitted static descriptor data, installed at allocation.
+        for offset in unsafe { descriptor.pointer_map() } {
             if *offset + std::mem::size_of::<*mut u8>() > self.bytes.len() {
                 continue;
             }
