@@ -3,3 +3,21 @@
 pub i32 AbiVersion() {
     return 5;
 }
+
+/// Converts an opaque runtime address to its pointer-width representation.
+///
+/// `native_word_from_pointer` is not a user-visible extern: codegen recognizes this direct call
+/// only after the compiler has attached canonical-runtime authority to this exact source corpus.
+pub word NativeWord(pointer value) {
+    return native_word_from_pointer(value);
+}
+
+/// Converts a pointer-width runtime word back to an opaque native address.
+pub pointer NativePointer(word value) {
+    return pointer_from_native_word(value);
+}
+
+/// Terminates through the manifest-owned ABI-v5 trap entrypoint.
+pub never Trap(u8 code, pointer message, word messageLength) {
+    trap(code, message, messageLength);
+}

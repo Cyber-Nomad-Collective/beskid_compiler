@@ -243,6 +243,17 @@ fn parsed_parameter_read_materializes_the_generation_safe_local_slot() {
 }
 
 #[test]
+fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
+    let (input, isa, item) = item_fixture("pointer Echo(pointer value) { return value; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("pointer syntax lowers through generated ISLE");
+    let clif = function.display().to_string();
+    assert!(clif.contains("function u0:0(i64) -> i64"), "{clif}");
+    assert!(clif.contains("return v0"), "{clif}");
+}
+
+#[test]
 fn parsed_direct_call_uses_explicit_item_module_importer() {
     let (input, isa, root) = item_fixture_with_root(
         "i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }",

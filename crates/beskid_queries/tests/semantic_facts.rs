@@ -9,12 +9,12 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSnapshot};
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, ClosureCapture, CompletionContext, LocalSlot, OperatorFact,
-    ProjectSession, SemanticError, SourceUnitId, SyntaxGenerationId, build_typed_program,
-    call_arguments, call_lowering, cast_intents, child_nodes, closure_environment,
-    completion_candidates, control_flow, direct_callees, item_body, item_signature, literal_fact,
-    local_slot, node_kind, node_span, node_type, operator_fact, reachable_items, resolved_item,
-    resolved_local, runtime_intrinsic, spawn_target,
+    AstNodeKey, BeskidDatabase, ClosureCapture, CompletionContext, ItemSignature, LocalSlot,
+    OperatorFact, ProjectSession, SemanticError, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
+    build_typed_program, call_arguments, call_lowering, cast_intents, child_nodes,
+    closure_environment, completion_candidates, control_flow, direct_callees, item_body,
+    item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
+    reachable_items, resolved_item, resolved_local, runtime_intrinsic, spawn_target,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -1129,6 +1129,29 @@ fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {
     assert_eq!(
         runtime_intrinsic(&db, call).expect("runtime intrinsic"),
         Some(beskid_queries::RuntimeIntrinsic(expected as u32))
+    );
+}
+
+#[test]
+fn syntax_only_signatures_preserve_runtime_pointer_and_never_primitives() {
+    let source = "pointer Echo(pointer value) { return value; } never Stop() { while true {} }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let echo = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let stop = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+
+    assert_eq!(
+        item_signature(&db, echo).expect("pointer signature"),
+        Some(ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER]),
+            result: SemanticTypeId::POINTER,
+        })
+    );
+    assert_eq!(
+        item_signature(&db, stop).expect("never signature"),
+        Some(ItemSignature {
+            parameters: Arc::from([]),
+            result: SemanticTypeId::NEVER,
+        })
     );
 }
 

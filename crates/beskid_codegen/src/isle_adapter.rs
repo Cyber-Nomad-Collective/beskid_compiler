@@ -191,7 +191,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             };
             Some(self.query(item_signature(self.db, declaration))?.result)
         })?;
-        if semantic == SemanticTypeId::WORD {
+        if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER) {
             return self.isa.map(|isa| isa.pointer_type());
         }
         map_scalar_type(semantic)
@@ -222,7 +222,7 @@ impl SyntaxNodeFacts<'_> {
                     let slot = self.query(local_slot(self.db, identifier))?;
                     let value_type =
                         self.scalar_semantic_type(identifier).and_then(|semantic| {
-                            if semantic == SemanticTypeId::WORD {
+                            if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER) {
                                 self.isa.map(|isa| isa.pointer_type())
                             } else {
                                 map_scalar_type(semantic)
@@ -424,7 +424,7 @@ fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid
         .map(|semantic| map_signature_type(isa, semantic))
         .collect::<Option<Vec<_>>>()?;
     let returns = match item.result {
-        SemanticTypeId::UNIT => Vec::new(),
+        SemanticTypeId::UNIT | SemanticTypeId::NEVER => Vec::new(),
         result => vec![map_signature_type(isa, result)?],
     };
     Some(emitter.signature(parameters, returns))
@@ -512,7 +512,7 @@ fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
         SemanticTypeId::BOOL | SemanticTypeId::U8 => types::I8,
         SemanticTypeId::I32 => types::I32,
         SemanticTypeId::I64 => types::I64,
-        SemanticTypeId::WORD => return None,
+        SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::NEVER => return None,
         SemanticTypeId::F64 => types::F64,
         SemanticTypeId::CHAR => types::I32,
         SemanticTypeId::UNIT | SemanticTypeId::STRING => return None,
@@ -521,7 +521,7 @@ fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
 }
 
 fn map_signature_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
-    if semantic == SemanticTypeId::WORD {
+    if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER) {
         Some(isa.pointer_type())
     } else {
         map_scalar_type(semantic)

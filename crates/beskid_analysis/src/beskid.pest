@@ -167,7 +167,7 @@ EnumPath = { Path ~ "::" ~ Identifier }
 ////////////////////////////////////////////////////////////
 // 3) TYPES
 ////////////////////////////////////////////////////////////
-PrimitiveType = { "bool" | "i32" | "i64" | "u8" | "word" | "f64" | "char" | "string" | "unit" }
+PrimitiveType = { "bool" | "i32" | "i64" | "u8" | "pointer" | "word" | "f64" | "char" | "string" | "unit" | "never" }
 
 GenericParameters = { "<" ~ Identifier ~ ("," ~ Identifier)* ~ ">" }
 GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }

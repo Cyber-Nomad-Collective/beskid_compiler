@@ -181,6 +181,10 @@ impl SemanticTypeId {
     pub const STRING: Self = Self(7);
     /// Pointer-width unsigned integer in Beskid source, represented as ABI `usize`.
     pub const WORD: Self = Self(8);
+    /// Opaque native address used only by the canonical runtime source surface.
+    pub const POINTER: Self = Self(9);
+    /// Bottom type for operations which cannot return normally.
+    pub const NEVER: Self = Self(10);
 }
 
 /// Backend-relevant call classification, detached from legacy HIR nodes.
@@ -1154,11 +1158,13 @@ fn semantic_type_from_syntax(
             PrimitiveType::I32 => SemanticTypeId::I32,
             PrimitiveType::I64 => SemanticTypeId::I64,
             PrimitiveType::U8 => SemanticTypeId::U8,
+            PrimitiveType::Pointer => SemanticTypeId::POINTER,
             PrimitiveType::Word => SemanticTypeId::WORD,
             PrimitiveType::F64 => SemanticTypeId::F64,
             PrimitiveType::Char => SemanticTypeId::CHAR,
             PrimitiveType::String => SemanticTypeId::STRING,
             PrimitiveType::Unit => SemanticTypeId::UNIT,
+            PrimitiveType::Never => SemanticTypeId::NEVER,
         }),
         Type::Complex(_) | Type::Array(_) | Type::Function { .. } => {
             Err(SemanticError::unavailable("item_signature"))

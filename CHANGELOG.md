@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add a manifest-derived ABI-v5 runtime provenance audit and portable explicit-symbol-list verifier.
+- Add canonical-runtime `pointer`, `word`, and `never` source signatures plus compiler-minted intrinsic-call authority.
 
 ### Changed
 
