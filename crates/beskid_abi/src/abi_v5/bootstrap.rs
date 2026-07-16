@@ -84,12 +84,6 @@ impl RuntimeAuditMetadata {
                     .iter()
                     .map(|entry| entry.symbol.as_str().into()),
             )
-            .chain(
-                manifest
-                    .trusted_runtime_intrinsics
-                    .iter()
-                    .map(|entry| entry.symbol.clone()),
-            )
             .collect::<Vec<_>>();
         allowed_exports.sort();
         allowed_exports.dedup();

@@ -121,6 +121,23 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
 }
 
 #[test]
+fn runtime_kit_exports_do_not_require_direct_intrinsic_symbols() {
+    let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
+    let audit = RuntimeAuditMetadata::for_manifest(
+        &manifest,
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    )
+    .expect("canonical audit metadata");
+
+    assert!(audit
+        .allowed_exports
+        .contains(&"beskid_rt_v5_process_init".into()));
+    assert!(!audit
+        .allowed_exports
+        .contains(&"beskid_rt_v5_intrinsic_memory_compare".into()));
+}
+
+#[test]
 fn canonical_layouts_freeze_common_and_target_context_offsets() {
     let expected_contexts = [
         ("BeskidArchContextX86_64SysV", 64, 16, "rip", 56),
