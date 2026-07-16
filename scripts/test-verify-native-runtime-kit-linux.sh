@@ -8,9 +8,9 @@ trap 'rm -rf "${fixture_root}"' EXIT
 
 prefix="${fixture_root}/prefix"
 kit_root="${prefix}/lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu/debug"
-mkdir -p "${kit_root}" "${fixture_root}/bin"
+mkdir -p "${kit_root}/static" "${kit_root}/shared" "${fixture_root}/bin"
 printf '{}\n' > "${kit_root}/abi.json"
-touch "${kit_root}/libbeskid_runtime.a" "${kit_root}/libbeskid_runtime.so"
+touch "${kit_root}/static/libbeskid_runtime.a" "${kit_root}/shared/libbeskid_runtime.so"
 
 cat > "${fixture_root}/bin/nm" <<'EOF'
 #!/usr/bin/env bash
@@ -71,7 +71,7 @@ if PATH="${fixture_root}/bin:${PATH}" \
   exit 1
 fi
 grep -F 'Linux native runtime-kit failure diagnostics' "${fixture_root}/failure.log" >/dev/null
-grep -F "file ${kit_root}/libbeskid_runtime.so" "${fixture_root}/failure.log" >/dev/null
+grep -F "file ${kit_root}/shared/libbeskid_runtime.so" "${fixture_root}/failure.log" >/dev/null
 grep -F 'readelf -d' "${fixture_root}/failure.log" >/dev/null
 grep -F 'readelf -Ws' "${fixture_root}/failure.log" >/dev/null
 grep -F 'ldd' "${fixture_root}/failure.log" >/dev/null

@@ -20,8 +20,8 @@ esac
 
 target="x86_64-unknown-linux-gnu"
 kit_root="${prefix}/lib/beskid-runtime/abi-5/${target}/${profile}"
-static_library="${kit_root}/libbeskid_runtime.a"
-shared_library="${kit_root}/libbeskid_runtime.so"
+static_library="${kit_root}/static/libbeskid_runtime.a"
+shared_library="${kit_root}/shared/libbeskid_runtime.so"
 [[ -f "${kit_root}/abi.json" ]] || { echo "Missing staged runtime metadata: ${kit_root}/abi.json" >&2; exit 1; }
 [[ -f "${static_library}" ]] || { echo "Missing staged static runtime library: ${static_library}" >&2; exit 1; }
 [[ -f "${shared_library}" ]] || { echo "Missing staged shared runtime library: ${shared_library}" >&2; exit 1; }
