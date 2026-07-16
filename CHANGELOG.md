@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Use platform-correct local dynamic-loader flags so freshly staged Linux ABI-v5 runtime kits
+  can be opened by Engine and external native resolution.
 - Separate binary-provenance runtime exports from the ABI-and-assembly symbols required by the JIT loader.
 
 - Name the internal generation-safe LSP syntax-fact result so lifecycle refresh paths preserve
