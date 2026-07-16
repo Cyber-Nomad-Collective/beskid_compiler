@@ -8,6 +8,7 @@ pub mod dispatch_tags {
 }
 pub mod generated;
 pub mod runtime_kit;
+pub mod runtime_provenance;
 pub mod runtime_source;
 pub mod types;
 pub mod version;
