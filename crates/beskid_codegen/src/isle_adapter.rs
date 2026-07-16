@@ -370,7 +370,7 @@ impl SyntaxNodeFacts<'_> {
             payloads.push(payload);
         }
         let size = payloads.iter().flatten().fold(tag_type.bytes(), |size, payload| {
-            size.max(payload_offset.checked_add(payload.bytes()).unwrap_or(u32::MAX))
+            size.max(payload_offset.saturating_add(payload.bytes()))
         });
         let size = align_to(size, alignment)?.max(1);
         for (index, payload) in payloads.into_iter().enumerate() {
