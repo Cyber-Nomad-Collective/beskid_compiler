@@ -131,15 +131,34 @@ pub enum CallKind {
 /// within one source unit and revision, so using it as a module-import key can bind a call to an
 /// unrelated item when two units happen to assign the same local id. Runtime intrinsics are not
 /// source items and retain their canonical ABI-table index.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DirectCallee {
     Item(AstNodeKey),
+    /// One generic source declaration paired with its exact call-derived ABI identity.
+    ///
+    /// The vector stores parameter ABI type identities followed by the result identity.  It is
+    /// deliberately structural rather than a lossy hash so module imports cannot conflate two
+    /// valid generic instantiations.
+    SpecializedItem {
+        declaration: AstNodeKey,
+        abi_identity: std::sync::Arc<[u32]>,
+    },
     RuntimeIntrinsic(u32),
 }
 
 impl DirectCallee {
     pub const fn item(key: AstNodeKey) -> Self {
         Self::Item(key)
+    }
+
+    pub fn specialized_item(
+        declaration: AstNodeKey,
+        abi_identity: impl Into<std::sync::Arc<[u32]>>,
+    ) -> Self {
+        Self::SpecializedItem {
+            declaration,
+            abi_identity: abi_identity.into(),
+        }
     }
 
     pub const fn runtime_intrinsic(index: u32) -> Self {
@@ -532,7 +551,7 @@ pub trait CallImporter {
     ) -> Result<FuncRef, CallImportError>;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LoweringErrorKind {
     MissingRuleOrFact,
     UnknownCallee(DirectCallee),
@@ -661,7 +680,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             match self
                 .call_importer
                 .as_deref_mut()?
-                .import(self.builder, callee, &signature)
+                .import(self.builder, callee.clone(), &signature)
             {
                 Ok(function) => function,
                 Err(CallImportError::UnknownCallee) => {
@@ -1681,19 +1700,19 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LoweringError {
     key: AstNodeKey,
     kind: LoweringErrorKind,
 }
 
 impl LoweringError {
-    pub fn key(self) -> AstNodeKey {
+    pub fn key(&self) -> AstNodeKey {
         self.key
     }
 
-    pub fn kind(self) -> LoweringErrorKind {
-        self.kind
+    pub fn kind(&self) -> LoweringErrorKind {
+        self.kind.clone()
     }
 }
 

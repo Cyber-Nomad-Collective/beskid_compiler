@@ -15,7 +15,8 @@ use beskid_queries::{
     SyntaxGenerationId, abi_type, aggregate_layout, build_typed_program, call_abi_signature,
     call_arguments, call_lowering, cast_intents, child_nodes, closure_environment,
     completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
-    generic_call_instantiation, item_abi_signature, item_body, item_signature, literal_fact,
+    generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
+    item_signature, literal_fact,
     local_slot, node_kind, node_span, node_type, operator_fact, reachable_items, resolved_item,
     resolved_local, runtime_intrinsic, spawn_target, test_item,
 };
@@ -1002,6 +1003,20 @@ unit Main() { Equal(1, 1, "because"); return; }
                 SemanticTypeId::STRING,
             ]),
             result: SemanticTypeId::UNIT,
+        })
+    );
+    assert_eq!(
+        generic_call_specialization(&db, call).expect("inferred generic specialization"),
+        Some(beskid_queries::GenericCallSpecialization {
+            declaration: key(unit, generation, &index, NodeKind::FunctionDefinition, 0),
+            signature: ItemSignature {
+                parameters: Arc::from([
+                    SemanticTypeId::I32,
+                    SemanticTypeId::I32,
+                    SemanticTypeId::STRING,
+                ]),
+                result: SemanticTypeId::UNIT,
+            },
         })
     );
 }

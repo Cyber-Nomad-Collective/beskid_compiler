@@ -13,8 +13,9 @@ use beskid_queries::{
     AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
     aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_abi_signature,
     call_arguments, call_lowering, cast_intents, child_nodes, enum_constructor, enum_layout,
-    enum_match, item_abi_signature, item_body, literal_fact, local_slot, node_kind, node_type,
-    operator_fact, resolved_local, runtime_intrinsic_name, test_statement_nodes,
+    enum_match, generic_call_specialization, item_abi_signature, item_body, literal_fact,
+    local_slot, node_kind, node_type, operator_fact, resolved_local, runtime_intrinsic_name,
+    test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
@@ -32,6 +33,7 @@ pub struct SyntaxNodeFacts<'db> {
     db: &'db dyn Db,
     input: &'db CodegenInput<'db>,
     isa: Option<&'db dyn TargetIsa>,
+    item_specializations: HashMap<AstNodeKey, ItemSignature>,
 }
 
 impl<'db> SyntaxNodeFacts<'db> {
@@ -40,6 +42,7 @@ impl<'db> SyntaxNodeFacts<'db> {
             db: input.database(),
             input,
             isa: None,
+            item_specializations: HashMap::new(),
         }
     }
 
@@ -48,6 +51,21 @@ impl<'db> SyntaxNodeFacts<'db> {
             db: input.database(),
             input,
             isa: Some(isa),
+            item_specializations: HashMap::new(),
+        }
+    }
+
+    fn new_with_item_specialization(
+        input: &'db CodegenInput<'db>,
+        isa: &'db dyn TargetIsa,
+        item: AstNodeKey,
+        signature: ItemSignature,
+    ) -> Self {
+        Self {
+            db: input.database(),
+            input,
+            isa: Some(isa),
+            item_specializations: HashMap::from([(item, signature)]),
         }
     }
 
@@ -180,6 +198,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
             return None;
         };
+        if let Some(specialization) = self.query(generic_call_specialization(self.db, key)) {
+            return Some(DirectCallee::specialized_item(
+                specialization.declaration,
+                specialization_identity(&specialization.signature),
+            ));
+        }
         Some(DirectCallee::item(declaration))
     }
 
@@ -445,8 +469,14 @@ impl SyntaxNodeFacts<'_> {
                             == Some(beskid_queries::IndexedNodeKind::Identifier)
                     })?;
                     let slot = self.query(local_slot(self.db, identifier))?;
-                    let value_type =
-                        self.scalar_semantic_type(identifier).and_then(|semantic| {
+                    let specialization = self
+                        .item_specializations
+                        .get(&key)
+                        .and_then(|signature| signature.parameters.get(parameters.len()))
+                        .copied();
+                    let value_type = specialization
+                        .or_else(|| self.scalar_semantic_type(identifier))
+                        .and_then(|semantic| {
                             if matches!(
                                 semantic,
                                 SemanticTypeId::WORD
@@ -706,6 +736,44 @@ pub fn emit_isle_item_with_services<'db>(
     )
 }
 
+/// Emit one source item using an exact call-derived generic ABI specialization.
+///
+/// This is intentionally separate from [`emit_isle_item_with_services`]: ordinary declarations
+/// continue to obtain their ABI from their own syntax, while generic declarations can only enter
+/// through a current call fact that proves every substituted ABI type.
+pub fn emit_isle_item_with_services_specialization<'db>(
+    input: &'db CodegenInput<'db>,
+    isa: &'db dyn TargetIsa,
+    item: AstNodeKey,
+    specialization: ItemSignature,
+    string_interner: &mut dyn StringInterner,
+    importer: &mut dyn CallImporter,
+) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
+    let db = input.database();
+    let body = item_body(db, item)
+        .ok()
+        .flatten()
+        .ok_or_else(|| FunctionEmissionError::Verification("item has no syntax body".to_owned()))?;
+    let signature = signature_for_item(isa, specialization.clone()).ok_or_else(|| {
+        FunctionEmissionError::Verification("generic item specialization is unavailable".to_owned())
+    })?;
+    let emitter = FunctionEmitter::new(isa);
+    let facts = SyntaxNodeFacts::new_with_item_specialization(input, isa, item, specialization);
+    emitter.emit_item_statement_with_services(
+        ItemStatementEmission {
+            name: UserFuncName::user(0, 0),
+            signature,
+            facts: &facts,
+            item,
+            body,
+        },
+        EmissionServices {
+            string_interner: Some(string_interner),
+            call_importer: Some(importer),
+        },
+    )
+}
+
 /// Explicit module importer keyed by syntax-resolved item identity.
 ///
 /// Call lowering never guesses symbols: the host declares each item and supplies its exact
@@ -750,6 +818,16 @@ fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid
         result => vec![map_signature_type(isa, result)?],
     };
     Some(emitter.signature(parameters, returns))
+}
+
+fn specialization_identity(signature: &ItemSignature) -> std::sync::Arc<[u32]> {
+    signature
+        .parameters
+        .iter()
+        .map(|semantic| semantic.0)
+        .chain(std::iter::once(signature.result.0))
+        .collect::<Vec<_>>()
+        .into()
 }
 
 fn signature_for_runtime_intrinsic(

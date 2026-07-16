@@ -62,7 +62,7 @@ impl NodeFacts for CallFacts {
     }
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
-        (key == self.call).then_some(self.callee)
+        (key == self.call).then_some(self.callee.clone())
     }
 
     fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
@@ -139,7 +139,7 @@ fn direct_call_imports_semantic_callee_and_executes() {
     let facts = call_facts(isa.as_ref(), DirectCallee::item(direct_callee_key()));
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I32]);
-    let mut importer = importer(isa.clone(), facts.callee);
+    let mut importer = importer(isa.clone(), facts.callee.clone());
     let function = emitter
         .emit_expression_with_call_importer(
             UserFuncName::user(0, 18),
@@ -178,7 +178,7 @@ fn unknown_direct_callee_is_an_exact_keyed_error() {
         generation: SyntaxGenerationId(15),
         node: beskid_queries::AstNodeId(999),
     });
-    let facts = call_facts(isa.as_ref(), unknown);
+    let facts = call_facts(isa.as_ref(), unknown.clone());
     let emitter = FunctionEmitter::new(isa.as_ref());
     let mut importer = importer(isa.clone(), DirectCallee::item(direct_callee_key()));
     let error = emitter

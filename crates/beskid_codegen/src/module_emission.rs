@@ -2,6 +2,9 @@ use std::collections::HashMap;
 
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
+use beskid_queries::{
+    ItemSignature, child_nodes, generic_call_specialization, item_abi_signature,
+};
 use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::{
     Endianness, ExtFuncData, ExternalName, FuncRef, GlobalValueData, Signature, Type, Value,
@@ -14,7 +17,10 @@ use cranelift_module::{
 
 use crate::lowering::descriptor::TypeDescriptorData;
 use crate::lowering::{CodegenArtifact, ExternImport};
-use crate::{CodegenContext, CodegenInput, emit_isle_item_with_services};
+use crate::{
+    CodegenContext, CodegenInput, emit_isle_item_with_services,
+    emit_isle_item_with_services_specialization,
+};
 
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
 #[derive(Debug, Clone)]
@@ -28,6 +34,17 @@ pub struct DescriptorHandles {
 pub struct SyntaxModuleItem {
     pub key: AstNodeKey,
     pub symbol: String,
+}
+
+/// One fully declared syntax item after generic source declarations have been expanded into
+/// exact ABI specializations.  The callee key is the same structural identity produced by ISLE
+/// call facts, keeping declaration and import selection generation-safe.
+#[derive(Debug, Clone)]
+struct ResolvedSyntaxModuleItem {
+    key: AstNodeKey,
+    symbol: String,
+    callee: DirectCallee,
+    specialization: Option<ItemSignature>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -51,10 +68,19 @@ pub fn lower_syntax_program(
     isa: &dyn TargetIsa,
     items: &[SyntaxModuleItem],
 ) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
+    let items = resolve_module_items(input, items)?;
+    lower_resolved_syntax_program(input, isa, &items)
+}
+
+fn lower_resolved_syntax_program(
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    items: &[ResolvedSyntaxModuleItem],
+) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
     let mut symbols = HashMap::with_capacity(items.len());
     for item in items {
         if symbols
-            .insert(DirectCallee::item(item.key), item.symbol.clone())
+            .insert(item.callee.clone(), item.symbol.clone())
             .is_some()
         {
             return Err(SyntaxModuleEmissionError::DuplicateSymbol(
@@ -66,7 +92,7 @@ pub fn lower_syntax_program(
     symbols.extend(
         runtime_intrinsics
             .iter()
-            .map(|(callee, symbol)| (*callee, symbol.clone())),
+                .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
     );
 
     let mut context = CodegenContext::new();
@@ -78,8 +104,18 @@ pub fn lower_syntax_program(
                 context: &mut context,
                 pointer_type: isa.pointer_type(),
             };
-            emit_isle_item_with_services(input, isa, item.key, &mut strings, &mut importer)
-                .map_err(SyntaxModuleEmissionError::Emission)?
+            match &item.specialization {
+                Some(specialization) => emit_isle_item_with_services_specialization(
+                    input,
+                    isa,
+                    item.key,
+                    specialization.clone(),
+                    &mut strings,
+                    &mut importer,
+                ),
+                None => emit_isle_item_with_services(input, isa, item.key, &mut strings, &mut importer),
+            }
+            .map_err(SyntaxModuleEmissionError::Emission)?
         };
         functions.push(crate::LoweredFunction {
             name: item.symbol.clone(),
@@ -99,6 +135,92 @@ pub fn lower_syntax_program(
             .collect(),
         ..CodegenArtifact::default()
     })
+}
+
+fn resolve_module_items(
+    input: &CodegenInput<'_>,
+    source_items: &[SyntaxModuleItem],
+) -> Result<Vec<ResolvedSyntaxModuleItem>, SyntaxModuleEmissionError> {
+    let db = input.database();
+    let mut specializations = HashMap::<AstNodeKey, Vec<ItemSignature>>::new();
+    for item in source_items {
+        collect_generic_call_specializations(db, item.key, &mut specializations)?;
+    }
+
+    let mut resolved = Vec::with_capacity(source_items.len());
+    for item in source_items {
+        if item_abi_signature(db, item.key)
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            resolved.push(ResolvedSyntaxModuleItem {
+                key: item.key,
+                symbol: item.symbol.clone(),
+                callee: DirectCallee::item(item.key),
+                specialization: None,
+            });
+            continue;
+        }
+        let Some(signatures) = specializations.get(&item.key) else {
+            return Err(SyntaxModuleEmissionError::Emission(
+                FunctionEmissionError::Verification(
+                    "generic item has no call-derived ABI specialization".to_owned(),
+                ),
+            ));
+        };
+        for signature in signatures {
+            let identity = specialization_identity(signature);
+            resolved.push(ResolvedSyntaxModuleItem {
+                key: item.key,
+                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(signature)),
+                callee: DirectCallee::specialized_item(item.key, identity),
+                specialization: Some(signature.clone()),
+            });
+        }
+    }
+    Ok(resolved)
+}
+
+fn collect_generic_call_specializations(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    specializations: &mut HashMap<AstNodeKey, Vec<ItemSignature>>,
+) -> Result<(), SyntaxModuleEmissionError> {
+    if let Some(specialization) = generic_call_specialization(db, key)
+        .map_err(|error| SyntaxModuleEmissionError::Emission(FunctionEmissionError::Verification(error.to_string())))?
+    {
+        let signatures = specializations.entry(specialization.declaration).or_default();
+        if !signatures.contains(&specialization.signature) {
+            signatures.push(specialization.signature);
+        }
+    }
+    if let Some(children) = child_nodes(db, key)
+        .map_err(|error| SyntaxModuleEmissionError::Emission(FunctionEmissionError::Verification(error.to_string())))?
+    {
+        for child in children.iter().copied() {
+            collect_generic_call_specializations(db, child, specializations)?;
+        }
+    }
+    Ok(())
+}
+
+fn specialization_identity(signature: &ItemSignature) -> std::sync::Arc<[u32]> {
+    signature
+        .parameters
+        .iter()
+        .map(|semantic| semantic.0)
+        .chain(std::iter::once(signature.result.0))
+        .collect::<Vec<_>>()
+        .into()
+}
+
+fn specialization_mangle(signature: &ItemSignature) -> String {
+    specialization_identity(signature)
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join("_")
 }
 
 /// Syntax-ISLE adapter over the existing artifact-owned literal pool.
@@ -176,26 +298,28 @@ impl beskid_isle::CallImporter for ArtifactCallImporter<'_> {
 }
 
 /// Declare every syntax item before lowering any body, then import direct callees by exact
-/// generation-safe item key. This is the production module boundary for syntax → ISLE lowering.
+/// generation-safe call identity. This is the production module boundary for syntax → ISLE
+/// lowering, including distinct generic instantiations of one source declaration.
 pub fn emit_syntax_program<M: Module>(
     module: &mut M,
     input: &CodegenInput<'_>,
     isa: &dyn TargetIsa,
     items: &[SyntaxModuleItem],
     linkage: Linkage,
-) -> Result<HashMap<AstNodeKey, FuncId>, SyntaxModuleEmissionError> {
-    let artifact = lower_syntax_program(input, isa, items)?;
-    let mut by_key = HashMap::with_capacity(items.len());
+) -> Result<HashMap<DirectCallee, FuncId>, SyntaxModuleEmissionError> {
+    let items = resolve_module_items(input, items)?;
+    let artifact = lower_resolved_syntax_program(input, isa, &items)?;
+    let mut by_callee = HashMap::with_capacity(items.len());
     let mut by_symbol = HashMap::with_capacity(items.len());
     for (item, lowered) in items.iter().zip(&artifact.functions) {
         let id = module.declare_function(&item.symbol, linkage, &lowered.function.signature)?;
-        by_key.insert(item.key, id);
+        by_callee.insert(item.callee.clone(), id);
         by_symbol.insert(item.symbol.clone(), id);
     }
     crate::cranelift_host::declare_validated_extern_imports(module, &artifact, &mut by_symbol)
         .map_err(|error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())))?;
     for (item, lowered) in items.iter().zip(artifact.functions) {
-        let id = by_key[&item.key];
+        let id = by_callee[&item.callee];
         let mut context = module.make_context();
         context.func = lowered.function;
         crate::cranelift_host::remap_testcase_externals(module, &mut context, &by_symbol).map_err(
@@ -204,7 +328,7 @@ pub fn emit_syntax_program<M: Module>(
         module.define_function(id, &mut context)?;
         module.clear_context(&mut context);
     }
-    Ok(by_key)
+    Ok(by_callee)
 }
 
 /// Define one module-local data object per entry in `artifact.string_literals`.

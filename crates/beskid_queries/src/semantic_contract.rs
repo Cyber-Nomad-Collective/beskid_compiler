@@ -210,6 +210,17 @@ pub struct GenericCallInstantiation {
     pub argument_count: u8,
 }
 
+/// One exact ABI specialization selected by a current generic call expression.
+///
+/// The declaration remains generation-safe and the ABI signature is derived exclusively from
+/// this invocation's syntax arguments.  Consumers use both fields as the item identity, so two
+/// distinct instantiations cannot accidentally share one module declaration.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GenericCallSpecialization {
+    pub declaration: AstNodeKey,
+    pub signature: ItemSignature,
+}
+
 /// One semantic cast required while lowering an AST node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CastIntent {
@@ -1172,6 +1183,36 @@ fn generic_call_instantiation_tracked(
             return None;
         };
         generic_call_instantiation_for_node(db, program, index, key, &path.node.path.node).map(Ok)
+    })?
+    .transpose()
+}
+
+#[salsa::tracked]
+fn generic_call_specialization_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<GenericCallSpecialization> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        node.of::<beskid_analysis::syntax::CallExpression>()?;
+        let declaration = match call_lowering(db, key).ok().flatten()? {
+            CallLowering::Direct(declaration) => declaration,
+            CallLowering::Dynamic | CallLowering::Runtime(_) => return None,
+        };
+        let declaration_syntax = db.syntax_unit(declaration.unit)?;
+        let declaration_node = declaration_syntax.syntax_index(db).node_at(
+            declaration_syntax.expanded_program(db),
+            declaration.node,
+        )?;
+        let function = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        if function.generics.is_empty() {
+            return None;
+        }
+        let signature = call_abi_signature(db, key).ok().flatten()?;
+        Some(Ok(GenericCallSpecialization {
+            declaration,
+            signature,
+        }))
     })?
     .transpose()
 }
@@ -3339,6 +3380,18 @@ pub fn generic_call_instantiation(
     key: AstNodeKey,
 ) -> SemanticQueryResult<GenericCallInstantiation> {
     with_registered_syntax(db, key, generic_call_instantiation_tracked)
+}
+
+/// Return the exact source-derived ABI specialization for one generic direct call.
+///
+/// Inferred generic arguments are accepted only when every ABI type is proven by the current
+/// call arguments.  The returned declaration plus signature is suitable for a mangled module
+/// identity and never consults legacy HIR lowering.
+pub fn generic_call_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<GenericCallSpecialization> {
+    with_registered_syntax(db, key, generic_call_specialization_tracked)
 }
 
 /// Return numeric cast intents proven by an exact typed-let constraint.

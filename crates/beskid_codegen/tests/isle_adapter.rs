@@ -466,11 +466,15 @@ fn parsed_program_declares_then_imports_syntax_items_without_hir() {
     assert_eq!(declared.len(), 2);
     assert_eq!(
         module.get_name("AddOne"),
-        Some(cranelift_module::FuncOrDataId::Func(declared[&items[0]]))
+        Some(cranelift_module::FuncOrDataId::Func(
+            declared[&beskid_isle::DirectCallee::item(items[0])]
+        ))
     );
     assert_eq!(
         module.get_name("Main"),
-        Some(cranelift_module::FuncOrDataId::Func(declared[&items[1]]))
+        Some(cranelift_module::FuncOrDataId::Func(
+            declared[&beskid_isle::DirectCallee::item(items[1])]
+        ))
     );
 }
 
@@ -505,6 +509,40 @@ fn parsed_program_lowers_to_backend_artifact_without_hir() {
         .find(|function| function.name == "Main")
         .expect("Main artifact function");
     assert!(main.function.display().to_string().contains("call"));
+}
+
+#[test]
+fn parsed_program_specializes_an_inferred_generic_call_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "unit Equal<T>(T actual, T expected, string because) { if actual == expected { return; } return; } unit Main() { Equal(\"same\", \"same\", \"because\"); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: items[0],
+                symbol: "Equal".into(),
+            },
+            SyntaxModuleItem {
+                key: items[1],
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("syntax module specializes inferred generic calls through exact ABI facts");
+
+    beskid_codegen::validate_artifact(&artifact)
+        .expect("the generic call imports its specialized item identity");
+    assert_eq!(artifact.functions.len(), 2);
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Equal#generic_")),
+        "generic source items must use a mangled specialization identity"
+    );
 }
 
 #[test]
