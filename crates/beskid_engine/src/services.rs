@@ -279,7 +279,7 @@ pub fn lower_prepared_syntax_entrypoint(
 pub fn syntax_test_items_from_front_end(
     front: &beskid_analysis::services::FrontEndTypedResult,
 ) -> Result<Vec<SyntaxTestItem>> {
-    let assembly = Arc::new(syntax_assembly_from_front_end(front));
+    let assembly = Arc::new(front.syntax_assembly());
     with_db(|db| syntax_test_items_from_assembly(db, assembly))
 }
 
@@ -291,7 +291,7 @@ pub fn syntax_entrypoint_return_type_from_front_end(
     front: &beskid_analysis::services::FrontEndTypedResult,
     entrypoint: &str,
 ) -> Result<SemanticTypeId> {
-    let assembly = Arc::new(syntax_assembly_from_front_end(front));
+    let assembly = Arc::new(front.syntax_assembly());
     with_db(|db| {
         let entry_path = assembly.entry_unit().path.clone();
         let project = ProjectSession::new(
@@ -371,28 +371,6 @@ fn collect_syntax_test_items(
         out.extend(collect_syntax_test_items(db, child)?);
     }
     Ok(out)
-}
-
-/// Form the syntax-only authority from the frontend's post-mod-rewrite entry snapshot.
-///
-/// `ProgramAssembly` retains parsed source units for analysis and HIR compatibility, while the
-/// frontend's `program` is the expanded/re-written entry consumed by semantic facts. Replacing
-/// precisely that unit before `TypedProgram` registration keeps every Engine item key aligned
-/// with the generation-safe query snapshot.
-fn syntax_assembly_from_front_end(
-    front: &beskid_analysis::services::FrontEndTypedResult,
-) -> beskid_analysis::projects::SyntaxProgramAssembly {
-    let assembly = &front.assembly;
-    let mut units = assembly.units.as_ref().clone();
-    units[assembly.entry_index].program = front.program.clone();
-    beskid_analysis::projects::SyntaxProgramAssembly::new(
-        assembly.roots.clone(),
-        Arc::new(units),
-        assembly.entry_index,
-        assembly.discovery,
-        Arc::clone(&assembly.module_index),
-        assembly.has_std_dependency,
-    )
 }
 
 fn native_isa() -> Result<Arc<dyn TargetIsa>> {

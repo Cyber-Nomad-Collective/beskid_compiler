@@ -177,7 +177,7 @@ pub fn lower_prepared_syntax_entrypoint(
     target: TargetMetadata,
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxEntrypoint> {
-    let assembly = Arc::new(syntax_assembly_from_front_end(front));
+    let assembly = Arc::new(front.syntax_assembly());
     let entry_path = assembly.entry_unit().path.clone();
     let generation = SyntaxGenerationId(1);
     let project = ProjectSession::new(
@@ -254,7 +254,7 @@ pub fn lower_prepared_syntax_module(
     target: TargetMetadata,
     isa: &dyn TargetIsa,
 ) -> Result<CodegenArtifact> {
-    let assembly = Arc::new(syntax_assembly_from_front_end(front));
+    let assembly = Arc::new(front.syntax_assembly());
     let entry_path = assembly.entry_unit().path.clone();
     let generation = SyntaxGenerationId(1);
     let project = ProjectSession::new(
@@ -302,22 +302,6 @@ pub fn lower_prepared_syntax_module(
     }
     lower_syntax_program(&input, isa, &items)
         .map_err(|error| anyhow::anyhow!("syntax ISLE module lowering failed: {error}"))
-}
-
-fn syntax_assembly_from_front_end(
-    front: &FrontEndTypedResult,
-) -> beskid_analysis::projects::SyntaxProgramAssembly {
-    let assembly = &front.assembly;
-    let mut units = assembly.units.as_ref().clone();
-    units[assembly.entry_index].program = front.program.clone();
-    beskid_analysis::projects::SyntaxProgramAssembly::new(
-        assembly.roots.clone(),
-        Arc::new(units),
-        assembly.entry_index,
-        assembly.discovery,
-        Arc::clone(&assembly.module_index),
-        assembly.has_std_dependency,
-    )
 }
 
 fn find_entrypoint(

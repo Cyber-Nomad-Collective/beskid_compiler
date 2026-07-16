@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Centralize post-mod-rewrite syntax assembly projection at the shared frontend boundary for
+  Engine and prepared syntax lowering.
 - Serve LSP completion from generation-bound syntax/Salsa facts with exact replacement edits, including imported module members.
 - Make the exact installed ABI-v5 runtime kit the sole Engine, JIT, REPL, and in-process test runtime authority.
 - Require linked AOT artifacts to use one hash-validated ABI-v5 runtime kit while retaining runtime-free object emission.
