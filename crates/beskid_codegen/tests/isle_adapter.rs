@@ -633,20 +633,42 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
             .iter()
             .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_system_allocate")
     );
+    let root_frame = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "RootFrame")
+        .expect("RootFrame helper is lowered");
     assert!(
-        imports
-            .iter()
-            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_raw_word_load")
+        root_frame.function.display().to_string().contains("load.i64"),
+        "manifest-authorized raw_word_load is lowered inline through ISLE"
     );
     assert!(
-        imports
+        !imports
             .iter()
-            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_pointer_from_native_word")
+            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_raw_word_load"),
+        "the inline load must not retain an unnecessary ABI import"
     );
     assert!(
+        root_frame.function.display().to_string().contains("iadd"),
+        "manifest-authorized pointer_add is lowered inline through ISLE"
+    );
+    assert!(
+        !imports.iter().any(|entry| {
+            matches!(
+                entry.symbol.as_str(),
+                "beskid_rt_v5_intrinsic_pointer_from_native_word"
+                    | "beskid_rt_v5_intrinsic_pointer_add"
+            )
+        }),
+        "inline pointer conversions and arithmetic must not retain ABI imports"
+    );
+    assert_eq!(
         imports
             .iter()
-            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_pointer_add")
+            .map(|entry| entry.symbol.as_str())
+            .collect::<Vec<_>>(),
+        ["beskid_rt_v5_intrinsic_system_allocate"],
+        "only the still-external allocation primitive remains imported"
     );
 
     let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
