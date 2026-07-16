@@ -13,7 +13,7 @@ use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Redirect},
-    routing::{any, get},
+    routing::{any, delete, get},
 };
 use beskid_pckg_artifacts::LocalFileArtifactStore;
 use beskid_pckg_auth::{
@@ -31,6 +31,7 @@ use sqlx::Row;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::services::{ServeDir, ServeFile};
 
+mod api_key_routes;
 mod artifact_routes;
 mod community_routes;
 mod packages;
@@ -56,6 +57,7 @@ struct AppState {
     auth: Option<AuthConfig>,
     packages: PackageBackend,
     artifacts: Arc<LocalFileArtifactStore>,
+    api_keys: Option<Arc<SqlxPackageRepository>>,
 }
 
 /// Storage is selected exactly once during startup. In-memory storage remains
@@ -505,6 +507,10 @@ pub async fn router_from_config(config: PckgServerConfig) -> Result<Router, Serv
     repository.migrate().await.map_err(|error| {
         ServerStartupError(format!("pckg registry migration failed: {error:?}"))
     })?;
+    repository
+        .migrate_api_keys()
+        .await
+        .map_err(|error| ServerStartupError(format!("pckg API-key migration failed: {error:?}")))?;
     let community_repository = Arc::new(SqlxCommunityRepository::new(pool));
     community_repository.migrate().await.map_err(|error| {
         ServerStartupError(format!("pckg community migration failed: {error:?}"))
@@ -538,6 +544,10 @@ fn router_with_backend(
             }
         })
         .unwrap_or_default();
+    let api_keys = match &packages {
+        PackageBackend::Sqlx(repository) => Some(repository.clone()),
+        PackageBackend::InMemory(_) => None,
+    };
     Router::new()
         .route("/health", get(health))
         .route("/health/live", get(health))
@@ -594,6 +604,11 @@ fn router_with_backend(
         )
         .route("/api/auth/hub-finish", get(auth_hub_finish))
         .route("/api/auth/session", get(read_session))
+        .route(
+            "/api/api-keys",
+            get(api_key_routes::list_api_keys).post(api_key_routes::create_api_key),
+        )
+        .route("/api/api-keys/{id}", delete(api_key_routes::revoke_api_key))
         .nest_service("/api/community", community_routes::router(community_state))
         .route("/api", any(api_not_found))
         .route("/api/{*path}", any(api_not_found))
@@ -601,6 +616,7 @@ fn router_with_backend(
             auth: config.auth,
             packages,
             artifacts: Arc::new(artifacts),
+            api_keys,
         })
         .fallback_service(ServeDir::new(web_root).fallback(ServeFile::new(index)))
 }

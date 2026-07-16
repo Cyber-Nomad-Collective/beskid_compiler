@@ -31,6 +31,7 @@ pub(crate) struct PackageVersionPath {
 #[derive(Debug, Default, serde::Deserialize)]
 pub(crate) struct ListQuery {
     q: Option<String>,
+    owner: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
     page: Option<i64>,
@@ -54,6 +55,10 @@ impl ListQuery {
             .filter(|value| !value.is_empty())
             .map(str::to_ascii_lowercase)
     }
+
+    fn requests_current_owner(&self) -> bool {
+        self.owner.as_deref() == Some("me")
+    }
 }
 
 /// Legacy package index. Results are visibility-filtered before paging so a
@@ -64,6 +69,9 @@ pub async fn list_packages(
     Query(query): Query<ListQuery>,
 ) -> Response {
     let subject = authenticated_subject(&state, &headers);
+    if query.requests_current_owner() && subject.is_none() {
+        return crate::unauthorized_response();
+    }
     let packages = match state
         .packages
         .list_packages(query.limit(), query.offset())
@@ -75,7 +83,13 @@ pub async fn list_packages(
     let needle = query.query();
     let summaries = packages
         .into_iter()
-        .filter(|package| package.is_public || subject.as_deref() == Some(&package.owner_subject))
+        .filter(|package| {
+            if query.requests_current_owner() {
+                subject.as_deref() == Some(&package.owner_subject)
+            } else {
+                package.is_public || subject.as_deref() == Some(&package.owner_subject)
+            }
+        })
         .filter(|package| {
             needle
                 .as_ref()

@@ -794,6 +794,7 @@ dependencies = [
  "beskid_pckg_community",
  "beskid_pckg_contract",
  "beskid_pckg_store",
+ "chrono",
  "http-body-util",
  "multer",
  "serde",
@@ -814,6 +815,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "sha2",
  "sqlx",
  "uuid",
 ]

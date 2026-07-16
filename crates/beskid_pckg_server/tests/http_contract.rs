@@ -89,6 +89,19 @@ async fn package_index_search_and_detail_return_persisted_public_data() {
     assert_eq!(list.status(), StatusCode::OK);
     assert_eq!(response_body(list).await[0]["name"], "Public.Demo");
 
+    let my_packages = app
+        .clone()
+        .oneshot(
+            Request::get("/api/packages?owner=me")
+                .header("cookie", &owner_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(my_packages.status(), StatusCode::OK);
+    assert_eq!(response_body(my_packages).await[0]["name"], "Public.Demo");
+
     let search = app
         .clone()
         .oneshot(
@@ -116,6 +129,19 @@ async fn package_index_search_and_detail_return_persisted_public_data() {
     let detail = response_body(detail).await;
     assert_eq!(detail["versions"].as_array().unwrap().len(), 2);
     assert_eq!(detail["latestVersion"], "2.0.0");
+}
+
+#[tokio::test]
+async fn current_owner_package_filter_does_not_allow_anonymous_catalog_probing() {
+    let response = router(PckgServerConfig::default())
+        .oneshot(
+            Request::get("/api/packages?owner=me")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -173,6 +199,28 @@ async fn package_mutations_require_an_authenticated_session() {
         response_body(response).await,
         serde_json::json!({"message": "authentication required"})
     );
+}
+
+#[tokio::test]
+async fn api_key_management_requires_an_auth_hub_session() {
+    let app = router(PckgServerConfig::default());
+    for request in [
+        Request::get("/api/api-keys").body(Body::empty()).unwrap(),
+        Request::post("/api/api-keys")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"name":"CI","scopes":["publish"]}"#))
+            .unwrap(),
+        Request::delete("/api/api-keys/00000000-0000-0000-0000-000000000000")
+            .body(Body::empty())
+            .unwrap(),
+    ] {
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response_body(response).await,
+            serde_json::json!({"message": "authentication required"})
+        );
+    }
 }
 
 fn package_session(subject: &str) -> String {

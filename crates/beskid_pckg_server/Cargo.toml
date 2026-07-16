@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 beskid_pckg_auth = { path = "../beskid_pckg_auth" }
 beskid_pckg_artifacts = { path = "../beskid_pckg_artifacts" }
 beskid_pckg_contract = { path = "../beskid_pckg_contract" }

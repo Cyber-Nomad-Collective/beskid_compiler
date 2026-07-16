@@ -9,4 +9,5 @@ publish = false
 async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "derive"] }
+sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
