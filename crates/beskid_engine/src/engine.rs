@@ -255,6 +255,11 @@ fn resolve_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *cons
     use std::os::raw::{c_char, c_int, c_void};
 
     const RTLD_NOW: c_int = 2;
+    // Keep the external resolver's Linux flags aligned with the runtime-kit loader: glibc
+    // defines RTLD_LOCAL as zero, while bit 4 is RTLD_NOLOAD.
+    #[cfg(target_os = "linux")]
+    const RTLD_LOCAL: c_int = 0;
+    #[cfg(not(target_os = "linux"))]
     const RTLD_LOCAL: c_int = 4;
 
     unsafe extern "C" {

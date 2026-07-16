@@ -64,6 +64,12 @@ impl DynamicLibrary {
         use std::os::unix::ffi::OsStrExt;
 
         const RTLD_NOW: std::ffi::c_int = 2;
+        // `RTLD_LOCAL` is the default on glibc, where its value is zero.  Do not use the
+        // Darwin flag value here: Linux assigns bit 4 to `RTLD_NOLOAD`, which would reject a
+        // fresh runtime kit instead of loading it.
+        #[cfg(target_os = "linux")]
+        const RTLD_LOCAL: std::ffi::c_int = 0;
+        #[cfg(not(target_os = "linux"))]
         const RTLD_LOCAL: std::ffi::c_int = 4;
         unsafe extern "C" {
             fn dlopen(
