@@ -76,12 +76,13 @@ pub use persistence::{
 pub use semantic_contract::{
     AstNodeKey, CallLowering, CastIntent, ClosureCapture, ClosureEnvironment, CompletionCandidate, CompletionContext, CompletionKind, ControlFlow,
     IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, OperatorFact, ResolvedItem,
-    ResolvedLocal, RuntimeIntrinsic, SemanticError, SemanticQueryResult, SemanticTypeId,
+    ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName, SemanticError, SemanticQueryResult, SemanticTypeId,
     SourceSpan, SourceUnitId, SpawnTarget, TypedProgram, call_arguments, call_lowering,
     cast_intents, child_nodes, closure_environment, completion_candidates, control_flow, direct_callees, item_body,
     item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
-    reachable_items, resolved_item, resolved_local, runtime_intrinsic, spawn_target,
+    reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_target,
 };
+pub use typed_program::build_canonical_runtime_typed_program;
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,
     prepare_compilation_diagnostics, with_db,

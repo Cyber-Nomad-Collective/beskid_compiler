@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use beskid_abi::runtime_source::RuntimeIntrinsicCapability;
 use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 
@@ -70,6 +71,9 @@ pub struct TypedProgram {
     pub entry: SourceUnitId,
     pub generation: SyntaxGenerationId,
     pub assembly: Arc<SyntaxProgramAssembly>,
+    /// Present only when this program was assembled from the compiler-embedded canonical
+    /// runtime corpus. Ordinary user syntax can never manufacture this capability.
+    pub runtime_intrinsic_capability: Option<Arc<RuntimeIntrinsicCapability>>,
 }
 
 /// Authoritative Salsa input for the current syntax generation of one source unit.
@@ -210,6 +214,13 @@ pub struct ItemSignature {
 /// Trusted runtime operation selected by semantic analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RuntimeIntrinsic(pub u32);
+
+/// Syntactic name of a potential ABI-v5 runtime intrinsic call.
+///
+/// This is intentionally only a syntax fact. Codegen must pair it with the opaque canonical
+/// runtime capability before it may become an import.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RuntimeIntrinsicName(pub Arc<str>);
 
 /// A deterministic completion replacement range in the current source unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1360,6 +1371,27 @@ fn runtime_intrinsic_tracked(
 }
 
 #[salsa::tracked]
+fn runtime_intrinsic_name_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<RuntimeIntrinsicName> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return None;
+        };
+        if path.node.path.node.segments.len() != 1 {
+            return None;
+        }
+        Some(Ok(RuntimeIntrinsicName(Arc::from(
+            path.node.path.node.segments[0].node.name.node.name.as_str(),
+        ))))
+    })?
+    .transpose()
+}
+
+#[salsa::tracked]
 fn node_kind_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -1792,6 +1824,17 @@ pub fn spawn_target(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnTa
 /// unregistered keys contain no fact.
 pub fn runtime_intrinsic(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<RuntimeIntrinsic> {
     with_registered_syntax(db, key, runtime_intrinsic_tracked)
+}
+
+/// Return an unprivileged direct-call spelling for the codegen runtime import gate.
+///
+/// The name alone does not authorize an ABI import; only a canonical-runtime typed program can
+/// turn it into one.
+pub fn runtime_intrinsic_name(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<RuntimeIntrinsicName> {
+    with_registered_syntax(db, key, runtime_intrinsic_name_tracked)
 }
 
 pub fn node_kind(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<IndexedNodeKind> {

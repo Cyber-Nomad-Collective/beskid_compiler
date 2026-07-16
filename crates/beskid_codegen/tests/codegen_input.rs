@@ -9,7 +9,11 @@ use beskid_analysis::services::parse_program_with_source_name;
 use beskid_codegen::{CodegenInput, CodegenInputError};
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    TypedProgram, build_typed_program,
+    TypedProgram, build_canonical_runtime_typed_program, build_typed_program,
+};
+use beskid_abi::runtime_source::{
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, canonical_runtime_intrinsic_capability,
+    canonical_runtime_sources,
 };
 
 fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata) {
@@ -59,6 +63,78 @@ fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata)
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("target");
     (db, typed, root, target)
+}
+
+#[test]
+fn ordinary_syntax_programs_cannot_import_runtime_intrinsics() {
+    let (db, typed, root, target) = input_fixture();
+    let input = CodegenInput::new(
+        &db,
+        typed,
+        Arc::from([root]),
+        target.clone(),
+        AbiManifestV5::canonical_runtime(target),
+    )
+    .expect("ordinary input remains valid");
+
+    assert!(input.runtime_intrinsic_capability().is_none());
+}
+
+#[test]
+fn exact_canonical_assembly_carries_intrinsic_authority_to_codegen() {
+    let mut db = BeskidDatabase::default();
+    let directory = tempfile::tempdir().expect("runtime project").keep();
+    let source = canonical_runtime_sources().pop().expect("embedded source");
+    let source_path = directory.join("Bootstrap.bd");
+    std::fs::write(&source_path, &source.source).expect("write canonical source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
+        .expect("parse canonical source");
+    let project = ProjectSession::new(
+        &db,
+        directory.clone(),
+        source_path.clone(),
+        "beskid-runtime-native".into(),
+        "lock".into(),
+    );
+    let generation = SyntaxGenerationId(1);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: directory },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
+            path: source_path.clone(),
+            source: source.source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("target");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = build_canonical_runtime_typed_program(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_runtime_intrinsic_capability(&manifest).expect("compiler authority"),
+    )
+    .expect("exact canonical assembly");
+    let root = AstNodeKey {
+        unit: SourceUnitId::new(&db, source_path),
+        generation,
+        node: AstNodeId(0),
+    };
+    let input = CodegenInput::new(&db, typed, Arc::from([root]), target, manifest)
+        .expect("canonical codegen input");
+
+    assert!(input.runtime_intrinsic_capability().is_some());
 }
 
 #[test]

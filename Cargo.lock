@@ -542,8 +542,10 @@ dependencies = [
  "beskid_runtime",
  "cranelift-codegen",
  "cranelift-frontend",
+ "cranelift-jit",
  "cranelift-module",
  "pest",
+ "target-lexicon",
  "tempfile",
  "thiserror 2.0.18",
 ]
@@ -686,6 +688,7 @@ name = "beskid_queries"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "beskid_abi",
  "beskid_analysis",
  "beskid_artifacts",
  "beskid_graph",

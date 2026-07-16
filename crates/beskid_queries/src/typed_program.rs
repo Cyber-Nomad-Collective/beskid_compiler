@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use beskid_abi::runtime_source::RuntimeIntrinsicCapability;
 use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 
@@ -79,5 +80,41 @@ pub fn build_typed_program(
         entry: SourceUnitId::new(db, entry_unit.path.clone()),
         generation,
         assembly,
+        runtime_intrinsic_capability: None,
     })
+}
+
+/// Attach compiler-minted runtime intrinsic authority after validating that the assembled syntax
+/// is the exact embedded canonical corpus. This is deliberately separate from the ordinary
+/// assembly constructor so package names, paths, and user source cannot acquire the capability.
+pub fn build_canonical_runtime_typed_program(
+    db: &mut BeskidDatabase,
+    project: ProjectSession,
+    generation: SyntaxGenerationId,
+    assembly: Arc<SyntaxProgramAssembly>,
+    capability: RuntimeIntrinsicCapability,
+) -> Result<TypedProgram, SemanticError> {
+    let expected = beskid_abi::runtime_source::canonical_runtime_sources();
+    let actual = assembly
+        .units()
+        .iter()
+        .map(|unit| beskid_abi::abi_v5::SourceUnit {
+            logical_path: unit.logical_name.clone(),
+            source: unit.source.clone(),
+        })
+        .collect::<Vec<_>>();
+    let exact_corpus = actual.len() == expected.len()
+        && actual.iter().all(|source| {
+            capability.authorizes_source(&source.logical_path)
+                && expected.iter().any(|expected| expected == source)
+        });
+    if !exact_corpus {
+        return Err(SemanticError::new(
+            "syntax assembly is not the compiler-embedded canonical runtime corpus",
+        ));
+    }
+
+    let mut typed = build_typed_program(db, project, generation, assembly)?;
+    typed.runtime_intrinsic_capability = Some(Arc::new(capability));
+    Ok(typed)
 }

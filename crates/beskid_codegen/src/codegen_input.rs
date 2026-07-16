@@ -104,6 +104,47 @@ impl<'db> CodegenInput<'db> {
     pub fn abi_manifest(&self) -> &AbiManifestV5 {
         &self.abi_manifest
     }
+
+    /// Compiler-minted authority for direct ABI-v5 intrinsic imports.
+    ///
+    /// It is absent for every ordinary user program, including projects that imitate runtime
+    /// paths or package metadata.
+    pub fn runtime_intrinsic_capability(
+        &self,
+    ) -> Option<&std::sync::Arc<beskid_abi::runtime_source::RuntimeIntrinsicCapability>> {
+        self.typed_program.runtime_intrinsic_capability.as_ref()
+    }
+
+    /// Resolve one direct ABI-v5 intrinsic import through the canonical-source capability.
+    ///
+    /// A current node from a foreign unit, a stale node, a user program, and an undeclared
+    /// manifest name all return `None`; callers must never substitute an extern fallback.
+    pub fn runtime_intrinsic_for(
+        &self,
+        key: AstNodeKey,
+        name: &str,
+    ) -> Option<(u32, &beskid_abi::abi_v5::RuntimeIntrinsic)> {
+        if !matches!(node_kind(self.db, key), Ok(Some(_))) {
+            return None;
+        }
+        let unit_path = key.unit.path(self.db);
+        let logical_path = self
+            .typed_program
+            .assembly
+            .units()
+            .iter()
+            .find(|unit| paths_match(&unit.path, unit_path))?
+            .logical_name
+            .as_str();
+        let capability = self.runtime_intrinsic_capability()?;
+        let intrinsic = capability.intrinsic_for_source(logical_path, name)?;
+        let index = self
+            .abi_manifest
+            .trusted_runtime_intrinsics
+            .iter()
+            .position(|candidate| candidate.name == intrinsic.name)?;
+        Some((u32::try_from(index).ok()?, intrinsic))
+    }
 }
 
 fn paths_match(left: &std::path::Path, right: &std::path::Path) -> bool {
