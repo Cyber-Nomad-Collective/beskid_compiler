@@ -8,7 +8,7 @@ use beskid_codegen::module_emission::{SyntaxModuleItem, lower_syntax_program};
 use beskid_pipeline::PipelineObserver;
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, build_typed_program, child_nodes,
-    item_signature, node_kind, reachable_items, with_db,
+    item_name, item_signature, reachable_items, with_db,
 };
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
@@ -82,7 +82,7 @@ pub fn run_entrypoint_from_front_end_with_engine(
     let syntax_entrypoint = with_db(|db| {
         lower_syntax_entrypoint_from_front_end(
             db,
-            &front.assembly,
+            front,
             entrypoint,
             engine.target_metadata().clone(),
             pipeline,
@@ -227,14 +227,12 @@ fn run_syntax_jitted_entrypoint(
 
 fn lower_syntax_entrypoint_from_front_end(
     db: &mut BeskidDatabase,
-    assembly: &beskid_analysis::projects::ProgramAssembly,
+    front: &beskid_analysis::services::FrontEndTypedResult,
     entrypoint: &str,
     target: beskid_abi::abi_v5::TargetMetadata,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SyntaxEntrypointArtifact> {
-    let syntax_assembly = Arc::new(beskid_analysis::projects::SyntaxProgramAssembly::from(
-        assembly,
-    ));
+    let syntax_assembly = Arc::new(syntax_assembly_from_front_end(front));
     lower_syntax_entrypoint(db, syntax_assembly, entrypoint, target, pipeline)
 }
 
@@ -328,14 +326,36 @@ fn lower_syntax_entrypoint(
 /// Test and tooling callers that only need CLIF can use this without constructing an Engine or
 /// a runtime kit. Linked execution must still use [`Engine`]'s exact ABI-v5 kit authority.
 pub fn lower_prepared_syntax_entrypoint(
-    assembly: &beskid_analysis::projects::ProgramAssembly,
+    front: &beskid_analysis::services::FrontEndTypedResult,
     entrypoint: &str,
     target: beskid_abi::abi_v5::TargetMetadata,
 ) -> Result<beskid_codegen::CodegenArtifact> {
     with_db(|db| {
-        lower_syntax_entrypoint_from_front_end(db, assembly, entrypoint, target, None)
+        lower_syntax_entrypoint_from_front_end(db, front, entrypoint, target, None)
             .map(|entrypoint| entrypoint.artifact)
     })
+}
+
+/// Form the syntax-only authority from the frontend's post-mod-rewrite entry snapshot.
+///
+/// `ProgramAssembly` retains parsed source units for analysis and HIR compatibility, while the
+/// frontend's `program` is the expanded/re-written entry consumed by semantic facts. Replacing
+/// precisely that unit before `TypedProgram` registration keeps every Engine item key aligned
+/// with the generation-safe query snapshot.
+fn syntax_assembly_from_front_end(
+    front: &beskid_analysis::services::FrontEndTypedResult,
+) -> beskid_analysis::projects::SyntaxProgramAssembly {
+    let assembly = &front.assembly;
+    let mut units = assembly.units.as_ref().clone();
+    units[assembly.entry_index].program = front.program.clone();
+    beskid_analysis::projects::SyntaxProgramAssembly::new(
+        assembly.roots.clone(),
+        Arc::new(units),
+        assembly.entry_index,
+        assembly.discovery,
+        Arc::clone(&assembly.module_index),
+        assembly.has_std_dependency,
+    )
 }
 
 fn native_isa() -> Result<Arc<dyn TargetIsa>> {
@@ -403,28 +423,13 @@ fn syntax_item_symbol(
 
 fn syntax_item_name(
     db: &dyn beskid_queries::Db,
-    input: &beskid_codegen::CodegenInput<'_>,
+    _input: &beskid_codegen::CodegenInput<'_>,
     key: AstNodeKey,
 ) -> Option<String> {
-    let kind = node_kind(db, key).ok().flatten()?;
-    let unit = input
-        .typed_program()
-        .assembly
-        .units()
-        .iter()
-        .find(|unit| beskid_queries::SourceUnitId::new(db, unit.path.clone()) == key.unit)?;
-    let index =
-        beskid_analysis::syntax_query::SyntaxIndex::from_program(&unit.program, key.generation);
-    let node = index.node_at(&unit.program, key.node)?;
-    match kind {
-        beskid_queries::IndexedNodeKind::FunctionDefinition => node
-            .of::<beskid_analysis::syntax::FunctionDefinition>()
-            .map(|definition| definition.name.node.name.clone()),
-        beskid_queries::IndexedNodeKind::TestDefinition => node
-            .of::<beskid_analysis::syntax::TestDefinition>()
-            .map(|definition| definition.name.node.name.clone()),
-        _ => None,
-    }
+    item_name(db, key)
+        .ok()
+        .flatten()
+        .map(|name| name.as_ref().to_owned())
 }
 
 fn entrypoint_matches_item(item: &beskid_analysis::resolve::ItemInfo, entrypoint: &str) -> bool {

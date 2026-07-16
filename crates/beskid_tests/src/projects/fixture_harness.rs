@@ -196,7 +196,7 @@ pub fn lower_corelib_tests_entrypoint(
     )
     .unwrap_or_else(|err| panic!("front-end for {entry_relative}: {err}"));
     beskid_engine::services::lower_prepared_syntax_entrypoint(
-        &front.assembly,
+        &front,
         entrypoint,
         beskid_engine::host_runtime_target()
             .unwrap_or_else(|error| panic!("host ABI-v5 target: {error}")),

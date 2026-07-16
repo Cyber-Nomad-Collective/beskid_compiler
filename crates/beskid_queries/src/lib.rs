@@ -78,7 +78,7 @@ pub use semantic_contract::{
     IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, OperatorFact, ResolvedItem,
     ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName, SemanticError, SemanticQueryResult, SemanticTypeId,
     SourceSpan, SourceUnitId, SpawnTarget, TypedProgram, call_arguments, call_lowering,
-    cast_intents, child_nodes, closure_environment, completion_candidates, control_flow, direct_callees, item_body,
+    cast_intents, child_nodes, closure_environment, completion_candidates, control_flow, direct_callees, item_body, item_name,
     item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_target,
 };

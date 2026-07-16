@@ -1594,6 +1594,22 @@ fn item_body_tracked(
 }
 
 #[salsa::tracked]
+fn item_name_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<str>> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        node.of::<beskid_analysis::syntax::FunctionDefinition>()
+            .map(|definition| Arc::from(definition.name.node.name.as_str()))
+            .or_else(|| {
+                node.of::<beskid_analysis::syntax::TestDefinition>()
+                    .map(|definition| Arc::from(definition.name.node.name.as_str()))
+            })
+    })
+}
+
+#[salsa::tracked]
 fn direct_callees_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -1930,6 +1946,11 @@ pub fn operator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Operat
 
 pub fn item_body(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
     with_registered_syntax(db, key, item_body_tracked)
+}
+
+/// Return the exact declared name for a current syntax function or test item.
+pub fn item_name(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
+    with_registered_syntax(db, key, item_name_tracked)
 }
 
 /// Return unique direct function callees in expanded-syntax order.
