@@ -477,6 +477,9 @@ pub trait NodeFacts {
     fn field_index(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
+    fn field_receiver_slot(&self, _key: AstNodeKey) -> Option<u32> {
+        None
+    }
     fn enum_layout(&self, _key: AstNodeKey) -> Option<EnumLayout> {
         None
     }
@@ -862,6 +865,39 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
     }
 }
 
+impl IsleContext<'_, '_, '_, '_> {
+    /// Bring syntax integer operands to their common CLIF width before a binary operation.
+    ///
+    /// Beskid only exposes `u8` at byte width, so byte operands are zero-extended while wider
+    /// scalar integers preserve their signed representation. This keeps source-level mixed
+    /// arithmetic such as `i64 + (u8 - 48)` out of the retired HIR coercion path.
+    fn common_integer_operands(&mut self, left: Value, right: Value) -> (Value, Value) {
+        let left_type = self.builder.func.dfg.value_type(left);
+        let right_type = self.builder.func.dfg.value_type(right);
+        if !left_type.is_int() || !right_type.is_int() || left_type == right_type {
+            return (left, right);
+        }
+        let target = if left_type.bits() >= right_type.bits() {
+            left_type
+        } else {
+            right_type
+        };
+        let widen = |builder: &mut FunctionBuilder<'_>, value: Value, source: Type| {
+            if source == target {
+                value
+            } else if source == types::I8 {
+                builder.ins().uextend(target, value)
+            } else {
+                builder.ins().sextend(target, value)
+            }
+        };
+        (
+            widen(self.builder, left, left_type),
+            widen(self.builder, right, right_type),
+        )
+    }
+}
+
 impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn node_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {
         self.facts.node_kind(key)
@@ -934,50 +970,61 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn clif_iadd(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().iadd(left, right)
     }
 
     fn clif_isub(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().isub(left, right)
     }
 
     fn clif_imul(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().imul(left, right)
     }
 
     fn clif_sdiv(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().sdiv(left, right)
     }
 
     fn clif_srem(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().srem(left, right)
     }
 
     fn clif_eq(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().icmp(IntCC::Equal, left, right)
     }
 
     fn clif_ne(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().icmp(IntCC::NotEqual, left, right)
     }
 
     fn clif_slt(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().icmp(IntCC::SignedLessThan, left, right)
     }
 
     fn clif_sle(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder
             .ins()
             .icmp(IntCC::SignedLessThanOrEqual, left, right)
     }
 
     fn clif_sgt(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder
             .ins()
             .icmp(IntCC::SignedGreaterThan, left, right)
     }
 
     fn clif_sge(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
         self.builder
             .ins()
             .icmp(IntCC::SignedGreaterThanOrEqual, left, right)
@@ -1512,8 +1559,12 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             });
             return None;
         }
-        let base_key = self.facts.child(key, 0)?;
-        let base = generated::constructor_lower_expression(self, base_key)?;
+        let receiver_slot = self.facts.field_receiver_slot(key)?;
+        let (receiver, receiver_type) = self.locals.get(&receiver_slot).copied()?;
+        let base = self.builder.use_var(receiver);
+        if self.builder.func.dfg.value_type(base) != receiver_type {
+            return None;
+        }
         if !self.builder.func.dfg.value_type(base).is_int() {
             return None;
         }
@@ -1548,8 +1599,12 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             });
             return None;
         };
-        let base_key = self.facts.child(target, 0)?;
-        let base = generated::constructor_lower_expression(self, base_key)?;
+        let receiver_slot = self.facts.field_receiver_slot(target)?;
+        let (receiver, receiver_type) = self.locals.get(&receiver_slot).copied()?;
+        let base = self.builder.use_var(receiver);
+        if self.builder.func.dfg.value_type(base) != receiver_type {
+            return None;
+        }
         let value = generated::constructor_lower_expression(self, value_key)?;
         if !self.builder.func.dfg.value_type(base).is_int()
             || self.builder.func.dfg.value_type(value) != field.value_type

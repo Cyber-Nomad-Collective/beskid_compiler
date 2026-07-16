@@ -74,14 +74,14 @@ pub use persistence::{
     SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_manifest,
 };
 pub use semantic_contract::{
-    AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering, CastIntent, ClosureCapture,
+    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering, CastIntent, ClosureCapture,
     ClosureEnvironment, CompletionCandidate, CompletionContext, CompletionKind, ControlFlow,
     EnumConstructorFact, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact,
     ExportSymbol, GenericCallInstantiation, GenericCallSpecialization, IndexedNodeKind,
     ItemSignature, LiteralFact, LocalSlot,
     CorelibService, OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnTarget,
-    TestItem, TypedProgram, abi_type, aggregate_layout, aggregate_literal_declaration,
+    TestItem, TypedProgram, abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration,
     block_statement_nodes, call_abi_signature, call_arguments, call_lowering, cast_intents,
     child_nodes, closure_environment, completion_candidates, control_flow, direct_callees,
     enum_constructor, enum_layout, enum_match, generic_call_instantiation,

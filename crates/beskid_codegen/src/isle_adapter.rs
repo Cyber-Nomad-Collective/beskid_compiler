@@ -11,7 +11,7 @@ use beskid_isle::{
 };
 use beskid_queries::{
     AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
-    aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_abi_signature,
+    aggregate_field_access, aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_abi_signature,
     call_arguments, call_lowering, cast_intents, child_nodes, enum_constructor, enum_layout,
     enum_match, generic_call_specialization, item_abi_signature, item_body, literal_fact,
     local_slot, node_kind, node_type, operator_fact, resolved_local, runtime_intrinsic_name,
@@ -76,6 +76,9 @@ impl<'db> SyntaxNodeFacts<'db> {
 
 impl NodeFacts for SyntaxNodeFacts<'_> {
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+        if self.query(aggregate_field_access(self.db, key)).is_some() {
+            return Some(NodeKind::FieldExpression);
+        }
         self.query(node_kind(self.db, key)).and_then(map_node_kind)
     }
 
@@ -335,7 +338,21 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn struct_layout(&self, key: AstNodeKey) -> Option<StructLayout> {
-        self.struct_layout_for_literal(key)
+        self.struct_layout_for_literal(key).or_else(|| {
+            self.query(aggregate_field_access(self.db, key))
+                .and_then(|access| self.struct_layout_for_declaration(access.declaration))
+        })
+    }
+
+    fn field_index(&self, key: AstNodeKey) -> Option<u32> {
+        self.query(aggregate_field_access(self.db, key))
+            .map(|access| access.index)
+    }
+
+    fn field_receiver_slot(&self, key: AstNodeKey) -> Option<u32> {
+        let access = self.query(aggregate_field_access(self.db, key))?;
+        self.query(local_slot(self.db, access.receiver))
+            .map(|slot| slot.index)
     }
 
     fn enum_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
@@ -366,8 +383,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
 impl SyntaxNodeFacts<'_> {
     fn struct_layout_for_literal(&self, key: AstNodeKey) -> Option<StructLayout> {
-        let isa = self.isa?;
         let declaration = self.query(aggregate_literal_declaration(self.db, key))?;
+        self.struct_layout_for_declaration(declaration)
+    }
+
+    fn struct_layout_for_declaration(&self, declaration: AstNodeKey) -> Option<StructLayout> {
+        let isa = self.isa?;
         let aggregate = self.query(aggregate_layout(self.db, declaration))?;
         let mut size = 0_u32;
         let mut alignment = 1_u32;
@@ -540,6 +561,17 @@ impl SyntaxNodeFacts<'_> {
                                 .and_then(|identifier| self.query(node_type(self.db, identifier)))
                         })
                 })?
+            })
+            .or_else(|| {
+                self.query(aggregate_field_access(self.db, key)).and_then(|access| {
+                    self.query(aggregate_layout(self.db, access.declaration))?
+                        .fields
+                        .get(usize::try_from(access.index).ok()?)
+                        .map(|(_, shape)| match shape {
+                            AggregateFieldShape::Scalar(semantic) => *semantic,
+                            AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+                        })
+                })
             })
             .or_else(|| {
                 let (_, intrinsic) = self.runtime_intrinsic(key)?;

@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Derive direct nominal-local field access and mixed-width integer operands from generation-safe
+  syntax facts for ISLE emission, including Corelib `StyleChain` and terminal parsing paths.
 - Route Corelib executable-entry lowering from an assembled generation-safe syntax program
   directly through `TypedProgram`, `CodegenInput`, and ISLE, without invoking the legacy HIR
   frontend compatibility path.

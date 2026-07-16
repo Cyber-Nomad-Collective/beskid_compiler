@@ -21,9 +21,10 @@ use beskid_codegen::{
 use beskid_isle::{DirectCallee, FunctionEmitter, NodeFacts};
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    build_canonical_corelib_syscall_typed_program, build_canonical_runtime_typed_program,
-    build_typed_program, call_abi_signature, call_lowering, child_nodes, enum_match, item_name,
-    literal_fact, node_kind, node_type, test_statement_nodes,
+    aggregate_field_access, build_canonical_corelib_syscall_typed_program,
+    build_canonical_runtime_typed_program, build_typed_program, call_abi_signature, call_lowering,
+    child_nodes, enum_match, item_name, literal_fact, node_kind, node_type,
+    test_statement_nodes,
 };
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::isa;
@@ -365,6 +366,52 @@ fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i32 42"), "{clif}");
     assert!(clif.contains("return"), "{clif}");
+}
+
+#[test]
+fn parsed_u8_comparison_coerces_integer_literals_without_hir() {
+    let (input, isa, item) = item_fixture("bool Main(u8 b) { return b > 57; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("u8 comparisons lower through syntax facts");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i8 57"), "{clif}");
+}
+
+#[test]
+fn parsed_mixed_u8_i64_arithmetic_coerces_the_u8_operand_without_hir() {
+    let (input, isa, item) = item_fixture("i64 Main(u8 b, i64 acc) { return acc + (b - 48); }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("mixed-width arithmetic lowers through syntax facts");
+    let clif = function.display().to_string();
+    assert!(clif.contains("uextend.i64"), "{clif}");
+    assert!(clif.contains("iadd"), "{clif}");
+}
+
+#[test]
+fn parsed_nominal_parameter_field_read_lowers_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "type Style { i64 code } bool Main(Style chain) { return chain.code == 0; }",
+    );
+    let item = find_function_definition(input.database(), root).expect("main item");
+    let field = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::PathExpression,
+    )
+    .expect("field expression");
+    assert!(
+        aggregate_field_access(input.database(), field)
+            .expect("field query")
+            .is_some(),
+        "field access syntax fact"
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("nominal parameter field read lowers through syntax facts");
+    let clif = function.display().to_string();
+    assert!(clif.contains("load.i64"), "{clif}");
 }
 
 #[test]
