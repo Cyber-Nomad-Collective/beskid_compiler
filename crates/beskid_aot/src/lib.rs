@@ -17,7 +17,7 @@ pub mod runtime;
 pub mod target;
 
 pub use api::{
-    AotBuildRequest, AotBuildResult, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode,
+    AotBuildRequest, AotBuildResult, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, NativeLibraryPair, emit_library_pair,
     ProjectTargetKind, RuntimeKitRequest, build, default_output_kind, emit_object_only,
     resolve_entrypoint,
 };

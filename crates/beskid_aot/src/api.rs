@@ -154,6 +154,58 @@ pub struct AotBuildResult {
     pub linker_invocation: Option<String>,
 }
 
+/// Native static/shared library inputs suitable for higher-level runtime-kit publication.
+#[derive(Debug, Clone)]
+pub struct NativeLibraryPair {
+    pub static_library: PathBuf,
+    pub shared_library: PathBuf,
+    pub provenance_symbols: Vec<String>,
+}
+
+/// Emit native library artifacts from an existing codegen artifact without requiring a runtime
+/// kit. This is intentionally a library-only primitive: executable entrypoint and runtime-kit
+/// validation remain enforced by [`build`].
+pub fn emit_library_pair(
+    artifact: CodegenArtifact,
+    output_dir: PathBuf,
+    name: &str,
+    target_triple: Option<String>,
+    exported_symbols: Vec<String>,
+) -> AotResult<NativeLibraryPair> {
+    let target = detect_target(target_triple.as_deref())?;
+    std::fs::create_dir_all(&output_dir).map_err(|err| AotError::Io { path: output_dir.clone(), message: err.to_string() })?;
+    let object_path = output_dir.join(format!("{name}.{}", target.object_ext));
+    let request = AotBuildRequest {
+        artifact,
+        output_kind: BuildOutputKind::ObjectOnly,
+        output_path: object_path.clone(),
+        object_path: Some(object_path),
+        target_triple: target_triple.clone(),
+        profile: BuildProfile::Debug,
+        entrypoint: String::new(),
+        export_policy: ExportPolicy::Explicit(exported_symbols),
+        link_mode: LinkMode::Auto,
+        runtime: None,
+        verbose_link: false,
+        external_libraries: Vec::new(),
+        library_search_paths: Vec::new(),
+        pipeline: None,
+    };
+    validate_extern_libraries(&request.artifact, &request.external_libraries)?;
+    let object = emit_object_stage(&request)?;
+    let static_library = output_dir.join(crate::target::output_filename(name, BuildOutputKind::StaticLib, &target));
+    let shared_library = output_dir.join(crate::target::output_filename(name, BuildOutputKind::SharedLib, &target));
+    for (output_kind, output_path) in [(BuildOutputKind::StaticLib, &static_library), (BuildOutputKind::SharedLib, &shared_library)] {
+        link(&LinkRequest {
+            target_triple: target_triple.clone(), output_kind, output_path: output_path.clone(),
+            object_path: object.object_path.clone(), runtime_staticlib: None, host_staticlib: None,
+            entrypoint_symbol: String::new(), exported_symbols: object.exported_symbols.clone(),
+            link_mode: LinkMode::Auto, verbose: false, external_libraries: Vec::new(), library_search_paths: Vec::new(),
+        })?;
+    }
+    Ok(NativeLibraryPair { static_library, shared_library, provenance_symbols: object.exported_symbols })
+}
+
 #[derive(Debug, Clone)]
 struct ObjectStageResult {
     object_path: PathBuf,

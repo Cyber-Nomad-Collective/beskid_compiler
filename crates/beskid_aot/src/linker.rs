@@ -206,14 +206,25 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
         return archive_static_libtool(req);
     }
 
+    if req.runtime_staticlib.is_none() {
+        let output = Command::new("ar")
+            .arg("crs")
+            .arg(&req.output_path)
+            .arg(&req.object_path)
+            .output()
+            .map_err(|_| AotError::LinkerUnavailable)?;
+        if !output.status.success() {
+            return Err(AotError::LinkFailed {
+                status: output.status.code().unwrap_or(-1),
+                command: format!("ar crs {} {}", req.output_path.display(), req.object_path.display()),
+                detail: format_link_detail(&output),
+            });
+        }
+        return Ok(LinkResult { output_path: req.output_path.clone(), exported_symbols: req.exported_symbols.clone(), command_line: format!("ar crs {} {}", req.output_path.display(), req.object_path.display()) });
+    }
+
     let script_path = req.output_path.with_extension("mri");
-    let runtime_lib = req
-        .runtime_staticlib
-        .as_ref()
-        .ok_or_else(|| AotError::InvalidRequest {
-            message: "static archive output requires runtime archive unless standalone object-only mode is used"
-                .to_owned(),
-        })?;
+    let runtime_lib = req.runtime_staticlib.as_ref().expect("runtime checked above");
     let script = format!(
         "CREATE {}\nADDLIB {}\nADDMOD {}\nSAVE\nEND\n",
         req.output_path.display(),
@@ -269,6 +280,13 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
 }
 
 fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
+    if req.runtime_staticlib.is_none() {
+        let output = Command::new("libtool")
+            .arg("-static").arg("-o").arg(&req.output_path).arg(&req.object_path)
+            .output().map_err(|_| AotError::LinkerUnavailable)?;
+        if !output.status.success() { return Err(AotError::LinkFailed { status: output.status.code().unwrap_or(-1), command: format!("libtool -static -o {} {}", req.output_path.display(), req.object_path.display()), detail: format_link_detail(&output) }); }
+        return Ok(LinkResult { output_path: req.output_path.clone(), command_line: format!("libtool -static -o {} {}", req.output_path.display(), req.object_path.display()), exported_symbols: req.exported_symbols.clone() });
+    }
     let runtime_lib = req
         .runtime_staticlib
         .as_ref()
