@@ -41,7 +41,10 @@ pub use module_emission::{
     DescriptorHandles, SyntaxModuleItem, emit_string_literals, emit_type_descriptors,
     lower_syntax_program,
 };
-pub use prepared_syntax::{PreparedSyntaxEntrypoint, lower_prepared_syntax_entrypoint};
+pub use prepared_syntax::{
+    PreparedSyntaxEntrypoint, lower_canonical_runtime_prepared_syntax,
+    lower_prepared_syntax_entrypoint,
+};
 pub use services::{
     LoweredProgram, jit_symbol_for_item, lower_from_front_end,
     lower_resolved_entrypoint_with_pipeline, lower_resolved_input_with_pipeline, lower_source,

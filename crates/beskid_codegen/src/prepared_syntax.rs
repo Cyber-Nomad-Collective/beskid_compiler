@@ -3,16 +3,23 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
-use beskid_analysis::services::FrontEndTypedResult;
+use beskid_abi::{
+    abi_v5::{AbiManifestV5, TargetMetadata},
+    runtime_source::{CANONICAL_BOOTSTRAP_SOURCE_PATH, canonical_runtime_intrinsic_capability, canonical_runtime_sources},
+};
+use beskid_analysis::{
+    projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly},
+    services::{FrontEndTypedResult, parse_program_with_source_name},
+};
 use beskid_isle::AstNodeKey;
 use beskid_queries::{
     BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
-    build_typed_program, child_nodes, item_name, item_signature, reachable_items,
+    build_canonical_runtime_typed_program, build_typed_program, block_statement_nodes, child_nodes, item_export_symbol,
+    item_name, item_signature, node_kind, node_span, reachable_items,
 };
 use cranelift_codegen::isa::TargetIsa;
 
-use crate::{CodegenArtifact, CodegenInput, SyntaxModuleItem, lower_syntax_program};
+use crate::{CodegenArtifact, CodegenInput, ExportEntry, SyntaxModuleItem, lower_syntax_program};
 
 /// Result of lowering one prepared syntax entrypoint through the HIR-free boundary.
 pub struct PreparedSyntaxEntrypoint {
@@ -20,6 +27,127 @@ pub struct PreparedSyntaxEntrypoint {
     pub symbol: String,
     pub return_type: SemanticTypeId,
 }
+
+/// Lower the compiler-embedded canonical runtime corpus through prepared syntax and ISLE.
+/// Only this constructor can mint the matching intrinsic capability; a runtime kit cannot be
+/// built from a caller-supplied source file or host shim.
+pub fn lower_canonical_runtime_prepared_syntax(
+    db: &mut BeskidDatabase,
+    target: TargetMetadata,
+    isa: &dyn TargetIsa,
+) -> Result<CodegenArtifact> {
+    let source = canonical_runtime_sources()
+        .into_iter()
+        .find(|unit| unit.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
+        .ok_or_else(|| anyhow::anyhow!("canonical Bootstrap source is missing"))?;
+    let source_text = source.source.clone();
+    let root_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime/beskid");
+    let source_path = root_dir.join(&source.logical_path);
+    let program = parse_program_with_source_name(source_path.to_str().unwrap_or_default(), &source.source)
+        .map_err(|error| anyhow::anyhow!("canonical runtime parse failed: {error}"))?;
+    let project = ProjectSession::new(
+        db,
+        root_dir.clone(),
+        source_path.clone(),
+        "beskid-runtime-native".into(),
+        "canonical-runtime".into(),
+    );
+    let generation = SyntaxGenerationId(1);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root_dir },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: source.logical_path,
+            path: source_path.clone(),
+            source: source.source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let capability = canonical_runtime_intrinsic_capability(&manifest)
+        .map_err(|error| anyhow::anyhow!("canonical runtime intrinsic capability unavailable: {error:?}"))?;
+    let typed = build_canonical_runtime_typed_program(db, project, generation, assembly, capability)
+        .map_err(|error| anyhow::anyhow!("canonical runtime syntax preparation failed: {error}"))?;
+    let root = AstNodeKey {
+        unit: SourceUnitId::new(db, source_path),
+        generation,
+        node: beskid_queries::AstNodeId(0),
+    };
+    let input = CodegenInput::new(db, typed, Arc::from([root]), target, manifest)
+        .map_err(|error| anyhow::anyhow!("canonical runtime CodegenInput failed: {error}"))?;
+    let items = function_definitions(input.database(), root)
+        .into_iter()
+        .filter_map(|key| {
+            item_export_symbol(input.database(), key)
+                .ok()
+                .flatten()
+                .map(|symbol| symbol.0.to_string())
+                .or_else(|| syntax_item_symbol(input.database(), &input, key))
+                .map(|symbol| SyntaxModuleItem { key, symbol })
+        })
+        .collect::<Vec<_>>();
+    if items.is_empty() {
+        anyhow::bail!("canonical Bootstrap source has no declared exports");
+    }
+    let mut artifact = lower_syntax_program(&input, isa, &items).map_err(|error| {
+        let source_context = match &error {
+            crate::module_emission::SyntaxModuleEmissionError::Emission(
+                beskid_isle::FunctionEmissionError::Lowering(lowering),
+            ) => {
+                let span = node_span(input.database(), lowering.key())
+                    .ok()
+                    .flatten()
+                    .map(|span| {
+                    let start = usize::try_from(span.start).unwrap_or_default();
+                    let end = usize::try_from(span.end).unwrap_or_default();
+                    source_text.get(start..end).unwrap_or_default().to_owned()
+                })
+                    .unwrap_or_default();
+                let kind = node_kind(input.database(), lowering.key()).ok().flatten();
+                let children = child_nodes(input.database(), lowering.key())
+                    .ok()
+                    .flatten()
+                    .map(|children| {
+                        children
+                            .iter()
+                            .map(|child| node_kind(input.database(), *child).ok().flatten())
+                            .collect::<Vec<_>>()
+                    });
+                let statements = block_statement_nodes(input.database(), lowering.key())
+                    .ok()
+                    .flatten()
+                    .map(|nodes| nodes.iter().map(|node| (node.node.0, node_kind(input.database(), *node).ok().flatten())).collect::<Vec<_>>());
+                let if_children = block_statement_nodes(input.database(), lowering.key())
+                    .ok().flatten().and_then(|nodes| nodes.first().copied())
+                    .and_then(|if_node| child_nodes(input.database(), if_node).ok().flatten())
+                    .map(|nodes| nodes.iter().map(|node| (node.node.0, node_kind(input.database(), *node).ok().flatten())).collect::<Vec<_>>());
+                format!("{span}; kind={kind:?}; children={children:?}; statements={statements:?}; if_children={if_children:?}")
+            }
+            _ => String::new(),
+        };
+        anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}; source={source_context:?}")
+    })?;
+    artifact.exports = items
+        .iter()
+        .filter_map(|item| {
+            let export = item_export_symbol(input.database(), item.key).ok().flatten()?;
+            let beskid_name = item_name(input.database(), item.key).ok().flatten()?;
+            Some(ExportEntry {
+                beskid_name: beskid_name.to_string(),
+                exported_symbol: export.0.to_string(),
+                abi: "C".to_owned(),
+            })
+        })
+        .collect();
+    Ok(artifact)
+}
+
 
 /// Lower a prepared frontend snapshot with the caller's target ISA.
 ///
@@ -138,7 +266,7 @@ fn find_item(db: &BeskidDatabase, key: AstNodeKey, entrypoint: &str) -> Option<A
 }
 
 fn syntax_item_symbol(
-    db: &BeskidDatabase,
+    db: &dyn beskid_queries::Db,
     input: &CodegenInput<'_>,
     key: AstNodeKey,
 ) -> Option<String> {
@@ -161,4 +289,19 @@ fn syntax_item_symbol(
         })
         .collect::<String>();
     Some(format!("{name}#syntax_{logical}_{}", key.node.0))
+}
+
+fn function_definitions(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Vec<AstNodeKey> {
+    let mut items = Vec::new();
+    if node_kind(db, key).ok().flatten()
+        == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
+    {
+        items.push(key);
+    }
+    if let Some(children) = child_nodes(db, key).ok().flatten() {
+        for child in children.iter().copied() {
+            items.extend(function_definitions(db, child));
+        }
+    }
+    items
 }
