@@ -26,11 +26,14 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
         }
         [flag, target] if flag == "--fixture" => {
             let audit = audit_for(target)?;
-            println!("target={}", audit.target);
-            for symbol in audit.allowed_exports {
+            let fixture = audit
+                .fixture_symbol_list()
+                .map_err(|error| error.to_string())?;
+            println!("target={}", fixture.target);
+            for symbol in fixture.defined {
                 println!("defined={symbol}");
             }
-            for symbol in audit.allowed_imports {
+            for symbol in fixture.undefined {
                 println!("undefined={symbol}");
             }
             Ok(())

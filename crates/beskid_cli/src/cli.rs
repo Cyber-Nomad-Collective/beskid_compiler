@@ -28,8 +28,8 @@ use crate::commands::{
     migrate_bsol, new, parse, repl, run, runtime_kit, test, tree, update, validate_bsol,
 };
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
-use beskid_pckg::PckgArgs;
 use beskid_pckg::cli::PckgCommand;
+use beskid_pckg::PckgArgs;
 use clap::{ArgAction, Parser, Subcommand};
 use miette::Report;
 use std::env;
@@ -373,8 +373,6 @@ mod tests {
             "x86_64-unknown-linux-gnu",
             "--profile",
             "release",
-            "--source-hash",
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "--static-library",
             "out/libbeskid_runtime.a",
             "--shared-library",
@@ -385,7 +383,9 @@ mod tests {
         let Commands::RuntimeKit(args) = cli.command else {
             panic!("expected runtime-kit command");
         };
-        let crate::commands::runtime_kit::RuntimeKitCommand::Build(args) = args.command;
+        let crate::commands::runtime_kit::RuntimeKitCommand::Build(args) = args.command else {
+            panic!("expected runtime-kit build command");
+        };
         assert_eq!(args.prefix, Path::new("/opt/beskid"));
         assert_eq!(args.target, "x86_64-unknown-linux-gnu");
         assert_eq!(args.profile.as_str(), "release");
@@ -406,8 +406,6 @@ mod tests {
             "x86_64-unknown-linux-gnu",
             "--profile",
             "debug",
-            "--source-hash",
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "--static-library",
             "out/libbeskid_runtime.a",
         ]) {
@@ -415,5 +413,51 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.to_string().contains("--shared-library"));
+    }
+
+    #[test]
+    fn parses_runtime_kit_matrix_contract() {
+        let cli = Cli::try_parse_from([
+            "beskid",
+            "runtime-kit",
+            "build-matrix",
+            "--prefix",
+            "/opt/beskid",
+            "--target",
+            "x86_64-unknown-linux-gnu",
+            "--debug-static-library",
+            "out/debug/libbeskid_runtime.a",
+            "--debug-shared-library",
+            "out/debug/libbeskid_runtime.so",
+            "--release-static-library",
+            "out/release/libbeskid_runtime.a",
+            "--release-shared-library",
+            "out/release/libbeskid_runtime.so",
+            "--debug-provenance-symbol-list",
+            "out/debug/runtime.symbols",
+            "--release-provenance-symbol-list",
+            "out/release/runtime.symbols",
+        ])
+        .expect("parse runtime-kit matrix");
+        let Commands::RuntimeKit(args) = cli.command else {
+            panic!("expected runtime-kit command");
+        };
+        let crate::commands::runtime_kit::RuntimeKitCommand::BuildMatrix(args) = args.command
+        else {
+            panic!("expected runtime-kit matrix command");
+        };
+        assert_eq!(args.target, "x86_64-unknown-linux-gnu");
+        assert_eq!(
+            args.debug_static_library,
+            Path::new("out/debug/libbeskid_runtime.a")
+        );
+        assert_eq!(
+            args.release_shared_library,
+            Path::new("out/release/libbeskid_runtime.so")
+        );
+        assert_eq!(
+            args.debug_provenance_symbol_list,
+            Path::new("out/debug/runtime.symbols")
+        );
     }
 }

@@ -39,6 +39,26 @@ impl RuntimeProvenanceAudit {
         serde_json::to_string(self)
     }
 
+    /// Produce a portable symbol-list fixture in the spelling emitted by this target's object
+    /// tools. This is also the contract platform adapters must reproduce before publication.
+    pub fn fixture_symbol_list(&self) -> Result<SymbolList, SymbolListError> {
+        let metadata = supported_target(&self.target)?;
+        let prefix = metadata.symbol_prefix;
+        Ok(SymbolList {
+            target: self.target.clone(),
+            defined: self
+                .allowed_exports
+                .iter()
+                .map(|symbol| format!("{prefix}{symbol}"))
+                .collect(),
+            undefined: self
+                .allowed_imports
+                .iter()
+                .map(|symbol| format!("{prefix}{symbol}"))
+                .collect(),
+        })
+    }
+
     /// Verify an explicit symbol-list file against this target's manifest-derived policy.
     pub fn verify(&self, symbols: &SymbolList) -> Result<(), SymbolListError> {
         if symbols.target != self.target {

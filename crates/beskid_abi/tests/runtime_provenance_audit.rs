@@ -34,6 +34,15 @@ fn canonical_audit_serializes_a_stable_machine_readable_contract() {
 }
 
 #[test]
+fn portable_fixture_uses_each_targets_native_symbol_spelling() {
+    for metadata in TargetMetadata::supported() {
+        let audit = RuntimeProvenanceAudit::canonical(metadata).unwrap();
+        let fixture = audit.fixture_symbol_list().unwrap();
+        audit.verify(&fixture).unwrap();
+    }
+}
+
+#[test]
 fn symbol_list_parser_rejects_target_mismatch() {
     let list =
         parse_symbol_list("target=x86_64-pc-windows-msvc\ndefined=beskid_rt_v5_abi_version\n")
