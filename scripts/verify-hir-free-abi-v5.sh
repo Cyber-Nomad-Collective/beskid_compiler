@@ -20,6 +20,7 @@ failed=0
 active_count=0
 test_count=0
 fixture_count=0
+dependency_count=0
 provenance_count=0
 
 category_for_path() {
@@ -76,6 +77,32 @@ report_matches() {
   failed=1
 }
 
+report_dependency_matches() {
+  local output
+  local match
+  local search_paths=()
+  local path
+
+  for path in "$@"; do
+    [[ -e "$path" ]] && search_paths+=("$path")
+  done
+  if ((${#search_paths[@]} == 0)); then
+    return 0
+  fi
+
+  output="$(rg -n --glob 'Cargo.toml' -- 'beskid_runtime(?:_bridge)?|beskid_host' "${search_paths[@]}" || true)"
+  if [[ -z "$output" ]]; then
+    return 0
+  fi
+
+  echo "retired Rust runtime dependency paths remain"
+  while IFS= read -r match; do
+    dependency_count=$((dependency_count + 1))
+    echo "[retired dependency] $match"
+  done <<< "$output"
+  failed=1
+}
+
 report_matches \
   "HIR references remain" \
   'beskid_analysis::hir|crate::hir|\bHir[A-Z]|\bUnitHir\b|\bunit_hir(_tracked|_with_source)?\b' \
@@ -100,6 +127,11 @@ report_matches \
   'DISPATCH_|dispatch_(tag|route|envelope)|UsePrebuilt|RuntimeLinkProfile::Minimal|BESKID_RUNTIME_ARCHIVE' \
   "$scan_crates"
 
+# Source scans cannot see a retired crate that is still pulled into a release
+# closure through Cargo metadata.  Inspect declarations directly so the gate
+# fails before a workspace build can reintroduce the Rust runtime path.
+report_dependency_matches "$scan_root/Cargo.toml" "$scan_crates"
+
 verify_provenance_fixture() {
   local target="$1"
   echo "verifying ABI-v5 runtime provenance fixture: $target"
@@ -121,8 +153,8 @@ verify_provenance_fixture "x86_64-unknown-linux-gnu"
 verify_provenance_fixture "x86_64-pc-windows-msvc"
 
 source_total=$((active_count + test_count + fixture_count))
-total_count=$((source_total + provenance_count))
-echo "HIR-free ABI-v5 blocker summary: active production=$active_count; test support=$test_count; generated/fixtures=$fixture_count; source total=$source_total; provenance fixtures=$provenance_count; total=$total_count"
+total_count=$((source_total + dependency_count + provenance_count))
+echo "HIR-free ABI-v5 blocker summary: active production=$active_count; test support=$test_count; generated/fixtures=$fixture_count; source total=$source_total; retired dependencies=$dependency_count; provenance fixtures=$provenance_count; total=$total_count"
 
 if (( failed != 0 )); then
   exit 1
