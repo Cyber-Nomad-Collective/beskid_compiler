@@ -82,6 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Classify generic syntax module items before selecting ABI specializations, omitting generic
+  type and enum declarations that have source layout facts but no executable ISLE body.
 - Require an exact compiler-owned lexical source path before granting Foundation panic-service
   authority, so symlinked `Testing/Assert.bd` sources remain ordinary syntax.
 - Follow parsed public module declarations in import-closure assembly while keeping use-path
