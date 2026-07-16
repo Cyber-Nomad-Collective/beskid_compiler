@@ -32,9 +32,23 @@ fn canonical_bootstrap_source_is_embedded_and_exports_the_v5_probe() {
 fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
     let source = &canonical_runtime_sources()[0].source;
 
+    // Every manifest lifecycle/trap export is source-owned. Context-switch exports are
+    // intentionally supplied by target assembly and covered by their own assembly tests.
+    for export in &linux_manifest().exports {
+        assert!(
+            source.contains(&format!("Symbol:\"{}\"", export.symbol)),
+            "canonical runtime source must own manifest export {}",
+            export.symbol,
+        );
+    }
+
     for symbol in [
+        "beskid_library_attach_v5",
+        "beskid_library_detach_v5",
         "beskid_rt_v5_process_init",
         "beskid_rt_v5_process_shutdown",
+        "beskid_rt_v5_thread_attach",
+        "beskid_rt_v5_thread_detach",
         "beskid_rt_v5_trap",
     ] {
         assert!(
@@ -45,6 +59,10 @@ fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
 
     assert!(source.contains("pub pointer ProcessInit(pointer config)"));
     assert!(source.contains("pub unit ProcessShutdown(pointer runtime)"));
+    assert!(source.contains("pub i32 LibraryAttach(pointer runtime)"));
+    assert!(source.contains("pub unit LibraryDetach(pointer runtime)"));
+    assert!(source.contains("pub pointer ThreadAttach(pointer runtime)"));
+    assert!(source.contains("pub unit ThreadDetach(pointer thread)"));
     assert!(source.contains("pub never Trap(u8 code, pointer message, word messageLength)"));
     assert!(source.contains("trap(code, message, messageLength);"));
 }

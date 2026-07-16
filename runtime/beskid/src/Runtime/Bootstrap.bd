@@ -27,6 +27,47 @@ pub unit ProcessShutdown(pointer runtime) {
     return;
 }
 
+/// Attaches a dynamically composed Beskid library to its caller-owned runtime state.
+///
+/// Library composition shares the same bootstrap ownership boundary as process startup: this
+/// wrapper records the supplied runtime in canonical TLS and reports success without allocating
+/// a second process runtime or delegating to a host bridge.
+[Export(Abi:"C", Symbol:"beskid_library_attach_v5")]
+pub i32 LibraryAttach(pointer runtime) {
+    ProcessInit(runtime);
+    return 0;
+}
+
+/// Detaches a composed library from its caller-owned runtime state.
+[Export(Abi:"C", Symbol:"beskid_library_detach_v5")]
+pub unit LibraryDetach(pointer runtime) {
+    ProcessShutdown(runtime);
+    return;
+}
+
+/// Attaches the current native thread to one caller-owned runtime state.
+///
+/// The bootstrap runtime uses the supplied runtime pointer as the thread token until the
+/// scheduler owns a dedicated `BeskidTlsState` allocation. This preserves the ABI's opaque
+/// token contract without introducing a Rust or host-managed thread object.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_thread_attach")]
+pub pointer ThreadAttach(pointer runtime) {
+    SetCurrentThreadState(runtime);
+    return runtime;
+}
+
+/// Detaches the current thread when its installed token matches `thread`.
+///
+/// An out-of-order detach leaves another active attachment intact, mirroring the root-frame
+/// ownership checks in this bootstrap layer.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_thread_detach")]
+pub unit ThreadDetach(pointer thread) {
+    if CurrentThreadState() == thread {
+        SetCurrentThreadState(NativePointer(0));
+    }
+    return;
+}
+
 /// Converts an opaque runtime address to its pointer-width representation.
 ///
 /// `native_word_from_pointer` is not a user-visible extern: codegen recognizes this direct call
