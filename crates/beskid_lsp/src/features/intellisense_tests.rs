@@ -13,7 +13,7 @@ mod tests {
     use crate::features::{definition, hover, references, signature_help};
     use crate::position::position_to_offset;
     use crate::session::lifecycle::{ANALYSIS_CACHE_VERSION, build_document};
-    use crate::session::store::{Document, State, SyntaxDefinition, SyntaxHover};
+    use crate::session::store::{Document, State, SyntaxDefinition, SyntaxHover, SyntaxSymbol};
     use crate::workspace_scan::path_to_uri;
 
     struct CorelibMvpFixture {
@@ -188,6 +188,36 @@ mod tests {
         assert_eq!(location.uri, uri);
         assert_eq!(location.range.start.line, 1);
         assert_eq!(location.range.start.character, 4);
+    }
+
+    #[test]
+    fn definition_on_declaration_uses_syntax_symbol_without_legacy_analysis() {
+        let uri = Uri::from_str("file:///tmp/syntax-symbol.bd").expect("uri");
+        let doc = Document {
+            version: 1,
+            text: "i32 helper() { return 0; }".to_string(),
+            analysis_cache_version: ANALYSIS_CACHE_VERSION,
+            analysis: None,
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: vec![SyntaxSymbol {
+                name: "helper".to_string(),
+                kind: beskid_analysis::services::AnalysisSymbolKind::Function,
+                start: 4,
+                end: 10,
+            }],
+            syntax_completion: None,
+        };
+
+        let response = definition::handler::handle_definition(&uri, &doc, 6)
+            .expect("syntax symbol definition");
+        let GotoDefinitionResponse::Scalar(location) = response else {
+            panic!("expected scalar definition");
+        };
+        assert_eq!(location.uri, uri);
+        assert_eq!(location.range.start.line, 0);
+        assert_eq!(location.range.start.character, 4);
+        assert_eq!(location.range.end.character, 10);
     }
 
     #[test]

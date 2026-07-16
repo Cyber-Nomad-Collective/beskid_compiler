@@ -44,15 +44,16 @@ pub fn handle_definition(
         }));
     }
 
-    let analysis = doc.analysis.as_ref()?;
-    let symbols = beskid_analysis::services::collect_document_symbols(analysis);
-    symbols
+    // Declaration navigation is a self-targeting syntax fact.  Keep it separate from the
+    // resolved-reference table above because declarations do not need name resolution, but do
+    // not fall back to the optional HIR analysis snapshot.
+    doc.syntax_symbols
         .iter()
-        .find(|symbol| offset_in_range(offset, symbol.selection_start, symbol.selection_end))
+        .find(|symbol| offset_in_range(offset, symbol.start, symbol.end))
         .map(|symbol| {
             GotoDefinitionResponse::Scalar(Location {
                 uri: uri.clone(),
-                range: offset_range_to_lsp(&doc.text, symbol.selection_start, symbol.selection_end),
+                range: offset_range_to_lsp(&doc.text, symbol.start, symbol.end),
             })
         })
 }
