@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError};
-use cranelift_codegen::ir::Endianness;
+use cranelift_codegen::ir::{Endianness, ExtFuncData, ExternalName, FuncRef, Signature};
 use cranelift_codegen::isa::TargetIsa;
+use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{
     DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult,
 };
@@ -11,7 +12,7 @@ use cranelift_module::{
 use crate::lowering::CodegenArtifact;
 use crate::lowering::descriptor::TypeDescriptorData;
 use crate::{
-    CodegenInput, ItemModuleImporter, emit_isle_item_with_call_importer, syntax_item_signature,
+    CodegenInput, emit_isle_item_with_call_importer,
 };
 
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
@@ -34,6 +35,72 @@ pub enum SyntaxModuleEmissionError {
     Module(#[from] ModuleError),
     #[error("syntax ISLE emission failed: {0:?}")]
     Emission(FunctionEmissionError),
+    #[error("syntax module declares duplicate symbol `{0}`")]
+    DuplicateSymbol(String),
+}
+
+/// Lower syntax items into the ordinary backend artifact boundary without constructing HIR or
+/// using the legacy `Lowerable` implementation. Direct calls retain their exact syntax item
+/// identity while their emitted CLIF references the final declared symbol by name.
+///
+/// Backends may then use their existing artifact declaration/remapping path. Production JIT
+/// entrypoint lowering uses this bridge as it migrates away from HIR.
+pub fn lower_syntax_program(
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    items: &[SyntaxModuleItem],
+) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
+    let mut symbols = HashMap::with_capacity(items.len());
+    for item in items {
+        if symbols
+            .insert(DirectCallee::new(item.key.node.0), item.symbol.clone())
+            .is_some()
+        {
+            return Err(SyntaxModuleEmissionError::DuplicateSymbol(item.symbol.clone()));
+        }
+    }
+
+    let mut functions = Vec::with_capacity(items.len());
+    for item in items {
+        let function = {
+            let mut importer = ArtifactCallImporter { symbols: &symbols };
+            emit_isle_item_with_call_importer(input, isa, item.key, &mut importer)
+                .map_err(SyntaxModuleEmissionError::Emission)?
+        };
+        functions.push(crate::LoweredFunction {
+            name: item.symbol.clone(),
+            function,
+        });
+    }
+    Ok(CodegenArtifact {
+        functions,
+        ..CodegenArtifact::default()
+    })
+}
+
+struct ArtifactCallImporter<'a> {
+    symbols: &'a HashMap<DirectCallee, String>,
+}
+
+impl beskid_isle::CallImporter for ArtifactCallImporter<'_> {
+    fn import(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        callee: DirectCallee,
+        signature: &Signature,
+    ) -> Result<FuncRef, beskid_isle::CallImportError> {
+        let symbol = self
+            .symbols
+            .get(&callee)
+            .ok_or(beskid_isle::CallImportError::UnknownCallee)?;
+        let signature = builder.import_signature(signature.clone());
+        Ok(builder.func.import_function(ExtFuncData {
+            name: ExternalName::testcase(symbol.as_bytes()),
+            signature,
+            colocated: false,
+            patchable: false,
+        }))
+    }
 }
 
 /// Declare every syntax item before lowering any body, then import direct callees by exact
@@ -45,24 +112,20 @@ pub fn emit_syntax_program<M: Module>(
     items: &[SyntaxModuleItem],
     linkage: Linkage,
 ) -> Result<HashMap<AstNodeKey, FuncId>, SyntaxModuleEmissionError> {
+    let artifact = lower_syntax_program(input, isa, items)?;
     let mut by_key = HashMap::with_capacity(items.len());
-    let mut by_callee = HashMap::with_capacity(items.len());
-    for item in items {
-        let signature = syntax_item_signature(input, isa, item.key)
-            .map_err(SyntaxModuleEmissionError::Emission)?;
-        let id = module.declare_function(&item.symbol, linkage, &signature)?;
+    let mut by_symbol = HashMap::with_capacity(items.len());
+    for (item, lowered) in items.iter().zip(&artifact.functions) {
+        let id = module.declare_function(&item.symbol, linkage, &lowered.function.signature)?;
         by_key.insert(item.key, id);
-        by_callee.insert(DirectCallee::new(item.key.node.0), id);
+        by_symbol.insert(item.symbol.clone(), id);
     }
-    for item in items {
-        let function = {
-            let mut importer = ItemModuleImporter::new(module, by_callee.clone());
-            emit_isle_item_with_call_importer(input, isa, item.key, &mut importer)
-                .map_err(SyntaxModuleEmissionError::Emission)?
-        };
+    for (item, lowered) in items.iter().zip(artifact.functions) {
         let id = by_key[&item.key];
         let mut context = module.make_context();
-        context.func = function;
+        context.func = lowered.function;
+        crate::cranelift_host::remap_testcase_externals(module, &mut context, &by_symbol)
+            .map_err(|error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())))?;
         module.define_function(id, &mut context)?;
         module.clear_context(&mut context);
     }

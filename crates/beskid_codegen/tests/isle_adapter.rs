@@ -10,7 +10,7 @@ use beskid_analysis::services::parse_program_with_source_name;
 use beskid_codegen::{
     CodegenInput, ItemModuleImporter, emit_isle_expression, emit_isle_item,
     emit_isle_item_with_call_importer,
-    module_emission::{SyntaxModuleItem, emit_syntax_program},
+    module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
 };
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
@@ -322,6 +322,39 @@ fn parsed_program_declares_then_imports_syntax_items_without_hir() {
         module.get_name("Main"),
         Some(cranelift_module::FuncOrDataId::Func(declared[&items[1]]))
     );
+}
+
+#[test]
+fn parsed_program_lowers_to_backend_artifact_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: items[0],
+                symbol: "AddOne".into(),
+            },
+            SyntaxModuleItem {
+                key: items[1],
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("syntax items lower into a normal backend artifact");
+
+    assert_eq!(artifact.functions.len(), 2);
+    beskid_codegen::validate_artifact(&artifact)
+        .expect("direct syntax calls resolve against artifact definitions");
+    let main = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("Main artifact function");
+    assert!(main.function.display().to_string().contains("call"));
 }
 
 fn item_fixture(
