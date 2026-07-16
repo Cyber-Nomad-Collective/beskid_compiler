@@ -20,7 +20,7 @@ use beskid_codegen::{
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
     build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes,
-    item_name, literal_fact, node_kind, test_statement_nodes,
+    enum_match, item_name, literal_fact, node_kind, node_type, test_statement_nodes,
 };
 use cranelift_codegen::ir::types;
 use cranelift_codegen::isa;
@@ -181,6 +181,29 @@ fn parsed_nullary_enum_constructor_uses_source_layout_without_hir() {
     let clif = function.display().to_string();
     assert!(clif.contains("stack_store"));
     assert!(clif.contains("iconst.i32 0"));
+}
+
+#[test]
+fn parsed_enum_match_uses_source_arms_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Choice { None(), Some() } i32 Main() { return match Choice::Some() { Choice::None() => 1, Choice::Some() => 2, }; }",
+    );
+    let expression = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("enum match");
+    assert!(
+        enum_match(input.database(), expression).expect("enum match query").is_some(),
+        "source match facts"
+    );
+    assert_eq!(
+        node_type(input.database(), expression).expect("match type"),
+        Some(beskid_queries::SemanticTypeId::I32)
+    );
+    let function = emit_isle_expression(&input, isa.as_ref(), expression, types::I32)
+        .expect("enum match lowers through syntax facts");
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("load.i32"));
+    assert!(clif.contains("br_table"));
 }
 
 

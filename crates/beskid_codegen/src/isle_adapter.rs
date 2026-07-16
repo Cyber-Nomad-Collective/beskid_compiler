@@ -5,14 +5,14 @@ use std::collections::HashMap;
 use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
-    EmissionServices, EnumLayout, EnumVariantLayout, FieldLayout, ItemStatementEmission, LiteralKind, NodeFacts, NodeKind,
+    EmissionServices, EnumLayout, EnumVariantLayout, FieldLayout, ItemStatementEmission, LiteralKind, MatchArmFact, NodeFacts, NodeKind,
     OperatorFact, ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{
     AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
     aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_arguments,
     call_lowering, cast_intents, child_nodes, item_abi_signature, item_body,
-    enum_constructor, enum_layout, literal_fact, local_slot, node_kind, node_type, operator_fact, resolved_local,
+    enum_constructor, enum_layout, enum_match, literal_fact, local_slot, node_kind, node_type, operator_fact, resolved_local,
     runtime_intrinsic_name, test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
@@ -306,7 +306,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn enum_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
-        self.enum_layout_for_constructor(key)
+        self.enum_layout_for(key)
     }
 
     fn enum_variant_index(&self, key: AstNodeKey) -> Option<u32> {
@@ -316,6 +316,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn enum_payload(&self, key: AstNodeKey) -> Option<AstNodeKey> {
         self.query(enum_constructor(self.db, key))?.payload
+    }
+
+    fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
+        self.query(enum_match(self.db, key)).map(|fact| {
+            fact.arms
+                .iter()
+                .map(|arm| match arm.variant_index {
+                    Some(variant) => MatchArmFact::variant(u64::from(variant), arm.body),
+                    None => MatchArmFact::wildcard(arm.body),
+                })
+                .collect()
+        })
     }
 }
 
@@ -344,10 +356,16 @@ impl SyntaxNodeFacts<'_> {
         Some(StructLayout::new(size, alignment.ilog2() as u8, fields))
     }
 
-    fn enum_layout_for_constructor(&self, key: AstNodeKey) -> Option<EnumLayout> {
+    fn enum_layout_for(&self, key: AstNodeKey) -> Option<EnumLayout> {
         let isa = self.isa?;
-        let constructor = self.query(enum_constructor(self.db, key))?;
-        let source = self.query(enum_layout(self.db, constructor.declaration))?;
+        let declaration = self
+            .query(enum_constructor(self.db, key))
+            .map(|constructor| constructor.declaration)
+            .or_else(|| {
+                self.query(enum_match(self.db, key))
+                    .map(|match_fact| match_fact.declaration)
+            })?;
+        let source = self.query(enum_layout(self.db, declaration))?;
         let tag_type = types::I32;
         let tag = FieldLayout::new(tag_type, 0);
         let mut alignment = tag_type.bytes();
