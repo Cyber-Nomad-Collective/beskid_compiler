@@ -1195,9 +1195,11 @@ fn expected_cast_type(
             .copied()
             .find(|operand| is_ancestor(index, *operand, key.node))?;
         let sibling = operands.into_iter().find(|candidate| *candidate != operand)?;
-        let sibling_node = index.node_at(program, sibling)?;
-        return semantic_type_for_node(program, index, sibling, sibling_node)
-            .map(|result| result.map_err(|_| SemanticError::unavailable("cast_intents")));
+        if is_transparent_binary_operand_path(index, operand, key.node) {
+            let sibling_node = index.node_at(program, sibling)?;
+            return semantic_type_for_node(program, index, sibling, sibling_node)
+                .map(|result| result.map_err(|_| SemanticError::unavailable("cast_intents")));
+        }
     }
 
     if let Some(statement_id) = nearest_ancestor(index, key.node, |kind| {
@@ -1268,6 +1270,29 @@ fn expected_cast_type(
         _ => None,
     };
     Some(expected.ok_or_else(|| SemanticError::unavailable("cast_intents")))
+}
+
+/// A binary comparison constrains only its own operand expression, not a nested call argument.
+/// For example, `object == NativePointer(0)` must retain `NativePointer`'s `word` parameter
+/// intent for `0`; the outer pointer comparison has no authority to coerce that argument.
+fn is_transparent_binary_operand_path(
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    operand: beskid_analysis::syntax::AstNodeId,
+    node: beskid_analysis::syntax::AstNodeId,
+) -> bool {
+    use beskid_analysis::syntax_query::NodeKind;
+
+    let mut current = node;
+    while current != operand {
+        let Some(parent) = parent_node(index, current) else {
+            return false;
+        };
+        if !matches!(index.kind(parent), Some(NodeKind::Expression | NodeKind::LiteralExpression | NodeKind::GroupedExpression)) {
+            return false;
+        }
+        current = parent;
+    }
+    true
 }
 
 /// ABI-v5 intrinsic signatures are target-independent.  Selecting a supported target merely

@@ -827,6 +827,24 @@ fn cast_intents_use_binary_operand_types_for_contextual_literals() {
 }
 
 #[test]
+fn cast_intents_keep_nested_call_literals_bound_to_the_parameter_type() {
+    let source = r#"
+pointer NativePointer(word value) { return value; }
+bool Main(pointer object) { return object == NativePointer(0); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let literal = key(unit, generation, &index, NodeKind::Literal, 0);
+
+    assert_eq!(
+        cast_intents(&db, literal).expect("nested call argument cast"),
+        Some(Arc::from([beskid_queries::CastIntent {
+            from: beskid_queries::SemanticTypeId::I32,
+            to: beskid_queries::SemanticTypeId::WORD,
+        }]))
+    );
+}
+
+#[test]
 fn item_signatures_cover_primitive_functions_methods_and_contracts() {
     let source = r#"
 i64 Convert(i32 value, bool checked) { return value; }
