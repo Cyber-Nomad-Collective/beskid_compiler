@@ -77,12 +77,12 @@ fn wrap_dispatch_return(entry: &DispatchEntry, group: &str, body: &str) -> Strin
         "usize" if dispatch_body_needs_usize_cast(&entry.dispatch_key) => {
             format!("Some({{\n{body}\n        }} as usize)")
         }
-        "usize" => format!("Some({{\n{body}\n        }})"),
+        "usize" => format!("Some({body})"),
         "ptr" => format!("Some({{\n{body}\n        }} as *mut u8)"),
         "i64" if dispatch_body_needs_i64_cast(&entry.dispatch_key) => {
             format!("Some({{\n{body}\n        }} as i64)")
         }
-        "i64" => format!("Some({{\n{body}\n        }})"),
+        "i64" => format!("Some({body})"),
         _ => body.to_string(),
     }
 }
@@ -1260,6 +1260,8 @@ fn format_param_array(params: &[AbiParamKind]) -> String {
 mod tests {
     use std::path::PathBuf;
 
+    use crate::model::DispatchEntry;
+
     #[test]
     fn legacy_v4_codegen_rejects_the_v5_authority() {
         let manifest_path =
@@ -1269,5 +1271,24 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.contains("unknown field `schema_version`"));
+    }
+
+    #[test]
+    fn safe_dispatch_returns_do_not_emit_redundant_expression_braces() {
+        let entry = DispatchEntry {
+            dispatch_key: "fiber_now_millis".to_string(),
+            name: "FiberNowMillis".to_string(),
+            tag: 0,
+            params: Vec::new(),
+            returns: "usize".to_string(),
+            injected: true,
+            beskid_path: Vec::new(),
+            owner: "language".to_string(),
+        };
+
+        assert_eq!(
+            super::wrap_dispatch_return(&entry, "usize", "crate::builtins::fiber_now_millis()"),
+            "Some(crate::builtins::fiber_now_millis())"
+        );
     }
 }

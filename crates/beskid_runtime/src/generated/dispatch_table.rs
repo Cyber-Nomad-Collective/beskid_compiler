@@ -2,7 +2,26 @@
 #![allow(clippy::too_many_lines)]
 
 use beskid_abi::BeskidStr;
-use beskid_abi::{TAG_ARRAY_LEN, TAG_ARRAY_NEW, TAG_BYTES_COMPARE, TAG_BYTES_COPY, TAG_BYTES_FROM_STR, TAG_BYTES_GET, TAG_BYTES_SET, TAG_CHANNEL_CLOSE, TAG_CHANNEL_CREATE, TAG_CHANNEL_RECEIVE_PTR, TAG_CHANNEL_RECEIVE_STATUS, TAG_CHANNEL_RECEIVE_VALUE, TAG_CHANNEL_SEND, TAG_CHANNEL_SEND_PTR, TAG_CHANNEL_TRY_RECEIVE, TAG_CHANNEL_TRY_RECEIVE_PTR, TAG_CHANNEL_TRY_SEND, TAG_CHANNEL_TRY_SEND_PTR, TAG_CLOCK_MONOTONIC_NANOS, TAG_CLOCK_REALTIME_NANOS, TAG_ENV_GET, TAG_ENV_GETCWD, TAG_ENV_SET, TAG_EVENT_GET_HANDLER, TAG_EVENT_LEN, TAG_EVENT_SUBSCRIBE, TAG_EVENT_UNSUBSCRIBE_FIRST, TAG_FIBER_CANCEL, TAG_FIBER_CURRENT_ID, TAG_FIBER_DETACH, TAG_FIBER_JOIN_STATUS, TAG_FIBER_JOIN_VALUE, TAG_FIBER_NOW_MILLIS, TAG_FIBER_PROCESSOR_COUNT, TAG_FIBER_SPAWN, TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, TAG_FS_DELETE, TAG_FS_EXISTS, TAG_FS_MKDIR, TAG_FS_READ_TEXT, TAG_FS_WRITE_TEXT, TAG_GC_BYTES_ALLOCATED, TAG_GC_COLLECT, TAG_GC_COLLECT_IF_NEEDED, TAG_GC_EXTERNAL_ROOT_COUNT, TAG_GC_OBJECT_COUNT, TAG_GC_PHASE, TAG_HUB_CREATE, TAG_HUB_REGISTER, TAG_HUB_UNREGISTER, TAG_HUB_WAIT_RECEIVE_INDEX, TAG_HUB_WAIT_RECEIVE_STATUS, TAG_HUB_WAIT_RECEIVE_VALUE, TAG_MUTEX_CREATE, TAG_MUTEX_LOCK, TAG_MUTEX_TRY_LOCK, TAG_MUTEX_UNLOCK, TAG_PROCESS_EXIT, TAG_PROCESS_GETPID, TAG_STR_CONCAT, TAG_STR_EQ, TAG_STR_FROM_BYTES_UTF8, TAG_STR_FROM_I64, TAG_STR_LEN, TAG_STR_NEW, TAG_STR_SLICE, TAG_SYSCALL_READ, TAG_SYSCALL_READ_BYTES, TAG_SYSCALL_WRITE, TAG_SYSCALL_WRITE_BYTES, TAG_TEST_BYTES_LEN, TAG_TEST_BYTES_PTR, TAG_TTY_WINSIZE, TAG_WAIT_GROUP_ADD, TAG_WAIT_GROUP_CREATE, TAG_WAIT_GROUP_DONE, TAG_WAIT_GROUP_WAIT};
+use beskid_abi::{
+    TAG_ARRAY_LEN, TAG_ARRAY_NEW, TAG_BYTES_COMPARE, TAG_BYTES_COPY, TAG_BYTES_FROM_STR,
+    TAG_BYTES_GET, TAG_BYTES_SET, TAG_CHANNEL_CLOSE, TAG_CHANNEL_CREATE, TAG_CHANNEL_RECEIVE_PTR,
+    TAG_CHANNEL_RECEIVE_STATUS, TAG_CHANNEL_RECEIVE_VALUE, TAG_CHANNEL_SEND, TAG_CHANNEL_SEND_PTR,
+    TAG_CHANNEL_TRY_RECEIVE, TAG_CHANNEL_TRY_RECEIVE_PTR, TAG_CHANNEL_TRY_SEND,
+    TAG_CHANNEL_TRY_SEND_PTR, TAG_CLOCK_MONOTONIC_NANOS, TAG_CLOCK_REALTIME_NANOS, TAG_ENV_GET,
+    TAG_ENV_GETCWD, TAG_ENV_SET, TAG_EVENT_GET_HANDLER, TAG_EVENT_LEN, TAG_EVENT_SUBSCRIBE,
+    TAG_EVENT_UNSUBSCRIBE_FIRST, TAG_FIBER_CANCEL, TAG_FIBER_CURRENT_ID, TAG_FIBER_DETACH,
+    TAG_FIBER_JOIN_STATUS, TAG_FIBER_JOIN_VALUE, TAG_FIBER_NOW_MILLIS, TAG_FIBER_PROCESSOR_COUNT,
+    TAG_FIBER_SPAWN, TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, TAG_FS_DELETE, TAG_FS_EXISTS, TAG_FS_MKDIR,
+    TAG_FS_READ_TEXT, TAG_FS_WRITE_TEXT, TAG_GC_BYTES_ALLOCATED, TAG_GC_COLLECT,
+    TAG_GC_COLLECT_IF_NEEDED, TAG_GC_EXTERNAL_ROOT_COUNT, TAG_GC_OBJECT_COUNT, TAG_GC_PHASE,
+    TAG_HUB_CREATE, TAG_HUB_REGISTER, TAG_HUB_UNREGISTER, TAG_HUB_WAIT_RECEIVE_INDEX,
+    TAG_HUB_WAIT_RECEIVE_STATUS, TAG_HUB_WAIT_RECEIVE_VALUE, TAG_MUTEX_CREATE, TAG_MUTEX_LOCK,
+    TAG_MUTEX_TRY_LOCK, TAG_MUTEX_UNLOCK, TAG_PROCESS_EXIT, TAG_PROCESS_GETPID, TAG_STR_CONCAT,
+    TAG_STR_EQ, TAG_STR_FROM_BYTES_UTF8, TAG_STR_FROM_I64, TAG_STR_LEN, TAG_STR_NEW, TAG_STR_SLICE,
+    TAG_SYSCALL_READ, TAG_SYSCALL_READ_BYTES, TAG_SYSCALL_WRITE, TAG_SYSCALL_WRITE_BYTES,
+    TAG_TEST_BYTES_LEN, TAG_TEST_BYTES_PTR, TAG_TTY_WINSIZE, TAG_WAIT_GROUP_ADD,
+    TAG_WAIT_GROUP_CREATE, TAG_WAIT_GROUP_DONE, TAG_WAIT_GROUP_WAIT,
+};
 
 /// Dispatch return group `usize` (registration group id `0`).
 pub const DISPATCH_GROUP_USIZE: u32 = 0;
@@ -36,7 +55,6 @@ fn is_valid_i64_tag(tag: i32) -> bool {
     (0..64).contains(&tag) && (VALID_TAGS_I64 & (1u64 << tag as u32)) != 0
 }
 
-
 /// Dispatch `usize` return group by manifest tag.
 ///
 /// # Safety
@@ -49,33 +67,36 @@ pub unsafe fn dispatch_usize(tag: i32, enum_ptr: *const u8) -> Option<usize> {
         return Some(value);
     }
     match tag {
-        TAG_ARRAY_LEN => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-crate::builtins::array_len(p0 as *const beskid_abi::BeskidArray)
+        TAG_ARRAY_LEN => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                crate::builtins::array_len(p0 as *const beskid_abi::BeskidArray)
             }
-        }) }
-        TAG_FS_WRITE_TEXT => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_STR_LEN => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-            crate::builtins::str_len(p0)
+        }),
+        TAG_FS_WRITE_TEXT => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_STR_LEN => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
+                crate::builtins::str_len(p0)
             }
-        }) }
-        TAG_SYSCALL_WRITE => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const *const BeskidStr);
-            crate::builtins::syscall_write(p0 as i64, p1)
+        }),
+        TAG_SYSCALL_WRITE => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const *const BeskidStr);
+                crate::builtins::syscall_write(p0 as i64, p1)
             }
-        } as usize) }
-        TAG_SYSCALL_WRITE_BYTES => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const *const u8);
-            crate::builtins::syscall_write_bytes(p0 as i64, p1 as *const beskid_abi::BeskidArray)
+        } as usize),
+        TAG_SYSCALL_WRITE_BYTES => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::builtins::syscall_write_bytes(
+                    p0 as i64,
+                    p1 as *const beskid_abi::BeskidArray,
+                )
             }
-        } as usize) }
+        } as usize),
         _ => None,
     }
 }
@@ -92,78 +113,82 @@ pub unsafe fn dispatch_ptr(tag: i32, enum_ptr: *const u8) -> Option<*mut u8> {
         return Some(value);
     }
     match tag {
-        TAG_ARRAY_NEW => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const usize);
-            let p1 = *(enum_ptr.add(24) as *const usize);
-            crate::builtins::array_new(p0, p1)
+        TAG_ARRAY_NEW => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const usize);
+                let p1 = *(enum_ptr.add(24) as *const usize);
+                crate::builtins::array_new(p0, p1)
             }
-        } as *mut u8) }
-        TAG_BYTES_FROM_STR => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-            crate::builtins::bytes_from_str(p0)
+        } as *mut u8),
+        TAG_BYTES_FROM_STR => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
+                crate::builtins::bytes_from_str(p0)
             }
-        } as *mut u8) }
-        TAG_BYTES_SET => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            let p2 = *(enum_ptr.add(32) as *const u64);
-            crate::builtins::bytes_set(p0 as *const beskid_abi::BeskidArray, p1 as i64, p2 as i64)
+        } as *mut u8),
+        TAG_BYTES_SET => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                let p2 = *(enum_ptr.add(32) as *const u64);
+                crate::builtins::bytes_set(
+                    p0 as *const beskid_abi::BeskidArray,
+                    p1 as i64,
+                    p2 as i64,
+                )
             }
-        } as *mut u8) }
-        TAG_ENV_GET => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_ENV_GETCWD => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_FS_READ_TEXT => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_STR_CONCAT => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-let p1 = *(enum_ptr.add(24) as *const *const u8);
-crate::builtins::str_concat(p0 as *const BeskidStr, p1 as *const BeskidStr)
+        } as *mut u8),
+        TAG_ENV_GET => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_ENV_GETCWD => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_FS_READ_TEXT => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_STR_CONCAT => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::builtins::str_concat(p0 as *const BeskidStr, p1 as *const BeskidStr)
             }
-        } as *mut u8) }
-        TAG_STR_FROM_BYTES_UTF8 => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-            crate::builtins::str_from_bytes_utf8(p0 as *const beskid_abi::BeskidArray)
+        } as *mut u8),
+        TAG_STR_FROM_BYTES_UTF8 => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                crate::builtins::str_from_bytes_utf8(p0 as *const beskid_abi::BeskidArray)
             }
-        } as *mut u8) }
-        TAG_STR_FROM_I64 => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::str_from_i64(p0 as i64)
+        } as *mut u8),
+        TAG_STR_FROM_I64 => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::str_from_i64(p0 as i64)
             }
-        } as *mut u8) }
-        TAG_STR_NEW => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-            let p1 = *(enum_ptr.add(24) as *const usize);
-            crate::builtins::str_new(p0, p1)
+        } as *mut u8),
+        TAG_STR_NEW => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const usize);
+                crate::builtins::str_new(p0, p1)
             }
-        } as *mut u8) }
-        TAG_STR_SLICE => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            let p2 = *(enum_ptr.add(32) as *const u64);
-            crate::builtins::str_slice(p0, p1 as usize, p2 as usize)
+        } as *mut u8),
+        TAG_STR_SLICE => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                let p2 = *(enum_ptr.add(32) as *const u64);
+                crate::builtins::str_slice(p0, p1 as usize, p2 as usize)
             }
-        } as *mut u8) }
-        TAG_SYSCALL_READ => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            crate::builtins::syscall_read(p0 as i64, p1 as i64)
+        } as *mut u8),
+        TAG_SYSCALL_READ => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                crate::builtins::syscall_read(p0 as i64, p1 as i64)
             }
-        } as *mut u8) }
-        TAG_SYSCALL_READ_BYTES => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            crate::builtins::syscall_read_bytes(p0 as i64, p1 as i64)
+        } as *mut u8),
+        TAG_SYSCALL_READ_BYTES => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                crate::builtins::syscall_read_bytes(p0 as i64, p1 as i64)
             }
-        } as *mut u8) }
+        } as *mut u8),
         _ => None,
     }
 }
@@ -180,60 +205,66 @@ pub unsafe fn dispatch_unit(tag: i32, enum_ptr: *const u8) -> bool {
         return true;
     }
     match tag {
-        TAG_BYTES_COPY => { {
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            let p2 = *(enum_ptr.add(32) as *const *const u8);
-            let p3 = *(enum_ptr.add(40) as *const u64);
-            let p4 = *(enum_ptr.add(48) as *const u64);
-            crate::builtins::bytes_copy(p0 as *const beskid_abi::BeskidArray, p1 as i64, p2 as *const beskid_abi::BeskidArray, p3 as i64, p4 as i64)
+        TAG_BYTES_COPY => {
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                let p2 = *(enum_ptr.add(32) as *const *const u8);
+                let p3 = *(enum_ptr.add(40) as *const u64);
+                let p4 = *(enum_ptr.add(48) as *const u64);
+                crate::builtins::bytes_copy(
+                    p0 as *const beskid_abi::BeskidArray,
+                    p1 as i64,
+                    p2 as *const beskid_abi::BeskidArray,
+                    p3 as i64,
+                    p4 as i64,
+                )
             };
             true
-        } }
-        TAG_CHANNEL_CLOSE => { {
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::channel_close(p0 as i64)
+        }
+        TAG_CHANNEL_CLOSE => {
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::channel_close(p0 as i64)
             };
             true
-        } }
-        TAG_FIBER_CANCEL => { {
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::fiber_cancel(p0 as i64)
+        }
+        TAG_FIBER_CANCEL => {
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::fiber_cancel(p0 as i64)
             };
             true
-        } }
-        TAG_FIBER_DETACH => { {
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::fiber_detach(p0 as i64)
+        }
+        TAG_FIBER_DETACH => {
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::fiber_detach(p0 as i64)
             };
             true
-        } }
-        TAG_MUTEX_UNLOCK => { {
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::mutex_unlock(p0 as i64)
+        }
+        TAG_MUTEX_UNLOCK => {
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::mutex_unlock(p0 as i64)
             };
             true
-        } }
-        TAG_WAIT_GROUP_ADD => { {
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            crate::builtins::wait_group_add(p0 as i64, p1 as i64)
+        }
+        TAG_WAIT_GROUP_ADD => {
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                crate::builtins::wait_group_add(p0 as i64, p1 as i64)
             };
             true
-        } }
-        TAG_WAIT_GROUP_DONE => { {
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::wait_group_done(p0 as i64)
+        }
+        TAG_WAIT_GROUP_DONE => {
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::wait_group_done(p0 as i64)
             };
             true
-        } }
+        }
         _ => false,
     }
 }
@@ -250,256 +281,243 @@ pub unsafe fn dispatch_i64(tag: i32, enum_ptr: *const u8) -> Option<i64> {
         return Some(value);
     }
     match tag {
-        TAG_BYTES_COMPARE => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-            let p1 = *(enum_ptr.add(24) as *const *const u8);
-            crate::builtins::bytes_compare(p0 as *const beskid_abi::BeskidArray, p1 as *const beskid_abi::BeskidArray)
+        TAG_BYTES_COMPARE => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::builtins::bytes_compare(
+                    p0 as *const beskid_abi::BeskidArray,
+                    p1 as *const beskid_abi::BeskidArray,
+                )
             }
-        }) }
-        TAG_BYTES_GET => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            crate::builtins::bytes_get(p0 as *const beskid_abi::BeskidArray, p1 as i64)
+        }),
+        TAG_BYTES_GET => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                crate::builtins::bytes_get(p0 as *const beskid_abi::BeskidArray, p1 as i64)
             }
-        }) }
-        TAG_CHANNEL_CREATE => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            crate::builtins::channel_create(p0 as i64, p1 as i64)
+        }),
+        TAG_CHANNEL_CREATE => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                crate::builtins::channel_create(p0 as i64, p1 as i64)
             }
-        }) }
-        TAG_CHANNEL_RECEIVE_PTR => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-let p1 = *(enum_ptr.add(24) as *const *const u8);
-crate::channel_receive_ptr(p0 as i64, p1 as *mut *mut u8)
+        }),
+        TAG_CHANNEL_RECEIVE_PTR => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::channel_receive_ptr(p0 as i64, p1 as *mut *mut u8)
             }
-        }) }
-        TAG_CHANNEL_RECEIVE_STATUS => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::channel_receive_status(p0 as i64)
+        }),
+        TAG_CHANNEL_RECEIVE_STATUS => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::channel_receive_status(p0 as i64)
             }
-        }) }
-        TAG_CHANNEL_RECEIVE_VALUE => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::channel_receive_value(p0 as i64)
+        }),
+        TAG_CHANNEL_RECEIVE_VALUE => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::channel_receive_value(p0 as i64)
             }
-        }) }
-        TAG_CHANNEL_SEND => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            crate::builtins::channel_send(p0 as i64, p1 as i64)
+        }),
+        TAG_CHANNEL_SEND => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                crate::builtins::channel_send(p0 as i64, p1 as i64)
             }
-        }) }
-        TAG_CHANNEL_SEND_PTR => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-let p1 = *(enum_ptr.add(24) as *const *const u8);
-crate::channel_send_ptr(p0 as i64, p1 as *mut u8)
+        }),
+        TAG_CHANNEL_SEND_PTR => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::channel_send_ptr(p0 as i64, p1 as *mut u8)
             }
-        }) }
-        TAG_CHANNEL_TRY_RECEIVE => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const *const u8);
-            crate::builtins::channel_try_receive(p0 as i64, p1 as *mut i64)
+        }),
+        TAG_CHANNEL_TRY_RECEIVE => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::builtins::channel_try_receive(p0 as i64, p1 as *mut i64)
             }
-        }) }
-        TAG_CHANNEL_TRY_RECEIVE_PTR => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-let p1 = *(enum_ptr.add(24) as *const *const u8);
-crate::channel_try_receive_ptr(p0 as i64, p1 as *mut *mut u8)
+        }),
+        TAG_CHANNEL_TRY_RECEIVE_PTR => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::channel_try_receive_ptr(p0 as i64, p1 as *mut *mut u8)
             }
-        }) }
-        TAG_CHANNEL_TRY_SEND => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            crate::builtins::channel_try_send(p0 as i64, p1 as i64)
+        }),
+        TAG_CHANNEL_TRY_SEND => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                crate::builtins::channel_try_send(p0 as i64, p1 as i64)
             }
-        }) }
-        TAG_CHANNEL_TRY_SEND_PTR => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-let p1 = *(enum_ptr.add(24) as *const *const u8);
-crate::channel_try_send_ptr(p0 as i64, p1 as *mut u8)
+        }),
+        TAG_CHANNEL_TRY_SEND_PTR => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::channel_try_send_ptr(p0 as i64, p1 as *mut u8)
             }
-        }) }
-        TAG_CLOCK_MONOTONIC_NANOS => { Some({
-            crate::builtins::clock_monotonic_nanos()
-        }) }
-        TAG_CLOCK_REALTIME_NANOS => { Some({
-            crate::builtins::clock_realtime_nanos()
-        }) }
-        TAG_ENV_SET => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_FIBER_CURRENT_ID => { Some({
-            crate::builtins::fiber_current_id()
-        }) }
-        TAG_FIBER_JOIN_STATUS => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::fiber_join_status(p0 as i64)
+        }),
+        TAG_CLOCK_MONOTONIC_NANOS => Some(crate::builtins::clock_monotonic_nanos()),
+        TAG_CLOCK_REALTIME_NANOS => Some(crate::builtins::clock_realtime_nanos()),
+        TAG_ENV_SET => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_FIBER_CURRENT_ID => Some(crate::builtins::fiber_current_id()),
+        TAG_FIBER_JOIN_STATUS => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::fiber_join_status(p0 as i64)
             }
-        }) }
-        TAG_FIBER_JOIN_VALUE => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::fiber_join_value(p0 as i64)
+        }),
+        TAG_FIBER_JOIN_VALUE => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::fiber_join_value(p0 as i64)
             }
-        }) }
-        TAG_FIBER_NOW_MILLIS => { Some({
-            crate::builtins::fiber_now_millis()
-        }) }
-        TAG_FIBER_PROCESSOR_COUNT => { Some({
-            crate::builtins::fiber_processor_count()
-        }) }
-        TAG_FIBER_SPAWN => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-let p1 = *(enum_ptr.add(24) as *const *const u8);
-crate::builtins::fiber_spawn(core::mem::transmute::<*const u8, extern "C" fn(*mut u8) -> i64>(p0), p1 as *mut u8)
+        }),
+        TAG_FIBER_NOW_MILLIS => Some(crate::builtins::fiber_now_millis()),
+        TAG_FIBER_PROCESSOR_COUNT => Some(crate::builtins::fiber_processor_count()),
+        TAG_FIBER_SPAWN => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::builtins::fiber_spawn(
+                    core::mem::transmute::<*const u8, extern "C" fn(*mut u8) -> i64>(p0),
+                    p1 as *mut u8,
+                )
             }
-        }) }
-        TAG_FIBER_SPAWN_WITH_CANCEL_SLOT => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-let p1 = *(enum_ptr.add(24) as *const *const u8);
-let p2 = *(enum_ptr.add(32) as *const *const u8);
-crate::builtins::fiber_spawn_with_cancel_slot(core::mem::transmute::<*const u8, extern "C" fn(*mut u8) -> i64>(p0), p1 as *mut u8, p2 as *mut *mut crate::builtins::EventState)
+        }),
+        TAG_FIBER_SPAWN_WITH_CANCEL_SLOT => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                let p2 = *(enum_ptr.add(32) as *const *const u8);
+                crate::builtins::fiber_spawn_with_cancel_slot(
+                    core::mem::transmute::<*const u8, extern "C" fn(*mut u8) -> i64>(p0),
+                    p1 as *mut u8,
+                    p2 as *mut *mut crate::builtins::EventState,
+                )
             }
-        }) }
-        TAG_FS_DELETE => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_FS_EXISTS => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_FS_MKDIR => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_GC_BYTES_ALLOCATED => { Some({
-            crate::builtins::gc_bytes_allocated()
-        } as i64) }
-        TAG_GC_COLLECT => { Some({
-            crate::builtins::gc_collect()
-        } as i64) }
-        TAG_GC_COLLECT_IF_NEEDED => { Some({
-            crate::builtins::gc_collect_if_needed()
-        } as i64) }
-        TAG_GC_EXTERNAL_ROOT_COUNT => { Some({
-            crate::builtins::gc_external_root_count()
-        } as i64) }
-        TAG_GC_OBJECT_COUNT => { Some({
-            crate::builtins::gc_object_count()
-        } as i64) }
-        TAG_GC_PHASE => { Some({
-            crate::builtins::gc_phase()
-        } as i64) }
-        TAG_HUB_CREATE => { Some({
-            crate::builtins::hub_create()
-        }) }
-        TAG_HUB_REGISTER => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            let p2 = *(enum_ptr.add(32) as *const u64);
-            crate::builtins::hub_register(p0 as i64, p1 as i64, p2 as i64)
+        }),
+        TAG_FS_DELETE => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_FS_EXISTS => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_FS_MKDIR => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_GC_BYTES_ALLOCATED => Some({ crate::builtins::gc_bytes_allocated() } as i64),
+        TAG_GC_COLLECT => Some({ crate::builtins::gc_collect() } as i64),
+        TAG_GC_COLLECT_IF_NEEDED => Some({ crate::builtins::gc_collect_if_needed() } as i64),
+        TAG_GC_EXTERNAL_ROOT_COUNT => Some({ crate::builtins::gc_external_root_count() } as i64),
+        TAG_GC_OBJECT_COUNT => Some({ crate::builtins::gc_object_count() } as i64),
+        TAG_GC_PHASE => Some({ crate::builtins::gc_phase() } as i64),
+        TAG_HUB_CREATE => Some(crate::builtins::hub_create()),
+        TAG_HUB_REGISTER => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                let p2 = *(enum_ptr.add(32) as *const u64);
+                crate::builtins::hub_register(p0 as i64, p1 as i64, p2 as i64)
             }
-        }) }
-        TAG_HUB_UNREGISTER => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            let p1 = *(enum_ptr.add(24) as *const u64);
-            crate::builtins::hub_unregister(p0 as i64, p1 as i64)
+        }),
+        TAG_HUB_UNREGISTER => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                crate::builtins::hub_unregister(p0 as i64, p1 as i64)
             }
-        }) }
-        TAG_HUB_WAIT_RECEIVE_INDEX => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::hub_wait_receive_index(p0 as i64)
+        }),
+        TAG_HUB_WAIT_RECEIVE_INDEX => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::hub_wait_receive_index(p0 as i64)
             }
-        }) }
-        TAG_HUB_WAIT_RECEIVE_STATUS => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::hub_wait_receive_status(p0 as i64)
+        }),
+        TAG_HUB_WAIT_RECEIVE_STATUS => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::hub_wait_receive_status(p0 as i64)
             }
-        }) }
-        TAG_HUB_WAIT_RECEIVE_VALUE => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::hub_wait_receive_value(p0 as i64)
+        }),
+        TAG_HUB_WAIT_RECEIVE_VALUE => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::hub_wait_receive_value(p0 as i64)
             }
-        }) }
-        TAG_MUTEX_CREATE => { Some({
-            crate::builtins::mutex_create()
-        }) }
-        TAG_MUTEX_LOCK => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::mutex_lock(p0 as i64)
+        }),
+        TAG_MUTEX_CREATE => Some(crate::builtins::mutex_create()),
+        TAG_MUTEX_LOCK => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::mutex_lock(p0 as i64)
             }
-        }) }
-        TAG_MUTEX_TRY_LOCK => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::mutex_try_lock(p0 as i64)
+        }),
+        TAG_MUTEX_TRY_LOCK => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::mutex_try_lock(p0 as i64)
             }
-        }) }
-        TAG_PROCESS_EXIT => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_PROCESS_GETPID => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_STR_EQ => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-let p1 = *(enum_ptr.add(24) as *const *const u8);
-crate::builtins::str_eq(p0 as *const BeskidStr, p1 as *const BeskidStr)
+        }),
+        TAG_PROCESS_EXIT => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_PROCESS_GETPID => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_STR_EQ => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::builtins::str_eq(p0 as *const BeskidStr, p1 as *const BeskidStr)
             }
-        } as i64) }
-        TAG_TEST_BYTES_LEN => { Some({
-            crate::builtins::test_bytes_len()
-        } as i64) }
-        TAG_TEST_BYTES_PTR => { Some({
-            crate::builtins::test_bytes_ptr()
-        } as i64) }
-        TAG_TTY_WINSIZE => { crate::interop::register::trap_missing_host_handler(tag) }
-        TAG_WAIT_GROUP_CREATE => { Some({
-            crate::builtins::wait_group_create()
-        }) }
-        TAG_WAIT_GROUP_WAIT => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::builtins::wait_group_wait(p0 as i64)
+        } as i64),
+        TAG_TEST_BYTES_LEN => Some({ crate::builtins::test_bytes_len() } as i64),
+        TAG_TEST_BYTES_PTR => Some({ crate::builtins::test_bytes_ptr() } as i64),
+        TAG_TTY_WINSIZE => crate::interop::register::trap_missing_host_handler(tag),
+        TAG_WAIT_GROUP_CREATE => Some(crate::builtins::wait_group_create()),
+        TAG_WAIT_GROUP_WAIT => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const u64);
+                crate::builtins::wait_group_wait(p0 as i64)
             }
-        }) }
-        TAG_EVENT_SUBSCRIBE => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-let p1 = *(enum_ptr.add(24) as *const *const u8);
-crate::builtins::event_subscribe(p0 as *mut *mut crate::builtins::EventState, p1 as *mut u8, 256)
+        }),
+        TAG_EVENT_SUBSCRIBE => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::builtins::event_subscribe(
+                    p0 as *mut *mut crate::builtins::EventState,
+                    p1 as *mut u8,
+                    256,
+                )
             }
-        } as i64) }
-        TAG_EVENT_UNSUBSCRIBE_FIRST => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-let p1 = *(enum_ptr.add(24) as *const *const u8);
-crate::builtins::event_unsubscribe_first(p0 as *mut *mut crate::builtins::EventState, p1 as *mut u8)
+        } as i64),
+        TAG_EVENT_UNSUBSCRIBE_FIRST => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const *const u8);
+                crate::builtins::event_unsubscribe_first(
+                    p0 as *mut *mut crate::builtins::EventState,
+                    p1 as *mut u8,
+                )
             }
-        } as i64) }
-        TAG_EVENT_LEN => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-crate::builtins::event_len(p0 as *mut crate::builtins::EventState)
+        } as i64),
+        TAG_EVENT_LEN => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                crate::builtins::event_len(p0 as *mut crate::builtins::EventState)
             }
-        } as i64) }
-        TAG_EVENT_GET_HANDLER => { Some({
-unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const u8);
-let p1 = *(enum_ptr.add(24) as *const u64);
-crate::builtins::event_get_handler(p0 as *mut crate::builtins::EventState, p1 as usize)
+        } as i64),
+        TAG_EVENT_GET_HANDLER => Some({
+            unsafe {
+                let p0 = *(enum_ptr.add(16) as *const *const u8);
+                let p1 = *(enum_ptr.add(24) as *const u64);
+                crate::builtins::event_get_handler(
+                    p0 as *mut crate::builtins::EventState,
+                    p1 as usize,
+                )
             }
-        } as i64) }
+        } as i64),
         _ => None,
     }
 }
-
