@@ -1,7 +1,5 @@
 //! HTTP package-registry routes backed by the pckg persistence boundary.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use axum::{
     Json,
     body::{Body, Bytes, to_bytes},
@@ -16,13 +14,16 @@ use beskid_pckg_contract::{
     PublishPackageVersionRequest, UpsertPackageRequest,
 };
 use beskid_pckg_store::{
-    NewPackage, Package, PackageRepository, PackageVersion, PublishOutcome, PublishVersion,
-    StoreError,
+    NewPackage, Package, PackageVersion, PublishOutcome, PublishVersion, StoreError,
 };
 
 use crate::{AppState, authenticated_subject};
 
-static NEXT_IDENTIFIER: AtomicU64 = AtomicU64::new(1);
+#[derive(serde::Deserialize)]
+pub(crate) struct PackageVersionPath {
+    name: String,
+    version: String,
+}
 
 pub async fn list_packages(State(state): State<AppState>) -> Json<Vec<PackageSummaryResponse>> {
     // The repository deliberately does not expose enumeration until its SQL
@@ -38,12 +39,10 @@ pub async fn package_detail(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     let subject = authenticated_subject(&state, &headers);
-    let package = state
-        .packages
-        .lock()
-        .expect("package repository mutex is not poisoned")
-        .find_package(&name)
-        .cloned();
+    let package = match state.packages.find_package(&name).await {
+        Ok(package) => package,
+        Err(_) => return package_storage_failure(),
+    };
     let Some(package) = package
         .filter(|package| package.is_public || subject.as_deref() == Some(&package.owner_subject))
     else {
@@ -70,17 +69,17 @@ pub async fn upsert_package(
     let Some(subject) = authenticated_subject(&state, &headers) else {
         return crate::unauthorized_response();
     };
-    let mut packages = state
+    match state
         .packages
-        .lock()
-        .expect("package repository mutex is not poisoned");
-    match packages.create_package(NewPackage {
-        id: next_id("package"),
-        name: request.name,
-        owner_subject: subject,
-        is_public: request.is_public,
-        now_unix_seconds: now(),
-    }) {
+        .create_package(NewPackage {
+            id: next_id("package"),
+            name: request.name,
+            owner_subject: subject,
+            is_public: request.is_public,
+            now_unix_seconds: now(),
+        })
+        .await
+    {
         Ok(package) => (StatusCode::CREATED, Json(package_summary(&package))).into_response(),
         Err(StoreError::PackageAlreadyExists) => (
             StatusCode::CONFLICT,
@@ -123,10 +122,10 @@ pub async fn publish_version(
                 .into_response();
         }
     };
-    publish_version_metadata(state, headers, name, request)
+    publish_version_metadata(state, headers, name, request).await
 }
 
-fn publish_version_metadata(
+async fn publish_version_metadata(
     state: AppState,
     headers: axum::http::HeaderMap,
     name: String,
@@ -135,11 +134,11 @@ fn publish_version_metadata(
     let Some(subject) = authenticated_subject(&state, &headers) else {
         return crate::unauthorized_response();
     };
-    let mut packages = state
-        .packages
-        .lock()
-        .expect("package repository mutex is not poisoned");
-    let Some(package) = packages.find_package(&name).cloned() else {
+    let package = match state.packages.find_package(&name).await {
+        Ok(package) => package,
+        Err(_) => return package_storage_failure(),
+    };
+    let Some(package) = package else {
         return package_not_found();
     };
     if package.owner_subject != subject {
@@ -154,15 +153,19 @@ fn publish_version_metadata(
         )
             .into_response();
     };
-    match packages.publish_version(PublishVersion {
-        id: next_id("version"),
-        package_id: package.id.clone(),
-        storage_key: format!("packages/{}/{}.bpk", package.id, version),
-        version,
-        checksum_sha256,
-        size_bytes: 0,
-        now_unix_seconds: now(),
-    }) {
+    match state
+        .packages
+        .publish_version(PublishVersion {
+            id: next_id("version"),
+            package_id: package.id.clone(),
+            storage_key: format!("packages/{}/{}.bpk", package.id, version),
+            version,
+            checksum_sha256,
+            size_bytes: 0,
+            now_unix_seconds: now(),
+        })
+        .await
+    {
         Ok(PublishOutcome::Created(version)) => (
             StatusCode::CREATED,
             Json(version_summary(&package, &version)),
@@ -272,10 +275,10 @@ async fn publish_multipart_version(
                 .into_response();
         }
     };
-    persist_uploaded_artifact(state, subject, name, version, artifact, validated)
+    persist_uploaded_artifact(state, subject, name, version, artifact, validated).await
 }
 
-fn persist_uploaded_artifact(
+async fn persist_uploaded_artifact(
     state: AppState,
     subject: String,
     name: String,
@@ -283,17 +286,21 @@ fn persist_uploaded_artifact(
     bytes: Bytes,
     validated: beskid_pckg_artifacts::ValidatedArtifact,
 ) -> Response {
-    let mut packages = state
-        .packages
-        .lock()
-        .expect("package repository mutex is not poisoned");
-    let Some(package) = packages.find_package(&name).cloned() else {
+    let package = match state.packages.find_package(&name).await {
+        Ok(package) => package,
+        Err(_) => return package_storage_failure(),
+    };
+    let Some(package) = package else {
         return package_not_found();
     };
     if package.owner_subject != subject {
         return package_not_found();
     }
-    if let Some(existing) = packages.find_version(&package.id, &version).cloned() {
+    let existing = match state.packages.find_version(&package.id, &version).await {
+        Ok(existing) => existing,
+        Err(_) => return package_storage_failure(),
+    };
+    if let Some(existing) = existing {
         if !existing
             .checksum_sha256
             .eq_ignore_ascii_case(&validated.checksum_sha256)
@@ -328,15 +335,19 @@ fn persist_uploaded_artifact(
         Ok(stored) => stored,
         Err(_) => return artifact_storage_failure(),
     };
-    match packages.publish_version(PublishVersion {
-        id: next_id("version"),
-        package_id: package.id.clone(),
-        version,
-        checksum_sha256: stored.checksum_sha256,
-        storage_key: stored.storage_key,
-        size_bytes: stored.size_bytes,
-        now_unix_seconds: now(),
-    }) {
+    match state
+        .packages
+        .publish_version(PublishVersion {
+            id: next_id("version"),
+            package_id: package.id.clone(),
+            version,
+            checksum_sha256: stored.checksum_sha256,
+            storage_key: stored.storage_key,
+            size_bytes: stored.size_bytes,
+            now_unix_seconds: now(),
+        })
+        .await
+    {
         Ok(PublishOutcome::Created(version)) => (
             StatusCode::CREATED,
             Json(version_summary(&package, &version)),
@@ -376,6 +387,14 @@ fn artifact_storage_failure() -> Response {
         .into_response()
 }
 
+fn package_storage_failure() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(ApiErrorResponse::new("package storage unavailable")),
+    )
+        .into_response()
+}
+
 /// Publishes a validated `.bpk` artifact as a raw request body.
 ///
 /// The legacy form endpoint carried metadata and artifact bytes together. This
@@ -385,7 +404,7 @@ fn artifact_storage_failure() -> Response {
 pub async fn upload_artifact(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((name, version)): Path<(String, String)>,
+    Path(PackageVersionPath { name, version }): Path<PackageVersionPath>,
     bytes: Bytes,
 ) -> Response {
     let Some(subject) = authenticated_subject(&state, &headers) else {
@@ -401,7 +420,7 @@ pub async fn upload_artifact(
                 .into_response();
         }
     };
-    persist_uploaded_artifact(state, subject, name, version, bytes, validated)
+    persist_uploaded_artifact(state, subject, name, version, bytes, validated).await
 }
 
 /// Serves a verified package artifact. Private packages retain the registry's
@@ -409,28 +428,29 @@ pub async fn upload_artifact(
 pub async fn download_artifact(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((name, version)): Path<(String, String)>,
+    Path(PackageVersionPath { name, version }): Path<PackageVersionPath>,
 ) -> Response {
     let subject = authenticated_subject(&state, &headers);
-    let (package, version) = {
-        let packages = state
-            .packages
-            .lock()
-            .expect("package repository mutex is not poisoned");
-        let Some(package) = packages.find_package(&name).cloned() else {
-            return package_not_found();
-        };
-        if !package.is_public && subject.as_deref() != Some(&package.owner_subject) {
-            return package_not_found();
-        }
-        let Some(version) = packages.find_version(&package.id, &version).cloned() else {
-            return package_not_found();
-        };
-        if version.is_yanked {
-            return package_not_found();
-        }
-        (package, version)
+    let package = match state.packages.find_package(&name).await {
+        Ok(package) => package,
+        Err(_) => return package_storage_failure(),
     };
+    let Some(package) = package else {
+        return package_not_found();
+    };
+    if !package.is_public && subject.as_deref() != Some(&package.owner_subject) {
+        return package_not_found();
+    }
+    let stored_version = match state.packages.find_version(&package.id, &version).await {
+        Ok(version) => version,
+        Err(_) => return package_storage_failure(),
+    };
+    let Some(version) = stored_version else {
+        return package_not_found();
+    };
+    if version.is_yanked {
+        return package_not_found();
+    }
     match state
         .artifacts
         .verify(&version.storage_key, &version.checksum_sha256)
@@ -475,7 +495,7 @@ pub async fn download_artifact(
 pub async fn yank_version(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-    Path((name, version)): Path<(String, String)>,
+    Path(PackageVersionPath { name, version }): Path<PackageVersionPath>,
 ) -> impl IntoResponse {
     set_yanked(state, headers, name, version, true).await
 }
@@ -483,7 +503,7 @@ pub async fn yank_version(
 pub async fn unyank_version(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-    Path((name, version)): Path<(String, String)>,
+    Path(PackageVersionPath { name, version }): Path<PackageVersionPath>,
 ) -> impl IntoResponse {
     set_yanked(state, headers, name, version, false).await
 }
@@ -498,17 +518,21 @@ async fn set_yanked(
     let Some(subject) = authenticated_subject(&state, &headers) else {
         return crate::unauthorized_response();
     };
-    let mut packages = state
-        .packages
-        .lock()
-        .expect("package repository mutex is not poisoned");
-    let Some(package) = packages.find_package(&name).cloned() else {
+    let package = match state.packages.find_package(&name).await {
+        Ok(package) => package,
+        Err(_) => return package_storage_failure(),
+    };
+    let Some(package) = package else {
         return package_not_found();
     };
     if package.owner_subject != subject {
         return package_not_found();
     }
-    match packages.set_yanked(&package.id, &version, yanked, now()) {
+    match state
+        .packages
+        .set_yanked(&package.id, &version, yanked, now())
+        .await
+    {
         Ok(version) => Json(PackageVersionLifecycleResponse {
             success: true,
             message: if yanked {
@@ -614,6 +638,6 @@ fn timestamp(seconds: i64) -> String {
         .format(&time::format_description::well_known::Rfc3339)
         .expect("RFC3339 formatting succeeds")
 }
-fn next_id(kind: &str) -> String {
-    format!("{kind}-{}", NEXT_IDENTIFIER.fetch_add(1, Ordering::Relaxed))
+fn next_id(_kind: &str) -> String {
+    uuid::Uuid::new_v4().to_string()
 }

@@ -84,7 +84,9 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
             Request::post("/api/packages")
                 .header("content-type", "application/json")
                 .header("cookie", &owner)
-                .body(Body::from(r#"{"name":"Public.Demo","isPublic":true}"#))
+                .body(Body::from(
+                    r#"{"name":"Public.Demo","isPublic":true,"submitForReview":false}"#,
+                ))
                 .unwrap(),
         )
         .await
@@ -102,7 +104,13 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
         )
         .await
         .unwrap();
-    assert_eq!(uploaded.status(), StatusCode::CREATED);
+    let uploaded_status = uploaded.status();
+    assert_eq!(
+        uploaded_status,
+        StatusCode::CREATED,
+        "{:?}",
+        json(uploaded).await
+    );
     assert_eq!(json(uploaded).await["checksumSha256"], hex_sha256(&bytes));
 
     let downloaded = app
@@ -138,7 +146,9 @@ async fn private_and_yanked_artifacts_are_hidden_from_non_owners_and_downloads()
         Request::post("/api/packages")
             .header("content-type", "application/json")
             .header("cookie", &owner)
-            .body(Body::from(r#"{"name":"Private.Demo","isPublic":false}"#))
+            .body(Body::from(
+                r#"{"name":"Private.Demo","isPublic":false,"submitForReview":false}"#,
+            ))
             .unwrap(),
         Request::post("/api/packages/Private.Demo/versions/1.0.0/artifact")
             .header("cookie", &owner)
