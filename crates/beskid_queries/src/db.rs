@@ -6,16 +6,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use beskid_analysis::projects::CompilePlan;
-use beskid_analysis::projects::assembly::{ModuleIndex, SourceUnit, UnitHir};
-use beskid_analysis::resolve::Resolution;
+use beskid_analysis::projects::assembly::{ModuleIndex, SourceUnit};
 use beskid_analysis::syntax::SyntaxGenerationId;
-use beskid_analysis::types::UnitTypeSurface;
 use salsa::Setter;
 
 use crate::inputs::{FileText, GrammarRevision, ProjectSession};
-use crate::semantic_contract::{
-    SemanticError, SourceUnitId, SyntaxUnitInput, SyntaxUnitRevision,
-};
+use crate::semantic_contract::{SemanticError, SourceUnitId, SyntaxUnitInput, SyntaxUnitRevision};
 use crate::stats::record_revision_bump;
 use crate::typed_entry_bundle::reset_typed_entry_inputs;
 
@@ -47,9 +43,6 @@ impl Default for SyntaxDependencyRegistry {
 #[derive(Default)]
 pub struct UnitArtifactCache {
     pub source_units: HashMap<String, Arc<SourceUnit>>,
-    pub unit_hir: HashMap<String, Arc<UnitHir>>,
-    pub unit_resolutions: HashMap<String, Arc<Resolution>>,
-    pub unit_type_surfaces: HashMap<String, Arc<UnitTypeSurface>>,
 }
 
 /// Salsa database trait extended by tracked query groups.
@@ -409,9 +402,6 @@ impl BeskidDatabase {
     pub fn clear_unit_cache(&self) {
         let mut cache = self.unit_cache.lock().expect("unit cache");
         cache.source_units.clear();
-        cache.unit_hir.clear();
-        cache.unit_resolutions.clear();
-        cache.unit_type_surfaces.clear();
     }
 
     /// Register a module index snapshot for per-unit resolution queries.
@@ -437,9 +427,6 @@ impl BeskidDatabase {
         let mut cache = self.unit_cache.lock().expect("unit cache");
         for fp in fingerprints {
             cache.source_units.remove(fp);
-            cache.unit_hir.remove(fp);
-            cache.unit_resolutions.remove(fp);
-            cache.unit_type_surfaces.remove(fp);
         }
     }
 

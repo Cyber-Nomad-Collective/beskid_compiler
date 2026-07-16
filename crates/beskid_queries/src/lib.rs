@@ -98,11 +98,8 @@ pub use typed_entry_bundle::{
 pub use typed_program::build_typed_program;
 pub use typed_program::build_canonical_runtime_typed_program;
 pub use unit::{
-    cache_module_index_for_assembly, module_index_fingerprint_for_assembly, parse_and_expand_unit,
-    parse_and_expand_unit_tracked, parse_and_expand_unit_with_source, seed_file_from_disk,
-    unit_content_fingerprint, unit_hir, unit_hir_tracked, unit_hir_with_source, unit_imports,
-    unit_resolution, unit_resolution_tracked, unit_type_surface, unit_type_surface_tracked,
-    warm_prefetched_unit_type_surfaces,
+    parse_and_expand_unit, parse_and_expand_unit_tracked, parse_and_expand_unit_with_source,
+    seed_file_from_disk, unit_content_fingerprint, unit_imports,
 };
 
 pub use beskid_analysis::services::{

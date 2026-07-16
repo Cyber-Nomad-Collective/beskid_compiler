@@ -19,8 +19,12 @@ pub fn unit_materializer_for(
     Arc::new(move |path: &Path, source: &str| {
         let _ = session;
         let fp = content_fingerprint(source);
-        if let Some((unit, hir)) = cached_pair(&db, &fp) {
+        if let Some(unit) = cached_unit(&db, &fp) {
             record_query_hit();
+            let hir = build_hir_units(std::slice::from_ref(&unit))
+                .into_iter()
+                .next()
+                .expect("unit hir");
             return Ok((unit, hir));
         }
 
@@ -30,47 +34,28 @@ pub fn unit_materializer_for(
             .into_iter()
             .next()
             .expect("unit hir");
-        insert_cache(&db, fp, &unit, hir);
-        let hir = build_hir_units(std::slice::from_ref(&unit))
-            .into_iter()
-            .next()
-            .expect("unit hir");
+        insert_cache(&db, fp, &unit);
         Ok((unit, hir))
     })
 }
 
-fn cached_pair(
+fn cached_unit(
     db: &Arc<Mutex<BeskidDatabase>>,
     fp: &str,
-) -> Option<(
-    beskid_analysis::projects::assembly::SourceUnit,
-    beskid_analysis::projects::assembly::UnitHir,
-)> {
+) -> Option<beskid_analysis::projects::assembly::SourceUnit> {
     let guard = db.lock().expect("beskid database lock");
     let cache = guard.unit_cache().lock().expect("unit cache");
-    let unit = cache.source_units.get(fp)?.as_ref().clone();
-    let hir_arc = Arc::clone(cache.unit_hir.get(fp)?);
-    let hir = Arc::try_unwrap(hir_arc).unwrap_or_else(|_| {
-        build_hir_units(std::slice::from_ref(&unit))
-            .into_iter()
-            .next()
-            .expect("unit hir")
-    });
-    Some((unit, hir))
+    Some(cache.source_units.get(fp)?.as_ref().clone())
 }
 
 fn insert_cache(
     db: &Arc<Mutex<BeskidDatabase>>,
     fp: String,
     unit: &beskid_analysis::projects::assembly::SourceUnit,
-    hir: beskid_analysis::projects::assembly::UnitHir,
 ) {
     let guard = db.lock().expect("beskid database lock");
     let mut cache = guard.unit_cache().lock().expect("unit cache");
-    cache
-        .source_units
-        .insert(fp.clone(), Arc::new(unit.clone()));
-    cache.unit_hir.insert(fp, Arc::new(hir));
+    cache.source_units.insert(fp, Arc::new(unit.clone()));
 }
 
 fn parse_unit(
