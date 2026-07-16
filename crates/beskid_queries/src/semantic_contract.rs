@@ -1178,6 +1178,28 @@ fn expected_cast_type(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
 ) -> Option<Result<SemanticTypeId, SemanticError>> {
+    if let Some(binary_id) = nearest_ancestor(index, key.node, |kind| {
+        kind == beskid_analysis::syntax_query::NodeKind::BinaryExpression
+    }) {
+        let operands = index
+            .children(binary_id)?
+            .iter()
+            .copied()
+            .filter(|child| {
+                index.kind(*child)
+                    != Some(beskid_analysis::syntax_query::NodeKind::BinaryOp)
+            })
+            .collect::<Vec<_>>();
+        let operand = operands
+            .iter()
+            .copied()
+            .find(|operand| is_ancestor(index, *operand, key.node))?;
+        let sibling = operands.into_iter().find(|candidate| *candidate != operand)?;
+        let sibling_node = index.node_at(program, sibling)?;
+        return semantic_type_for_node(program, index, sibling, sibling_node)
+            .map(|result| result.map_err(|_| SemanticError::unavailable("cast_intents")));
+    }
+
     if let Some(statement_id) = nearest_ancestor(index, key.node, |kind| {
         kind == beskid_analysis::syntax_query::NodeKind::LetStatement
     }) {

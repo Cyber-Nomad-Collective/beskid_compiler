@@ -812,6 +812,21 @@ fn cast_intents_use_manifest_runtime_parameter_types_for_contextual_literals() {
 }
 
 #[test]
+fn cast_intents_use_binary_operand_types_for_contextual_literals() {
+    let source = "bool Main(word size) { return size < 16; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let literal = key(unit, generation, &index, NodeKind::Literal, 0);
+
+    assert_eq!(
+        cast_intents(&db, literal).expect("binary operand cast"),
+        Some(Arc::from([beskid_queries::CastIntent {
+            from: beskid_queries::SemanticTypeId::I32,
+            to: beskid_queries::SemanticTypeId::WORD,
+        }]))
+    );
+}
+
+#[test]
 fn item_signatures_cover_primitive_functions_methods_and_contracts() {
     let source = r#"
 i64 Convert(i32 value, bool checked) { return value; }
