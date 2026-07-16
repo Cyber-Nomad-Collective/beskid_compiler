@@ -36,11 +36,17 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");
     let lowered =
-        with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target, isa.as_ref()))
+        with_db(|db| {
+            lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref())
+        })
             .expect("prepared syntax lowering");
+    let lowered_again =
+        with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target, isa.as_ref()))
+            .expect("repeated prepared syntax lowering");
 
     assert_eq!(lowered.artifact.functions.len(), 2);
     assert!(lowered.symbol.starts_with("Main#syntax_"));
+    assert_eq!(lowered_again.symbol, lowered.symbol);
     std::fs::remove_dir_all(directory).expect("remove project");
 }
 

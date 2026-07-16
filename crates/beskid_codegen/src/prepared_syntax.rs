@@ -22,7 +22,7 @@ use beskid_queries::{
     BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
     block_statement_nodes, build_canonical_runtime_typed_program, build_typed_program, child_nodes,
     item_body, item_export_symbol, item_name, item_signature, node_kind, node_span,
-    reachable_items,
+    project_session_for_syntax_assembly, reachable_items,
 };
 use cranelift_codegen::isa::TargetIsa;
 
@@ -180,13 +180,13 @@ pub fn lower_prepared_syntax_entrypoint(
     let assembly = Arc::new(front.syntax_assembly());
     let entry_path = assembly.entry_unit().path.clone();
     let generation = SyntaxGenerationId(1);
-    let project = ProjectSession::new(
+    let project = project_session_for_syntax_assembly(
         db,
-        assembly.roots().host.source_root.clone(),
-        entry_path.clone(),
-        "syntax-codegen".into(),
-        "prepared-frontend".into(),
-    );
+        &assembly,
+        "syntax-codegen",
+        "prepared-frontend",
+    )
+    .map_err(|error| anyhow::anyhow!("syntax program session preparation failed: {error}"))?;
     let typed = build_typed_program(db, project, generation, Arc::clone(&assembly))
         .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
@@ -255,15 +255,14 @@ pub fn lower_prepared_syntax_module(
     isa: &dyn TargetIsa,
 ) -> Result<CodegenArtifact> {
     let assembly = Arc::new(front.syntax_assembly());
-    let entry_path = assembly.entry_unit().path.clone();
     let generation = SyntaxGenerationId(1);
-    let project = ProjectSession::new(
+    let project = project_session_for_syntax_assembly(
         db,
-        assembly.roots().host.source_root.clone(),
-        entry_path,
-        "syntax-codegen".into(),
-        "prepared-frontend".into(),
-    );
+        &assembly,
+        "syntax-codegen",
+        "prepared-frontend",
+    )
+    .map_err(|error| anyhow::anyhow!("syntax program session preparation failed: {error}"))?;
     let typed = build_typed_program(db, project, generation, Arc::clone(&assembly))
         .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
