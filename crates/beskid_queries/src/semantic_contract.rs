@@ -995,11 +995,16 @@ fn call_lowering_for_node(
                 } else {
                     Err(SemanticError::unavailable("generic_call_instantiation"))
                 }
-            } else if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
+            } else if let Some(declaration) =
+                resolve_item_declaration(db, program, index, key, path)
+            {
                 Ok(CallLowering::Direct(declaration))
             } else if imported_call_receiver_exists(db, key, path) {
                 Ok(CallLowering::Dynamic)
-            } else if path.segments.iter().all(|segment| segment.node.type_args.is_empty())
+            } else if path
+                .segments
+                .iter()
+                .all(|segment| segment.node.type_args.is_empty())
                 && beskid_analysis::builtins::builtin_for_path(
                     &path
                         .segments
@@ -1030,8 +1035,7 @@ fn generic_call_instantiation_tracked(
         let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
             return None;
         };
-        generic_call_instantiation_for_node(db, program, index, key, &path.node.path.node)
-            .map(Ok)
+        generic_call_instantiation_for_node(db, program, index, key, &path.node.path.node).map(Ok)
     })?
     .transpose()
 }
@@ -1049,7 +1053,9 @@ fn generic_call_instantiation_for_node(
     let declaration = resolve_item_declaration_candidate(db, program, index, key, path)?;
     let syntax = db.syntax_unit(declaration.unit)?;
     syntax.accepts_key(db, declaration).then_some(())?;
-    let target = syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?;
+    let target = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)?;
     let function = target.of::<beskid_analysis::syntax::FunctionDefinition>()?;
     (function.generics.len() == usize::from(argument_count)).then_some(GenericCallInstantiation {
         declaration,
@@ -1460,12 +1466,13 @@ fn item_abi_signature_tracked(
                 function.return_type.as_ref(),
             ));
         }
-        node.of::<beskid_analysis::syntax::TestDefinition>().map(|_| {
-            Ok(ItemSignature {
-                parameters: Arc::from([]),
-                result: SemanticTypeId::UNIT,
+        node.of::<beskid_analysis::syntax::TestDefinition>()
+            .map(|_| {
+                Ok(ItemSignature {
+                    parameters: Arc::from([]),
+                    result: SemanticTypeId::UNIT,
+                })
             })
-        })
     })?
     .transpose()
 }
@@ -1522,9 +1529,7 @@ fn abi_type_tracked(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            return Some(
-                Ok(signature.result),
-            );
+            return Some(Ok(signature.result));
         }
         if let Some(syntax_type) = node.of::<beskid_analysis::syntax::Type>() {
             return Some(abi_type_from_syntax(db, key, syntax_type));
@@ -2061,6 +2066,47 @@ fn item_body_tracked(
     })
 }
 
+/// Return the executable statements of a test item in source order.
+///
+/// A test definition also owns visibility, name, and optional metadata children.  ISLE function
+/// emission must enumerate only its statement body, never those declaration children.
+#[salsa::tracked]
+fn test_statement_nodes_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_node(db, syntax, key, |program, index, node| {
+        let test = node.of::<beskid_analysis::syntax::TestDefinition>()?;
+        Some(
+            test.statements
+                .iter()
+                .map(|statement| {
+                    let wrapper = index
+                        .direct_child_id(
+                            program,
+                            key.node,
+                            beskid_analysis::syntax_query::DynNodeRef::from(statement),
+                        )
+                        .ok_or_else(|| SemanticError::unavailable("test_statement_nodes"))?;
+                    let children = index
+                        .children(wrapper)
+                        .ok_or_else(|| SemanticError::unavailable("test_statement_nodes"))?;
+                    let [statement] = children else {
+                        return Err(SemanticError::unavailable("test_statement_nodes"));
+                    };
+                    Ok(AstNodeKey {
+                        node: *statement,
+                        ..key
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Arc::from),
+        )
+    })?
+    .transpose()
+}
+
 #[salsa::tracked]
 fn item_name_tracked(
     db: &dyn Db,
@@ -2581,6 +2627,14 @@ pub fn operator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Operat
 
 pub fn item_body(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
     with_registered_syntax(db, key, item_body_tracked)
+}
+
+/// Return the exact executable statement nodes for a current syntax test definition.
+pub fn test_statement_nodes(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_registered_syntax(db, key, test_statement_nodes_tracked)
 }
 
 /// Return the exact declared name for a current syntax function or test item.

@@ -11,6 +11,7 @@ use beskid_queries::{
     CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, call_arguments,
     call_lowering, cast_intents, child_nodes, item_abi_signature, item_body, literal_fact,
     local_slot, node_kind, node_type, operator_fact, resolved_local, runtime_intrinsic_name,
+    test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
@@ -73,7 +74,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
-        self.children(key).get(usize::from(index)).copied()
+        let children = if self.node_kind(key) == Some(NodeKind::TestDefinition) {
+            self.query(test_statement_nodes(self.db, key))?
+        } else {
+            self.children(key).into()
+        };
+        children.get(usize::from(index)).copied()
     }
 
     fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
@@ -81,12 +87,21 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             self.node_kind(key),
             Some(NodeKind::BlockExpression | NodeKind::TestDefinition)
         )
-        .then(|| u8::try_from(self.children(key).len()).ok())?
+        .then(|| {
+            let length = if self.node_kind(key) == Some(NodeKind::TestDefinition) {
+                let nodes = self.query(test_statement_nodes(self.db, key))?;
+                nodes.len()
+            } else {
+                self.children(key).len()
+            };
+            u8::try_from(length).ok()
+        })?
     }
 
     fn let_initializer(&self, key: AstNodeKey) -> Option<AstNodeKey> {
         (self.node_kind(key) == Some(NodeKind::LetStatement))
             .then(|| self.children(key).last().copied())?
+            .and_then(|initializer| self.unwrap_transparent(initializer))
     }
 
     fn local_slot(&self, key: AstNodeKey) -> Option<u32> {

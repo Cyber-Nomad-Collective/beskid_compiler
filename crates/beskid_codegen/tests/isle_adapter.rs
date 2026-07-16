@@ -20,7 +20,7 @@ use beskid_codegen::{
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
     build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes,
-    item_name, literal_fact, node_kind,
+    item_name, literal_fact, node_kind, test_statement_nodes,
 };
 use cranelift_codegen::ir::types;
 use cranelift_codegen::isa;
@@ -172,6 +172,17 @@ fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
 fn parsed_test_item_emits_verified_isle_clif_without_lowerable() {
     let (input, isa, root) = item_fixture_with_root("test Smoke { return; }");
     let item = find_test_definition(input.database(), root).expect("test item key");
+
+    let statements = test_statement_nodes(input.database(), item)
+        .expect("test statement query")
+        .expect("test statement nodes");
+    assert_eq!(statements.len(), 1);
+    assert_eq!(
+        node_kind(input.database(), statements[0])
+            .expect("statement kind")
+            .expect("statement node"),
+        beskid_queries::IndexedNodeKind::ReturnStatement
+    );
 
     let function = emit_isle_item(&input, isa.as_ref(), item)
         .expect("parsed test item lowers through generated ISLE");
