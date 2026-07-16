@@ -45,6 +45,44 @@ pub struct RuntimeKitBuildOptions {
     pub shared_import_library: Option<PathBuf>,
 }
 
+/// Build and atomically publish the compiler-owned canonical runtime for this native host.
+/// The caller supplies only its empty destination and profile; runtime source and native library
+/// paths are constructed here, so a bridge or arbitrary archive cannot enter the ABI-v5 layout.
+pub fn build_native_host(prefix: PathBuf, profile: RuntimeKitProfile) -> Result<ResolvedRuntimeKit> {
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("macos", "aarch64") => target.triple.as_str() == "aarch64-apple-darwin",
+            ("linux", "x86_64") => target.triple.as_str() == "x86_64-unknown-linux-gnu",
+            ("windows", "x86_64") => target.triple.as_str() == "x86_64-pc-windows-msvc",
+            _ => false,
+        })
+        .ok_or_else(|| anyhow!("unsupported ABI-v5 native host"))?;
+    let staging = std::env::temp_dir().join(format!(
+        "beskid-native-runtime-{}-{}",
+        std::process::id(),
+        profile.as_str()
+    ));
+    if staging.exists() {
+        std::fs::remove_dir_all(&staging)
+            .map_err(|error| anyhow!("remove stale runtime staging {}: {error}", staging.display()))?;
+    }
+    let artifact = beskid_aot::lower_canonical_runtime_prepared_syntax(target.clone())
+        .map_err(|error| anyhow!("lower canonical native runtime: {error}"))?;
+    let pair = beskid_aot::emit_host_platform_library_pair(artifact, staging.clone(), "beskid_runtime")
+        .map_err(|error| anyhow!("link canonical native runtime: {error}"))?;
+    let result = build(RuntimeKitBuildOptions {
+        prefix,
+        target: target.triple.as_str().to_owned(),
+        profile,
+        static_library: pair.static_library,
+        shared_library: pair.shared_library,
+        shared_import_library: None,
+    });
+    let _ = std::fs::remove_dir_all(staging);
+    result
+}
+
 /// The pair of native artifacts required for one optimization profile.
 ///
 /// This intentionally carries only native files emitted by the runtime build.  The publisher
@@ -235,6 +273,16 @@ mod tests {
     use super::*;
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    fn native_host_builder_publishes_the_canonical_runtime_to_an_empty_prefix() {
+        let prefix = TempDir::new("native-host-runtime-prefix");
+        let built = build_native_host(prefix.0.clone(), RuntimeKitProfile::Debug)
+            .expect("publish native host runtime kit");
+        assert!(built.static_library.is_file());
+        assert!(built.shared_library.is_file());
+    }
 
     static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
