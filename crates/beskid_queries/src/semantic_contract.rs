@@ -890,7 +890,11 @@ fn local_declaration_scope(
                 return None;
             }
             nearest_ancestor(index, parent, |kind| {
-                kind == beskid_analysis::syntax_query::NodeKind::Block
+                matches!(
+                    kind,
+                    beskid_analysis::syntax_query::NodeKind::Block
+                        | beskid_analysis::syntax_query::NodeKind::TestDefinition
+                )
             })
             .filter(|scope| is_ancestor(index, *scope, reference))
         }

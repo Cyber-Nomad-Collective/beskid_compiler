@@ -593,6 +593,148 @@ fn parsed_program_specializes_an_inferred_generic_call_without_hir() {
 }
 
 #[test]
+fn parsed_test_program_specializes_a_generic_call_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "unit Equal<T>(T actual, T expected, string because) { if actual == expected { return; } return; } test Main { string value = \"same\"; Equal(value, value, \"because\"); }",
+    );
+    let generic = find_function_definition(input.database(), root).expect("generic function");
+    let test = find_test_definition(input.database(), root).expect("test item");
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: generic,
+                symbol: "Equal".into(),
+            },
+            SyntaxModuleItem {
+                key: test,
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("test-body generic calls produce exact syntax ABI specializations");
+
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Equal#generic_")),
+        "test-body generic calls must emit their exact specialization",
+    );
+}
+
+#[test]
+fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
+    let mut db = Box::new(BeskidDatabase::default());
+    let directory = tempfile::tempdir().expect("project").keep();
+    let main_path = directory.join("Main.bd");
+    let assert_path = directory.join("Testing/Assert.bd");
+    let main_source = "use Testing.Assert; test Main { Assert.Equal(\"same\", \"same\", \"because\"); }";
+    let assert_source = "pub unit Equal<T>(T actual, T expected, string because) { if actual == expected { return; } return; }";
+    std::fs::create_dir_all(assert_path.parent().expect("Testing directory"))
+        .expect("Testing directory");
+    std::fs::write(&main_path, main_source).expect("main source");
+    std::fs::write(&assert_path, assert_source).expect("assert source");
+    let main_program = parse_program_with_source_name(main_path.to_str().unwrap(), main_source)
+        .expect("main parse");
+    let assert_program = parse_program_with_source_name(assert_path.to_str().unwrap(), assert_source)
+        .expect("assert parse");
+    let main_unit = SourceUnitId::new(&*db, main_path.clone());
+    let assert_unit = SourceUnitId::new(&*db, assert_path.clone());
+    let generation = SyntaxGenerationId(22);
+    let project = ProjectSession::new(
+        &*db,
+        directory.clone(),
+        main_path.clone(),
+        "App".into(),
+        "lock".into(),
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: "Main".into(),
+                path: main_path,
+                source: main_source.into(),
+                program: main_program,
+            },
+            SourceUnit {
+                logical_name: "Testing.Assert".into(),
+                path: assert_path,
+                source: assert_source.into(),
+                program: assert_program,
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let typed = build_typed_program(&mut db, project, generation, assembly)
+        .expect("typed syntax program");
+    let main_root = AstNodeKey {
+        unit: main_unit,
+        generation,
+        node: AstNodeId(0),
+    };
+    let assert_root = AstNodeKey {
+        unit: assert_unit,
+        generation,
+        node: AstNodeId(0),
+    };
+    let generic = find_function_definition(&*db, assert_root).expect("generic function");
+    let test = find_test_definition(&*db, main_root).expect("test item");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input = CodegenInput::new(
+        leaked,
+        typed,
+        Arc::from([main_root, assert_root]),
+        target.clone(),
+        AbiManifestV5::canonical_runtime(target),
+    )
+    .expect("generation-safe input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: generic,
+                symbol: "Equal".into(),
+            },
+            SyntaxModuleItem {
+                key: test,
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("qualified generic calls produce exact syntax ABI specializations");
+
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Equal#generic_")),
+        "qualified generic calls must emit their exact specialization",
+    );
+}
+
+#[test]
 fn parsed_syntax_program_uses_the_existing_artifact_string_pool() {
     let (input, isa, root) = item_fixture_with_root("unit Main() { \"Beskid\"; return; }");
     let main = find_function_definitions(input.database(), root)[0];
