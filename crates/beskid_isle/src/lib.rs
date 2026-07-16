@@ -87,11 +87,15 @@ pub enum LiteralKind {
 /// They are selected from the manifest-backed capability, never from a user-declared extern.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RuntimeIntrinsicKind {
+    MemoryCopy,
+    MemorySet,
     NativeWordFromPointer,
     PointerFromNativeWord,
     PointerAdd,
     RawWordLoad,
     RawWordStore,
+    RawByteLoad,
+    RawByteStore,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -681,19 +685,107 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
     }
 
     fn emit_runtime_intrinsic_statement(&mut self, key: AstNodeKey) -> Option<()> {
-        let Some(RuntimeIntrinsicKind::RawWordStore) = self.facts.runtime_intrinsic_kind(key) else {
+        let Some(kind) = self.facts.runtime_intrinsic_kind(key) else {
             return self.direct_call_statement(key);
         };
         let arguments = self.runtime_intrinsic_arguments(key)?;
-        let [address, value] = arguments.as_slice() else {
-            return None;
-        };
-        let pointer = self.builder.func.dfg.value_type(*address);
-        if !pointer.is_int() || self.builder.func.dfg.value_type(*value) != pointer
+        match kind {
+            RuntimeIntrinsicKind::RawWordStore | RuntimeIntrinsicKind::RawByteStore => {
+                let [address, value] = arguments.as_slice() else { return None; };
+                let pointer = self.builder.func.dfg.value_type(*address);
+                if !pointer.is_int() {
+                    return None;
+                }
+                self.builder.ins().store(MemFlags::new(), *value, *address, 0);
+                Some(())
+            }
+            RuntimeIntrinsicKind::MemorySet => {
+                let [destination, byte, length] = arguments.as_slice() else { return None; };
+                self.emit_memory_set(*destination, *byte, *length)
+            }
+            RuntimeIntrinsicKind::MemoryCopy => {
+                let [destination, source, length] = arguments.as_slice() else { return None; };
+                self.emit_memory_copy(*destination, *source, *length)
+            }
+            _ => self.direct_call_statement(key),
+        }
+    }
+
+    fn emit_memory_set(&mut self, destination: Value, byte: Value, length: Value) -> Option<()> {
+        let pointer = self.builder.func.dfg.value_type(destination);
+        if !pointer.is_int()
+            || self.builder.func.dfg.value_type(length) != pointer
+            || self.builder.func.dfg.value_type(byte) != types::I8
         {
             return None;
         }
-        self.builder.ins().store(MemFlags::new(), *value, *address, 0);
+        let address = self.builder.declare_var(pointer);
+        let remaining = self.builder.declare_var(pointer);
+        self.builder.def_var(address, destination);
+        self.builder.def_var(remaining, length);
+        let header = self.builder.create_block();
+        let body = self.builder.create_block();
+        let exit = self.builder.create_block();
+        self.builder.ins().jump(header, &[]);
+        self.builder.switch_to_block(header);
+        let count = self.builder.use_var(remaining);
+        let done = self.builder.ins().icmp_imm(IntCC::Equal, count, 0);
+        self.builder.ins().brif(done, exit, &[], body, &[]);
+        self.builder.switch_to_block(body);
+        let current = self.builder.use_var(address);
+        self.builder.ins().store(MemFlags::new(), byte, current, 0);
+        let next_address = self.builder.ins().iadd_imm(current, 1);
+        self.builder.def_var(address, next_address);
+        let count = self.builder.use_var(remaining);
+        let next_count = self.builder.ins().iadd_imm(count, -1);
+        self.builder.def_var(remaining, next_count);
+        self.builder.ins().jump(header, &[]);
+        self.builder.seal_block(header);
+        self.builder.seal_block(body);
+        self.builder.switch_to_block(exit);
+        self.builder.seal_block(exit);
+        Some(())
+    }
+
+    fn emit_memory_copy(&mut self, destination: Value, source: Value, length: Value) -> Option<()> {
+        let pointer = self.builder.func.dfg.value_type(destination);
+        if !pointer.is_int()
+            || self.builder.func.dfg.value_type(source) != pointer
+            || self.builder.func.dfg.value_type(length) != pointer
+        {
+            return None;
+        }
+        let destination_var = self.builder.declare_var(pointer);
+        let source_var = self.builder.declare_var(pointer);
+        let remaining = self.builder.declare_var(pointer);
+        self.builder.def_var(destination_var, destination);
+        self.builder.def_var(source_var, source);
+        self.builder.def_var(remaining, length);
+        let header = self.builder.create_block();
+        let body = self.builder.create_block();
+        let exit = self.builder.create_block();
+        self.builder.ins().jump(header, &[]);
+        self.builder.switch_to_block(header);
+        let count = self.builder.use_var(remaining);
+        let done = self.builder.ins().icmp_imm(IntCC::Equal, count, 0);
+        self.builder.ins().brif(done, exit, &[], body, &[]);
+        self.builder.switch_to_block(body);
+        let source_address = self.builder.use_var(source_var);
+        let byte = self.builder.ins().load(types::I8, MemFlags::new(), source_address, 0);
+        let destination_address = self.builder.use_var(destination_var);
+        self.builder.ins().store(MemFlags::new(), byte, destination_address, 0);
+        let next_source = self.builder.ins().iadd_imm(source_address, 1);
+        self.builder.def_var(source_var, next_source);
+        let next_destination = self.builder.ins().iadd_imm(destination_address, 1);
+        self.builder.def_var(destination_var, next_destination);
+        let count = self.builder.use_var(remaining);
+        let next_count = self.builder.ins().iadd_imm(count, -1);
+        self.builder.def_var(remaining, next_count);
+        self.builder.ins().jump(header, &[]);
+        self.builder.seal_block(header);
+        self.builder.seal_block(body);
+        self.builder.switch_to_block(exit);
+        self.builder.seal_block(exit);
         Some(())
     }
 }
@@ -882,7 +974,15 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 (self.builder.func.dfg.value_type(*address) == result)
                     .then(|| self.builder.ins().load(result, MemFlags::new(), *address, 0))
             }
-            RuntimeIntrinsicKind::RawWordStore => None,
+            RuntimeIntrinsicKind::RawByteLoad => {
+                let [address] = arguments.as_slice() else { return None; };
+                (self.builder.func.dfg.value_type(*address).is_int() && result == types::I8)
+                    .then(|| self.builder.ins().load(result, MemFlags::new(), *address, 0))
+            }
+            RuntimeIntrinsicKind::MemoryCopy
+            | RuntimeIntrinsicKind::MemorySet
+            | RuntimeIntrinsicKind::RawWordStore
+            | RuntimeIntrinsicKind::RawByteStore => None,
         }
     }
 

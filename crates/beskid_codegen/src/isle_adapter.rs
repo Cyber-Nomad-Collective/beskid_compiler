@@ -157,11 +157,15 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         let (_, intrinsic) = self.runtime_intrinsic(key)?;
         Some(match intrinsic.name.as_str() {
+            "memory_copy" => RuntimeIntrinsicKind::MemoryCopy,
+            "memory_set" => RuntimeIntrinsicKind::MemorySet,
             "native_word_from_pointer" => RuntimeIntrinsicKind::NativeWordFromPointer,
             "pointer_from_native_word" => RuntimeIntrinsicKind::PointerFromNativeWord,
             "pointer_add" => RuntimeIntrinsicKind::PointerAdd,
             "raw_word_load" => RuntimeIntrinsicKind::RawWordLoad,
             "raw_word_store" => RuntimeIntrinsicKind::RawWordStore,
+            "raw_byte_load" => RuntimeIntrinsicKind::RawByteLoad,
+            "raw_byte_store" => RuntimeIntrinsicKind::RawByteStore,
             _ => return None,
         })
     }
