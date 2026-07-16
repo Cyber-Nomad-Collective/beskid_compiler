@@ -10,6 +10,8 @@ use target_lexicon::Triple;
 
 struct IfElseFacts {
     nodes: [AstNodeKey; 6],
+    has_else: bool,
+    returns_values: bool,
 }
 
 impl NodeFacts for IfElseFacts {
@@ -56,9 +58,9 @@ impl NodeFacts for IfElseFacts {
         match (key, index) {
             (key, 0) if key == if_node => Some(condition),
             (key, 1) if key == if_node => Some(then_return),
-            (key, 2) if key == if_node => Some(else_return),
-            (key, 0) if key == then_return => Some(then_value),
-            (key, 0) if key == else_return => Some(else_value),
+            (key, 2) if key == if_node && self.has_else => Some(else_return),
+            (key, 0) if key == then_return && self.returns_values => Some(then_value),
+            (key, 0) if key == else_return && self.returns_values => Some(else_value),
             _ => None,
         }
     }
@@ -105,6 +107,8 @@ fn if_else_rule_emits_verified_multi_block_clif() {
             generation,
             node: AstNodeId(index as u32 + 1),
         }),
+        has_else: true,
+        returns_values: true,
     };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I32]);
@@ -136,4 +140,35 @@ fn if_else_rule_emits_verified_multi_block_clif() {
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
     assert_eq!(run(), 1);
+}
+
+#[test]
+fn if_without_else_terminates_reachable_fallthrough() {
+    let flags = settings::Flags::new(settings::builder());
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(flags)
+        .expect("host flags");
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/IfWithoutElse.bd"));
+    let facts = IfElseFacts {
+        nodes: std::array::from_fn(|index| AstNodeKey {
+            unit,
+            generation: SyntaxGenerationId(11),
+            node: AstNodeId(index as u32 + 1),
+        }),
+        has_else: false,
+        returns_values: false,
+    };
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_statement(
+            UserFuncName::user(0, 14),
+            emitter.signature([], []),
+            &facts,
+            facts.nodes[0],
+        )
+        .expect("verified if without else");
+
+    assert!(function.display().to_string().contains("return"));
 }

@@ -1138,6 +1138,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         }
         self.builder.switch_to_block(merge_block);
         self.builder.seal_block(merge_block);
+        if block_is_terminated(self.builder, then_block)
+            && block_is_terminated(self.builder, else_block)
+        {
+            self.builder.ins().trap(TrapCode::unwrap_user(1));
+        }
         Some(())
     }
 
@@ -1842,13 +1847,16 @@ impl<'isa> FunctionEmitter<'isa> {
                 materialize_parameters(&mut context, item)?;
             }
             lower_statement(&mut context, request.body).map_err(FunctionEmissionError::Lowering)?;
-            let terminated = block_is_terminated(&builder, entry);
+            let final_block = builder.current_block().ok_or_else(|| {
+                FunctionEmissionError::Verification("function has no final block".to_owned())
+            })?;
+            let terminated = block_is_terminated(&builder, final_block);
             if !terminated {
                 if builder.func.signature.returns.is_empty() {
                     builder.ins().return_(&[]);
                 } else {
                     return Err(FunctionEmissionError::Verification(
-                        "generated statement body did not terminate its entry block".to_owned(),
+                        "generated statement body did not terminate its final block".to_owned(),
                     ));
                 }
             }

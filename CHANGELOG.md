@@ -63,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Derive contextual primitive cast intents from direct and canonical ABI-v5 intrinsic call
   parameters so runtime `word` offsets are typed before ISLE emission.
 
+### Fixed
+
+- Terminate reachable syntax-ISLE control-flow merge blocks after one-arm `if` statements and
+  preserve valid unreachable merges when both arms return.
+
 ### Removed
 
 - Remove the obsolete Rust language-handler regeneration hook, which targeted the retired
