@@ -223,6 +223,62 @@ async fn api_key_management_requires_an_auth_hub_session() {
     }
 }
 
+#[tokio::test]
+async fn administration_never_bootstraps_privilege_or_discloses_admin_state() {
+    let app = router(authenticated_config());
+    let member_cookie = format!("pckg_session={}", package_session("github:42"));
+
+    let role_list = app
+        .clone()
+        .oneshot(
+            Request::get("/api/admin/roles")
+                .header("cookie", &member_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(role_list.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let anonymous = app
+        .oneshot(
+            Request::get("/api/admin/roles")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn administration_ui_contract_routes_require_a_session() {
+    let app = router(PckgServerConfig::default());
+    for request in [
+        Request::get("/api/admin/users")
+            .body(Body::empty())
+            .unwrap(),
+        Request::patch("/api/admin/users/github%3A42")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"roles":["Moderator"],"publisherVerified":true}"#,
+            ))
+            .unwrap(),
+        Request::get("/api/admin/permissions")
+            .body(Body::empty())
+            .unwrap(),
+        Request::post("/api/admin/permissions")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"subject":"github:42","resource":"package:demo","capability":"moderate"}"#,
+            ))
+            .unwrap(),
+    ] {
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+}
+
 fn package_session(subject: &str) -> String {
     issue_pckg_session(
         &AuthHubIdentity {

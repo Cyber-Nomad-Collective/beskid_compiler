@@ -31,6 +31,7 @@ use sqlx::Row;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::services::{ServeDir, ServeFile};
 
+mod admin_routes;
 mod api_key_routes;
 mod artifact_routes;
 mod community_routes;
@@ -42,6 +43,7 @@ pub struct PckgServerConfig {
     web_root: PathBuf,
     artifact_root: PathBuf,
     database_url: Option<String>,
+    admin_bootstrap_subject: Option<String>,
     auth: Option<AuthConfig>,
 }
 
@@ -392,6 +394,7 @@ impl Default for PckgServerConfig {
             web_root: PathBuf::from("/app/web"),
             artifact_root: env::temp_dir().join("beskid-pckg-artifacts"),
             database_url: None,
+            admin_bootstrap_subject: None,
             auth: None,
         }
     }
@@ -419,7 +422,8 @@ impl PckgServerConfig {
                     .map(PathBuf::from)
                     .unwrap_or_else(|| PathBuf::from("/app/artifacts")),
             )
-            .with_database_url(env::var("PCKG_DATABASE_URL").ok()))
+            .with_database_url(env::var("PCKG_DATABASE_URL").ok())
+            .with_admin_bootstrap_subject(env::var("PCKG_ADMIN_BOOTSTRAP_SUBJECT").ok()))
     }
 
     pub fn with_auth_secrets(
@@ -470,6 +474,13 @@ impl PckgServerConfig {
         self.database_url = database_url.filter(|value| !value.trim().is_empty());
         self
     }
+
+    /// Explicit, one-time deployment bootstrap. This is ignored once any
+    /// admin role exists; it never defaults to a user or GitHub login.
+    pub fn with_admin_bootstrap_subject(mut self, subject: Option<String>) -> Self {
+        self.admin_bootstrap_subject = subject.filter(|value| !value.trim().is_empty());
+        self
+    }
 }
 
 /// Builds the in-memory server used by unit tests and explicitly database-free
@@ -511,6 +522,17 @@ pub async fn router_from_config(config: PckgServerConfig) -> Result<Router, Serv
         .migrate_api_keys()
         .await
         .map_err(|error| ServerStartupError(format!("pckg API-key migration failed: {error:?}")))?;
+    repository.migrate_administration().await.map_err(|error| {
+        ServerStartupError(format!("pckg administration migration failed: {error:?}"))
+    })?;
+    if let Some(subject) = config.admin_bootstrap_subject.as_deref() {
+        repository
+            .bootstrap_super_admin(subject, now_unix_seconds())
+            .await
+            .map_err(|error| {
+                ServerStartupError(format!("pckg administration bootstrap failed: {error:?}"))
+            })?;
+    }
     let community_repository = Arc::new(SqlxCommunityRepository::new(pool));
     community_repository.migrate().await.map_err(|error| {
         ServerStartupError(format!("pckg community migration failed: {error:?}"))
@@ -609,6 +631,28 @@ fn router_with_backend(
             get(api_key_routes::list_api_keys).post(api_key_routes::create_api_key),
         )
         .route("/api/api-keys/{id}", delete(api_key_routes::revoke_api_key))
+        .route("/api/admin/users", get(admin_routes::list_users))
+        .route(
+            "/api/admin/users/{subject}",
+            axum::routing::patch(admin_routes::update_user),
+        )
+        .route("/api/admin/roles", get(admin_routes::list_roles))
+        .route(
+            "/api/admin/roles/{subject}",
+            axum::routing::put(admin_routes::grant_role),
+        )
+        .route(
+            "/api/admin/publishers/{subject}/verification",
+            axum::routing::put(admin_routes::set_publisher_verification),
+        )
+        .route(
+            "/api/admin/permissions",
+            get(admin_routes::list_permissions).post(admin_routes::grant_permission),
+        )
+        .route(
+            "/api/admin/packages/{name}/versions/{version}/review",
+            axum::routing::post(admin_routes::review_package_version),
+        )
         .nest_service("/api/community", community_routes::router(community_state))
         .route("/api", any(api_not_found))
         .route("/api/{*path}", any(api_not_found))
@@ -736,4 +780,11 @@ fn invalid_handoff_response() -> axum::response::Response {
         Json(ApiErrorResponse::new("invalid handoff")),
     )
         .into_response()
+}
+
+fn now_unix_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time is after unix epoch")
+        .as_secs() as i64
 }
