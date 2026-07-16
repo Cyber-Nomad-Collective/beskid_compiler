@@ -1139,16 +1139,20 @@ unit Main() { Equal(Position(), 0, "initial position"); return; }
 }
 
 #[test]
-fn inferred_generic_call_rejects_an_explicit_i32_against_an_i64_binding() {
-    let source = r#"
-i64 Position() { return 0_i64; }
-unit Equal<T>(T actual, T expected, string because) { return; }
-unit Main() { Equal(Position(), 0_i32, "initial position"); return; }
-"#;
-    let (db, _project, unit, generation, index) = setup(source);
-    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+fn inferred_generic_call_does_not_rebind_an_explicit_integer_suffix() {
+    for (bound_type, explicit_literal) in [("i64", "0_i32"), ("i32", "0_i64"), ("i32", "0_u8")] {
+        let source = format!(
+            r#"
+{bound_type} Position() {{ return 0_{bound_type}; }}
+unit Equal<T>(T actual, T expected, string because) {{ return; }}
+unit Main() {{ Equal(Position(), {explicit_literal}, "initial position"); return; }}
+"#
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
 
-    assert_unavailable(call_abi_signature(&db, call));
+        assert_unavailable(call_abi_signature(&db, call));
+    }
 }
 
 #[test]
