@@ -1020,12 +1020,10 @@ fn use_path_completion_candidates(
         if !partial.is_empty() && !next.to_lowercase().starts_with(partial_lower.as_str()) {
             continue;
         }
-        let mut completed = parent_path
-            .iter()
-            .map(|segment| (*segment).to_string())
-            .collect::<Vec<_>>();
-        completed.push((*next).to_string());
-        let label = completed.join(".");
+        // Completion inserts the next segment at the cursor.  Its display label must therefore
+        // not repeat the already-typed module prefix (for example, `use Std.` offers `Core`,
+        // not `Std.Core`).
+        let label = (*next).to_string();
         candidates.push(CompletionInfo {
             label: label.clone(),
             kind: CompletionKind::Module,

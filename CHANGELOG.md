@@ -73,6 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Follow parsed public module declarations in import-closure assembly while keeping use-path
+  completion candidates scoped to the next unqualified module segment.
 - Preserve complete logical module names for assembled `.generated/*.g.bd` units so syntax
   consumers do not register `Generated` modules under a truncated name.
 - Terminate reachable syntax-ISLE control-flow merge blocks after one-arm `if` statements and

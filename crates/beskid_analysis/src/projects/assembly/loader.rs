@@ -18,7 +18,7 @@ use super::unit_cache::{disk_cache_stats, ensure_manifest};
 use super::{ProgramAssembly, SourceUnit, UnitHir};
 use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
-use crate::syntax::{Program, Spanned};
+use crate::syntax::{Node, Program, Spanned};
 
 /// Optional Salsa-backed unit builder (set by `beskid_queries` during assembly).
 pub type UnitMaterializer = std::sync::Arc<
@@ -181,6 +181,11 @@ pub fn assemble_program_with_materializer(
                         && let Some(parent_file) = resolve_module_file(&parent_import, &roots)
                     {
                         queue.push_back(parent_file);
+                    }
+                }
+                for module_path in module_declaration_paths_from_source(&path, &source) {
+                    if let Some(dep_file) = resolve_module_file(&module_path, &roots) {
+                        queue.push_back(dep_file);
                     }
                 }
             }
@@ -446,6 +451,39 @@ pub(crate) fn import_paths_from_source_full(source: &str) -> Vec<String> {
         }
     }
     paths
+}
+
+/// Out-of-line module dependencies declared by parsed syntax (`pub mod A.B;`).
+///
+/// Import closure intentionally treats an unparseable source as contributing no extra module
+/// declarations: the regular unit build remains the authority for reporting that parse error,
+/// while discovery does not guess at a declaration from stale or malformed text.
+pub(crate) fn module_declaration_paths_from_source(path: &Path, source: &str) -> Vec<String> {
+    let logical_name = path.display().to_string();
+    let Ok(program) = crate::services::parse_program_with_source_name(&logical_name, source) else {
+        return Vec::new();
+    };
+
+    program
+        .node
+        .items
+        .iter()
+        .filter_map(|item| match &item.node {
+            Node::ModuleDeclaration(declaration) => Some(
+                declaration
+                    .node
+                    .path
+                    .node
+                    .segments
+                    .iter()
+                    .map(|segment| segment.node.name.node.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("."),
+            ),
+            _ => None,
+        })
+        .filter(|module_path| !module_path.is_empty())
+        .collect()
 }
 
 /// Module path prefixes from qualified references (`Core.Results.Result`, `Core.Syscall.WriteWith`).
@@ -769,6 +807,138 @@ mod tests {
         assert!(names.iter().any(|name| name == "A.bd"));
         assert!(names.iter().any(|name| name == "B.bd"));
         assert!(!names.iter().any(|name| name == "Unused.bd"));
+        let _ = fs::remove_dir_all(&project_root);
+    }
+
+    #[test]
+    fn import_closure_follows_public_module_declarations() {
+        let project_root = temp_project_root("import_closure_public_module");
+        let source_root = project_root.join("src");
+        write_bd(
+            &source_root,
+            "Entry.bd",
+            "use Core.Text.Regex;\npub fn Entry() { Core.Text.Regex.Parse(); }",
+        );
+        write_bd(
+            &source_root,
+            "Core/Text/Regex.bd",
+            "pub mod Core.Text.Regex.Generated;\npub fn Parse() { Core.Text.Regex.Generated.ParsePat(); }",
+        );
+        write_bd(
+            &source_root,
+            "Core/Text/Regex/Generated.bd",
+            "pub fn ParsePat() { }",
+        );
+        let plan = CompilePlan {
+            source_root: source_root.clone(),
+            project_root: project_root.clone(),
+            manifest_path: project_root.join("project.bproj"),
+            project_name: "fixture".to_string(),
+            target: Target {
+                name: "Entry".to_string(),
+                kind: TargetKind::Lib,
+                entry: Some("Entry.bd".to_string()),
+            },
+            dependency_projects: Vec::new(),
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let assembly = assemble_program(
+            &plan,
+            None,
+            &source_root.join("Entry.bd"),
+            None,
+            &assembly_options_for_plan(&plan),
+            None,
+        )
+        .expect("public module declaration should extend import closure");
+        let loaded: Vec<_> = assembly.units.iter().map(|unit| &unit.path).collect();
+        assert!(
+            loaded.iter().any(|path| path.ends_with("Entry.bd")),
+            "expected entry in closure, got: {loaded:?}"
+        );
+        assert!(
+            loaded
+                .iter()
+                .any(|path| path.ends_with("Core/Text/Regex.bd")),
+            "expected declared module owner in closure, got: {loaded:?}"
+        );
+        assert!(
+            loaded
+                .iter()
+                .any(|path| path.ends_with("Core/Text/Regex/Generated.bd")),
+            "expected declared generated module in closure, got: {loaded:?}"
+        );
+        let _ = fs::remove_dir_all(&project_root);
+    }
+
+    #[test]
+    fn import_closure_ignores_missing_public_module_declarations() {
+        let project_root = temp_project_root("import_closure_missing_public_module");
+        let source_root = project_root.join("src");
+        write_bd(
+            &source_root,
+            "Entry.bd",
+            "pub mod Core.Text.DoesNotExist;\npub fn Entry() { }",
+        );
+        let plan = CompilePlan {
+            source_root: source_root.clone(),
+            project_root: project_root.clone(),
+            manifest_path: project_root.join("project.bproj"),
+            project_name: "fixture".to_string(),
+            target: Target {
+                name: "Entry".to_string(),
+                kind: TargetKind::Lib,
+                entry: Some("Entry.bd".to_string()),
+            },
+            dependency_projects: Vec::new(),
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let assembly = assemble_program(
+            &plan,
+            None,
+            &source_root.join("Entry.bd"),
+            None,
+            &assembly_options_for_plan(&plan),
+            None,
+        )
+        .expect("absent module declaration target should not invalidate existing closure");
+        assert_eq!(assembly.units.len(), 1);
+        let _ = fs::remove_dir_all(&project_root);
+    }
+
+    #[test]
+    fn import_closure_terminates_public_module_declaration_cycles() {
+        let project_root = temp_project_root("import_closure_public_module_cycle");
+        let source_root = project_root.join("src");
+        write_bd(&source_root, "Entry.bd", "use Core.A;\npub fn Entry() { }");
+        write_bd(&source_root, "Core/A.bd", "pub mod Core.B;\npub fn A() { }");
+        write_bd(&source_root, "Core/B.bd", "pub mod Core.A;\npub fn B() { }");
+        let plan = CompilePlan {
+            source_root: source_root.clone(),
+            project_root: project_root.clone(),
+            manifest_path: project_root.join("project.bproj"),
+            project_name: "fixture".to_string(),
+            target: Target {
+                name: "Entry".to_string(),
+                kind: TargetKind::Lib,
+                entry: Some("Entry.bd".to_string()),
+            },
+            dependency_projects: Vec::new(),
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let assembly = assemble_program(
+            &plan,
+            None,
+            &source_root.join("Entry.bd"),
+            None,
+            &assembly_options_for_plan(&plan),
+            None,
+        )
+        .expect("module declaration cycles should be de-duplicated");
+        assert_eq!(assembly.units.len(), 3);
         let _ = fs::remove_dir_all(&project_root);
     }
 
