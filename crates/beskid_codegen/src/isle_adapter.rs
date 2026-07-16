@@ -170,7 +170,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         }
         matches!(
             self.query(call_lowering(self.db, key)),
-            Some(CallLowering::Direct(_))
+            Some(CallLowering::Direct(_) | CallLowering::CorelibService(_))
         )
         .then_some(CallKind::Direct)
     }
@@ -195,7 +195,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if let Some((index, _)) = self.runtime_intrinsic(key) {
             return Some(DirectCallee::runtime_intrinsic(index));
         }
-        let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
+        let lowering = self.query(call_lowering(self.db, key))?;
+        if let CallLowering::CorelibService(service) = lowering {
+            self.input.corelib_service_capability()?;
+            return Some(DirectCallee::corelib_service(service.symbol));
+        }
+        let CallLowering::Direct(declaration) = lowering else {
             return None;
         };
         if let Some(specialization) = self.query(generic_call_specialization(self.db, key)) {

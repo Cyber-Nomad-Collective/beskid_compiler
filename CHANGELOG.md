@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Lower compiler-authorized Corelib syscall services through distinct ABI imports in syntax ISLE
+  codegen, without granting ordinary applications or canonical runtime intrinsic authority.
 - Add a compiler-minted Corelib syscall service capability and syntax lowering fact that only
   accepts the exact embedded `Core/Syscall/Syscall.bd` corpus.
 - Add generation-safe enum-constructor facts and syntax-only ISLE lowering for nullary and

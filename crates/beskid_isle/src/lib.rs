@@ -144,6 +144,11 @@ pub enum DirectCallee {
         abi_identity: std::sync::Arc<[u32]>,
     },
     RuntimeIntrinsic(u32),
+    /// One compiler-authorized Corelib syscall ABI service, identified by its manifest symbol.
+    ///
+    /// This is intentionally distinct from [`Self::RuntimeIntrinsic`]: Corelib source authority
+    /// is not canonical-runtime intrinsic authority and cannot reuse its capability token.
+    CorelibService(&'static str),
 }
 
 impl DirectCallee {
@@ -163,6 +168,10 @@ impl DirectCallee {
 
     pub const fn runtime_intrinsic(index: u32) -> Self {
         Self::RuntimeIntrinsic(index)
+    }
+
+    pub const fn corelib_service(symbol: &'static str) -> Self {
+        Self::CorelibService(symbol)
     }
 }
 
@@ -676,21 +685,20 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
     ) -> Option<(cranelift_codegen::ir::Inst, Signature)> {
         let callee = self.facts.direct_callee(key)?;
         let signature = self.facts.call_signature(key)?;
-        let function =
-            match self
-                .call_importer
-                .as_deref_mut()?
-                .import(self.builder, callee.clone(), &signature)
-            {
-                Ok(function) => function,
-                Err(CallImportError::UnknownCallee) => {
-                    self.pending_error = Some(LoweringError {
-                        key,
-                        kind: LoweringErrorKind::UnknownCallee(callee),
-                    });
-                    return None;
-                }
-            };
+        let function = match self.call_importer.as_deref_mut()?.import(
+            self.builder,
+            callee.clone(),
+            &signature,
+        ) {
+            Ok(function) => function,
+            Err(CallImportError::UnknownCallee) => {
+                self.pending_error = Some(LoweringError {
+                    key,
+                    kind: LoweringErrorKind::UnknownCallee(callee),
+                });
+                return None;
+            }
+        };
         let argument_keys = self.facts.call_arguments(key)?;
         if argument_keys.len() != signature.params.len() {
             return None;
@@ -742,20 +750,28 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         let arguments = self.runtime_intrinsic_arguments(key)?;
         match kind {
             RuntimeIntrinsicKind::RawWordStore | RuntimeIntrinsicKind::RawByteStore => {
-                let [address, value] = arguments.as_slice() else { return None; };
+                let [address, value] = arguments.as_slice() else {
+                    return None;
+                };
                 let pointer = self.builder.func.dfg.value_type(*address);
                 if !pointer.is_int() {
                     return None;
                 }
-                self.builder.ins().store(MemFlags::new(), *value, *address, 0);
+                self.builder
+                    .ins()
+                    .store(MemFlags::new(), *value, *address, 0);
                 Some(())
             }
             RuntimeIntrinsicKind::MemorySet => {
-                let [destination, byte, length] = arguments.as_slice() else { return None; };
+                let [destination, byte, length] = arguments.as_slice() else {
+                    return None;
+                };
                 self.emit_memory_set(*destination, *byte, *length)
             }
             RuntimeIntrinsicKind::MemoryCopy => {
-                let [destination, source, length] = arguments.as_slice() else { return None; };
+                let [destination, source, length] = arguments.as_slice() else {
+                    return None;
+                };
                 self.emit_memory_copy(*destination, *source, *length)
             }
             _ => self.direct_call_statement(key),
@@ -822,9 +838,14 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         self.builder.ins().brif(done, exit, &[], body, &[]);
         self.builder.switch_to_block(body);
         let source_address = self.builder.use_var(source_var);
-        let byte = self.builder.ins().load(types::I8, MemFlags::new(), source_address, 0);
+        let byte = self
+            .builder
+            .ins()
+            .load(types::I8, MemFlags::new(), source_address, 0);
         let destination_address = self.builder.use_var(destination_var);
-        self.builder.ins().store(MemFlags::new(), byte, destination_address, 0);
+        self.builder
+            .ins()
+            .store(MemFlags::new(), byte, destination_address, 0);
         let next_source = self.builder.ins().iadd_imm(source_address, 1);
         self.builder.def_var(source_var, next_source);
         let next_destination = self.builder.ins().iadd_imm(destination_address, 1);
@@ -839,7 +860,6 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         self.builder.seal_block(exit);
         Some(())
     }
-
 }
 
 impl generated::Context for IsleContext<'_, '_, '_, '_> {
@@ -1012,24 +1032,40 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         match kind {
             RuntimeIntrinsicKind::NativeWordFromPointer
             | RuntimeIntrinsicKind::PointerFromNativeWord => {
-                let [value] = arguments.as_slice() else { return None; };
+                let [value] = arguments.as_slice() else {
+                    return None;
+                };
                 (self.builder.func.dfg.value_type(*value) == result).then_some(*value)
             }
             RuntimeIntrinsicKind::PointerAdd => {
-                let [base, offset] = arguments.as_slice() else { return None; };
+                let [base, offset] = arguments.as_slice() else {
+                    return None;
+                };
                 (self.builder.func.dfg.value_type(*base) == result
                     && self.builder.func.dfg.value_type(*offset) == result)
                     .then(|| self.builder.ins().iadd(*base, *offset))
             }
             RuntimeIntrinsicKind::RawWordLoad => {
-                let [address] = arguments.as_slice() else { return None; };
-                (self.builder.func.dfg.value_type(*address) == result)
-                    .then(|| self.builder.ins().load(result, MemFlags::new(), *address, 0))
+                let [address] = arguments.as_slice() else {
+                    return None;
+                };
+                (self.builder.func.dfg.value_type(*address) == result).then(|| {
+                    self.builder
+                        .ins()
+                        .load(result, MemFlags::new(), *address, 0)
+                })
             }
             RuntimeIntrinsicKind::RawByteLoad => {
-                let [address] = arguments.as_slice() else { return None; };
-                (self.builder.func.dfg.value_type(*address).is_int() && result == types::I8)
-                    .then(|| self.builder.ins().load(result, MemFlags::new(), *address, 0))
+                let [address] = arguments.as_slice() else {
+                    return None;
+                };
+                (self.builder.func.dfg.value_type(*address).is_int() && result == types::I8).then(
+                    || {
+                        self.builder
+                            .ins()
+                            .load(result, MemFlags::new(), *address, 0)
+                    },
+                )
             }
             RuntimeIntrinsicKind::MemoryCopy
             | RuntimeIntrinsicKind::MemorySet
@@ -1817,7 +1853,16 @@ impl<'isa> FunctionEmitter<'isa> {
         facts: &dyn NodeFacts,
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(StatementEmission { name, signature, facts, item: None, body }, EmissionServices::none())
+        self.emit_statement_inner(
+            StatementEmission {
+                name,
+                signature,
+                facts,
+                item: None,
+                body,
+            },
+            EmissionServices::none(),
+        )
     }
 
     /// Emit a parsed function item after binding its source parameters to local slots.
@@ -1829,7 +1874,16 @@ impl<'isa> FunctionEmitter<'isa> {
         item: AstNodeKey,
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(StatementEmission { name, signature, facts, item: Some(item), body }, EmissionServices::none())
+        self.emit_statement_inner(
+            StatementEmission {
+                name,
+                signature,
+                facts,
+                item: Some(item),
+                body,
+            },
+            EmissionServices::none(),
+        )
     }
 
     fn emit_statement_inner<'services>(
@@ -1845,8 +1899,12 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.append_block_params_for_function_params(entry);
             builder.switch_to_block(entry);
             builder.seal_block(entry);
-            let mut context =
-                IsleContext::new_with_services(&mut builder, request.facts, services.string_interner, services.call_importer);
+            let mut context = IsleContext::new_with_services(
+                &mut builder,
+                request.facts,
+                services.string_interner,
+                services.call_importer,
+            );
             if let Some(item) = request.item {
                 materialize_parameters(&mut context, item)?;
             }
@@ -1879,7 +1937,19 @@ impl<'isa> FunctionEmitter<'isa> {
         body: AstNodeKey,
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(StatementEmission { name, signature, facts, item: None, body }, EmissionServices { string_interner: None, call_importer: Some(call_importer) })
+        self.emit_statement_inner(
+            StatementEmission {
+                name,
+                signature,
+                facts,
+                item: None,
+                body,
+            },
+            EmissionServices {
+                string_interner: None,
+                call_importer: Some(call_importer),
+            },
+        )
     }
 
     /// Emit a parsed function item with parameter materialization and explicit call imports.
@@ -1892,7 +1962,19 @@ impl<'isa> FunctionEmitter<'isa> {
         body: AstNodeKey,
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(StatementEmission { name, signature, facts, item: Some(item), body }, EmissionServices { string_interner: None, call_importer: Some(call_importer) })
+        self.emit_statement_inner(
+            StatementEmission {
+                name,
+                signature,
+                facts,
+                item: Some(item),
+                body,
+            },
+            EmissionServices {
+                string_interner: None,
+                call_importer: Some(call_importer),
+            },
+        )
     }
 
     /// Emit a parsed item with both artifact-owned string interning and exact call imports.
@@ -1901,7 +1983,16 @@ impl<'isa> FunctionEmitter<'isa> {
         request: ItemStatementEmission<'_>,
         services: EmissionServices<'_>,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(StatementEmission { name: request.name, signature: request.signature, facts: request.facts, item: Some(request.item), body: request.body }, services)
+        self.emit_statement_inner(
+            StatementEmission {
+                name: request.name,
+                signature: request.signature,
+                facts: request.facts,
+                item: Some(request.item),
+                body: request.body,
+            },
+            services,
+        )
     }
 
     fn emit_expression_inner<'services>(

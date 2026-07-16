@@ -5,11 +5,11 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub use beskid_abi::runtime_source::CorelibService;
 use beskid_abi::{
     abi_v5::{AbiManifestV5, AbiType, TargetMetadata},
     runtime_source::RuntimeIntrinsicCapability,
 };
-pub use beskid_abi::runtime_source::CorelibService;
 use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 
@@ -577,7 +577,11 @@ fn resolve_type_qualified_imported_function(
         .flatten()
         .filter(|import| {
             (import_path.len() == 1 && import.binding == import_path[0])
-                || import.path.iter().map(String::as_str).eq(import_path.iter().copied())
+                || import
+                    .path
+                    .iter()
+                    .map(String::as_str)
+                    .eq(import_path.iter().copied())
         })
         .fold(Vec::new(), |mut candidates, import| {
             if !candidates.contains(&import.target) {
@@ -1317,8 +1321,8 @@ fn method_declaration_for_struct_literal_receiver(
             unit: declaration.unit,
             generation: declaration.generation,
             node,
-    })
-    .collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
     (methods.len() == 1).then(|| methods[0])
 }
 
@@ -1374,10 +1378,9 @@ fn generic_call_specialization_tracked(
             }
         };
         let declaration_syntax = db.syntax_unit(declaration.unit)?;
-        let declaration_node = declaration_syntax.syntax_index(db).node_at(
-            declaration_syntax.expanded_program(db),
-            declaration.node,
-        )?;
+        let declaration_node = declaration_syntax
+            .syntax_index(db)
+            .node_at(declaration_syntax.expanded_program(db), declaration.node)?;
         let function = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>()?;
         if function.generics.is_empty() {
             return None;
@@ -1926,12 +1929,11 @@ fn call_abi_signature_for_call(
 ) -> Result<ItemSignature, SemanticError> {
     let declaration = match call_lowering(db, key)? {
         Some(CallLowering::Direct(declaration)) => declaration,
-        Some(
-            CallLowering::Dynamic
-            | CallLowering::Runtime(_)
-            | CallLowering::CorelibService(_),
-        )
-        | None => {
+        Some(CallLowering::CorelibService(service)) => {
+            return corelib_service_abi_signature(service)
+                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
+        }
+        Some(CallLowering::Dynamic | CallLowering::Runtime(_)) | None => {
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
     };
@@ -1989,6 +1991,35 @@ fn call_abi_signature_for_call(
             generic_abi_type(db, declaration, &return_type.node, &substitutions)
         })?;
     Ok(ItemSignature {
+        parameters: parameters.into(),
+        result,
+    })
+}
+
+/// ABI facts for the compiler-embedded Corelib syscall facade. These are deliberately available
+/// only after [`CallLowering::CorelibService`] has proved the current source corpus; user source
+/// that merely spells one of these names remains dynamic and receives no import signature.
+fn corelib_service_abi_signature(service: CorelibService) -> Option<ItemSignature> {
+    let (parameters, result) = match service.name {
+        "__syscall_write" => (
+            vec![SemanticTypeId::I64, SemanticTypeId::STRING],
+            SemanticTypeId::I64,
+        ),
+        "__syscall_read" => (
+            vec![SemanticTypeId::I64, SemanticTypeId::I64],
+            SemanticTypeId::STRING,
+        ),
+        "__syscall_write_bytes" => (
+            vec![SemanticTypeId::I64, SemanticTypeId::POINTER],
+            SemanticTypeId::I64,
+        ),
+        "__syscall_read_bytes" => (
+            vec![SemanticTypeId::I64, SemanticTypeId::I64],
+            SemanticTypeId::POINTER,
+        ),
+        _ => return None,
+    };
+    Some(ItemSignature {
         parameters: parameters.into(),
         result,
     })
@@ -2580,8 +2611,7 @@ fn unique_exported_type_in_unit(
         if !visited.insert(current) {
             continue;
         }
-        if let Some(candidate) = unique_type_in_unit(db, current, generation, name, generic_arity)
-        {
+        if let Some(candidate) = unique_type_in_unit(db, current, generation, name, generic_arity) {
             candidates.push(candidate);
         }
         pending.extend(public_reexport_units(db, current, generation));

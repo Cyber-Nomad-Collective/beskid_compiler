@@ -115,6 +115,14 @@ impl<'db> CodegenInput<'db> {
         self.typed_program.runtime_intrinsic_capability.as_ref()
     }
 
+    /// Compiler-minted authority for Corelib syscall service imports. This separate proof never
+    /// grants canonical-runtime intrinsic authority to the Corelib facade.
+    pub fn corelib_service_capability(
+        &self,
+    ) -> Option<&std::sync::Arc<beskid_abi::runtime_source::CorelibServiceCapability>> {
+        self.typed_program.corelib_service_capability.as_ref()
+    }
+
     /// Resolve one direct ABI-v5 intrinsic import through the canonical-source capability.
     ///
     /// A current node from a foreign unit, a stale node, a user program, and an undeclared

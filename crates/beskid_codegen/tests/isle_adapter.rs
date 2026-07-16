@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, canonical_runtime_intrinsic_capability,
-    canonical_runtime_sources,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
+    canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
+    canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };
 use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
@@ -17,12 +18,14 @@ use beskid_codegen::{
     module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
     syntax_item_signature,
 };
+use beskid_isle::{DirectCallee, FunctionEmitter, NodeFacts};
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes,
-    enum_match, item_name, literal_fact, node_kind, node_type, test_statement_nodes,
+    build_canonical_corelib_syscall_typed_program, build_canonical_runtime_typed_program,
+    build_typed_program, call_abi_signature, call_lowering, child_nodes, enum_match, item_name,
+    literal_fact, node_kind, node_type, test_statement_nodes,
 };
-use cranelift_codegen::ir::types;
+use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::isa;
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
@@ -102,27 +105,68 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();
     let source_path = directory.join("Main.bd");
-    let source = "i32 Main() { let point = Point { x: 1, y: 2 }; return 0; } type Point { i32 x, i32 y }";
+    let source =
+        "i32 Main() { let point = Point { x: 1, y: 2 }; return 0; } type Point { i32 x, i32 y }";
     std::fs::write(&source_path, source).expect("source");
     let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
         .expect("parse source");
     let entry = SourceUnitId::new(&db, source_path.clone());
-    let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
+    let project = ProjectSession::new(
+        &db,
+        directory.clone(),
+        source_path.clone(),
+        "App".into(),
+        "lock".into(),
+    );
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root: directory }, dependencies: Vec::new() },
-        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
-        0, AssemblyDiscovery::ImportClosure, Arc::new(ModuleIndex::empty()), false,
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: "Main".into(),
+            path: source_path,
+            source: source.into(),
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
     ));
-    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
-    let literal = find_node(&db, root, beskid_queries::IndexedNodeKind::StructLiteralExpression)
-        .expect("struct literal");
-    let target = TargetMetadata::supported().into_iter()
-        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu").expect("linux target");
-    let input = CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target)).expect("input");
-    let isa = isa::lookup_by_name("x86_64").expect("host ISA")
-        .finish(settings::Flags::new(settings::builder())).expect("host flags");
+    let typed =
+        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey {
+        unit: entry,
+        generation,
+        node: AstNodeId(0),
+    };
+    let literal = find_node(
+        &db,
+        root,
+        beskid_queries::IndexedNodeKind::StructLiteralExpression,
+    )
+    .expect("struct literal");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let input = CodegenInput::new(
+        &db,
+        typed,
+        Arc::from([root]),
+        target.clone(),
+        AbiManifestV5::canonical_runtime(target),
+    )
+    .expect("input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
     let function = emit_isle_expression(&input, isa.as_ref(), literal, isa.pointer_type())
         .expect("aggregate literal lowers through syntax facts");
     assert!(function.display().to_string().contains("stack_store"));
@@ -138,22 +182,62 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
     let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
         .expect("parse source");
     let entry = SourceUnitId::new(&db, source_path.clone());
-    let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
+    let project = ProjectSession::new(
+        &db,
+        directory.clone(),
+        source_path.clone(),
+        "App".into(),
+        "lock".into(),
+    );
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root: directory }, dependencies: Vec::new() },
-        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
-        0, AssemblyDiscovery::ImportClosure, Arc::new(ModuleIndex::empty()), false,
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: "Main".into(),
+            path: source_path,
+            source: source.into(),
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
     ));
-    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
-    let constructor = find_node(&db, root, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
-        .expect("enum constructor");
-    let target = TargetMetadata::supported().into_iter()
-        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu").expect("linux target");
-    let input = CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target)).expect("input");
-    let isa = isa::lookup_by_name("x86_64").expect("host ISA")
-        .finish(settings::Flags::new(settings::builder())).expect("host flags");
+    let typed =
+        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey {
+        unit: entry,
+        generation,
+        node: AstNodeId(0),
+    };
+    let constructor = find_node(
+        &db,
+        root,
+        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
+    )
+    .expect("enum constructor");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let input = CodegenInput::new(
+        &db,
+        typed,
+        Arc::from([root]),
+        target.clone(),
+        AbiManifestV5::canonical_runtime(target),
+    )
+    .expect("input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
 
     let function = emit_isle_expression(&input, isa.as_ref(), constructor, isa.pointer_type())
         .expect("enum constructor lowers through syntax facts");
@@ -188,10 +272,16 @@ fn parsed_enum_match_uses_source_arms_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
         "enum Choice { None(), Some() } i32 Main() { return match Choice::Some() { Choice::None() => 1, Choice::Some() => 2, }; }",
     );
-    let expression = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MatchExpression)
-        .expect("enum match");
+    let expression = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::MatchExpression,
+    )
+    .expect("enum match");
     assert!(
-        enum_match(input.database(), expression).expect("enum match query").is_some(),
+        enum_match(input.database(), expression)
+            .expect("enum match query")
+            .is_some(),
         "source match facts"
     );
     assert_eq!(
@@ -205,7 +295,6 @@ fn parsed_enum_match_uses_source_arms_without_hir() {
     assert!(clif.contains("load.i32"));
     assert!(clif.contains("br_table"));
 }
-
 
 #[test]
 fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
@@ -439,6 +528,61 @@ fn parsed_direct_call_uses_explicit_item_module_importer() {
 }
 
 #[test]
+fn canonical_corelib_service_call_imports_its_distinct_abi_symbol() {
+    let (input, isa, root) = canonical_corelib_syscall_fixture();
+    let read = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Read"))
+        .expect("Core.Syscall Read source item");
+    let call = find_corelib_service_call(input.database(), read, "__syscall_read")
+        .expect("__syscall_read call");
+    let service = DirectCallee::corelib_service("syscall_read");
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = function_signature(isa.as_ref(), isa.pointer_type(), [types::I64, types::I64]);
+    let imported = module
+        .declare_function("syscall_read", Linkage::Import, &signature)
+        .expect("declare the exact Corelib service import");
+    let mut importer =
+        ItemModuleImporter::new(&mut module, HashMap::from([(service.clone(), imported)]));
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+    assert_eq!(facts.direct_callee(call), Some(service.clone()));
+    assert_eq!(
+        call_abi_signature(input.database(), call).expect("Corelib service ABI fact"),
+        Some(beskid_queries::ItemSignature {
+            parameters: Arc::from([
+                beskid_queries::SemanticTypeId::I64,
+                beskid_queries::SemanticTypeId::I64,
+            ]),
+            result: beskid_queries::SemanticTypeId::STRING,
+        })
+    );
+
+    let service_facts = CorelibServiceImportFacts::new(input.database(), service);
+
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_expression_with_call_importer(
+            UserFuncName::user(0, 91),
+            emitter.signature([], [isa.pointer_type()]),
+            &service_facts,
+            service_facts.call,
+            &mut importer,
+        )
+        .expect("compiler-authorized Corelib service lowers through an exact import");
+    assert!(function.display().to_string().contains("call"));
+}
+
+#[test]
+fn ordinary_syscall_spelling_cannot_request_a_corelib_service_import() {
+    let (input, _isa, root) =
+        item_fixture_with_root("i64 Main() { return __syscall_write(1, \"application\"); }");
+    let main = find_function_definition(input.database(), root).expect("application Main");
+    let call = find_call_expression(input.database(), main).expect("application syscall spelling");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+    assert_eq!(facts.direct_callee(call), None);
+}
+
+#[test]
 fn parsed_program_declares_then_imports_syntax_items_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
         "i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }",
@@ -630,7 +774,8 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
     let directory = tempfile::tempdir().expect("project").keep();
     let main_path = directory.join("Main.bd");
     let assert_path = directory.join("Testing/Assert.bd");
-    let main_source = "use Testing.Assert; test Main { Assert.Equal(\"same\", \"same\", \"because\"); }";
+    let main_source =
+        "use Testing.Assert; test Main { Assert.Equal(\"same\", \"same\", \"because\"); }";
     let assert_source = "pub unit Equal<T>(T actual, T expected, string because) { if actual == expected { return; } return; }";
     std::fs::create_dir_all(assert_path.parent().expect("Testing directory"))
         .expect("Testing directory");
@@ -638,8 +783,9 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
     std::fs::write(&assert_path, assert_source).expect("assert source");
     let main_program = parse_program_with_source_name(main_path.to_str().unwrap(), main_source)
         .expect("main parse");
-    let assert_program = parse_program_with_source_name(assert_path.to_str().unwrap(), assert_source)
-        .expect("assert parse");
+    let assert_program =
+        parse_program_with_source_name(assert_path.to_str().unwrap(), assert_source)
+            .expect("assert parse");
     let main_unit = SourceUnitId::new(&*db, main_path.clone());
     let assert_unit = SourceUnitId::new(&*db, assert_path.clone());
     let generation = SyntaxGenerationId(22);
@@ -677,8 +823,8 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed = build_typed_program(&mut db, project, generation, assembly)
-        .expect("typed syntax program");
+    let typed =
+        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_root = AstNodeKey {
         unit: main_unit,
         generation,
@@ -889,7 +1035,11 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
         .find(|function| function.name == "RootFrame")
         .expect("RootFrame helper is lowered");
     assert!(
-        root_frame.function.display().to_string().contains("load.i64"),
+        root_frame
+            .function
+            .display()
+            .to_string()
+            .contains("load.i64"),
         "manifest-authorized raw_word_load is lowered inline through ISLE"
     );
     assert!(
@@ -943,6 +1093,76 @@ fn item_fixture(
     let (input, isa, root) = item_fixture_with_root(source);
     let item = find_function_definition(input.database(), root).expect("function key");
     (input, isa, item)
+}
+
+fn canonical_corelib_syscall_fixture() -> (
+    CodegenInput<'static>,
+    Arc<dyn cranelift_codegen::isa::TargetIsa>,
+    AstNodeKey,
+) {
+    let mut db = Box::new(BeskidDatabase::default());
+    let directory = tempfile::tempdir().expect("Corelib syscall project").keep();
+    let source = canonical_corelib_syscall_sources()
+        .pop()
+        .expect("embedded Core.Syscall source");
+    let source_path = directory.join("Syscall.bd");
+    std::fs::write(&source_path, &source.source).expect("write embedded Core.Syscall source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
+        .expect("parse embedded Core.Syscall source");
+    let entry = SourceUnitId::new(&*db, source_path.clone());
+    let project = ProjectSession::new(
+        &*db,
+        directory.clone(),
+        source_path.clone(),
+        "beskid-corelib".into(),
+        "corelib-source".into(),
+    );
+    let generation = SyntaxGenerationId(92);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH.into(),
+            path: source_path,
+            source: source.source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = build_canonical_corelib_syscall_typed_program(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_syscall_service_capability(&manifest).expect("Corelib service authority"),
+    )
+    .expect("exact embedded Core.Syscall source receives service authority");
+    let root = AstNodeKey {
+        unit: entry,
+        generation,
+        node: AstNodeId(0),
+    };
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
+        .expect("generation-safe Corelib input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    (input, isa, root)
 }
 
 fn item_fixture_with_root(
@@ -1055,6 +1275,109 @@ fn find_call_expression(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<
         .iter()
         .copied()
         .find_map(|child| find_call_expression(db, child))
+}
+
+fn find_corelib_service_call(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    expected_name: &str,
+) -> Option<AstNodeKey> {
+    if matches!(
+        call_lowering(db, key).ok().flatten(),
+        Some(beskid_queries::CallLowering::CorelibService(service)) if service.name == expected_name
+    ) {
+        return Some(key);
+    }
+    child_nodes(db, key)
+        .ok()
+        .flatten()?
+        .iter()
+        .copied()
+        .find_map(|child| find_corelib_service_call(db, child, expected_name))
+}
+
+struct CorelibServiceImportFacts {
+    call: AstNodeKey,
+    fd: AstNodeKey,
+    limit: AstNodeKey,
+    service: DirectCallee,
+}
+
+impl CorelibServiceImportFacts {
+    fn new(db: &dyn beskid_queries::Db, service: DirectCallee) -> Self {
+        let unit = SourceUnitId::new(db, std::path::PathBuf::from("/tmp/CorelibService.bd"));
+        let generation = SyntaxGenerationId(93);
+        Self {
+            call: AstNodeKey {
+                unit,
+                generation,
+                node: AstNodeId(1),
+            },
+            fd: AstNodeKey {
+                unit,
+                generation,
+                node: AstNodeId(2),
+            },
+            limit: AstNodeKey {
+                unit,
+                generation,
+                node: AstNodeId(3),
+            },
+            service,
+        }
+    }
+}
+
+impl NodeFacts for CorelibServiceImportFacts {
+    fn node_kind(&self, key: AstNodeKey) -> Option<beskid_isle::NodeKind> {
+        (key == self.call)
+            .then_some(beskid_isle::NodeKind::CallExpression)
+            .or_else(|| {
+                (key == self.fd || key == self.limit)
+                    .then_some(beskid_isle::NodeKind::LiteralExpression)
+            })
+    }
+
+    fn literal_kind(&self, key: AstNodeKey) -> Option<beskid_isle::LiteralKind> {
+        (key == self.fd || key == self.limit).then_some(beskid_isle::LiteralKind::Integer)
+    }
+
+    fn call_kind(&self, key: AstNodeKey) -> Option<beskid_isle::CallKind> {
+        (key == self.call).then_some(beskid_isle::CallKind::Direct)
+    }
+
+    fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
+        (key == self.fd)
+            .then_some(0)
+            .or_else(|| (key == self.limit).then_some(16))
+    }
+
+    fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+        if key == self.call {
+            Some(types::I64)
+        } else {
+            (key == self.fd || key == self.limit).then_some(types::I64)
+        }
+    }
+
+    fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
+        (key == self.call).then_some(self.service.clone())
+    }
+
+    fn call_signature(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Signature> {
+        (key == self.call).then(|| cranelift_codegen::ir::Signature {
+            params: vec![
+                cranelift_codegen::ir::AbiParam::new(types::I64),
+                cranelift_codegen::ir::AbiParam::new(types::I64),
+            ],
+            returns: vec![cranelift_codegen::ir::AbiParam::new(types::I64)],
+            call_conv: cranelift_codegen::isa::CallConv::SystemV,
+        })
+    }
+
+    fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        (key == self.call).then_some(vec![self.fd, self.limit])
+    }
 }
 
 fn find_function_definition(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<AstNodeKey> {

@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
-use beskid_queries::{
-    ItemSignature, child_nodes, generic_call_specialization, item_abi_signature,
-};
+use beskid_queries::{ItemSignature, child_nodes, generic_call_specialization, item_abi_signature};
 use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::{
     Endianness, ExtFuncData, ExternalName, FuncRef, GlobalValueData, Signature, Type, Value,
@@ -92,7 +90,13 @@ fn lower_resolved_syntax_program(
     symbols.extend(
         runtime_intrinsics
             .iter()
-                .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
+            .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
+    );
+    let corelib_services = corelib_service_symbols(input);
+    symbols.extend(
+        corelib_services
+            .iter()
+            .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
     );
 
     let mut context = CodegenContext::new();
@@ -113,7 +117,9 @@ fn lower_resolved_syntax_program(
                     &mut strings,
                     &mut importer,
                 ),
-                None => emit_isle_item_with_services(input, isa, item.key, &mut strings, &mut importer),
+                None => {
+                    emit_isle_item_with_services(input, isa, item.key, &mut strings, &mut importer)
+                }
             }
             .map_err(SyntaxModuleEmissionError::Emission)?
         };
@@ -127,6 +133,7 @@ fn lower_resolved_syntax_program(
         string_literals: context.string_literals,
         extern_imports: runtime_intrinsics
             .into_values()
+            .chain(corelib_services.into_values())
             .map(|symbol| ExternImport {
                 symbol,
                 abi: Some("C".into()),
@@ -149,11 +156,7 @@ fn resolve_module_items(
 
     let mut resolved = Vec::with_capacity(source_items.len());
     for item in source_items {
-        if item_abi_signature(db, item.key)
-            .ok()
-            .flatten()
-            .is_some()
-        {
+        if item_abi_signature(db, item.key).ok().flatten().is_some() {
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
                 symbol: item.symbol.clone(),
@@ -173,7 +176,11 @@ fn resolve_module_items(
             let identity = specialization_identity(signature);
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
-                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(signature)),
+                symbol: format!(
+                    "{}#generic_{}",
+                    item.symbol,
+                    specialization_mangle(signature)
+                ),
                 callee: DirectCallee::specialized_item(item.key, identity),
                 specialization: Some(signature.clone()),
             });
@@ -187,17 +194,19 @@ fn collect_generic_call_specializations(
     key: AstNodeKey,
     specializations: &mut HashMap<AstNodeKey, Vec<ItemSignature>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
-    if let Some(specialization) = generic_call_specialization(db, key)
-        .map_err(|error| SyntaxModuleEmissionError::Emission(FunctionEmissionError::Verification(error.to_string())))?
-    {
-        let signatures = specializations.entry(specialization.declaration).or_default();
+    if let Some(specialization) = generic_call_specialization(db, key).map_err(|error| {
+        SyntaxModuleEmissionError::Emission(FunctionEmissionError::Verification(error.to_string()))
+    })? {
+        let signatures = specializations
+            .entry(specialization.declaration)
+            .or_default();
         if !signatures.contains(&specialization.signature) {
             signatures.push(specialization.signature);
         }
     }
-    if let Some(children) = child_nodes(db, key)
-        .map_err(|error| SyntaxModuleEmissionError::Emission(FunctionEmissionError::Verification(error.to_string())))?
-    {
+    if let Some(children) = child_nodes(db, key).map_err(|error| {
+        SyntaxModuleEmissionError::Emission(FunctionEmissionError::Verification(error.to_string()))
+    })? {
         for child in children.iter().copied() {
             collect_generic_call_specializations(db, child, specializations)?;
         }
@@ -266,6 +275,27 @@ fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<DirectCallee, 
                             intrinsic.symbol.clone(),
                         )
                     })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// ABI symbols admitted by the distinct Corelib syscall capability.  Unlike runtime intrinsics,
+/// these imports can only be selected by a `CallLowering::CorelibService` syntax fact from the
+/// exact embedded facade; ordinary dynamic calls never reach this table.
+fn corelib_service_symbols(input: &CodegenInput<'_>) -> HashMap<DirectCallee, String> {
+    input
+        .corelib_service_capability()
+        .map(|capability| {
+            capability
+                .services()
+                .iter()
+                .map(|service| {
+                    (
+                        DirectCallee::corelib_service(service.symbol),
+                        service.symbol.to_owned(),
+                    )
                 })
                 .collect()
         })
@@ -346,7 +376,6 @@ pub fn emit_string_literals<M: Module>(
     }
     Ok(handles)
 }
-
 
 /// Emit descriptor and offset-table data for every type in `artifact.type_descriptors`.
 pub fn emit_type_descriptors<M: Module>(
