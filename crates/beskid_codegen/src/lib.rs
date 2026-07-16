@@ -24,7 +24,7 @@ pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics
 pub use errors::CodegenError;
 pub use isle_adapter::{
     ItemModuleImporter, SyntaxNodeFacts, emit_isle_expression, emit_isle_item,
-    emit_isle_item_with_call_importer,
+    emit_isle_item_with_call_importer, syntax_item_signature,
 };
 pub use linking::{
     FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, referenced_extern_imports,

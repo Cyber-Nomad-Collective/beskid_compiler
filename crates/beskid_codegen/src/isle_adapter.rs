@@ -340,6 +340,19 @@ pub fn emit_isle_item<'db>(
     emitter.emit_item_statement(UserFuncName::user(0, 0), signature, &facts, item, body)
 }
 
+/// Read the generation-safe syntax signature required to predeclare an item in a module.
+pub fn syntax_item_signature(
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    item: AstNodeKey,
+) -> Result<Signature, FunctionEmissionError> {
+    item_signature(input.database(), item)
+        .ok()
+        .flatten()
+        .and_then(|signature| signature_for_item(isa, signature))
+        .ok_or_else(|| FunctionEmissionError::Verification("item signature unavailable".to_owned()))
+}
+
 /// Emit a syntax-only item with an explicit semantic-call importer.
 pub fn emit_isle_item_with_call_importer<'db>(
     input: &'db CodegenInput<'db>,

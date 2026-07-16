@@ -1,17 +1,72 @@
 use std::collections::HashMap;
 
 use beskid_analysis::types::TypeId;
+use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError};
 use cranelift_codegen::ir::Endianness;
-use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleResult};
+use cranelift_codegen::isa::TargetIsa;
+use cranelift_module::{
+    DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult,
+};
 
 use crate::lowering::CodegenArtifact;
 use crate::lowering::descriptor::TypeDescriptorData;
+use crate::{
+    CodegenInput, ItemModuleImporter, emit_isle_item_with_call_importer, syntax_item_signature,
+};
 
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
 #[derive(Debug, Clone)]
 pub struct DescriptorHandles {
     pub descriptor: DataId,
     pub offsets: DataId,
+}
+
+/// One syntax item declared and defined through the HIR-free ISLE boundary.
+#[derive(Debug, Clone)]
+pub struct SyntaxModuleItem {
+    pub key: AstNodeKey,
+    pub symbol: String,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SyntaxModuleEmissionError {
+    #[error("module declaration failed: {0}")]
+    Module(#[from] ModuleError),
+    #[error("syntax ISLE emission failed: {0:?}")]
+    Emission(FunctionEmissionError),
+}
+
+/// Declare every syntax item before lowering any body, then import direct callees by exact
+/// generation-safe item key. This is the production module boundary for syntax → ISLE lowering.
+pub fn emit_syntax_program<M: Module>(
+    module: &mut M,
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    items: &[SyntaxModuleItem],
+    linkage: Linkage,
+) -> Result<HashMap<AstNodeKey, FuncId>, SyntaxModuleEmissionError> {
+    let mut by_key = HashMap::with_capacity(items.len());
+    let mut by_callee = HashMap::with_capacity(items.len());
+    for item in items {
+        let signature = syntax_item_signature(input, isa, item.key)
+            .map_err(SyntaxModuleEmissionError::Emission)?;
+        let id = module.declare_function(&item.symbol, linkage, &signature)?;
+        by_key.insert(item.key, id);
+        by_callee.insert(DirectCallee::new(item.key.node.0), id);
+    }
+    for item in items {
+        let function = {
+            let mut importer = ItemModuleImporter::new(module, by_callee.clone());
+            emit_isle_item_with_call_importer(input, isa, item.key, &mut importer)
+                .map_err(SyntaxModuleEmissionError::Emission)?
+        };
+        let id = by_key[&item.key];
+        let mut context = module.make_context();
+        context.func = function;
+        module.define_function(id, &mut context)?;
+        module.clear_context(&mut context);
+    }
+    Ok(by_key)
 }
 
 /// Define one module-local data object per entry in `artifact.string_literals`.

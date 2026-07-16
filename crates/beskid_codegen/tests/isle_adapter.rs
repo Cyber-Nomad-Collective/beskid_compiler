@@ -10,6 +10,7 @@ use beskid_analysis::services::parse_program_with_source_name;
 use beskid_codegen::{
     CodegenInput, ItemModuleImporter, emit_isle_expression, emit_isle_item,
     emit_isle_item_with_call_importer,
+    module_emission::{SyntaxModuleItem, emit_syntax_program},
 };
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
@@ -274,6 +275,42 @@ fn parsed_direct_call_uses_explicit_item_module_importer() {
     let clif = function.display().to_string();
     assert!(clif.contains("call"), "{clif}");
     assert!(clif.contains("iconst.i32 41"), "{clif}");
+}
+
+#[test]
+fn parsed_program_declares_then_imports_syntax_items_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }",
+    );
+    let db = input.database();
+    let items = find_function_definitions(db, root);
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let declared = emit_syntax_program(
+        &mut module,
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: items[0],
+                symbol: "AddOne".into(),
+            },
+            SyntaxModuleItem {
+                key: items[1],
+                symbol: "Main".into(),
+            },
+        ],
+        Linkage::Export,
+    )
+    .expect("syntax items declare before their direct-call bodies lower");
+    assert_eq!(declared.len(), 2);
+    assert_eq!(
+        module.get_name("AddOne"),
+        Some(cranelift_module::FuncOrDataId::Func(declared[&items[0]]))
+    );
+    assert_eq!(
+        module.get_name("Main"),
+        Some(cranelift_module::FuncOrDataId::Func(declared[&items[1]]))
+    );
 }
 
 fn item_fixture(
