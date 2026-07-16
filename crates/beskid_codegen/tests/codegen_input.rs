@@ -6,11 +6,11 @@ use beskid_analysis::projects::{
     SyntaxProgramAssembly,
 };
 use beskid_analysis::services::parse_program_with_source_name;
+use beskid_codegen::{CodegenInput, CodegenInputError};
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
     TypedProgram, build_typed_program,
 };
-use beskid_codegen::{CodegenInput, CodegenInputError};
 
 fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata) {
     let mut db = BeskidDatabase::default();
@@ -29,27 +29,26 @@ fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata)
         "lock".into(),
     );
     let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly {
-        roots: EffectiveCompilationRoots {
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
             host: RootEntry {
                 dependency_name: None,
                 source_root: directory,
             },
             dependencies: Vec::new(),
         },
-        units: Arc::new(vec![SourceUnit {
+        Arc::new(vec![SourceUnit {
             logical_name: "Main".into(),
             path: source_path,
             source: source.into(),
             program,
         }]),
-        entry_index: 0,
-        discovery: AssemblyDiscovery::ImportClosure,
-        module_index: Arc::new(ModuleIndex::empty()),
-        has_std_dependency: false,
-    });
-    let typed = build_typed_program(&mut db, project, generation, assembly)
-        .expect("typed program");
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed program");
     let root = AstNodeKey {
         unit: entry,
         generation,

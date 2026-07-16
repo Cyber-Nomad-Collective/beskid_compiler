@@ -99,7 +99,7 @@ fn syntax_facts_for_entry(
         return (Vec::new(), Vec::new(), Vec::new());
     };
     let unit = typed.entry;
-    let Some(entry) = typed.assembly.units.get(typed.assembly.entry_index) else {
+    let Some(entry) = typed.assembly.units().get(typed.assembly.entry_index()) else {
         return (Vec::new(), Vec::new(), Vec::new());
     };
     let index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&entry.program, generation);

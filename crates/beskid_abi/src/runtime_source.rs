@@ -6,8 +6,7 @@
 use std::path::Path;
 
 use crate::abi_v5::{
-    AbiManifestV5, RuntimeIntrinsic, RuntimePackageIdentity, SourceUnit, canonical_runtime_package,
-    canonical_source_hash,
+    AbiManifestV5, RuntimeIntrinsic, SourceUnit, canonical_runtime_package, canonical_source_hash,
 };
 use crate::runtime_kit::{
     BuildProfile, ResolvedRuntimeKit, RuntimeKitBuildError, RuntimeKitBuildRequest,
@@ -33,21 +32,40 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
 ///
 /// Deliberately has no public constructor and does not implement serialization.
 #[derive(Debug)]
-pub struct RuntimeIntrinsicCapability {
+pub struct CanonicalRuntimeProof {
     source_hash: String,
     source_paths: Vec<String>,
+}
+
+impl CanonicalRuntimeProof {
+    pub fn source_hash(&self) -> &str {
+        &self.source_hash
+    }
+
+    /// Check a logical path against the exact corpus validated when this proof was minted.
+    pub fn authorizes_source(&self, logical_path: &str) -> bool {
+        self.source_paths
+            .iter()
+            .any(|candidate| candidate == logical_path)
+    }
+}
+
+/// Trusted intrinsic selection derived from a [`CanonicalRuntimeProof`].
+///
+/// It intentionally cannot be constructed from an analysis assembly or package identity.
+#[derive(Debug)]
+pub struct RuntimeIntrinsicCapability {
+    proof: CanonicalRuntimeProof,
     intrinsics: Vec<RuntimeIntrinsic>,
 }
 
 impl RuntimeIntrinsicCapability {
     pub fn source_hash(&self) -> &str {
-        &self.source_hash
+        self.proof.source_hash()
     }
 
     pub fn authorizes_source(&self, logical_path: &str) -> bool {
-        self.source_paths
-            .iter()
-            .any(|candidate| candidate == logical_path)
+        self.proof.authorizes_source(logical_path)
     }
 
     pub fn intrinsic_for_source(
@@ -66,7 +84,6 @@ impl RuntimeIntrinsicCapability {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeCapabilityError {
-    UnauthorizedPackage,
     SourceSetMismatch,
     InvalidManifest,
 }
@@ -124,19 +141,18 @@ pub fn resolve_canonical_runtime_kit(
     Ok(kit)
 }
 
-/// Grant trusted intrinsic selection only to the exact embedded runtime sources and manifest.
-pub fn grant_runtime_intrinsics(
-    package: &RuntimePackageIdentity,
+/// Mint an opaque proof only for the exact runtime corpus embedded in this compiler.
+///
+/// Syntax program assemblies never carry this proof. A caller may present a corpus for
+/// verification, but matching a package name or a source path alone cannot mint it.
+pub fn prove_canonical_runtime_corpus(
     sources: &[SourceUnit],
     manifest: &AbiManifestV5,
-) -> Result<RuntimeIntrinsicCapability, RuntimeCapabilityError> {
-    if package != &canonical_runtime_package() {
-        return Err(RuntimeCapabilityError::UnauthorizedPackage);
-    }
+) -> Result<CanonicalRuntimeProof, RuntimeCapabilityError> {
     manifest
         .validate()
         .map_err(|_| RuntimeCapabilityError::InvalidManifest)?;
-    if manifest.trusted_runtime_package.as_ref() != Some(package) {
+    if manifest.trusted_runtime_package.as_ref() != Some(&canonical_runtime_package()) {
         return Err(RuntimeCapabilityError::InvalidManifest);
     }
 
@@ -148,12 +164,25 @@ pub fn grant_runtime_intrinsics(
         return Err(RuntimeCapabilityError::SourceSetMismatch);
     }
 
-    Ok(RuntimeIntrinsicCapability {
+    Ok(CanonicalRuntimeProof {
         source_hash: expected_hash,
         source_paths: expected_sources
             .into_iter()
             .map(|unit| unit.logical_path)
             .collect(),
+    })
+}
+
+/// Produce the only intrinsic authority factory exposed by the ABI layer.
+///
+/// This factory uses the compiler-embedded corpus rather than accepting an analysis assembly,
+/// so ordinary projects cannot gain runtime identity by imitating its path, name, or source.
+pub fn canonical_runtime_intrinsic_capability(
+    manifest: &AbiManifestV5,
+) -> Result<RuntimeIntrinsicCapability, RuntimeCapabilityError> {
+    let proof = prove_canonical_runtime_corpus(&canonical_runtime_sources(), manifest)?;
+    Ok(RuntimeIntrinsicCapability {
+        proof,
         intrinsics: manifest.trusted_runtime_intrinsics.clone(),
     })
 }

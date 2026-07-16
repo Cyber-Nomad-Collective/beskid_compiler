@@ -57,7 +57,7 @@ impl<'db> CodegenInput<'db> {
         let entry_path = typed_program.entry.path(db);
         let entry_matches = typed_program
             .assembly
-            .units
+            .units()
             .iter()
             .any(|unit| paths_match(&unit.path, entry_path));
         if !entry_matches {
@@ -68,7 +68,7 @@ impl<'db> CodegenInput<'db> {
             let unit_path = root.unit.path(db);
             let belongs_to_assembly = typed_program
                 .assembly
-                .units
+                .units()
                 .iter()
                 .any(|unit| paths_match(&unit.path, unit_path));
             if !belongs_to_assembly || !matches!(node_kind(db, root), Ok(Some(_))) {

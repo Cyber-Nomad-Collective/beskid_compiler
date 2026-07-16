@@ -12,11 +12,11 @@ pub use discovery::{
     module_path_exists_on_disk, module_path_to_relative_path, resolve_module_file,
 };
 pub use hir_units::{UnitHir, build_hir_units, reindex_hir_units_in_place};
+pub(crate) use loader::assemble_program;
+pub use loader::assemble_program_with_materializer;
 pub use loader::{
     AssemblyError, UnitMaterializer, assembly_options_for_plan, assembly_options_for_prepare,
 };
-pub use loader::assemble_program_with_materializer;
-pub(crate) use loader::assemble_program;
 pub use module_index::{ModuleIndex, infer_logical_module_path};
 pub use roots::{
     EffectiveCompilationRoots, RootEntry, effective_roots_for_plan, effective_roots_from_lockfile,
@@ -59,15 +59,62 @@ pub struct ProgramAssembly {
 /// HIR-free multi-module input retained by generation-safe semantic and codegen boundaries.
 #[derive(Debug, Clone)]
 pub struct SyntaxProgramAssembly {
-    pub roots: EffectiveCompilationRoots,
-    pub units: Arc<Vec<SourceUnit>>,
-    pub entry_index: usize,
-    pub discovery: AssemblyDiscovery,
-    pub module_index: Arc<ModuleIndex>,
-    pub has_std_dependency: bool,
+    roots: EffectiveCompilationRoots,
+    units: Arc<Vec<SourceUnit>>,
+    entry_index: usize,
+    discovery: AssemblyDiscovery,
+    module_index: Arc<ModuleIndex>,
+    has_std_dependency: bool,
 }
 
 impl SyntaxProgramAssembly {
+    /// Construct a syntax-only assembly from ordinary project inputs.
+    ///
+    /// This type deliberately carries no runtime privilege. Canonical-runtime authority is
+    /// minted exclusively by `beskid_abi::runtime_source` after it validates the embedded
+    /// runtime corpus; matching a path, package name, or source text here grants nothing.
+    pub fn new(
+        roots: EffectiveCompilationRoots,
+        units: Arc<Vec<SourceUnit>>,
+        entry_index: usize,
+        discovery: AssemblyDiscovery,
+        module_index: Arc<ModuleIndex>,
+        has_std_dependency: bool,
+    ) -> Self {
+        Self {
+            roots,
+            units,
+            entry_index,
+            discovery,
+            module_index,
+            has_std_dependency,
+        }
+    }
+
+    pub fn roots(&self) -> &EffectiveCompilationRoots {
+        &self.roots
+    }
+
+    pub fn units(&self) -> &[SourceUnit] {
+        self.units.as_ref()
+    }
+
+    pub fn entry_index(&self) -> usize {
+        self.entry_index
+    }
+
+    pub fn discovery(&self) -> AssemblyDiscovery {
+        self.discovery
+    }
+
+    pub fn module_index(&self) -> &Arc<ModuleIndex> {
+        &self.module_index
+    }
+
+    pub fn has_std_dependency(&self) -> bool {
+        self.has_std_dependency
+    }
+
     pub fn entry_unit(&self) -> &SourceUnit {
         &self.units[self.entry_index]
     }
@@ -75,14 +122,14 @@ impl SyntaxProgramAssembly {
 
 impl From<&ProgramAssembly> for SyntaxProgramAssembly {
     fn from(assembly: &ProgramAssembly) -> Self {
-        Self {
-            roots: assembly.roots.clone(),
-            units: Arc::clone(&assembly.units),
-            entry_index: assembly.entry_index,
-            discovery: assembly.discovery,
-            module_index: Arc::clone(&assembly.module_index),
-            has_std_dependency: assembly.has_std_dependency,
-        }
+        Self::new(
+            assembly.roots.clone(),
+            Arc::clone(&assembly.units),
+            assembly.entry_index,
+            assembly.discovery,
+            Arc::clone(&assembly.module_index),
+            assembly.has_std_dependency,
+        )
     }
 }
 

@@ -1,9 +1,8 @@
-use beskid_abi::abi_v5::{
-    AbiManifestV5, RuntimePackageIdentity, SourceUnit, TargetMetadata, canonical_runtime_package,
-};
+use beskid_abi::abi_v5::{AbiManifestV5, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, RuntimeCapabilityError, canonical_runtime_sources,
-    grant_runtime_intrinsics,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, RuntimeCapabilityError,
+    canonical_runtime_intrinsic_capability, canonical_runtime_sources,
+    prove_canonical_runtime_corpus,
 };
 
 fn linux_manifest() -> AbiManifestV5 {
@@ -33,9 +32,12 @@ fn canonical_bootstrap_source_is_embedded_and_exports_the_v5_probe() {
 fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
     let manifest = linux_manifest();
     let sources = canonical_runtime_sources();
-    let capability = grant_runtime_intrinsics(&canonical_runtime_package(), &sources, &manifest)
-        .expect("canonical source authority");
+    let proof =
+        prove_canonical_runtime_corpus(&sources, &manifest).expect("canonical source proof");
+    let capability =
+        canonical_runtime_intrinsic_capability(&manifest).expect("canonical intrinsic authority");
 
+    assert!(proof.authorizes_source(CANONICAL_BOOTSTRAP_SOURCE_PATH));
     assert!(capability.authorizes_source(CANONICAL_BOOTSTRAP_SOURCE_PATH));
     assert!(
         capability
@@ -59,24 +61,21 @@ fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
 }
 
 #[test]
-fn lookalike_package_and_source_drift_cannot_receive_authority() {
+fn lookalike_source_path_name_or_contents_cannot_receive_authority() {
     let manifest = linux_manifest();
     let sources = canonical_runtime_sources();
-    let lookalike: RuntimePackageIdentity = serde_json::from_value(serde_json::json!({
-        "publisher": "attacker.invalid",
-        "name": "beskid-runtime-native",
-        "abi_version": 5
-    }))
-    .unwrap();
-    assert!(matches!(
-        grant_runtime_intrinsics(&lookalike, &sources, &manifest),
-        Err(RuntimeCapabilityError::UnauthorizedPackage)
-    ));
 
     let mut changed = sources.clone();
     changed[0].source.push_str("\n// drift\n");
     assert!(matches!(
-        grant_runtime_intrinsics(&canonical_runtime_package(), &changed, &manifest),
+        prove_canonical_runtime_corpus(&changed, &manifest),
+        Err(RuntimeCapabilityError::SourceSetMismatch)
+    ));
+
+    let mut renamed = sources.clone();
+    renamed[0].logical_path = "src/User/Bootstrap.bd".into();
+    assert!(matches!(
+        prove_canonical_runtime_corpus(&renamed, &manifest),
         Err(RuntimeCapabilityError::SourceSetMismatch)
     ));
 
@@ -86,7 +85,7 @@ fn lookalike_package_and_source_drift_cannot_receive_authority() {
         source: "pub unit Backdoor() { return; }".into(),
     });
     assert!(matches!(
-        grant_runtime_intrinsics(&canonical_runtime_package(), &extra, &manifest),
+        prove_canonical_runtime_corpus(&extra, &manifest),
         Err(RuntimeCapabilityError::SourceSetMismatch)
     ));
 }
@@ -96,11 +95,7 @@ fn manifest_drift_cannot_expand_runtime_authority() {
     let mut manifest = linux_manifest();
     manifest.trusted_runtime_intrinsics.pop();
     assert!(matches!(
-        grant_runtime_intrinsics(
-            &canonical_runtime_package(),
-            &canonical_runtime_sources(),
-            &manifest,
-        ),
+        canonical_runtime_intrinsic_capability(&manifest),
         Err(RuntimeCapabilityError::InvalidManifest)
     ));
 }

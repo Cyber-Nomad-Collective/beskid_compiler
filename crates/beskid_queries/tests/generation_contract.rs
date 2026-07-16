@@ -5,27 +5,26 @@ use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SyntaxProgramAssembly,
 };
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession,
-    SourceUnitId, SyntaxGenerationId, TypedProgram, call_arguments, call_lowering,
-    cast_intents, control_flow, item_signature, local_slot, node_type, resolved_item,
-    resolved_local, runtime_intrinsic,
+    AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession, SourceUnitId,
+    SyntaxGenerationId, TypedProgram, call_arguments, call_lowering, cast_intents, control_flow,
+    item_signature, local_slot, node_type, resolved_item, resolved_local, runtime_intrinsic,
 };
 
 fn empty_assembly() -> Arc<SyntaxProgramAssembly> {
-    Arc::new(SyntaxProgramAssembly {
-        roots: EffectiveCompilationRoots {
+    Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
             host: RootEntry {
                 dependency_name: None,
                 source_root: PathBuf::from("/tmp/project/src"),
             },
             dependencies: Vec::new(),
         },
-        units: Arc::new(Vec::new()),
-        entry_index: 0,
-        discovery: AssemblyDiscovery::ImportClosure,
-        module_index: Arc::new(ModuleIndex::empty()),
-        has_std_dependency: false,
-    })
+        Arc::new(Vec::new()),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ))
 }
 
 #[test]

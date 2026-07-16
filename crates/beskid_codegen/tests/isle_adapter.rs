@@ -33,25 +33,25 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
         "lock".into(),
     );
     let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly {
-        roots: EffectiveCompilationRoots {
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
             host: RootEntry {
                 dependency_name: None,
                 source_root: directory,
             },
             dependencies: Vec::new(),
         },
-        units: Arc::new(vec![SourceUnit {
+        Arc::new(vec![SourceUnit {
             logical_name: "Main".into(),
             path: source_path,
             source: source.into(),
             program,
         }]),
-        entry_index: 0,
-        discovery: AssemblyDiscovery::ImportClosure,
-        module_index: Arc::new(ModuleIndex::empty()),
-        has_std_dependency: false,
-    });
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
     let typed =
         build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey {
@@ -102,25 +102,25 @@ fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
         "lock".into(),
     );
     let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly {
-        roots: EffectiveCompilationRoots {
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
             host: RootEntry {
                 dependency_name: None,
                 source_root: directory,
             },
             dependencies: Vec::new(),
         },
-        units: Arc::new(vec![SourceUnit {
+        Arc::new(vec![SourceUnit {
             logical_name: "Main".into(),
             path: source_path,
             source: source.into(),
             program,
         }]),
-        entry_index: 0,
-        discovery: AssemblyDiscovery::ImportClosure,
-        module_index: Arc::new(ModuleIndex::empty()),
-        has_std_dependency: false,
-    });
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
     let typed =
         build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey {
@@ -173,25 +173,25 @@ fn parsed_local_read_emits_verified_isle_clif_without_lowerable() {
         "lock".into(),
     );
     let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly {
-        roots: EffectiveCompilationRoots {
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
             host: RootEntry {
                 dependency_name: None,
                 source_root: directory,
             },
             dependencies: Vec::new(),
         },
-        units: Arc::new(vec![SourceUnit {
+        Arc::new(vec![SourceUnit {
             logical_name: "Main".into(),
             path: source_path,
             source: source.into(),
             program,
         }]),
-        entry_index: 0,
-        discovery: AssemblyDiscovery::ImportClosure,
-        module_index: Arc::new(ModuleIndex::empty()),
-        has_std_dependency: false,
-    });
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
     let typed =
         build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey {

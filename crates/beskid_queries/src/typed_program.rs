@@ -13,11 +13,11 @@ pub fn build_typed_program(
     assembly: Arc<SyntaxProgramAssembly>,
 ) -> Result<TypedProgram, SemanticError> {
     let entry_unit = assembly
-        .units
-        .get(assembly.entry_index)
+        .units()
+        .get(assembly.entry_index())
         .ok_or_else(|| SemanticError::new("syntax assembly has no valid entry unit"))?;
 
-    for unit in assembly.units.iter() {
+    for unit in assembly.units() {
         let identity = SourceUnitId::new(db, unit.path.clone());
         db.ensure_expanded_syntax_unit(
             project,
@@ -29,13 +29,13 @@ pub fn build_typed_program(
     }
 
     let module_units = assembly
-        .units
+        .units()
         .iter()
         .filter_map(|unit| {
             beskid_analysis::projects::infer_logical_module_path(
                 unit,
-                &assembly.roots,
-                assembly.has_std_dependency,
+                assembly.roots(),
+                assembly.has_std_dependency(),
             )
             .map(|module_path| (module_path, SourceUnitId::new(db, unit.path.clone())))
         })
@@ -44,7 +44,7 @@ pub fn build_typed_program(
         .syntax_dependency_registry()
         .lock()
         .expect("syntax dependency registry");
-    for unit in assembly.units.iter() {
+    for unit in assembly.units() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
         let imports = unit
             .program
