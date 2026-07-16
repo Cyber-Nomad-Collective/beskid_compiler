@@ -63,7 +63,8 @@ fn cli_verifies_linux_shared_loader_imports_only_in_shared_mode() {
         "undefined=_ITM_deregisterTMCloneTable\n\
          undefined=_ITM_registerTMCloneTable\n\
          undefined=__cxa_finalize\n\
-         undefined=__gmon_start__\n",
+         undefined=__gmon_start__\n\
+         undefined=__tls_get_addr\n",
     );
 
     let mut shared_verify = binary()

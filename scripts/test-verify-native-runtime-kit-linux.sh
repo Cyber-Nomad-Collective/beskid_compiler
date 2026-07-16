@@ -14,8 +14,11 @@ touch "${kit_root}/static/libbeskid_runtime.a" "${kit_root}/shared/libbeskid_run
 
 cat > "${fixture_root}/bin/nm" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "${BESKID_LINUX_NM_LOG}"
 if [[ " $* " == *" --defined-only "* ]]; then
   printf '%s\n' beskid_rt_v5_process_init
+elif [[ " $* " == *" -D "* || " $* " == *" --dynamic "* ]]; then
+  printf '%s\n' __tls_get_addr
 else
   printf '%s\n' mmap
 fi
@@ -23,6 +26,12 @@ EOF
 cat > "${fixture_root}/bin/cargo" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${BESKID_LINUX_EVIDENCE_LOG}"
+if [[ " $* " == *" --bin beskid_runtime_provenance "* ]]; then
+  for argument in "$@"; do
+    symbol_list="${argument}"
+  done
+  cp "${symbol_list}" "${BESKID_LINUX_SYMBOL_LIST_DIR}/$(basename "${symbol_list}")"
+fi
 if [[ "${BESKID_LINUX_EVIDENCE_FAIL_ENGINE:-}" == 1 && " $* " == *" -p beskid_engine "* ]]; then
   exit 1
 fi
@@ -51,14 +60,21 @@ printf '%s\n' 'linux-vdso.so.1'
 EOF
 chmod +x "${fixture_root}/bin/file" "${fixture_root}/bin/readelf" "${fixture_root}/bin/ldd"
 
+mkdir -p "${fixture_root}/symbol-lists"
 PATH="${fixture_root}/bin:${PATH}" \
 BESKID_RUNTIME_PREFIX="${prefix}" \
 BESKID_RUNTIME_KIT_PROFILE=debug \
 BESKID_LINUX_EVIDENCE_LOG="${fixture_root}/calls.log" \
+BESKID_LINUX_NM_LOG="${fixture_root}/nm.log" \
+BESKID_LINUX_SYMBOL_LIST_DIR="${fixture_root}/symbol-lists" \
   "${compiler_root}/scripts/verify-native-runtime-kit-linux.sh" >/dev/null
 
 test "$(grep -F -- '--bin beskid_runtime_provenance -- --verify ' "${fixture_root}/calls.log" | wc -l | tr -d '[:space:]')" = 1
 test "$(grep -F -- '--bin beskid_runtime_provenance -- --verify-shared ' "${fixture_root}/calls.log" | wc -l | tr -d '[:space:]')" = 1
+test "$(grep -F -- '--undefined-only' "${fixture_root}/nm.log" | wc -l | tr -d '[:space:]')" = 1
+test "$(grep -E -- '(^| )-u( |$)' "${fixture_root}/nm.log" | wc -l | tr -d '[:space:]')" = 0
+test "$(grep -F -- 'undefined=__tls_get_addr' "${fixture_root}/symbol-lists/shared.symbols" | wc -l | tr -d '[:space:]')" = 1
+test "$(grep -c '^undefined=' "${fixture_root}/symbol-lists/static.symbols" || true)" = 0
 grep -F -- '-p beskid_engine --test native_runtime_kit_smoke staged_linux_runtime_kit_executes_a_canonical_entrypoint -- --ignored --exact' "${fixture_root}/calls.log" >/dev/null
 grep -F -- '-p beskid_repl staged_linux_runtime_kit_evaluates_a_snippet -- --ignored --exact' "${fixture_root}/calls.log" >/dev/null
 
@@ -66,6 +82,8 @@ if PATH="${fixture_root}/bin:${PATH}" \
   BESKID_RUNTIME_PREFIX="${prefix}" \
   BESKID_RUNTIME_KIT_PROFILE=debug \
   BESKID_LINUX_EVIDENCE_LOG="${fixture_root}/calls.log" \
+  BESKID_LINUX_NM_LOG="${fixture_root}/nm.log" \
+  BESKID_LINUX_SYMBOL_LIST_DIR="${fixture_root}/symbol-lists" \
   BESKID_LINUX_EVIDENCE_FAIL_ENGINE=1 \
   "${compiler_root}/scripts/verify-native-runtime-kit-linux.sh" >"${fixture_root}/failure.log" 2>&1; then
   echo "expected Linux evidence failure" >&2

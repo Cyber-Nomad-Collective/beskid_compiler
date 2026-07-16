@@ -81,7 +81,10 @@ audit_artifact() {
       nm -D --undefined-only -j "${artifact}" | sed '/^$/d; s/^/undefined=/'
     else
       nm -g --defined-only -j "${artifact}" | sed '/^$/d; s/^/defined=/'
-      nm -u -j "${artifact}" | sed '/^$/d; s/^/undefined=/'
+      # An archive has no linked undefined-symbol boundary: `nm -u` reports references made by
+      # every member object, including the dynamic-TLS helper that is only an ELF shared-object
+      # loader import. Audit the archive's public definitions here; audit linked imports only on
+      # the shared runtime below, where --verify-shared applies the narrow loader policy.
     fi
   } > "${symbols}"
   if [[ "${dynamic}" == "yes" ]]; then
