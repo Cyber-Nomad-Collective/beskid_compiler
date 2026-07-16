@@ -38,7 +38,7 @@ pub use lowering::{
     require_mapping_eligible, shape_id_for_item,
 };
 pub use module_emission::{
-    DescriptorHandles, SyntaxModuleItem, emit_string_literals, emit_type_descriptors,
+    DescriptorHandles, SyntaxModuleItem, emit_runtime_tls, emit_string_literals, emit_type_descriptors,
     lower_syntax_program,
 };
 pub use prepared_syntax::{

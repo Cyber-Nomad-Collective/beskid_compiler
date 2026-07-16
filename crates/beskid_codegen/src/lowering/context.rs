@@ -40,6 +40,8 @@ pub struct CodegenArtifact {
     pub string_literals: HashMap<String, Vec<u8>>,
     pub extern_imports: Vec<ExternImport>,
     pub exports: Vec<crate::lowering::expressions::export::ExportEntry>,
+    /// One compiler-owned TLS cell used only by trusted canonical runtime intrinsics.
+    pub runtime_tls: bool,
 }
 
 /// Key for a monomorphized function instance (`item` plus concrete type `args`).

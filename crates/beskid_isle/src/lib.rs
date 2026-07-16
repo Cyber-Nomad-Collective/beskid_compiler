@@ -15,7 +15,7 @@ use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
 pub use cranelift_codegen::ir::{
-    AbiParam, Block, FuncRef, Function, MemFlags, Signature, StackSlotData, StackSlotKind,
+    AbiParam, Block, ExternalName, FuncRef, Function, GlobalValueData, MemFlags, Signature, StackSlotData, StackSlotKind,
     TrapCode, Type, UserFuncName, Value,
 };
 use cranelift_codegen::isa::TargetIsa;
@@ -96,6 +96,8 @@ pub enum RuntimeIntrinsicKind {
     RawWordStore,
     RawByteLoad,
     RawByteStore,
+    TlsGet,
+    TlsSet,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -707,6 +709,14 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
                 let [destination, source, length] = arguments.as_slice() else { return None; };
                 self.emit_memory_copy(*destination, *source, *length)
             }
+            RuntimeIntrinsicKind::TlsSet => {
+                let [value] = arguments.as_slice() else { return None; };
+                let pointer = self.builder.func.dfg.value_type(*value);
+                if !pointer.is_int() { return None; }
+                let address = self.runtime_tls_address(pointer);
+                self.builder.ins().store(MemFlags::new(), *value, address, 0);
+                Some(())
+            }
             _ => self.direct_call_statement(key),
         }
     }
@@ -787,6 +797,16 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         self.builder.switch_to_block(exit);
         self.builder.seal_block(exit);
         Some(())
+    }
+
+    fn runtime_tls_address(&mut self, pointer: Type) -> Value {
+        let global = self.builder.func.create_global_value(GlobalValueData::Symbol {
+            name: ExternalName::testcase(b"__beskid_runtime_tls"),
+            offset: 0.into(),
+            colocated: true,
+            tls: true,
+        });
+        self.builder.ins().global_value(pointer, global)
     }
 }
 
@@ -979,10 +999,16 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 (self.builder.func.dfg.value_type(*address).is_int() && result == types::I8)
                     .then(|| self.builder.ins().load(result, MemFlags::new(), *address, 0))
             }
+            RuntimeIntrinsicKind::TlsGet => {
+                if !arguments.is_empty() { return None; }
+                let address = self.runtime_tls_address(result);
+                Some(self.builder.ins().load(result, MemFlags::new(), address, 0))
+            }
             RuntimeIntrinsicKind::MemoryCopy
             | RuntimeIntrinsicKind::MemorySet
             | RuntimeIntrinsicKind::RawWordStore
-            | RuntimeIntrinsicKind::RawByteStore => None,
+            | RuntimeIntrinsicKind::RawByteStore
+            | RuntimeIntrinsicKind::TlsSet => None,
         }
     }
 

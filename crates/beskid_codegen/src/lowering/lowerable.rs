@@ -144,6 +144,7 @@ pub fn lower_program_with_assembly_for_entrypoint(
                 v
             },
             exports: collect_exports(&program.node.items),
+            runtime_tls: false,
         })
     } else {
         Err(errors)

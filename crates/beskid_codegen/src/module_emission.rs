@@ -223,6 +223,20 @@ pub fn emit_string_literals<M: Module>(
     Ok(handles)
 }
 
+/// Define the single compiler-owned TLS pointer cell used by trusted runtime `tls_get/set`.
+/// User code cannot request this artifact field because only the canonical-runtime constructor
+/// sets it after minting the intrinsic capability.
+pub fn emit_runtime_tls<M: Module>(module: &mut M, artifact: &CodegenArtifact) -> ModuleResult<Option<DataId>> {
+    if !artifact.runtime_tls {
+        return Ok(None);
+    }
+    let data_id = module.declare_data("__beskid_runtime_tls", Linkage::Local, true, true)?;
+    let mut context = DataDescription::new();
+    context.define_zeroinit(usize::from(module.isa().pointer_bytes()));
+    module.define_data(data_id, &context)?;
+    Ok(Some(data_id))
+}
+
 /// Emit descriptor and offset-table data for every type in `artifact.type_descriptors`.
 pub fn emit_type_descriptors<M: Module>(
     module: &mut M,
