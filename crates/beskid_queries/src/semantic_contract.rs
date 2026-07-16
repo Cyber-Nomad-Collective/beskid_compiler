@@ -198,6 +198,17 @@ pub enum CallLowering {
     Runtime(RuntimeIntrinsic),
 }
 
+/// Exact explicit instantiation of a generic source function.
+///
+/// The invocation keeps its own type-argument syntax; this fact proves only that the current
+/// generation resolves to one declaration whose declared generic arity matches that syntax.
+/// It deliberately performs no inferred substitution or monomorphization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GenericCallInstantiation {
+    pub declaration: AstNodeKey,
+    pub argument_count: u8,
+}
+
 /// One semantic cast required while lowering an AST node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CastIntent {
@@ -398,6 +409,19 @@ fn resolve_item_declaration(
     {
         return None;
     }
+    resolve_item_declaration_candidate(db, program, index, key, path)
+}
+
+/// Resolve a function declaration without accepting terminal generic syntax as a call fact.
+/// Callers must validate an explicit terminal instantiation through
+/// [`generic_call_instantiation`] before treating this candidate as callable.
+fn resolve_item_declaration_candidate(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
     let (name, module_path) = path.segments.split_last()?;
     if module_path.is_empty() {
         let name = name.node.name.node.name.as_str();
@@ -957,7 +981,21 @@ fn call_lowering_for_node(
         expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
         beskid_analysis::syntax::Expression::Path(path) => {
             let path = &path.node.path.node;
-            if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
+            if path
+                .segments
+                .last()
+                .is_some_and(|segment| !segment.node.type_args.is_empty())
+            {
+                if let Some(instantiation) =
+                    generic_call_instantiation_for_node(db, program, index, key, path)
+                {
+                    Ok(CallLowering::Direct(instantiation.declaration))
+                } else if imported_call_receiver_exists(db, key, path) {
+                    Ok(CallLowering::Dynamic)
+                } else {
+                    Err(SemanticError::unavailable("generic_call_instantiation"))
+                }
+            } else if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
                 Ok(CallLowering::Direct(declaration))
             } else if imported_call_receiver_exists(db, key, path) {
                 Ok(CallLowering::Dynamic)
@@ -978,6 +1016,44 @@ fn call_lowering_for_node(
         }
         beskid_analysis::syntax::Expression::Member(_) => Ok(CallLowering::Dynamic),
         _ => Err(SemanticError::unavailable("call_lowering")),
+    })
+}
+
+#[salsa::tracked]
+fn generic_call_instantiation_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<GenericCallInstantiation> {
+    with_node(db, syntax, key, |program, index, node| {
+        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return None;
+        };
+        generic_call_instantiation_for_node(db, program, index, key, &path.node.path.node)
+            .map(Ok)
+    })?
+    .transpose()
+}
+
+fn generic_call_instantiation_for_node(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<GenericCallInstantiation> {
+    let terminal = path.segments.last()?;
+    let argument_count = u8::try_from(terminal.node.type_args.len()).ok()?;
+    (argument_count > 0).then_some(())?;
+    let declaration = resolve_item_declaration_candidate(db, program, index, key, path)?;
+    let syntax = db.syntax_unit(declaration.unit)?;
+    syntax.accepts_key(db, declaration).then_some(())?;
+    let target = syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?;
+    let function = target.of::<beskid_analysis::syntax::FunctionDefinition>()?;
+    (function.generics.len() == usize::from(argument_count)).then_some(GenericCallInstantiation {
+        declaration,
+        argument_count,
     })
 }
 
@@ -2179,6 +2255,15 @@ pub fn call_arguments(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[
 /// unavailable. Stale, unregistered, and non-call nodes contain no fact.
 pub fn call_lowering(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallLowering> {
     with_registered_syntax(db, key, call_lowering_tracked)
+}
+
+/// Return the exact declared generic target for one current call with explicit terminal type
+/// arguments. Arity mismatches, stale generations, and inferred calls remain unavailable.
+pub fn generic_call_instantiation(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<GenericCallInstantiation> {
+    with_registered_syntax(db, key, generic_call_instantiation_tracked)
 }
 
 /// Return numeric cast intents proven by an exact typed-let constraint.

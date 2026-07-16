@@ -13,7 +13,7 @@ use beskid_queries::{
     OperatorFact, ProjectSession, SemanticError, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
     build_typed_program, call_arguments, call_lowering, cast_intents, child_nodes,
     closure_environment, completion_candidates, control_flow, direct_callees, item_body,
-    item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
+    generic_call_instantiation, item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, spawn_target, test_item,
 };
 
@@ -457,6 +457,93 @@ fn generic_imported_static_call_resolves_to_its_exact_syntax_item() {
     assert_eq!(
         call_lowering(&db, call).expect("generic imported static call"),
         Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+}
+
+#[test]
+fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/generic-terminal-import/project/src");
+    let main_path = root.join("Main.bd");
+    let channel_path = root.join("Concurrency/Channel.bd");
+    let main_source = "use Concurrency.Channel;\nunit Main() { Channel.CreateWithOptions<i64>(); Channel.CreateWithOptions<i64, i32>(); }";
+    let channel_source = "unit CreateWithOptions<T>() { return; }";
+    let main_program = expand_program(
+        parse_program(main_source).expect("main parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let channel_program = expand_program(
+        parse_program(channel_source).expect("channel parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: channel_path.display().to_string(),
+                path: channel_path.clone(),
+                source: channel_source.to_string(),
+                program: channel_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let channel_unit = SourceUnitId::new(&db, channel_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(20);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let channel_index = SyntaxIndex::from_program(&channel_program, generation);
+    let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
+    let declaration = key(
+        channel_unit,
+        generation,
+        &channel_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+
+    assert_eq!(
+        call_lowering(&db, call).expect("generic imported terminal call"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        generic_call_instantiation(&db, call).expect("exact generic instantiation"),
+        Some(beskid_queries::GenericCallInstantiation {
+            declaration,
+            argument_count: 1,
+        })
+    );
+    let mismatched = key(main_unit, generation, &main_index, NodeKind::CallExpression, 1);
+    assert_eq!(
+        call_lowering(&db, mismatched).expect("mismatched generic terminal call"),
+        Some(beskid_queries::CallLowering::Dynamic)
+    );
+    assert_eq!(
+        generic_call_instantiation(&db, mismatched).expect("mismatched generic instantiation"),
+        None
     );
 }
 
