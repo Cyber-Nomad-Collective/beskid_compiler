@@ -172,6 +172,7 @@ pub async fn scan_workspace(
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
+            syntax_completion: None,
         };
         let diagnostics = analyze_document(None, &uri, &text, None, None);
         set_disk_snapshot(state, uri.clone(), doc).await;

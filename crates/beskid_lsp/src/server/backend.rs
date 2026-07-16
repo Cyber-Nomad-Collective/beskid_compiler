@@ -261,11 +261,17 @@ impl LanguageServer for Backend {
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
             return Ok(Some(CompletionResponse::Array(Vec::new())));
         };
-        Ok(Some(completion::handler::handle_completion(
-            &snapshot.uri,
-            &snapshot.document,
-            snapshot.offset,
-        )))
+        Ok(Some(
+            with_compilation_db(&self.state, |db| {
+                completion::handler::handle_completion(
+                    db,
+                    &snapshot.uri,
+                    &snapshot.document,
+                    snapshot.offset,
+                )
+            })
+            .await,
+        ))
     }
 
     async fn document_symbol(

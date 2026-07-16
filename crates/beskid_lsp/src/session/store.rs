@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 use beskid_analysis::CompilationContext;
 use beskid_analysis::services::DocumentAnalysisSnapshot;
 use beskid_queries::{
-    BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database,
+    AstNodeKey, BeskidDatabase, configure_compilation_database_for_project,
+    reset_compilation_database,
 };
 use tokio::sync::{Mutex as AsyncMutex, Notify};
 use tower_lsp_server::ls_types::Uri;
@@ -28,6 +29,8 @@ pub struct Document {
     /// Generation-safe syntax/Salsa hover facts for this exact buffer revision.
     pub syntax_hovers: Vec<SyntaxHover>,
     pub syntax_symbols: Vec<SyntaxSymbol>,
+    /// Generation-bound root key used by syntax-only completion queries.
+    pub syntax_completion: Option<SyntaxCompletion>,
 }
 
 /// One resolved syntax reference and its declaration location.
@@ -57,6 +60,12 @@ pub struct SyntaxSymbol {
     pub kind: beskid_analysis::services::AnalysisSymbolKind,
     pub start: usize,
     pub end: usize,
+}
+
+/// The authoritative syntax generation available to a completion request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyntaxCompletion {
+    pub anchor: AstNodeKey,
 }
 
 /// In-memory LSP workspace: open docs, closed-but-indexed files, and compilation context cache.
