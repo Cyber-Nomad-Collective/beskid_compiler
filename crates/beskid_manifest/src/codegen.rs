@@ -34,8 +34,13 @@ fn dispatch_body_needs_i64_cast(dispatch_key: &str) -> bool {
     dispatch_key.starts_with("gc_")
         || matches!(
             dispatch_key,
-            "str_eq" | "test_bytes_len" | "test_bytes_ptr" | "event_subscribe"
-                | "event_unsubscribe_first" | "event_len" | "event_get_handler"
+            "str_eq"
+                | "test_bytes_len"
+                | "test_bytes_ptr"
+                | "event_subscribe"
+                | "event_unsubscribe_first"
+                | "event_len"
+                | "event_get_handler"
         )
 }
 
@@ -62,7 +67,9 @@ fn wrap_dispatch_return(entry: &DispatchEntry, group: &str, body: &str) -> Strin
     let body = maybe_wrap_unsafe_body(body);
     if entry.returns == "never" {
         return match group {
-            "ptr" | "i64" => format!("{{\n{body};\n            unreachable_unchecked()\n        }}"),
+            "ptr" | "i64" => {
+                format!("{{\n{body};\n            unreachable_unchecked()\n        }}")
+            }
             _ => format!("Some({{\n{body};\n            unreachable_unchecked()\n        }})"),
         };
     }
@@ -484,10 +491,7 @@ pub fn render_analysis_builtins(manifest: &ManifestRoot) -> String {
 /// These entries make exact canonical-runtime calls resolvable by the syntax fact layer. They do
 /// not grant an ABI import: `CodegenInput::runtime_intrinsic_for` still requires the opaque
 /// canonical-runtime capability before codegen can emit the symbol.
-pub fn append_analysis_v5_intrinsics(
-    base: &str,
-    runtime: &crate::v5::RuntimeManifestV5,
-) -> String {
+pub fn append_analysis_v5_intrinsics(base: &str, runtime: &crate::v5::RuntimeManifestV5) -> String {
     const MARKER: &str = "// ABI-v5 canonical runtime intrinsic candidates\n";
     let mut out = base
         .split_once(MARKER)
@@ -505,7 +509,7 @@ pub fn append_analysis_v5_intrinsics(
             .collect::<Vec<_>>();
         write_analysis_entry(
             &mut intrinsic_entries,
-            &[intrinsic.name.clone()],
+            std::slice::from_ref(&intrinsic.name),
             &intrinsic.symbol,
             &params,
             &v5_analysis_type(&intrinsic.result),
