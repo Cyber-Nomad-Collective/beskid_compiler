@@ -5,12 +5,13 @@ use std::collections::HashMap;
 use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
-    EmissionServices, ItemStatementEmission, LiteralKind, NodeFacts, NodeKind, OperatorFact,
-    ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner,
+    EmissionServices, FieldLayout, ItemStatementEmission, LiteralKind, NodeFacts, NodeKind,
+    OperatorFact, ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{
-    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, block_statement_nodes,
-    call_arguments, call_lowering, cast_intents, child_nodes, item_abi_signature, item_body,
+    AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
+    aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_arguments,
+    call_lowering, cast_intents, child_nodes, item_abi_signature, item_body,
     literal_fact, local_slot, node_kind, node_type, operator_fact, resolved_local,
     runtime_intrinsic_name, test_statement_nodes,
 };
@@ -205,6 +206,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             })
     }
 
+    fn array_elements(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        self.array_elements_for_literal(key)
+    }
+
+    fn array_layout(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
+        self.array_layout_for_literal(key)
+    }
+
     fn function_parameters(&self, key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
         let mut parameters = Vec::new();
         self.collect_function_parameters(key, &mut parameters)?;
@@ -250,6 +259,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
+        if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
+            && self.query(aggregate_literal_declaration(self.db, key)).is_some()
+        {
+            return self.isa.map(|isa| isa.pointer_type());
+        }
+        if self.node_kind(key) == Some(NodeKind::ArrayLiteralExpression) {
+            return self.isa.map(|isa| isa.pointer_type());
+        }
         let semantic = self.scalar_semantic_type(key).or_else(|| {
             let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
                 return None;
@@ -264,9 +281,73 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         }
         map_scalar_type(semantic)
     }
+
+    fn struct_fields(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        (self.node_kind(key) == Some(NodeKind::StructLiteralExpression)).then(|| {
+            self.raw_children(key)
+                .into_iter()
+                .filter(|child| {
+                    self.query(node_kind(self.db, *child))
+                        == Some(beskid_queries::IndexedNodeKind::StructLiteralField)
+                })
+                .filter_map(|field| self.raw_children(field).last().copied())
+                .filter_map(|value| self.unwrap_transparent(value))
+                .collect()
+        })
+    }
+
+    fn struct_layout(&self, key: AstNodeKey) -> Option<StructLayout> {
+        self.struct_layout_for_literal(key)
+    }
 }
 
 impl SyntaxNodeFacts<'_> {
+    fn struct_layout_for_literal(&self, key: AstNodeKey) -> Option<StructLayout> {
+        let isa = self.isa?;
+        let declaration = self.query(aggregate_literal_declaration(self.db, key))?;
+        let aggregate = self.query(aggregate_layout(self.db, declaration))?;
+        let mut size = 0_u32;
+        let mut alignment = 1_u32;
+        let mut fields = Vec::with_capacity(aggregate.fields.len());
+        for (_, shape) in aggregate.fields.iter() {
+            let value_type = match shape {
+                AggregateFieldShape::Scalar(semantic) => map_signature_type(isa, *semantic)?,
+                AggregateFieldShape::Nominal(_) => isa.pointer_type(),
+            };
+            let field_alignment = value_type.bytes().next_power_of_two();
+            size = align_to(size, field_alignment)?;
+            fields.push(FieldLayout::new(value_type, size));
+            size = size.checked_add(value_type.bytes())?;
+            alignment = alignment.max(field_alignment);
+        }
+        // An empty nominal value still needs an addressable ABI-v5 reference. Keep its source
+        // layout empty while reserving one byte for the stack-backed literal representation.
+        let size = align_to(size, alignment)?.max(1);
+        Some(StructLayout::new(size, alignment.ilog2() as u8, fields))
+    }
+
+    fn array_elements_for_literal(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        (self.node_kind(key) == Some(NodeKind::ArrayLiteralExpression)).then(|| {
+            self.raw_children(key)
+                .into_iter()
+                .filter_map(|child| self.unwrap_transparent(child))
+                .collect()
+        })
+    }
+
+    fn array_layout_for_literal(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
+        let elements = self.array_elements_for_literal(key)?;
+        if !elements.is_empty() {
+            return None;
+        }
+        let pointer = self.isa?.pointer_type();
+        Some(beskid_isle::ArrayLayout::new(
+            pointer,
+            pointer.bytes(),
+            0,
+            pointer.bytes().ilog2() as u8,
+        ))
+    }
     fn runtime_intrinsic(
         &self,
         key: AstNodeKey,
@@ -399,6 +480,11 @@ impl SyntaxNodeFacts<'_> {
     }
 }
 
+fn align_to(value: u32, alignment: u32) -> Option<u32> {
+    value.checked_add(alignment.checked_sub(1)?)
+        .map(|value| value / alignment * alignment)
+}
+
 fn semantic_type_for_runtime_intrinsic(
     intrinsic: &beskid_abi::abi_v5::RuntimeIntrinsic,
 ) -> Option<SemanticTypeId> {
@@ -425,7 +511,7 @@ pub fn emit_isle_expression<'db>(
     result: Type,
 ) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
     let emitter = FunctionEmitter::new(isa);
-    let facts = SyntaxNodeFacts::new(input);
+    let facts = SyntaxNodeFacts::new_with_isa(input, isa);
     emitter.emit_expression(
         UserFuncName::user(0, 0),
         emitter.signature([], [result]),
@@ -434,10 +520,10 @@ pub fn emit_isle_expression<'db>(
     )
 }
 
-/// Emit a zero-argument parsed function body through generated ISLE statement selection.
+/// Emit a parsed item body through generated ISLE statement selection.
 ///
-/// Parameters are intentionally rejected until local parameter materialization is represented by
-/// the syntax facts, rather than falling back to the legacy HIR lowering context.
+/// Parameter materialization is derived from generation-safe local syntax facts, so this remains
+/// independent of the legacy HIR lowering context.
 pub fn emit_isle_item<'db>(
     input: &'db CodegenInput<'db>,
     isa: &dyn TargetIsa,

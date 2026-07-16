@@ -49,11 +49,7 @@ fn host_context_pair_contains_the_manifest_context_exports_in_both_native_artifa
             .arg(artifact)
             .output()
             .expect("run nm");
-        assert!(
-            output.status.success(),
-            "nm failed for {}",
-            artifact.display()
-        );
+        assert!(output.status.success(), "nm failed for {}", artifact.display());
         let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
         for symbol in &expected {
             assert!(
@@ -168,7 +164,11 @@ fn linux_host_platform_pair_exports_the_native_runtime_boundary() {
             .arg(artifact)
             .output()
             .expect("run nm");
-        assert!(output.status.success(), "nm failed for {}", artifact.display());
+        assert!(
+            output.status.success(),
+            "nm failed for {}",
+            artifact.display()
+        );
         let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
         for symbol in expected_exports {
             assert!(
@@ -310,7 +310,7 @@ int main(void) {
     all(target_os = "linux", target_arch = "x86_64"),
     all(target_os = "macos", target_arch = "aarch64"),
 ))]
-fn canonical_runtime_static_archive_hides_syntax_implementation_symbols() {
+fn canonical_runtime_static_archive_hides_non_abi_implementation_symbols() {
     let triple = if cfg!(target_os = "macos") {
         "aarch64-apple-darwin"
     } else {
@@ -334,5 +334,12 @@ fn canonical_runtime_static_archive_hides_syntax_implementation_symbols() {
     assert!(
         !symbols.contains("#syntax"),
         "static runtime archive leaked syntax implementation symbols: {symbols}"
+    );
+    assert!(
+        !symbols
+            .lines()
+            .map(|symbol| symbol.trim_start_matches('_'))
+            .any(|symbol| symbol == "panic"),
+        "static runtime archive leaked forbidden non-ABI panic symbol: {symbols}"
     );
 }

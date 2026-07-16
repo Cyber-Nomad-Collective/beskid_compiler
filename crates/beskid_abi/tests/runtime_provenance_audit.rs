@@ -80,3 +80,18 @@ fn symbol_list_rejects_rust_bridge_and_unwind_provenance() {
     let error = audit.verify(&list).unwrap_err();
     assert!(error.to_string().contains("forbidden runtime provenance"));
 }
+
+#[test]
+fn symbol_list_rejects_non_abi_panic_export() {
+    let audit = RuntimeProvenanceAudit::canonical(target("x86_64-unknown-linux-gnu")).unwrap();
+    let mut list = audit.fixture_symbol_list().unwrap();
+    list.defined.push("panic".into());
+
+    let error = audit.verify(&list).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("forbidden runtime provenance symbol `panic`"),
+        "unexpected provenance error: {error}"
+    );
+}

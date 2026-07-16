@@ -53,6 +53,86 @@ pub fn extract_mod_contract_registrations(
     extract_mod_contract_registrations_with_program(package_id, resolution, None)
 }
 
+/// Discover Mod SDK registrations directly from parsed source syntax.
+///
+/// This is the syntax-only counterpart of [`extract_mod_contract_registrations`]. It keeps the
+/// established short-name compatibility for self-contained Mod fixtures while accepting fully
+/// qualified SDK contract paths when source imports expose them.
+pub fn extract_mod_contract_registrations_from_syntax(
+    package_id: &str,
+    program: &Spanned<Program>,
+) -> Vec<ContractRegistration> {
+    let internal_symbols = collect_internal_symbol_entry_methods(program).unwrap_or_default();
+    let mut registrations = Vec::new();
+    collect_syntax_registrations_from_items(
+        package_id,
+        &program.node.items,
+        &internal_symbols,
+        &mut registrations,
+    );
+    registrations.sort_by(|left, right| {
+        left.contract_id
+            .cmp(&right.contract_id)
+            .then_with(|| left.type_id.cmp(&right.type_id))
+            .then_with(|| left.entry_symbol.cmp(&right.entry_symbol))
+    });
+    registrations.dedup();
+    registrations
+}
+
+fn collect_syntax_registrations_from_items(
+    package_id: &str,
+    items: &[Spanned<Node>],
+    internal_symbols: &HashMap<(String, String), String>,
+    registrations: &mut Vec<ContractRegistration>,
+) {
+    for item in items {
+        match &item.node {
+            Node::TypeDefinition(definition) => {
+                let type_name = &definition.node.name.node.name;
+                for conformance in &definition.node.conformances {
+                    let Some(spec) = sdk_contract_spec_for_path(&conformance.node) else {
+                        continue;
+                    };
+                    let entry_symbol = internal_symbols
+                        .get(&(type_name.clone(), spec.entry_method.to_string()))
+                        .map(|method_name| mod_contract_entry_symbol(package_id, method_name))
+                        .unwrap_or_else(|| mod_contract_entry_symbol(package_id, spec.entry_method));
+                    registrations.push(ContractRegistration {
+                        contract_id: spec.contract_id.to_string(),
+                        type_id: format!("{package_id}.{type_name}"),
+                        entry_symbol,
+                    });
+                }
+            }
+            Node::InlineModule(module) => collect_syntax_registrations_from_items(
+                package_id,
+                &module.node.items,
+                internal_symbols,
+                registrations,
+            ),
+            _ => {}
+        }
+    }
+}
+
+fn sdk_contract_spec_for_path(path: &crate::syntax::Path) -> Option<&'static SdkContractSpec> {
+    let qualified = path
+        .segments
+        .iter()
+        .map(|segment| segment.node.name.node.name.as_str())
+        .collect::<Vec<_>>()
+        .join(".");
+    SDK_MOD_CONTRACTS.iter().find(|spec| {
+        spec.contract_id == qualified
+            || spec
+                .contract_id
+                .rsplit('.')
+                .next()
+                .is_some_and(|short| short == qualified)
+    })
+}
+
 /// Like [`extract_mod_contract_registrations`] but accepts optional mod source for
 /// `[InternalSymbol]` attribute scanning on contract entry methods.
 pub fn extract_mod_contract_registrations_with_program(
@@ -75,10 +155,11 @@ pub fn extract_mod_contract_registrations_with_program(
             continue;
         }
         if let Some(qualified) = qualified_name(resolution, item.id)
-            && let Some(spec) = contract_specs_by_id.get(qualified.as_str()) {
-                contract_item_specs.insert(item.id, spec);
-                continue;
-            }
+            && let Some(spec) = contract_specs_by_id.get(qualified.as_str())
+        {
+            contract_item_specs.insert(item.id, spec);
+            continue;
+        }
         if let Some(spec) = contract_specs_by_short.get(item.name.as_str()) {
             contract_item_specs.insert(item.id, spec);
         }
@@ -165,10 +246,7 @@ fn collect_internal_symbol_entry_methods_from_type(
     }
 }
 
-fn method_has_attribute(
-    attributes: &[Spanned<crate::syntax::Attribute>],
-    name: &str,
-) -> bool {
+fn method_has_attribute(attributes: &[Spanned<crate::syntax::Attribute>], name: &str) -> bool {
     attributes
         .iter()
         .any(|attribute| attribute.node.name.node.name == name)
@@ -189,9 +267,7 @@ pub fn mod_contract_entry_symbol(package_id: &str, entry_method: &str) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::{
-        lower_normalize_resolve_type_spanned, parse_program_with_source_name,
-    };
+    use crate::services::{lower_normalize_resolve_type_spanned, parse_program_with_source_name};
 
     #[test]
     fn extracts_sdk_contract_registrations_from_type_conformances() {
@@ -203,6 +279,7 @@ type DemoCollect : Collector {
     CollectTargetSet Collect(CollectRequest request) {
         return CollectTargetSet {};
     }
+
 }
 "#;
         let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
@@ -210,6 +287,25 @@ type DemoCollect : Collector {
             lower_normalize_resolve_type_spanned(&program).expect("lower mod registration fixture");
         let registrations =
             extract_mod_contract_registrations_with_program("DemoMod", &resolution, Some(&program));
+        assert_eq!(registrations.len(), 1);
+        assert_eq!(
+            registrations[0].contract_id,
+            "Beskid.Compiler.Collect.Collector"
+        );
+        assert_eq!(registrations[0].type_id, "DemoMod.DemoCollect");
+        assert_eq!(registrations[0].entry_symbol, "demomod_collect");
+    }
+
+    #[test]
+    fn extracts_sdk_contract_registrations_from_syntax_without_resolution() {
+        let source = r#"
+contract Collector { i32 Collect(i32 request); }
+type DemoCollect : Collector {
+    i32 Collect(i32 request) { return request; }
+}
+"#;
+        let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
+        let registrations = extract_mod_contract_registrations_from_syntax("DemoMod", &program);
         assert_eq!(registrations.len(), 1);
         assert_eq!(
             registrations[0].contract_id,
@@ -240,7 +336,10 @@ type DemoCollect : Collector {
 "#;
         let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
         let symbols = collect_internal_symbol_entry_methods(&program).expect("scan");
-        assert_eq!(symbols.get(&("DemoCollect".to_string(), "Collect".to_string())), Some(&"Collect".to_string()));
+        assert_eq!(
+            symbols.get(&("DemoCollect".to_string(), "Collect".to_string())),
+            Some(&"Collect".to_string())
+        );
         let (_hir, resolution, _typed) =
             lower_normalize_resolve_type_spanned(&program).expect("lower mod registration fixture");
         let registrations =

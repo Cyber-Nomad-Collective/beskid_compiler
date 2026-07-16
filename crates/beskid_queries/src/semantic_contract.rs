@@ -1536,8 +1536,9 @@ fn signature_from_syntax(
 
 /// ABI-representation signature for syntax-only lowering.
 ///
-/// Nominal source identity remains in [`item_signature`]. This parallel fact exposes a scalar
-/// representation only when source syntax proves a transparent, single-field aggregate layout.
+/// Nominal source identity remains in [`item_signature`]. ABI v5 passes every declared nominal
+/// aggregate by reference, represented as one target-sized pointer; only source declaration
+/// resolution is needed to prove that representation.
 #[salsa::tracked]
 fn item_abi_signature_tracked(
     db: &dyn Db,
@@ -1597,7 +1598,7 @@ fn abi_type_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
-    with_node(db, syntax, key, |_program, _index, node| {
+    with_node(db, syntax, key, |program, index, node| {
         if let Some(statement) = node.of::<beskid_analysis::syntax::LetStatement>() {
             return Some(
                 statement
@@ -1606,6 +1607,18 @@ fn abi_type_tracked(
                     .ok_or_else(|| SemanticError::unavailable("abi_type"))
                     .and_then(|ty| abi_type_from_syntax(db, key, &ty.node)),
             );
+        }
+        if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
+            return Some(abi_type_for_local_path(
+                db,
+                program,
+                index,
+                key,
+                &path.path.node,
+            ));
+        }
+        if node.of::<beskid_analysis::syntax::Identifier>().is_some() {
+            return abi_local_declaration_type(db, program, index, key, key.node);
         }
         if node
             .of::<beskid_analysis::syntax::CallExpression>()
@@ -1646,7 +1659,7 @@ fn abi_type_from_syntax(
 
     match syntax_type {
         Type::Primitive(_) => semantic_type_from_syntax(syntax_type),
-        Type::Complex(path) => transparent_aggregate_abi_type(db, key, &path.node),
+        Type::Complex(path) => nominal_aggregate_abi_type(db, key, &path.node),
         Type::Array(_) | Type::Function { .. } => Err(SemanticError::unavailable("abi_type")),
     }
 }
@@ -1671,6 +1684,20 @@ fn aggregate_layout_tracked(
         )
     })?
     .transpose()
+}
+
+#[salsa::tracked]
+fn aggregate_literal_declaration_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<AstNodeKey> {
+    with_node(db, syntax, key, |program, index, node| {
+        node.of::<beskid_analysis::syntax::StructLiteralExpression>()
+            .and_then(|literal| {
+                resolve_nominal_layout_declaration(db, program, index, key, &literal.path.node)
+            })
+    })
 }
 
 #[salsa::tracked]
@@ -1724,6 +1751,10 @@ fn aggregate_field_layout(
             resolve_nominal_layout_declaration(db, program, index, key, &path.node)
                 .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?,
         ),
+        // Arrays are heap-backed reference values in ABI v5, including empty literal payloads.
+        beskid_analysis::syntax::Type::Array(_) => {
+            AggregateFieldShape::Scalar(SemanticTypeId::POINTER)
+        }
         _ => return Err(SemanticError::unavailable("aggregate_layout")),
     };
     Ok((Arc::from(field.node.name.node.name.as_str()), shape))
@@ -1763,33 +1794,64 @@ fn resolve_nominal_layout_declaration(
     Some(*declaration)
 }
 
-fn transparent_aggregate_abi_type(
+fn nominal_aggregate_abi_type(
     db: &dyn Db,
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Result<SemanticTypeId, SemanticError> {
-    let declaration = resolve_type_declaration(db, key, path)
+    resolve_type_declaration(db, key, path)
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-    let syntax = db
-        .syntax_unit(declaration.unit)
-        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-    if !syntax.accepts_key(db, declaration) {
+    Ok(SemanticTypeId::POINTER)
+}
+
+fn abi_type_for_local_path(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Result<SemanticTypeId, SemanticError> {
+    let [segment] = path.segments.as_slice() else {
+        return Err(SemanticError::unavailable("abi_type"));
+    };
+    if !segment.node.type_args.is_empty() {
         return Err(SemanticError::unavailable("abi_type"));
     }
-    let target = syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), declaration.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
-        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-    if !target.attributes.is_empty()
-        || !target.conformances.is_empty()
-        || target.fields.len() != 1
-        || target.fields[0].node.kind != beskid_analysis::syntax::FieldKind::Value
-    {
-        return Err(SemanticError::unavailable("abi_type"));
+    let declaration = resolve_lexical_declaration(
+        program,
+        index,
+        key.node,
+        segment.node.name.node.name.as_str(),
+    )
+    .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    abi_local_declaration_type(db, program, index, key, declaration)
+        .unwrap_or_else(|| Err(SemanticError::unavailable("abi_type")))
+}
+
+fn abi_local_declaration_type(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> Option<Result<SemanticTypeId, SemanticError>> {
+    let parent = parent_node(index, declaration)?;
+    match index.kind(parent)? {
+        beskid_analysis::syntax_query::NodeKind::Parameter => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::Parameter>()
+            .map(|parameter| abi_type_from_syntax(db, key, &parameter.ty.node)),
+        beskid_analysis::syntax_query::NodeKind::LetStatement => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::LetStatement>()
+            .map(|statement| {
+                statement.type_annotation.as_ref().map_or_else(
+                    || Err(SemanticError::unavailable("abi_type")),
+                    |syntax_type| abi_type_from_syntax(db, key, &syntax_type.node),
+                )
+            }),
+        _ => None,
     }
-    semantic_type_from_syntax(&target.fields[0].node.ty.node)
-        .map_err(|_| SemanticError::unavailable("abi_type"))
 }
 
 fn resolve_type_declaration(
@@ -1855,13 +1917,24 @@ fn unique_type_in_unit(
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
     let matches = index
-        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
+        .metadata()
+        .iter()
+        .map(|metadata| metadata.id)
         .filter(|candidate| {
             index
                 .node_at(program, *candidate)
-                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
-                .is_some_and(|definition| {
-                    definition.name.node.name == name && definition.generics.len() == generic_arity
+                .is_some_and(|node| {
+                    node.of::<beskid_analysis::syntax::TypeDefinition>()
+                        .is_some_and(|definition| {
+                            definition.name.node.name == name
+                                && definition.generics.len() == generic_arity
+                        })
+                        || node
+                            .of::<beskid_analysis::syntax::EnumDefinition>()
+                            .is_some_and(|definition| {
+                                definition.name.node.name == name
+                                    && definition.generics.len() == generic_arity
+                            })
                 })
         })
         .collect::<Vec<_>>();
@@ -2845,6 +2918,14 @@ pub fn item_abi_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<I
 /// Return target-neutral source field shapes for a nominal `type` definition.
 pub fn aggregate_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AggregateLayoutFact> {
     with_registered_syntax(db, key, aggregate_layout_tracked)
+}
+
+/// Return the current nominal `type` declaration constructed by a struct literal.
+pub fn aggregate_literal_declaration(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<AstNodeKey> {
+    with_registered_syntax(db, key, aggregate_literal_declaration_tracked)
 }
 
 /// Return target-neutral source variants and field shapes for a nominal `enum` definition.

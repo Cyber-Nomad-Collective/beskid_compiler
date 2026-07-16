@@ -21,6 +21,18 @@ pub(super) fn lower_prepared_entrypoint(
     })
 }
 
+/// Lower every executable item in a prepared frontend snapshot through the AOT target ISA.
+pub(super) fn lower_prepared_module(
+    front: &beskid_analysis::services::FrontEndTypedResult,
+    target_triple: Option<&str>,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<beskid_codegen::CodegenArtifact> {
+    let target = resolve_abi_target(target_triple)?;
+    observe_phase_result(pipeline, CODEGEN_CLIF, || {
+        beskid_aot::lower_prepared_syntax_module(front, target).map_err(anyhow::Error::from)
+    })
+}
+
 fn resolve_abi_target(target_triple: Option<&str>) -> Result<TargetMetadata> {
     let requested = match target_triple {
         Some(triple) => triple,

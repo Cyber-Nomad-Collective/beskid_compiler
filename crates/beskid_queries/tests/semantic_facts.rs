@@ -14,7 +14,8 @@ use beskid_queries::{
     ItemSignature, LocalSlot, OperatorFact, ProjectSession, SemanticError, SemanticTypeId,
     SourceUnitId, SyntaxGenerationId, aggregate_layout, build_typed_program, call_arguments,
     call_lowering, cast_intents, child_nodes, closure_environment, completion_candidates,
-    control_flow, direct_callees, enum_layout, generic_call_instantiation, item_body, item_signature,
+    control_flow, direct_callees, enum_layout, generic_call_instantiation, item_abi_signature,
+    item_body, item_signature,
     literal_fact, local_slot, node_kind, node_span, node_type, operator_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, spawn_target, test_item,
 };
@@ -95,6 +96,30 @@ fn aggregate_layout_keeps_channel_options_nominal_capacity() {
         layout.fields[1].1,
         AggregateFieldShape::Scalar(SemanticTypeId::BOOL)
     );
+}
+
+#[test]
+fn sample_mod_method_abi_signatures_pass_nominal_values_by_pointer() {
+    let source = include_str!("../../beskid_tests/fixtures/mods/sample_mod/Src/Mod.bd");
+    let (db, _project, unit, generation, index) = setup(source);
+    let methods = index
+        .ids_of_kind(NodeKind::MethodDefinition)
+        .map(|node| AstNodeKey {
+            unit,
+            generation,
+            node,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(methods.len(), 5);
+    for method in methods {
+        assert_eq!(
+            item_abi_signature(&db, method).expect("method ABI signature"),
+            Some(ItemSignature {
+                parameters: Arc::from([SemanticTypeId::POINTER]),
+                result: SemanticTypeId::POINTER,
+            }),
+        );
+    }
 }
 
 #[test]

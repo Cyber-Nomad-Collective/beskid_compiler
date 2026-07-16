@@ -98,6 +98,38 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
 }
 
 #[test]
+fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
+    let mut db = BeskidDatabase::default();
+    let directory = tempfile::tempdir().expect("project").keep();
+    let source_path = directory.join("Main.bd");
+    let source = "i32 Main() { let point = Point { x: 1, y: 2 }; return 0; } type Point { i32 x, i32 y }";
+    std::fs::write(&source_path, source).expect("source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
+        .expect("parse source");
+    let entry = SourceUnitId::new(&db, source_path.clone());
+    let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
+    let generation = SyntaxGenerationId(1);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root: directory }, dependencies: Vec::new() },
+        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
+        0, AssemblyDiscovery::ImportClosure, Arc::new(ModuleIndex::empty()), false,
+    ));
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
+    let literal = find_node(&db, root, beskid_queries::IndexedNodeKind::StructLiteralExpression)
+        .expect("struct literal");
+    let target = TargetMetadata::supported().into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu").expect("linux target");
+    let input = CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target)).expect("input");
+    let isa = isa::lookup_by_name("x86_64").expect("host ISA")
+        .finish(settings::Flags::new(settings::builder())).expect("host flags");
+    let function = emit_isle_expression(&input, isa.as_ref(), literal, isa.pointer_type())
+        .expect("aggregate literal lowers through syntax facts");
+    assert!(function.display().to_string().contains("stack_store"));
+}
+
+
+#[test]
 fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();
@@ -744,4 +776,19 @@ fn find_integer_literal(db: &BeskidDatabase, key: AstNodeKey) -> Option<AstNodeK
         .iter()
         .copied()
         .find_map(|child| find_integer_literal(db, child))
+}
+
+fn find_node(
+    db: &BeskidDatabase,
+    key: AstNodeKey,
+    expected: beskid_queries::IndexedNodeKind,
+) -> Option<AstNodeKey> {
+    if node_kind(db, key).ok().flatten() == Some(expected) {
+        return Some(key);
+    }
+    child_nodes(db, key)
+        .ok()
+        .flatten()?
+        .iter()
+        .find_map(|child| find_node(db, *child, expected))
 }

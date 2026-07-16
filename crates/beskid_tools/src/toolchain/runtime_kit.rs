@@ -282,6 +282,23 @@ mod tests {
             .expect("publish native host runtime kit");
         assert!(built.static_library.is_file());
         assert!(built.shared_library.is_file());
+        let output = std::process::Command::new("nm")
+            .args(["-g", "--defined-only", "-j"])
+            .arg(&built.static_library)
+            .output()
+            .expect("inspect staged static runtime archive");
+        assert!(
+            output.status.success(),
+            "nm failed for staged static runtime archive"
+        );
+        let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
+        assert!(
+            !symbols
+                .lines()
+                .map(|symbol| symbol.trim_start_matches('_'))
+                .any(|symbol| symbol == "panic"),
+            "staged static runtime archive leaked forbidden non-ABI panic symbol: {symbols}"
+        );
     }
 
     static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
