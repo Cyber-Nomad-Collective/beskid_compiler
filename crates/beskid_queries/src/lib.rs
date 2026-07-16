@@ -79,7 +79,7 @@ pub use semantic_contract::{
     EnumConstructorFact, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact,
     ExportSymbol, GenericCallInstantiation, GenericCallSpecialization, IndexedNodeKind,
     ItemSignature, LiteralFact, LocalSlot,
-    OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
+    CorelibService, OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnTarget,
     TestItem, TypedProgram, abi_type, aggregate_layout, aggregate_literal_declaration,
     block_statement_nodes, call_abi_signature, call_arguments, call_lowering, cast_intents,
@@ -104,6 +104,7 @@ pub use typed_entry_bundle::{
     typed_entry_state_with_db, typed_prepare_revision_for,
 };
 pub use typed_program::build_canonical_runtime_typed_program;
+pub use typed_program::build_canonical_corelib_syscall_typed_program;
 pub use typed_program::build_typed_program;
 pub use typed_program::project_session_for_syntax_assembly;
 pub use unit::{

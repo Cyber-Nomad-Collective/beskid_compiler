@@ -14,10 +14,17 @@ use crate::runtime_kit::{
 };
 
 pub const CANONICAL_BOOTSTRAP_SOURCE_PATH: &str = "src/Runtime/Bootstrap.bd";
+/// Canonical Foundation syscall facade eligible for Corelib service authority.
+pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd";
 
 const CANONICAL_BOOTSTRAP_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../runtime/beskid/src/Runtime/Bootstrap.bd"
+));
+
+const CANONICAL_CORELIB_SYSCALL_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"
 ));
 
 /// The runtime source corpus built into this compiler version.
@@ -27,6 +34,41 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         source: CANONICAL_BOOTSTRAP_SOURCE.into(),
     }]
 }
+
+/// The compiler-embedded Corelib syscall facade. This is deliberately a distinct source corpus
+/// from the runtime bootstrap: Corelib services must never borrow runtime-intrinsic authority.
+pub fn canonical_corelib_syscall_sources() -> Vec<SourceUnit> {
+    vec![SourceUnit {
+        logical_path: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_SYSCALL_SOURCE.into(),
+    }]
+}
+
+/// One ABI-facing service used by the compiler-owned Corelib syscall facade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CorelibService {
+    pub name: &'static str,
+    pub symbol: &'static str,
+}
+
+const CORELIB_SYSCALL_SERVICES: &[CorelibService] = &[
+    CorelibService {
+        name: "__syscall_write",
+        symbol: "syscall_write",
+    },
+    CorelibService {
+        name: "__syscall_read",
+        symbol: "syscall_read",
+    },
+    CorelibService {
+        name: "__syscall_write_bytes",
+        symbol: "syscall_write_bytes",
+    },
+    CorelibService {
+        name: "__syscall_read_bytes",
+        symbol: "syscall_read_bytes",
+    },
+];
 
 /// A compiler-owned proof that a node belongs to the exact canonical runtime corpus.
 ///
@@ -57,6 +99,54 @@ impl CanonicalRuntimeProof {
 pub struct RuntimeIntrinsicCapability {
     proof: CanonicalRuntimeProof,
     intrinsics: Vec<RuntimeIntrinsic>,
+}
+
+/// Compiler-owned proof that a unit belongs to the embedded Corelib syscall corpus.
+///
+/// This has a separate type and constructor from [`RuntimeIntrinsicCapability`], so Corelib
+/// never inherits raw bootstrap intrinsic authority.
+#[derive(Debug)]
+pub struct CorelibServiceProof {
+    source_hash: String,
+    source_paths: Vec<String>,
+}
+
+impl CorelibServiceProof {
+    pub fn source_hash(&self) -> &str {
+        &self.source_hash
+    }
+
+    pub fn authorizes_source(&self, logical_path: &str) -> bool {
+        self.source_paths
+            .iter()
+            .any(|candidate| candidate == logical_path)
+    }
+}
+
+#[derive(Debug)]
+pub struct CorelibServiceCapability {
+    proof: CorelibServiceProof,
+}
+
+impl CorelibServiceCapability {
+    pub fn authorizes_source(&self, logical_path: &str) -> bool {
+        self.proof.authorizes_source(logical_path)
+    }
+
+    pub fn service_for_source(&self, logical_path: &str, name: &str) -> Option<CorelibService> {
+        self.authorizes_source(logical_path)
+            .then(|| {
+                CORELIB_SYSCALL_SERVICES
+                    .iter()
+                    .copied()
+                    .find(|service| service.name == name)
+            })
+            .flatten()
+    }
+
+    pub fn services(&self) -> &'static [CorelibService] {
+        CORELIB_SYSCALL_SERVICES
+    }
 }
 
 impl RuntimeIntrinsicCapability {
@@ -184,5 +274,30 @@ pub fn canonical_runtime_intrinsic_capability(
     Ok(RuntimeIntrinsicCapability {
         proof,
         intrinsics: manifest.trusted_runtime_intrinsics.clone(),
+    })
+}
+
+/// Mint the distinct Corelib syscall service capability from the compiler-embedded source.
+///
+/// Callers still have to prove their assembled unit exactly matches this corpus before the
+/// capability can be attached to syntax facts. The ABI manifest is validated here to prevent a
+/// drifted target contract from being combined with compiler-owned services.
+pub fn canonical_corelib_syscall_service_capability(
+    manifest: &AbiManifestV5,
+) -> Result<CorelibServiceCapability, RuntimeCapabilityError> {
+    manifest
+        .validate()
+        .map_err(|_| RuntimeCapabilityError::InvalidManifest)?;
+    if manifest.trusted_runtime_package.as_ref() != Some(&canonical_runtime_package()) {
+        return Err(RuntimeCapabilityError::InvalidManifest);
+    }
+    let sources = canonical_corelib_syscall_sources();
+    let source_hash = canonical_source_hash(&sources)
+        .map_err(|_| RuntimeCapabilityError::SourceSetMismatch)?;
+    Ok(CorelibServiceCapability {
+        proof: CorelibServiceProof {
+            source_hash,
+            source_paths: sources.into_iter().map(|unit| unit.logical_path).collect(),
+        },
     })
 }

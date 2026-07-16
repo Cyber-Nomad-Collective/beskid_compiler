@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use beskid_abi::runtime_source::RuntimeIntrinsicCapability;
+use beskid_abi::runtime_source::{CorelibServiceCapability, RuntimeIntrinsicCapability};
 use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 
@@ -154,7 +154,48 @@ pub fn build_typed_program(
         generation,
         assembly,
         runtime_intrinsic_capability: None,
+        corelib_service_capability: None,
     })
+}
+
+/// Attach the separately-minted Corelib syscall service authority only after verifying the exact
+/// embedded Foundation facade. This deliberately cannot produce runtime intrinsic authority.
+pub fn build_canonical_corelib_syscall_typed_program(
+    db: &mut BeskidDatabase,
+    project: ProjectSession,
+    generation: SyntaxGenerationId,
+    assembly: Arc<SyntaxProgramAssembly>,
+    capability: CorelibServiceCapability,
+) -> Result<TypedProgram, SemanticError> {
+    let expected = beskid_abi::runtime_source::canonical_corelib_syscall_sources();
+    let actual = assembly
+        .units()
+        .iter()
+        .map(|unit| beskid_abi::abi_v5::SourceUnit {
+            logical_path: unit.logical_name.clone(),
+            source: unit.source.clone(),
+        })
+        .collect::<Vec<_>>();
+    let exact_corpus = actual.len() == expected.len()
+        && actual.iter().all(|source| {
+            capability.authorizes_source(&source.logical_path)
+                && expected.iter().any(|expected| expected == source)
+        });
+    if !exact_corpus {
+        return Err(SemanticError::new(
+            "syntax assembly is not the compiler-embedded Corelib syscall corpus",
+        ));
+    }
+
+    let mut typed = build_typed_program(db, project, generation, assembly)?;
+    let services = capability.services().to_vec();
+    db.syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .corelib_services
+        .insert((typed.entry, generation), services);
+    typed.corelib_service_capability = Some(Arc::new(capability));
+    Ok(typed)
 }
 
 /// Attach compiler-minted runtime intrinsic authority after validating that the assembled syntax

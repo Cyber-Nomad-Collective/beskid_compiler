@@ -9,6 +9,7 @@ use beskid_abi::{
     abi_v5::{AbiManifestV5, AbiType, TargetMetadata},
     runtime_source::RuntimeIntrinsicCapability,
 };
+pub use beskid_abi::runtime_source::CorelibService;
 use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 
@@ -78,6 +79,10 @@ pub struct TypedProgram {
     /// Present only when this program was assembled from the compiler-embedded canonical
     /// runtime corpus. Ordinary user syntax can never manufacture this capability.
     pub runtime_intrinsic_capability: Option<Arc<RuntimeIntrinsicCapability>>,
+    /// Present only for the exact compiler-embedded Corelib syscall facade. This is intentionally
+    /// separate from canonical runtime intrinsic authority.
+    pub corelib_service_capability:
+        Option<Arc<beskid_abi::runtime_source::CorelibServiceCapability>>,
 }
 
 /// Authoritative Salsa input for the current syntax generation of one source unit.
@@ -197,6 +202,7 @@ pub enum CallLowering {
     Direct(AstNodeKey),
     Dynamic,
     Runtime(RuntimeIntrinsic),
+    CorelibService(CorelibService),
 }
 
 /// Exact explicit instantiation of a generic source function.
@@ -1215,7 +1221,9 @@ fn call_lowering_for_node(
         expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
         beskid_analysis::syntax::Expression::Path(path) => {
             let path = &path.node.path.node;
-            if path
+            if let Some(service) = corelib_service_for(db, key, path) {
+                Ok(CallLowering::CorelibService(service))
+            } else if path
                 .segments
                 .last()
                 .is_some_and(|segment| !segment.node.type_args.is_empty())
@@ -1309,9 +1317,30 @@ fn method_declaration_for_struct_literal_receiver(
             unit: declaration.unit,
             generation: declaration.generation,
             node,
-        })
-        .collect::<Vec<_>>();
+    })
+    .collect::<Vec<_>>();
     (methods.len() == 1).then(|| methods[0])
+}
+
+/// Resolve a legacy syscall spelling only when its current source unit was admitted by the
+/// compiler-minted Corelib service constructor. The same builtins remain dynamic everywhere else.
+fn corelib_service_for(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<CorelibService> {
+    let [segment] = path.segments.as_slice() else {
+        return None;
+    };
+    let name = segment.node.name.node.name.as_str();
+    db.syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .corelib_services
+        .get(&(key.unit, key.generation))?
+        .iter()
+        .copied()
+        .find(|service| service.name == name)
 }
 
 #[salsa::tracked]
@@ -1340,7 +1369,9 @@ fn generic_call_specialization_tracked(
         node.of::<beskid_analysis::syntax::CallExpression>()?;
         let declaration = match call_lowering(db, key).ok().flatten()? {
             CallLowering::Direct(declaration) => declaration,
-            CallLowering::Dynamic | CallLowering::Runtime(_) => return None,
+            CallLowering::Dynamic | CallLowering::Runtime(_) | CallLowering::CorelibService(_) => {
+                return None;
+            }
         };
         let declaration_syntax = db.syntax_unit(declaration.unit)?;
         let declaration_node = declaration_syntax.syntax_index(db).node_at(
@@ -1895,7 +1926,12 @@ fn call_abi_signature_for_call(
 ) -> Result<ItemSignature, SemanticError> {
     let declaration = match call_lowering(db, key)? {
         Some(CallLowering::Direct(declaration)) => declaration,
-        Some(CallLowering::Dynamic | CallLowering::Runtime(_)) | None => {
+        Some(
+            CallLowering::Dynamic
+            | CallLowering::Runtime(_)
+            | CallLowering::CorelibService(_),
+        )
+        | None => {
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
     };
