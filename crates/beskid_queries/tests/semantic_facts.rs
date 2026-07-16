@@ -548,6 +548,47 @@ fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
 }
 
 #[test]
+fn transparent_single_field_generic_types_have_only_source_derived_abi_facts() {
+    let source = r#"
+type Channel<T> { i64 handle }
+type Pair<T> { i64 left, i64 right }
+Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; }
+Pair<T> CreatePair<T>() { return Pair<T> { left: 0_i64, right: 0_i64 }; }
+unit Main() {
+    Channel<i64> channel = Create<i64>();
+    Pair<i64> pair = CreatePair<i64>();
+    return;
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let create = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let create_pair = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let channel_call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let pair_call = key(unit, generation, &index, NodeKind::CallExpression, 1);
+    let channel_let = key(unit, generation, &index, NodeKind::LetStatement, 0);
+    let pair_let = key(unit, generation, &index, NodeKind::LetStatement, 1);
+
+    assert_eq!(
+        beskid_queries::item_abi_signature(&db, create).expect("transparent signature"),
+        Some(beskid_queries::ItemSignature {
+            parameters: Arc::from([]),
+            result: SemanticTypeId::I64,
+        })
+    );
+    assert_eq!(
+        beskid_queries::abi_type(&db, channel_call).expect("transparent call ABI"),
+        Some(SemanticTypeId::I64)
+    );
+    assert_eq!(
+        beskid_queries::abi_type(&db, channel_let).expect("transparent local ABI"),
+        Some(SemanticTypeId::I64)
+    );
+    assert_unavailable(beskid_queries::item_abi_signature(&db, create_pair));
+    assert_unavailable(beskid_queries::abi_type(&db, pair_call));
+    assert_unavailable(beskid_queries::abi_type(&db, pair_let));
+}
+
+#[test]
 fn structural_facts_survive_while_unported_semantics_are_unavailable() {
     let source = r#"
 i32 Helper(i64 value) { return 1; }

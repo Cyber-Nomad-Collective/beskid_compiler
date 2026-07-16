@@ -1441,6 +1441,228 @@ fn signature_from_syntax(
     })
 }
 
+/// ABI-representation signature for syntax-only lowering.
+///
+/// Nominal source identity remains in [`item_signature`]. This parallel fact exposes a scalar
+/// representation only when source syntax proves a transparent, single-field aggregate layout.
+#[salsa::tracked]
+fn item_abi_signature_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ItemSignature> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+            return Some(abi_signature_from_syntax(
+                db,
+                key,
+                &function.parameters,
+                function.return_type.as_ref(),
+            ));
+        }
+        node.of::<beskid_analysis::syntax::TestDefinition>().map(|_| {
+            Ok(ItemSignature {
+                parameters: Arc::from([]),
+                result: SemanticTypeId::UNIT,
+            })
+        })
+    })?
+    .transpose()
+}
+
+fn abi_signature_from_syntax(
+    db: &dyn Db,
+    key: AstNodeKey,
+    parameters: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Parameter>],
+    return_type: Option<&beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>>,
+) -> Result<ItemSignature, SemanticError> {
+    let parameters = parameters
+        .iter()
+        .map(|parameter| abi_type_from_syntax(db, key, &parameter.node.ty.node))
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = return_type.map_or(Ok(SemanticTypeId::UNIT), |return_type| {
+        abi_type_from_syntax(db, key, &return_type.node)
+    })?;
+    Ok(ItemSignature {
+        parameters: parameters.into(),
+        result,
+    })
+}
+
+#[salsa::tracked]
+fn abi_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        if let Some(statement) = node.of::<beskid_analysis::syntax::LetStatement>() {
+            return Some(
+                statement
+                    .type_annotation
+                    .as_ref()
+                    .ok_or_else(|| SemanticError::unavailable("abi_type"))
+                    .and_then(|ty| abi_type_from_syntax(db, key, &ty.node)),
+            );
+        }
+        if node
+            .of::<beskid_analysis::syntax::CallExpression>()
+            .is_some()
+        {
+            let lowering = match call_lowering(db, key) {
+                Ok(Some(lowering)) => lowering,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            let CallLowering::Direct(declaration) = lowering else {
+                return Some(Err(SemanticError::unavailable("abi_type")));
+            };
+            let signature = match item_abi_signature(db, declaration) {
+                Ok(Some(signature)) => signature,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            return Some(
+                Ok(signature.result),
+            );
+        }
+        if let Some(syntax_type) = node.of::<beskid_analysis::syntax::Type>() {
+            return Some(abi_type_from_syntax(db, key, syntax_type));
+        }
+        if let Some(literal) = node.of::<beskid_analysis::syntax::Literal>() {
+            return Some(Ok(semantic_type_for_literal(literal)));
+        }
+        None
+    })?
+    .transpose()
+}
+
+fn abi_type_from_syntax(
+    db: &dyn Db,
+    key: AstNodeKey,
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> Result<SemanticTypeId, SemanticError> {
+    use beskid_analysis::syntax::Type;
+
+    match syntax_type {
+        Type::Primitive(_) => semantic_type_from_syntax(syntax_type),
+        Type::Complex(path) => transparent_aggregate_abi_type(db, key, &path.node),
+        Type::Array(_) | Type::Function { .. } => Err(SemanticError::unavailable("abi_type")),
+    }
+}
+
+fn transparent_aggregate_abi_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Result<SemanticTypeId, SemanticError> {
+    let declaration = resolve_type_declaration(db, key, path)
+        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    let syntax = db
+        .syntax_unit(declaration.unit)
+        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    if !syntax.accepts_key(db, declaration) {
+        return Err(SemanticError::unavailable("abi_type"));
+    }
+    let target = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    if !target.attributes.is_empty()
+        || !target.conformances.is_empty()
+        || target.fields.len() != 1
+        || target.fields[0].node.kind != beskid_analysis::syntax::FieldKind::Value
+    {
+        return Err(SemanticError::unavailable("abi_type"));
+    }
+    semantic_type_from_syntax(&target.fields[0].node.ty.node)
+        .map_err(|_| SemanticError::unavailable("abi_type"))
+}
+
+fn resolve_type_declaration(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
+    let (name, module_path) = path.segments.split_last()?;
+    let generic_arity = name.node.type_args.len();
+    let name = name.node.name.node.name.as_str();
+    let candidates = if module_path.is_empty() {
+        let mut units = vec![key.unit];
+        let imports = db
+            .syntax_dependency_registry()
+            .lock()
+            .expect("syntax dependency registry");
+        if let Some(imports) = imports.imports.get(&(key.unit, key.generation)) {
+            units.extend(imports.iter().map(|import| import.target));
+        }
+        units
+    } else {
+        let module_path = module_path
+            .iter()
+            .map(|segment| segment.node.name.node.name.as_str())
+            .collect::<Vec<_>>();
+        db.syntax_dependency_registry()
+            .lock()
+            .expect("syntax dependency registry")
+            .imports
+            .get(&(key.unit, key.generation))?
+            .iter()
+            .filter(|import| {
+                import.path.len() >= module_path.len()
+                    && import.path[import.path.len() - module_path.len()..]
+                        .iter()
+                        .map(String::as_str)
+                        .eq(module_path.iter().copied())
+            })
+            .map(|import| import.target)
+            .collect()
+    };
+    let matches = candidates
+        .into_iter()
+        .filter_map(|unit| unique_type_in_unit(db, unit, key.generation, name, generic_arity))
+        .collect::<Vec<_>>();
+    let [declaration] = matches.as_slice() else {
+        return None;
+    };
+    Some(*declaration)
+}
+
+fn unique_type_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+    generic_arity: usize,
+) -> Option<AstNodeKey> {
+    let syntax = db.syntax_unit(unit)?;
+    if syntax.generation(db) != generation {
+        return None;
+    }
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let matches = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
+        .filter(|candidate| {
+            index
+                .node_at(program, *candidate)
+                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+                .is_some_and(|definition| {
+                    definition.name.node.name == name && definition.generics.len() == generic_arity
+                })
+        })
+        .collect::<Vec<_>>();
+    let [node] = matches.as_slice() else {
+        return None;
+    };
+    Some(AstNodeKey {
+        unit,
+        generation,
+        node: *node,
+    })
+}
+
 fn semantic_type_from_syntax(
     syntax_type: &beskid_analysis::syntax::Type,
 ) -> Result<SemanticTypeId, SemanticError> {
@@ -2288,6 +2510,16 @@ pub fn control_flow(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Control
 /// ported. Stale, unregistered, and non-callable nodes contain no fact.
 pub fn item_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ItemSignature> {
     with_registered_syntax(db, key, item_signature_tracked)
+}
+
+/// Return the scalar ABI representation signature proven by current source syntax.
+pub fn item_abi_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ItemSignature> {
+    with_registered_syntax(db, key, item_abi_signature_tracked)
+}
+
+/// Return the scalar ABI representation for one current syntax node.
+pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    with_registered_syntax(db, key, abi_type_tracked)
 }
 
 /// Return the exact lambda parameters and outer lexical captures in source order.

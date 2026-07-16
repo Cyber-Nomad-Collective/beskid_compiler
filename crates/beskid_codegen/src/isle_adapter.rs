@@ -7,9 +7,10 @@ use beskid_isle::{
     LiteralKind, NodeFacts, NodeKind, OperatorFact, ParameterSlot, Signature,
 };
 use beskid_queries::{
-    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, call_arguments, call_lowering,
-    cast_intents, child_nodes, item_body, item_signature, literal_fact, local_slot, node_kind,
-    node_type, operator_fact, resolved_local, runtime_intrinsic_name,
+    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, call_arguments,
+    call_lowering, cast_intents, child_nodes, item_abi_signature, item_body,
+    literal_fact, local_slot, node_kind, node_type, operator_fact, resolved_local,
+    runtime_intrinsic_name,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
@@ -136,7 +137,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
             return None;
         };
-        signature_for_item(self.isa?, self.query(item_signature(self.db, declaration))?)
+        signature_for_item(
+            self.isa?,
+            self.query(item_abi_signature(self.db, declaration))?,
+        )
     }
 
     fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -192,7 +196,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
                 return None;
             };
-            Some(self.query(item_signature(self.db, declaration))?.result)
+            Some(self.query(item_abi_signature(self.db, declaration))?.result)
         })?;
         if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER) {
             return self.isa.map(|isa| isa.pointer_type());
@@ -245,6 +249,7 @@ impl SyntaxNodeFacts<'_> {
     fn scalar_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
         self.query(cast_intents(self.db, key))
             .and_then(|intents| intents.first().map(|intent| intent.to))
+            .or_else(|| self.query(abi_type(self.db, key)))
             .or_else(|| self.query(node_type(self.db, key)))
             .or_else(|| {
                 (self.query(node_kind(self.db, key))
@@ -256,7 +261,16 @@ impl SyntaxNodeFacts<'_> {
                             self.query(node_kind(self.db, *child))
                                 == Some(beskid_queries::IndexedNodeKind::Identifier)
                         })
-                        .and_then(|identifier| self.query(node_type(self.db, identifier)))
+                        .and_then(|identifier| self.query(abi_type(self.db, identifier)))
+                        .or_else(|| {
+                            self.raw_children(key)
+                                .into_iter()
+                                .find(|child| {
+                                    self.query(node_kind(self.db, *child))
+                                        == Some(beskid_queries::IndexedNodeKind::Identifier)
+                                })
+                                .and_then(|identifier| self.query(node_type(self.db, identifier)))
+                        })
                 })?
             })
             .or_else(|| {
@@ -368,7 +382,7 @@ pub fn emit_isle_item<'db>(
         .ok()
         .flatten()
         .ok_or_else(|| FunctionEmissionError::Verification("item has no syntax body".to_owned()))?;
-    let signature = item_signature(db, item)
+    let signature = item_abi_signature(db, item)
         .ok()
         .flatten()
         .and_then(|signature| signature_for_item(isa, signature))
@@ -388,7 +402,7 @@ pub fn syntax_item_signature(
     isa: &dyn TargetIsa,
     item: AstNodeKey,
 ) -> Result<Signature, FunctionEmissionError> {
-    item_signature(input.database(), item)
+    item_abi_signature(input.database(), item)
         .ok()
         .flatten()
         .and_then(|signature| signature_for_item(isa, signature))
@@ -407,7 +421,7 @@ pub fn emit_isle_item_with_call_importer<'db>(
         .ok()
         .flatten()
         .ok_or_else(|| FunctionEmissionError::Verification("item has no syntax body".to_owned()))?;
-    let signature = item_signature(db, item)
+    let signature = item_abi_signature(db, item)
         .ok()
         .flatten()
         .and_then(|signature| signature_for_item(isa, signature))

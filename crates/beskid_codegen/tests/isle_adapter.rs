@@ -14,6 +14,7 @@ use beskid_analysis::services::parse_program_with_source_name;
 use beskid_codegen::{
     CodegenInput, ItemModuleImporter, emit_isle_expression, emit_isle_item,
     emit_isle_item_with_call_importer,
+    syntax_item_signature,
     module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
 };
 use beskid_queries::{
@@ -267,6 +268,18 @@ fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
     let clif = function.display().to_string();
     assert!(clif.contains("function u0:0(i64) -> i64"), "{clif}");
     assert!(clif.contains("return v0"), "{clif}");
+}
+
+#[test]
+fn parsed_transparent_generic_aggregate_uses_its_source_proven_i64_abi_signature() {
+    let (input, isa, root) = item_fixture_with_root(
+        "type Channel<T> { i64 handle } Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; }",
+    );
+    let create = find_function_definitions(input.database(), root)[0];
+
+    let signature = syntax_item_signature(&input, isa.as_ref(), create)
+        .expect("transparent aggregate source layout supplies an ABI signature");
+    assert_eq!(signature.returns[0].value_type, types::I64);
 }
 
 #[test]
