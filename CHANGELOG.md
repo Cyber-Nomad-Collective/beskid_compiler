@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add canonical Beskid allocation-header ownership and LIFO root-frame primitives as the
+  bounded input to a future non-moving collector.
 - Add a manifest-derived ABI-v5 runtime provenance audit and portable explicit-symbol-list verifier.
 - Add canonical-runtime `pointer`, `word`, and `never` source signatures plus compiler-minted intrinsic-call authority.
 - Categorize every HIR retirement blocker without allowlists and verify all ABI-v5 provenance fixtures from the release gate.

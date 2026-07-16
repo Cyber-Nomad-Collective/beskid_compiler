@@ -70,6 +70,35 @@ fn canonical_bootstrap_source_uses_only_manifest_owned_allocation_and_tls_primit
 }
 
 #[test]
+fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
+    let source = &canonical_runtime_sources()[0].source;
+
+    // The bridge's `allocate_beskid` returns the address of an object header, zero-fills the
+    // allocation, and installs the descriptor at offset zero.  The source runtime must retain
+    // that ownership shape before a collector is allowed to trace or sweep it.
+    assert!(source.contains("pub word AllocationSize(pointer request)"));
+    assert!(source.contains("raw_word_load(request)"));
+    assert!(source.contains("pub pointer AllocationDescriptor(pointer request)"));
+    assert!(source.contains("pointer_add(request, 16)"));
+    assert!(source.contains("pub pointer AllocateObject(pointer request)"));
+    assert!(source.contains("memory_set(object, 0, size);"));
+    assert!(source.contains("InitializeObjectHeader(object, descriptor);"));
+    assert!(source.contains("pub unit ReleaseObject(pointer object, pointer request)"));
+
+    // Frames are caller-owned stack records.  The runtime only links and unlinks them in LIFO
+    // order; scanning and collection deliberately remain separate future responsibilities.
+    assert!(source.contains("pub pointer RootFramePrevious(pointer rootFrame)"));
+    assert!(source.contains("pub pointer RootFrameSlots(pointer rootFrame)"));
+    assert!(source.contains("pub word RootFrameSlotCount(pointer rootFrame)"));
+    assert!(source.contains("pub unit PushRootFrame(pointer tlsState, pointer rootFrame)"));
+    assert!(source.contains("pub bool PopRootFrame(pointer tlsState, pointer rootFrame)"));
+    assert!(source.contains("if RootFrame(tlsState) != rootFrame"));
+    assert!(source.contains("SetRootFrame(tlsState, RootFramePrevious(rootFrame));"));
+    assert!(!source.contains("CollectGarbage("));
+    assert!(!source.contains("Sweep("));
+}
+
+#[test]
 fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
     let manifest = linux_manifest();
     let sources = canonical_runtime_sources();
@@ -88,6 +117,7 @@ fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
         "pointer_add",
         "raw_word_load",
         "raw_word_store",
+        "memory_set",
         "trap",
     ] {
         assert!(

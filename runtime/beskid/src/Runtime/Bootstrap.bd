@@ -86,6 +86,108 @@ pub unit SetRootFrame(pointer tlsState, pointer rootFrame) {
     return;
 }
 
+/// Reads the preceding frame from a caller-owned `BeskidRootFrame` record.
+///
+/// A frame is stack storage owned by generated code.  The runtime may link the frame into TLS,
+/// but never allocates, frees, or moves it.
+pub pointer RootFramePrevious(pointer rootFrame) {
+    return NativePointer(raw_word_load(rootFrame));
+}
+
+/// Reads the address of the first `BeskidRootSlot` from a root-frame record.
+///
+/// This is a collector input, not a collector: it gives a future non-moving marker an exact
+/// manifest-layout traversal boundary without making liveness decisions here.
+pub pointer RootFrameSlots(pointer rootFrame) {
+    return NativePointer(raw_word_load(pointer_add(rootFrame, 8)));
+}
+
+/// Reads the number of caller-owned slots represented by a root frame.
+pub word RootFrameSlotCount(pointer rootFrame) {
+    return raw_word_load(pointer_add(rootFrame, 16));
+}
+
+/// Links a caller-owned root frame as the current frame for this TLS state.
+///
+/// The prior top is retained in `rootFrame.previous`, so a future collector can traverse a stable
+/// LIFO chain while generated code owns the actual slot storage.
+pub unit PushRootFrame(pointer tlsState, pointer rootFrame) {
+    raw_word_store(rootFrame, NativeWord(RootFrame(tlsState)));
+    SetRootFrame(tlsState, rootFrame);
+    return;
+}
+
+/// Unlinks `rootFrame` only when it remains the current top of this TLS state.
+///
+/// Returning `false` for an out-of-order pop preserves the active root chain instead of silently
+/// dropping a live frame.  This is ownership validation, not collection or finalization.
+pub bool PopRootFrame(pointer tlsState, pointer rootFrame) {
+    if RootFrame(tlsState) != rootFrame {
+        return false;
+    }
+    SetRootFrame(tlsState, RootFramePrevious(rootFrame));
+    raw_word_store(rootFrame, 0);
+    return true;
+}
+
+/// Reads `BeskidAllocationRequest.size` at its manifest-frozen offset.
+pub word AllocationSize(pointer request) {
+    return raw_word_load(request);
+}
+
+/// Reads `BeskidAllocationRequest.alignment` at its manifest-frozen offset.
+pub word AllocationAlignment(pointer request) {
+    return raw_word_load(pointer_add(request, 8));
+}
+
+/// Reads `BeskidAllocationRequest.descriptor` at its manifest-frozen offset.
+pub pointer AllocationDescriptor(pointer request) {
+    return NativePointer(raw_word_load(pointer_add(request, 16)));
+}
+
+/// Installs the fixed `BeskidObjectHeader` fields at the start of a freshly zeroed object.
+///
+/// `gc_word` stays zero until the future marker owns mark-state transitions.  This source slice
+/// does not interpret descriptor pointer maps, trace children, or finalize an object.
+pub unit InitializeObjectHeader(pointer object, pointer descriptor) {
+    raw_word_store(object, NativeWord(descriptor));
+    raw_word_store(pointer_add(object, 8), 0);
+    return;
+}
+
+/// Reserves one zeroed object whose header begins at the returned address.
+///
+/// This mirrors the existing runtime's `allocate_beskid` ownership shape: the descriptor is at
+/// offset zero and the allocation size already includes the 16-byte object header.  Returning a
+/// null pointer on an invalid/saturated request leaves trap and collection policy to higher
+/// runtime layers.
+pub pointer AllocateObject(pointer request) {
+    word size = AllocationSize(request);
+    if size < 16 {
+        return NativePointer(0);
+    }
+    pointer object = SystemAllocate(size, AllocationAlignment(request));
+    if object == NativePointer(0) {
+        return object;
+    }
+    memory_set(object, 0, size);
+    pointer descriptor = AllocationDescriptor(request);
+    InitializeObjectHeader(object, descriptor);
+    return object;
+}
+
+/// Releases an object allocation during a future sweep phase.
+///
+/// No currently exposed function invokes this directly.  Keeping deallocation paired with the
+/// originating request preserves size ownership without claiming that tracing or finalization is
+/// available yet.
+pub unit ReleaseObject(pointer object, pointer request) {
+    if object != NativePointer(0) {
+        SystemFree(object, AllocationSize(request));
+    }
+    return;
+}
+
 /// Terminates through the manifest-owned ABI-v5 trap entrypoint.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_trap")]
 pub never Trap(u8 code, pointer message, word messageLength) {
