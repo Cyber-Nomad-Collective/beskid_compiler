@@ -358,6 +358,9 @@ pub enum StoreError {
 pub trait PackageRepository {
     fn create_package(&mut self, request: NewPackage) -> Result<Package, StoreError>;
     fn find_package(&self, name: &str) -> Option<&Package>;
+    /// Deletes a package and returns its versions so the caller can remove the
+    /// corresponding artifact objects only after the registry mutation commits.
+    fn delete_package(&mut self, name: &str) -> Result<Vec<PackageVersion>, StoreError>;
     fn publish_version(&mut self, request: PublishVersion) -> Result<PublishOutcome, StoreError>;
     fn find_version(&self, package_id: &str, version: &str) -> Option<&PackageVersion>;
     fn set_yanked(
@@ -379,6 +382,9 @@ pub trait PackageRepository {
 pub trait AsyncPackageRepository: Send + Sync {
     async fn create_package(&self, request: NewPackage) -> Result<Package, StoreError>;
     async fn find_package(&self, name: &str) -> Result<Option<Package>, StoreError>;
+    /// Deletes the package transactionally and returns storage records for
+    /// post-commit artifact cleanup.
+    async fn delete_package(&self, name: &str) -> Result<Vec<PackageVersion>, StoreError>;
     async fn publish_version(&self, request: PublishVersion) -> Result<PublishOutcome, StoreError>;
     async fn find_version(
         &self,
@@ -1030,6 +1036,57 @@ impl AsyncPackageRepository for SqlxPackageRepository {
         .await
         .map_err(database_error)?;
         Ok(row.map(PackageRow::into_domain))
+    }
+
+    async fn delete_package(&self, name: &str) -> Result<Vec<PackageVersion>, StoreError> {
+        validate_package_name(name)?;
+        let mut transaction = self.pool.begin().await.map_err(database_error)?;
+        let package = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM pckg_packages WHERE name = $1 FOR UPDATE",
+        )
+        .bind(name)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(database_error)?
+        .ok_or(StoreError::PackageNotFound)?;
+        let versions = sqlx::query_as::<_, PackageVersionRow>(
+            "SELECT id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc \
+             FROM pckg_package_versions WHERE package_id = $1 FOR UPDATE",
+        )
+        .bind(package)
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(database_error)?
+        .into_iter()
+        .map(PackageVersionRow::into_domain)
+        .collect::<Vec<_>>();
+        // Review decisions retain a restrictive FK for audit integrity, so an
+        // explicit package deletion removes its package-scoped audit history.
+        sqlx::query("DELETE FROM pckg_package_review_decisions WHERE package_id = $1")
+            .bind(package)
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+        sqlx::query("DELETE FROM pckg_resource_permissions WHERE resource_kind = 'package' AND resource_id = $1")
+            .bind(package.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+        sqlx::query("DELETE FROM pckg_package_versions WHERE package_id = $1")
+            .bind(package)
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+        let deleted = sqlx::query("DELETE FROM pckg_packages WHERE id = $1")
+            .bind(package)
+            .execute(&mut *transaction)
+            .await
+            .map_err(database_error)?;
+        if deleted.rows_affected() != 1 {
+            return Err(StoreError::PackageNotFound);
+        }
+        transaction.commit().await.map_err(database_error)?;
+        Ok(versions)
     }
 
     async fn publish_version(&self, request: PublishVersion) -> Result<PublishOutcome, StoreError> {
@@ -2208,6 +2265,23 @@ impl PackageRepository for InMemoryPackageRepository {
 
     fn find_package(&self, name: &str) -> Option<&Package> {
         self.packages_by_name.get(name)
+    }
+
+    fn delete_package(&mut self, name: &str) -> Result<Vec<PackageVersion>, StoreError> {
+        let package = self
+            .packages_by_name
+            .remove(name)
+            .ok_or(StoreError::PackageNotFound)?;
+        let keys = self
+            .versions_by_key
+            .keys()
+            .filter(|(package_id, _)| package_id == &package.id)
+            .cloned()
+            .collect::<Vec<_>>();
+        Ok(keys
+            .into_iter()
+            .filter_map(|key| self.versions_by_key.remove(&key))
+            .collect())
     }
 
     fn publish_version(&mut self, request: PublishVersion) -> Result<PublishOutcome, StoreError> {

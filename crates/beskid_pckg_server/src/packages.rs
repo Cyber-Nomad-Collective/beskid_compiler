@@ -253,6 +253,76 @@ pub async fn package_detail(
     .into_response()
 }
 
+/// Lists version summaries without forcing clients to download the full package
+/// detail document. Private packages deliberately remain indistinguishable from
+/// absent packages for unauthenticated and non-owner callers.
+pub async fn list_versions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> Response {
+    let subject = authenticated_subject(&state, &headers);
+    let package = match state.packages.find_package(&name).await {
+        Ok(Some(package)) => package,
+        Ok(None) => return package_not_found(),
+        Err(_) => return package_storage_failure(),
+    };
+    if !package.is_public && subject.as_deref() != Some(&package.owner_subject) {
+        return package_not_found();
+    }
+    match state.packages.list_versions(&package.id).await {
+        Ok(versions) => Json(
+            versions
+                .iter()
+                .map(|version| version_summary(&package, version))
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(_) => package_storage_failure(),
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeletePackageResponse {
+    success: bool,
+    message: String,
+}
+
+/// Deletes a package only for its Auth Hub owner. The storage boundary commits
+/// first; artifact cleanup is best-effort afterwards because it cannot safely
+/// be part of a PostgreSQL transaction.
+pub async fn delete_package(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> Response {
+    let Some(subject) = authenticated_subject(&state, &headers) else {
+        return crate::unauthorized_response();
+    };
+    let package = match state.packages.find_package(&name).await {
+        Ok(Some(package)) => package,
+        Ok(None) => return package_not_found(),
+        Err(_) => return package_storage_failure(),
+    };
+    if package.owner_subject != subject {
+        return package_not_found();
+    }
+    let removed = match state.packages.delete_package(&name).await {
+        Ok(versions) => versions,
+        Err(StoreError::PackageNotFound) => return package_not_found(),
+        Err(_) => return package_storage_failure(),
+    };
+    for version in removed {
+        let _ = state.artifacts.delete(&version.storage_key);
+    }
+    Json(DeletePackageResponse {
+        success: true,
+        message: "package deleted".to_owned(),
+    })
+    .into_response()
+}
+
 pub async fn upsert_package(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,

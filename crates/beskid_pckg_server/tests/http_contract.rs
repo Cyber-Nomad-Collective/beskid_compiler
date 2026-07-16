@@ -455,6 +455,98 @@ async fn package_mutations_are_owned_by_the_verified_auth_hub_subject() {
     assert_eq!(forbidden.status(), StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn package_lifecycle_lists_versions_and_hides_delete_from_non_owners() {
+    let app = router(authenticated_config());
+    let owner_cookie = format!("pckg_session={}", package_session("github:71"));
+    let other_cookie = format!("pckg_session={}", package_session("github:72"));
+    let create = app
+        .clone()
+        .oneshot(
+            Request::post("/api/packages")
+                .header("content-type", "application/json")
+                .header("cookie", &owner_cookie)
+                .body(Body::from(
+                    r#"{"name":"Lifecycle.Demo","isPublic":false,"submitForReview":false}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let publish = app
+        .clone()
+        .oneshot(
+            Request::post("/api/packages/Lifecycle.Demo/versions")
+                .header("content-type", "application/json")
+                .header("cookie", &owner_cookie)
+                .body(Body::from(
+                    serde_json::json!({"version":"1.0.0", "checksumSha256":"b".repeat(64)})
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(publish.status(), StatusCode::CREATED);
+
+    let hidden_list = app
+        .clone()
+        .oneshot(
+            Request::get("/api/packages/Lifecycle.Demo/versions")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(hidden_list.status(), StatusCode::NOT_FOUND);
+    let versions = app
+        .clone()
+        .oneshot(
+            Request::get("/api/packages/Lifecycle.Demo/versions")
+                .header("cookie", &owner_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(versions.status(), StatusCode::OK);
+    assert_eq!(response_body(versions).await[0]["version"], "1.0.0");
+
+    let hidden_delete = app
+        .clone()
+        .oneshot(
+            Request::delete("/api/packages/Lifecycle.Demo")
+                .header("cookie", &other_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(hidden_delete.status(), StatusCode::NOT_FOUND);
+    let deleted = app
+        .clone()
+        .oneshot(
+            Request::delete("/api/packages/Lifecycle.Demo")
+                .header("cookie", &owner_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::OK);
+    assert_eq!(response_body(deleted).await["success"], true);
+    let absent = app
+        .oneshot(
+            Request::get("/api/packages/Lifecycle.Demo")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(absent.status(), StatusCode::NOT_FOUND);
+}
+
 fn authenticated_config() -> PckgServerConfig {
     PckgServerConfig::with_auth_secrets("auth-hub-test-secret", "pckg-session-test-secret")
 }

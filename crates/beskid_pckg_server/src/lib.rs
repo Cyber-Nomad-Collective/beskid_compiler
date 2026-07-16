@@ -118,6 +118,35 @@ impl PackageBackend {
         }
     }
 
+    async fn delete_package(&self, name: &str) -> Result<Vec<PackageVersion>, StoreError> {
+        match self {
+            Self::InMemory(repository) => {
+                let mut package_repository = repository
+                    .repository
+                    .lock()
+                    .expect("package repository mutex is not poisoned");
+                let package_id = package_repository
+                    .find_package(name)
+                    .map(|package| package.id.clone())
+                    .ok_or(StoreError::PackageNotFound)?;
+                let versions = package_repository.delete_package(name)?;
+                drop(package_repository);
+                repository
+                    .package_names
+                    .lock()
+                    .expect("package catalog mutex is not poisoned")
+                    .remove(name);
+                repository
+                    .versions_by_package
+                    .lock()
+                    .expect("version catalog mutex is not poisoned")
+                    .remove(&package_id);
+                Ok(versions)
+            }
+            Self::Sqlx(repository) => repository.delete_package(name).await,
+        }
+    }
+
     async fn find_package_by_id(&self, id: &str) -> Result<Option<Package>, StoreError> {
         match self {
             Self::InMemory(repository) => {
@@ -585,10 +614,13 @@ fn router_with_backend(
             "/api/publishers/{subject}/packages",
             get(packages::publisher_packages),
         )
-        .route("/api/packages/{idOrName}", get(packages::package_detail))
+        .route(
+            "/api/packages/{idOrName}",
+            get(packages::package_detail).delete(packages::delete_package),
+        )
         .route(
             "/api/packages/{name}/versions",
-            axum::routing::post(packages::publish_version),
+            get(packages::list_versions).post(packages::publish_version),
         )
         .route(
             "/api/packages/{name}/versions/{version}/yank",
