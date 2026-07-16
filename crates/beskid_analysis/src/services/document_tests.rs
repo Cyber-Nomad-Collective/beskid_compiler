@@ -196,7 +196,7 @@ mod tests {
             "expected Std shard segment after use Std., got {labels:?}"
         );
         assert!(
-            !labels.iter().any(|label| *label == "Std.Core"),
+            !labels.contains(&"Std.Core"),
             "use-path completion must offer the next segment, not a repeated prefix: {labels:?}"
         );
     }
