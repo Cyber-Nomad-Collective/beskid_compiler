@@ -5,13 +5,14 @@ use std::collections::HashMap;
 use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
-    LiteralKind, NodeFacts, NodeKind, OperatorFact, ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner,
+    EmissionServices, ItemStatementEmission, LiteralKind, NodeFacts, NodeKind, OperatorFact,
+    ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner,
 };
 use beskid_queries::{
-    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, block_statement_nodes, call_arguments,
-    call_lowering, cast_intents, child_nodes, item_abi_signature, item_body, literal_fact,
-    local_slot, node_kind, node_type, operator_fact, resolved_local, runtime_intrinsic_name,
-    test_statement_nodes,
+    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, block_statement_nodes,
+    call_arguments, call_lowering, cast_intents, child_nodes, item_abi_signature, item_body,
+    literal_fact, local_slot, node_kind, node_type, operator_fact, resolved_local,
+    runtime_intrinsic_name, test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
@@ -528,13 +529,8 @@ pub fn emit_isle_item_with_services<'db>(
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_isa(input, isa);
     emitter.emit_item_statement_with_services(
-        UserFuncName::user(0, 0),
-        signature,
-        &facts,
-        item,
-        body,
-        string_interner,
-        importer,
+        ItemStatementEmission { name: UserFuncName::user(0, 0), signature, facts: &facts, item, body },
+        EmissionServices { string_interner: Some(string_interner), call_importer: Some(importer) },
     )
 }
 

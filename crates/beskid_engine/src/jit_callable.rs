@@ -1,5 +1,3 @@
-use beskid_analysis::hir::HirPrimitiveType;
-use beskid_analysis::types::TypeInfo;
 use beskid_queries::SemanticTypeId;
 
 #[derive(Debug, Clone, Copy)]
@@ -16,31 +14,7 @@ pub(crate) enum EntryReturnKind {
 }
 
 impl EntryReturnKind {
-    pub(crate) fn from_type_info(info: &TypeInfo) -> Self {
-        match info {
-            TypeInfo::Primitive(HirPrimitiveType::Unit) => Self::Unit,
-            TypeInfo::Primitive(HirPrimitiveType::Never) => Self::Never,
-            TypeInfo::Primitive(HirPrimitiveType::String)
-            | TypeInfo::Named(_)
-            | TypeInfo::GenericParam(_)
-            | TypeInfo::Applied { .. }
-            | TypeInfo::Function { .. }
-            | TypeInfo::Array(_)
-            | TypeInfo::Fiber(_) => Self::PointerLike,
-            TypeInfo::Primitive(HirPrimitiveType::I64) => Self::I64,
-            TypeInfo::Primitive(HirPrimitiveType::I32) => Self::I32,
-            TypeInfo::Primitive(HirPrimitiveType::U8) => Self::U8,
-            TypeInfo::Primitive(HirPrimitiveType::Bool) => Self::Bool,
-            TypeInfo::Primitive(HirPrimitiveType::F64) => Self::F64,
-            TypeInfo::Primitive(HirPrimitiveType::Char) => Self::Char,
-            TypeInfo::Primitive(HirPrimitiveType::Word) => Self::PointerLike,
-        }
-    }
-
-    /// Syntax-query equivalent of [`Self::from_type_info`].
-    ///
-    /// This is intentionally the only return-ABI bridge used by the syntax → ISLE JIT path;
-    /// that path must not consult the legacy typed-HIR result after code generation.
+    /// The sole return-ABI bridge used by the syntax → ISLE JIT path.
     pub(crate) fn from_semantic_type(ty: SemanticTypeId) -> Self {
         match ty {
             SemanticTypeId::UNIT => Self::Unit,

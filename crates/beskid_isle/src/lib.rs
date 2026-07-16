@@ -480,6 +480,38 @@ pub struct ParameterSlot {
     pub value_type: Type,
 }
 
+/// Parsed item inputs for statement-oriented ISLE emission.
+pub struct ItemStatementEmission<'a> {
+    pub name: UserFuncName,
+    pub signature: Signature,
+    pub facts: &'a dyn NodeFacts,
+    pub item: AstNodeKey,
+    pub body: AstNodeKey,
+}
+
+/// Optional artifact services consumed by ISLE lowering.
+pub struct EmissionServices<'a> {
+    pub string_interner: Option<&'a mut dyn StringInterner>,
+    pub call_importer: Option<&'a mut dyn CallImporter>,
+}
+
+impl EmissionServices<'_> {
+    pub const fn none() -> Self {
+        Self {
+            string_interner: None,
+            call_importer: None,
+        }
+    }
+}
+
+struct StatementEmission<'a> {
+    name: UserFuncName,
+    signature: Signature,
+    facts: &'a dyn NodeFacts,
+    item: Option<AstNodeKey>,
+    body: AstNodeKey,
+}
+
 /// Artifact-owned string materialization invoked only after generated ISLE selection.
 pub trait StringInterner {
     fn intern(
@@ -1757,7 +1789,7 @@ impl<'isa> FunctionEmitter<'isa> {
         facts: &dyn NodeFacts,
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(name, signature, facts, None, body, None, None)
+        self.emit_statement_inner(StatementEmission { name, signature, facts, item: None, body }, EmissionServices::none())
     }
 
     /// Emit a parsed function item after binding its source parameters to local slots.
@@ -1769,20 +1801,15 @@ impl<'isa> FunctionEmitter<'isa> {
         item: AstNodeKey,
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(name, signature, facts, Some(item), body, None, None)
+        self.emit_statement_inner(StatementEmission { name, signature, facts, item: Some(item), body }, EmissionServices::none())
     }
 
     fn emit_statement_inner<'services>(
         &self,
-        name: UserFuncName,
-        signature: Signature,
-        facts: &dyn NodeFacts,
-        item: Option<AstNodeKey>,
-        body: AstNodeKey,
-        string_interner: Option<&'services mut dyn StringInterner>,
-        call_importer: Option<&'services mut dyn CallImporter>,
+        request: StatementEmission<'_>,
+        services: EmissionServices<'services>,
     ) -> Result<Function, FunctionEmissionError> {
-        let mut function = Function::with_name_signature(name, signature);
+        let mut function = Function::with_name_signature(request.name, request.signature);
         let mut builder_context = FunctionBuilderContext::new();
         {
             let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
@@ -1791,11 +1818,11 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.switch_to_block(entry);
             builder.seal_block(entry);
             let mut context =
-                IsleContext::new_with_services(&mut builder, facts, string_interner, call_importer);
-            if let Some(item) = item {
+                IsleContext::new_with_services(&mut builder, request.facts, services.string_interner, services.call_importer);
+            if let Some(item) = request.item {
                 materialize_parameters(&mut context, item)?;
             }
-            lower_statement(&mut context, body).map_err(FunctionEmissionError::Lowering)?;
+            lower_statement(&mut context, request.body).map_err(FunctionEmissionError::Lowering)?;
             let terminated = block_is_terminated(&builder, entry);
             if !terminated {
                 if builder.func.signature.returns.is_empty() {
@@ -1821,15 +1848,7 @@ impl<'isa> FunctionEmitter<'isa> {
         body: AstNodeKey,
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(
-            name,
-            signature,
-            facts,
-            None,
-            body,
-            None,
-            Some(call_importer),
-        )
+        self.emit_statement_inner(StatementEmission { name, signature, facts, item: None, body }, EmissionServices { string_interner: None, call_importer: Some(call_importer) })
     }
 
     /// Emit a parsed function item with parameter materialization and explicit call imports.
@@ -1842,37 +1861,16 @@ impl<'isa> FunctionEmitter<'isa> {
         body: AstNodeKey,
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(
-            name,
-            signature,
-            facts,
-            Some(item),
-            body,
-            None,
-            Some(call_importer),
-        )
+        self.emit_statement_inner(StatementEmission { name, signature, facts, item: Some(item), body }, EmissionServices { string_interner: None, call_importer: Some(call_importer) })
     }
 
     /// Emit a parsed item with both artifact-owned string interning and exact call imports.
     pub fn emit_item_statement_with_services(
         &self,
-        name: UserFuncName,
-        signature: Signature,
-        facts: &dyn NodeFacts,
-        item: AstNodeKey,
-        body: AstNodeKey,
-        string_interner: &mut dyn StringInterner,
-        call_importer: &mut dyn CallImporter,
+        request: ItemStatementEmission<'_>,
+        services: EmissionServices<'_>,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(
-            name,
-            signature,
-            facts,
-            Some(item),
-            body,
-            Some(string_interner),
-            Some(call_importer),
-        )
+        self.emit_statement_inner(StatementEmission { name: request.name, signature: request.signature, facts: request.facts, item: Some(request.item), body: request.body }, services)
     }
 
     fn emit_expression_inner<'services>(

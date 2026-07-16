@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use beskid_analysis::resolve::ItemKind;
-use beskid_analysis::services::ResolvedInput;
+use beskid_analysis::services::{FrontEndOptions, ResolvedInput};
 use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 #[cfg(test)]
 use beskid_codegen::module_emission::{SyntaxModuleItem, lower_syntax_program};
@@ -52,15 +51,23 @@ pub fn run_entrypoint_with_pipeline(
         .or_else(|| {
             Some(beskid_analysis::services::synthetic_compile_plan_for_source(&source_path))
         });
-    run_resolved_entrypoint_with_pipeline(
-        &ResolvedInput {
-            source_path,
-            source: source.to_string(),
-            compile_plan,
-            prepared_workspace: None,
-            workspace_summary: None,
-            assembly: None,
-        },
+    let resolved = ResolvedInput {
+        source_path,
+        source: source.to_string(),
+        compile_plan,
+        prepared_workspace: None,
+        workspace_summary: None,
+        assembly: None,
+    };
+    let front = beskid_queries::compile_front_end_from_resolved_input(
+        &resolved,
+        FrontEndOptions::default(),
+        pipeline,
+    )?;
+    run_entrypoint_from_front_end_with_pipeline(
+        &front,
+        &resolved.source_path.display().to_string(),
+        &resolved.source,
         entrypoint,
         pipeline,
     )
@@ -109,102 +116,6 @@ pub fn run_entrypoint_from_front_end_with_engine(
     // consumes the already prepared expanded syntax assembly.
     let _ = (source_name, source);
     run_syntax_jitted_entrypoint(engine, &syntax_entrypoint, entrypoint, pipeline)
-}
-
-/// JIT-compile and run using a fully resolved project input (same assembly path as `beskid build`).
-pub fn run_resolved_entrypoint_with_pipeline(
-    resolved: &ResolvedInput,
-    entrypoint: &str,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<String> {
-    run_resolved_entrypoint_with_pipeline_inner(resolved, entrypoint, true, pipeline)
-}
-
-/// Like [`run_resolved_entrypoint_with_pipeline`] but skips semantic diagnostics (after gate).
-pub fn run_resolved_entrypoint_after_gate_with_pipeline(
-    resolved: &ResolvedInput,
-    entrypoint: &str,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<String> {
-    run_resolved_entrypoint_with_pipeline_inner(resolved, entrypoint, false, pipeline)
-}
-
-fn run_resolved_entrypoint_with_pipeline_inner(
-    resolved: &ResolvedInput,
-    entrypoint: &str,
-    with_diagnostics: bool,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<String> {
-    let lowered = beskid_codegen::lower_resolved_entrypoint_with_pipeline(
-        resolved,
-        Some(entrypoint),
-        with_diagnostics,
-        pipeline,
-    )?;
-
-    let mut engine = Engine::try_new()?;
-    run_jitted_entrypoint(
-        &mut engine,
-        &lowered.resolution,
-        &lowered.typed,
-        &lowered.artifact,
-        entrypoint,
-        pipeline,
-    )
-}
-
-fn run_jitted_entrypoint(
-    engine: &mut Engine,
-    resolution: &beskid_analysis::resolve::Resolution,
-    typed: &beskid_analysis::types::TypeResult,
-    artifact: &beskid_codegen::CodegenArtifact,
-    entrypoint: &str,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<String> {
-    engine
-        .compile_artifact_with_pipeline(artifact, pipeline)
-        .map_err(|err| anyhow::anyhow!("JIT compile failed: {err}"))?;
-
-    let entrypoint_info = resolution
-        .items
-        .iter()
-        .find(|item| {
-            entrypoint_matches_item(item, entrypoint)
-                && (item.kind == ItemKind::Function || item.kind == ItemKind::Test)
-        })
-        .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
-
-    let jit_symbol = beskid_codegen::jit_symbol_for_item(resolution, entrypoint_info.id);
-
-    let signature = typed
-        .function_signatures
-        .get(&entrypoint_info.id)
-        .ok_or_else(|| anyhow::anyhow!("Missing signature for `{entrypoint}`"))?;
-
-    if !signature.params.is_empty() {
-        return Err(anyhow::anyhow!(
-            "Entrypoint `{entrypoint}` must take no parameters"
-        ));
-    }
-
-    let return_info = typed
-        .types
-        .get(signature.return_type)
-        .ok_or_else(|| anyhow::anyhow!("Missing return type for `{entrypoint}`"))?;
-
-    let ptr = unsafe { engine.entrypoint_ptr(&jit_symbol) }
-        .map_err(|err| anyhow::anyhow!("Entrypoint lookup failed: {err}"))?;
-    if ptr.is_null() {
-        return Err(anyhow::anyhow!(
-            "Entrypoint `{entrypoint}` returned null pointer"
-        ));
-    }
-
-    let return_kind = EntryReturnKind::from_type_info(return_info);
-
-    let output = JitCallable::execute_as_i64(ptr, return_kind);
-
-    Ok(JitCallable::format_i64_result(output, return_kind))
 }
 
 /// Fully syntax-backed entrypoint authority handed from the prepared frontend to the JIT.
@@ -556,19 +467,6 @@ fn syntax_item_name(
         .ok()
         .flatten()
         .map(|name| name.as_ref().to_owned())
-}
-
-fn entrypoint_matches_item(item: &beskid_analysis::resolve::ItemInfo, entrypoint: &str) -> bool {
-    if item.name == entrypoint {
-        return true;
-    }
-    if !entrypoint.contains("::") {
-        return false;
-    }
-    let Some(short) = entrypoint.rsplit("::").next() else {
-        return false;
-    };
-    item.name == short
 }
 
 #[cfg(test)]

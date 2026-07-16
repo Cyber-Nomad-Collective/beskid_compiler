@@ -19,4 +19,3 @@ pub use engine::resolve_for_tests;
 pub use engine::set_security_policies_for_tests;
 pub use jit_module::{BeskidJitModule, JitError};
 pub use runtime_kit::JitRuntimeKit;
-pub use services::run_resolved_entrypoint_with_pipeline;
