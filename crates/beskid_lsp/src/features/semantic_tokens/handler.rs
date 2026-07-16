@@ -35,6 +35,7 @@ mod tests {
                 end: 7,
             }],
             syntax_completion: None,
+            syntax_inlay_hints: Vec::new(),
         };
 
         let tokens = match handle_semantic_tokens(&doc) {

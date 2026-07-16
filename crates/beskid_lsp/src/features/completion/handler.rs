@@ -184,6 +184,7 @@ mod tests {
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             syntax_completion: Some(SyntaxCompletion { anchor }),
+            syntax_inlay_hints: Vec::new(),
         };
         let offset = source.find("Zeb;").expect("completion prefix") + 3;
         let response = handle_completion(
@@ -270,6 +271,7 @@ mod tests {
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             syntax_completion: Some(SyntaxCompletion { anchor }),
+            syntax_inlay_hints: Vec::new(),
         };
         let offset = main_source.find("Hel;").expect("completion prefix") + 3;
         let response = handle_completion(

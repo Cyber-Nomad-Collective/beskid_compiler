@@ -16,9 +16,9 @@ use beskid_analysis::services::{
     resolved_input_from_plan,
 };
 use beskid_queries::{
-    AstNodeKey, SyntaxGenerationId, build_typed_program, bump_file_revision,
-    bump_typed_prepare_revision, fingerprint_key, node_span, resolved_item, resolved_local,
-    typed_entry_state_with_db,
+    AstNodeKey, SemanticTypeId, SyntaxGenerationId, build_typed_program, bump_file_revision,
+    bump_typed_prepare_revision, fingerprint_key, node_span, node_type, resolved_item,
+    resolved_local, typed_entry_state_with_db,
 };
 
 use crate::manifest_uri::is_manifest_uri;
@@ -27,7 +27,7 @@ use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::project_context::cached_compilation_context;
 use crate::session::startup::wait_for_initial_scan;
 use crate::session::store::{
-    Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxSymbol,
+    Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxInlayHint, SyntaxSymbol,
 };
 use crate::workspace_scan::uri_to_path;
 
@@ -88,12 +88,13 @@ fn syntax_facts_for_entry(
     Vec<SyntaxHover>,
     Vec<SyntaxSymbol>,
     Option<SyntaxCompletion>,
+    Vec<SyntaxInlayHint>,
 ) {
     let Some(plan) = resolved.compile_plan.as_ref() else {
-        return (Vec::new(), Vec::new(), Vec::new(), None);
+        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
     };
     let Some(front_end) = entry_state.typed.as_ref() else {
-        return (Vec::new(), Vec::new(), Vec::new(), None);
+        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
     };
     let project =
         db.ensure_project_session(plan, &resolved.source_path, lockfile_digest_for_plan(plan));
@@ -102,23 +103,40 @@ fn syntax_facts_for_entry(
     ));
     let generation = SyntaxGenerationId(entry_state.generation);
     let Ok(typed) = build_typed_program(db, project, generation, assembly) else {
-        return (Vec::new(), Vec::new(), Vec::new(), None);
+        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
     };
     let unit = typed.entry;
     let Some(entry) = typed.assembly.units().get(typed.assembly.entry_index()) else {
-        return (Vec::new(), Vec::new(), Vec::new(), None);
+        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
     };
     let index =
         beskid_analysis::syntax_query::SyntaxIndex::from_program(&entry.program, generation);
 
     let mut definitions = Vec::new();
     let mut hovers = Vec::new();
+    let mut inlay_hints = Vec::new();
     for metadata in index.metadata() {
         let reference = AstNodeKey {
             unit,
             generation,
             node: metadata.id,
         };
+        if matches!(
+            metadata.kind,
+            beskid_analysis::syntax_query::NodeKind::LiteralExpression
+                | beskid_analysis::syntax_query::NodeKind::PathExpression
+        ) && let Some(type_label) = node_type(db, reference)
+            .ok()
+            .flatten()
+            .and_then(syntax_type_label)
+            && let Some(span) = node_span(db, reference).ok().flatten()
+        {
+            inlay_hints.push(SyntaxInlayHint {
+                start: span.start,
+                end: span.end,
+                type_label: type_label.to_string(),
+            });
+        }
         let local = resolved_local(db, reference).ok().flatten();
         let declaration = local.map(|resolved| resolved.declaration).or_else(|| {
             resolved_item(db, reference)
@@ -203,6 +221,8 @@ fn syntax_facts_for_entry(
         )
     });
     hovers.dedup();
+    inlay_hints.sort_by_key(|hint| (hint.start, hint.end, hint.type_label.clone()));
+    inlay_hints.dedup();
     let completion = index
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::Program)
         .next()
@@ -218,7 +238,25 @@ fn syntax_facts_for_entry(
         hovers,
         syntax_symbols_for_program(&entry.program),
         completion,
+        inlay_hints,
     )
+}
+
+fn syntax_type_label(ty: SemanticTypeId) -> Option<&'static str> {
+    match ty {
+        SemanticTypeId::UNIT => Some("unit"),
+        SemanticTypeId::BOOL => Some("bool"),
+        SemanticTypeId::I32 => Some("i32"),
+        SemanticTypeId::I64 => Some("i64"),
+        SemanticTypeId::U8 => Some("u8"),
+        SemanticTypeId::F64 => Some("f64"),
+        SemanticTypeId::CHAR => Some("char"),
+        SemanticTypeId::STRING => Some("string"),
+        SemanticTypeId::WORD => Some("word"),
+        SemanticTypeId::POINTER => Some("pointer"),
+        SemanticTypeId::NEVER => Some("never"),
+        _ => None,
+    }
 }
 
 fn syntax_symbols_for_program(
@@ -407,16 +445,17 @@ async fn build_syntax_facts(
     Vec<SyntaxHover>,
     Vec<SyntaxSymbol>,
     Option<SyntaxCompletion>,
+    Vec<SyntaxInlayHint>,
 ) {
     wait_for_initial_scan(state).await;
     if is_manifest_uri(uri) {
-        return (Vec::new(), Vec::new(), Vec::new(), None);
+        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
     }
     let Some(path) = uri_to_path(uri) else {
-        return (Vec::new(), Vec::new(), Vec::new(), None);
+        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
     };
     let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
-        return (Vec::new(), Vec::new(), Vec::new(), None);
+        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
     };
     with_compilation_db_mut_state(state, |db, write| {
         if let Some(plan) = session.compile_plan.as_ref() {
@@ -425,7 +464,7 @@ async fn build_syntax_facts(
         db.ensure_file_text(path, text.to_string());
         let options = PrepareOptions::default();
         let Ok(entry_state) = typed_entry_state_with_db(db, &resolved, &options, None) else {
-            return (Vec::new(), Vec::new(), Vec::new(), None);
+            return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
         };
         syntax_facts_for_entry(db, &resolved, &entry_state)
     })
@@ -440,7 +479,7 @@ pub async fn build_document(
     text: String,
 ) -> Document {
     let analysis = build_document_analysis(state, uri, &text).await;
-    let (syntax_definitions, syntax_hovers, syntax_symbols, syntax_completion) =
+    let (syntax_definitions, syntax_hovers, syntax_symbols, syntax_completion, syntax_inlay_hints) =
         build_syntax_facts(state, uri, &text).await;
     Document {
         version,
@@ -451,6 +490,7 @@ pub async fn build_document(
         syntax_hovers,
         syntax_symbols,
         syntax_completion,
+        syntax_inlay_hints,
     }
 }
 
@@ -512,7 +552,7 @@ async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
     .await;
 
     let analysis = build_document_analysis(state, uri, &text).await;
-    let (syntax_definitions, syntax_hovers, syntax_symbols, syntax_completion) =
+    let (syntax_definitions, syntax_hovers, syntax_symbols, syntax_completion, syntax_inlay_hints) =
         build_syntax_facts(state, uri, &text).await;
     let mut write = state.write().await;
     if let Some(doc) = write.docs.get_mut(uri)
@@ -523,6 +563,7 @@ async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
         doc.syntax_hovers = syntax_hovers;
         doc.syntax_symbols = syntax_symbols;
         doc.syntax_completion = syntax_completion;
+        doc.syntax_inlay_hints = syntax_inlay_hints;
         doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
     } else if let Some(doc) = write.workspace_index.get_mut(uri)
         && doc.text == text
@@ -532,6 +573,7 @@ async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
         doc.syntax_hovers = syntax_hovers;
         doc.syntax_symbols = syntax_symbols;
         doc.syntax_completion = syntax_completion;
+        doc.syntax_inlay_hints = syntax_inlay_hints;
         doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
     }
 }
@@ -592,7 +634,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
     drop(write_state);
     touch_entry_file_revision_for_uri(state, &uri, &text).await;
     let analysis = build_document_analysis(state, &uri, &text).await;
-    let (syntax_definitions, syntax_hovers, syntax_symbols, syntax_completion) =
+    let (syntax_definitions, syntax_hovers, syntax_symbols, syntax_completion, syntax_inlay_hints) =
         build_syntax_facts(state, &uri, &text).await;
 
     let mut write_state = state.write().await;
@@ -607,6 +649,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
             syntax_hovers,
             syntax_symbols,
             syntax_completion,
+            syntax_inlay_hints,
         },
     );
 }
@@ -631,8 +674,13 @@ pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
 
     for (uri, text) in entries {
         let analysis = build_document_analysis(state, &uri, &text).await;
-        let (syntax_definitions, syntax_hovers, syntax_symbols, syntax_completion) =
-            build_syntax_facts(state, &uri, &text).await;
+        let (
+            syntax_definitions,
+            syntax_hovers,
+            syntax_symbols,
+            syntax_completion,
+            syntax_inlay_hints,
+        ) = build_syntax_facts(state, &uri, &text).await;
         let mut write = state.write().await;
         if let Some(doc) = write.docs.get_mut(&uri)
             && doc.text == text
@@ -642,6 +690,7 @@ pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
             doc.syntax_hovers = syntax_hovers;
             doc.syntax_symbols = syntax_symbols;
             doc.syntax_completion = syntax_completion;
+            doc.syntax_inlay_hints = syntax_inlay_hints;
             doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
         }
     }
@@ -729,6 +778,7 @@ mod tests {
                 syntax_hovers: Vec::new(),
                 syntax_symbols: Vec::new(),
                 syntax_completion: None,
+                syntax_inlay_hints: Vec::new(),
             },
         );
 

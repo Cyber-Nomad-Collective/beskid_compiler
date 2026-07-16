@@ -31,6 +31,8 @@ pub struct Document {
     pub syntax_symbols: Vec<SyntaxSymbol>,
     /// Generation-bound root key used by syntax-only completion queries.
     pub syntax_completion: Option<SyntaxCompletion>,
+    /// Generation-safe type facts for source nodes in this exact buffer revision.
+    pub syntax_inlay_hints: Vec<SyntaxInlayHint>,
 }
 
 /// One resolved syntax reference and its declaration location.
@@ -60,6 +62,14 @@ pub struct SyntaxSymbol {
     pub kind: beskid_analysis::services::AnalysisSymbolKind,
     pub start: usize,
     pub end: usize,
+}
+
+/// One source span whose type was proven by a generation-safe semantic query.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxInlayHint {
+    pub start: usize,
+    pub end: usize,
+    pub type_label: String,
 }
 
 /// The authoritative syntax generation available to a completion request.
