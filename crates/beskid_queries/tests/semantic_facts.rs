@@ -185,7 +185,7 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
     let root = PathBuf::from("/tmp/qualified-import/project/src");
     let main_path = root.join("Main.bd");
     let tools_path = root.join("Lib/Tools.bd");
-    let main_source = "use Lib.Tools;\ni32 Main() { return Tools.Helper(); }";
+    let main_source = "use Lib.Tools;\ni32 Main() { Tools.Member(); return Tools.Helper(); }";
     let tools_source = "i32 Helper() { return 1; }";
     let main_program = expand_program(
         parse_program(main_source).expect("main parse"),
@@ -263,7 +263,33 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
     );
     assert_eq!(
         call_lowering(&db, call).expect("qualified direct call"),
+        Some(beskid_queries::CallLowering::Dynamic)
+    );
+    let direct_call = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        1,
+    );
+    assert_eq!(
+        call_lowering(&db, direct_call).expect("qualified direct call"),
         Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    let main = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+    let program = key(main_unit, generation, &main_index, NodeKind::Program, 0);
+    assert_eq!(
+        reachable_items(&db, program, main)
+            .expect("cross-unit reachability")
+            .expect("cross-unit graph")
+            .as_ref(),
+        &[main, declaration]
     );
     let member_cursor = main_source.find("Tools.Helper").expect("qualified call") + "Tools.".len();
     let completion_key = key(main_unit, generation, &main_index, NodeKind::Program, 0);

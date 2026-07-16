@@ -888,12 +888,56 @@ fn call_lowering_for_node(
     Some(match &call.callee.node {
         expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
         beskid_analysis::syntax::Expression::Path(path) => {
-            resolve_item_declaration(db, program, index, key, &path.node.path.node)
-                .map(CallLowering::Direct)
-                .ok_or_else(|| SemanticError::unavailable("call_lowering"))
+            let path = &path.node.path.node;
+            if path.segments.iter().any(|segment| !segment.node.type_args.is_empty())
+                && imported_call_receiver_exists(db, key, path)
+            {
+                Ok(CallLowering::Dynamic)
+            } else if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
+                Ok(CallLowering::Direct(declaration))
+            } else if imported_call_receiver_exists(db, key, path) {
+                Ok(CallLowering::Dynamic)
+            } else {
+                Err(SemanticError::unavailable("call_lowering"))
+            }
         }
+        beskid_analysis::syntax::Expression::Member(_) => Ok(CallLowering::Dynamic),
         _ => Err(SemanticError::unavailable("call_lowering")),
     })
+}
+
+/// Whether a qualified call's receiver is an exact current import target.
+/// Imported type/module member calls have no direct item edge; unknown qualified calls remain
+/// unavailable instead of being guessed.
+fn imported_call_receiver_exists(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> bool {
+    let Some((_member, receiver)) = path.segments.split_last() else {
+        return false;
+    };
+    if receiver.is_empty() {
+        return false;
+    }
+    let receiver = receiver
+        .iter()
+        .map(|segment| segment.node.name.node.name.as_str())
+        .collect::<Vec<_>>();
+    db.syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .imports
+        .get(&(key.unit, key.generation))
+        .is_some_and(|imports| {
+            imports.iter().any(|import| {
+                import.path.len() >= receiver.len()
+                    && import.path[import.path.len() - receiver.len()..]
+                        .iter()
+                        .map(String::as_str)
+                        .eq(receiver.iter().copied())
+            })
+        })
 }
 
 fn expression_is_lambda(expression: &beskid_analysis::syntax::Expression) -> bool {
@@ -1626,9 +1670,6 @@ fn reachable_items_tracked(
     {
         return Ok(None);
     }
-    if program.unit != entry.unit || program.generation != entry.generation {
-        return Err(SemanticError::unavailable("reachable_items"));
-    }
     if syntax.syntax_index(db).kind(program.node)
         != Some(beskid_analysis::syntax_query::NodeKind::Program)
         || !matches!(
@@ -1644,7 +1685,6 @@ fn reachable_items_tracked(
 
     fn visit(
         db: &dyn Db,
-        syntax: SyntaxUnitInput,
         item: AstNodeKey,
         reachable: &mut Vec<AstNodeKey>,
     ) -> Result<(), SemanticError> {
@@ -1652,16 +1692,22 @@ fn reachable_items_tracked(
             return Ok(());
         }
         reachable.push(item);
-        let callees = direct_callees_tracked(db, syntax, item)?
+        let item_syntax = db
+            .syntax_unit(item.unit)
+            .ok_or_else(|| SemanticError::unavailable("reachable_items"))?;
+        if !item_syntax.accepts_key(db, item) {
+            return Err(SemanticError::unavailable("reachable_items"));
+        }
+        let callees = direct_callees_tracked(db, item_syntax, item)?
             .ok_or_else(|| SemanticError::unavailable("reachable_items"))?;
         for callee in callees.iter().copied() {
-            visit(db, syntax, callee, reachable)?;
+            visit(db, callee, reachable)?;
         }
         Ok(())
     }
 
     let mut reachable = Vec::new();
-    visit(db, syntax, entry, &mut reachable)?;
+    visit(db, entry, &mut reachable)?;
     Ok(Some(reachable.into()))
 }
 
