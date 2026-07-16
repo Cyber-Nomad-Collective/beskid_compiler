@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Name the internal generation-safe LSP syntax-fact result so lifecycle refresh paths preserve
+  definitions, hovers, symbols, completion, and inlay hints without positional tuple coupling.
 - Audit Linux shared ABI-v5 runtime artifacts with an exact ELF loader-import allowlist while
   preserving the static archive and Rust-runtime linkage boundary.
 - Centralize post-mod-rewrite syntax assembly projection at the shared frontend boundary for

@@ -37,6 +37,19 @@ pub const ANALYSIS_CACHE_VERSION: u32 = 5;
 /// Debounce window for typed executable prepare (coalesced with diagnostic publish).
 const TYPED_PREPARE_DEBOUNCE_MS: u64 = 120;
 
+/// Syntax-only LSP facts for one prepared entry revision.
+///
+/// Keeping the facts named prevents lifecycle refresh paths from silently
+/// reordering independent syntax-derived capabilities.
+#[derive(Default)]
+struct SyntaxFacts {
+    definitions: Vec<SyntaxDefinition>,
+    hovers: Vec<SyntaxHover>,
+    symbols: Vec<SyntaxSymbol>,
+    completion: Option<SyntaxCompletion>,
+    inlay_hints: Vec<SyntaxInlayHint>,
+}
+
 fn salsa_revision(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
@@ -83,18 +96,12 @@ fn syntax_facts_for_entry(
     db: &mut beskid_queries::BeskidDatabase,
     resolved: &ResolvedInput,
     entry_state: &beskid_queries::TypedEntryState,
-) -> (
-    Vec<SyntaxDefinition>,
-    Vec<SyntaxHover>,
-    Vec<SyntaxSymbol>,
-    Option<SyntaxCompletion>,
-    Vec<SyntaxInlayHint>,
-) {
+) -> SyntaxFacts {
     let Some(plan) = resolved.compile_plan.as_ref() else {
-        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
+        return SyntaxFacts::default();
     };
     let Some(front_end) = entry_state.typed.as_ref() else {
-        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
+        return SyntaxFacts::default();
     };
     let project =
         db.ensure_project_session(plan, &resolved.source_path, lockfile_digest_for_plan(plan));
@@ -103,11 +110,11 @@ fn syntax_facts_for_entry(
     ));
     let generation = SyntaxGenerationId(entry_state.generation);
     let Ok(typed) = build_typed_program(db, project, generation, assembly) else {
-        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
+        return SyntaxFacts::default();
     };
     let unit = typed.entry;
     let Some(entry) = typed.assembly.units().get(typed.assembly.entry_index()) else {
-        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
+        return SyntaxFacts::default();
     };
     let index =
         beskid_analysis::syntax_query::SyntaxIndex::from_program(&entry.program, generation);
@@ -233,13 +240,13 @@ fn syntax_facts_for_entry(
                 node,
             },
         });
-    (
+    SyntaxFacts {
         definitions,
         hovers,
-        syntax_symbols_for_program(&entry.program),
+        symbols: syntax_symbols_for_program(&entry.program),
         completion,
         inlay_hints,
-    )
+    }
 }
 
 fn syntax_type_label(ty: SemanticTypeId) -> Option<&'static str> {
@@ -436,26 +443,16 @@ async fn build_document_analysis(
     .await
 }
 
-async fn build_syntax_facts(
-    state: &RwLock<State>,
-    uri: &Uri,
-    text: &str,
-) -> (
-    Vec<SyntaxDefinition>,
-    Vec<SyntaxHover>,
-    Vec<SyntaxSymbol>,
-    Option<SyntaxCompletion>,
-    Vec<SyntaxInlayHint>,
-) {
+async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> SyntaxFacts {
     wait_for_initial_scan(state).await;
     if is_manifest_uri(uri) {
-        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
+        return SyntaxFacts::default();
     }
     let Some(path) = uri_to_path(uri) else {
-        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
+        return SyntaxFacts::default();
     };
     let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
-        return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
+        return SyntaxFacts::default();
     };
     with_compilation_db_mut_state(state, |db, write| {
         if let Some(plan) = session.compile_plan.as_ref() {
@@ -464,7 +461,7 @@ async fn build_syntax_facts(
         db.ensure_file_text(path, text.to_string());
         let options = PrepareOptions::default();
         let Ok(entry_state) = typed_entry_state_with_db(db, &resolved, &options, None) else {
-            return (Vec::new(), Vec::new(), Vec::new(), None, Vec::new());
+            return SyntaxFacts::default();
         };
         syntax_facts_for_entry(db, &resolved, &entry_state)
     })
@@ -479,18 +476,17 @@ pub async fn build_document(
     text: String,
 ) -> Document {
     let analysis = build_document_analysis(state, uri, &text).await;
-    let (syntax_definitions, syntax_hovers, syntax_symbols, syntax_completion, syntax_inlay_hints) =
-        build_syntax_facts(state, uri, &text).await;
+    let syntax_facts = build_syntax_facts(state, uri, &text).await;
     Document {
         version,
         text,
         analysis_cache_version: ANALYSIS_CACHE_VERSION,
         analysis,
-        syntax_definitions,
-        syntax_hovers,
-        syntax_symbols,
-        syntax_completion,
-        syntax_inlay_hints,
+        syntax_definitions: syntax_facts.definitions,
+        syntax_hovers: syntax_facts.hovers,
+        syntax_symbols: syntax_facts.symbols,
+        syntax_completion: syntax_facts.completion,
+        syntax_inlay_hints: syntax_facts.inlay_hints,
     }
 }
 
@@ -552,28 +548,27 @@ async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
     .await;
 
     let analysis = build_document_analysis(state, uri, &text).await;
-    let (syntax_definitions, syntax_hovers, syntax_symbols, syntax_completion, syntax_inlay_hints) =
-        build_syntax_facts(state, uri, &text).await;
+    let syntax_facts = build_syntax_facts(state, uri, &text).await;
     let mut write = state.write().await;
     if let Some(doc) = write.docs.get_mut(uri)
         && doc.text == text
     {
         doc.analysis = analysis;
-        doc.syntax_definitions = syntax_definitions;
-        doc.syntax_hovers = syntax_hovers;
-        doc.syntax_symbols = syntax_symbols;
-        doc.syntax_completion = syntax_completion;
-        doc.syntax_inlay_hints = syntax_inlay_hints;
+        doc.syntax_definitions = syntax_facts.definitions;
+        doc.syntax_hovers = syntax_facts.hovers;
+        doc.syntax_symbols = syntax_facts.symbols;
+        doc.syntax_completion = syntax_facts.completion;
+        doc.syntax_inlay_hints = syntax_facts.inlay_hints;
         doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
     } else if let Some(doc) = write.workspace_index.get_mut(uri)
         && doc.text == text
     {
         doc.analysis = analysis;
-        doc.syntax_definitions = syntax_definitions;
-        doc.syntax_hovers = syntax_hovers;
-        doc.syntax_symbols = syntax_symbols;
-        doc.syntax_completion = syntax_completion;
-        doc.syntax_inlay_hints = syntax_inlay_hints;
+        doc.syntax_definitions = syntax_facts.definitions;
+        doc.syntax_hovers = syntax_facts.hovers;
+        doc.syntax_symbols = syntax_facts.symbols;
+        doc.syntax_completion = syntax_facts.completion;
+        doc.syntax_inlay_hints = syntax_facts.inlay_hints;
         doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
     }
 }
@@ -634,8 +629,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
     drop(write_state);
     touch_entry_file_revision_for_uri(state, &uri, &text).await;
     let analysis = build_document_analysis(state, &uri, &text).await;
-    let (syntax_definitions, syntax_hovers, syntax_symbols, syntax_completion, syntax_inlay_hints) =
-        build_syntax_facts(state, &uri, &text).await;
+    let syntax_facts = build_syntax_facts(state, &uri, &text).await;
 
     let mut write_state = state.write().await;
     write_state.docs.insert(
@@ -645,11 +639,11 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
             text,
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
             analysis,
-            syntax_definitions,
-            syntax_hovers,
-            syntax_symbols,
-            syntax_completion,
-            syntax_inlay_hints,
+            syntax_definitions: syntax_facts.definitions,
+            syntax_hovers: syntax_facts.hovers,
+            syntax_symbols: syntax_facts.symbols,
+            syntax_completion: syntax_facts.completion,
+            syntax_inlay_hints: syntax_facts.inlay_hints,
         },
     );
 }
@@ -674,23 +668,17 @@ pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
 
     for (uri, text) in entries {
         let analysis = build_document_analysis(state, &uri, &text).await;
-        let (
-            syntax_definitions,
-            syntax_hovers,
-            syntax_symbols,
-            syntax_completion,
-            syntax_inlay_hints,
-        ) = build_syntax_facts(state, &uri, &text).await;
+        let syntax_facts = build_syntax_facts(state, &uri, &text).await;
         let mut write = state.write().await;
         if let Some(doc) = write.docs.get_mut(&uri)
             && doc.text == text
         {
             doc.analysis = analysis;
-            doc.syntax_definitions = syntax_definitions;
-            doc.syntax_hovers = syntax_hovers;
-            doc.syntax_symbols = syntax_symbols;
-            doc.syntax_completion = syntax_completion;
-            doc.syntax_inlay_hints = syntax_inlay_hints;
+            doc.syntax_definitions = syntax_facts.definitions;
+            doc.syntax_hovers = syntax_facts.hovers;
+            doc.syntax_symbols = syntax_facts.symbols;
+            doc.syntax_completion = syntax_facts.completion;
+            doc.syntax_inlay_hints = syntax_facts.inlay_hints;
             doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
         }
     }
