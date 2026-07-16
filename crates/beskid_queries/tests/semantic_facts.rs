@@ -558,6 +558,83 @@ fn qualified_import_resolution_follows_public_module_reexports() {
 }
 
 #[test]
+fn fully_qualified_assembly_module_call_resolves_without_a_use_binding() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/fully-qualified-module/project/src");
+    let terminal_path = root.join("Platform/Terminal.bd");
+    let string_path = root.join("Core/String/String.bd");
+    let terminal_source = "bool EnvFlagSet(string value) { return Core.String.IsEmpty(value); }";
+    let string_source = "bool IsEmpty(string value) { return value == \"\"; }";
+    let terminal_program = expand_program(
+        parse_program(terminal_source).expect("terminal parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let string_program = expand_program(
+        parse_program(string_source).expect("string parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: terminal_path.display().to_string(),
+                path: terminal_path.clone(),
+                source: terminal_source.to_string(),
+                program: terminal_program.clone(),
+            },
+            SourceUnit {
+                logical_name: string_path.display().to_string(),
+                path: string_path.clone(),
+                source: string_source.to_string(),
+                program: string_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let terminal_unit = SourceUnitId::new(&db, terminal_path);
+    let string_unit = SourceUnitId::new(&db, string_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        terminal_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(25);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let terminal_index = SyntaxIndex::from_program(&terminal_program, generation);
+    let string_index = SyntaxIndex::from_program(&string_program, generation);
+    let call = key(
+        terminal_unit,
+        generation,
+        &terminal_index,
+        NodeKind::CallExpression,
+        0,
+    );
+    let declaration = key(
+        string_unit,
+        generation,
+        &string_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+
+    assert_eq!(
+        call_lowering(&db, call).expect("fully qualified module call"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+}
+
+#[test]
 fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/qualified-import-ambiguity/project/src");

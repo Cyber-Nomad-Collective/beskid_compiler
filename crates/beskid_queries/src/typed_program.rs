@@ -81,11 +81,23 @@ pub fn build_typed_program(
             )
             .map(|module_path| (module_path, SourceUnitId::new(db, unit.path.clone())))
         })
-        .collect::<std::collections::HashMap<_, _>>();
+        .fold(
+            std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new(),
+            |mut modules, (path, unit)| {
+                let units = modules.entry(path).or_default();
+                if !units.contains(&unit) {
+                    units.push(unit);
+                }
+                modules
+            },
+        );
     let mut registry = db
         .syntax_dependency_registry()
         .lock()
         .expect("syntax dependency registry");
+    for (path, units) in &module_units {
+        registry.modules.insert((generation, path.clone()), units.clone());
+    }
     for unit in assembly.units() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
         let imports = unit
@@ -121,7 +133,10 @@ pub fn build_typed_program(
             .filter_map(|(path, binding, public)| {
                 module_units
                     .get(&path)
-                    .copied()
+                    .and_then(|targets| match targets.as_slice() {
+                        [target] => Some(*target),
+                        _ => None,
+                    })
                     .map(|target| crate::db::SyntaxImport {
                         path,
                         binding,

@@ -23,6 +23,8 @@ type SyntaxUnitRegistry = HashMap<SourceUnitId, SyntaxUnitInput>;
 #[derive(Default)]
 pub struct SyntaxDependencyRegistry {
     pub(crate) imports: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<SyntaxImport>>,
+    /// Exact logical module paths assembled for one syntax generation.
+    pub(crate) modules: HashMap<(SyntaxGenerationId, Vec<String>), Vec<SourceUnitId>>,
 }
 
 /// One explicit module import resolved to an assembled syntax unit.

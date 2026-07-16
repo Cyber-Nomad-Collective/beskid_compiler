@@ -499,10 +499,11 @@ fn resolve_item_declaration_candidate(
         .syntax_dependency_registry()
         .lock()
         .expect("syntax dependency registry");
-    let candidates = registry
+    let mut candidates = registry
         .imports
-        .get(&(key.unit, key.generation))?
-        .iter()
+        .get(&(key.unit, key.generation))
+        .into_iter()
+        .flatten()
         .filter(|import| {
             (module_path.len() == 1 && import.binding == module_path[0])
                 || import.path == module_path
@@ -511,6 +512,17 @@ fn resolve_item_declaration_candidate(
         })
         .map(|import| import.target)
         .collect::<Vec<_>>();
+    for target in registry
+        .modules
+        .get(&(key.generation, module_path))
+        .into_iter()
+        .flatten()
+        .copied()
+    {
+        if !candidates.contains(&target) {
+            candidates.push(target);
+        }
+    }
     let [target_unit] = candidates.as_slice() else {
         return None;
     };
