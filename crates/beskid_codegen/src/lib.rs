@@ -43,7 +43,7 @@ pub use module_emission::{
 };
 pub use prepared_syntax::{
     PreparedSyntaxEntrypoint, lower_canonical_runtime_prepared_syntax,
-    lower_prepared_syntax_entrypoint,
+    lower_prepared_syntax_entrypoint, lower_prepared_syntax_module,
 };
 pub use services::{
     LoweredProgram, jit_symbol_for_item, lower_from_front_end,
