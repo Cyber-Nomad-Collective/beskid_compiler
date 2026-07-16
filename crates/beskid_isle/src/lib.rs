@@ -82,6 +82,18 @@ pub enum LiteralKind {
     Boolean,
 }
 
+/// Compiler-owned primitives available only to canonical runtime syntax.
+///
+/// They are selected from the manifest-backed capability, never from a user-declared extern.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeIntrinsicKind {
+    NativeWordFromPointer,
+    PointerFromNativeWord,
+    PointerAdd,
+    RawWordLoad,
+    RawWordStore,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OperatorFact {
     Or,
@@ -380,6 +392,9 @@ pub trait NodeFacts {
     fn call_kind(&self, _key: AstNodeKey) -> Option<CallKind> {
         None
     }
+    fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
+        None
+    }
     fn child(&self, _key: AstNodeKey, _index: u8) -> Option<AstNodeKey> {
         None
     }
@@ -656,6 +671,31 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         let (call, _) = self.import_direct_call(key)?;
         self.builder.inst_results(call).is_empty().then_some(())
     }
+
+    fn runtime_intrinsic_arguments(&mut self, key: AstNodeKey) -> Option<Vec<Value>> {
+        self.facts
+            .call_arguments(key)?
+            .into_iter()
+            .map(|argument| generated::constructor_lower_expression(self, argument))
+            .collect()
+    }
+
+    fn emit_runtime_intrinsic_statement(&mut self, key: AstNodeKey) -> Option<()> {
+        let Some(RuntimeIntrinsicKind::RawWordStore) = self.facts.runtime_intrinsic_kind(key) else {
+            return self.direct_call_statement(key);
+        };
+        let arguments = self.runtime_intrinsic_arguments(key)?;
+        let [address, value] = arguments.as_slice() else {
+            return None;
+        };
+        let pointer = self.builder.func.dfg.value_type(*address);
+        if !pointer.is_int() || self.builder.func.dfg.value_type(*value) != pointer
+        {
+            return None;
+        }
+        self.builder.ins().store(MemFlags::new(), *value, *address, 0);
+        Some(())
+    }
 }
 
 impl generated::Context for IsleContext<'_, '_, '_, '_> {
@@ -801,17 +841,18 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn emit_expression_statement(&mut self, key: AstNodeKey) -> Option<()> {
         let expression = self.facts.child(key, 0)?;
-        if self.facts.node_kind(expression) == Some(NodeKind::CallExpression)
-            && matches!(
-                self.facts.call_kind(expression),
-                Some(CallKind::Direct | CallKind::RuntimeIntrinsic)
-            )
-            && self
-                .facts
-                .call_signature(expression)
-                .is_some_and(|signature| signature.returns.is_empty())
-        {
-            return self.direct_call_statement(expression);
+        if self.facts.node_kind(expression) == Some(NodeKind::CallExpression) {
+            if self.facts.call_kind(expression) == Some(CallKind::RuntimeIntrinsic) {
+                return self.emit_runtime_intrinsic_statement(expression);
+            }
+            if self.facts.call_kind(expression) == Some(CallKind::Direct)
+                && self
+                    .facts
+                    .call_signature(expression)
+                    .is_some_and(|signature| signature.returns.is_empty())
+            {
+                return self.direct_call_statement(expression);
+            }
         }
         let value = generated::constructor_lower_expression(self, expression)?;
         self.discard_value(value);
@@ -819,7 +860,30 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn emit_runtime_intrinsic(&mut self, key: AstNodeKey) -> Option<Value> {
-        self.direct_call(key)
+        let Some(kind) = self.facts.runtime_intrinsic_kind(key) else {
+            return self.direct_call(key);
+        };
+        let arguments = self.runtime_intrinsic_arguments(key)?;
+        let result = self.facts.scalar_type(key)?;
+        match kind {
+            RuntimeIntrinsicKind::NativeWordFromPointer
+            | RuntimeIntrinsicKind::PointerFromNativeWord => {
+                let [value] = arguments.as_slice() else { return None; };
+                (self.builder.func.dfg.value_type(*value) == result).then_some(*value)
+            }
+            RuntimeIntrinsicKind::PointerAdd => {
+                let [base, offset] = arguments.as_slice() else { return None; };
+                (self.builder.func.dfg.value_type(*base) == result
+                    && self.builder.func.dfg.value_type(*offset) == result)
+                    .then(|| self.builder.ins().iadd(*base, *offset))
+            }
+            RuntimeIntrinsicKind::RawWordLoad => {
+                let [address] = arguments.as_slice() else { return None; };
+                (self.builder.func.dfg.value_type(*address) == result)
+                    .then(|| self.builder.ins().load(result, MemFlags::new(), *address, 0))
+            }
+            RuntimeIntrinsicKind::RawWordStore => None,
+        }
     }
 
     fn discard_value(&mut self, _value: Value) {}

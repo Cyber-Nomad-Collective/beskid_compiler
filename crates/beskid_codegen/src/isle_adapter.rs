@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
-    LiteralKind, NodeFacts, NodeKind, OperatorFact, ParameterSlot, Signature, StringInterner,
+    LiteralKind, NodeFacts, NodeKind, OperatorFact, ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner,
 };
 use beskid_queries::{
     CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, block_statement_nodes, call_arguments,
@@ -152,6 +152,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             Some(CallLowering::Direct(_))
         )
         .then_some(CallKind::Direct)
+    }
+
+    fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
+        let (_, intrinsic) = self.runtime_intrinsic(key)?;
+        Some(match intrinsic.name.as_str() {
+            "native_word_from_pointer" => RuntimeIntrinsicKind::NativeWordFromPointer,
+            "pointer_from_native_word" => RuntimeIntrinsicKind::PointerFromNativeWord,
+            "pointer_add" => RuntimeIntrinsicKind::PointerAdd,
+            "raw_word_load" => RuntimeIntrinsicKind::RawWordLoad,
+            "raw_word_store" => RuntimeIntrinsicKind::RawWordStore,
+            _ => return None,
+        })
     }
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
