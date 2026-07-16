@@ -4,7 +4,7 @@ use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
     CallLowering, ItemSignature, call_lowering, child_nodes, generic_call_specialization,
-    item_abi_signature,
+    item_abi_signature, node_kind,
 };
 use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::{
@@ -166,6 +166,16 @@ fn resolve_module_items(
                 callee: DirectCallee::item(item.key),
                 specialization: None,
             });
+            continue;
+        }
+        let kind = node_kind(db, item.key).map_err(|error| {
+            SyntaxModuleEmissionError::Emission(FunctionEmissionError::Verification(
+                error.to_string(),
+            ))
+        })?;
+        if kind != Some(beskid_queries::IndexedNodeKind::FunctionDefinition) {
+            // Type and enum declarations carry source layout facts but have no executable
+            // syntax body. They deliberately do not require a call-derived function ABI.
             continue;
         }
         let Some(signatures) = specializations.get(&item.key) else {

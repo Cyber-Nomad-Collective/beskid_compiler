@@ -904,6 +904,56 @@ fn parsed_program_lowers_to_backend_artifact_without_hir() {
 }
 
 #[test]
+fn parsed_syntax_program_omits_uncalled_generic_enum_declarations() {
+    let (input, isa, root) = item_fixture_with_root(
+        "type Box<T> { T value } enum Option<T> { Some(T value), None } i32 Main() { return 0; }",
+    );
+    let boxed = find_definition_of_kind(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::TypeDefinition,
+    )
+    .expect("generic type declaration");
+    let option = find_definition_of_kind(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::EnumDefinition,
+    )
+    .expect("generic enum declaration");
+    let main = find_function_definitions(input.database(), root)[0];
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: boxed,
+                symbol: "Box".into(),
+            },
+            SyntaxModuleItem {
+                key: option,
+                symbol: "Option".into(),
+            },
+            SyntaxModuleItem {
+                key: main,
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("generic declarations without executable bodies are omitted");
+
+    assert_eq!(
+        artifact
+            .functions
+            .iter()
+            .map(|function| function.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Main"],
+        "only executable syntax items enter the artifact",
+    );
+}
+
+#[test]
 fn parsed_struct_literal_method_call_uses_receiver_abi_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
         "type Point { i32 x, i32 Ping() { return 7; } } i32 Main() { return Point { x: 1 }.Ping(); }",
@@ -1637,6 +1687,22 @@ fn find_function_definitions(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Ve
         }
     }
     found
+}
+
+fn find_definition_of_kind(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    expected: beskid_queries::IndexedNodeKind,
+) -> Option<AstNodeKey> {
+    if node_kind(db, key).ok().flatten() == Some(expected) {
+        return Some(key);
+    }
+    child_nodes(db, key)
+        .ok()
+        .flatten()?
+        .iter()
+        .copied()
+        .find_map(|child| find_definition_of_kind(db, child, expected))
 }
 
 fn find_call_expression(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<AstNodeKey> {
