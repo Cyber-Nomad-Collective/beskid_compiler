@@ -79,7 +79,7 @@ pub use semantic_contract::{
     ExportSymbol, GenericCallInstantiation, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot,
     OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnTarget,
-    TestItem, TypedProgram, abi_type, aggregate_layout, call_arguments, call_lowering,
+    TestItem, TypedProgram, abi_type, aggregate_layout, block_statement_nodes, call_arguments, call_lowering,
     cast_intents, child_nodes, closure_environment, completion_candidates, control_flow,
     direct_callees, generic_call_instantiation, item_abi_signature, item_body, item_export_symbol,
     item_name, item_signature, literal_fact, local_slot, node_kind, node_span, node_type,

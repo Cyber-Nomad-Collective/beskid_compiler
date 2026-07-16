@@ -802,7 +802,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_expression_statement(&mut self, key: AstNodeKey) -> Option<()> {
         let expression = self.facts.child(key, 0)?;
         if self.facts.node_kind(expression) == Some(NodeKind::CallExpression)
-            && self.facts.call_kind(expression) == Some(CallKind::Direct)
+            && matches!(
+                self.facts.call_kind(expression),
+                Some(CallKind::Direct | CallKind::RuntimeIntrinsic)
+            )
             && self
                 .facts
                 .call_signature(expression)
@@ -882,10 +885,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_if_else(&mut self, key: AstNodeKey) -> Option<()> {
         let condition_key = self.facts.child(key, 0)?;
         let then_key = self.facts.child(key, 1)?;
-        let else_key = self.facts.child(key, 2)?;
+        let else_key = self.facts.child(key, 2);
         let condition = generated::constructor_lower_expression(self, condition_key)?;
         let then_block = self.builder.create_block();
         let else_block = self.builder.create_block();
+        let merge_block = self.builder.create_block();
         self.builder
             .ins()
             .brif(condition, then_block, &[], else_block, &[]);
@@ -893,10 +897,20 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.builder.switch_to_block(then_block);
         self.builder.seal_block(then_block);
         generated::constructor_lower_statement(self, then_key)?;
+        if !block_is_terminated(self.builder, then_block) {
+            self.builder.ins().jump(merge_block, &[]);
+        }
 
         self.builder.switch_to_block(else_block);
         self.builder.seal_block(else_block);
-        generated::constructor_lower_statement(self, else_key)?;
+        if let Some(else_key) = else_key {
+            generated::constructor_lower_statement(self, else_key)?;
+        }
+        if !block_is_terminated(self.builder, else_block) {
+            self.builder.ins().jump(merge_block, &[]);
+        }
+        self.builder.switch_to_block(merge_block);
+        self.builder.seal_block(merge_block);
         Some(())
     }
 

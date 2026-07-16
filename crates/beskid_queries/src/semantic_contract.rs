@@ -2199,6 +2199,29 @@ fn test_statement_nodes_tracked(
     .transpose()
 }
 
+/// Return executable block statements without syntax-index wrapper nodes.
+#[salsa::tracked]
+fn block_statement_nodes_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_node(db, syntax, key, |program, index, node| {
+        let block = node.of::<beskid_analysis::syntax::Block>()?;
+        Some(
+            block.statements.iter().map(|statement| {
+                let wrapper = index.direct_child_id(
+                    program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(statement),
+                ).ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?;
+                let [statement] = index.children(wrapper)
+                    .ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?
+                else { return Err(SemanticError::unavailable("block_statement_nodes")); };
+                Ok(AstNodeKey { node: *statement, ..key })
+            }).collect::<Result<Vec<_>, _>>().map(Arc::from),
+        )
+    })?.transpose()
+}
+
 #[salsa::tracked]
 fn item_name_tracked(
     db: &dyn Db,
@@ -2761,6 +2784,11 @@ pub fn test_statement_nodes(
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_registered_syntax(db, key, test_statement_nodes_tracked)
+}
+
+/// Return executable statements for a current block in source order.
+pub fn block_statement_nodes(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+    with_registered_syntax(db, key, block_statement_nodes_tracked)
 }
 
 /// Return the exact declared name for a current syntax function or test item.

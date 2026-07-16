@@ -8,7 +8,7 @@ use beskid_isle::{
     LiteralKind, NodeFacts, NodeKind, OperatorFact, ParameterSlot, Signature, StringInterner,
 };
 use beskid_queries::{
-    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, call_arguments,
+    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, block_statement_nodes, call_arguments,
     call_lowering, cast_intents, child_nodes, item_abi_signature, item_body, literal_fact,
     local_slot, node_kind, node_type, operator_fact, resolved_local, runtime_intrinsic_name,
     test_statement_nodes,
@@ -76,10 +76,26 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
         let children = if self.node_kind(key) == Some(NodeKind::TestDefinition) {
             self.query(test_statement_nodes(self.db, key))?
+        } else if self.node_kind(key) == Some(NodeKind::BlockExpression) {
+            self.query(block_statement_nodes(self.db, key))?
+        } else if self.node_kind(key) == Some(NodeKind::BinaryExpression) {
+            self.children(key)
+                .iter()
+                .copied()
+                .filter(|child| {
+                    !matches!(
+                        self.query(node_kind(self.db, *child)),
+                        Some(beskid_queries::IndexedNodeKind::BinaryOp)
+                    )
+                })
+                .collect()
         } else {
             self.children(key).into()
         };
-        children.get(usize::from(index)).copied()
+        children
+            .get(usize::from(index))
+            .copied()
+            .and_then(|child| self.unwrap_transparent(child))
     }
 
     fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
@@ -90,6 +106,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         .then(|| {
             let length = if self.node_kind(key) == Some(NodeKind::TestDefinition) {
                 let nodes = self.query(test_statement_nodes(self.db, key))?;
+                nodes.len()
+            } else if self.node_kind(key) == Some(NodeKind::BlockExpression) {
+                let nodes = self.query(block_statement_nodes(self.db, key))?;
                 nodes.len()
             } else {
                 self.children(key).len()
