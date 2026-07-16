@@ -30,3 +30,7 @@ fi
 
 echo "==> Building native ABI-v5 runtime kit (${profile}) at ${prefix}"
 "${cli[@]}" runtime-kit build-native-host --prefix "${prefix}" --profile "${profile}"
+
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+  "${ROOT}/scripts/verify-native-runtime-kit-linux.sh"
+fi

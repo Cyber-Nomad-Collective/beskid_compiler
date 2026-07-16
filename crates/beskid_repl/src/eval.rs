@@ -198,6 +198,28 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[ignore = "requires the staged Linux native runtime-kit prefix"]
+    fn staged_linux_runtime_kit_evaluates_a_snippet() {
+        let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
+            .map(std::path::PathBuf::from)
+            .expect("Linux evidence must set BESKID_RUNTIME_PREFIX");
+        let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
+            Ok("debug") => BuildProfile::Debug,
+            Ok("release") => BuildProfile::Release,
+            value => panic!("unsupported staged runtime profile: {value:?}"),
+        };
+        let target = host_runtime_target().expect("supported native host target");
+        let mut engine = Engine::with_runtime_kit(&prefix, target, profile)
+            .expect("load the staged Linux runtime kit");
+
+        assert_eq!(
+            eval_snippet(&mut engine, "41 + 1"),
+            EvalOutcome::Value("42".to_string())
+        );
+    }
+
+    #[test]
     fn eval_unit_statement() {
         let mut engine = Engine::new();
         let outcome = eval_snippet(&mut engine, "let x = 1;");

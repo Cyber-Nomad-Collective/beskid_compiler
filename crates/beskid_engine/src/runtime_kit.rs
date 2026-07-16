@@ -74,9 +74,20 @@ impl DynamicLibrary {
         }
         let path = CString::new(path.as_os_str().as_bytes())
             .map_err(|_| format!("runtime library path contains NUL: `{}`", path.display()))?;
+        let display_path = path.to_string_lossy().into_owned();
+        // POSIX requires clearing a prior loader diagnostic before observing the result of a new
+        // dlopen call. Without this, an otherwise actionable ELF/TLS loader failure can surface
+        // as an unhelpful empty diagnostic in hosted CI.
+        unsafe {
+            let _ = dlerror();
+        }
         let handle = unsafe { dlopen(path.as_ptr(), RTLD_NOW | RTLD_LOCAL) };
         if handle.is_null() {
-            return Err(last_dl_error(unsafe { dlerror() }));
+            let diagnostic = last_dl_error(unsafe { dlerror() });
+            let os_error = std::io::Error::last_os_error();
+            return Err(format!(
+                "dlopen `{display_path}` failed with RTLD_NOW|RTLD_LOCAL: {diagnostic}; errno={os_error}"
+            ));
         }
         Ok(Self(handle))
     }
