@@ -29,6 +29,7 @@ pub struct SyntaxDependencyRegistry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxImport {
     pub(crate) path: Vec<String>,
+    pub(crate) binding: String,
     pub(crate) target: SourceUnitId,
 }
 

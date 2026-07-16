@@ -462,7 +462,8 @@ fn resolve_item_declaration_candidate(
         .get(&(key.unit, key.generation))?
         .iter()
         .filter(|import| {
-            import.path == module_path
+            (module_path.len() == 1 && import.binding == module_path[0])
+                || import.path == module_path
                 || (import.path.len() >= module_path.len()
                     && import.path[import.path.len() - module_path.len()..] == module_path)
         })
@@ -1103,13 +1104,19 @@ fn imported_call_receiver_exists(
         .imports
         .get(&(key.unit, key.generation))
         .is_some_and(|imports| {
-            imports.iter().any(|import| {
-                import.path.len() >= receiver.len()
-                    && import.path[import.path.len() - receiver.len()..]
-                        .iter()
-                        .map(String::as_str)
-                        .eq(receiver.iter().copied())
-            })
+            imports
+                .iter()
+                .filter(|import| {
+                (receiver.len() == 1 && import.binding == receiver[0])
+                    || (import.path.len() >= receiver.len()
+                        && import.path[import.path.len() - receiver.len()..]
+                            .iter()
+                            .map(String::as_str)
+                            .eq(receiver.iter().copied()))
+                })
+                .take(2)
+                .count()
+                == 1
         })
 }
 
@@ -2613,7 +2620,7 @@ pub fn completion_candidates(
             .and_then(|imports| {
                 imports
                     .iter()
-                    .find(|import| import.path.last().is_some_and(|segment| segment == alias))
+                    .find(|import| import.binding == alias)
             })
             .map(|import| import.target)
         else {

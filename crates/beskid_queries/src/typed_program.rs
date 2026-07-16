@@ -53,23 +53,30 @@ pub fn build_typed_program(
             .items
             .iter()
             .filter_map(|item| match &item.node {
-                beskid_analysis::syntax::Node::UseDeclaration(declaration) => Some(
-                    declaration
+                beskid_analysis::syntax::Node::UseDeclaration(declaration) => {
+                    let path = declaration
                         .node
                         .path
                         .node
                         .segments
                         .iter()
                         .map(|segment| segment.node.name.node.name.clone())
-                        .collect(),
-                ),
+                        .collect::<Vec<_>>();
+                    let binding = declaration
+                        .node
+                        .alias
+                        .as_ref()
+                        .map(|alias| alias.node.name.clone())
+                        .or_else(|| path.last().cloned())?;
+                    Some((path, binding))
+                }
                 _ => None,
             })
-            .filter_map(|path| {
+            .filter_map(|(path, binding)| {
                 module_units
                     .get(&path)
                     .copied()
-                    .map(|target| crate::db::SyntaxImport { path, target })
+                    .map(|target| crate::db::SyntaxImport { path, binding, target })
             })
             .collect();
         registry.imports.insert((unit_id, generation), imports);
