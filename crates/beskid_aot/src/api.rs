@@ -212,6 +212,42 @@ pub fn emit_host_context_library_pair(
     )
 }
 
+/// Emit native library artifacts that include the current host target's context-switch assembly
+/// and its minimal platform boundary. The platform object deliberately owns only raw native
+/// allocation/free and the ABI-v5 trap path; portable memory operations remain compiler
+/// intrinsics.
+pub fn emit_host_platform_library_pair(
+    artifact: CodegenArtifact,
+    output_dir: PathBuf,
+    name: &str,
+) -> AotResult<NativeLibraryPair> {
+    let target = host_runtime_target()?;
+    std::fs::create_dir_all(&output_dir).map_err(|err| AotError::Io {
+        path: output_dir.clone(),
+        message: err.to_string(),
+    })?;
+    let context_object = compile_context_assembly(&target, &output_dir, name)?;
+    let platform_object = compile_platform_assembly(&target, &output_dir, name)?;
+    let mut provenance_symbols = AbiManifestV5::canonical_runtime(target)
+        .assembly_exports
+        .into_iter()
+        .map(|entry| entry.symbol.as_str().to_owned())
+        .collect::<Vec<_>>();
+    provenance_symbols.extend([
+        "beskid_rt_v5_intrinsic_system_allocate".to_owned(),
+        "beskid_rt_v5_intrinsic_system_free".to_owned(),
+        "beskid_rt_v5_trap".to_owned(),
+    ]);
+    emit_library_pair_with_objects(
+        artifact,
+        output_dir,
+        name,
+        Some(host_target_triple().to_owned()),
+        provenance_symbols,
+        vec![context_object, platform_object],
+    )
+}
+
 fn emit_library_pair_with_objects(
     artifact: CodegenArtifact,
     output_dir: PathBuf,
@@ -377,6 +413,43 @@ fn compile_context_assembly(
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
             command: format!("{:?}", command),
+            detail: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(object)
+}
+
+fn compile_platform_assembly(
+    target: &TargetMetadata,
+    output_dir: &std::path::Path,
+    name: &str,
+) -> AotResult<PathBuf> {
+    if target.triple.as_str() != "aarch64-apple-darwin" {
+        return Err(AotError::UnsupportedLinkerStrategy {
+            target: target.triple.as_str().to_owned(),
+            message: "native platform shim is not implemented for this host target".to_owned(),
+        });
+    }
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../beskid_abi/assembly")
+        .join(target.triple.as_str())
+        .join("platform.S");
+    let object = output_dir.join(format!("{name}.platform.o"));
+    let output = Command::new("clang")
+        .args(["-c", "-arch", "arm64"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&object)
+        .output()
+        .map_err(|_| AotError::LinkerUnavailable)?;
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: format!(
+                "clang -c -arch arm64 {} -o {}",
+                source.display(),
+                object.display()
+            ),
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
