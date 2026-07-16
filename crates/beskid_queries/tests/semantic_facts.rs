@@ -771,7 +771,7 @@ fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
 }
 
 #[test]
-fn transparent_single_field_generic_types_have_only_source_derived_abi_facts() {
+fn nominal_generic_types_have_only_source_derived_pointer_abi_facts() {
     let source = r#"
 type Channel<T> { i64 handle }
 type Pair<T> { i64 left, i64 right }
@@ -792,23 +792,36 @@ unit Main() {
     let pair_let = key(unit, generation, &index, NodeKind::LetStatement, 1);
 
     assert_eq!(
-        beskid_queries::item_abi_signature(&db, create).expect("transparent signature"),
+        beskid_queries::item_abi_signature(&db, create).expect("nominal signature"),
         Some(beskid_queries::ItemSignature {
             parameters: Arc::from([]),
-            result: SemanticTypeId::I64,
+            result: SemanticTypeId::POINTER,
         })
     );
     assert_eq!(
-        beskid_queries::abi_type(&db, channel_call).expect("transparent call ABI"),
-        Some(SemanticTypeId::I64)
+        beskid_queries::abi_type(&db, channel_call).expect("nominal call ABI"),
+        Some(SemanticTypeId::POINTER)
     );
     assert_eq!(
-        beskid_queries::abi_type(&db, channel_let).expect("transparent local ABI"),
-        Some(SemanticTypeId::I64)
+        beskid_queries::abi_type(&db, channel_let).expect("nominal local ABI"),
+        Some(SemanticTypeId::POINTER)
     );
-    assert_unavailable(beskid_queries::item_abi_signature(&db, create_pair));
-    assert_unavailable(beskid_queries::abi_type(&db, pair_call));
-    assert_unavailable(beskid_queries::abi_type(&db, pair_let));
+    assert_eq!(
+        beskid_queries::item_abi_signature(&db, create_pair)
+            .expect("multi-field nominal signature"),
+        Some(beskid_queries::ItemSignature {
+            parameters: Arc::from([]),
+            result: SemanticTypeId::POINTER,
+        })
+    );
+    assert_eq!(
+        beskid_queries::abi_type(&db, pair_call).expect("multi-field nominal call ABI"),
+        Some(SemanticTypeId::POINTER)
+    );
+    assert_eq!(
+        beskid_queries::abi_type(&db, pair_let).expect("multi-field nominal local ABI"),
+        Some(SemanticTypeId::POINTER)
+    );
 }
 
 #[test]
