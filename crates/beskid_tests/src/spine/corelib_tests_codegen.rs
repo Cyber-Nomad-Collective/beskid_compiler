@@ -25,11 +25,11 @@ macro_rules! corelib_lower_test {
 }
 
 #[test]
-fn channel_create_unbounded_default_lowers_to_clif() {
+fn channel_module_import_smoke_lowers_to_clif() {
     with_project_test_env(&corelib_tests_project_root(), || {
         let artifact = lower_corelib_tests_entrypoint(
             "concurrency/ChannelApiTests.bd",
-            "channel_create_unbounded_default",
+            "channel_module_import_smoke",
         );
         assert!(
             !artifact.functions.is_empty(),
@@ -56,7 +56,7 @@ corelib_lower_test!(
 corelib_lower_test!(
     messages_channel_factory_lowers,
     "console/ConsoleMessageChannelTests.bd",
-    "messages_channel_factory"
+    "messages_channel_factory_smoke"
 );
 corelib_lower_test!(
     panel_ascii_frame_lowers,
