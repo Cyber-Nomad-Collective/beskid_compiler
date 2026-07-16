@@ -157,6 +157,9 @@ fn format_lower_error(error: anyhow::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use beskid_abi::runtime_kit::BuildProfile;
+    use beskid_engine::host_runtime_target;
+    use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
     #[test]
     fn wraps_expression_as_i64_main() {
@@ -177,6 +180,21 @@ mod tests {
         let mut engine = Engine::new();
         let outcome = eval_snippet(&mut engine, "41 + 1");
         assert_eq!(outcome, EvalOutcome::Value("42".to_string()));
+    }
+
+    #[test]
+    fn eval_uses_a_fresh_native_runtime_kit() {
+        let prefix = tempfile::tempdir().expect("fresh runtime-kit prefix");
+        build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
+            .expect("publish canonical native runtime kit");
+        let target = host_runtime_target().expect("supported native host target");
+        let mut engine = Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug)
+            .expect("load the exact fresh runtime kit");
+
+        assert_eq!(
+            eval_snippet(&mut engine, "true"),
+            EvalOutcome::Value("true".to_string())
+        );
     }
 
     #[test]

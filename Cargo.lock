@@ -572,6 +572,7 @@ dependencies = [
  "beskid_pipeline",
  "beskid_queries",
  "beskid_runtime",
+ "beskid_tools",
  "cranelift-codegen",
  "cranelift-jit",
  "cranelift-module",
@@ -711,13 +712,16 @@ name = "beskid_repl"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "beskid_abi",
  "beskid_analysis",
  "beskid_codegen",
  "beskid_engine",
  "beskid_pipeline",
  "beskid_queries",
+ "beskid_tools",
  "crossterm 0.29.0",
  "ratatui 0.30.1",
+ "tempfile",
  "tui-term",
 ]
 

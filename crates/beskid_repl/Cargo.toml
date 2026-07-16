@@ -15,3 +15,6 @@ ratatui = { workspace = true }
 tui-term = { workspace = true, features = ["vt100"] }
 
 [dev-dependencies]
+beskid_abi = { path = "../beskid_abi" }
+beskid_tools = { path = "../beskid_tools" }
+tempfile = "3"

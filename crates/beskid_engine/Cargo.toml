@@ -23,4 +23,5 @@ extern_dlopen = []
 [dev-dependencies]
 beskid_aot = { path = "../beskid_aot" }
 beskid_runtime = { path = "../beskid_runtime", features = ["metrics"] }
+beskid_tools = { path = "../beskid_tools" }
 tempfile = "3"

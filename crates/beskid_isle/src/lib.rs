@@ -1023,6 +1023,17 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_return(&mut self, key: AstNodeKey) -> Option<()> {
         if let Some(value_key) = self.facts.child(key, 0) {
             let value = generated::constructor_lower_expression(self, value_key)?;
+            let expected = self.builder.func.signature.returns.first()?.value_type;
+            let actual = self.builder.func.dfg.value_type(value);
+            let value = if actual == expected {
+                value
+            } else if actual.is_int() && expected.is_int() && actual.bits() < expected.bits() {
+                self.builder.ins().sextend(expected, value)
+            } else if actual.is_int() && expected.is_int() && actual.bits() > expected.bits() {
+                self.builder.ins().ireduce(expected, value)
+            } else {
+                return None;
+            };
             self.builder.ins().return_(&[value]);
         } else {
             self.builder.ins().return_(&[]);
