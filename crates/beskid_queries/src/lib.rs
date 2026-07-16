@@ -74,22 +74,22 @@ pub use persistence::{
     SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_manifest,
 };
 pub use semantic_contract::{
-    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering, CastIntent, ClosureCapture,
-    ClosureEnvironment, CompletionCandidate, CompletionContext, CompletionKind, ControlFlow,
-    EnumConstructorFact, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact,
-    ExportSymbol, GenericCallInstantiation, GenericCallSpecialization, IndexedNodeKind,
-    ItemSignature, LiteralFact, LocalSlot,
-    CorelibService, OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
+    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering,
+    CastIntent, ClosureCapture, ClosureEnvironment, CompletionCandidate, CompletionContext,
+    CompletionKind, ControlFlow, CorelibService, EnumConstructorFact, EnumLayoutFact,
+    EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, ExportSymbol, GenericCallInstantiation,
+    GenericCallSpecialization, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot,
+    OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnTarget,
-    TestItem, TypedProgram, abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration,
-    block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments,
-    call_lowering, cast_intents,
-    child_nodes, closure_environment, completion_candidates, control_flow, direct_callees,
-    enum_constructor, enum_layout, enum_match, generic_call_instantiation,
-    generic_call_specialization, item_abi_signature,
-    item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot, node_kind,
-    node_span, node_type, operator_fact, reachable_items, resolved_item, resolved_local,
-    runtime_intrinsic, runtime_intrinsic_name, spawn_target, test_item, test_statement_nodes,
+    TestItem, TypedProgram, abi_type, aggregate_field_access, aggregate_layout,
+    aggregate_literal_declaration, block_statement_nodes, call_abi_signature,
+    call_argument_abi_type, call_arguments,
+    call_lowering, cast_intents, child_nodes, closure_environment, completion_candidates,
+    control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
+    generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
+    item_export_symbol, item_name, item_signature, literal_fact, local_slot, node_kind, node_span,
+    node_type, operator_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
+    runtime_intrinsic_name, spawn_target, test_item, test_statement_nodes,
 };
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,
@@ -104,10 +104,11 @@ pub use typed_entry_bundle::{
     reset_typed_entry_inputs, typed_entry_bundle_tracked, typed_entry_bundle_with_db,
     typed_entry_state_with_db, typed_prepare_revision_for,
 };
-pub use typed_program::build_canonical_runtime_typed_program;
 pub use typed_program::build_canonical_corelib_syscall_typed_program;
-pub use typed_program::build_typed_program_with_corelib_syscall_services;
+pub use typed_program::build_canonical_runtime_typed_program;
 pub use typed_program::build_typed_program;
+pub use typed_program::build_typed_program_with_corelib_services;
+pub use typed_program::build_typed_program_with_corelib_syscall_services;
 pub use typed_program::project_session_for_syntax_assembly;
 pub use unit::{
     parse_and_expand_unit, parse_and_expand_unit_tracked, parse_and_expand_unit_with_source,

@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use beskid_abi::runtime_source::{CorelibServiceCapability, RuntimeIntrinsicCapability};
+use beskid_abi::runtime_source::{
+    CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability,
+    canonical_corelib_service_source_path, canonical_corelib_service_sources,
+};
 use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 
@@ -96,7 +99,9 @@ pub fn build_typed_program(
         .lock()
         .expect("syntax dependency registry");
     for (path, units) in &module_units {
-        registry.modules.insert((generation, path.clone()), units.clone());
+        registry
+            .modules
+            .insert((generation, path.clone()), units.clone());
     }
     for unit in assembly.units() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
@@ -189,7 +194,14 @@ pub fn build_canonical_corelib_syscall_typed_program(
 
     let mut typed = build_typed_program(db, project, generation, assembly)?;
     let entry = typed.entry;
-    attach_corelib_services(db, &mut typed, entry, capability);
+    let services = capability
+        .services()
+        .iter()
+        .copied()
+        .filter(|service| service.source_path == expected[0].logical_path)
+        .collect();
+    attach_corelib_services(db, &mut typed, entry, services);
+    typed.corelib_service_capability = Some(Arc::new(capability));
     Ok(typed)
 }
 
@@ -200,6 +212,28 @@ pub fn build_canonical_corelib_syscall_typed_program(
 /// standalone-corpus constructor above. This path deliberately identifies the facade by both its
 /// canonical relative source path and the compiler-embedded bytes, then records service authority
 /// against only that `SourceUnitId`. All sibling and host units remain ordinary syntax units.
+pub fn build_typed_program_with_corelib_services(
+    db: &mut BeskidDatabase,
+    project: ProjectSession,
+    generation: SyntaxGenerationId,
+    assembly: Arc<SyntaxProgramAssembly>,
+    capability: CorelibServiceCapability,
+) -> Result<TypedProgram, SemanticError> {
+    let service_units = canonical_corelib_service_units(&assembly, &capability)
+        .into_iter()
+        .map(|(path, services)| (SourceUnitId::new(db, path), services))
+        .collect::<Vec<_>>();
+    let mut typed = build_typed_program(db, project, generation, assembly)?;
+    if !service_units.is_empty() {
+        for (service_unit, services) in service_units {
+            attach_corelib_services(db, &mut typed, service_unit, services);
+        }
+        typed.corelib_service_capability = Some(Arc::new(capability));
+    }
+    Ok(typed)
+}
+
+/// Compatibility spelling for callers that assemble only the syscall facade.
 pub fn build_typed_program_with_corelib_syscall_services(
     db: &mut BeskidDatabase,
     project: ProjectSession,
@@ -207,52 +241,51 @@ pub fn build_typed_program_with_corelib_syscall_services(
     assembly: Arc<SyntaxProgramAssembly>,
     capability: CorelibServiceCapability,
 ) -> Result<TypedProgram, SemanticError> {
-    let service_unit = canonical_corelib_syscall_unit(&assembly)
-        .map(|path| SourceUnitId::new(db, path));
-    let mut typed = build_typed_program(db, project, generation, assembly)?;
-    if let Some(service_unit) = service_unit {
-        attach_corelib_services(db, &mut typed, service_unit, capability);
-    }
-    Ok(typed)
+    build_typed_program_with_corelib_services(db, project, generation, assembly, capability)
 }
 
 fn attach_corelib_services(
     db: &BeskidDatabase,
     typed: &mut TypedProgram,
     service_unit: SourceUnitId,
-    capability: CorelibServiceCapability,
+    services: Vec<CorelibService>,
 ) {
-    let services = capability.services().to_vec();
     db.syntax_dependency_registry()
         .lock()
         .expect("syntax dependency registry")
         .corelib_services
         .insert((service_unit, typed.generation), services);
-    typed.corelib_service_capability = Some(Arc::new(capability));
 }
 
-fn canonical_corelib_syscall_unit(
+fn canonical_corelib_service_units(
     assembly: &SyntaxProgramAssembly,
-) -> Option<std::path::PathBuf> {
-    let expected = beskid_abi::runtime_source::canonical_corelib_syscall_sources()
+    capability: &CorelibServiceCapability,
+) -> Vec<(std::path::PathBuf, Vec<CorelibService>)> {
+    canonical_corelib_service_sources()
         .into_iter()
-        .next()
-        .expect("embedded Corelib syscall corpus has one source");
-    let expected_path = std::path::Path::new(&expected.logical_path);
-    let candidates = assembly
-        .units()
-        .iter()
-        .filter(|unit| {
-            unit.source == expected.source
-                && assembly
-                    .roots()
-                    .dependencies
+        .filter_map(|expected| {
+            let canonical_path = canonical_corelib_service_source_path(&expected.logical_path)?;
+            let canonical_path = canonical_path.canonicalize().ok()?;
+            let candidates = assembly
+                .units()
+                .iter()
+                .filter(|unit| {
+                    unit.logical_name == expected.logical_path
+                        && unit.source == expected.source
+                        && unit.path.canonicalize().ok().as_ref() == Some(&canonical_path)
+                })
+                .collect::<Vec<_>>();
+            (candidates.len() == 1).then(|| {
+                let services = capability
+                    .services()
                     .iter()
-                    .chain(std::iter::once(&assembly.roots().host))
-                    .any(|root| unit.path.strip_prefix(&root.source_root).ok() == Some(expected_path))
+                    .copied()
+                    .filter(|service| service.source_path == expected.logical_path)
+                    .collect();
+                (candidates[0].path.clone(), services)
+            })
         })
-        .collect::<Vec<_>>();
-    (candidates.len() == 1).then(|| candidates[0].path.clone())
+        .collect()
 }
 
 /// Attach compiler-minted runtime intrinsic authority after validating that the assembled syntax

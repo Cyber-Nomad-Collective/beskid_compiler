@@ -1,8 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
-use beskid_queries::{ItemSignature, child_nodes, generic_call_specialization, item_abi_signature};
+use beskid_queries::{
+    CallLowering, ItemSignature, call_lowering, child_nodes, generic_call_specialization,
+    item_abi_signature,
+};
 use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::{
     Endianness, ExtFuncData, ExternalName, FuncRef, GlobalValueData, Signature, Type, Value,
@@ -92,7 +95,7 @@ fn lower_resolved_syntax_program(
             .iter()
             .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
     );
-    let corelib_services = corelib_service_symbols(input);
+    let corelib_services = corelib_service_symbols(input, items);
     symbols.extend(
         corelib_services
             .iter()
@@ -284,22 +287,43 @@ fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<DirectCallee, 
 /// ABI symbols admitted by the distinct Corelib syscall capability.  Unlike runtime intrinsics,
 /// these imports can only be selected by a `CallLowering::CorelibService` syntax fact from the
 /// exact embedded facade; ordinary dynamic calls never reach this table.
-fn corelib_service_symbols(input: &CodegenInput<'_>) -> HashMap<DirectCallee, String> {
-    input
-        .corelib_service_capability()
-        .map(|capability| {
-            capability
-                .services()
-                .iter()
-                .map(|service| {
-                    (
-                        DirectCallee::corelib_service(service.symbol),
-                        service.symbol.to_owned(),
-                    )
-                })
-                .collect()
+fn corelib_service_symbols(
+    input: &CodegenInput<'_>,
+    items: &[ResolvedSyntaxModuleItem],
+) -> HashMap<DirectCallee, String> {
+    let Some(capability) = input.corelib_service_capability() else {
+        return HashMap::new();
+    };
+    let mut callees = HashSet::new();
+    for item in items {
+        collect_corelib_service_callees(input.database(), item.key, &mut callees);
+    }
+    capability
+        .services()
+        .iter()
+        .filter(|service| callees.contains(&service.symbol))
+        .map(|service| {
+            (
+                DirectCallee::corelib_service(service.symbol),
+                service.symbol.to_owned(),
+            )
         })
-        .unwrap_or_default()
+        .collect()
+}
+
+fn collect_corelib_service_callees(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    callees: &mut HashSet<&'static str>,
+) {
+    if let Ok(Some(CallLowering::CorelibService(service))) = call_lowering(db, key) {
+        callees.insert(service.symbol);
+    }
+    if let Ok(Some(children)) = child_nodes(db, key) {
+        for child in children.iter().copied() {
+            collect_corelib_service_callees(db, child, callees);
+        }
+    }
 }
 
 struct ArtifactCallImporter<'a> {

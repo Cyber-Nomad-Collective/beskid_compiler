@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, canonical_corelib_syscall_service_capability,
-    canonical_corelib_syscall_sources,
+    CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, canonical_corelib_service_source_path,
+    canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
 };
 use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
 use beskid_analysis::projects::{
@@ -22,9 +22,8 @@ use beskid_queries::{
     call_arguments, call_lowering, cast_intents, child_nodes, closure_environment,
     completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
     generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
-    item_signature, literal_fact,
-    local_slot, node_kind, node_span, node_type, operator_fact, reachable_items, resolved_item,
-    resolved_local, runtime_intrinsic, spawn_target, test_item,
+    item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
+    reachable_items, resolved_item, resolved_local, runtime_intrinsic, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -563,7 +562,9 @@ fn qualified_import_resolution_follows_public_module_reexports() {
         generation,
         &main_index,
         NodeKind::EnumConstructorExpression,
-        main_source.find("Parser.TextParseResult").expect("re-exported type"),
+        main_source
+            .find("Parser.TextParseResult")
+            .expect("re-exported type"),
     );
     assert!(
         enum_constructor(&db, constructor)
@@ -655,7 +656,8 @@ fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
     let root = PathBuf::from("/tmp/imported-type-qualified/project/src");
     let main_path = root.join("Main.bd");
     let progress_path = root.join("Console/Controls/ProgressBar.bd");
-    let main_source = "use Console.Controls.ProgressBar;\ni32 Main() { return ProgressBar.ProgressBar.New(); }";
+    let main_source =
+        "use Console.Controls.ProgressBar;\ni32 Main() { return ProgressBar.ProgressBar.New(); }";
     let progress_source = "pub type ProgressBar { i32 percent }\npub i32 New() { return 1; }";
     let main_program = expand_program(
         parse_program(main_source).expect("main parse"),
@@ -2209,11 +2211,13 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
             generation,
             node,
         })
-        .find(|key| matches!(
-            call_lowering(&db, *key).expect("Core.Syscall lowering"),
-            Some(beskid_queries::CallLowering::CorelibService(service))
-                if service.name == "__syscall_write"
-        ))
+        .find(|key| {
+            matches!(
+                call_lowering(&db, *key).expect("Core.Syscall lowering"),
+                Some(beskid_queries::CallLowering::CorelibService(service))
+                    if service.name == "__syscall_write"
+            )
+        })
         .expect("Core.Syscall write call");
     assert!(matches!(
         call_lowering(&db, syscall_write).expect("Core.Syscall lowering"),
@@ -2238,7 +2242,9 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
     let mut forged_db = BeskidDatabase::default();
     let forged_directory = tempfile::tempdir().expect("forged Corelib project").keep();
     let forged_path = forged_directory.join("Syscall.bd");
-    let forged_source = source.source.replacen("__syscall_write", "__syscall_writex", 1);
+    let forged_source = source
+        .source
+        .replacen("__syscall_write", "__syscall_writex", 1);
     std::fs::write(&forged_path, &forged_source).expect("write forged Corelib source");
     let forged_program = parse_program(&forged_source).expect("parse forged Corelib source");
     let forged_project = ProjectSession::new(
@@ -2286,10 +2292,17 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
     let source = canonical_corelib_syscall_sources()
         .pop()
         .expect("embedded Core.Syscall source");
-    let workspace = tempfile::tempdir().expect("Corelib assembly workspace").keep();
+    let workspace = tempfile::tempdir()
+        .expect("Corelib assembly workspace")
+        .keep();
     let application_root = workspace.join("application");
-    let foundation_root = workspace.join("foundation");
-    let syscall_path = foundation_root.join(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH);
+    let syscall_path = canonical_corelib_service_source_path(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH)
+        .expect("compiler-owned Core.Syscall path");
+    let foundation_root = syscall_path
+        .ancestors()
+        .nth(3)
+        .expect("foundation source root")
+        .to_path_buf();
     let application_path = application_root.join("Main.bd");
     let application_source = "i64 Main() { return __syscall_write(1, \"application\"); }";
     let syscall_program = parse_program(&source.source).expect("parse embedded Core.Syscall");

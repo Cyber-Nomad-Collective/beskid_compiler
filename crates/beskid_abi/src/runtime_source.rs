@@ -16,6 +16,8 @@ use crate::runtime_kit::{
 pub const CANONICAL_BOOTSTRAP_SOURCE_PATH: &str = "src/Runtime/Bootstrap.bd";
 /// Canonical Foundation syscall facade eligible for Corelib service authority.
 pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd";
+/// Canonical Foundation assertion helper eligible to import the panic runtime service.
+pub const CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH: &str = "Testing/Assert.bd";
 
 const CANONICAL_BOOTSTRAP_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -25,6 +27,11 @@ const CANONICAL_BOOTSTRAP_SOURCE: &str = include_str!(concat!(
 const CANONICAL_CORELIB_SYSCALL_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"
+));
+
+const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Testing/Assert.bd"
 ));
 
 /// The runtime source corpus built into this compiler version.
@@ -44,29 +51,66 @@ pub fn canonical_corelib_syscall_sources() -> Vec<SourceUnit> {
     }]
 }
 
-/// One ABI-facing service used by the compiler-owned Corelib syscall facade.
+/// Compiler-embedded Foundation units eligible for distinct ABI service authority.
+pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
+    let mut sources = canonical_corelib_syscall_sources();
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_ASSERT_SOURCE.into(),
+    });
+    sources
+}
+
+/// The canonical compiler-owned source file for one Foundation service unit.
+///
+/// Authority is tied to this checked-in file identity as well as embedded bytes and logical
+/// module path. A user project that copies `Testing/Assert.bd` cannot acquire it.
+pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::path::PathBuf> {
+    let relative = match logical_path {
+        CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => "Core/Syscall/Syscall.bd",
+        CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => "Testing/Assert.bd",
+        _ => return None,
+    };
+    Some(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corelib/packages/foundation/src")
+            .join(relative),
+    )
+}
+
+/// One ABI-facing service used by a compiler-owned Corelib source unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CorelibService {
     pub name: &'static str,
     pub symbol: &'static str,
+    pub source_path: &'static str,
 }
 
-const CORELIB_SYSCALL_SERVICES: &[CorelibService] = &[
+const CORELIB_SERVICES: &[CorelibService] = &[
     CorelibService {
         name: "__syscall_write",
         symbol: "syscall_write",
+        source_path: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
     },
     CorelibService {
         name: "__syscall_read",
         symbol: "syscall_read",
+        source_path: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
     },
     CorelibService {
         name: "__syscall_write_bytes",
         symbol: "syscall_write_bytes",
+        source_path: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
     },
     CorelibService {
         name: "__syscall_read_bytes",
         symbol: "syscall_read_bytes",
+        source_path: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "panic_str",
+        source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
     },
 ];
 
@@ -101,7 +145,7 @@ pub struct RuntimeIntrinsicCapability {
     intrinsics: Vec<RuntimeIntrinsic>,
 }
 
-/// Compiler-owned proof that a unit belongs to the embedded Corelib syscall corpus.
+/// Compiler-owned proof that a unit belongs to the embedded Corelib service corpus.
 ///
 /// This has a separate type and constructor from [`RuntimeIntrinsicCapability`], so Corelib
 /// never inherits raw bootstrap intrinsic authority.
@@ -136,16 +180,16 @@ impl CorelibServiceCapability {
     pub fn service_for_source(&self, logical_path: &str, name: &str) -> Option<CorelibService> {
         self.authorizes_source(logical_path)
             .then(|| {
-                CORELIB_SYSCALL_SERVICES
+                CORELIB_SERVICES
                     .iter()
                     .copied()
-                    .find(|service| service.name == name)
+                    .find(|service| service.name == name && service.source_path == logical_path)
             })
             .flatten()
     }
 
     pub fn services(&self) -> &'static [CorelibService] {
-        CORELIB_SYSCALL_SERVICES
+        CORELIB_SERVICES
     }
 }
 
@@ -282,7 +326,7 @@ pub fn canonical_runtime_intrinsic_capability(
 /// Callers still have to prove their assembled unit exactly matches this corpus before the
 /// capability can be attached to syntax facts. The ABI manifest is validated here to prevent a
 /// drifted target contract from being combined with compiler-owned services.
-pub fn canonical_corelib_syscall_service_capability(
+pub fn canonical_corelib_service_capability(
     manifest: &AbiManifestV5,
 ) -> Result<CorelibServiceCapability, RuntimeCapabilityError> {
     manifest
@@ -291,13 +335,23 @@ pub fn canonical_corelib_syscall_service_capability(
     if manifest.trusted_runtime_package.as_ref() != Some(&canonical_runtime_package()) {
         return Err(RuntimeCapabilityError::InvalidManifest);
     }
-    let sources = canonical_corelib_syscall_sources();
-    let source_hash = canonical_source_hash(&sources)
-        .map_err(|_| RuntimeCapabilityError::SourceSetMismatch)?;
+    let sources = canonical_corelib_service_sources();
+    let source_hash =
+        canonical_source_hash(&sources).map_err(|_| RuntimeCapabilityError::SourceSetMismatch)?;
     Ok(CorelibServiceCapability {
         proof: CorelibServiceProof {
             source_hash,
             source_paths: sources.into_iter().map(|unit| unit.logical_path).collect(),
         },
     })
+}
+
+/// Backwards-compatible spelling for callers that only need the syscall subset.
+///
+/// The returned capability remains source-scoped; it cannot authorize assertion services for a
+/// syscall unit.
+pub fn canonical_corelib_syscall_service_capability(
+    manifest: &AbiManifestV5,
+) -> Result<CorelibServiceCapability, RuntimeCapabilityError> {
+    canonical_corelib_service_capability(manifest)
 }

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Authorize only the compiler-owned Foundation `Testing/Assert.bd` identity to lower
+  `__panic_str` as the `panic_str` Corelib service; copied source remains ordinary syntax and
+  emission declares only services reached by authorized calls.
 - Lower compiler-authorized Corelib syscall services through distinct ABI imports in syntax ISLE
   codegen, without granting ordinary applications or canonical runtime intrinsic authority.
 - Add a compiler-minted Corelib syscall service capability and syntax lowering fact that only

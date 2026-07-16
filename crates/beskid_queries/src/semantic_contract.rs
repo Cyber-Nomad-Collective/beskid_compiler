@@ -2156,6 +2156,7 @@ fn corelib_service_abi_signature(service: CorelibService) -> Option<ItemSignatur
             vec![SemanticTypeId::I64, SemanticTypeId::I64],
             SemanticTypeId::POINTER,
         ),
+        "__panic_str" => (vec![SemanticTypeId::STRING], SemanticTypeId::NEVER),
         _ => return None,
     };
     Some(ItemSignature {

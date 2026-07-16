@@ -1,6 +1,7 @@
 use beskid_abi::abi_v5::{AbiManifestV5, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, RuntimeCapabilityError,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    RuntimeCapabilityError, canonical_corelib_service_capability,
     canonical_runtime_intrinsic_capability, canonical_runtime_sources,
     prove_canonical_runtime_corpus,
 };
@@ -199,4 +200,23 @@ fn manifest_drift_cannot_expand_runtime_authority() {
         canonical_runtime_intrinsic_capability(&manifest),
         Err(RuntimeCapabilityError::InvalidManifest)
     ));
+}
+
+#[test]
+fn canonical_foundation_assert_owns_only_the_panic_service() {
+    let capability =
+        canonical_corelib_service_capability(&linux_manifest()).expect("Corelib service authority");
+
+    assert_eq!(
+        capability
+            .service_for_source(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, "__panic_str")
+            .map(|service| service.symbol),
+        Some("panic_str")
+    );
+    assert!(
+        capability
+            .service_for_source(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, "__syscall_write")
+            .is_none(),
+        "the Assert unit must not receive every Corelib service"
+    );
 }
