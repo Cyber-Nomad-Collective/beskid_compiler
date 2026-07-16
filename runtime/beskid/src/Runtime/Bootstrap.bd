@@ -4,6 +4,29 @@ pub i32 AbiVersion() {
     return 5;
 }
 
+/// Activates the caller-owned runtime state for the current process thread.
+///
+/// The old bridge only established thread-local runtime bootstrap state; it did not own a
+/// separately allocated ABI-v5 process object.  Keep that ownership boundary while the
+/// allocation and GC runtime modules are migrated: the caller supplies the manifest-layout
+/// runtime handle, which becomes the current trusted TLS value and is returned unchanged.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_process_init")]
+pub pointer ProcessInit(pointer config) {
+    tls_set(config);
+    return config;
+}
+
+/// Ends the current process-thread bootstrap scope.
+///
+/// `runtime` is retained in the ABI signature so future lifecycle modules can validate and
+/// dispose caller-owned state.  This first source-only slice mirrors the bridge's TLS-only
+/// bootstrap by clearing the active handle without allocating or scheduling work.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_process_shutdown")]
+pub unit ProcessShutdown(pointer runtime) {
+    tls_set(NativePointer(0));
+    return;
+}
+
 /// Converts an opaque runtime address to its pointer-width representation.
 ///
 /// `native_word_from_pointer` is not a user-visible extern: codegen recognizes this direct call
@@ -18,6 +41,7 @@ pub pointer NativePointer(word value) {
 }
 
 /// Terminates through the manifest-owned ABI-v5 trap entrypoint.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_trap")]
 pub never Trap(u8 code, pointer message, word messageLength) {
     trap(code, message, messageLength);
 }

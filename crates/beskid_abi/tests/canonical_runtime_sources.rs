@@ -29,6 +29,27 @@ fn canonical_bootstrap_source_is_embedded_and_exports_the_v5_probe() {
 }
 
 #[test]
+fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
+    let source = &canonical_runtime_sources()[0].source;
+
+    for symbol in [
+        "beskid_rt_v5_process_init",
+        "beskid_rt_v5_process_shutdown",
+        "beskid_rt_v5_trap",
+    ] {
+        assert!(
+            source.contains(&format!("Symbol:\"{symbol}\"")),
+            "canonical runtime source must own {symbol}",
+        );
+    }
+
+    assert!(source.contains("pub pointer ProcessInit(pointer config)"));
+    assert!(source.contains("pub unit ProcessShutdown(pointer runtime)"));
+    assert!(source.contains("pub never Trap(u8 code, pointer message, word messageLength)"));
+    assert!(source.contains("trap(code, message, messageLength);"));
+}
+
+#[test]
 fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
     let manifest = linux_manifest();
     let sources = canonical_runtime_sources();
