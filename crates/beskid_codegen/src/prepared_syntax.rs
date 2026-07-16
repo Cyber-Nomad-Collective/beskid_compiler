@@ -104,8 +104,8 @@ pub fn lower_canonical_runtime_prepared_syntax(
                     .ok()
                     .flatten()
                     .map(|span| {
-                    let start = usize::try_from(span.start).unwrap_or_default();
-                    let end = usize::try_from(span.end).unwrap_or_default();
+                    let start = span.start;
+                    let end = span.end;
                     source_text.get(start..end).unwrap_or_default().to_owned()
                 })
                     .unwrap_or_default();
