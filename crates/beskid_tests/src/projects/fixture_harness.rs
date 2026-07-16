@@ -225,6 +225,14 @@ pub fn shared_corelib_mvp_assembly() -> Arc<ProgramAssembly> {
         .clone()
 }
 
+/// Like [`with_project_test_env`], but returns a value. Caller must already hold the cwd lock
+/// (e.g. via `with_project_test_env`); this helper must not re-enter `with_cwd_at_workspace_root`
+/// or tests deadlock on `PROJECT_TEST_CWD_LOCK`.
+fn with_project_test_env_return<T>(project_root: &Path, f: impl FnOnce(&Path) -> T) -> T {
+    configure_db_for_project(project_root);
+    f(project_root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,12 +270,4 @@ mod tests {
                 .ends_with("console/ConsoleMessageChannelTests.bd"));
         });
     }
-}
-
-/// Like [`with_project_test_env`], but returns a value. Caller must already hold the cwd lock
-/// (e.g. via `with_project_test_env`); this helper must not re-enter `with_cwd_at_workspace_root`
-/// or tests deadlock on `PROJECT_TEST_CWD_LOCK`.
-fn with_project_test_env_return<T>(project_root: &Path, f: impl FnOnce(&Path) -> T) -> T {
-    configure_db_for_project(project_root);
-    f(project_root)
 }
