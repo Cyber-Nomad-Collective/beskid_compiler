@@ -6,8 +6,8 @@ use beskid_analysis::doc::{
     API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocLinkContext, ApiDocRoot, ApiLocation,
     DocRefLinkContext, apply_signature_to_item, assign_declaring_packages,
     build_api_doc_link_context, build_item_signature, display_name_for_item,
-    fill_member_ids_from_parents, hir_programs_by_path, link_api_doc_library_tree,
-    qualified_names_for_items, relativize_api_doc_paths, resolve_item_tiers,
+    fill_member_ids_from_parents, link_api_doc_library_tree, qualified_names_for_items,
+    relativize_api_doc_paths, resolve_item_tiers,
 };
 use beskid_analysis::hir::HirVisibility;
 use beskid_analysis::projects::assembly::ProgramAssembly;
@@ -201,21 +201,15 @@ pub fn execute(args: DocArgs) -> Result<()> {
     let (snap, assembly) = build_doc_snapshot(&resolved, &program, docs_ref.as_ref())?;
 
     let source_path_str = resolved.source_path.to_string_lossy().into_owned();
-    let mut hir_by_path = assembly
+    let syntax_by_path = assembly
         .as_ref()
-        .map(|asm| hir_programs_by_path(&asm.units))
+        .map(|asm| {
+            asm.units
+                .iter()
+                .map(|unit| (unit.path.clone(), unit.program.clone()))
+                .collect::<std::collections::HashMap<_, _>>()
+        })
         .unwrap_or_default();
-    if hir_by_path.is_empty() {
-        let ast: beskid_analysis::syntax::Spanned<beskid_analysis::hir::AstProgram> =
-            program.clone().into();
-        let mut hir = beskid_analysis::hir::lower_program(&ast);
-        if beskid_analysis::hir::normalize_program(&mut hir).is_ok() {
-            hir_by_path.insert(resolved.source_path.clone(), hir);
-        }
-    }
-    let entry_hir = hir_by_path
-        .get(&resolved.source_path)
-        .or_else(|| hir_by_path.values().next());
     let qualified_names = snap.resolution.as_ref().map(qualified_names_for_items);
 
     fs::create_dir_all(&args.out).with_context(|| format!("create {}", args.out.display()))?;
@@ -267,7 +261,12 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 controls: vec![],
                 tier: None,
             };
-            let sig = build_item_signature(item, Some(res), &hir_by_path, entry_hir);
+            let item_program = item
+                .source_path
+                .as_ref()
+                .and_then(|path| syntax_by_path.get(path))
+                .unwrap_or(&program);
+            let sig = build_item_signature(item, Some(res), item_program);
             apply_signature_to_item(&mut api_item, sig);
             entries.push(DocEntry {
                 qualified_name,
