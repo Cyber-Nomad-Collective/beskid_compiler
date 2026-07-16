@@ -873,6 +873,58 @@ mod tests {
     }
 
     #[test]
+    fn import_closure_follows_public_module_declarations_into_generated_sources() {
+        let project_root = temp_project_root("import_closure_generated_public_module");
+        let source_root = project_root.join("src");
+        write_bd(
+            &source_root,
+            "Entry.bd",
+            "use Core.Text.Regex;\npub fn Entry() { Core.Text.Regex.Parse(); }",
+        );
+        write_bd(
+            &source_root,
+            "Core/Text/Regex.bd",
+            "pub mod Core.Text.Regex.Generated;\npub fn Parse() { Core.Text.Regex.Generated.ParsePat(); }",
+        );
+        write_bd(
+            &project_root.join(".generated"),
+            "Core/Text/Regex/Generated.g.bd",
+            "pub fn ParsePat() { }",
+        );
+        let plan = CompilePlan {
+            source_root: source_root.clone(),
+            project_root: project_root.clone(),
+            manifest_path: project_root.join("project.bproj"),
+            project_name: "fixture".to_string(),
+            target: Target {
+                name: "Entry".to_string(),
+                kind: TargetKind::Lib,
+                entry: Some("Entry.bd".to_string()),
+            },
+            dependency_projects: Vec::new(),
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let assembly = assemble_program(
+            &plan,
+            None,
+            &source_root.join("Entry.bd"),
+            None,
+            &assembly_options_for_plan(&plan),
+            None,
+        )
+        .expect("public module declaration should resolve its generated source");
+        let loaded: Vec<_> = assembly.units.iter().map(|unit| &unit.path).collect();
+        assert!(
+            loaded
+                .iter()
+                .any(|path| path.ends_with(".generated/Core/Text/Regex/Generated.g.bd")),
+            "expected generated declared module in closure, got: {loaded:?}"
+        );
+        let _ = fs::remove_dir_all(&project_root);
+    }
+
+    #[test]
     fn import_closure_ignores_missing_public_module_declarations() {
         let project_root = temp_project_root("import_closure_missing_public_module");
         let source_root = project_root.join("src");
