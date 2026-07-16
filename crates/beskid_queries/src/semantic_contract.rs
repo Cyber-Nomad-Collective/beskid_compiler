@@ -373,10 +373,13 @@ fn resolve_item_declaration(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Option<AstNodeKey> {
+    // A generic receiver remains an exact module/type namespace fact: `Channel<i64>.Create`
+    // names the `Create` item imported from `Concurrency.Channel`.  Only a generic terminal
+    // callee would require unimplemented function monomorphization.
     if path
         .segments
-        .iter()
-        .any(|segment| !segment.node.type_args.is_empty())
+        .last()
+        .is_some_and(|segment| !segment.node.type_args.is_empty())
     {
         return None;
     }
@@ -939,16 +942,7 @@ fn call_lowering_for_node(
         expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
         beskid_analysis::syntax::Expression::Path(path) => {
             let path = &path.node.path.node;
-            if path
-                .segments
-                .iter()
-                .any(|segment| !segment.node.type_args.is_empty())
-                && imported_call_receiver_exists(db, key, path)
-            {
-                Ok(CallLowering::Dynamic)
-            } else if let Some(declaration) =
-                resolve_item_declaration(db, program, index, key, path)
-            {
+            if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
                 Ok(CallLowering::Direct(declaration))
             } else if imported_call_receiver_exists(db, key, path) {
                 Ok(CallLowering::Dynamic)

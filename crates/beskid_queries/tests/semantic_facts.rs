@@ -390,6 +390,77 @@ fn unqualified_import_resolution_requires_one_registered_syntax_target() {
 }
 
 #[test]
+fn generic_imported_static_call_resolves_to_its_exact_syntax_item() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/generic-import/project/src");
+    let main_path = root.join("Main.bd");
+    let channel_path = root.join("Concurrency/Channel.bd");
+    let main_source = "use Concurrency.Channel;\nunit Main() { Channel<i64>.Create(); }";
+    let channel_source = "unit Create<T>() { return; }";
+    let main_program = expand_program(
+        parse_program(main_source).expect("main parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let channel_program = expand_program(
+        parse_program(channel_source).expect("channel parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: channel_path.display().to_string(),
+                path: channel_path.clone(),
+                source: channel_source.to_string(),
+                program: channel_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let channel_unit = SourceUnitId::new(&db, channel_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(19);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let channel_index = SyntaxIndex::from_program(&channel_program, generation);
+    let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
+    let declaration = key(
+        channel_unit,
+        generation,
+        &channel_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+
+    assert_eq!(
+        call_lowering(&db, call).expect("generic imported static call"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+}
+
+#[test]
 fn structural_facts_survive_while_unported_semantics_are_unavailable() {
     let source = r#"
 i32 Helper(i64 value) { return 1; }
