@@ -1,6 +1,6 @@
 use beskid_abi::abi_v5::{TargetMetadata, TargetTriple};
 use beskid_abi::runtime_provenance::{
-    RuntimeProvenanceAudit, SymbolList, SymbolListError, parse_symbol_list,
+    parse_symbol_list, RuntimeProvenanceAudit, SymbolList, SymbolListError,
 };
 
 fn target(triple: &str) -> TargetMetadata {
@@ -103,6 +103,9 @@ fn linux_shared_runtime_allows_only_documented_dynamic_loader_imports() {
         "_ITM_registerTMCloneTable",
         "__cxa_finalize",
         "__gmon_start__",
+        // Dynamically resolved ELF TLS is required for a shared runtime loaded with dlopen.
+        // The resolver supplies this loader entry point; it is never a runtime-owned API.
+        "__tls_get_addr",
     ];
     let linux_audit =
         RuntimeProvenanceAudit::canonical(target("x86_64-unknown-linux-gnu")).unwrap();

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, render_runtime_asm_include};
+use beskid_abi::abi_v5::{render_runtime_asm_include, AbiManifestV5, TargetMetadata};
 
 struct TempDir(PathBuf);
 
@@ -42,6 +42,10 @@ fn target() -> TargetMetadata {
 
 fn source() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("assembly/x86_64-unknown-linux-gnu/context.S")
+}
+
+fn tls_source() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("assembly/x86_64-unknown-linux-gnu/platform_tls.c")
 }
 
 fn prepare_include(temp: &Path) {
@@ -110,6 +114,40 @@ fn elf_object_exports_exactly_two_symbols_and_saves_the_manifest_preserved_set()
     assert!(
         !source.contains(".cfi_"),
         "context switching must not advertise unwind"
+    );
+}
+
+#[test]
+fn linux_platform_tls_uses_dynamic_relocations_for_dlopen() {
+    let temp = TempDir::new();
+    let object = temp.0.join("platform_tls.o");
+    output(
+        Command::new("clang")
+            .args([
+                "-target",
+                "x86_64-unknown-linux-gnu",
+                "-std=c11",
+                "-fPIC",
+                "-c",
+            ])
+            .arg(tls_source())
+            .arg("-o")
+            .arg(&object),
+    );
+
+    let relocations =
+        String::from_utf8(output(Command::new("objdump").arg("-r").arg(&object)).stdout).unwrap();
+    assert!(
+        relocations.contains("TLSLD") || relocations.contains("TLSGD"),
+        "dlopen-safe TLS must use dynamic TLS relocations, got:\n{relocations}"
+    );
+    assert!(
+        relocations.contains("__tls_get_addr"),
+        "dynamic TLS must resolve through the ELF loader, got:\n{relocations}"
+    );
+    assert!(
+        !relocations.contains("GOTTPOFF"),
+        "initial-exec TLS requires static TLS and cannot be used by a dlopen runtime:\n{relocations}"
     );
 }
 

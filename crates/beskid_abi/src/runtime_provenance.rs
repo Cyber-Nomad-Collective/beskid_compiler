@@ -14,13 +14,17 @@ use crate::runtime_source::canonical_runtime_source_hash;
 /// Imports emitted by the ELF linker for a shared object before application code is linked.
 ///
 /// These are intentionally not part of the static runtime manifest: they describe the Linux
-/// dynamic-loader/toolchain boundary, never a runtime dependency. Keep this list exact so the
-/// shared-artifact audit continues to reject Rust runtime linkage and other undeclared imports.
+/// dynamic-loader/toolchain boundary, never a runtime dependency. In particular,
+/// `__tls_get_addr` resolves dynamic TLS for a runtime `.so` that can be loaded with `dlopen`;
+/// initial-exec TLS would make the runtime require unavailable static TLS.
+/// Keep this list exact so the shared-artifact audit continues to reject Rust runtime linkage and
+/// other undeclared imports.
 const LINUX_ELF_SHARED_LOADER_IMPORTS: &[&str] = &[
     "_ITM_deregisterTMCloneTable",
     "_ITM_registerTMCloneTable",
     "__cxa_finalize",
     "__gmon_start__",
+    "__tls_get_addr",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
