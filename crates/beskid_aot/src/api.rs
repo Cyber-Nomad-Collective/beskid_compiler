@@ -245,7 +245,9 @@ pub fn emit_host_platform_library_pair(
         name,
         Some(host_target_triple().to_owned()),
         provenance_symbols,
-        std::iter::once(context_object).chain(platform_objects).collect(),
+        std::iter::once(context_object)
+            .chain(platform_objects)
+            .collect(),
     )
 }
 
@@ -429,19 +431,34 @@ fn compile_platform_objects(
     output_dir: &std::path::Path,
     name: &str,
 ) -> AotResult<Vec<PathBuf>> {
-    if target.triple.as_str() != "aarch64-apple-darwin" {
-        return Err(AotError::UnsupportedLinkerStrategy {
-            target: target.triple.as_str().to_owned(),
-            message: "native platform shim is not implemented for this host target".to_owned(),
-        });
-    }
     let assembly_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../beskid_abi/assembly")
         .join(target.triple.as_str());
     let source = assembly_root.join("platform.S");
+    let tls_source = assembly_root.join("platform_tls.c");
     let object = output_dir.join(format!("{name}.platform.o"));
+    let tls_object = output_dir.join(format!("{name}.platform_tls.o"));
+    let (assembly_args, tls_args): (&[&str], &[&str]) = match target.triple.as_str() {
+        "aarch64-apple-darwin" => (&["-c", "-arch", "arm64"], &["-std=c11", "-c", "-arch", "arm64"]),
+        "x86_64-unknown-linux-gnu" => (
+            &["-target", "x86_64-unknown-linux-gnu", "-fPIC", "-c"],
+            &[
+                "-target",
+                "x86_64-unknown-linux-gnu",
+                "-std=c11",
+                "-fPIC",
+                "-c",
+            ],
+        ),
+        _ => {
+            return Err(AotError::UnsupportedLinkerStrategy {
+                target: target.triple.as_str().to_owned(),
+                message: "native platform shim is not implemented for this host target".to_owned(),
+            });
+        }
+    };
     let output = Command::new("clang")
-        .args(["-c", "-arch", "arm64"])
+        .args(assembly_args)
         .arg(&source)
         .arg("-o")
         .arg(&object)
@@ -450,18 +467,12 @@ fn compile_platform_objects(
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
-            command: format!(
-                "clang -c -arch arm64 {} -o {}",
-                source.display(),
-                object.display()
-            ),
+            command: format!("clang {:?} {} -o {}", assembly_args, source.display(), object.display()),
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
-    let tls_source = assembly_root.join("platform_tls.c");
-    let tls_object = output_dir.join(format!("{name}.platform_tls.o"));
     let output = Command::new("clang")
-        .args(["-std=c11", "-c", "-arch", "arm64"])
+        .args(tls_args)
         .arg(&tls_source)
         .arg("-o")
         .arg(&tls_object)
@@ -470,11 +481,7 @@ fn compile_platform_objects(
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
-            command: format!(
-                "clang -std=c11 -c -arch arm64 {} -o {}",
-                tls_source.display(),
-                tls_object.display()
-            ),
+            command: format!("clang {:?} {} -o {}", tls_args, tls_source.display(), tls_object.display()),
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }

@@ -136,6 +136,51 @@ fn host_platform_pair_exports_only_the_host_platform_runtime_boundary() {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn linux_host_platform_pair_exports_the_native_runtime_boundary() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let pair = emit_host_platform_library_pair(
+        CodegenArtifact::default(),
+        temp.path().join("out"),
+        "runtime_platform",
+    )
+    .expect("emit Linux host platform pair");
+
+    let expected_exports = [
+        "beskid_arch_v5_context_init",
+        "beskid_arch_v5_context_switch",
+        "beskid_rt_v5_intrinsic_system_allocate",
+        "beskid_rt_v5_intrinsic_system_free",
+        "beskid_rt_v5_intrinsic_tls_get",
+        "beskid_rt_v5_intrinsic_tls_set",
+    ];
+    assert_eq!(
+        pair.provenance_symbols,
+        expected_exports
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    );
+
+    for artifact in [&pair.static_library, &pair.shared_library] {
+        let output = Command::new("nm")
+            .args(["-g", "--defined-only", "-j"])
+            .arg(artifact)
+            .output()
+            .expect("run nm");
+        assert!(output.status.success(), "nm failed for {}", artifact.display());
+        let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
+        for symbol in expected_exports {
+            assert!(
+                symbols.lines().any(|line| line == symbol),
+                "{} does not define {symbol}: {symbols}",
+                artifact.display()
+            );
+        }
+    }
+}
+
+#[test]
 #[cfg(any(
     all(target_os = "linux", target_arch = "x86_64"),
     all(target_os = "macos", target_arch = "aarch64"),
