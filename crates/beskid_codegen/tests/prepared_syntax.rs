@@ -2,7 +2,10 @@ use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::services::{
     FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
-use beskid_codegen::{lower_prepared_syntax_entrypoint, lower_prepared_syntax_module};
+use beskid_codegen::{
+    lower_prepared_syntax_entrypoint, lower_prepared_syntax_module,
+    lower_syntax_assembly_entrypoint,
+};
 use beskid_queries::{compile_front_end_from_resolved_input, with_db};
 use cranelift_codegen::{isa, settings};
 
@@ -35,18 +38,29 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
         .expect("x86 ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");
-    let lowered =
-        with_db(|db| {
-            lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref())
-        })
-            .expect("prepared syntax lowering");
-    let lowered_again =
-        with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target, isa.as_ref()))
-            .expect("repeated prepared syntax lowering");
+    let lowered = with_db(|db| {
+        lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref())
+    })
+    .expect("prepared syntax lowering");
+    let lowered_again = with_db(|db| {
+        lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref())
+    })
+    .expect("repeated prepared syntax lowering");
+    let lowered_from_assembly = with_db(|db| {
+        lower_syntax_assembly_entrypoint(
+            db,
+            std::sync::Arc::new(front.syntax_assembly()),
+            "Main",
+            target.clone(),
+            isa.as_ref(),
+        )
+    })
+    .expect("syntax assembly lowering");
 
     assert_eq!(lowered.artifact.functions.len(), 2);
     assert!(lowered.symbol.starts_with("Main#syntax_"));
     assert_eq!(lowered_again.symbol, lowered.symbol);
+    assert_eq!(lowered_from_assembly.symbol, lowered.symbol);
     std::fs::remove_dir_all(directory).expect("remove project");
 }
 
@@ -83,14 +97,18 @@ fn prepared_syntax_module_lowers_functions_and_methods_without_hir() {
         .expect("prepared syntax module lowering");
 
     assert_eq!(artifact.functions.len(), 2);
-    assert!(artifact
-        .functions
-        .iter()
-        .any(|function| function.name.starts_with("Echo#syntax_")));
-    assert!(artifact
-        .functions
-        .iter()
-        .any(|function| function.name.starts_with("Run#syntax_")));
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Echo#syntax_"))
+    );
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Run#syntax_"))
+    );
     std::fs::remove_dir_all(directory).expect("remove project");
 }
 
@@ -105,8 +123,7 @@ fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
     let source = include_str!("../../beskid_tests/fixtures/mods/sample_mod/Src/Mod.bd");
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
-    let resolved: ResolvedInput =
-        resolved_input_from_plan(path, source.into(), plan, None, None);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
         &resolved,
         FrontEndOptions {

@@ -178,6 +178,22 @@ pub fn lower_prepared_syntax_entrypoint(
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxEntrypoint> {
     let assembly = Arc::new(front.syntax_assembly());
+    lower_syntax_assembly_entrypoint(db, assembly, entrypoint, target, isa)
+}
+
+/// Lower one entrypoint from an assembled syntax program through ISLE.
+///
+/// This is the executable boundary for callers which already own a
+/// [`SyntaxProgramAssembly`]. It intentionally does not accept a typed-HIR frontend or invoke
+/// the legacy prepare spine: each semantic and reachability fact is derived from the supplied
+/// generation-scoped syntax assembly.
+pub fn lower_syntax_assembly_entrypoint(
+    db: &mut BeskidDatabase,
+    assembly: Arc<SyntaxProgramAssembly>,
+    entrypoint: &str,
+    target: TargetMetadata,
+    isa: &dyn TargetIsa,
+) -> Result<PreparedSyntaxEntrypoint> {
     let entry_path = assembly.entry_unit().path.clone();
     let generation = SyntaxGenerationId(1);
     let project = project_session_for_syntax_assembly(
@@ -289,10 +305,8 @@ pub fn lower_prepared_syntax_module(
         .flat_map(|root| function_definitions(input.database(), root))
         .filter(|key| item_body(input.database(), *key).ok().flatten().is_some())
         .map(|key| {
-            syntax_item_symbol(input.database(), &input, key).map(|symbol| SyntaxModuleItem {
-                key,
-                symbol,
-            })
+            syntax_item_symbol(input.database(), &input, key)
+                .map(|symbol| SyntaxModuleItem { key, symbol })
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("prepared syntax module contains an unnamed item"))?;

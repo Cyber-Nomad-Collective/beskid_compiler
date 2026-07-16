@@ -7,8 +7,8 @@ use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 use beskid_codegen::module_emission::{SyntaxModuleItem, lower_syntax_program};
 use beskid_pipeline::PipelineObserver;
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, SemanticTypeId, build_typed_program, child_nodes,
-    item_name, item_signature, project_session_for_syntax_assembly, test_item, with_db,
+    AstNodeKey, BeskidDatabase, SemanticTypeId, build_typed_program, child_nodes, item_name,
+    item_signature, project_session_for_syntax_assembly, test_item, with_db,
 };
 #[cfg(test)]
 use beskid_queries::{ProjectSession, reachable_items};
@@ -162,7 +162,15 @@ fn lower_syntax_entrypoint_from_front_end(
     let lowered = beskid_pipeline::observe_phase_result(
         pipeline,
         beskid_pipeline::phases::CODEGEN_CLIF,
-        || beskid_codegen::lower_prepared_syntax_entrypoint(db, front, entrypoint, target, isa.as_ref()),
+        || {
+            beskid_codegen::lower_prepared_syntax_entrypoint(
+                db,
+                front,
+                entrypoint,
+                target,
+                isa.as_ref(),
+            )
+        },
     )?;
     Ok(SyntaxEntrypointArtifact {
         artifact: lowered.artifact,
@@ -272,6 +280,29 @@ pub fn lower_prepared_syntax_entrypoint(
     })
 }
 
+/// Lower a preassembled syntax entrypoint through the host ISLE boundary.
+///
+/// Corelib migration gates use this when the generation-safe syntax registry has authority for
+/// a dependency graph that the retired HIR resolver cannot represent. No HIR frontend is
+/// prepared as a fallback.
+pub fn lower_syntax_assembly_entrypoint(
+    assembly: Arc<beskid_analysis::projects::SyntaxProgramAssembly>,
+    entrypoint: &str,
+    target: beskid_abi::abi_v5::TargetMetadata,
+) -> Result<beskid_codegen::CodegenArtifact> {
+    with_db(|db| {
+        let isa = native_isa()?;
+        beskid_codegen::lower_syntax_assembly_entrypoint(
+            db,
+            assembly,
+            entrypoint,
+            target,
+            isa.as_ref(),
+        )
+        .map(|entrypoint| entrypoint.artifact)
+    })
+}
+
 /// Discover current-generation test items from a prepared frontend snapshot.
 ///
 /// This deliberately registers and queries the post-expansion syntax assembly rather than
@@ -294,13 +325,11 @@ pub fn syntax_entrypoint_return_type_from_front_end(
     let assembly = Arc::new(front.syntax_assembly());
     with_db(|db| {
         let entry_path = assembly.entry_unit().path.clone();
-        let project = project_session_for_syntax_assembly(
-            db,
-            &assembly,
-            "syntax-repl",
-            "prepared-frontend",
-        )
-        .map_err(|error| anyhow::anyhow!("syntax REPL session preparation failed: {error}"))?;
+        let project =
+            project_session_for_syntax_assembly(db, &assembly, "syntax-repl", "prepared-frontend")
+                .map_err(|error| {
+                    anyhow::anyhow!("syntax REPL session preparation failed: {error}")
+                })?;
         let generation = SyntaxGenerationId(1);
         build_typed_program(db, project, generation, assembly)
             .map_err(|error| anyhow::anyhow!("syntax REPL preparation failed: {error}"))?;
@@ -326,13 +355,9 @@ fn syntax_test_items_from_assembly(
     assembly: Arc<beskid_analysis::projects::SyntaxProgramAssembly>,
 ) -> Result<Vec<SyntaxTestItem>> {
     let entry_path = assembly.entry_unit().path.clone();
-    let project = project_session_for_syntax_assembly(
-        db,
-        &assembly,
-        "syntax-tests",
-        "prepared-frontend",
-    )
-    .map_err(|error| anyhow::anyhow!("syntax test session preparation failed: {error}"))?;
+    let project =
+        project_session_for_syntax_assembly(db, &assembly, "syntax-tests", "prepared-frontend")
+            .map_err(|error| anyhow::anyhow!("syntax test session preparation failed: {error}"))?;
     let generation = SyntaxGenerationId(1);
     build_typed_program(db, project, generation, assembly)
         .map_err(|error| anyhow::anyhow!("syntax test preparation failed: {error}"))?;
@@ -437,10 +462,7 @@ fn syntax_item_symbol(
     Some(format!("{name}#syntax_{logical}_{}", key.node.0))
 }
 
-fn syntax_item_name(
-    db: &dyn beskid_queries::Db,
-    key: AstNodeKey,
-) -> Option<String> {
+fn syntax_item_name(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<String> {
     item_name(db, key)
         .ok()
         .flatten()

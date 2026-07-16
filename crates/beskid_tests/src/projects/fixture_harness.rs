@@ -7,13 +7,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use beskid_analysis::projects::{ProgramAssembly, SyntaxProgramAssembly};
-use beskid_analysis::services::{FrontEndOptions, ResolvedInput, resolve_input};
+use beskid_analysis::services::{ResolvedInput, resolve_input};
 use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    build_typed_program, call_lowering, compile_front_end_from_resolved_input,
-    configure_db_for_project, program_assembly, project_session_for_syntax_assembly, with_db,
-    AstNodeKey, SourceUnitId,
+    AstNodeKey, SourceUnitId, build_typed_program, call_lowering, configure_db_for_project,
+    program_assembly, project_session_for_syntax_assembly, with_db,
 };
 
 use super::std_env_lock::std_dependency_env_lock;
@@ -221,17 +220,11 @@ pub fn lower_corelib_tests_entrypoint(
     entrypoint: &str,
 ) -> beskid_codegen::CodegenArtifact {
     let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
-    let front = compile_front_end_from_resolved_input(
-        &resolved,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
-        None,
-    )
-    .unwrap_or_else(|err| panic!("front-end for {entry_relative}: {err}"));
-    beskid_engine::services::lower_prepared_syntax_entrypoint(
-        &front,
+    let assembly = Arc::new(SyntaxProgramAssembly::from(
+        resolved.assembly.as_ref().expect("corelib entry assembly"),
+    ));
+    beskid_engine::services::lower_syntax_assembly_entrypoint(
+        assembly,
         entrypoint,
         beskid_engine::host_runtime_target()
             .unwrap_or_else(|error| panic!("host ABI-v5 target: {error}")),
@@ -276,33 +269,39 @@ mod tests {
     fn corelib_entry_assemblies_remain_isolated_by_explicit_source_path() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let channel = resolve_corelib_tests_entry_with_assembly(
-                "concurrency/ChannelApiTests.bd",
-            );
-            let messages = resolve_corelib_tests_entry_with_assembly(
-                "console/ConsoleMessageChannelTests.bd",
-            );
+            let channel =
+                resolve_corelib_tests_entry_with_assembly("concurrency/ChannelApiTests.bd");
+            let messages =
+                resolve_corelib_tests_entry_with_assembly("console/ConsoleMessageChannelTests.bd");
 
-            assert!(channel
-                .source_path
-                .ends_with("concurrency/ChannelApiTests.bd"));
-            assert!(messages
-                .source_path
-                .ends_with("console/ConsoleMessageChannelTests.bd"));
-            assert!(channel
-                .assembly
-                .as_ref()
-                .expect("channel assembly")
-                .entry_unit()
-                .path
-                .ends_with("concurrency/ChannelApiTests.bd"));
-            assert!(messages
-                .assembly
-                .as_ref()
-                .expect("messages assembly")
-                .entry_unit()
-                .path
-                .ends_with("console/ConsoleMessageChannelTests.bd"));
+            assert!(
+                channel
+                    .source_path
+                    .ends_with("concurrency/ChannelApiTests.bd")
+            );
+            assert!(
+                messages
+                    .source_path
+                    .ends_with("console/ConsoleMessageChannelTests.bd")
+            );
+            assert!(
+                channel
+                    .assembly
+                    .as_ref()
+                    .expect("channel assembly")
+                    .entry_unit()
+                    .path
+                    .ends_with("concurrency/ChannelApiTests.bd")
+            );
+            assert!(
+                messages
+                    .assembly
+                    .as_ref()
+                    .expect("messages assembly")
+                    .entry_unit()
+                    .path
+                    .ends_with("console/ConsoleMessageChannelTests.bd")
+            );
         });
     }
 }

@@ -96,5 +96,5 @@ corelib_lower_test!(
 corelib_lower_test!(
     text_parser_literal_matches_prefix_lowers,
     "text/TextParserTests.bd",
-    "literal_matches_prefix"
+    "literal_matches_using_cursor"
 );
