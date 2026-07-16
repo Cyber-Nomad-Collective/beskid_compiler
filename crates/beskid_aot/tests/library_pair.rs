@@ -86,7 +86,8 @@ fn host_platform_pair_exports_only_the_host_platform_runtime_boundary() {
         "beskid_arch_v5_context_switch",
         "beskid_rt_v5_intrinsic_system_allocate",
         "beskid_rt_v5_intrinsic_system_free",
-        "beskid_rt_v5_trap",
+        "beskid_rt_v5_intrinsic_tls_get",
+        "beskid_rt_v5_intrinsic_tls_set",
     ];
     assert_eq!(
         pair.provenance_symbols,
@@ -126,7 +127,7 @@ fn host_platform_pair_exports_only_the_host_platform_runtime_boundary() {
         .expect("run nm");
     assert!(output.status.success(), "nm failed");
     let undefined = String::from_utf8(output.stdout).expect("utf-8 nm output");
-    for symbol in ["__exit", "_mmap", "_munmap", "_write"] {
+    for symbol in ["_mmap", "_munmap", "__tlv_bootstrap"] {
         assert!(
             undefined.lines().any(|line| line == symbol),
             "platform archive does not import {symbol}: {undefined}"
@@ -188,4 +189,62 @@ fn canonical_bootstrap_lowers_through_the_aot_prepared_syntax_boundary() {
         !clif.contains("tls_value"),
         "TLS ownership is supplied by the native platform helper, not unsupported CLIF TLS globals"
     );
+}
+
+#[test]
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn canonical_platform_pair_links_the_native_tls_helper() {
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|candidate| candidate.triple.as_str() == "aarch64-apple-darwin")
+        .expect("Darwin ABI-v5 target");
+    let artifact = lower_canonical_runtime_prepared_syntax(target).expect("lower Bootstrap");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let pair = emit_host_platform_library_pair(artifact, temp.path().join("out"), "beskid_runtime")
+        .expect("link canonical platform pair");
+    for symbol in [
+        "beskid_rt_v5_intrinsic_tls_get",
+        "beskid_rt_v5_intrinsic_tls_set",
+    ] {
+        assert!(pair.provenance_symbols.contains(&symbol.to_owned()));
+    }
+    let symbols = Command::new("nm")
+        .args(["-u", pair.shared_library.to_str().expect("utf-8 path")])
+        .output()
+        .expect("run nm");
+    assert!(symbols.status.success());
+    assert!(
+        String::from_utf8_lossy(&symbols.stdout).contains("__tlv_bootstrap"),
+        "Darwin TLV helper must retain its audited bootstrap import"
+    );
+    let source = temp.path().join("tls_isolation.c");
+    std::fs::write(&source, r#"
+#include <pthread.h>
+extern void *beskid_rt_v5_intrinsic_tls_get(void);
+extern void beskid_rt_v5_intrinsic_tls_set(void *);
+static int main_token, thread_token;
+static void *worker(void *unused) {
+    (void)unused;
+    if (beskid_rt_v5_intrinsic_tls_get() != 0) return (void *)1;
+    beskid_rt_v5_intrinsic_tls_set(&thread_token);
+    return beskid_rt_v5_intrinsic_tls_get() == &thread_token ? 0 : (void *)1;
+}
+int main(void) {
+    pthread_t thread; void *result = 0;
+    beskid_rt_v5_intrinsic_tls_set(&main_token);
+    if (pthread_create(&thread, 0, worker, 0) != 0) return 1;
+    if (pthread_join(thread, &result) != 0 || result != 0) return 2;
+    return beskid_rt_v5_intrinsic_tls_get() == &main_token ? 0 : 3;
+}
+"#).expect("write TLS smoke");
+    let executable = temp.path().join("tls_isolation");
+    let status = Command::new("clang")
+        .arg(&source)
+        .arg(&pair.shared_library)
+        .arg("-o")
+        .arg(&executable)
+        .status()
+        .expect("compile TLS smoke");
+    assert!(status.success());
+    assert!(Command::new(executable).status().expect("run TLS smoke").success());
 }

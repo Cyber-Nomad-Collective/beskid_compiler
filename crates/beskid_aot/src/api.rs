@@ -227,7 +227,7 @@ pub fn emit_host_platform_library_pair(
         message: err.to_string(),
     })?;
     let context_object = compile_context_assembly(&target, &output_dir, name)?;
-    let platform_object = compile_platform_assembly(&target, &output_dir, name)?;
+    let platform_objects = compile_platform_objects(&target, &output_dir, name)?;
     let mut provenance_symbols = AbiManifestV5::canonical_runtime(target)
         .assembly_exports
         .into_iter()
@@ -236,7 +236,8 @@ pub fn emit_host_platform_library_pair(
     provenance_symbols.extend([
         "beskid_rt_v5_intrinsic_system_allocate".to_owned(),
         "beskid_rt_v5_intrinsic_system_free".to_owned(),
-        "beskid_rt_v5_trap".to_owned(),
+        "beskid_rt_v5_intrinsic_tls_get".to_owned(),
+        "beskid_rt_v5_intrinsic_tls_set".to_owned(),
     ]);
     emit_library_pair_with_objects(
         artifact,
@@ -244,7 +245,7 @@ pub fn emit_host_platform_library_pair(
         name,
         Some(host_target_triple().to_owned()),
         provenance_symbols,
-        vec![context_object, platform_object],
+        std::iter::once(context_object).chain(platform_objects).collect(),
     )
 }
 
@@ -280,6 +281,10 @@ fn emit_library_pair_with_objects(
     };
     validate_extern_libraries(&request.artifact, &request.external_libraries)?;
     let object = emit_object_stage(&request)?;
+    let mut linked_exports = object.exported_symbols.clone();
+    linked_exports.extend(exported_symbols.iter().cloned());
+    linked_exports.sort();
+    linked_exports.dedup();
     let static_library = output_dir.join(crate::target::output_filename(
         name,
         BuildOutputKind::StaticLib,
@@ -303,7 +308,7 @@ fn emit_library_pair_with_objects(
             host_staticlib: None,
             additional_object_paths: additional_object_paths.clone(),
             entrypoint_symbol: String::new(),
-            exported_symbols: object.exported_symbols.clone(),
+            exported_symbols: linked_exports.clone(),
             link_mode: LinkMode::Auto,
             verbose: false,
             external_libraries: Vec::new(),
@@ -419,21 +424,21 @@ fn compile_context_assembly(
     Ok(object)
 }
 
-fn compile_platform_assembly(
+fn compile_platform_objects(
     target: &TargetMetadata,
     output_dir: &std::path::Path,
     name: &str,
-) -> AotResult<PathBuf> {
+) -> AotResult<Vec<PathBuf>> {
     if target.triple.as_str() != "aarch64-apple-darwin" {
         return Err(AotError::UnsupportedLinkerStrategy {
             target: target.triple.as_str().to_owned(),
             message: "native platform shim is not implemented for this host target".to_owned(),
         });
     }
-    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let assembly_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../beskid_abi/assembly")
-        .join(target.triple.as_str())
-        .join("platform.S");
+        .join(target.triple.as_str());
+    let source = assembly_root.join("platform.S");
     let object = output_dir.join(format!("{name}.platform.o"));
     let output = Command::new("clang")
         .args(["-c", "-arch", "arm64"])
@@ -453,7 +458,27 @@ fn compile_platform_assembly(
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
-    Ok(object)
+    let tls_source = assembly_root.join("platform_tls.c");
+    let tls_object = output_dir.join(format!("{name}.platform_tls.o"));
+    let output = Command::new("clang")
+        .args(["-std=c11", "-c", "-arch", "arm64"])
+        .arg(&tls_source)
+        .arg("-o")
+        .arg(&tls_object)
+        .output()
+        .map_err(|_| AotError::LinkerUnavailable)?;
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: format!(
+                "clang -std=c11 -c -arch arm64 {} -o {}",
+                tls_source.display(),
+                tls_object.display()
+            ),
+            detail: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(vec![object, tls_object])
 }
 
 #[derive(Debug, Clone)]

@@ -47,15 +47,4 @@ _beskid_rt_v5_intrinsic_system_free:
 L_free_done:
     ret
 
-.globl _beskid_rt_v5_trap
-_beskid_rt_v5_trap:
-    // ABI-v5 fixes the process status at 101. The code is diagnostic classification only;
-    // `write` receives the manifest-provided message bytes before the non-returning exit.
-    mov x0, #2
-    // x1 and x2 already carry message/message_len for write.
-    bl _write
-    mov x0, #101
-    bl __exit
-    brk #0
-
 .subsections_via_symbols

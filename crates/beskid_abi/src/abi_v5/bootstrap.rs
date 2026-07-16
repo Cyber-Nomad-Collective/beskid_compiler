@@ -67,6 +67,11 @@ impl RuntimeAuditMetadata {
             .iter()
             .map(|entry| entry.symbol.clone())
             .collect::<Vec<_>>();
+        // Darwin C11 thread-local storage lowers through the platform TLV bootstrap helper.
+        // Normalization strips the Mach-O leading underscore, leaving this exact spelling.
+        if manifest.target.object_format.as_str() == "macho" {
+            allowed_imports.push("_tlv_bootstrap".into());
+        }
         allowed_imports.sort();
         let mut allowed_exports = manifest
             .exports
