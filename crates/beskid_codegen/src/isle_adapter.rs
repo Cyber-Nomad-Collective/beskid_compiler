@@ -166,8 +166,6 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             "raw_word_store" => RuntimeIntrinsicKind::RawWordStore,
             "raw_byte_load" => RuntimeIntrinsicKind::RawByteLoad,
             "raw_byte_store" => RuntimeIntrinsicKind::RawByteStore,
-            "tls_get" => RuntimeIntrinsicKind::TlsGet,
-            "tls_set" => RuntimeIntrinsicKind::TlsSet,
             _ => return None,
         })
     }

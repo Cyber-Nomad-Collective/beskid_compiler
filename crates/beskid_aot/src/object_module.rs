@@ -8,7 +8,7 @@ use beskid_codegen::cranelift_host::{
     declare_validated_extern_imports, remap_testcase_externals,
 };
 use beskid_codegen::{
-    CodegenArtifact, emit_runtime_tls, emit_string_literals, emit_type_descriptors, validate_artifact,
+    CodegenArtifact, emit_string_literals, emit_type_descriptors, validate_artifact,
 };
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
@@ -124,9 +124,6 @@ impl BeskidObjectModule {
         })?;
 
         self.data_ids = emit_string_literals(module, artifact)?;
-        if let Some(tls) = emit_runtime_tls(module, artifact)? {
-            self.data_ids.insert("__beskid_runtime_tls".to_owned(), tls);
-        }
         let descriptor_ids = emit_type_descriptors(module, artifact)?;
         for handles in descriptor_ids.values() {
             let descriptor_name = format!("__data_{}", handles.descriptor.as_u32());

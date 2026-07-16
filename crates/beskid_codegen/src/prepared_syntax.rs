@@ -145,7 +145,6 @@ pub fn lower_canonical_runtime_prepared_syntax(
             })
         })
         .collect();
-    artifact.runtime_tls = true;
     Ok(artifact)
 }
 

@@ -178,12 +178,14 @@ fn canonical_bootstrap_lowers_through_the_aot_prepared_syntax_boundary() {
         "beskid_rt_v5_intrinsic_raw_byte_store",
         "beskid_rt_v5_intrinsic_raw_word_load",
         "beskid_rt_v5_intrinsic_raw_word_store",
-        "beskid_rt_v5_intrinsic_tls_get",
-        "beskid_rt_v5_intrinsic_tls_set",
     ] {
         assert!(
             !clif.contains(intrinsic),
             "direct ISLE intrinsic must not leave an object import: {intrinsic}"
         );
     }
+    assert!(
+        !clif.contains("tls_value"),
+        "TLS ownership is supplied by the native platform helper, not unsupported CLIF TLS globals"
+    );
 }
