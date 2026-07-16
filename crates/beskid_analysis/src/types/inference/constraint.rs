@@ -11,15 +11,27 @@ pub struct TypeVar(pub u32);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Constraint {
-    Equal { var: TypeVar, ty: TypeId, span: SpanInfo },
-    EqualVar { left: TypeVar, right: TypeVar, span: SpanInfo },
+    Equal {
+        var: TypeVar,
+        ty: TypeId,
+        span: SpanInfo,
+    },
+    EqualVar {
+        left: TypeVar,
+        right: TypeVar,
+        span: SpanInfo,
+    },
     ApplyGeneric {
         callee: ItemId,
         arg_types: Vec<TypeId>,
         result_vars: Vec<TypeVar>,
         span: SpanInfo,
     },
-    IsNumeric { var: TypeVar, span: SpanInfo, name: String },
+    IsNumeric {
+        var: TypeVar,
+        span: SpanInfo,
+        name: String,
+    },
     VariantOf {
         var: TypeVar,
         enum_item: ItemId,

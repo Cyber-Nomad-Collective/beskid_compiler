@@ -10,9 +10,32 @@ pub enum NamingProfile {
 
 /// Reserved spellings that force a leading `_` escape (see `beskid.pest` Keyword overlap).
 const RESERVED_IDENTIFIERS: &[&str] = &[
-    "type", "enum", "contract", "attribute", "impl", "match", "event", "when", "if", "else",
-    "while", "for", "in", "return", "break", "continue", "let", "mut", "mod", "use", "pub", "ref",
-    "out", "test", "meta", "skip",
+    "type",
+    "enum",
+    "contract",
+    "attribute",
+    "impl",
+    "match",
+    "event",
+    "when",
+    "if",
+    "else",
+    "while",
+    "for",
+    "in",
+    "return",
+    "break",
+    "continue",
+    "let",
+    "mut",
+    "mod",
+    "use",
+    "pub",
+    "ref",
+    "out",
+    "test",
+    "meta",
+    "skip",
 ];
 
 /// Strip a single leading `_` used for keyword escape.
@@ -29,9 +52,9 @@ pub fn is_keyword_escape(name: &str) -> bool {
 }
 
 fn reserved_keyword_prefix_conflict(lower: &str) -> bool {
-    RESERVED_IDENTIFIERS.iter().any(|kw| {
-        lower == *kw || lower.starts_with(&format!("{kw}_"))
-    })
+    RESERVED_IDENTIFIERS
+        .iter()
+        .any(|kw| lower == *kw || lower.starts_with(&format!("{kw}_")))
 }
 
 fn is_ascii_ident_char(c: char) -> bool {
@@ -190,7 +213,10 @@ mod tests {
     fn matches_corelib_examples() {
         assert!(matches_profile("IsOk", NamingProfile::PascalCase));
         assert!(matches_profile("isTty", NamingProfile::LowerCamelCase));
-        assert!(matches_profile("hub_register_accepts_channel", NamingProfile::SnakeCase));
+        assert!(matches_profile(
+            "hub_register_accepts_channel",
+            NamingProfile::SnakeCase
+        ));
         assert!(!matches_profile("is_tty", NamingProfile::LowerCamelCase));
         assert!(!matches_profile("isok", NamingProfile::PascalCase));
     }

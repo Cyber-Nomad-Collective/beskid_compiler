@@ -13,12 +13,12 @@ use crate::resolve::{
     HirNodeId, ItemId, LocalId, Resolution, ResolvedType, ResolvedValue, canonical_item_id,
 };
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::result::{CallLoweringKind, FunctionSignature, MethodReceiverSource};
 use crate::types::path_value::{
     PathTypeEnv, field_type_on_receiver, first_field_segment_name, generic_mapping_for_type_id,
     method_name_from_path_callee, named_item_id, receiver_type_for_path_callee,
     resolve_path_base_local, struct_fields_for_item,
 };
+use crate::types::result::{CallLoweringKind, FunctionSignature, MethodReceiverSource};
 use crate::types::{TypeId, TypeInfo, TypeTable};
 /// Cast intent keyed by HIR node id (span retained for diagnostics).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -314,10 +314,10 @@ impl<'a> PrepWalker<'a> {
     }
 
     fn type_id_for_type_path(&self, path: &Spanned<crate::hir::HirPath>) -> Option<TypeId> {
-        let ResolvedType::Item(item_id) = self.resolution.tables.resolved_type_at(
-            path.span,
-            self.current_source_path.as_ref(),
-        )?
+        let ResolvedType::Item(item_id) = self
+            .resolution
+            .tables
+            .resolved_type_at(path.span, self.current_source_path.as_ref())?
         else {
             return None;
         };
@@ -367,8 +367,7 @@ impl<'a> PrepWalker<'a> {
                 }
             }
             HirItem::TestDefinition(def) => self.with_source_path_from_item(item.span, |w| {
-                w.current_return_type =
-                    primitive_type_id(w.surfaces.types, HirPrimitiveType::Unit);
+                w.current_return_type = primitive_type_id(w.surfaces.types, HirPrimitiveType::Unit);
                 w.walk_block(&def.node.body);
             }),
             HirItem::TypeDefinition(def) => {
@@ -489,15 +488,22 @@ impl<'a> PrepWalker<'a> {
             HirExpressionNode::AssignExpression(a) => {
                 self.walk_expression(&a.node.target);
                 self.walk_expression(&a.node.value);
-                if let (Some(t), Some(v)) = (self.expr_type(&a.node.target), self.expr_type(&a.node.value))
-                {
+                if let (Some(t), Some(v)) = (
+                    self.expr_type(&a.node.target),
+                    self.expr_type(&a.node.value),
+                ) {
                     self.record_numeric_cast(expr.id, expr.span, t, v);
                 }
             }
             HirExpressionNode::LambdaExpression(l) => {
-                let sig = self.contextual_expected_type.and_then(|id| match self.surfaces.types.get(id)? {
-                    TypeInfo::Function { params, return_type } => Some((params.clone(), *return_type)),
-                    _ => None,
+                let sig = self.contextual_expected_type.and_then(|id| {
+                    match self.surfaces.types.get(id)? {
+                        TypeInfo::Function {
+                            params,
+                            return_type,
+                        } => Some((params.clone(), *return_type)),
+                        _ => None,
+                    }
                 });
                 self.walk_expression(&l.node.body);
                 if let (Some((_, er)), Some(rt)) = (sig.as_ref(), self.expr_type(&l.node.body)) {
@@ -540,8 +546,14 @@ impl<'a> PrepWalker<'a> {
         }
     }
 
-    fn prep_struct_literal_casts(&mut self, expr_id: HirNodeId, lit: &Spanned<HirStructLiteralExpression>) {
-        let Some(type_id) = self.node_type(expr_id).or_else(|| self.type_id_for_type_path(&lit.node.path))
+    fn prep_struct_literal_casts(
+        &mut self,
+        expr_id: HirNodeId,
+        lit: &Spanned<HirStructLiteralExpression>,
+    ) {
+        let Some(type_id) = self
+            .node_type(expr_id)
+            .or_else(|| self.type_id_for_type_path(&lit.node.path))
         else {
             return;
         };
@@ -569,7 +581,12 @@ impl<'a> PrepWalker<'a> {
                 substitute_type_id(self.surfaces, *expected, &mapping)
             };
             if let Some(actual) = self.expr_type(&field.node.value) {
-                self.record_numeric_cast(field.node.value.id, field.node.value.span, expected, actual);
+                self.record_numeric_cast(
+                    field.node.value.id,
+                    field.node.value.span,
+                    expected,
+                    actual,
+                );
             }
         }
     }
@@ -580,7 +597,9 @@ impl<'a> PrepWalker<'a> {
             .tables
             .resolved_type_at(ctor.node.path.span, self.current_source_path.as_ref())
             .and_then(|r| match r {
-                ResolvedType::Item(id) => self.named_type_id(canonical_item_id(self.resolution, id)),
+                ResolvedType::Item(id) => {
+                    self.named_type_id(canonical_item_id(self.resolution, id))
+                }
                 _ => None,
             })
         else {
@@ -731,7 +750,10 @@ impl<'a> PrepWalker<'a> {
             if segs.len() >= 2
                 && let Some(ResolvedValue::Item(cid)) = self.resolved_value_at(path.node.path.span)
                 && let Some(method) = method_name_from_path_callee(segs)
-                && let Some(sig) = self.surfaces.contract_signatures.get(&(cid, method.to_string()))
+                && let Some(sig) = self
+                    .surfaces
+                    .contract_signatures
+                    .get(&(cid, method.to_string()))
                 && let Some(recv) = self.named_type_id(cid)
             {
                 self.record_call_kind(
@@ -750,10 +772,10 @@ impl<'a> PrepWalker<'a> {
         if let HirExpressionNode::MemberExpression(mem) = &call.node.callee.node {
             if let HirExpressionNode::PathExpression(path) = &mem.node.target.node
                 && let Some(ResolvedValue::Item(cid)) = self.resolved_value_at(path.node.path.span)
-                && let Some(sig) = self.surfaces.contract_signatures.get(&(
-                    cid,
-                    mem.node.member.node.name.as_str().to_string(),
-                ))
+                && let Some(sig) = self
+                    .surfaces
+                    .contract_signatures
+                    .get(&(cid, mem.node.member.node.name.as_str().to_string()))
                 && let Some(recv) = self.named_type_id(cid)
             {
                 self.record_call_kind(
@@ -922,11 +944,15 @@ fn lookup_function_type(types: &TypeTable, params: &[TypeId], ret: TypeId) -> Op
 }
 
 fn find_named_type(types: &TypeTable, item: ItemId) -> Option<TypeId> {
-    (0..types.len()).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Named(i)) if *i == item))
+    (0..types.len())
+        .map(TypeId)
+        .find(|id| matches!(types.get(*id), Some(TypeInfo::Named(i)) if *i == item))
 }
 
 fn find_generic_param(types: &TypeTable, name: &str) -> Option<TypeId> {
-    (0..types.len()).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::GenericParam(n)) if n == name))
+    (0..types.len())
+        .map(TypeId)
+        .find(|id| matches!(types.get(*id), Some(TypeInfo::GenericParam(n)) if n == name))
 }
 
 fn find_applied_type(types: &TypeTable, base: ItemId, args: &[TypeId]) -> Option<TypeId> {
@@ -937,13 +963,19 @@ fn is_numeric(types: &TypeTable, id: TypeId) -> bool {
     matches!(
         types.get(id),
         Some(TypeInfo::Primitive(
-            HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::F64
+            HirPrimitiveType::I32
+                | HirPrimitiveType::I64
+                | HirPrimitiveType::U8
+                | HirPrimitiveType::F64
         ))
     )
 }
 
 fn is_never(types: &TypeTable, id: TypeId) -> bool {
-    matches!(types.get(id), Some(TypeInfo::Primitive(HirPrimitiveType::Never)))
+    matches!(
+        types.get(id),
+        Some(TypeInfo::Primitive(HirPrimitiveType::Never))
+    )
 }
 
 fn types_compatible_without_cast(
@@ -975,11 +1007,12 @@ fn types_compatible_without_cast(
     }
     if let Some(TypeInfo::Fiber(p)) = types.get(actual)
         && let Some(TypeInfo::Applied { base, args }) = types.get(expected)
-            && args.len() == 1
-                && args[0] == *p
-                && resolution.items.get(base.0).is_some_and(|i| {
-                    i.name == "Fiber" || i.name.ends_with("::Fiber")
-                })
+        && args.len() == 1
+        && args[0] == *p
+        && resolution
+            .items
+            .get(base.0)
+            .is_some_and(|i| i.name == "Fiber" || i.name.ends_with("::Fiber"))
     {
         return true;
     }
@@ -994,7 +1027,7 @@ fn types_compatible_without_cast(
 }
 
 fn literal_type_id(types: &TypeTable, lit: &crate::hir::HirLiteral) -> Option<TypeId> {
-    use crate::hir::{integer_literal_primitive_type, HirLiteral};
+    use crate::hir::{HirLiteral, integer_literal_primitive_type};
     match lit {
         HirLiteral::Integer(v) => primitive_type_id(types, integer_literal_primitive_type(v)),
         HirLiteral::Float(_) => primitive_type_id(types, HirPrimitiveType::F64),

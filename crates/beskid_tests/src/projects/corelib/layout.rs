@@ -148,10 +148,9 @@ fn checked_in_corelib_template_has_beskid_tests_project() {
 
 #[test]
 fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
-    let manifest = std::fs::read_to_string(
-        corelib_root().join("tests/corelib_tests/corelib_tests.bproj"),
-    )
-    .expect("read corelib_tests.bproj");
+    let manifest =
+        std::fs::read_to_string(corelib_root().join("tests/corelib_tests/corelib_tests.bproj"))
+            .expect("read corelib_tests.bproj");
     assert!(
         manifest.contains("name = \"corelib_tests\""),
         "corelib test harness must use project name corelib_tests (not corelib) to avoid recursive obj/ paths"
@@ -236,12 +235,7 @@ fn corelib_collections_sources_carry_api_shape_tier_directives() {
     let collections_root = super::foundation_src().join("Collections");
     let mut missing: Vec<String> = Vec::new();
     for file in [
-        "Array.bd",
-        "List.bd",
-        "Map.bd",
-        "Set.bd",
-        "Queue.bd",
-        "Stack.bd",
+        "Array.bd", "List.bd", "Map.bd", "Set.bd", "Queue.bd", "Stack.bd",
     ] {
         let path = collections_root.join(file);
         let text = std::fs::read_to_string(&path)
@@ -284,8 +278,7 @@ fn corelib_core_os_streams_carry_api_shape_tier_directives() {
 
 #[test]
 fn checked_in_generated_regex_parsers_use_pascal_case_callables() {
-    let generated = super::foundation_root()
-        .join(".generated/Core/Text/Regex/Generated.g.bd");
+    let generated = super::foundation_root().join(".generated/Core/Text/Regex/Generated.g.bd");
     let text = fs::read_to_string(&generated).expect("read Generated.g.bd");
     assert!(
         text.contains("ParseDigit"),
@@ -314,7 +307,11 @@ fn checked_in_corelib_parser_subdirectory_exists() {
         "Coordination.bd",
     ] {
         let path = parser_root.join(file);
-        assert!(path.is_file(), "missing parser submodule: {}", path.display());
+        assert!(
+            path.is_file(),
+            "missing parser submodule: {}",
+            path.display()
+        );
     }
     let pest_root = super::foundation_src().join("Core/Text/Pest");
     for file in ["Names.bd", "Grammar.bd", "Expr.bd", "Emit.bd"] {
@@ -322,9 +319,17 @@ fn checked_in_corelib_parser_subdirectory_exists() {
         assert!(path.is_file(), "missing pest submodule: {}", path.display());
     }
     let casing = super::foundation_src().join("Core/Text/Casing.bd");
-    assert!(casing.is_file(), "missing Core.Text.Casing hub: {}", casing.display());
+    assert!(
+        casing.is_file(),
+        "missing Core.Text.Casing hub: {}",
+        casing.display()
+    );
     let pest_hub = super::foundation_src().join("Core/Text/Pest.bd");
-    assert!(pest_hub.is_file(), "missing Core.Text.Pest hub: {}", pest_hub.display());
+    assert!(
+        pest_hub.is_file(),
+        "missing Core.Text.Pest hub: {}",
+        pest_hub.display()
+    );
 }
 
 #[test]

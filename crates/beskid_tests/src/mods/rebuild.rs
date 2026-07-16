@@ -3,16 +3,14 @@
 use std::fs;
 
 use beskid_analysis::mod_host::{
-    ModHostInput, NativeContractInvoker, StubContractInvoker,
-    extract_mod_contract_registrations, run_through_generate,
+    ModHostInput, NativeContractInvoker, StubContractInvoker, extract_mod_contract_registrations,
+    run_through_generate,
 };
 use beskid_analysis::projects::{
     ProjectKind, WorkspacePrepareOptions, build_compile_plan, load_manifest_from_path,
     prepare_project_workspace_with_options,
 };
-use beskid_analysis::services::{
-    resolved_input_from_plan, parse_program_with_source_name,
-};
+use beskid_analysis::services::{parse_program_with_source_name, resolved_input_from_plan};
 use beskid_aot::{ModArtifactBuildRequest, build_mod_artifact};
 use beskid_codegen::lower_resolved_input_with_pipeline;
 
@@ -53,8 +51,8 @@ fn sample_mod_rebuild_writes_descriptor_registrations_and_host_dispatches() {
         "expected non-empty descriptor registrations, got: {registrations:?}"
     );
 
-    let target = beskid_aot::target::detect_target(Some(host_target_triple()))
-        .expect("host target");
+    let target =
+        beskid_aot::target::detect_target(Some(host_target_triple())).expect("host target");
     let descriptor = build_mod_artifact(ModArtifactBuildRequest {
         artifact: lowered.artifact,
         workspace_root: workspace.host_dir.clone(),
@@ -68,11 +66,13 @@ fn sample_mod_rebuild_writes_descriptor_registrations_and_host_dispatches() {
         compiler_version: env!("CARGO_PKG_VERSION").to_owned(),
         registrations: registrations
             .into_iter()
-            .map(|registration| beskid_aot::mod_artifact::ContractRegistration {
-                contract_id: registration.contract_id,
-                type_id: registration.type_id,
-                entry_symbol: registration.entry_symbol,
-            })
+            .map(
+                |registration| beskid_aot::mod_artifact::ContractRegistration {
+                    contract_id: registration.contract_id,
+                    type_id: registration.type_id,
+                    entry_symbol: registration.entry_symbol,
+                },
+            )
             .collect(),
     })
     .expect("build mod artifact");
@@ -99,7 +99,7 @@ fn sample_mod_rebuild_writes_descriptor_registrations_and_host_dispatches() {
             source: host_source,
             pipeline: None,
             invoker: Some(&stub_invoker),
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     )
     .expect("host mod dispatch");
@@ -123,7 +123,7 @@ fn sample_mod_rebuild_writes_descriptor_registrations_and_host_dispatches() {
             source: host_source,
             pipeline: None,
             invoker: Some(&native_invoker),
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     )
     .expect("native invoker dispatch");

@@ -1,12 +1,12 @@
+use crate::shell::primitives::Hotkey;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Paragraph;
-use crate::shell::primitives::Hotkey;
 
 use crate::pipeline::tui::widgets::draw_tabbed_log_panel;
 use crate::shell::context::WidgetContext;
-use crate::shell::scope::ShellScope;
 use crate::shell::input::ShellInput;
+use crate::shell::scope::ShellScope;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
 
 pub struct LogWidget;
@@ -60,7 +60,9 @@ impl BeskidWidget for LogPanelWidget {
 fn render_log_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
     if ctx.scope.is_user() && !ctx.shell_state.pipeline_active() {
         frame.render_widget(
-            Paragraph::new(ShellScope::no_project_lines(&ctx.key_bindings.palette_hint())),
+            Paragraph::new(ShellScope::no_project_lines(
+                &ctx.key_bindings.palette_hint(),
+            )),
             area,
         );
         return;

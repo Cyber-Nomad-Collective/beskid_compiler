@@ -18,4 +18,8 @@ pub extern "C" fn beskid_runtime_link_anchor() {
     {
         let _ = beskid_host::beskid_host_register_all();
     }
+    #[cfg(feature = "language_handlers")]
+    {
+        let _ = beskid_runtime_handlers::beskid_language_register_all();
+    }
 }

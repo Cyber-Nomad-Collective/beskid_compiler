@@ -6,9 +6,9 @@ const ENV_CORELIB_ROOT: &str = "BESKID_CORELIB_ROOT";
 
 use daggy::{Dag, NodeIndex};
 
+use crate::projects::discovery::discover_project_manifest_in_dir;
 use crate::projects::error::ProjectError;
 use crate::projects::graph::loader::load_manifest_from_path;
-use crate::projects::discovery::discover_project_manifest_in_dir;
 use crate::projects::graph::pathing::{
     dependency_manifest_path, normalize_existing_path, project_root_from_manifest_path,
 };

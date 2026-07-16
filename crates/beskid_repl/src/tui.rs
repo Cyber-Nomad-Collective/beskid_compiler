@@ -49,11 +49,8 @@ pub fn run_tui(session: &mut ReplSession) -> io::Result<()> {
                 );
             frame.render_widget(pseudo, chunks[0]);
 
-            let input_line = Paragraph::new(format!("{PROMPT}{input}")).block(
-                Block::default()
-                    .title(" Input ")
-                    .borders(Borders::ALL),
-            );
+            let input_line = Paragraph::new(format!("{PROMPT}{input}"))
+                .block(Block::default().title(" Input ").borders(Borders::ALL));
             frame.render_widget(input_line, chunks[1]);
         })?;
 
@@ -112,7 +109,9 @@ fn handle_line(session: &mut ReplSession, parser: &mut Parser, line: &str) {
         match handle_command(session, command.trim()) {
             CommandOutcome::Quit => {}
             CommandOutcome::Print(message) => write_output(parser, &message),
-            CommandOutcome::PrintError(message) => write_output(parser, &format!("error: {message}")),
+            CommandOutcome::PrintError(message) => {
+                write_output(parser, &format!("error: {message}"))
+            }
         }
         return;
     }

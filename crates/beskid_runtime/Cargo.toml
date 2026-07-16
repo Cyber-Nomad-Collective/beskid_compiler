@@ -16,9 +16,11 @@ beskid_manifest = { path = "../beskid_manifest" }
 criterion = "0.5"
 
 [features]
+default = ["rust_fallback_handlers"]
 metrics = []
 arrays_backing = [] # No-op since 2026-06-05: backing store is always allocated unconditionally.
 sched = []
+rust_fallback_handlers = []
 
 [[bench]]
 name = "runtime_micro"

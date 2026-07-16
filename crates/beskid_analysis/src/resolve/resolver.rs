@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::hir::{HirProgram, HirItem};
+use crate::hir::{HirItem, HirProgram};
 use crate::syntax::Spanned;
 
 use super::errors::ResolveResult;
@@ -10,9 +10,9 @@ use super::errors::{ResolveError, ResolveWarning};
 use super::ids::{ItemId, ModuleId};
 use super::items::ItemInfo;
 use super::module_graph::ModuleGraph;
+use super::span_index::SpanIndex;
 use super::symbol::{SymbolId, SymbolRegistry};
 use super::tables::ResolutionTables;
-use super::span_index::SpanIndex;
 
 #[derive(Debug, Default)]
 pub struct Resolver {
@@ -124,4 +124,3 @@ impl Resolution {
         self.span_index = super::span_index::span_index_from_tables(&self.tables);
     }
 }
-

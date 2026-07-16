@@ -1,6 +1,5 @@
 //! Materialized dependency sources must parse the same as package sources.
 
-
 use beskid_analysis::projects::AssemblyDiscovery;
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_analysis::services::resolve_input;

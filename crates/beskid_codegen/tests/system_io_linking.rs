@@ -16,8 +16,17 @@ fn compiler_workspace_root() -> PathBuf {
 
 fn lower_entry(entry_rel: &str, entrypoint: &str) {
     let root = compiler_workspace_root();
-    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src").join(entry_rel);
-    let project_root = entry.parent().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
+    let entry = root
+        .join("corelib/beskid_corelib/tests/corelib_tests/src")
+        .join(entry_rel);
+    let project_root = entry
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
     let source = std::fs::read_to_string(&entry).expect("read entry");
 
     let previous = std::env::current_dir().expect("cwd");

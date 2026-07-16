@@ -3,9 +3,7 @@
 use anyhow::{Context, Result};
 
 use crate::services::parse_program_with_source_name;
-use crate::syntax::{
-    ContractDefinition, FunctionDefinition, Node, Spanned, TypeDefinition,
-};
+use crate::syntax::{ContractDefinition, FunctionDefinition, Node, Spanned, TypeDefinition};
 use crate::syntax_query::AstNode;
 
 use super::types::ProgramItem;
@@ -25,7 +23,9 @@ pub fn materialize_program_item(source: &str) -> Result<Spanned<ProgramItem>> {
         .ok_or_else(|| anyhow::anyhow!("expected at least one top-level item in: {trimmed}"))
 }
 
-pub fn materialize_program_items(sources: impl IntoIterator<Item = impl AsRef<str>>) -> Result<Vec<Spanned<ProgramItem>>> {
+pub fn materialize_program_items(
+    sources: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Result<Vec<Spanned<ProgramItem>>> {
     sources
         .into_iter()
         .map(|source| materialize_program_item(source.as_ref()))
@@ -35,10 +35,7 @@ pub fn materialize_program_items(sources: impl IntoIterator<Item = impl AsRef<st
 pub fn materialize_function_definition(source: &str) -> Result<Spanned<FunctionDefinition>> {
     match materialize_program_item(source)?.node {
         Node::Function(definition) => Ok(definition),
-        other => anyhow::bail!(
-            "expected function definition, got {:?}",
-            other.node_kind()
-        ),
+        other => anyhow::bail!("expected function definition, got {:?}", other.node_kind()),
     }
 }
 
@@ -52,10 +49,7 @@ pub fn materialize_type_definition(source: &str) -> Result<Spanned<TypeDefinitio
 pub fn materialize_contract_definition(source: &str) -> Result<Spanned<ContractDefinition>> {
     match materialize_program_item(source)?.node {
         Node::ContractDefinition(definition) => Ok(definition),
-        other => anyhow::bail!(
-            "expected contract definition, got {:?}",
-            other.node_kind()
-        ),
+        other => anyhow::bail!("expected contract definition, got {:?}", other.node_kind()),
     }
 }
 
@@ -72,8 +66,8 @@ mod tests {
 
     #[test]
     fn materializes_type_definition_from_source() {
-        let item = materialize_type_definition("type Account { i64 balance }")
-            .expect("type materialize");
+        let item =
+            materialize_type_definition("type Account { i64 balance }").expect("type materialize");
         assert_eq!(item.node.name.node.name, "Account");
     }
 

@@ -744,6 +744,17 @@ dependencies = [
  "beskid_host",
  "beskid_manifest",
  "beskid_runtime",
+ "beskid_runtime_handlers",
+]
+
+[[package]]
+name = "beskid_runtime_handlers"
+version = "0.1.0"
+dependencies = [
+ "beskid_abi",
+ "beskid_isle",
+ "beskid_manifest",
+ "beskid_runtime",
 ]
 
 [[package]]
@@ -783,6 +794,7 @@ dependencies = [
  "beskid_pipeline",
  "beskid_queries",
  "beskid_runtime",
+ "beskid_runtime_handlers",
  "beskid_template",
  "object 0.37.3",
  "pest",

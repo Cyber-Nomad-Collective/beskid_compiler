@@ -3,8 +3,8 @@
 use std::fs;
 
 use beskid_analysis::projects::{
-    ProjectKind, build_compile_plan, build_project_graph, discover_project_manifest_in_dir,
-    collect_dependency_projects, parse_manifest,
+    ProjectKind, build_compile_plan, build_project_graph, collect_dependency_projects,
+    discover_project_manifest_in_dir, parse_manifest,
 };
 
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
@@ -281,15 +281,9 @@ target "app" {
     let manifest_path = discover_project_manifest_in_dir(&output)
         .expect("discover scaffold manifest")
         .expect("scaffold manifest present");
-    let resolved = services::resolve_input(
-        Some(&entry),
-        Some(&manifest_path),
-        None,
-        None,
-        false,
-        false,
-    )
-    .expect("resolve instantiated project");
+    let resolved =
+        services::resolve_input(Some(&entry), Some(&manifest_path), None, None, false, false)
+            .expect("resolve instantiated project");
 
     let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
         &resolved,
@@ -297,7 +291,6 @@ target "app" {
             front_end: FrontEndOptions {
                 with_semantic_diagnostics: true,
                 ..Default::default()
-
             },
             ..Default::default()
         },

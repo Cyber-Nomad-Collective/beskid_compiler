@@ -4,11 +4,11 @@ use std::time::Instant;
 
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
-use tachyonfx::{fx, EffectManager, Interpolation};
+use tachyonfx::{EffectManager, Interpolation, fx};
 
 use crate::tui::layout::{
-    overlay_rect_for, OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, OVERLAY_PCKG,
-    OVERLAY_SETTINGS, OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS,
+    OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, OVERLAY_PCKG, OVERLAY_SETTINGS,
+    OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS, overlay_rect_for,
 };
 use crate::tui::message::ShellMessage;
 use crate::tui::shell::focus::OverlayKind;
@@ -34,12 +34,18 @@ impl Default for ShellFx {
 impl ShellFx {
     pub fn on_message(&mut self, msg: &ShellMessage, state: &ShellState) {
         match msg {
-            ShellMessage::SetOverlayVisible { kind, visible: true } => {
+            ShellMessage::SetOverlayVisible {
+                kind,
+                visible: true,
+            } => {
                 if let Some(area) = overlay_rect(state, *kind) {
                     self.queue_overlay_open(area);
                 }
             }
-            ShellMessage::SetOverlayVisible { kind, visible: false } => {
+            ShellMessage::SetOverlayVisible {
+                kind,
+                visible: false,
+            } => {
                 if let Some(area) = overlay_rect(state, *kind) {
                     self.queue_overlay_close(area);
                 }
@@ -84,10 +90,10 @@ impl ShellFx {
 
     fn queue_overlay_open(&mut self, area: Rect) {
         let backdrop = Style::default().bg(Color::Indexed(234));
-        self.effects.add_effect(fx::coalesce_from(backdrop, FAST).with_area(area));
-        self.effects.add_effect(
-            fx::dissolve_to(Style::default().fg(Color::Cyan), FAST).with_area(area),
-        );
+        self.effects
+            .add_effect(fx::coalesce_from(backdrop, FAST).with_area(area));
+        self.effects
+            .add_effect(fx::dissolve_to(Style::default().fg(Color::Cyan), FAST).with_area(area));
     }
 
     fn queue_overlay_close(&mut self, area: Rect) {
@@ -95,18 +101,19 @@ impl ShellFx {
     }
 
     fn queue_compile_complete(&mut self, area: Rect) {
-        self.effects.add_effect(
-            fx::sequence(&[
-                fx::lighten_fg(0.35, MEDIUM).with_area(area),
-                fx::fade_to_fg(Color::Reset, MEDIUM).with_area(area),
-            ]),
-        );
+        self.effects.add_effect(fx::sequence(&[
+            fx::lighten_fg(0.35, MEDIUM).with_area(area),
+            fx::fade_to_fg(Color::Reset, MEDIUM).with_area(area),
+        ]));
     }
 
     fn queue_stage_pulse(&mut self, area: Rect) {
         self.effects.add_effect(
-            fx::dissolve_to(Style::default().fg(Color::DarkGray), (120, Interpolation::Linear))
-                .with_area(area),
+            fx::dissolve_to(
+                Style::default().fg(Color::DarkGray),
+                (120, Interpolation::Linear),
+            )
+            .with_area(area),
         );
     }
 }

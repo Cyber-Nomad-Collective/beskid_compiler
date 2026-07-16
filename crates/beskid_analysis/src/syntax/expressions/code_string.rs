@@ -33,13 +33,7 @@ impl CodeStringLiteral {
             .find(|child| child.as_rule() == Rule::CodeFence)
             .ok_or_else(|| ParseError::missing(Rule::CodeFence))?;
         let (language, segments) = parse_code_fence(fence)?;
-        Ok(Spanned::new(
-            Self {
-                language,
-                segments,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { language, segments }, span))
     }
 
     pub fn materialize_text(&self) -> String {

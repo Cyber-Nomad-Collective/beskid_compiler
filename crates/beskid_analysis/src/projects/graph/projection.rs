@@ -87,7 +87,10 @@ fn collect_dependency_projects_from_node(
             continue;
         }
 
-        if !matches!(child_kind, Some(ProjectKind::Template) | Some(ProjectKind::Bsol)) {
+        if !matches!(
+            child_kind,
+            Some(ProjectKind::Template) | Some(ProjectKind::Bsol)
+        ) {
             collect_dependency_projects_from_node(graph, child, visited, output);
         }
 

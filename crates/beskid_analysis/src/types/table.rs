@@ -141,7 +141,10 @@ impl TypeTable {
                     .map(|arg| self.import_type_id(*arg, other, remap))
                     .collect(),
             },
-            TypeInfo::Function { params, return_type } => TypeInfo::Function {
+            TypeInfo::Function {
+                params,
+                return_type,
+            } => TypeInfo::Function {
                 params: params
                     .iter()
                     .map(|param| self.import_type_id(*param, other, remap))

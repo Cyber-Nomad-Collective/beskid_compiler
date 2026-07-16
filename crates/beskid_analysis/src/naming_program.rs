@@ -4,8 +4,8 @@ use crate::naming_case::NamingProfile;
 use crate::syntax::ContractNode;
 use crate::syntax::{
     Block, ContractDefinition, EnumDefinition, EnumVariant, Expression, ExtendTypeDefinition,
-    Field, FunctionDefinition, InlineModule, MethodDefinition, Node, Parameter,
-    Pattern, Program, Statement, TestDefinition, TypeDefinition,
+    Field, FunctionDefinition, InlineModule, MethodDefinition, Node, Parameter, Pattern, Program,
+    Statement, TestDefinition, TypeDefinition,
 };
 use crate::syntax::{Identifier, Spanned};
 
@@ -85,7 +85,10 @@ fn walk_node_mut(node: &mut Node, visit: &mut impl FnMut(NamingRole, &mut Identi
     }
 }
 
-fn walk_type_definition(def: &TypeDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
+fn walk_type_definition(
+    def: &TypeDefinition,
+    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
+) {
     visit(NamingRole::TypeDeclaration, &def.name);
     for generic in &def.generics {
         visit(NamingRole::GenericParameter, generic);
@@ -114,7 +117,10 @@ fn walk_type_definition_mut(
     }
 }
 
-fn walk_enum_definition(def: &EnumDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
+fn walk_enum_definition(
+    def: &EnumDefinition,
+    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
+) {
     visit(NamingRole::TypeDeclaration, &def.name);
     for generic in &def.generics {
         visit(NamingRole::GenericParameter, generic);
@@ -137,7 +143,10 @@ fn walk_enum_definition_mut(
     }
 }
 
-fn walk_enum_variant(variant: &EnumVariant, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
+fn walk_enum_variant(
+    variant: &EnumVariant,
+    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
+) {
     visit(NamingRole::EnumVariant, &variant.name);
     for field in &variant.fields {
         walk_field(&field.node, visit);
@@ -234,7 +243,10 @@ fn walk_method_definition_mut(
     walk_block_mut(&mut def.body.node, visit);
 }
 
-fn walk_extend_type(def: &ExtendTypeDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
+fn walk_extend_type(
+    def: &ExtendTypeDefinition,
+    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
+) {
     for method in &def.methods {
         walk_method_definition(&method.node, visit);
     }
@@ -249,7 +261,10 @@ fn walk_extend_type_mut(
     }
 }
 
-fn walk_test_definition(def: &TestDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
+fn walk_test_definition(
+    def: &TestDefinition,
+    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
+) {
     visit(NamingRole::Test, &def.name);
     for stmt in &def.statements {
         walk_statement(&stmt.node, visit);
@@ -266,7 +281,10 @@ fn walk_test_definition_mut(
     }
 }
 
-fn walk_inline_module(module: &InlineModule, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
+fn walk_inline_module(
+    module: &InlineModule,
+    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
+) {
     visit(NamingRole::ModuleSegment, &module.name);
     for item in &module.items {
         walk_node(&item.node, visit);
@@ -283,7 +301,10 @@ fn walk_inline_module_mut(
     }
 }
 
-fn walk_module_path(path: &Spanned<crate::syntax::Path>, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
+fn walk_module_path(
+    path: &Spanned<crate::syntax::Path>,
+    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
+) {
     for segment in &path.node.segments {
         visit(NamingRole::ModuleSegment, &segment.node.name);
     }

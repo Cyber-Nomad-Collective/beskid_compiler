@@ -1,8 +1,8 @@
 //! Post-normalize HIR walk assigning stable [`HirNodeId`](crate::resolve::HirNodeId) values.
 
 use crate::hir::{
-    HirBlock, HirElseBranch, HirExpressionNode, HirItem, HirMatchArm,
-    HirPattern, HirProgram, HirStatementNode,
+    HirBlock, HirElseBranch, HirExpressionNode, HirItem, HirMatchArm, HirPattern, HirProgram,
+    HirStatementNode,
 };
 use crate::resolve::HirNodeId;
 use crate::syntax::Spanned;
@@ -249,7 +249,9 @@ fn reset_block_node_ids(block: &mut Spanned<HirBlock>) {
 fn reset_statement_node_ids(stmt: &mut Spanned<HirStatementNode>) {
     stmt.id = HirNodeId::INVALID;
     match &mut stmt.node {
-        HirStatementNode::LetStatement(let_stmt) => reset_expression_node_ids(&mut let_stmt.node.value),
+        HirStatementNode::LetStatement(let_stmt) => {
+            reset_expression_node_ids(&mut let_stmt.node.value)
+        }
         HirStatementNode::ReturnStatement(ret) => {
             if let Some(expr) = &mut ret.node.value {
                 reset_expression_node_ids(expr);

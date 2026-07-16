@@ -3,9 +3,7 @@
 use std::fs;
 
 use beskid_analysis::services::resolve_input;
-use beskid_queries::{
-    configure_db_for_project, program_assembly, with_db,
-};
+use beskid_queries::{configure_db_for_project, program_assembly, with_db};
 
 use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
 

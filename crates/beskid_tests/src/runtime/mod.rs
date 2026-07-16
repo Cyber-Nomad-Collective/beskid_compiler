@@ -1,4 +1,7 @@
 #[cfg(test)]
+mod beskid_handlers;
+
+#[cfg(test)]
 mod alloc;
 
 #[cfg(test)]

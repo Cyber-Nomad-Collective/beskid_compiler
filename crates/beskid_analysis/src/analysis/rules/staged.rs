@@ -52,9 +52,11 @@ impl SemanticPipelineRule {
             self.stage3_control_flow_and_patterns(ctx, &hir);
         });
 
-        let Some(resolution) = observe_stage_optional(pipeline, phases::SEMANTIC_NAME_RESOLUTION, || {
-            self.stage1_name_resolution(ctx, &hir)
-        }) else {
+        let Some(resolution) =
+            observe_stage_optional(pipeline, phases::SEMANTIC_NAME_RESOLUTION, || {
+                self.stage1_name_resolution(ctx, &hir)
+            })
+        else {
             return;
         };
 

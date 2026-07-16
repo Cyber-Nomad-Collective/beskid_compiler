@@ -14,12 +14,10 @@ pub(crate) mod timer;
 pub(crate) mod tree;
 pub(crate) mod widgets;
 
+pub use crate::tui::shell::state::NavTarget;
 pub use diagnostics::{SeverityCounts, count_severities, format_severity_summary};
 pub use hyperlink::FileLineLink;
-pub use model::{
-    CommandSummary, PipelineProgress, SummarySlice, SummaryStat, TestReportSummary,
-};
-pub use crate::tui::shell::state::NavTarget;
+pub use model::{CommandSummary, PipelineProgress, SummarySlice, SummaryStat, TestReportSummary};
 pub use pipeline_tree::PipelineTree;
 pub use terminal::{PipelineViewState, TuiSession, reset_stderr_ansi};
 pub use test_table::{TestRow, TestRowState, TestRunUi};

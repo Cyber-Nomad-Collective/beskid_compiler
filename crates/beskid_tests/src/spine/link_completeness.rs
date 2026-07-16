@@ -16,13 +16,13 @@ use crate::projects::with_cwd;
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
 
 #[cfg(feature = "slow")]
-use beskid_codegen::LinkSymbol;
-#[cfg(feature = "slow")]
-use beskid_codegen::lowering::lower_program_with_assembly;
-#[cfg(feature = "slow")]
 use crate::projects::fixture_harness::{
     corelib_tests_project_root, resolve_corelib_tests_entry_with_assembly, with_project_test_env,
 };
+#[cfg(feature = "slow")]
+use beskid_codegen::LinkSymbol;
+#[cfg(feature = "slow")]
+use beskid_codegen::lowering::lower_program_with_assembly;
 
 #[test]
 fn main_entry_link_plan_validates_for_temp_project() {
@@ -59,13 +59,8 @@ i32 Main() {
     with_cwd(&root, || {
         let ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
         let plan = ctx.compile_plan.clone().expect("plan");
-        let resolved = resolved_input_from_plan(
-            entry.clone(),
-            source.to_string(),
-            plan.clone(),
-            None,
-            None,
-        );
+        let resolved =
+            resolved_input_from_plan(entry.clone(), source.to_string(), plan.clone(), None, None);
         configure_db_for_project(&root);
         let assembly = with_db(|db| {
             program_assembly(
@@ -165,8 +160,7 @@ fn corelib_assert_equal_i64_link_plan_validates() {
 #[test]
 fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home() {
     with_project_test_env(&corelib_tests_project_root(), || {
-        let resolved =
-            resolve_corelib_tests_entry_with_assembly("console/AnsiEscapeTests.bd");
+        let resolved = resolve_corelib_tests_entry_with_assembly("console/AnsiEscapeTests.bd");
         let front = compile_front_end_from_resolved_input(
             &resolved,
             FrontEndOptions {
@@ -280,8 +274,7 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
 #[test]
 fn ansi_csi_bold_red_link_plan_validates() {
     with_project_test_env(&corelib_tests_project_root(), || {
-        let resolved =
-            resolve_corelib_tests_entry_with_assembly("console/AnsiEscapeTests.bd");
+        let resolved = resolve_corelib_tests_entry_with_assembly("console/AnsiEscapeTests.bd");
         let front = compile_front_end_from_resolved_input(
             &resolved,
             FrontEndOptions {

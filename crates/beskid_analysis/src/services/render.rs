@@ -1,5 +1,5 @@
-use crate::syntax_query::NodeRef;
 use crate::syntax::{Program, Spanned};
+use crate::syntax_query::NodeRef;
 
 pub fn render_program_tree(program: &Spanned<Program>) -> String {
     let mut out = String::new();

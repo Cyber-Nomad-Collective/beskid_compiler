@@ -158,8 +158,8 @@ struct CallKindCase {
 }
 
 fn assert_call_kind_case(case: &CallKindCase) {
-    let result =
-        resolve_and_type(case.source).unwrap_or_else(|_| panic!("{}: expected typing to succeed", case.name));
+    let result = resolve_and_type(case.source)
+        .unwrap_or_else(|_| panic!("{}: expected typing to succeed", case.name));
     assert!(
         result.lowering.call_kinds.values().any(case.predicate),
         "{}: expected matching call kind, got {:?}",
@@ -641,7 +641,11 @@ fn typing_cast_intent_accessor_finds_intent_by_node() {
     let result = resolve_and_type("unit Main() { i32 x = 1; i64 y = x; }")
         .expect("expected typing to succeed with cast intent");
     let intent = &result.cast_intents()[0];
-    assert!(result.cast_intents_for_node(intent.node_id).any(|found| found == intent));
+    assert!(
+        result
+            .cast_intents_for_node(intent.node_id)
+            .any(|found| found == intent)
+    );
 }
 
 #[test]

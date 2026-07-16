@@ -77,10 +77,21 @@ pub fn register_footer_clicks(
     for item in items {
         let key_w = item.key.chars().count() as u16;
         let desc_w = item.description.chars().count() as u16;
-        let segment_w = key_w.saturating_add(1).saturating_add(desc_w).saturating_add(2);
+        let segment_w = key_w
+            .saturating_add(1)
+            .saturating_add(desc_w)
+            .saturating_add(2);
         if let Some(action) = action_for_hotkey_description(&item.description) {
             let width = segment_w.min(area.width.saturating_sub(x.saturating_sub(area.x)));
-            targets.add_rect(Rect { x, y, width, height: 1 }, action);
+            targets.add_rect(
+                Rect {
+                    x,
+                    y,
+                    width,
+                    height: 1,
+                },
+                action,
+            );
         }
         x = x.saturating_add(segment_w);
     }
@@ -131,9 +142,6 @@ mod tests {
         let mut targets = ShortcutClickTargets::default();
         targets.add_rect(Rect::new(0, 0, 10, 1), ShortcutClickAction::Quit);
         targets.add_rect(Rect::new(0, 0, 10, 1), ShortcutClickAction::OpenPalette);
-        assert_eq!(
-            targets.hit(5, 0),
-            Some(ShortcutClickAction::OpenPalette)
-        );
+        assert_eq!(targets.hit(5, 0), Some(ShortcutClickAction::OpenPalette));
     }
 }

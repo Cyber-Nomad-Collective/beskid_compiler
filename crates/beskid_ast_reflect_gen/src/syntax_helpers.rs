@@ -310,13 +310,13 @@ pub fn decl_names_from_files(files: &[(String, syn::File)]) -> BTreeSet<String> 
     for (_, file) in files {
         for item in &file.items {
             match item {
-                syn::Item::Struct(s) if matches!(s.vis, Visibility::Public(_))
-                    && s.generics.params.is_empty() =>
+                syn::Item::Struct(s)
+                    if matches!(s.vis, Visibility::Public(_)) && s.generics.params.is_empty() =>
                 {
                     names.insert(s.ident.to_string());
                 }
-                syn::Item::Enum(e) if matches!(e.vis, Visibility::Public(_))
-                    && e.generics.params.is_empty() =>
+                syn::Item::Enum(e)
+                    if matches!(e.vis, Visibility::Public(_)) && e.generics.params.is_empty() =>
                 {
                     names.insert(e.ident.to_string());
                 }

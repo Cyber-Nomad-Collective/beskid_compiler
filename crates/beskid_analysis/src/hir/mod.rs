@@ -34,18 +34,21 @@ pub use expression::{
     HirPathExpression, HirSpawnExpression, HirStructLiteralExpression, HirTryExpression,
     HirUnaryExpression, HirUnaryOp,
 };
+pub use index::{
+    index_program, index_program_from_base, max_hir_node_id, reindex_programs_in_place,
+};
 pub use item::{
     HirAttribute, HirAttributeDeclaration, HirAttributeParameter, HirAttributeTarget,
     HirContractDefinition, HirContractEmbedding, HirContractMethodSignature, HirContractNode,
     HirEnumDefinition, HirEnumVariant, HirExportInterface, HirExtendTypeDefinition,
     HirExternInterface, HirFunctionDefinition, HirInlineModule, HirMethodDefinition,
-    HirModuleDeclaration, HirTestDefinition, HirTestMetaSection, HirTestMetadataEntry,
-    HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition, HirUseDeclaration, Item,
+    HirModuleDeclaration, HirRuntimeHandler, HirTestDefinition, HirTestMetaSection,
+    HirTestMetadataEntry, HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition,
+    HirUseDeclaration, Item,
 };
 pub use legality::{HirLegalityError, validate_hir_program};
 pub use literal::{HirLiteral, integer_literal_magnitude, integer_literal_primitive_type};
 pub use lowering::lower_program;
-pub use index::{index_program, index_program_from_base, max_hir_node_id, reindex_programs_in_place};
 pub use match_arm::HirMatchArm;
 pub use module::Module;
 pub use normalize::{HirNormalizeError, normalize_program, normalize_program_with_resolution};

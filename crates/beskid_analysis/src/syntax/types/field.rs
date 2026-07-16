@@ -1,7 +1,7 @@
+use crate::syntax::items::parse_helpers::parse_attributes;
 use crate::syntax::{
     Attribute, Identifier, InjectQualifier, Parameter, PrimitiveType, Spanned, Type, Visibility,
 };
-use crate::syntax::items::parse_helpers::parse_attributes;
 
 use beskid_ast_derive::AstNode;
 

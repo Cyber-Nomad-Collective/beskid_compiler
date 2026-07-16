@@ -70,17 +70,19 @@ pub struct DispatchEntry {
     pub injected: bool,
     #[serde(default)]
     pub beskid_path: Vec<String>,
-    #[serde(default = "default_language_owner")]
+    #[serde(default)]
     pub owner: String,
-}
-
-fn default_language_owner() -> String {
-    "language".to_string()
+    #[serde(default)]
+    pub language_handler: bool,
 }
 
 impl DispatchEntry {
     pub fn is_host(&self) -> bool {
         self.owner == "host"
+    }
+
+    pub fn is_language_handler(&self) -> bool {
+        self.language_handler
     }
 }
 

@@ -1,10 +1,10 @@
 //! Compile-time `@{}` hole evaluation for mod `CodeString` bodies.
 
 use crate::services::parse_expression_source;
-use crate::syntax::expressions::{
-    decode_string_literal_token, materialize_code_segments, parse_plain_code_body, Literal,
-};
 use crate::syntax::Expression;
+use crate::syntax::expressions::{
+    Literal, decode_string_literal_token, materialize_code_segments, parse_plain_code_body,
+};
 
 use super::generate_output::CodeGenerateOutput;
 
@@ -13,8 +13,8 @@ use super::generate_output::CodeGenerateOutput;
 /// The body is parsed with the `CodePlainBody` grammar (`CodeHole` + `CodePlainText`).
 /// Each hole is a Beskid expression; string literals decode via `StringContent`.
 pub fn evaluate_beskid_code_body(body: &str) -> Result<String, String> {
-    let segments = parse_plain_code_body(body)
-        .map_err(|err| format!("failed to parse code body: {err:?}"))?;
+    let segments =
+        parse_plain_code_body(body).map_err(|err| format!("failed to parse code body: {err:?}"))?;
     materialize_code_segments(&segments, eval_code_hole)
 }
 

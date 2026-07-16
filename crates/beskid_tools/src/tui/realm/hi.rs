@@ -42,7 +42,11 @@ impl HiShellComponent {
 }
 
 impl tuirealm::component::Component for HiShellComponent {
-    fn view(&mut self, frame: &mut tuirealm::ratatui::Frame, area: tuirealm::ratatui::layout::Rect) {
+    fn view(
+        &mut self,
+        frame: &mut tuirealm::ratatui::Frame,
+        area: tuirealm::ratatui::layout::Rect,
+    ) {
         self.app.set_frame_area(area);
         self.app.draw_shell(frame);
     }
@@ -80,14 +84,18 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
 
     let mut application = Application::init(listener);
     application
-        .mount(HiShellId::Root, Box::new(HiShellComponent { app }), Vec::new())
+        .mount(
+            HiShellId::Root,
+            Box::new(HiShellComponent { app }),
+            Vec::new(),
+        )
         .map_err(|err| io::Error::other(err.to_string()))?;
     application
         .active(&HiShellId::Root)
         .map_err(|err| io::Error::other(err.to_string()))?;
 
-    let mut terminal = StderrTerminalAdapter::new()
-        .map_err(|err| io::Error::other(err.to_string()))?;
+    let mut terminal =
+        StderrTerminalAdapter::new().map_err(|err| io::Error::other(err.to_string()))?;
     terminal
         .enable_raw_mode()
         .map_err(|err| io::Error::other(err.to_string()))?;
@@ -150,14 +158,22 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
                     WorkflowEvent::StageCompleted(_stage) => {
                         inner.app.shell_state.compile_complete = true;
                         // Trigger compile complete message
-                        let _ = inner.app.msg_tx.send(crate::tui::shell::runtime::RuntimeOp::Update(
-                            crate::tui::message::ShellMessage::CompileComplete,
-                        ));
+                        let _ =
+                            inner
+                                .app
+                                .msg_tx
+                                .send(crate::tui::shell::runtime::RuntimeOp::Update(
+                                    crate::tui::message::ShellMessage::CompileComplete,
+                                ));
                     }
                     WorkflowEvent::StageFailed(_stage, err) => {
-                        let _ = inner.app.msg_tx.send(crate::tui::shell::runtime::RuntimeOp::Update(
-                            crate::tui::message::ShellMessage::PushLog(err.clone()),
-                        ));
+                        let _ =
+                            inner
+                                .app
+                                .msg_tx
+                                .send(crate::tui::shell::runtime::RuntimeOp::Update(
+                                    crate::tui::message::ShellMessage::PushLog(err.clone()),
+                                ));
                     }
                     WorkflowEvent::Cancelled => {
                         // Stage was cancelled

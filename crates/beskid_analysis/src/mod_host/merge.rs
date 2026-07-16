@@ -35,9 +35,9 @@ pub(crate) fn merge_generated_syntax(
                 },
                 generated.pipeline_ops.clone(),
             );
-            pipeline.validate().map_err(|err| {
-                anyhow::anyhow!("failed to validate mod pipeline ops: {err:?}")
-            })?;
+            pipeline
+                .validate()
+                .map_err(|err| anyhow::anyhow!("failed to validate mod pipeline ops: {err:?}"))?;
             pipeline.ordered_ops()
         };
         for op in ops {

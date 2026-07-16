@@ -1,6 +1,6 @@
+use crate::shell::primitives::Hotkey;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use crate::shell::primitives::Hotkey;
 
 use crate::shell::catalog::ContextualCommand;
 use crate::shell::context::WidgetContext;
@@ -51,7 +51,8 @@ impl BeskidWidget for TestsWidget {
 }
 
 pub fn open_tests(ctx: &mut WidgetContext<'_>) {
-    ctx.shell_state.set_overlay_visible(OverlayKind::Tests, true);
+    ctx.shell_state
+        .set_overlay_visible(OverlayKind::Tests, true);
     ctx.shell_state.focus_overlay(OverlayKind::Tests);
     ctx.shell_state.sync_code_viewer_for_selection();
 }

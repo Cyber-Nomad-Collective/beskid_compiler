@@ -7,8 +7,8 @@ use std::sync::Arc;
 use crate::hir::{HirExpressionNode, HirItem, HirProgram, HirStatementNode};
 use crate::resolve::Resolution;
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::surface::{build_unit_type_surface, merge_unit_surfaces_with_types};
 use crate::types::TypeInfo;
+use crate::types::surface::{build_unit_type_surface, merge_unit_surfaces_with_types};
 
 use super::TypeChecker;
 
@@ -45,8 +45,7 @@ pub(crate) fn precheck_checker<'a>(
             )
         });
 
-    let (merged_types, merged) =
-        merge_unit_surfaces_with_types(dependency_surfaces, entry_surface);
+    let (merged_types, merged) = merge_unit_surfaces_with_types(dependency_surfaces, entry_surface);
     let mut checker = TypeChecker::from_merged(resolution, &merged, merged_types);
     for program in programs {
         checker.seed_program_enums(program);
@@ -162,11 +161,7 @@ fn collect_invalid_try_targets_in_block(
 ) {
     for statement in &block.node.statements {
         if let HirStatementNode::ExpressionStatement(expr_stmt) = &statement.node {
-            collect_invalid_try_targets_in_expression(
-                checker,
-                &expr_stmt.node.expression,
-                spans,
-            );
+            collect_invalid_try_targets_in_expression(checker, &expr_stmt.node.expression, spans);
         } else if let HirStatementNode::LetStatement(let_stmt) = &statement.node {
             collect_invalid_try_targets_in_expression(checker, &let_stmt.node.value, spans);
         } else if let HirStatementNode::ReturnStatement(return_stmt) = &statement.node

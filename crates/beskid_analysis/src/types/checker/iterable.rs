@@ -3,8 +3,8 @@ use crate::resolve::ItemKind;
 use crate::syntax::Spanned;
 use crate::types::{TypeId, TypeInfo};
 
-use crate::types::result::TypeError;
 use super::TypeChecker;
+use crate::types::result::TypeError;
 
 impl<'a> TypeChecker<'a> {
     pub(super) fn resolve_iterable_item_type(

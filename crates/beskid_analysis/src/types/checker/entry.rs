@@ -82,16 +82,13 @@ impl TypeChecker<'_> {
                             })
                     })
                     .or_else(|| {
-                        index.prefetched_hir(path).map(|hir| {
-                            Arc::new(build_unit_type_surface(hir, resolution, path))
-                        })
+                        index
+                            .prefetched_hir(path)
+                            .map(|hir| Arc::new(build_unit_type_surface(hir, resolution, path)))
                     })
                     .or_else(|| {
                         prefetched_surfaces.and_then(|surfaces| {
-                            surfaces
-                                .get(&key)
-                                .or_else(|| surfaces.get(path))
-                                .cloned()
+                            surfaces.get(&key).or_else(|| surfaces.get(path)).cloned()
                         })
                     });
                 if let Some(surface) = surface {

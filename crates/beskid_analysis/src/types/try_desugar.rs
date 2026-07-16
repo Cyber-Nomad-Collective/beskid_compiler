@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use crate::hir::{HirExpressionNode, HirProgram};
 use crate::resolve::Resolution;
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::checker::precheck::precheck_checker;
 use crate::types::TypeChecker;
+use crate::types::checker::precheck::precheck_checker;
 
 pub use crate::types::checker::TryDesugarTarget;
 

@@ -1,0 +1,28 @@
+[package]
+name = "beskid_pckg_server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+beskid_pckg_auth = { path = "../beskid_pckg_auth" }
+beskid_pckg_artifacts = { path = "../beskid_pckg_artifacts" }
+beskid_pckg_contract = { path = "../beskid_pckg_contract" }
+beskid_pckg_community = { path = "../beskid_pckg_community" }
+beskid_pckg_store = { path = "../beskid_pckg_store" }
+multer = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs"] }
+time = { version = "0.3", features = ["formatting"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+zip = "2"

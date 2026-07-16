@@ -50,19 +50,43 @@ pub fn generate_host_from_path(manifest_path: &Path, out_dir: &Path) -> Result<(
 }
 
 /// Generate `beskid_runtime` dispatch table under `out_dir`.
-pub fn generate_runtime(manifest: &Manifest, out_dir: &Path) -> Result<(), String> {
+pub fn generate_runtime(
+    manifest: &Manifest,
+    out_dir: &Path,
+    rust_fallback_handlers: bool,
+) -> Result<(), String> {
     fs::create_dir_all(out_dir).map_err(|err| err.to_string())?;
     fs::write(
         out_dir.join("dispatch_table.rs"),
-        codegen::render_runtime_dispatch_table(manifest),
+        codegen::render_runtime_dispatch_table(manifest, rust_fallback_handlers),
     )
     .map_err(|err| err.to_string())
 }
 
-/// Convenience: load manifest and write runtime dispatch table.
-pub fn generate_runtime_from_path(manifest_path: &Path, out_dir: &Path) -> Result<(), String> {
+/// Generate `beskid_runtime_handlers` language handler table under `out_dir`.
+pub fn generate_language(manifest: &Manifest, out_dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(out_dir).map_err(|err| err.to_string())?;
+    fs::write(
+        out_dir.join("language_handlers.rs"),
+        codegen::render_language_handler_table(manifest),
+    )
+    .map_err(|err| err.to_string())
+}
+
+/// Convenience: load manifest and write language handler table.
+pub fn generate_language_from_path(manifest_path: &Path, out_dir: &Path) -> Result<(), String> {
     let manifest = load_manifest(manifest_path)?;
-    generate_runtime(&manifest, out_dir)
+    generate_language(&manifest, out_dir)
+}
+
+/// Convenience: load manifest and write runtime dispatch table.
+pub fn generate_runtime_from_path(
+    manifest_path: &Path,
+    out_dir: &Path,
+    rust_fallback_handlers: bool,
+) -> Result<(), String> {
+    let manifest = load_manifest(manifest_path)?;
+    generate_runtime(&manifest, out_dir, rust_fallback_handlers)
 }
 
 /// Generate `beskid_abi` outputs under `out_dir`.
@@ -92,11 +116,15 @@ pub fn generate_abi(manifest: &Manifest, out_dir: &Path) -> Result<(), String> {
 }
 
 /// Generate runtime dispatch router under `out_dir`.
-pub fn generate_runtime_dispatch(manifest: &Manifest, out_dir: &Path) -> Result<(), String> {
+pub fn generate_runtime_dispatch(
+    manifest: &Manifest,
+    out_dir: &Path,
+    rust_fallback_handlers: bool,
+) -> Result<(), String> {
     fs::create_dir_all(out_dir).map_err(|err| err.to_string())?;
     fs::write(
         out_dir.join("dispatch_table.rs"),
-        codegen::render_runtime_dispatch_table(manifest),
+        codegen::render_runtime_dispatch_table(manifest, rust_fallback_handlers),
     )
     .map_err(|err| err.to_string())
 }
@@ -166,6 +194,24 @@ pub fn generate_analysis_with_v5_intrinsics_from_source(
 pub fn generate_abi_from_path(manifest_path: &Path, out_dir: &Path) -> Result<(), String> {
     let manifest = load_manifest(manifest_path)?;
     generate_abi(&manifest, out_dir)
+}
+
+/// Generate runtime handler metadata for `beskid_analysis`.
+pub fn generate_runtime_handlers(manifest: &Manifest, out_path: &Path) -> Result<(), String> {
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(out_path, codegen::render_runtime_handler_specs(manifest))
+        .map_err(|err| err.to_string())
+}
+
+/// Convenience: load manifest and write runtime handler metadata.
+pub fn generate_runtime_handlers_from_path(
+    manifest_path: &Path,
+    out_path: &Path,
+) -> Result<(), String> {
+    let manifest = load_manifest(manifest_path)?;
+    generate_runtime_handlers(&manifest, out_path)
 }
 
 /// Convenience: load manifest and write analysis include file.

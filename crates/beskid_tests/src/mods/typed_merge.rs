@@ -1,11 +1,11 @@
 //! Typed AST merge conformance: generator outcomes splice into host `Program`.
 
-use beskid_analysis::mod_host::{
-    ModHostInput, ScriptedContractInvoker, run_through_generate,
-};
+use beskid_analysis::mod_host::{ModHostInput, ScriptedContractInvoker, run_through_generate};
 use beskid_analysis::services::parse_program_with_source_name;
 
-use super::fixture::{ModFixtureWorkspace, program_contains_function, typed_items_contain_function};
+use super::fixture::{
+    ModFixtureWorkspace, program_contains_function, typed_items_contain_function,
+};
 
 #[test]
 fn typed_generator_items_merge_into_host_program() {
@@ -32,7 +32,7 @@ fn typed_generator_items_merge_into_host_program() {
             source,
             pipeline: None,
             invoker: Some(&invoker),
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     )
     .expect("typed merge generate");

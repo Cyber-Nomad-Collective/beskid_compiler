@@ -11,6 +11,10 @@ cranelift-frontend = { workspace = true }
 [build-dependencies]
 cranelift-isle = { workspace = true }
 
+[features]
+default = ["isle_primitives"]
+isle_primitives = []
+
 [dev-dependencies]
 cranelift-jit = { workspace = true }
 cranelift-module = { workspace = true }

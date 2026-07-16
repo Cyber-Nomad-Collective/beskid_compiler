@@ -1,8 +1,8 @@
 //! `BeskidWidget` trait and shell action types.
 
+use super::primitives::Hotkey;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use super::primitives::Hotkey;
 
 use super::catalog::ContextualCommand;
 use super::context::WidgetContext;

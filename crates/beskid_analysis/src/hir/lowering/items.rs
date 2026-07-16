@@ -3,12 +3,12 @@ use crate::hir::{
     HirAttributeTarget, HirContractDefinition, HirContractEmbedding, HirContractMethodSignature,
     HirContractNode, HirEnumDefinition, HirEnumVariant, HirExportInterface,
     HirExtendTypeDefinition, HirExternInterface, HirFunctionDefinition, HirInlineModule, HirItem,
-    HirMethodDefinition, HirModuleDeclaration, HirProgram, HirTestDefinition, HirTestMetaSection,
-    HirTestMetadataEntry, HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition,
-    HirUseDeclaration,
+    HirMethodDefinition, HirModuleDeclaration, HirProgram, HirRuntimeHandler, HirTestDefinition,
+    HirTestMetaSection, HirTestMetadataEntry, HirTestSkipEntry, HirTestSkipSection,
+    HirTypeDefinition, HirUseDeclaration,
 };
-use crate::syntax::{self, Spanned};
 use crate::syntax::expressions::try_decode_string_literal;
+use crate::syntax::{self, Spanned};
 
 use super::Lowerable;
 
@@ -42,6 +42,46 @@ fn lower_extern_interface(attributes: &[Spanned<syntax::Attribute>]) -> Option<H
         }
     }
     Some(HirExternInterface { abi, library })
+}
+
+fn lower_runtime_handler(attributes: &[Spanned<syntax::Attribute>]) -> Option<HirRuntimeHandler> {
+    let runtime_attr = attributes
+        .iter()
+        .find(|attr| attr.node.name.node.name == "Runtime")?;
+    let mut dispatch_tag = None;
+    let mut returns = None;
+    for arg in &runtime_attr.node.arguments {
+        match arg.node.name.node.name.as_str() {
+            "DispatchTag" => dispatch_tag = extract_u32_literal(&arg.node.value),
+            "Returns" => returns = extract_type_name(&arg.node.value),
+            _ => {}
+        }
+    }
+    Some(HirRuntimeHandler {
+        dispatch_tag: dispatch_tag?,
+        returns: returns?,
+    })
+}
+
+fn extract_u32_literal(expression: &Spanned<syntax::Expression>) -> Option<u32> {
+    let syntax::Expression::Literal(literal_expr) = &expression.node else {
+        return None;
+    };
+    let syntax::Literal::Integer(text) = &literal_expr.node.literal.node else {
+        return None;
+    };
+    text.parse().ok()
+}
+
+fn extract_type_name(expression: &Spanned<syntax::Expression>) -> Option<String> {
+    match &expression.node {
+        syntax::Expression::Literal(_) => extract_string_literal(expression),
+        syntax::Expression::Path(path_expr) => {
+            let segment = path_expr.node.path.node.segments.last()?;
+            Some(segment.node.name.node.name.clone())
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn lower_attributes(
@@ -127,6 +167,7 @@ impl Lowerable for Spanned<syntax::FunctionDefinition> {
         Spanned::new(
             HirFunctionDefinition {
                 export_interface: lower_export_interface(&self.node.attributes),
+                runtime_handler: lower_runtime_handler(&self.node.attributes),
                 attributes: lower_attributes(&self.node.attributes),
                 visibility: self.node.visibility.lower(),
                 name: self.node.name.lower(),

@@ -25,9 +25,9 @@ pub mod external_library;
 pub mod format;
 pub mod hir;
 pub mod macros;
+pub mod mod_host;
 pub mod naming_case;
 pub(crate) mod naming_program;
-pub mod mod_host;
 pub mod parser;
 pub mod parsing;
 pub mod paths;
@@ -43,6 +43,7 @@ pub mod query {
     pub use super::syntax_query::*;
 }
 pub mod resolve;
+pub mod runtime_registration;
 pub mod services;
 pub mod syntax;
 pub mod types;
@@ -53,20 +54,18 @@ pub use analysis::{
 };
 pub use compilation_context::{CompilationContext, ProjectSessionHandle, module_roots_for_plan};
 pub use parser::{BeskidParser, Rule};
-pub use projects::{
-    AssemblyDiscovery, AssemblyOptions, ProgramAssembly, effective_roots_for_plan,
-};
+pub use projects::{AssemblyDiscovery, AssemblyOptions, ProgramAssembly, effective_roots_for_plan};
 pub use projects::{
     ProjectGraphBuildOptions, WorkspaceResolutionSummary, resolve_project_manifest_for_source_path,
-};
-pub use syntax::{AstNodeId, AstNodeKey, SyntaxGenerationId};
-pub use syntax_query::{
-    Ancestors, AstNode, Descendants, DynNodeRef, HirDescendants, HirNode, HirNodeKind, HirNodeRef,
-    HirQuery, HirVisit, HirWalker, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,
 };
 #[allow(deprecated)]
 pub use services::{
     AnalyzeInProjectOptions, analyze_program_with_options, analyze_source_with_compilation_context,
     compile_plan_for_input_path, compile_plan_for_input_path_with_member,
     resolve_input_with_pipeline,
+};
+pub use syntax::{AstNodeId, AstNodeKey, SyntaxGenerationId};
+pub use syntax_query::{
+    Ancestors, AstNode, Descendants, DynNodeRef, HirDescendants, HirNode, HirNodeKind, HirNodeRef,
+    HirQuery, HirVisit, HirWalker, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,
 };

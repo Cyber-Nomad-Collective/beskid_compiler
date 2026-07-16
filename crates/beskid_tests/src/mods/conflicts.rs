@@ -30,7 +30,7 @@ fn duplicate_registration_in_one_artifact_emits_e1829() {
             source,
             pipeline: None,
             invoker: None,
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     );
 
@@ -63,7 +63,7 @@ fn unknown_contract_id_emits_e1853() {
             source,
             pipeline: None,
             invoker: None,
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     ) {
         Ok(_) => panic!("unknown contractId must abort scheduling"),
@@ -93,7 +93,7 @@ fn rewriter_without_analyzer_emits_e1854() {
             source,
             pipeline: None,
             invoker: None,
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     ) {
         Ok(_) => panic!("rewriter without analyzer must abort scheduling"),
@@ -123,7 +123,7 @@ fn missing_entry_symbol_emits_e1828() {
             source,
             pipeline: None,
             invoker: None,
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     ) {
         Ok(_) => panic!("empty entrySymbol must abort scheduling"),

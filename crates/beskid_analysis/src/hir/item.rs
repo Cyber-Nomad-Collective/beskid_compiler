@@ -1,5 +1,5 @@
-use crate::syntax_query::{HirNode, HirNodeKind, HirNodeRef};
 use crate::syntax::Spanned;
+use crate::syntax_query::{HirNode, HirNodeKind, HirNodeRef};
 
 use super::block::HirBlock;
 use super::common::{HirIdentifier, HirPath, HirVisibility};
@@ -18,6 +18,13 @@ pub struct HirExternInterface {
 pub struct HirExportInterface {
     pub abi: Option<String>,
     pub symbol: Option<String>,
+}
+
+/// Parsed `[Runtime(DispatchTag: …, Returns: …)]` metadata on a handler function.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HirRuntimeHandler {
+    pub dispatch_tag: u32,
+    pub returns: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, beskid_ast_derive::HirNode)]
@@ -94,6 +101,8 @@ pub struct HirExtendTypeDefinition {
 pub struct HirFunctionDefinition {
     #[ast(skip)]
     pub export_interface: Option<HirExportInterface>,
+    #[ast(skip)]
+    pub runtime_handler: Option<HirRuntimeHandler>,
     #[ast(children)]
     pub attributes: Vec<Spanned<HirAttribute>>,
     #[ast(child)]

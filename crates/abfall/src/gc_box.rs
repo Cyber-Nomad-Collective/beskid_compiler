@@ -165,7 +165,6 @@ impl GcHeader {
     pub fn reset_white(&self) {
         self.header_word.fetch_and(!COLOR_MASK, Ordering::Release);
     }
-
 }
 
 /// A garbage collected object with metadata

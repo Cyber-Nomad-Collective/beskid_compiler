@@ -1,9 +1,9 @@
 //! Host bridge for `Beskid.Compiler.Query` — maps Mod SDK `NodeRef` to `beskid_analysis::syntax_query`.
 
+use crate::syntax::{Program, SpanInfo, Spanned};
 use crate::syntax_query::{
     Ancestors, Descendants, DynNodeRef, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,
 };
-use crate::syntax::{Program, SpanInfo, Spanned};
 
 use super::types::ProgramItem;
 
@@ -216,7 +216,9 @@ impl<'a> SdkSyntaxQuery<'a> {
         self.of_kind(kind).into_iter().next()
     }
 
-    pub fn find_first_typed<T: crate::syntax_query::AstNode + 'static>(&mut self) -> Option<SdkNodeRef> {
+    pub fn find_first_typed<T: crate::syntax_query::AstNode + 'static>(
+        &mut self,
+    ) -> Option<SdkNodeRef> {
         let start = self.resolve(self.start)?;
         for node in Descendants::new(start) {
             if node.of::<T>().is_none() {
@@ -328,7 +330,10 @@ impl<'a> SdkSyntaxPipeline<'a> {
     }
 
     /// Validate queued ops and apply them structurally to top-level program items.
-    pub fn apply(self, program: &mut Spanned<Program>) -> Result<SdkNodeRef, PipelineValidationError> {
+    pub fn apply(
+        self,
+        program: &mut Spanned<Program>,
+    ) -> Result<SdkNodeRef, PipelineValidationError> {
         let SdkSyntaxPipeline {
             snapshot,
             root,
@@ -450,9 +455,10 @@ fn apply_resolved_program_item_ops(
             }
             PipelineOpKind::Replace => {
                 if let Some(replacement) = op.payload
-                    && op.target_index < program.node.items.len() {
-                        program.node.items[op.target_index] = replacement;
-                    }
+                    && op.target_index < program.node.items.len()
+                {
+                    program.node.items[op.target_index] = replacement;
+                }
             }
             PipelineOpKind::InsertBefore => {
                 if let Some(item) = op.payload {

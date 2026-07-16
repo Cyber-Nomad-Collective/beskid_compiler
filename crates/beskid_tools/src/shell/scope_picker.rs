@@ -3,8 +3,8 @@
 use std::path::Path;
 
 use ratatui::Frame;
-use ratatui::widgets::FrameExt;
 use ratatui::layout::Rect;
+use ratatui::widgets::FrameExt;
 use ratatui_explorer::{File, FileExplorer, Input, Theme};
 
 use crate::shell::scope::ShellScope;

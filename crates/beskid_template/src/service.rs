@@ -287,8 +287,7 @@ fn resolve_install_source(request: &InstallTemplateRequest) -> Result<(PathBuf, 
     Ok((root, snapshot))
 }
 
-type ResolvedTemplateForInstantiate =
-    (PathBuf, TemplateManifest, Option<(String, String, bool)>);
+type ResolvedTemplateForInstantiate = (PathBuf, TemplateManifest, Option<(String, String, bool)>);
 
 fn resolve_template_for_instantiate(
     selector: &TemplateSelector,

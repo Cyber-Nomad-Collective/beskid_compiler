@@ -1,21 +1,19 @@
 use std::cell::RefCell;
 
+use crate::shell::primitives::Hotkey;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols;
 use ratatui::widgets::{Paragraph, Tabs};
-use crate::shell::primitives::Hotkey;
 
 use crate::pipeline::tui::log_tabs::LogTab;
 use crate::pipeline::tui::stage_focus::StageFocus;
-use crate::pipeline::tui::widgets::{
-    draw_log_panel, draw_pipeline_tree, draw_progress_footer,
-};
+use crate::pipeline::tui::widgets::{draw_log_panel, draw_pipeline_tree, draw_progress_footer};
 use crate::shell::context::WidgetContext;
+use crate::shell::input::ShellInput;
 use crate::shell::panel_style::toolbar_block;
 use crate::shell::scope::ShellScope;
-use crate::shell::input::ShellInput;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
 use crate::tui::shell::focus::OverlayKind;
 
@@ -157,7 +155,11 @@ fn draw_timeline_tab(
     );
 }
 
-fn draw_incremental_tab(frame: &mut Frame, area: Rect, state: &mut crate::tui::shell::state::ShellState) {
+fn draw_incremental_tab(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut crate::tui::shell::state::ShellState,
+) {
     draw_log_panel(
         frame,
         area,

@@ -51,7 +51,7 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
             source,
             pipeline: None,
             invoker: Some(&invoker),
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     )
     .expect("generate with contributions");
@@ -169,7 +169,7 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
             source,
             pipeline: None,
             invoker: Some(&invoker),
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     )
     .expect("generate");

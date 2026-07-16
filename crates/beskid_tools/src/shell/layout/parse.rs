@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use bsol::{load_profile, parse_bsol_document, validate, ValidatedBlock, ValidatedDocument, ValidatedValue};
+use bsol::{
+    ValidatedBlock, ValidatedDocument, ValidatedValue, load_profile, parse_bsol_document, validate,
+};
 
 use super::model::{BoardNode, BoardV2Doc, NodeKind};
 use crate::shell::board::{BoardLayout, BoardRegion, BoardTile};
@@ -165,7 +167,12 @@ fn lower_node(block: &ValidatedBlock) -> Result<BoardNode, String> {
         .fields
         .get("kind")
         .and_then(|k| NodeKind::parse_kind(k))
-        .ok_or_else(|| format!("node `{}` has invalid kind", block.label.as_deref().unwrap_or("?")))?;
+        .ok_or_else(|| {
+            format!(
+                "node `{}` has invalid kind",
+                block.label.as_deref().unwrap_or("?")
+            )
+        })?;
     let children = block
         .values
         .get("children")
@@ -191,7 +198,10 @@ fn lower_node(block: &ValidatedBlock) -> Result<BoardNode, String> {
         min_width: block.fields.get("min_width").and_then(|v| v.parse().ok()),
         min_height: block.fields.get("min_height").and_then(|v| v.parse().ok()),
         fixed_width: block.fields.get("fixed_width").and_then(|v| v.parse().ok()),
-        fixed_height: block.fields.get("fixed_height").and_then(|v| v.parse().ok()),
+        fixed_height: block
+            .fields
+            .get("fixed_height")
+            .and_then(|v| v.parse().ok()),
         ratio: block.fields.get("ratio").and_then(|v| v.parse().ok()),
         children,
         active: block.fields.get("active").cloned(),
