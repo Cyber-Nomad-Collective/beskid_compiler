@@ -800,6 +800,7 @@ dependencies = [
  "async-channel 2.5.0",
  "beskid_abi",
  "beskid_analysis",
+ "beskid_aot",
  "beskid_pckg",
  "beskid_pipeline",
  "beskid_queries",
