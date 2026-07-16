@@ -28,6 +28,7 @@ use cranelift_frontend::Variable;
 pub enum NodeKind {
     Program,
     FunctionDefinition,
+    TestDefinition,
     ExpressionStatement,
     ReturnStatement,
     LetStatement,
@@ -107,16 +108,25 @@ pub enum CallKind {
     RuntimeIntrinsic,
 }
 
+/// Exact semantic call target.
+///
+/// Source items carry their complete generation-safe syntax key.  A node id is only unique
+/// within one source unit and revision, so using it as a module-import key can bind a call to an
+/// unrelated item when two units happen to assign the same local id. Runtime intrinsics are not
+/// source items and retain their canonical ABI-table index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct DirectCallee(u32);
+pub enum DirectCallee {
+    Item(AstNodeKey),
+    RuntimeIntrinsic(u32),
+}
 
 impl DirectCallee {
-    pub const fn new(index: u32) -> Self {
-        Self(index)
+    pub const fn item(key: AstNodeKey) -> Self {
+        Self::Item(key)
     }
 
-    pub const fn index(self) -> u32 {
-        self.0
+    pub const fn runtime_intrinsic(index: u32) -> Self {
+        Self::RuntimeIntrinsic(index)
     }
 }
 

@@ -53,7 +53,7 @@ pub fn lower_syntax_program(
     let mut symbols = HashMap::with_capacity(items.len());
     for item in items {
         if symbols
-            .insert(DirectCallee::new(item.key.node.0), item.symbol.clone())
+            .insert(DirectCallee::item(item.key), item.symbol.clone())
             .is_some()
         {
             return Err(SyntaxModuleEmissionError::DuplicateSymbol(item.symbol.clone()));

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use beskid_isle::{
@@ -22,6 +23,15 @@ struct CallFacts {
     argument: AstNodeKey,
     callee: DirectCallee,
     signature: Signature,
+}
+
+fn direct_callee_key() -> AstNodeKey {
+    let db = BeskidDatabase::default();
+    AstNodeKey {
+        unit: SourceUnitId::new(&db, PathBuf::from("/tmp/Callee.bd")),
+        generation: SyntaxGenerationId(15),
+        node: beskid_queries::AstNodeId(7),
+    }
 }
 
 impl NodeFacts for CallFacts {
@@ -66,6 +76,7 @@ impl NodeFacts for CallFacts {
 
 struct KnownCallImporter {
     module: JITModule,
+    expected: DirectCallee,
 }
 
 impl CallImporter for KnownCallImporter {
@@ -75,7 +86,7 @@ impl CallImporter for KnownCallImporter {
         callee: DirectCallee,
         signature: &Signature,
     ) -> Result<FuncRef, CallImportError> {
-        if callee != DirectCallee::new(7) {
+        if callee != self.expected {
             return Err(CallImportError::UnknownCallee);
         }
         let function = self
@@ -110,11 +121,12 @@ fn call_facts(isa: &dyn TargetIsa, callee: DirectCallee) -> CallFacts {
     }
 }
 
-fn importer(isa: std::sync::Arc<dyn TargetIsa>) -> KnownCallImporter {
+fn importer(isa: std::sync::Arc<dyn TargetIsa>, expected: DirectCallee) -> KnownCallImporter {
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
     builder.symbol("add_one", add_one as *const u8);
     KnownCallImporter {
         module: JITModule::new(builder),
+        expected,
     }
 }
 
@@ -124,10 +136,10 @@ fn direct_call_imports_semantic_callee_and_executes() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let facts = call_facts(isa.as_ref(), DirectCallee::new(7));
+    let facts = call_facts(isa.as_ref(), DirectCallee::item(direct_callee_key()));
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I32]);
-    let mut importer = importer(isa.clone());
+    let mut importer = importer(isa.clone(), facts.callee);
     let function = emitter
         .emit_expression_with_call_importer(
             UserFuncName::user(0, 18),
@@ -161,10 +173,14 @@ fn unknown_direct_callee_is_an_exact_keyed_error() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let unknown = DirectCallee::new(999);
+    let unknown = DirectCallee::item(AstNodeKey {
+        unit: SourceUnitId::new(&BeskidDatabase::default(), PathBuf::from("/tmp/Unknown.bd")),
+        generation: SyntaxGenerationId(15),
+        node: beskid_queries::AstNodeId(999),
+    });
     let facts = call_facts(isa.as_ref(), unknown);
     let emitter = FunctionEmitter::new(isa.as_ref());
-    let mut importer = importer(isa.clone());
+    let mut importer = importer(isa.clone(), DirectCallee::item(direct_callee_key()));
     let error = emitter
         .emit_expression_with_call_importer(
             UserFuncName::user(0, 19),
@@ -180,4 +196,29 @@ fn unknown_direct_callee_is_an_exact_keyed_error() {
     };
     assert_eq!(error.key(), facts.call);
     assert_eq!(error.kind(), LoweringErrorKind::UnknownCallee(unknown));
+}
+
+#[test]
+fn source_callees_with_the_same_node_id_in_different_units_are_distinct() {
+    let db = BeskidDatabase::default();
+    let generation = SyntaxGenerationId(15);
+    let left = AstNodeKey {
+        unit: SourceUnitId::new(&db, PathBuf::from("/tmp/Left.bd")),
+        generation,
+        node: beskid_queries::AstNodeId(7),
+    };
+    let right = AstNodeKey {
+        unit: SourceUnitId::new(&db, PathBuf::from("/tmp/Right.bd")),
+        generation,
+        node: beskid_queries::AstNodeId(7),
+    };
+
+    let symbols = HashMap::from([
+        (DirectCallee::item(left), "Left"),
+        (DirectCallee::item(right), "Right"),
+    ]);
+
+    assert_ne!(DirectCallee::item(left), DirectCallee::item(right));
+    assert_eq!(symbols[&DirectCallee::item(left)], "Left");
+    assert_eq!(symbols[&DirectCallee::item(right)], "Right");
 }

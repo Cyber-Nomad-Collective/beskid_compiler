@@ -504,6 +504,22 @@ contract Converter { string Format(char value); }
 }
 
 #[test]
+fn test_items_have_a_unit_signature_and_own_generation_safe_body_cursor() {
+    let source = "test Smoke { return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let test = key(unit, generation, &index, NodeKind::TestDefinition, 0);
+
+    assert_eq!(
+        item_signature(&db, test).expect("test signature"),
+        Some(ItemSignature {
+            parameters: Arc::from([]),
+            result: SemanticTypeId::UNIT,
+        })
+    );
+    assert_eq!(item_body(&db, test).expect("test body"), Some(test));
+}
+
+#[test]
 fn item_signature_does_not_guess_complex_type_identity() {
     let source = "Value Identity(Value value) { return value; }";
     let (db, _project, unit, generation, index) = setup(source);

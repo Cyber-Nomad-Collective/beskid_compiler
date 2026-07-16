@@ -565,6 +565,7 @@ fn local_declaration_owner(
             kind,
             beskid_analysis::syntax_query::NodeKind::FunctionDefinition
                 | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+                | beskid_analysis::syntax_query::NodeKind::TestDefinition
                 | beskid_analysis::syntax_query::NodeKind::LambdaExpression
         )
     })
@@ -1121,6 +1122,12 @@ fn item_signature_for_node(
             method.return_type.as_ref(),
         ));
     }
+    if node.of::<beskid_analysis::syntax::TestDefinition>().is_some() {
+        return Some(Ok(ItemSignature {
+            parameters: Arc::from([]),
+            result: SemanticTypeId::UNIT,
+        }));
+    }
     if let Some(contract) = node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
         return Some(signature_from_syntax(
             &contract.parameters,
@@ -1535,6 +1542,9 @@ fn item_body_tracked(
                 )
                 .map(|node| AstNodeKey { node, ..key });
         }
+        if node.of::<beskid_analysis::syntax::TestDefinition>().is_some() {
+            return Some(key);
+        }
         None
     })
 }
@@ -1546,7 +1556,11 @@ fn direct_callees_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_node(db, syntax, key, |program, index, node| {
-        node.of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        if node.of::<beskid_analysis::syntax::FunctionDefinition>().is_none()
+            && node.of::<beskid_analysis::syntax::TestDefinition>().is_none()
+        {
+            return None;
+        }
         Some(direct_callees_for_item(db, program, index, key))
     })?
     .transpose()
@@ -1617,8 +1631,13 @@ fn reachable_items_tracked(
     }
     if syntax.syntax_index(db).kind(program.node)
         != Some(beskid_analysis::syntax_query::NodeKind::Program)
-        || entry_syntax.syntax_index(db).kind(entry.node)
-            != Some(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+        || !matches!(
+            entry_syntax.syntax_index(db).kind(entry.node),
+            Some(
+                beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                    | beskid_analysis::syntax_query::NodeKind::TestDefinition
+            )
+        )
     {
         return Ok(None);
     }

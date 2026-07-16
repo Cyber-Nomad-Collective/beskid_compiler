@@ -28,6 +28,8 @@
       (emit_local_let key))
 (rule (lower_statement key @ (node_kind (NodeKind.BlockExpression)))
       (lower_statement_cursor (statement_cursor key)))
+(rule (lower_statement key @ (node_kind (NodeKind.TestDefinition)))
+      (lower_statement_cursor (statement_cursor key)))
 
 (rule (lower_statement_cursor cursor @ (cursor_kind (CursorKind.End)))
       (finish_statements))

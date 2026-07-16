@@ -163,6 +163,17 @@ fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
 }
 
 #[test]
+fn parsed_test_item_emits_verified_isle_clif_without_lowerable() {
+    let (input, isa, root) = item_fixture_with_root("test Smoke { return; }");
+    let item = find_test_definition(input.database(), root).expect("test item key");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("parsed test item lowers through generated ISLE");
+
+    assert!(function.display().to_string().contains("return"));
+}
+
+#[test]
 fn parsed_local_read_emits_verified_isle_clif_without_lowerable() {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();
@@ -278,7 +289,7 @@ fn parsed_direct_call_uses_explicit_item_module_importer() {
         .expect("declare imported syntax item");
     let mut importer = ItemModuleImporter::new(
         &mut module,
-        HashMap::from([(beskid_isle::DirectCallee::new(declaration.node.0), imported)]),
+        HashMap::from([(beskid_isle::DirectCallee::item(declaration), imported)]),
     );
 
     let function = emit_isle_item_with_call_importer(&input, isa.as_ref(), caller, &mut importer)
@@ -495,6 +506,22 @@ fn find_function_definition(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Opt
         .iter()
         .copied()
         .find_map(|child| find_function_definition(db, child))
+}
+
+fn find_test_definition(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<AstNodeKey> {
+    if node_kind(db, key)
+        .ok()
+        .flatten()
+        .is_some_and(|kind| kind == beskid_queries::IndexedNodeKind::TestDefinition)
+    {
+        return Some(key);
+    }
+    child_nodes(db, key)
+        .ok()
+        .flatten()?
+        .iter()
+        .copied()
+        .find_map(|child| find_test_definition(db, child))
 }
 
 fn find_integer_literal(db: &BeskidDatabase, key: AstNodeKey) -> Option<AstNodeKey> {

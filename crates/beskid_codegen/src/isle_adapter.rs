@@ -76,8 +76,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
-        (self.node_kind(key) == Some(NodeKind::BlockExpression))
-            .then(|| u8::try_from(self.children(key).len()).ok())?
+        matches!(
+            self.node_kind(key),
+            Some(NodeKind::BlockExpression | NodeKind::TestDefinition)
+        )
+        .then(|| u8::try_from(self.children(key).len()).ok())?
     }
 
     fn let_initializer(&self, key: AstNodeKey) -> Option<AstNodeKey> {
@@ -118,12 +121,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
         if let Some((index, _)) = self.runtime_intrinsic(key) {
-            return Some(DirectCallee::new(index));
+            return Some(DirectCallee::runtime_intrinsic(index));
         }
         let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
             return None;
         };
-        Some(DirectCallee::new(declaration.node.0))
+        Some(DirectCallee::item(declaration))
     }
 
     fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
@@ -264,7 +267,21 @@ impl SyntaxNodeFacts<'_> {
     }
 
     fn children(&self, key: AstNodeKey) -> Vec<AstNodeKey> {
-        self.raw_children(key)
+        let children = self.raw_children(key);
+        let children = if self.query(node_kind(self.db, key))
+            == Some(beskid_queries::IndexedNodeKind::TestDefinition)
+        {
+            children
+                .into_iter()
+                .filter(|child| {
+                    self.query(node_kind(self.db, *child))
+                        == Some(beskid_queries::IndexedNodeKind::Statement)
+                })
+                .collect()
+        } else {
+            children
+        };
+        children
             .into_iter()
             .filter_map(|child| self.unwrap_transparent(child))
             .collect()
@@ -456,6 +473,7 @@ fn map_node_kind(kind: beskid_queries::IndexedNodeKind) -> Option<NodeKind> {
         Syntax::Program => NodeKind::Program,
         Syntax::Block => NodeKind::BlockExpression,
         Syntax::FunctionDefinition => NodeKind::FunctionDefinition,
+        Syntax::TestDefinition => NodeKind::TestDefinition,
         Syntax::ExpressionStatement => NodeKind::ExpressionStatement,
         Syntax::ReturnStatement => NodeKind::ReturnStatement,
         Syntax::LetStatement => NodeKind::LetStatement,
