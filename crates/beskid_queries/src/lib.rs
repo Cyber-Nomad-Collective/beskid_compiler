@@ -81,12 +81,12 @@ pub use semantic_contract::{
     OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnTarget,
     TestItem, TypedProgram, abi_type, aggregate_layout, aggregate_literal_declaration,
-    block_statement_nodes, call_arguments,
-    call_lowering, cast_intents, child_nodes, closure_environment, completion_candidates,
-    control_flow, direct_callees, enum_constructor, enum_layout, enum_match, generic_call_instantiation, item_abi_signature, item_body,
-    item_export_symbol, item_name, item_signature, literal_fact, local_slot, node_kind, node_span,
-    node_type, operator_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
-    runtime_intrinsic_name, spawn_target, test_item, test_statement_nodes,
+    block_statement_nodes, call_abi_signature, call_arguments, call_lowering, cast_intents,
+    child_nodes, closure_environment, completion_candidates, control_flow, direct_callees,
+    enum_constructor, enum_layout, enum_match, generic_call_instantiation, item_abi_signature,
+    item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot, node_kind,
+    node_span, node_type, operator_fact, reachable_items, resolved_item, resolved_local,
+    runtime_intrinsic, runtime_intrinsic_name, spawn_target, test_item, test_statement_nodes,
 };
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,
