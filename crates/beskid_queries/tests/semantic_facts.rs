@@ -325,6 +325,71 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
 }
 
 #[test]
+fn unqualified_import_resolution_requires_one_registered_syntax_target() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/unqualified-import/project/src");
+    let main_path = root.join("Main.bd");
+    let tools_path = root.join("Lib/Tools.bd");
+    let main_source = "use Lib.Tools;\ni32 Main() { return Helper(); }";
+    let tools_source = "i32 Helper() { return 1; }";
+    let main_program = expand_program(
+        parse_program(main_source).expect("main parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let tools_program = expand_program(
+        parse_program(tools_source).expect("tools parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: tools_path.display().to_string(),
+                path: tools_path.clone(),
+                source: tools_source.to_string(),
+                program: tools_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let tools_unit = SourceUnitId::new(&db, tools_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(18);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let tools_index = SyntaxIndex::from_program(&tools_program, generation);
+    let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
+    let helper = key(tools_unit, generation, &tools_index, NodeKind::FunctionDefinition, 0);
+
+    assert_eq!(
+        call_lowering(&db, call).expect("unqualified imported call"),
+        Some(beskid_queries::CallLowering::Direct(helper))
+    );
+}
+
+#[test]
 fn structural_facts_survive_while_unported_semantics_are_unavailable() {
     let source = r#"
 i32 Helper(i64 value) { return 1; }
@@ -1186,6 +1251,10 @@ fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {
     assert_eq!(
         runtime_intrinsic(&db, call).expect("runtime intrinsic"),
         Some(beskid_queries::RuntimeIntrinsic(expected as u32))
+    );
+    assert_eq!(
+        call_lowering(&db, call).expect("manifest builtin call lowering"),
+        Some(beskid_queries::CallLowering::Dynamic)
     );
 }
 

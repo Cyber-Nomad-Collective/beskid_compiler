@@ -382,12 +382,13 @@ fn resolve_item_declaration(
     }
     let (name, module_path) = path.segments.split_last()?;
     if module_path.is_empty() {
-        return resolve_unqualified_item_declaration(
-            program,
-            index,
-            key,
-            &name.node.name.node.name,
-        );
+        let name = name.node.name.node.name.as_str();
+        if resolve_lexical_declaration(program, index, key.node, name).is_some() {
+            return None;
+        }
+        return resolve_unqualified_item_declaration(program, index, key, name)
+            .or_else(|| unique_function_in_unit(db, key.unit, key.generation, name))
+            .or_else(|| unique_imported_function(db, key, name));
     }
     let module_path = module_path
         .iter()
@@ -413,29 +414,68 @@ fn resolve_item_declaration(
     };
     let target_unit = *target_unit;
     drop(registry);
-    let target_syntax = db.syntax_unit(target_unit)?;
-    if target_syntax.generation(db) != key.generation {
+    unique_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name)
+}
+
+/// Resolve an exact function name only when the syntax unit has one unambiguous definition.
+/// This preserves reachability for macro-expanded items whose synthetic nodes no longer retain
+/// their original module ancestry.
+fn unique_function_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+) -> Option<AstNodeKey> {
+    let syntax = db.syntax_unit(unit)?;
+    if syntax.generation(db) != generation {
         return None;
     }
-    let target_program = target_syntax.expanded_program(db);
-    let target_index = target_syntax.syntax_index(db);
-    let candidates = target_index
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let candidates = index
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
         .filter(|candidate| {
-            target_index
-                .node_at(&target_program, *candidate)
+            index
+                .node_at(&program, *candidate)
                 .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
-                .is_some_and(|function| function.name.node.name == name.node.name.node.name)
+                .is_some_and(|function| function.name.node.name == name)
         })
+        .collect::<Vec<_>>();
+    let [node] = candidates.as_slice() else {
+        return None;
+    };
+    Some(AstNodeKey {
+        unit,
+        generation,
+        node: *node,
+    })
+}
+
+/// Resolve an unqualified imported function only when its assembled import targets provide one
+/// exact declaration. Arbitrary unresolved bare names deliberately remain unavailable.
+fn unique_imported_function(db: &dyn Db, key: AstNodeKey, name: &str) -> Option<AstNodeKey> {
+    let targets = db
+        .syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .imports
+        .get(&(key.unit, key.generation))?
+        .iter()
+        .map(|import| import.target)
+        .fold(Vec::new(), |mut targets, target| {
+            if !targets.contains(&target) {
+                targets.push(target);
+            }
+            targets
+        });
+    let candidates = targets
+        .into_iter()
+        .filter_map(|target| unique_function_in_unit(db, target, key.generation, name))
         .collect::<Vec<_>>();
     let [declaration] = candidates.as_slice() else {
         return None;
     };
-    Some(AstNodeKey {
-        unit: target_unit,
-        generation: key.generation,
-        node: *declaration,
-    })
+    Some(*declaration)
 }
 
 fn resolve_unqualified_item_declaration(
@@ -911,6 +951,17 @@ fn call_lowering_for_node(
             {
                 Ok(CallLowering::Direct(declaration))
             } else if imported_call_receiver_exists(db, key, path) {
+                Ok(CallLowering::Dynamic)
+            } else if path.segments.iter().all(|segment| segment.node.type_args.is_empty())
+                && beskid_analysis::builtins::builtin_for_path(
+                    &path
+                        .segments
+                        .iter()
+                        .map(|segment| segment.node.name.node.name.clone())
+                        .collect::<Vec<_>>(),
+                )
+                .is_some()
+            {
                 Ok(CallLowering::Dynamic)
             } else {
                 Err(SemanticError::unavailable("call_lowering"))
