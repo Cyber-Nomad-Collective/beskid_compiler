@@ -484,6 +484,21 @@ fn cast_intents_use_exact_typed_let_constraints_and_local_types() {
 }
 
 #[test]
+fn cast_intents_use_manifest_runtime_parameter_types_for_contextual_literals() {
+    let source = "pointer Main(pointer state) { return pointer_add(state, 8); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let literal = key(unit, generation, &index, NodeKind::Literal, 0);
+
+    assert_eq!(
+        cast_intents(&db, literal).expect("runtime argument cast"),
+        Some(Arc::from([beskid_queries::CastIntent {
+            from: beskid_queries::SemanticTypeId::I32,
+            to: beskid_queries::SemanticTypeId::WORD,
+        }]))
+    );
+}
+
+#[test]
 fn item_signatures_cover_primitive_functions_methods_and_contracts() {
     let source = r#"
 i64 Convert(i32 value, bool checked) { return value; }

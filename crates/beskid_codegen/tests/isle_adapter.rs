@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
-    canonical_runtime_intrinsic_capability, canonical_runtime_sources,
-    CANONICAL_BOOTSTRAP_SOURCE_PATH,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, canonical_runtime_intrinsic_capability,
+    canonical_runtime_sources,
 };
 use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
@@ -12,20 +12,20 @@ use beskid_analysis::projects::{
 };
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_codegen::{
-    emit_isle_expression, emit_isle_item, emit_isle_item_with_call_importer,
-    module_emission::{emit_syntax_program, lower_syntax_program, SyntaxModuleItem},
-    CodegenInput, ItemModuleImporter,
+    CodegenInput, ItemModuleImporter, emit_isle_expression, emit_isle_item,
+    emit_isle_item_with_call_importer,
+    module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
 };
 use beskid_queries::{
+    AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
     build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes,
-    item_name, literal_fact, node_kind, AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession,
-    SourceUnitId, SyntaxGenerationId,
+    item_name, literal_fact, node_kind,
 };
 use cranelift_codegen::ir::types;
 use cranelift_codegen::isa;
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{default_libcall_names, Linkage, Module};
+use cranelift_module::{Linkage, Module, default_libcall_names};
 
 #[test]
 fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
@@ -437,7 +437,12 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
     let items = find_function_definitions(input.database(), root);
-    let selected = ["NativePointer", "SystemAllocate", "RootFramePrevious"];
+    let selected = [
+        "NativePointer",
+        "SystemAllocate",
+        "RootFramePrevious",
+        "RootFrame",
+    ];
     let module_items = selected
         .into_iter()
         .map(|name| {
@@ -461,15 +466,26 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
     beskid_codegen::validate_artifact(&artifact)
         .expect("canonical helper imports are declared by the manifest authority");
     let imports = beskid_codegen::referenced_extern_imports(&artifact);
-    assert!(imports
-        .iter()
-        .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_system_allocate"));
-    assert!(imports
-        .iter()
-        .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_raw_word_load"));
-    assert!(imports
-        .iter()
-        .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_pointer_from_native_word"));
+    assert!(
+        imports
+            .iter()
+            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_system_allocate")
+    );
+    assert!(
+        imports
+            .iter()
+            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_raw_word_load")
+    );
+    assert!(
+        imports
+            .iter()
+            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_pointer_from_native_word")
+    );
+    assert!(
+        imports
+            .iter()
+            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_pointer_add")
+    );
 
     let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
     let declared = emit_syntax_program(

@@ -7,11 +7,11 @@ use beskid_isle::{
     LiteralKind, NodeFacts, NodeKind, OperatorFact, ParameterSlot, Signature,
 };
 use beskid_queries::{
-    call_arguments, call_lowering, child_nodes, item_body, item_signature, literal_fact,
-    local_slot, node_kind, node_type, operator_fact, resolved_local, runtime_intrinsic_name,
-    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId,
+    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, call_arguments, call_lowering,
+    cast_intents, child_nodes, item_body, item_signature, literal_fact, local_slot, node_kind,
+    node_type, operator_fact, resolved_local, runtime_intrinsic_name,
 };
-use cranelift_codegen::ir::{types, FuncRef, Type, UserFuncName};
+use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{FuncId, Module};
@@ -243,7 +243,9 @@ impl SyntaxNodeFacts<'_> {
     }
 
     fn scalar_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        self.query(node_type(self.db, key))
+        self.query(cast_intents(self.db, key))
+            .and_then(|intents| intents.first().map(|intent| intent.to))
+            .or_else(|| self.query(node_type(self.db, key)))
             .or_else(|| {
                 (self.query(node_kind(self.db, key))
                     == Some(beskid_queries::IndexedNodeKind::LetStatement))

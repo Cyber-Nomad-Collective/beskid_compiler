@@ -4,7 +4,10 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use beskid_abi::runtime_source::RuntimeIntrinsicCapability;
+use beskid_abi::{
+    abi_v5::{AbiManifestV5, AbiType, TargetMetadata},
+    runtime_source::RuntimeIntrinsicCapability,
+};
 use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 
@@ -370,12 +373,21 @@ fn resolve_item_declaration(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Option<AstNodeKey> {
-    if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
+    if path
+        .segments
+        .iter()
+        .any(|segment| !segment.node.type_args.is_empty())
+    {
         return None;
     }
     let (name, module_path) = path.segments.split_last()?;
     if module_path.is_empty() {
-        return resolve_unqualified_item_declaration(program, index, key, &name.node.name.node.name);
+        return resolve_unqualified_item_declaration(
+            program,
+            index,
+            key,
+            &name.node.name.node.name,
+        );
     }
     let module_path = module_path
         .iter()
@@ -445,9 +457,7 @@ fn resolve_unqualified_item_declaration(
                     && index
                         .node_at(program, *candidate)
                         .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
-                        .is_some_and(|function| {
-                            function.name.node.name == name
-                        })
+                        .is_some_and(|function| function.name.node.name == name)
             })
             .collect::<Vec<_>>();
         match candidates.as_slice() {
@@ -889,11 +899,16 @@ fn call_lowering_for_node(
         expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
         beskid_analysis::syntax::Expression::Path(path) => {
             let path = &path.node.path.node;
-            if path.segments.iter().any(|segment| !segment.node.type_args.is_empty())
+            if path
+                .segments
+                .iter()
+                .any(|segment| !segment.node.type_args.is_empty())
                 && imported_call_receiver_exists(db, key, path)
             {
                 Ok(CallLowering::Dynamic)
-            } else if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
+            } else if let Some(declaration) =
+                resolve_item_declaration(db, program, index, key, path)
+            {
                 Ok(CallLowering::Direct(declaration))
             } else if imported_call_receiver_exists(db, key, path) {
                 Ok(CallLowering::Dynamic)
@@ -957,48 +972,28 @@ fn cast_intents_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[CastIntent]>> {
     with_node(db, syntax, key, |program, index, node| {
-        cast_intents_for_node(program, index, key.node, node)
+        cast_intents_for_node(db, program, index, key, node)
     })?
     .transpose()
 }
 
 fn cast_intents_for_node(
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
-    node_id: beskid_analysis::syntax::AstNodeId,
+    key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Option<Result<Arc<[CastIntent]>, SemanticError>> {
     if !expression_fact_target(node.node_kind()) {
         return None;
     }
-    let Some(statement_id) = nearest_ancestor(index, node_id, |kind| {
-        kind == beskid_analysis::syntax_query::NodeKind::LetStatement
-    }) else {
-        return Some(Err(SemanticError::unavailable("cast_intents")));
-    };
-    let statement = index
-        .node_at(program, statement_id)?
-        .of::<beskid_analysis::syntax::LetStatement>()?;
-    let value_id = index
-        .children(statement_id)?
-        .iter()
-        .copied()
-        .find(|child| {
-            index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Expression)
-        })?;
-    if !is_ancestor(index, value_id, node_id) {
-        return None;
-    }
-    let Some(expected) = statement.type_annotation.as_ref() else {
-        return Some(Err(SemanticError::unavailable("cast_intents")));
-    };
-    let actual = match semantic_type_for_node(program, index, node_id, node)? {
+    let actual = match semantic_type_for_node(program, index, key.node, node)? {
         Ok(actual) => actual,
         Err(_) => return Some(Err(SemanticError::unavailable("cast_intents"))),
     };
-    let expected = match semantic_type_from_syntax(&expected.node) {
+    let expected = match expected_cast_type(db, program, index, key)? {
         Ok(expected) => expected,
-        Err(_) => return Some(Err(SemanticError::unavailable("cast_intents"))),
+        Err(error) => return Some(Err(error)),
     };
     if actual == expected {
         return Some(Ok(Arc::from([])));
@@ -1012,10 +1007,119 @@ fn cast_intents_for_node(
     Some(Err(SemanticError::unavailable("cast_intents")))
 }
 
+/// Resolve the exact explicit constraint that gives an expression a numeric coercion target.
+///
+/// A typed `let` remains the original source of cast intent.  A direct call contributes the
+/// corresponding parameter type only when its declaration or canonical ABI-v5 intrinsic
+/// signature is known from generation-safe syntax facts.  This establishes the target before
+/// ISLE emits the literal; lowering never guesses a machine-width conversion.
+fn expected_cast_type(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+) -> Option<Result<SemanticTypeId, SemanticError>> {
+    if let Some(statement_id) = nearest_ancestor(index, key.node, |kind| {
+        kind == beskid_analysis::syntax_query::NodeKind::LetStatement
+    }) {
+        let statement = index
+            .node_at(program, statement_id)?
+            .of::<beskid_analysis::syntax::LetStatement>()?;
+        let value_id = index
+            .children(statement_id)?
+            .iter()
+            .copied()
+            .find(|child| {
+                index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Expression)
+            })?;
+        if !is_ancestor(index, value_id, key.node) {
+            return None;
+        }
+        return Some(
+            statement
+                .type_annotation
+                .as_ref()
+                .ok_or_else(|| SemanticError::unavailable("cast_intents"))
+                .and_then(|expected| semantic_type_from_syntax(&expected.node)),
+        );
+    }
+
+    let call_id = nearest_ancestor(index, key.node, |kind| {
+        kind == beskid_analysis::syntax_query::NodeKind::CallExpression
+    })?;
+    let call = index
+        .node_at(program, call_id)?
+        .of::<beskid_analysis::syntax::CallExpression>()?;
+    let argument_index = call.args.iter().position(|argument| {
+        index
+            .direct_child_id(
+                program,
+                call_id,
+                beskid_analysis::syntax_query::DynNodeRef::from(argument),
+            )
+            .is_some_and(|argument_id| is_ancestor(index, argument_id, key.node))
+    })?;
+    let expected = match &call.callee.node {
+        beskid_analysis::syntax::Expression::Path(path) => {
+            let path = &path.node.path.node;
+            if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
+                item_signature(db, declaration)
+                    .ok()
+                    .flatten()
+                    .and_then(|signature| signature.parameters.get(argument_index).copied())
+            } else if path.segments.len() == 1
+                && resolve_lexical_declaration(
+                    program,
+                    index,
+                    call_id,
+                    path.segments[0].node.name.node.name.as_str(),
+                )
+                .is_none()
+            {
+                canonical_intrinsic_parameter_type(
+                    path.segments[0].node.name.node.name.as_str(),
+                    argument_index,
+                )
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    Some(expected.ok_or_else(|| SemanticError::unavailable("cast_intents")))
+}
+
+/// ABI-v5 intrinsic signatures are target-independent.  Selecting a supported target merely
+/// accesses the generated canonical manifest; codegen still requires its non-forgeable runtime
+/// capability before it can import any of these symbols.
+fn canonical_intrinsic_parameter_type(name: &str, argument_index: usize) -> Option<SemanticTypeId> {
+    let target = TargetMetadata::supported().into_iter().next()?;
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let intrinsic = manifest.intrinsic_metadata(name)?;
+    abi_semantic_type(*intrinsic.params.get(argument_index)?)
+}
+
+fn abi_semantic_type(ty: AbiType) -> Option<SemanticTypeId> {
+    Some(match ty {
+        AbiType::Void => return None,
+        AbiType::Pointer => SemanticTypeId::POINTER,
+        AbiType::USize => SemanticTypeId::WORD,
+        AbiType::I8 | AbiType::U8 => SemanticTypeId::U8,
+        AbiType::I32 => SemanticTypeId::I32,
+        AbiType::I64 => SemanticTypeId::I64,
+        AbiType::F64 => SemanticTypeId::F64,
+        _ => return None,
+    })
+}
+
 fn primitive_numeric(semantic_type: SemanticTypeId) -> bool {
     matches!(
         semantic_type,
-        SemanticTypeId::I32 | SemanticTypeId::I64 | SemanticTypeId::U8 | SemanticTypeId::F64
+        SemanticTypeId::I32
+            | SemanticTypeId::I64
+            | SemanticTypeId::U8
+            | SemanticTypeId::WORD
+            | SemanticTypeId::F64
     )
 }
 
@@ -1166,7 +1270,10 @@ fn item_signature_for_node(
             method.return_type.as_ref(),
         ));
     }
-    if node.of::<beskid_analysis::syntax::TestDefinition>().is_some() {
+    if node
+        .of::<beskid_analysis::syntax::TestDefinition>()
+        .is_some()
+    {
         return Some(Ok(ItemSignature {
             parameters: Arc::from([]),
             result: SemanticTypeId::UNIT,
@@ -1586,7 +1693,10 @@ fn item_body_tracked(
                 )
                 .map(|node| AstNodeKey { node, ..key });
         }
-        if node.of::<beskid_analysis::syntax::TestDefinition>().is_some() {
+        if node
+            .of::<beskid_analysis::syntax::TestDefinition>()
+            .is_some()
+        {
             return Some(key);
         }
         None
@@ -1616,8 +1726,12 @@ fn direct_callees_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_node(db, syntax, key, |program, index, node| {
-        if node.of::<beskid_analysis::syntax::FunctionDefinition>().is_none()
-            && node.of::<beskid_analysis::syntax::TestDefinition>().is_none()
+        if node
+            .of::<beskid_analysis::syntax::FunctionDefinition>()
+            .is_none()
+            && node
+                .of::<beskid_analysis::syntax::TestDefinition>()
+                .is_none()
         {
             return None;
         }
@@ -1770,14 +1884,21 @@ pub fn completion_candidates(
     key: AstNodeKey,
     context: CompletionContext,
 ) -> SemanticQueryResult<Arc<[CompletionCandidate]>> {
-    let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None); };
-    if !syntax.accepts_key(db, key) { return Ok(None); }
+    let Some(syntax) = db.syntax_unit(key.unit) else {
+        return Ok(None);
+    };
+    if !syntax.accepts_key(db, key) {
+        return Ok(None);
+    }
     let Some(file) = db
         .file_registry()
         .lock()
         .expect("file registry")
         .get(key.unit.path(db))
-        .copied() else { return Ok(None); };
+        .copied()
+    else {
+        return Ok(None);
+    };
     let source = file.text(db);
     if context.cursor > source.len()
         || context.replacement_start > context.replacement_end
@@ -1785,32 +1906,77 @@ pub fn completion_candidates(
         || !source.is_char_boundary(context.cursor)
         || !source.is_char_boundary(context.replacement_start)
         || !source.is_char_boundary(context.replacement_end)
-    { return Ok(None); }
+    {
+        return Ok(None);
+    }
     let prefix = &source[context.replacement_start..context.replacement_end];
     let before = &source[..context.replacement_start];
     let mut candidates = Vec::new();
     if before.ends_with('.') {
-        let alias = before[..before.len() - 1].rsplit(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_').next().unwrap_or_default();
-        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let Some(target) = registry.imports.get(&(key.unit, key.generation)).and_then(|imports| imports.iter().find(|import| import.path.last().is_some_and(|segment| segment == alias))).map(|import| import.target) else { return Ok(None); };
+        let alias = before[..before.len() - 1]
+            .rsplit(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+            .next()
+            .unwrap_or_default();
+        let registry = db
+            .syntax_dependency_registry()
+            .lock()
+            .expect("syntax dependency registry");
+        let Some(target) = registry
+            .imports
+            .get(&(key.unit, key.generation))
+            .and_then(|imports| {
+                imports
+                    .iter()
+                    .find(|import| import.path.last().is_some_and(|segment| segment == alias))
+            })
+            .map(|import| import.target)
+        else {
+            return Ok(None);
+        };
         drop(registry);
-        let Some(target_syntax) = db.syntax_unit(target) else { return Ok(None); };
-        if target_syntax.generation(db) != key.generation { return Ok(None); }
+        let Some(target_syntax) = db.syntax_unit(target) else {
+            return Ok(None);
+        };
+        if target_syntax.generation(db) != key.generation {
+            return Ok(None);
+        }
         let program = target_syntax.expanded_program(db);
         let index = target_syntax.syntax_index(db);
         for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
-            if let Some(function) = index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>()) {
+            if let Some(function) = index
+                .node_at(program, id)
+                .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+            {
                 let label: Arc<str> = Arc::from(function.name.node.name.as_str());
-                if label.starts_with(prefix) { candidates.push(CompletionCandidate { label, kind: CompletionKind::Function, detail: None, replacement_start: context.replacement_start, replacement_end: context.replacement_end }); }
+                if label.starts_with(prefix) {
+                    candidates.push(CompletionCandidate {
+                        label,
+                        kind: CompletionKind::Function,
+                        detail: None,
+                        replacement_start: context.replacement_start,
+                        replacement_end: context.replacement_end,
+                    });
+                }
             }
         }
     } else {
         let program = syntax.expanded_program(db);
         let index = syntax.syntax_index(db);
         for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
-            if let Some(function) = index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>()) {
+            if let Some(function) = index
+                .node_at(program, id)
+                .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+            {
                 let label: Arc<str> = Arc::from(function.name.node.name.as_str());
-                if label.starts_with(prefix) { candidates.push(CompletionCandidate { label, kind: CompletionKind::Function, detail: None, replacement_start: context.replacement_start, replacement_end: context.replacement_end }); }
+                if label.starts_with(prefix) {
+                    candidates.push(CompletionCandidate {
+                        label,
+                        kind: CompletionKind::Function,
+                        detail: None,
+                        replacement_start: context.replacement_start,
+                        replacement_end: context.replacement_end,
+                    });
+                }
             }
         }
     }

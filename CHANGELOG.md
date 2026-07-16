@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lower compiler-authorized canonical runtime intrinsic calls through syntax-only ISLE module
   emission, with manifest-derived imports and verified CLIF coverage for allocation and root-frame
   helpers.
+- Derive contextual primitive cast intents from direct and canonical ABI-v5 intrinsic call
+  parameters so runtime `word` offsets are typed before ISLE emission.
 
 ### Removed
 
