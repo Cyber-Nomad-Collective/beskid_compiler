@@ -574,16 +574,28 @@ fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
         .clone()
         .unwrap_or_else(|| req.output_path.with_extension(target.object_ext));
 
-    let mut object_module = BeskidObjectModule::new(req.target_triple.as_deref())?;
-    let obs = req.pipeline.as_deref();
-    observe_phase_result(obs, AOT_EMIT_OBJECT, || {
-        object_module.compile_artifact(&req.artifact, obs)
-    })?;
-
-    let all_symbols = object_module.declared_symbols();
+    let exports = req.artifact.exports.clone();
+    let all_symbols = req
+        .artifact
+        .functions
+        .iter()
+        .map(|function| {
+            beskid_codegen::lowering::expressions::export::object_link_symbol(
+                &function.name,
+                &exports,
+            )
+        })
+        .collect::<Vec<_>>();
     let export_table = ExportTable::from_artifact(&req.artifact);
     let export_policy = export_table.resolve_export_policy(&req.export_policy);
     let exported_symbols = apply_export_policy(all_symbols, &export_policy);
+    let exported_symbol_set = exported_symbols.iter().cloned().collect::<HashSet<_>>();
+
+    let mut object_module = BeskidObjectModule::new(req.target_triple.as_deref())?;
+    let obs = req.pipeline.as_deref();
+    observe_phase_result(obs, AOT_EMIT_OBJECT, || {
+        object_module.compile_artifact_with_exports(&req.artifact, &exported_symbol_set, obs)
+    })?;
 
     object_module.finalize_to_path(&object_path)?;
 

@@ -263,7 +263,9 @@ fn canonical_platform_pair_links_the_native_tls_helper() {
         "Darwin TLV helper must retain its audited bootstrap import"
     );
     let source = temp.path().join("tls_isolation.c");
-    std::fs::write(&source, r#"
+    std::fs::write(
+        &source,
+        r#"
 #include <pthread.h>
 extern void *beskid_rt_v5_intrinsic_tls_get(void);
 extern void beskid_rt_v5_intrinsic_tls_set(void *);
@@ -274,6 +276,7 @@ static void *worker(void *unused) {
     beskid_rt_v5_intrinsic_tls_set(&thread_token);
     return beskid_rt_v5_intrinsic_tls_get() == &thread_token ? 0 : (void *)1;
 }
+
 int main(void) {
     pthread_t thread; void *result = 0;
     beskid_rt_v5_intrinsic_tls_set(&main_token);
@@ -281,7 +284,10 @@ int main(void) {
     if (pthread_join(thread, &result) != 0 || result != 0) return 2;
     return beskid_rt_v5_intrinsic_tls_get() == &main_token ? 0 : 3;
 }
-"#).expect("write TLS smoke");
+
+"#,
+    )
+    .expect("write TLS smoke");
     let executable = temp.path().join("tls_isolation");
     let status = Command::new("clang")
         .arg(&source)
@@ -291,5 +297,42 @@ int main(void) {
         .status()
         .expect("compile TLS smoke");
     assert!(status.success());
-    assert!(Command::new(executable).status().expect("run TLS smoke").success());
+    assert!(
+        Command::new(executable)
+            .status()
+            .expect("run TLS smoke")
+            .success()
+    );
+}
+
+#[test]
+#[cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+))]
+fn canonical_runtime_static_archive_hides_syntax_implementation_symbols() {
+    let triple = if cfg!(target_os = "macos") {
+        "aarch64-apple-darwin"
+    } else {
+        "x86_64-unknown-linux-gnu"
+    };
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|candidate| candidate.triple.as_str() == triple)
+        .expect("supported host target");
+    let artifact = lower_canonical_runtime_prepared_syntax(target).expect("lower Bootstrap");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let pair = emit_host_platform_library_pair(artifact, temp.path().join("out"), "beskid_runtime")
+        .expect("link canonical platform pair");
+    let output = Command::new("nm")
+        .args(["-g", "--defined-only", "-j"])
+        .arg(&pair.static_library)
+        .output()
+        .expect("run nm");
+    assert!(output.status.success(), "nm failed");
+    let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
+    assert!(
+        !symbols.contains("#syntax"),
+        "static runtime archive leaked syntax implementation symbols: {symbols}"
+    );
 }

@@ -35,5 +35,6 @@ pub use mod_artifact::{
 };
 pub use prepared_syntax::{
     lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint,
+    lower_prepared_syntax_module,
 };
 pub use run::{AotRunRequest, AotRunResult, build_and_run, run_linked_executable};

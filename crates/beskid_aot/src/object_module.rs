@@ -1,10 +1,10 @@
 //! Cranelift object-module wrapper: declare imports, lower [`CodegenArtifact`] functions, write `.o`/`.obj`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use beskid_codegen::cranelift_host::{
-    declare_builtin_imports, declare_user_functions_with_link_symbols,
+    declare_builtin_imports, declare_user_functions_with_link_symbols_and_linkage,
     declare_validated_extern_imports, remap_testcase_externals,
 };
 use beskid_codegen::{
@@ -71,9 +71,33 @@ impl BeskidObjectModule {
     }
 
     /// Declare builtins, user functions, externs, data, then define every lowered function in `artifact`.
+    ///
+    /// This compatibility entrypoint exports every declared function. Production AOT publication
+    /// must call [`Self::compile_artifact_with_exports`] with its explicit export boundary.
     pub fn compile_artifact(
         &mut self,
         artifact: &CodegenArtifact,
+        pipeline: Option<&dyn PipelineObserver>,
+    ) -> AotResult<()> {
+        let exports = artifact.exports.clone();
+        let exported_symbols = artifact
+            .functions
+            .iter()
+            .map(|function| {
+                beskid_codegen::lowering::expressions::export::object_link_symbol(
+                    &function.name,
+                    &exports,
+                )
+            })
+            .collect::<HashSet<_>>();
+        self.compile_artifact_with_exports(artifact, &exported_symbols, pipeline)
+    }
+
+    /// Compile `artifact` with only `exported_symbols` visible at the native object boundary.
+    pub fn compile_artifact_with_exports(
+        &mut self,
+        artifact: &CodegenArtifact,
+        exported_symbols: &HashSet<String>,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> AotResult<()> {
         let module = self
@@ -100,17 +124,23 @@ impl BeskidObjectModule {
         }
 
         let exports = artifact.exports.clone();
-        let declared = declare_user_functions_with_link_symbols(
+        let declared = declare_user_functions_with_link_symbols_and_linkage(
             module,
             artifact,
-            Linkage::Export,
             &mut self.func_ids,
             |name| {
                 beskid_codegen::lowering::expressions::export::object_link_symbol(name, &exports)
             },
+            |symbol| {
+                if exported_symbols.contains(symbol) {
+                    Linkage::Export
+                } else {
+                    Linkage::Local
+                }
+            },
         )?;
-        // User functions use Export linkage so AOT shared libraries surface symbols to the host
-        // linker; `[Export(Symbol:"...")]` renames the emitted symbol via codegen export metadata.
+        // Only symbols selected by the caller's export policy use Export linkage. This keeps
+        // canonical syntax implementation functions out of the static runtime boundary.
         self.declared_symbols.extend(declared);
         declare_validated_extern_imports(module, artifact, &mut self.func_ids).map_err(|err| {
             match err {
