@@ -3,13 +3,16 @@
 use axum::{
     Json,
     body::{Body, Bytes, to_bytes},
-    extract::{Path, Request, State},
+    extract::{Path, Query, Request, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use beskid_pckg_artifacts::{PackageArtifactStore, PublishRequest, validate_package_artifact};
+use beskid_pckg_artifacts::{
+    ArtifactRecord, PackageArtifactStore, PublishRequest, select_download,
+    validate_package_artifact,
+};
 use beskid_pckg_contract::{
-    ApiErrorResponse, PackageDetailsResponse, PackageHealthSnapshotResponse,
+    ApiErrorResponse, PackageDetailsResponse, PackageHealthSnapshotResponse, PackageSearchResponse,
     PackageSummaryResponse, PackageVersionLifecycleResponse, PackageVersionSummaryResponse,
     PublishPackageVersionRequest, UpsertPackageRequest,
 };
@@ -25,12 +28,96 @@ pub(crate) struct PackageVersionPath {
     version: String,
 }
 
-pub async fn list_packages(State(state): State<AppState>) -> Json<Vec<PackageSummaryResponse>> {
-    // The repository deliberately does not expose enumeration until its SQL
-    // adapter can apply search/paging consistently. Keep the list endpoint
-    // stable while named package routes become functional.
-    let _ = state;
-    Json(Vec::new())
+#[derive(Debug, Default, serde::Deserialize)]
+pub(crate) struct ListQuery {
+    q: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    page: Option<i64>,
+}
+
+impl ListQuery {
+    fn limit(&self) -> i64 {
+        self.limit.unwrap_or(100).clamp(1, 200)
+    }
+
+    fn offset(&self) -> i64 {
+        self.offset
+            .unwrap_or_else(|| self.page.unwrap_or(0).max(0).saturating_mul(self.limit()))
+            .max(0)
+    }
+
+    fn query(&self) -> Option<String> {
+        self.q
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase)
+    }
+}
+
+/// Legacy package index. Results are visibility-filtered before paging so a
+/// private package never leaks through a count or a later page.
+pub async fn list_packages(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ListQuery>,
+) -> Response {
+    let subject = authenticated_subject(&state, &headers);
+    let packages = match state
+        .packages
+        .list_packages(query.limit(), query.offset())
+        .await
+    {
+        Ok(packages) => packages,
+        Err(_) => return package_storage_failure(),
+    };
+    let needle = query.query();
+    let summaries = packages
+        .into_iter()
+        .filter(|package| package.is_public || subject.as_deref() == Some(&package.owner_subject))
+        .filter(|package| {
+            needle
+                .as_ref()
+                .is_none_or(|needle| package.name.to_ascii_lowercase().contains(needle))
+        })
+        .map(|package| package_summary(&package))
+        .collect::<Vec<_>>();
+    Json(summaries).into_response()
+}
+
+/// Search keeps the historic `/api/search` payload shape while using the same
+/// visibility and paging rules as the package index.
+pub async fn search_packages(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ListQuery>,
+) -> Response {
+    let subject = authenticated_subject(&state, &headers);
+    let packages = match state
+        .packages
+        .list_packages(query.limit(), query.offset())
+        .await
+    {
+        Ok(packages) => packages,
+        Err(_) => return package_storage_failure(),
+    };
+    let needle = query.query();
+    let results = packages
+        .into_iter()
+        .filter(|package| package.is_public || subject.as_deref() == Some(&package.owner_subject))
+        .filter(|package| {
+            needle
+                .as_ref()
+                .is_none_or(|needle| package.name.to_ascii_lowercase().contains(needle))
+        })
+        .map(|package| PackageSearchResponse {
+            package: package_summary(&package),
+            review_count: 0,
+            health: health(),
+        })
+        .collect::<Vec<_>>();
+    Json(results).into_response()
 }
 
 pub async fn package_detail(
@@ -43,20 +130,35 @@ pub async fn package_detail(
         Ok(package) => package,
         Err(_) => return package_storage_failure(),
     };
+    let package = match package {
+        Some(package) => Some(package),
+        None => match state.packages.find_package_by_id(&name).await {
+            Ok(package) => package,
+            Err(_) => return package_storage_failure(),
+        },
+    };
     let Some(package) = package
         .filter(|package| package.is_public || subject.as_deref() == Some(&package.owner_subject))
     else {
         return package_not_found();
     };
 
+    let versions = match state.packages.list_versions(&package.id).await {
+        Ok(versions) => versions,
+        Err(_) => return package_storage_failure(),
+    };
+    let latest_version = latest_non_yanked(&versions).map(|version| version.version.clone());
     Json(PackageDetailsResponse {
         package: package_summary(&package),
-        versions: Vec::new(),
+        versions: versions
+            .iter()
+            .map(|version| version_summary(&package, version))
+            .collect(),
         dependencies: Vec::new(),
         dependents_count: 0,
         readme: None,
         health: health(),
-        latest_version: None,
+        latest_version,
     })
     .into_response()
 }
@@ -441,7 +543,23 @@ pub async fn download_artifact(
     if !package.is_public && subject.as_deref() != Some(&package.owner_subject) {
         return package_not_found();
     }
-    let stored_version = match state.packages.find_version(&package.id, &version).await {
+    let resolved_version = if version.eq_ignore_ascii_case("latest") {
+        let versions = match state.packages.list_versions(&package.id).await {
+            Ok(versions) => versions,
+            Err(_) => return package_storage_failure(),
+        };
+        match latest_non_yanked(&versions) {
+            Some(version) => version.version.clone(),
+            None => return package_not_found(),
+        }
+    } else {
+        version
+    };
+    let stored_version = match state
+        .packages
+        .find_version(&package.id, &resolved_version)
+        .await
+    {
         Ok(version) => version,
         Err(_) => return package_storage_failure(),
     };
@@ -596,6 +714,17 @@ fn version_summary(package: &Package, version: &PackageVersion) -> PackageVersio
         configuration_json: None,
         overrides_json: None,
     }
+}
+
+fn latest_non_yanked(versions: &[PackageVersion]) -> Option<&PackageVersion> {
+    let records = versions
+        .iter()
+        .map(|version| ArtifactRecord::new(&version.version, version.is_yanked))
+        .collect::<Vec<_>>();
+    let selected = select_download(&records, "latest")?;
+    versions
+        .iter()
+        .find(|version| version.version == selected.version)
 }
 
 fn health() -> PackageHealthSnapshotResponse {

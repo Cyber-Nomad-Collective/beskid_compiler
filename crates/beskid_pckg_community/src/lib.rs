@@ -173,6 +173,7 @@ impl Board {
 
 pub type PostId = u64;
 pub type CommentId = u64;
+pub type NotificationId = u64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Post {
@@ -264,11 +265,13 @@ impl Default for NotificationPreference {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Notification {
+    pub id: NotificationId,
     pub recipient: Subject,
     pub scope: NotificationScope,
     pub actor: Subject,
     pub post_id: Option<PostId>,
     pub comment_id: Option<CommentId>,
+    pub is_read: bool,
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -287,6 +290,8 @@ pub enum CommunityError {
     PostNotFound,
     #[error("comment was not found")]
     CommentNotFound,
+    #[error("notification was not found")]
+    NotificationNotFound,
     #[error("an author cannot vote on their own content")]
     SelfVote,
 }
@@ -297,6 +302,7 @@ pub struct CommunityService {
     boards: BTreeMap<BoardId, Board>,
     permissions: BTreeSet<(Subject, ResourceId, Permission)>,
     publisher_follows: BTreeSet<(Subject, Subject)>,
+    package_follows: BTreeSet<(Subject, String)>,
     posts: BTreeMap<PostId, Post>,
     comments: BTreeMap<CommentId, Comment>,
     post_votes: BTreeMap<(PostId, Subject), i8>,
@@ -305,6 +311,7 @@ pub struct CommunityService {
     notifications: Vec<Notification>,
     next_post_id: PostId,
     next_comment_id: CommentId,
+    next_notification_id: NotificationId,
 }
 
 impl CommunityService {
@@ -312,6 +319,7 @@ impl CommunityService {
         Self {
             next_post_id: 1,
             next_comment_id: 1,
+            next_notification_id: 1,
             ..Self::default()
         }
     }
@@ -323,6 +331,30 @@ impl CommunityService {
     }
     pub fn add_board(&mut self, board: Board) {
         self.boards.insert(board.id.clone(), board);
+    }
+    pub fn boards(&self) -> Vec<&Board> {
+        self.boards.values().collect()
+    }
+    pub fn board(&self, board_id: &BoardId) -> Option<&Board> {
+        self.boards.get(board_id)
+    }
+    pub fn posts_for_board(&self, board_id: &BoardId) -> Vec<&Post> {
+        self.posts
+            .values()
+            .filter(|post| &post.board_id == board_id)
+            .collect()
+    }
+    pub fn post(&self, post_id: PostId) -> Option<&Post> {
+        self.posts.get(&post_id)
+    }
+    pub fn comments_for_post(&self, post_id: PostId) -> Vec<&Comment> {
+        self.comments
+            .values()
+            .filter(|comment| comment.post_id == post_id)
+            .collect()
+    }
+    pub fn comment(&self, comment_id: CommentId) -> Option<&Comment> {
+        self.comments.get(&comment_id)
     }
     pub fn grant_permission(
         &mut self,
@@ -382,6 +414,48 @@ impl CommunityService {
         self.publisher_follows
             .iter()
             .filter(|(_, target)| target == publisher)
+            .count()
+    }
+    pub fn is_following_publisher(&self, follower: &Subject, publisher: &Subject) -> bool {
+        follower == publisher
+            || self
+                .publisher_follows
+                .contains(&(follower.clone(), publisher.clone()))
+    }
+    pub fn toggle_package_follow(
+        &mut self,
+        actor: &Principal,
+        package: impl Into<String>,
+    ) -> Result<FollowResult, CommunityError> {
+        Self::require(actor, Permission::Publish)?;
+        let key = (
+            actor
+                .subject()
+                .expect("authorized principal has a subject")
+                .clone(),
+            package.into(),
+        );
+        if self.package_follows.remove(&key) {
+            Ok(FollowResult {
+                is_following: false,
+                changed: true,
+            })
+        } else {
+            self.package_follows.insert(key);
+            Ok(FollowResult {
+                is_following: true,
+                changed: true,
+            })
+        }
+    }
+    pub fn is_following_package(&self, follower: &Subject, package: &str) -> bool {
+        self.package_follows
+            .contains(&(follower.clone(), package.to_owned()))
+    }
+    pub fn package_follow_count(&self, package: &str) -> usize {
+        self.package_follows
+            .iter()
+            .filter(|(_, followed_package)| followed_package == package)
             .count()
     }
 
@@ -515,6 +589,9 @@ impl CommunityService {
     ) {
         self.preferences.insert(subject, preference);
     }
+    pub fn notification_preference(&self, subject: &Subject) -> NotificationPreference {
+        self.preferences.get(subject).cloned().unwrap_or_default()
+    }
     pub fn should_notify(&self, subject: &Subject, scope: NotificationScope) -> bool {
         self.preferences
             .get(subject)
@@ -527,6 +604,24 @@ impl CommunityService {
             .iter()
             .filter(|notification| &notification.recipient == subject)
             .collect()
+    }
+    pub fn mark_notification_read(
+        &mut self,
+        actor: &Principal,
+        notification_id: NotificationId,
+    ) -> Result<(), CommunityError> {
+        let actor_subject = actor
+            .subject()
+            .ok_or(CommunityError::NotificationNotFound)?;
+        let notification = self
+            .notifications
+            .iter_mut()
+            .find(|notification| {
+                notification.id == notification_id && &notification.recipient == actor_subject
+            })
+            .ok_or(CommunityError::NotificationNotFound)?;
+        notification.is_read = true;
+        Ok(())
     }
 
     fn require(actor: &Principal, permission: Permission) -> Result<(), CommunityError> {
@@ -554,6 +649,11 @@ impl CommunityService {
     fn take_comment_id(&mut self) -> CommentId {
         let id = self.next_comment_id;
         self.next_comment_id += 1;
+        id
+    }
+    fn take_notification_id(&mut self) -> NotificationId {
+        let id = self.next_notification_id;
+        self.next_notification_id += 1;
         id
     }
     fn apply_vote(
@@ -596,12 +696,15 @@ impl CommunityService {
         comment_id: Option<CommentId>,
     ) {
         if recipient != actor && self.should_notify(recipient, scope) {
+            let id = self.take_notification_id();
             self.notifications.push(Notification {
+                id,
                 recipient: recipient.clone(),
                 scope,
                 actor: actor.clone(),
                 post_id,
                 comment_id,
+                is_read: false,
             });
         }
     }

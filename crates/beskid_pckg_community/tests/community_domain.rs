@@ -1,6 +1,6 @@
 use beskid_pckg_community::{
     ApiKeyScope, Board, BoardId, CommunityError, CommunityService, NotificationPreference,
-    Permission, Principal, Profile, ResourceId, Role, Subject, VoteValue,
+    NotificationScope, Permission, Principal, Profile, ResourceId, Role, Subject, VoteValue,
 };
 
 fn subject(value: &str) -> Subject {
@@ -182,4 +182,99 @@ fn notification_preferences_filter_delivery_by_scope() {
         &member,
         beskid_pckg_community::NotificationScope::FollowedPublisherPost
     ));
+}
+
+#[test]
+fn community_getters_return_boards_posts_and_post_comments_in_stable_id_order() {
+    let mut community = CommunityService::new();
+    let board_id = BoardId::new("general").unwrap();
+    community.add_board(Board::new(board_id.clone(), "General"));
+    let author = user("github:1");
+    let post = community
+        .create_post(&author, &board_id, "First", "Body")
+        .unwrap();
+    let comment = community
+        .create_comment(&user("github:2"), post.id, "Reply", None)
+        .unwrap();
+
+    assert_eq!(community.boards().len(), 1);
+    assert_eq!(community.board(&board_id).unwrap().title, "General");
+    assert_eq!(community.posts_for_board(&board_id), vec![&post]);
+    assert_eq!(community.post(post.id), Some(&post));
+    assert_eq!(community.comments_for_post(post.id), vec![&comment]);
+    assert_eq!(community.comment(comment.id), Some(&comment));
+}
+
+#[test]
+fn publisher_and_package_follow_statuses_never_create_self_follows() {
+    let mut community = CommunityService::new();
+    let actor = user("github:1");
+    let publisher = subject("github:2");
+
+    assert!(!community.is_following_publisher(actor.subject().unwrap(), &publisher));
+    community
+        .toggle_publisher_follow(&actor, &publisher)
+        .unwrap();
+    assert!(community.is_following_publisher(actor.subject().unwrap(), &publisher));
+    assert_eq!(community.publisher_follow_count(&publisher), 1);
+
+    assert!(
+        community
+            .toggle_package_follow(&actor, "beskid.tools")
+            .unwrap()
+            .is_following
+    );
+    assert!(community.is_following_package(actor.subject().unwrap(), "beskid.tools"));
+    assert_eq!(community.package_follow_count("beskid.tools"), 1);
+    assert!(
+        community
+            .toggle_package_follow(&actor, "beskid.tools")
+            .unwrap()
+            .changed
+    );
+    assert!(!community.is_following_package(actor.subject().unwrap(), "beskid.tools"));
+
+    let self_follow = community
+        .toggle_publisher_follow(&actor, actor.subject().unwrap())
+        .unwrap();
+    assert!(self_follow.is_following);
+    assert!(!self_follow.changed);
+}
+
+#[test]
+fn notification_preferences_default_and_notifications_can_only_be_read_by_recipient() {
+    let mut community = CommunityService::new();
+    let board_id = BoardId::new("general").unwrap();
+    community.add_board(Board::new(board_id.clone(), "General"));
+    let author = user("github:1");
+    let commenter = user("github:2");
+    let post = community
+        .create_post(&author, &board_id, "First", "Body")
+        .unwrap();
+
+    assert_eq!(
+        community.notification_preference(author.subject().unwrap()),
+        NotificationPreference::all()
+    );
+    community.set_notification_preference(
+        author.subject().unwrap().clone(),
+        NotificationPreference::all(),
+    );
+    let comment = community
+        .create_comment(&commenter, post.id, "Reply", None)
+        .unwrap();
+    let notification = community.notifications_for(author.subject().unwrap())[0];
+    assert_eq!(notification.scope, NotificationScope::Reply);
+    assert!(!notification.is_read);
+    assert_eq!(notification.comment_id, Some(comment.id));
+    let notification_id = notification.id;
+
+    assert_eq!(
+        community.mark_notification_read(&commenter, notification_id),
+        Err(CommunityError::NotificationNotFound)
+    );
+    community
+        .mark_notification_read(&author, notification_id)
+        .unwrap();
+    assert!(community.notifications_for(author.subject().unwrap())[0].is_read);
 }

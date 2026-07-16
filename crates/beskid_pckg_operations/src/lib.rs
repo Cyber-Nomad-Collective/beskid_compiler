@@ -49,6 +49,206 @@ pub fn authorize_administration(principal: &Principal) -> AuthorizationDecision 
     }
 }
 
+/// Publisher state owned by pckg, keyed solely by the Auth Hub subject.
+///
+/// The HTTP adapter must only construct this from a verified Auth Hub session
+/// (for GitHub-only pckg this is a `github:<numeric-id>` subject).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublisherProfile {
+    subject: String,
+    is_verified: bool,
+}
+
+impl PublisherProfile {
+    pub fn unverified(subject: impl Into<String>) -> Self {
+        Self {
+            subject: subject.into(),
+            is_verified: false,
+        }
+    }
+
+    pub fn verified(subject: impl Into<String>) -> Self {
+        Self {
+            subject: subject.into(),
+            is_verified: true,
+        }
+    }
+
+    pub fn subject(&self) -> &str {
+        &self.subject
+    }
+
+    pub fn is_verified(&self) -> bool {
+        self.is_verified
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PublisherVerificationDecision {
+    Denied,
+    Unchanged(PublisherProfile),
+    Updated(PublisherProfile),
+}
+
+/// Only registry administrators may change publisher verification.
+pub fn decide_publisher_verification(
+    administrator: &Principal,
+    publisher: &PublisherProfile,
+    verified: bool,
+) -> PublisherVerificationDecision {
+    if authorize_administration(administrator) == AuthorizationDecision::Denied {
+        return PublisherVerificationDecision::Denied;
+    }
+
+    if publisher.is_verified == verified {
+        return PublisherVerificationDecision::Unchanged(publisher.clone());
+    }
+
+    let updated = if verified {
+        PublisherProfile::verified(publisher.subject())
+    } else {
+        PublisherProfile::unverified(publisher.subject())
+    };
+    PublisherVerificationDecision::Updated(updated)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ResourceKind {
+    Package,
+    Board,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct Resource {
+    kind: ResourceKind,
+    id: String,
+}
+
+impl Resource {
+    pub fn package(id: impl Into<String>) -> Self {
+        Self {
+            kind: ResourceKind::Package,
+            id: id.into(),
+        }
+    }
+
+    pub fn board(id: impl Into<String>) -> Self {
+        Self {
+            kind: ResourceKind::Board,
+            id: id.into(),
+        }
+    }
+
+    pub fn kind(&self) -> ResourceKind {
+        self.kind
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Capability {
+    Moderate,
+}
+
+/// A durable permission row: the storage adapter enforces uniqueness on
+/// `(subject, resource_kind, resource_id, capability)`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResourcePermission {
+    subject: String,
+    resource: Resource,
+    capability: Capability,
+    granted_by_subject: String,
+    granted_at_unix_seconds: i64,
+}
+
+impl ResourcePermission {
+    pub fn moderate(
+        subject: impl Into<String>,
+        resource: Resource,
+        granted_by_subject: impl Into<String>,
+        granted_at_unix_seconds: i64,
+    ) -> Self {
+        Self {
+            subject: subject.into(),
+            resource,
+            capability: Capability::Moderate,
+            granted_by_subject: granted_by_subject.into(),
+            granted_at_unix_seconds,
+        }
+    }
+
+    pub fn subject(&self) -> &str {
+        &self.subject
+    }
+
+    pub fn resource(&self) -> &Resource {
+        &self.resource
+    }
+
+    pub fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    pub fn granted_by_subject(&self) -> &str {
+        &self.granted_by_subject
+    }
+
+    pub fn granted_at_unix_seconds(&self) -> i64 {
+        self.granted_at_unix_seconds
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PermissionGrantDecision {
+    AlreadyGranted,
+    Granted(ResourcePermission),
+}
+
+pub fn decide_permission_grant(
+    existing: &[ResourcePermission],
+    requested: ResourcePermission,
+) -> PermissionGrantDecision {
+    if existing.iter().any(|permission| {
+        permission.subject == requested.subject
+            && permission.resource == requested.resource
+            && permission.capability == requested.capability
+    }) {
+        PermissionGrantDecision::AlreadyGranted
+    } else {
+        PermissionGrantDecision::Granted(requested)
+    }
+}
+
+/// Package owners, global moderators, SuperAdmins, and explicitly granted
+/// package moderators may moderate package-owned community content.
+pub fn authorize_package_moderation(
+    principal: &Principal,
+    owner_subject: &str,
+    package_id: &str,
+    permissions: &[ResourcePermission],
+) -> AuthorizationDecision {
+    if principal.has_role(Role::SuperAdmin)
+        || principal.has_role(Role::Moderator)
+        || principal.subject() == owner_subject
+    {
+        return AuthorizationDecision::Allowed;
+    }
+
+    let resource = Resource::package(package_id);
+    if permissions.iter().any(|permission| {
+        permission.subject == principal.subject()
+            && permission.resource == resource
+            && permission.capability == Capability::Moderate
+    }) {
+        AuthorizationDecision::Allowed
+    } else {
+        AuthorizationDecision::Denied
+    }
+}
+
 pub const BLOCKED_LINK_REASON: &str =
     "This content contains a link that is not allowed on this registry.";
 const MAX_BLOCKED_LINK_PATTERN_LENGTH: usize = 512;
@@ -262,6 +462,45 @@ impl NotificationPreference {
             send_email,
             include_in_spotlight,
         }
+    }
+
+    pub fn user_subject(&self) -> &str {
+        &self.user_id
+    }
+
+    pub fn notification_type(&self) -> NotificationType {
+        self.notification_type
+    }
+
+    pub fn scope(&self) -> &NotificationScope {
+        &self.scope
+    }
+
+    pub fn send_email(&self) -> bool {
+        self.send_email
+    }
+
+    pub fn include_in_spotlight(&self) -> bool {
+        self.include_in_spotlight
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AdministrativeNotificationPreferenceDecision {
+    Denied,
+    Upsert(NotificationPreference),
+}
+
+/// Administrative notification preference changes are a separate operation
+/// from recipient-owned preference edits, and require the SuperAdmin role.
+pub fn decide_administrative_notification_preference(
+    administrator: &Principal,
+    requested: NotificationPreference,
+) -> AdministrativeNotificationPreferenceDecision {
+    if authorize_administration(administrator) == AuthorizationDecision::Allowed {
+        AdministrativeNotificationPreferenceDecision::Upsert(requested)
+    } else {
+        AdministrativeNotificationPreferenceDecision::Denied
     }
 }
 
@@ -555,5 +794,78 @@ mod tests {
         config.auth_hub.service_token = Some("service".into());
         config.session_secret = Some("session".into());
         assert_eq!(config.validate(), Ok(()));
+    }
+
+    #[test]
+    fn publisher_verification_is_admin_controlled_and_subject_keyed() {
+        let publisher = PublisherProfile::unverified("github:42");
+        let member = Principal::new("github:42", [Role::User]);
+        let administrator = Principal::new("github:1", [Role::SuperAdmin]);
+
+        assert_eq!(
+            decide_publisher_verification(&member, &publisher, true),
+            PublisherVerificationDecision::Denied
+        );
+        assert_eq!(
+            decide_publisher_verification(&administrator, &publisher, true),
+            PublisherVerificationDecision::Updated(PublisherProfile::verified("github:42"))
+        );
+    }
+
+    #[test]
+    fn package_owner_or_granted_moderator_can_moderate_a_package() {
+        let owner = Principal::new("github:42", [Role::User]);
+        let collaborator = Principal::new("github:43", [Role::User]);
+        let permission =
+            ResourcePermission::moderate("github:43", Resource::package("pkg-1"), "github:1", 1);
+
+        assert_eq!(
+            authorize_package_moderation(&owner, "github:42", "pkg-1", &[]),
+            AuthorizationDecision::Allowed
+        );
+        assert_eq!(
+            authorize_package_moderation(&collaborator, "github:42", "pkg-1", &[permission]),
+            AuthorizationDecision::Allowed
+        );
+    }
+
+    #[test]
+    fn permission_grants_are_idempotent_by_subject_resource_and_capability() {
+        let resource = Resource::board("board-9");
+        let grant = ResourcePermission::moderate("github:42", resource.clone(), "github:1", 1);
+
+        assert_eq!(
+            decide_permission_grant(&[grant.clone()], grant),
+            PermissionGrantDecision::AlreadyGranted
+        );
+        assert!(matches!(
+            decide_permission_grant(
+                &[],
+                ResourcePermission::moderate("github:42", resource, "github:1", 1)
+            ),
+            PermissionGrantDecision::Granted(_)
+        ));
+    }
+
+    #[test]
+    fn administrative_notification_preference_changes_only_affect_the_target_subject() {
+        let administrator = Principal::new("github:1", [Role::SuperAdmin]);
+        let member = Principal::new("github:42", [Role::User]);
+        let requested = NotificationPreference::new(
+            "github:42",
+            NotificationType::System,
+            NotificationScope::Global,
+            true,
+            true,
+        );
+
+        assert_eq!(
+            decide_administrative_notification_preference(&member, requested.clone()),
+            AdministrativeNotificationPreferenceDecision::Denied
+        );
+        assert_eq!(
+            decide_administrative_notification_preference(&administrator, requested.clone()),
+            AdministrativeNotificationPreferenceDecision::Upsert(requested)
+        );
     }
 }

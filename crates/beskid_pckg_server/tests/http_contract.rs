@@ -37,30 +37,85 @@ async fn health_endpoints_report_live_and_ready() {
 }
 
 #[tokio::test]
-async fn public_package_routes_return_stable_placeholder_json() {
-    let app = router(PckgServerConfig::default());
+async fn package_index_search_and_detail_return_persisted_public_data() {
+    let app = router(authenticated_config());
+    let owner_cookie = format!("pckg_session={}", package_session("github:1"));
+    let create = app
+        .clone()
+        .oneshot(
+            Request::post("/api/packages")
+                .header("content-type", "application/json")
+                .header("cookie", &owner_cookie)
+                .body(Body::from(
+                    r#"{"name":"Public.Demo","isPublic":true,"submitForReview":false}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let package_id = response_body(create).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    for version in ["1.0.0", "2.0.0"] {
+        let published = app
+            .clone()
+            .oneshot(
+                Request::post("/api/packages/Public.Demo/versions")
+                    .header("content-type", "application/json")
+                    .header("cookie", &owner_cookie)
+                    .body(Body::from(
+                        serde_json::json!({"version": version, "checksumSha256": "a".repeat(64)})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(published.status(), StatusCode::CREATED);
+    }
 
     let list = app
         .clone()
-        .oneshot(Request::get("/api/packages").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(list.status(), StatusCode::OK);
-    assert_eq!(response_body(list).await, serde_json::json!([]));
-
-    let detail = app
         .oneshot(
-            Request::get("/api/packages/example")
+            Request::get("/api/packages?limit=1")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(detail.status(), StatusCode::NOT_FOUND);
+    assert_eq!(list.status(), StatusCode::OK);
+    assert_eq!(response_body(list).await[0]["name"], "Public.Demo");
+
+    let search = app
+        .clone()
+        .oneshot(
+            Request::get("/api/search?q=public")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(search.status(), StatusCode::OK);
     assert_eq!(
-        response_body(detail).await,
-        serde_json::json!({"message": "package not found"})
+        response_body(search).await[0]["package"]["name"],
+        "Public.Demo"
     );
+
+    let detail = app
+        .oneshot(
+            Request::get(format!("/api/packages/{package_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(detail.status(), StatusCode::OK);
+    let detail = response_body(detail).await;
+    assert_eq!(detail["versions"].as_array().unwrap().len(), 2);
+    assert_eq!(detail["latestVersion"], "2.0.0");
 }
 
 #[tokio::test]

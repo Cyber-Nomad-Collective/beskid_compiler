@@ -18,6 +18,10 @@ use zip::ZipArchive;
 
 const MAX_ENTRIES: usize = 10_000;
 const MAX_UNCOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
+/// Browsing is deliberately capped well below the accepted artifact size.
+/// Consumers render individual files, they never need a whole source tree in
+/// one response.
+pub const MAX_BROWSE_READ_BYTES: u64 = 1024 * 1024;
 const REQUIRED_ENTRIES: [&str; 3] = ["package.json", "Project.proj", "checksums.sha256"];
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -38,6 +42,16 @@ pub enum ArtifactError {
     ChecksumMismatch,
     #[error("artifact I/O failed: {0}")]
     Io(String),
+    #[error("artifact contains an entry that is unsafe to browse: {0}")]
+    UnsafeBrowseEntry(String),
+    #[error("requested artifact path is not browseable")]
+    ForbiddenBrowsePath,
+    #[error("artifact entry is missing")]
+    EntryNotFound,
+    #[error("artifact entry '{path}' exceeds the {limit_bytes} byte read limit")]
+    EntryTooLarge { path: String, limit_bytes: u64 },
+    #[error("structured documentation metadata is invalid: {0}")]
+    InvalidDocumentation(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +68,159 @@ pub struct StoredArtifact {
     pub storage_key: String,
     pub checksum_sha256: String,
     pub size_bytes: u64,
+}
+
+/// A source or documentation entry that is safe to expose in a package UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowseEntry {
+    pub path: String,
+    pub size_bytes: u64,
+}
+
+/// Extracted public documentation metadata.  A package may omit either field.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArtifactDocumentation {
+    pub readme: Option<String>,
+    pub metadata: Option<Value>,
+}
+
+/// Read-only index over a fully validated `.bpk` archive.
+///
+/// Construction repeats package validation using the recorded package identity
+/// and checksum.  This keeps server handlers from accidentally browsing bytes
+/// that merely *claim* to be a validated artifact.
+#[derive(Debug, Clone)]
+pub struct ArtifactBrowser {
+    bytes: Vec<u8>,
+    entries: BTreeMap<String, BrowseEntry>,
+    indices: BTreeMap<String, usize>,
+}
+
+impl ArtifactBrowser {
+    pub fn from_validated_bytes(
+        bytes: &[u8],
+        validated: &ValidatedArtifact,
+    ) -> Result<Self, ArtifactError> {
+        if sha256_hex(bytes) != validated.checksum_sha256 {
+            return Err(ArtifactError::ChecksumMismatch);
+        }
+        validate_package_artifact(bytes, &validated.package_name, &validated.version)?;
+
+        let mut zip = ZipArchive::new(Cursor::new(bytes))
+            .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
+        let mut entries = BTreeMap::new();
+        let mut indices = BTreeMap::new();
+        for index in 0..zip.len() {
+            let entry = zip
+                .by_index(index)
+                .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
+            if entry.is_dir() {
+                continue;
+            }
+            let path = normalize_zip_path(entry.name())?;
+            if !is_browseable_archive_entry(&path) {
+                return Err(ArtifactError::UnsafeBrowseEntry(path));
+            }
+            entries.insert(
+                path.clone(),
+                BrowseEntry {
+                    path: path.clone(),
+                    size_bytes: entry.size(),
+                },
+            );
+            indices.insert(path, index);
+        }
+        Ok(Self {
+            bytes: bytes.to_vec(),
+            entries,
+            indices,
+        })
+    }
+
+    pub fn list_docs(&self) -> Result<Vec<BrowseEntry>, ArtifactError> {
+        let mut entries = self
+            .entries
+            .values()
+            .filter(|entry| is_documentation_path(&entry.path))
+            .cloned()
+            .collect::<Vec<_>>();
+        entries.sort_by(|left, right| {
+            documentation_sort_rank(&left.path)
+                .cmp(&documentation_sort_rank(&right.path))
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        Ok(entries)
+    }
+
+    pub fn read_doc(&self, path: &str) -> Result<String, ArtifactError> {
+        self.read_text(path, is_documentation_path)
+    }
+
+    pub fn list_source_tree(&self) -> Result<Vec<BrowseEntry>, ArtifactError> {
+        Ok(self
+            .entries
+            .values()
+            .filter(|entry| is_source_path(&entry.path))
+            .cloned()
+            .collect())
+    }
+
+    pub fn read_source(&self, path: &str) -> Result<String, ArtifactError> {
+        self.read_text(path, is_source_path)
+    }
+
+    pub fn documentation(&self) -> Result<ArtifactDocumentation, ArtifactError> {
+        let readme = if self.entries.contains_key("README.md") {
+            Some(self.read_doc("README.md")?)
+        } else {
+            None
+        };
+        let metadata = if self.entries.contains_key(".beskid/docs/metadata.json") {
+            let contents = self.read_doc(".beskid/docs/metadata.json")?;
+            let value: Value = serde_json::from_str(&contents).map_err(|error| {
+                ArtifactError::InvalidDocumentation(format!("metadata.json is not JSON: {error}"))
+            })?;
+            if !value.is_object() {
+                return Err(ArtifactError::InvalidDocumentation(
+                    "metadata.json root must be an object".into(),
+                ));
+            }
+            Some(value)
+        } else {
+            None
+        };
+        Ok(ArtifactDocumentation { readme, metadata })
+    }
+
+    fn read_text(
+        &self,
+        requested_path: &str,
+        allowed: fn(&str) -> bool,
+    ) -> Result<String, ArtifactError> {
+        let path = normalize_browse_request(requested_path)?;
+        if !allowed(&path) {
+            return Err(ArtifactError::ForbiddenBrowsePath);
+        }
+        let entry = self
+            .entries
+            .get(&path)
+            .ok_or(ArtifactError::EntryNotFound)?;
+        if entry.size_bytes > MAX_BROWSE_READ_BYTES {
+            return Err(ArtifactError::EntryTooLarge {
+                path,
+                limit_bytes: MAX_BROWSE_READ_BYTES,
+            });
+        }
+        let mut zip = ZipArchive::new(Cursor::new(self.bytes.as_slice()))
+            .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
+        let index = *self
+            .indices
+            .get(&entry.path)
+            .ok_or(ArtifactError::EntryNotFound)?;
+        let bytes = read_entry_limited(&mut zip, index, &entry.path)?;
+        String::from_utf8(bytes)
+            .map_err(|_| ArtifactError::InvalidZip("text entry is not UTF-8".into()))
+    }
 }
 
 pub struct PublishRequest<'a> {
@@ -408,6 +575,27 @@ fn read_entry_bytes(
         .map_err(io_error)?;
     Ok(bytes)
 }
+fn read_entry_limited(
+    zip: &mut ZipArchive<Cursor<&[u8]>>,
+    index: usize,
+    path: &str,
+) -> Result<Vec<u8>, ArtifactError> {
+    let entry = zip
+        .by_index(index)
+        .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
+    let mut bytes = Vec::with_capacity(entry.size().min(MAX_BROWSE_READ_BYTES) as usize);
+    entry
+        .take(MAX_BROWSE_READ_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(io_error)?;
+    if bytes.len() as u64 > MAX_BROWSE_READ_BYTES {
+        return Err(ArtifactError::EntryTooLarge {
+            path: path.to_owned(),
+            limit_bytes: MAX_BROWSE_READ_BYTES,
+        });
+    }
+    Ok(bytes)
+}
 fn normalize_zip_path(path: &str) -> Result<String, ArtifactError> {
     let path = path.replace('\\', "/");
     if path.is_empty()
@@ -421,6 +609,35 @@ fn normalize_zip_path(path: &str) -> Result<String, ArtifactError> {
         )));
     }
     Ok(path)
+}
+fn normalize_browse_request(path: &str) -> Result<String, ArtifactError> {
+    normalize_zip_path(path).map_err(|_| ArtifactError::ForbiddenBrowsePath)
+}
+fn is_documentation_path(path: &str) -> bool {
+    path == "README.md" || path.starts_with("docs/") || path.starts_with(".beskid/docs/")
+}
+fn is_source_path(path: &str) -> bool {
+    path.starts_with("src/")
+}
+fn is_browseable_archive_entry(path: &str) -> bool {
+    if matches!(path, "package.json" | "Project.proj" | "checksums.sha256") {
+        return true;
+    }
+    if is_documentation_path(path) || is_source_path(path) {
+        return !path.split('/').any(|segment| {
+            segment.starts_with('.') && !(segment == ".beskid" && path.starts_with(".beskid/"))
+        });
+    }
+    false
+}
+fn documentation_sort_rank(path: &str) -> u8 {
+    if path == "README.md" {
+        0
+    } else if path.starts_with(".beskid/docs/") {
+        1
+    } else {
+        2
+    }
 }
 fn forbidden_path(path: &str) -> bool {
     path.starts_with(".beskid/") && !path.starts_with(".beskid/docs/")

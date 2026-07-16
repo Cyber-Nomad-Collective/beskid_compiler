@@ -1,6 +1,7 @@
 //! Axum composition for the pckg compatibility server.
 
 use std::{
+    collections::{BTreeMap, BTreeSet},
     env, fmt,
     net::SocketAddr,
     path::{Path as FilePath, PathBuf},
@@ -22,12 +23,15 @@ use beskid_pckg_auth::{
 use beskid_pckg_contract::{ApiErrorResponse, HealthResponse, SessionResponse};
 use beskid_pckg_store::{
     AsyncPackageRepository, InMemoryPackageRepository, NewPackage, Package, PackageRepository,
-    PackageVersion, PublishOutcome, PublishVersion, SqlxPackageRepository, StoreError,
+    PackageVersion, PublishOutcome, PublishVersion, SqlxCommunityRepository, SqlxPackageRepository,
+    StoreError,
 };
 use serde::Deserialize;
+use sqlx::Row;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::services::{ServeDir, ServeFile};
 
+mod artifact_routes;
 mod community_routes;
 mod packages;
 
@@ -59,23 +63,40 @@ struct AppState {
 /// database; a configured database always goes through the SQLx boundary.
 #[derive(Clone)]
 pub(crate) enum PackageBackend {
-    InMemory(Arc<std::sync::Mutex<InMemoryPackageRepository>>),
+    InMemory(Arc<InMemoryPackageBackend>),
     Sqlx(Arc<SqlxPackageRepository>),
+}
+
+/// Server-owned indexes make read enumeration available to the intentionally
+/// minimal in-memory repository. PostgreSQL reads query the canonical tables
+/// directly, so this is only a deterministic test/local adapter.
+#[derive(Default)]
+struct InMemoryPackageBackend {
+    repository: std::sync::Mutex<InMemoryPackageRepository>,
+    package_names: std::sync::Mutex<BTreeSet<String>>,
+    versions_by_package: std::sync::Mutex<BTreeMap<String, BTreeSet<String>>>,
 }
 
 impl PackageBackend {
     fn in_memory() -> Self {
-        Self::InMemory(Arc::new(std::sync::Mutex::new(
-            InMemoryPackageRepository::default(),
-        )))
+        Self::InMemory(Arc::new(InMemoryPackageBackend::default()))
     }
 
     async fn create_package(&self, request: NewPackage) -> Result<Package, StoreError> {
         match self {
-            Self::InMemory(repository) => repository
-                .lock()
-                .expect("package repository mutex is not poisoned")
-                .create_package(request),
+            Self::InMemory(repository) => {
+                let package = repository
+                    .repository
+                    .lock()
+                    .expect("package repository mutex is not poisoned")
+                    .create_package(request)?;
+                repository
+                    .package_names
+                    .lock()
+                    .expect("package catalog mutex is not poisoned")
+                    .insert(package.name.clone());
+                Ok(package)
+            }
             Self::Sqlx(repository) => repository.create_package(request).await,
         }
     }
@@ -83,6 +104,7 @@ impl PackageBackend {
     async fn find_package(&self, name: &str) -> Result<Option<Package>, StoreError> {
         match self {
             Self::InMemory(repository) => Ok(repository
+                .repository
                 .lock()
                 .expect("package repository mutex is not poisoned")
                 .find_package(name)
@@ -91,12 +113,113 @@ impl PackageBackend {
         }
     }
 
+    async fn find_package_by_id(&self, id: &str) -> Result<Option<Package>, StoreError> {
+        match self {
+            Self::InMemory(repository) => {
+                let names = repository
+                    .package_names
+                    .lock()
+                    .expect("package catalog mutex is not poisoned")
+                    .clone();
+                let repository = repository
+                    .repository
+                    .lock()
+                    .expect("package repository mutex is not poisoned");
+                Ok(names.into_iter().find_map(|name| {
+                    repository
+                        .find_package(&name)
+                        .filter(|package| package.id == id)
+                        .cloned()
+                }))
+            }
+            Self::Sqlx(repository) => sqlx_find_package_by_id(repository, id).await,
+        }
+    }
+
+    async fn list_packages(&self, limit: i64, offset: i64) -> Result<Vec<Package>, StoreError> {
+        match self {
+            Self::InMemory(repository) => {
+                let names = repository
+                    .package_names
+                    .lock()
+                    .expect("package catalog mutex is not poisoned")
+                    .clone();
+                let repository = repository
+                    .repository
+                    .lock()
+                    .expect("package repository mutex is not poisoned");
+                let mut packages = names
+                    .into_iter()
+                    .filter_map(|name| repository.find_package(&name).cloned())
+                    .collect::<Vec<_>>();
+                packages.sort_by(|left, right| {
+                    right
+                        .updated_at_unix_seconds
+                        .cmp(&left.updated_at_unix_seconds)
+                        .then_with(|| left.name.cmp(&right.name))
+                });
+                Ok(packages
+                    .into_iter()
+                    .skip(offset as usize)
+                    .take(limit as usize)
+                    .collect())
+            }
+            Self::Sqlx(repository) => sqlx_list_packages(repository, limit, offset).await,
+        }
+    }
+
+    async fn list_versions(&self, package_id: &str) -> Result<Vec<PackageVersion>, StoreError> {
+        match self {
+            Self::InMemory(repository) => {
+                let versions = repository
+                    .versions_by_package
+                    .lock()
+                    .expect("version catalog mutex is not poisoned")
+                    .get(package_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let repository = repository
+                    .repository
+                    .lock()
+                    .expect("package repository mutex is not poisoned");
+                let mut versions = versions
+                    .into_iter()
+                    .filter_map(|version| repository.find_version(package_id, &version).cloned())
+                    .collect::<Vec<_>>();
+                versions.sort_by(|left, right| {
+                    right
+                        .published_at_unix_seconds
+                        .cmp(&left.published_at_unix_seconds)
+                        .then_with(|| right.version.cmp(&left.version))
+                });
+                Ok(versions)
+            }
+            Self::Sqlx(repository) => sqlx_list_versions(repository, package_id).await,
+        }
+    }
+
     async fn publish_version(&self, request: PublishVersion) -> Result<PublishOutcome, StoreError> {
         match self {
-            Self::InMemory(repository) => repository
-                .lock()
-                .expect("package repository mutex is not poisoned")
-                .publish_version(request),
+            Self::InMemory(repository) => {
+                let outcome = repository
+                    .repository
+                    .lock()
+                    .expect("package repository mutex is not poisoned")
+                    .publish_version(request)?;
+                let version = match &outcome {
+                    PublishOutcome::Created(version) | PublishOutcome::AlreadyExists(version) => {
+                        version
+                    }
+                };
+                repository
+                    .versions_by_package
+                    .lock()
+                    .expect("version catalog mutex is not poisoned")
+                    .entry(version.package_id.clone())
+                    .or_default()
+                    .insert(version.version.clone());
+                Ok(outcome)
+            }
             Self::Sqlx(repository) => repository.publish_version(request).await,
         }
     }
@@ -108,6 +231,7 @@ impl PackageBackend {
     ) -> Result<Option<PackageVersion>, StoreError> {
         match self {
             Self::InMemory(repository) => Ok(repository
+                .repository
                 .lock()
                 .expect("package repository mutex is not poisoned")
                 .find_version(package_id, version)
@@ -125,6 +249,7 @@ impl PackageBackend {
     ) -> Result<PackageVersion, StoreError> {
         match self {
             Self::InMemory(repository) => repository
+                .repository
                 .lock()
                 .expect("package repository mutex is not poisoned")
                 .set_yanked(package_id, version, yanked, now_unix_seconds),
@@ -135,6 +260,116 @@ impl PackageBackend {
             }
         }
     }
+}
+
+fn row_package(row: sqlx::postgres::PgRow) -> Result<Package, StoreError> {
+    Ok(Package {
+        id: row
+            .try_get("id")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        name: row
+            .try_get("name")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        owner_subject: row
+            .try_get("owner_subject")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        is_public: row
+            .try_get("is_public")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        created_at_unix_seconds: row
+            .try_get("created_at")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        updated_at_unix_seconds: row
+            .try_get("updated_at")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+    })
+}
+
+fn row_version(row: sqlx::postgres::PgRow) -> Result<PackageVersion, StoreError> {
+    let size_bytes: i64 = row
+        .try_get("size_bytes")
+        .map_err(|error| StoreError::Database(error.to_string()))?;
+    Ok(PackageVersion {
+        id: row
+            .try_get("id")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        package_id: row
+            .try_get("package_id")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        version: row
+            .try_get("version")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        checksum_sha256: row
+            .try_get("checksum_sha256")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        storage_key: row
+            .try_get("storage_key")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        size_bytes: size_bytes
+            .try_into()
+            .map_err(|_| StoreError::InvalidIdentifier)?,
+        is_yanked: row
+            .try_get("is_yanked")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        published_at_unix_seconds: row
+            .try_get("published_at")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+        yanked_at_unix_seconds: row
+            .try_get("yanked_at")
+            .map_err(|error| StoreError::Database(error.to_string()))?,
+    })
+}
+
+const PACKAGE_SELECT: &str = "SELECT id::text AS id, name, owner_subject, is_public, EXTRACT(EPOCH FROM created_at_utc)::bigint AS created_at, EXTRACT(EPOCH FROM updated_at_utc)::bigint AS updated_at FROM pckg_packages";
+const VERSION_SELECT: &str = "SELECT id::text AS id, package_id::text AS package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, EXTRACT(EPOCH FROM published_at_utc)::bigint AS published_at, EXTRACT(EPOCH FROM yanked_at_utc)::bigint AS yanked_at FROM pckg_package_versions";
+
+async fn sqlx_find_package_by_id(
+    repository: &SqlxPackageRepository,
+    id: &str,
+) -> Result<Option<Package>, StoreError> {
+    let query = format!("{PACKAGE_SELECT} WHERE id::text = $1");
+    sqlx::query(&query)
+        .bind(id)
+        .fetch_optional(repository.pool())
+        .await
+        .map_err(|error| StoreError::Database(error.to_string()))?
+        .map(row_package)
+        .transpose()
+}
+
+async fn sqlx_list_packages(
+    repository: &SqlxPackageRepository,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Package>, StoreError> {
+    let query =
+        format!("{PACKAGE_SELECT} ORDER BY updated_at_utc DESC, name ASC LIMIT $1 OFFSET $2");
+    sqlx::query(&query)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(repository.pool())
+        .await
+        .map_err(|error| StoreError::Database(error.to_string()))?
+        .into_iter()
+        .map(row_package)
+        .collect()
+}
+
+async fn sqlx_list_versions(
+    repository: &SqlxPackageRepository,
+    package_id: &str,
+) -> Result<Vec<PackageVersion>, StoreError> {
+    let query = format!(
+        "{VERSION_SELECT} WHERE package_id::text = $1 ORDER BY published_at_utc DESC, version DESC"
+    );
+    sqlx::query(&query)
+        .bind(package_id)
+        .fetch_all(repository.pool())
+        .await
+        .map_err(|error| StoreError::Database(error.to_string()))?
+        .into_iter()
+        .map(row_version)
+        .collect()
 }
 
 #[derive(Debug)]
@@ -244,7 +479,7 @@ pub fn router(config: PckgServerConfig) -> Router {
         config.database_url.is_none(),
         "PCKG_DATABASE_URL is configured; use router_from_config or serve"
     );
-    router_with_backend(config, PackageBackend::in_memory())
+    router_with_backend(config, PackageBackend::in_memory(), None)
 }
 
 /// Connects the configured PostgreSQL repository, applies only pckg-owned
@@ -253,7 +488,11 @@ pub fn router(config: PckgServerConfig) -> Router {
 /// audited GitHub-subject mapping.
 pub async fn router_from_config(config: PckgServerConfig) -> Result<Router, ServerStartupError> {
     let Some(database_url) = config.database_url.clone() else {
-        return Ok(router_with_backend(config, PackageBackend::in_memory()));
+        return Ok(router_with_backend(
+            config,
+            PackageBackend::in_memory(),
+            None,
+        ));
     };
     let pool = PgPoolOptions::new()
         .max_connections(10)
@@ -262,17 +501,26 @@ pub async fn router_from_config(config: PckgServerConfig) -> Result<Router, Serv
         .map_err(|error| {
             ServerStartupError(format!("cannot connect to PCKG_DATABASE_URL: {error}"))
         })?;
-    let repository = SqlxPackageRepository::new(pool);
+    let repository = SqlxPackageRepository::new(pool.clone());
     repository.migrate().await.map_err(|error| {
         ServerStartupError(format!("pckg registry migration failed: {error:?}"))
+    })?;
+    let community_repository = Arc::new(SqlxCommunityRepository::new(pool));
+    community_repository.migrate().await.map_err(|error| {
+        ServerStartupError(format!("pckg community migration failed: {error:?}"))
     })?;
     Ok(router_with_backend(
         config,
         PackageBackend::Sqlx(Arc::new(repository)),
+        Some(community_repository),
     ))
 }
 
-fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Router {
+fn router_with_backend(
+    config: PckgServerConfig,
+    packages: PackageBackend,
+    community_repository: Option<Arc<SqlxCommunityRepository>>,
+) -> Router {
     let web_root = config.web_root.clone();
     let index = web_root.join("index.html");
     let artifacts = LocalFileArtifactStore::new(&config.artifact_root)
@@ -280,8 +528,14 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
     let community_state = config
         .auth
         .as_ref()
-        .map(|auth| {
-            community_routes::CommunityState::with_session_secret(auth.session_secret.clone())
+        .map(|auth| match &community_repository {
+            Some(repository) => community_routes::CommunityState::with_sqlx_session_secret(
+                auth.session_secret.clone(),
+                repository.clone(),
+            ),
+            None => {
+                community_routes::CommunityState::with_session_secret(auth.session_secret.clone())
+            }
         })
         .unwrap_or_default();
     Router::new()
@@ -292,6 +546,7 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
             "/api/packages",
             get(packages::list_packages).post(packages::upsert_package),
         )
+        .route("/api/search", get(packages::search_packages))
         .route("/api/packages/{idOrName}", get(packages::package_detail))
         .route(
             "/api/packages/{name}/versions",
@@ -312,6 +567,30 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
         .route(
             "/api/packages/{name}/versions/{version}/download",
             get(packages::download_artifact),
+        )
+        .route(
+            "/api/packages/{name}/versions/{version}/readme",
+            get(artifact_routes::readme),
+        )
+        .route(
+            "/api/packages/{name}/versions/{version}/docs",
+            get(artifact_routes::list_docs),
+        )
+        .route(
+            "/api/packages/{name}/versions/{version}/docs/file",
+            get(artifact_routes::read_doc),
+        )
+        .route(
+            "/api/packages/{name}/versions/{version}/docs/structured",
+            get(artifact_routes::structured_docs),
+        )
+        .route(
+            "/api/packages/{name}/versions/{version}/source/tree",
+            get(artifact_routes::source_tree),
+        )
+        .route(
+            "/api/packages/{name}/versions/{version}/source/file",
+            get(artifact_routes::read_source),
         )
         .route("/api/auth/hub-finish", get(auth_hub_finish))
         .route("/api/auth/session", get(read_session))
