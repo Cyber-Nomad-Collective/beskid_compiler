@@ -20,6 +20,7 @@ type ModuleIndexCache = HashMap<String, Arc<ModuleIndex>>;
 type SyntaxUnitRegistry = HashMap<SourceUnitId, SyntaxUnitInput>;
 
 /// Assembly-scoped import/module authority for generation-safe cross-unit syntax facts.
+#[derive(Default)]
 pub struct SyntaxDependencyRegistry {
     pub(crate) imports: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<SyntaxImport>>,
 }
@@ -29,14 +30,6 @@ pub struct SyntaxDependencyRegistry {
 pub struct SyntaxImport {
     pub(crate) path: Vec<String>,
     pub(crate) target: SourceUnitId,
-}
-
-impl Default for SyntaxDependencyRegistry {
-    fn default() -> Self {
-        Self {
-            imports: HashMap::new(),
-        }
-    }
 }
 
 /// Cached heavy artifacts keyed by content fingerprint (invalidated via Salsa inputs).

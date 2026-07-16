@@ -495,7 +495,7 @@ fn unique_function_in_unit(
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
         .filter(|candidate| {
             index
-                .node_at(&program, *candidate)
+                .node_at(program, *candidate)
                 .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
                 .is_some_and(|function| function.name.node.name == name)
         })
@@ -1016,20 +1016,19 @@ fn call_lowering_for_node(
                 resolve_item_declaration(db, program, index, key, path)
             {
                 Ok(CallLowering::Direct(declaration))
-            } else if imported_call_receiver_exists(db, key, path) {
-                Ok(CallLowering::Dynamic)
-            } else if path
-                .segments
-                .iter()
-                .all(|segment| segment.node.type_args.is_empty())
-                && beskid_analysis::builtins::builtin_for_path(
-                    &path
-                        .segments
-                        .iter()
-                        .map(|segment| segment.node.name.node.name.clone())
-                        .collect::<Vec<_>>(),
-                )
-                .is_some()
+            } else if imported_call_receiver_exists(db, key, path)
+                || (path
+                    .segments
+                    .iter()
+                    .all(|segment| segment.node.type_args.is_empty())
+                    && beskid_analysis::builtins::builtin_for_path(
+                        &path
+                            .segments
+                            .iter()
+                            .map(|segment| segment.node.name.node.name.clone())
+                            .collect::<Vec<_>>(),
+                    )
+                    .is_some())
             {
                 Ok(CallLowering::Dynamic)
             } else {
@@ -2599,8 +2598,8 @@ pub fn completion_candidates(
     let prefix = &source[context.replacement_start..context.replacement_end];
     let before = &source[..context.replacement_start];
     let mut candidates = Vec::new();
-    if before.ends_with('.') {
-        let alias = before[..before.len() - 1]
+    if let Some(before_dot) = before.strip_suffix('.') {
+        let alias = before_dot
             .rsplit(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
             .next()
             .unwrap_or_default();
