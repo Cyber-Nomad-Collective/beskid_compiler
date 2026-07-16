@@ -369,15 +369,31 @@ mod tests {
         target: &str,
     ) -> RuntimeKitProfileArtifacts {
         let suffix = profile.as_str();
-        let static_library = inputs.0.join(format!("{suffix}.a"));
-        let shared_library = inputs.0.join(format!("{suffix}.shared"));
-        fs::write(&static_library, format!("static-{suffix}")).unwrap();
-        fs::write(&shared_library, format!("shared-{suffix}")).unwrap();
-        let provenance_symbol_list = inputs.0.join(format!("{suffix}.symbols"));
         let target = TargetMetadata::supported()
             .into_iter()
             .find(|candidate| candidate.triple.as_str() == target)
             .expect("supported matrix target");
+        let static_extension = if target.object_format.as_str() == "coff" {
+            "lib"
+        } else {
+            "a"
+        };
+        let shared_extension = match target.object_format.as_str() {
+            "elf" => "so",
+            "macho" => "dylib",
+            "coff" => "dll",
+            _ => unreachable!("supported matrix target object format"),
+        };
+        let static_library = inputs.0.join(format!("{suffix}.{static_extension}"));
+        let shared_library = inputs.0.join(format!("{suffix}.{shared_extension}"));
+        fs::write(&static_library, format!("static-{suffix}")).unwrap();
+        fs::write(&shared_library, format!("shared-{suffix}")).unwrap();
+        let shared_import_library = (target.object_format.as_str() == "coff").then(|| {
+            let import_library = inputs.0.join(format!("{suffix}.import.lib"));
+            fs::write(&import_library, format!("import-{suffix}")).unwrap();
+            import_library
+        });
+        let provenance_symbol_list = inputs.0.join(format!("{suffix}.symbols"));
         let audit = RuntimeProvenanceAudit::canonical(target).expect("canonical audit");
         let fixture = audit.fixture_symbol_list().expect("fixture symbols");
         let mut symbols = format!("target={}\n", fixture.target);
@@ -392,7 +408,7 @@ mod tests {
             profile,
             static_library,
             shared_library,
-            shared_import_library: None,
+            shared_import_library,
             provenance_symbol_list,
         }
     }
@@ -449,6 +465,34 @@ mod tests {
         assert!(built
             .iter()
             .all(|kit| kit.static_library.ends_with("static/libbeskid_runtime.a")));
+    }
+
+    #[test]
+    fn validates_windows_x86_64_debug_and_release_matrix_layout_without_host_toolchains() {
+        let prefix = TempDir::new("windows-prefix");
+        let inputs = TempDir::new("windows-inputs");
+        let target = "x86_64-pc-windows-msvc";
+        let built = build_matrix(RuntimeKitMatrixBuildOptions {
+            prefix: prefix.0.clone(),
+            target: target.into(),
+            profiles: vec![
+                profile_artifacts(&inputs, RuntimeKitProfile::Debug, target),
+                profile_artifacts(&inputs, RuntimeKitProfile::Release, target),
+            ],
+        })
+        .expect("publish deterministic Windows runtime-kit matrix");
+
+        assert_eq!(built.len(), 2);
+        for profile in ["debug", "release"] {
+            let root = prefix
+                .0
+                .join("lib/beskid-runtime/abi-5")
+                .join(target)
+                .join(profile);
+            assert!(root.join("abi.json").is_file());
+            assert!(root.join("static/beskid_runtime.lib").is_file());
+            assert!(root.join("shared/beskid_runtime.dll").is_file());
+        }
     }
 
     #[test]
