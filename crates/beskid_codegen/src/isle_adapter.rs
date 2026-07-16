@@ -5,14 +5,14 @@ use std::collections::HashMap;
 use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
-    EmissionServices, FieldLayout, ItemStatementEmission, LiteralKind, NodeFacts, NodeKind,
+    EmissionServices, EnumLayout, EnumVariantLayout, FieldLayout, ItemStatementEmission, LiteralKind, NodeFacts, NodeKind,
     OperatorFact, ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{
     AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
     aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_arguments,
     call_lowering, cast_intents, child_nodes, item_abi_signature, item_body,
-    literal_fact, local_slot, node_kind, node_type, operator_fact, resolved_local,
+    enum_constructor, enum_layout, literal_fact, local_slot, node_kind, node_type, operator_fact, resolved_local,
     runtime_intrinsic_name, test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
@@ -267,6 +267,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.node_kind(key) == Some(NodeKind::ArrayLiteralExpression) {
             return self.isa.map(|isa| isa.pointer_type());
         }
+        if self.node_kind(key) == Some(NodeKind::EnumLiteralExpression)
+            && self.query(enum_constructor(self.db, key)).is_some()
+        {
+            return self.isa.map(|isa| isa.pointer_type());
+        }
         let semantic = self.scalar_semantic_type(key).or_else(|| {
             let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
                 return None;
@@ -299,6 +304,19 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn struct_layout(&self, key: AstNodeKey) -> Option<StructLayout> {
         self.struct_layout_for_literal(key)
     }
+
+    fn enum_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
+        self.enum_layout_for_constructor(key)
+    }
+
+    fn enum_variant_index(&self, key: AstNodeKey) -> Option<u32> {
+        self.query(enum_constructor(self.db, key))
+            .map(|constructor| constructor.variant_index)
+    }
+
+    fn enum_payload(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        self.query(enum_constructor(self.db, key))?.payload
+    }
 }
 
 impl SyntaxNodeFacts<'_> {
@@ -324,6 +342,44 @@ impl SyntaxNodeFacts<'_> {
         // layout empty while reserving one byte for the stack-backed literal representation.
         let size = align_to(size, alignment)?.max(1);
         Some(StructLayout::new(size, alignment.ilog2() as u8, fields))
+    }
+
+    fn enum_layout_for_constructor(&self, key: AstNodeKey) -> Option<EnumLayout> {
+        let isa = self.isa?;
+        let constructor = self.query(enum_constructor(self.db, key))?;
+        let source = self.query(enum_layout(self.db, constructor.declaration))?;
+        let tag_type = types::I32;
+        let tag = FieldLayout::new(tag_type, 0);
+        let mut alignment = tag_type.bytes();
+        let mut payload_offset = tag_type.bytes();
+        let mut variants = Vec::with_capacity(source.variants.len());
+        let mut payloads = Vec::with_capacity(source.variants.len());
+        for variant in source.variants.iter() {
+            let payload = match variant.fields.as_ref() {
+                [] => None,
+                [(_, AggregateFieldShape::Scalar(semantic))] => {
+                    Some(map_signature_type(isa, *semantic)?)
+                }
+                [(_, AggregateFieldShape::Nominal(_))] => Some(isa.pointer_type()),
+                _ => return None,
+            };
+            if let Some(payload) = payload {
+                alignment = alignment.max(payload.bytes());
+                payload_offset = payload_offset.max(align_to(tag_type.bytes(), payload.bytes())?);
+            }
+            payloads.push(payload);
+        }
+        let size = payloads.iter().flatten().fold(tag_type.bytes(), |size, payload| {
+            size.max(payload_offset.checked_add(payload.bytes()).unwrap_or(u32::MAX))
+        });
+        let size = align_to(size, alignment)?.max(1);
+        for (index, payload) in payloads.into_iter().enumerate() {
+            variants.push(EnumVariantLayout::new(
+                u64::try_from(index).ok()?,
+                payload.map(|value_type| FieldLayout::new(value_type, payload_offset)),
+            ));
+        }
+        Some(EnumLayout::new(size, alignment.ilog2() as u8, tag, variants))
     }
 
     fn array_elements_for_literal(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {

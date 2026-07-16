@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add generation-safe enum-constructor facts and syntax-only ISLE lowering for nullary and
+  single-payload variants.
 - Add canonical Beskid allocation-header ownership and LIFO root-frame primitives as the
   bounded input to a future non-moving collector.
 - Add a manifest-derived ABI-v5 runtime provenance audit and portable explicit-symbol-list verifier.

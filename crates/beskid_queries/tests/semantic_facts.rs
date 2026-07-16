@@ -14,7 +14,7 @@ use beskid_queries::{
     ItemSignature, LocalSlot, OperatorFact, ProjectSession, SemanticError, SemanticTypeId,
     SourceUnitId, SyntaxGenerationId, aggregate_layout, build_typed_program, call_arguments,
     call_lowering, cast_intents, child_nodes, closure_environment, completion_candidates,
-    control_flow, direct_callees, enum_layout, generic_call_instantiation, item_abi_signature,
+    control_flow, direct_callees, enum_constructor, enum_layout, generic_call_instantiation, item_abi_signature,
     item_body, item_signature,
     literal_fact, local_slot, node_kind, node_span, node_type, operator_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, spawn_target, test_item,
@@ -149,6 +149,45 @@ fn enum_layout_keeps_channel_capacity_variants_in_source_order() {
             ]),
         }
     );
+}
+
+#[test]
+fn enum_constructor_selects_the_source_variant_and_single_payload() {
+    let source = "enum Choice { None(), Some(i32 value) } i32 Main() { Choice choice = Choice::Some(7); return 0; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let constructor = key(
+        unit,
+        generation,
+        &index,
+        NodeKind::EnumConstructorExpression,
+        0,
+    );
+    let declaration = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+    let payload = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+
+    assert_eq!(
+        enum_constructor(&db, constructor).expect("enum constructor query"),
+        Some(beskid_queries::EnumConstructorFact {
+            declaration,
+            variant_index: 1,
+            payload: Some(payload),
+        })
+    );
+}
+
+#[test]
+fn enum_constructor_rejects_multiple_payloads_until_isle_has_a_multi_field_shape() {
+    let source = "enum Pair { Value(i32 left, i32 right) } i32 Main() { Pair pair = Pair::Value(1, 2); return 0; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let constructor = key(
+        unit,
+        generation,
+        &index,
+        NodeKind::EnumConstructorExpression,
+        0,
+    );
+
+    assert_unavailable(enum_constructor(&db, constructor));
 }
 
 fn key(

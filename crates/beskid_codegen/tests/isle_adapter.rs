@@ -18,7 +18,7 @@ use beskid_codegen::{
     syntax_item_signature,
 };
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
+    AstNodeId, AstNodeKey, BeskidDatabase, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
     build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes,
     item_name, literal_fact, node_kind, test_statement_nodes,
 };
@@ -126,6 +126,61 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
     let function = emit_isle_expression(&input, isa.as_ref(), literal, isa.pointer_type())
         .expect("aggregate literal lowers through syntax facts");
     assert!(function.display().to_string().contains("stack_store"));
+}
+
+#[test]
+fn parsed_enum_constructor_uses_source_layout_without_hir() {
+    let mut db = BeskidDatabase::default();
+    let directory = tempfile::tempdir().expect("project").keep();
+    let source_path = directory.join("Main.bd");
+    let source = "enum Choice { None(), Some(i32 value) } i32 Main() { Choice choice = Choice::Some(7); return 0; }";
+    std::fs::write(&source_path, source).expect("source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
+        .expect("parse source");
+    let entry = SourceUnitId::new(&db, source_path.clone());
+    let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
+    let generation = SyntaxGenerationId(1);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root: directory }, dependencies: Vec::new() },
+        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
+        0, AssemblyDiscovery::ImportClosure, Arc::new(ModuleIndex::empty()), false,
+    ));
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
+    let constructor = find_node(&db, root, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+        .expect("enum constructor");
+    let target = TargetMetadata::supported().into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu").expect("linux target");
+    let input = CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target)).expect("input");
+    let isa = isa::lookup_by_name("x86_64").expect("host ISA")
+        .finish(settings::Flags::new(settings::builder())).expect("host flags");
+
+    let function = emit_isle_expression(&input, isa.as_ref(), constructor, isa.pointer_type())
+        .expect("enum constructor lowers through syntax facts");
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("stack_store"));
+    assert!(clif.contains("iconst.i32 1"));
+}
+
+#[test]
+fn parsed_nullary_enum_constructor_uses_source_layout_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Choice { None(), Some(i32 value) } i32 Main() { Choice choice = Choice::None(); return 0; }",
+    );
+    let constructor = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
+    )
+    .expect("enum constructor");
+
+    let function = emit_isle_expression(&input, isa.as_ref(), constructor, isa.pointer_type())
+        .expect("nullary enum constructor lowers through syntax facts");
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("stack_store"));
+    assert!(clif.contains("iconst.i32 0"));
 }
 
 
@@ -779,7 +834,7 @@ fn find_integer_literal(db: &BeskidDatabase, key: AstNodeKey) -> Option<AstNodeK
 }
 
 fn find_node(
-    db: &BeskidDatabase,
+    db: &dyn Db,
     key: AstNodeKey,
     expected: beskid_queries::IndexedNodeKind,
 ) -> Option<AstNodeKey> {

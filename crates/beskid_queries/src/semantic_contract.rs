@@ -255,6 +255,18 @@ pub struct EnumVariantLayoutFact {
     pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
 }
 
+/// Exact enum declaration, source-order variant, and payload selected by a constructor.
+///
+/// The current generated ISLE enum emitter represents at most one payload value per variant.
+/// Constructors with more than one source field deliberately remain unavailable instead of
+/// silently dropping data while that emitter is extended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EnumConstructorFact {
+    pub declaration: AstNodeKey,
+    pub variant_index: u32,
+    pub payload: Option<AstNodeKey>,
+}
+
 /// Exact linker symbol declared by a syntax `[Export(Symbol:"...")]` attribute.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportSymbol(pub Arc<str>);
@@ -1733,6 +1745,66 @@ fn enum_layout_tracked(
     .transpose()
 }
 
+#[salsa::tracked]
+fn enum_constructor_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<EnumConstructorFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        let constructor = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
+        let declaration = resolve_type_declaration(db, key, &constructor.path.node.type_path.node)
+            .ok_or_else(|| SemanticError::unavailable("enum_constructor"));
+        let declaration = match declaration {
+            Ok(declaration) => declaration,
+            Err(error) => return Some(Err(error)),
+        };
+        let layout = match enum_layout(db, declaration) {
+            Ok(Some(layout)) => layout,
+            Ok(None) | Err(_) => return Some(Err(SemanticError::unavailable("enum_constructor"))),
+        };
+        let variant_name = constructor.path.node.variant.node.name.as_str();
+        let Some(variant_index) = layout
+            .variants
+            .iter()
+            .position(|variant| variant.name.as_ref() == variant_name)
+        else {
+            return Some(Err(SemanticError::unavailable("enum_constructor")));
+        };
+        let variant = &layout.variants[variant_index];
+        if variant.fields.len() != constructor.args.len() || variant.fields.len() > 1 {
+            return Some(Err(SemanticError::unavailable("enum_constructor")));
+        }
+        let payload = constructor
+            .args
+            .first()
+            .map(|argument| {
+                index
+                    .direct_child_id(
+                        program,
+                        key.node,
+                        beskid_analysis::syntax_query::DynNodeRef::from(argument),
+                    )
+                    .map(|node| AstNodeKey {
+                        node: normalized_expression_node(index, node),
+                        ..key
+                    })
+                    .ok_or_else(|| SemanticError::unavailable("enum_constructor"))
+            })
+            .transpose();
+        let variant_index = match u32::try_from(variant_index) {
+            Ok(variant_index) => variant_index,
+            Err(_) => return Some(Err(SemanticError::unavailable("enum_constructor"))),
+        };
+        Some(payload.map(|payload| EnumConstructorFact {
+            declaration,
+            variant_index,
+            payload,
+        }))
+    })?
+    .transpose()
+}
+
 fn aggregate_field_layout(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -2931,6 +3003,17 @@ pub fn aggregate_literal_declaration(
 /// Return target-neutral source variants and field shapes for a nominal `enum` definition.
 pub fn enum_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumLayoutFact> {
     with_registered_syntax(db, key, enum_layout_tracked)
+}
+
+/// Return the exact source enum constructor selection for the current syntax generation.
+///
+/// Constructors with multiple payload fields remain unavailable until the generated ISLE enum
+/// emitter has an equally explicit multi-field payload representation.
+pub fn enum_constructor(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<EnumConstructorFact> {
+    with_registered_syntax(db, key, enum_constructor_tracked)
 }
 
 /// Return the scalar ABI representation for one current syntax node.
