@@ -122,7 +122,16 @@ pub fn resolve_input_with_policy(
                 compile_plan = Some(synthetic_compile_plan_for_source(input_path));
             }
 
-    let source_path = if let Some(plan) = compile_plan.as_ref() {
+    let source_path = if let Some(input_path) = input
+        && !input_is_manifest
+        && input_path.is_file()
+    {
+        materialized_input_path(
+            input_path,
+            compile_plan.as_ref(),
+            prepared_workspace.as_ref(),
+        )
+    } else if let Some(plan) = compile_plan.as_ref() {
         let root = prepared_workspace
             .as_ref()
             .map(|workspace| workspace.materialized_source_root.as_path())
@@ -162,6 +171,30 @@ pub fn resolve_input_with_policy(
         workspace_summary,
         assembly: None,
     })
+}
+
+/// Preserve an explicit source-file selection when project resolution has a default manifest
+/// entry. If a workspace materialized its sources, map that selected file into the materialized
+/// root so downstream assembly and session fingerprints identify the same physical revision.
+fn materialized_input_path(
+    input_path: &std::path::Path,
+    plan: Option<&CompilePlan>,
+    workspace: Option<&PreparedProjectWorkspace>,
+) -> PathBuf {
+    let Some((plan, workspace)) = plan.zip(workspace) else {
+        return input_path.to_path_buf();
+    };
+    let canonical_input = input_path
+        .canonicalize()
+        .unwrap_or_else(|_| input_path.to_path_buf());
+    let canonical_source_root = plan
+        .source_root
+        .canonicalize()
+        .unwrap_or_else(|_| plan.source_root.clone());
+    canonical_input
+        .strip_prefix(canonical_source_root)
+        .map(|relative| workspace.materialized_source_root.join(relative))
+        .unwrap_or(canonical_input)
 }
 
 #[cfg(test)]

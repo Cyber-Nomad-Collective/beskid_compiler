@@ -225,6 +225,45 @@ pub fn shared_corelib_mvp_assembly() -> Arc<ProgramAssembly> {
         .clone()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn corelib_entry_assemblies_remain_isolated_by_explicit_source_path() {
+        let root = corelib_tests_project_root();
+        with_project_test_env(&root, || {
+            let channel = resolve_corelib_tests_entry_with_assembly(
+                "concurrency/ChannelApiTests.bd",
+            );
+            let messages = resolve_corelib_tests_entry_with_assembly(
+                "console/ConsoleMessageChannelTests.bd",
+            );
+
+            assert!(channel
+                .source_path
+                .ends_with("concurrency/ChannelApiTests.bd"));
+            assert!(messages
+                .source_path
+                .ends_with("console/ConsoleMessageChannelTests.bd"));
+            assert!(channel
+                .assembly
+                .as_ref()
+                .expect("channel assembly")
+                .entry_unit()
+                .path
+                .ends_with("concurrency/ChannelApiTests.bd"));
+            assert!(messages
+                .assembly
+                .as_ref()
+                .expect("messages assembly")
+                .entry_unit()
+                .path
+                .ends_with("console/ConsoleMessageChannelTests.bd"));
+        });
+    }
+}
+
 /// Like [`with_project_test_env`], but returns a value. Caller must already hold the cwd lock
 /// (e.g. via `with_project_test_env`); this helper must not re-enter `with_cwd_at_workspace_root`
 /// or tests deadlock on `PROJECT_TEST_CWD_LOCK`.
