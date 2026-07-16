@@ -229,6 +229,23 @@ pub struct ItemSignature {
     pub result: SemanticTypeId,
 }
 
+/// Target-neutral storage shape for one source aggregate field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AggregateFieldShape {
+    Scalar(SemanticTypeId),
+    Nominal(AstNodeKey),
+}
+
+/// Source-ordered, named fields of one nominal `type` definition.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AggregateLayoutFact {
+    pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
+}
+
+/// Exact linker symbol declared by a syntax `[Export(Symbol:"...")]` attribute.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportSymbol(pub Arc<str>);
+
 /// Generation-safe metadata attached to one syntax `test` item.
 ///
 /// The CLI uses this instead of inspecting the legacy assembled program, so discovery and
@@ -1556,6 +1573,81 @@ fn abi_type_from_syntax(
     }
 }
 
+#[salsa::tracked]
+fn aggregate_layout_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<AggregateLayoutFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        let definition = node.of::<beskid_analysis::syntax::TypeDefinition>()?;
+        Some(
+            definition
+                .fields
+                .iter()
+                .map(|field| {
+                    if field.node.kind != beskid_analysis::syntax::FieldKind::Value {
+                        return Err(SemanticError::unavailable("aggregate_layout"));
+                    }
+                    let shape = match &field.node.ty.node {
+                        beskid_analysis::syntax::Type::Primitive(_) => AggregateFieldShape::Scalar(
+                            semantic_type_from_syntax(&field.node.ty.node)?,
+                        ),
+                        beskid_analysis::syntax::Type::Complex(path) => {
+                            AggregateFieldShape::Nominal(
+                                resolve_nominal_layout_declaration(
+                                    db, program, index, key, &path.node,
+                                )
+                                .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?,
+                            )
+                        }
+                        _ => return Err(SemanticError::unavailable("aggregate_layout")),
+                    };
+                    Ok((Arc::from(field.node.name.node.name.as_str()), shape))
+                })
+                .collect::<Result<Vec<_>, SemanticError>>()
+                .map(|fields| AggregateLayoutFact {
+                    fields: fields.into(),
+                }),
+        )
+    })?
+    .transpose()
+}
+
+fn resolve_nominal_layout_declaration(
+    _db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
+    let [segment] = path.segments.as_slice() else {
+        return None;
+    };
+    let name = segment.node.name.node.name.as_str();
+    let candidates = index
+        .metadata()
+        .iter()
+        .filter_map(|metadata| {
+            let node = index.node_at(program, metadata.id)?;
+            let matches = node
+                .of::<beskid_analysis::syntax::TypeDefinition>()
+                .is_some_and(|definition| definition.name.node.name == name)
+                || node
+                    .of::<beskid_analysis::syntax::EnumDefinition>()
+                    .is_some_and(|definition| definition.name.node.name == name);
+            matches.then_some(AstNodeKey {
+                node: metadata.id,
+                ..key
+            })
+        })
+        .collect::<Vec<_>>();
+    let [declaration] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*declaration)
+}
+
 fn transparent_aggregate_abi_type(
     db: &dyn Db,
     key: AstNodeKey,
@@ -2124,6 +2216,35 @@ fn item_name_tracked(
 }
 
 #[salsa::tracked]
+fn item_export_symbol_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ExportSymbol> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        let definition = node.of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        let export = definition
+            .attributes
+            .iter()
+            .find(|attribute| attribute.node.name.node.name == "Export")?;
+        let raw = export.node.arguments.iter().find_map(|argument| {
+            if argument.node.name.node.name != "Symbol" {
+                return None;
+            }
+            let beskid_analysis::syntax::Expression::Literal(literal) = &argument.node.value.node
+            else {
+                return None;
+            };
+            let beskid_analysis::syntax::Literal::String(value) = &literal.node.literal.node else {
+                return None;
+            };
+            value.strip_prefix('"')?.strip_suffix('"')
+        })?;
+        Some(ExportSymbol(Arc::from(raw)))
+    })
+}
+
+#[salsa::tracked]
 fn test_item_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -2563,6 +2684,11 @@ pub fn item_abi_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<I
     with_registered_syntax(db, key, item_abi_signature_tracked)
 }
 
+/// Return target-neutral source field shapes for a nominal `type` definition.
+pub fn aggregate_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AggregateLayoutFact> {
+    with_registered_syntax(db, key, aggregate_layout_tracked)
+}
+
 /// Return the scalar ABI representation for one current syntax node.
 pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, abi_type_tracked)
@@ -2640,6 +2766,11 @@ pub fn test_statement_nodes(
 /// Return the exact declared name for a current syntax function or test item.
 pub fn item_name(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
     with_registered_syntax(db, key, item_name_tracked)
+}
+
+/// Return the explicitly declared linker symbol for a current syntax function.
+pub fn item_export_symbol(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ExportSymbol> {
+    with_registered_syntax(db, key, item_export_symbol_tracked)
 }
 
 /// Return CLI-facing metadata for one current syntax `test` item.

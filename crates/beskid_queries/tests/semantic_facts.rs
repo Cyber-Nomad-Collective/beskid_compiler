@@ -9,12 +9,13 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSnapshot};
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, ClosureCapture, CompletionContext, ItemSignature, LocalSlot,
-    OperatorFact, ProjectSession, SemanticError, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
-    build_typed_program, call_arguments, call_lowering, cast_intents, child_nodes,
-    closure_environment, completion_candidates, control_flow, direct_callees, item_body,
-    generic_call_instantiation, item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
-    reachable_items, resolved_item, resolved_local, runtime_intrinsic, spawn_target, test_item,
+    AggregateFieldShape, AstNodeKey, BeskidDatabase, ClosureCapture, CompletionContext,
+    ItemSignature, LocalSlot, OperatorFact, ProjectSession, SemanticError, SemanticTypeId,
+    SourceUnitId, SyntaxGenerationId, aggregate_layout, build_typed_program, call_arguments,
+    call_lowering, cast_intents, child_nodes, closure_environment, completion_candidates,
+    control_flow, direct_callees, generic_call_instantiation, item_body, item_signature,
+    literal_fact, local_slot, node_kind, node_span, node_type, operator_fact, reachable_items,
+    resolved_item, resolved_local, runtime_intrinsic, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -75,6 +76,24 @@ fn warm_point_query_uses_registered_expanded_syntax_without_reparse() {
         Some(beskid_queries::SemanticTypeId::I32)
     );
     assert_eq!(db.syntax_authority_counts(), (1, 1));
+}
+
+#[test]
+fn aggregate_layout_keeps_channel_options_nominal_capacity() {
+    let source = "enum ChannelCapacity { Unbounded(), Bounded(i64 capacity) } type ChannelOptions { ChannelCapacity capacity, bool singleReader, bool singleWriter }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let options = key(unit, generation, &index, NodeKind::TypeDefinition, 0);
+    let capacity = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+    let layout = aggregate_layout(&db, options)
+        .expect("layout query")
+        .expect("layout");
+    assert_eq!(layout.fields.len(), 3);
+    assert_eq!(layout.fields[0].0.as_ref(), "capacity");
+    assert_eq!(layout.fields[0].1, AggregateFieldShape::Nominal(capacity));
+    assert_eq!(
+        layout.fields[1].1,
+        AggregateFieldShape::Scalar(SemanticTypeId::BOOL)
+    );
 }
 
 fn key(
@@ -380,8 +399,20 @@ fn unqualified_import_resolution_requires_one_registered_syntax_target() {
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let tools_index = SyntaxIndex::from_program(&tools_program, generation);
-    let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
-    let helper = key(tools_unit, generation, &tools_index, NodeKind::FunctionDefinition, 0);
+    let call = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        0,
+    );
+    let helper = key(
+        tools_unit,
+        generation,
+        &tools_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
 
     assert_eq!(
         call_lowering(&db, call).expect("unqualified imported call"),
@@ -445,7 +476,13 @@ fn generic_imported_static_call_resolves_to_its_exact_syntax_item() {
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let channel_index = SyntaxIndex::from_program(&channel_program, generation);
-    let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
+    let call = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        0,
+    );
     let declaration = key(
         channel_unit,
         generation,
@@ -516,7 +553,13 @@ fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let channel_index = SyntaxIndex::from_program(&channel_program, generation);
-    let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
+    let call = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        0,
+    );
     let declaration = key(
         channel_unit,
         generation,
@@ -536,7 +579,13 @@ fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
             argument_count: 1,
         })
     );
-    let mismatched = key(main_unit, generation, &main_index, NodeKind::CallExpression, 1);
+    let mismatched = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        1,
+    );
     assert_eq!(
         call_lowering(&db, mismatched).expect("mismatched generic terminal call"),
         Some(beskid_queries::CallLowering::Dynamic)
