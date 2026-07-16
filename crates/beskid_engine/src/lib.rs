@@ -12,6 +12,7 @@ mod runtime_kit;
 pub mod services;
 
 pub use engine::Engine;
+pub use engine::host_runtime_target;
 #[cfg(feature = "extern_dlopen")]
 pub use engine::resolve_for_tests;
 #[cfg(feature = "extern_dlopen")]

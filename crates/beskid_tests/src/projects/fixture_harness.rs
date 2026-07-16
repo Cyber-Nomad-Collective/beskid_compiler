@@ -167,9 +167,8 @@ pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
                 front_end: FrontEndOptions {
                     with_semantic_diagnostics: true,
                     ..Default::default()
-
                 },
-            ..Default::default()
+                ..Default::default()
             },
             None,
         )
@@ -196,12 +195,11 @@ pub fn lower_corelib_tests_entrypoint(
         None,
     )
     .unwrap_or_else(|err| panic!("front-end for {entry_relative}: {err}"));
-    beskid_codegen::entrypoint_artifact_from_front_end(
-        front.as_lower_input(),
-        &resolved.source_path.display().to_string(),
-        &resolved.source,
+    beskid_engine::services::lower_prepared_syntax_entrypoint(
+        &front.assembly,
         entrypoint,
-        None,
+        beskid_engine::host_runtime_target()
+            .unwrap_or_else(|error| panic!("host ABI-v5 target: {error}")),
     )
     .unwrap_or_else(|err| panic!("lower {entrypoint} in {entry_relative}: {err}"))
 }

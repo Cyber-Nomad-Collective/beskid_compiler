@@ -16,6 +16,7 @@ beskid_abi = { path = "../beskid_abi" }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_queries = { path = "../beskid_queries" }
 beskid_codegen = { path = "../beskid_codegen" }
+beskid_engine = { path = "../beskid_engine" }
 beskid_lsp = { path = "../beskid_lsp" }
 beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_template = { path = "../beskid_template" }

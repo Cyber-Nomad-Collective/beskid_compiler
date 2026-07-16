@@ -1,5 +1,6 @@
 use beskid_analysis::hir::HirPrimitiveType;
 use beskid_analysis::types::TypeInfo;
+use beskid_queries::SemanticTypeId;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum EntryReturnKind {
@@ -32,6 +33,30 @@ impl EntryReturnKind {
             TypeInfo::Primitive(HirPrimitiveType::Bool) => Self::Bool,
             TypeInfo::Primitive(HirPrimitiveType::F64) => Self::F64,
             TypeInfo::Primitive(HirPrimitiveType::Char) => Self::Char,
+            TypeInfo::Primitive(HirPrimitiveType::Word) => Self::PointerLike,
+        }
+    }
+
+    /// Syntax-query equivalent of [`Self::from_type_info`].
+    ///
+    /// This is intentionally the only return-ABI bridge used by the syntax → ISLE JIT path;
+    /// that path must not consult the legacy typed-HIR result after code generation.
+    pub(crate) fn from_semantic_type(ty: SemanticTypeId) -> Self {
+        match ty {
+            SemanticTypeId::UNIT => Self::Unit,
+            SemanticTypeId::NEVER => Self::Never,
+            SemanticTypeId::I64 => Self::I64,
+            SemanticTypeId::I32 => Self::I32,
+            SemanticTypeId::U8 => Self::U8,
+            SemanticTypeId::BOOL => Self::Bool,
+            SemanticTypeId::F64 => Self::F64,
+            SemanticTypeId::CHAR => Self::Char,
+            SemanticTypeId::STRING | SemanticTypeId::WORD | SemanticTypeId::POINTER => {
+                Self::PointerLike
+            }
+            // The syntax contract leaves non-primitive signatures unavailable, so this is a
+            // defensive ABI choice rather than a fallback to HIR type information.
+            _ => Self::PointerLike,
         }
     }
 }

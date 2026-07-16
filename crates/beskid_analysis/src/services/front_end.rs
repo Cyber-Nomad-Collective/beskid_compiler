@@ -30,26 +30,6 @@ impl std::fmt::Debug for FrontEndTypedResult {
     }
 }
 
-impl FrontEndTypedResult {
-    /// Borrowed view for per-entrypoint lowering (shared assembly/resolution/typed HIR).
-    pub fn as_lower_input(&self) -> FrontEndLowerInput<'_> {
-        FrontEndLowerInput {
-            assembly: &self.assembly,
-            hir: &self.hir,
-            resolution: &self.resolution,
-            typed: &self.typed,
-        }
-    }
-}
-
-/// Borrowed front-end bundle passed into codegen lowering.
-pub struct FrontEndLowerInput<'a> {
-    pub assembly: &'a crate::projects::ProgramAssembly,
-    pub hir: &'a crate::syntax::Spanned<crate::hir::HirProgram>,
-    pub resolution: &'a crate::resolve::Resolution,
-    pub typed: &'a crate::types::TypeResult,
-}
-
 /// Options for [`compile_front_end_with_pipeline`].
 #[derive(Debug, Clone)]
 pub struct FrontEndOptions {

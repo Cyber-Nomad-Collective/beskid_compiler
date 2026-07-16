@@ -65,7 +65,7 @@ pub use entry_session::{
     update_semantic_snapshot,
 };
 pub use front_end::{
-    FrontEndLowerInput, FrontEndOptions, FrontEndTypedResult, compile_front_end_with_pipeline,
+    FrontEndOptions, FrontEndTypedResult, compile_front_end_with_pipeline,
 };
 pub use input::{
     AnalyzeInProjectOptions, ResolvedInput, resolve_input, resolve_input_with_pipeline,

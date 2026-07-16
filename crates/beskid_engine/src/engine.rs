@@ -57,6 +57,11 @@ impl Engine {
         })
     }
 
+    /// Exact ABI-v5 target selected by this engine's validated runtime kit.
+    pub fn target_metadata(&self) -> &TargetMetadata {
+        &self.runtime_kit.target
+    }
+
     /// Load `artifact` into a fresh or reused JIT module, declare builtins/externs, define functions, finalize.
     pub fn compile_artifact(&mut self, artifact: &CodegenArtifact) -> Result<(), JitError> {
         self.compile_artifact_with_pipeline(artifact, None)
@@ -169,7 +174,8 @@ fn runtime_prefix() -> Result<PathBuf, JitError> {
     })
 }
 
-fn host_runtime_target() -> Result<TargetMetadata, JitError> {
+/// ABI-v5 target metadata for the native JIT host.
+pub fn host_runtime_target() -> Result<TargetMetadata, JitError> {
     let triple = match (std::env::consts::ARCH, std::env::consts::OS) {
         ("x86_64", "linux") => "x86_64-unknown-linux-gnu",
         ("aarch64", "macos") => "aarch64-apple-darwin",

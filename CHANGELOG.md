@@ -21,8 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Derive lambda capture environments, spawn operands, and manifest-owned runtime intrinsics from expanded AST/Salsa facts.
 - Add a generation-safe expanded-syntax to generated-ISLE adapter for production expression emission.
 - Emit zero-parameter parsed function bodies through syntax-only generated ISLE statement rules.
+- Route prepared frontend Engine and fixture entrypoints through generation-safe syntax,
+  `TypedProgram`, `CodegenInput`, and ISLE module emission rather than typed HIR.
 
 ### Removed
+
+- Remove the borrowed `FrontEndLowerInput` / HIR-only entrypoint codegen boundary.
 
 - Remove AOT prebuilt-archive and standalone fallbacks, runtime link profiles, and host-archive lookup.
 

@@ -574,6 +574,7 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
+ "tempfile",
 ]
 
 [[package]]
@@ -768,6 +769,7 @@ dependencies = [
  "beskid_analysis",
  "beskid_aot",
  "beskid_codegen",
+ "beskid_engine",
  "beskid_lsp",
  "beskid_pckg",
  "beskid_pipeline",
