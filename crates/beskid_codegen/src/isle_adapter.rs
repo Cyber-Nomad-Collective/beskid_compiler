@@ -7,11 +7,11 @@ use beskid_isle::{
     LiteralKind, NodeFacts, NodeKind, OperatorFact, ParameterSlot, Signature,
 };
 use beskid_queries::{
-    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, call_arguments, call_lowering,
-    child_nodes, item_body, item_signature, literal_fact, local_slot, node_kind, node_type,
-    operator_fact, resolved_local, runtime_intrinsic_name,
+    call_arguments, call_lowering, child_nodes, item_body, item_signature, literal_fact,
+    local_slot, node_kind, node_type, operator_fact, resolved_local, runtime_intrinsic_name,
+    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId,
 };
-use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
+use cranelift_codegen::ir::{types, FuncRef, Type, UserFuncName};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{FuncId, Module};
@@ -243,19 +243,24 @@ impl SyntaxNodeFacts<'_> {
     }
 
     fn scalar_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        self.query(node_type(self.db, key)).or_else(|| {
-            (self.query(node_kind(self.db, key))
-                == Some(beskid_queries::IndexedNodeKind::LetStatement))
-            .then(|| {
-                self.raw_children(key)
-                    .into_iter()
-                    .find(|child| {
-                        self.query(node_kind(self.db, *child))
-                            == Some(beskid_queries::IndexedNodeKind::Identifier)
-                    })
-                    .and_then(|identifier| self.query(node_type(self.db, identifier)))
-            })?
-        })
+        self.query(node_type(self.db, key))
+            .or_else(|| {
+                (self.query(node_kind(self.db, key))
+                    == Some(beskid_queries::IndexedNodeKind::LetStatement))
+                .then(|| {
+                    self.raw_children(key)
+                        .into_iter()
+                        .find(|child| {
+                            self.query(node_kind(self.db, *child))
+                                == Some(beskid_queries::IndexedNodeKind::Identifier)
+                        })
+                        .and_then(|identifier| self.query(node_type(self.db, identifier)))
+                })?
+            })
+            .or_else(|| {
+                let (_, intrinsic) = self.runtime_intrinsic(key)?;
+                semantic_type_for_runtime_intrinsic(intrinsic)
+            })
     }
 
     fn literal(&self, key: AstNodeKey) -> Option<LiteralFact> {
@@ -310,6 +315,24 @@ impl SyntaxNodeFacts<'_> {
             key = *children.first()?;
         }
     }
+}
+
+fn semantic_type_for_runtime_intrinsic(
+    intrinsic: &beskid_abi::abi_v5::RuntimeIntrinsic,
+) -> Option<SemanticTypeId> {
+    use beskid_abi::abi_v5::AbiType;
+
+    Some(match intrinsic.result {
+        AbiType::Void => return None,
+        AbiType::Pointer => SemanticTypeId::POINTER,
+        AbiType::USize => SemanticTypeId::WORD,
+        AbiType::I8 => SemanticTypeId::U8,
+        AbiType::U8 => SemanticTypeId::U8,
+        AbiType::I32 => SemanticTypeId::I32,
+        AbiType::I64 => SemanticTypeId::I64,
+        AbiType::F64 => SemanticTypeId::F64,
+        _ => return None,
+    })
 }
 
 /// Emit one parsed expanded-syntax expression through generated ISLE selection.

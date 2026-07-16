@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Emit zero-parameter parsed function bodies through syntax-only generated ISLE statement rules.
 - Route prepared frontend Engine and fixture entrypoints through generation-safe syntax,
   `TypedProgram`, `CodegenInput`, and ISLE module emission rather than typed HIR.
+- Lower compiler-authorized canonical runtime intrinsic calls through syntax-only ISLE module
+  emission, with manifest-derived imports and verified CLIF coverage for allocation and root-frame
+  helpers.
 
 ### Removed
 

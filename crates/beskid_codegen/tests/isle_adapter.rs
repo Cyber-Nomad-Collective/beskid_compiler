@@ -2,25 +2,30 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
+use beskid_abi::runtime_source::{
+    canonical_runtime_intrinsic_capability, canonical_runtime_sources,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH,
+};
 use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
     SyntaxProgramAssembly,
 };
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_codegen::{
-    CodegenInput, ItemModuleImporter, emit_isle_expression, emit_isle_item,
-    emit_isle_item_with_call_importer,
-    module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
+    emit_isle_expression, emit_isle_item, emit_isle_item_with_call_importer,
+    module_emission::{emit_syntax_program, lower_syntax_program, SyntaxModuleItem},
+    CodegenInput, ItemModuleImporter,
 };
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    build_typed_program, call_lowering, child_nodes, literal_fact, node_kind,
+    build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes,
+    item_name, literal_fact, node_kind, AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession,
+    SourceUnitId, SyntaxGenerationId,
 };
 use cranelift_codegen::ir::types;
 use cranelift_codegen::isa;
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{Linkage, Module, default_libcall_names};
+use cranelift_module::{default_libcall_names, Linkage, Module};
 
 #[test]
 fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
@@ -366,6 +371,116 @@ fn parsed_program_lowers_to_backend_artifact_without_hir() {
         .find(|function| function.name == "Main")
         .expect("Main artifact function");
     assert!(main.function.display().to_string().contains("call"));
+}
+
+#[test]
+fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_manifest_imports() {
+    let mut db = Box::new(BeskidDatabase::default());
+    let directory = tempfile::tempdir().expect("runtime project").keep();
+    let source = canonical_runtime_sources()
+        .pop()
+        .expect("embedded canonical runtime source");
+    let source_path = directory.join("Bootstrap.bd");
+    std::fs::write(&source_path, &source.source).expect("write canonical runtime source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
+        .expect("parse canonical runtime source");
+    let project = ProjectSession::new(
+        &*db,
+        directory.clone(),
+        source_path.clone(),
+        "beskid-runtime-native".into(),
+        "lock".into(),
+    );
+    let generation = SyntaxGenerationId(31);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
+            path: source_path.clone(),
+            source: source.source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = build_canonical_runtime_typed_program(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_runtime_intrinsic_capability(&manifest).expect("compiler authority"),
+    )
+    .expect("canonical runtime syntax facts");
+    let root = AstNodeKey {
+        unit: SourceUnitId::new(&*db, source_path),
+        generation,
+        node: AstNodeId(0),
+    };
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
+        .expect("canonical runtime codegen input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let items = find_function_definitions(input.database(), root);
+    let selected = ["NativePointer", "SystemAllocate", "RootFramePrevious"];
+    let module_items = selected
+        .into_iter()
+        .map(|name| {
+            let key = items
+                .iter()
+                .copied()
+                .find(|key| {
+                    item_name(input.database(), *key).ok().flatten().as_deref() == Some(name)
+                })
+                .unwrap_or_else(|| panic!("canonical helper {name}"));
+            SyntaxModuleItem {
+                key,
+                symbol: name.into(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &module_items)
+        .expect("canonical helpers lower through the syntax-only module emitter");
+
+    beskid_codegen::validate_artifact(&artifact)
+        .expect("canonical helper imports are declared by the manifest authority");
+    let imports = beskid_codegen::referenced_extern_imports(&artifact);
+    assert!(imports
+        .iter()
+        .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_system_allocate"));
+    assert!(imports
+        .iter()
+        .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_raw_word_load"));
+    assert!(imports
+        .iter()
+        .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_pointer_from_native_word"));
+
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let declared = emit_syntax_program(
+        &mut module,
+        &input,
+        isa.as_ref(),
+        &module_items,
+        Linkage::Export,
+    )
+    .expect("canonical runtime helpers define through the production module emitter");
+    assert_eq!(declared.len(), module_items.len());
 }
 
 fn item_fixture(

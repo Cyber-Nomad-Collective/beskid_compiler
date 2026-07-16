@@ -9,11 +9,9 @@ use cranelift_module::{
     DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult,
 };
 
-use crate::lowering::CodegenArtifact;
 use crate::lowering::descriptor::TypeDescriptorData;
-use crate::{
-    CodegenInput, emit_isle_item_with_call_importer,
-};
+use crate::lowering::{CodegenArtifact, ExternImport};
+use crate::{emit_isle_item_with_call_importer, CodegenInput};
 
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
 #[derive(Debug, Clone)]
@@ -56,9 +54,17 @@ pub fn lower_syntax_program(
             .insert(DirectCallee::item(item.key), item.symbol.clone())
             .is_some()
         {
-            return Err(SyntaxModuleEmissionError::DuplicateSymbol(item.symbol.clone()));
+            return Err(SyntaxModuleEmissionError::DuplicateSymbol(
+                item.symbol.clone(),
+            ));
         }
     }
+    let runtime_intrinsics = runtime_intrinsic_symbols(input);
+    symbols.extend(
+        runtime_intrinsics
+            .iter()
+            .map(|(callee, symbol)| (*callee, symbol.clone())),
+    );
 
     let mut functions = Vec::with_capacity(items.len());
     for item in items {
@@ -74,8 +80,41 @@ pub fn lower_syntax_program(
     }
     Ok(CodegenArtifact {
         functions,
+        extern_imports: runtime_intrinsics
+            .into_values()
+            .map(|symbol| ExternImport {
+                symbol,
+                abi: Some("C".into()),
+                library: None,
+            })
+            .collect(),
         ..CodegenArtifact::default()
     })
+}
+
+/// Manifest symbols available only to compiler-authorized canonical runtime source.  Ordinary
+/// syntax programs never receive these entries, so an unresolved name cannot turn into an extern
+/// fallback.
+fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<DirectCallee, String> {
+    input
+        .runtime_intrinsic_capability()
+        .map(|_| {
+            input
+                .abi_manifest()
+                .trusted_runtime_intrinsics
+                .iter()
+                .enumerate()
+                .filter_map(|(index, intrinsic)| {
+                    u32::try_from(index).ok().map(|index| {
+                        (
+                            DirectCallee::runtime_intrinsic(index),
+                            intrinsic.symbol.clone(),
+                        )
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 struct ArtifactCallImporter<'a> {
@@ -120,12 +159,15 @@ pub fn emit_syntax_program<M: Module>(
         by_key.insert(item.key, id);
         by_symbol.insert(item.symbol.clone(), id);
     }
+    crate::cranelift_host::declare_validated_extern_imports(module, &artifact, &mut by_symbol)
+        .map_err(|error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())))?;
     for (item, lowered) in items.iter().zip(artifact.functions) {
         let id = by_key[&item.key];
         let mut context = module.make_context();
         context.func = lowered.function;
-        crate::cranelift_host::remap_testcase_externals(module, &mut context, &by_symbol)
-            .map_err(|error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())))?;
+        crate::cranelift_host::remap_testcase_externals(module, &mut context, &by_symbol).map_err(
+            |error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())),
+        )?;
         module.define_function(id, &mut context)?;
         module.clear_context(&mut context);
     }
