@@ -105,6 +105,7 @@ pub use typed_entry_bundle::{
 };
 pub use typed_program::build_canonical_runtime_typed_program;
 pub use typed_program::build_canonical_corelib_syscall_typed_program;
+pub use typed_program::build_typed_program_with_corelib_syscall_services;
 pub use typed_program::build_typed_program;
 pub use typed_program::project_session_for_syntax_assembly;
 pub use unit::{

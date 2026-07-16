@@ -6,8 +6,8 @@ use anyhow::Result;
 use beskid_abi::{
     abi_v5::{AbiManifestV5, TargetMetadata},
     runtime_source::{
-        CANONICAL_BOOTSTRAP_SOURCE_PATH, canonical_runtime_intrinsic_capability,
-        canonical_runtime_sources,
+        CANONICAL_BOOTSTRAP_SOURCE_PATH, canonical_corelib_syscall_service_capability,
+        canonical_runtime_intrinsic_capability, canonical_runtime_sources,
     },
 };
 use beskid_analysis::{
@@ -20,7 +20,8 @@ use beskid_analysis::{
 use beskid_isle::AstNodeKey;
 use beskid_queries::{
     BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
-    block_statement_nodes, build_canonical_runtime_typed_program, build_typed_program, child_nodes,
+    block_statement_nodes, build_canonical_runtime_typed_program,
+    build_typed_program_with_corelib_syscall_services, child_nodes,
     item_body, item_export_symbol, item_name, item_signature, node_kind, node_span,
     project_session_for_syntax_assembly, reachable_items,
 };
@@ -203,7 +204,17 @@ pub fn lower_syntax_assembly_entrypoint(
         "prepared-frontend",
     )
     .map_err(|error| anyhow::anyhow!("syntax program session preparation failed: {error}"))?;
-    let typed = build_typed_program(db, project, generation, Arc::clone(&assembly))
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let capability = canonical_corelib_syscall_service_capability(&manifest).map_err(|error| {
+        anyhow::anyhow!("Corelib syscall service capability unavailable: {error:?}")
+    })?;
+    let typed = build_typed_program_with_corelib_syscall_services(
+        db,
+        project,
+        generation,
+        Arc::clone(&assembly),
+        capability,
+    )
         .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
         .units()
@@ -219,7 +230,7 @@ pub fn lower_syntax_assembly_entrypoint(
         typed,
         Arc::from(roots),
         target.clone(),
-        AbiManifestV5::canonical_runtime(target),
+        manifest,
     )
     .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
     let entry_root = AstNodeKey {
@@ -279,7 +290,17 @@ pub fn lower_prepared_syntax_module(
         "prepared-frontend",
     )
     .map_err(|error| anyhow::anyhow!("syntax program session preparation failed: {error}"))?;
-    let typed = build_typed_program(db, project, generation, Arc::clone(&assembly))
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let capability = canonical_corelib_syscall_service_capability(&manifest).map_err(|error| {
+        anyhow::anyhow!("Corelib syscall service capability unavailable: {error:?}")
+    })?;
+    let typed = build_typed_program_with_corelib_syscall_services(
+        db,
+        project,
+        generation,
+        Arc::clone(&assembly),
+        capability,
+    )
         .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
         .units()
@@ -295,7 +316,7 @@ pub fn lower_prepared_syntax_module(
         typed,
         Arc::from(roots),
         target.clone(),
-        AbiManifestV5::canonical_runtime(target),
+        manifest,
     )
     .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
     let items = input

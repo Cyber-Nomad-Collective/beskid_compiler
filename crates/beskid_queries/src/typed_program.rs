@@ -188,14 +188,71 @@ pub fn build_canonical_corelib_syscall_typed_program(
     }
 
     let mut typed = build_typed_program(db, project, generation, assembly)?;
+    let entry = typed.entry;
+    attach_corelib_services(db, &mut typed, entry, capability);
+    Ok(typed)
+}
+
+/// Build a normal multi-unit syntax program and, when it contains the exact compiler-embedded
+/// Corelib syscall facade, grant service facts to that unit alone.
+///
+/// Corelib test and application assemblies include many units, so they cannot satisfy the
+/// standalone-corpus constructor above. This path deliberately identifies the facade by both its
+/// canonical relative source path and the compiler-embedded bytes, then records service authority
+/// against only that `SourceUnitId`. All sibling and host units remain ordinary syntax units.
+pub fn build_typed_program_with_corelib_syscall_services(
+    db: &mut BeskidDatabase,
+    project: ProjectSession,
+    generation: SyntaxGenerationId,
+    assembly: Arc<SyntaxProgramAssembly>,
+    capability: CorelibServiceCapability,
+) -> Result<TypedProgram, SemanticError> {
+    let service_unit = canonical_corelib_syscall_unit(&assembly)
+        .map(|path| SourceUnitId::new(db, path));
+    let mut typed = build_typed_program(db, project, generation, assembly)?;
+    if let Some(service_unit) = service_unit {
+        attach_corelib_services(db, &mut typed, service_unit, capability);
+    }
+    Ok(typed)
+}
+
+fn attach_corelib_services(
+    db: &BeskidDatabase,
+    typed: &mut TypedProgram,
+    service_unit: SourceUnitId,
+    capability: CorelibServiceCapability,
+) {
     let services = capability.services().to_vec();
     db.syntax_dependency_registry()
         .lock()
         .expect("syntax dependency registry")
         .corelib_services
-        .insert((typed.entry, generation), services);
+        .insert((service_unit, typed.generation), services);
     typed.corelib_service_capability = Some(Arc::new(capability));
-    Ok(typed)
+}
+
+fn canonical_corelib_syscall_unit(
+    assembly: &SyntaxProgramAssembly,
+) -> Option<std::path::PathBuf> {
+    let expected = beskid_abi::runtime_source::canonical_corelib_syscall_sources()
+        .into_iter()
+        .next()
+        .expect("embedded Corelib syscall corpus has one source");
+    let expected_path = std::path::Path::new(&expected.logical_path);
+    let candidates = assembly
+        .units()
+        .iter()
+        .filter(|unit| {
+            unit.source == expected.source
+                && assembly
+                    .roots()
+                    .dependencies
+                    .iter()
+                    .chain(std::iter::once(&assembly.roots().host))
+                    .any(|root| unit.path.strip_prefix(&root.source_root).ok() == Some(expected_path))
+        })
+        .collect::<Vec<_>>();
+    (candidates.len() == 1).then(|| candidates[0].path.clone())
 }
 
 /// Attach compiler-minted runtime intrinsic authority after validating that the assembled syntax

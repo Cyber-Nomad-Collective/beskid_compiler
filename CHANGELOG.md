@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Register compiler-authorized Corelib syscall services per exact embedded source unit within
+  multi-unit prepared syntax assemblies, leaving every sibling and forged source unprivileged.
 - Derive direct nominal-local field access and mixed-width integer operands from generation-safe
   syntax facts for ISLE emission, including Corelib `StyleChain` and terminal parsing paths.
 - Route Corelib executable-entry lowering from an assembled generation-safe syntax program
