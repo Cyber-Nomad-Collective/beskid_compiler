@@ -369,15 +369,15 @@ fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
 }
 
 #[test]
-fn parsed_transparent_generic_aggregate_uses_its_source_proven_i64_abi_signature() {
+fn parsed_generic_nominal_aggregate_uses_its_source_proven_pointer_abi_signature() {
     let (input, isa, root) = item_fixture_with_root(
         "type Channel<T> { i64 handle } Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; }",
     );
     let create = find_function_definitions(input.database(), root)[0];
 
     let signature = syntax_item_signature(&input, isa.as_ref(), create)
-        .expect("transparent aggregate source layout supplies an ABI signature");
-    assert_eq!(signature.returns[0].value_type, types::I64);
+        .expect("nominal aggregate source declaration supplies an ABI signature");
+    assert_eq!(signature.returns[0].value_type, isa.pointer_type());
 }
 
 #[test]
