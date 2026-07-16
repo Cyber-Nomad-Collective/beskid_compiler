@@ -106,7 +106,7 @@ fn aggregate_layout_keeps_channel_options_nominal_capacity() {
 }
 
 #[test]
-fn sample_mod_method_abi_signatures_pass_nominal_values_by_pointer() {
+fn sample_mod_method_abi_signatures_include_pointer_receiver_and_nominal_parameter() {
     let source = include_str!("../../beskid_tests/fixtures/mods/sample_mod/Src/Mod.bd");
     let (db, _project, unit, generation, index) = setup(source);
     let methods = index
@@ -122,7 +122,7 @@ fn sample_mod_method_abi_signatures_pass_nominal_values_by_pointer() {
         assert_eq!(
             item_abi_signature(&db, method).expect("method ABI signature"),
             Some(ItemSignature {
-                parameters: Arc::from([SemanticTypeId::POINTER]),
+                parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::POINTER]),
                 result: SemanticTypeId::POINTER,
             }),
         );
