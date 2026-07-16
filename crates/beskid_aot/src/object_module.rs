@@ -12,6 +12,7 @@ use beskid_codegen::{
 };
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;
+use cranelift_codegen::isa::TargetIsa;
 use cranelift_module::{DataId, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
@@ -198,4 +199,14 @@ impl BeskidObjectModule {
             message: err.to_string(),
         })
     }
+}
+
+/// Construct the exact ISA used by AOT object emission for a validated ABI target.
+pub(crate) fn object_target_isa(target: &str) -> AotResult<std::sync::Arc<dyn TargetIsa>> {
+    let mut flag_builder = settings::builder();
+    flag_builder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+    cranelift_codegen::isa::lookup_by_name(target)
+        .map_err(|err| AotError::IsaInit { message: err.to_string() })?
+        .finish(settings::Flags::new(flag_builder))
+        .map_err(|err| AotError::IsaInit { message: err.to_string() })
 }
