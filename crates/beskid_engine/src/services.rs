@@ -7,11 +7,11 @@ use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 use beskid_codegen::module_emission::{SyntaxModuleItem, lower_syntax_program};
 use beskid_pipeline::PipelineObserver;
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, build_typed_program, child_nodes,
+    AstNodeKey, BeskidDatabase, SemanticTypeId, build_typed_program, child_nodes,
     item_name, item_signature, project_session_for_syntax_assembly, test_item, with_db,
 };
 #[cfg(test)]
-use beskid_queries::reachable_items;
+use beskid_queries::{ProjectSession, reachable_items};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 
