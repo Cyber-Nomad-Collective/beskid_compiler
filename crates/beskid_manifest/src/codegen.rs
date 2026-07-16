@@ -479,6 +479,18 @@ pub fn render_analysis_builtins(manifest: &ManifestRoot) -> String {
                 &entry.returns,
                 entry.injected,
             );
+            if entry.is_language_handler()
+                && let Some(handler_path) = language_handler_beskid_path(entry)
+            {
+                write_analysis_entry(
+                    &mut out,
+                    &handler_path,
+                    &entry.dispatch_key,
+                    &entry.params,
+                    &entry.returns,
+                    entry.injected,
+                );
+            }
         }
     }
 
@@ -529,6 +541,76 @@ fn v5_analysis_type(ty: &str) -> String {
         "void" => "unit".into(),
         other => other.into(),
     }
+}
+
+pub fn render_runtime_handler_specs(manifest: &ManifestRoot) -> String {
+    let mut out = String::new();
+    write_generated_preamble(&mut out, &[]);
+    writeln!(
+        &mut out,
+        "/// Language-owned handler metadata merged from manifest `language_handler` rows."
+    )
+    .unwrap();
+    writeln!(&mut out, "#[derive(Debug, Clone, Copy, PartialEq, Eq)]").unwrap();
+    writeln!(&mut out, "pub struct RuntimeHandlerSpec {{").unwrap();
+    writeln!(&mut out, "    pub dispatch_key: &'static str,").unwrap();
+    writeln!(&mut out, "    pub tag: u32,").unwrap();
+    writeln!(&mut out, "    pub return_group: &'static str,").unwrap();
+    writeln!(&mut out, "    pub handler_path: &'static [&'static str],").unwrap();
+    writeln!(&mut out, "}}").unwrap();
+    writeln!(&mut out).unwrap();
+    writeln!(
+        &mut out,
+        "pub const RUNTIME_HANDLER_SPECS: &[RuntimeHandlerSpec] = &["
+    )
+    .unwrap();
+    for (group, entries) in [
+        ("usize", &manifest.dispatch.usize),
+        ("ptr", &manifest.dispatch.ptr),
+        ("unit", &manifest.dispatch.unit),
+        ("i64", &manifest.dispatch.i64),
+    ] {
+        for entry in entries {
+            if let Some(handler_path) = language_handler_beskid_path(entry) {
+                let path = handler_path
+                    .iter()
+                    .map(|segment| format!("\\\"{segment}\\\""))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(
+                    &mut out,
+                    "    RuntimeHandlerSpec {{ dispatch_key: \"{}\", tag: {}, return_group: \"{group}\", handler_path: &[{path}] }},",
+                    entry.dispatch_key, entry.tag,
+                )
+                .unwrap();
+            }
+        }
+    }
+    writeln!(&mut out, "]; ").unwrap();
+    out
+}
+
+fn language_handler_beskid_path(entry: &DispatchEntry) -> Option<Vec<String>> {
+    if !entry.is_language_handler() {
+        return None;
+    }
+    let segments = entry
+        .dispatch_key
+        .split('_')
+        .map(|segment| {
+            let mut chars = segment.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(chars).collect()
+            })
+        })
+        .collect::<Vec<_>>();
+    Some(
+        ["Runtime", "Handlers"]
+            .into_iter()
+            .map(str::to_string)
+            .chain(segments)
+            .collect(),
+    )
 }
 
 fn write_analysis_entry(
@@ -680,7 +762,10 @@ fn param_array_name(
     name
 }
 
-pub fn render_runtime_dispatch_table(manifest: &ManifestRoot) -> String {
+pub fn render_runtime_dispatch_table(
+    manifest: &ManifestRoot,
+    rust_fallback_handlers: bool,
+) -> String {
     let mut out = String::new();
     write_generated_preamble(&mut out, &["clippy::too_many_lines"]);
     if runtime_dispatch_has_never_returns(manifest) {
@@ -736,6 +821,7 @@ pub fn render_runtime_dispatch_table(manifest: &ManifestRoot) -> String {
         &manifest.dispatch.usize,
         "try_dispatch_usize",
         "Option<usize>",
+        rust_fallback_handlers,
         |entry, body| wrap_dispatch_return(entry, "usize", body),
     );
     render_dispatch_fn(
@@ -745,6 +831,7 @@ pub fn render_runtime_dispatch_table(manifest: &ManifestRoot) -> String {
         &manifest.dispatch.ptr,
         "try_dispatch_ptr",
         "Option<*mut u8>",
+        rust_fallback_handlers,
         |entry, body| wrap_dispatch_return(entry, "ptr", body),
     );
     render_dispatch_fn(
@@ -754,6 +841,7 @@ pub fn render_runtime_dispatch_table(manifest: &ManifestRoot) -> String {
         &manifest.dispatch.unit,
         "try_dispatch_unit",
         "bool",
+        rust_fallback_handlers,
         |_entry, body| {
             let body = maybe_wrap_unsafe_body(body);
             format!("{{\n{body};\n            true\n        }}")
@@ -766,6 +854,7 @@ pub fn render_runtime_dispatch_table(manifest: &ManifestRoot) -> String {
         &manifest.dispatch.i64,
         "try_dispatch_i64",
         "Option<i64>",
+        rust_fallback_handlers,
         |entry, body| wrap_dispatch_return(entry, "i64", body),
     );
 
@@ -803,6 +892,7 @@ fn render_valid_tag_fn(out: &mut String, group: &str, entries: &[DispatchEntry])
     writeln!(out).unwrap();
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_dispatch_fn<F>(
     out: &mut String,
     fn_name: &str,
@@ -810,6 +900,7 @@ fn render_dispatch_fn<F>(
     entries: &[DispatchEntry],
     try_override: &str,
     return_type: &str,
+    rust_fallback_handlers: bool,
     wrap_body: F,
 ) where
     F: Fn(&DispatchEntry, &str) -> String,
@@ -861,6 +952,9 @@ fn render_dispatch_fn<F>(
             .unwrap();
             continue;
         }
+        if entry.is_language_handler() && !rust_fallback_handlers {
+            continue;
+        }
         let body = render_dispatch_arm_body(entry, DispatchCallee::Runtime);
         let wrapped = wrap_body(entry, &body);
         writeln!(
@@ -877,6 +971,104 @@ fn render_dispatch_fn<F>(
     writeln!(out, "    }}").unwrap();
     writeln!(out, "}}").unwrap();
     writeln!(out).unwrap();
+}
+
+/// Generate language handler wrappers and registration table for `beskid_runtime_handlers`.
+pub fn render_language_handler_table(manifest: &ManifestRoot) -> String {
+    let mut out = String::new();
+    write_generated_preamble(&mut out, &["clippy::too_many_lines"]);
+    let groups: [(&str, &[DispatchEntry], u32); 4] = [
+        ("usize", &manifest.dispatch.usize, 0),
+        ("ptr", &manifest.dispatch.ptr, 1),
+        ("unit", &manifest.dispatch.unit, 2),
+        ("i64", &manifest.dispatch.i64, 3),
+    ];
+    let mut language_entries = Vec::new();
+    for (group, entries, group_id) in &groups {
+        for entry in *entries {
+            if entry.is_language_handler() {
+                language_entries.push((*group, entry, *group_id));
+            }
+        }
+    }
+    writeln!(&mut out, "use beskid_abi::BeskidStr;").unwrap();
+    writeln!(&mut out, "use beskid_runtime::HandlerTableEntry;").unwrap();
+    writeln!(&mut out).unwrap();
+    for (group, entry, _) in &language_entries {
+        let wrapper = language_wrapper_fn_name(entry);
+        let return_type = host_wrapper_return_type(group);
+        let enum_param = if entry.params.is_empty() {
+            "_enum_ptr"
+        } else {
+            "enum_ptr"
+        };
+        let raw_body = render_dispatch_arm_body(entry, DispatchCallee::Language);
+        let wrapped = if entry.returns == "never" {
+            maybe_wrap_unsafe_body(&raw_body)
+        } else if raw_body.contains("enum_ptr.add") {
+            let inner = maybe_wrap_unsafe_body(&raw_body);
+            match *group {
+                "unit" => format!("{inner};"),
+                "ptr" => format!("({inner}) as *mut u8"),
+                "usize" => format!("({inner}) as usize"),
+                _ => inner,
+            }
+        } else {
+            match *group {
+                "unit" => format!("{raw_body};"),
+                "ptr" => format!("{raw_body} as *mut u8"),
+                "usize" => format!("{raw_body} as usize"),
+                _ => raw_body,
+            }
+        };
+        writeln!(&mut out, "/// # Safety\\n///\\n/// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.").unwrap();
+        writeln!(
+            &mut out,
+            "unsafe extern \"C\" fn {wrapper}({enum_param}: *const u8) -> {return_type} {{"
+        )
+        .unwrap();
+        writeln!(&mut out, "    {wrapped}").unwrap();
+        writeln!(&mut out, "}}").unwrap();
+        writeln!(&mut out).unwrap();
+    }
+    writeln!(
+        &mut out,
+        "const LANGUAGE_HANDLERS: [HandlerTableEntry; {}] = [",
+        language_entries.len()
+    )
+    .unwrap();
+    for (_, entry, group_id) in &language_entries {
+        let wrapper = language_wrapper_fn_name(entry);
+        writeln!(&mut out, "    HandlerTableEntry {{ group: {group_id}, tag: {}, fn_ptr: {wrapper} as *const u8 }},", entry.tag).unwrap();
+    }
+    writeln!(&mut out, "]; ").unwrap();
+    writeln!(&mut out).unwrap();
+    writeln!(
+        &mut out,
+        "/// Register all language-owned dispatch handlers with the runtime."
+    )
+    .unwrap();
+    writeln!(&mut out, "#[unsafe(no_mangle)]").unwrap();
+    writeln!(
+        &mut out,
+        "pub extern \"C-unwind\" fn beskid_language_register_all() -> i32 {{"
+    )
+    .unwrap();
+    writeln!(&mut out, "    beskid_runtime::beskid_register_handlers(").unwrap();
+    writeln!(
+        &mut out,
+        "        u64::from(beskid_abi::BESKID_RUNTIME_ABI_VERSION),"
+    )
+    .unwrap();
+    writeln!(&mut out, "        LANGUAGE_HANDLERS.as_ptr(),").unwrap();
+    writeln!(&mut out, "        LANGUAGE_HANDLERS.len() as u64,").unwrap();
+    writeln!(&mut out, "    )").unwrap();
+    writeln!(&mut out, "}}").unwrap();
+    out
+}
+
+fn language_wrapper_fn_name(entry: &DispatchEntry) -> String {
+    format!("language_dispatch_{}", entry.dispatch_key)
 }
 
 /// Generate host handler wrappers and registration table for `beskid_host`.
@@ -1007,6 +1199,7 @@ fn host_wrapper_return_type(group: &str) -> &'static str {
 enum DispatchCallee {
     Runtime,
     Host,
+    Language,
 }
 
 fn render_dispatch_arm_body(entry: &DispatchEntry, callee: DispatchCallee) -> String {
@@ -1017,12 +1210,11 @@ fn render_dispatch_arm_body(entry: &DispatchEntry, callee: DispatchCallee) -> St
     for (index, param) in entry.params.iter().enumerate() {
         let offset = 16 + index * 8;
         let var = format!("p{index}");
-        writeln!(
-            decode,
-            "            let {var} = *(enum_ptr.add({offset}) as {});",
-            payload_load_type(param)
-        )
-        .unwrap();
+        let load = match callee {
+            DispatchCallee::Language => language_envelope_load(param, index),
+            _ => format!("*(enum_ptr.add({offset}) as {})", payload_load_type(param)),
+        };
+        writeln!(decode, "            let {var} = {load};").unwrap();
     }
     let args = entry
         .params
@@ -1044,6 +1236,7 @@ fn render_dispatch_arm_body(entry: &DispatchEntry, callee: DispatchCallee) -> St
 fn dispatch_callee_path(dispatch_key: &str, callee: DispatchCallee) -> String {
     match callee {
         DispatchCallee::Host => format!("crate::{dispatch_key}"),
+        DispatchCallee::Language => format!("crate::{dispatch_key}"),
         DispatchCallee::Runtime => match dispatch_key {
             "channel_receive_ptr"
             | "channel_send_ptr"
@@ -1057,6 +1250,7 @@ fn dispatch_callee_path(dispatch_key: &str, callee: DispatchCallee) -> String {
 fn special_dispatch_arm(entry: &DispatchEntry, callee: DispatchCallee) -> Option<String> {
     let prefix = match callee {
         DispatchCallee::Host => "crate::",
+        DispatchCallee::Language => "crate::",
         DispatchCallee::Runtime => "crate::builtins::",
     };
     match entry.dispatch_key.as_str() {
@@ -1140,6 +1334,18 @@ fn special_dispatch_arm(entry: &DispatchEntry, callee: DispatchCallee) -> Option
             ))
         }
         _ => None,
+    }
+}
+
+fn language_envelope_load(param: &str, param_index: usize) -> String {
+    match param {
+        "string" => format!("crate::envelope::load_string(enum_ptr, {param_index})"),
+        "ptr" => format!("crate::envelope::load_ptr(enum_ptr, {param_index})"),
+        "usize" => format!("crate::envelope::load_usize(enum_ptr, {param_index})"),
+        "u64" => format!("crate::envelope::load_u64(enum_ptr, {param_index})"),
+        "i64" => format!("crate::envelope::load_i64(enum_ptr, {param_index})"),
+        "i32" => format!("crate::envelope::load_raw::<i32>(enum_ptr, {param_index})"),
+        _ => format!("crate::envelope::load_u64(enum_ptr, {param_index})"),
     }
 }
 
@@ -1284,6 +1490,7 @@ mod tests {
             injected: true,
             beskid_path: Vec::new(),
             owner: "language".to_string(),
+            language_handler: false,
         };
 
         assert_eq!(

@@ -165,12 +165,9 @@ fn split_string_content_segment(
                     interpolation_span.start,
                     input,
                 )?;
-                let expr = segment
-                    .into_inner()
-                    .next()
-                    .ok_or(ParseError::MissingPair {
-                        expected: Rule::InterpolationExpression,
-                    })?;
+                let expr = segment.into_inner().next().ok_or(ParseError::MissingPair {
+                    expected: Rule::InterpolationExpression,
+                })?;
                 let expr_span = offset_span(SpanInfo::from_span(&expr.as_span()), inner_offset);
                 parts.push(StringLiteralPart::RuntimeInterpolation {
                     expression_source: expr.as_str().trim().to_string(),

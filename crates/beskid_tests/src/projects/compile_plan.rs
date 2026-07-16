@@ -5,11 +5,9 @@ use crate::test_harness::{
     write_workspace_manifest,
 };
 use beskid_analysis::projects::{
-    DependencySource, PROJECT_LOCK_FILE_NAME, ProjectError, TargetKind,
-    is_project_manifest_path,
-    UnresolvedDependencyPolicy, WorkspacePrepareOptions, build_compile_plan,
-    build_compile_plan_with_policy, prepare_project_workspace,
-    prepare_project_workspace_with_options,
+    DependencySource, PROJECT_LOCK_FILE_NAME, ProjectError, TargetKind, UnresolvedDependencyPolicy,
+    WorkspacePrepareOptions, build_compile_plan, build_compile_plan_with_policy,
+    is_project_manifest_path, prepare_project_workspace, prepare_project_workspace_with_options,
 };
 
 use super::test_cwd::with_cwd_at_workspace_root;

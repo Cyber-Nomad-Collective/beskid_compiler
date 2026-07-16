@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 use crate::fiber::Yielder;
-use crate::status::{
-    FIBER_JOIN_CANCELLED, FIBER_JOIN_OK, FIBER_JOIN_PANICKED,
-};
+use crate::status::{FIBER_JOIN_CANCELLED, FIBER_JOIN_OK, FIBER_JOIN_PANICKED};
 
 use super::state::{
     FiberKey, FiberState, JoinOutcome, JoinSnapshot, Scheduler, key_to_id, wake_fiber_immediate,

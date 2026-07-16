@@ -1,6 +1,6 @@
 use crate::surface::ast::parse_program_ast;
-use beskid_analysis::syntax_query::*;
 use beskid_analysis::syntax::*;
+use beskid_analysis::syntax_query::*;
 
 #[test]
 fn test_query_descendants_count() {

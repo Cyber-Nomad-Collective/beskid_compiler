@@ -8,8 +8,7 @@ use std::fs;
 
 use beskid_analysis::SemanticDiagnostic;
 use beskid_analysis::services::{
-    FrontEndOptions, PrepareOptions, prepare_compilation_diagnostics,
-    resolved_input_from_plan,
+    FrontEndOptions, PrepareOptions, prepare_compilation_diagnostics, resolved_input_from_plan,
 };
 
 use crate::projects::with_cwd;
@@ -51,24 +50,18 @@ target "app" {
     fs::write(&entry, source).expect("write source");
 
     let codes = with_cwd(&root, || {
-        let plan = beskid_analysis::services::compile_plan_for_input_path(&entry)
-            .expect("compile plan");
-        let resolved = resolved_input_from_plan(
-            entry.clone(),
-            source.to_string(),
-            plan,
-            None,
-            None,
-        );
+        let plan =
+            beskid_analysis::services::compile_plan_for_input_path(&entry).expect("compile plan");
+        let resolved =
+            resolved_input_from_plan(entry.clone(), source.to_string(), plan, None, None);
         let (_, diagnostics) = prepare_compilation_diagnostics(
             &resolved,
             PrepareOptions {
                 front_end: FrontEndOptions {
                     with_semantic_diagnostics: true,
                     ..Default::default()
-
                 },
-            ..Default::default()
+                ..Default::default()
             },
             None,
         )

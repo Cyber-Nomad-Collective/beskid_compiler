@@ -3,7 +3,7 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
-use crate::shell::widgets::{draw_compile_debug_panel, CompileDebugTab};
+use crate::shell::widgets::{CompileDebugTab, draw_compile_debug_panel};
 use crate::tui::effects::ShellEffect;
 use crate::tui::input::{InputEvent, InputResult};
 use crate::tui::message::ShellMessage;

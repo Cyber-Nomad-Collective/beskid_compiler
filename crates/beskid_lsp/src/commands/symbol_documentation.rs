@@ -15,7 +15,7 @@ pub const CMD_GET_DOCUMENTATION_URI: &str = "beskid.symbol.getDocumentationUri";
 
 const DEFAULT_PCKG_BASE: &str = "https://pckg.beskid-lang.org";
 const DEFAULT_BOOK_BASE: &str = "https://beskid-lang.org";
-const DEFAULT_SPEC_BASE: &str = "https://beskid-lang.org/platform-spec";
+const DEFAULT_SPEC_BASE: &str = "https://spec.beskid-lang.org/platform-spec";
 
 const CORELIB_SPEC_PATH: &str =
     "/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/";
@@ -192,7 +192,7 @@ mod tests {
         }
         assert_eq!(
             absolute_spec_url(CORELIB_SPEC_PATH),
-            "https://beskid-lang.org/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/"
+            "https://spec.beskid-lang.org/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/"
         );
         if let Some(value) = prior {
             // SAFETY: test-only env restore.

@@ -12,8 +12,8 @@ use tracing::debug;
 use beskid_abi::{ModCollectRequest, ModGenerationRequest};
 
 use super::invoker::{
-    AnalyzerOutcome, CollectorOutcome, ContractInvocationError, ContractInvoker,
-    GeneratorOutcome, RewriterOutcome, StubContractInvoker,
+    AnalyzerOutcome, CollectorOutcome, ContractInvocationError, ContractInvoker, GeneratorOutcome,
+    RewriterOutcome, StubContractInvoker,
 };
 use super::types::ContractRegistration;
 

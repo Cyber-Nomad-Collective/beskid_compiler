@@ -1,22 +1,18 @@
 use std::path::Path;
 
 use crate::hir::{
-    AstProgram, HirNormalizeError, HirProgram, index_program_from_base, max_hir_node_id,
-    lower_program as lower_hir_program, normalize_program_with_resolution,
+    AstProgram, HirNormalizeError, HirProgram, index_program_from_base,
+    lower_program as lower_hir_program, max_hir_node_id, normalize_program_with_resolution,
 };
-use crate::projects::{AssemblyDiscovery, assembly::ProgramAssembly};
 use crate::projects::assembly::ModuleIndex;
-use crate::resolve::resolver::{
-    ResolveTraceContext, enter_resolve_span, resolve_program_traced,
-};
+use crate::projects::{AssemblyDiscovery, assembly::ProgramAssembly};
+use crate::resolve::resolver::{ResolveTraceContext, enter_resolve_span, resolve_program_traced};
 use crate::resolve::{Resolution, ResolveError, Resolver};
 use crate::syntax::{Program, Spanned};
 use crate::types::{TypeChecker, TypeError, TypeResult};
 use beskid_pipeline::{PipelineObserver, observe_phase_result, observe_phase_value, phases};
 
-fn lower_trace_context(
-    entry_source_path: Option<&std::path::PathBuf>,
-) -> ResolveTraceContext<'_> {
+fn lower_trace_context(entry_source_path: Option<&std::path::PathBuf>) -> ResolveTraceContext<'_> {
     ResolveTraceContext {
         entry_path: entry_source_path.map(|path| path.as_path()),
         session_fingerprint: None,
@@ -174,7 +170,9 @@ fn typed_hir_from_lowered_with_assembly_inner(
         let _resolve_guard = enter_resolve_span(resolve_ctx);
         if let Some(assembly) = assembly {
             let resolve = if assembly.discovery == AssemblyDiscovery::ImportClosure {
-                assembly.module_index.resolve_assembly_closure(&hir, assembly)
+                assembly
+                    .module_index
+                    .resolve_assembly_closure(&hir, assembly)
             } else {
                 assembly
                     .module_index
@@ -285,10 +283,12 @@ fn type_check_lowered_hir(
     policy: DependencyTypingPolicy,
     module_index: Option<&ModuleIndex>,
     assembly: Option<&ProgramAssembly>,
-    prefetched_surfaces: Option<&std::collections::HashMap<
-        std::path::PathBuf,
-        std::sync::Arc<crate::types::surface::UnitTypeSurface>,
-    >>,
+    prefetched_surfaces: Option<
+        &std::collections::HashMap<
+            std::path::PathBuf,
+            std::sync::Arc<crate::types::surface::UnitTypeSurface>,
+        >,
+    >,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
     observe_phase_result(pipeline, phases::LOWER_TYPE_CHECK, || {

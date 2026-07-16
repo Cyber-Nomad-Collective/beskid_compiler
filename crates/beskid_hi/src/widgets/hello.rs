@@ -4,9 +4,7 @@ use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratkit::services::hotkey_service::Hotkey;
 
-use beskid_tools::shell::{
-    BeskidWidget, ShellAction, ShellInput, WidgetContext, WidgetMeta,
-};
+use beskid_tools::shell::{BeskidWidget, ShellAction, ShellInput, WidgetContext, WidgetMeta};
 
 use crate::models::descriptor::{ExtensionWidgetDescriptor, WIDGET_CATALOG};
 
@@ -47,7 +45,11 @@ impl BeskidWidget for HelloWidget {
         frame.render_widget(
             Paragraph::new("beskid_hi extension widget — shell API surface OK")
                 .style(Style::default().fg(Color::Green))
-                .block(Block::default().borders(Borders::ALL).title(format!(" {} ", DESC.id))),
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(format!(" {} ", DESC.id)),
+                ),
             area,
         );
     }

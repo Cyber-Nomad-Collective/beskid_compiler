@@ -48,7 +48,9 @@ fn parse_quoted_manifest_string(raw: &str) -> Option<&str> {
 
 /// Write a `.bws` workspace manifest and return its path.
 pub(crate) fn write_workspace_manifest(dir: impl AsRef<Path>, source: &str) -> PathBuf {
-    let manifest_path = dir.as_ref().join(manifest_file_name_from_source(source, "bws"));
+    let manifest_path = dir
+        .as_ref()
+        .join(manifest_file_name_from_source(source, "bws"));
     fs::write(&manifest_path, source).expect("write workspace manifest");
     manifest_path
 }

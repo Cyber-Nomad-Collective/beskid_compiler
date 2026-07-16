@@ -97,7 +97,9 @@ fn collect_syntax_registrations_from_items(
                     let entry_symbol = internal_symbols
                         .get(&(type_name.clone(), spec.entry_method.to_string()))
                         .map(|method_name| mod_contract_entry_symbol(package_id, method_name))
-                        .unwrap_or_else(|| mod_contract_entry_symbol(package_id, spec.entry_method));
+                        .unwrap_or_else(|| {
+                            mod_contract_entry_symbol(package_id, spec.entry_method)
+                        });
                     registrations.push(ContractRegistration {
                         contract_id: spec.contract_id.to_string(),
                         type_id: format!("{package_id}.{type_name}"),

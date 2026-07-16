@@ -4,8 +4,8 @@ use std::fs;
 
 use beskid_analysis::CompilationContext;
 use beskid_analysis::services::{
-    FrontEndOptions, PrepareOptions, analyze_source_in_project,
-    prepare_compilation_diagnostics, resolved_input_from_plan,
+    FrontEndOptions, PrepareOptions, analyze_source_in_project, prepare_compilation_diagnostics,
+    resolved_input_from_plan,
 };
 
 use crate::projects::with_cwd;
@@ -46,13 +46,8 @@ i32 Main() {
     with_cwd(&root, || {
         let ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
         let plan = ctx.compile_plan.clone().expect("plan");
-        let resolved = resolved_input_from_plan(
-            entry.clone(),
-            source.to_string(),
-            plan,
-            None,
-            None,
-        );
+        let resolved =
+            resolved_input_from_plan(entry.clone(), source.to_string(), plan, None, None);
 
         let gate = analyze_source_in_project(&entry, source).expect("analyze");
         let (_, prepare) = prepare_compilation_diagnostics(
@@ -61,9 +56,8 @@ i32 Main() {
                 front_end: FrontEndOptions {
                     with_semantic_diagnostics: true,
                     ..Default::default()
-
                 },
-            ..Default::default()
+                ..Default::default()
             },
             None,
         )

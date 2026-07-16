@@ -5,8 +5,8 @@ use crate::hir::{
     HirContractDefinition, HirInlineModule, HirItem, HirModuleDeclaration, HirPath,
     HirPrimitiveType, HirProgram, HirType, HirVisibility,
 };
-use crate::syntax_query::{HirNode, HirQuery};
 use crate::syntax::{SpanInfo, Spanned};
+use crate::syntax_query::{HirNode, HirQuery};
 use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {

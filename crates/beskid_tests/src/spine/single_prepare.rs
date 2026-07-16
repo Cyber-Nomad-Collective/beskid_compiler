@@ -8,9 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::Mutex;
 
-use beskid_analysis::services::{
-    FrontEndOptions, PrepareOptions, ResolvedInput, resolve_input,
-};
+use beskid_analysis::services::{FrontEndOptions, PrepareOptions, ResolvedInput, resolve_input};
 use beskid_codegen::services::lower_from_front_end;
 use beskid_pipeline::{PipelineEvent, PipelineObserver, phases};
 use beskid_queries::{configure_db_for_project, prepare_compilation_diagnostics};
@@ -111,7 +109,6 @@ fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecord
             front_end: FrontEndOptions {
                 with_semantic_diagnostics: true,
                 ..Default::default()
-
             },
             ..Default::default()
         },

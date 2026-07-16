@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use beskid_engine::services::run_entrypoint;
 use beskid_engine::Engine;
+use beskid_engine::services::run_entrypoint;
 
 #[test]
 fn jit_repeat_string_accumulation_with_mut() {
@@ -18,7 +18,10 @@ pub string Repeat(string unit, i64 count) {
 pub i64 Main() { return __str_len(Repeat("-", 4)); }
 "#;
     let output = run_entrypoint(Path::new("repeat.bd"), source, "Main").expect("main should run");
-    assert_eq!(output, "4", "expected accumulated string length 4, got {output}");
+    assert_eq!(
+        output, "4",
+        "expected accumulated string length 4, got {output}"
+    );
 }
 
 #[test]
@@ -71,5 +74,8 @@ mod Frame {
 pub i64 Main() { return __str_len(Frame.Repeat("-", 4)); }
 "#;
     let output = run_entrypoint(Path::new("repeat.bd"), source, "Main").expect("main should run");
-    assert_eq!(output, "4", "expected cross-module repeat length 4, got {output}");
+    assert_eq!(
+        output, "4",
+        "expected cross-module repeat length 4, got {output}"
+    );
 }

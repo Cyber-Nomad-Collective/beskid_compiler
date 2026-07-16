@@ -54,8 +54,8 @@ i32 Main() {
                 .kind,
             TargetKind::App
         );
-        let diagnostics = analyze_source_in_project(&entry, source)
-            .expect("analyze project source");
+        let diagnostics =
+            analyze_source_in_project(&entry, source).expect("analyze project source");
         let codes: Vec<String> = diagnostics
             .into_iter()
             .filter_map(|diagnostic| diagnostic.code)
@@ -117,8 +117,8 @@ i32 marker() {
                 .kind,
             TargetKind::Lib
         );
-        let diagnostics = analyze_source_in_project(&entry, source)
-            .expect("analyze lib project source");
+        let diagnostics =
+            analyze_source_in_project(&entry, source).expect("analyze lib project source");
         let codes: Vec<String> = diagnostics
             .into_iter()
             .filter_map(|diagnostic| diagnostic.code)

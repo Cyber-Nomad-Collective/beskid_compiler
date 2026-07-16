@@ -10,11 +10,11 @@ use beskid_pipeline::{
 use crate::analysis::diagnostics::MietteReportError;
 use crate::projects::{
     CompilePlan, PreparedProjectWorkspace, ProjectGraphBuildOptions, UnresolvedDependencyPolicy,
-    WorkspacePrepareOptions, WorkspaceResolutionSummary,
-    build_compile_plan_with_policy_and_graph, discover_project_manifest_in_dir,
-    discover_project_manifest_from_input_or_cwd, discover_workspace_manifest_in_dir,
-    is_project_manifest_path, is_workspace_manifest_path, prepare_project_workspace_with_options,
-    reject_legacy_manifest_path, resolve_workspace_candidate_with_summary,
+    WorkspacePrepareOptions, WorkspaceResolutionSummary, build_compile_plan_with_policy_and_graph,
+    discover_project_manifest_from_input_or_cwd, discover_project_manifest_in_dir,
+    discover_workspace_manifest_in_dir, is_project_manifest_path, is_workspace_manifest_path,
+    prepare_project_workspace_with_options, reject_legacy_manifest_path,
+    resolve_workspace_candidate_with_summary,
 };
 
 use super::diagnostics_emit::project_error_diagnostic;

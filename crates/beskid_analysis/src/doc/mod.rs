@@ -14,7 +14,7 @@ mod render;
 mod type_format;
 mod validate;
 
-pub use api_signatures::{apply_signature_to_item, build_item_signature, hir_programs_by_path};
+pub use api_signatures::{apply_signature_to_item, build_item_signature};
 pub use api_snapshot::{
     API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
     API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, API_JSON_SCHEMA_VERSION_GRAPH_V3, ApiDocItem, ApiDocRoot,

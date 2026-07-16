@@ -1,11 +1,11 @@
+use crate::shell::primitives::Hotkey;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use crate::shell::primitives::Hotkey;
 
 use crate::shell::context::WidgetContext;
 use crate::shell::input::ShellInput;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
-use crate::shell::widgets::compile_debug::{draw_compile_debug_panel, CompileDebugTab};
+use crate::shell::widgets::compile_debug::{CompileDebugTab, draw_compile_debug_panel};
 
 /// Debugger page — surfaces the compile debugger timeline (same data as compile/debug page).
 pub struct DebugFutureWidget;

@@ -7,12 +7,11 @@
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
-const CRANELIFT_QUIET: &str =
-    "cranelift_jit=warn,cranelift_codegen=warn,cranelift_frontend=warn,cranelift_module=warn,cranelift_native=warn,cranelift_object=warn";
+const CRANELIFT_QUIET: &str = "cranelift_jit=warn,cranelift_codegen=warn,cranelift_frontend=warn,cranelift_module=warn,cranelift_native=warn,cranelift_object=warn";
 
 static TUI_LOG_SINK_ACTIVE: AtomicBool = AtomicBool::new(false);
 

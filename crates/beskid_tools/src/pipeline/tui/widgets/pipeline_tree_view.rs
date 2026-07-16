@@ -1,11 +1,11 @@
 //! Pipeline phase tree via ratkit `tree-view`.
 
+use crate::shell::primitives::{TreeNode, TreeViewState};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders};
-use crate::shell::primitives::{TreeNode, TreeViewState};
 use ratkit::widgets::{TreeView, TreeViewRef};
 
 pub fn draw_pipeline_tree(

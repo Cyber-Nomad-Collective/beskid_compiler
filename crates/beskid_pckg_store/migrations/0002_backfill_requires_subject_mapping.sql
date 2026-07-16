@@ -1,0 +1,3 @@
+-- Populate pckg_legacy_identity_subject_map(old_identity_id, auth_hub_subject)
+-- from an audited GitHub identity export before importing existing packages.
+-- Do not infer subjects from legacy usernames or email addresses.

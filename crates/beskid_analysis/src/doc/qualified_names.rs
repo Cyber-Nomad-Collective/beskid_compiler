@@ -95,9 +95,10 @@ pub fn type_ref_lookup_index(resolution: &Resolution) -> HashMap<String, usize> 
             }
         }
         if let Some(symbol) = item.symbol
-            && let Some(key) = symbol_key(&resolution.symbols, symbol) {
-                idx.entry(key).or_insert(id);
-            }
+            && let Some(key) = symbol_key(&resolution.symbols, symbol)
+        {
+            idx.entry(key).or_insert(id);
+        }
         idx.entry(item.name.clone()).or_insert(id);
     }
     idx

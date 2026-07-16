@@ -15,51 +15,53 @@ use crate::tui::shell::pane_state::{ShellMode, TemplateListTab};
 use crate::tui::shell::state::ShellState;
 
 pub fn update(msg: &ShellMessage, state: &mut ShellState) -> Vec<ShellEffect> {
-        let mut effects = Vec::new();
-        match msg {
-            ShellMessage::SetOverlayVisible {
-                kind: OverlayKind::Templates,
-                visible: true,
-            }
-            | ShellMessage::EnterProjectWizard => {
-                state.shell_mode = ShellMode::ProjectWizard;
-                state.set_overlay_visible(OverlayKind::Templates, true);
-                state.focus_overlay(OverlayKind::Templates);
-                if !state.templates.catalog_loaded && !state.templates.loading {
-                    effects.push(ShellEffect::FetchTemplates);
-                }
-            }
-            ShellMessage::TemplatesLoaded { installed, registry } => {
-                state.templates.loading = false;
-                state.templates.catalog_loaded = true;
-                state.templates.error = None;
-                state.templates.installed.clone_from(installed);
-                state.templates.registry.clone_from(registry);
-                if state.templates.active_rows() > 0
-                    && state.templates.list_state.selected().is_none()
-                {
-                    state.templates.list_state.select(Some(0));
-                }
-                state.sync_template_detail_viewer();
-            }
-            ShellMessage::TemplatesLoadFailed(error) => {
-                state.templates.loading = false;
-                state.templates.error = Some(error.clone());
-            }
-            ShellMessage::TemplateInstallDone { short_name, package_id } => {
-                state.templates.installing = false;
-                state.templates.status = Some(format!(
-                    "Installed `{short_name}` from `{package_id}`"
-                ));
+    let mut effects = Vec::new();
+    match msg {
+        ShellMessage::SetOverlayVisible {
+            kind: OverlayKind::Templates,
+            visible: true,
+        }
+        | ShellMessage::EnterProjectWizard => {
+            state.shell_mode = ShellMode::ProjectWizard;
+            state.set_overlay_visible(OverlayKind::Templates, true);
+            state.focus_overlay(OverlayKind::Templates);
+            if !state.templates.catalog_loaded && !state.templates.loading {
                 effects.push(ShellEffect::FetchTemplates);
             }
-            ShellMessage::TemplateInstallFailed { package_id, error } => {
-                state.templates.installing = false;
-                state.templates.status =
-                    Some(format!("Install failed for `{package_id}`: {error}"));
-            }
-            _ => {}
         }
+        ShellMessage::TemplatesLoaded {
+            installed,
+            registry,
+        } => {
+            state.templates.loading = false;
+            state.templates.catalog_loaded = true;
+            state.templates.error = None;
+            state.templates.installed.clone_from(installed);
+            state.templates.registry.clone_from(registry);
+            if state.templates.active_rows() > 0 && state.templates.list_state.selected().is_none()
+            {
+                state.templates.list_state.select(Some(0));
+            }
+            state.sync_template_detail_viewer();
+        }
+        ShellMessage::TemplatesLoadFailed(error) => {
+            state.templates.loading = false;
+            state.templates.error = Some(error.clone());
+        }
+        ShellMessage::TemplateInstallDone {
+            short_name,
+            package_id,
+        } => {
+            state.templates.installing = false;
+            state.templates.status = Some(format!("Installed `{short_name}` from `{package_id}`"));
+            effects.push(ShellEffect::FetchTemplates);
+        }
+        ShellMessage::TemplateInstallFailed { package_id, error } => {
+            state.templates.installing = false;
+            state.templates.status = Some(format!("Install failed for `{package_id}`: {error}"));
+        }
+        _ => {}
+    }
     effects
 }
 
@@ -69,11 +71,8 @@ pub fn on_input(event: &InputEvent, state: &mut ShellState) -> InputResult {
 
 pub fn render(area: Rect, frame: &mut Frame, state: &mut ShellState) {
     let [top, body] = Layout::vertical([Constraint::Length(3), Constraint::Min(6)]).areas(area);
-    let [list_area, detail_area] = Layout::horizontal([
-        Constraint::Percentage(42),
-        Constraint::Percentage(58),
-    ])
-    .areas(body);
+    let [list_area, detail_area] =
+        Layout::horizontal([Constraint::Percentage(42), Constraint::Percentage(58)]).areas(body);
 
     draw_tabs(frame, top, state);
     draw_template_list(frame, list_area, state);
@@ -129,12 +128,10 @@ fn draw_template_list(frame: &mut Frame, area: Rect, state: &mut ShellState) {
             .registry
             .iter()
             .map(|row| {
-                ListItem::new(Line::from(vec![
-                    Span::styled(
-                        row.package_id.as_str(),
-                        Style::default().fg(Color::Cyan),
-                    ),
-                ]))
+                ListItem::new(Line::from(vec![Span::styled(
+                    row.package_id.as_str(),
+                    Style::default().fg(Color::Cyan),
+                )]))
             })
             .collect(),
     };

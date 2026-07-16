@@ -256,7 +256,8 @@ impl<'a> SolverState<'a> {
             }
             let (span, name) =
                 ambiguity_site(set, *var).unwrap_or((fallback_span, var.0.to_string()));
-            self.errors.push(TypeError::MissingTypeAnnotation { span, name });
+            self.errors
+                .push(TypeError::MissingTypeAnnotation { span, name });
         }
     }
 }
@@ -270,9 +271,7 @@ fn ambiguity_site(set: &ConstraintSet, var: TypeVar) -> Option<(SpanInfo, String
                 name,
             } if *candidate == var => return Some((*span, name.clone())),
             Constraint::ApplyGeneric {
-                result_vars,
-                span,
-                ..
+                result_vars, span, ..
             } if result_vars.contains(&var) => {
                 return Some((*span, format!("T{}", var.0)));
             }

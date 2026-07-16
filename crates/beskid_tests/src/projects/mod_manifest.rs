@@ -3,8 +3,8 @@
 use std::fs;
 
 use beskid_analysis::projects::{
-    MOD_CAPABILITY_NAMES, ProjectGraphNode, ProjectKind, TargetKind,
-    build_compile_plan, build_project_graph, parse_manifest,
+    MOD_CAPABILITY_NAMES, ProjectGraphNode, ProjectKind, TargetKind, build_compile_plan,
+    build_project_graph, parse_manifest,
 };
 
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};

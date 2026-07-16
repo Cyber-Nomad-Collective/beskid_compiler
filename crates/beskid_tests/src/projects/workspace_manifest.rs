@@ -65,9 +65,7 @@ member "core" {
     assert!(
         matches!(
             error,
-            ProjectError::Validation(_)
-                | ProjectError::Parse(_)
-                | ProjectError::ParseAt { .. }
+            ProjectError::Validation(_) | ProjectError::Parse(_) | ProjectError::ParseAt { .. }
         ),
         "unexpected workspace error: {error:?}"
     );

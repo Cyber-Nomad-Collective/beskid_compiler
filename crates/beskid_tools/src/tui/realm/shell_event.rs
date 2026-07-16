@@ -1,13 +1,13 @@
 //! Tuirealm event mapping for the unified shell (no ratkit coordinator bridge).
 
 use crossterm::event::{
-    KeyCode, KeyEvent as CrosstermKeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
-    MouseButton, MouseEvent as CrosstermMouseEvent, MouseEventKind,
+    KeyCode, KeyEvent as CrosstermKeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton,
+    MouseEvent as CrosstermMouseEvent, MouseEventKind,
 };
 use tuirealm::event::{
     Event, Key, KeyEvent as RealmKeyEvent, KeyModifiers as RealmKeyModifiers, MediaKeyCode,
-    MouseButton as RealmMouseButton, MouseEvent as RealmMouseEvent, MouseEventKind as RealmMouseKind,
-    NoUserEvent,
+    MouseButton as RealmMouseButton, MouseEvent as RealmMouseEvent,
+    MouseEventKind as RealmMouseKind, NoUserEvent,
 };
 
 use crate::tui::input::InputEvent;
@@ -55,10 +55,7 @@ pub fn mouse_is_click(mouse: &CrosstermMouseEvent) -> bool {
 }
 
 pub fn mouse_is_move_or_drag(mouse: &CrosstermMouseEvent) -> bool {
-    matches!(
-        mouse.kind,
-        MouseEventKind::Moved | MouseEventKind::Drag(_)
-    )
+    matches!(mouse.kind, MouseEventKind::Moved | MouseEventKind::Drag(_))
 }
 
 pub fn mouse_is_inside(mouse: &CrosstermMouseEvent, rect: ratatui::layout::Rect) -> bool {

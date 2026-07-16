@@ -6,9 +6,9 @@ use crossterm::event::{
 };
 use ratatui::layout::Position;
 
-use crate::pipeline::tui::log_input::{scroll_from_mouse, scroll_log, LogScrollEvent};
-use crate::pipeline::tui::widgets::tree_click_at;
+use crate::pipeline::tui::log_input::{LogScrollEvent, scroll_from_mouse, scroll_log};
 use crate::pipeline::tui::log_tabs::LogTab;
+use crate::pipeline::tui::widgets::tree_click_at;
 use crate::tui::input::{InputAction, InputEvent, InputResult};
 
 use super::focus::{FocusTarget, OverlayKind, PaneFocus};
@@ -32,8 +32,7 @@ pub fn handle_base_input(event: &InputEvent, state: &mut ShellState) -> InputRes
 
 pub fn handle_tests_overlay_input(event: &InputEvent, state: &mut ShellState) -> InputResult {
     if let InputEvent::Key(key) = event {
-        if key.kind == KeyEventKind::Press
-            && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
+        if key.kind == KeyEventKind::Press && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
         {
             return InputResult::CloseOverlay;
         }
@@ -312,7 +311,12 @@ fn handle_mouse(state: &mut ShellState, mouse: MouseEvent) -> InputAction {
         state.focus = FocusTarget::Base(pane);
     }
     if state.pane_focus == PaneFocus::Detail {
-        tree_click_at(state.layout_rects.detail, mouse, &state.tree_nodes, &mut state.tree_state);
+        tree_click_at(
+            state.layout_rects.detail,
+            mouse,
+            &state.tree_nodes,
+            &mut state.tree_state,
+        );
         return InputAction::Redraw;
     }
     if let Some(kind) = overlay_at(state, position) {
@@ -339,12 +343,8 @@ fn header_tab_at(state: &ShellState, position: Position) -> Option<FocusTarget> 
     let slot = inner_x.saturating_mul(3) / header.width.max(1);
     match slot {
         0 => Some(FocusTarget::Base(PaneFocus::Stage)),
-        1 if state.tests_loaded => {
-            Some(FocusTarget::Overlay(OverlayKind::Tests))
-        }
-        2 if state.summary_ready => {
-            Some(FocusTarget::Overlay(OverlayKind::Summary))
-        }
+        1 if state.tests_loaded => Some(FocusTarget::Overlay(OverlayKind::Tests)),
+        2 if state.summary_ready => Some(FocusTarget::Overlay(OverlayKind::Summary)),
         _ => None,
     }
 }
@@ -488,7 +488,11 @@ fn route_tree_key(state: &mut ShellState, down: bool) {
 }
 
 fn route_tree_horizontal(state: &mut ShellState, expand: bool) {
-    let code = if expand { KeyCode::Right } else { KeyCode::Left };
+    let code = if expand {
+        KeyCode::Right
+    } else {
+        KeyCode::Left
+    };
     let key = KeyEvent {
         code,
         modifiers: KeyModifiers::NONE,
@@ -687,15 +691,14 @@ fn queue_template_install(state: &mut ShellState) {
         crate::tui::shell::pane_state::TemplateListTab::Registry => {
             state.templates.selected_package_id()
         }
-        crate::tui::shell::pane_state::TemplateListTab::Installed => state
-            .templates
-            .selected_package_id()
-            .or_else(|| {
+        crate::tui::shell::pane_state::TemplateListTab::Installed => {
+            state.templates.selected_package_id().or_else(|| {
                 state
                     .templates
                     .selected_short_name()
                     .map(crate::tui::panes::template_ops::resolve_package_id)
-            }),
+            })
+        }
     };
     if let Some(package_id) = package_id {
         state.templates.pending_install = Some(package_id);
@@ -703,17 +706,17 @@ fn queue_template_install(state: &mut ShellState) {
     }
 }
 
-fn list_row_index(area: ratatui::layout::Rect, position: Position, row_count: usize) -> Option<usize> {
+fn list_row_index(
+    area: ratatui::layout::Rect,
+    position: Position,
+    row_count: usize,
+) -> Option<usize> {
     if row_count == 0 || !area.contains(position) {
         return None;
     }
     let inner_y = position.y.saturating_sub(area.y + 1);
     let index = inner_y as usize;
-    if index < row_count {
-        Some(index)
-    } else {
-        None
-    }
+    if index < row_count { Some(index) } else { None }
 }
 
 #[cfg(test)]
@@ -766,10 +769,7 @@ mod tests {
             },
             ..Default::default()
         };
-        assert_eq!(
-            pane_at(&state, Position::new(5, 5)),
-            Some(PaneFocus::Stage)
-        );
+        assert_eq!(pane_at(&state, Position::new(5, 5)), Some(PaneFocus::Stage));
         assert_eq!(
             pane_at(&state, Position::new(50, 5)),
             Some(PaneFocus::Detail)

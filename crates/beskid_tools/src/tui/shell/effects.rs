@@ -3,21 +3,17 @@
 use std::sync::mpsc::Sender;
 use std::thread;
 
+use crate::tui::effects::ShellEffect;
+use crate::tui::message::ShellMessage;
 use crate::tui::panes::{
     fetch_package_details, fetch_packages, install_registry_template, list_installed_templates,
     list_registry_templates, resolve_package_id, search_packages,
 };
-use crate::tui::effects::ShellEffect;
-use crate::tui::message::ShellMessage;
 use crate::tui::shell::state::ShellState;
 
 use super::runtime::RuntimeOp;
 
-pub fn apply_effects(
-    effects: Vec<ShellEffect>,
-    tx: &Sender<RuntimeOp>,
-    state: &mut ShellState,
-) {
+pub fn apply_effects(effects: Vec<ShellEffect>, tx: &Sender<RuntimeOp>, state: &mut ShellState) {
     for effect in effects {
         match effect {
             ShellEffect::Redraw | ShellEffect::CloseOverlay | ShellEffect::Quit => {}
@@ -97,7 +93,9 @@ fn spawn_templates_catalog(tx: Sender<RuntimeOp>, state: &ShellState) {
                 installed,
                 registry,
             },
-            (Err(error), _) | (_, Err(error)) => ShellMessage::TemplatesLoadFailed(error.to_string()),
+            (Err(error), _) | (_, Err(error)) => {
+                ShellMessage::TemplatesLoadFailed(error.to_string())
+            }
         };
         let _ = tx.send(RuntimeOp::Update(msg));
     });

@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
+use crate::hir::index::reset_program_node_ids;
 use crate::hir::{
     AstProgram, HirProgram, index_program_from_base, lower_program as lower_hir_program,
 };
-use crate::hir::index::reset_program_node_ids;
 use crate::syntax::{Program, Spanned};
 
 use super::SourceUnit;

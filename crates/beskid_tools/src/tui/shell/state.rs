@@ -2,9 +2,9 @@
 
 use std::collections::HashSet;
 
+use crate::shell::primitives::{TreeNavigator, TreeNode, TreeViewState};
 use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
-use crate::shell::primitives::{TreeNavigator, TreeNode, TreeViewState};
 
 use crate::pipeline::tui::log_tabs::{LogTab, LogTabStates};
 use crate::pipeline::tui::{
@@ -172,7 +172,10 @@ impl ShellState {
             return;
         };
         if let Some(link) = row.link.as_ref()
-            && self.code_viewer.load_file(&link.path, Some(link.line)).is_ok()
+            && self
+                .code_viewer
+                .load_file(&link.path, Some(link.line))
+                .is_ok()
         {
             return;
         }
@@ -263,7 +266,10 @@ impl ShellState {
 fn selected_running_index(rows: &[TestRow]) -> Option<usize> {
     rows.iter()
         .position(|row| row.state == TestRowState::Running)
-        .or_else(|| rows.iter().rposition(|row| row.state != TestRowState::Pending))
+        .or_else(|| {
+            rows.iter()
+                .rposition(|row| row.state != TestRowState::Pending)
+        })
 }
 
 impl ShellState {
@@ -276,7 +282,9 @@ impl ShellState {
     }
 
     pub fn any_overlay_visible(&self) -> bool {
-        OverlayKind::ALL.iter().any(|kind| self.overlay_visible(*kind))
+        OverlayKind::ALL
+            .iter()
+            .any(|kind| self.overlay_visible(*kind))
     }
 
     pub fn set_overlay_visible(&mut self, kind: OverlayKind, visible: bool) {

@@ -4,19 +4,19 @@
 //! `beskid hi` uses the same tuirealm loop on stderr.
 
 pub mod app;
-pub mod realm;
-pub mod signals;
 pub mod effects;
-pub mod overlay_chrome;
-pub mod shell_fx;
 pub mod input;
 pub mod layout;
 pub mod message;
+pub mod overlay_chrome;
 pub mod panes;
+pub mod realm;
 pub mod render;
 pub mod screens;
 pub mod session;
 pub mod shell;
+pub mod shell_fx;
+pub mod signals;
 pub mod views;
 pub mod widgets;
 

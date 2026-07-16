@@ -6,8 +6,8 @@ use crate::shell::chrome::PINNED_TOP_ROWS;
 use crate::tui::shell::state::LayoutRects;
 
 pub use crate::shell::layout::overlays::{
-    overlay_rect, overlay_rect_for, OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH,
-    OVERLAY_PCKG, OVERLAY_SETTINGS, OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS,
+    OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, OVERLAY_PCKG, OVERLAY_SETTINGS,
+    OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS, overlay_rect, overlay_rect_for,
 };
 
 pub const PANEL_HEADER: &str = "header";
@@ -39,8 +39,8 @@ pub fn resolve_shell_layout(area: Rect) -> LayoutRects {
         height: footer_block.height.saturating_sub(1),
         ..footer_block
     };
-    let [stage, detail] = Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)])
-        .areas(body);
+    let [stage, detail] =
+        Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)]).areas(body);
 
     let chrome = Rect {
         y: footer_block.y + footer.height,

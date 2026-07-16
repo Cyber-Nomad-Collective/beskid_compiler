@@ -5,8 +5,8 @@ use crate::hir::{
     HirBlock, HirExpressionNode, HirItem, HirPath, HirProgram, HirStatementNode, HirType,
     HirUseDeclaration, HirVisibility,
 };
-use crate::syntax_query::HirQuery;
 use crate::syntax::Spanned;
+use crate::syntax_query::HirQuery;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 

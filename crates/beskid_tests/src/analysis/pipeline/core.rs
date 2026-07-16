@@ -745,10 +745,10 @@ fn analysis_does_not_emit_for_loop_iterable_errors_from_semantic_rules() {
             AnalysisOptions::default(),
         );
         assert!(
-            !result
-                .diagnostics
-                .iter()
-                .any(|diag| matches!(diag.code.as_deref(), Some("E1215" | "E1216" | "E1217" | "E1218"))),
+            !result.diagnostics.iter().any(|diag| matches!(
+                diag.code.as_deref(),
+                Some("E1215" | "E1216" | "E1217" | "E1218")
+            )),
             "for-loop iterable diagnostics are owned by lower.type_check; got {:?}",
             result.diagnostics
         );

@@ -1,5 +1,5 @@
-use crate::syntax_query::AstNode;
 use crate::syntax::SpanInfo;
+use crate::syntax_query::AstNode;
 
 #[derive(Clone, Copy)]
 pub struct DynNodeRef<'a>(pub &'a dyn AstNode);

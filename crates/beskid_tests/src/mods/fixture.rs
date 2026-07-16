@@ -7,9 +7,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use beskid_analysis::projects::{
-    CompilePlan, ResolvedDependencyProject, Target, TargetKind,
-};
+use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
 
 use crate::test_harness::temp_case_dir;
 
@@ -160,4 +158,3 @@ dependency "SampleMod" {
   path = "../SampleMod"
 }
 "#;
-

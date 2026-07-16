@@ -8,11 +8,10 @@ use bsol::{
 
 use super::error::ProjectError;
 use super::model::{
-    Dependency, DependencySource, GrammarOutputEntry, ProjectKind, ProjectLinkSection,
-    ProjectManifest, ModGeneratedOutput, ProjectGrammarSection, ProjectModSection,
-    ProjectSchemasSection, ProjectSection, ProjectTemplateSection, SchemaExport, Target,
-    TargetKind, WorkspaceManifest, WorkspaceMember, WorkspaceOverride, WorkspaceRegistry,
-    WorkspaceSection,
+    Dependency, DependencySource, GrammarOutputEntry, ModGeneratedOutput, ProjectGrammarSection,
+    ProjectKind, ProjectLinkSection, ProjectManifest, ProjectModSection, ProjectSchemasSection,
+    ProjectSection, ProjectTemplateSection, SchemaExport, Target, TargetKind, WorkspaceManifest,
+    WorkspaceMember, WorkspaceOverride, WorkspaceRegistry, WorkspaceSection,
 };
 use super::validator::{validate_manifest, validate_workspace_manifest};
 
@@ -64,7 +63,14 @@ enum ModFieldValue {
     String(String),
 }
 
-const PROJECT_ROOT_FIELDS: &[&str] = &["name", "version", "root", "root_namespace", "type", "readme"];
+const PROJECT_ROOT_FIELDS: &[&str] = &[
+    "name",
+    "version",
+    "root",
+    "root_namespace",
+    "type",
+    "readme",
+];
 const WORKSPACE_ROOT_FIELDS: &[&str] = &["name", "resolver"];
 const MEMBER_FIELDS: &[&str] = &["path"];
 
@@ -219,7 +225,9 @@ fn lower_grammar_block(block: &ValidatedBlock) -> Result<ProjectGrammarSection, 
     })
 }
 
-fn lower_mod_generated_outputs(block: &ValidatedBlock) -> Result<Vec<ModGeneratedOutput>, ProjectError> {
+fn lower_mod_generated_outputs(
+    block: &ValidatedBlock,
+) -> Result<Vec<ModGeneratedOutput>, ProjectError> {
     block
         .nested
         .iter()
@@ -292,11 +300,14 @@ fn lower_mod_block(block: &ValidatedBlock) -> Result<HashMap<String, ModFieldVal
             fields.insert(key.to_string(), ModFieldValue::StringList(list.clone()));
         } else if let Some(value) = block.fields.get(key) {
             let parsed = match key {
-                "maxGeneratorRounds" | "maxMetaRounds" => ModFieldValue::U32(
-                    value
-                        .parse::<u32>()
-                        .map_err(|_| parse_at(block.span, format!("`mod.{key}` must be a positive integer")))?,
-                ),
+                "maxGeneratorRounds" | "maxMetaRounds" => {
+                    ModFieldValue::U32(value.parse::<u32>().map_err(|_| {
+                        parse_at(
+                            block.span,
+                            format!("`mod.{key}` must be a positive integer"),
+                        )
+                    })?)
+                }
                 "artifactPolicy" => ModFieldValue::String(value.clone()),
                 "capabilities" => ModFieldValue::StringList(vec![value.clone()]),
                 _ => ModFieldValue::String(value.clone()),
@@ -445,14 +456,21 @@ fn build_project_template_from_fields(
 }
 
 fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSection, ProjectError> {
-    reject_corelib_opt_out_keys(&project.fields, &project.extras, BsolSpan {
-        start: 0,
-        end: 0,
-        line: 1,
-    })?;
+    reject_corelib_opt_out_keys(
+        &project.fields,
+        &project.extras,
+        BsolSpan {
+            start: 0,
+            end: 0,
+            line: 1,
+        },
+    )?;
     let kind = build_project_kind(project.fields.get("type").map(|s| s.as_str()))?;
     let mod_section = match (&kind, &project.mod_section) {
-        (ProjectKind::Host | ProjectKind::Template | ProjectKind::Aggregate | ProjectKind::Bsol, Some(_)) => {
+        (
+            ProjectKind::Host | ProjectKind::Template | ProjectKind::Aggregate | ProjectKind::Bsol,
+            Some(_),
+        ) => {
             return Err(ProjectError::meta_contract(
                 "E1874",
                 "`mod` is only allowed when `type = Mod`",
@@ -465,7 +483,10 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
         _ => None,
     };
     let template_section = match (&kind, &project.template_section) {
-        (ProjectKind::Host | ProjectKind::Mod | ProjectKind::Aggregate | ProjectKind::Bsol, Some(_)) => {
+        (
+            ProjectKind::Host | ProjectKind::Mod | ProjectKind::Aggregate | ProjectKind::Bsol,
+            Some(_),
+        ) => {
             return Err(ProjectError::meta_contract(
                 "E1879",
                 "`template` is only allowed when `type = Template`",
@@ -477,7 +498,10 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
         _ => None,
     };
     let schemas_section = match (&kind, &project.schemas_section) {
-        (ProjectKind::Host | ProjectKind::Mod | ProjectKind::Template | ProjectKind::Aggregate, Some(_)) => {
+        (
+            ProjectKind::Host | ProjectKind::Mod | ProjectKind::Template | ProjectKind::Aggregate,
+            Some(_),
+        ) => {
             return Err(ProjectError::meta_contract(
                 "E1900",
                 "`schemas` is only allowed when `type = Bsol`",
@@ -491,17 +515,13 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
         block_kind: project.block_kind.clone(),
         name: required_field(&project.fields, "name")?,
         version: required_field(&project.fields, "version")?,
-        root: project
-            .fields
-            .get("root")
-            .cloned()
-            .unwrap_or_else(|| {
-                if matches!(kind, ProjectKind::Aggregate | ProjectKind::Bsol) {
-                    String::new()
-                } else {
-                    "Src".to_string()
-                }
-            }),
+        root: project.fields.get("root").cloned().unwrap_or_else(|| {
+            if matches!(kind, ProjectKind::Aggregate | ProjectKind::Bsol) {
+                String::new()
+            } else {
+                "Src".to_string()
+            }
+        }),
         root_namespace: project.fields.get("root_namespace").cloned(),
         kind,
         mod_section,
@@ -841,7 +861,10 @@ member "corelib_tests" {
 "#;
         let w = parse_workspace_manifest(src).expect("parse workspace");
         assert_eq!(
-            w.workspace.extras.get("defaultTestMember").map(String::as_str),
+            w.workspace
+                .extras
+                .get("defaultTestMember")
+                .map(String::as_str),
             Some("corelib_tests")
         );
     }
@@ -866,10 +889,7 @@ target "lib" {
 }
 "#;
         let manifest = parse_manifest(src).expect("parse grammar manifest");
-        let grammar = manifest
-            .project
-            .grammar_section
-            .expect("grammar section");
+        let grammar = manifest.project.grammar_section.expect("grammar section");
         assert_eq!(grammar.roots, vec!["grammars"]);
         assert_eq!(grammar.grammar_outputs.len(), 1);
         assert_eq!(grammar.grammar_outputs[0].pest, "grammars/regex.pest");

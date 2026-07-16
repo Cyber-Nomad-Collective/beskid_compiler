@@ -22,7 +22,10 @@ pub fn resolve_panels<'a>(
 ) -> Result<ResolvedPanels<'a>, String> {
     let header_h = PINNED_TOP_ROWS.min(area.height);
     let chrome_h = CHROME_ROWS.min(area.height.saturating_sub(header_h));
-    let main_h = area.height.saturating_sub(header_h).saturating_sub(chrome_h);
+    let main_h = area
+        .height
+        .saturating_sub(header_h)
+        .saturating_sub(chrome_h);
     let header_area = Rect {
         width: area.width,
         height: header_h,
@@ -44,8 +47,7 @@ pub fn resolve_panels<'a>(
         x: area.x,
         y: area.y + header_h + main_h,
     };
-    let frame = panes_ratatui::resolve(runtime, main_area)
-        .map_err(|e| e.to_string())?;
+    let frame = panes_ratatui::resolve(runtime, main_area).map_err(|e| e.to_string())?;
     Ok(ResolvedPanels {
         frame,
         header_area,
@@ -106,8 +108,8 @@ pub fn panel_id_for_kind(runtime: &LayoutRuntime, kind: &str) -> Option<PanelId>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shell::layout::load::load_from_source;
     use crate::shell::layout::EMBEDDED_HI_V2;
+    use crate::shell::layout::load::load_from_source;
 
     #[test]
     fn resolve_panels_rejects_zero_main_height() {

@@ -13,24 +13,27 @@ use super::chrome::ShellChrome;
 use super::context::WidgetContext;
 use super::control_mode::HiControlMode;
 use super::hotkeys::ShellHotkeys;
-use super::nav::NavAction;
-use super::layout::{
-    self, HiLayoutState, LayoutEditCommand, LayoutEditorOverlay, LayoutOverlayAction,
-    switch_page, template_by_id,
-};
-use super::nav::{NavRegistrar, NavRegistry};
-use super::workflow::{WorkflowCommand, WorkflowEngine, WorkflowStage};
-use super::palette::{self, CommandPaletteState, PaletteAction};
 use super::key_bindings::ShortcutBindings;
 use super::layers::ShellLayer;
+use super::layout::{
+    self, HiLayoutState, LayoutEditCommand, LayoutEditorOverlay, LayoutOverlayAction, switch_page,
+    template_by_id,
+};
+use super::nav::NavAction;
+use super::nav::{NavRegistrar, NavRegistry};
 use super::overlay_render::{self, HiOverlayWidgets, OverlayRenderContext};
+use super::palette::{self, CommandPaletteState, PaletteAction};
 use super::registry::WidgetRegistry;
 use super::scope::ShellScope;
-use super::scope_picker::{ScopePickerAction, ScopePickerMode, ScopePickerOverlay, resolve_picked_scope};
+use super::scope_picker::{
+    ScopePickerAction, ScopePickerMode, ScopePickerOverlay, resolve_picked_scope,
+};
 use super::settings::{ToolSettingsRegistrar, ToolSettingsRegistry, load_config};
 use super::shortcut_clicks::{ShortcutClickAction, ShortcutClickTargets};
 use super::widget::ShellAction;
 use super::widgets::{self, open_analysis, open_compile_debug, open_pckg, open_tests};
+use super::workflow::{WorkflowCommand, WorkflowEngine, WorkflowStage};
+use crate::pipeline::tui::widgets::init_session_logger;
 use crate::tui::input::{InputEvent, InputResult};
 use crate::tui::realm::shell_event::{
     ShellOutcome, ShellRealmEvent, mouse_is_click, mouse_is_inside, mouse_is_move_or_drag,
@@ -38,7 +41,6 @@ use crate::tui::realm::shell_event::{
 use crate::tui::shell::effects::{apply_effects, drain_pending_work};
 use crate::tui::shell::focus::OverlayKind;
 use crate::tui::shell::pane_state::ShellMode;
-use crate::pipeline::tui::widgets::init_session_logger;
 use crate::tui::shell::runtime::RuntimeOp;
 use crate::tui::shell::state::ShellState;
 use crate::tui::views;
@@ -223,7 +225,9 @@ impl HiShellApp {
 
     fn handle_modal_mouse(&mut self, _mouse: &MouseEvent) -> Option<ShellOutcome> {
         match self.top_mouse_layer()? {
-            ShellLayer::Palette | ShellLayer::ScopePicker | ShellLayer::PanelOverlay => Some(ShellOutcome::Redraw),
+            ShellLayer::Palette | ShellLayer::ScopePicker | ShellLayer::PanelOverlay => {
+                Some(ShellOutcome::Redraw)
+            }
             ShellLayer::LayoutEditor | ShellLayer::Help | ShellLayer::Base => None,
         }
     }
@@ -245,9 +249,7 @@ impl HiShellApp {
                     self.handle_palette_action(action);
                     Some(ShellOutcome::Redraw)
                 }
-                ShellRealmEvent::Input(InputEvent::Mouse(mouse)) => {
-                    self.modal_mouse_outcome(mouse)
-                }
+                ShellRealmEvent::Input(InputEvent::Mouse(mouse)) => self.modal_mouse_outcome(mouse),
                 _ => Some(ShellOutcome::Redraw),
             },
             ShellLayer::ScopePicker => {
@@ -349,17 +351,16 @@ impl HiShellApp {
                     return ShellOutcome::Redraw;
                 }
             }
-            let panel_id =
-                super::layout::resolve::resolve_panels(&mut self.layout.runtime, area)
-                    .ok()
-                    .and_then(|resolved| {
-                        super::layout::resolve::panel_id_at_terminal(
-                            &resolved.frame,
-                            resolved.main_area,
-                            mouse.column,
-                            mouse.row,
-                        )
-                    });
+            let panel_id = super::layout::resolve::resolve_panels(&mut self.layout.runtime, area)
+                .ok()
+                .and_then(|resolved| {
+                    super::layout::resolve::panel_id_at_terminal(
+                        &resolved.frame,
+                        resolved.main_area,
+                        mouse.column,
+                        mouse.row,
+                    )
+                });
             if let Some(pid) = panel_id {
                 self.layout.runtime.focus(pid);
                 return ShellOutcome::Redraw;
@@ -446,7 +447,12 @@ impl HiShellApp {
             self.focused_widget = kind.to_string();
             return;
         }
-        for widget in ["hi.welcome", "graph.deps", "compile.debugger", "analysis.diagnostics"] {
+        for widget in [
+            "hi.welcome",
+            "graph.deps",
+            "compile.debugger",
+            "analysis.diagnostics",
+        ] {
             if super::layout::resolve::focus_panel_by_kind(&mut self.layout.runtime, widget) {
                 self.focused_widget = widget.to_string();
                 return;
@@ -491,7 +497,8 @@ impl HiShellApp {
                 ctx.shell_state.focus_overlay(OverlayKind::Templates);
             }
             "graph.deps" => {
-                ctx.shell_state.set_overlay_visible(OverlayKind::Graph, true);
+                ctx.shell_state
+                    .set_overlay_visible(OverlayKind::Graph, true);
                 ctx.shell_state.focus_overlay(OverlayKind::Graph);
             }
             "compile.debugger" => open_compile_debug(&mut ctx),
@@ -548,12 +555,13 @@ impl HiShellApp {
             }
             LayoutOverlayAction::FocusNode(node_id) => {
                 if let Some(node) = self.layout.doc.nodes.get(&node_id)
-                    && let Some(widget) = &node.widget {
-                        let _ = super::layout::resolve::focus_panel_by_kind(
-                            &mut self.layout.runtime,
-                            widget,
-                        );
-                    }
+                    && let Some(widget) = &node.widget
+                {
+                    let _ = super::layout::resolve::focus_panel_by_kind(
+                        &mut self.layout.runtime,
+                        widget,
+                    );
+                }
             }
         }
     }
@@ -578,66 +586,54 @@ impl HiShellApp {
                 self.scope_picker = ScopePickerOverlay::open(ScopePickerMode::Project).ok();
             }
             "layout.focus_next" => {
-                let _ = self.layout.apply_command(
-                    LayoutEditCommand::FocusNext,
-                    &self.scope,
-                    None,
-                );
+                let _ = self
+                    .layout
+                    .apply_command(LayoutEditCommand::FocusNext, &self.scope, None);
             }
             "layout.focus_prev" => {
-                let _ = self.layout.apply_command(
-                    LayoutEditCommand::FocusPrev,
-                    &self.scope,
-                    None,
-                );
+                let _ = self
+                    .layout
+                    .apply_command(LayoutEditCommand::FocusPrev, &self.scope, None);
             }
             "layout.add" => {
-                let _ = self.layout.apply_command(
-                    LayoutEditCommand::AddPanel,
-                    &self.scope,
-                    None,
-                );
+                let _ = self
+                    .layout
+                    .apply_command(LayoutEditCommand::AddPanel, &self.scope, None);
             }
             "layout.remove" => {
-                let _ = self.layout.apply_command(
-                    LayoutEditCommand::RemovePanel,
-                    &self.scope,
-                    None,
-                );
+                let _ =
+                    self.layout
+                        .apply_command(LayoutEditCommand::RemovePanel, &self.scope, None);
             }
             "layout.wrap_col" => {
-                let _ = self.layout.apply_command(
-                    LayoutEditCommand::WrapCol,
-                    &self.scope,
-                    None,
-                );
+                let _ = self
+                    .layout
+                    .apply_command(LayoutEditCommand::WrapCol, &self.scope, None);
             }
             "layout.wrap_row" => {
-                let _ = self.layout.apply_command(
-                    LayoutEditCommand::WrapRow,
-                    &self.scope,
-                    None,
-                );
+                let _ = self
+                    .layout
+                    .apply_command(LayoutEditCommand::WrapRow, &self.scope, None);
             }
             "layout.tabs" => {
-                let _ = self.layout.apply_command(
-                    LayoutEditCommand::ConvertTabs,
-                    &self.scope,
-                    None,
-                );
+                let _ =
+                    self.layout
+                        .apply_command(LayoutEditCommand::ConvertTabs, &self.scope, None);
             }
             "layout.stack" => {
-                let _ = self.layout.apply_command(
-                    LayoutEditCommand::ConvertStack,
-                    &self.scope,
-                    None,
-                );
+                let _ =
+                    self.layout
+                        .apply_command(LayoutEditCommand::ConvertStack, &self.scope, None);
             }
             "layout.save" => {
-                let _ = self.layout.apply_command(LayoutEditCommand::Save, &self.scope, None);
+                let _ = self
+                    .layout
+                    .apply_command(LayoutEditCommand::Save, &self.scope, None);
             }
             "layout.reset" => {
-                let _ = self.layout.apply_command(LayoutEditCommand::Reset, &self.scope, None);
+                let _ = self
+                    .layout
+                    .apply_command(LayoutEditCommand::Reset, &self.scope, None);
                 self.nav.merge_pages(&self.layout.pages);
             }
             _ => {}
@@ -655,7 +651,10 @@ impl HiShellApp {
     }
 
     fn submit_workflow(&mut self, command: WorkflowCommand) {
-        if matches!(command, WorkflowCommand::Build { .. } | WorkflowCommand::Test { .. }) {
+        if matches!(
+            command,
+            WorkflowCommand::Build { .. } | WorkflowCommand::Test { .. }
+        ) {
             self.try_refresh_scope();
             self.shell_state.reset_compile_progress();
             let _ = switch_page(&mut self.layout, "compile_debug");
@@ -677,18 +676,13 @@ impl HiShellApp {
                     }
                     super::catalog::CommandItem::Contextual(_) => {
                         if item.id().starts_with("layout.") {
-                            let widget = if item.id() == "layout.add"
-                                || item.id() == "layout.set_widget"
-                            {
-                                let w = params.trim();
-                                if w.is_empty() {
-                                    None
+                            let widget =
+                                if item.id() == "layout.add" || item.id() == "layout.set_widget" {
+                                    let w = params.trim();
+                                    if w.is_empty() { None } else { Some(w) }
                                 } else {
-                                    Some(w)
-                                }
-                            } else {
-                                None
-                            };
+                                    None
+                                };
                             if let Some(w) = widget {
                                 let cmd = if item.id() == "layout.add" {
                                     LayoutEditCommand::AddPanel
@@ -705,11 +699,22 @@ impl HiShellApp {
                     }
                     super::catalog::CommandItem::Workflow(wf) => {
                         let command = match wf.stage {
-                            WorkflowStage::Build => WorkflowCommand::Build { params: params.clone() },
-                            WorkflowStage::Test => WorkflowCommand::Test { params: params.clone() },
-                            WorkflowStage::Run => WorkflowCommand::Run { target: params.clone(), args: vec![] },
-                            WorkflowStage::Analyze => WorkflowCommand::Analyze { params: params.clone() },
-                            WorkflowStage::Graph => WorkflowCommand::Graph { params: params.clone() },
+                            WorkflowStage::Build => WorkflowCommand::Build {
+                                params: params.clone(),
+                            },
+                            WorkflowStage::Test => WorkflowCommand::Test {
+                                params: params.clone(),
+                            },
+                            WorkflowStage::Run => WorkflowCommand::Run {
+                                target: params.clone(),
+                                args: vec![],
+                            },
+                            WorkflowStage::Analyze => WorkflowCommand::Analyze {
+                                params: params.clone(),
+                            },
+                            WorkflowStage::Graph => WorkflowCommand::Graph {
+                                params: params.clone(),
+                            },
                         };
                         self.submit_workflow(command);
                     }
@@ -740,9 +745,10 @@ impl HiShellApp {
     fn route_overlay_input(&mut self, event: ShellRealmEvent) -> ShellOutcome {
         if let ShellRealmEvent::Input(input) = event {
             if let InputEvent::Key(key) = &input
-                && let Some(action) = self.handle_global_key(*key) {
-                    return action;
-                }
+                && let Some(action) = self.handle_global_key(*key)
+            {
+                return action;
+            }
             let result = views::on_input(&input, &mut self.shell_state);
             match result {
                 InputResult::Quit => {
@@ -780,20 +786,16 @@ impl HiShellApp {
                     return Some(ShellOutcome::Redraw);
                 }
                 KeyCode::Esc => {
-                    let _ = self.layout.apply_command(
-                        LayoutEditCommand::ToggleEdit,
-                        &self.scope,
-                        None,
-                    );
+                    let _ =
+                        self.layout
+                            .apply_command(LayoutEditCommand::ToggleEdit, &self.scope, None);
                     self.sync_hotkey_scope();
                     return Some(ShellOutcome::Redraw);
                 }
                 KeyCode::Char('+') | KeyCode::Char('=') => {
-                    let _ = self.layout.apply_command(
-                        LayoutEditCommand::ResizePlus,
-                        &self.scope,
-                        None,
-                    );
+                    let _ =
+                        self.layout
+                            .apply_command(LayoutEditCommand::ResizePlus, &self.scope, None);
                     return Some(ShellOutcome::Redraw);
                 }
                 KeyCode::Char('-') | KeyCode::Char('_') => {
@@ -965,7 +967,10 @@ impl HiShellApp {
         let control_mode = self.control_mode();
         let header_h = super::chrome::PINNED_TOP_ROWS.min(area.height);
         let chrome_h = 1u16.min(area.height.saturating_sub(header_h));
-        let main_h = area.height.saturating_sub(header_h).saturating_sub(chrome_h);
+        let main_h = area
+            .height
+            .saturating_sub(header_h)
+            .saturating_sub(chrome_h);
         let header_area = ratatui::layout::Rect {
             width: area.width,
             height: header_h,
@@ -1094,8 +1099,7 @@ impl HiShellApp {
                             crate::tui::layout::OVERLAY_TESTS,
                             area,
                         );
-                        let help_items =
-                            self.hotkeys.footer_items(Some(&self.focused_widget));
+                        let help_items = self.hotkeys.footer_items(Some(&self.focused_widget));
                         self.chrome.render_help_overlay(
                             help_area,
                             frame,
@@ -1126,7 +1130,8 @@ impl HiShellApp {
                 }
                 ShellLayer::Palette => {
                     if self.palette.visible {
-                        self.palette.render(area, frame, &self.key_bindings.palette_hint());
+                        self.palette
+                            .render(area, frame, &self.key_bindings.palette_hint());
                     }
                 }
             }
@@ -1150,9 +1155,9 @@ fn render_edit_highlight(frame: &mut Frame, area: Rect) {
 
 #[cfg(test)]
 mod tests {
+    use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;
-    use ratatui::Terminal;
 
     use super::*;
     use crate::shell::layout;

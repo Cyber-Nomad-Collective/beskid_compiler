@@ -1,0 +1,19 @@
+[package]
+name = "beskid_runtime_handlers"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+beskid_abi = { path = "../beskid_abi" }
+beskid_runtime = { path = "../beskid_runtime" }
+beskid_isle = { path = "../beskid_isle", optional = true }
+
+[features]
+default = ["isle_primitives"]
+isle_primitives = ["dep:beskid_isle", "beskid_isle/isle_primitives"]
+
+[build-dependencies]
+beskid_manifest = { path = "../beskid_manifest" }

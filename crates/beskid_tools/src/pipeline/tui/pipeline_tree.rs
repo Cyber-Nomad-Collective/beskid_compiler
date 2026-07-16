@@ -23,7 +23,10 @@ impl PipelineNode {
         } else {
             TreeNode::with_children(
                 self.display_label(),
-                self.children.iter().map(PipelineNode::to_tree_node).collect(),
+                self.children
+                    .iter()
+                    .map(PipelineNode::to_tree_node)
+                    .collect(),
             )
         }
     }
@@ -61,7 +64,12 @@ impl PipelineTree {
         }
     }
 
-    pub fn phase_end(&mut self, depth: usize, label: impl Into<String>, duration: impl Into<String>) {
+    pub fn phase_end(
+        &mut self,
+        depth: usize,
+        label: impl Into<String>,
+        duration: impl Into<String>,
+    ) {
         let duration = duration.into();
         if let Some(path) = self.stack.get(depth).cloned()
             && let Some(node) = self.node_at_path_mut(&path)
@@ -74,13 +82,7 @@ impl PipelineTree {
         }
     }
 
-    pub fn work_unit(
-        &mut self,
-        depth: usize,
-        done: u64,
-        total: u64,
-        label: impl Into<String>,
-    ) {
+    pub fn work_unit(&mut self, depth: usize, done: u64, total: u64, label: impl Into<String>) {
         let label = format!("[{done}/{total}] {}", label.into());
         let node = PipelineNode {
             label,

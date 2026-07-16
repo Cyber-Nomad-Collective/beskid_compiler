@@ -30,8 +30,8 @@ impl<'a> Iterator for Ancestors<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::syntax_query::syntax_snapshot::SyntaxSnapshot;
     use crate::services::parse_program;
+    use crate::syntax_query::syntax_snapshot::SyntaxSnapshot;
 
     #[test]
     fn ancestors_walk_up_to_program() {

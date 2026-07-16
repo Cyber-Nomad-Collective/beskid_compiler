@@ -70,7 +70,10 @@ fn draw_stats_table(frame: &mut Frame, area: Rect, summary: &CommandSummary) {
         .collect();
     let table = Table::new(
         rows,
-        [ratatui::layout::Constraint::Length(14), ratatui::layout::Constraint::Min(4)],
+        [
+            ratatui::layout::Constraint::Length(14),
+            ratatui::layout::Constraint::Min(4),
+        ],
     )
     .block(
         Block::default()

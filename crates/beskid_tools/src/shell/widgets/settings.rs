@@ -1,23 +1,23 @@
 use std::cell::RefCell;
 
+use crate::shell::primitives::Hotkey;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use crate::shell::primitives::Hotkey;
 
 use crate::shell::context::WidgetContext;
 use crate::shell::input::ShellInput;
 use crate::shell::key_bindings::{
     BINDABLE_ACTIONS, ShortcutBindings, chord_from_key, display_chord,
 };
-use crate::shell::shortcut_clicks::ShortcutClickAction;
 use crate::shell::settings::{
     SettingKind, ToolSettingsRegistry, ToolsConfig, get_value, load_config, save_config,
     save_path_for_scope, set_value,
 };
+use crate::shell::shortcut_clicks::ShortcutClickAction;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
 
 struct SettingsWidgetState {
@@ -97,7 +97,10 @@ impl SettingsWidgetState {
             Ok(()) => {
                 self.saved_config = self.config.clone();
                 self.sync_bindings_to_host(ctx);
-                self.status = Some(format!("Saved to {}", save_path_for_scope(ctx.scope).display()));
+                self.status = Some(format!(
+                    "Saved to {}",
+                    save_path_for_scope(ctx.scope).display()
+                ));
             }
             Err(err) => self.status = Some(format!("Save failed: {err}")),
         }
@@ -306,15 +309,13 @@ impl BeskidWidget for SettingsWidget {
             return;
         };
 
-        let mut lines = vec![
-            Line::from(vec![
-                Span::styled("Tool: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    format!("{} ({})", page.title, page.tool_id),
-                    Style::default().fg(Color::Cyan),
-                ),
-            ]),
-        ];
+        let mut lines = vec![Line::from(vec![
+            Span::styled("Tool: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("{} ({})", page.title, page.tool_id),
+                Style::default().fg(Color::Cyan),
+            ),
+        ])];
 
         if state.is_shortcuts_page() {
             lines.push(Line::from(Span::styled(

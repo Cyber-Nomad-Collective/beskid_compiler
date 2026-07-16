@@ -64,8 +64,8 @@ struct TemplateManifestJson {
 }
 
 pub fn default_registry_config() -> RegistryConnectConfig {
-    let url = std::env::var("BESKID_PCKG_URL")
-        .unwrap_or_else(|_| "https://pckg.beskid-lang.org".into());
+    let url =
+        std::env::var("BESKID_PCKG_URL").unwrap_or_else(|_| "https://pckg.beskid-lang.org".into());
     let mut config = RegistryConnectConfig::new(url);
     if let Ok(token) = std::env::var("BESKID_PCKG_TOKEN")
         && !token.trim().is_empty()
@@ -114,10 +114,14 @@ pub fn list_installed_templates() -> Result<Vec<InstalledTemplateView>> {
     Ok(rows)
 }
 
-pub fn list_registry_templates(config: &RegistryConnectConfig) -> Result<Vec<RegistryTemplateView>> {
+pub fn list_registry_templates(
+    config: &RegistryConnectConfig,
+) -> Result<Vec<RegistryTemplateView>> {
     let client = build_pckg_client(config)?;
     let runtime = tokio_runtime()?;
-    let packages = runtime.block_on(client.list_packages()).map_err(pckg_to_anyhow)?;
+    let packages = runtime
+        .block_on(client.list_packages())
+        .map_err(pckg_to_anyhow)?;
     let mut rows = Vec::new();
     for pkg in packages {
         if !pkg.name.starts_with("beskid.templates.") {
@@ -207,8 +211,7 @@ fn install_dir_for_identity(identity: &str) -> PathBuf {
 
 fn load_manifest(root: &Path) -> Result<TemplateManifestJson> {
     let path = root.join(TEMPLATE_MANIFEST_REL);
-    let text = fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
     Ok(serde_json::from_str(&text)?)
 }
 

@@ -62,7 +62,7 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
             source,
             pipeline: Some(&pipeline),
             invoker: Some(&invoker),
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     )
     .expect("mod host generate");
@@ -179,7 +179,7 @@ fn scripted_invoker_surfaces_analyzer_diagnostics_to_outcomes() {
             source,
             pipeline: Some(&pipeline),
             invoker: Some(&invoker),
-        cached_target_fingerprint: None,
+            cached_target_fingerprint: None,
         },
     )
     .expect("mod host generate");

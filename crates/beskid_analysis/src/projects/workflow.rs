@@ -6,11 +6,12 @@ use std::io::{Cursor, Read};
 use std::path::Path;
 
 use beskid_pipeline::{
-    PipelineObserver, observe_phase_result, report_progress,
+    PipelineObserver, observe_phase_result,
     phases::{
         WORKSPACE_MATERIALIZE_LOCAL, WORKSPACE_MATERIALIZE_LOCKFILE,
         WORKSPACE_MATERIALIZE_PATH_DEPS, WORKSPACE_MATERIALIZE_REGISTRY,
     },
+    report_progress,
 };
 use serde_json::Value;
 use zip::ZipArchive;
@@ -643,15 +644,14 @@ fn materialize_registry_dependency(
     })?;
     extract_zip_to_dir(&artifact, &materialized_root)?;
 
-    let manifest_path = crate::projects::discovery::discover_project_manifest_in_dir(
-        &materialized_root,
-    )?
-    .ok_or_else(|| {
-        ProjectError::Validation(format!(
-            "registry artifact for {}:{} missing a `.bproj` manifest",
-            unresolved.dependency_name, selected_version
-        ))
-    })?;
+    let manifest_path =
+        crate::projects::discovery::discover_project_manifest_in_dir(&materialized_root)?
+            .ok_or_else(|| {
+                ProjectError::Validation(format!(
+                    "registry artifact for {}:{} missing a `.bproj` manifest",
+                    unresolved.dependency_name, selected_version
+                ))
+            })?;
 
     let materialized_source_root = if materialized_root.join("src").is_dir() {
         materialized_root.join("src")
@@ -698,7 +698,9 @@ fn resolve_registry_base_url(
     {
         return url.trim_end_matches('/').to_string();
     }
-    "https://pckg.beskid-lang.org".trim_end_matches('/').to_string()
+    "https://pckg.beskid-lang.org"
+        .trim_end_matches('/')
+        .to_string()
 }
 
 fn parse_registry_descriptor(descriptor: &str) -> (Option<String>, Option<String>) {

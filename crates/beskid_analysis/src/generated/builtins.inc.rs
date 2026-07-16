@@ -229,7 +229,19 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
+    &["Runtime", "Handlers", "Bytes", "Compare"] => {
+        symbol: "bytes_compare",
+        params: [Ptr, Ptr],
+        returns: U64,
+        injected: true,
+    },
     &["__bytes_get"] => {
+        symbol: "bytes_get",
+        params: [Ptr, U64],
+        returns: U64,
+        injected: true,
+    },
+    &["Runtime", "Handlers", "Bytes", "Get"] => {
         symbol: "bytes_get",
         params: [Ptr, U64],
         returns: U64,
@@ -415,13 +427,37 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
+    &["__str_eq"] => {
+        symbol: "str_eq",
+        params: [Ptr, Ptr],
+        returns: U64,
+        injected: true,
+    },
+    &["Runtime", "Handlers", "String", "Eq"] => {
+        symbol: "str_eq",
+        params: [Ptr, Ptr],
+        returns: U64,
+        injected: true,
+    },
     &["__test_bytes_len"] => {
         symbol: "test_bytes_len",
         params: [],
         returns: U64,
         injected: true,
     },
+    &["Runtime", "Handlers", "Test", "Bytes", "Len"] => {
+        symbol: "test_bytes_len",
+        params: [],
+        returns: U64,
+        injected: true,
+    },
     &["__test_bytes_ptr"] => {
+        symbol: "test_bytes_ptr",
+        params: [],
+        returns: U64,
+        injected: true,
+    },
+    &["Runtime", "Handlers", "Test", "Bytes", "Ptr"] => {
         symbol: "test_bytes_ptr",
         params: [],
         returns: U64,
