@@ -516,7 +516,51 @@ fn resolve_item_declaration_candidate(
     };
     let target_unit = *target_unit;
     drop(registry);
-    unique_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name)
+    unique_exported_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name)
+}
+
+/// Resolve a public module member through its defining syntax unit or an explicit public
+/// re-export. This is intentionally limited to assembly-registered `pub use` edges, so a
+/// private implementation import cannot become visible through its parent module.
+fn unique_exported_function_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+) -> Option<AstNodeKey> {
+    let mut pending = vec![unit];
+    let mut visited = std::collections::HashSet::new();
+    let mut candidates = Vec::new();
+    while let Some(current) = pending.pop() {
+        if !visited.insert(current) {
+            continue;
+        }
+        if let Some(candidate) = unique_function_in_unit(db, current, generation, name) {
+            candidates.push(candidate);
+        }
+        pending.extend(public_reexport_units(db, current, generation));
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
+}
+
+fn public_reexport_units(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+) -> Vec<SourceUnitId> {
+    db.syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .imports
+        .get(&(unit, generation))
+        .into_iter()
+        .flatten()
+        .filter(|import| import.public)
+        .map(|import| import.target)
+        .collect()
 }
 
 /// Resolve an exact function name only when the syntax unit has one unambiguous definition.
@@ -2102,12 +2146,41 @@ fn resolve_type_declaration(
     };
     let matches = candidates
         .into_iter()
-        .filter_map(|unit| unique_type_in_unit(db, unit, key.generation, name, generic_arity))
+        .filter_map(|unit| {
+            unique_exported_type_in_unit(db, unit, key.generation, name, generic_arity)
+        })
         .collect::<Vec<_>>();
     let [declaration] = matches.as_slice() else {
         return None;
     };
     Some(*declaration)
+}
+
+/// Resolve a public type member through its defining syntax unit or explicit public re-exports.
+fn unique_exported_type_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+    generic_arity: usize,
+) -> Option<AstNodeKey> {
+    let mut pending = vec![unit];
+    let mut visited = std::collections::HashSet::new();
+    let mut candidates = Vec::new();
+    while let Some(current) = pending.pop() {
+        if !visited.insert(current) {
+            continue;
+        }
+        if let Some(candidate) = unique_type_in_unit(db, current, generation, name, generic_arity)
+        {
+            candidates.push(candidate);
+        }
+        pending.extend(public_reexport_units(db, current, generation));
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 fn unique_type_in_unit(

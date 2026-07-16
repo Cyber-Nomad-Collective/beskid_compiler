@@ -31,6 +31,8 @@ pub struct SyntaxImport {
     pub(crate) path: Vec<String>,
     pub(crate) binding: String,
     pub(crate) target: SourceUnitId,
+    /// Whether the importing source unit re-exports this target as part of its module API.
+    pub(crate) public: bool,
 }
 
 /// Cached heavy artifacts keyed by content fingerprint (invalidated via Salsa inputs).

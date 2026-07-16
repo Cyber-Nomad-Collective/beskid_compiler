@@ -109,15 +109,25 @@ pub fn build_typed_program(
                         .as_ref()
                         .map(|alias| alias.node.name.clone())
                         .or_else(|| path.last().cloned())?;
-                    Some((path, binding))
+                    Some((
+                        path,
+                        binding,
+                        declaration.node.visibility.node
+                            == beskid_analysis::syntax::Visibility::Public,
+                    ))
                 }
                 _ => None,
             })
-            .filter_map(|(path, binding)| {
+            .filter_map(|(path, binding, public)| {
                 module_units
                     .get(&path)
                     .copied()
-                    .map(|target| crate::db::SyntaxImport { path, binding, target })
+                    .map(|target| crate::db::SyntaxImport {
+                        path,
+                        binding,
+                        target,
+                        public,
+                    })
             })
             .collect();
         registry.imports.insert((unit_id, generation), imports);

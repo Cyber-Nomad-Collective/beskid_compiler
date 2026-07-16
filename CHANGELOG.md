@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Resolve syntax-fact module members and nominal types through explicit public re-export edges.
 - Keep legacy export metadata fixtures aligned with runtime-handler metadata during the syntax
   migration.
 - Use platform-correct local dynamic-loader flags so freshly staged Linux ABI-v5 runtime kits

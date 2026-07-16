@@ -459,6 +459,105 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
 }
 
 #[test]
+fn qualified_import_resolution_follows_public_module_reexports() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/public-reexport/project/src");
+    let main_path = root.join("Main.bd");
+    let parser_path = root.join("Core/Text/Parser.bd");
+    let result_path = root.join("Core/Text/Parser/Result.bd");
+    let private_path = root.join("Core/Text/Parser/Private.bd");
+    let main_source = "use Core.Text.Parser;\ni32 Main() { Parser.IsOk(); Parser.Hidden(); Parser.TextParseResult::Ok(); return 1; }";
+    let parser_source = "pub use Core.Text.Parser.Result;\nuse Core.Text.Parser.Private;";
+    let result_source = "pub i32 IsOk() { return 1; }\npub enum TextParseResult { Ok() }";
+    let private_source = "pub i32 Hidden() { return 1; }";
+    let sources = [
+        (&main_path, main_source),
+        (&parser_path, parser_source),
+        (&result_path, result_source),
+        (&private_path, private_source),
+    ];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: (*path).clone(),
+            source: (*source).to_string(),
+            program: expand_program(
+                parse_program(source).expect("parse"),
+                DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+            ),
+        })
+        .collect::<Vec<_>>();
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units.clone()),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let result_unit = SourceUnitId::new(&db, result_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(18);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&units[0].program, generation);
+    let result_index = SyntaxIndex::from_program(&units[2].program, generation);
+    let is_ok = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::PathExpression,
+        main_source.find("Parser.IsOk").expect("public function"),
+    );
+    let is_ok_declaration = key(
+        result_unit,
+        generation,
+        &result_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+    assert_eq!(
+        resolved_item(&db, is_ok).expect("public re-export"),
+        Some(beskid_queries::ResolvedItem {
+            declaration: is_ok_declaration,
+        })
+    );
+    let hidden = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::PathExpression,
+        main_source.find("Parser.Hidden").expect("private function"),
+    );
+    assert_eq!(resolved_item(&db, hidden).expect("private import"), None);
+    let constructor = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::EnumConstructorExpression,
+        main_source.find("Parser.TextParseResult").expect("re-exported type"),
+    );
+    assert!(
+        enum_constructor(&db, constructor)
+            .expect("re-exported type")
+            .is_some()
+    );
+}
+
+#[test]
 fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/qualified-import-ambiguity/project/src");
