@@ -164,11 +164,33 @@ pub fn declare_user_functions_with_link_symbols<M: Module>(
     func_ids: &mut HashMap<String, FuncId>,
     link_symbol: impl Fn(&str) -> String,
 ) -> Result<Vec<String>, ModuleError> {
+    declare_user_functions_with_link_symbols_and_linkage(
+        module,
+        artifact,
+        func_ids,
+        link_symbol,
+        |_| linkage,
+    )
+}
+
+/// Like [`declare_user_functions_with_link_symbols`], but chooses linkage per emitted object
+/// symbol. AOT runtime publication uses this to keep syntax implementation functions local while
+/// exporting only manifest-approved ABI functions.
+pub fn declare_user_functions_with_link_symbols_and_linkage<M: Module>(
+    module: &mut M,
+    artifact: &CodegenArtifact,
+    func_ids: &mut HashMap<String, FuncId>,
+    link_symbol: impl Fn(&str) -> String,
+    linkage_for_symbol: impl Fn(&str) -> Linkage,
+) -> Result<Vec<String>, ModuleError> {
     let mut declared = Vec::with_capacity(artifact.functions.len());
     for function in &artifact.functions {
         let emitted_symbol = link_symbol(&function.name);
-        let func_id =
-            module.declare_function(&emitted_symbol, linkage, &function.function.signature)?;
+        let func_id = module.declare_function(
+            &emitted_symbol,
+            linkage_for_symbol(&emitted_symbol),
+            &function.function.signature,
+        )?;
         func_ids.insert(function.name.clone(), func_id);
         declared.push(emitted_symbol);
     }

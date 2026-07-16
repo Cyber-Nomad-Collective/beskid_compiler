@@ -14,9 +14,33 @@ pub fn lower_prepared_syntax_entrypoint(
 ) -> AotResult<beskid_codegen::CodegenArtifact> {
     let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
-        beskid_codegen::lower_prepared_syntax_entrypoint(db, front, entrypoint, target, isa.as_ref())
-            .map(|lowered| lowered.artifact)
-            .map_err(|error| crate::error::AotError::InvalidRequest { message: error.to_string() })
+        beskid_codegen::lower_prepared_syntax_entrypoint(
+            db,
+            front,
+            entrypoint,
+            target,
+            isa.as_ref(),
+        )
+        .map(|lowered| lowered.artifact)
+        .map_err(|error| crate::error::AotError::InvalidRequest {
+            message: error.to_string(),
+        })
+    })
+}
+
+/// Lower every executable item in a prepared frontend snapshot using the exact ISA selected for
+/// AOT object emission.
+pub fn lower_prepared_syntax_module(
+    front: &FrontEndTypedResult,
+    target: TargetMetadata,
+) -> AotResult<beskid_codegen::CodegenArtifact> {
+    let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
+    beskid_queries::with_db(|db| {
+        beskid_codegen::lower_prepared_syntax_module(db, front, target, isa.as_ref()).map_err(
+            |error| crate::error::AotError::InvalidRequest {
+                message: error.to_string(),
+            },
+        )
     })
 }
 
@@ -27,9 +51,10 @@ pub fn lower_canonical_runtime_prepared_syntax(
 ) -> AotResult<beskid_codegen::CodegenArtifact> {
     let isa = crate::object_module::object_target_isa(target.triple.as_str())?;
     beskid_queries::with_db(|db| {
-        beskid_codegen::lower_canonical_runtime_prepared_syntax(db, target, isa.as_ref())
-            .map_err(|error| crate::error::AotError::InvalidRequest {
+        beskid_codegen::lower_canonical_runtime_prepared_syntax(db, target, isa.as_ref()).map_err(
+            |error| crate::error::AotError::InvalidRequest {
                 message: error.to_string(),
-            })
+            },
+        )
     })
 }
