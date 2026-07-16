@@ -82,6 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Require an exact compiler-owned lexical source path before granting Foundation panic-service
+  authority, so symlinked `Testing/Assert.bd` sources remain ordinary syntax.
 - Terminate reachable syntax-ISLE control-flow merge blocks after one-arm `if` statements and
   preserve valid unreachable merges when both arms return.
 

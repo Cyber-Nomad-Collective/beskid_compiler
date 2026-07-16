@@ -265,14 +265,16 @@ fn canonical_corelib_service_units(
         .into_iter()
         .filter_map(|expected| {
             let canonical_path = canonical_corelib_service_source_path(&expected.logical_path)?;
-            let canonical_path = canonical_path.canonicalize().ok()?;
             let candidates = assembly
                 .units()
                 .iter()
                 .filter(|unit| {
                     unit.logical_name == expected.logical_path
                         && unit.source == expected.source
-                        && unit.path.canonicalize().ok().as_ref() == Some(&canonical_path)
+                        // Service authority is bound to the compiler-owned lexical source
+                        // identity. Resolving either side would let a user-project symlink
+                        // inherit the Corelib service imports.
+                        && unit.path == canonical_path
                 })
                 .collect::<Vec<_>>();
             (candidates.len() == 1).then(|| {

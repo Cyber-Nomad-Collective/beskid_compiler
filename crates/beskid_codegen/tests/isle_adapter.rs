@@ -737,6 +737,89 @@ fn copied_foundation_assert_source_cannot_receive_panic_authority() {
     ));
 }
 
+#[cfg(unix)]
+#[test]
+fn symlinked_foundation_assert_source_cannot_receive_panic_authority() {
+    let mut db = BeskidDatabase::default();
+    let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
+        .expect("embedded Foundation Assert source");
+    let directory = tempfile::tempdir()
+        .expect("symlinked Foundation project")
+        .keep();
+    let source_path = directory.join(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH);
+    std::fs::create_dir_all(source_path.parent().expect("Assert parent"))
+        .expect("create symlinked Assert parent");
+    let compiler_owned_path =
+        canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
+            .expect("compiler-owned Assert path");
+    std::os::unix::fs::symlink(&compiler_owned_path, &source_path)
+        .expect("link compiler-owned Assert source into user project");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
+        .expect("parse symlinked Foundation Assert source");
+    let generation = SyntaxGenerationId(96);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
+            path: source_path.clone(),
+            source: source.source,
+            program: program.clone(),
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let project = ProjectSession::new(
+        &db,
+        directory,
+        source_path.clone(),
+        "symlinked-foundation".into(),
+        "symlinked-assert".into(),
+    );
+    let typed = build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+    )
+    .expect("symlinked source remains an ordinary syntax program");
+    assert!(typed.corelib_service_capability.is_none());
+
+    let trigger_failure = SyntaxIndex::from_program(&program, generation)
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey {
+            unit: SourceUnitId::new(&db, source_path.clone()),
+            generation,
+            node,
+        })
+        .find(|key| {
+            call_lowering(&db, *key)
+                .ok()
+                .flatten()
+                .is_some_and(|lowering| matches!(lowering, beskid_queries::CallLowering::Dynamic))
+        })
+        .expect("symlinked panic spelling remains dynamic");
+    assert!(matches!(
+        call_lowering(&db, trigger_failure).expect("symlinked call lowering"),
+        Some(beskid_queries::CallLowering::Dynamic)
+    ));
+}
+
 #[test]
 fn ordinary_syscall_spelling_cannot_request_a_corelib_service_import() {
     let (input, _isa, root) =
