@@ -1,16 +1,20 @@
 //! Generation-safe Salsa facts consumed by the generated ISLE lowering boundary.
 
+use std::collections::HashMap;
+
 use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
-    LiteralKind, NodeFacts, NodeKind, OperatorFact, Signature,
+    LiteralKind, NodeFacts, NodeKind, OperatorFact, ParameterSlot, Signature,
 };
 use beskid_queries::{
     CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, call_arguments, call_lowering,
     child_nodes, item_body, item_signature, literal_fact, local_slot, node_kind, node_type,
-    operator_fact, resolved_local,
+    operator_fact, resolved_local, runtime_intrinsic_name,
 };
-use cranelift_codegen::ir::{Type, UserFuncName, types};
+use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
+use cranelift_frontend::FunctionBuilder;
+use cranelift_module::{FuncId, Module};
 
 use crate::CodegenInput;
 
@@ -21,13 +25,15 @@ use crate::CodegenInput;
 /// to HIR or hand-built test facts.
 pub struct SyntaxNodeFacts<'db> {
     db: &'db dyn Db,
+    input: &'db CodegenInput<'db>,
     isa: Option<&'db dyn TargetIsa>,
 }
 
 impl<'db> SyntaxNodeFacts<'db> {
-    pub fn new(input: &CodegenInput<'db>) -> Self {
+    pub fn new(input: &'db CodegenInput<'db>) -> Self {
         Self {
             db: input.database(),
+            input,
             isa: None,
         }
     }
@@ -35,6 +41,7 @@ impl<'db> SyntaxNodeFacts<'db> {
     fn new_with_isa(input: &'db CodegenInput<'db>, isa: &'db dyn TargetIsa) -> Self {
         Self {
             db: input.database(),
+            input,
             isa: Some(isa),
         }
     }
@@ -99,6 +106,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
+        if self.runtime_intrinsic(key).is_some() {
+            return Some(CallKind::RuntimeIntrinsic);
+        }
         matches!(
             self.query(call_lowering(self.db, key)),
             Some(CallLowering::Direct(_))
@@ -107,6 +117,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
+        if let Some((index, _)) = self.runtime_intrinsic(key) {
+            return Some(DirectCallee::new(index));
+        }
         let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
             return None;
         };
@@ -114,6 +127,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
+        if let Some((_, intrinsic)) = self.runtime_intrinsic(key) {
+            return signature_for_runtime_intrinsic(self.isa?, intrinsic);
+        }
         let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
             return None;
         };
@@ -122,7 +138,19 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         self.query(call_arguments(self.db, key))
-            .map(|arguments| arguments.to_vec())
+            .and_then(|arguments| {
+                arguments
+                    .iter()
+                    .copied()
+                    .map(|argument| self.unwrap_transparent(argument))
+                    .collect()
+            })
+    }
+
+    fn function_parameters(&self, key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
+        let mut parameters = Vec::new();
+        self.collect_function_parameters(key, &mut parameters)?;
+        Some(parameters)
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
@@ -157,7 +185,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
-        let semantic = self.scalar_semantic_type(key)?;
+        let semantic = self.scalar_semantic_type(key).or_else(|| {
+            let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
+                return None;
+            };
+            Some(self.query(item_signature(self.db, declaration))?.result)
+        })?;
         if semantic == SemanticTypeId::WORD {
             return self.isa.map(|isa| isa.pointer_type());
         }
@@ -166,6 +199,46 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 }
 
 impl SyntaxNodeFacts<'_> {
+    fn runtime_intrinsic(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<(u32, &beskid_abi::abi_v5::RuntimeIntrinsic)> {
+        let name = self.query(runtime_intrinsic_name(self.db, key))?;
+        self.input.runtime_intrinsic_for(key, &name.0)
+    }
+    fn collect_function_parameters(
+        &self,
+        key: AstNodeKey,
+        parameters: &mut Vec<ParameterSlot>,
+    ) -> Option<()> {
+        for child in self.raw_children(key) {
+            match self.query(node_kind(self.db, child))? {
+                beskid_queries::IndexedNodeKind::Block => continue,
+                beskid_queries::IndexedNodeKind::Parameter => {
+                    let identifier = self.raw_children(child).into_iter().find(|candidate| {
+                        self.query(node_kind(self.db, *candidate))
+                            == Some(beskid_queries::IndexedNodeKind::Identifier)
+                    })?;
+                    let slot = self.query(local_slot(self.db, identifier))?;
+                    let value_type =
+                        self.scalar_semantic_type(identifier).and_then(|semantic| {
+                            if semantic == SemanticTypeId::WORD {
+                                self.isa.map(|isa| isa.pointer_type())
+                            } else {
+                                map_scalar_type(semantic)
+                            }
+                        })?;
+                    parameters.push(ParameterSlot {
+                        slot: slot.index,
+                        value_type,
+                    });
+                }
+                _ => self.collect_function_parameters(child, parameters)?,
+            }
+        }
+        Some(())
+    }
+
     fn scalar_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
         self.query(node_type(self.db, key)).or_else(|| {
             (self.query(node_kind(self.db, key))
@@ -223,8 +296,8 @@ impl SyntaxNodeFacts<'_> {
 }
 
 /// Emit one parsed expanded-syntax expression through generated ISLE selection.
-pub fn emit_isle_expression(
-    input: &CodegenInput<'_>,
+pub fn emit_isle_expression<'db>(
+    input: &'db CodegenInput<'db>,
     isa: &dyn TargetIsa,
     body: AstNodeKey,
     result: Type,
@@ -243,8 +316,8 @@ pub fn emit_isle_expression(
 ///
 /// Parameters are intentionally rejected until local parameter materialization is represented by
 /// the syntax facts, rather than falling back to the legacy HIR lowering context.
-pub fn emit_isle_item(
-    input: &CodegenInput<'_>,
+pub fn emit_isle_item<'db>(
+    input: &'db CodegenInput<'db>,
     isa: &dyn TargetIsa,
     item: AstNodeKey,
 ) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
@@ -262,19 +335,14 @@ pub fn emit_isle_item(
                 "item signature is unavailable to syntax-only ISLE emission".to_owned(),
             )
         })?;
-    if !signature.params.is_empty() {
-        return Err(FunctionEmissionError::Verification(
-            "syntax-only ISLE item emission does not yet materialize parameters".to_owned(),
-        ));
-    }
     let emitter = FunctionEmitter::new(isa);
-    let facts = SyntaxNodeFacts::new(input);
-    emitter.emit_statement(UserFuncName::user(0, 0), signature, &facts, body)
+    let facts = SyntaxNodeFacts::new_with_isa(input, isa);
+    emitter.emit_item_statement(UserFuncName::user(0, 0), signature, &facts, item, body)
 }
 
 /// Emit a syntax-only item with an explicit semantic-call importer.
-pub fn emit_isle_item_with_call_importer(
-    input: &CodegenInput<'_>,
+pub fn emit_isle_item_with_call_importer<'db>(
+    input: &'db CodegenInput<'db>,
     isa: &dyn TargetIsa,
     item: AstNodeKey,
     importer: &mut dyn CallImporter,
@@ -291,20 +359,47 @@ pub fn emit_isle_item_with_call_importer(
         .ok_or_else(|| {
             FunctionEmissionError::Verification("item signature unavailable".to_owned())
         })?;
-    if !signature.params.is_empty() {
-        return Err(FunctionEmissionError::Verification(
-            "syntax-only ISLE item emission does not yet materialize parameters".to_owned(),
-        ));
-    }
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_isa(input, isa);
-    emitter.emit_statement_with_call_importer(
+    emitter.emit_item_statement_with_call_importer(
         UserFuncName::user(0, 0),
         signature,
         &facts,
+        item,
         body,
         importer,
     )
+}
+
+/// Explicit module importer keyed by syntax-resolved item identity.
+///
+/// Call lowering never guesses symbols: the host declares each item and supplies its exact
+/// [`FuncId`] keyed by [`DirectCallee`].
+pub struct ItemModuleImporter<'module, M: Module> {
+    module: &'module mut M,
+    functions: HashMap<DirectCallee, FuncId>,
+}
+
+impl<'module, M: Module> ItemModuleImporter<'module, M> {
+    pub fn new(module: &'module mut M, functions: HashMap<DirectCallee, FuncId>) -> Self {
+        Self { module, functions }
+    }
+}
+
+impl<M: Module> CallImporter for ItemModuleImporter<'_, M> {
+    fn import(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        callee: DirectCallee,
+        _signature: &Signature,
+    ) -> Result<FuncRef, beskid_isle::CallImportError> {
+        let function = self
+            .functions
+            .get(&callee)
+            .copied()
+            .ok_or(beskid_isle::CallImportError::UnknownCallee)?;
+        Ok(self.module.declare_func_in_func(function, builder.func))
+    }
 }
 
 fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid_isle::Signature> {
@@ -318,6 +413,25 @@ fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid
     let returns = match item.result {
         SemanticTypeId::UNIT => Vec::new(),
         result => vec![map_signature_type(isa, result)?],
+    };
+    Some(emitter.signature(parameters, returns))
+}
+
+fn signature_for_runtime_intrinsic(
+    isa: &dyn TargetIsa,
+    intrinsic: &beskid_abi::abi_v5::RuntimeIntrinsic,
+) -> Option<beskid_isle::Signature> {
+    let emitter = FunctionEmitter::new(isa);
+    let parameters = intrinsic
+        .params
+        .iter()
+        .copied()
+        .map(|ty| map_abi_type(isa, ty))
+        .collect::<Option<Vec<_>>>()?;
+    let returns = if intrinsic.noreturn || intrinsic.result == beskid_abi::abi_v5::AbiType::Void {
+        Vec::new()
+    } else {
+        vec![map_abi_type(isa, intrinsic.result)?]
     };
     Some(emitter.signature(parameters, returns))
 }
@@ -399,4 +513,19 @@ fn map_signature_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<T
     } else {
         map_scalar_type(semantic)
     }
+}
+
+fn map_abi_type(isa: &dyn TargetIsa, ty: beskid_abi::abi_v5::AbiType) -> Option<Type> {
+    use beskid_abi::abi_v5::AbiType;
+    Some(match ty {
+        AbiType::Pointer | AbiType::USize | AbiType::ISize => isa.pointer_type(),
+        AbiType::I8 | AbiType::U8 => types::I8,
+        AbiType::I16 | AbiType::U16 => types::I16,
+        AbiType::I32 | AbiType::U32 => types::I32,
+        AbiType::I64 | AbiType::U64 => types::I64,
+        AbiType::V128 => types::I8X16,
+        AbiType::F32 => types::F32,
+        AbiType::F64 => types::F64,
+        AbiType::Void => return None,
+    })
 }

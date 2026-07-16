@@ -107,7 +107,7 @@ pub enum CallKind {
     RuntimeIntrinsic,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DirectCallee(u32);
 
 impl DirectCallee {
@@ -437,6 +437,17 @@ pub trait NodeFacts {
     fn local_slot(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
+    /// Parameter slots in source order for one function item.
+    fn function_parameters(&self, _key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
+        None
+    }
+}
+
+/// Generation-safe local slot and scalar type for one emitted function parameter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParameterSlot {
+    pub slot: u32,
+    pub value_type: Type,
 }
 
 /// Artifact-owned string materialization invoked only after generated ISLE selection.
@@ -1510,15 +1521,48 @@ impl<'isa> FunctionEmitter<'isa> {
         facts: &dyn NodeFacts,
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
+        self.emit_statement_inner(name, signature, facts, None, body, None)
+    }
+
+    /// Emit a parsed function item after binding its source parameters to local slots.
+    pub fn emit_item_statement(
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        item: AstNodeKey,
+        body: AstNodeKey,
+    ) -> Result<Function, FunctionEmissionError> {
+        self.emit_statement_inner(name, signature, facts, Some(item), body, None)
+    }
+
+    fn emit_statement_inner<'services>(
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        item: Option<AstNodeKey>,
+        body: AstNodeKey,
+        call_importer: Option<&'services mut dyn CallImporter>,
+    ) -> Result<Function, FunctionEmissionError> {
         let mut function = Function::with_name_signature(name, signature);
         let mut builder_context = FunctionBuilderContext::new();
         {
             let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
             let entry = builder.create_block();
+            builder.append_block_params_for_function_params(entry);
             builder.switch_to_block(entry);
             builder.seal_block(entry);
-            lower_statement(&mut IsleContext::new(&mut builder, facts), body)
-                .map_err(FunctionEmissionError::Lowering)?;
+            let mut context = match call_importer {
+                Some(call_importer) => {
+                    IsleContext::new_with_call_importer(&mut builder, facts, call_importer)
+                }
+                None => IsleContext::new(&mut builder, facts),
+            };
+            if let Some(item) = item {
+                materialize_parameters(&mut context, item)?;
+            }
+            lower_statement(&mut context, body).map_err(FunctionEmissionError::Lowering)?;
             let terminated = block_is_terminated(&builder, entry);
             if !terminated {
                 return Err(FunctionEmissionError::Verification(
@@ -1540,28 +1584,27 @@ impl<'isa> FunctionEmitter<'isa> {
         body: AstNodeKey,
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
-        let mut function = Function::with_name_signature(name, signature);
-        let mut builder_context = FunctionBuilderContext::new();
-        {
-            let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
-            let entry = builder.create_block();
-            builder.switch_to_block(entry);
-            builder.seal_block(entry);
-            lower_statement(
-                &mut IsleContext::new_with_call_importer(&mut builder, facts, call_importer),
-                body,
-            )
-            .map_err(FunctionEmissionError::Lowering)?;
-            if !block_is_terminated(&builder, entry) {
-                return Err(FunctionEmissionError::Verification(
-                    "generated statement body did not terminate its entry block".to_owned(),
-                ));
-            }
-            builder.finalize();
-        }
-        verify_function(&function, self.isa.flags())
-            .map_err(|error| FunctionEmissionError::Verification(error.to_string()))?;
-        Ok(function)
+        self.emit_statement_inner(name, signature, facts, None, body, Some(call_importer))
+    }
+
+    /// Emit a parsed function item with parameter materialization and explicit call imports.
+    pub fn emit_item_statement_with_call_importer(
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        item: AstNodeKey,
+        body: AstNodeKey,
+        call_importer: &mut dyn CallImporter,
+    ) -> Result<Function, FunctionEmissionError> {
+        self.emit_statement_inner(
+            name,
+            signature,
+            facts,
+            Some(item),
+            body,
+            Some(call_importer),
+        )
     }
 
     fn emit_expression_inner<'services>(
@@ -1597,6 +1640,41 @@ impl<'isa> FunctionEmitter<'isa> {
             .map_err(|error| FunctionEmissionError::Verification(error.to_string()))?;
         Ok(function)
     }
+}
+
+fn materialize_parameters(
+    context: &mut IsleContext<'_, '_, '_, '_>,
+    item: AstNodeKey,
+) -> Result<(), FunctionEmissionError> {
+    let parameters = context.facts.function_parameters(item).ok_or_else(|| {
+        FunctionEmissionError::Verification("item parameter facts are unavailable".to_owned())
+    })?;
+    let incoming = context
+        .builder
+        .block_params(context.builder.current_block().ok_or_else(|| {
+            FunctionEmissionError::Verification("function has no entry block".to_owned())
+        })?)
+        .to_vec();
+    if parameters.len() != incoming.len() {
+        return Err(FunctionEmissionError::Verification(
+            "item parameter facts do not match function signature".to_owned(),
+        ));
+    }
+    for (parameter, value) in parameters.into_iter().zip(incoming) {
+        if context.locals.contains_key(&parameter.slot)
+            || context.builder.func.dfg.value_type(value) != parameter.value_type
+        {
+            return Err(FunctionEmissionError::Verification(
+                "item parameter slot or type is invalid".to_owned(),
+            ));
+        }
+        let variable = context.builder.declare_var(parameter.value_type);
+        context.builder.def_var(variable, value);
+        context
+            .locals
+            .insert(parameter.slot, (variable, parameter.value_type));
+    }
+    Ok(())
 }
 
 fn block_is_terminated(builder: &FunctionBuilder<'_>, block: Block) -> bool {

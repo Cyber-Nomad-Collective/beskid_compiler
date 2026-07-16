@@ -23,3 +23,5 @@ thiserror = "2"
 [dev-dependencies]
 pest = { workspace = true }
 tempfile = "3"
+cranelift-jit = { workspace = true }
+target-lexicon = "0.13"

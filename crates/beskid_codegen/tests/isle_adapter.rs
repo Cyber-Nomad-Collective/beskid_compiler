@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
@@ -6,14 +7,19 @@ use beskid_analysis::projects::{
     SyntaxProgramAssembly,
 };
 use beskid_analysis::services::parse_program_with_source_name;
-use beskid_codegen::{CodegenInput, emit_isle_expression, emit_isle_item};
+use beskid_codegen::{
+    CodegenInput, ItemModuleImporter, emit_isle_expression, emit_isle_item,
+    emit_isle_item_with_call_importer,
+};
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    build_typed_program, child_nodes, literal_fact, node_kind,
+    build_typed_program, call_lowering, child_nodes, literal_fact, node_kind,
 };
 use cranelift_codegen::ir::types;
 use cranelift_codegen::isa;
 use cranelift_codegen::settings;
+use cranelift_jit::{JITBuilder, JITModule};
+use cranelift_module::{Linkage, Module, default_libcall_names};
 
 #[test]
 fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
@@ -224,7 +230,177 @@ fn parsed_local_read_emits_verified_isle_clif_without_lowerable() {
     assert!(function.display().to_string().contains("iconst.i32 42"));
 }
 
-fn find_function_definition(db: &BeskidDatabase, key: AstNodeKey) -> Option<AstNodeKey> {
+#[test]
+fn parsed_parameter_read_materializes_the_generation_safe_local_slot() {
+    let (input, isa, item) = item_fixture("i32 Identity(i32 value) { return value; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("parsed parameter read lowers through generated ISLE");
+    let clif = function.display().to_string();
+    assert!(clif.contains("function u0:0(i32) -> i32"), "{clif}");
+    assert!(clif.contains("return v0"), "{clif}");
+}
+
+#[test]
+fn parsed_direct_call_uses_explicit_item_module_importer() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }",
+    );
+    let db = input.database();
+    let items = find_function_definitions(db, root);
+    let callee = items[0];
+    let caller = items[1];
+    let call = find_call_expression(db, caller).expect("call syntax key");
+    let beskid_queries::CallLowering::Direct(declaration) = call_lowering(db, call)
+        .expect("direct-call query")
+        .expect("direct call")
+    else {
+        panic!("expected a syntax-resolved direct call");
+    };
+    assert_eq!(declaration, callee);
+
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = function_signature(isa.as_ref(), types::I32, [types::I32]);
+    let imported = module
+        .declare_function("AddOne", Linkage::Import, &signature)
+        .expect("declare imported syntax item");
+    let mut importer = ItemModuleImporter::new(
+        &mut module,
+        HashMap::from([(beskid_isle::DirectCallee::new(declaration.node.0), imported)]),
+    );
+
+    let function = emit_isle_item_with_call_importer(&input, isa.as_ref(), caller, &mut importer)
+        .expect("parsed direct call lowers through explicit module import");
+    let clif = function.display().to_string();
+    assert!(clif.contains("call"), "{clif}");
+    assert!(clif.contains("iconst.i32 41"), "{clif}");
+}
+
+fn item_fixture(
+    source: &str,
+) -> (
+    CodegenInput<'static>,
+    Arc<dyn cranelift_codegen::isa::TargetIsa>,
+    AstNodeKey,
+) {
+    let (input, isa, root) = item_fixture_with_root(source);
+    let item = find_function_definition(input.database(), root).expect("function key");
+    (input, isa, item)
+}
+
+fn item_fixture_with_root(
+    source: &str,
+) -> (
+    CodegenInput<'static>,
+    Arc<dyn cranelift_codegen::isa::TargetIsa>,
+    AstNodeKey,
+) {
+    let mut db = Box::new(BeskidDatabase::default());
+    let directory = tempfile::tempdir().expect("project").keep();
+    let source_path = directory.join("Main.bd");
+    std::fs::write(&source_path, source).expect("source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
+        .expect("parse source");
+    let entry = SourceUnitId::new(&*db, source_path.clone());
+    let project = ProjectSession::new(
+        &*db,
+        directory.clone(),
+        source_path.clone(),
+        "App".into(),
+        "lock".into(),
+    );
+    let generation = SyntaxGenerationId(21);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: "Main".into(),
+            path: source_path,
+            source: source.into(),
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let typed =
+        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey {
+        unit: entry,
+        generation,
+        node: AstNodeId(0),
+    };
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input = CodegenInput::new(
+        leaked,
+        typed,
+        Arc::from([root]),
+        target.clone(),
+        AbiManifestV5::canonical_runtime(target),
+    )
+    .expect("generation-safe input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    (input, isa, root)
+}
+
+fn function_signature(
+    isa: &dyn cranelift_codegen::isa::TargetIsa,
+    result: cranelift_codegen::ir::Type,
+    parameters: impl IntoIterator<Item = cranelift_codegen::ir::Type>,
+) -> cranelift_codegen::ir::Signature {
+    let mut signature = cranelift_codegen::ir::Signature::new(isa.default_call_conv());
+    signature.params.extend(
+        parameters
+            .into_iter()
+            .map(cranelift_codegen::ir::AbiParam::new),
+    );
+    signature
+        .returns
+        .push(cranelift_codegen::ir::AbiParam::new(result));
+    signature
+}
+
+fn find_function_definitions(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Vec<AstNodeKey> {
+    let mut found = Vec::new();
+    if node_kind(db, key).ok().flatten()
+        == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
+    {
+        found.push(key);
+    }
+    if let Some(children) = child_nodes(db, key).ok().flatten() {
+        for child in children.iter().copied() {
+            found.extend(find_function_definitions(db, child));
+        }
+    }
+    found
+}
+
+fn find_call_expression(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<AstNodeKey> {
+    if node_kind(db, key).ok().flatten() == Some(beskid_queries::IndexedNodeKind::CallExpression) {
+        return Some(key);
+    }
+    child_nodes(db, key)
+        .ok()
+        .flatten()?
+        .iter()
+        .copied()
+        .find_map(|child| find_call_expression(db, child))
+}
+
+fn find_function_definition(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<AstNodeKey> {
     if node_kind(db, key)
         .ok()
         .flatten()

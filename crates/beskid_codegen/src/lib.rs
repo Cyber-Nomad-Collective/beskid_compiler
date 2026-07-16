@@ -23,7 +23,8 @@ pub use codegen_input::{CodegenInput, CodegenInputError};
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
 pub use errors::CodegenError;
 pub use isle_adapter::{
-    SyntaxNodeFacts, emit_isle_expression, emit_isle_item, emit_isle_item_with_call_importer,
+    ItemModuleImporter, SyntaxNodeFacts, emit_isle_expression, emit_isle_item,
+    emit_isle_item_with_call_importer,
 };
 pub use linking::{
     FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, referenced_extern_imports,
