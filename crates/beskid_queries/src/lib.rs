@@ -77,12 +77,11 @@ pub use semantic_contract::{
     AstNodeKey, CallLowering, CastIntent, ClosureCapture, ClosureEnvironment, CompletionCandidate, CompletionContext, CompletionKind, ControlFlow,
     IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, OperatorFact, ResolvedItem,
     ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName, SemanticError, SemanticQueryResult, SemanticTypeId,
-    SourceSpan, SourceUnitId, SpawnTarget, TypedProgram, call_arguments, call_lowering,
+    SourceSpan, SourceUnitId, SpawnTarget, TestItem, TypedProgram, call_arguments, call_lowering,
     cast_intents, child_nodes, closure_environment, completion_candidates, control_flow, direct_callees, item_body, item_name,
     item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
-    reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_target,
+    reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_target, test_item,
 };
-pub use typed_program::build_canonical_runtime_typed_program;
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,
     prepare_compilation_diagnostics, with_db,
@@ -97,6 +96,7 @@ pub use typed_entry_bundle::{
     typed_entry_state_with_db, typed_prepare_revision_for,
 };
 pub use typed_program::build_typed_program;
+pub use typed_program::build_canonical_runtime_typed_program;
 pub use unit::{
     cache_module_index_for_assembly, module_index_fingerprint_for_assembly, parse_and_expand_unit,
     parse_and_expand_unit_tracked, parse_and_expand_unit_with_source, seed_file_from_disk,

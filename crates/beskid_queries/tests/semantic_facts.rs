@@ -14,7 +14,7 @@ use beskid_queries::{
     build_typed_program, call_arguments, call_lowering, cast_intents, child_nodes,
     closure_environment, completion_candidates, control_flow, direct_callees, item_body,
     item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
-    reachable_items, resolved_item, resolved_local, runtime_intrinsic, spawn_target,
+    reachable_items, resolved_item, resolved_local, runtime_intrinsic, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -694,6 +694,45 @@ fn test_items_have_a_unit_signature_and_own_generation_safe_body_cursor() {
         })
     );
     assert_eq!(item_body(&db, test).expect("test body"), Some(test));
+}
+
+#[test]
+fn test_item_facts_preserve_metadata_and_reject_stale_generations() {
+    let source = r#"test Smoke {
+        meta { group = "fast"; tags = "unit, smoke"; }
+        skip { condition = true; reason = "not on this host"; }
+        return;
+    }"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let test = key(unit, generation, &index, NodeKind::TestDefinition, 0);
+
+    let facts = test_item(&db, test)
+        .expect("test facts query")
+        .expect("current test facts");
+    assert_eq!(facts.name.as_ref(), "Smoke");
+    assert_eq!(facts.qualified_name.as_ref(), "Smoke");
+    assert_eq!(facts.group.as_deref(), Some("fast"));
+    assert_eq!(
+        facts
+            .tags
+            .iter()
+            .map(|tag| tag.as_ref())
+            .collect::<Vec<_>>(),
+        ["unit", "smoke"]
+    );
+    assert_eq!(facts.skip_condition, Some(true));
+    assert_eq!(facts.skip_reason.as_deref(), Some("not on this host"));
+    assert_eq!(
+        test_item(
+            &db,
+            AstNodeKey {
+                generation: SyntaxGenerationId(generation.0 - 1),
+                ..test
+            }
+        )
+        .expect("stale test facts"),
+        None
+    );
 }
 
 #[test]

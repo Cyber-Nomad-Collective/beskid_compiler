@@ -218,6 +218,21 @@ pub struct ItemSignature {
     pub result: SemanticTypeId,
 }
 
+/// Generation-safe metadata attached to one syntax `test` item.
+///
+/// The CLI uses this instead of inspecting the legacy assembled program, so discovery and
+/// filtering remain tied to the same expanded syntax revision that codegen executes.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TestItem {
+    pub name: Arc<str>,
+    pub qualified_name: Arc<str>,
+    pub tags: Arc<[Arc<str>]>,
+    pub group: Option<Arc<str>>,
+    pub skip_condition: Option<bool>,
+    pub skip_reason: Option<Arc<str>>,
+    pub selection_span: SourceSpan,
+}
+
 /// Trusted runtime operation selected by semantic analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RuntimeIntrinsic(pub u32);
@@ -1765,6 +1780,98 @@ fn item_name_tracked(
 }
 
 #[salsa::tracked]
+fn test_item_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<TestItem> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        let definition = node.of::<beskid_analysis::syntax::TestDefinition>()?;
+        let mut module_path = Vec::new();
+        let mut parent = parent_node(_index, key.node);
+        while let Some(current) = parent {
+            if let Some(module) = _index
+                .node_at(_program, current)
+                .and_then(|node| node.of::<beskid_analysis::syntax::InlineModule>())
+            {
+                module_path.push(module.name.node.name.clone());
+            }
+            parent = parent_node(_index, current);
+        }
+        module_path.reverse();
+        let qualified_name = if module_path.is_empty() {
+            definition.name.node.name.clone()
+        } else {
+            format!("{}::{}", module_path.join("::"), definition.name.node.name)
+        };
+        let mut tags = Vec::new();
+        let mut group = None;
+        if let Some(meta) = &definition.meta {
+            for entry in &meta.node.entries {
+                match entry.node.name.node.name.as_str() {
+                    "group" => group = test_string_literal(&entry.node.value),
+                    "tags" => {
+                        tags = test_string_literal(&entry.node.value)
+                            .into_iter()
+                            .flat_map(|value| {
+                                value
+                                    .split(',')
+                                    .map(str::trim)
+                                    .filter(|tag| !tag.is_empty())
+                                    .map(Arc::<str>::from)
+                                    .collect::<Vec<_>>()
+                            })
+                            .collect();
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut skip_condition = None;
+        let mut skip_reason = None;
+        if let Some(skip) = &definition.skip {
+            for entry in &skip.node.entries {
+                match entry.node.name.node.name.as_str() {
+                    "condition" => skip_condition = test_bool_literal(&entry.node.value),
+                    "reason" => skip_reason = test_string_literal(&entry.node.value),
+                    _ => {}
+                }
+            }
+        }
+        Some(TestItem {
+            name: Arc::from(definition.name.node.name.as_str()),
+            qualified_name: Arc::from(qualified_name),
+            tags: Arc::from(tags),
+            group,
+            skip_condition,
+            skip_reason,
+            selection_span: definition.name.span,
+        })
+    })
+}
+
+fn test_string_literal(
+    expression: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
+) -> Option<Arc<str>> {
+    let beskid_analysis::syntax::Expression::Literal(literal) = &expression.node else {
+        return None;
+    };
+    beskid_analysis::syntax::try_decode_string_literal(&literal.node.literal.node).map(Arc::from)
+}
+
+fn test_bool_literal(
+    expression: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Expression>,
+) -> Option<bool> {
+    let beskid_analysis::syntax::Expression::Literal(literal) = &expression.node else {
+        return None;
+    };
+    let beskid_analysis::syntax::Literal::Bool(value) = &literal.node.literal.node else {
+        return None;
+    };
+    Some(*value)
+}
+
+#[salsa::tracked]
 fn direct_callees_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -2162,6 +2269,11 @@ pub fn item_body(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey
 /// Return the exact declared name for a current syntax function or test item.
 pub fn item_name(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
     with_registered_syntax(db, key, item_name_tracked)
+}
+
+/// Return CLI-facing metadata for one current syntax `test` item.
+pub fn test_item(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<TestItem> {
+    with_registered_syntax(db, key, test_item_tracked)
 }
 
 /// Return unique direct function callees in expanded-syntax order.
