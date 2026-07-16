@@ -2,15 +2,15 @@
 
 use std::collections::HashMap;
 
+use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
-    LiteralKind, NodeFacts, NodeKind, OperatorFact, ParameterSlot, Signature,
+    LiteralKind, NodeFacts, NodeKind, OperatorFact, ParameterSlot, Signature, StringInterner,
 };
 use beskid_queries::{
     CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, call_arguments,
-    call_lowering, cast_intents, child_nodes, item_abi_signature, item_body,
-    literal_fact, local_slot, node_kind, node_type, operator_fact, resolved_local,
-    runtime_intrinsic_name,
+    call_lowering, cast_intents, child_nodes, item_abi_signature, item_body, literal_fact,
+    local_slot, node_kind, node_type, operator_fact, resolved_local, runtime_intrinsic_name,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
@@ -191,6 +191,13 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         text.trim_matches('\'').chars().next()
     }
 
+    fn string_literal(&self, key: AstNodeKey) -> Option<std::sync::Arc<str>> {
+        let LiteralFact::String(text) = self.literal(key)? else {
+            return None;
+        };
+        try_decode_string_literal_token(&text).map(Into::into)
+    }
+
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
         let semantic = self.scalar_semantic_type(key).or_else(|| {
             let CallLowering::Direct(declaration) = self.query(call_lowering(self.db, key))? else {
@@ -198,7 +205,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             };
             Some(self.query(item_abi_signature(self.db, declaration))?.result)
         })?;
-        if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER) {
+        if matches!(
+            semantic,
+            SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING
+        ) {
             return self.isa.map(|isa| isa.pointer_type());
         }
         map_scalar_type(semantic)
@@ -229,7 +239,12 @@ impl SyntaxNodeFacts<'_> {
                     let slot = self.query(local_slot(self.db, identifier))?;
                     let value_type =
                         self.scalar_semantic_type(identifier).and_then(|semantic| {
-                            if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER) {
+                            if matches!(
+                                semantic,
+                                SemanticTypeId::WORD
+                                    | SemanticTypeId::POINTER
+                                    | SemanticTypeId::STRING
+                            ) {
                                 self.isa.map(|isa| isa.pointer_type())
                             } else {
                                 map_scalar_type(semantic)
@@ -440,6 +455,39 @@ pub fn emit_isle_item_with_call_importer<'db>(
     )
 }
 
+/// Emit a syntax-only item with the shared artifact string pool and exact call imports.
+pub fn emit_isle_item_with_services<'db>(
+    input: &'db CodegenInput<'db>,
+    isa: &dyn TargetIsa,
+    item: AstNodeKey,
+    string_interner: &mut dyn StringInterner,
+    importer: &mut dyn CallImporter,
+) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
+    let db = input.database();
+    let body = item_body(db, item)
+        .ok()
+        .flatten()
+        .ok_or_else(|| FunctionEmissionError::Verification("item has no syntax body".to_owned()))?;
+    let signature = item_abi_signature(db, item)
+        .ok()
+        .flatten()
+        .and_then(|signature| signature_for_item(isa, signature))
+        .ok_or_else(|| {
+            FunctionEmissionError::Verification("item signature unavailable".to_owned())
+        })?;
+    let emitter = FunctionEmitter::new(isa);
+    let facts = SyntaxNodeFacts::new_with_isa(input, isa);
+    emitter.emit_item_statement_with_services(
+        UserFuncName::user(0, 0),
+        signature,
+        &facts,
+        item,
+        body,
+        string_interner,
+        importer,
+    )
+}
+
 /// Explicit module importer keyed by syntax-resolved item identity.
 ///
 /// Call lowering never guesses symbols: the host declares each item and supplies its exact
@@ -578,7 +626,10 @@ fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
 }
 
 fn map_signature_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
-    if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER) {
+    if matches!(
+        semantic,
+        SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING
+    ) {
         Some(isa.pointer_type())
     } else {
         map_scalar_type(semantic)

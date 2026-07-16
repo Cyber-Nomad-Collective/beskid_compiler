@@ -14,8 +14,8 @@ use beskid_analysis::services::parse_program_with_source_name;
 use beskid_codegen::{
     CodegenInput, ItemModuleImporter, emit_isle_expression, emit_isle_item,
     emit_isle_item_with_call_importer,
-    syntax_item_signature,
     module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
+    syntax_item_signature,
 };
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
@@ -384,6 +384,29 @@ fn parsed_program_lowers_to_backend_artifact_without_hir() {
         .find(|function| function.name == "Main")
         .expect("Main artifact function");
     assert!(main.function.display().to_string().contains("call"));
+}
+
+#[test]
+fn parsed_syntax_program_uses_the_existing_artifact_string_pool() {
+    let (input, isa, root) = item_fixture_with_root("unit Main() { \"Beskid\"; return; }");
+    let main = find_function_definitions(input.database(), root)[0];
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem {
+            key: main,
+            symbol: "Main".into(),
+        }],
+    )
+    .expect("syntax item with a string literal lowers through the artifact pool");
+
+    assert_eq!(artifact.string_literals.len(), 1);
+    assert!(
+        artifact
+            .string_literals
+            .values()
+            .any(|bytes| bytes.as_slice() == b"Beskid")
+    );
 }
 
 #[test]

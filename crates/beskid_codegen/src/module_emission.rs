@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
 use beskid_analysis::types::TypeId;
-use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError};
-use cranelift_codegen::ir::{Endianness, ExtFuncData, ExternalName, FuncRef, Signature};
+use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
+use cranelift_codegen::ir::InstBuilder;
+use cranelift_codegen::ir::{
+    Endianness, ExtFuncData, ExternalName, FuncRef, GlobalValueData, Signature, Type, Value,
+};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{
@@ -11,7 +14,7 @@ use cranelift_module::{
 
 use crate::lowering::descriptor::TypeDescriptorData;
 use crate::lowering::{CodegenArtifact, ExternImport};
-use crate::{emit_isle_item_with_call_importer, CodegenInput};
+use crate::{CodegenContext, CodegenInput, emit_isle_item_with_services};
 
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
 #[derive(Debug, Clone)]
@@ -66,11 +69,16 @@ pub fn lower_syntax_program(
             .map(|(callee, symbol)| (*callee, symbol.clone())),
     );
 
+    let mut context = CodegenContext::new();
     let mut functions = Vec::with_capacity(items.len());
     for item in items {
         let function = {
             let mut importer = ArtifactCallImporter { symbols: &symbols };
-            emit_isle_item_with_call_importer(input, isa, item.key, &mut importer)
+            let mut strings = ArtifactStringInterner {
+                context: &mut context,
+                pointer_type: isa.pointer_type(),
+            };
+            emit_isle_item_with_services(input, isa, item.key, &mut strings, &mut importer)
                 .map_err(SyntaxModuleEmissionError::Emission)?
         };
         functions.push(crate::LoweredFunction {
@@ -80,6 +88,7 @@ pub fn lower_syntax_program(
     }
     Ok(CodegenArtifact {
         functions,
+        string_literals: context.string_literals,
         extern_imports: runtime_intrinsics
             .into_values()
             .map(|symbol| ExternImport {
@@ -90,6 +99,30 @@ pub fn lower_syntax_program(
             .collect(),
         ..CodegenArtifact::default()
     })
+}
+
+/// Syntax-ISLE adapter over the existing artifact-owned literal pool.
+struct ArtifactStringInterner<'a> {
+    context: &'a mut CodegenContext,
+    pointer_type: Type,
+}
+
+impl StringInterner for ArtifactStringInterner<'_> {
+    fn intern(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        _key: AstNodeKey,
+        text: &str,
+    ) -> Option<Value> {
+        let symbol = self.context.intern_string_literal(text.as_bytes());
+        let global = builder.func.create_global_value(GlobalValueData::Symbol {
+            name: ExternalName::testcase(symbol),
+            offset: 0.into(),
+            colocated: true,
+            tls: false,
+        });
+        Some(builder.ins().global_value(self.pointer_type, global))
+    }
 }
 
 /// Manifest symbols available only to compiler-authorized canonical runtime source.  Ordinary

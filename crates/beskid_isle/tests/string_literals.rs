@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use beskid_isle::{AstNodeKey, FunctionEmitter, LiteralKind, NodeFacts, NodeKind, StringInterner};
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
@@ -27,8 +28,8 @@ impl NodeFacts for StringFacts {
         None
     }
 
-    fn string_literal(&self, key: AstNodeKey) -> Option<&str> {
-        (key == self.key).then_some(self.text.as_str())
+    fn string_literal(&self, key: AstNodeKey) -> Option<Arc<str>> {
+        (key == self.key).then(|| Arc::from(self.text.as_str()))
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {

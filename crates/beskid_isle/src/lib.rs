@@ -7,6 +7,7 @@
 //! ```
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 pub use beskid_queries::AstNodeKey;
 use cranelift_codegen::ir::InstBuilder;
@@ -401,7 +402,7 @@ pub trait NodeFacts {
     fn char_literal(&self, _key: AstNodeKey) -> Option<char> {
         None
     }
-    fn string_literal(&self, _key: AstNodeKey) -> Option<&str> {
+    fn string_literal(&self, _key: AstNodeKey) -> Option<Arc<str>> {
         None
     }
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type>;
@@ -706,7 +707,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let text = self.facts.string_literal(key)?;
         self.string_interner
             .as_deref_mut()?
-            .intern(self.builder, key, text)
+            .intern(self.builder, key, &text)
     }
 
     fn clif_iadd(&mut self, left: Value, right: Value) -> Value {
@@ -1531,7 +1532,7 @@ impl<'isa> FunctionEmitter<'isa> {
         facts: &dyn NodeFacts,
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(name, signature, facts, None, body, None)
+        self.emit_statement_inner(name, signature, facts, None, body, None, None)
     }
 
     /// Emit a parsed function item after binding its source parameters to local slots.
@@ -1543,7 +1544,7 @@ impl<'isa> FunctionEmitter<'isa> {
         item: AstNodeKey,
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(name, signature, facts, Some(item), body, None)
+        self.emit_statement_inner(name, signature, facts, Some(item), body, None, None)
     }
 
     fn emit_statement_inner<'services>(
@@ -1553,6 +1554,7 @@ impl<'isa> FunctionEmitter<'isa> {
         facts: &dyn NodeFacts,
         item: Option<AstNodeKey>,
         body: AstNodeKey,
+        string_interner: Option<&'services mut dyn StringInterner>,
         call_importer: Option<&'services mut dyn CallImporter>,
     ) -> Result<Function, FunctionEmissionError> {
         let mut function = Function::with_name_signature(name, signature);
@@ -1563,12 +1565,8 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.append_block_params_for_function_params(entry);
             builder.switch_to_block(entry);
             builder.seal_block(entry);
-            let mut context = match call_importer {
-                Some(call_importer) => {
-                    IsleContext::new_with_call_importer(&mut builder, facts, call_importer)
-                }
-                None => IsleContext::new(&mut builder, facts),
-            };
+            let mut context =
+                IsleContext::new_with_services(&mut builder, facts, string_interner, call_importer);
             if let Some(item) = item {
                 materialize_parameters(&mut context, item)?;
             }
@@ -1594,7 +1592,15 @@ impl<'isa> FunctionEmitter<'isa> {
         body: AstNodeKey,
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
-        self.emit_statement_inner(name, signature, facts, None, body, Some(call_importer))
+        self.emit_statement_inner(
+            name,
+            signature,
+            facts,
+            None,
+            body,
+            None,
+            Some(call_importer),
+        )
     }
 
     /// Emit a parsed function item with parameter materialization and explicit call imports.
@@ -1613,6 +1619,29 @@ impl<'isa> FunctionEmitter<'isa> {
             facts,
             Some(item),
             body,
+            None,
+            Some(call_importer),
+        )
+    }
+
+    /// Emit a parsed item with both artifact-owned string interning and exact call imports.
+    pub fn emit_item_statement_with_services(
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        item: AstNodeKey,
+        body: AstNodeKey,
+        string_interner: &mut dyn StringInterner,
+        call_importer: &mut dyn CallImporter,
+    ) -> Result<Function, FunctionEmissionError> {
+        self.emit_statement_inner(
+            name,
+            signature,
+            facts,
+            Some(item),
+            body,
+            Some(string_interner),
             Some(call_importer),
         )
     }

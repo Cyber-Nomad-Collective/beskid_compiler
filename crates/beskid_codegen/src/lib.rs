@@ -25,7 +25,7 @@ pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics
 pub use errors::CodegenError;
 pub use isle_adapter::{
     ItemModuleImporter, SyntaxNodeFacts, emit_isle_expression, emit_isle_item,
-    emit_isle_item_with_call_importer, syntax_item_signature,
+    emit_isle_item_with_call_importer, emit_isle_item_with_services, syntax_item_signature,
 };
 pub use linking::{
     FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, referenced_extern_imports,
@@ -37,7 +37,10 @@ pub use lowering::{
     map_type_id_to_clif_with_dynamic, mapping_pair_eligible, object_link_symbol, pointer_type,
     require_mapping_eligible, shape_id_for_item,
 };
-pub use module_emission::{DescriptorHandles, SyntaxModuleItem, emit_string_literals, emit_type_descriptors, lower_syntax_program};
+pub use module_emission::{
+    DescriptorHandles, SyntaxModuleItem, emit_string_literals, emit_type_descriptors,
+    lower_syntax_program,
+};
 pub use prepared_syntax::{PreparedSyntaxEntrypoint, lower_prepared_syntax_entrypoint};
 pub use services::{
     LoweredProgram, jit_symbol_for_item, lower_from_front_end,
