@@ -644,6 +644,94 @@ fn fully_qualified_assembly_module_call_resolves_without_a_use_binding() {
 }
 
 #[test]
+fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/imported-type-qualified/project/src");
+    let main_path = root.join("Main.bd");
+    let progress_path = root.join("Console/Controls/ProgressBar.bd");
+    let main_source = "use Console.Controls.ProgressBar;\ni32 Main() { return ProgressBar.ProgressBar.New(); }";
+    let progress_source = "pub type ProgressBar { i32 percent }\npub i32 New() { return 1; }";
+    let main_program = expand_program(
+        parse_program(main_source).expect("main parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let progress_program = expand_program(
+        parse_program(progress_source).expect("progress parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: progress_path.display().to_string(),
+                path: progress_path.clone(),
+                source: progress_source.to_string(),
+                program: progress_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let progress_unit = SourceUnitId::new(&db, progress_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(54);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let progress_index = SyntaxIndex::from_program(&progress_program, generation);
+    let call = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        0,
+    );
+    let declaration = key(
+        progress_unit,
+        generation,
+        &progress_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+    let main = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+
+    assert_eq!(
+        call_lowering(&db, call).expect("imported type-qualified static call"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        direct_callees(&db, main).expect("imported type-qualified call graph"),
+        Some(Arc::from([declaration]))
+    );
+}
+
+#[test]
 fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/qualified-import-ambiguity/project/src");

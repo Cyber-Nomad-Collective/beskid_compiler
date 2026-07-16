@@ -536,11 +536,67 @@ fn resolve_item_declaration_candidate(
         }
     }
     let [target_unit] = candidates.as_slice() else {
-        return None;
+        drop(registry);
+        return resolve_type_qualified_imported_function(db, key, path);
     };
     let target_unit = *target_unit;
     drop(registry);
     unique_exported_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name)
+}
+
+/// Resolve `Imported.ModuleType.Function()` only when the import identifies one source unit,
+/// the extra qualifier identifies one declared type in that unit, and the terminal function is
+/// likewise unique. This preserves a direct call edge for the Corelib convention of spelling
+/// static functions through their nominal type without treating arbitrary nested paths as
+/// callable.
+fn resolve_type_qualified_imported_function(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
+    let (function, module_path) = path.segments.split_last()?;
+    let (type_segment, import_path) = module_path.split_last()?;
+    let import_path = import_path
+        .iter()
+        .map(|segment| segment.node.name.node.name.as_str())
+        .collect::<Vec<_>>();
+    let registry = db
+        .syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry");
+    let candidates = registry
+        .imports
+        .get(&(key.unit, key.generation))
+        .into_iter()
+        .flatten()
+        .filter(|import| {
+            (import_path.len() == 1 && import.binding == import_path[0])
+                || import.path.iter().map(String::as_str).eq(import_path.iter().copied())
+        })
+        .fold(Vec::new(), |mut candidates, import| {
+            if !candidates.contains(&import.target) {
+                candidates.push(import.target);
+            }
+            candidates
+        });
+    let [target_unit] = candidates.as_slice() else {
+        return None;
+    };
+    let target_unit = *target_unit;
+    drop(registry);
+    unique_exported_type_in_unit(
+        db,
+        target_unit,
+        key.generation,
+        &type_segment.node.name.node.name,
+        type_segment.node.type_args.len(),
+    )?;
+    unique_exported_function_in_unit(
+        db,
+        target_unit,
+        key.generation,
+        &function.node.name.node.name,
+    )
 }
 
 /// Resolve a public module member through its defining syntax unit or an explicit public
