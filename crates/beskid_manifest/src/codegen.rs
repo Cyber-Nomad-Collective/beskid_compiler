@@ -479,6 +479,54 @@ pub fn render_analysis_builtins(manifest: &ManifestRoot) -> String {
     out
 }
 
+/// Render the analysis builtin surface plus manifest-owned ABI-v5 runtime intrinsic candidates.
+///
+/// These entries make exact canonical-runtime calls resolvable by the syntax fact layer. They do
+/// not grant an ABI import: `CodegenInput::runtime_intrinsic_for` still requires the opaque
+/// canonical-runtime capability before codegen can emit the symbol.
+pub fn append_analysis_v5_intrinsics(
+    base: &str,
+    runtime: &crate::v5::RuntimeManifestV5,
+) -> String {
+    const MARKER: &str = "// ABI-v5 canonical runtime intrinsic candidates\n";
+    let mut out = base
+        .split_once(MARKER)
+        .map_or_else(|| base.to_owned(), |(prefix, _)| prefix.to_owned());
+    if !out.trim_end().ends_with('}') {
+        out.push_str("}\n");
+    }
+    let closing = out.rfind('}').expect("generated builtins closes macro");
+    let mut intrinsic_entries = String::from(MARKER);
+    for intrinsic in &runtime.intrinsics {
+        let params = intrinsic
+            .params
+            .iter()
+            .map(|parameter| v5_analysis_type(&parameter.ty))
+            .collect::<Vec<_>>();
+        write_analysis_entry(
+            &mut intrinsic_entries,
+            &[intrinsic.name.clone()],
+            &intrinsic.symbol,
+            &params,
+            &v5_analysis_type(&intrinsic.result),
+            true,
+        );
+    }
+    out.insert_str(closing, &intrinsic_entries);
+    out
+}
+
+fn v5_analysis_type(ty: &str) -> String {
+    match ty {
+        "pointer" => "ptr".into(),
+        // The legacy resolver surface only distinguishes wide numeric scalar candidates. Exact
+        // ABI widths come from the canonical manifest in syntax codegen, not this lookup table.
+        "u8" | "u32" | "i32" | "i64" | "isize" => "u64".into(),
+        "void" => "unit".into(),
+        other => other.into(),
+    }
+}
+
 fn write_analysis_entry(
     out: &mut String,
     path: &[String],

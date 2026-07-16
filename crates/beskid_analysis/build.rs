@@ -9,6 +9,8 @@ fn main() {
 
     let source = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|err| panic!("beskid_analysis build: read ABI-v5 manifest: {err}"));
-    beskid_manifest::load_v5_manifest_source(&source)
-        .unwrap_or_else(|err| panic!("beskid_analysis build: validate ABI-v5 manifest: {err}"));
+    let base = std::fs::read_to_string(&transitional_builtins)
+        .unwrap_or_else(|err| panic!("beskid_analysis build: read builtin baseline: {err}"));
+    beskid_manifest::generate_analysis_with_v5_intrinsics_from_source(&source, &base, &transitional_builtins)
+        .unwrap_or_else(|err| panic!("beskid_analysis build: generate ABI-v5 builtin surface: {err}"));
 }
