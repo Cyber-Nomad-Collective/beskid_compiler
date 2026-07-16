@@ -421,6 +421,34 @@ fn parsed_syntax_program_uses_the_existing_artifact_string_pool() {
 }
 
 #[test]
+fn parsed_syntax_program_emits_imported_unit_calls_as_statements() {
+    let (input, isa, root) = item_fixture_with_root("unit Assert() { } unit Main() { Assert(); }");
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: items[0],
+                symbol: "Assert".into(),
+            },
+            SyntaxModuleItem {
+                key: items[1],
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("syntax program with a unit call lowers through its statement rule");
+
+    let main = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("Main function");
+    assert!(main.function.display().to_string().contains("call"));
+}
+
+#[test]
 fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_manifest_imports() {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("runtime project").keep();

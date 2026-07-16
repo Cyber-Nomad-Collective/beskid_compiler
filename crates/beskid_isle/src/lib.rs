@@ -600,13 +600,12 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         self.builder.block_params(merge_block).first().copied()
     }
 
-    fn direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
+    fn import_direct_call(
+        &mut self,
+        key: AstNodeKey,
+    ) -> Option<(cranelift_codegen::ir::Inst, Signature)> {
         let callee = self.facts.direct_callee(key)?;
         let signature = self.facts.call_signature(key)?;
-        let result_type = self.facts.scalar_type(key)?;
-        if signature.returns.len() != 1 || signature.returns[0].value_type != result_type {
-            return None;
-        }
         let function =
             match self
                 .call_importer
@@ -635,7 +634,27 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             arguments.push(value);
         }
         let call = self.builder.ins().call(function, &arguments);
+        Some((call, signature))
+    }
+
+    fn direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
+        let signature = self.facts.call_signature(key)?;
+        let result_type = self.facts.scalar_type(key)?;
+        if signature.returns.len() != 1 || signature.returns[0].value_type != result_type {
+            return None;
+        }
+        let (call, _) = self.import_direct_call(key)?;
         self.builder.inst_results(call).first().copied()
+    }
+
+    fn direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
+        self.facts
+            .call_signature(key)?
+            .returns
+            .is_empty()
+            .then_some(())?;
+        let (call, _) = self.import_direct_call(key)?;
+        self.builder.inst_results(call).is_empty().then_some(())
     }
 }
 
@@ -778,6 +797,22 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn emit_direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
         self.direct_call(key)
+    }
+
+    fn emit_expression_statement(&mut self, key: AstNodeKey) -> Option<()> {
+        let expression = self.facts.child(key, 0)?;
+        if self.facts.node_kind(expression) == Some(NodeKind::CallExpression)
+            && self.facts.call_kind(expression) == Some(CallKind::Direct)
+            && self
+                .facts
+                .call_signature(expression)
+                .is_some_and(|signature| signature.returns.is_empty())
+        {
+            return self.direct_call_statement(expression);
+        }
+        let value = generated::constructor_lower_expression(self, expression)?;
+        self.discard_value(value);
+        Some(())
     }
 
     fn emit_runtime_intrinsic(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -1573,9 +1608,13 @@ impl<'isa> FunctionEmitter<'isa> {
             lower_statement(&mut context, body).map_err(FunctionEmissionError::Lowering)?;
             let terminated = block_is_terminated(&builder, entry);
             if !terminated {
-                return Err(FunctionEmissionError::Verification(
-                    "generated statement body did not terminate its entry block".to_owned(),
-                ));
+                if builder.func.signature.returns.is_empty() {
+                    builder.ins().return_(&[]);
+                } else {
+                    return Err(FunctionEmissionError::Verification(
+                        "generated statement body did not terminate its entry block".to_owned(),
+                    ));
+                }
             }
             builder.finalize();
         }
