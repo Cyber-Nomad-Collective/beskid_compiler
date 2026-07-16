@@ -50,6 +50,26 @@ fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
 }
 
 #[test]
+fn canonical_bootstrap_source_uses_only_manifest_owned_allocation_and_tls_primitives() {
+    let source = &canonical_runtime_sources()[0].source;
+
+    assert!(source.contains("pub pointer SystemAllocate(word size, word alignment)"));
+    assert!(source.contains("return system_allocate(size, alignment);"));
+    assert!(source.contains("pub unit SystemFree(pointer address, word size)"));
+    assert!(source.contains("system_free(address, size);"));
+
+    assert!(source.contains("pub pointer CurrentThreadState()"));
+    assert!(source.contains("return tls_get();"));
+    assert!(source.contains("pub unit SetCurrentThreadState(pointer state)"));
+    assert!(source.contains("tls_set(state);"));
+
+    assert!(source.contains("pub pointer RootFrame(pointer tlsState)"));
+    assert!(source.contains("raw_word_load(pointer_add(tlsState, 8))"));
+    assert!(source.contains("pub unit SetRootFrame(pointer tlsState, pointer rootFrame)"));
+    assert!(source.contains("raw_word_store(pointer_add(tlsState, 8), NativeWord(rootFrame));"));
+}
+
+#[test]
 fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
     let manifest = linux_manifest();
     let sources = canonical_runtime_sources();
@@ -60,11 +80,23 @@ fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
 
     assert!(proof.authorizes_source(CANONICAL_BOOTSTRAP_SOURCE_PATH));
     assert!(capability.authorizes_source(CANONICAL_BOOTSTRAP_SOURCE_PATH));
-    assert!(
-        capability
-            .intrinsic_for_source(CANONICAL_BOOTSTRAP_SOURCE_PATH, "trap")
-            .is_some()
-    );
+    for intrinsic in [
+        "system_allocate",
+        "system_free",
+        "tls_get",
+        "tls_set",
+        "pointer_add",
+        "raw_word_load",
+        "raw_word_store",
+        "trap",
+    ] {
+        assert!(
+            capability
+                .intrinsic_for_source(CANONICAL_BOOTSTRAP_SOURCE_PATH, intrinsic)
+                .is_some(),
+            "canonical runtime must retain authority for {intrinsic}",
+        );
+    }
     assert!(
         capability
             .intrinsic_for_source("src/User.bd", "trap")
