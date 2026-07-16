@@ -1,4 +1,6 @@
-use beskid_aot::emit_library_pair;
+use std::process::Command;
+
+use beskid_aot::{emit_host_context_library_pair, emit_library_pair};
 use beskid_codegen::CodegenArtifact;
 
 #[test]
@@ -15,4 +17,51 @@ fn emits_static_and_shared_library_shells_without_runtime_kit() {
     assert!(pair.static_library.is_file());
     assert!(pair.shared_library.is_file());
     assert!(pair.provenance_symbols.is_empty());
+}
+
+#[test]
+#[cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+))]
+fn host_context_pair_contains_the_manifest_context_exports_in_both_native_artifacts() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let pair = emit_host_context_library_pair(
+        CodegenArtifact::default(),
+        temp.path().join("out"),
+        "runtime_context",
+    )
+    .expect("emit host context pair");
+
+    let expected = [
+        "beskid_arch_v5_context_init".to_owned(),
+        "beskid_arch_v5_context_switch".to_owned(),
+    ];
+    assert_eq!(pair.provenance_symbols, expected);
+
+    for artifact in [&pair.static_library, &pair.shared_library] {
+        let output = Command::new("nm")
+            .args(["-g", "--defined-only", "-j"])
+            .arg(artifact)
+            .output()
+            .expect("run nm");
+        assert!(
+            output.status.success(),
+            "nm failed for {}",
+            artifact.display()
+        );
+        let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
+        for symbol in &expected {
+            assert!(
+                symbols.lines().any(|line| {
+                    line.trim_end_matches(':')
+                        .strip_prefix('_')
+                        .unwrap_or(line.trim_end_matches(':'))
+                        == symbol
+                }),
+                "{} does not define {symbol}: {symbols}",
+                artifact.display()
+            );
+        }
+    }
 }

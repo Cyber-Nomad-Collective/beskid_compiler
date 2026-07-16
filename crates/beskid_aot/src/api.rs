@@ -1,8 +1,9 @@
 //! Public AOT API: build requests, output kinds, and the [`build`] orchestration entry point.
 
 use std::path::PathBuf;
+use std::process::Command;
 
-use beskid_abi::abi_v5::TargetMetadata;
+use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, render_runtime_asm_include};
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_codegen::CodegenArtifact;
 use beskid_pipeline::{
@@ -172,8 +173,58 @@ pub fn emit_library_pair(
     target_triple: Option<String>,
     exported_symbols: Vec<String>,
 ) -> AotResult<NativeLibraryPair> {
+    emit_library_pair_with_objects(
+        artifact,
+        output_dir,
+        name,
+        target_triple,
+        exported_symbols,
+        Vec::new(),
+    )
+}
+
+/// Emit a native library pair that includes the current host target's canonical context
+/// assembly object. The assembly source and generated ABI include are the same ones verified by
+/// `beskid_abi`'s target assembly tests; no inline assembly or synthetic context shim is used.
+pub fn emit_host_context_library_pair(
+    artifact: CodegenArtifact,
+    output_dir: PathBuf,
+    name: &str,
+) -> AotResult<NativeLibraryPair> {
+    let target = host_runtime_target()?;
+    std::fs::create_dir_all(&output_dir).map_err(|err| AotError::Io {
+        path: output_dir.clone(),
+        message: err.to_string(),
+    })?;
+    let context_object = compile_context_assembly(&target, &output_dir, name)?;
+    let context_symbols = AbiManifestV5::canonical_runtime(target)
+        .assembly_exports
+        .into_iter()
+        .map(|entry| entry.symbol.as_str().to_owned())
+        .collect();
+    emit_library_pair_with_objects(
+        artifact,
+        output_dir,
+        name,
+        Some(host_target_triple().to_owned()),
+        context_symbols,
+        vec![context_object],
+    )
+}
+
+fn emit_library_pair_with_objects(
+    artifact: CodegenArtifact,
+    output_dir: PathBuf,
+    name: &str,
+    target_triple: Option<String>,
+    exported_symbols: Vec<String>,
+    additional_object_paths: Vec<PathBuf>,
+) -> AotResult<NativeLibraryPair> {
     let target = detect_target(target_triple.as_deref())?;
-    std::fs::create_dir_all(&output_dir).map_err(|err| AotError::Io { path: output_dir.clone(), message: err.to_string() })?;
+    std::fs::create_dir_all(&output_dir).map_err(|err| AotError::Io {
+        path: output_dir.clone(),
+        message: err.to_string(),
+    })?;
     let object_path = output_dir.join(format!("{name}.{}", target.object_ext));
     let request = AotBuildRequest {
         artifact,
@@ -183,7 +234,7 @@ pub fn emit_library_pair(
         target_triple: target_triple.clone(),
         profile: BuildProfile::Debug,
         entrypoint: String::new(),
-        export_policy: ExportPolicy::Explicit(exported_symbols),
+        export_policy: ExportPolicy::Explicit(exported_symbols.clone()),
         link_mode: LinkMode::Auto,
         runtime: None,
         verbose_link: false,
@@ -193,17 +244,143 @@ pub fn emit_library_pair(
     };
     validate_extern_libraries(&request.artifact, &request.external_libraries)?;
     let object = emit_object_stage(&request)?;
-    let static_library = output_dir.join(crate::target::output_filename(name, BuildOutputKind::StaticLib, &target));
-    let shared_library = output_dir.join(crate::target::output_filename(name, BuildOutputKind::SharedLib, &target));
-    for (output_kind, output_path) in [(BuildOutputKind::StaticLib, &static_library), (BuildOutputKind::SharedLib, &shared_library)] {
+    let static_library = output_dir.join(crate::target::output_filename(
+        name,
+        BuildOutputKind::StaticLib,
+        &target,
+    ));
+    let shared_library = output_dir.join(crate::target::output_filename(
+        name,
+        BuildOutputKind::SharedLib,
+        &target,
+    ));
+    for (output_kind, output_path) in [
+        (BuildOutputKind::StaticLib, &static_library),
+        (BuildOutputKind::SharedLib, &shared_library),
+    ] {
         link(&LinkRequest {
-            target_triple: target_triple.clone(), output_kind, output_path: output_path.clone(),
-            object_path: object.object_path.clone(), runtime_staticlib: None, host_staticlib: None,
-            entrypoint_symbol: String::new(), exported_symbols: object.exported_symbols.clone(),
-            link_mode: LinkMode::Auto, verbose: false, external_libraries: Vec::new(), library_search_paths: Vec::new(),
+            target_triple: target_triple.clone(),
+            output_kind,
+            output_path: output_path.clone(),
+            object_path: object.object_path.clone(),
+            runtime_staticlib: None,
+            host_staticlib: None,
+            additional_object_paths: additional_object_paths.clone(),
+            entrypoint_symbol: String::new(),
+            exported_symbols: object.exported_symbols.clone(),
+            link_mode: LinkMode::Auto,
+            verbose: false,
+            external_libraries: Vec::new(),
+            library_search_paths: Vec::new(),
         })?;
     }
-    Ok(NativeLibraryPair { static_library, shared_library, provenance_symbols: object.exported_symbols })
+    let mut provenance_symbols = object.exported_symbols;
+    provenance_symbols.extend(exported_symbols);
+    provenance_symbols.sort();
+    provenance_symbols.dedup();
+    Ok(NativeLibraryPair {
+        static_library,
+        shared_library,
+        provenance_symbols,
+    })
+}
+
+fn host_target_triple() -> &'static str {
+    match (std::env::consts::ARCH, std::env::consts::OS) {
+        ("x86_64", "linux") => "x86_64-unknown-linux-gnu",
+        ("aarch64", "macos") => "aarch64-apple-darwin",
+        ("x86_64", "windows") => "x86_64-pc-windows-msvc",
+        _ => "",
+    }
+}
+
+fn host_runtime_target() -> AotResult<TargetMetadata> {
+    let triple = host_target_triple();
+    TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == triple)
+        .ok_or_else(|| AotError::UnsupportedLinkerStrategy {
+            target: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+            message:
+                "canonical context assembly is only available for supported native ABI-v5 hosts"
+                    .to_owned(),
+        })
+}
+
+fn compile_context_assembly(
+    target: &TargetMetadata,
+    output_dir: &std::path::Path,
+    name: &str,
+) -> AotResult<PathBuf> {
+    let assembly_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../beskid_abi/assembly")
+        .join(target.triple.as_str());
+    let source = assembly_root.join(if target.triple.as_str().contains("windows") {
+        "context.asm"
+    } else {
+        "context.S"
+    });
+    let include = output_dir.join(format!(
+        "beskid_runtime_abi_v5_{}.inc",
+        target.triple.as_str().replace('-', "_")
+    ));
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let rendered =
+        render_runtime_asm_include(&manifest).map_err(|err| AotError::InvalidRequest {
+            message: format!("{err:?}"),
+        })?;
+    std::fs::write(&include, rendered).map_err(|err| AotError::Io {
+        path: include.clone(),
+        message: err.to_string(),
+    })?;
+    let object = output_dir.join(format!(
+        "{name}.context.{}",
+        if target.triple.as_str().contains("windows") {
+            "obj"
+        } else {
+            "o"
+        }
+    ));
+
+    let mut command = if target.triple.as_str().contains("windows") {
+        Command::new("llvm-ml")
+    } else {
+        Command::new("clang")
+    };
+    if target.triple.as_str() == "x86_64-unknown-linux-gnu" {
+        command.args(["-target", "x86_64-unknown-linux-gnu", "-c"]);
+        command
+            .arg(&source)
+            .arg("-I")
+            .arg(output_dir)
+            .arg("-o")
+            .arg(&object);
+    } else if target.triple.as_str() == "aarch64-apple-darwin" {
+        command.args(["-c", "-arch", "arm64"]);
+        command
+            .arg(&source)
+            .arg("-I")
+            .arg(output_dir)
+            .arg("-o")
+            .arg(&object);
+    } else if target.triple.as_str() == "x86_64-pc-windows-msvc" {
+        command.args(["--m64", "/c", "/X", "/Fo"]);
+        command.arg(&object).arg("/I").arg(output_dir).arg(&source);
+    } else {
+        return Err(AotError::UnsupportedLinkerStrategy {
+            target: target.triple.as_str().to_owned(),
+            message: "no canonical context assembly invocation for target".to_owned(),
+        });
+    }
+    let output = command.output().map_err(|_| AotError::LinkerUnavailable)?;
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: format!("{:?}", command),
+            detail: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(object)
 }
 
 #[derive(Debug, Clone)]
@@ -357,6 +534,7 @@ fn link_stage(
             output_kind: req.output_kind,
             output_path: req.output_path.clone(),
             object_path: object_stage.object_path.clone(),
+            additional_object_paths: Vec::new(),
             runtime_staticlib: Some(runtime.staticlib_path.clone()),
             host_staticlib: None,
             entrypoint_symbol: native_link_entrypoint(&req.entrypoint).to_owned(),

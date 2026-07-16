@@ -13,6 +13,8 @@ pub struct LinkRequest {
     pub output_kind: BuildOutputKind,
     pub output_path: PathBuf,
     pub object_path: PathBuf,
+    /// Additional native object files that must be present in every linked/archive artifact.
+    pub additional_object_paths: Vec<PathBuf>,
     pub runtime_staticlib: Option<PathBuf>,
     pub host_staticlib: Option<PathBuf>,
     pub entrypoint_symbol: String,
@@ -48,6 +50,10 @@ fn append_static_archive(cmd: &mut Command, target: &str, archive: &std::path::P
 
 fn format_link_command(compiler: &str, req: &LinkRequest, target: &str) -> String {
     let mut command_line = format!("{} {}", compiler, req.object_path.display());
+    for object in &req.additional_object_paths {
+        command_line.push(' ');
+        command_line.push_str(&object.display().to_string());
+    }
     if let Some(runtime_staticlib) = &req.runtime_staticlib {
         if target.contains("darwin") || target.contains("macos") {
             command_line.push_str(" -Wl,-force_load ");
@@ -104,6 +110,14 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
             message: "object file does not exist".to_owned(),
         });
     }
+    for object_path in &req.additional_object_paths {
+        if !object_path.exists() {
+            return Err(AotError::Io {
+                path: object_path.clone(),
+                message: "additional object file does not exist".to_owned(),
+            });
+        }
+    }
     if let Some(runtime_staticlib) = &req.runtime_staticlib
         && !runtime_staticlib.exists()
     {
@@ -141,6 +155,7 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
         .to_ascii_lowercase();
     let mut cmd = Command::new(&compiler);
     cmd.arg(&req.object_path);
+    cmd.args(&req.additional_object_paths);
     if let Some(runtime_staticlib) = &req.runtime_staticlib {
         append_static_archive(&mut cmd, &target, runtime_staticlib);
     }
@@ -211,26 +226,46 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
             .arg("crs")
             .arg(&req.output_path)
             .arg(&req.object_path)
+            .args(&req.additional_object_paths)
             .output()
             .map_err(|_| AotError::LinkerUnavailable)?;
         if !output.status.success() {
             return Err(AotError::LinkFailed {
                 status: output.status.code().unwrap_or(-1),
-                command: format!("ar crs {} {}", req.output_path.display(), req.object_path.display()),
+                command: format!(
+                    "ar crs {} {}",
+                    req.output_path.display(),
+                    req.object_path.display()
+                ),
                 detail: format_link_detail(&output),
             });
         }
-        return Ok(LinkResult { output_path: req.output_path.clone(), exported_symbols: req.exported_symbols.clone(), command_line: format!("ar crs {} {}", req.output_path.display(), req.object_path.display()) });
+        return Ok(LinkResult {
+            output_path: req.output_path.clone(),
+            exported_symbols: req.exported_symbols.clone(),
+            command_line: format!(
+                "ar crs {} {}",
+                req.output_path.display(),
+                req.object_path.display()
+            ),
+        });
     }
 
     let script_path = req.output_path.with_extension("mri");
-    let runtime_lib = req.runtime_staticlib.as_ref().expect("runtime checked above");
-    let script = format!(
-        "CREATE {}\nADDLIB {}\nADDMOD {}\nSAVE\nEND\n",
+    let runtime_lib = req
+        .runtime_staticlib
+        .as_ref()
+        .expect("runtime checked above");
+    let mut script = format!(
+        "CREATE {}\nADDLIB {}\nADDMOD {}\n",
         req.output_path.display(),
         runtime_lib.display(),
         req.object_path.display()
     );
+    for object in &req.additional_object_paths {
+        script.push_str(&format!("ADDMOD {}\n", object.display()));
+    }
+    script.push_str("SAVE\nEND\n");
     std::fs::write(&script_path, script).map_err(|err| AotError::Io {
         path: script_path.clone(),
         message: err.to_string(),
@@ -282,10 +317,33 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
 fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
     if req.runtime_staticlib.is_none() {
         let output = Command::new("libtool")
-            .arg("-static").arg("-o").arg(&req.output_path).arg(&req.object_path)
-            .output().map_err(|_| AotError::LinkerUnavailable)?;
-        if !output.status.success() { return Err(AotError::LinkFailed { status: output.status.code().unwrap_or(-1), command: format!("libtool -static -o {} {}", req.output_path.display(), req.object_path.display()), detail: format_link_detail(&output) }); }
-        return Ok(LinkResult { output_path: req.output_path.clone(), command_line: format!("libtool -static -o {} {}", req.output_path.display(), req.object_path.display()), exported_symbols: req.exported_symbols.clone() });
+            .arg("-static")
+            .arg("-o")
+            .arg(&req.output_path)
+            .arg(&req.object_path)
+            .args(&req.additional_object_paths)
+            .output()
+            .map_err(|_| AotError::LinkerUnavailable)?;
+        if !output.status.success() {
+            return Err(AotError::LinkFailed {
+                status: output.status.code().unwrap_or(-1),
+                command: format!(
+                    "libtool -static -o {} {}",
+                    req.output_path.display(),
+                    req.object_path.display()
+                ),
+                detail: format_link_detail(&output),
+            });
+        }
+        return Ok(LinkResult {
+            output_path: req.output_path.clone(),
+            command_line: format!(
+                "libtool -static -o {} {}",
+                req.output_path.display(),
+                req.object_path.display()
+            ),
+            exported_symbols: req.exported_symbols.clone(),
+        });
     }
     let runtime_lib = req
         .runtime_staticlib
@@ -300,6 +358,7 @@ fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
     cmd.arg("-o").arg(&req.output_path);
     cmd.arg(runtime_lib);
     cmd.arg(&req.object_path);
+    cmd.args(&req.additional_object_paths);
 
     if req.verbose {
         eprintln!("[aot] archive command: {:?}", cmd);
