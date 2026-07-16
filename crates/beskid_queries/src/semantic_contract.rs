@@ -242,6 +242,19 @@ pub struct AggregateLayoutFact {
     pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
 }
 
+/// Source-ordered variants and fields of one nominal `enum` definition.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EnumLayoutFact {
+    pub variants: Arc<[EnumVariantLayoutFact]>,
+}
+
+/// One source enum variant with its source-ordered named fields.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EnumVariantLayoutFact {
+    pub name: Arc<str>,
+    pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
+}
+
 /// Exact linker symbol declared by a syntax `[Export(Symbol:"...")]` attribute.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportSymbol(pub Arc<str>);
@@ -1192,15 +1205,16 @@ fn expected_cast_type(
             .iter()
             .copied()
             .filter(|child| {
-                index.kind(*child)
-                    != Some(beskid_analysis::syntax_query::NodeKind::BinaryOp)
+                index.kind(*child) != Some(beskid_analysis::syntax_query::NodeKind::BinaryOp)
             })
             .collect::<Vec<_>>();
         let operand = operands
             .iter()
             .copied()
             .find(|operand| is_ancestor(index, *operand, key.node))?;
-        let sibling = operands.into_iter().find(|candidate| *candidate != operand)?;
+        let sibling = operands
+            .into_iter()
+            .find(|candidate| *candidate != operand)?;
         if is_transparent_binary_operand_path(index, operand, key.node) {
             let sibling_node = index.node_at(program, sibling)?;
             return semantic_type_for_node(program, index, sibling, sibling_node)
@@ -1293,7 +1307,10 @@ fn is_transparent_binary_operand_path(
         let Some(parent) = parent_node(index, current) else {
             return false;
         };
-        if !matches!(index.kind(parent), Some(NodeKind::Expression | NodeKind::LiteralExpression | NodeKind::GroupedExpression)) {
+        if !matches!(
+            index.kind(parent),
+            Some(NodeKind::Expression | NodeKind::LiteralExpression | NodeKind::GroupedExpression)
+        ) {
             return false;
         }
         current = parent;
@@ -1536,6 +1553,14 @@ fn item_abi_signature_tracked(
                 function.return_type.as_ref(),
             ));
         }
+        if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
+            return Some(abi_signature_from_syntax(
+                db,
+                key,
+                &method.parameters,
+                method.return_type.as_ref(),
+            ));
+        }
         node.of::<beskid_analysis::syntax::TestDefinition>()
             .map(|_| {
                 Ok(ItemSignature {
@@ -1638,26 +1663,7 @@ fn aggregate_layout_tracked(
             definition
                 .fields
                 .iter()
-                .map(|field| {
-                    if field.node.kind != beskid_analysis::syntax::FieldKind::Value {
-                        return Err(SemanticError::unavailable("aggregate_layout"));
-                    }
-                    let shape = match &field.node.ty.node {
-                        beskid_analysis::syntax::Type::Primitive(_) => AggregateFieldShape::Scalar(
-                            semantic_type_from_syntax(&field.node.ty.node)?,
-                        ),
-                        beskid_analysis::syntax::Type::Complex(path) => {
-                            AggregateFieldShape::Nominal(
-                                resolve_nominal_layout_declaration(
-                                    db, program, index, key, &path.node,
-                                )
-                                .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?,
-                            )
-                        }
-                        _ => return Err(SemanticError::unavailable("aggregate_layout")),
-                    };
-                    Ok((Arc::from(field.node.name.node.name.as_str()), shape))
-                })
+                .map(|field| aggregate_field_layout(db, program, index, key, field))
                 .collect::<Result<Vec<_>, SemanticError>>()
                 .map(|fields| AggregateLayoutFact {
                     fields: fields.into(),
@@ -1665,6 +1671,62 @@ fn aggregate_layout_tracked(
         )
     })?
     .transpose()
+}
+
+#[salsa::tracked]
+fn enum_layout_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<EnumLayoutFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        let definition = node.of::<beskid_analysis::syntax::EnumDefinition>()?;
+        Some(
+            definition
+                .variants
+                .iter()
+                .map(|variant| {
+                    variant
+                        .node
+                        .fields
+                        .iter()
+                        .map(|field| aggregate_field_layout(db, program, index, key, field))
+                        .collect::<Result<Vec<_>, SemanticError>>()
+                        .map(|fields| EnumVariantLayoutFact {
+                            name: Arc::from(variant.node.name.node.name.as_str()),
+                            fields: fields.into(),
+                        })
+                })
+                .collect::<Result<Vec<_>, SemanticError>>()
+                .map(|variants| EnumLayoutFact {
+                    variants: variants.into(),
+                }),
+        )
+    })?
+    .transpose()
+}
+
+fn aggregate_field_layout(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    field: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Field>,
+) -> Result<(Arc<str>, AggregateFieldShape), SemanticError> {
+    if field.node.kind != beskid_analysis::syntax::FieldKind::Value {
+        return Err(SemanticError::unavailable("aggregate_layout"));
+    }
+    let shape = match &field.node.ty.node {
+        beskid_analysis::syntax::Type::Primitive(_) => {
+            AggregateFieldShape::Scalar(semantic_type_from_syntax(&field.node.ty.node)?)
+        }
+        beskid_analysis::syntax::Type::Complex(path) => AggregateFieldShape::Nominal(
+            resolve_nominal_layout_declaration(db, program, index, key, &path.node)
+                .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?,
+        ),
+        _ => return Err(SemanticError::unavailable("aggregate_layout")),
+    };
+    Ok((Arc::from(field.node.name.node.name.as_str()), shape))
 }
 
 fn resolve_nominal_layout_declaration(
@@ -2262,17 +2324,33 @@ fn block_statement_nodes_tracked(
     with_node(db, syntax, key, |program, index, node| {
         let block = node.of::<beskid_analysis::syntax::Block>()?;
         Some(
-            block.statements.iter().map(|statement| {
-                let wrapper = index.direct_child_id(
-                    program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(statement),
-                ).ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?;
-                let [statement] = index.children(wrapper)
-                    .ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?
-                else { return Err(SemanticError::unavailable("block_statement_nodes")); };
-                Ok(AstNodeKey { node: *statement, ..key })
-            }).collect::<Result<Vec<_>, _>>().map(Arc::from),
+            block
+                .statements
+                .iter()
+                .map(|statement| {
+                    let wrapper = index
+                        .direct_child_id(
+                            program,
+                            key.node,
+                            beskid_analysis::syntax_query::DynNodeRef::from(statement),
+                        )
+                        .ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?;
+                    let [statement] = index
+                        .children(wrapper)
+                        .ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?
+                    else {
+                        return Err(SemanticError::unavailable("block_statement_nodes"));
+                    };
+                    Ok(AstNodeKey {
+                        node: *statement,
+                        ..key
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Arc::from),
         )
-    })?.transpose()
+    })?
+    .transpose()
 }
 
 #[salsa::tracked]
@@ -2284,6 +2362,10 @@ fn item_name_tracked(
     with_node(db, syntax, key, |_program, _index, node| {
         node.of::<beskid_analysis::syntax::FunctionDefinition>()
             .map(|definition| Arc::from(definition.name.node.name.as_str()))
+            .or_else(|| {
+                node.of::<beskid_analysis::syntax::MethodDefinition>()
+                    .map(|definition| Arc::from(definition.name.node.name.as_str()))
+            })
             .or_else(|| {
                 node.of::<beskid_analysis::syntax::TestDefinition>()
                     .map(|definition| Arc::from(definition.name.node.name.as_str()))
@@ -2765,6 +2847,11 @@ pub fn aggregate_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Agg
     with_registered_syntax(db, key, aggregate_layout_tracked)
 }
 
+/// Return target-neutral source variants and field shapes for a nominal `enum` definition.
+pub fn enum_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumLayoutFact> {
+    with_registered_syntax(db, key, enum_layout_tracked)
+}
+
 /// Return the scalar ABI representation for one current syntax node.
 pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, abi_type_tracked)
@@ -2840,11 +2927,14 @@ pub fn test_statement_nodes(
 }
 
 /// Return executable statements for a current block in source order.
-pub fn block_statement_nodes(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+pub fn block_statement_nodes(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_registered_syntax(db, key, block_statement_nodes_tracked)
 }
 
-/// Return the exact declared name for a current syntax function or test item.
+/// Return the exact declared name for a current syntax function, method, or test item.
 pub fn item_name(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
     with_registered_syntax(db, key, item_name_tracked)
 }

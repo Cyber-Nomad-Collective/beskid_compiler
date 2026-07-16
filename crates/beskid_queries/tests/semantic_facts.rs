@@ -10,10 +10,11 @@ use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSnapshot};
 use beskid_queries::{
     AggregateFieldShape, AstNodeKey, BeskidDatabase, ClosureCapture, CompletionContext,
+    EnumLayoutFact, EnumVariantLayoutFact,
     ItemSignature, LocalSlot, OperatorFact, ProjectSession, SemanticError, SemanticTypeId,
     SourceUnitId, SyntaxGenerationId, aggregate_layout, build_typed_program, call_arguments,
     call_lowering, cast_intents, child_nodes, closure_environment, completion_candidates,
-    control_flow, direct_callees, generic_call_instantiation, item_body, item_signature,
+    control_flow, direct_callees, enum_layout, generic_call_instantiation, item_body, item_signature,
     literal_fact, local_slot, node_kind, node_span, node_type, operator_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, spawn_target, test_item,
 };
@@ -93,6 +94,35 @@ fn aggregate_layout_keeps_channel_options_nominal_capacity() {
     assert_eq!(
         layout.fields[1].1,
         AggregateFieldShape::Scalar(SemanticTypeId::BOOL)
+    );
+}
+
+#[test]
+fn enum_layout_keeps_channel_capacity_variants_in_source_order() {
+    let source = "enum ChannelCapacity { Unbounded(), Bounded(i64 capacity) } type ChannelOptions { ChannelCapacity capacity, bool singleReader, bool singleWriter }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let capacity = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+
+    let layout = enum_layout(&db, capacity)
+        .expect("layout query")
+        .expect("layout");
+    assert_eq!(
+        layout,
+        EnumLayoutFact {
+            variants: Arc::from([
+                EnumVariantLayoutFact {
+                    name: Arc::from("Unbounded"),
+                    fields: Arc::from([]),
+                },
+                EnumVariantLayoutFact {
+                    name: Arc::from("Bounded"),
+                    fields: Arc::from([(
+                        Arc::from("capacity"),
+                        AggregateFieldShape::Scalar(SemanticTypeId::I64),
+                    )]),
+                },
+            ]),
+        }
     );
 }
 
