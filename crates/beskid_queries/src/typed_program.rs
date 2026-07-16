@@ -6,6 +6,47 @@ use beskid_analysis::syntax::SyntaxGenerationId;
 
 use crate::{BeskidDatabase, Db, ProjectSession, SemanticError, SourceUnitId, TypedProgram};
 
+/// Return the existing owner of a prepared syntax assembly when it has already
+/// been registered in this database, otherwise mint the first owner for it.
+///
+/// Prepared frontends and their syntax consumers share a database. Reusing the
+/// recorded owner is therefore required to preserve the one-project-per-source
+/// invariant across test discovery, REPL inspection, and code generation.
+pub fn project_session_for_syntax_assembly(
+    db: &BeskidDatabase,
+    assembly: &SyntaxProgramAssembly,
+    fallback_target_name: &str,
+    fallback_lockfile_digest: &str,
+) -> Result<ProjectSession, SemanticError> {
+    let mut owner = None;
+    for unit in assembly.units() {
+        let unit = SourceUnitId::new(db, unit.path.clone());
+        let Some(input) = db.syntax_unit(unit) else {
+            continue;
+        };
+        let candidate = input.project(db);
+        if let Some(existing) = owner {
+            if existing != candidate {
+                return Err(SemanticError::new(
+                    "prepared syntax assembly contains source units from different project sessions",
+                ));
+            }
+        } else {
+            owner = Some(candidate);
+        }
+    }
+
+    Ok(owner.unwrap_or_else(|| {
+        ProjectSession::new(
+            db,
+            assembly.roots().host.source_root.clone(),
+            assembly.entry_unit().path.clone(),
+            fallback_target_name.into(),
+            fallback_lockfile_digest.into(),
+        )
+    }))
+}
+
 /// Register an expanded syntax assembly as one generation-safe typed-program identity.
 pub fn build_typed_program(
     db: &mut BeskidDatabase,

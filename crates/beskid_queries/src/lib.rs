@@ -103,6 +103,7 @@ pub use typed_entry_bundle::{
 };
 pub use typed_program::build_canonical_runtime_typed_program;
 pub use typed_program::build_typed_program;
+pub use typed_program::project_session_for_syntax_assembly;
 pub use unit::{
     parse_and_expand_unit, parse_and_expand_unit_tracked, parse_and_expand_unit_with_source,
     seed_file_from_disk, unit_content_fingerprint, unit_imports,

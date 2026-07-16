@@ -8,7 +8,7 @@ use beskid_codegen::module_emission::{SyntaxModuleItem, lower_syntax_program};
 use beskid_pipeline::PipelineObserver;
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, build_typed_program, child_nodes,
-    item_name, item_signature, test_item, with_db,
+    item_name, item_signature, project_session_for_syntax_assembly, test_item, with_db,
 };
 #[cfg(test)]
 use beskid_queries::reachable_items;
@@ -294,13 +294,13 @@ pub fn syntax_entrypoint_return_type_from_front_end(
     let assembly = Arc::new(front.syntax_assembly());
     with_db(|db| {
         let entry_path = assembly.entry_unit().path.clone();
-        let project = ProjectSession::new(
+        let project = project_session_for_syntax_assembly(
             db,
-            assembly.roots().host.source_root.clone(),
-            entry_path.clone(),
-            "syntax-repl".into(),
-            "prepared-frontend".into(),
-        );
+            &assembly,
+            "syntax-repl",
+            "prepared-frontend",
+        )
+        .map_err(|error| anyhow::anyhow!("syntax REPL session preparation failed: {error}"))?;
         let generation = SyntaxGenerationId(1);
         build_typed_program(db, project, generation, assembly)
             .map_err(|error| anyhow::anyhow!("syntax REPL preparation failed: {error}"))?;
@@ -326,13 +326,13 @@ fn syntax_test_items_from_assembly(
     assembly: Arc<beskid_analysis::projects::SyntaxProgramAssembly>,
 ) -> Result<Vec<SyntaxTestItem>> {
     let entry_path = assembly.entry_unit().path.clone();
-    let project = ProjectSession::new(
+    let project = project_session_for_syntax_assembly(
         db,
-        assembly.roots().host.source_root.clone(),
-        entry_path.clone(),
-        "syntax-tests".into(),
-        "prepared-frontend".into(),
-    );
+        &assembly,
+        "syntax-tests",
+        "prepared-frontend",
+    )
+    .map_err(|error| anyhow::anyhow!("syntax test session preparation failed: {error}"))?;
     let generation = SyntaxGenerationId(1);
     build_typed_program(db, project, generation, assembly)
         .map_err(|error| anyhow::anyhow!("syntax test preparation failed: {error}"))?;
@@ -552,5 +552,42 @@ mod tests {
         assert_eq!(test.skip_condition, Some(true));
         assert_eq!(test.skip_reason.as_deref(), Some("not on this host"));
         assert!(test.selection_span.start < test.selection_span.end);
+    }
+
+    #[test]
+    fn syntax_test_discovery_reuses_the_registered_assembly_session() {
+        let mut db = BeskidDatabase::default();
+        let directory = tempfile::tempdir().expect("project").keep();
+        let path = directory.join("Main.bd");
+        let source = "test Smoke { return; }";
+        let program =
+            parse_program_with_source_name(path.to_str().unwrap(), source).expect("parse");
+        let assembly = Arc::new(SyntaxProgramAssembly::new(
+            EffectiveCompilationRoots {
+                host: RootEntry {
+                    dependency_name: None,
+                    source_root: directory,
+                },
+                dependencies: Vec::new(),
+            },
+            Arc::new(vec![SourceUnit {
+                logical_name: "Main".into(),
+                path,
+                source: source.into(),
+                program,
+            }]),
+            0,
+            AssemblyDiscovery::ImportClosure,
+            Arc::new(ModuleIndex::empty()),
+            false,
+        ));
+
+        syntax_test_items_from_assembly(&mut db, Arc::clone(&assembly))
+            .expect("initial syntax test discovery");
+        let tests = syntax_test_items_from_assembly(&mut db, assembly)
+            .expect("repeated syntax test discovery must retain source ownership");
+
+        assert_eq!(tests.len(), 1);
+        assert_eq!(tests[0].name, "Smoke");
     }
 }
