@@ -11,11 +11,11 @@ use beskid_isle::{
 };
 use beskid_queries::{
     AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
-    aggregate_field_access, aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_abi_signature,
-    call_argument_abi_type,
-    call_arguments, call_lowering, cast_intents, child_nodes, enum_constructor, enum_layout,
-    enum_match, generic_call_specialization, item_abi_signature, item_body, literal_fact,
-    local_slot, node_kind, node_type, operator_fact, resolved_local, runtime_intrinsic_name,
+    aggregate_field_access, aggregate_layout, aggregate_literal_declaration, block_statement_nodes,
+    call_abi_signature, call_argument_abi_type, call_arguments, call_lowering, cast_intents,
+    child_nodes, enum_constructor, enum_layout, enum_match, generic_call_specialization,
+    item_abi_signature, item_body, literal_fact, local_slot, node_kind, node_type,
+    nominal_member_receiver, operator_fact, resolved_local, runtime_intrinsic_name,
     test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
@@ -151,7 +151,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn local_slot(&self, key: AstNodeKey) -> Option<u32> {
         match self.query(node_kind(self.db, key))? {
             beskid_queries::IndexedNodeKind::PathExpression => {
-                let declaration = self.query(resolved_local(self.db, key))?.declaration;
+                let declaration = self
+                    .query(resolved_local(self.db, key))
+                    .map(|resolved| resolved.declaration)
+                    .or_else(|| self.query(nominal_member_receiver(self.db, key)))?;
                 self.query(local_slot(self.db, declaration))
                     .map(|slot| slot.index)
             }
@@ -565,15 +568,16 @@ impl SyntaxNodeFacts<'_> {
                 })?
             })
             .or_else(|| {
-                self.query(aggregate_field_access(self.db, key)).and_then(|access| {
-                    self.query(aggregate_layout(self.db, access.declaration))?
-                        .fields
-                        .get(usize::try_from(access.index).ok()?)
-                        .map(|(_, shape)| match shape {
-                            AggregateFieldShape::Scalar(semantic) => *semantic,
-                            AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
-                        })
-                })
+                self.query(aggregate_field_access(self.db, key))
+                    .and_then(|access| {
+                        self.query(aggregate_layout(self.db, access.declaration))?
+                            .fields
+                            .get(usize::try_from(access.index).ok()?)
+                            .map(|(_, shape)| match shape {
+                                AggregateFieldShape::Scalar(semantic) => *semantic,
+                                AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+                            })
+                    })
             })
             .or_else(|| {
                 let (_, intrinsic) = self.runtime_intrinsic(key)?;

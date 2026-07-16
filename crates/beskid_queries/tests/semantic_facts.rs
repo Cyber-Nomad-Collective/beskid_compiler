@@ -22,8 +22,9 @@ use beskid_queries::{
     call_arguments, call_lowering, cast_intents, child_nodes, closure_environment,
     completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
     generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
-    item_signature, literal_fact, local_slot, node_kind, node_span, node_type, operator_fact,
-    reachable_items, resolved_item, resolved_local, runtime_intrinsic, spawn_target, test_item,
+    item_signature, literal_fact, local_slot, node_kind, node_span, node_type,
+    nominal_member_receiver, operator_fact, reachable_items, resolved_item, resolved_local,
+    runtime_intrinsic, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -1626,6 +1627,70 @@ i64 Main() { return Helper(); }
     assert_eq!(
         call_lowering(&db, named_call).expect("named call"),
         Some(beskid_queries::CallLowering::Direct(helper))
+    );
+}
+
+#[test]
+fn call_lowering_resolves_an_explicit_nominal_parameter_method() {
+    let source = r#"
+type Point { i32 x, i32 Ping() { return 7; } }
+i32 Main(Point point) { return point.Ping(); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let receiver = key(unit, generation, &index, NodeKind::PathExpression, 0);
+    let declaration = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        source.find("point) {").expect("parameter declaration"),
+    );
+
+    assert_eq!(
+        call_lowering(&db, call).expect("nominal member call lowering"),
+        Some(beskid_queries::CallLowering::Direct(method))
+    );
+    assert_eq!(
+        direct_callees(&db, main).expect("nominal member call graph"),
+        Some(Arc::from([method]))
+    );
+    assert_eq!(
+        nominal_member_receiver(&db, receiver).expect("nominal receiver fact"),
+        Some(declaration)
+    );
+    assert_eq!(
+        call_arguments(&db, call).expect("nominal member call arguments"),
+        Some(Arc::from([receiver]))
+    );
+}
+
+#[test]
+fn call_lowering_resolves_an_explicit_nominal_let_method() {
+    let source = r#"
+type Point { i32 x, i32 Ping() { return 7; } }
+i32 Main() { Point point = Point { x: 1 }; return point.Ping(); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let receiver = key(unit, generation, &index, NodeKind::PathExpression, 0);
+
+    assert_eq!(
+        call_lowering(&db, call).expect("nominal let member call lowering"),
+        Some(beskid_queries::CallLowering::Direct(method))
+    );
+    assert_eq!(
+        nominal_member_receiver(&db, receiver).expect("nominal let receiver fact"),
+        Some(key_at_start(
+            unit,
+            generation,
+            &index,
+            NodeKind::Identifier,
+            source.find("point =").expect("let declaration"),
+        ))
     );
 }
 

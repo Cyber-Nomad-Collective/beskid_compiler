@@ -1203,6 +1203,21 @@ fn call_arguments_tracked(
                 node: normalized_expression_node(index, receiver),
                 ..key
             });
+        } else if let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node
+            && nominal_local_member_receiver(db, program, index, key, &path.node.path.node)
+                .is_some()
+        {
+            let Some(callee) = index.direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
+            ) else {
+                return Some(Err(SemanticError::unavailable("call_arguments")));
+            };
+            arguments.push(AstNodeKey {
+                node: normalized_expression_node(index, callee),
+                ..key
+            });
         }
         let explicit = match call
             .args
@@ -1242,6 +1257,10 @@ fn call_lowering_for_node(
             let path = &path.node.path.node;
             if let Some(service) = corelib_service_for(db, key, path) {
                 Ok(CallLowering::CorelibService(service))
+            } else if let Some((declaration, _)) =
+                nominal_local_member_receiver(db, program, index, key, path)
+            {
+                Ok(CallLowering::Direct(declaration))
             } else if path
                 .segments
                 .last()
@@ -1280,7 +1299,7 @@ fn call_lowering_for_node(
             }
         }
         beskid_analysis::syntax::Expression::Member(member) => {
-            method_declaration_for_struct_literal_receiver(db, program, index, key, call, member)
+            method_declaration_for_member_receiver(db, program, index, key, call, member)
                 .map(CallLowering::Direct)
                 .ok_or_else(|| SemanticError::unavailable("call_lowering"))
         }
@@ -1288,11 +1307,11 @@ fn call_lowering_for_node(
     })
 }
 
-/// Resolve the smallest receiver-aware member-call shape with complete syntax authority: a
-/// current struct literal and one method declared directly on that nominal type. Locals,
-/// extensions, overloads, and inferred receiver types remain unavailable until they have their
-/// own generation-safe facts.
-fn method_declaration_for_struct_literal_receiver(
+/// Resolve one syntax-authorized nominal receiver and its uniquely declared method. Struct
+/// literals and unqualified locals with explicit nominal parameter or let annotations provide
+/// the required declaration authority. Inferred locals, extensions, overloads, and chained
+/// receivers remain unavailable rather than reconstructing retired HIR type information.
+fn method_declaration_for_member_receiver(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
@@ -1315,7 +1334,76 @@ fn method_declaration_for_struct_literal_receiver(
         node: normalized_expression_node(index, receiver),
         ..key
     };
-    let declaration = aggregate_literal_declaration(db, receiver).ok().flatten()?;
+    let declaration = aggregate_literal_declaration(db, receiver)
+        .ok()
+        .flatten()
+        .or_else(|| {
+            let receiver_node = index.node_at(program, receiver.node)?;
+            let path = receiver_node.of::<beskid_analysis::syntax::PathExpression>()?;
+            let [segment] = path.path.node.segments.as_slice() else {
+                return None;
+            };
+            if !segment.node.type_args.is_empty() {
+                return None;
+            }
+            nominal_local_receiver_declaration(
+                db,
+                program,
+                index,
+                key,
+                segment.node.name.node.name.as_str(),
+            )
+            .map(|(declaration, _)| declaration)
+        })?;
+    unique_nominal_method_declaration(db, declaration, &member.node.member.node.name)
+}
+
+/// Resolve an ordinary `local.Method()` spelling only when `local` resolves to an explicitly
+/// annotated nominal parameter or let. Qualified static paths and inferred locals are left to
+/// their existing path rules or remain unavailable.
+fn nominal_local_member_receiver(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<(AstNodeKey, AstNodeKey)> {
+    let [receiver, member] = path.segments.as_slice() else {
+        return None;
+    };
+    if !receiver.node.type_args.is_empty() || !member.node.type_args.is_empty() {
+        return None;
+    }
+    let (declaration, receiver) = nominal_local_receiver_declaration(
+        db,
+        program,
+        index,
+        key,
+        receiver.node.name.node.name.as_str(),
+    )?;
+    unique_nominal_method_declaration(db, declaration, &member.node.name.node.name)
+        .map(|method| (method, receiver))
+}
+
+#[salsa::tracked]
+fn nominal_member_receiver_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<AstNodeKey> {
+    with_node(db, syntax, key, |program, index, node| {
+        let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
+        nominal_local_member_receiver(db, program, index, key, &path.path.node)
+            .map(|(_, receiver)| Ok(receiver))
+    })?
+    .transpose()
+}
+
+fn unique_nominal_method_declaration(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    method_name: &str,
+) -> Option<AstNodeKey> {
     let declaration_syntax = db.syntax_unit(declaration.unit)?;
     let declaration_program = declaration_syntax.expanded_program(db);
     let declaration_index = declaration_syntax.syntax_index(db);
@@ -1330,7 +1418,7 @@ fn method_declaration_for_struct_literal_receiver(
             declaration_index
                 .node_at(declaration_program, *candidate)
                 .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
-                .is_some_and(|method| method.name.node.name == member.node.member.node.name)
+                .is_some_and(|method| method.name.node.name == method_name)
         })
         .map(|node| AstNodeKey {
             unit: declaration.unit,
@@ -3786,6 +3874,15 @@ pub fn node_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTy
 /// unavailable.
 pub fn call_arguments(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_registered_syntax(db, key, call_arguments_tracked)
+}
+
+/// Return the declaration identifier for the receiver of an exact `local.Method()` path.
+///
+/// The fact exists only when the local has an explicit nominal parameter or let annotation and
+/// that nominal type declares exactly one matching method. Static paths, inferred locals,
+/// extension methods, overloads, and chained receivers remain unavailable.
+pub fn nominal_member_receiver(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
+    with_registered_syntax(db, key, nominal_member_receiver_tracked)
 }
 
 /// Classify call shapes whose lowering is certain from expanded syntax alone.
