@@ -1281,6 +1281,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn cursor_kind(&mut self, cursor: StatementCursor) -> Option<CursorKind> {
+        let current = self.builder.current_block()?;
+        if block_is_terminated(self.builder, current) {
+            return Some(CursorKind::End);
+        }
         let count = self.facts.statement_count(cursor.block)?;
         Some(if cursor.index < count {
             CursorKind::More

@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the syntax-only ISLE path.
 - Derive typed-local ABI facts in syntax `test` bodies from the test definition scope, so exact
   generic call specializations remain reachable for ISLE emission.
+- Stop syntax ISLE statement cursors after a terminating instruction, preventing unreachable
+  trailing source statements from being emitted into a filled CLIF block.
 - Run Corelib entry-call gates against generation-safe syntax facts instead of the retired HIR
   semantic resolver, preserving public module re-export authority during the migration.
 - Resolve imported type-qualified static calls and inferred generic calls through generation-safe

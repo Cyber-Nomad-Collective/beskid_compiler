@@ -14,6 +14,41 @@ struct IfElseFacts {
     returns_values: bool,
 }
 
+struct ReturnSequenceFacts {
+    nodes: [AstNodeKey; 3],
+}
+
+impl NodeFacts for ReturnSequenceFacts {
+    fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+        let [block, first_return, second_return] = self.nodes;
+        if key == block {
+            Some(NodeKind::BlockExpression)
+        } else if key == first_return || key == second_return {
+            Some(NodeKind::ReturnStatement)
+        } else {
+            None
+        }
+    }
+
+    fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
+        (key == self.nodes[0]).then_some(2)
+    }
+
+    fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+        (key == self.nodes[0])
+            .then(|| self.nodes.get(usize::from(index) + 1).copied())
+            .flatten()
+    }
+
+    fn integer_literal(&self, _key: AstNodeKey) -> Option<i64> {
+        None
+    }
+
+    fn scalar_type(&self, _key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+        None
+    }
+}
+
 impl NodeFacts for IfElseFacts {
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
         let [
@@ -171,4 +206,33 @@ fn if_without_else_terminates_reachable_fallthrough() {
         .expect("verified if without else");
 
     assert!(function.display().to_string().contains("return"));
+}
+
+#[test]
+fn statement_cursor_stops_after_a_terminator() {
+    let flags = settings::Flags::new(settings::builder());
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(flags)
+        .expect("host flags");
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/ReturnSequence.bd"));
+    let facts = ReturnSequenceFacts {
+        nodes: std::array::from_fn(|index| AstNodeKey {
+            unit,
+            generation: SyntaxGenerationId(12),
+            node: AstNodeId(index as u32 + 1),
+        }),
+    };
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_statement(
+            UserFuncName::user(0, 15),
+            emitter.signature([], []),
+            &facts,
+            facts.nodes[0],
+        )
+        .expect("a statement sequence after return remains valid CLIF");
+
+    assert_eq!(function.display().to_string().matches("return").count(), 1);
 }
