@@ -330,6 +330,7 @@ struct SourceFunction {
 #[serde(deny_unknown_fields)]
 struct SourceIntrinsic {
     name: String,
+    symbol: String,
     capability: String,
     params: Vec<SourceParameter>,
     result: String,
@@ -401,6 +402,7 @@ fn source_intrinsic(entry: &SourceIntrinsic) -> RuntimeIntrinsic {
     let (param_names, params) = source_params(&entry.params);
     RuntimeIntrinsic {
         name: entry.name.clone(),
+        symbol: entry.symbol.clone(),
         capability: entry.capability.clone(),
         param_names,
         params,

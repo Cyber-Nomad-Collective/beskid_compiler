@@ -174,6 +174,7 @@ pub struct AbiLayout {
 #[serde(deny_unknown_fields)]
 pub struct RuntimeIntrinsic {
     pub name: String,
+    pub symbol: String,
     pub capability: String,
     pub param_names: Vec<String>,
     pub params: Vec<AbiType>,
@@ -311,6 +312,19 @@ impl AbiManifestV5 {
                 .iter()
                 .map(|entry| entry.name.as_str()),
         )?;
+        let mut intrinsic_symbols = HashSet::new();
+        for intrinsic in &self.trusted_runtime_intrinsics {
+            if !intrinsic.symbol.starts_with(RUNTIME_SYMBOL_PREFIX) {
+                return Err(ManifestValidationError::UnversionedRuntimeSymbol {
+                    symbol: intrinsic.symbol.clone(),
+                });
+            }
+            if !intrinsic_symbols.insert(intrinsic.symbol.as_str()) {
+                return Err(ManifestValidationError::DuplicateSymbol {
+                    symbol: intrinsic.symbol.clone(),
+                });
+            }
+        }
         validate_named_contracts(
             self.platform_imports
                 .iter()

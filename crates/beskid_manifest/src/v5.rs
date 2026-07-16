@@ -49,6 +49,7 @@ pub struct FunctionV5 {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IntrinsicV5 {
     pub name: String,
+    pub symbol: String,
     pub capability: String,
     pub params: Vec<ParameterV5>,
     pub result: String,
@@ -209,9 +210,10 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         .collect::<Result<Vec<_>, _>>()?;
     let intrinsics = blocks(&document.blocks, "intrinsic")
         .map(|block| {
-            ensure_fields(block, &["capability", "params", "returns"])?;
+            ensure_fields(block, &["symbol", "capability", "params", "returns"])?;
             Ok(IntrinsicV5 {
                 name: label(block)?,
+                symbol: string_field(block, "symbol")?,
                 capability: string_field(block, "capability")?,
                 params: parameters(block, "params")?,
                 result: string_field(block, "returns")?,
@@ -353,6 +355,10 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "intrinsic",
     )?;
     unique(
+        manifest.intrinsics.iter().map(|entry| entry.symbol.as_str()),
+        "intrinsic linker symbol",
+    )?;
+    unique(
         manifest
             .layouts
             .iter()
@@ -367,7 +373,10 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         }
     }
     for entry in &manifest.intrinsics {
-        if entry.name.is_empty() || entry.capability != format!("runtime.bootstrap.{}", entry.name)
+        if entry.name.is_empty()
+            || entry.symbol.is_empty()
+            || !entry.symbol.starts_with("beskid_rt_v5_")
+            || entry.capability != format!("runtime.bootstrap.{}", entry.name)
         {
             return Err(format!(
                 "intrinsic {} has an invalid capability id",

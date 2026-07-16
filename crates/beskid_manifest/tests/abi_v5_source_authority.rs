@@ -38,6 +38,7 @@ export "beskid_rt_v5_trap" {
   returns = never
 }
 intrinsic "pointer_add" {
+  symbol = "beskid_rt_v5_intrinsic_pointer_add"
   capability = "runtime.bootstrap.pointer_add"
   params = [{ name = base, type = pointer }, { name = offset, type = usize }]
   returns = pointer
@@ -85,6 +86,10 @@ fn v5_manifest_is_the_only_input_to_every_generated_artifact() {
     .unwrap();
     let manifest = load_v5_manifest_source(&source).expect("valid v5 source");
     assert_eq!(manifest.meta.abi_version, 5);
+    assert!(manifest
+        .intrinsics
+        .iter()
+        .all(|intrinsic| intrinsic.symbol.starts_with("beskid_rt_v5_")));
     let trap = manifest
         .exports
         .iter()
@@ -152,6 +157,21 @@ fn checked_in_v5_artifacts_are_fresh() {
         fs::read_to_string(root.join("crates/beskid_abi/include/abi-v5-audit.json")).unwrap(),
         artifacts.audit_json
     );
+}
+
+#[test]
+fn intrinsic_linker_symbols_are_explicit_and_unique() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let duplicate = source.replacen(
+        "symbol = \"beskid_rt_v5_intrinsic_pointer_add\"",
+        "symbol = \"beskid_rt_v5_intrinsic_memory_copy\"",
+        1,
+    );
+
+    assert!(load_v5_manifest_source(&duplicate)
+        .expect_err("duplicate linker symbols must be rejected")
+        .contains("intrinsic linker symbol"));
 }
 
 #[test]

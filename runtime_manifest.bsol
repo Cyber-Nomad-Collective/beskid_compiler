@@ -49,21 +49,21 @@ export "beskid_rt_v5_trap" {
   returns = never
 }
 
-intrinsic "native_word_from_pointer" { capability = "runtime.bootstrap.native_word_from_pointer" params = [{ name = value, type = pointer }] returns = usize }
-intrinsic "pointer_from_native_word" { capability = "runtime.bootstrap.pointer_from_native_word" params = [{ name = value, type = usize }] returns = pointer }
-intrinsic "pointer_add" { capability = "runtime.bootstrap.pointer_add" params = [{ name = base, type = pointer }, { name = offset, type = usize }] returns = pointer }
-intrinsic "raw_word_load" { capability = "runtime.bootstrap.raw_word_load" params = [{ name = address, type = pointer }] returns = usize }
-intrinsic "raw_word_store" { capability = "runtime.bootstrap.raw_word_store" params = [{ name = address, type = pointer }, { name = value, type = usize }] returns = void }
-intrinsic "raw_byte_load" { capability = "runtime.bootstrap.raw_byte_load" params = [{ name = address, type = pointer }] returns = u8 }
-intrinsic "raw_byte_store" { capability = "runtime.bootstrap.raw_byte_store" params = [{ name = address, type = pointer }, { name = value, type = u8 }] returns = void }
-intrinsic "memory_set" { capability = "runtime.bootstrap.memory_set" params = [{ name = destination, type = pointer }, { name = byte, type = u8 }, { name = length, type = usize }] returns = void }
-intrinsic "memory_copy" { capability = "runtime.bootstrap.memory_copy" params = [{ name = destination, type = pointer }, { name = source, type = pointer }, { name = length, type = usize }] returns = void }
-intrinsic "memory_compare" { capability = "runtime.bootstrap.memory_compare" params = [{ name = left, type = pointer }, { name = right, type = pointer }, { name = length, type = usize }] returns = i32 }
-intrinsic "system_allocate" { capability = "runtime.bootstrap.system_allocate" params = [{ name = size, type = usize }, { name = alignment, type = usize }] returns = pointer }
-intrinsic "system_free" { capability = "runtime.bootstrap.system_free" params = [{ name = address, type = pointer }, { name = size, type = usize }] returns = void }
-intrinsic "tls_get" { capability = "runtime.bootstrap.tls_get" params = [] returns = pointer }
-intrinsic "tls_set" { capability = "runtime.bootstrap.tls_set" params = [{ name = value, type = pointer }] returns = void }
-intrinsic "trap" { capability = "runtime.bootstrap.trap" params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }] returns = never }
+intrinsic "native_word_from_pointer" { symbol = "beskid_rt_v5_intrinsic_native_word_from_pointer" capability = "runtime.bootstrap.native_word_from_pointer" params = [{ name = value, type = pointer }] returns = usize }
+intrinsic "pointer_from_native_word" { symbol = "beskid_rt_v5_intrinsic_pointer_from_native_word" capability = "runtime.bootstrap.pointer_from_native_word" params = [{ name = value, type = usize }] returns = pointer }
+intrinsic "pointer_add" { symbol = "beskid_rt_v5_intrinsic_pointer_add" capability = "runtime.bootstrap.pointer_add" params = [{ name = base, type = pointer }, { name = offset, type = usize }] returns = pointer }
+intrinsic "raw_word_load" { symbol = "beskid_rt_v5_intrinsic_raw_word_load" capability = "runtime.bootstrap.raw_word_load" params = [{ name = address, type = pointer }] returns = usize }
+intrinsic "raw_word_store" { symbol = "beskid_rt_v5_intrinsic_raw_word_store" capability = "runtime.bootstrap.raw_word_store" params = [{ name = address, type = pointer }, { name = value, type = usize }] returns = void }
+intrinsic "raw_byte_load" { symbol = "beskid_rt_v5_intrinsic_raw_byte_load" capability = "runtime.bootstrap.raw_byte_load" params = [{ name = address, type = pointer }] returns = u8 }
+intrinsic "raw_byte_store" { symbol = "beskid_rt_v5_intrinsic_raw_byte_store" capability = "runtime.bootstrap.raw_byte_store" params = [{ name = address, type = pointer }, { name = value, type = u8 }] returns = void }
+intrinsic "memory_set" { symbol = "beskid_rt_v5_intrinsic_memory_set" capability = "runtime.bootstrap.memory_set" params = [{ name = destination, type = pointer }, { name = byte, type = u8 }, { name = length, type = usize }] returns = void }
+intrinsic "memory_copy" { symbol = "beskid_rt_v5_intrinsic_memory_copy" capability = "runtime.bootstrap.memory_copy" params = [{ name = destination, type = pointer }, { name = source, type = pointer }, { name = length, type = usize }] returns = void }
+intrinsic "memory_compare" { symbol = "beskid_rt_v5_intrinsic_memory_compare" capability = "runtime.bootstrap.memory_compare" params = [{ name = left, type = pointer }, { name = right, type = pointer }, { name = length, type = usize }] returns = i32 }
+intrinsic "system_allocate" { symbol = "beskid_rt_v5_intrinsic_system_allocate" capability = "runtime.bootstrap.system_allocate" params = [{ name = size, type = usize }, { name = alignment, type = usize }] returns = pointer }
+intrinsic "system_free" { symbol = "beskid_rt_v5_intrinsic_system_free" capability = "runtime.bootstrap.system_free" params = [{ name = address, type = pointer }, { name = size, type = usize }] returns = void }
+intrinsic "tls_get" { symbol = "beskid_rt_v5_intrinsic_tls_get" capability = "runtime.bootstrap.tls_get" params = [] returns = pointer }
+intrinsic "tls_set" { symbol = "beskid_rt_v5_intrinsic_tls_set" capability = "runtime.bootstrap.tls_set" params = [{ name = value, type = pointer }] returns = void }
+intrinsic "trap" { symbol = "beskid_rt_v5_trap" capability = "runtime.bootstrap.trap" params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }] returns = never }
 
 layout "BeskidAllocationRequest" { size = 24 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = descriptor, offset = 16, type = pointer }] }
 layout "BeskidHandle" { size = 16 alignment = 8 fields = [{ name = slot, offset = 0, type = u32 }, { name = generation, offset = 4, type = u32 }, { name = owner_cookie, offset = 8, type = u64 }] }

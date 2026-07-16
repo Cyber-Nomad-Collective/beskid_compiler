@@ -61,6 +61,7 @@ fn valid_manifest() -> AbiManifestV5 {
         trusted_runtime_package: None,
         trusted_runtime_intrinsics: vec![RuntimeIntrinsic {
             name: "gc_write_barrier".into(),
+            symbol: "beskid_rt_v5_intrinsic_gc_write_barrier".into(),
             capability: "runtime.gc".into(),
             param_names: vec!["owner".into(), "value".into()],
             params: vec![AbiType::Pointer, AbiType::Pointer],
@@ -132,6 +133,15 @@ fn manifest_accepts_only_unique_direct_v5_symbols() {
     duplicate.exports.push(function("beskid_rt_v5_alloc"));
     assert!(matches!(
         duplicate.validate(),
+        Err(ManifestValidationError::DuplicateSymbol { .. })
+    ));
+
+    let mut duplicate_intrinsic = valid_manifest();
+    duplicate_intrinsic
+        .trusted_runtime_intrinsics
+        .push(duplicate_intrinsic.trusted_runtime_intrinsics[0].clone());
+    assert!(matches!(
+        duplicate_intrinsic.validate(),
         Err(ManifestValidationError::DuplicateSymbol { .. })
     ));
 }

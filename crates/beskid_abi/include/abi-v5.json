@@ -127,6 +127,7 @@
   "intrinsics": [
     {
       "name": "memory_compare",
+      "symbol": "beskid_rt_v5_intrinsic_memory_compare",
       "capability": "runtime.bootstrap.memory_compare",
       "params": [
         {
@@ -146,6 +147,7 @@
     },
     {
       "name": "memory_copy",
+      "symbol": "beskid_rt_v5_intrinsic_memory_copy",
       "capability": "runtime.bootstrap.memory_copy",
       "params": [
         {
@@ -165,6 +167,7 @@
     },
     {
       "name": "memory_set",
+      "symbol": "beskid_rt_v5_intrinsic_memory_set",
       "capability": "runtime.bootstrap.memory_set",
       "params": [
         {
@@ -184,6 +187,7 @@
     },
     {
       "name": "native_word_from_pointer",
+      "symbol": "beskid_rt_v5_intrinsic_native_word_from_pointer",
       "capability": "runtime.bootstrap.native_word_from_pointer",
       "params": [
         {
@@ -195,6 +199,7 @@
     },
     {
       "name": "pointer_add",
+      "symbol": "beskid_rt_v5_intrinsic_pointer_add",
       "capability": "runtime.bootstrap.pointer_add",
       "params": [
         {
@@ -210,6 +215,7 @@
     },
     {
       "name": "pointer_from_native_word",
+      "symbol": "beskid_rt_v5_intrinsic_pointer_from_native_word",
       "capability": "runtime.bootstrap.pointer_from_native_word",
       "params": [
         {
@@ -221,6 +227,7 @@
     },
     {
       "name": "raw_byte_load",
+      "symbol": "beskid_rt_v5_intrinsic_raw_byte_load",
       "capability": "runtime.bootstrap.raw_byte_load",
       "params": [
         {
@@ -232,6 +239,7 @@
     },
     {
       "name": "raw_byte_store",
+      "symbol": "beskid_rt_v5_intrinsic_raw_byte_store",
       "capability": "runtime.bootstrap.raw_byte_store",
       "params": [
         {
@@ -247,6 +255,7 @@
     },
     {
       "name": "raw_word_load",
+      "symbol": "beskid_rt_v5_intrinsic_raw_word_load",
       "capability": "runtime.bootstrap.raw_word_load",
       "params": [
         {
@@ -258,6 +267,7 @@
     },
     {
       "name": "raw_word_store",
+      "symbol": "beskid_rt_v5_intrinsic_raw_word_store",
       "capability": "runtime.bootstrap.raw_word_store",
       "params": [
         {
@@ -273,6 +283,7 @@
     },
     {
       "name": "system_allocate",
+      "symbol": "beskid_rt_v5_intrinsic_system_allocate",
       "capability": "runtime.bootstrap.system_allocate",
       "params": [
         {
@@ -288,6 +299,7 @@
     },
     {
       "name": "system_free",
+      "symbol": "beskid_rt_v5_intrinsic_system_free",
       "capability": "runtime.bootstrap.system_free",
       "params": [
         {
@@ -303,12 +315,14 @@
     },
     {
       "name": "tls_get",
+      "symbol": "beskid_rt_v5_intrinsic_tls_get",
       "capability": "runtime.bootstrap.tls_get",
       "params": [],
       "result": "pointer"
     },
     {
       "name": "tls_set",
+      "symbol": "beskid_rt_v5_intrinsic_tls_set",
       "capability": "runtime.bootstrap.tls_set",
       "params": [
         {
@@ -320,6 +334,7 @@
     },
     {
       "name": "trap",
+      "symbol": "beskid_rt_v5_trap",
       "capability": "runtime.bootstrap.trap",
       "params": [
         {
