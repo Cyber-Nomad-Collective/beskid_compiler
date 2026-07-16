@@ -73,6 +73,7 @@ audit_artifact() {
   local artifact="$2"
   local dynamic="$3"
   local symbols="${evidence_root}/${label}.symbols"
+  local verifier="--verify"
   {
     printf 'target=%s\n' "${target}"
     if [[ "${dynamic}" == "yes" ]]; then
@@ -83,7 +84,10 @@ audit_artifact() {
       nm -u -j "${artifact}" | sed '/^$/d; s/^/undefined=/'
     fi
   } > "${symbols}"
-  cargo run -q -p beskid_abi --bin beskid_runtime_provenance -- --verify "${symbols}"
+  if [[ "${dynamic}" == "yes" ]]; then
+    verifier="--verify-shared"
+  fi
+  cargo run -q -p beskid_abi --bin beskid_runtime_provenance -- "${verifier}" "${symbols}"
 }
 
 audit_artifact static "${static_library}" no

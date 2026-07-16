@@ -1,6 +1,6 @@
 use beskid_abi::abi_v5::{TargetMetadata, TargetTriple};
 use beskid_abi::runtime_provenance::{
-    parse_symbol_list, RuntimeProvenanceAudit, SymbolList, SymbolListError,
+    RuntimeProvenanceAudit, SymbolList, SymbolListError, parse_symbol_list,
 };
 
 fn target(triple: &str) -> TargetMetadata {
@@ -94,4 +94,40 @@ fn symbol_list_rejects_non_abi_panic_export() {
             .contains("forbidden runtime provenance symbol `panic`"),
         "unexpected provenance error: {error}"
     );
+}
+
+#[test]
+fn linux_shared_runtime_allows_only_documented_dynamic_loader_imports() {
+    let loader_imports = [
+        "_ITM_deregisterTMCloneTable",
+        "_ITM_registerTMCloneTable",
+        "__cxa_finalize",
+        "__gmon_start__",
+    ];
+    let linux_audit =
+        RuntimeProvenanceAudit::canonical(target("x86_64-unknown-linux-gnu")).unwrap();
+    let mut linux_symbols = linux_audit.fixture_symbol_list().unwrap();
+    linux_symbols
+        .undefined
+        .extend(loader_imports.iter().map(ToString::to_string));
+    let static_error = linux_audit.verify(&linux_symbols).unwrap_err();
+    assert!(static_error.to_string().contains("unexpected"));
+    linux_audit.verify_shared(&linux_symbols).unwrap();
+
+    let mut unexpected_linux_symbols = linux_symbols;
+    unexpected_linux_symbols
+        .undefined
+        .push("__cxa_atexit".to_string());
+    let error = linux_audit
+        .verify_shared(&unexpected_linux_symbols)
+        .unwrap_err();
+    assert!(error.to_string().contains("unexpected"));
+
+    let darwin_audit = RuntimeProvenanceAudit::canonical(target("aarch64-apple-darwin")).unwrap();
+    let mut darwin_symbols = darwin_audit.fixture_symbol_list().unwrap();
+    darwin_symbols
+        .undefined
+        .extend(loader_imports.iter().map(ToString::to_string));
+    let error = darwin_audit.verify_shared(&darwin_symbols).unwrap_err();
+    assert!(error.to_string().contains("unexpected"));
 }

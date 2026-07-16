@@ -57,7 +57,8 @@ BESKID_RUNTIME_KIT_PROFILE=debug \
 BESKID_LINUX_EVIDENCE_LOG="${fixture_root}/calls.log" \
   "${compiler_root}/scripts/verify-native-runtime-kit-linux.sh" >/dev/null
 
-test "$(grep -F -- '--bin beskid_runtime_provenance -- --verify' "${fixture_root}/calls.log" | wc -l | tr -d '[:space:]')" = 2
+test "$(grep -F -- '--bin beskid_runtime_provenance -- --verify ' "${fixture_root}/calls.log" | wc -l | tr -d '[:space:]')" = 1
+test "$(grep -F -- '--bin beskid_runtime_provenance -- --verify-shared ' "${fixture_root}/calls.log" | wc -l | tr -d '[:space:]')" = 1
 grep -F -- '-p beskid_engine --test native_runtime_kit_smoke staged_linux_runtime_kit_executes_a_canonical_entrypoint -- --ignored --exact' "${fixture_root}/calls.log" >/dev/null
 grep -F -- '-p beskid_repl staged_linux_runtime_kit_evaluates_a_snippet -- --ignored --exact' "${fixture_root}/calls.log" >/dev/null
 

@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use beskid_abi::abi_v5::TargetMetadata;
-use beskid_abi::runtime_provenance::{parse_symbol_list, RuntimeProvenanceAudit};
+use beskid_abi::runtime_provenance::{RuntimeProvenanceAudit, parse_symbol_list};
 
 fn main() -> ExitCode {
     match run(std::env::args().skip(1).collect()) {
@@ -45,7 +45,14 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
                 .verify(&symbols)
                 .map_err(|error| error.to_string())
         }
-        _ => Err("usage: beskid_runtime_provenance (--audit <target> | --fixture <target> | --verify <symbol-list>|-)".into()),
+        [flag, path] if flag == "--verify-shared" => {
+            let source = read_symbol_list(path)?;
+            let symbols = parse_symbol_list(&source).map_err(|error| error.to_string())?;
+            audit_for(&symbols.target)?
+                .verify_shared(&symbols)
+                .map_err(|error| error.to_string())
+        }
+        _ => Err("usage: beskid_runtime_provenance (--audit <target> | --fixture <target> | --verify <symbol-list>|- | --verify-shared <symbol-list>|-)".into()),
     }
 }
 

@@ -11,6 +11,18 @@ use serde::Serialize;
 use crate::abi_v5::{AbiManifestV5, ManifestValidationError, RuntimeAuditMetadata, TargetMetadata};
 use crate::runtime_source::canonical_runtime_source_hash;
 
+/// Imports emitted by the ELF linker for a shared object before application code is linked.
+///
+/// These are intentionally not part of the static runtime manifest: they describe the Linux
+/// dynamic-loader/toolchain boundary, never a runtime dependency. Keep this list exact so the
+/// shared-artifact audit continues to reject Rust runtime linkage and other undeclared imports.
+const LINUX_ELF_SHARED_LOADER_IMPORTS: &[&str] = &[
+    "_ITM_deregisterTMCloneTable",
+    "_ITM_registerTMCloneTable",
+    "__cxa_finalize",
+    "__gmon_start__",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeProvenanceAudit {
@@ -76,14 +88,38 @@ impl RuntimeProvenanceAudit {
 
     /// Verify an explicit symbol-list file against this target's manifest-derived policy.
     pub fn verify(&self, symbols: &SymbolList) -> Result<(), SymbolListError> {
+        self.verify_with_additional_imports(symbols, &[])
+    }
+
+    /// Verify an ELF shared-runtime symbol list against its manifest-derived policy.
+    ///
+    /// The four accepted Linux imports are emitted by the dynamic-loader/toolchain boundary.
+    /// They are deliberately unavailable to static archive verification.
+    pub fn verify_shared(&self, symbols: &SymbolList) -> Result<(), SymbolListError> {
+        let additional_imports = match self.target.as_str() {
+            "x86_64-unknown-linux-gnu" => LINUX_ELF_SHARED_LOADER_IMPORTS,
+            _ => &[],
+        };
+        self.verify_with_additional_imports(symbols, additional_imports)
+    }
+
+    fn verify_with_additional_imports(
+        &self,
+        symbols: &SymbolList,
+        additional_imports: &[&str],
+    ) -> Result<(), SymbolListError> {
         if symbols.target != self.target {
             return Err(SymbolListError::TargetMismatch {
                 expected: self.target.clone(),
                 actual: symbols.target.clone(),
             });
         }
+        let mut allowed_imports = self.allowed_imports.clone();
+        allowed_imports.extend(additional_imports.iter().map(|symbol| (*symbol).into()));
+        allowed_imports.sort();
+        allowed_imports.dedup();
         RuntimeAuditMetadata {
-            allowed_imports: self.allowed_imports.clone(),
+            allowed_imports,
             allowed_exports: self.allowed_exports.clone(),
             forbidden_rust_symbols: self.forbidden_symbol_families.clone(),
             object_format: target_object_format(&self.target)?,
@@ -151,7 +187,7 @@ pub fn parse_symbol_list(input: &str) -> Result<SymbolList, SymbolListError> {
             _ => {
                 return Err(SymbolListError::InvalidLine {
                     line: line_number + 1,
-                })
+                });
             }
         }
     }

@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Audit Linux shared ABI-v5 runtime artifacts with an exact ELF loader-import allowlist while
+  preserving the static archive and Rust-runtime linkage boundary.
 - Centralize post-mod-rewrite syntax assembly projection at the shared frontend boundary for
   Engine and prepared syntax lowering.
 - Serve LSP completion from generation-bound syntax/Salsa facts with exact replacement edits, including imported module members.
