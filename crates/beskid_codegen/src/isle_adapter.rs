@@ -235,6 +235,16 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn function_parameters(&self, key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
         let mut parameters = Vec::new();
+        if self.query(node_kind(self.db, key))
+            == Some(beskid_queries::IndexedNodeKind::MethodDefinition)
+        {
+            parameters.push(ParameterSlot {
+                // Methods cannot spell `self` in Beskid source. The ABI receiver still needs a
+                // materialized local so its declared pointer position is consumed by ISLE.
+                slot: u32::MAX,
+                value_type: self.isa?.pointer_type(),
+            });
+        }
         self.collect_function_parameters(key, &mut parameters)?;
         Some(parameters)
     }

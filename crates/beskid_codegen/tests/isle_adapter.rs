@@ -512,6 +512,53 @@ fn parsed_program_lowers_to_backend_artifact_without_hir() {
 }
 
 #[test]
+fn parsed_struct_literal_method_call_uses_receiver_abi_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "type Point { i32 x, i32 Ping() { return 7; } } i32 Main() { return Point { x: 1 }.Ping(); }",
+    );
+    let db = input.database();
+    let main = find_function_definitions(db, root)
+        .into_iter()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main source item");
+    let method = find_node(db, root, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .expect("inline method source item");
+    let call = find_call_expression(db, main).expect("method call syntax");
+    let beskid_queries::CallLowering::Direct(declaration) = call_lowering(db, call)
+        .expect("method call query")
+        .expect("method call lowering")
+    else {
+        panic!("struct literal method call must resolve to its exact syntax declaration");
+    };
+    assert_eq!(declaration, method);
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: method,
+                symbol: "Point_Ping".into(),
+            },
+            SyntaxModuleItem {
+                key: main,
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("syntax-only module lowering supports the method receiver ABI");
+
+    beskid_codegen::validate_artifact(&artifact)
+        .expect("method call imports the exact syntax method declaration");
+    let main = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("Main artifact function");
+    assert!(main.function.display().to_string().contains("call"));
+}
+
+#[test]
 fn parsed_program_specializes_an_inferred_generic_call_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
         "unit Equal<T>(T actual, T expected, string because) { if actual == expected { return; } return; } unit Main() { Equal(\"same\", \"same\", \"because\"); }",

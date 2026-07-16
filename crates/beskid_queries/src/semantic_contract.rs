@@ -1153,22 +1153,48 @@ fn call_arguments_tracked(
 ) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-        Some(
-            call.args
-                .iter()
-                .map(|argument| {
-                    index
-                        .direct_child_id(
-                            program,
-                            key.node,
-                            beskid_analysis::syntax_query::DynNodeRef::from(argument),
-                        )
-                        .map(|node| AstNodeKey { node, ..key })
-                        .ok_or_else(|| SemanticError::unavailable("call_arguments"))
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(Arc::from),
-        )
+        let mut arguments = Vec::with_capacity(call.args.len() + 1);
+        if let beskid_analysis::syntax::Expression::Member(member) = &call.callee.node {
+            let Some(callee) = index.direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
+            ) else {
+                return Some(Err(SemanticError::unavailable("call_arguments")));
+            };
+            let callee = normalized_expression_node(index, callee);
+            let Some(receiver) = index.direct_child_id(
+                program,
+                callee,
+                beskid_analysis::syntax_query::DynNodeRef::from(member.node.target.as_ref()),
+            ) else {
+                return Some(Err(SemanticError::unavailable("call_arguments")));
+            };
+            arguments.push(AstNodeKey {
+                node: normalized_expression_node(index, receiver),
+                ..key
+            });
+        }
+        let explicit = match call
+            .args
+            .iter()
+            .map(|argument| {
+                index
+                    .direct_child_id(
+                        program,
+                        key.node,
+                        beskid_analysis::syntax_query::DynNodeRef::from(argument),
+                    )
+                    .map(|node| AstNodeKey { node, ..key })
+                    .ok_or_else(|| SemanticError::unavailable("call_arguments"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(explicit) => explicit,
+            Err(error) => return Some(Err(error)),
+        };
+        arguments.extend(explicit);
+        Some(Ok(arguments.into()))
     })?
     .transpose()
 }
@@ -1222,9 +1248,66 @@ fn call_lowering_for_node(
                 Err(SemanticError::unavailable("call_lowering"))
             }
         }
-        beskid_analysis::syntax::Expression::Member(_) => Ok(CallLowering::Dynamic),
+        beskid_analysis::syntax::Expression::Member(member) => {
+            method_declaration_for_struct_literal_receiver(db, program, index, key, call, member)
+                .map(CallLowering::Direct)
+                .ok_or_else(|| SemanticError::unavailable("call_lowering"))
+        }
         _ => Err(SemanticError::unavailable("call_lowering")),
     })
+}
+
+/// Resolve the smallest receiver-aware member-call shape with complete syntax authority: a
+/// current struct literal and one method declared directly on that nominal type. Locals,
+/// extensions, overloads, and inferred receiver types remain unavailable until they have their
+/// own generation-safe facts.
+fn method_declaration_for_struct_literal_receiver(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    call: &beskid_analysis::syntax::CallExpression,
+    member: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::MemberExpression>,
+) -> Option<AstNodeKey> {
+    let callee = index.direct_child_id(
+        program,
+        key.node,
+        beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
+    )?;
+    let callee = normalized_expression_node(index, callee);
+    let receiver = index.direct_child_id(
+        program,
+        callee,
+        beskid_analysis::syntax_query::DynNodeRef::from(member.node.target.as_ref()),
+    )?;
+    let receiver = AstNodeKey {
+        node: normalized_expression_node(index, receiver),
+        ..key
+    };
+    let declaration = aggregate_literal_declaration(db, receiver).ok().flatten()?;
+    let declaration_syntax = db.syntax_unit(declaration.unit)?;
+    let declaration_program = declaration_syntax.expanded_program(db);
+    let declaration_index = declaration_syntax.syntax_index(db);
+    declaration_index
+        .node_at(declaration_program, declaration.node)?
+        .of::<beskid_analysis::syntax::TypeDefinition>()?;
+    let methods = declaration_index
+        .children(declaration.node)?
+        .iter()
+        .copied()
+        .filter(|candidate| {
+            declaration_index
+                .node_at(declaration_program, *candidate)
+                .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+                .is_some_and(|method| method.name.node.name == member.node.member.node.name)
+        })
+        .map(|node| AstNodeKey {
+            unit: declaration.unit,
+            generation: declaration.generation,
+            node,
+        })
+        .collect::<Vec<_>>();
+    (methods.len() == 1).then(|| methods[0])
 }
 
 #[salsa::tracked]
@@ -1758,12 +1841,20 @@ fn item_abi_signature_tracked(
             ));
         }
         if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
-            return Some(abi_signature_from_syntax(
+            let mut signature = match abi_signature_from_syntax(
                 db,
                 key,
                 &method.parameters,
                 method.return_type.as_ref(),
-            ));
+            ) {
+                Ok(signature) => signature,
+                Err(error) => return Some(Err(error)),
+            };
+            let mut parameters = Vec::with_capacity(signature.parameters.len() + 1);
+            parameters.push(SemanticTypeId::POINTER);
+            parameters.extend(signature.parameters.iter().copied());
+            signature.parameters = parameters.into();
+            return Some(Ok(signature));
         }
         node.of::<beskid_analysis::syntax::TestDefinition>()
             .map(|_| {

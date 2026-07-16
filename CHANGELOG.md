@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Route Corelib executable-entry lowering from an assembled generation-safe syntax program
   directly through `TypedProgram`, `CodegenInput`, and ISLE, without invoking the legacy HIR
   frontend compatibility path.
+- Lower inline nominal struct-literal method calls through generation-safe receiver and ABI facts
+  in the syntax-only ISLE path.
 - Run Corelib entry-call gates against generation-safe syntax facts instead of the retired HIR
   semantic resolver, preserving public module re-export authority during the migration.
 - Resolve imported type-qualified static calls and inferred generic calls through generation-safe
