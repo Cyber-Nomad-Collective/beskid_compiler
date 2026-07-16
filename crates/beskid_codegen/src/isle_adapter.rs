@@ -12,6 +12,7 @@ use beskid_isle::{
 use beskid_queries::{
     AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
     aggregate_field_access, aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_abi_signature,
+    call_argument_abi_type,
     call_arguments, call_lowering, cast_intents, child_nodes, enum_constructor, enum_layout,
     enum_match, generic_call_specialization, item_abi_signature, item_body, literal_fact,
     local_slot, node_kind, node_type, operator_fact, resolved_local, runtime_intrinsic_name,
@@ -312,7 +313,8 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             return self.isa.map(|isa| isa.pointer_type());
         }
         let semantic = self
-            .scalar_semantic_type(key)
+            .query(call_argument_abi_type(self.db, key))
+            .or_else(|| self.scalar_semantic_type(key))
             .or_else(|| Some(self.query(call_abi_signature(self.db, key))?.result))?;
         if matches!(
             semantic,

@@ -816,6 +816,56 @@ fn parsed_test_program_specializes_a_generic_call_without_hir() {
 }
 
 #[test]
+fn parsed_test_program_lowers_a_bare_i64_generic_argument_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i64 Position() { return 0_i64; } unit Equal<T>(T actual, T expected, string because) { if actual == expected { return; } return; } test Main { Equal(Position(), 0, \"initial position\"); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let test = find_test_definition(input.database(), root).expect("test item");
+    let call = find_call_expression(input.database(), test).expect("outer Equal call");
+    assert_eq!(
+        call_abi_signature(input.database(), call).expect("generic call signature"),
+        Some(beskid_queries::ItemSignature {
+            parameters: Arc::from([
+                beskid_queries::SemanticTypeId::I64,
+                beskid_queries::SemanticTypeId::I64,
+                beskid_queries::SemanticTypeId::STRING,
+            ]),
+            result: beskid_queries::SemanticTypeId::UNIT,
+        }),
+    );
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: items[0],
+                symbol: "Position".into(),
+            },
+            SyntaxModuleItem {
+                key: items[1],
+                symbol: "Equal".into(),
+            },
+            SyntaxModuleItem {
+                key: test,
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("syntax lowering keeps the generic literal at the specialized ABI width");
+
+    beskid_codegen::validate_artifact(&artifact).expect("generic artifact is ABI-valid");
+    let equal = artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Equal#generic_"))
+        .expect("specialized Equal function");
+    let clif = equal.function.display().to_string();
+    assert!(clif.contains("i64"), "{clif}");
+}
+
+#[test]
 fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("project").keep();

@@ -1,6 +1,6 @@
 //! Public AST/Salsa semantic contracts used by later frontend and codegen replacement slices.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1145,6 +1145,9 @@ fn local_declaration_type(
 
 fn semantic_type_for_literal(literal: &beskid_analysis::syntax::Literal) -> SemanticTypeId {
     match literal {
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i32") => {
+            SemanticTypeId::I32
+        }
         beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i64") => {
             SemanticTypeId::I64
         }
@@ -1977,15 +1980,28 @@ fn call_abi_signature_for_call(
         .map(|generic| generic.node.name.as_str())
         .collect::<Vec<_>>();
     let mut substitutions = HashMap::new();
+    // A bare integer starts at the language default `i32`, but carries no explicit ABI suffix.
+    // Keep that distinction while inferring a generic call: a later exact argument can select
+    // the binding and the bare literal can inherit it if its magnitude fits.
+    let mut provisional_integer_substitutions = HashSet::new();
     for (parameter, argument) in function.parameters.iter().zip(arguments.iter().copied()) {
         let actual = abi_type(db, argument)?
             .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
         if let Some(generic) = generic_type_name(&parameter.node.ty.node, &generic_names) {
-            if substitutions
-                .insert(generic.to_owned(), actual)
-                .is_some_and(|existing| existing != actual)
-            {
-                return Err(SemanticError::unavailable("call_abi_signature"));
+            let bare_integer = unsuffixed_integer_literal(db, argument)?;
+            match substitutions.get(generic).copied() {
+                None => {
+                    substitutions.insert(generic.to_owned(), actual);
+                    if bare_integer {
+                        provisional_integer_substitutions.insert(generic.to_owned());
+                    }
+                }
+                Some(existing) if existing == actual => {}
+                Some(existing) if bare_integer && integer_literal_fits_abi(db, argument, existing)? => {}
+                Some(_) if provisional_integer_substitutions.remove(generic) => {
+                    substitutions.insert(generic.to_owned(), actual);
+                }
+                Some(_) => return Err(SemanticError::unavailable("call_abi_signature")),
             }
         } else if abi_type_from_syntax(db, declaration, &parameter.node.ty.node)? != actual {
             return Err(SemanticError::unavailable("call_abi_signature"));
@@ -2006,6 +2022,117 @@ fn call_abi_signature_for_call(
         parameters: parameters.into(),
         result,
     })
+}
+
+/// Whether a source expression is a bare integer literal without an ABI suffix.
+///
+/// This follows only singleton syntax wrappers, so compound arithmetic, casts, calls, and arrays
+/// never inherit an ABI representation from a surrounding call.
+fn unsuffixed_integer_literal(db: &dyn Db, key: AstNodeKey) -> Result<bool, SemanticError> {
+    Ok(integer_literal_text(db, key)?.is_some())
+}
+
+/// Prove that one bare integer literal fits the ABI representation selected elsewhere in its
+/// generic call. Explicitly suffixed literals never reach this helper.
+fn integer_literal_fits_abi(
+    db: &dyn Db,
+    key: AstNodeKey,
+    expected: SemanticTypeId,
+) -> Result<bool, SemanticError> {
+    let Some(text) = integer_literal_text(db, key)? else {
+        return Ok(false);
+    };
+    let value = text.replace('_', "").parse::<u64>().ok();
+    Ok(match expected {
+        SemanticTypeId::I32 => value.is_some_and(|value| i32::try_from(value).is_ok()),
+        SemanticTypeId::I64 => value.is_some_and(|value| i64::try_from(value).is_ok()),
+        SemanticTypeId::U8 => value.is_some_and(|value| u8::try_from(value).is_ok()),
+        SemanticTypeId::WORD => value.is_some(),
+        _ => false,
+    })
+}
+
+fn integer_literal_text(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Result<Option<Arc<str>>, SemanticError> {
+    let Some(literal) = literal_fact(db, key)? else {
+        let Some(children) = child_nodes(db, key)? else {
+            return Ok(None);
+        };
+        let [child] = children.as_ref() else {
+            return Ok(None);
+        };
+        return integer_literal_text(db, *child);
+    };
+    match literal {
+        LiteralFact::Integer(text) if !integer_has_explicit_abi_suffix(&text) => Ok(Some(text)),
+        _ => Ok(None),
+    }
+}
+
+fn integer_has_explicit_abi_suffix(text: &str) -> bool {
+    matches!(
+        text.rsplit_once('_').map(|(_, suffix)| suffix),
+        Some("i32" | "i64" | "u8")
+    )
+}
+
+#[salsa::tracked]
+fn call_argument_abi_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
+    with_node(db, syntax, key, |_program, index, _node| {
+        Some((|| {
+            let mut current = key.node;
+            while let Some(parent) = index
+                .metadata_for(key.generation, current)
+                .and_then(|meta| meta.parent)
+            {
+                let parent_key = AstNodeKey { node: parent, ..key };
+                if index.kind(parent)
+                    == Some(beskid_analysis::syntax_query::NodeKind::CallExpression)
+                {
+                    let arguments = call_arguments(db, parent_key)?
+                        .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"))?;
+                    let argument_index = arguments.iter().position(|argument| {
+                        let mut descendant = key.node;
+                        loop {
+                            if descendant == argument.node {
+                                return true;
+                            }
+                            let Some(next) = index
+                                .metadata_for(key.generation, descendant)
+                                .and_then(|meta| meta.parent)
+                            else {
+                                return false;
+                            };
+                            descendant = next;
+                        }
+                    });
+                    let Some(argument_index) = argument_index else {
+                        current = parent;
+                        continue;
+                    };
+                    if integer_literal_text(db, arguments[argument_index])?.is_none() {
+                        return Err(SemanticError::unavailable("call_argument_abi_type"));
+                    }
+                    let signature = call_abi_signature(db, parent_key)?
+                        .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"))?;
+                    return signature
+                        .parameters
+                        .get(argument_index)
+                        .copied()
+                        .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"));
+                }
+                current = parent;
+            }
+            Err(SemanticError::unavailable("call_argument_abi_type"))
+        })())
+    })?
+    .transpose()
 }
 
 /// ABI facts for the compiler-embedded Corelib syscall facade. These are deliberately available
@@ -3772,6 +3899,17 @@ pub fn enum_match(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumMatch
 /// Return the scalar ABI representation for one current syntax node.
 pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, abi_type_tracked)
+}
+
+/// Return the exact call-parameter ABI selected for one bare integer argument.
+///
+/// Only a singleton unsuffixed integer argument of a direct call receives this contextual fact;
+/// all other expressions remain unavailable rather than being implicitly coerced.
+pub fn call_argument_abi_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
+    with_registered_syntax(db, key, call_argument_abi_type_tracked)
 }
 
 /// Return the exact lambda parameters and outer lexical captures in source order.
