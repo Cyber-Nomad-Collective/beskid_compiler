@@ -132,7 +132,7 @@ fn canonical_hash() -> String {
 }
 
 #[test]
-fn loader_registers_exactly_metadata_approved_exports_and_retains_library() {
+fn loader_requires_only_metadata_loader_exports_and_retains_library() {
     let Some(target) = host_target() else {
         return;
     };
@@ -142,11 +142,12 @@ fn loader_registers_exactly_metadata_approved_exports_and_retains_library() {
     let actual = runtime.symbol_names().collect::<BTreeSet<_>>();
     let expected = runtime
         .metadata()
-        .export_allowlist
+        .loader_required_exports
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
     assert_eq!(actual, expected);
+    assert!(!actual.contains("beskid_rt_v5_intrinsic_system_allocate"));
     assert!(!actual.contains("attacker_unapproved_export"));
     assert_eq!(runtime.shared_library_path(), shared);
     assert!(

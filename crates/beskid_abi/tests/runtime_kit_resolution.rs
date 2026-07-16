@@ -88,6 +88,7 @@ fn install_linux_kit(prefix: &Path, profile: BuildProfile) -> PathBuf {
         },
         import_allowlist: audit.allowed_imports.clone(),
         export_allowlist: audit.allowed_exports.clone(),
+        loader_required_exports: audit.loader_required_exports.clone(),
         abi_contract,
         audit,
     };

@@ -43,19 +43,7 @@ impl RuntimeProvenanceAudit {
         let manifest = AbiManifestV5::canonical_runtime(target.clone());
         let metadata =
             RuntimeAuditMetadata::for_manifest(&manifest, &canonical_runtime_source_hash())?;
-        let mut required_exports = manifest
-            .exports
-            .iter()
-            .map(|entry| entry.symbol.clone())
-            .chain(
-                manifest
-                    .assembly_exports
-                    .iter()
-                    .map(|entry| entry.symbol.as_str().into()),
-            )
-            .collect::<Vec<_>>();
-        required_exports.sort();
-        required_exports.dedup();
+        let required_exports = metadata.loader_required_exports.clone();
         Ok(Self {
             target: target.triple.as_str().into(),
             required_exports,
@@ -125,6 +113,7 @@ impl RuntimeProvenanceAudit {
         RuntimeAuditMetadata {
             allowed_imports,
             allowed_exports: self.allowed_exports.clone(),
+            loader_required_exports: self.required_exports.clone(),
             forbidden_rust_symbols: self.forbidden_symbol_families.clone(),
             object_format: target_object_format(&self.target)?,
             symbol_prefix: target_symbol_prefix(&self.target)?,

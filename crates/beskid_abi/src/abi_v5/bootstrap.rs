@@ -49,6 +49,7 @@ pub fn canonical_runtime_package() -> RuntimePackageIdentity {
 pub struct RuntimeAuditMetadata {
     pub allowed_imports: Vec<String>,
     pub allowed_exports: Vec<String>,
+    pub loader_required_exports: Vec<String>,
     pub forbidden_rust_symbols: Vec<String>,
     pub object_format: String,
     pub symbol_prefix: String,
@@ -74,7 +75,7 @@ impl RuntimeAuditMetadata {
         }
         allowed_imports.sort();
         allowed_imports.dedup();
-        let mut allowed_exports = manifest
+        let mut loader_required_exports = manifest
             .exports
             .iter()
             .map(|entry| entry.symbol.clone())
@@ -85,11 +86,21 @@ impl RuntimeAuditMetadata {
                     .map(|entry| entry.symbol.as_str().into()),
             )
             .collect::<Vec<_>>();
+        loader_required_exports.sort();
+        loader_required_exports.dedup();
+        let mut allowed_exports = loader_required_exports.clone();
+        allowed_exports.extend(
+            manifest
+                .trusted_runtime_intrinsics
+                .iter()
+                .map(|intrinsic| intrinsic.symbol.clone()),
+        );
         allowed_exports.sort();
         allowed_exports.dedup();
         Ok(Self {
             allowed_imports,
             allowed_exports,
+            loader_required_exports,
             forbidden_rust_symbols: forbidden_symbol_families(),
             object_format: manifest.target.object_format.as_str().into(),
             symbol_prefix: manifest.target.symbol_prefix.clone(),

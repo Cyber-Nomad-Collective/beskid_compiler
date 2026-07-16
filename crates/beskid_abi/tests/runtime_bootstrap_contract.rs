@@ -121,7 +121,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
 }
 
 #[test]
-fn runtime_kit_exports_do_not_require_direct_intrinsic_symbols() {
+fn runtime_provenance_allows_intrinsics_without_making_them_loader_requirements() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
     let audit = RuntimeAuditMetadata::for_manifest(
         &manifest,
@@ -132,8 +132,14 @@ fn runtime_kit_exports_do_not_require_direct_intrinsic_symbols() {
     assert!(audit
         .allowed_exports
         .contains(&"beskid_rt_v5_process_init".into()));
-    assert!(!audit
+    assert!(audit
         .allowed_exports
+        .contains(&"beskid_rt_v5_intrinsic_memory_compare".into()));
+    assert!(audit
+        .loader_required_exports
+        .contains(&"beskid_rt_v5_process_init".into()));
+    assert!(!audit
+        .loader_required_exports
         .contains(&"beskid_rt_v5_intrinsic_memory_compare".into()));
 }
 
@@ -349,6 +355,7 @@ fn runtime_kit() -> RuntimeKitMetadata {
         },
         import_allowlist: audit.allowed_imports.clone(),
         export_allowlist: audit.allowed_exports.clone(),
+        loader_required_exports: audit.loader_required_exports.clone(),
         abi_contract,
         audit,
     }

@@ -60,6 +60,7 @@ pub struct RuntimeKitMetadata {
     pub artifacts: RuntimeArtifacts,
     pub import_allowlist: Vec<String>,
     pub export_allowlist: Vec<String>,
+    pub loader_required_exports: Vec<String>,
     pub abi_contract: AbiManifestV5,
     pub audit: RuntimeAuditMetadata,
 }
@@ -129,6 +130,7 @@ impl RuntimeKitMetadata {
 
         validate_allowlist(&self.import_allowlist)?;
         validate_allowlist(&self.export_allowlist)?;
+        validate_allowlist(&self.loader_required_exports)?;
         if self.layout_hash != self.abi_contract.layout_hash()
             || self.layout_hash != self.audit.layout_hash
         {
@@ -154,6 +156,11 @@ impl RuntimeKitMetadata {
         if self.export_allowlist != self.audit.allowed_exports {
             return Err(RuntimeKitValidationError::ContractAuditMismatch {
                 field: "export_allowlist".into(),
+            });
+        }
+        if self.loader_required_exports != self.audit.loader_required_exports {
+            return Err(RuntimeKitValidationError::ContractAuditMismatch {
+                field: "loader_required_exports".into(),
             });
         }
         Ok(())
@@ -353,6 +360,7 @@ pub fn build_runtime_kit(
         artifacts,
         import_allowlist: audit.allowed_imports.clone(),
         export_allowlist: audit.allowed_exports.clone(),
+        loader_required_exports: audit.loader_required_exports.clone(),
         abi_contract,
         audit,
     };

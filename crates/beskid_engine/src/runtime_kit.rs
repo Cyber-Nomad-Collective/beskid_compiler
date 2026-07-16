@@ -26,8 +26,8 @@ impl JitRuntimeKit {
         let kit = resolve_canonical_runtime_kit(prefix, target, profile)
             .map_err(|error| format!("ABI-v5 runtime kit validation failed: {error:?}"))?;
         let library = DynamicLibrary::open(&kit.shared_library)?;
-        let mut symbols = Vec::with_capacity(kit.metadata.export_allowlist.len());
-        for name in &kit.metadata.export_allowlist {
+        let mut symbols = Vec::with_capacity(kit.metadata.loader_required_exports.len());
+        for name in &kit.metadata.loader_required_exports {
             symbols.push((name.clone(), library.symbol(name)?));
         }
         Ok(Self {
