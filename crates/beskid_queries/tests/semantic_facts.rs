@@ -1116,6 +1116,42 @@ unit Main() { Equal(1, 1, "because"); return; }
 }
 
 #[test]
+fn inferred_generic_call_allows_a_bare_integer_to_follow_an_exact_i64_argument() {
+    let source = r#"
+i64 Position() { return 0_i64; }
+unit Equal<T>(T actual, T expected, string because) { return; }
+unit Main() { Equal(Position(), 0, "initial position"); return; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(
+        call_abi_signature(&db, call).expect("nested generic call signature"),
+        Some(ItemSignature {
+            parameters: Arc::from([
+                SemanticTypeId::I64,
+                SemanticTypeId::I64,
+                SemanticTypeId::STRING,
+            ]),
+            result: SemanticTypeId::UNIT,
+        })
+    );
+}
+
+#[test]
+fn inferred_generic_call_rejects_an_explicit_i32_against_an_i64_binding() {
+    let source = r#"
+i64 Position() { return 0_i64; }
+unit Equal<T>(T actual, T expected, string because) { return; }
+unit Main() { Equal(Position(), 0_i32, "initial position"); return; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_unavailable(call_abi_signature(&db, call));
+}
+
+#[test]
 fn nominal_generic_types_have_only_source_derived_pointer_abi_facts() {
     let source = r#"
 type Channel<T> { i64 handle }

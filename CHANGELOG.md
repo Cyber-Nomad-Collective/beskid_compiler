@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Register compiler-authorized Corelib syscall services per exact embedded source unit within
   multi-unit prepared syntax assemblies, leaving every sibling and forged source unprivileged.
+- Preserve strict `_i32`, `_i64`, and `_u8` literal suffixes while allowing a bare integer
+  argument to inherit an exact generic-call ABI only when its source magnitude fits.
+- Lower that proven bare integer through the selected call-parameter ABI in generated ISLE,
+  including nested Corelib assertion calls over `i64` results.
 - Derive direct nominal-local field access and mixed-width integer operands from generation-safe
   syntax facts for ISLE emission, including Corelib `StyleChain` and terminal parsing paths.
 - Route Corelib executable-entry lowering from an assembled generation-safe syntax program
