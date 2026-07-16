@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use beskid_codegen::cranelift_host::{
-    declare_builtin_imports, declare_user_functions_with_link_symbols_and_linkage,
+    declare_referenced_builtin_imports, declare_user_functions_with_link_symbols_and_linkage,
     declare_validated_extern_imports, remap_testcase_externals,
 };
 use beskid_codegen::{
@@ -25,7 +25,6 @@ pub struct BeskidObjectModule {
     module: Option<ObjectModule>,
     func_ids: HashMap<String, FuncId>,
     data_ids: HashMap<String, DataId>,
-    builtins_declared: bool,
     declared_symbols: Vec<String>,
 }
 
@@ -65,7 +64,6 @@ impl BeskidObjectModule {
             module: Some(ObjectModule::new(builder)),
             func_ids: HashMap::new(),
             data_ids: HashMap::new(),
-            builtins_declared: false,
             declared_symbols: Vec::new(),
         })
     }
@@ -118,11 +116,6 @@ impl BeskidObjectModule {
             });
         }
 
-        if !self.builtins_declared {
-            declare_builtin_imports(module, &mut self.func_ids)?;
-            self.builtins_declared = true;
-        }
-
         let exports = artifact.exports.clone();
         let declared = declare_user_functions_with_link_symbols_and_linkage(
             module,
@@ -142,6 +135,7 @@ impl BeskidObjectModule {
         // Only symbols selected by the caller's export policy use Export linkage. This keeps
         // canonical syntax implementation functions out of the static runtime boundary.
         self.declared_symbols.extend(declared);
+        declare_referenced_builtin_imports(module, artifact, &mut self.func_ids)?;
         declare_validated_extern_imports(module, artifact, &mut self.func_ids).map_err(|err| {
             match err {
                 beskid_codegen::cranelift_host::ExternDeclarationError::InvalidSignature(

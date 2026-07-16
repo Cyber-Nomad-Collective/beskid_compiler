@@ -1,7 +1,7 @@
 //! Shared Cranelift module helpers for JIT and AOT backends (builtin imports, extern FFI checks,
 //! TestCase name remapping). Object builds use the same extern FFI rules as JIT.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use beskid_abi::{AbiParamKind, AbiReturnKind, BUILTIN_SPECS};
@@ -80,6 +80,40 @@ pub fn declare_builtin_imports<M: Module>(
     let call_conv = module.isa().default_call_conv();
 
     for spec in BUILTIN_SPECS {
+        let signature = builtin_signature(pointer, call_conv, spec.params, spec.returns);
+        let id = module.declare_function(spec.symbol, Linkage::Import, &signature)?;
+        func_ids.insert(spec.symbol.to_owned(), id);
+    }
+
+    Ok(())
+}
+
+/// Declare only builtin imports referenced by the artifact's lowered CLIF.
+///
+/// AOT archives retain every declared import, even when no emitted function calls it. Restrict
+/// the object boundary to actual `TestCase` callees so a canonical runtime archive cannot leak
+/// unrelated legacy runtime symbols.
+pub fn declare_referenced_builtin_imports<M: Module>(
+    module: &mut M,
+    artifact: &CodegenArtifact,
+    func_ids: &mut HashMap<String, FuncId>,
+) -> Result<(), ModuleError> {
+    let referenced = artifact
+        .functions
+        .iter()
+        .flat_map(|function| function.function.dfg.ext_funcs.iter())
+        .filter_map(|(_func_ref, ext_func)| match &ext_func.name {
+            ExternalName::TestCase(name) => Some(String::from_utf8_lossy(name.raw()).to_string()),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let pointer = module.isa().pointer_type();
+    let call_conv = module.isa().default_call_conv();
+
+    for spec in BUILTIN_SPECS {
+        if !referenced.contains(spec.symbol) || func_ids.contains_key(spec.symbol) {
+            continue;
+        }
         let signature = builtin_signature(pointer, call_conv, spec.params, spec.returns);
         let id = module.declare_function(spec.symbol, Linkage::Import, &signature)?;
         func_ids.insert(spec.symbol.to_owned(), id);

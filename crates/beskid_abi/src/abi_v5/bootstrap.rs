@@ -73,6 +73,7 @@ impl RuntimeAuditMetadata {
             allowed_imports.push("_tlv_bootstrap".into());
         }
         allowed_imports.sort();
+        allowed_imports.dedup();
         let mut allowed_exports = manifest
             .exports
             .iter()
@@ -83,8 +84,15 @@ impl RuntimeAuditMetadata {
                     .iter()
                     .map(|entry| entry.symbol.as_str().into()),
             )
+            .chain(
+                manifest
+                    .trusted_runtime_intrinsics
+                    .iter()
+                    .map(|entry| entry.symbol.clone()),
+            )
             .collect::<Vec<_>>();
         allowed_exports.sort();
+        allowed_exports.dedup();
         Ok(Self {
             allowed_imports,
             allowed_exports,
@@ -115,6 +123,25 @@ impl RuntimeAuditMetadata {
         exact_symbol_set("defined", &self.allowed_exports, &defined)?;
         exact_symbol_set("undefined", &self.allowed_imports, &undefined)?;
         Ok(())
+    }
+
+    /// Audit a linked runtime object whose manifest exports must be present while optional
+    /// platform intrinsics and imports may be dead-stripped by the native linker.
+    pub fn audit_linked_runtime_symbol_tables<'a>(
+        &self,
+        required_exports: &[String],
+        defined: impl IntoIterator<Item = &'a str>,
+        undefined: impl IntoIterator<Item = &'a str>,
+    ) -> Result<(), String> {
+        let defined = self.normalized_symbol_set("defined", defined)?;
+        let mut undefined = self.normalized_symbol_set("undefined", undefined)?;
+        // `nm -u` reports references from every member of a static archive. A reference that is
+        // also defined by another member is internally resolved when the archive is linked and
+        // must not be treated as an external runtime dependency.
+        undefined.retain(|symbol| !defined.contains(symbol));
+        required_symbol_set("defined", required_exports, &defined)?;
+        allowlisted_symbol_set("defined", &self.allowed_exports, &defined)?;
+        allowlisted_symbol_set("undefined", &self.allowed_imports, &undefined)
     }
 
     fn normalized_symbol_set<'a>(
@@ -148,6 +175,36 @@ fn exact_symbol_set(
     Err(format!(
         "{table} symbol table mismatch: missing={missing:?}, unexpected={unexpected:?}"
     ))
+}
+
+fn required_symbol_set(
+    table: &str,
+    required: &[String],
+    actual: &BTreeSet<String>,
+) -> Result<(), String> {
+    let required = required.iter().cloned().collect::<BTreeSet<_>>();
+    let missing = required.difference(actual).cloned().collect::<Vec<_>>();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{table} symbol table is missing={missing:?}"))
+    }
+}
+
+fn allowlisted_symbol_set(
+    table: &str,
+    allowed: &[String],
+    actual: &BTreeSet<String>,
+) -> Result<(), String> {
+    let allowed = allowed.iter().cloned().collect::<BTreeSet<_>>();
+    let unexpected = actual.difference(&allowed).cloned().collect::<Vec<_>>();
+    if unexpected.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{table} symbol table has unexpected={unexpected:?}"
+        ))
+    }
 }
 
 fn normalize_object_symbol(raw: &str, object_format: &str, symbol_prefix: &str) -> String {

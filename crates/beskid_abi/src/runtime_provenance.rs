@@ -15,6 +15,7 @@ use crate::runtime_source::canonical_runtime_source_hash;
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeProvenanceAudit {
     pub target: String,
+    pub required_exports: Vec<String>,
     pub allowed_imports: Vec<String>,
     pub allowed_exports: Vec<String>,
     pub forbidden_symbol_families: Vec<String>,
@@ -26,8 +27,22 @@ impl RuntimeProvenanceAudit {
         let manifest = AbiManifestV5::canonical_runtime(target.clone());
         let metadata =
             RuntimeAuditMetadata::for_manifest(&manifest, &canonical_runtime_source_hash())?;
+        let mut required_exports = manifest
+            .exports
+            .iter()
+            .map(|entry| entry.symbol.clone())
+            .chain(
+                manifest
+                    .assembly_exports
+                    .iter()
+                    .map(|entry| entry.symbol.as_str().into()),
+            )
+            .collect::<Vec<_>>();
+        required_exports.sort();
+        required_exports.dedup();
         Ok(Self {
             target: target.triple.as_str().into(),
+            required_exports,
             allowed_imports: metadata.allowed_imports,
             allowed_exports: metadata.allowed_exports,
             forbidden_symbol_families: metadata.forbidden_rust_symbols,
@@ -76,7 +91,8 @@ impl RuntimeProvenanceAudit {
             layout_hash: String::new(),
             runtime_source_hash: String::new(),
         }
-        .audit_object_symbol_tables(
+        .audit_linked_runtime_symbol_tables(
+            &self.required_exports,
             symbols.defined.iter().map(String::as_str),
             symbols.undefined.iter().map(String::as_str),
         )

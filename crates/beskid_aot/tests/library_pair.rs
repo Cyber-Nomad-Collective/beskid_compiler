@@ -1,6 +1,9 @@
 use std::process::Command;
 
-use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
+use beskid_abi::{
+    abi_v5::{AbiManifestV5, TargetMetadata},
+    runtime_provenance::{RuntimeProvenanceAudit, parse_symbol_list},
+};
 use beskid_aot::{
     emit_host_context_library_pair, emit_host_platform_library_pair, emit_library_pair,
     lower_canonical_runtime_prepared_syntax,
@@ -342,4 +345,33 @@ fn canonical_runtime_static_archive_hides_non_abi_implementation_symbols() {
             .any(|symbol| symbol == "panic"),
         "static runtime archive leaked forbidden non-ABI panic symbol: {symbols}"
     );
+
+    let undefined = Command::new("nm")
+        .args(["-u", "-j"])
+        .arg(&pair.static_library)
+        .output()
+        .expect("run nm for static imports");
+    assert!(undefined.status.success(), "nm failed");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|candidate| candidate.triple.as_str() == triple)
+        .expect("supported host target");
+    let symbol_list = format!(
+        "target={triple}\n{}{}",
+        symbols
+            .lines()
+            .filter(|symbol| !symbol.is_empty() && !symbol.ends_with(':'))
+            .map(|symbol| format!("defined={symbol}\n"))
+            .collect::<String>(),
+        String::from_utf8(undefined.stdout)
+            .expect("utf-8 nm output")
+            .lines()
+            .filter(|symbol| !symbol.is_empty() && !symbol.ends_with(':'))
+            .map(|symbol| format!("undefined={symbol}\n"))
+            .collect::<String>(),
+    );
+    RuntimeProvenanceAudit::canonical(target)
+        .expect("canonical provenance policy")
+        .verify(&parse_symbol_list(&symbol_list).expect("parse symbol list"))
+        .expect("canonical static runtime archive satisfies provenance policy");
 }
