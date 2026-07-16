@@ -149,6 +149,7 @@ fn stale_generation_has_no_semantic_facts() {
         generation: SyntaxGenerationId(4),
         assembly: empty_assembly(),
         runtime_intrinsic_capability: None,
+        corelib_service_capability: None,
     };
     db.ensure_file_text(
         typed.entry.path(&db).clone(),
