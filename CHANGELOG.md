@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add an explicit native-runtime-kit CI migration diagnostic and fixture test that identifies every remaining runtime-bridge setup caller.
 - Add the Apple Silicon native platform-shim artifact for ABI-v5 allocation, release, and trap,
   with manifest-platform import provenance checks and no Rust bridge dependency.
+- Add a native-host runtime-kit CLI publisher and CI staging wrapper for exact debug or release
+  host artifacts.
 
 ### Changed
 

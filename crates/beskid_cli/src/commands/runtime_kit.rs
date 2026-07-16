@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use beskid_tools::toolchain::runtime_kit::{
-    build, build_matrix, RuntimeKitBuildOptions, RuntimeKitMatrixBuildOptions, RuntimeKitProfile,
-    RuntimeKitProfileArtifacts,
+    RuntimeKitBuildOptions, RuntimeKitMatrixBuildOptions, RuntimeKitProfile,
+    RuntimeKitProfileArtifacts, build, build_matrix, build_native_host,
 };
 use clap::{Args, Subcommand, ValueEnum};
 
@@ -19,6 +19,8 @@ pub struct RuntimeKitArgs {
 pub enum RuntimeKitCommand {
     /// Validate and atomically publish prebuilt native runtime artifacts.
     Build(RuntimeKitBuildArgs),
+    /// Build and publish the canonical runtime for this exact native host.
+    BuildNativeHost(RuntimeKitNativeHostBuildArgs),
     /// Publish the required debug and release artifacts for one target.
     BuildMatrix(RuntimeKitBuildMatrixArgs),
 }
@@ -72,6 +74,17 @@ pub struct RuntimeKitBuildArgs {
     /// Windows shared import library; required only for the Windows target.
     #[arg(long)]
     pub shared_import_library: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct RuntimeKitNativeHostBuildArgs {
+    /// Empty installation prefix receiving `lib/beskid-runtime/abi-5/`.
+    #[arg(long)]
+    pub prefix: PathBuf,
+
+    /// Runtime optimization/diagnostic profile for this host build.
+    #[arg(long, value_enum)]
+    pub profile: RuntimeKitProfileArg,
 }
 
 #[derive(Args, Debug)]
@@ -129,6 +142,13 @@ pub fn execute(args: RuntimeKitArgs) -> Result<()> {
                 shared_import_library: args.shared_import_library,
             })?;
             println!("Built ABI-v5 runtime kit at {}", built.root.display());
+        }
+        RuntimeKitCommand::BuildNativeHost(args) => {
+            let built = build_native_host(args.prefix, args.profile.into())?;
+            println!(
+                "Built native-host ABI-v5 runtime kit at {}",
+                built.root.display()
+            );
         }
         RuntimeKitCommand::BuildMatrix(args) => {
             let built = build_matrix(RuntimeKitMatrixBuildOptions {

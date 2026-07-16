@@ -28,8 +28,8 @@ use crate::commands::{
     migrate_bsol, new, parse, repl, run, runtime_kit, test, tree, update, validate_bsol,
 };
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
-use beskid_pckg::cli::PckgCommand;
 use beskid_pckg::PckgArgs;
+use beskid_pckg::cli::PckgCommand;
 use clap::{ArgAction, Parser, Subcommand};
 use miette::Report;
 use std::env;
@@ -392,6 +392,30 @@ mod tests {
         assert_eq!(args.static_library, Path::new("out/libbeskid_runtime.a"));
         assert_eq!(args.shared_library, Path::new("out/libbeskid_runtime.so"));
         assert!(args.shared_import_library.is_none());
+    }
+
+    #[test]
+    fn parses_runtime_kit_native_host_contract() {
+        let cli = Cli::try_parse_from([
+            "beskid",
+            "runtime-kit",
+            "build-native-host",
+            "--prefix",
+            "/tmp/beskid-native-runtime",
+            "--profile",
+            "debug",
+        ])
+        .expect("parse native host runtime-kit build");
+
+        let Commands::RuntimeKit(args) = cli.command else {
+            panic!("expected runtime-kit command");
+        };
+        let crate::commands::runtime_kit::RuntimeKitCommand::BuildNativeHost(args) = args.command
+        else {
+            panic!("expected native host runtime-kit build");
+        };
+        assert_eq!(args.prefix, Path::new("/tmp/beskid-native-runtime"));
+        assert_eq!(args.profile.as_str(), "debug");
     }
 
     #[test]
