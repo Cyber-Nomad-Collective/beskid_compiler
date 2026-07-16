@@ -19,6 +19,11 @@ impl TypeDescriptor {
     ///
     /// The descriptor and offset table must be static codegen data and must remain valid for the
     /// returned lifetime. This is the only layout authority used to scan opaque heap payloads.
+    ///
+    /// # Safety
+    ///
+    /// `pointer_offsets` must either be null when `pointer_count` is zero, or point to at least
+    /// `pointer_count` valid `usize` entries for the returned slice lifetime.
     #[inline]
     pub unsafe fn pointer_map(&self) -> &[usize] {
         if self.pointer_count == 0 || self.pointer_offsets.is_null() {
