@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Remove the obsolete Rust language-handler regeneration hook, which targeted the retired
+  runtime.v1 manifest rather than the canonical ABI-v5 contract.
 - Remove the borrowed `FrontEndLowerInput` / HIR-only entrypoint codegen boundary.
 
 - Remove AOT prebuilt-archive and standalone fallbacks, runtime link profiles, and host-archive lookup.
