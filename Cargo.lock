@@ -500,6 +500,7 @@ version = "0.1.77"
 dependencies = [
  "anyhow",
  "argfile",
+ "beskid_abi",
  "beskid_analysis",
  "beskid_aot",
  "beskid_codegen",

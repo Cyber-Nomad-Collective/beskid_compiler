@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 
+use crate::commands::syntax_codegen::lower_prepared_entrypoint;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::TargetKind;
@@ -11,7 +12,6 @@ use beskid_aot::{
     AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, ProjectTargetKind,
     build, default_output_kind, default_runtime_strategy, resolve_entrypoint,
 };
-use beskid_codegen::services::lower_from_front_end;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
@@ -127,7 +127,6 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         },
     )?;
     let front = prepared.into_executable()?;
-    let source_name = resolved.source_path.display().to_string();
 
     let input_path = resolved.source_path.clone();
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
@@ -137,14 +136,12 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         .map(|plan| plan.target.name.clone());
 
     let entrypoint = resolve_entrypoint(args.entrypoint.clone())?;
-    let lowered = lower_from_front_end(
-        &source_name,
-        &resolved.source,
-        front,
-        Some(&entrypoint),
+    let artifact = lower_prepared_entrypoint(
+        &front,
+        &entrypoint,
+        args.target_triple.as_deref(),
         Some(session.observer()),
     )?;
-    let artifact = lowered.artifact;
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
 
