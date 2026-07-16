@@ -27,6 +27,18 @@ pub struct CommunityState {
     backend: CommunityBackend,
 }
 
+/// The deliberately small profile projection exposed to registry-owned
+/// catalog routes.  It contains only persisted community profile fields; in
+/// particular it never invents a GitHub login from an Auth Hub subject.
+#[derive(Clone, Debug)]
+pub(crate) struct CatalogProfile {
+    pub subject: String,
+    pub display_name: String,
+    pub bio: String,
+    pub social_links: Vec<String>,
+    pub is_publisher_verified: bool,
+}
+
 #[derive(Clone)]
 enum CommunityBackend {
     InMemory(Arc<Mutex<CommunityService>>),
@@ -67,6 +79,40 @@ impl CommunityState {
             CommunityBackend::InMemory(service) => service,
             CommunityBackend::Sqlx(_) => {
                 panic!("SQL-backed community state does not expose an in-memory service")
+            }
+        }
+    }
+
+    pub(crate) async fn profile_for_catalog(
+        &self,
+        subject: &str,
+    ) -> Result<Option<CatalogProfile>, CommunityStoreError> {
+        let Ok(subject) = Subject::new(subject.to_owned()) else {
+            return Ok(None);
+        };
+        match &self.backend {
+            CommunityBackend::InMemory(service) => Ok(service
+                .lock()
+                .expect("community service lock is not poisoned")
+                .profile(&subject)
+                .map(|profile| CatalogProfile {
+                    subject: profile.subject.as_str().to_owned(),
+                    display_name: profile.display_name.clone(),
+                    bio: profile.bio.clone(),
+                    social_links: profile.social_links.clone(),
+                    is_publisher_verified: profile.is_publisher_verified,
+                })),
+            CommunityBackend::Sqlx(repository) => {
+                repository.profile(subject.as_str()).await.map(|profile| {
+                    profile.map(|profile| CatalogProfile {
+                        subject: profile.subject,
+                        display_name: profile.display_name,
+                        bio: profile.bio,
+                        social_links: serde_json::from_str(&profile.social_links_json)
+                            .unwrap_or_default(),
+                        is_publisher_verified: profile.is_publisher_verified,
+                    })
+                })
             }
         }
     }

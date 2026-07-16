@@ -60,6 +60,7 @@ struct AppState {
     packages: PackageBackend,
     artifacts: Arc<LocalFileArtifactStore>,
     api_keys: Option<Arc<SqlxPackageRepository>>,
+    community: community_routes::CommunityState,
 }
 
 /// Storage is selected exactly once during startup. In-memory storage remains
@@ -579,6 +580,11 @@ fn router_with_backend(
             get(packages::list_packages).post(packages::upsert_package),
         )
         .route("/api/search", get(packages::search_packages))
+        .route("/api/publishers", get(packages::list_publishers))
+        .route(
+            "/api/publishers/{subject}/packages",
+            get(packages::publisher_packages),
+        )
         .route("/api/packages/{idOrName}", get(packages::package_detail))
         .route(
             "/api/packages/{name}/versions",
@@ -653,7 +659,10 @@ fn router_with_backend(
             "/api/admin/packages/{name}/versions/{version}/review",
             axum::routing::post(admin_routes::review_package_version),
         )
-        .nest_service("/api/community", community_routes::router(community_state))
+        .nest_service(
+            "/api/community",
+            community_routes::router(community_state.clone()),
+        )
         .route("/api", any(api_not_found))
         .route("/api/{*path}", any(api_not_found))
         .with_state(AppState {
@@ -661,6 +670,7 @@ fn router_with_backend(
             packages,
             artifacts: Arc::new(artifacts),
             api_keys,
+            community: community_state,
         })
         .fallback_service(ServeDir::new(web_root).fallback(ServeFile::new(index)))
 }

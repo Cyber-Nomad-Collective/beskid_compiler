@@ -145,6 +145,96 @@ async fn current_owner_package_filter_does_not_allow_anonymous_catalog_probing()
 }
 
 #[tokio::test]
+async fn publisher_catalog_uses_profiled_github_subjects_and_hides_private_packages() {
+    let app = router(authenticated_config());
+    let publisher_cookie = format!("pckg_session={}", package_session("github:100"));
+    let unprofiled_cookie = format!("pckg_session={}", package_session("github:200"));
+
+    let profile = app
+        .clone()
+        .oneshot(
+            Request::put("/api/community/profiles/me")
+                .header("content-type", "application/json")
+                .header("cookie", &publisher_cookie)
+                .body(Body::from(
+                    r#"{"displayName":"Registry Team","bio":"Maintainers","socialLinks":["https://example.test"]}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(profile.status(), StatusCode::OK);
+
+    for (name, is_public, cookie) in [
+        ("Public.Profiled", true, &publisher_cookie),
+        ("Private.Profiled", false, &publisher_cookie),
+        ("Public.Unprofiled", true, &unprofiled_cookie),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/packages")
+                    .header("content-type", "application/json")
+                    .header("cookie", cookie)
+                    .body(Body::from(
+                        serde_json::json!({
+                            "name": name,
+                            "isPublic": is_public,
+                            "submitForReview": false,
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    let directory = app
+        .clone()
+        .oneshot(Request::get("/api/publishers").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(directory.status(), StatusCode::OK);
+    assert_eq!(
+        response_body(directory).await,
+        serde_json::json!([{
+            "subject": "github:100",
+            "displayName": "Registry Team",
+            "bio": "Maintainers",
+            "socialLinks": ["https://example.test"],
+            "isPublisherVerified": false,
+            "packageCount": 1,
+        }])
+    );
+
+    let packages = app
+        .clone()
+        .oneshot(
+            Request::get("/api/publishers/github:100/packages")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(packages.status(), StatusCode::OK);
+    assert_eq!(response_body(packages).await[0]["name"], "Public.Profiled");
+
+    for path in [
+        "/api/publishers/github:not-a-number/packages",
+        "/api/publishers/github:200/packages",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+}
+
+#[tokio::test]
 async fn web_root_serves_assets_and_uses_index_for_client_routes() {
     let web_root = std::env::temp_dir().join(format!("beskid-pckg-web-{}", std::process::id()));
     fs::create_dir_all(web_root.join("assets")).expect("web root is created");

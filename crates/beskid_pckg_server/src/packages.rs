@@ -22,6 +22,17 @@ use beskid_pckg_store::{
 
 use crate::{AppState, authenticated_subject};
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PublisherResponse {
+    subject: String,
+    display_name: String,
+    bio: String,
+    social_links: Vec<String>,
+    is_publisher_verified: bool,
+    package_count: usize,
+}
+
 #[derive(serde::Deserialize)]
 pub(crate) struct PackageVersionPath {
     name: String,
@@ -132,6 +143,71 @@ pub async fn search_packages(
         })
         .collect::<Vec<_>>();
     Json(results).into_response()
+}
+
+/// Public publisher directory. A publisher must have both an Auth-Hub-subject
+/// keyed community profile and at least one public package. Private packages
+/// never affect the directory or its package counts.
+pub async fn list_publishers(State(state): State<AppState>) -> Response {
+    let packages = match state.packages.list_packages(200, 0).await {
+        Ok(packages) => packages,
+        Err(_) => return package_storage_failure(),
+    };
+    let mut public_counts = std::collections::BTreeMap::<String, usize>::new();
+    for package in packages.into_iter().filter(|package| package.is_public) {
+        *public_counts.entry(package.owner_subject).or_default() += 1;
+    }
+    let mut publishers = Vec::new();
+    for (subject, package_count) in public_counts {
+        match state.community.profile_for_catalog(&subject).await {
+            Ok(Some(profile)) => publishers.push(PublisherResponse {
+                subject: profile.subject,
+                display_name: profile.display_name,
+                bio: profile.bio,
+                social_links: profile.social_links,
+                is_publisher_verified: profile.is_publisher_verified,
+                package_count,
+            }),
+            Ok(None) => {}
+            Err(_) => return package_storage_failure(),
+        }
+    }
+    Json(publishers).into_response()
+}
+
+/// Public packages owned by a profile-backed Auth Hub subject. A missing
+/// profile is indistinguishable from a missing publisher, avoiding leakage of
+/// package owner subjects which have not opted into the directory.
+pub async fn publisher_packages(
+    State(state): State<AppState>,
+    Path(subject): Path<String>,
+) -> Response {
+    if !is_github_subject(&subject) {
+        return package_not_found();
+    }
+    match state.community.profile_for_catalog(&subject).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return package_not_found(),
+        Err(_) => return package_storage_failure(),
+    }
+    let packages = match state.packages.list_packages(200, 0).await {
+        Ok(packages) => packages,
+        Err(_) => return package_storage_failure(),
+    };
+    Json(
+        packages
+            .into_iter()
+            .filter(|package| package.is_public && package.owner_subject == subject)
+            .map(|package| package_summary(&package))
+            .collect::<Vec<_>>(),
+    )
+    .into_response()
+}
+
+fn is_github_subject(subject: &str) -> bool {
+    subject
+        .strip_prefix("github:")
+        .is_some_and(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 pub async fn package_detail(
