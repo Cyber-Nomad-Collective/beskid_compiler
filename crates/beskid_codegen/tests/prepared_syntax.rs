@@ -88,6 +88,18 @@ fn compiler_trace_reports_syntax_facts_without_source_literal_payloads() {
     assert!(trace.contains("event=ast.node key="));
     assert!(trace.contains("event=call.fact key="));
     assert!(trace.contains("lowering=Direct"));
+    assert!(
+        trace.contains("callee=Item("),
+        "call.fact should render DirectCallee with Item(name@path#gN:nN), got:\n{trace}"
+    );
+    assert!(
+        !trace.contains("AstNodeKey {"),
+        "call.fact must not Debug-dump AstNodeKey: {trace}"
+    );
+    assert!(
+        !trace.contains("abi_identity:"),
+        "call.fact must not Debug-dump abi_identity numbers: {trace}"
+    );
     assert!(trace.contains("event=isle.selected"));
     assert!(trace.contains("elapsed_ms="));
     assert!(

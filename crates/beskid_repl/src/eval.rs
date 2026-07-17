@@ -41,7 +41,7 @@ pub fn type_of_snippet(snippet: &str) -> EvalOutcome {
     match wrap_snippet(snippet) {
         Ok(wrapped) => match prepare_wrapped(&wrapped.source) {
             Ok(front) => match syntax_entrypoint_return_type_from_front_end(&front, "Main") {
-                Ok(return_type) => EvalOutcome::Type(format_semantic_type(return_type).to_owned()),
+                Ok(return_type) => EvalOutcome::Type(format_semantic_type(return_type)),
                 Err(error) => EvalOutcome::Error(error.to_string()),
             },
             Err(error) => EvalOutcome::Error(error),
@@ -133,21 +133,8 @@ fn run_wrapped(
     .map_err(format_lower_error)
 }
 
-fn format_semantic_type(ty: beskid_queries::SemanticTypeId) -> &'static str {
-    match ty {
-        beskid_queries::SemanticTypeId::UNIT => "unit",
-        beskid_queries::SemanticTypeId::BOOL => "bool",
-        beskid_queries::SemanticTypeId::I32 => "i32",
-        beskid_queries::SemanticTypeId::I64 => "i64",
-        beskid_queries::SemanticTypeId::U8 => "u8",
-        beskid_queries::SemanticTypeId::F64 => "f64",
-        beskid_queries::SemanticTypeId::CHAR => "char",
-        beskid_queries::SemanticTypeId::STRING => "string",
-        beskid_queries::SemanticTypeId::WORD => "word",
-        beskid_queries::SemanticTypeId::POINTER => "pointer",
-        beskid_queries::SemanticTypeId::NEVER => "never",
-        _ => "unknown",
-    }
+fn format_semantic_type(ty: beskid_queries::SemanticTypeId) -> String {
+    ty.display_name()
 }
 
 fn format_lower_error(error: anyhow::Error) -> String {

@@ -4,8 +4,8 @@ use std::time::Instant;
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
-    call_lowering, child_nodes, generic_call_specialization, item_abi_signature, node_kind,
-    node_span, CallLowering, ItemSignature,
+    call_lowering, child_nodes, generic_call_specialization, item_abi_signature, item_name,
+    node_kind, node_span, CallLowering, ItemSignature, SemanticTypeId,
 };
 use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::{
@@ -278,10 +278,11 @@ fn trace_node_facts(
                     .get(&callee)
                     .map(String::as_str)
                     .unwrap_or("<missing>");
+                let callee_display = format_callee_for_trace(db, &callee);
                 crate::isle_trace::event(|| {
                     format!(
-                    "event=call.fact key={node} lowering={lowering_name} callee={callee:?} module_import={import}"
-                )
+                        "event=call.fact key={node} lowering={lowering_name} callee={callee_display} module_import={import}"
+                    )
                 });
             }
             None => crate::isle_trace::event(|| {
@@ -314,6 +315,50 @@ fn trace_key(db: &dyn beskid_queries::Db, key: AstNodeKey) -> String {
         key.generation.0,
         key.node.0
     )
+}
+
+fn format_abi_identity(identity: &[u32]) -> String {
+    if identity.is_empty() {
+        return "[]".to_owned();
+    }
+    let (parameters, result) = identity.split_at(identity.len() - 1);
+    let parameters = parameters
+        .iter()
+        .copied()
+        .map(|id| SemanticTypeId(id).display_name())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let result = result
+        .first()
+        .copied()
+        .map(|id| SemanticTypeId(id).display_name())
+        .unwrap_or_else(|| "unit".to_owned());
+    format!("[{parameters}]->{result}")
+}
+
+fn format_declaration_for_trace(db: &dyn beskid_queries::Db, key: AstNodeKey) -> String {
+    let name = item_name(db, key)
+        .ok()
+        .flatten()
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| "<anon>".to_owned());
+    format!("{name}@{}", trace_key(db, key))
+}
+
+fn format_callee_for_trace(db: &dyn beskid_queries::Db, callee: &DirectCallee) -> String {
+    match callee {
+        DirectCallee::Item(key) => format!("Item({})", format_declaration_for_trace(db, *key)),
+        DirectCallee::SpecializedItem {
+            declaration,
+            abi_identity,
+        } => format!(
+            "SpecializedItem({}, {})",
+            format_declaration_for_trace(db, *declaration),
+            format_abi_identity(abi_identity)
+        ),
+        DirectCallee::RuntimeIntrinsic(index) => format!("RuntimeIntrinsic({index})"),
+        DirectCallee::CorelibService(symbol) => format!("CorelibService({symbol})"),
+    }
 }
 
 fn resolve_module_items(
