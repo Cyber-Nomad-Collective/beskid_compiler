@@ -10,12 +10,11 @@ use beskid_isle::{
     RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{
-    AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
-    aggregate_field_access, aggregate_layout, aggregate_literal_declaration, block_statement_nodes,
-    call_abi_signature, call_argument_abi_type, call_arguments, call_lowering, cast_intents,
-    child_nodes, enum_constructor, enum_layout, enum_match, generic_call_specialization,
-    item_abi_signature, item_body, literal_fact, local_slot, node_kind, node_type,
-    nominal_member_receiver, operator_fact, resolved_local, runtime_intrinsic_name,
+    AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration,
+    block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
+    cast_intents, child_nodes, dispatch_builtin_symbol, enum_constructor, enum_layout, enum_match,
+    generic_call_specialization, item_abi_signature, item_body, literal_fact, local_slot, node_kind,
+    node_type, nominal_member_receiver, operator_fact, resolved_local, runtime_intrinsic_name,
     test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
@@ -114,6 +113,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                     )
                 })
                 .collect()
+        } else if self.node_kind(key) == Some(NodeKind::UnaryExpression) {
+            // Operand-only view: UnaryOp is selected via `operator_fact`, not as a child.
+            self.children(key)
+                .iter()
+                .copied()
+                .filter(|child| {
+                    !matches!(
+                        self.query(node_kind(self.db, *child)),
+                        Some(beskid_queries::IndexedNodeKind::UnaryOp)
+                    )
+                })
+                .collect()
         } else {
             self.children(key).into()
         };
@@ -175,11 +186,32 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.runtime_intrinsic(key).is_some() {
             return Some(CallKind::RuntimeIntrinsic);
         }
+        if self
+            .query(dispatch_builtin_symbol(self.db, key))
+            .is_some()
+        {
+            return Some(CallKind::Dynamic);
+        }
         matches!(
             self.query(call_lowering(self.db, key)),
             Some(CallLowering::Direct(_) | CallLowering::CorelibService(_))
         )
         .then_some(CallKind::Direct)
+    }
+
+    fn dispatch_builtin_symbol(&self, key: AstNodeKey) -> Option<&'static str> {
+        self.query(dispatch_builtin_symbol(self.db, key))
+            .map(|symbol| symbol.0)
+    }
+
+    fn expression_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        self.scalar_semantic_type(key)
+    }
+
+    fn index_target_is_string(&self, key: AstNodeKey) -> bool {
+        self.child(key, 0)
+            .and_then(|target| self.scalar_semantic_type(target))
+            == Some(SemanticTypeId::STRING)
     }
 
     fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
@@ -958,6 +990,9 @@ fn map_operator_fact(operator: beskid_queries::OperatorFact) -> OperatorFact {
         Syntax::Mod => OperatorFact::Mod,
         Syntax::Neg => OperatorFact::Neg,
         Syntax::Not => OperatorFact::Not,
+        Syntax::StringAdd => OperatorFact::StringAdd,
+        Syntax::StringEq => OperatorFact::StringEq,
+        Syntax::StringNotEq => OperatorFact::StringNotEq,
     }
 }
 

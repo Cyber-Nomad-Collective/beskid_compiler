@@ -25,6 +25,10 @@ use cranelift_frontend::FunctionBuilderContext;
 use cranelift_frontend::Switch;
 use cranelift_frontend::Variable;
 
+mod dispatch;
+
+pub use dispatch::{emit_dispatch_call, emit_str_from_i64_dispatch, pointer_type as isle_pointer_type};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeKind {
     Program,
@@ -117,12 +121,22 @@ pub enum OperatorFact {
     Mod,
     Neg,
     Not,
+    StringAdd,
+    StringEq,
+    StringNotEq,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IndexTarget {
+    String,
+    Array,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallKind {
     Direct,
     RuntimeIntrinsic,
+    Dynamic,
 }
 
 /// Exact semantic call target.
@@ -498,6 +512,15 @@ pub trait NodeFacts {
     fn local_slot(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
+    fn dispatch_builtin_symbol(&self, _key: AstNodeKey) -> Option<&'static str> {
+        None
+    }
+    fn expression_semantic_type(&self, _key: AstNodeKey) -> Option<beskid_queries::SemanticTypeId> {
+        None
+    }
+    fn index_target_is_string(&self, _key: AstNodeKey) -> bool {
+        false
+    }
     /// Parameter slots in source order for one function item.
     fn function_parameters(&self, _key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
         None
@@ -716,6 +739,44 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         }
         let call = self.builder.ins().call(function, &arguments);
         Some((call, signature))
+    }
+
+    fn coerce_expression_to_string(&mut self, key: AstNodeKey) -> Option<Value> {
+        use beskid_queries::SemanticTypeId;
+
+        let value = generated::constructor_lower_expression(self, key)?;
+        let semantic = self.facts.expression_semantic_type(key)?;
+        if semantic == SemanticTypeId::STRING {
+            return Some(value);
+        }
+        let pointer_type = self.builder.func.dfg.value_type(value);
+        let coerced = match semantic {
+            SemanticTypeId::I64 => value,
+            SemanticTypeId::I32 => self.builder.ins().sextend(types::I64, value),
+            SemanticTypeId::U8 => self.builder.ins().uextend(types::I64, value),
+            SemanticTypeId::BOOL => self.builder.ins().uextend(types::I64, value),
+            _ => return None,
+        };
+        if pointer_type != types::I64 && semantic == SemanticTypeId::I64 {
+            // keep i64 as-is
+        }
+        dispatch::emit_str_from_i64_dispatch(&mut self.builder, coerced).ok()
+    }
+
+    fn emit_string_compare(&mut self, key: AstNodeKey, invert: bool) -> Option<Value> {
+        let left_key = self.facts.child(key, 0)?;
+        let right_key = self.facts.child(key, 1)?;
+        let left = self.coerce_expression_to_string(left_key)?;
+        let right = self.coerce_expression_to_string(right_key)?;
+        let route = beskid_abi::dispatch_route_for_symbol("str_eq")?;
+        let eq_flag = dispatch::emit_dispatch_call(&mut self.builder, route, &[left, right], true)
+            .ok()??;
+        let zero = self.builder.ins().iconst(types::I64, 0);
+        Some(if invert {
+            self.builder.ins().icmp(IntCC::Equal, eq_flag, zero)
+        } else {
+            self.builder.ins().icmp(IntCC::NotEqual, eq_flag, zero)
+        })
     }
 
     fn direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -1050,11 +1111,107 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.direct_call(key)
     }
 
+    fn emit_dispatch_call(&mut self, key: AstNodeKey) -> Option<Value> {
+        let symbol = self.facts.dispatch_builtin_symbol(key)?;
+        let route = beskid_abi::dispatch_route_for_symbol(symbol)?;
+        let arguments = self
+            .facts
+            .call_arguments(key)?
+            .into_iter()
+            .map(|argument| generated::constructor_lower_expression(self, argument))
+            .collect::<Option<Vec<_>>>()?;
+        let returns_value = !matches!(route.group, beskid_abi::DispatchReturnGroup::Unit);
+        match dispatch::emit_dispatch_call(&mut self.builder, route, &arguments, returns_value) {
+            Ok(Some(value)) => Some(value),
+            // Unit-returning builtins are emitted as statements, not expression values.
+            Ok(None) | Err(_) => None,
+        }
+    }
+
+    fn emit_string_concat(&mut self, key: AstNodeKey) -> Option<Value> {
+        let left_key = self.facts.child(key, 0)?;
+        let right_key = self.facts.child(key, 1)?;
+        let left = self.coerce_expression_to_string(left_key)?;
+        let right = self.coerce_expression_to_string(right_key)?;
+        let route = beskid_abi::dispatch_route_for_symbol("str_concat")?;
+        dispatch::emit_dispatch_call(&mut self.builder, route, &[left, right], true)
+            .ok()?
+    }
+
+    fn emit_string_eq(&mut self, key: AstNodeKey) -> Option<Value> {
+        self.emit_string_compare(key, false)
+    }
+
+    fn emit_string_ne(&mut self, key: AstNodeKey) -> Option<Value> {
+        self.emit_string_compare(key, true)
+    }
+
+    fn emit_string_index_read(&mut self, key: AstNodeKey) -> Option<Value> {
+        let base_key = self.facts.child(key, 0)?;
+        let index_key = self.facts.child(key, 1)?;
+        let handle = generated::constructor_lower_expression(self, base_key)?;
+        let index = generated::constructor_lower_expression(self, index_key)?;
+        let pointer_type = self.builder.func.dfg.value_type(handle);
+        if !pointer_type.is_int() || !self.builder.func.dfg.value_type(index).is_int() {
+            return None;
+        }
+        let ptr = self
+            .builder
+            .ins()
+            .load(pointer_type, MemFlags::new(), handle, 0);
+        let len = self
+            .builder
+            .ins()
+            .load(pointer_type, MemFlags::new(), handle, 8);
+        let out_of_bounds = self
+            .builder
+            .ins()
+            .icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
+        self.builder
+            .ins()
+            .trapnz(out_of_bounds, TrapCode::unwrap_user(2));
+        let addr = self.builder.ins().iadd(ptr, index);
+        Some(
+            self.builder
+                .ins()
+                .load(types::I8, MemFlags::new(), addr, 0),
+        )
+    }
+
+    fn index_target(&mut self, key: AstNodeKey) -> Option<IndexTarget> {
+        if self.facts.index_target_is_string(key) {
+            return Some(IndexTarget::String);
+        }
+        if self.facts.array_layout(key).is_some() {
+            return Some(IndexTarget::Array);
+        }
+        None
+    }
+
     fn emit_expression_statement(&mut self, key: AstNodeKey) -> Option<()> {
         let expression = self.facts.child(key, 0)?;
         if self.facts.node_kind(expression) == Some(NodeKind::CallExpression) {
             if self.facts.call_kind(expression) == Some(CallKind::RuntimeIntrinsic) {
                 return self.emit_runtime_intrinsic_statement(expression);
+            }
+            if self.facts.call_kind(expression) == Some(CallKind::Dynamic) {
+                let symbol = self.facts.dispatch_builtin_symbol(expression)?;
+                let route = beskid_abi::dispatch_route_for_symbol(symbol)?;
+                let arguments = self
+                    .facts
+                    .call_arguments(expression)?
+                    .into_iter()
+                    .map(|argument| generated::constructor_lower_expression(self, argument))
+                    .collect::<Option<Vec<_>>>()?;
+                let returns_value = self.facts.scalar_type(expression).is_some();
+                dispatch::emit_dispatch_call(
+                    &mut self.builder,
+                    route,
+                    &arguments,
+                    returns_value,
+                )
+                .ok()?;
+                return Some(());
             }
             if self.facts.call_kind(expression) == Some(CallKind::Direct)
                 && self
@@ -1800,7 +1957,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct LoweringError {
     key: AstNodeKey,
     kind: LoweringErrorKind,
@@ -1813,6 +1970,44 @@ impl LoweringError {
 
     pub fn kind(&self) -> LoweringErrorKind {
         self.kind.clone()
+    }
+
+    /// Prefer this when a Salsa db is available so the unit path is expanded.
+    pub fn display_with_key_label(&self, key_label: impl std::fmt::Display) -> String {
+        format!("{} at {key_label}", self.kind_label())
+    }
+
+    fn kind_label(&self) -> String {
+        match &self.kind {
+            LoweringErrorKind::MissingRuleOrFact => "MissingRuleOrFact".to_owned(),
+            LoweringErrorKind::UnknownCallee(callee) => format!("UnknownCallee({callee:?})"),
+            LoweringErrorKind::InvalidArrayLayout => "InvalidArrayLayout".to_owned(),
+            LoweringErrorKind::InvalidStructLayout => "InvalidStructLayout".to_owned(),
+            LoweringErrorKind::InvalidStructField(index) => {
+                format!("InvalidStructField({index})")
+            }
+            LoweringErrorKind::InvalidEnumLayout => "InvalidEnumLayout".to_owned(),
+            LoweringErrorKind::InvalidEnumVariant(index) => {
+                format!("InvalidEnumVariant({index})")
+            }
+            LoweringErrorKind::InvalidMatchArms => "InvalidMatchArms".to_owned(),
+            LoweringErrorKind::NonExhaustiveMatch => "NonExhaustiveMatch".to_owned(),
+            LoweringErrorKind::InvalidBlockExpression => "InvalidBlockExpression".to_owned(),
+            LoweringErrorKind::InvalidRangeFor => "InvalidRangeFor".to_owned(),
+        }
+    }
+}
+
+impl std::fmt::Display for LoweringError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Without a db the unit path is unavailable; still emit the shared #gN:nN cursor.
+        write!(f, "{} at #{}", self.kind_label(), self.key.cursor_label())
+    }
+}
+
+impl std::fmt::Debug for LoweringError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
     }
 }
 
@@ -2132,4 +2327,26 @@ fn block_is_terminated(builder: &FunctionBuilder<'_>, block: Block) -> bool {
 pub enum FunctionEmissionError {
     Lowering(LoweringError),
     Verification(String),
+}
+
+impl std::fmt::Display for FunctionEmissionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Lowering(error) => write!(f, "Lowering({error})"),
+            Self::Verification(message) => write!(f, "Verification({message})"),
+        }
+    }
+}
+
+impl FunctionEmissionError {
+    /// Expand nested AstNodeKey labels with a full `path#gN:nN` when a db is available.
+    pub fn display_with_db(&self, db: &dyn beskid_queries::Db) -> String {
+        match self {
+            Self::Lowering(error) => format!(
+                "Lowering({})",
+                error.display_with_key_label(beskid_queries::format_ast_node_key(db, error.key()))
+            ),
+            Self::Verification(message) => format!("Verification({message})"),
+        }
+    }
 }

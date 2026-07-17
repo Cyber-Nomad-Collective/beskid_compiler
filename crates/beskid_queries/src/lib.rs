@@ -81,6 +81,7 @@ pub use semantic_contract::{
     GenericCallSpecialization, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot,
     OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnTarget,
+    format_ast_node_key,
     TestItem, TypedProgram, abi_type, aggregate_field_access, aggregate_layout,
     aggregate_literal_declaration, block_statement_nodes, call_abi_signature,
     call_argument_abi_type, call_arguments, call_lowering, cast_intents, child_nodes,
@@ -88,6 +89,7 @@ pub use semantic_contract::{
     enum_layout, enum_match, generic_call_instantiation, generic_call_specialization,
     item_abi_signature, item_body, item_export_symbol, item_name, item_signature, literal_fact,
     local_slot, node_kind, node_span, node_type, nominal_member_receiver, operator_fact,
+    dispatch_builtin_symbol, DispatchBuiltinSymbol,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name,
     spawn_target, test_item, test_statement_nodes,
 };

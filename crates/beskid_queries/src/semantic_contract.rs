@@ -8,6 +8,7 @@ use std::sync::Arc;
 pub use beskid_abi::runtime_source::CorelibService;
 use beskid_abi::{
     abi_v5::{AbiManifestV5, AbiType, TargetMetadata},
+    dispatch_route_for_symbol,
     runtime_source::RuntimeIntrinsicCapability,
 };
 use beskid_analysis::projects::SyntaxProgramAssembly;
@@ -36,6 +37,11 @@ impl SourceUnitId {
     pub fn path(self, db: &dyn Db) -> &PathBuf {
         self.interned_path(db)
     }
+}
+
+/// Format a generation-safe syntax key as `path#gN:nN` for traces and diagnostics.
+pub fn format_ast_node_key(db: &dyn Db, key: AstNodeKey) -> String {
+    key.display_label(key.unit.path(db).display())
 }
 
 fn normalized_source_path(path: &Path) -> PathBuf {
@@ -436,6 +442,9 @@ pub enum OperatorFact {
     Mod,
     Neg,
     Not,
+    StringAdd,
+    StringEq,
+    StringNotEq,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -1370,6 +1379,11 @@ fn call_lowering_for_node(
                     generic_call_instantiation_for_node(db, program, index, key, path)
                 {
                     Ok(CallLowering::Direct(instantiation.declaration))
+                } else if let Some(declaration) =
+                    resolve_item_declaration_candidate(db, program, index, key, path)
+                    && generic_call_uses_parameter_type_arguments(db, key, declaration, path)
+                {
+                    Ok(CallLowering::Direct(declaration))
                 } else if imported_call_receiver_exists(db, key, path) {
                     Ok(CallLowering::Dynamic)
                 } else {
@@ -1601,13 +1615,9 @@ fn generic_call_specialization_tracked(
     .transpose()
 }
 
-fn generic_call_instantiation_for_node(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
-    key: AstNodeKey,
-    path: &beskid_analysis::syntax::Path,
-) -> Option<GenericCallInstantiation> {
+fn explicit_generic_type_argument_syntax<'a>(
+    path: &'a beskid_analysis::syntax::Path,
+) -> Option<&'a [beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>]> {
     let terminal = path.segments.last()?;
     let receiver = path.segments.get(..path.segments.len().checked_sub(1)?)?;
     let receiver_with_arguments = receiver
@@ -1615,29 +1625,97 @@ fn generic_call_instantiation_for_node(
         .filter(|segment| !segment.node.type_args.is_empty())
         .collect::<Vec<_>>();
     let terminal_has_arguments = !terminal.node.type_args.is_empty();
-    let argument_syntax = match (terminal_has_arguments, receiver_with_arguments.as_slice()) {
-        (true, []) => terminal.node.type_args.as_slice(),
-        (false, [receiver]) => receiver.node.type_args.as_slice(),
-        _ => return None,
+    match (terminal_has_arguments, receiver_with_arguments.as_slice()) {
+        (true, []) => Some(terminal.node.type_args.as_slice()),
+        (false, [receiver]) => Some(receiver.node.type_args.as_slice()),
+        _ => None,
+    }
+}
+
+fn type_syntax_is_generic_parameter_reference(
+    syntax_type: &beskid_analysis::syntax::Type,
+    parameter_name: &str,
+) -> bool {
+    let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
+        return false;
     };
+    let [segment] = path.node.segments.as_slice() else {
+        return false;
+    };
+    segment.node.type_args.is_empty()
+        && segment.node.name.node.name == parameter_name
+}
+
+fn generic_call_uses_parameter_type_arguments(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> bool {
+    let Some(type_arguments) = explicit_generic_type_argument_syntax(path) else {
+        return false;
+    };
+    let Some(syntax) = db.syntax_unit(declaration.unit) else {
+        return false;
+    };
+    if !syntax.accepts_key(db, declaration) {
+        return false;
+    }
+    let Some(function) = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+    else {
+        return false;
+    };
+    if function.generics.len() != type_arguments.len() {
+        return false;
+    }
+    type_arguments
+        .iter()
+        .zip(function.generics.iter())
+        .all(|(argument, generic)| {
+            abi_type_from_syntax(db, key, &argument.node).is_ok()
+                || type_syntax_is_generic_parameter_reference(
+                    &argument.node,
+                    generic.node.name.as_str(),
+                )
+        })
+}
+
+fn generic_call_instantiation_for_node(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<GenericCallInstantiation> {
+    let argument_syntax = explicit_generic_type_argument_syntax(path)?;
     let argument_count = u8::try_from(argument_syntax.len()).ok()?;
     (argument_count > 0).then_some(())?;
     let declaration = resolve_item_declaration_candidate(db, program, index, key, path)?;
     let syntax = db.syntax_unit(declaration.unit)?;
     syntax.accepts_key(db, declaration).then_some(())?;
-    let target = syntax
+    let function = syntax
         .syntax_index(db)
-        .node_at(syntax.expanded_program(db), declaration.node)?;
-    let function = target.of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        .node_at(syntax.expanded_program(db), declaration.node)?
+        .of::<beskid_analysis::syntax::FunctionDefinition>()?;
     (function.generics.len() == usize::from(argument_count)).then_some(())?;
-    let arguments = argument_syntax
-        .iter()
-        .map(|argument| abi_type_from_syntax(db, key, &argument.node).ok())
-        .collect::<Option<Vec<_>>>()?;
+    let mut concrete_arguments = Vec::with_capacity(argument_syntax.len());
+    for (argument, generic) in argument_syntax.iter().zip(function.generics.iter()) {
+        match abi_type_from_syntax(db, key, &argument.node) {
+            Ok(concrete) => concrete_arguments.push(concrete),
+            Err(_) if type_syntax_is_generic_parameter_reference(
+                &argument.node,
+                generic.node.name.as_str(),
+            ) => {}
+            Err(_) => return None,
+        }
+    }
     Some(GenericCallInstantiation {
         declaration,
         argument_count,
-        arguments: arguments.into(),
+        arguments: concrete_arguments.into(),
     })
 }
 
@@ -2109,6 +2187,12 @@ fn item_abi_signature_tracked(
 ) -> SemanticQueryResult<ItemSignature> {
     with_node(db, syntax, key, |_program, _index, node| {
         if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+            // Generic declarations have no single item ABI. Call sites must prove a concrete
+            // specialization; otherwise module emission would register `Item` while calls import
+            // `SpecializedItem` (for example `Channel<T> Create<T>()` collapsing to POINTER).
+            if !function.generics.is_empty() {
+                return None;
+            }
             return Some(abi_signature_from_syntax(
                 db,
                 key,
@@ -2171,7 +2255,11 @@ fn call_abi_signature_for_call(
             return corelib_service_abi_signature(service)
                 .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
         }
-        Some(CallLowering::Dynamic | CallLowering::Runtime(_)) | None => {
+        Some(CallLowering::Dynamic) => {
+            return dispatch_builtin_abi_signature(db, key)
+                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
+        }
+        Some(CallLowering::Runtime(_)) | None => {
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
     };
@@ -2204,11 +2292,13 @@ fn call_abi_signature_for_call(
         .collect::<Vec<_>>();
     let mut substitutions = HashMap::new();
     if let Some(instantiation) = generic_call_instantiation(db, key)? {
-        if instantiation.arguments.len() != generic_names.len() {
-            return Err(SemanticError::unavailable("call_abi_signature"));
-        }
-        for (generic, argument) in generic_names.iter().zip(instantiation.arguments.iter()) {
-            substitutions.insert((*generic).to_owned(), *argument);
+        if !instantiation.arguments.is_empty() {
+            if instantiation.arguments.len() != generic_names.len() {
+                return Err(SemanticError::unavailable("call_abi_signature"));
+            }
+            for (generic, argument) in generic_names.iter().zip(instantiation.arguments.iter()) {
+                substitutions.insert((*generic).to_owned(), *argument);
+            }
         }
     }
     // A bare integer starts at the language default `i32`, but carries no explicit ABI suffix.
@@ -2365,6 +2455,41 @@ fn call_argument_abi_type_tracked(
         })())
     })?
     .transpose()
+}
+
+/// ABI signature for a soft runtime builtin reached as [`CallLowering::Dynamic`].
+///
+/// Only names with a dispatch route receive a signature; this never grants Corelib-service or
+/// canonical-runtime intrinsic authority.
+fn dispatch_builtin_abi_signature(db: &dyn Db, key: AstNodeKey) -> Option<ItemSignature> {
+    let symbol = dispatch_builtin_symbol(db, key).ok().flatten()?;
+    let (_, spec) = beskid_analysis::builtins::builtin_specs()
+        .iter()
+        .enumerate()
+        .find(|(_, candidate)| candidate.runtime_symbol == symbol.0)?;
+    let parameters = spec
+        .params
+        .iter()
+        .copied()
+        .map(builtin_type_to_semantic)
+        .collect::<Option<Vec<_>>>()?;
+    let result = builtin_type_to_semantic(spec.returns)?;
+    Some(ItemSignature {
+        parameters: parameters.into(),
+        result,
+    })
+}
+
+fn builtin_type_to_semantic(ty: beskid_analysis::builtins::BuiltinType) -> Option<SemanticTypeId> {
+    use beskid_analysis::builtins::BuiltinType;
+    Some(match ty {
+        BuiltinType::String => SemanticTypeId::STRING,
+        BuiltinType::Ptr => SemanticTypeId::POINTER,
+        BuiltinType::Usize => SemanticTypeId::WORD,
+        BuiltinType::U64 => SemanticTypeId::I64,
+        BuiltinType::Unit => SemanticTypeId::UNIT,
+        BuiltinType::Never => SemanticTypeId::NEVER,
+    })
 }
 
 /// ABI facts for the compiler-embedded Corelib syscall facade. These are deliberately available
@@ -3462,15 +3587,59 @@ fn node_span_tracked(
     with_node(db, syntax, key, |_program, _index, node| node.span())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DispatchBuiltinSymbol(pub &'static str);
+
+#[salsa::tracked]
+fn dispatch_builtin_symbol_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<DispatchBuiltinSymbol> {
+    with_node(db, syntax, key, |program, index, node| {
+        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+        let lowering = call_lowering_for_node(db, program, index, key, node)
+            .and_then(|result| result.ok())?;
+        if lowering != CallLowering::Dynamic {
+            return None;
+        }
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return None;
+        };
+        if path.node.path.node.segments.len() != 1 {
+            return None;
+        }
+        let name = path.node.path.node.segments[0]
+            .node
+            .name
+            .node
+            .name
+            .as_str();
+        let (_, spec) = beskid_analysis::builtins::builtin_for_path(&[name.to_owned()])?;
+        if dispatch_route_for_symbol(spec.runtime_symbol).is_none() {
+            return None;
+        }
+        Some(Ok(DispatchBuiltinSymbol(spec.runtime_symbol)))
+    })?
+    .transpose()
+}
+
+pub fn dispatch_builtin_symbol(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<DispatchBuiltinSymbol> {
+    with_registered_syntax(db, key, dispatch_builtin_symbol_tracked)
+}
+
 #[salsa::tracked]
 fn operator_fact_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<OperatorFact> {
-    with_node(db, syntax, key, |_program, _index, node| {
+    with_node(db, syntax, key, |program, index, node| {
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
-            return Some(binary_operator(binary.op.node));
+            return operator_fact_for_binary(db, program, index, key, binary);
         }
         if let Some(unary) = node.of::<beskid_analysis::syntax::UnaryExpression>() {
             return Some(unary_operator(unary.op.node));
@@ -3502,6 +3671,42 @@ fn binary_operator(operator: beskid_analysis::syntax::BinaryOp) -> OperatorFact 
         beskid_analysis::syntax::BinaryOp::Div => OperatorFact::Div,
         beskid_analysis::syntax::BinaryOp::Mod => OperatorFact::Mod,
     }
+}
+
+fn operator_fact_for_binary(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    binary: &beskid_analysis::syntax::BinaryExpression,
+) -> Option<OperatorFact> {
+    let left = index.direct_child_id(
+        program,
+        key.node,
+        beskid_analysis::syntax_query::DynNodeRef::from(binary.left.as_ref()),
+    )?;
+    let right = index.direct_child_id(
+        program,
+        key.node,
+        beskid_analysis::syntax_query::DynNodeRef::from(binary.right.as_ref()),
+    )?;
+    let left_key = AstNodeKey { node: left, ..key };
+    let right_key = AstNodeKey { node: right, ..key };
+    let left_type = abi_type(db, left_key).ok().flatten();
+    let right_type = abi_type(db, right_key).ok().flatten();
+    let result_type = abi_type(db, key).ok().flatten();
+    let involves_string = [left_type, right_type, result_type]
+        .into_iter()
+        .any(|ty| ty == Some(SemanticTypeId::STRING));
+    if involves_string {
+        return Some(match binary.op.node {
+            beskid_analysis::syntax::BinaryOp::Add => OperatorFact::StringAdd,
+            beskid_analysis::syntax::BinaryOp::Eq => OperatorFact::StringEq,
+            beskid_analysis::syntax::BinaryOp::NotEq => OperatorFact::StringNotEq,
+            op => binary_operator(op),
+        });
+    }
+    Some(binary_operator(binary.op.node))
 }
 
 fn unary_operator(operator: beskid_analysis::syntax::UnaryOp) -> OperatorFact {

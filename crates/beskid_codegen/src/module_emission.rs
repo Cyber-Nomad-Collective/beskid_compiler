@@ -4,8 +4,9 @@ use std::time::Instant;
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
-    call_lowering, child_nodes, generic_call_specialization, item_abi_signature, item_name,
-    node_kind, node_span, CallLowering, ItemSignature, SemanticTypeId,
+    call_lowering, child_nodes, format_ast_node_key, generic_call_specialization,
+    item_abi_signature, item_name, node_kind, node_span, CallLowering, ItemSignature,
+    SemanticTypeId,
 };
 use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::{
@@ -53,7 +54,7 @@ struct ResolvedSyntaxModuleItem {
 pub enum SyntaxModuleEmissionError {
     #[error("module declaration failed: {0}")]
     Module(#[from] ModuleError),
-    #[error("syntax ISLE emission failed: {0:?}")]
+    #[error("syntax ISLE emission failed: {0}")]
     Emission(FunctionEmissionError),
     #[error("syntax module declares duplicate symbol `{0}`")]
     DuplicateSymbol(String),
@@ -82,7 +83,7 @@ pub fn lower_syntax_program(
         Ok(items) => items,
         Err(error) => {
             crate::isle_trace::event(|| {
-                format!("event=isle.missing rule=module_item_resolution detail={error:?}")
+                format!("event=isle.missing rule=module_item_resolution detail={error}")
             });
             return Err(error);
         }
@@ -96,7 +97,7 @@ pub fn lower_syntax_program(
             artifact.extern_imports.len()
         ),
         Err(error) => format!(
-            "event=clif.end outcome=error elapsed_ms={} detail={error:?}",
+            "event=clif.end outcome=error elapsed_ms={} detail={error}",
             started.elapsed().as_millis()
         ),
     });
@@ -164,11 +165,14 @@ fn lower_resolved_syntax_program(
                 }
             }
             .map_err(|error| {
-                crate::isle_trace::event(|| format!(
-                    "event=isle.missing rule=emit_item_statement item={} elapsed_ms={} detail={error:?}",
-                    trace_key(input.database(), item.key),
+                crate::isle_trace::event(|| {
+                    format!(
+                    "event=isle.missing rule=emit_item_statement item={} elapsed_ms={} detail={}",
+                    format_ast_node_key(input.database(), item.key),
                     started.elapsed().as_millis(),
-                ));
+                    error.display_with_db(input.database()),
+                )
+                });
                 SyntaxModuleEmissionError::Emission(error)
             })?
         };
@@ -309,12 +313,7 @@ fn trace_node_facts(
 }
 
 fn trace_key(db: &dyn beskid_queries::Db, key: AstNodeKey) -> String {
-    format!(
-        "{}#g{}:n{}",
-        key.unit.path(db).display(),
-        key.generation.0,
-        key.node.0
-    )
+    format_ast_node_key(db, key)
 }
 
 fn format_abi_identity(identity: &[u32]) -> String {

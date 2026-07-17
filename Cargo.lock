@@ -699,6 +699,7 @@ dependencies = [
 name = "beskid_isle"
 version = "0.1.0"
 dependencies = [
+ "beskid_abi",
  "beskid_queries",
  "cranelift-codegen",
  "cranelift-frontend",

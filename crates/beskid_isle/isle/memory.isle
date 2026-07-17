@@ -29,7 +29,9 @@
       (emit_field_assign key))
 (rule (lower_expression key @ (node_kind (NodeKind.ArrayLiteralExpression)))
       (emit_array_literal key))
-(rule (lower_expression key @ (node_kind (NodeKind.IndexExpression)))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.IndexExpression))
+        (index_target (IndexTarget.Array))))
       (emit_index_read key))
 (rule (lower_expression key @ (node_kind (NodeKind.StructLiteralExpression)))
       (emit_struct_literal key))
