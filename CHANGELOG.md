@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reject imported generic nominal static calls that omit receiver type arguments across syntax
+  lowering, ABI selection, and generic specialization, while retaining explicit receiver and
+  terminal-method instantiations.
 - Register compiler-authorized Corelib syscall services per exact embedded source unit within
   multi-unit prepared syntax assemblies, leaving every sibling and forged source unprivileged.
 - Preserve strict `_i32`, `_i64`, and `_u8` literal suffixes while allowing a bare integer
