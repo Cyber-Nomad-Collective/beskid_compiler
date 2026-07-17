@@ -43,6 +43,7 @@ fn semantic_snapshot_query_hits_registry() {
             discovery: beskid_analysis::projects::AssemblyDiscovery::ImportClosure,
             module_index: std::sync::Arc::new(beskid_analysis::projects::ModuleIndex::empty()),
             has_std_dependency: false,
+            trusted_corelib_service_paths: std::sync::Arc::from([]),
         },
     );
     update_semantic_snapshot(&fp, SemanticSnapshot::from_diagnostics(&[], 1, "semantic"));

@@ -10,8 +10,8 @@ use beskid_abi::runtime_source::{
     canonical_runtime_sources,
 };
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
-    SyntaxProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry,
+    SourceUnit, SyntaxProgramAssembly,
 };
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
@@ -620,6 +620,44 @@ fn canonical_corelib_service_call_imports_its_distinct_abi_symbol() {
         )
         .expect("compiler-authorized Corelib service lowers through an exact import");
     assert!(function.display().to_string().contains("call"));
+}
+
+#[test]
+fn materialized_foundation_syscall_facade_imports_its_authorized_write_service() {
+    let (input, isa, root) = materialized_corelib_syscall_fixture();
+    let write = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Write"))
+        .expect("materialized Core.Syscall Write source item");
+    let call = find_corelib_service_call(input.database(), write, "__syscall_write")
+        .expect("materialized __syscall_write call");
+    assert_eq!(
+        beskid_codegen::SyntaxNodeFacts::new(&input).direct_callee(call),
+        Some(DirectCallee::corelib_service("syscall_write")),
+        "only loader-proven materialized Foundation source receives the service fact"
+    );
+    let service = DirectCallee::corelib_service("syscall_write");
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = function_signature(isa.as_ref(), types::I64, [types::I64, isa.pointer_type()]);
+    let imported = module
+        .declare_function("syscall_write", Linkage::Import, &signature)
+        .expect("declare materialized Corelib service import");
+    let mut importer =
+        ItemModuleImporter::new(&mut module, HashMap::from([(service.clone(), imported)]));
+    let service_facts = CorelibServiceImportFacts::new(input.database(), service);
+    let function = FunctionEmitter::new(isa.as_ref())
+        .emit_expression_with_call_importer(
+            UserFuncName::user(0, 97),
+            FunctionEmitter::new(isa.as_ref()).signature([], [types::I64]),
+            &service_facts,
+            service_facts.call,
+            &mut importer,
+        )
+        .expect("materialized Core.Syscall call lowers through the authorized external import");
+    assert!(
+        function.display().to_string().contains("call"),
+        "the trusted materialized facade must import syscall_write"
+    );
 }
 
 #[test]
@@ -1550,6 +1588,86 @@ fn canonical_corelib_syscall_fixture() -> (
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe Corelib input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    (input, isa, root)
+}
+
+fn materialized_corelib_syscall_fixture() -> (
+    CodegenInput<'static>,
+    Arc<dyn cranelift_codegen::isa::TargetIsa>,
+    AstNodeKey,
+) {
+    let mut db = Box::new(BeskidDatabase::default());
+    let directory = tempfile::tempdir()
+        .expect("materialized Corelib syscall project")
+        .keep();
+    let source = canonical_corelib_syscall_sources()
+        .pop()
+        .expect("embedded Core.Syscall source");
+    let source_path = directory.join("obj/beskid/deps/src/foundation/Core/Syscall/Syscall.bd");
+    std::fs::create_dir_all(source_path.parent().expect("materialized syscall parent"))
+        .expect("create materialized syscall parent");
+    std::fs::write(&source_path, &source.source).expect("write materialized Core.Syscall source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
+        .expect("parse materialized Core.Syscall source");
+    let entry = SourceUnitId::new(&*db, source_path.clone());
+    let project = ProjectSession::new(
+        &*db,
+        directory.clone(),
+        source_path.clone(),
+        "beskid-corelib".into(),
+        "materialized-corelib-source".into(),
+    );
+    let generation = SyntaxGenerationId(97);
+    let assembly = ProgramAssembly {
+        roots: EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory.clone(),
+            },
+            dependencies: vec![RootEntry {
+                dependency_name: Some("corelib_foundation".into()),
+                source_root: directory.join("obj/beskid/deps/src/foundation"),
+            }],
+        },
+        units: Arc::new(vec![SourceUnit {
+            logical_name: source_path.display().to_string(),
+            path: source_path.clone(),
+            source: source.source,
+            program,
+        }]),
+        hir_units: Arc::new(Vec::new()),
+        entry_index: 0,
+        discovery: AssemblyDiscovery::ImportClosure,
+        module_index: Arc::new(ModuleIndex::empty()),
+        has_std_dependency: false,
+        trusted_corelib_service_paths: Arc::from([source_path.clone()]),
+    };
+    let syntax = Arc::new(SyntaxProgramAssembly::from(&assembly));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        syntax,
+        canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+    )
+    .expect("loader-proven materialized Core.Syscall receives service authority");
+    let root = AstNodeKey {
+        unit: entry,
+        generation,
+        node: AstNodeId(0),
+    };
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
+        .expect("generation-safe materialized Corelib input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))

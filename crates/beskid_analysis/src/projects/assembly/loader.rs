@@ -414,6 +414,8 @@ pub fn assemble_program_with_materializer(
         prefetch_dependency_roots,
     ));
 
+    let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, workspace, &units);
+
     Ok(ProgramAssembly {
         roots,
         units: Arc::new(units),
@@ -422,7 +424,59 @@ pub fn assemble_program_with_materializer(
         discovery: options.discovery,
         module_index,
         has_std_dependency: plan.has_std_dependency,
+        trusted_corelib_service_paths,
     })
+}
+
+/// Preserve the lexical origin of compiler-owned Foundation service units when a workspace
+/// materializes them under `obj/beskid/deps`. A matching dependency name or source text is never
+/// enough: the resolved dependency's original source root must contain the compiler-embedded
+/// source path before its copied physical path is admitted.
+fn trusted_corelib_service_paths(
+    plan: &CompilePlan,
+    workspace: Option<&PreparedProjectWorkspace>,
+    units: &[SourceUnit],
+) -> Arc<[PathBuf]> {
+    let mut trusted = Vec::new();
+    for logical_path in beskid_abi::runtime_source::canonical_corelib_service_sources()
+        .into_iter()
+        .map(|source| source.logical_path)
+    {
+        let Some(canonical_path) =
+            beskid_abi::runtime_source::canonical_corelib_service_source_path(&logical_path)
+        else {
+            continue;
+        };
+        let Some((index, dependency)) = plan
+            .dependency_projects
+            .iter()
+            .enumerate()
+            .find(|(_, dependency)| canonical_path.starts_with(&dependency.source_root))
+        else {
+            continue;
+        };
+        let Ok(relative) = canonical_path.strip_prefix(&dependency.source_root) else {
+            continue;
+        };
+        let effective_path = workspace
+            .and_then(|workspace| workspace.materialized_dependencies.get(index))
+            .map(|dependency| dependency.materialized_source_root.join(relative))
+            .unwrap_or(canonical_path);
+        if let Some(unit) = units
+            .iter()
+            .find(|unit| paths_match(&unit.path, &effective_path))
+        {
+            trusted.push(unit.path.clone());
+        }
+    }
+    trusted.sort();
+    trusted.dedup();
+    Arc::from(trusted)
+}
+
+fn paths_match(left: &Path, right: &Path) -> bool {
+    left.canonicalize().unwrap_or_else(|_| left.to_path_buf())
+        == right.canonicalize().unwrap_or_else(|_| right.to_path_buf())
 }
 
 fn collect_bd_files(root: &Path, out: &mut Vec<PathBuf>) {
@@ -589,13 +643,17 @@ fn unit_progress_label(path: &Path) -> String {
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use super::trusted_corelib_service_paths;
     use crate::projects::{
         AssemblyDiscovery, AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject,
         Target, TargetKind, assemble_program, assembly_options_for_plan,
         assembly_options_for_prepare, plan_entry_path,
     };
+    use crate::projects::{MaterializedDependencyProject, PreparedProjectWorkspace, SourceUnit};
+    use crate::services::parse_program_with_source_name;
 
     fn temp_project_root(label: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -611,6 +669,92 @@ mod tests {
             fs::create_dir_all(parent).expect("create parent dirs");
         }
         fs::write(path, source).expect("write bd source");
+    }
+
+    #[test]
+    fn materialized_compiler_foundation_path_retains_service_provenance_but_a_copy_does_not() {
+        let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
+            .into_iter()
+            .find(|source| {
+                source.logical_path
+                    == beskid_abi::runtime_source::CANONICAL_CORELIB_SYSCALL_SOURCE_PATH
+            })
+            .expect("embedded Foundation syscall source");
+        let canonical_path =
+            beskid_abi::runtime_source::canonical_corelib_service_source_path(&source.logical_path)
+                .expect("compiler-owned syscall path");
+        let canonical_source_root = canonical_path
+            .ancestors()
+            .nth(3)
+            .expect("Foundation source root")
+            .to_path_buf();
+        let canonical_project_root = canonical_source_root
+            .parent()
+            .expect("Foundation project root")
+            .to_path_buf();
+        let workspace_root = temp_project_root("trusted_foundation_materialization");
+        let materialized_source_root = workspace_root.join("deps/foundation/src");
+        let relative = canonical_path
+            .strip_prefix(&canonical_source_root)
+            .expect("syscall below source root");
+        let materialized_path = materialized_source_root.join(relative);
+        let unit = SourceUnit {
+            logical_name: materialized_path.display().to_string(),
+            path: materialized_path.clone(),
+            source: source.source.clone(),
+            program: parse_program_with_source_name("materialized syscall", &source.source)
+                .expect("parse syscall source"),
+        };
+        let plan = CompilePlan {
+            project_root: workspace_root.clone(),
+            manifest_path: workspace_root.join("App.bproj"),
+            project_name: "App".into(),
+            source_root: workspace_root.join("src"),
+            target: Target {
+                name: "App".into(),
+                kind: TargetKind::App,
+                entry: Some("Main.bd".into()),
+            },
+            dependency_projects: vec![ResolvedDependencyProject {
+                dependency_name: "corelib_foundation".into(),
+                manifest_path: canonical_project_root.join("corelib_foundation.bproj"),
+                project_root: canonical_project_root,
+                project_name: "corelib_foundation".into(),
+                source_root: canonical_source_root,
+            }],
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let workspace = PreparedProjectWorkspace {
+            lockfile_path: workspace_root.join("Project.lock"),
+            materialized_project_root: workspace_root.join("root"),
+            materialized_source_root: workspace_root.join("root/src"),
+            materialized_dependencies: vec![MaterializedDependencyProject {
+                dependency_name: "corelib_foundation".into(),
+                manifest_path: plan.dependency_projects[0].manifest_path.clone(),
+                project_name: "corelib_foundation".into(),
+                materialized_project_root: workspace_root.join("deps/foundation"),
+                materialized_source_root: materialized_source_root.clone(),
+            }],
+        };
+        assert_eq!(
+            trusted_corelib_service_paths(&plan, Some(&workspace), std::slice::from_ref(&unit)),
+            Arc::from([materialized_path.clone()]),
+            "the materialized path keeps the compiler-owned Foundation origin"
+        );
+
+        let mut copied_plan = plan.clone();
+        copied_plan.dependency_projects[0].source_root = workspace_root.join("copied/src");
+        assert!(
+            trusted_corelib_service_paths(
+                &copied_plan,
+                Some(&workspace),
+                std::slice::from_ref(&unit),
+            )
+            .is_empty(),
+            "a copied source root cannot inherit Corelib service provenance"
+        );
+        let _ = fs::remove_dir_all(workspace_root);
     }
 
     fn no_entry_plan_with_source(source: &str) -> (CompilePlan, PathBuf) {

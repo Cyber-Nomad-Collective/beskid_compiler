@@ -40,14 +40,18 @@ impl FrontEndTypedResult {
         let assembly = &self.assembly;
         let mut units = assembly.units.as_ref().clone();
         units[assembly.entry_index].program = self.program.clone();
-        crate::projects::SyntaxProgramAssembly::new(
+        let mut syntax = crate::projects::SyntaxProgramAssembly::new(
             assembly.roots.clone(),
             std::sync::Arc::new(units),
             assembly.entry_index,
             assembly.discovery,
             std::sync::Arc::clone(&assembly.module_index),
             assembly.has_std_dependency,
-        )
+        );
+        syntax.set_trusted_corelib_service_paths_for_project_assembly(std::sync::Arc::clone(
+            &assembly.trusted_corelib_service_paths,
+        ));
+        syntax
     }
 }
 

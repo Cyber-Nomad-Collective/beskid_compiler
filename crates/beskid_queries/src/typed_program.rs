@@ -292,12 +292,18 @@ fn canonical_corelib_service_units(
                 .units()
                 .iter()
                 .filter(|unit| {
-                    unit.logical_name == expected.logical_path
-                        && unit.source == expected.source
-                        // Service authority is bound to the compiler-owned lexical source
-                        // identity. Resolving either side would let a user-project symlink
-                        // inherit the Corelib service imports.
-                        && unit.path == canonical_path
+                    unit.source == expected.source
+                        && (
+                            // Direct compiler sources retain their canonical lexical identity.
+                            unit.path == canonical_path
+                            // Materialized dependency copies lose that physical identity. The
+                            // assembly loader supplies this separate, origin-checked path list
+                            // only after resolving the original dependency from compiler Corelib.
+                            || assembly
+                                .trusted_corelib_service_paths()
+                                .iter()
+                                .any(|trusted| trusted == &unit.path)
+                        )
                 })
                 .collect::<Vec<_>>();
             (candidates.len() == 1).then(|| {

@@ -73,6 +73,7 @@ fn empty_assembly(plan: &CompilePlan) -> ProgramAssembly {
         discovery: AssemblyDiscovery::ImportClosure,
         module_index: std::sync::Arc::new(ModuleIndex::empty()),
         has_std_dependency: false,
+        trusted_corelib_service_paths: std::sync::Arc::from([]),
     }
 }
 
