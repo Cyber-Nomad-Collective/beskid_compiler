@@ -20,9 +20,8 @@ use beskid_analysis::{
 use beskid_isle::AstNodeKey;
 use beskid_queries::{
     BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
-    block_statement_nodes, build_canonical_runtime_typed_program,
-    build_typed_program_with_corelib_syscall_services, child_nodes,
-    item_body, item_export_symbol, item_name, item_signature, node_kind, node_span,
+    build_canonical_runtime_typed_program, build_typed_program_with_corelib_syscall_services,
+    child_nodes, item_body, item_export_symbol, item_name, item_signature, node_kind,
     project_session_for_syntax_assembly, reachable_items,
 };
 use cranelift_codegen::isa::TargetIsa;
@@ -48,7 +47,6 @@ pub fn lower_canonical_runtime_prepared_syntax(
         .into_iter()
         .find(|unit| unit.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
         .ok_or_else(|| anyhow::anyhow!("canonical Bootstrap source is missing"))?;
-    let source_text = source.source.clone();
     let root_dir =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime/beskid");
     let source_path = root_dir.join(&source.logical_path);
@@ -113,42 +111,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
         anyhow::bail!("canonical Bootstrap source has no declared exports");
     }
     let mut artifact = lower_syntax_program(&input, isa, &items).map_err(|error| {
-        let source_context = match &error {
-            crate::module_emission::SyntaxModuleEmissionError::Emission(
-                beskid_isle::FunctionEmissionError::Lowering(lowering),
-            ) => {
-                let span = node_span(input.database(), lowering.key())
-                    .ok()
-                    .flatten()
-                    .map(|span| {
-                    let start = span.start;
-                    let end = span.end;
-                    source_text.get(start..end).unwrap_or_default().to_owned()
-                })
-                    .unwrap_or_default();
-                let kind = node_kind(input.database(), lowering.key()).ok().flatten();
-                let children = child_nodes(input.database(), lowering.key())
-                    .ok()
-                    .flatten()
-                    .map(|children| {
-                        children
-                            .iter()
-                            .map(|child| node_kind(input.database(), *child).ok().flatten())
-                            .collect::<Vec<_>>()
-                    });
-                let statements = block_statement_nodes(input.database(), lowering.key())
-                    .ok()
-                    .flatten()
-                    .map(|nodes| nodes.iter().map(|node| (node.node.0, node_kind(input.database(), *node).ok().flatten())).collect::<Vec<_>>());
-                let if_children = block_statement_nodes(input.database(), lowering.key())
-                    .ok().flatten().and_then(|nodes| nodes.first().copied())
-                    .and_then(|if_node| child_nodes(input.database(), if_node).ok().flatten())
-                    .map(|nodes| nodes.iter().map(|node| (node.node.0, node_kind(input.database(), *node).ok().flatten())).collect::<Vec<_>>());
-                format!("{span}; kind={kind:?}; children={children:?}; statements={statements:?}; if_children={if_children:?}")
-            }
-            _ => String::new(),
-        };
-        anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}; source={source_context:?}")
+        anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}")
     })?;
     artifact.exports = items
         .iter()

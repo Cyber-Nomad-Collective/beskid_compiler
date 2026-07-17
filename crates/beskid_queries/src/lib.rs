@@ -81,7 +81,7 @@ pub use semantic_contract::{
     GenericCallSpecialization, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot,
     OperatorFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnTarget,
-    format_ast_node_key,
+    format_ast_node_key, format_ast_node_site, format_source_span_range,
     TestItem, TypedProgram, abi_type, aggregate_field_access, aggregate_layout,
     aggregate_literal_declaration, block_statement_nodes, call_abi_signature,
     call_argument_abi_type, call_arguments, call_lowering, cast_intents, child_nodes,

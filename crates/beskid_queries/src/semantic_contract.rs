@@ -44,6 +44,49 @@ pub fn format_ast_node_key(db: &dyn Db, key: AstNodeKey) -> String {
     key.display_label(key.unit.path(db).display())
 }
 
+/// Format a lowering/diagnostic site as `path#gN:nN Construct@line:col-line:col`.
+///
+/// Falls back to `Unknown` / `?:?-?:?` when kind or span facts are unavailable so the key is
+/// still actionable without requiring a second query at the call site.
+pub fn format_ast_node_site(db: &dyn Db, key: AstNodeKey) -> String {
+    let label = format_ast_node_key(db, key);
+    let construct = node_kind(db, key)
+        .ok()
+        .flatten()
+        .map(|kind| format!("{kind:?}"))
+        .unwrap_or_else(|| "Unknown".to_owned());
+    let range = node_span(db, key)
+        .ok()
+        .flatten()
+        .map(format_source_span_range)
+        .unwrap_or_else(|| "?:?-?:?".to_owned());
+    format!("{label} {construct}@{range}")
+}
+
+/// Format a source span as `line:col-line:col` (1-based endpoints).
+pub fn format_source_span_range(span: SourceSpan) -> String {
+    format!(
+        "{}:{}-{}:{}",
+        span.line_col_start.0, span.line_col_start.1, span.line_col_end.0, span.line_col_end.1
+    )
+}
+
+#[cfg(test)]
+mod ast_node_site_format_tests {
+    use super::{SourceSpan, format_source_span_range};
+
+    #[test]
+    fn formats_line_column_range() {
+        let span = SourceSpan {
+            start: 100,
+            end: 140,
+            line_col_start: (52, 5),
+            line_col_end: (55, 6),
+        };
+        assert_eq!(format_source_span_range(span), "52:5-55:6");
+    }
+}
+
 fn normalized_source_path(path: &Path) -> PathBuf {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
