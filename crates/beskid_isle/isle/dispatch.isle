@@ -1,0 +1,40 @@
+(decl partial emit_dispatch_call (AstNodeKey) Value)
+(extern constructor emit_dispatch_call emit_dispatch_call)
+
+(decl partial emit_string_concat (AstNodeKey) Value)
+(extern constructor emit_string_concat emit_string_concat)
+
+(decl partial emit_string_eq (AstNodeKey) Value)
+(extern constructor emit_string_eq emit_string_eq)
+
+(decl partial emit_string_ne (AstNodeKey) Value)
+(extern constructor emit_string_ne emit_string_ne)
+
+(decl partial emit_string_index_read (AstNodeKey) Value)
+(extern constructor emit_string_index_read emit_string_index_read)
+
+(decl index_target (IndexTarget) AstNodeKey)
+(extern extractor index_target index_target)
+
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.CallExpression))
+        (call_kind (CallKind.Dynamic))))
+      (emit_dispatch_call key))
+
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.StringAdd))))
+      (emit_string_concat key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.StringEq))))
+      (emit_string_eq key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.StringNotEq))))
+      (emit_string_ne key))
+
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.IndexExpression))
+        (index_target (IndexTarget.String))))
+      (emit_string_index_read key))

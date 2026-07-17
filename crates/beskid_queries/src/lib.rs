@@ -89,6 +89,7 @@ pub use semantic_contract::{
     enum_layout, enum_match, generic_call_instantiation, generic_call_specialization,
     item_abi_signature, item_body, item_export_symbol, item_name, item_signature, literal_fact,
     local_slot, node_kind, node_span, node_type, nominal_member_receiver, operator_fact,
+    dispatch_builtin_symbol, DispatchBuiltinSymbol,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name,
     spawn_target, test_item, test_statement_nodes,
 };

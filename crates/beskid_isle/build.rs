@@ -8,6 +8,7 @@ const INPUTS: &[&str] = &[
     "binary.isle",
     "unary_casts.isle",
     "calls.isle",
+    "dispatch.isle",
     "statements.isle",
     "control_flow.isle",
     "memory.isle",

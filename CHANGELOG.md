@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Lower Corelib soft string builtins (`__str_len`, `__str_slice`, …), string concat/eq from
+  interpolation desugar, and `string[index]` byte reads through syntax ISLE dispatch rules, so
+  Foundation `Testing/Assert.bd` and `Core/String/String.bd` no longer fail with
+  `MissingRuleOrFact` on the syntax-only path.
 - Add opt-in `BESKID_COMPILER_TRACE=1` syntax-ISLE records for source keys, AST spans,
   call/import facts, selection failures, and CLIF emission timing in Corelib CI diagnostics.
 - Authorize only the compiler-owned Foundation `Testing/Assert.bd` identity to lower
