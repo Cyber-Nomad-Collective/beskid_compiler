@@ -1719,6 +1719,51 @@ pub Hub<T> Create<T>() { return Hub<T> { value: 0_i64 }; }
 }
 
 #[test]
+fn generic_parameter_type_argument_call_remains_direct_inside_generic_body() {
+    let source = r#"
+type Channel<T> { i64 handle }
+type Options { i64 flags }
+Options Default() { return Options { flags: 0_i64 }; }
+Channel<T> CreateWithOptions<T>(Options options) { return Channel<T> { handle: options.flags }; }
+Channel<T> Create<T>() { return CreateWithOptions<T>(Default()); }
+unit Main() { Channel<i64> ch = Create<i64>(); return; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let create_with_options = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let nested = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey {
+            unit,
+            generation,
+            node,
+        })
+        .find(|call| {
+            matches!(
+                call_lowering(&db, *call).ok().flatten(),
+                Some(beskid_queries::CallLowering::Direct(declaration))
+                    if declaration == create_with_options
+            )
+        })
+        .expect("CreateWithOptions<T> call inside Create");
+
+    assert_eq!(
+        generic_call_instantiation(&db, nested).expect("parameter type-arg instantiation"),
+        Some(beskid_queries::GenericCallInstantiation {
+            declaration: create_with_options,
+            argument_count: 1,
+            arguments: Arc::from([]),
+        })
+    );
+    assert_eq!(
+        call_abi_signature(&db, nested).expect("nested call ABI"),
+        Some(ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER]),
+            result: SemanticTypeId::POINTER,
+        })
+    );
+}
+
+#[test]
 fn inferred_generic_call_has_an_exact_argument_derived_abi_signature() {
     let source = r#"
 unit Equal<T>(T actual, T expected, string because) { return; }
@@ -1825,11 +1870,9 @@ unit Main() {
     let pair_let = key(unit, generation, &index, NodeKind::LetStatement, 1);
 
     assert_eq!(
-        beskid_queries::item_abi_signature(&db, create).expect("nominal signature"),
-        Some(beskid_queries::ItemSignature {
-            parameters: Arc::from([]),
-            result: SemanticTypeId::POINTER,
-        })
+        beskid_queries::item_abi_signature(&db, create).expect("generic item has no fixed ABI"),
+        None,
+        "generic factories must not publish a single item ABI; callers specialize"
     );
     assert_eq!(
         beskid_queries::abi_type(&db, channel_call).expect("nominal call ABI"),
@@ -1841,11 +1884,8 @@ unit Main() {
     );
     assert_eq!(
         beskid_queries::item_abi_signature(&db, create_pair)
-            .expect("multi-field nominal signature"),
-        Some(beskid_queries::ItemSignature {
-            parameters: Arc::from([]),
-            result: SemanticTypeId::POINTER,
-        })
+            .expect("generic multi-field factory has no fixed ABI"),
+        None
     );
     assert_eq!(
         beskid_queries::abi_type(&db, pair_call).expect("multi-field nominal call ABI"),
