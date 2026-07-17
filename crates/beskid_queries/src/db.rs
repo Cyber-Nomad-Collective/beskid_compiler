@@ -39,7 +39,8 @@ pub struct SyntaxImport {
     pub(crate) path: Vec<String>,
     pub(crate) binding: String,
     pub(crate) target: SourceUnitId,
-    /// Whether the importing source unit re-exports this target as part of its module API.
+    /// Whether the importing source unit exposes this target through its module API.
+    /// Private imports remain available only to the importing unit's own syntax facts.
     pub(crate) public: bool,
 }
 

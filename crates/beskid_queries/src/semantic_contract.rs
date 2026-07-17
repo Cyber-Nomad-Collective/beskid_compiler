@@ -525,41 +525,93 @@ fn resolve_item_declaration_candidate(
         .iter()
         .map(|segment| segment.node.name.node.name.clone())
         .collect::<Vec<_>>();
-    let registry = db
-        .syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry");
-    let mut candidates = registry
-        .imports
-        .get(&(key.unit, key.generation))
-        .into_iter()
-        .flatten()
-        .filter(|import| {
-            (module_path.len() == 1 && import.binding == module_path[0])
-                || import.path == module_path
-                || (import.path.len() >= module_path.len()
-                    && import.path[import.path.len() - module_path.len()..] == module_path)
-        })
-        .map(|import| import.target)
-        .collect::<Vec<_>>();
-    for target in registry
-        .modules
-        .get(&(key.generation, module_path))
-        .into_iter()
-        .flatten()
-        .copied()
-    {
-        if !candidates.contains(&target) {
-            candidates.push(target);
-        }
-    }
-    let [target_unit] = candidates.as_slice() else {
-        drop(registry);
+    let Some(target_unit) = resolve_qualified_module_unit(db, key, &module_path) else {
         return resolve_type_qualified_imported_function(db, key, path);
     };
-    let target_unit = *target_unit;
-    drop(registry);
     unique_exported_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name)
+}
+
+/// Resolve a qualified module path from an exact current import and, when required, explicit
+/// public child-module edges. Private imports remain available only inside their owner.
+fn resolve_qualified_module_unit(
+    db: &dyn Db,
+    key: AstNodeKey,
+    module_path: &[String],
+) -> Option<SourceUnitId> {
+    let initial = db
+        .syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .imports
+        .get(&(key.unit, key.generation))?
+        .iter()
+        .filter_map(|import| {
+            import_path_prefix_len(import, module_path).map(|consumed| (import.target, consumed))
+        })
+        .collect::<Vec<_>>();
+
+    let mut resolved = Vec::new();
+    for (unit, consumed) in initial {
+        let mut pending = vec![(unit, consumed)];
+        let mut visited = std::collections::HashSet::new();
+        while let Some((current, consumed)) = pending.pop() {
+            if !visited.insert((current, consumed)) {
+                continue;
+            }
+            if consumed == module_path.len() {
+                if !resolved.contains(&current) {
+                    resolved.push(current);
+                }
+                continue;
+            }
+            let segment = &module_path[consumed];
+            pending.extend(
+                public_reexport_units(db, current, key.generation)
+                    .into_iter()
+                    .filter_map(|child| {
+                        public_reexport_binding(db, current, key.generation, child)
+                            .is_some_and(|binding| binding == *segment)
+                            .then_some((child, consumed + 1))
+                    }),
+            );
+        }
+    }
+    let [unit] = resolved.as_slice() else {
+        return None;
+    };
+    Some(*unit)
+}
+
+fn import_path_prefix_len(
+    import: &crate::db::SyntaxImport,
+    module_path: &[String],
+) -> Option<usize> {
+    if module_path
+        .first()
+        .is_some_and(|segment| import.binding == *segment)
+    {
+        return Some(1);
+    }
+    if module_path.starts_with(&import.path) {
+        return Some(import.path.len());
+    }
+    import.path.ends_with(module_path).then_some(module_path.len())
+}
+
+fn public_reexport_binding(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    target: SourceUnitId,
+) -> Option<String> {
+    db.syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .imports
+        .get(&(unit, generation))?
+        .iter()
+        .find(|import| import.public && import.target == target)
+        .map(|import| import.binding.clone())
 }
 
 /// Resolve `Imported.ModuleType.Function()` only when the import identifies one source unit,
@@ -576,36 +628,9 @@ fn resolve_type_qualified_imported_function(
     let (type_segment, import_path) = module_path.split_last()?;
     let import_path = import_path
         .iter()
-        .map(|segment| segment.node.name.node.name.as_str())
+        .map(|segment| segment.node.name.node.name.clone())
         .collect::<Vec<_>>();
-    let registry = db
-        .syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry");
-    let candidates = registry
-        .imports
-        .get(&(key.unit, key.generation))
-        .into_iter()
-        .flatten()
-        .filter(|import| {
-            (import_path.len() == 1 && import.binding == import_path[0])
-                || import
-                    .path
-                    .iter()
-                    .map(String::as_str)
-                    .eq(import_path.iter().copied())
-        })
-        .fold(Vec::new(), |mut candidates, import| {
-            if !candidates.contains(&import.target) {
-                candidates.push(import.target);
-            }
-            candidates
-        });
-    let [target_unit] = candidates.as_slice() else {
-        return None;
-    };
-    let target_unit = *target_unit;
-    drop(registry);
+    let target_unit = resolve_qualified_module_unit(db, key, &import_path)?;
     unique_exported_type_in_unit(
         db,
         target_unit,
