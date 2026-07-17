@@ -54,10 +54,20 @@ struct ResolvedSyntaxModuleItem {
 pub enum SyntaxModuleEmissionError {
     #[error("module declaration failed: {0}")]
     Module(#[from] ModuleError),
+    /// Pre-formatted with [`FunctionEmissionError::display_with_db`] so FAIL lines include
+    /// construct and source range, not only `#gN:nN`.
     #[error("syntax ISLE emission failed: {0}")]
-    Emission(FunctionEmissionError),
+    Emission(String),
     #[error("syntax module declares duplicate symbol `{0}`")]
     DuplicateSymbol(String),
+}
+
+fn emission_error(input: &CodegenInput<'_>, error: FunctionEmissionError) -> SyntaxModuleEmissionError {
+    SyntaxModuleEmissionError::Emission(error.display_with_db(input.database()))
+}
+
+fn emission_verification(message: impl Into<String>) -> SyntaxModuleEmissionError {
+    SyntaxModuleEmissionError::Emission(format!("Verification({})", message.into()))
 }
 
 /// Lower syntax items into the ordinary backend artifact boundary without constructing HIR or
@@ -168,12 +178,12 @@ fn lower_resolved_syntax_program(
                 crate::isle_trace::event(|| {
                     format!(
                     "event=isle.missing rule=emit_item_statement item={} elapsed_ms={} detail={}",
-                    format_ast_node_key(input.database(), item.key),
+                    beskid_queries::format_ast_node_site(input.database(), item.key),
                     started.elapsed().as_millis(),
                     error.display_with_db(input.database()),
                 )
                 });
-                SyntaxModuleEmissionError::Emission(error)
+                emission_error(input, error)
             })?
         };
         crate::isle_trace::event(|| {
@@ -381,21 +391,15 @@ fn resolve_module_items(
             });
             continue;
         }
-        let kind = node_kind(db, item.key).map_err(|error| {
-            SyntaxModuleEmissionError::Emission(FunctionEmissionError::Verification(
-                error.to_string(),
-            ))
-        })?;
+        let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
         if kind != Some(beskid_queries::IndexedNodeKind::FunctionDefinition) {
             // Type and enum declarations carry source layout facts but have no executable
             // syntax body. They deliberately do not require a call-derived function ABI.
             continue;
         }
         let Some(signatures) = specializations.get(&item.key) else {
-            return Err(SyntaxModuleEmissionError::Emission(
-                FunctionEmissionError::Verification(
-                    "generic item has no call-derived ABI specialization".to_owned(),
-                ),
+            return Err(emission_verification(
+                "generic item has no call-derived ABI specialization",
             ));
         };
         for signature in signatures {
@@ -420,9 +424,9 @@ fn collect_generic_call_specializations(
     key: AstNodeKey,
     specializations: &mut HashMap<AstNodeKey, Vec<ItemSignature>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
-    if let Some(specialization) = generic_call_specialization(db, key).map_err(|error| {
-        SyntaxModuleEmissionError::Emission(FunctionEmissionError::Verification(error.to_string()))
-    })? {
+    if let Some(specialization) = generic_call_specialization(db, key)
+        .map_err(|error| emission_verification(error.to_string()))?
+    {
         let signatures = specializations
             .entry(specialization.declaration)
             .or_default();
@@ -430,9 +434,9 @@ fn collect_generic_call_specializations(
             signatures.push(specialization.signature);
         }
     }
-    if let Some(children) = child_nodes(db, key).map_err(|error| {
-        SyntaxModuleEmissionError::Emission(FunctionEmissionError::Verification(error.to_string()))
-    })? {
+    if let Some(children) =
+        child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))?
+    {
         for child in children.iter().copied() {
             collect_generic_call_specializations(db, child, specializations)?;
         }

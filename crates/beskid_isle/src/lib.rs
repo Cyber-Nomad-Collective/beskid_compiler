@@ -1977,6 +1977,13 @@ impl LoweringError {
         format!("{} at {key_label}", self.kind_label())
     }
 
+    /// Expand the failing site with path, AST construct, and source range when a db is available.
+    ///
+    /// Example: `MissingRuleOrFact at Assert.bd#g1:n19 IfStatement@52:5-55:6`.
+    pub fn display_with_db(&self, db: &dyn beskid_queries::Db) -> String {
+        self.display_with_key_label(beskid_queries::format_ast_node_site(db, self.key))
+    }
+
     fn kind_label(&self) -> String {
         match &self.kind {
             LoweringErrorKind::MissingRuleOrFact => "MissingRuleOrFact".to_owned(),
@@ -2000,7 +2007,8 @@ impl LoweringError {
 
 impl std::fmt::Display for LoweringError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Without a db the unit path is unavailable; still emit the shared #gN:nN cursor.
+        // Without a db the unit path/construct/range are unavailable; still emit #gN:nN.
+        // Prefer [`Self::display_with_db`] at codegen boundaries.
         write!(f, "{} at #{}", self.kind_label(), self.key.cursor_label())
     }
 }
@@ -2339,13 +2347,10 @@ impl std::fmt::Display for FunctionEmissionError {
 }
 
 impl FunctionEmissionError {
-    /// Expand nested AstNodeKey labels with a full `path#gN:nN` when a db is available.
+    /// Expand nested AstNodeKey labels with path, construct, and source range when a db is available.
     pub fn display_with_db(&self, db: &dyn beskid_queries::Db) -> String {
         match self {
-            Self::Lowering(error) => format!(
-                "Lowering({})",
-                error.display_with_key_label(beskid_queries::format_ast_node_key(db, error.key()))
-            ),
+            Self::Lowering(error) => format!("Lowering({})", error.display_with_db(db)),
             Self::Verification(message) => format!("Verification({message})"),
         }
     }
