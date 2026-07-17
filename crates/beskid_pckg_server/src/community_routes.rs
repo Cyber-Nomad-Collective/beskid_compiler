@@ -108,6 +108,7 @@ impl CommunityState {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)] // Seeded by path-included integration tests, not lib unit tests.
     pub fn grant_test_moderator(&self, subject: impl Into<String>) {
         match &self.moderation {
             ModerationBackend::InMemory(subjects) => {
