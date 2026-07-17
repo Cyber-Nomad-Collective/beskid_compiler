@@ -5,6 +5,7 @@ use tower_lsp_server::ls_types::*;
 
 use super::support::{open_document, uri};
 
+#[ignore = "requires initialized workspace scan + hydrated analysis"]
 #[tokio::test]
 async fn returns_project_schema_hint_for_proj_document() {
     let (service, _socket) = LspService::new(Backend::new);

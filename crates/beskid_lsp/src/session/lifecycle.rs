@@ -607,14 +607,16 @@ pub async fn schedule_typed_prepare_rebuild(state: Arc<RwLock<State>>, uri: Uri)
 }
 
 /// Upsert an open document, respecting monotonic versions and Salsa revision fast paths.
-pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: String) {
+///
+/// Returns `false` when `version` is stale relative to the buffered document (no mutation).
+pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: String) -> bool {
     let revision = salsa_revision(&text);
     let mut write_state = state.write().await;
     write_state.workspace_index.remove(&uri);
 
     if let Some(existing) = write_state.docs.get_mut(&uri) {
         if version < existing.version {
-            return;
+            return false;
         }
 
         if existing.analysis_cache_version == ANALYSIS_CACHE_VERSION
@@ -622,7 +624,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
         {
             existing.version = version;
             existing.text = text;
-            return;
+            return true;
         }
     }
 
@@ -646,6 +648,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
             syntax_inlay_hints: syntax_facts.inlay_hints,
         },
     );
+    true
 }
 
 /// Drop an open buffer after `didClose` (disk hydration may repopulate the workspace index).

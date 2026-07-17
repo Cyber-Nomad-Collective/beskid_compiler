@@ -113,10 +113,13 @@ impl ResolutionTables {
         span: SpanInfo,
         source_path: Option<&PathBuf>,
     ) -> Option<ResolvedType> {
-        if let Some(path) = source_path
-            && let Some(resolved_type) = self.scoped_type_at(path, span)
-        {
-            return Some(resolved_type);
+        if let Some(path) = source_path {
+            if let Some(resolved_type) = self.scoped_type_at(path, span) {
+                return Some(resolved_type);
+            }
+            // Known unit: prefer this unit's unscoped table over other units' scoped facts so a
+            // same-offset dependency type cannot preempt the entry before SpanIndex fallback.
+            return self.resolved_types.get(&span).cloned();
         }
 
         let mut candidate: Option<ResolvedType> = None;

@@ -1658,9 +1658,9 @@ fn generic_call_specialization_tracked(
     .transpose()
 }
 
-fn explicit_generic_type_argument_syntax<'a>(
-    path: &'a beskid_analysis::syntax::Path,
-) -> Option<&'a [beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>]> {
+fn explicit_generic_type_argument_syntax(
+    path: &beskid_analysis::syntax::Path,
+) -> Option<&[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>]> {
     let terminal = path.segments.last()?;
     let receiver = path.segments.get(..path.segments.len().checked_sub(1)?)?;
     let receiver_with_arguments = receiver
@@ -2334,14 +2334,14 @@ fn call_abi_signature_for_call(
         .map(|generic| generic.node.name.as_str())
         .collect::<Vec<_>>();
     let mut substitutions = HashMap::new();
-    if let Some(instantiation) = generic_call_instantiation(db, key)? {
-        if !instantiation.arguments.is_empty() {
-            if instantiation.arguments.len() != generic_names.len() {
-                return Err(SemanticError::unavailable("call_abi_signature"));
-            }
-            for (generic, argument) in generic_names.iter().zip(instantiation.arguments.iter()) {
-                substitutions.insert((*generic).to_owned(), *argument);
-            }
+    if let Some(instantiation) = generic_call_instantiation(db, key)?
+        && !instantiation.arguments.is_empty()
+    {
+        if instantiation.arguments.len() != generic_names.len() {
+            return Err(SemanticError::unavailable("call_abi_signature"));
+        }
+        for (generic, argument) in generic_names.iter().zip(instantiation.arguments.iter()) {
+            substitutions.insert((*generic).to_owned(), *argument);
         }
     }
     // A bare integer starts at the language default `i32`, but carries no explicit ABI suffix.
@@ -3659,9 +3659,7 @@ fn dispatch_builtin_symbol_tracked(
             .name
             .as_str();
         let (_, spec) = beskid_analysis::builtins::builtin_for_path(&[name.to_owned()])?;
-        if dispatch_route_for_symbol(spec.runtime_symbol).is_none() {
-            return None;
-        }
+        dispatch_route_for_symbol(spec.runtime_symbol)?;
         Some(Ok(DispatchBuiltinSymbol(spec.runtime_symbol)))
     })?
     .transpose()

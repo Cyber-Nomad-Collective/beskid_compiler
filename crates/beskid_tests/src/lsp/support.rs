@@ -28,6 +28,7 @@ pub fn semantic_tokens_params(uri: Uri) -> SemanticTokensParams {
 }
 
 pub async fn open_document(server: &Backend, uri: Uri, language_id: &str, text: String) {
+    server.signal_workspace_ready_for_tests().await;
     server
         .did_open(DidOpenTextDocumentParams {
             text_document: TextDocumentItem {

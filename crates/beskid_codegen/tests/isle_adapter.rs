@@ -19,7 +19,6 @@ use beskid_codegen::{
     CodegenInput, ItemModuleImporter, emit_isle_expression, emit_isle_item,
     emit_isle_item_with_call_importer,
     module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
-    syntax_item_signature,
 };
 use beskid_isle::{DirectCallee, FunctionEmitter, NodeFacts};
 use beskid_queries::{
@@ -532,14 +531,33 @@ fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
 
 #[test]
 fn parsed_generic_nominal_aggregate_uses_its_source_proven_pointer_abi_signature() {
+    // Generic Create<T> has no fixed item ABI; the call site must prove Channel<i64> -> POINTER.
     let (input, isa, root) = item_fixture_with_root(
-        "type Channel<T> { i64 handle } Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; }",
+        "type Channel<T> { i64 handle } Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; } unit Main() { Channel<i64> ch = Create<i64>(); return; }",
     );
-    let create = find_function_definitions(input.database(), root)[0];
-
-    let signature = syntax_item_signature(&input, isa.as_ref(), create)
-        .expect("nominal aggregate source declaration supplies an ABI signature");
-    assert_eq!(signature.returns[0].value_type, isa.pointer_type());
+    let db = input.database();
+    let items = find_function_definitions(db, root);
+    let create = items
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Create"))
+        .expect("Create");
+    let main = items
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main");
+    assert_eq!(
+        beskid_queries::item_abi_signature(db, create).expect("generic item ABI query"),
+        None,
+        "generic factories must not expose a fixed item ABI"
+    );
+    let call = find_call_expression(db, main).expect("Create call");
+    let signature = call_abi_signature(db, call)
+        .expect("specialized call ABI query")
+        .expect("Create<i64> specialization");
+    assert_eq!(signature.result, beskid_queries::SemanticTypeId::POINTER);
+    let _ = isa;
 }
 
 #[test]

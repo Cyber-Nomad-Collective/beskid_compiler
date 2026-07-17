@@ -5,10 +5,10 @@ use beskid_analysis::hir::{AstProgram, HirProgram, lower_program, normalize_prog
 use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::resolve::{Resolution, ResolveError, Resolver};
 use beskid_analysis::services::{
-    DependencyTypingPolicy, TypedHirResolution, typed_hir_from_lowered,
+    LowerResolveTypeError, lower_normalize_resolve_type_spanned,
 };
 use beskid_analysis::syntax::{Program, Spanned};
-use beskid_analysis::types::{TypeError, TypeResult, type_program};
+use beskid_analysis::types::{TypeError, TypeResult};
 
 use crate::surface::util::parse_pair;
 
@@ -30,35 +30,23 @@ pub fn resolve(source: &str) -> Result<Resolution, Vec<ResolveError>> {
 }
 
 pub fn typecheck(source: &str) -> Result<TypeResult, Vec<TypeError>> {
-    let mut hir = lower_to_hir(source);
-    let resolution =
-        Resolver::new()
-            .resolve_program(&hir)
-            .unwrap_or_else(|errors: Vec<ResolveError>| {
-                panic!("expected resolver to succeed, got errors: {errors:?}")
-            });
-    type_program(&mut hir, &resolution)
+    let program = parse_program(source);
+    match lower_normalize_resolve_type_spanned(&program) {
+        Ok((_, _, typed)) => Ok(typed),
+        Err(LowerResolveTypeError::Type { errors, .. }) => Err(errors),
+        Err(other) => panic!("expected typing spine to reach type-check, got: {other}"),
+    }
 }
 
 pub fn typecheck_hir(source: &str) -> (Spanned<HirProgram>, Resolution, TypeResult) {
     let program = parse_program(source);
-    let ast: Spanned<AstProgram> = program.into();
-    let hir = lower_program(&ast);
-    let resolution = Resolver::new()
-        .resolve_program(&hir)
-        .unwrap_or_else(|errors| panic!("expected resolution success: {errors:?}"));
-    let (hir, resolution, typed) = typed_hir_from_lowered(
-        hir,
-        TypedHirResolution::Pass1(&resolution),
-        None,
-        DependencyTypingPolicy::FullClosure,
-    )
-    .unwrap_or_else(|err| panic!("expected type success: {err}"));
-    (hir, resolution, typed)
+    lower_normalize_resolve_type_spanned(&program)
+        .unwrap_or_else(|err| panic!("expected type success: {err}"))
 }
 
 pub fn lower_resolve(source: &str) -> (Spanned<HirProgram>, Resolution) {
-    let hir = lower_to_hir(source);
+    let mut hir = lower_to_hir(source);
+    normalize_program(&mut hir).expect("normalization failed");
     let resolution = Resolver::new()
         .resolve_program(&hir)
         .expect("expected resolution to succeed");

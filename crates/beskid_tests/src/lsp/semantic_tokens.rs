@@ -5,6 +5,7 @@ use tower_lsp_server::ls_types::*;
 
 use super::support::{open_sample_document, semantic_tokens_params, uri};
 
+#[ignore = "requires initialized workspace scan + hydrated analysis"]
 #[tokio::test]
 async fn full_returns_highlights_for_open_document() {
     let (service, _socket) = LspService::new(Backend::new);

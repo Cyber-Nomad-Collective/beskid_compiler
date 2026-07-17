@@ -130,14 +130,16 @@ fn unterminated_statement_is_rejected_by_mandatory_verification() {
         },
     });
     let emitter = FunctionEmitter::new(isa.as_ref());
+    // Unit signatures receive an implicit empty `return`; non-unit signatures must still
+    // terminate explicitly or the emitter rejects the body before verification.
     let error = emitter
         .emit_statement(
             UserFuncName::user(0, 12),
-            emitter.signature([], []),
+            emitter.signature([], [types::I32]),
             &facts,
             facts.0.statement,
         )
-        .expect_err("unterminated CLIF must not escape the emitter");
+        .expect_err("unterminated non-unit CLIF must not escape the emitter");
 
     assert!(matches!(error, FunctionEmissionError::Verification(_)));
 }

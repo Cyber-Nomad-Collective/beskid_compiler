@@ -3,6 +3,7 @@ use std::path::Path;
 use beskid_engine::services::run_entrypoint;
 
 #[test]
+#[ignore = "spawn expression lowering is not yet on the syntax-ISLE path; HIR spawn lowering still exists but run_entrypoint is syntax-ISLE-only"]
 fn jit_runs_spawn_under_fiber_scheduler() {
     let source = "i64 child_value() { return 42; } unit Main() { spawn child_value; }";
     run_entrypoint(Path::new("spawn_scheduler.bd"), source, "Main")

@@ -340,7 +340,7 @@ pub enum LowerResolveTypeError {
     Normalize(Vec<HirNormalizeError>),
     #[error("Resolution failed\n{}", format_errors(.0))]
     Resolve(Vec<ResolveError>),
-    #[error("Type checking failed")]
+    #[error("Type checking failed\n{}", format_errors(.errors))]
     Type {
         errors: Vec<TypeError>,
         typed: Box<TypeResult>,

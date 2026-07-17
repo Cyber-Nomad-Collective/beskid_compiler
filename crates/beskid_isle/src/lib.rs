@@ -760,7 +760,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         if pointer_type != types::I64 && semantic == SemanticTypeId::I64 {
             // keep i64 as-is
         }
-        dispatch::emit_str_from_i64_dispatch(&mut self.builder, coerced).ok()
+        dispatch::emit_str_from_i64_dispatch(self.builder, coerced).ok()
     }
 
     fn emit_string_compare(&mut self, key: AstNodeKey, invert: bool) -> Option<Value> {
@@ -769,7 +769,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         let left = self.coerce_expression_to_string(left_key)?;
         let right = self.coerce_expression_to_string(right_key)?;
         let route = beskid_abi::dispatch_route_for_symbol("str_eq")?;
-        let eq_flag = dispatch::emit_dispatch_call(&mut self.builder, route, &[left, right], true)
+        let eq_flag = dispatch::emit_dispatch_call(self.builder, route, &[left, right], true)
             .ok()??;
         let zero = self.builder.ins().iconst(types::I64, 0);
         Some(if invert {
@@ -957,6 +957,28 @@ impl IsleContext<'_, '_, '_, '_> {
             widen(self.builder, right, right_type),
         )
     }
+
+    /// Prefer a proven local receiver slot (nominal `local.field` paths). Fall back to
+    /// lowering the expression child so temporary struct literals still work.
+    fn field_base_pointer(&mut self, field_key: AstNodeKey) -> Option<Value> {
+        let base = if let Some(receiver_slot) = self.facts.field_receiver_slot(field_key) {
+            let (receiver, receiver_type) = self.locals.get(&receiver_slot).copied()?;
+            let base = self.builder.use_var(receiver);
+            if self.builder.func.dfg.value_type(base) != receiver_type {
+                return None;
+            }
+            base
+        } else {
+            let base_key = self.facts.child(field_key, 0)?;
+            generated::constructor_lower_expression(self, base_key)?
+        };
+        self.builder
+            .func
+            .dfg
+            .value_type(base)
+            .is_int()
+            .then_some(base)
+    }
 }
 
 impl generated::Context for IsleContext<'_, '_, '_, '_> {
@@ -1121,7 +1143,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             .map(|argument| generated::constructor_lower_expression(self, argument))
             .collect::<Option<Vec<_>>>()?;
         let returns_value = !matches!(route.group, beskid_abi::DispatchReturnGroup::Unit);
-        match dispatch::emit_dispatch_call(&mut self.builder, route, &arguments, returns_value) {
+        match dispatch::emit_dispatch_call(self.builder, route, &arguments, returns_value) {
             Ok(Some(value)) => Some(value),
             // Unit-returning builtins are emitted as statements, not expression values.
             Ok(None) | Err(_) => None,
@@ -1134,7 +1156,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let left = self.coerce_expression_to_string(left_key)?;
         let right = self.coerce_expression_to_string(right_key)?;
         let route = beskid_abi::dispatch_route_for_symbol("str_concat")?;
-        dispatch::emit_dispatch_call(&mut self.builder, route, &[left, right], true)
+        dispatch::emit_dispatch_call(self.builder, route, &[left, right], true)
             .ok()?
     }
 
@@ -1205,7 +1227,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                     .collect::<Option<Vec<_>>>()?;
                 let returns_value = self.facts.scalar_type(expression).is_some();
                 dispatch::emit_dispatch_call(
-                    &mut self.builder,
+                    self.builder,
                     route,
                     &arguments,
                     returns_value,
@@ -1716,15 +1738,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             });
             return None;
         }
-        let receiver_slot = self.facts.field_receiver_slot(key)?;
-        let (receiver, receiver_type) = self.locals.get(&receiver_slot).copied()?;
-        let base = self.builder.use_var(receiver);
-        if self.builder.func.dfg.value_type(base) != receiver_type {
-            return None;
-        }
-        if !self.builder.func.dfg.value_type(base).is_int() {
-            return None;
-        }
+        let base = self.field_base_pointer(key)?;
         Some(self.builder.ins().load(
             field.value_type,
             MemFlags::new(),
@@ -1756,15 +1770,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             });
             return None;
         };
-        let receiver_slot = self.facts.field_receiver_slot(target)?;
-        let (receiver, receiver_type) = self.locals.get(&receiver_slot).copied()?;
-        let base = self.builder.use_var(receiver);
-        if self.builder.func.dfg.value_type(base) != receiver_type {
-            return None;
-        }
+        let base = self.field_base_pointer(target)?;
         let value = generated::constructor_lower_expression(self, value_key)?;
-        if !self.builder.func.dfg.value_type(base).is_int()
-            || self.builder.func.dfg.value_type(value) != field.value_type
+        if self.builder.func.dfg.value_type(value) != field.value_type
             || self.facts.scalar_type(key)? != field.value_type
         {
             self.pending_error = Some(LoweringError {

@@ -236,18 +236,24 @@ fn host_ops_are_not_kernel_exports_v4() {
 #[test]
 fn host_manifest_entries_match_generated_registration_table() {
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let manifest = std::fs::read_to_string(crate_dir.join("../../runtime_manifest.bsol"))
-        .expect("runtime manifest should be readable");
+    // ABI v5 runtime_manifest.bsol no longer lists `owner = host` dispatch rows; the
+    // generated host handler table is the registration source of truth.
     let host_handlers =
         std::fs::read_to_string(crate_dir.join("../beskid_host/src/generated/host_handlers.rs"))
             .expect("generated host handler table should be readable");
 
-    let manifest_host_count = manifest.matches("owner = host").count();
+    let dispatch_fn_count = host_handlers
+        .matches("unsafe extern \"C\" fn host_dispatch_")
+        .count();
     let registration_count = host_handlers.matches("HandlerTableEntry {").count();
 
+    assert!(
+        registration_count > 0,
+        "host handler registration table must not be empty"
+    );
     assert_eq!(
-        registration_count, manifest_host_count,
-        "every host-owned dispatch tag must have a generated registration entry"
+        registration_count, dispatch_fn_count,
+        "every host dispatch wrapper must have a generated registration entry"
     );
 }
 

@@ -17,6 +17,7 @@ fn isle_inputs_are_in_one_stable_order() {
             "binary.isle",
             "unary_casts.isle",
             "calls.isle",
+            "dispatch.isle",
             "statements.isle",
             "control_flow.isle",
             "memory.isle",

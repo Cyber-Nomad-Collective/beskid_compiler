@@ -53,6 +53,11 @@ impl Backend {
         }
     }
 
+    /// Unblock analysis paths that wait on the initial workspace scan (integration tests only).
+    pub async fn signal_workspace_ready_for_tests(&self) {
+        crate::session::startup::signal_initial_scan_complete(&self.state).await;
+    }
+
     async fn schedule_publish_diagnostics(&self, uri: Uri) {
         let rev = {
             let mut map = self.diagnostics_revision.lock().await;
@@ -155,7 +160,7 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let doc = params.text_document;
-        set_document(&self.state, doc.uri.clone(), doc.version, doc.text).await;
+        let _ = set_document(&self.state, doc.uri.clone(), doc.version, doc.text).await;
         self.schedule_publish_diagnostics(doc.uri.clone()).await;
         schedule_typed_prepare_rebuild(self.state.clone(), doc.uri).await;
     }
@@ -163,7 +168,7 @@ impl LanguageServer for Backend {
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri.clone();
         let content_changes = params.content_changes;
-        if let Some(mut doc) = snapshot_document(&self.state, &uri).await {
+        let updated = if let Some(mut doc) = snapshot_document(&self.state, &uri).await {
             apply_document_changes(&mut doc.text, content_changes);
             set_document(
                 &self.state,
@@ -171,9 +176,7 @@ impl LanguageServer for Backend {
                 params.text_document.version,
                 doc.text,
             )
-            .await;
-            self.schedule_publish_diagnostics(uri.clone()).await;
-            schedule_typed_prepare_rebuild(self.state.clone(), uri).await;
+            .await
         } else if let Some(full_text) = content_changes
             .into_iter()
             .rev()
@@ -186,7 +189,11 @@ impl LanguageServer for Backend {
                 params.text_document.version,
                 full_text,
             )
-            .await;
+            .await
+        } else {
+            false
+        };
+        if updated {
             self.schedule_publish_diagnostics(uri.clone()).await;
             schedule_typed_prepare_rebuild(self.state.clone(), uri).await;
         }
