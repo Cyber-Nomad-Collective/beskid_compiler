@@ -1370,6 +1370,11 @@ fn call_lowering_for_node(
                     generic_call_instantiation_for_node(db, program, index, key, path)
                 {
                     Ok(CallLowering::Direct(instantiation.declaration))
+                } else if let Some(declaration) =
+                    resolve_item_declaration_candidate(db, program, index, key, path)
+                    && generic_call_uses_parameter_type_arguments(db, key, declaration, path)
+                {
+                    Ok(CallLowering::Direct(declaration))
                 } else if imported_call_receiver_exists(db, key, path) {
                     Ok(CallLowering::Dynamic)
                 } else {
@@ -1601,13 +1606,9 @@ fn generic_call_specialization_tracked(
     .transpose()
 }
 
-fn generic_call_instantiation_for_node(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
-    key: AstNodeKey,
-    path: &beskid_analysis::syntax::Path,
-) -> Option<GenericCallInstantiation> {
+fn explicit_generic_type_argument_syntax<'a>(
+    path: &'a beskid_analysis::syntax::Path,
+) -> Option<&'a [beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>]> {
     let terminal = path.segments.last()?;
     let receiver = path.segments.get(..path.segments.len().checked_sub(1)?)?;
     let receiver_with_arguments = receiver
@@ -1615,29 +1616,97 @@ fn generic_call_instantiation_for_node(
         .filter(|segment| !segment.node.type_args.is_empty())
         .collect::<Vec<_>>();
     let terminal_has_arguments = !terminal.node.type_args.is_empty();
-    let argument_syntax = match (terminal_has_arguments, receiver_with_arguments.as_slice()) {
-        (true, []) => terminal.node.type_args.as_slice(),
-        (false, [receiver]) => receiver.node.type_args.as_slice(),
-        _ => return None,
+    match (terminal_has_arguments, receiver_with_arguments.as_slice()) {
+        (true, []) => Some(terminal.node.type_args.as_slice()),
+        (false, [receiver]) => Some(receiver.node.type_args.as_slice()),
+        _ => None,
+    }
+}
+
+fn type_syntax_is_generic_parameter_reference(
+    syntax_type: &beskid_analysis::syntax::Type,
+    parameter_name: &str,
+) -> bool {
+    let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
+        return false;
     };
+    let [segment] = path.node.segments.as_slice() else {
+        return false;
+    };
+    segment.node.type_args.is_empty()
+        && segment.node.name.node.name == parameter_name
+}
+
+fn generic_call_uses_parameter_type_arguments(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> bool {
+    let Some(type_arguments) = explicit_generic_type_argument_syntax(path) else {
+        return false;
+    };
+    let Some(syntax) = db.syntax_unit(declaration.unit) else {
+        return false;
+    };
+    if !syntax.accepts_key(db, declaration) {
+        return false;
+    }
+    let Some(function) = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+    else {
+        return false;
+    };
+    if function.generics.len() != type_arguments.len() {
+        return false;
+    }
+    type_arguments
+        .iter()
+        .zip(function.generics.iter())
+        .all(|(argument, generic)| {
+            abi_type_from_syntax(db, key, &argument.node).is_ok()
+                || type_syntax_is_generic_parameter_reference(
+                    &argument.node,
+                    generic.node.name.as_str(),
+                )
+        })
+}
+
+fn generic_call_instantiation_for_node(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<GenericCallInstantiation> {
+    let argument_syntax = explicit_generic_type_argument_syntax(path)?;
     let argument_count = u8::try_from(argument_syntax.len()).ok()?;
     (argument_count > 0).then_some(())?;
     let declaration = resolve_item_declaration_candidate(db, program, index, key, path)?;
     let syntax = db.syntax_unit(declaration.unit)?;
     syntax.accepts_key(db, declaration).then_some(())?;
-    let target = syntax
+    let function = syntax
         .syntax_index(db)
-        .node_at(syntax.expanded_program(db), declaration.node)?;
-    let function = target.of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        .node_at(syntax.expanded_program(db), declaration.node)?
+        .of::<beskid_analysis::syntax::FunctionDefinition>()?;
     (function.generics.len() == usize::from(argument_count)).then_some(())?;
-    let arguments = argument_syntax
-        .iter()
-        .map(|argument| abi_type_from_syntax(db, key, &argument.node).ok())
-        .collect::<Option<Vec<_>>>()?;
+    let mut concrete_arguments = Vec::with_capacity(argument_syntax.len());
+    for (argument, generic) in argument_syntax.iter().zip(function.generics.iter()) {
+        match abi_type_from_syntax(db, key, &argument.node) {
+            Ok(concrete) => concrete_arguments.push(concrete),
+            Err(_) if type_syntax_is_generic_parameter_reference(
+                &argument.node,
+                generic.node.name.as_str(),
+            ) => {}
+            Err(_) => return None,
+        }
+    }
     Some(GenericCallInstantiation {
         declaration,
         argument_count,
-        arguments: arguments.into(),
+        arguments: concrete_arguments.into(),
     })
 }
 
@@ -2109,6 +2178,12 @@ fn item_abi_signature_tracked(
 ) -> SemanticQueryResult<ItemSignature> {
     with_node(db, syntax, key, |_program, _index, node| {
         if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+            // Generic declarations have no single item ABI. Call sites must prove a concrete
+            // specialization; otherwise module emission would register `Item` while calls import
+            // `SpecializedItem` (for example `Channel<T> Create<T>()` collapsing to POINTER).
+            if !function.generics.is_empty() {
+                return None;
+            }
             return Some(abi_signature_from_syntax(
                 db,
                 key,
@@ -2204,11 +2279,13 @@ fn call_abi_signature_for_call(
         .collect::<Vec<_>>();
     let mut substitutions = HashMap::new();
     if let Some(instantiation) = generic_call_instantiation(db, key)? {
-        if instantiation.arguments.len() != generic_names.len() {
-            return Err(SemanticError::unavailable("call_abi_signature"));
-        }
-        for (generic, argument) in generic_names.iter().zip(instantiation.arguments.iter()) {
-            substitutions.insert((*generic).to_owned(), *argument);
+        if !instantiation.arguments.is_empty() {
+            if instantiation.arguments.len() != generic_names.len() {
+                return Err(SemanticError::unavailable("call_abi_signature"));
+            }
+            for (generic, argument) in generic_names.iter().zip(instantiation.arguments.iter()) {
+                substitutions.insert((*generic).to_owned(), *argument);
+            }
         }
     }
     // A bare integer starts at the language default `i32`, but carries no explicit ABI suffix.

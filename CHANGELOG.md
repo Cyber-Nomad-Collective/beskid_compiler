@@ -92,6 +92,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Refuse a fixed `item_abi_signature` for generic function declarations so module emission
+  registers call-derived `SpecializedItem` identities (including zero-argument factories whose
+  nominal return type collapses to POINTER).
+- Keep direct call lowering for nested generic calls that forward an enclosing type parameter
+  (`CreateWithOptions<T>` inside `Create<T>`), so reachability and specialization collection stay
+  connected for Corelib Channel/Console factories.
 - Classify generic syntax module items before selecting ABI specializations, omitting generic
   type and enum declarations that have source layout facts but no executable ISLE body.
 - Require an exact compiler-owned lexical source path before granting Foundation panic-service

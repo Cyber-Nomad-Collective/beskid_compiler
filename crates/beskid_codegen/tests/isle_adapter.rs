@@ -1117,6 +1117,56 @@ fn parsed_program_specializes_an_inferred_generic_call_without_hir() {
 }
 
 #[test]
+fn parsed_program_specializes_zero_argument_generic_factory_without_hir() {
+    // Channel<T> Create<T>() collapses to POINTER at the ABI layer. Item ABI must still refuse a
+    // fixed signature so module emission registers SpecializedItem, matching call-site imports.
+    let (input, isa, root) = item_fixture_with_root(
+        "type Channel<T> { i64 handle } Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; } unit Main() { Channel<i64> ch = Create<i64>(); return; }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let create = items
+        .iter()
+        .copied()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Create"))
+        .expect("Create");
+    let main = items
+        .iter()
+        .copied()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main");
+    assert_eq!(
+        beskid_queries::item_abi_signature(input.database(), create).expect("generic item ABI"),
+        None
+    );
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: create,
+                symbol: "Create".into(),
+            },
+            SyntaxModuleItem {
+                key: main,
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("zero-argument generic factories specialize through call-derived ABI identity");
+
+    beskid_codegen::validate_artifact(&artifact)
+        .expect("specialized factory imports must resolve against module declarations");
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Create#generic_")),
+        "generic factory must emit a mangled specialization, not a bare Item identity"
+    );
+}
+
+#[test]
 fn parsed_test_program_specializes_a_generic_call_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
         "unit Equal<T>(T actual, T expected, string because) { if actual == expected { return; } return; } test Main { string value = \"same\"; Equal(value, value, \"because\"); }",
