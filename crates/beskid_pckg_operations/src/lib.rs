@@ -835,7 +835,7 @@ mod tests {
         let grant = ResourcePermission::moderate("github:42", resource.clone(), "github:1", 1);
 
         assert_eq!(
-            decide_permission_grant(&[grant.clone()], grant),
+            decide_permission_grant(std::slice::from_ref(&grant), grant.clone()),
             PermissionGrantDecision::AlreadyGranted
         );
         assert!(matches!(
