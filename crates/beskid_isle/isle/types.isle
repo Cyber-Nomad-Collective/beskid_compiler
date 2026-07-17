@@ -5,5 +5,6 @@
 (type NodeKind extern (enum Program FunctionDefinition TestDefinition ExpressionStatement ReturnStatement LetStatement IfStatement WhileStatement BreakStatement ContinueStatement LiteralExpression GroupedExpression UnaryExpression BinaryExpression AssignExpression CallExpression PathExpression IndexExpression ArrayLiteralExpression FieldExpression StructLiteralExpression EnumLiteralExpression MatchExpression RangeExpression BlockExpression ForStatement))
 (type CursorKind extern (enum More End))
 (type LiteralKind extern (enum Integer Float String Char Boolean))
-(type OperatorFact extern (enum Or And IdentityEq IdentityNotEq Eq NotEq Lt Lte Gt Gte Add Sub Mul Div Mod Neg Not))
-(type CallKind extern (enum Direct RuntimeIntrinsic))
+(type OperatorFact extern (enum Or And IdentityEq IdentityNotEq Eq NotEq Lt Lte Gt Gte Add Sub Mul Div Mod Neg Not StringAdd StringEq StringNotEq))
+(type CallKind extern (enum Direct RuntimeIntrinsic Dynamic))
+(type IndexTarget extern (enum String Array))
