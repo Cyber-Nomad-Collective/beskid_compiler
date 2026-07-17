@@ -63,9 +63,7 @@ pub use entry_session::{
     invalidate_project as invalidate_entry_sessions_for_project, next_syntax_generation_id,
     update_semantic_snapshot,
 };
-pub use front_end::{
-    FrontEndLowerInput, FrontEndOptions, FrontEndTypedResult, compile_front_end_with_pipeline,
-};
+pub use front_end::{FrontEndOptions, FrontEndTypedResult, compile_front_end_with_pipeline};
 pub use input::{
     AnalyzeInProjectOptions, ResolvedInput, resolve_input, resolve_input_with_pipeline,
     resolve_input_with_policy,

@@ -3,8 +3,13 @@
 mod codegen;
 mod lower;
 mod model;
+mod v5;
 
 pub use model::ManifestRoot;
+pub use v5::{
+    GeneratedV5Artifacts, RuntimeManifestV5, generate_v5_artifacts, load_v5_manifest_source,
+    write_v5_artifacts,
+};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,7 +22,12 @@ use model::ManifestRoot as Manifest;
 /// Load and parse the runtime manifest from `path`.
 pub fn load_manifest(path: &Path) -> Result<Manifest, String> {
     let text = fs::read_to_string(path).map_err(|err| format!("read {}: {err}", path.display()))?;
-    let document = parse_bsol_document(&text).map_err(|err| err.to_string())?;
+    load_manifest_source(&text)
+}
+
+/// Parse the legacy generation view from an already-loaded normative manifest source.
+pub fn load_manifest_source(source: &str) -> Result<Manifest, String> {
+    let document = parse_bsol_document(source).map_err(|err| err.to_string())?;
     let profile = load_profile("runtime.v1").map_err(|err| err.to_string())?;
     let validated = validate(&document, &profile).map_err(|err| err.to_string())?;
     lower_runtime_manifest(validated)
@@ -160,6 +170,24 @@ pub fn generate_analysis(manifest: &Manifest, out_path: &Path) -> Result<(), Str
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
     fs::write(out_path, codegen::render_analysis_builtins(manifest)).map_err(|err| err.to_string())
+}
+
+/// Generate the analysis builtin table from the normative manifest, including the ABI-v5
+/// canonical-runtime intrinsic candidates used by syntax facts.
+pub fn generate_analysis_with_v5_intrinsics_from_source(
+    source: &str,
+    base: &str,
+    out_path: &Path,
+) -> Result<(), String> {
+    let runtime = load_v5_manifest_source(source)?;
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(
+        out_path,
+        codegen::append_analysis_v5_intrinsics(base, &runtime),
+    )
+    .map_err(|err| err.to_string())
 }
 
 /// Convenience: load manifest and write all ABI generated files.

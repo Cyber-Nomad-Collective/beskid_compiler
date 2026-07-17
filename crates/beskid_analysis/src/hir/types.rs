@@ -15,6 +15,7 @@ pub enum HirPrimitiveType {
     I32,
     I64,
     U8,
+    Word,
     F64,
     Char,
     String,
@@ -27,6 +28,7 @@ impl HirPrimitiveType {
         match self {
             HirPrimitiveType::Bool => 1,
             HirPrimitiveType::U8 => 8,
+            HirPrimitiveType::Word => usize::BITS,
             HirPrimitiveType::I32 => 32,
             HirPrimitiveType::I64 => 64,
             HirPrimitiveType::F64 => 64,

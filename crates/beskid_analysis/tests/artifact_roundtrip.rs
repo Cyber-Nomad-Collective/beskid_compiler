@@ -1,9 +1,7 @@
 use beskid_analysis::artifacts::{
-    decode_hir_program, decode_syntax_program, encode_syntax_program, hir_unit_snapshot,
-    source_unit_snapshot,
+    decode_syntax_program, encode_syntax_program, source_unit_snapshot,
 };
 use beskid_analysis::macros::expand_program_with_diagnostics;
-use beskid_analysis::projects::assembly::build_hir_units;
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_artifacts::encode_ast;
 
@@ -27,7 +25,7 @@ fn syntax_program_snapshot_roundtrips() {
 }
 
 #[test]
-fn unit_artifact_snapshots_roundtrip() {
+fn expanded_syntax_unit_snapshot_roundtrips() {
     let source = "i32 Main() { return 0; }";
     let program = parse_program_with_source_name("Main.bd", source)
         .map(|p| {
@@ -46,16 +44,12 @@ fn unit_artifact_snapshots_roundtrip() {
         source: source.to_string(),
         program,
     };
-    let hir = build_hir_units(std::slice::from_ref(&unit))
-        .into_iter()
-        .next()
-        .expect("hir");
     let ast = source_unit_snapshot(&unit, &[]).expect("ast snap");
-    let hir_snap =
-        hir_unit_snapshot(&beskid_artifacts::content_fingerprint(source), &hir).expect("hir snap");
     let ast_wire = encode_ast(&ast).expect("encode ast");
     assert!(!ast_wire.is_empty());
-    assert!(!hir_snap.hir_wire.is_empty());
-    let _ = decode_hir_program(&hir_snap.hir_wire, &unit, &hir_snap.content_fingerprint)
-        .expect("hir marker decode");
+    let decoded = beskid_artifacts::decode_ast(&ast_wire).expect("decode ast");
+    assert_eq!(
+        decoded.meta.content_fingerprint,
+        beskid_artifacts::content_fingerprint(source)
+    );
 }

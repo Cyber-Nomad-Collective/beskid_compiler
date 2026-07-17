@@ -53,7 +53,10 @@ pub use query_bridge::{
     SdkSyntaxPipeline, SdkSyntaxQuery, SdkSyntaxSelection, downcast_node, materialize_snapshot,
     query_at,
 };
-pub use registrations::{extract_mod_contract_registrations, mod_contract_entry_symbol};
+pub use registrations::{
+    extract_mod_contract_registrations, extract_mod_contract_registrations_from_syntax,
+    mod_contract_entry_symbol,
+};
 pub use types::{
     ContractRegistration, ModArtifactDescriptor, ModHostAnalyzeResult, ModHostGenerateResult,
     ModHostInput, ModHostSession, ProgramItem,

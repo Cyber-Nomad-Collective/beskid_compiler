@@ -5,16 +5,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use beskid_analysis::mod_host::extract_mod_contract_registrations;
+use beskid_analysis::mod_host::extract_mod_contract_registrations_from_syntax;
 use beskid_analysis::projects::{
     ProjectKind, WorkspacePrepareOptions, build_compile_plan,
     discover_project_manifest_from_input_or_cwd, discover_project_manifest_in_dir,
     discover_workspace_manifest_in_dir, load_manifest_from_path,
     prepare_project_workspace_with_options, resolve_workspace_candidate_path,
 };
-use beskid_analysis::services::resolved_input_from_plan;
+use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan};
 use beskid_aot::{ModArtifactBuildRequest, build_mod_artifact};
-use beskid_codegen::lower_resolved_input_with_pipeline;
 use beskid_pipeline::{
     PipelineObserver, observe_phase, observe_phase_result,
     phases::{
@@ -202,9 +201,21 @@ fn build_mod_artifact_for_resolved(
         Some(prepared.clone()),
         None,
     );
-    let lowered = lower_resolved_input_with_pipeline(&resolved_input, false, pipeline)?;
+    let front = beskid_queries::compile_front_end_from_resolved_input(
+        &resolved_input,
+        FrontEndOptions {
+            with_semantic_diagnostics: false,
+            ..Default::default()
+        },
+        pipeline,
+    )?;
+    let artifact = super::syntax_codegen::lower_prepared_module(
+        &front,
+        target_triple.as_deref(),
+        pipeline,
+    )?;
     let registrations =
-        extract_mod_contract_registrations(&resolved.manifest.project.name, &lowered.resolution)
+        extract_mod_contract_registrations_from_syntax(&resolved.manifest.project.name, &front.program)
             .into_iter()
             .map(
                 |registration| beskid_aot::mod_artifact::ContractRegistration {
@@ -217,7 +228,7 @@ fn build_mod_artifact_for_resolved(
     let target = beskid_aot::target::detect_target(target_triple.as_deref())?;
     observe_phase_result(pipeline, AOT_LINK, || {
         build_mod_artifact(ModArtifactBuildRequest {
-            artifact: lowered.artifact,
+            artifact,
             workspace_root: resolved.plan.project_root.clone(),
             project_root: resolved.plan.project_root.clone(),
             manifest_path: resolved.plan.manifest_path.clone(),
@@ -400,6 +411,66 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rebuilds_sample_mod_through_prepared_syntax_and_writes_registrations() {
+        let root = unique_temp_dir("beskid_cli_mod_prepared_syntax");
+        let source_root = root.join("Src");
+        fs::create_dir_all(&source_root).expect("source root");
+        let manifest_path = root.join("DemoMod.bproj");
+        fs::write(
+            &manifest_path,
+            r#"
+DemoMod {
+  name = "DemoMod"
+  version = "0.1.0"
+  type = Mod
+  mod {
+    capabilities = [read_project_sources]
+  }
+}
+"#,
+        )
+        .expect("manifest");
+        fs::write(
+            source_root.join("Mod.bd"),
+            include_str!("../../../beskid_tests/fixtures/mods/sample_mod/Src/Mod.bd"),
+        )
+        .expect("mod source");
+
+        let manifest = load_manifest_from_path(&manifest_path).expect("load manifest");
+        let plan = build_compile_plan(&manifest_path, None).expect("compile plan");
+        let prepared = prepare_project_workspace_with_options(
+            &plan,
+            WorkspacePrepareOptions::default(),
+            None,
+        )
+        .expect("prepare workspace");
+        let descriptor = build_mod_artifact_for_resolved(
+            &ResolvedModProject { manifest, plan },
+            &prepared,
+            Some(host_abi_target().to_owned()),
+            None,
+        )
+        .expect("syntax-only mod rebuild");
+
+        let sidecar = fs::read_to_string(descriptor.sidecar_path()).expect("descriptor");
+        assert!(sidecar.contains("Beskid.Compiler.Collect.Collector"));
+        assert!(sidecar.contains("Beskid.Compiler.Collect.Generator"));
+        assert!(sidecar.contains("demomod_collect"));
+        assert!(sidecar.contains("demomod_generate"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn host_abi_target() -> &'static str {
+        if cfg!(target_os = "macos") {
+            "aarch64-apple-darwin"
+        } else if cfg!(target_os = "linux") {
+            "x86_64-unknown-linux-gnu"
+        } else {
+            "x86_64-pc-windows-msvc"
+        }
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {

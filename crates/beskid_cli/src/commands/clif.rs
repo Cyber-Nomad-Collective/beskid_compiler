@@ -1,9 +1,9 @@
 //! `beskid clif` — lower resolved Beskid source to CLIF and print the IR.
 
+use crate::commands::syntax_codegen::lower_prepared_entrypoint;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_codegen::render_clif;
-use beskid_codegen::services::lower_from_front_end;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
@@ -43,19 +43,12 @@ pub fn execute(args: ClifArgs) -> Result<()> {
     )?;
     let prepared = session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;
     let front = prepared.into_executable()?;
-    let source_name = resolved.source_path.display().to_string();
-    let lowered = lower_from_front_end(
-        &source_name,
-        &resolved.source,
-        front,
-        Some("Main"),
-        Some(session.observer()),
-    )?;
+    let artifact = lower_prepared_entrypoint(&front, "Main", None, Some(session.observer()))?;
     session.pipeline().finish_session_with_summary(
         "CLIF ready",
         Some(CommandSummary::plain("CLIF", "CLIF ready")),
     );
-    print!("{}", render_clif(&lowered.artifact));
+    print!("{}", render_clif(&artifact));
 
     Ok(())
 }

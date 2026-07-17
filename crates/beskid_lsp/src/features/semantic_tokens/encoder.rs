@@ -1,4 +1,4 @@
-use beskid_analysis::services::{AnalysisSymbolKind, DocumentAnalysisSnapshot};
+use beskid_analysis::services::AnalysisSymbolKind;
 use tower_lsp_server::ls_types::{
     SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend,
 };
@@ -21,31 +21,6 @@ pub(crate) struct SemanticTokenCandidate {
     priority: u8,
 }
 
-pub(crate) trait SemanticTokenSource {
-    fn collect(
-        &self,
-        text: &str,
-        analysis: Option<&DocumentAnalysisSnapshot>,
-        out: &mut Vec<SemanticTokenCandidate>,
-    );
-}
-
-struct SymbolSource;
-
-impl SemanticTokenSource for SymbolSource {
-    fn collect(
-        &self,
-        _text: &str,
-        analysis: Option<&DocumentAnalysisSnapshot>,
-        out: &mut Vec<SemanticTokenCandidate>,
-    ) {
-        push_semantic_symbol_tokens(analysis, out);
-    }
-}
-
-static SYMBOL_SOURCE: SymbolSource = SymbolSource;
-const DEFAULT_SOURCES: [&dyn SemanticTokenSource; 1] = [&SYMBOL_SOURCE];
-
 pub fn semantic_token_legend() -> SemanticTokensLegend {
     SemanticTokensLegend {
         token_types: vec![
@@ -61,14 +36,10 @@ pub fn semantic_token_legend() -> SemanticTokensLegend {
 }
 
 fn push_semantic_symbol_tokens(
-    analysis: Option<&DocumentAnalysisSnapshot>,
+    symbols: &[crate::session::store::SyntaxSymbol],
     out: &mut Vec<SemanticTokenCandidate>,
 ) {
-    let Some(analysis) = analysis else {
-        return;
-    };
-
-    for symbol in beskid_analysis::services::collect_document_symbols(analysis) {
+    for symbol in symbols {
         let token_type = match symbol.kind {
             AnalysisSymbolKind::Function => TOKEN_TYPE_FUNCTION,
             AnalysisSymbolKind::Test => TOKEN_TYPE_FUNCTION,
@@ -80,8 +51,8 @@ fn push_semantic_symbol_tokens(
         };
 
         out.push(SemanticTokenCandidate {
-            start: symbol.selection_start,
-            end: symbol.selection_end,
+            start: symbol.start,
+            end: symbol.end,
             token_type,
             token_modifiers_bitset: TOKEN_MODIFIER_DECLARATION,
             priority: 10,
@@ -89,24 +60,17 @@ fn push_semantic_symbol_tokens(
     }
 }
 
+/// Build the declaration-only token stream from the document's current syntax generation.
+///
+/// `SyntaxSymbol` is constructed from the exact `SyntaxIndex` snapshot held by the session;
+/// semantic tokens must not reach into the optional legacy HIR analysis snapshot.
 pub fn build_semantic_tokens(
     text: &str,
-    analysis: Option<&DocumentAnalysisSnapshot>,
-    offset_to_position: impl Fn(&str, usize) -> tower_lsp_server::ls_types::Position,
-) -> Vec<SemanticToken> {
-    build_semantic_tokens_with_sources(text, analysis, &DEFAULT_SOURCES, offset_to_position)
-}
-
-pub(crate) fn build_semantic_tokens_with_sources(
-    text: &str,
-    analysis: Option<&DocumentAnalysisSnapshot>,
-    sources: &[&dyn SemanticTokenSource],
+    symbols: &[crate::session::store::SyntaxSymbol],
     offset_to_position: impl Fn(&str, usize) -> tower_lsp_server::ls_types::Position,
 ) -> Vec<SemanticToken> {
     let mut candidates = Vec::new();
-    for source in sources {
-        source.collect(text, analysis, &mut candidates);
-    }
+    push_semantic_symbol_tokens(symbols, &mut candidates);
 
     candidates.sort_by_key(|candidate| (candidate.start, candidate.end, candidate.priority));
 
@@ -159,4 +123,48 @@ pub(crate) fn build_semantic_tokens_with_sources(
     }
 
     tokens
+}
+
+#[cfg(test)]
+mod tests {
+    use beskid_analysis::services::AnalysisSymbolKind;
+
+    use super::build_semantic_tokens;
+    use crate::position::offset_to_position;
+    use crate::session::store::SyntaxSymbol;
+
+    #[test]
+    fn syntax_symbols_preserve_legend_order_and_delta_encoding() {
+        let text = "fn first() {}\nstruct Second {}";
+        let tokens = build_semantic_tokens(
+            text,
+            &[
+                SyntaxSymbol {
+                    name: "first".into(),
+                    kind: AnalysisSymbolKind::Function,
+                    start: 3,
+                    end: 8,
+                },
+                SyntaxSymbol {
+                    name: "Second".into(),
+                    kind: AnalysisSymbolKind::Type,
+                    start: 21,
+                    end: 27,
+                },
+            ],
+            offset_to_position,
+        );
+
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].delta_line, 0);
+        assert_eq!(tokens[0].delta_start, 3);
+        assert_eq!(tokens[0].length, 5);
+        assert_eq!(tokens[0].token_type, 0); // FUNCTION is the first legend entry.
+        assert_eq!(tokens[0].token_modifiers_bitset, 1); // DECLARATION is bit zero.
+        assert_eq!(tokens[1].delta_line, 1);
+        assert_eq!(tokens[1].delta_start, 7);
+        assert_eq!(tokens[1].length, 6);
+        assert_eq!(tokens[1].token_type, 2); // STRUCT is the third legend entry.
+        assert_eq!(tokens[1].token_modifiers_bitset, 1);
+    }
 }

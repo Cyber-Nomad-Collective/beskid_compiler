@@ -137,6 +137,7 @@ mod tests {
                     abi: Some("C".into()),
                     symbol: None,
                 }),
+                runtime_handler: None,
                 attributes: Vec::new(),
                 visibility: Spanned::new(HirVisibility::Public, Default::default()),
                 name: Spanned::new(

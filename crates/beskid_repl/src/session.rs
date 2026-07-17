@@ -1,4 +1,3 @@
-use beskid_aot::RuntimeLinkProfile;
 use beskid_engine::Engine;
 
 use crate::eval::{self, EvalOutcome};
@@ -6,24 +5,18 @@ use crate::eval::{self, EvalOutcome};
 /// Persistent JIT session for snippet evaluation.
 pub struct ReplSession {
     engine: Engine,
-    runtime_link_profile: RuntimeLinkProfile,
 }
 
 impl ReplSession {
     pub fn new() -> Self {
-        Self::with_link_profile(RuntimeLinkProfile::Std)
-    }
-
-    pub fn with_link_profile(runtime_link_profile: RuntimeLinkProfile) -> Self {
         Self {
-            engine: Engine::with_link_profile(runtime_link_profile),
-            runtime_link_profile,
+            engine: Engine::new(),
         }
     }
 
-    /// Drop the current JIT module and allocate a fresh runtime heap.
+    /// Drop the current JIT module and reload the exact installed ABI-v5 runtime kit.
     pub fn reset(&mut self) {
-        self.engine = Engine::with_link_profile(self.runtime_link_profile);
+        self.engine = Engine::new();
     }
 
     /// Evaluate a snippet (not a colon-command).

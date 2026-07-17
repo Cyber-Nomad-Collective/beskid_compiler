@@ -176,35 +176,6 @@ fn cached_front_end_is_valid(fingerprint: &SessionFingerprint) -> bool {
         && snapshot.syntax_generation_id == current_syntax_generation_id(fingerprint)
 }
 
-/// CLIF artifact for a single entrypoint from a shared front-end bundle.
-pub fn entrypoint_artifact_from_front_end(
-    front: beskid_analysis::services::FrontEndLowerInput<'_>,
-    source_name: &str,
-    source: &str,
-    entrypoint: &str,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<CodegenArtifact> {
-    observe_phase_result(pipeline, CODEGEN_CLIF, || {
-        lower_program_with_assembly_for_entrypoint(
-            front.hir,
-            front.resolution,
-            front.typed,
-            Some(front.assembly),
-            Some(entrypoint),
-        )
-        .map_err(|errors| {
-            let diagnostics = codegen_errors_to_diagnostics(
-                source_name,
-                source,
-                &errors,
-                front.typed,
-                front.resolution,
-            );
-            anyhow::Error::new(SemanticDiagnosticsError::from_diagnostics(diagnostics))
-        })
-    })
-}
-
 /// Lower a pre-built front-end result to CLIF, optionally linking a single entrypoint.
 pub fn lower_from_front_end(
     source_name: &str,

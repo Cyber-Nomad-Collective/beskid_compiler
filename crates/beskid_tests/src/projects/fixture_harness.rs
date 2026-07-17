@@ -6,11 +6,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
-use beskid_analysis::projects::ProgramAssembly;
-use beskid_analysis::services::{FrontEndOptions, PrepareOptions, ResolvedInput, resolve_input};
+use beskid_analysis::projects::{ProgramAssembly, SyntaxProgramAssembly};
+use beskid_analysis::services::{ResolvedInput, resolve_input};
+use beskid_analysis::syntax::SyntaxGenerationId;
+use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation_with_db,
-    program_assembly, with_db,
+    AstNodeKey, SourceUnitId, build_typed_program, call_lowering, configure_db_for_project,
+    program_assembly, project_session_for_syntax_assembly, with_db,
 };
 
 use super::std_env_lock::std_dependency_env_lock;
@@ -154,26 +156,58 @@ fn cached_corelib_tests_assembly(
     assembly
 }
 
-/// Semantic gate for a `corelib_tests` entry (resolve + typecheck entry body; dependency signatures only).
+/// Syntax-fact gate for a `corelib_tests` entry.
+///
+/// Corelib's migration gate must not route entry calls through the retired HIR semantic resolver:
+/// its public-module re-export rules intentionally lag the generation-safe syntax registry.  This
+/// validates every entry call against the assembled syntax authority instead. Dependency bodies
+/// remain outside this entry gate, just as they did under `EntryOnly` typing.
 pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
     test_progress(&format!("→ corelib typecheck: {entry_relative}"));
     let started = Instant::now();
     let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
     with_db(|db| {
-        prepare_compilation_with_db(
+        let assembly = resolved
+            .assembly
+            .as_ref()
+            .expect("corelib entry assembly")
+            .clone();
+        let syntax_assembly = std::sync::Arc::new(SyntaxProgramAssembly::from(&assembly));
+        let project = project_session_for_syntax_assembly(
             db,
-            &resolved,
-            PrepareOptions {
-                front_end: FrontEndOptions {
-                    with_semantic_diagnostics: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            None,
+            &syntax_assembly,
+            "corelib-syntax-gate",
+            "prepared-corelib-entry",
         )
-    })
-    .expect("corelib_tests semantic gate");
+        .expect("corelib syntax project session");
+        let generation = SyntaxGenerationId(1);
+        let typed = build_typed_program(db, project, generation, syntax_assembly)
+            .expect("corelib syntax program");
+        let entry = typed.assembly.entry_unit();
+        let index = SyntaxIndex::from_program(&entry.program, generation);
+        let unit = SourceUnitId::new(db, entry.path.clone());
+        for node in index.ids_of_kind(NodeKind::CallExpression) {
+            let key = AstNodeKey {
+                unit,
+                generation,
+                node,
+            };
+            call_lowering(db, key)
+                .and_then(|fact| {
+                    fact.ok_or_else(|| {
+                        beskid_queries::SemanticError::unavailable(
+                            "entry call has no syntax lowering fact",
+                        )
+                    })
+                })
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "corelib syntax call gate for {entry_relative} failed at node {:?}: {error}",
+                        node
+                    )
+                });
+        }
+    });
     test_progress(&format!(
         "✓ corelib typecheck: {entry_relative} ({:.1}s)",
         started.elapsed().as_secs_f64()
@@ -186,21 +220,14 @@ pub fn lower_corelib_tests_entrypoint(
     entrypoint: &str,
 ) -> beskid_codegen::CodegenArtifact {
     let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
-    let front = compile_front_end_from_resolved_input(
-        &resolved,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
-        None,
-    )
-    .unwrap_or_else(|err| panic!("front-end for {entry_relative}: {err}"));
-    beskid_codegen::entrypoint_artifact_from_front_end(
-        front.as_lower_input(),
-        &resolved.source_path.display().to_string(),
-        &resolved.source,
+    let assembly = Arc::new(SyntaxProgramAssembly::from(
+        resolved.assembly.as_ref().expect("corelib entry assembly"),
+    ));
+    beskid_engine::services::lower_syntax_assembly_entrypoint(
+        assembly,
         entrypoint,
-        None,
+        beskid_engine::host_runtime_target()
+            .unwrap_or_else(|error| panic!("host ABI-v5 target: {error}")),
     )
     .unwrap_or_else(|err| panic!("lower {entrypoint} in {entry_relative}: {err}"))
 }
@@ -232,4 +259,49 @@ pub fn shared_corelib_mvp_assembly() -> Arc<ProgramAssembly> {
 fn with_project_test_env_return<T>(project_root: &Path, f: impl FnOnce(&Path) -> T) -> T {
     configure_db_for_project(project_root);
     f(project_root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn corelib_entry_assemblies_remain_isolated_by_explicit_source_path() {
+        let root = corelib_tests_project_root();
+        with_project_test_env(&root, || {
+            let channel =
+                resolve_corelib_tests_entry_with_assembly("concurrency/ChannelApiTests.bd");
+            let messages =
+                resolve_corelib_tests_entry_with_assembly("console/ConsoleMessageChannelTests.bd");
+
+            assert!(
+                channel
+                    .source_path
+                    .ends_with("concurrency/ChannelApiTests.bd")
+            );
+            assert!(
+                messages
+                    .source_path
+                    .ends_with("console/ConsoleMessageChannelTests.bd")
+            );
+            assert!(
+                channel
+                    .assembly
+                    .as_ref()
+                    .expect("channel assembly")
+                    .entry_unit()
+                    .path
+                    .ends_with("concurrency/ChannelApiTests.bd")
+            );
+            assert!(
+                messages
+                    .assembly
+                    .as_ref()
+                    .expect("messages assembly")
+                    .entry_unit()
+                    .path
+                    .ends_with("console/ConsoleMessageChannelTests.bd")
+            );
+        });
+    }
 }

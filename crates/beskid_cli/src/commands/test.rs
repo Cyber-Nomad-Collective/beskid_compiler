@@ -1,9 +1,10 @@
 //! `beskid test` — discover `test` items, filter by tags/group, and run them under JIT.
 
 use anyhow::{Result, anyhow};
-use beskid_analysis::services;
 use beskid_engine::Engine;
-use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
+use beskid_engine::services::{
+    SyntaxTestItem, run_entrypoint_from_front_end_with_engine, syntax_test_items_from_front_end,
+};
 use clap::Args;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -11,7 +12,6 @@ use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
-use crate::runtime_profile::CliRuntimeProfile;
 use beskid_tools::PipelineProgressKind;
 use beskid_tools::diagnostics;
 use beskid_tools::pipeline::{tui::FileLineLink, tui::TestRowState, tui::TestRunUi};
@@ -48,10 +48,6 @@ pub struct TestArgs {
     /// Disable animated progress and graph output
     #[arg(long)]
     pub plain: bool,
-
-    /// Runtime link profile: `std` links `beskid_host`; `minimal` is language runtime only
-    #[arg(long, value_enum, default_value_t = CliRuntimeProfile::Std)]
-    pub runtime_profile: CliRuntimeProfile,
 
     /// Run every Test target in the project manifest in one process (shared session).
     #[arg(long)]
@@ -137,7 +133,7 @@ pub(crate) fn execute_single_target(
         },
     )?;
 
-    let tests = services::collect_test_cases(&prepared.program);
+    let tests = syntax_test_items_from_front_end(prepared.executable()?)?;
     if tests.is_empty() {
         if args.json {
             println!(
@@ -183,8 +179,8 @@ pub(crate) fn execute_single_target(
         };
         let link = FileLineLink {
             path: resolved.source_path.clone(),
-            line: test.definition_line,
-            column: test.definition_column,
+            line: test.selection_span.line_col_start.0,
+            column: test.selection_span.line_col_start.1,
         };
         test_ui.push_row(test.qualified_name.clone(), initial, Some(link));
         planned.push((test, row_index, initial));
@@ -196,7 +192,7 @@ pub(crate) fn execute_single_target(
 
     let mut executions = Vec::new();
     let mut summary = TestSummary::default();
-    let mut owned_engine = Engine::with_link_profile(args.runtime_profile.into());
+    let mut owned_engine = Engine::new();
     let engine = shared_engine.unwrap_or(&mut owned_engine);
     for (test, row_index, initial) in planned {
         if !args.plain && session.pipeline().interrupted() {
@@ -328,7 +324,7 @@ pub(crate) fn execute_single_target(
 }
 
 fn is_filtered_out(
-    test: &services::TestCaseInfo,
+    test: &SyntaxTestItem,
     include_tags: &[String],
     exclude_tags: &[String],
     group_prefix: Option<&str>,

@@ -1,0 +1,17 @@
+{
+  "forbiddenSymbolFamilies": [
+    "_Unwind",
+    "__Unwind",
+    "__rust",
+    "_rust",
+    "abfall",
+    "alloc::alloc",
+    "core::panicking",
+    "corosensei",
+    "eh_personality",
+    "gcc_personality",
+    "panic",
+    "rust",
+    "std::panicking"
+  ]
+}

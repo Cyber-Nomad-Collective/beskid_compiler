@@ -1,11 +1,15 @@
 //! Host/runtime contract: C-layout string/array handles, builtin symbol names, and ABI version.
 
 pub mod abi_types;
+pub mod abi_v5;
 pub mod mod_contract;
 pub mod dispatch_tags {
     pub use crate::generated::dispatch_tags::*;
 }
 pub mod generated;
+pub mod runtime_kit;
+pub mod runtime_provenance;
+pub mod runtime_source;
 pub mod types;
 pub mod version;
 

@@ -1,4 +1,4 @@
-//! On-disk layout: `{cache_root}/units/{content_fp}/{meta.json, ast.bin, hir.bin}`.
+//! On-disk layout: `{cache_root}/units/{content_fp}/{meta.json, ast.bin}`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,16 +8,13 @@ static ARTIFACT_STORE_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 use crate::fingerprint::grammar_revision;
 use crate::manifest::{ARTIFACT_SCHEMA_VERSION, ArtifactManifest};
-use crate::snapshot::{
-    AstUnitSnapshot, HirUnitSnapshot, decode_ast, decode_hir, encode_ast, encode_hir,
-};
+use crate::snapshot::{AstUnitSnapshot, decode_ast, encode_ast};
 
 #[derive(Debug, Clone)]
 pub struct UnitArtifactPaths {
     pub unit_dir: PathBuf,
     pub meta: PathBuf,
     pub ast: PathBuf,
-    pub hir: PathBuf,
 }
 
 pub struct ArtifactStore {
@@ -36,16 +33,62 @@ impl ArtifactStore {
     }
 
     pub fn ensure_dirs(&self) -> std::io::Result<()> {
-        fs::create_dir_all(self.cache_root.join("units"))?;
+        let _guard = ARTIFACT_STORE_WRITE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        self.ensure_dirs_locked()
+    }
+
+    fn ensure_dirs_locked(&self) -> std::io::Result<()> {
+        fs::create_dir_all(&self.cache_root)?;
         let manifest_path = self.cache_root.join("manifest.json");
-        if !manifest_path.is_file() {
-            let manifest = ArtifactManifest {
-                grammar_rev: grammar_revision().to_string(),
-                compiler_version: env!("CARGO_PKG_VERSION").to_string(),
-                schema_version: ARTIFACT_SCHEMA_VERSION,
-                persisted_units: 0,
-            };
-            fs::write(manifest_path, serde_json::to_string_pretty(&manifest)?)?;
+        let manifest = self.manifest();
+        let is_current = manifest.as_ref().is_some_and(|manifest| {
+            manifest.grammar_rev == grammar_revision()
+                && manifest.schema_version == ARTIFACT_SCHEMA_VERSION
+        });
+        if is_current {
+            fs::create_dir_all(self.cache_root.join("units"))?;
+            return Ok(());
+        }
+
+        self.replace_stale_units_tree()?;
+        let manifest = ArtifactManifest {
+            grammar_rev: grammar_revision().to_string(),
+            compiler_version: env!("CARGO_PKG_VERSION").to_string(),
+            schema_version: ARTIFACT_SCHEMA_VERSION,
+            persisted_units: 0,
+        };
+        write_atomically(
+            &manifest_path,
+            serde_json::to_string_pretty(&manifest)?.as_bytes(),
+        )?;
+        Ok(())
+    }
+
+    /// Replace the complete stale unit namespace before a current manifest can be published.
+    fn replace_stale_units_tree(&self) -> std::io::Result<()> {
+        let units = self.cache_root.join("units");
+        let staging = self.cache_root.join("units.schema-current.tmp");
+        let stale = self.cache_root.join("units.schema-stale.purge");
+        remove_dir_if_present(&staging)?;
+        remove_dir_if_present(&stale)?;
+        fs::create_dir(&staging)?;
+
+        if units.exists() {
+            fs::rename(&units, &stale)?;
+        }
+        if let Err(error) = fs::rename(&staging, &units) {
+            if stale.exists() {
+                let _ = fs::rename(&stale, &units);
+            }
+            return Err(error);
+        }
+        if let Err(error) = remove_dir_if_present(&stale) {
+            let _ = fs::rename(&units, &staging);
+            let _ = fs::rename(&stale, &units);
+            let _ = remove_dir_if_present(&staging);
+            return Err(error);
         }
         Ok(())
     }
@@ -68,7 +111,6 @@ impl ArtifactStore {
         UnitArtifactPaths {
             meta: unit_dir.join("meta.json"),
             ast: unit_dir.join("ast.bin"),
-            hir: unit_dir.join("hir.bin"),
             unit_dir,
         }
     }
@@ -88,24 +130,11 @@ impl ArtifactStore {
         Some(snapshot)
     }
 
-    pub fn read_hir(&self, content_fingerprint: &str) -> Option<HirUnitSnapshot> {
-        if !self.is_manifest_current() {
-            return None;
-        }
-        let paths = self.unit_paths(content_fingerprint);
-        let bytes = fs::read(paths.hir).ok()?;
-        let snapshot = decode_hir(&bytes).ok()?;
-        if snapshot.schema_version != ARTIFACT_SCHEMA_VERSION {
-            return None;
-        }
-        Some(snapshot)
-    }
-
-    pub fn write_unit(&self, ast: &AstUnitSnapshot, hir: &HirUnitSnapshot) -> std::io::Result<()> {
+    pub fn write_unit(&self, ast: &AstUnitSnapshot) -> std::io::Result<()> {
         let _guard = ARTIFACT_STORE_WRITE_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        self.ensure_dirs()?;
+        self.ensure_dirs_locked()?;
         let fp = &ast.meta.content_fingerprint;
         let paths = self.unit_paths(fp);
         fs::create_dir_all(&paths.unit_dir)?;
@@ -114,16 +143,23 @@ impl ArtifactStore {
             serde_json::to_string_pretty(&ast.meta)?.as_bytes(),
         )?;
         write_atomically(&paths.ast, &encode_ast(ast).map_err(io_err)?)?;
-        write_atomically(&paths.hir, &encode_hir(hir).map_err(io_err)?)?;
+        let legacy_hir = paths.unit_dir.join("hir.bin");
+        if legacy_hir.exists() {
+            fs::remove_file(legacy_hir)?;
+        }
         Ok(())
     }
 
     /// Recompute `persisted_units` from disk (call once per assembly batch, not per unit).
     pub fn refresh_manifest(&self) -> std::io::Result<()> {
-        self.update_manifest_count()
+        let _guard = ARTIFACT_STORE_WRITE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        self.ensure_dirs_locked()?;
+        self.update_manifest_count_locked()
     }
 
-    fn update_manifest_count(&self) -> std::io::Result<()> {
+    fn update_manifest_count_locked(&self) -> std::io::Result<()> {
         let count = fs::read_dir(self.cache_root.join("units"))?
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_dir())
@@ -152,6 +188,14 @@ impl ArtifactStore {
             serde_json::to_string_pretty(&manifest)?.as_bytes(),
         )?;
         Ok(())
+    }
+}
+
+fn remove_dir_if_present(path: &Path) -> std::io::Result<()> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
 }
 

@@ -15,10 +15,7 @@ pub fn handle_prepare_rename(
     let (start, end) = if project_manifest::is_manifest_uri(uri) {
         token_span_at_offset(&doc.text, offset)?
     } else {
-        // Rename is only supported for resolved references.
-        doc.analysis.as_ref().and_then(|analysis| {
-            beskid_analysis::services::definition_at_offset(analysis, offset)
-        })?;
+        resolved_syntax_target(uri, doc, offset)?;
         token_span_at_offset(&doc.text, offset)?
     };
 
@@ -42,11 +39,19 @@ pub fn handle_rename(
     let mut ranges: Vec<(usize, usize)> = if project_manifest::is_manifest_uri(uri) {
         project_manifest::token_references(&doc.text, offset)
     } else {
-        let analysis = doc.analysis.as_ref()?;
-        beskid_analysis::services::references_at_offset(analysis, offset, true)
-            .into_iter()
-            .map(|reference| (reference.location.start, reference.location.end))
-            .collect()
+        let target = resolved_syntax_target(uri, doc, offset)?;
+        let mut ranges: Vec<_> = doc
+            .syntax_definitions
+            .iter()
+            .filter(|reference| {
+                reference.declaration_path == target.declaration_path
+                    && reference.declaration_start == target.declaration_start
+                    && reference.declaration_end == target.declaration_end
+            })
+            .map(|reference| (reference.reference_start, reference.reference_end))
+            .collect();
+        ranges.push((target.declaration_start, target.declaration_end));
+        ranges
     };
 
     if ranges.is_empty() {
@@ -70,6 +75,20 @@ pub fn handle_rename(
     Some(WorkspaceEdit {
         changes: Some(changes),
         ..WorkspaceEdit::default()
+    })
+}
+
+fn resolved_syntax_target<'a>(
+    uri: &Uri,
+    doc: &'a Document,
+    offset: usize,
+) -> Option<&'a crate::session::store::SyntaxDefinition> {
+    let path = crate::workspace_scan::uri_to_path(uri);
+    doc.syntax_definitions.iter().find(|definition| {
+        (definition.reference_start <= offset && offset <= definition.reference_end)
+            || (path.as_deref().is_some_and(|path| path == definition.declaration_path)
+                && definition.declaration_start <= offset
+                && offset <= definition.declaration_end)
     })
 }
 
@@ -119,22 +138,48 @@ fn is_valid_identifier(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::fs;
 
-    use tower_lsp_server::ls_types::Uri;
+    use tempfile::TempDir;
 
     use super::*;
     use crate::session::lifecycle::build_document;
+    use crate::workspace_scan::path_to_uri;
 
     fn source() -> &'static str {
         "i32 add(i32 lhs, i32 rhs) {\n    return lhs + rhs;\n}\n\ni32 main() {\n    return add(1, 2);\n}\n"
     }
 
+    fn project_fixture() -> (TempDir, Uri) {
+        let root = tempfile::tempdir().expect("temporary project");
+        let source_dir = root.path().join("Src");
+        fs::create_dir_all(&source_dir).expect("source directory");
+        fs::write(source_dir.join("Main.bd"), source()).expect("source file");
+        fs::write(
+            root.path().join("RenameProject.bproj"),
+            r#"RenameProject {
+  name = "RenameProject"
+  version = "0.1.0"
+}
+
+target "App" {
+  kind = "App"
+  entry = "Main.bd"
+}
+"#,
+        )
+        .expect("project manifest");
+        let uri = path_to_uri(&source_dir.join("Main.bd")).expect("file uri");
+        (root, uri)
+    }
+
     #[tokio::test]
     async fn prepare_rename_for_resolved_symbol_returns_selection() {
         let state = tokio::sync::RwLock::new(crate::session::store::State::default());
-        let uri = Uri::from_str("file:///rename_test.bd").expect("valid uri");
-        let doc = build_document(&state, &uri, 1, source().to_string()).await;
+        state.read().await.mark_initial_scan_complete();
+        let (_root, uri) = project_fixture();
+        let mut doc = build_document(&state, &uri, 1, source().to_string()).await;
+        doc.analysis = None;
         let offset = source().find("lhs +").expect("lhs");
         let response = handle_prepare_rename(&uri, &doc, offset).expect("prepare rename");
         let PrepareRenameResponse::Range(range) = response else {
@@ -146,8 +191,10 @@ mod tests {
     #[tokio::test]
     async fn rename_updates_definition_and_references() {
         let state = tokio::sync::RwLock::new(crate::session::store::State::default());
-        let uri = Uri::from_str("file:///rename_test.bd").expect("valid uri");
-        let doc = build_document(&state, &uri, 1, source().to_string()).await;
+        state.read().await.mark_initial_scan_complete();
+        let (_root, uri) = project_fixture();
+        let mut doc = build_document(&state, &uri, 1, source().to_string()).await;
+        doc.analysis = None;
         let position = Position::new(1, 11);
         let edit = handle_rename(&uri, &doc, position, "left").expect("workspace edit");
         let changes = edit.changes.expect("changes map");

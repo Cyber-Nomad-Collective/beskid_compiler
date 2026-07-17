@@ -1,0 +1,35 @@
+(decl partial emit_integer (AstNodeKey) Value)
+(extern constructor emit_integer emit_integer)
+
+(decl partial emit_boolean (AstNodeKey) Value)
+(extern constructor emit_boolean emit_boolean)
+
+(decl partial emit_float (AstNodeKey) Value)
+(extern constructor emit_float emit_float)
+
+(decl partial emit_char (AstNodeKey) Value)
+(extern constructor emit_char emit_char)
+
+(decl partial emit_string (AstNodeKey) Value)
+(extern constructor emit_string emit_string)
+
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.LiteralExpression))
+        (literal_kind (LiteralKind.Integer))))
+      (emit_integer key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.LiteralExpression))
+        (literal_kind (LiteralKind.Boolean))))
+      (emit_boolean key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.LiteralExpression))
+        (literal_kind (LiteralKind.Float))))
+      (emit_float key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.LiteralExpression))
+        (literal_kind (LiteralKind.Char))))
+      (emit_char key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.LiteralExpression))
+        (literal_kind (LiteralKind.String))))
+      (emit_string key))

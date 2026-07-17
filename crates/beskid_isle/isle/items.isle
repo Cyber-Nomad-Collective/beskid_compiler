@@ -1,0 +1,5 @@
+(decl partial item_body (AstNodeKey) AstNodeKey)
+(rule (item_body key @ (node_kind (NodeKind.FunctionDefinition)))
+      (child_at key 0))
+(rule (item_body key @ (node_kind (NodeKind.TestDefinition)))
+      key)

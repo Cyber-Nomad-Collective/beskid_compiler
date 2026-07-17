@@ -40,6 +40,11 @@ mod tests {
             text: text.to_string(),
             analysis_cache_version: 0,
             analysis: None,
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
+            syntax_completion: None,
+            syntax_inlay_hints: Vec::new(),
         }
     }
 

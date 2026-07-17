@@ -1,0 +1,34 @@
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Or))))
+      (clif_short_circuit_or key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.And))))
+      (clif_short_circuit_and key))
+
+(decl partial emit_if_else (AstNodeKey) Unit)
+(extern constructor emit_if_else emit_if_else)
+
+(rule (lower_statement key @ (node_kind (NodeKind.IfStatement)))
+      (emit_if_else key))
+
+(decl partial emit_while (AstNodeKey) Unit)
+(extern constructor emit_while emit_while)
+(decl partial emit_break (AstNodeKey) Unit)
+(extern constructor emit_break emit_break)
+(decl partial emit_continue (AstNodeKey) Unit)
+(extern constructor emit_continue emit_continue)
+(decl partial emit_range_for (AstNodeKey) Unit)
+(extern constructor emit_range_for emit_range_for)
+
+(rule (lower_statement key @ (node_kind (NodeKind.WhileStatement)))
+      (emit_while key))
+(rule (lower_statement key @ (node_kind (NodeKind.BreakStatement)))
+      (emit_break key))
+(rule (lower_statement key @ (node_kind (NodeKind.ContinueStatement)))
+      (emit_continue key))
+(rule (lower_statement key @ (and
+        (node_kind (NodeKind.ForStatement))
+        (for_iterable_kind (NodeKind.RangeExpression))))
+      (emit_range_for key))

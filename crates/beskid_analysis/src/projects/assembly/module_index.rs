@@ -476,6 +476,9 @@ pub fn infer_logical_module_path(
     has_std_dependency: bool,
 ) -> Option<Vec<String>> {
     let path = &unit.path;
+    if let Some(module_path) = module_path_from_generated_suffix(path, has_std_dependency) {
+        return Some(module_path);
+    }
     for root in std::iter::once(&roots.host).chain(roots.dependencies.iter()) {
         let Ok(rel) = path.strip_prefix(&root.source_root) else {
             continue;
@@ -745,7 +748,7 @@ fn module_path_from_generated_suffix(path: &Path, has_std_dependency: bool) -> O
     if !file_name.ends_with(".g.bd") {
         return None;
     }
-    let module_name = &file_name[..file_name.len().saturating_sub(6)];
+    let module_name = &file_name[..file_name.len().saturating_sub(5)];
     let parent = rel_path.parent()?;
     let mut segments: Vec<String> = parent
         .components()
@@ -791,5 +794,27 @@ fn module_path_from_src_suffix(
         Some(with_std)
     } else {
         Some(segments)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::module_path_from_generated_suffix;
+    use std::path::Path;
+
+    #[test]
+    fn generated_file_suffix_keeps_the_complete_module_name() {
+        assert_eq!(
+            module_path_from_generated_suffix(
+                Path::new("/packages/corelib/.generated/Core/Text/Regex/Generated.g.bd"),
+                false,
+            ),
+            Some(vec![
+                "Core".to_string(),
+                "Text".to_string(),
+                "Regex".to_string(),
+                "Generated".to_string(),
+            ])
+        );
     }
 }

@@ -5,6 +5,7 @@
 
 pub mod common;
 pub mod expressions;
+mod identity;
 pub mod items;
 pub mod statements;
 pub mod types;
@@ -21,6 +22,7 @@ pub use expressions::{
     parse_plain_code_body, split_string_literal_parts, split_string_literal_token,
     try_decode_string_literal, try_decode_string_literal_token,
 };
+pub use identity::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use items::{
     Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
     ContractDefinition, ContractEmbedding, ContractMethodSignature, ContractNode, EnumDefinition,

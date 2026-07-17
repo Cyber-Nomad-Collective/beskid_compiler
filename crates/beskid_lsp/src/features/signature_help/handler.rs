@@ -10,12 +10,15 @@ pub fn handle_signature_help(uri: &Uri, doc: &Document, offset: usize) -> Option
     if project_manifest::is_manifest_uri(uri) {
         return None;
     }
-    let analysis = doc.analysis.as_ref()?;
     let (start, end) = callee_span_before_open_paren(&doc.text, offset)?;
     let mid = start
         .saturating_add((end.saturating_sub(start)) / 2)
         .min(doc.text.len());
-    let hover = beskid_analysis::services::hover_at_offset(analysis, mid)?;
+    let hover = doc
+        .syntax_hovers
+        .iter()
+        .filter(|hover| hover.reference_start <= mid && mid <= hover.reference_end)
+        .min_by_key(|hover| hover.reference_end.saturating_sub(hover.reference_start))?;
     let label = hover
         .markdown
         .lines()
@@ -27,7 +30,7 @@ pub fn handle_signature_help(uri: &Uri, doc: &Document, offset: usize) -> Option
             label,
             documentation: Some(Documentation::MarkupContent(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: hover.markdown,
+                value: hover.markdown.clone(),
             })),
             parameters: None,
             active_parameter: Some(0),

@@ -1,45 +1,65 @@
-use abfall::Heap;
-use beskid_aot::RuntimeLinkProfile;
+use std::path::{Path, PathBuf};
+
+use beskid_abi::abi_v5::TargetMetadata;
+use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_codegen::{CodegenArtifact, ExternImport};
 use beskid_pipeline::PipelineObserver;
-use beskid_runtime::{
-    GcSnapshot, RuntimeRoot, beskid_heap_options_for_engine, bootstrap_dispatch_handlers,
-    clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope,
-    run_closure_as_main, scheduler_init, set_current_heap, set_current_root, snapshot_gc,
-};
-use std::sync::Arc;
 
 use crate::jit_module::{BeskidJitModule, JitError};
 
-/// Owns the GC heap and a [`BeskidJitModule`] used to compile and resolve JIT code.
+const ENV_RUNTIME_PREFIX: &str = "BESKID_RUNTIME_PREFIX";
+
+#[derive(Clone)]
+struct RuntimeKitSelection {
+    prefix: PathBuf,
+    target: TargetMetadata,
+    profile: RuntimeKitProfile,
+}
+
+/// Owns an exact ABI-v5 runtime-kit selection and a [`BeskidJitModule`].
 pub struct Engine {
-    heap: Arc<Heap>,
-    runtime_root: RuntimeRoot,
+    runtime_kit: RuntimeKitSelection,
     jit: BeskidJitModule,
 }
 
 impl Engine {
-    /// Build an engine with a fresh runtime root and empty JIT module (std host profile).
+    /// Build an engine from the exact ABI-v5 runtime kit installed with this executable.
     pub fn new() -> Self {
-        Self::with_link_profile(RuntimeLinkProfile::Std)
+        Self::try_new().expect("failed to initialize exact ABI-v5 JIT runtime kit")
     }
 
-    /// Build an engine; registers host handlers when `profile` is [`RuntimeLinkProfile::Std`].
-    pub fn with_link_profile(profile: RuntimeLinkProfile) -> Self {
-        scheduler_init();
-        bootstrap_dispatch_handlers();
-        if profile == RuntimeLinkProfile::Std {
-            let _ = beskid_host::beskid_host_register_all();
-            let _ = beskid_runtime_handlers::beskid_language_register_all();
-        }
-        let heap = Heap::with_options(beskid_heap_options_for_engine());
-        let runtime_root = RuntimeRoot::new(Arc::clone(&heap));
-        let jit = BeskidJitModule::new().expect("failed to initialize JIT module");
-        Self {
-            heap,
-            runtime_root,
+    /// Fallible form of [`Self::new`].
+    pub fn try_new() -> Result<Self, JitError> {
+        let prefix = runtime_prefix()?;
+        let target = host_runtime_target()?;
+        let profile = if cfg!(debug_assertions) {
+            RuntimeKitProfile::Debug
+        } else {
+            RuntimeKitProfile::Release
+        };
+        Self::with_runtime_kit(&prefix, target, profile)
+    }
+
+    /// Build an engine from one explicit, validated ABI-v5 runtime kit.
+    pub fn with_runtime_kit(
+        prefix: &Path,
+        target: TargetMetadata,
+        profile: RuntimeKitProfile,
+    ) -> Result<Self, JitError> {
+        let jit = BeskidJitModule::new_with_runtime_kit(prefix, &target, profile, &[])?;
+        Ok(Self {
+            runtime_kit: RuntimeKitSelection {
+                prefix: prefix.to_path_buf(),
+                target,
+                profile,
+            },
             jit,
-        }
+        })
+    }
+
+    /// Exact ABI-v5 target selected by this engine's validated runtime kit.
+    pub fn target_metadata(&self) -> &TargetMetadata {
+        &self.runtime_kit.target
     }
 
     /// Load `artifact` into a fresh or reused JIT module, declare builtins/externs, define functions, finalize.
@@ -83,12 +103,13 @@ impl Engine {
             Vec::new()
         };
 
-        // Recreate JIT module per artifact to register extra symbols at builder time.
-        self.jit = if extras.is_empty() {
-            BeskidJitModule::new()?
-        } else {
-            BeskidJitModule::new_with_symbols(&extras)?
-        };
+        // Recreate the module per artifact while preserving the exact runtime-kit authority.
+        self.jit = BeskidJitModule::new_with_runtime_kit(
+            &self.runtime_kit.prefix,
+            &self.runtime_kit.target,
+            self.runtime_kit.profile,
+            &extras,
+        )?;
 
         #[cfg(debug_assertions)]
         {
@@ -118,53 +139,9 @@ impl Engine {
         Ok(unsafe { self.jit.get_finalized_function_ptr(func_id) })
     }
 
-    /// Run `f` with TLS pointing at the active heap session and runtime root.
-    pub fn with_runtime<R>(&mut self, f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R {
-        enter_runtime_scope();
-        set_current_heap(&self.heap);
-        set_current_root(&mut self.runtime_root as *mut _);
-        struct Guard;
-        impl Drop for Guard {
-            fn drop(&mut self) {
-                clear_current_heap();
-                clear_current_root();
-                leave_runtime_scope();
-            }
-        }
-        let _guard = Guard;
-        f(&self.heap, &mut self.runtime_root)
-    }
-
-    #[deprecated(note = "use Engine::with_runtime")]
-    pub fn with_arena<R>(&mut self, f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R {
-        self.with_runtime(f)
-    }
-
-    pub fn gc_snapshot(&mut self) -> Option<GcSnapshot> {
-        self.with_runtime(|_, _| snapshot_gc())
-    }
-
     #[doc(hidden)]
     pub fn jit_module_mut(&mut self) -> &mut cranelift_jit::JITModule {
         self.jit.module()
-    }
-
-    /// Run a `() -> i64` entrypoint on fiber 0 with scheduler shutdown join of non-detached children.
-    ///
-    /// # Safety
-    ///
-    /// `entrypoint` must name a finalized function with the `extern "C" fn() -> i64` ABI.
-    pub unsafe fn execute_main_i64_with_scheduler(
-        &mut self,
-        entrypoint: &str,
-    ) -> Result<i64, JitError> {
-        let entry = unsafe { self.entrypoint_ptr(entrypoint)? as usize };
-        Ok(self.with_runtime(|_, _| {
-            run_closure_as_main(move || {
-                let callable: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };
-                callable()
-            })
-        }))
     }
 }
 
@@ -172,6 +149,49 @@ impl Default for Engine {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn runtime_prefix() -> Result<PathBuf, JitError> {
+    if let Some(prefix) = std::env::var_os(ENV_RUNTIME_PREFIX) {
+        return Ok(PathBuf::from(prefix));
+    }
+    let executable = std::env::current_exe().map_err(|error| {
+        JitError::RuntimeKit(format!(
+            "cannot locate current executable for ABI-v5 runtime prefix: {error}"
+        ))
+    })?;
+    let bin = executable.parent().ok_or_else(|| {
+        JitError::RuntimeKit(format!(
+            "current executable has no parent: `{}`",
+            executable.display()
+        ))
+    })?;
+    bin.parent().map(Path::to_path_buf).ok_or_else(|| {
+        JitError::RuntimeKit(format!(
+            "current executable has no install prefix: `{}`",
+            executable.display()
+        ))
+    })
+}
+
+/// ABI-v5 target metadata for the native JIT host.
+pub fn host_runtime_target() -> Result<TargetMetadata, JitError> {
+    let triple = match (std::env::consts::ARCH, std::env::consts::OS) {
+        ("x86_64", "linux") => "x86_64-unknown-linux-gnu",
+        ("aarch64", "macos") => "aarch64-apple-darwin",
+        ("x86_64", "windows") => "x86_64-pc-windows-msvc",
+        (arch, os) => {
+            return Err(JitError::RuntimeKit(format!(
+                "unsupported ABI-v5 JIT runtime host `{arch}-{os}`"
+            )));
+        }
+    };
+    TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == triple)
+        .ok_or_else(|| {
+            JitError::RuntimeKit(format!("unsupported ABI-v5 runtime target `{triple}`"))
+        })
 }
 
 /// Resolve extern symbols from libraries already mapped into this process (libc, pthread, …).
@@ -235,6 +255,11 @@ fn resolve_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *cons
     use std::os::raw::{c_char, c_int, c_void};
 
     const RTLD_NOW: c_int = 2;
+    // Keep the external resolver's Linux flags aligned with the runtime-kit loader: glibc
+    // defines RTLD_LOCAL as zero, while bit 4 is RTLD_NOLOAD.
+    #[cfg(target_os = "linux")]
+    const RTLD_LOCAL: c_int = 0;
+    #[cfg(not(target_os = "linux"))]
     const RTLD_LOCAL: c_int = 4;
 
     unsafe extern "C" {

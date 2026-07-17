@@ -8,10 +8,6 @@ use serde_json::{Value, json};
 use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::{LSPAny, Uri};
 
-use beskid_analysis::resolve::symbol::{BUILTIN_PACKAGE, symbol_key};
-use beskid_analysis::resolve::symbol_lookup::symbol_for_item;
-use beskid_analysis::services::{DocumentAnalysisSnapshot, item_id_at_offset};
-
 use crate::protocol::execute_args::{first_arg_object, missing_args};
 use crate::session::store::Document;
 
@@ -23,8 +19,6 @@ const DEFAULT_SPEC_BASE: &str = "https://spec.beskid-lang.org/platform-spec";
 
 const CORELIB_SPEC_PATH: &str =
     "/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/";
-const BUILTIN_SPEC_PATH: &str = "/platform-spec/language-meta/interop/builtins-and-symbols/";
-
 pub fn handle_symbol_documentation_command(
     command: &str,
     arguments: Option<Vec<Value>>,
@@ -47,15 +41,19 @@ pub fn handle_symbol_documentation_command(
     Ok(Some(json!({ "url": url })))
 }
 
+#[allow(dead_code)]
 pub fn documentation_uri_for_document(document: &Document, offset: usize) -> Option<String> {
     documentation_uri_for_offset(document, offset)
 }
 
 fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<String> {
-    let analysis = document.analysis.as_ref()?;
-    let hover = beskid_analysis::services::hover_at_offset(analysis, offset)?;
+    let hover = document
+        .syntax_hovers
+        .iter()
+        .filter(|hover| hover.reference_start <= offset && offset <= hover.reference_end)
+        .min_by_key(|hover| hover.reference_end.saturating_sub(hover.reference_start))?;
     let symbol_name = extract_symbol_name(&hover.markdown);
-    let source_path = hover.location.path.as_path();
+    let source_path = hover.location_path.as_path();
 
     if let Some((package, version)) = package_from_materialized_path(source_path) {
         let base =
@@ -68,7 +66,7 @@ fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<St
         return Some(format!("{base}/docs/{package}@{version}{fragment}"));
     }
 
-    if let Some(spec_path) = platform_spec_path_for_offset(analysis, offset, source_path) {
+    if let Some(spec_path) = platform_spec_path_for_source(source_path) {
         return Some(absolute_spec_url(&spec_path));
     }
 
@@ -103,23 +101,8 @@ fn normalize_spec_suffix(spec_path: &str) -> String {
     }
 }
 
-fn platform_spec_path_for_offset(
-    snapshot: &DocumentAnalysisSnapshot,
-    offset: usize,
-    source_path: &Path,
-) -> Option<String> {
+fn platform_spec_path_for_source(source_path: &Path) -> Option<String> {
     if path_looks_like_corelib(source_path) {
-        return Some(CORELIB_SPEC_PATH.to_string());
-    }
-    let resolution = snapshot.resolution.as_ref()?;
-    let item_id = item_id_at_offset(snapshot, offset)?;
-    let symbol_id = symbol_for_item(resolution, item_id)?;
-    let key = symbol_key(&resolution.symbols, symbol_id)?;
-    let package = key.split("::").next()?;
-    if package == BUILTIN_PACKAGE {
-        return Some(BUILTIN_SPEC_PATH.to_string());
-    }
-    if package.starts_with("corelib") || package == "beskid_standard" {
         return Some(CORELIB_SPEC_PATH.to_string());
     }
     None
@@ -132,6 +115,12 @@ fn path_looks_like_corelib(path: &Path) -> bool {
 
 fn extract_symbol_name(markdown: &str) -> Option<String> {
     for line in markdown.lines() {
+        if let Some((_, rest)) = line.split_once('`')
+            && let Some((name, _)) = rest.split_once('`')
+            && !name.trim().is_empty()
+        {
+            return Some(name.trim().to_string());
+        }
         if let Some(rest) = line.strip_prefix("**")
             && let Some((name, _)) = rest.split_once("**")
         {

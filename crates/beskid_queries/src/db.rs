@@ -2,28 +2,54 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use beskid_analysis::projects::CompilePlan;
-use beskid_analysis::projects::assembly::{ModuleIndex, SourceUnit, UnitHir};
-use beskid_analysis::resolve::Resolution;
-use beskid_analysis::types::UnitTypeSurface;
+use beskid_analysis::projects::assembly::{ModuleIndex, SourceUnit};
+use beskid_analysis::syntax::SyntaxGenerationId;
 use salsa::Setter;
 
 use crate::inputs::{FileText, GrammarRevision, ProjectSession};
+use crate::semantic_contract::{
+    CorelibService, SemanticError, SourceUnitId, SyntaxUnitInput, SyntaxUnitRevision,
+};
 use crate::stats::record_revision_bump;
 use crate::typed_entry_bundle::reset_typed_entry_inputs;
 
 type ProjectRegistry = HashMap<(PathBuf, PathBuf, String), ProjectSession>;
 type ModuleIndexCache = HashMap<String, Arc<ModuleIndex>>;
+type SyntaxUnitRegistry = HashMap<SourceUnitId, SyntaxUnitInput>;
+
+/// Assembly-scoped import/module authority for generation-safe cross-unit syntax facts.
+#[derive(Default)]
+pub struct SyntaxDependencyRegistry {
+    pub(crate) imports: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<SyntaxImport>>,
+    /// Exact logical module paths assembled for one syntax generation.
+    pub(crate) modules: HashMap<(SyntaxGenerationId, Vec<String>), Vec<SourceUnitId>>,
+    /// Compiler-minted Corelib service names available to one exact source unit generation.
+    /// Ordinary program syntax never populates this registry entry.
+    pub(crate) corelib_services:
+        HashMap<(SourceUnitId, SyntaxGenerationId), Vec<CorelibService>>,
+}
+
+/// One explicit module import resolved to an assembled syntax unit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxImport {
+    pub(crate) path: Vec<String>,
+    pub(crate) binding: String,
+    /// Whether the source declaration explicitly named this binding with `as`.
+    pub(crate) has_explicit_alias: bool,
+    pub(crate) target: SourceUnitId,
+    /// Whether the importing source unit exposes this target through its module API.
+    /// Private imports remain available only to the importing unit's own syntax facts.
+    pub(crate) public: bool,
+}
 
 /// Cached heavy artifacts keyed by content fingerprint (invalidated via Salsa inputs).
 #[derive(Default)]
 pub struct UnitArtifactCache {
     pub source_units: HashMap<String, Arc<SourceUnit>>,
-    pub unit_hir: HashMap<String, Arc<UnitHir>>,
-    pub unit_resolutions: HashMap<String, Arc<Resolution>>,
-    pub unit_type_surfaces: HashMap<String, Arc<UnitTypeSurface>>,
 }
 
 /// Salsa database trait extended by tracked query groups.
@@ -34,6 +60,8 @@ pub trait Db: salsa::Database {
     fn unit_cache(&self) -> &Mutex<UnitArtifactCache>;
     fn grammar_revision_input(&self) -> GrammarRevision;
     fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>>;
+    fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput>;
+    fn syntax_dependency_registry(&self) -> &Mutex<SyntaxDependencyRegistry>;
 }
 
 /// Process/workspace-scoped incremental compilation database.
@@ -43,10 +71,14 @@ pub struct BeskidDatabase {
     storage: salsa::Storage<Self>,
     file_registry: Arc<Mutex<HashMap<PathBuf, FileText>>>,
     project_registry: Arc<Mutex<ProjectRegistry>>,
+    syntax_unit_registry: Arc<Mutex<SyntaxUnitRegistry>>,
+    syntax_dependency_registry: Arc<Mutex<SyntaxDependencyRegistry>>,
     unit_cache: Arc<Mutex<UnitArtifactCache>>,
     module_index_cache: Arc<Mutex<ModuleIndexCache>>,
     persistence_root: Option<PathBuf>,
     grammar_revision: Option<GrammarRevision>,
+    syntax_parse_count: Arc<AtomicU64>,
+    syntax_index_build_count: Arc<AtomicU64>,
 }
 
 impl Default for BeskidDatabase {
@@ -61,10 +93,14 @@ impl BeskidDatabase {
             storage: salsa::Storage::default(),
             file_registry: Arc::new(Mutex::new(HashMap::new())),
             project_registry: Arc::new(Mutex::new(HashMap::new())),
+            syntax_unit_registry: Arc::new(Mutex::new(HashMap::new())),
+            syntax_dependency_registry: Arc::new(Mutex::new(SyntaxDependencyRegistry::default())),
             unit_cache: Arc::new(Mutex::new(UnitArtifactCache::default())),
             module_index_cache: Arc::new(Mutex::new(ModuleIndexCache::new())),
             persistence_root: persistence_root.clone(),
             grammar_revision: None,
+            syntax_parse_count: Arc::new(AtomicU64::new(0)),
+            syntax_index_build_count: Arc::new(AtomicU64::new(0)),
         };
         let _ = db.grammar_revision();
         if let Some(root) = &db.persistence_root {
@@ -102,6 +138,249 @@ impl BeskidDatabase {
             .expect("grammar revision initialized in BeskidDatabase::new")
     }
 
+    /// Return the single registered Salsa revision input for `unit`.
+    pub fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput> {
+        Db::syntax_unit(self, unit)
+    }
+
+    /// Return the registered input for `unit`, creating it when first observed.
+    pub fn ensure_syntax_unit(
+        &mut self,
+        project: ProjectSession,
+        unit: SourceUnitId,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+    ) -> Result<SyntaxUnitInput, SemanticError> {
+        let source = self
+            .file_text(unit.path(self))
+            .map(|file| file.text(self).clone())
+            .ok_or_else(|| {
+                SemanticError::new(format!(
+                    "source text is not registered for {}",
+                    unit.path(self).display()
+                ))
+            })?;
+        let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(&source));
+        if let Some(input) = self.syntax_unit(unit) {
+            self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
+            if input.source_fingerprint(self) == &source_fingerprint {
+                return Ok(input);
+            }
+        }
+        let program = self.parse_and_expand(unit, &source)?;
+        self.register_expanded_syntax(
+            project,
+            unit,
+            generation,
+            source_fingerprint,
+            Arc::new(program),
+        )
+    }
+
+    /// Register an already expanded source unit without reparsing away mod rewrites.
+    pub fn ensure_expanded_syntax_unit(
+        &mut self,
+        project: ProjectSession,
+        unit: SourceUnitId,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+        source: String,
+        expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
+    ) -> Result<SyntaxUnitInput, SemanticError> {
+        let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(&source));
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&expanded_program)?);
+        if let Some(input) = self.syntax_unit(unit) {
+            self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
+            if input.source_fingerprint(self) == &source_fingerprint
+                && input.revision(self).tree_fingerprint == tree_fingerprint
+            {
+                return Ok(input);
+            }
+        }
+        let input = self.register_expanded_syntax(
+            project,
+            unit,
+            generation,
+            source_fingerprint,
+            expanded_program,
+        )?;
+        self.ensure_file_text(unit.path(self).clone(), source);
+        Ok(input)
+    }
+
+    /// Parse, expand, register, and invalidate one edited source as a single semantic update.
+    pub fn update_syntax_source(
+        &mut self,
+        project: ProjectSession,
+        unit: SourceUnitId,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+        source: String,
+    ) -> Result<SyntaxUnitInput, SemanticError> {
+        let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(&source));
+        if let Some(input) = self.syntax_unit(unit) {
+            self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
+            if input.source_fingerprint(self) == &source_fingerprint {
+                return Ok(input);
+            }
+        }
+        let program = self.parse_and_expand(unit, &source)?;
+        let input = self.register_expanded_syntax(
+            project,
+            unit,
+            generation,
+            source_fingerprint,
+            Arc::new(program),
+        )?;
+        self.ensure_file_text(unit.path(self).clone(), source);
+        Ok(input)
+    }
+
+    fn register_expanded_syntax(
+        &mut self,
+        project: ProjectSession,
+        unit: SourceUnitId,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+        source_fingerprint: Arc<str>,
+        expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
+    ) -> Result<SyntaxUnitInput, SemanticError> {
+        let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&expanded_program)?);
+        let registry = Arc::clone(&self.syntax_unit_registry);
+        let mut registry = registry.lock().expect("syntax unit registry");
+        if let Some(input) = registry.get(&unit).copied() {
+            self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
+            let current = input.revision(self);
+            if current
+                .tree_fingerprint_history
+                .iter()
+                .any(|fingerprint| fingerprint == &tree_fingerprint)
+            {
+                return Err(SemanticError::new(
+                    "expanded syntax cannot reuse a tree fingerprint from an existing generation",
+                ));
+            }
+            let syntax_index = Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(
+                &expanded_program,
+                generation,
+            ));
+            self.syntax_index_build_count
+                .fetch_add(1, Ordering::Relaxed);
+            let mut source_fingerprint_history = current.source_fingerprint_history.to_vec();
+            source_fingerprint_history.push(Arc::clone(&source_fingerprint));
+            let mut tree_fingerprint_history = current.tree_fingerprint_history.to_vec();
+            tree_fingerprint_history.push(Arc::clone(&tree_fingerprint));
+            input.set_revision(self).to(Arc::new(SyntaxUnitRevision {
+                generation,
+                expanded_program,
+                syntax_index,
+                source_fingerprint,
+                tree_fingerprint,
+                source_fingerprint_history: source_fingerprint_history.into(),
+                tree_fingerprint_history: tree_fingerprint_history.into(),
+            }));
+            return Ok(input);
+        }
+        let syntax_index = Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(
+            &expanded_program,
+            generation,
+        ));
+        self.syntax_index_build_count
+            .fetch_add(1, Ordering::Relaxed);
+        let input = SyntaxUnitInput::new(
+            self,
+            project,
+            unit,
+            Arc::new(SyntaxUnitRevision {
+                generation,
+                expanded_program,
+                syntax_index,
+                source_fingerprint_history: Arc::from([Arc::clone(&source_fingerprint)]),
+                tree_fingerprint_history: Arc::from([Arc::clone(&tree_fingerprint)]),
+                source_fingerprint,
+                tree_fingerprint,
+            }),
+        );
+        registry.insert(unit, input);
+        Ok(input)
+    }
+
+    fn validate_existing_registration(
+        &self,
+        input: SyntaxUnitInput,
+        project: ProjectSession,
+        generation: beskid_analysis::syntax::SyntaxGenerationId,
+        source_fingerprint: &Arc<str>,
+    ) -> Result<(), SemanticError> {
+        if input.project(self) != project {
+            return Err(SemanticError::new(
+                "a source unit cannot be reassigned to another project session",
+            ));
+        }
+        let current_generation = input.generation(self);
+        let source_changed = input.source_fingerprint(self) != source_fingerprint;
+        if generation.0 < current_generation.0 {
+            return Err(SemanticError::new("syntax generation cannot regress"));
+        }
+        if source_changed && generation.0 == current_generation.0 {
+            return Err(SemanticError::new(
+                "changed syntax requires a strictly newer generation",
+            ));
+        }
+        if source_changed
+            && input
+                .revision(self)
+                .source_fingerprint_history
+                .iter()
+                .any(|fingerprint| fingerprint == source_fingerprint)
+        {
+            return Err(SemanticError::new(
+                "source syntax cannot resurrect a fingerprint from an earlier generation",
+            ));
+        }
+        if !source_changed && generation != current_generation {
+            return Err(SemanticError::new(
+                "unchanged syntax cannot be relabeled with a different generation",
+            ));
+        }
+        Ok(())
+    }
+
+    fn parse_and_expand(
+        &self,
+        unit: SourceUnitId,
+        source: &str,
+    ) -> Result<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>, SemanticError>
+    {
+        self.syntax_parse_count.fetch_add(1, Ordering::Relaxed);
+        let source_name = unit.path(self).display().to_string();
+        let program =
+            beskid_analysis::services::parse_program_with_source_name(&source_name, source)
+                .map_err(|error| {
+                    SemanticError::new(format!("failed to parse {source_name}: {error}"))
+                })?;
+        let expanded = beskid_analysis::macros::expand_program_with_diagnostics(
+            program,
+            beskid_analysis::macros::DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+            &source_name,
+            source,
+        );
+        let errors = expanded
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == beskid_analysis::analysis::Severity::Error)
+            .map(|diagnostic| format!("failed to expand {source_name}: {}", diagnostic.message))
+            .collect::<Vec<_>>();
+        if !errors.is_empty() {
+            return Err(SemanticError::from_diagnostics(errors));
+        }
+        Ok(expanded.program)
+    }
+
+    #[doc(hidden)]
+    pub fn syntax_authority_counts(&self) -> (u64, u64) {
+        (
+            self.syntax_parse_count.load(Ordering::Relaxed),
+            self.syntax_index_build_count.load(Ordering::Relaxed),
+        )
+    }
+
     /// Invalidate units that import `changed_path` (fine-grained edit propagation).
     pub fn invalidate_import_dependents(
         &mut self,
@@ -130,9 +409,6 @@ impl BeskidDatabase {
     pub fn clear_unit_cache(&self) {
         let mut cache = self.unit_cache.lock().expect("unit cache");
         cache.source_units.clear();
-        cache.unit_hir.clear();
-        cache.unit_resolutions.clear();
-        cache.unit_type_surfaces.clear();
     }
 
     /// Register a module index snapshot for per-unit resolution queries.
@@ -158,9 +434,6 @@ impl BeskidDatabase {
         let mut cache = self.unit_cache.lock().expect("unit cache");
         for fp in fingerprints {
             cache.source_units.remove(fp);
-            cache.unit_hir.remove(fp);
-            cache.unit_resolutions.remove(fp);
-            cache.unit_type_surfaces.remove(fp);
         }
     }
 
@@ -302,6 +575,36 @@ pub fn configure_compilation_database_for_project(
     replace_compilation_database(target, BeskidDatabase::with_persistence(project_root));
 }
 
+fn expanded_syntax_fingerprint(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+) -> Result<String, SemanticError> {
+    let mut structural = serde_json::to_value(program).map_err(|error| {
+        SemanticError::new(format!("failed to fingerprint expanded syntax: {error}"))
+    })?;
+    remove_span_fields(&mut structural);
+    let encoded = serde_json::to_string(&structural).map_err(|error| {
+        SemanticError::new(format!("failed to fingerprint expanded syntax: {error}"))
+    })?;
+    Ok(beskid_artifacts::content_fingerprint(&encoded))
+}
+
+fn remove_span_fields(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Array(values) => {
+            for value in values {
+                remove_span_fields(value);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            fields.remove("span");
+            for value in fields.values_mut() {
+                remove_span_fields(value);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[salsa::db]
 impl salsa::Database for BeskidDatabase {}
 
@@ -313,6 +616,18 @@ impl Db for BeskidDatabase {
 
     fn project_registry(&self) -> &Mutex<HashMap<(PathBuf, PathBuf, String), ProjectSession>> {
         &self.project_registry
+    }
+
+    fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput> {
+        self.syntax_unit_registry
+            .lock()
+            .expect("syntax unit registry")
+            .get(&unit)
+            .copied()
+    }
+
+    fn syntax_dependency_registry(&self) -> &Mutex<SyntaxDependencyRegistry> {
+        &self.syntax_dependency_registry
     }
 
     fn unit_cache(&self) -> &Mutex<UnitArtifactCache> {

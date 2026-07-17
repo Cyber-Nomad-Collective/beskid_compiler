@@ -1,0 +1,20 @@
+(decl node_kind (NodeKind) AstNodeKey)
+(extern extractor node_kind node_kind)
+
+(decl literal_kind (LiteralKind) AstNodeKey)
+(extern extractor literal_kind literal_kind)
+
+(decl operator_fact (OperatorFact) AstNodeKey)
+(extern extractor operator_fact operator_fact)
+
+(decl call_kind (CallKind) AstNodeKey)
+(extern extractor call_kind call_kind)
+
+(decl partial child_at (AstNodeKey u8) AstNodeKey)
+(extern constructor child_at child_at)
+
+(decl partial assignment_target_kind (NodeKind) AstNodeKey)
+(extern extractor assignment_target_kind assignment_target_kind)
+
+(decl partial for_iterable_kind (NodeKind) AstNodeKey)
+(extern extractor for_iterable_kind for_iterable_kind)

@@ -1,7 +1,7 @@
 //! Shared Cranelift module helpers for JIT and AOT backends (builtin imports, extern FFI checks,
 //! TestCase name remapping). Object builds use the same extern FFI rules as JIT.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use beskid_abi::{AbiParamKind, AbiReturnKind, BUILTIN_SPECS};
@@ -88,6 +88,40 @@ pub fn declare_builtin_imports<M: Module>(
     Ok(())
 }
 
+/// Declare only builtin imports referenced by the artifact's lowered CLIF.
+///
+/// AOT archives retain every declared import, even when no emitted function calls it. Restrict
+/// the object boundary to actual `TestCase` callees so a canonical runtime archive cannot leak
+/// unrelated legacy runtime symbols.
+pub fn declare_referenced_builtin_imports<M: Module>(
+    module: &mut M,
+    artifact: &CodegenArtifact,
+    func_ids: &mut HashMap<String, FuncId>,
+) -> Result<(), ModuleError> {
+    let referenced = artifact
+        .functions
+        .iter()
+        .flat_map(|function| function.function.dfg.ext_funcs.iter())
+        .filter_map(|(_func_ref, ext_func)| match &ext_func.name {
+            ExternalName::TestCase(name) => Some(String::from_utf8_lossy(name.raw()).to_string()),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let pointer = module.isa().pointer_type();
+    let call_conv = module.isa().default_call_conv();
+
+    for spec in BUILTIN_SPECS {
+        if !referenced.contains(spec.symbol) || func_ids.contains_key(spec.symbol) {
+            continue;
+        }
+        let signature = builtin_signature(pointer, call_conv, spec.params, spec.returns);
+        let id = module.declare_function(spec.symbol, Linkage::Import, &signature)?;
+        func_ids.insert(spec.symbol.to_owned(), id);
+    }
+
+    Ok(())
+}
+
 /// Ensure `sig` uses only pointer-sized integers and a small allowlist of scalar types permitted for extern FFI.
 pub fn validate_ffi_signature(
     sig: &Signature,
@@ -164,11 +198,33 @@ pub fn declare_user_functions_with_link_symbols<M: Module>(
     func_ids: &mut HashMap<String, FuncId>,
     link_symbol: impl Fn(&str) -> String,
 ) -> Result<Vec<String>, ModuleError> {
+    declare_user_functions_with_link_symbols_and_linkage(
+        module,
+        artifact,
+        func_ids,
+        link_symbol,
+        |_| linkage,
+    )
+}
+
+/// Like [`declare_user_functions_with_link_symbols`], but chooses linkage per emitted object
+/// symbol. AOT runtime publication uses this to keep syntax implementation functions local while
+/// exporting only manifest-approved ABI functions.
+pub fn declare_user_functions_with_link_symbols_and_linkage<M: Module>(
+    module: &mut M,
+    artifact: &CodegenArtifact,
+    func_ids: &mut HashMap<String, FuncId>,
+    link_symbol: impl Fn(&str) -> String,
+    linkage_for_symbol: impl Fn(&str) -> Linkage,
+) -> Result<Vec<String>, ModuleError> {
     let mut declared = Vec::with_capacity(artifact.functions.len());
     for function in &artifact.functions {
         let emitted_symbol = link_symbol(&function.name);
-        let func_id =
-            module.declare_function(&emitted_symbol, linkage, &function.function.signature)?;
+        let func_id = module.declare_function(
+            &emitted_symbol,
+            linkage_for_symbol(&emitted_symbol),
+            &function.function.signature,
+        )?;
         func_ids.insert(function.name.clone(), func_id);
         declared.push(emitted_symbol);
     }

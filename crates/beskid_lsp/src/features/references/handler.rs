@@ -25,22 +25,45 @@ pub fn handle_references(
             .collect();
     }
 
-    let analysis = match doc.analysis.as_ref() {
-        Some(analysis) => analysis,
-        None => return Vec::new(),
+    let Some(target) = doc.syntax_definitions.iter().find(|definition| {
+        (definition.reference_start <= offset && offset <= definition.reference_end)
+            || (entry_path.is_some_and(|path| path == definition.declaration_path)
+                && definition.declaration_start <= offset
+                && offset <= definition.declaration_end)
+    }) else {
+        return Vec::new();
     };
-
-    let references =
-        beskid_analysis::services::references_at_offset(analysis, offset, include_declaration);
-
-    references
-        .into_iter()
-        .filter_map(|reference| {
-            let target_uri = path_to_uri(&reference.location.path)?;
-            Some(Location {
-                uri: target_uri,
-                range: symbol_location_to_lsp_range(&reference.location, entry_path, &doc.text),
-            })
+    let mut locations: Vec<Location> = doc
+        .syntax_definitions
+        .iter()
+        .filter(|reference| {
+            reference.declaration_path == target.declaration_path
+                && reference.declaration_start == target.declaration_start
+                && reference.declaration_end == target.declaration_end
         })
-        .collect()
+        .map(|reference| Location {
+            uri: uri.clone(),
+            range: offset_range_to_lsp(&doc.text, reference.reference_start, reference.reference_end),
+        })
+        .collect();
+    if include_declaration {
+        let Some(target_uri) = path_to_uri(&target.declaration_path) else {
+            return locations;
+        };
+        locations.push(Location {
+            uri: target_uri,
+            range: symbol_location_to_lsp_range(
+                &beskid_analysis::services::SymbolLocation {
+                    path: target.declaration_path.clone(),
+                    start: target.declaration_start,
+                    end: target.declaration_end,
+                },
+                entry_path,
+                &doc.text,
+            ),
+        });
+    }
+    locations.sort_by_key(|location| (location.uri.to_string(), location.range.start));
+    locations.dedup();
+    locations
 }

@@ -15,10 +15,13 @@ pub fn format_type(ty: &Spanned<Type>) -> String {
             PrimitiveType::I32 => "i32".to_string(),
             PrimitiveType::I64 => "i64".to_string(),
             PrimitiveType::U8 => "u8".to_string(),
+            PrimitiveType::Pointer => "pointer".to_string(),
+            PrimitiveType::Word => "word".to_string(),
             PrimitiveType::F64 => "f64".to_string(),
             PrimitiveType::Char => "char".to_string(),
             PrimitiveType::String => "string".to_string(),
             PrimitiveType::Unit => "unit".to_string(),
+            PrimitiveType::Never => "never".to_string(),
         },
         Type::Complex(path) => path
             .node

@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 beskid_abi = { path = "../beskid_abi" }
 beskid_codegen = { path = "../beskid_codegen" }
+beskid_analysis = { path = "../beskid_analysis" }
+beskid_queries = { path = "../beskid_queries" }
 beskid_pipeline = { path = "../beskid_pipeline" }
 cranelift-codegen = { workspace = true }
 cranelift-module = { workspace = true }

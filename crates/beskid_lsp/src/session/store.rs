@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 use beskid_analysis::CompilationContext;
 use beskid_analysis::services::DocumentAnalysisSnapshot;
 use beskid_queries::{
-    BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database,
+    AstNodeKey, BeskidDatabase, configure_compilation_database_for_project,
+    reset_compilation_database,
 };
 use tokio::sync::{Mutex as AsyncMutex, Notify};
 use tower_lsp_server::ls_types::Uri;
@@ -20,6 +21,61 @@ pub struct Document {
     pub text: String,
     pub analysis_cache_version: u32,
     pub analysis: Option<DocumentAnalysisSnapshot>,
+    /// Generation-safe syntax/Salsa definition facts for this exact buffer revision.
+    ///
+    /// Definition handling consumes this index instead of reaching back into the legacy
+    /// HIR-backed analysis snapshot.
+    pub syntax_definitions: Vec<SyntaxDefinition>,
+    /// Generation-safe syntax/Salsa hover facts for this exact buffer revision.
+    pub syntax_hovers: Vec<SyntaxHover>,
+    pub syntax_symbols: Vec<SyntaxSymbol>,
+    /// Generation-bound root key used by syntax-only completion queries.
+    pub syntax_completion: Option<SyntaxCompletion>,
+    /// Generation-safe type facts for source nodes in this exact buffer revision.
+    pub syntax_inlay_hints: Vec<SyntaxInlayHint>,
+}
+
+/// One resolved syntax reference and its declaration location.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxDefinition {
+    pub reference_start: usize,
+    pub reference_end: usize,
+    pub declaration_path: PathBuf,
+    pub declaration_start: usize,
+    pub declaration_end: usize,
+}
+
+/// Markdown hover content and the declaration span it describes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxHover {
+    pub reference_start: usize,
+    pub reference_end: usize,
+    pub markdown: String,
+    pub location_path: PathBuf,
+    pub location_start: usize,
+    pub location_end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxSymbol {
+    pub name: String,
+    pub kind: beskid_analysis::services::AnalysisSymbolKind,
+    pub start: usize,
+    pub end: usize,
+}
+
+/// One source span whose type was proven by a generation-safe semantic query.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxInlayHint {
+    pub start: usize,
+    pub end: usize,
+    pub type_label: String,
+}
+
+/// The authoritative syntax generation available to a completion request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyntaxCompletion {
+    pub anchor: AstNodeKey,
 }
 
 /// In-memory LSP workspace: open docs, closed-but-indexed files, and compilation context cache.

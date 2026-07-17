@@ -9,16 +9,26 @@
 //! hosts that run the mod SDK and should call [`beskid_pipeline::observe_phase`] around real mod
 //! work so observers match [`beskid_pipeline::phases::JIT_RUN_PHASE_ORDER`] when mods are active.
 
+pub mod codegen_input;
 pub mod cranelift_host;
 pub mod diagnostics;
 pub mod errors;
+pub mod isle_adapter;
+mod isle_trace;
 pub mod linking;
 pub mod lowering;
 pub mod module_emission;
+pub mod prepared_syntax;
 pub mod services;
 
+pub use codegen_input::{CodegenInput, CodegenInputError};
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
 pub use errors::CodegenError;
+pub use isle_adapter::{
+    ItemModuleImporter, SyntaxNodeFacts, emit_isle_expression, emit_isle_item,
+    emit_isle_item_with_call_importer, emit_isle_item_with_services,
+    emit_isle_item_with_services_specialization, syntax_item_signature,
+};
 pub use linking::{
     FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, referenced_extern_imports,
     validate_artifact,
@@ -29,9 +39,17 @@ pub use lowering::{
     map_type_id_to_clif_with_dynamic, mapping_pair_eligible, object_link_symbol, pointer_type,
     require_mapping_eligible, shape_id_for_item,
 };
-pub use module_emission::{DescriptorHandles, emit_string_literals, emit_type_descriptors};
+pub use module_emission::{
+    DescriptorHandles, SyntaxModuleItem, emit_string_literals, emit_type_descriptors,
+    lower_syntax_program,
+};
+pub use prepared_syntax::{
+    PreparedSyntaxEntrypoint, lower_canonical_runtime_prepared_syntax,
+    lower_prepared_syntax_entrypoint, lower_prepared_syntax_module,
+    lower_syntax_assembly_entrypoint,
+};
 pub use services::{
-    LoweredProgram, entrypoint_artifact_from_front_end, jit_symbol_for_item, lower_from_front_end,
+    LoweredProgram, jit_symbol_for_item, lower_from_front_end,
     lower_resolved_entrypoint_with_pipeline, lower_resolved_input_with_pipeline, lower_source,
     lower_source_for_entrypoint, lower_source_with_pipeline, materialize_source_path_for_lowering,
     render_clif,

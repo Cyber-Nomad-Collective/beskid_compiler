@@ -64,6 +64,7 @@ pub use services::{
     compile_plan_for_input_path, compile_plan_for_input_path_with_member,
     resolve_input_with_pipeline,
 };
+pub use syntax::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use syntax_query::{
     Ancestors, AstNode, Descendants, DynNodeRef, HirDescendants, HirNode, HirNodeKind, HirNodeRef,
     HirQuery, HirVisit, HirWalker, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,

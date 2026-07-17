@@ -6,12 +6,15 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 beskid_analysis = { path = "../beskid_analysis" }
-beskid_aot = { path = "../beskid_aot" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_engine = { path = "../beskid_engine" }
 beskid_pipeline = { path = "../beskid_pipeline" }
+beskid_queries = { path = "../beskid_queries" }
 crossterm = { workspace = true }
 ratatui = { workspace = true }
 tui-term = { workspace = true, features = ["vt100"] }
 
 [dev-dependencies]
+beskid_abi = { path = "../beskid_abi" }
+beskid_tools = { path = "../beskid_tools" }
+tempfile = "3"

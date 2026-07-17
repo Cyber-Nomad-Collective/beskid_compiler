@@ -31,23 +31,28 @@ impl std::fmt::Debug for FrontEndTypedResult {
 }
 
 impl FrontEndTypedResult {
-    /// Borrowed view for per-entrypoint lowering (shared assembly/resolution/typed HIR).
-    pub fn as_lower_input(&self) -> FrontEndLowerInput<'_> {
-        FrontEndLowerInput {
-            assembly: &self.assembly,
-            hir: &self.hir,
-            resolution: &self.resolution,
-            typed: &self.typed,
-        }
+    /// Return the syntax-only authority for the post-mod-rewrite frontend snapshot.
+    ///
+    /// `ProgramAssembly` retains parsed source units for HIR compatibility, while `program`
+    /// is the expanded/re-written entry consumed by generation-safe semantic facts. Replacing
+    /// exactly that unit keeps syntax item keys aligned without carrying legacy HIR units.
+    pub fn syntax_assembly(&self) -> crate::projects::SyntaxProgramAssembly {
+        let assembly = &self.assembly;
+        let mut units = assembly.units.as_ref().clone();
+        units[assembly.entry_index].program = self.program.clone();
+        let mut syntax = crate::projects::SyntaxProgramAssembly::new(
+            assembly.roots.clone(),
+            std::sync::Arc::new(units),
+            assembly.entry_index,
+            assembly.discovery,
+            std::sync::Arc::clone(&assembly.module_index),
+            assembly.has_std_dependency,
+        );
+        syntax.set_trusted_corelib_service_paths_for_project_assembly(std::sync::Arc::clone(
+            &assembly.trusted_corelib_service_paths,
+        ));
+        syntax
     }
-}
-
-/// Borrowed front-end bundle passed into codegen lowering.
-pub struct FrontEndLowerInput<'a> {
-    pub assembly: &'a crate::projects::ProgramAssembly,
-    pub hir: &'a crate::syntax::Spanned<crate::hir::HirProgram>,
-    pub resolution: &'a crate::resolve::Resolution,
-    pub typed: &'a crate::types::TypeResult,
 }
 
 /// Options for [`compile_front_end_with_pipeline`].
@@ -99,4 +104,54 @@ pub fn compile_front_end_with_pipeline(
     )?;
 
     prepared.into_executable()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::{FrontEndOptions, compile_front_end_with_pipeline};
+    use crate::services::{parse_program_with_source_name, synthetic_compile_plan_for_source};
+
+    static TEST_ID: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn syntax_assembly_replaces_only_the_entry_program_after_mod_rewrite() {
+        let test_id = TEST_ID.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("beskid_front_end_syntax_assembly_{test_id}"));
+        std::fs::create_dir_all(&root).expect("test source root");
+        let entry_path = root.join("Main.bd");
+        let source = "i32 Main() { return 0; }";
+        std::fs::write(&entry_path, source).expect("entry source");
+
+        let plan = synthetic_compile_plan_for_source(&entry_path);
+        let mut front = compile_front_end_with_pipeline(
+            &entry_path,
+            source,
+            Some(&plan),
+            None,
+            FrontEndOptions::default(),
+            None,
+        )
+        .expect("front end");
+        let rewritten = parse_program_with_source_name("Main.bd", "i32 Rewritten() { return 0; }")
+            .expect("rewritten entry program");
+        front.program = rewritten.clone();
+
+        let syntax_assembly = front.syntax_assembly();
+
+        assert_eq!(syntax_assembly.entry_unit().program, rewritten);
+        assert_eq!(syntax_assembly.roots(), &front.assembly.roots);
+        assert_eq!(syntax_assembly.entry_index(), front.assembly.entry_index);
+        assert_eq!(syntax_assembly.discovery(), front.assembly.discovery);
+        assert!(std::sync::Arc::ptr_eq(
+            syntax_assembly.module_index(),
+            &front.assembly.module_index,
+        ));
+        assert_eq!(
+            syntax_assembly.has_std_dependency(),
+            front.assembly.has_std_dependency,
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

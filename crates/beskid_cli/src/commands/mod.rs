@@ -20,6 +20,8 @@ pub mod new;
 pub mod parse;
 pub mod repl;
 pub mod run;
+pub mod runtime_kit;
+mod syntax_codegen;
 pub mod test;
 pub mod tree;
 pub mod update;

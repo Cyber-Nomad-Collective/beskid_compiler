@@ -1,11 +1,11 @@
-use std::path::Path;
-
 use anyhow::Result;
-use beskid_analysis::hir::HirPrimitiveType;
-use beskid_analysis::resolve::ItemKind;
-use beskid_analysis::types::{TypeInfo, format_type_id};
-use beskid_codegen::services::lower_source;
+use beskid_analysis::services::{
+    FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
+};
 use beskid_engine::Engine;
+use beskid_engine::services::{
+    run_entrypoint_from_front_end_with_engine, syntax_entrypoint_return_type_from_front_end,
+};
 use beskid_pipeline::PipelineObserver;
 
 use crate::REPL_SOURCE_PATH;
@@ -39,21 +39,11 @@ pub fn eval_snippet(engine: &mut Engine, snippet: &str) -> EvalOutcome {
 
 pub fn type_of_snippet(snippet: &str) -> EvalOutcome {
     match wrap_snippet(snippet) {
-        Ok(wrapped) => match lower_wrapped(&wrapped.source) {
-            Ok(lowered) => {
-                let Some(main) = find_entrypoint(&lowered.resolution, "Main") else {
-                    return EvalOutcome::Error("missing `Main` entrypoint".to_string());
-                };
-                let Some(signature) = lowered.typed.function_signatures.get(&main.id) else {
-                    return EvalOutcome::Error("missing signature for `Main`".to_string());
-                };
-                let display = format_type_id(
-                    &lowered.typed,
-                    Some(&lowered.resolution),
-                    signature.return_type,
-                );
-                EvalOutcome::Type(display)
-            }
+        Ok(wrapped) => match prepare_wrapped(&wrapped.source) {
+            Ok(front) => match syntax_entrypoint_return_type_from_front_end(&front, "Main") {
+                Ok(return_type) => EvalOutcome::Type(format_semantic_type(return_type).to_owned()),
+                Err(error) => EvalOutcome::Error(error.to_string()),
+            },
             Err(error) => EvalOutcome::Error(error),
         },
         Err(error) => EvalOutcome::Error(error),
@@ -80,7 +70,7 @@ fn wrap_snippet(snippet: &str) -> Result<WrappedSnippet, String> {
 
     for ret in EXPR_RETURN_TYPES {
         let wrapped = format!("{ret} Main() {{ return {trimmed}; }}");
-        if lower_wrapped(&wrapped).is_ok() {
+        if prepare_wrapped(&wrapped).is_ok() {
             return Ok(WrappedSnippet {
                 source: wrapped,
                 return_type: (*ret).to_string(),
@@ -108,8 +98,21 @@ fn is_likely_statement(snippet: &str) -> bool {
         .any(|prefix| trimmed.starts_with(prefix))
 }
 
-fn lower_wrapped(source: &str) -> Result<beskid_codegen::services::LoweredProgram, String> {
-    lower_source(Path::new(REPL_SOURCE_PATH), source, true).map_err(format_lower_error)
+fn prepare_wrapped(source: &str) -> Result<beskid_analysis::services::FrontEndTypedResult, String> {
+    let source_path = beskid_codegen::materialize_source_path_for_lowering(
+        std::path::Path::new(REPL_SOURCE_PATH),
+        source,
+    )
+    .map_err(format_lower_error)?;
+    let plan = synthetic_compile_plan_for_source(&source_path);
+    let resolved: ResolvedInput =
+        resolved_input_from_plan(source_path, source.to_owned(), plan, None, None);
+    beskid_queries::compile_front_end_from_resolved_input(
+        &resolved,
+        FrontEndOptions::default(),
+        None,
+    )
+    .map_err(format_lower_error)
 }
 
 fn run_wrapped(
@@ -118,94 +121,33 @@ fn run_wrapped(
     entrypoint: &str,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String, String> {
-    let lowered = lower_wrapped(source)?;
-    engine
-        .compile_artifact_with_pipeline(&lowered.artifact, pipeline)
-        .map_err(|err| format!("JIT compile failed: {err}"))?;
-
-    let entrypoint_info = find_entrypoint(&lowered.resolution, entrypoint)
-        .ok_or_else(|| format!("missing entrypoint `{entrypoint}`"))?;
-
-    let signature = lowered
-        .typed
-        .function_signatures
-        .get(&entrypoint_info.id)
-        .ok_or_else(|| format!("missing signature for `{entrypoint}`"))?;
-
-    if !signature.params.is_empty() {
-        return Err(format!("entrypoint `{entrypoint}` must take no parameters"));
-    }
-
-    let return_info = lowered
-        .typed
-        .types
-        .get(signature.return_type)
-        .ok_or_else(|| format!("missing return type for `{entrypoint}`"))?;
-
-    let jit_symbol = beskid_codegen::jit_symbol_for_item(&lowered.resolution, entrypoint_info.id);
-    let ptr = unsafe { engine.entrypoint_ptr(&jit_symbol) }
-        .map_err(|err| format!("entrypoint lookup failed: {err}"))?;
-    if ptr.is_null() {
-        return Err(format!("entrypoint `{entrypoint}` returned null pointer"));
-    }
-
-    Ok(engine.with_runtime(|_, _| format_return_value(ptr, return_info)))
+    let front = prepare_wrapped(source)?;
+    run_entrypoint_from_front_end_with_engine(
+        engine,
+        &front,
+        REPL_SOURCE_PATH,
+        source,
+        entrypoint,
+        pipeline,
+    )
+    .map_err(format_lower_error)
 }
 
-fn find_entrypoint<'a>(
-    resolution: &'a beskid_analysis::resolve::Resolution,
-    entrypoint: &str,
-) -> Option<&'a beskid_analysis::resolve::ItemInfo> {
-    resolution.items.iter().find(|item| {
-        entrypoint_matches_item(item, entrypoint)
-            && (item.kind == ItemKind::Function || item.kind == ItemKind::Test)
-    })
-}
-
-fn entrypoint_matches_item(item: &beskid_analysis::resolve::ItemInfo, entrypoint: &str) -> bool {
-    if item.name == entrypoint {
-        return true;
+fn format_semantic_type(ty: beskid_queries::SemanticTypeId) -> &'static str {
+    match ty {
+        beskid_queries::SemanticTypeId::UNIT => "unit",
+        beskid_queries::SemanticTypeId::BOOL => "bool",
+        beskid_queries::SemanticTypeId::I32 => "i32",
+        beskid_queries::SemanticTypeId::I64 => "i64",
+        beskid_queries::SemanticTypeId::U8 => "u8",
+        beskid_queries::SemanticTypeId::F64 => "f64",
+        beskid_queries::SemanticTypeId::CHAR => "char",
+        beskid_queries::SemanticTypeId::STRING => "string",
+        beskid_queries::SemanticTypeId::WORD => "word",
+        beskid_queries::SemanticTypeId::POINTER => "pointer",
+        beskid_queries::SemanticTypeId::NEVER => "never",
+        _ => "unknown",
     }
-    if !entrypoint.contains("::") {
-        return false;
-    }
-    entrypoint.rsplit("::").next() == Some(item.name.as_str())
-}
-
-fn format_return_value(ptr: *const u8, return_info: &TypeInfo) -> String {
-    match return_info {
-        TypeInfo::Primitive(HirPrimitiveType::Unit) => "ok".to_owned(),
-        TypeInfo::Primitive(HirPrimitiveType::Never) => {
-            let callable: extern "C" fn() -> ! = unsafe { std::mem::transmute(ptr) };
-            callable()
-        }
-        TypeInfo::Primitive(HirPrimitiveType::String)
-        | TypeInfo::Named(_)
-        | TypeInfo::GenericParam(_)
-        | TypeInfo::Applied { .. }
-        | TypeInfo::Function { .. }
-        | TypeInfo::Array(_)
-        | TypeInfo::Fiber(_) => {
-            let value: u64 = unsafe { invoke0(ptr) };
-            format!("0x{value:016x}")
-        }
-        TypeInfo::Primitive(HirPrimitiveType::I64) => unsafe { invoke0::<i64>(ptr) }.to_string(),
-        TypeInfo::Primitive(HirPrimitiveType::I32) => unsafe { invoke0::<i32>(ptr) }.to_string(),
-        TypeInfo::Primitive(HirPrimitiveType::U8) => unsafe { invoke0::<u8>(ptr) }.to_string(),
-        TypeInfo::Primitive(HirPrimitiveType::Bool) => {
-            (unsafe { invoke0::<u8>(ptr) } != 0).to_string()
-        }
-        TypeInfo::Primitive(HirPrimitiveType::F64) => unsafe { invoke0::<f64>(ptr) }.to_string(),
-        TypeInfo::Primitive(HirPrimitiveType::Char) => {
-            let value: u32 = unsafe { invoke0(ptr) };
-            std::char::from_u32(value).unwrap_or('\u{FFFD}').to_string()
-        }
-    }
-}
-
-unsafe fn invoke0<R>(ptr: *const u8) -> R {
-    let callable: extern "C" fn() -> R = unsafe { std::mem::transmute(ptr) };
-    callable()
 }
 
 fn format_lower_error(error: anyhow::Error) -> String {
@@ -215,6 +157,9 @@ fn format_lower_error(error: anyhow::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use beskid_abi::runtime_kit::BuildProfile;
+    use beskid_engine::host_runtime_target;
+    use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
     #[test]
     fn wraps_expression_as_i64_main() {
@@ -235,6 +180,43 @@ mod tests {
         let mut engine = Engine::new();
         let outcome = eval_snippet(&mut engine, "41 + 1");
         assert_eq!(outcome, EvalOutcome::Value("42".to_string()));
+    }
+
+    #[test]
+    fn eval_uses_a_fresh_native_runtime_kit() {
+        let prefix = tempfile::tempdir().expect("fresh runtime-kit prefix");
+        build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
+            .expect("publish canonical native runtime kit");
+        let target = host_runtime_target().expect("supported native host target");
+        let mut engine = Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug)
+            .expect("load the exact fresh runtime kit");
+
+        assert_eq!(
+            eval_snippet(&mut engine, "true"),
+            EvalOutcome::Value("true".to_string())
+        );
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[ignore = "requires the staged Linux native runtime-kit prefix"]
+    fn staged_linux_runtime_kit_evaluates_a_snippet() {
+        let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
+            .map(std::path::PathBuf::from)
+            .expect("Linux evidence must set BESKID_RUNTIME_PREFIX");
+        let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
+            Ok("debug") => BuildProfile::Debug,
+            Ok("release") => BuildProfile::Release,
+            value => panic!("unsupported staged runtime profile: {value:?}"),
+        };
+        let target = host_runtime_target().expect("supported native host target");
+        let mut engine = Engine::with_runtime_kit(&prefix, target, profile)
+            .expect("load the staged Linux runtime kit");
+
+        assert_eq!(
+            eval_snippet(&mut engine, "41 + 1"),
+            EvalOutcome::Value("42".to_string())
+        );
     }
 
     #[test]
@@ -268,5 +250,13 @@ mod tests {
         let mut engine = Engine::new();
         let outcome = eval_snippet(&mut engine, "let x = true + 1;");
         assert!(matches!(outcome, EvalOutcome::Error(_)));
+    }
+
+    #[test]
+    fn formats_word_type_from_syntax_authority() {
+        assert_eq!(
+            format_semantic_type(beskid_queries::SemanticTypeId::WORD),
+            "word"
+        );
     }
 }

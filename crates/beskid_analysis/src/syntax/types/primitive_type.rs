@@ -11,10 +11,13 @@ pub enum PrimitiveType {
     I32,
     I64,
     U8,
+    Pointer,
+    Word,
     F64,
     Char,
     String,
     Unit,
+    Never,
 }
 
 impl crate::parsing::parsable::Parsable for PrimitiveType {
@@ -34,10 +37,13 @@ impl crate::parsing::parsable::Parsable for PrimitiveType {
             "i32" => Self::I32,
             "i64" => Self::I64,
             "u8" => Self::U8,
+            "pointer" => Self::Pointer,
+            "word" => Self::Word,
             "f64" => Self::F64,
             "char" => Self::Char,
             "string" => Self::String,
             "unit" => Self::Unit,
+            "never" => Self::Never,
             _ => {
                 return Err(crate::parsing::error::ParseError::unexpected_rule(
                     pair,

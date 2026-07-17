@@ -80,12 +80,20 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn resolved_type_at(&self, span: SpanInfo) -> Option<ResolvedType> {
+        // A merged SpanIndex has no source identity. When type-checking a known unit, the
+        // source-scoped resolution table is authoritative; otherwise a same-offset dependency
+        // type can preempt the current unit before its scoped fact is considered.
+        if let Some(resolved_type) = self
+            .resolution
+            .tables
+            .resolved_type_at(span, self.current_source_path.as_ref())
+        {
+            return Some(resolved_type);
+        }
         if let Some(resolved_type) = self.resolution.span_index.lookup_type(span) {
             return Some(resolved_type);
         }
-        self.resolution
-            .tables
-            .resolved_type_at(span, self.current_source_path.as_ref())
+        None
     }
 
     pub(super) fn infer_generic_args_from_call(
@@ -547,5 +555,52 @@ impl<'a> TypeChecker<'a> {
             .collect::<Vec<_>>();
         self.constraints
             .apply_generic(callee, arg_types.to_vec(), result_vars, span);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::resolve::{Resolution, ResolvedType, SpanIndex};
+    use crate::types::surface::UnitTypeSurface;
+
+    #[test]
+    fn source_scoped_type_fact_wins_over_same_offset_span_index_entry() {
+        let span = SpanInfo {
+            start: 8,
+            end: 12,
+            ..SpanInfo::default()
+        };
+        let entry_path = PathBuf::from("src/entry.bd");
+        let dependency_path = PathBuf::from("src/dependency.bd");
+        let entry_type = ItemId(1);
+        let dependency_type = ItemId(2);
+        let mut resolution = Resolution::default();
+
+        resolution
+            .tables
+            .resolved_types
+            .insert(span, ResolvedType::Item(entry_type));
+        resolution.tables.scoped_resolved_types.insert(
+            dependency_path,
+            HashMap::from([(span, ResolvedType::Item(dependency_type))]),
+        );
+        // The merged span index is source-less. It represents the same dependency fact that
+        // previously preempted the entry unit before TypeChecker reached ResolutionTables.
+        resolution.span_index = SpanIndex::build_from_maps(
+            &[],
+            &[(span, ResolvedType::Item(dependency_type))],
+        );
+
+        let checker = TypeChecker::new(&resolution, &UnitTypeSurface::default())
+            .with_source_path(&entry_path);
+
+        assert_eq!(
+            checker.resolved_type_at(span),
+            Some(ResolvedType::Item(entry_type))
+        );
     }
 }

@@ -1,5 +1,4 @@
-use beskid_analysis::hir::HirPrimitiveType;
-use beskid_analysis::types::TypeInfo;
+use beskid_queries::SemanticTypeId;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum EntryReturnKind {
@@ -15,23 +14,23 @@ pub(crate) enum EntryReturnKind {
 }
 
 impl EntryReturnKind {
-    pub(crate) fn from_type_info(info: &TypeInfo) -> Self {
-        match info {
-            TypeInfo::Primitive(HirPrimitiveType::Unit) => Self::Unit,
-            TypeInfo::Primitive(HirPrimitiveType::Never) => Self::Never,
-            TypeInfo::Primitive(HirPrimitiveType::String)
-            | TypeInfo::Named(_)
-            | TypeInfo::GenericParam(_)
-            | TypeInfo::Applied { .. }
-            | TypeInfo::Function { .. }
-            | TypeInfo::Array(_)
-            | TypeInfo::Fiber(_) => Self::PointerLike,
-            TypeInfo::Primitive(HirPrimitiveType::I64) => Self::I64,
-            TypeInfo::Primitive(HirPrimitiveType::I32) => Self::I32,
-            TypeInfo::Primitive(HirPrimitiveType::U8) => Self::U8,
-            TypeInfo::Primitive(HirPrimitiveType::Bool) => Self::Bool,
-            TypeInfo::Primitive(HirPrimitiveType::F64) => Self::F64,
-            TypeInfo::Primitive(HirPrimitiveType::Char) => Self::Char,
+    /// The sole return-ABI bridge used by the syntax → ISLE JIT path.
+    pub(crate) fn from_semantic_type(ty: SemanticTypeId) -> Self {
+        match ty {
+            SemanticTypeId::UNIT => Self::Unit,
+            SemanticTypeId::NEVER => Self::Never,
+            SemanticTypeId::I64 => Self::I64,
+            SemanticTypeId::I32 => Self::I32,
+            SemanticTypeId::U8 => Self::U8,
+            SemanticTypeId::BOOL => Self::Bool,
+            SemanticTypeId::F64 => Self::F64,
+            SemanticTypeId::CHAR => Self::Char,
+            SemanticTypeId::STRING | SemanticTypeId::WORD | SemanticTypeId::POINTER => {
+                Self::PointerLike
+            }
+            // The syntax contract leaves non-primitive signatures unavailable, so this is a
+            // defensive ABI choice rather than a fallback to HIR type information.
+            _ => Self::PointerLike,
         }
     }
 }

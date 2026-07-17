@@ -196,6 +196,10 @@ fn beskid_descriptor_trace_keeps_child_payload_alive() {
 
     let parent = heap.allocate_beskid(16, (&desc as *const TypeDescriptor).cast::<u8>());
     let child = heap.allocate_beskid(16, std::ptr::null());
+    // SAFETY: the local descriptor and pointer map remain alive for this test.
+    assert_eq!(unsafe { desc.pointer_map() }, &pointer_offsets);
+    assert!(heap.owns_beskid_payload(parent));
+    assert!(heap.owns_beskid_payload(child));
     unsafe {
         std::ptr::write_unaligned(parent.add(8).cast::<*mut u8>(), child);
     }
@@ -218,4 +222,6 @@ fn beskid_descriptor_trace_keeps_child_payload_alive() {
         after < before,
         "removing the parent root should allow parent and child payloads to be reclaimed"
     );
+    assert!(!heap.owns_beskid_payload(parent));
+    assert!(!heap.owns_beskid_payload(child));
 }

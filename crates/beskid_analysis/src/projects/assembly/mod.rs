@@ -54,6 +54,105 @@ pub struct ProgramAssembly {
     pub discovery: AssemblyDiscovery,
     pub module_index: Arc<ModuleIndex>,
     pub has_std_dependency: bool,
+    /// Physical units copied from the compiler-owned Foundation sources by workspace
+    /// materialization. This is origin evidence, not a package-name privilege.
+    pub trusted_corelib_service_paths: Arc<[PathBuf]>,
+}
+
+/// HIR-free multi-module input retained by generation-safe semantic and codegen boundaries.
+#[derive(Debug, Clone)]
+pub struct SyntaxProgramAssembly {
+    roots: EffectiveCompilationRoots,
+    units: Arc<Vec<SourceUnit>>,
+    entry_index: usize,
+    discovery: AssemblyDiscovery,
+    module_index: Arc<ModuleIndex>,
+    has_std_dependency: bool,
+    trusted_corelib_service_paths: Arc<[PathBuf]>,
+}
+
+impl SyntaxProgramAssembly {
+    /// Construct a syntax-only assembly from ordinary project inputs.
+    ///
+    /// This type deliberately carries no runtime privilege. Canonical-runtime authority is
+    /// minted exclusively by `beskid_abi::runtime_source` after it validates the embedded
+    /// runtime corpus; matching a path, package name, or source text here grants nothing.
+    pub fn new(
+        roots: EffectiveCompilationRoots,
+        units: Arc<Vec<SourceUnit>>,
+        entry_index: usize,
+        discovery: AssemblyDiscovery,
+        module_index: Arc<ModuleIndex>,
+        has_std_dependency: bool,
+    ) -> Self {
+        Self {
+            roots,
+            units,
+            entry_index,
+            discovery,
+            module_index,
+            has_std_dependency,
+            trusted_corelib_service_paths: Arc::from([]),
+        }
+    }
+
+    pub fn roots(&self) -> &EffectiveCompilationRoots {
+        &self.roots
+    }
+
+    pub fn units(&self) -> &[SourceUnit] {
+        self.units.as_ref()
+    }
+
+    pub fn entry_index(&self) -> usize {
+        self.entry_index
+    }
+
+    pub fn discovery(&self) -> AssemblyDiscovery {
+        self.discovery
+    }
+
+    pub fn module_index(&self) -> &Arc<ModuleIndex> {
+        &self.module_index
+    }
+
+    pub fn has_std_dependency(&self) -> bool {
+        self.has_std_dependency
+    }
+
+    /// Paths whose materialized bytes originated at the compiler-owned Foundation facade.
+    ///
+    /// Empty for hand-built syntax assemblies: only project assembly may establish this fact
+    /// from a resolved dependency's lexical source root.
+    pub fn trusted_corelib_service_paths(&self) -> &[PathBuf] {
+        &self.trusted_corelib_service_paths
+    }
+
+    pub(crate) fn set_trusted_corelib_service_paths_for_project_assembly(
+        &mut self,
+        paths: Arc<[PathBuf]>,
+    ) {
+        self.trusted_corelib_service_paths = paths;
+    }
+
+    pub fn entry_unit(&self) -> &SourceUnit {
+        &self.units[self.entry_index]
+    }
+}
+
+impl From<&ProgramAssembly> for SyntaxProgramAssembly {
+    fn from(assembly: &ProgramAssembly) -> Self {
+        let mut syntax = Self::new(
+            assembly.roots.clone(),
+            Arc::clone(&assembly.units),
+            assembly.entry_index,
+            assembly.discovery,
+            Arc::clone(&assembly.module_index),
+            assembly.has_std_dependency,
+        );
+        syntax.trusted_corelib_service_paths = Arc::clone(&assembly.trusted_corelib_service_paths);
+        syntax
+    }
 }
 
 impl std::fmt::Debug for ProgramAssembly {
@@ -64,6 +163,10 @@ impl std::fmt::Debug for ProgramAssembly {
             .field("entry_index", &self.entry_index)
             .field("discovery", &self.discovery)
             .field("has_std_dependency", &self.has_std_dependency)
+            .field(
+                "trusted_corelib_service_paths",
+                &self.trusted_corelib_service_paths.len(),
+            )
             .finish()
     }
 }
@@ -78,6 +181,7 @@ impl Clone for ProgramAssembly {
             discovery: self.discovery,
             module_index: Arc::clone(&self.module_index),
             has_std_dependency: self.has_std_dependency,
+            trusted_corelib_service_paths: Arc::clone(&self.trusted_corelib_service_paths),
         }
     }
 }

@@ -4,16 +4,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 
+use crate::commands::syntax_codegen::lower_prepared_entrypoint;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
-use crate::runtime_profile::CliRuntimeProfile;
 use anyhow::Result;
 use beskid_analysis::projects::TargetKind;
 use beskid_aot::{
-    AotBuildRequest, BESKID_RUNTIME_ABI_VERSION, BuildOutputKind, BuildProfile, ExportPolicy,
-    LinkMode, ProjectTargetKind, RuntimeStrategy, build, default_output_kind,
-    default_runtime_strategy, resolve_entrypoint,
+    AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, ProjectTargetKind,
+    build, default_output_kind, default_runtime_strategy, resolve_entrypoint,
 };
-use beskid_codegen::services::lower_from_front_end;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
@@ -67,18 +65,6 @@ pub struct BuildArgs {
     #[arg(long)]
     pub object_output: Option<PathBuf>,
 
-    /// Prebuilt runtime static library (overrides the toolchain-bundled archive)
-    #[arg(long)]
-    pub runtime_archive: Option<PathBuf>,
-
-    /// ABI version for `--runtime-archive` (defaults to the toolchain ABI version)
-    #[arg(long)]
-    pub runtime_abi_version: Option<u32>,
-
-    /// Build in standalone mode (no Beskid runtime archive linkage)
-    #[arg(long)]
-    pub standalone: bool,
-
     /// Explicit symbols to export in shared/static artifacts
     #[arg(long = "export")]
     pub export_symbols: Vec<String>,
@@ -98,10 +84,6 @@ pub struct BuildArgs {
     /// Disable animated progress and graph output
     #[arg(long)]
     pub plain: bool,
-
-    /// Runtime link profile: `std` links `beskid_host`; `minimal` is language runtime only
-    #[arg(long, value_enum, default_value_t = CliRuntimeProfile::Std)]
-    pub runtime_profile: CliRuntimeProfile,
 }
 
 /// Resolve, lower, emit CLIF, and run the AOT/link pipeline according to `args`.
@@ -145,7 +127,6 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         },
     )?;
     let front = prepared.into_executable()?;
-    let source_name = resolved.source_path.display().to_string();
 
     let input_path = resolved.source_path.clone();
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
@@ -155,14 +136,12 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         .map(|plan| plan.target.name.clone());
 
     let entrypoint = resolve_entrypoint(args.entrypoint.clone())?;
-    let lowered = lower_from_front_end(
-        &source_name,
-        &resolved.source,
-        front,
-        Some(&entrypoint),
+    let artifact = lower_prepared_entrypoint(
+        &front,
+        &entrypoint,
+        args.target_triple.as_deref(),
         Some(session.observer()),
     )?;
-    let artifact = lowered.artifact;
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
 
@@ -190,28 +169,10 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         BuildProfile::Debug
     };
 
-    let runtime = if args.standalone {
-        if args.runtime_archive.is_some() {
-            return Err(anyhow::anyhow!(
-                "`--standalone` cannot be combined with `--runtime-archive`"
-            ));
-        }
-        RuntimeStrategy::Standalone
-    } else if let Some(path) = args.runtime_archive {
-        RuntimeStrategy::UsePrebuilt {
-            path,
-            abi_version: args
-                .runtime_abi_version
-                .unwrap_or(BESKID_RUNTIME_ABI_VERSION),
-        }
-    } else {
-        default_runtime_strategy(
-            profile,
-            args.target_triple.as_deref(),
-            args.runtime_profile.into(),
-        )
-        .map_err(|err| anyhow::anyhow!("{err}"))?
-    };
+    let runtime = (output_kind != BuildOutputKind::ObjectOnly)
+        .then(|| default_runtime_strategy(profile, args.target_triple.as_deref()))
+        .transpose()
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
 
     let link_mode = match (args.prefer_static, args.prefer_dynamic) {
         (true, false) => LinkMode::PreferStatic,
@@ -243,7 +204,6 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         export_policy,
         link_mode,
         runtime,
-        runtime_link_profile: args.runtime_profile.into(),
         verbose_link: args.verbose_link,
         external_libraries: Vec::new(),
         library_search_paths: Vec::new(),

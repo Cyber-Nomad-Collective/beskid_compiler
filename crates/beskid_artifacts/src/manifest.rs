@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-/// Bump when `AstUnitSnapshot` / `HirUnitSnapshot` wire layout changes.
-pub const ARTIFACT_SCHEMA_VERSION: u32 = 1;
+/// Bump when the syntax snapshot wire layout changes.
+pub const ARTIFACT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ArtifactManifest {

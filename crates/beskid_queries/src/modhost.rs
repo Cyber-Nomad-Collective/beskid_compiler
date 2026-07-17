@@ -11,7 +11,7 @@ use crate::stats::record_query_miss;
 
 /// Spec: `syntax_generation_id` — bumped when entry file text changes.
 #[salsa::input]
-pub struct SyntaxGenerationId {
+pub struct ModHostSyntaxGenerationId {
     pub path: String,
     pub generation: u64,
 }
@@ -36,7 +36,7 @@ pub fn mod_collect_target_fingerprint(
     db: &dyn Db,
     project: ProjectSession,
     entry: FileText,
-    syntax_gen: SyntaxGenerationId,
+    syntax_gen: ModHostSyntaxGenerationId,
     manifest_gen: ManifestGenerationId,
     capability_set: CapabilitySetId,
 ) -> String {
@@ -68,7 +68,7 @@ pub fn mod_generate_fingerprint(
     db: &dyn Db,
     project: ProjectSession,
     entry: FileText,
-    syntax_gen: SyntaxGenerationId,
+    syntax_gen: ModHostSyntaxGenerationId,
     manifest_gen: ManifestGenerationId,
     _capability_set: CapabilitySetId,
     collect_targets: String,
@@ -91,7 +91,7 @@ pub fn mod_generate(
     db: &dyn Db,
     project: ProjectSession,
     entry: FileText,
-    syntax_gen: SyntaxGenerationId,
+    syntax_gen: ModHostSyntaxGenerationId,
     manifest_gen: ManifestGenerationId,
     capability_set: CapabilitySetId,
     collect_targets: String,
@@ -143,5 +143,5 @@ fn compile_plan_for_session(
 
 /// Bump syntax generation counter for a path (call after file edit).
 pub fn bump_syntax_generation(db: &mut crate::db::BeskidDatabase, path: &str, generation: u64) {
-    let _ = SyntaxGenerationId::new(db, path.to_string(), generation);
+    let _ = ModHostSyntaxGenerationId::new(db, path.to_string(), generation);
 }

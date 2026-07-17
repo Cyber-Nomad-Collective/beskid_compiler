@@ -77,12 +77,12 @@ fn wrap_dispatch_return(entry: &DispatchEntry, group: &str, body: &str) -> Strin
         "usize" if dispatch_body_needs_usize_cast(&entry.dispatch_key) => {
             format!("Some({{\n{body}\n        }} as usize)")
         }
-        "usize" => format!("Some({{\n{body}\n        }})"),
+        "usize" => format!("Some({body})"),
         "ptr" => format!("Some({{\n{body}\n        }} as *mut u8)"),
         "i64" if dispatch_body_needs_i64_cast(&entry.dispatch_key) => {
             format!("Some({{\n{body}\n        }} as i64)")
         }
-        "i64" => format!("Some({{\n{body}\n        }})"),
+        "i64" => format!("Some({body})"),
         _ => body.to_string(),
     }
 }
@@ -113,7 +113,9 @@ pub fn render_abi_builtins(manifest: &ManifestRoot) -> String {
         specs.push((symbol_const_suffix(&entry.symbol), name, returns));
     }
 
-    for (params, name) in param_arrays.iter() {
+    let mut param_declarations = param_arrays.iter().collect::<Vec<_>>();
+    param_declarations.sort_unstable_by_key(|(_, name)| *name);
+    for (params, name) in param_declarations {
         let formatted = format_param_array(params);
         writeln!(
             &mut out,
@@ -496,6 +498,51 @@ pub fn render_analysis_builtins(manifest: &ManifestRoot) -> String {
     out
 }
 
+/// Render the analysis builtin surface plus manifest-owned ABI-v5 runtime intrinsic candidates.
+///
+/// These entries make exact canonical-runtime calls resolvable by the syntax fact layer. They do
+/// not grant an ABI import: `CodegenInput::runtime_intrinsic_for` still requires the opaque
+/// canonical-runtime capability before codegen can emit the symbol.
+pub fn append_analysis_v5_intrinsics(base: &str, runtime: &crate::v5::RuntimeManifestV5) -> String {
+    const MARKER: &str = "// ABI-v5 canonical runtime intrinsic candidates\n";
+    let mut out = base
+        .split_once(MARKER)
+        .map_or_else(|| base.to_owned(), |(prefix, _)| prefix.to_owned());
+    if !out.trim_end().ends_with('}') {
+        out.push_str("}\n");
+    }
+    let closing = out.rfind('}').expect("generated builtins closes macro");
+    let mut intrinsic_entries = String::from(MARKER);
+    for intrinsic in &runtime.intrinsics {
+        let params = intrinsic
+            .params
+            .iter()
+            .map(|parameter| v5_analysis_type(&parameter.ty))
+            .collect::<Vec<_>>();
+        write_analysis_entry(
+            &mut intrinsic_entries,
+            std::slice::from_ref(&intrinsic.name),
+            &intrinsic.symbol,
+            &params,
+            &v5_analysis_type(&intrinsic.result),
+            true,
+        );
+    }
+    out.insert_str(closing, &intrinsic_entries);
+    out
+}
+
+fn v5_analysis_type(ty: &str) -> String {
+    match ty {
+        "pointer" => "ptr".into(),
+        // The legacy resolver surface only distinguishes wide numeric scalar candidates. Exact
+        // ABI widths come from the canonical manifest in syntax codegen, not this lookup table.
+        "u8" | "u32" | "i32" | "i64" | "isize" => "u64".into(),
+        "void" => "unit".into(),
+        other => other.into(),
+    }
+}
+
 pub fn render_runtime_handler_specs(manifest: &ManifestRoot) -> String {
     let mut out = String::new();
     write_generated_preamble(&mut out, &[]);
@@ -512,46 +559,34 @@ pub fn render_runtime_handler_specs(manifest: &ManifestRoot) -> String {
     writeln!(&mut out, "    pub handler_path: &'static [&'static str],").unwrap();
     writeln!(&mut out, "}}").unwrap();
     writeln!(&mut out).unwrap();
-
-    let groups: [(&str, &[DispatchEntry]); 4] = [
-        ("usize", &manifest.dispatch.usize),
-        ("ptr", &manifest.dispatch.ptr),
-        ("unit", &manifest.dispatch.unit),
-        ("i64", &manifest.dispatch.i64),
-    ];
-
-    let mut specs = Vec::new();
-    for (group, entries) in groups {
-        for entry in entries {
-            if !entry.is_language_handler() {
-                continue;
-            }
-            if let Some(handler_path) = language_handler_beskid_path(entry) {
-                specs.push((entry, group, handler_path));
-            }
-        }
-    }
-
     writeln!(
         &mut out,
         "pub const RUNTIME_HANDLER_SPECS: &[RuntimeHandlerSpec] = &["
     )
     .unwrap();
-    for (entry, group, handler_path) in specs {
-        let path_lit = handler_path
-            .iter()
-            .map(|segment| format!("\"{segment}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
-        writeln!(
-            &mut out,
-            "    RuntimeHandlerSpec {{ dispatch_key: \"{key}\", tag: {}, return_group: \"{group}\", handler_path: &[{path_lit}] }},",
-            entry.tag,
-            key = entry.dispatch_key,
-        )
-        .unwrap();
+    for (group, entries) in [
+        ("usize", &manifest.dispatch.usize),
+        ("ptr", &manifest.dispatch.ptr),
+        ("unit", &manifest.dispatch.unit),
+        ("i64", &manifest.dispatch.i64),
+    ] {
+        for entry in entries {
+            if let Some(handler_path) = language_handler_beskid_path(entry) {
+                let path = handler_path
+                    .iter()
+                    .map(|segment| format!("\\\"{segment}\\\""))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(
+                    &mut out,
+                    "    RuntimeHandlerSpec {{ dispatch_key: \"{}\", tag: {}, return_group: \"{group}\", handler_path: &[{path}] }},",
+                    entry.dispatch_key, entry.tag,
+                )
+                .unwrap();
+            }
+        }
     }
-    writeln!(&mut out, "];").unwrap();
+    writeln!(&mut out, "]; ").unwrap();
     out
 }
 
@@ -559,23 +594,16 @@ fn language_handler_beskid_path(entry: &DispatchEntry) -> Option<Vec<String>> {
     if !entry.is_language_handler() {
         return None;
     }
-    let segments: Vec<String> = match entry.dispatch_key.as_str() {
-        "bytes_compare" => vec!["Bytes".into(), "Compare".into()],
-        "bytes_get" => vec!["Bytes".into(), "Get".into()],
-        "str_eq" => vec!["String".into(), "Eq".into()],
-        "test_bytes_len" => vec!["Test".into(), "Bytes".into(), "Len".into()],
-        "test_bytes_ptr" => vec!["Test".into(), "Bytes".into(), "Ptr".into()],
-        key => key
-            .split('_')
-            .map(|segment| {
-                let mut chars = segment.chars();
-                match chars.next() {
-                    None => String::new(),
-                    Some(first) => first.to_uppercase().chain(chars).collect(),
-                }
+    let segments = entry
+        .dispatch_key
+        .split('_')
+        .map(|segment| {
+            let mut chars = segment.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(chars).collect()
             })
-            .collect(),
-    };
+        })
+        .collect::<Vec<_>>();
     Some(
         ["Runtime", "Handlers"]
             .into_iter()
@@ -949,27 +977,23 @@ fn render_dispatch_fn<F>(
 pub fn render_language_handler_table(manifest: &ManifestRoot) -> String {
     let mut out = String::new();
     write_generated_preamble(&mut out, &["clippy::too_many_lines"]);
-
     let groups: [(&str, &[DispatchEntry], u32); 4] = [
         ("usize", &manifest.dispatch.usize, 0),
         ("ptr", &manifest.dispatch.ptr, 1),
         ("unit", &manifest.dispatch.unit, 2),
         ("i64", &manifest.dispatch.i64, 3),
     ];
-
-    let mut language_entries: Vec<(&str, &DispatchEntry, u32)> = Vec::new();
+    let mut language_entries = Vec::new();
     for (group, entries, group_id) in &groups {
         for entry in *entries {
             if entry.is_language_handler() {
-                language_entries.push((group, entry, *group_id));
+                language_entries.push((*group, entry, *group_id));
             }
         }
     }
-
     writeln!(&mut out, "use beskid_abi::BeskidStr;").unwrap();
     writeln!(&mut out, "use beskid_runtime::HandlerTableEntry;").unwrap();
     writeln!(&mut out).unwrap();
-
     for (group, entry, _) in &language_entries {
         let wrapper = language_wrapper_fn_name(entry);
         let return_type = host_wrapper_return_type(group);
@@ -987,7 +1011,6 @@ pub fn render_language_handler_table(manifest: &ManifestRoot) -> String {
                 "unit" => format!("{inner};"),
                 "ptr" => format!("({inner}) as *mut u8"),
                 "usize" => format!("({inner}) as usize"),
-                "i64" => inner,
                 _ => inner,
             }
         } else {
@@ -995,15 +1018,10 @@ pub fn render_language_handler_table(manifest: &ManifestRoot) -> String {
                 "unit" => format!("{raw_body};"),
                 "ptr" => format!("{raw_body} as *mut u8"),
                 "usize" => format!("{raw_body} as usize"),
-                "i64" => raw_body,
                 _ => raw_body,
             }
         };
-        writeln!(
-            &mut out,
-            "/// # Safety\n///\n/// `enum_ptr` must reference a valid dispatch envelope for the duration of the call."
-        )
-        .unwrap();
+        writeln!(&mut out, "/// # Safety\\n///\\n/// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.").unwrap();
         writeln!(
             &mut out,
             "unsafe extern \"C\" fn {wrapper}({enum_param}: *const u8) -> {return_type} {{"
@@ -1013,7 +1031,6 @@ pub fn render_language_handler_table(manifest: &ManifestRoot) -> String {
         writeln!(&mut out, "}}").unwrap();
         writeln!(&mut out).unwrap();
     }
-
     writeln!(
         &mut out,
         "const LANGUAGE_HANDLERS: [HandlerTableEntry; {}] = [",
@@ -1022,14 +1039,9 @@ pub fn render_language_handler_table(manifest: &ManifestRoot) -> String {
     .unwrap();
     for (_, entry, group_id) in &language_entries {
         let wrapper = language_wrapper_fn_name(entry);
-        writeln!(
-            &mut out,
-            "    HandlerTableEntry {{ group: {group_id}, tag: {}, fn_ptr: {wrapper} as *const u8 }},",
-            entry.tag
-        )
-        .unwrap();
+        writeln!(&mut out, "    HandlerTableEntry {{ group: {group_id}, tag: {}, fn_ptr: {wrapper} as *const u8 }},", entry.tag).unwrap();
     }
-    writeln!(&mut out, "];").unwrap();
+    writeln!(&mut out, "]; ").unwrap();
     writeln!(&mut out).unwrap();
     writeln!(
         &mut out,
@@ -1196,14 +1208,11 @@ fn render_dispatch_arm_body(entry: &DispatchEntry, callee: DispatchCallee) -> St
     }
     let mut decode = String::new();
     for (index, param) in entry.params.iter().enumerate() {
+        let offset = 16 + index * 8;
         let var = format!("p{index}");
         let load = match callee {
             DispatchCallee::Language => language_envelope_load(param, index),
-            _ => format!(
-                "*(enum_ptr.add({}) as {})",
-                16 + index * 8,
-                payload_load_type(param)
-            ),
+            _ => format!("*(enum_ptr.add({offset}) as {})", payload_load_type(param)),
         };
         writeln!(decode, "            let {var} = {load};").unwrap();
     }
@@ -1302,7 +1311,7 @@ fn special_dispatch_arm(entry: &DispatchEntry, callee: DispatchCallee) -> Option
              crate::builtins::str_concat(p0 as *const BeskidStr, p1 as *const BeskidStr)"
                 .to_string(),
         ),
-        "str_eq" if matches!(callee, DispatchCallee::Runtime) => Some(
+        "str_eq" => Some(
             "            let p0 = *(enum_ptr.add(16) as *const *const u8);\n\
              let p1 = *(enum_ptr.add(24) as *const *const u8);\n\
              crate::builtins::str_eq(p0 as *const BeskidStr, p1 as *const BeskidStr)"
@@ -1455,33 +1464,38 @@ fn format_param_array(params: &[AbiParamKind]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
 
+    use crate::model::DispatchEntry;
+
     #[test]
-    fn manifest_loads_and_generates() {
+    fn legacy_v4_codegen_rejects_the_v5_authority() {
         let manifest_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime_manifest.bsol");
-        let manifest = crate::load_manifest(&manifest_path).expect("manifest parse");
-        assert_eq!(manifest.manifest.abi_version, 4);
-        assert!(!manifest.kernel.is_empty());
-        let abi = render_abi_builtins(&manifest);
-        assert!(abi.contains("BUILTIN_SPECS"));
-        assert!(abi.contains("SYM_ALLOC"));
-        let dispatch = render_runtime_dispatch_table(&manifest, true);
-        assert!(dispatch.contains("dispatch_usize"));
-        assert!(dispatch.contains("TAG_STR_LEN"));
-        assert!(dispatch.contains("VALID_TAGS_USIZE"));
-        let language = render_language_handler_table(&manifest);
-        assert!(language.contains("beskid_language_register_all"));
-        assert!(language.contains("language_dispatch_bytes_compare"));
-        assert!(language.contains("language_dispatch_test_bytes_len"));
-        assert!(language.contains("crate::envelope::load_ptr"));
-        let symbols = render_abi_symbols(&manifest);
-        assert!(symbols.contains("RUNTIME_EXPORT_SYMBOLS"));
-        assert!(symbols.contains("SYM_STR_LEN"));
-        assert!(!symbols.contains("RUNTIME_EXPORT_SYMBOLS: &[&str] = &[\n    SYM_STR_LEN"));
-        assert!(!symbols.contains("Legacy runtime symbol"));
-        assert!(!symbols.contains("legacy handler"));
+        let error = match crate::load_manifest(&manifest_path) {
+            Ok(_) => panic!("v5 cannot enter v4 codegen"),
+            Err(error) => error,
+        };
+        assert!(error.contains("unknown field `schema_version`"));
+    }
+
+    #[test]
+    fn safe_dispatch_returns_do_not_emit_redundant_expression_braces() {
+        let entry = DispatchEntry {
+            dispatch_key: "fiber_now_millis".to_string(),
+            name: "FiberNowMillis".to_string(),
+            tag: 0,
+            params: Vec::new(),
+            returns: "usize".to_string(),
+            injected: true,
+            beskid_path: Vec::new(),
+            owner: "language".to_string(),
+            language_handler: false,
+        };
+
+        assert_eq!(
+            super::wrap_dispatch_return(&entry, "usize", "crate::builtins::fiber_now_millis()"),
+            "Some(crate::builtins::fiber_now_millis())"
+        );
     }
 }

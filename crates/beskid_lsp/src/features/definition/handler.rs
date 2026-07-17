@@ -17,27 +17,43 @@ pub fn handle_definition(
     }
 
     let entry_path = uri_to_path(uri);
-    let analysis = doc.analysis.as_ref()?;
-    if let Some(definition) = beskid_analysis::services::definition_at_offset(analysis, offset) {
-        let target_uri = path_to_uri(&definition.location.path).unwrap_or_else(|| uri.clone());
+    if let Some(definition) = doc
+        .syntax_definitions
+        .iter()
+        .filter(|definition| {
+            definition.reference_start <= offset && offset <= definition.reference_end
+        })
+        .min_by_key(|definition| {
+            definition
+                .reference_end
+                .saturating_sub(definition.reference_start)
+        })
+    {
+        let target_uri = path_to_uri(&definition.declaration_path).unwrap_or_else(|| uri.clone());
         return Some(GotoDefinitionResponse::Scalar(Location {
             uri: target_uri,
             range: symbol_location_to_lsp_range(
-                &definition.location,
+                &beskid_analysis::services::SymbolLocation {
+                    path: definition.declaration_path.clone(),
+                    start: definition.declaration_start,
+                    end: definition.declaration_end,
+                },
                 entry_path.as_deref(),
                 &doc.text,
             ),
         }));
     }
 
-    let symbols = beskid_analysis::services::collect_document_symbols(analysis);
-    symbols
+    // Declaration navigation is a self-targeting syntax fact.  Keep it separate from the
+    // resolved-reference table above because declarations do not need name resolution, but do
+    // not fall back to the optional HIR analysis snapshot.
+    doc.syntax_symbols
         .iter()
-        .find(|symbol| offset_in_range(offset, symbol.selection_start, symbol.selection_end))
+        .find(|symbol| offset_in_range(offset, symbol.start, symbol.end))
         .map(|symbol| {
             GotoDefinitionResponse::Scalar(Location {
                 uri: uri.clone(),
-                range: offset_range_to_lsp(&doc.text, symbol.selection_start, symbol.selection_end),
+                range: offset_range_to_lsp(&doc.text, symbol.start, symbol.end),
             })
         })
 }

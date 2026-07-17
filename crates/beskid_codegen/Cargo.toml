@@ -15,9 +15,13 @@ cranelift-frontend = { workspace = true }
 cranelift-module = { workspace = true }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_queries = { path = "../beskid_queries" }
+beskid_isle = { path = "../beskid_isle" }
 beskid_runtime = { path = "../beskid_runtime" }
 anyhow = "1"
 thiserror = "2"
 
 [dev-dependencies]
 pest = { workspace = true }
+tempfile = "3"
+cranelift-jit = { workspace = true }
+target-lexicon = "0.13"

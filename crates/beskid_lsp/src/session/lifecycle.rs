@@ -16,7 +16,9 @@ use beskid_analysis::services::{
     resolved_input_from_plan,
 };
 use beskid_queries::{
-    bump_file_revision, bump_typed_prepare_revision, fingerprint_key, typed_entry_state_with_db,
+    AstNodeKey, SemanticTypeId, SyntaxGenerationId, build_typed_program, bump_file_revision,
+    bump_typed_prepare_revision, fingerprint_key, node_span, node_type, resolved_item,
+    resolved_local, typed_entry_state_with_db,
 };
 
 use crate::manifest_uri::is_manifest_uri;
@@ -24,14 +26,29 @@ use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::project_context::cached_compilation_context;
 use crate::session::startup::wait_for_initial_scan;
-use crate::session::store::{Document, State};
+use crate::session::store::{
+    Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxInlayHint, SyntaxSymbol,
+};
 use crate::workspace_scan::uri_to_path;
 
 /// Document analysis snapshot shape; bump when snapshot fields change.
-pub const ANALYSIS_CACHE_VERSION: u32 = 4;
+pub const ANALYSIS_CACHE_VERSION: u32 = 5;
 
 /// Debounce window for typed executable prepare (coalesced with diagnostic publish).
 const TYPED_PREPARE_DEBOUNCE_MS: u64 = 120;
+
+/// Syntax-only LSP facts for one prepared entry revision.
+///
+/// Keeping the facts named prevents lifecycle refresh paths from silently
+/// reordering independent syntax-derived capabilities.
+#[derive(Default)]
+struct SyntaxFacts {
+    definitions: Vec<SyntaxDefinition>,
+    hovers: Vec<SyntaxHover>,
+    symbols: Vec<SyntaxSymbol>,
+    completion: Option<SyntaxCompletion>,
+    inlay_hints: Vec<SyntaxInlayHint>,
+}
 
 fn salsa_revision(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -60,6 +77,268 @@ fn module_paths_from_resolution(
             } else {
                 Some(module.path.join("::"))
             }
+        })
+        .collect()
+}
+
+fn lockfile_digest_for_plan(plan: &beskid_analysis::projects::CompilePlan) -> String {
+    let mut hasher = DefaultHasher::new();
+    plan.project_root.hash(&mut hasher);
+    plan.target.entry.hash(&mut hasher);
+    plan.target.name.hash(&mut hasher);
+    if let Ok(bytes) = std::fs::read(plan.project_root.join("Project.lock")) {
+        bytes.hash(&mut hasher);
+    }
+    format!("{:016x}", hasher.finish())
+}
+
+fn syntax_facts_for_entry(
+    db: &mut beskid_queries::BeskidDatabase,
+    resolved: &ResolvedInput,
+    entry_state: &beskid_queries::TypedEntryState,
+) -> SyntaxFacts {
+    let Some(plan) = resolved.compile_plan.as_ref() else {
+        return SyntaxFacts::default();
+    };
+    let Some(front_end) = entry_state.typed.as_ref() else {
+        return SyntaxFacts::default();
+    };
+    let project =
+        db.ensure_project_session(plan, &resolved.source_path, lockfile_digest_for_plan(plan));
+    let assembly = Arc::new(beskid_analysis::projects::SyntaxProgramAssembly::from(
+        &front_end.assembly,
+    ));
+    let generation = SyntaxGenerationId(entry_state.generation);
+    let Ok(typed) = build_typed_program(db, project, generation, assembly) else {
+        return SyntaxFacts::default();
+    };
+    let unit = typed.entry;
+    let Some(entry) = typed.assembly.units().get(typed.assembly.entry_index()) else {
+        return SyntaxFacts::default();
+    };
+    let index =
+        beskid_analysis::syntax_query::SyntaxIndex::from_program(&entry.program, generation);
+
+    let mut definitions = Vec::new();
+    let mut hovers = Vec::new();
+    let mut inlay_hints = Vec::new();
+    for metadata in index.metadata() {
+        let reference = AstNodeKey {
+            unit,
+            generation,
+            node: metadata.id,
+        };
+        if matches!(
+            metadata.kind,
+            beskid_analysis::syntax_query::NodeKind::LiteralExpression
+                | beskid_analysis::syntax_query::NodeKind::PathExpression
+        ) && let Some(type_label) = node_type(db, reference)
+            .ok()
+            .flatten()
+            .and_then(syntax_type_label)
+            && let Some(span) = node_span(db, reference).ok().flatten()
+        {
+            inlay_hints.push(SyntaxInlayHint {
+                start: span.start,
+                end: span.end,
+                type_label: type_label.to_string(),
+            });
+        }
+        let local = resolved_local(db, reference).ok().flatten();
+        let declaration = local.map(|resolved| resolved.declaration).or_else(|| {
+            resolved_item(db, reference)
+                .ok()
+                .flatten()
+                .map(|resolved| resolved.declaration)
+        });
+        let Some(declaration) = declaration else {
+            continue;
+        };
+        let Some(reference_span) = node_span(db, reference).ok().flatten() else {
+            continue;
+        };
+        let Some(declaration_span) = node_span(db, declaration).ok().flatten() else {
+            continue;
+        };
+        let declaration_path = declaration.unit.path(db).clone();
+        definitions.push(SyntaxDefinition {
+            reference_start: reference_span.start,
+            reference_end: reference_span.end,
+            declaration_path: declaration_path.clone(),
+            declaration_start: declaration_span.start,
+            declaration_end: declaration_span.end,
+        });
+        let Some(target_unit) = typed
+            .assembly
+            .units()
+            .iter()
+            .find(|candidate| candidate.path == declaration_path)
+        else {
+            continue;
+        };
+        let target_index = beskid_analysis::syntax_query::SyntaxIndex::from_program(
+            &target_unit.program,
+            generation,
+        );
+        let (location_start, location_end, name, kind) = target_index
+            .node_at(&target_unit.program, declaration.node)
+            .and_then(|node| {
+                node.of::<beskid_analysis::syntax::FunctionDefinition>()
+                    .map(|function| {
+                        (
+                            function.name.span.start,
+                            function.name.span.end,
+                            function.name.node.name.clone(),
+                            "function",
+                        )
+                    })
+            })
+            .unwrap_or_else(|| {
+                let name = entry
+                    .source
+                    .get(reference_span.start..reference_span.end)
+                    .unwrap_or_default()
+                    .to_string();
+                (declaration_span.start, declaration_span.end, name, "local")
+            });
+        if !name.is_empty() {
+            hovers.push(SyntaxHover {
+                reference_start: reference_span.start,
+                reference_end: reference_span.end,
+                markdown: format!("**{kind}** `{name}`"),
+                location_path: declaration_path,
+                location_start,
+                location_end,
+            });
+        }
+    }
+    definitions.sort_by_key(|definition| {
+        (
+            definition.reference_start,
+            definition.reference_end,
+            definition.declaration_path.clone(),
+        )
+    });
+    definitions.dedup();
+    hovers.sort_by_key(|hover| {
+        (
+            hover.reference_start,
+            hover.reference_end,
+            hover.location_path.clone(),
+        )
+    });
+    hovers.dedup();
+    inlay_hints.sort_by_key(|hint| (hint.start, hint.end, hint.type_label.clone()));
+    inlay_hints.dedup();
+    let completion = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::Program)
+        .next()
+        .map(|node| SyntaxCompletion {
+            anchor: AstNodeKey {
+                unit,
+                generation,
+                node,
+            },
+        });
+    SyntaxFacts {
+        definitions,
+        hovers,
+        symbols: syntax_symbols_for_program(&entry.program),
+        completion,
+        inlay_hints,
+    }
+}
+
+fn syntax_type_label(ty: SemanticTypeId) -> Option<&'static str> {
+    match ty {
+        SemanticTypeId::UNIT => Some("unit"),
+        SemanticTypeId::BOOL => Some("bool"),
+        SemanticTypeId::I32 => Some("i32"),
+        SemanticTypeId::I64 => Some("i64"),
+        SemanticTypeId::U8 => Some("u8"),
+        SemanticTypeId::F64 => Some("f64"),
+        SemanticTypeId::CHAR => Some("char"),
+        SemanticTypeId::STRING => Some("string"),
+        SemanticTypeId::WORD => Some("word"),
+        SemanticTypeId::POINTER => Some("pointer"),
+        SemanticTypeId::NEVER => Some("never"),
+        _ => None,
+    }
+}
+
+fn syntax_symbols_for_program(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+) -> Vec<SyntaxSymbol> {
+    use beskid_analysis::services::AnalysisSymbolKind as Kind;
+    use beskid_analysis::syntax::Node;
+    program
+        .node
+        .items
+        .iter()
+        .filter_map(|item| {
+            match &item.node {
+                Node::Function(definition) => Some((
+                    definition.node.name.node.name.clone(),
+                    Kind::Function,
+                    definition.node.name.span,
+                )),
+                Node::Method(definition) => Some((
+                    definition.node.name.node.name.clone(),
+                    Kind::Method,
+                    definition.node.name.span,
+                )),
+                Node::TestDefinition(definition) => Some((
+                    definition.node.name.node.name.clone(),
+                    Kind::Test,
+                    definition.node.name.span,
+                )),
+                Node::TypeDefinition(definition) => Some((
+                    definition.node.name.node.name.clone(),
+                    Kind::Type,
+                    definition.node.name.span,
+                )),
+                Node::EnumDefinition(definition) => Some((
+                    definition.node.name.node.name.clone(),
+                    Kind::Enum,
+                    definition.node.name.span,
+                )),
+                Node::ContractDefinition(definition) => Some((
+                    definition.node.name.node.name.clone(),
+                    Kind::Contract,
+                    definition.node.name.span,
+                )),
+                Node::InlineModule(definition) => Some((
+                    definition.node.name.node.name.clone(),
+                    Kind::Module,
+                    definition.node.name.span,
+                )),
+                Node::ModuleDeclaration(definition) => {
+                    definition.node.path.node.segments.last().map(|segment| {
+                        (
+                            segment.node.name.node.name.clone(),
+                            Kind::Module,
+                            segment.span,
+                        )
+                    })
+                }
+                Node::UseDeclaration(definition) => definition
+                    .node
+                    .alias
+                    .as_ref()
+                    .map(|alias| (alias.node.name.clone(), Kind::Use, alias.span))
+                    .or_else(|| {
+                        definition.node.path.node.segments.last().map(|segment| {
+                            (segment.node.name.node.name.clone(), Kind::Use, segment.span)
+                        })
+                    }),
+                _ => None,
+            }
+            .map(|(name, kind, span)| SyntaxSymbol {
+                name,
+                kind,
+                start: span.start,
+                end: span.end,
+            })
         })
         .collect()
 }
@@ -164,6 +443,31 @@ async fn build_document_analysis(
     .await
 }
 
+async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> SyntaxFacts {
+    wait_for_initial_scan(state).await;
+    if is_manifest_uri(uri) {
+        return SyntaxFacts::default();
+    }
+    let Some(path) = uri_to_path(uri) else {
+        return SyntaxFacts::default();
+    };
+    let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
+        return SyntaxFacts::default();
+    };
+    with_compilation_db_mut_state(state, |db, write| {
+        if let Some(plan) = session.compile_plan.as_ref() {
+            write.configure_db_for_project_with_db(db, &plan.project_root);
+        }
+        db.ensure_file_text(path, text.to_string());
+        let options = PrepareOptions::default();
+        let Ok(entry_state) = typed_entry_state_with_db(db, &resolved, &options, None) else {
+            return SyntaxFacts::default();
+        };
+        syntax_facts_for_entry(db, &resolved, &entry_state)
+    })
+    .await
+}
+
 /// Build a [`Document`] for `uri`, attaching a fresh analysis snapshot when possible.
 pub async fn build_document(
     state: &RwLock<State>,
@@ -172,11 +476,17 @@ pub async fn build_document(
     text: String,
 ) -> Document {
     let analysis = build_document_analysis(state, uri, &text).await;
+    let syntax_facts = build_syntax_facts(state, uri, &text).await;
     Document {
         version,
         text,
         analysis_cache_version: ANALYSIS_CACHE_VERSION,
         analysis,
+        syntax_definitions: syntax_facts.definitions,
+        syntax_hovers: syntax_facts.hovers,
+        syntax_symbols: syntax_facts.symbols,
+        syntax_completion: syntax_facts.completion,
+        syntax_inlay_hints: syntax_facts.inlay_hints,
     }
 }
 
@@ -238,16 +548,27 @@ async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
     .await;
 
     let analysis = build_document_analysis(state, uri, &text).await;
+    let syntax_facts = build_syntax_facts(state, uri, &text).await;
     let mut write = state.write().await;
     if let Some(doc) = write.docs.get_mut(uri)
         && doc.text == text
     {
         doc.analysis = analysis;
+        doc.syntax_definitions = syntax_facts.definitions;
+        doc.syntax_hovers = syntax_facts.hovers;
+        doc.syntax_symbols = syntax_facts.symbols;
+        doc.syntax_completion = syntax_facts.completion;
+        doc.syntax_inlay_hints = syntax_facts.inlay_hints;
         doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
     } else if let Some(doc) = write.workspace_index.get_mut(uri)
         && doc.text == text
     {
         doc.analysis = analysis;
+        doc.syntax_definitions = syntax_facts.definitions;
+        doc.syntax_hovers = syntax_facts.hovers;
+        doc.syntax_symbols = syntax_facts.symbols;
+        doc.syntax_completion = syntax_facts.completion;
+        doc.syntax_inlay_hints = syntax_facts.inlay_hints;
         doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
     }
 }
@@ -308,6 +629,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
     drop(write_state);
     touch_entry_file_revision_for_uri(state, &uri, &text).await;
     let analysis = build_document_analysis(state, &uri, &text).await;
+    let syntax_facts = build_syntax_facts(state, &uri, &text).await;
 
     let mut write_state = state.write().await;
     write_state.docs.insert(
@@ -317,6 +639,11 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
             text,
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
             analysis,
+            syntax_definitions: syntax_facts.definitions,
+            syntax_hovers: syntax_facts.hovers,
+            syntax_symbols: syntax_facts.symbols,
+            syntax_completion: syntax_facts.completion,
+            syntax_inlay_hints: syntax_facts.inlay_hints,
         },
     );
 }
@@ -341,11 +668,17 @@ pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
 
     for (uri, text) in entries {
         let analysis = build_document_analysis(state, &uri, &text).await;
+        let syntax_facts = build_syntax_facts(state, &uri, &text).await;
         let mut write = state.write().await;
         if let Some(doc) = write.docs.get_mut(&uri)
             && doc.text == text
         {
             doc.analysis = analysis;
+            doc.syntax_definitions = syntax_facts.definitions;
+            doc.syntax_hovers = syntax_facts.hovers;
+            doc.syntax_symbols = syntax_facts.symbols;
+            doc.syntax_completion = syntax_facts.completion;
+            doc.syntax_inlay_hints = syntax_facts.inlay_hints;
             doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
         }
     }
@@ -400,6 +733,7 @@ mod tests {
     #[tokio::test]
     async fn set_document_ignores_stale_versions() {
         let state = tokio::sync::RwLock::new(State::default());
+        state.read().await.mark_initial_scan_complete();
         let file_uri = uri();
         set_document(&state, file_uri.clone(), 2, source()).await;
         set_document(
@@ -428,9 +762,15 @@ mod tests {
                 text: text.clone(),
                 analysis_cache_version: ANALYSIS_CACHE_VERSION.saturating_sub(1),
                 analysis: None,
+                syntax_definitions: Vec::new(),
+                syntax_hovers: Vec::new(),
+                syntax_symbols: Vec::new(),
+                syntax_completion: None,
+                syntax_inlay_hints: Vec::new(),
             },
         );
 
+        state.mark_initial_scan_complete();
         let state = tokio::sync::RwLock::new(state);
         set_document(&state, file_uri.clone(), 2, text).await;
 

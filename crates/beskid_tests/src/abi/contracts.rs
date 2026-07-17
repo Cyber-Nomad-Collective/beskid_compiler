@@ -18,8 +18,6 @@ use beskid_abi::{
     TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, TAG_FS_WRITE_TEXT, dispatch_route_for_symbol,
     is_dispatch_symbol,
 };
-use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
-use beskid_aot::{AotError, RuntimeStrategy};
 use beskid_pipeline::phases::{
     MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE, SEMANTIC_SNAPSHOT,
     SYNTAX_GENERATION,
@@ -55,8 +53,8 @@ fn corelib_i64_constant(source: &str, name: &str) -> i64 {
 }
 
 #[test]
-fn abi_version_is_v4() {
-    assert_eq!(BESKID_RUNTIME_ABI_VERSION, 4);
+fn abi_version_is_v5() {
+    assert_eq!(BESKID_RUNTIME_ABI_VERSION, 5);
 }
 
 #[test]
@@ -216,40 +214,6 @@ fn mvp_corelib_ops_route_through_dispatch_or_kernel() {
         RUNTIME_EXPORT_SYMBOLS.contains(&SYM_INTEROP_DISPATCH_PTR),
         "kernel must export ptr dispatch entrypoint"
     );
-}
-
-#[test]
-fn prebuilt_runtime_rejects_wrong_abi_version() {
-    let path = PathBuf::from("/tmp/nonexistent-runtime-archive.a");
-    let request = RuntimeBuildRequest {
-        strategy: RuntimeStrategy::UsePrebuilt {
-            path,
-            abi_version: BESKID_RUNTIME_ABI_VERSION + 1,
-        },
-    };
-
-    let err = prepare_runtime(&request).expect_err("expected ABI mismatch failure");
-    assert!(matches!(
-        err,
-        AotError::RuntimeAbiMismatch {
-            expected,
-            actual
-        } if expected == BESKID_RUNTIME_ABI_VERSION && actual == BESKID_RUNTIME_ABI_VERSION + 1
-    ));
-}
-
-#[test]
-fn prebuilt_runtime_missing_archive_fails() {
-    let path = PathBuf::from("/tmp/missing-beskid-runtime-archive.a");
-    let request = RuntimeBuildRequest {
-        strategy: RuntimeStrategy::UsePrebuilt {
-            path: path.clone(),
-            abi_version: BESKID_RUNTIME_ABI_VERSION,
-        },
-    };
-
-    let err = prepare_runtime(&request).expect_err("expected missing archive failure");
-    assert!(matches!(err, AotError::RuntimeArchiveMissing { path: missing } if missing == path));
 }
 
 #[test]

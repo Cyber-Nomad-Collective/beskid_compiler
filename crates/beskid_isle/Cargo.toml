@@ -4,12 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-cranelift-codegen = { workspace = true }
+beskid_queries = { path = "../beskid_queries" }
+cranelift-codegen = { workspace = true, features = ["arm64", "x86"] }
 cranelift-frontend = { workspace = true }
 
 [build-dependencies]
-cranelift-isle = "0.128.3"
+cranelift-isle = { workspace = true }
 
 [features]
 default = ["isle_primitives"]
 isle_primitives = []
+
+[dev-dependencies]
+cranelift-jit = { workspace = true }
+cranelift-module = { workspace = true }
+target-lexicon = "0.13"

@@ -1,0 +1,9 @@
+beskid_runtime_native {
+  name = "beskid-runtime-native"
+  version = "0.4.0"
+  root = "src"
+}
+
+target "RuntimeNative" {
+  kind = Lib
+}

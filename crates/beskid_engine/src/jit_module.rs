@@ -1,6 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::generated::kernel_registration::register_kernel_exports;
+use crate::runtime_kit::JitRuntimeKit;
+use beskid_abi::abi_v5::TargetMetadata;
+use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_codegen::cranelift_host::{
     ExternDeclarationError, HostError, declare_builtin_imports, declare_user_functions,
     declare_validated_extern_imports, remap_testcase_externals,
@@ -21,6 +23,7 @@ pub enum JitError {
     Isa(String),
     Module(Box<ModuleError>),
     MissingFunction(String),
+    RuntimeKit(String),
 }
 
 impl fmt::Display for JitError {
@@ -29,6 +32,7 @@ impl fmt::Display for JitError {
             JitError::Isa(msg) => write!(f, "{msg}"),
             JitError::Module(err) => write!(f, "{err}"),
             JitError::MissingFunction(name) => write!(f, "missing function `{name}`"),
+            JitError::RuntimeKit(message) => write!(f, "{message}"),
         }
     }
 }
@@ -73,29 +77,37 @@ pub struct BeskidJitModule {
     module: JITModule,
     func_ids: HashMap<String, FuncId>,
     builtins_declared: bool,
+    _runtime_kit: JitRuntimeKit,
+    exact_symbols: HashSet<String>,
 }
 
 impl BeskidJitModule {
-    /// JIT module with only built-in runtime symbols (no extra `dlopen` addresses).
-    pub fn new() -> Result<Self, JitError> {
-        let builder = new_builder(&[])?;
-
-        let module = JITModule::new(builder);
+    /// JIT module backed only by an exact shared ABI-v5 runtime kit.
+    pub fn new_with_runtime_kit(
+        prefix: &std::path::Path,
+        target: &TargetMetadata,
+        profile: RuntimeKitProfile,
+        extras: &[(String, *const u8)],
+    ) -> Result<Self, JitError> {
+        let runtime = JitRuntimeKit::load(prefix, target, profile).map_err(JitError::RuntimeKit)?;
+        if let Some((name, _)) = extras
+            .iter()
+            .find(|(name, _)| runtime.metadata().export_allowlist.contains(name))
+        {
+            return Err(JitError::RuntimeKit(format!(
+                "external symbol `{name}` cannot override an ABI-v5 runtime export"
+            )));
+        }
+        let mut symbols = runtime.symbols().to_vec();
+        symbols.extend_from_slice(extras);
+        let exact_symbols = symbols.iter().map(|(name, _)| name.clone()).collect();
+        let builder = new_builder(&symbols)?;
         Ok(Self {
-            module,
+            module: JITModule::new(builder),
             func_ids: HashMap::new(),
             builtins_declared: false,
-        })
-    }
-
-    /// JIT module that also registers `extras` as raw symbol addresses (for resolved extern imports).
-    pub fn new_with_symbols(extras: &[(String, *const u8)]) -> Result<Self, JitError> {
-        let builder = new_builder(extras)?;
-        let module = JITModule::new(builder);
-        Ok(Self {
-            module,
-            func_ids: HashMap::new(),
-            builtins_declared: false,
+            _runtime_kit: runtime,
+            exact_symbols,
         })
     }
 
@@ -110,6 +122,7 @@ impl BeskidJitModule {
         artifact: &CodegenArtifact,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> Result<(), JitError> {
+        validate_exact_symbol_references(artifact, &self.exact_symbols)?;
         if !self.builtins_declared {
             declare_builtin_imports(&mut self.module, &mut self.func_ids)?;
             self.builtins_declared = true;
@@ -174,13 +187,37 @@ impl BeskidJitModule {
     }
 }
 
+fn validate_exact_symbol_references(
+    artifact: &CodegenArtifact,
+    approved: &HashSet<String>,
+) -> Result<(), JitError> {
+    let defined = artifact
+        .functions
+        .iter()
+        .map(|function| function.name.as_str())
+        .collect::<HashSet<_>>();
+    for function in &artifact.functions {
+        for (_, external) in function.function.dfg.ext_funcs.iter() {
+            let cranelift_codegen::ir::ExternalName::TestCase(name) = &external.name else {
+                continue;
+            };
+            let symbol = String::from_utf8_lossy(name.raw());
+            if !defined.contains(symbol.as_ref()) && !approved.contains(symbol.as_ref()) {
+                return Err(JitError::RuntimeKit(format!(
+                    "JIT symbol `{symbol}` is not approved by the exact ABI-v5 runtime kit"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn new_builder(extras: &[(String, *const u8)]) -> Result<JITBuilder, JitError> {
     let isa_builder = cranelift_native::builder().map_err(|err| JitError::Isa(err.to_string()))?;
     let isa = isa_builder
         .finish(settings::Flags::new(settings::builder()))
         .map_err(|err| JitError::Isa(err.to_string()))?;
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
-    register_kernel_exports(&mut builder);
     for (sym, addr) in extras {
         builder.symbol(sym, *addr);
     }

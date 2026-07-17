@@ -4,14 +4,13 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::commands::syntax_codegen::lower_prepared_entrypoint;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
-use crate::runtime_profile::CliRuntimeProfile;
 use anyhow::Result;
 use beskid_aot::{
     AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, build,
     default_runtime_strategy, run_linked_executable,
 };
-use beskid_codegen::services::lower_from_front_end;
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
 use beskid_tools::PipelineProgressKind;
@@ -37,10 +36,6 @@ pub struct RunArgs {
     /// Disable animated progress and graph output
     #[arg(long)]
     pub plain: bool,
-
-    /// Runtime link profile: `std` links `beskid_host`; `minimal` is language runtime only
-    #[arg(long, value_enum, default_value_t = CliRuntimeProfile::Std)]
-    pub runtime_profile: CliRuntimeProfile,
 }
 
 /// Resolve, AOT-link, and run `args.entrypoint` in a subprocess with pipeline progress on stderr when enabled.
@@ -60,15 +55,8 @@ pub fn execute(args: RunArgs) -> Result<()> {
     )?;
     let prepared = session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;
     let front = prepared.into_executable()?;
-    let source_name = resolved.source_path.display().to_string();
-    let lowered = lower_from_front_end(
-        &source_name,
-        &resolved.source,
-        front,
-        Some(&args.entrypoint),
-        Some(session.observer()),
-    )?;
-    let artifact = lowered.artifact;
+    let artifact =
+        lower_prepared_entrypoint(&front, &args.entrypoint, None, Some(session.observer()))?;
 
     let temp_dir = std::env::temp_dir().join(format!(
         "beskid_run_{}_{}",
@@ -92,7 +80,7 @@ pub fn execute(args: RunArgs) -> Result<()> {
         &target,
     ));
 
-    let runtime = default_runtime_strategy(BuildProfile::Debug, None, args.runtime_profile.into())
+    let runtime = default_runtime_strategy(BuildProfile::Debug, None)
         .map_err(|err| anyhow::anyhow!("{err}"))?;
 
     let link_inputs = link_libraries_for_artifact(&artifact, resolved.compile_plan.as_ref());
@@ -107,8 +95,7 @@ pub fn execute(args: RunArgs) -> Result<()> {
         entrypoint: args.entrypoint.clone(),
         export_policy: ExportPolicy::PublicOnly,
         link_mode: LinkMode::Auto,
-        runtime,
-        runtime_link_profile: args.runtime_profile.into(),
+        runtime: Some(runtime),
         verbose_link: false,
         external_libraries: Vec::new(),
         library_search_paths: Vec::new(),

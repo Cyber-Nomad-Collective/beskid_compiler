@@ -34,19 +34,12 @@ pub fn handle_document_symbols(uri: &Uri, doc: &Document) -> DocumentSymbolRespo
         return DocumentSymbolResponse::Nested(project_manifest::document_symbols(uri, &doc.text));
     }
 
-    let symbols = doc
-        .analysis
-        .as_ref()
-        .map(beskid_analysis::services::collect_document_symbols)
-        .unwrap_or_default();
-
-    let mapped = symbols
-        .into_iter()
+    let mapped = doc.syntax_symbols.iter()
         .map(|symbol| {
             let range =
-                offset_range_to_lsp(&doc.text, symbol.selection_start, symbol.selection_end);
+                offset_range_to_lsp(&doc.text, symbol.start, symbol.end);
             build_document_symbol(
-                symbol.name,
+                symbol.name.clone(),
                 Some(beskid_analysis::services::symbol_kind_name(symbol.kind).to_string()),
                 analysis_symbol_kind_to_lsp(symbol.kind),
                 Option::<Vec<SymbolTag>>::None,

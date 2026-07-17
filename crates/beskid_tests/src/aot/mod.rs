@@ -15,8 +15,8 @@ use beskid_analysis::syntax::{Program, Spanned};
 use beskid_analysis::types::type_program;
 use beskid_analysis::{AnalysisOptions, builtin_rules, run_rules};
 pub(super) use beskid_aot::{
-    AotBuildRequest, AotError, BuildOutputKind, ProjectTargetKind, RuntimeStrategy, build,
-    default_output_kind, resolve_entrypoint,
+    AotBuildRequest, AotError, BuildOutputKind, ProjectTargetKind, build, default_output_kind,
+    resolve_entrypoint,
 };
 use beskid_codegen::lower_program;
 use pest::Parser;
@@ -25,7 +25,6 @@ mod defaults;
 mod entrypoint;
 mod object_build;
 mod runtime_symbols;
-mod standalone;
 
 /// Isolated temp directory for AOT outputs (distinct prefix from `test_harness::temp_case_dir`).
 fn temp_case_dir(name: &str) -> PathBuf {
