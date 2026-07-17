@@ -4,7 +4,12 @@
 //! derives every mutating principal from a verified pckg session instead of
 //! accepting legacy pckg Identity user ids from request data.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::BTreeSet,
+    future::Future,
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
 use axum::{
     Json, Router,
@@ -15,16 +20,21 @@ use axum::{
 };
 use beskid_pckg_auth::verify_pckg_session;
 use beskid_pckg_community::{
-    BoardId, Comment, CommentId, CommunityError, CommunityService, NotificationPreference, Post,
-    PostId, Principal, Profile, Role, Subject, VoteValue,
+    BoardId, Comment, CommentId, CommunityError, CommunityService, NotificationPreference,
+    NotificationScope, Post, PostId, Principal, Profile, Role, Subject, VoteValue,
 };
-use beskid_pckg_store::{AsyncCommunityRepository, CommunityStoreError, SqlxCommunityRepository};
+use beskid_pckg_store::{
+    AdminRole, AsyncAdministrationRepository, AsyncCommunityRepository, CommunityStoreError,
+    SqlxCommunityRepository, SqlxPackageRepository,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct CommunityState {
     session_secret: Option<String>,
     backend: CommunityBackend,
+    moderation: ModerationBackend,
+    policy: Option<Arc<dyn CommunityLinkPolicy>>,
 }
 
 /// The deliberately small profile projection exposed to registry-owned
@@ -45,11 +55,26 @@ enum CommunityBackend {
     Sqlx(Arc<SqlxCommunityRepository>),
 }
 
+#[derive(Clone)]
+enum ModerationBackend {
+    InMemory(Arc<Mutex<BTreeSet<String>>>),
+    Sqlx(Arc<SqlxPackageRepository>),
+}
+
+pub(crate) type CommunityLinkPolicyFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<&'static str>, ()>> + Send + 'a>>;
+
+pub(crate) trait CommunityLinkPolicy: Send + Sync {
+    fn block_reason<'a>(&'a self, text: &'a str) -> CommunityLinkPolicyFuture<'a>;
+}
+
 impl Default for CommunityState {
     fn default() -> Self {
         Self {
             session_secret: None,
             backend: CommunityBackend::InMemory(Arc::new(Mutex::new(CommunityService::new()))),
+            moderation: ModerationBackend::InMemory(Arc::new(Mutex::new(BTreeSet::new()))),
+            policy: None,
         }
     }
 }
@@ -59,16 +84,65 @@ impl CommunityState {
         Self {
             session_secret: Some(session_secret.into()),
             backend: CommunityBackend::InMemory(Arc::new(Mutex::new(CommunityService::new()))),
+            moderation: ModerationBackend::InMemory(Arc::new(Mutex::new(BTreeSet::new()))),
+            policy: None,
         }
     }
 
     pub fn with_sqlx_session_secret(
         session_secret: impl Into<String>,
         repository: Arc<SqlxCommunityRepository>,
+        moderation_repository: Arc<SqlxPackageRepository>,
+        policy: Arc<dyn CommunityLinkPolicy>,
     ) -> Self {
         Self {
             session_secret: Some(session_secret.into()),
             backend: CommunityBackend::Sqlx(repository),
+            moderation: ModerationBackend::Sqlx(moderation_repository),
+            policy: Some(policy),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn grant_test_moderator(&self, subject: impl Into<String>) {
+        match &self.moderation {
+            ModerationBackend::InMemory(subjects) => {
+                subjects
+                    .lock()
+                    .expect("moderation service lock is not poisoned")
+                    .insert(subject.into());
+            }
+            ModerationBackend::Sqlx(_) => panic!("SQL-backed moderation cannot be seeded directly"),
+        }
+    }
+
+    async fn can_moderate_board(&self, subject: &str, board_id: &str) -> bool {
+        match &self.moderation {
+            ModerationBackend::InMemory(subjects) => subjects
+                .lock()
+                .expect("moderation service lock is not poisoned")
+                .contains(subject),
+            ModerationBackend::Sqlx(repository) => {
+                if repository
+                    .roles_for_subject(subject)
+                    .await
+                    .is_ok_and(|roles| {
+                        roles.iter().any(|role| {
+                            matches!(role, AdminRole::Moderator | AdminRole::SuperAdmin)
+                        })
+                    })
+                {
+                    return true;
+                }
+                repository
+                    .list_resource_permissions("board", board_id)
+                    .await
+                    .is_ok_and(|grants| {
+                        grants
+                            .iter()
+                            .any(|grant| grant.subject == subject && grant.capability == "moderate")
+                    })
+            }
         }
     }
 
@@ -116,6 +190,13 @@ impl CommunityState {
             }
         }
     }
+
+    async fn blocked_link_reason(&self, text: &str) -> Result<Option<&'static str>, Response> {
+        match &self.policy {
+            Some(policy) => policy.block_reason(text).await.map_err(|_| unavailable()),
+            None => Ok(None),
+        }
+    }
 }
 
 pub fn router(state: CommunityState) -> Router {
@@ -124,6 +205,7 @@ pub fn router(state: CommunityState) -> Router {
         .route("/profiles/{subject}", get(get_profile))
         .route("/boards", get(list_boards))
         .route("/boards/{board_id}", get(get_board))
+        .route("/boards/{board_id}/moderation/lock", post(set_board_locked))
         .route(
             "/boards/{board_id}/posts",
             get(list_posts).post(create_post),
@@ -165,6 +247,15 @@ pub fn router(state: CommunityState) -> Router {
             post(mark_notification_read),
         )
         .route(
+            "/notifications/mark-all-read",
+            post(mark_all_notifications_read),
+        )
+        .route("/notifications/test", post(send_test_notification))
+        .route(
+            "/notifications/{notification_id}/actions",
+            post(execute_notification_action),
+        )
+        .route(
             "/notification-preferences",
             get(get_notification_preferences).put(update_notification_preferences),
         )
@@ -188,6 +279,17 @@ struct CreatePostRequest {
 }
 
 #[derive(Deserialize)]
+struct SetBoardLockedRequest {
+    locked: bool,
+}
+
+#[derive(Serialize)]
+struct SetBoardLockedResponse {
+    success: bool,
+    message: &'static str,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateCommentRequest {
     content: String,
@@ -201,7 +303,20 @@ struct VoteRequest {
 
 #[derive(Deserialize)]
 struct NotificationPreferenceRequest {
-    mode: NotificationPreferenceMode,
+    #[serde(default)]
+    mode: Option<NotificationPreferenceMode>,
+    #[serde(default)]
+    preferences: Option<TypedNotificationPreferenceRequest>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TypedNotificationPreferenceRequest {
+    system_enabled: bool,
+    mention_enabled: bool,
+    reply_enabled: bool,
+    followed_publisher_post_enabled: bool,
+    moderation_enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -209,6 +324,18 @@ struct NotificationPreferenceRequest {
 enum NotificationPreferenceMode {
     All,
     MentionsOnly,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum NotificationAction {
+    MarkRead,
+    Dismiss,
+}
+
+#[derive(Deserialize)]
+struct NotificationActionRequest {
+    action: NotificationAction,
 }
 
 #[derive(Serialize)]
@@ -275,6 +402,7 @@ struct BoardResponse {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NotificationPreferenceResponse {
+    system_enabled: bool,
     mention_enabled: bool,
     reply_enabled: bool,
     followed_publisher_post_enabled: bool,
@@ -354,6 +482,64 @@ async fn get_board(State(state): State<CommunityState>, Path(board_id): Path<Str
             Ok(None) => not_found(),
             Err(error) => store_error(error),
         },
+    }
+}
+
+async fn set_board_locked(
+    State(state): State<CommunityState>,
+    headers: HeaderMap,
+    Path(board_id): Path<String>,
+    Json(request): Json<SetBoardLockedRequest>,
+) -> Response {
+    let principal = match authenticated_principal(&state, &headers) {
+        Ok(principal) => principal,
+        Err(response) => return response,
+    };
+    let subject = principal
+        .subject()
+        .expect("authenticated principal has subject")
+        .as_str();
+    if !state.can_moderate_board(subject, &board_id).await {
+        return community_error(CommunityError::Forbidden);
+    }
+    let message = if request.locked {
+        "Board locked."
+    } else {
+        "Board unlocked."
+    };
+    match &state.backend {
+        CommunityBackend::InMemory(service) => match BoardId::new(board_id).and_then(|id| {
+            service
+                .lock()
+                .expect("community service lock is not poisoned")
+                .set_board_locked(&id, request.locked)
+                .map(|()| id)
+        }) {
+            Ok(_) => Json(SetBoardLockedResponse {
+                success: true,
+                message,
+            })
+            .into_response(),
+            Err(error) => community_error(error),
+        },
+        CommunityBackend::Sqlx(repository) => {
+            let Some(mut board) = (match repository.board(&board_id).await {
+                Ok(board) => board,
+                Err(error) => return store_error(error),
+            }) else {
+                return not_found();
+            };
+            board.locked = request.locked;
+            board.updated_at_unix_seconds = now_unix_seconds();
+            match repository.create_board(board).await {
+                Ok(_) => Json(SetBoardLockedResponse {
+                    success: true,
+                    message,
+                })
+                .into_response(),
+                Err(error) => store_error(error),
+            }
+        }
     }
 }
 
@@ -645,6 +831,15 @@ async fn create_post(
         Ok(board_id) => board_id,
         Err(error) => return community_error(error),
     };
+    if let Some(message) = match state
+        .blocked_link_reason(&format!("{}\n{}", request.title, request.content))
+        .await
+    {
+        Ok(reason) => reason,
+        Err(response) => return response,
+    } {
+        return bad_request(message);
+    }
     match &state.backend {
         CommunityBackend::InMemory(service) => match service
             .lock()
@@ -687,6 +882,12 @@ async fn create_comment(
         Ok(principal) => principal,
         Err(response) => return response,
     };
+    if let Some(message) = match state.blocked_link_reason(&request.content).await {
+        Ok(reason) => reason,
+        Err(response) => return response,
+    } {
+        return bad_request(message);
+    }
     match &state.backend {
         CommunityBackend::InMemory(service) => match service
             .lock()
@@ -858,12 +1059,12 @@ async fn update_notification_preferences(
         Ok(principal) => principal,
         Err(response) => return response,
     };
+    let (memory_preference, store_preference) = match notification_preferences(request) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     match &state.backend {
         CommunityBackend::InMemory(service) => {
-            let preference = match request.mode {
-                NotificationPreferenceMode::All => NotificationPreference::all(),
-                NotificationPreferenceMode::MentionsOnly => NotificationPreference::mentions_only(),
-            };
             service
                 .lock()
                 .expect("community service lock is not poisoned")
@@ -872,31 +1073,18 @@ async fn update_notification_preferences(
                         .subject()
                         .expect("authenticated principal has subject")
                         .clone(),
-                    preference,
+                    memory_preference,
                 );
             StatusCode::NO_CONTENT.into_response()
         }
         CommunityBackend::Sqlx(repository) => {
-            let preference = match request.mode {
-                NotificationPreferenceMode::All => {
-                    beskid_pckg_store::CommunityNotificationPreference::default()
-                }
-                NotificationPreferenceMode::MentionsOnly => {
-                    beskid_pckg_store::CommunityNotificationPreference {
-                        mention_enabled: true,
-                        reply_enabled: false,
-                        followed_publisher_post_enabled: false,
-                        moderation_enabled: false,
-                    }
-                }
-            };
             match repository
                 .set_notification_preference(
                     principal
                         .subject()
                         .expect("authenticated principal has subject")
                         .as_str(),
-                    preference,
+                    store_preference,
                     now_unix_seconds(),
                 )
                 .await
@@ -906,6 +1094,71 @@ async fn update_notification_preferences(
             }
         }
     }
+}
+
+// This route-level helper intentionally returns Axum's complete rejection so
+// the public handler preserves the standard error body without allocation.
+#[allow(clippy::result_large_err)]
+fn notification_preferences(
+    request: NotificationPreferenceRequest,
+) -> Result<
+    (
+        NotificationPreference,
+        beskid_pckg_store::CommunityNotificationPreference,
+    ),
+    Response,
+> {
+    let store_preference = if let Some(preferences) = request.preferences {
+        beskid_pckg_store::CommunityNotificationPreference {
+            system_enabled: preferences.system_enabled,
+            mention_enabled: preferences.mention_enabled,
+            reply_enabled: preferences.reply_enabled,
+            followed_publisher_post_enabled: preferences.followed_publisher_post_enabled,
+            moderation_enabled: preferences.moderation_enabled,
+        }
+    } else {
+        match request.mode {
+            Some(NotificationPreferenceMode::All) => {
+                beskid_pckg_store::CommunityNotificationPreference::default()
+            }
+            Some(NotificationPreferenceMode::MentionsOnly) => {
+                beskid_pckg_store::CommunityNotificationPreference {
+                    system_enabled: true,
+                    mention_enabled: true,
+                    reply_enabled: false,
+                    followed_publisher_post_enabled: false,
+                    moderation_enabled: false,
+                }
+            }
+            None => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({"message":"notification preferences are required"})),
+                )
+                    .into_response());
+            }
+        }
+    };
+    let mut enabled = Vec::new();
+    if store_preference.system_enabled {
+        enabled.push(NotificationScope::System);
+    }
+    if store_preference.mention_enabled {
+        enabled.push(NotificationScope::Mention);
+    }
+    if store_preference.reply_enabled {
+        enabled.push(NotificationScope::Reply);
+    }
+    if store_preference.followed_publisher_post_enabled {
+        enabled.push(NotificationScope::FollowedPublisherPost);
+    }
+    if store_preference.moderation_enabled {
+        enabled.push(NotificationScope::Moderation);
+    }
+    Ok((
+        NotificationPreference::from_enabled(enabled),
+        store_preference,
+    ))
 }
 
 // Axum responses intentionally carry the complete HTTP rejection payload here;
@@ -982,6 +1235,22 @@ fn not_found() -> Response {
     (
         StatusCode::NOT_FOUND,
         Json(serde_json::json!({ "message": "community resource not found" })),
+    )
+        .into_response()
+}
+
+fn bad_request(message: &'static str) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({ "message": message })),
+    )
+        .into_response()
+}
+
+fn unavailable() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({ "message": "community safety policy unavailable" })),
     )
         .into_response()
 }
@@ -1160,11 +1429,20 @@ async fn get_notification_preferences(
                 .lock()
                 .expect("community service lock is not poisoned")
                 .notification_preference(subject);
-            Json(serde_json::json!({"mentionsOnly": preference.allows(beskid_pckg_community::NotificationScope::Mention) && !preference.allows(beskid_pckg_community::NotificationScope::Reply)})).into_response()
+            Json(NotificationPreferenceResponse {
+                system_enabled: preference.allows(NotificationScope::System),
+                mention_enabled: preference.allows(NotificationScope::Mention),
+                reply_enabled: preference.allows(NotificationScope::Reply),
+                followed_publisher_post_enabled: preference
+                    .allows(NotificationScope::FollowedPublisherPost),
+                moderation_enabled: preference.allows(NotificationScope::Moderation),
+            })
+            .into_response()
         }
         CommunityBackend::Sqlx(repository) => {
             match repository.notification_preference(subject.as_str()).await {
                 Ok(value) => Json(NotificationPreferenceResponse {
+                    system_enabled: value.system_enabled,
                     mention_enabled: value.mention_enabled,
                     reply_enabled: value.reply_enabled,
                     followed_publisher_post_enabled: value.followed_publisher_post_enabled,
@@ -1208,5 +1486,95 @@ async fn mark_notification_read(
             Ok(()) => StatusCode::NO_CONTENT.into_response(),
             Err(error) => store_error(error),
         },
+    }
+}
+
+async fn mark_all_notifications_read(
+    State(state): State<CommunityState>,
+    headers: HeaderMap,
+) -> Response {
+    let principal = match authenticated_principal(&state, &headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match &state.backend {
+        CommunityBackend::InMemory(service) => match service
+            .lock()
+            .expect("community service lock is not poisoned")
+            .mark_all_notifications_read(&principal)
+        {
+            Ok(updated) => Json(serde_json::json!({"updated": updated})).into_response(),
+            Err(error) => community_error(error),
+        },
+        CommunityBackend::Sqlx(repository) => match repository
+            .mark_all_notifications_read(
+                principal
+                    .subject()
+                    .expect("authenticated principal has subject")
+                    .as_str(),
+                now_unix_seconds(),
+            )
+            .await
+        {
+            Ok(updated) => Json(serde_json::json!({"updated": updated})).into_response(),
+            Err(error) => store_error(error),
+        },
+    }
+}
+
+async fn send_test_notification(
+    State(state): State<CommunityState>,
+    headers: HeaderMap,
+) -> Response {
+    let principal = match authenticated_principal(&state, &headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match &state.backend {
+        CommunityBackend::InMemory(service) => match service
+            .lock()
+            .expect("community service lock is not poisoned")
+            .create_test_notification(&principal)
+        {
+            Ok(id) => (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response(),
+            Err(error) => community_error(error),
+        },
+        CommunityBackend::Sqlx(repository) => match repository
+            .create_test_notification(
+                principal
+                    .subject()
+                    .expect("authenticated principal has subject")
+                    .as_str(),
+                now_unix_seconds(),
+            )
+            .await
+        {
+            Ok(notification) => (
+                StatusCode::CREATED,
+                Json(serde_json::json!({"id": notification.id})),
+            )
+                .into_response(),
+            Err(error) => store_error(error),
+        },
+    }
+}
+
+async fn execute_notification_action(
+    State(state): State<CommunityState>,
+    headers: HeaderMap,
+    Path(notification_id): Path<u64>,
+    Json(request): Json<NotificationActionRequest>,
+) -> Response {
+    // The legacy endpoint accepted arbitrary handler names but its registered
+    // handler always rejected them.  The Rust boundary exposes only the two
+    // safe, deterministic actions, both equivalent to recipient-owned read.
+    match request.action {
+        NotificationAction::MarkRead | NotificationAction::Dismiss => {}
+    }
+    let response = mark_notification_read(State(state), headers, Path(notification_id)).await;
+    if response.status().is_success() {
+        Json(serde_json::json!({"handled": true})).into_response()
+    } else {
+        response
     }
 }

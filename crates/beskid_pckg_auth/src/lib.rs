@@ -298,7 +298,7 @@ impl AuthHubHandoffVerifier for Hs256AuthHubHandoffVerifier {
         .claims;
 
         if claims.app != "pckg"
-            || claims.subject.trim().is_empty()
+            || !is_canonical_github_subject(&claims.subject)
             || claims.login.trim().is_empty()
             || claims.sid.trim().is_empty()
         {
@@ -359,7 +359,7 @@ pub fn verify_pckg_session(
     )
     .map_err(|_| AuthError::Rejected)?
     .claims;
-    if claims.subject.trim().is_empty()
+    if !is_canonical_github_subject(&claims.subject)
         || claims.github_login.trim().is_empty()
         || claims.hub_session_id.trim().is_empty()
     {
@@ -370,6 +370,13 @@ pub fn verify_pckg_session(
         github_login: claims.github_login,
         hub_session_id: claims.hub_session_id,
     })
+}
+
+/// pckg accepts only the Auth Hub's stable GitHub numeric subject.  In
+/// particular, a legacy ASP.NET Identity id, username, email, or a subject
+/// from another provider must never be turned into a pckg browser session.
+fn is_canonical_github_subject(subject: &str) -> bool {
+    subject.starts_with("github:") && subject["github:".len()..].parse::<u64>().is_ok()
 }
 
 #[derive(Debug, Default)]

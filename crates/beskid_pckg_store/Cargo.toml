@@ -7,7 +7,9 @@ publish = false
 
 [dependencies]
 async-trait = "0.1"
+beskid_pckg_operations = { path = "../beskid_pckg_operations" }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "derive"] }
 sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 uuid = { version = "1", features = ["v4"] }

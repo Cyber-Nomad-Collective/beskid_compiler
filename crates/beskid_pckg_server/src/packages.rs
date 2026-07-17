@@ -17,10 +17,17 @@ use beskid_pckg_contract::{
     PublishPackageVersionRequest, UpsertPackageRequest,
 };
 use beskid_pckg_store::{
-    NewPackage, Package, PackageVersion, PublishOutcome, PublishVersion, StoreError,
+    NewPackage, NewRegistryActivity, Package, PackageCommunityReview, PackageVersion, PublishOutcome, PublishVersion,
+    StoreError,
 };
 
 use crate::{AppState, authenticated_subject};
+
+#[derive(serde::Deserialize)]
+pub(crate) struct CommunityReviewRequest { rating: i16, comment: String }
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommunityReviewResponse { id: String, author: String, rating: i16, comment: String, created_at_utc: String }
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -253,6 +260,26 @@ pub async fn package_detail(
     .into_response()
 }
 
+pub async fn list_community_reviews(State(state): State<AppState>, Path(name): Path<String>) -> Response {
+    let Some(package) = state.packages.find_package(&name).await.ok().flatten().filter(|package| package.is_public) else { return package_not_found(); };
+    match state.packages.community_reviews(&package.id).await {
+        Ok(reviews) => Json(reviews.into_iter().map(community_review_response).collect::<Vec<_>>()).into_response(),
+        Err(_) => package_storage_failure(),
+    }
+}
+
+pub async fn create_community_review(State(state): State<AppState>, headers: HeaderMap, Path(name): Path<String>, Json(request): Json<CommunityReviewRequest>) -> Response {
+    let Some(subject) = authenticated_subject(&state, &headers) else { return crate::unauthorized_response(); };
+    let Some(package) = state.packages.find_package(&name).await.ok().flatten().filter(|package| package.is_public) else { return package_not_found(); };
+    if !(1..=5).contains(&request.rating) || request.comment.trim().is_empty() { return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("rating must be 1-5 and comment is required"))).into_response(); }
+    match state.operations.block_reason(&request.comment).await { Ok(Some(reason)) => return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new(reason))).into_response(), Ok(None) => {}, Err(_) => return package_storage_failure() }
+    let now = now();
+    let review = PackageCommunityReview { id: uuid::Uuid::new_v4().to_string(), package_id: package.id, author_subject: subject, rating: request.rating, comment: request.comment.trim().to_owned(), created_at_unix_seconds: now, updated_at_unix_seconds: now };
+    match state.packages.upsert_community_review(review).await { Ok(review) => (StatusCode::CREATED, Json(community_review_response(review))).into_response(), Err(_) => (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid community review"))).into_response() }
+}
+
+fn community_review_response(review: PackageCommunityReview) -> CommunityReviewResponse { CommunityReviewResponse { id: review.id, author: review.author_subject, rating: review.rating, comment: review.comment, created_at_utc: timestamp(review.created_at_unix_seconds) } }
+
 /// Lists version summaries without forcing clients to download the full package
 /// detail document. Private packages deliberately remain indistinguishable from
 /// absent packages for unauthenticated and non-owner callers.
@@ -428,11 +455,15 @@ async fn publish_version_metadata(
         })
         .await
     {
-        Ok(PublishOutcome::Created(version)) => (
-            StatusCode::CREATED,
-            Json(version_summary(&package, &version)),
-        )
-            .into_response(),
+        Ok(PublishOutcome::Created(version)) => {
+            let _ =
+                record_publish_activity(&state, &subject, &package.name, &version.version).await;
+            (
+                StatusCode::CREATED,
+                Json(version_summary(&package, &version)),
+            )
+                .into_response()
+        }
         Ok(PublishOutcome::AlreadyExists(version)) => {
             (StatusCode::OK, Json(version_summary(&package, &version))).into_response()
         }
@@ -610,11 +641,15 @@ async fn persist_uploaded_artifact(
         })
         .await
     {
-        Ok(PublishOutcome::Created(version)) => (
-            StatusCode::CREATED,
-            Json(version_summary(&package, &version)),
-        )
-            .into_response(),
+        Ok(PublishOutcome::Created(version)) => {
+            let _ =
+                record_publish_activity(&state, &subject, &package.name, &version.version).await;
+            (
+                StatusCode::CREATED,
+                Json(version_summary(&package, &version)),
+            )
+                .into_response()
+        }
         Ok(PublishOutcome::AlreadyExists(version)) => {
             (StatusCode::OK, Json(version_summary(&package, &version))).into_response()
         }
@@ -647,6 +682,29 @@ fn artifact_storage_failure() -> Response {
         Json(ApiErrorResponse::new("artifact storage failed")),
     )
         .into_response()
+}
+
+async fn record_publish_activity(
+    state: &AppState,
+    subject: &str,
+    package_name: &str,
+    version: &str,
+) -> Result<(), ()> {
+    state
+        .operations
+        .append_activity(NewRegistryActivity {
+            occurred_at_unix_seconds: now(),
+            severity: "Information".to_owned(),
+            action: "publish_success".to_owned(),
+            message: "Package version published.".to_owned(),
+            trace_id: None,
+            actor_subject: Some(subject.to_owned()),
+            package_name: Some(package_name.to_owned()),
+            version: Some(version.to_owned()),
+        })
+        .await
+        .map(|_| ())
+        .map_err(|_| ())
 }
 
 fn package_storage_failure() -> Response {

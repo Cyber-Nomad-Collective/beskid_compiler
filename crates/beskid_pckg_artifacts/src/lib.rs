@@ -8,6 +8,7 @@ use std::{
     fs,
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use semver::Version;
@@ -268,10 +269,15 @@ impl LocalFileArtifactStore {
         }
         Ok(self.root.join(package).join(version).join(filename))
     }
-}
 
-impl PackageArtifactStore for LocalFileArtifactStore {
-    fn save(&self, request: PublishRequest<'_>) -> Result<StoredArtifact, ArtifactError> {
+    /// Stages immutable artifact bytes without ever replacing an existing
+    /// deterministic package/version object. The boolean is true only when
+    /// this call created the object, so a caller can safely compensate a later
+    /// metadata-transaction failure without deleting another publisher's work.
+    pub fn save_staged(
+        &self,
+        request: PublishRequest<'_>,
+    ) -> Result<(StoredArtifact, bool), ArtifactError> {
         let actual = sha256_hex(request.bytes);
         if actual != request.validated.checksum_sha256 {
             return Err(ArtifactError::ChecksumMismatch);
@@ -280,18 +286,58 @@ impl PackageArtifactStore for LocalFileArtifactStore {
         let version = storage_component(&request.validated.version);
         let storage_key = format!("{package}/{version}/artifact.bpk");
         let path = self.path_for_key(&storage_key)?;
+        let stored = StoredArtifact {
+            storage_key,
+            checksum_sha256: actual.clone(),
+            size_bytes: request.bytes.len() as u64,
+        };
+        match fs::read(&path) {
+            Ok(existing) => {
+                return if sha256_hex(&existing) == actual {
+                    Ok((stored, false))
+                } else {
+                    Err(ArtifactError::ChecksumMismatch)
+                };
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(io_error(error)),
+        }
         let parent = path.parent().expect("artifact path always has parent");
         fs::create_dir_all(parent).map_err(io_error)?;
-        let temporary = parent.join(".artifact.bpk.tmp");
-        fs::File::create(&temporary)
+        static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+        let temporary = parent.join(format!(
+            ".artifact.bpk.{}.{}.tmp",
+            std::process::id(),
+            TEMPORARY_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::File::create_new(&temporary)
             .and_then(|mut file| file.write_all(request.bytes))
             .map_err(io_error)?;
-        fs::rename(temporary, path).map_err(io_error)?;
-        Ok(StoredArtifact {
-            storage_key,
-            checksum_sha256: actual,
-            size_bytes: request.bytes.len() as u64,
-        })
+        match fs::hard_link(&temporary, &path) {
+            Ok(()) => {
+                let _ = fs::remove_file(&temporary);
+                Ok((stored, true))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let _ = fs::remove_file(&temporary);
+                let existing = fs::read(&path).map_err(io_error)?;
+                if sha256_hex(&existing) == actual {
+                    Ok((stored, false))
+                } else {
+                    Err(ArtifactError::ChecksumMismatch)
+                }
+            }
+            Err(error) => {
+                let _ = fs::remove_file(&temporary);
+                Err(io_error(error))
+            }
+        }
+    }
+}
+
+impl PackageArtifactStore for LocalFileArtifactStore {
+    fn save(&self, request: PublishRequest<'_>) -> Result<StoredArtifact, ArtifactError> {
+        self.save_staged(request).map(|(stored, _)| stored)
     }
 
     fn open(&self, storage_key: &str) -> Result<Vec<u8>, ArtifactError> {

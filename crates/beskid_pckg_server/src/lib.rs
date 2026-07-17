@@ -22,9 +22,10 @@ use beskid_pckg_auth::{
 };
 use beskid_pckg_contract::{ApiErrorResponse, HealthResponse, SessionResponse};
 use beskid_pckg_store::{
-    AsyncPackageRepository, InMemoryPackageRepository, NewPackage, Package, PackageRepository,
+    AsyncPackageCommunityReviewRepository, AsyncPackageRepository, InMemoryPackageRepository,
+    NewPackage, Package, PackageCommunityReview, PackageCommunityReviewError, PackageRepository,
     PackageVersion, PublishOutcome, PublishVersion, SqlxCommunityRepository, SqlxPackageRepository,
-    StoreError,
+    StoreError, WorkspacePublishOutcome, WorkspacePublishReservation,
 };
 use serde::Deserialize;
 use sqlx::Row;
@@ -35,7 +36,10 @@ mod admin_routes;
 mod api_key_routes;
 mod artifact_routes;
 mod community_routes;
+mod embed;
+mod operations_routes;
 mod packages;
+mod workspace_review_routes;
 
 #[derive(Clone)]
 pub struct PckgServerConfig {
@@ -61,6 +65,8 @@ struct AppState {
     artifacts: Arc<LocalFileArtifactStore>,
     api_keys: Option<Arc<SqlxPackageRepository>>,
     community: community_routes::CommunityState,
+    reviews: workspace_review_routes::ReviewQueueState,
+    operations: operations_routes::OperationsState,
 }
 
 /// Storage is selected exactly once during startup. In-memory storage remains
@@ -80,6 +86,7 @@ struct InMemoryPackageBackend {
     repository: std::sync::Mutex<InMemoryPackageRepository>,
     package_names: std::sync::Mutex<BTreeSet<String>>,
     versions_by_package: std::sync::Mutex<BTreeMap<String, BTreeSet<String>>>,
+    community_reviews: std::sync::Mutex<Vec<PackageCommunityReview>>,
 }
 
 impl PackageBackend {
@@ -258,6 +265,81 @@ impl PackageBackend {
         }
     }
 
+    /// Atomically reserves all metadata for a workspace. The in-memory
+    /// implementation holds one repository lock and restores its snapshot on
+    /// any error; PostgreSQL delegates to its explicit batch transaction.
+    async fn publish_workspace_batch(
+        &self,
+        reservations: Vec<WorkspacePublishReservation>,
+    ) -> Result<Vec<WorkspacePublishOutcome>, StoreError> {
+        match self {
+            Self::InMemory(repository) => {
+                let mut package_repository = repository
+                    .repository
+                    .lock()
+                    .expect("package repository mutex is not poisoned");
+                let before = package_repository.clone();
+                let result = (|| {
+                    let mut outcomes = Vec::with_capacity(reservations.len());
+                    for reservation in &reservations {
+                        let package = match package_repository
+                            .find_package(&reservation.package.name)
+                            .cloned()
+                        {
+                            Some(package) => {
+                                if package.owner_subject != reservation.package.owner_subject {
+                                    return Err(StoreError::PackageOwnershipConflict);
+                                }
+                                package
+                            }
+                            None => {
+                                package_repository.create_package(reservation.package.clone())?
+                            }
+                        };
+                        let version = package_repository.publish_version(PublishVersion {
+                            id: reservation.version_id.clone(),
+                            package_id: package.id.clone(),
+                            version: reservation.version.clone(),
+                            checksum_sha256: reservation.checksum_sha256.clone(),
+                            storage_key: reservation.storage_key.clone(),
+                            size_bytes: reservation.size_bytes,
+                            now_unix_seconds: reservation.package.now_unix_seconds,
+                        })?;
+                        outcomes.push(WorkspacePublishOutcome { package, version });
+                    }
+                    Ok(outcomes)
+                })();
+                if result.is_err() {
+                    *package_repository = before;
+                    return result;
+                }
+                let outcomes = result.expect("checked above");
+                drop(package_repository);
+                let mut names = repository
+                    .package_names
+                    .lock()
+                    .expect("package catalog mutex is not poisoned");
+                let mut versions = repository
+                    .versions_by_package
+                    .lock()
+                    .expect("version catalog mutex is not poisoned");
+                for outcome in &outcomes {
+                    names.insert(outcome.package.name.clone());
+                    let version = match &outcome.version {
+                        PublishOutcome::Created(version)
+                        | PublishOutcome::AlreadyExists(version) => version,
+                    };
+                    versions
+                        .entry(version.package_id.clone())
+                        .or_default()
+                        .insert(version.version.clone());
+                }
+                Ok(outcomes)
+            }
+            Self::Sqlx(repository) => repository.publish_workspace_batch(&reservations).await,
+        }
+    }
+
     async fn find_version(
         &self,
         package_id: &str,
@@ -271,6 +353,56 @@ impl PackageBackend {
                 .find_version(package_id, version)
                 .cloned()),
             Self::Sqlx(repository) => repository.find_version(package_id, version).await,
+        }
+    }
+
+    async fn upsert_community_review(
+        &self,
+        review: PackageCommunityReview,
+    ) -> Result<PackageCommunityReview, PackageCommunityReviewError> {
+        match self {
+            Self::Sqlx(repository) => repository.upsert_package_community_review(review).await,
+            Self::InMemory(repository) => {
+                if !(1..=5).contains(&review.rating) {
+                    return Err(PackageCommunityReviewError::InvalidRating);
+                }
+                if review.comment.trim().is_empty() {
+                    return Err(PackageCommunityReviewError::InvalidComment);
+                }
+                let mut reviews = repository
+                    .community_reviews
+                    .lock()
+                    .expect("community reviews mutex is not poisoned");
+                if let Some(existing) = reviews.iter_mut().find(|existing| {
+                    existing.package_id == review.package_id
+                        && existing.author_subject == review.author_subject
+                }) {
+                    let mut updated = review;
+                    updated.id = existing.id.clone();
+                    *existing = updated.clone();
+                    Ok(updated)
+                } else {
+                    reviews.push(review.clone());
+                    Ok(review)
+                }
+            }
+        }
+    }
+
+    async fn community_reviews(
+        &self,
+        package_id: &str,
+    ) -> Result<Vec<PackageCommunityReview>, PackageCommunityReviewError> {
+        match self {
+            Self::Sqlx(repository) => repository.list_package_community_reviews(package_id).await,
+            Self::InMemory(repository) => Ok(repository
+                .community_reviews
+                .lock()
+                .expect("community reviews mutex is not poisoned")
+                .iter()
+                .filter(|review| review.package_id == package_id)
+                .cloned()
+                .collect()),
         }
     }
 
@@ -583,6 +715,18 @@ fn router_with_backend(
     let index = web_root.join("index.html");
     let artifacts = LocalFileArtifactStore::new(&config.artifact_root)
         .expect("pckg artifact root is creatable and canonicalizable");
+    let moderation_repository = match &packages {
+        PackageBackend::Sqlx(repository) => Some(repository.clone()),
+        PackageBackend::InMemory(_) => None,
+    };
+    let operations = match &packages {
+        PackageBackend::Sqlx(repository) => {
+            operations_routes::OperationsState::sqlx(repository.clone())
+        }
+        PackageBackend::InMemory(_) => {
+            operations_routes::OperationsState::in_memory(config.admin_bootstrap_subject.clone())
+        }
+    };
     let community_state = config
         .auth
         .as_ref()
@@ -590,6 +734,10 @@ fn router_with_backend(
             Some(repository) => community_routes::CommunityState::with_sqlx_session_secret(
                 auth.session_secret.clone(),
                 repository.clone(),
+                moderation_repository
+                    .clone()
+                    .expect("SQL community storage requires SQL administration storage"),
+                Arc::new(operations.clone()),
             ),
             None => {
                 community_routes::CommunityState::with_session_secret(auth.session_secret.clone())
@@ -609,10 +757,16 @@ fn router_with_backend(
             get(packages::list_packages).post(packages::upsert_package),
         )
         .route("/api/search", get(packages::search_packages))
+        .route("/api/embed/badge.svg", get(embed::badge))
+        .route("/api/embed/card", get(embed::card))
         .route("/api/publishers", get(packages::list_publishers))
         .route(
             "/api/publishers/{subject}/packages",
             get(packages::publisher_packages),
+        )
+        .route(
+            "/api/packages/{name}/community-reviews",
+            get(packages::list_community_reviews).post(packages::create_community_review),
         )
         .route(
             "/api/packages/{idOrName}",
@@ -662,6 +816,22 @@ fn router_with_backend(
             "/api/packages/{name}/versions/{version}/source/file",
             get(artifact_routes::read_source),
         )
+        .route(
+            "/api/workspaces/publish",
+            axum::routing::post(workspace_review_routes::publish_workspace),
+        )
+        .route(
+            "/api/packages/{name}/review-requests",
+            axum::routing::post(workspace_review_routes::submit_review_request),
+        )
+        .route(
+            "/api/packages/reviews",
+            get(workspace_review_routes::list_review_queue),
+        )
+        .route(
+            "/api/packages/reviews/{review_id}/actions",
+            axum::routing::post(workspace_review_routes::review_action),
+        )
         .route("/api/auth/hub-finish", get(auth_hub_finish))
         .route("/api/auth/session", get(read_session))
         .route(
@@ -691,6 +861,7 @@ fn router_with_backend(
             "/api/admin/packages/{name}/versions/{version}/review",
             axum::routing::post(admin_routes::review_package_version),
         )
+        .merge(operations_routes::router())
         .nest_service(
             "/api/community",
             community_routes::router(community_state.clone()),
@@ -703,6 +874,8 @@ fn router_with_backend(
             artifacts: Arc::new(artifacts),
             api_keys,
             community: community_state,
+            reviews: workspace_review_routes::ReviewQueueState::default(),
+            operations,
         })
         .fallback_service(ServeDir::new(web_root).fallback(ServeFile::new(index)))
 }
@@ -824,9 +997,15 @@ fn invalid_handoff_response() -> axum::response::Response {
         .into_response()
 }
 
-fn now_unix_seconds() -> i64 {
+pub(crate) fn now_unix_seconds() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system time is after unix epoch")
         .as_secs() as i64
+}
+
+pub(crate) fn format_timestamp(unix_seconds: i64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp(unix_seconds, 0)
+        .map(|timestamp| timestamp.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        .unwrap_or_default()
 }
