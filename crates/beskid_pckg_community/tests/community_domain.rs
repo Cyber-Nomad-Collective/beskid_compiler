@@ -278,3 +278,30 @@ fn notification_preferences_default_and_notifications_can_only_be_read_by_recipi
         .unwrap();
     assert!(community.notifications_for(author.subject().unwrap())[0].is_read);
 }
+
+#[test]
+fn bulk_read_and_delivery_check_are_scoped_to_the_auth_hub_recipient() {
+    let mut community = CommunityService::new();
+    let owner = user("github:1");
+    let other = user("github:2");
+    let test_id = community.create_test_notification(&owner).unwrap();
+
+    assert_eq!(
+        community.notifications_for(owner.subject().unwrap()).len(),
+        1
+    );
+    assert!(
+        community
+            .notifications_for(other.subject().unwrap())
+            .is_empty()
+    );
+    assert_eq!(community.mark_all_notifications_read(&other).unwrap(), 0);
+    assert!(!community.notifications_for(owner.subject().unwrap())[0].is_read);
+
+    assert_eq!(community.mark_all_notifications_read(&owner).unwrap(), 1);
+    let notification = &community.notifications_for(owner.subject().unwrap())[0];
+    assert_eq!(notification.id, test_id);
+    assert_eq!(notification.scope, NotificationScope::System);
+    assert_eq!(notification.actor, owner.subject().unwrap().clone());
+    assert!(notification.is_read);
+}

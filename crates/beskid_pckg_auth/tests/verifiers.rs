@@ -1,7 +1,8 @@
 use beskid_pckg_auth::{
-    ApiKeyIdentity, ApiKeyScope, ApiKeyVerifier, AuthHubHandoffVerifier, AuthHubIdentity,
-    AuthorizationError, HandoffRequest, PermissionGrant, Principal, ResourceAction,
-    ResourceVisibility, SubjectRole, authorize_resource_access,
+    ApiKeyIdentity, ApiKeyScope, ApiKeyVerifier, AuthHubHandoffClaims, AuthHubHandoffVerifier,
+    AuthHubIdentity, AuthorizationError, HandoffRequest, Hs256AuthHubHandoffVerifier,
+    PermissionGrant, Principal, ResourceAction, ResourceVisibility, SubjectRole,
+    authorize_resource_access, issue_pckg_session, sign_auth_hub_handoff, verify_pckg_session,
 };
 
 #[test]
@@ -14,6 +15,41 @@ fn handoff_verifier_rejects_non_pckg_audiences() {
     });
 
     assert!(result.is_err());
+}
+
+#[test]
+fn handoff_and_session_reject_ambiguous_legacy_subjects() {
+    let service_token = "auth-hub-handoff-test-secret";
+    let claims = AuthHubHandoffClaims {
+        app: "pckg".to_owned(),
+        subject: "legacy-identity-7".to_owned(),
+        login: "octocat".to_owned(),
+        sid: "hub-session-1".to_owned(),
+        expires_at: 4_102_444_800,
+    };
+    let handoff = sign_auth_hub_handoff(&claims, service_token).expect("test handoff signs");
+    let verifier = Hs256AuthHubHandoffVerifier::new(service_token).expect("test secret is valid");
+    assert_eq!(
+        verifier.verify(HandoffRequest {
+            app: "pckg".to_owned(),
+            handoff,
+        }),
+        Err(beskid_pckg_auth::AuthError::Rejected)
+    );
+
+    let session = issue_pckg_session(
+        &AuthHubIdentity {
+            subject: "legacy-identity-7".to_owned(),
+            github_login: "octocat".to_owned(),
+            hub_session_id: "hub-session-1".to_owned(),
+        },
+        service_token,
+    )
+    .expect("test session signs");
+    assert_eq!(
+        verify_pckg_session(&session, service_token),
+        Err(beskid_pckg_auth::AuthError::Rejected)
+    );
 }
 
 #[test]

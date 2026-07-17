@@ -224,7 +224,9 @@ pub struct FollowResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum NotificationScope {
+    System,
     Mention,
     Reply,
     FollowedPublisherPost,
@@ -240,6 +242,7 @@ impl NotificationPreference {
     pub fn all() -> Self {
         Self {
             enabled: BTreeSet::from([
+                NotificationScope::System,
                 NotificationScope::Mention,
                 NotificationScope::Reply,
                 NotificationScope::FollowedPublisherPost,
@@ -250,6 +253,11 @@ impl NotificationPreference {
     pub fn mentions_only() -> Self {
         Self {
             enabled: BTreeSet::from([NotificationScope::Mention]),
+        }
+    }
+    pub fn from_enabled(enabled: impl IntoIterator<Item = NotificationScope>) -> Self {
+        Self {
+            enabled: enabled.into_iter().collect(),
         }
     }
     pub fn allows(&self, scope: NotificationScope) -> bool {
@@ -337,6 +345,18 @@ impl CommunityService {
     }
     pub fn board(&self, board_id: &BoardId) -> Option<&Board> {
         self.boards.get(board_id)
+    }
+    pub fn set_board_locked(
+        &mut self,
+        board_id: &BoardId,
+        locked: bool,
+    ) -> Result<(), CommunityError> {
+        let board = self
+            .boards
+            .get_mut(board_id)
+            .ok_or(CommunityError::BoardNotFound)?;
+        board.locked = locked;
+        Ok(())
     }
     pub fn posts_for_board(&self, board_id: &BoardId) -> Vec<&Post> {
         self.posts
@@ -622,6 +642,49 @@ impl CommunityService {
             .ok_or(CommunityError::NotificationNotFound)?;
         notification.is_read = true;
         Ok(())
+    }
+
+    /// Marks only the authenticated recipient's unread notifications.
+    pub fn mark_all_notifications_read(
+        &mut self,
+        actor: &Principal,
+    ) -> Result<usize, CommunityError> {
+        let subject = actor
+            .subject()
+            .ok_or(CommunityError::NotificationNotFound)?;
+        let mut changed = 0;
+        for notification in self
+            .notifications
+            .iter_mut()
+            .filter(|notification| &notification.recipient == subject && !notification.is_read)
+        {
+            notification.is_read = true;
+            changed += 1;
+        }
+        Ok(changed)
+    }
+
+    /// Creates the one permitted self-addressed notification: a delivery
+    /// check for the current Auth Hub subject.
+    pub fn create_test_notification(
+        &mut self,
+        actor: &Principal,
+    ) -> Result<NotificationId, CommunityError> {
+        let subject = actor
+            .subject()
+            .ok_or(CommunityError::NotificationNotFound)?
+            .clone();
+        let id = self.take_notification_id();
+        self.notifications.push(Notification {
+            id,
+            recipient: subject.clone(),
+            scope: NotificationScope::System,
+            actor: subject,
+            post_id: None,
+            comment_id: None,
+            is_read: false,
+        });
+        Ok(id)
     }
 
     fn require(actor: &Principal, permission: Permission) -> Result<(), CommunityError> {

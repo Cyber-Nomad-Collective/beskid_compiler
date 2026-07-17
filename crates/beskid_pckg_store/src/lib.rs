@@ -8,10 +8,15 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
+use beskid_pckg_operations::BlockedLinkPattern;
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
+
+// Kept as a named contract because this insert must stay aligned with the
+// independently migrated profile table. It creates no synthetic identity data.
+const CREATE_TEST_NOTIFICATION_PROFILE_SQL: &str = "INSERT INTO pckg_community_profiles (subject,display_name,bio,social_links,is_publisher_verified,updated_at_utc) VALUES ($1,$1,'','[]'::JSONB,FALSE,$2) ON CONFLICT (subject) DO NOTHING";
 
 pub mod migrations {
     //! Ordered PostgreSQL migration plan for the package-registry cutover.
@@ -43,6 +48,24 @@ pub mod migrations {
     pub const CREATE_ADMINISTRATION: &str =
         include_str!("../migrations/0006_create_administration.sql");
 
+    /// Typed community preferences plus the self-addressed system delivery
+    /// check. This retains Auth Hub subjects as the only identity key.
+    pub const EXTEND_COMMUNITY_NOTIFICATIONS: &str =
+        include_str!("../migrations/0007_extend_community_notifications.sql");
+
+    /// Durable review submission queue and the current reviewer disposition.
+    pub const CREATE_PACKAGE_REVIEW_QUEUE: &str =
+        include_str!("../migrations/0008_create_package_review_queue.sql");
+
+    /// Registry operations retained after the GitHub-only Auth Hub cutover.
+    /// In particular this migration deliberately does not recreate SMTP or
+    /// personal-email settings from the retired C# application.
+    pub const CREATE_REGISTRY_OPERATIONS: &str =
+        include_str!("../migrations/0009_create_registry_operations.sql");
+
+    pub const CREATE_PACKAGE_COMMUNITY_REVIEWS: &str =
+        include_str!("../migrations/0010_create_package_community_reviews.sql");
+
     pub const ALL: &[(&str, &str)] = &[
         ("0001_create_package_registry", CREATE_PACKAGE_REGISTRY),
         (
@@ -56,7 +79,114 @@ pub mod migrations {
         ("0004_create_community", CREATE_COMMUNITY),
         ("0005_create_api_keys", CREATE_API_KEYS),
         ("0006_create_administration", CREATE_ADMINISTRATION),
+        (
+            "0007_extend_community_notifications",
+            EXTEND_COMMUNITY_NOTIFICATIONS,
+        ),
+        (
+            "0008_create_package_review_queue",
+            CREATE_PACKAGE_REVIEW_QUEUE,
+        ),
+        (
+            "0009_create_registry_operations",
+            CREATE_REGISTRY_OPERATIONS,
+        ),
+        (
+            "0010_create_package_community_reviews",
+            CREATE_PACKAGE_COMMUNITY_REVIEWS,
+        ),
     ];
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockedLinkPolicy {
+    pub id: String,
+    pub pattern: String,
+    pub note: Option<String>,
+    pub created_by_subject: String,
+    pub created_at_unix_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewBlockedLinkPolicy {
+    pub id: String,
+    pub pattern: String,
+    pub note: Option<String>,
+    pub created_by_subject: String,
+    pub created_at_unix_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistryActivity {
+    pub sequence: i64,
+    pub occurred_at_unix_seconds: i64,
+    pub severity: String,
+    pub action: String,
+    pub message: String,
+    pub trace_id: Option<String>,
+    pub actor_subject: Option<String>,
+    pub package_name: Option<String>,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewRegistryActivity {
+    pub occurred_at_unix_seconds: i64,
+    pub severity: String,
+    pub action: String,
+    pub message: String,
+    pub trace_id: Option<String>,
+    pub actor_subject: Option<String>,
+    pub package_name: Option<String>,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WeeklySpotlightRun {
+    pub id: String,
+    pub ran_by_subject: String,
+    pub ran_at_unix_seconds: i64,
+    pub activity_count: u64,
+    pub delivery: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RegistryOperationsStoreError {
+    InvalidAuthHubSubject,
+    InvalidBlockedLinkPattern,
+    InvalidBlockedLinkId,
+    DuplicateBlockedLinkPattern,
+    InvalidActivity,
+    InvalidWeeklySpotlightRun,
+    NotFound,
+    Database(String),
+}
+
+#[async_trait]
+pub trait AsyncRegistryOperationsRepository: Send + Sync {
+    async fn list_blocked_link_policies(
+        &self,
+    ) -> Result<Vec<BlockedLinkPolicy>, RegistryOperationsStoreError>;
+    async fn add_blocked_link_policy(
+        &self,
+        policy: NewBlockedLinkPolicy,
+    ) -> Result<BlockedLinkPolicy, RegistryOperationsStoreError>;
+    async fn delete_blocked_link_policy(
+        &self,
+        id: &str,
+    ) -> Result<(), RegistryOperationsStoreError>;
+    async fn append_registry_activity(
+        &self,
+        activity: NewRegistryActivity,
+    ) -> Result<RegistryActivity, RegistryOperationsStoreError>;
+    async fn recent_registry_activity(
+        &self,
+        take: u16,
+    ) -> Result<Vec<RegistryActivity>, RegistryOperationsStoreError>;
+    async fn record_weekly_spotlight(
+        &self,
+        run: WeeklySpotlightRun,
+    ) -> Result<WeeklySpotlightRun, RegistryOperationsStoreError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,6 +254,49 @@ pub enum AdministrationStoreError {
     InvalidDecision,
     InvalidPackageId,
     Database(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageReviewRequest {
+    pub id: String,
+    pub package_id: String,
+    pub requested_by_subject: String,
+    pub reason: String,
+    pub status: String,
+    pub submitted_at_unix_seconds: i64,
+    pub reviewer_subject: Option<String>,
+    pub review_notes: Option<String>,
+    pub reviewed_at_unix_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PackageReviewQueueError {
+    InvalidAuthHubSubject,
+    InvalidPackageId,
+    InvalidReviewId,
+    InvalidReason,
+    InvalidAction,
+    NotFound,
+    Database(String),
+}
+
+#[async_trait]
+pub trait AsyncPackageReviewRepository: Send + Sync {
+    async fn submit_package_review(
+        &self,
+        review: PackageReviewRequest,
+    ) -> Result<PackageReviewRequest, PackageReviewQueueError>;
+    async fn list_package_reviews(
+        &self,
+    ) -> Result<Vec<PackageReviewRequest>, PackageReviewQueueError>;
+    async fn action_package_review(
+        &self,
+        review_id: &str,
+        action: &str,
+        reviewer_subject: &str,
+        notes: Option<String>,
+        reviewed_at_unix_seconds: i64,
+    ) -> Result<PackageReviewRequest, PackageReviewQueueError>;
 }
 
 #[async_trait]
@@ -333,6 +506,24 @@ pub struct PublishVersion {
     pub now_unix_seconds: i64,
 }
 
+/// One immutable package-version reservation in a workspace publication.
+/// All reservations are committed together or none become durable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspacePublishReservation {
+    pub package: NewPackage,
+    pub version_id: String,
+    pub version: String,
+    pub checksum_sha256: String,
+    pub storage_key: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspacePublishOutcome {
+    pub package: Package,
+    pub version: PublishOutcome,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PublishOutcome {
     Created(PackageVersion),
@@ -346,6 +537,7 @@ pub enum StoreError {
     InvalidVersion,
     InvalidChecksum,
     PackageAlreadyExists,
+    PackageOwnershipConflict,
     PackageNotFound,
     VersionImmutable,
     VersionNotFound,
@@ -434,6 +626,127 @@ impl SqlxPackageRepository {
                 .map_err(database_error)?;
         }
         Ok(())
+    }
+
+    /// Reserves every package/version in one PostgreSQL transaction. Artifact
+    /// bytes are staged by the caller before this method and are compensated
+    /// if this transaction fails; this boundary guarantees that a malformed
+    /// later workspace member cannot leave earlier registry metadata behind.
+    pub async fn publish_workspace_batch(
+        &self,
+        reservations: &[WorkspacePublishReservation],
+    ) -> Result<Vec<WorkspacePublishOutcome>, StoreError> {
+        let mut transaction = self.pool.begin().await.map_err(database_error)?;
+        let mut outcomes = Vec::with_capacity(reservations.len());
+        for reservation in reservations {
+            validate_package_name(&reservation.package.name)?;
+            validate_subject(&reservation.package.owner_subject)?;
+            validate_version(&reservation.version)?;
+            validate_checksum(&reservation.checksum_sha256)?;
+            let requested_package_id = parse_identifier(&reservation.package.id)?;
+            let version_id = parse_identifier(&reservation.version_id)?;
+            let created_at = timestamp(reservation.package.now_unix_seconds)?;
+            let published_at = timestamp(reservation.package.now_unix_seconds)?;
+            let package = match sqlx::query_as::<_, PackageRow>(
+                "SELECT id, name, owner_subject, is_public, created_at_utc, updated_at_utc \
+                 FROM pckg_packages WHERE name = $1 FOR UPDATE",
+            )
+            .bind(&reservation.package.name)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(database_error)?
+            {
+                Some(row) => row.into_domain(),
+                None => {
+                    let inserted = sqlx::query_as::<_, PackageRow>(
+                        "INSERT INTO pckg_packages (id, name, owner_subject, is_public, created_at_utc, updated_at_utc) \
+                         VALUES ($1, $2, $3, $4, $5, $5) ON CONFLICT (name) DO NOTHING \
+                         RETURNING id, name, owner_subject, is_public, created_at_utc, updated_at_utc",
+                    )
+                    .bind(requested_package_id)
+                    .bind(&reservation.package.name)
+                    .bind(&reservation.package.owner_subject)
+                    .bind(reservation.package.is_public)
+                    .bind(created_at)
+                    .fetch_optional(&mut *transaction)
+                    .await
+                    .map_err(database_error)?;
+                    match inserted {
+                        Some(row) => row.into_domain(),
+                        None => sqlx::query_as::<_, PackageRow>(
+                            "SELECT id, name, owner_subject, is_public, created_at_utc, updated_at_utc \
+                             FROM pckg_packages WHERE name = $1 FOR UPDATE",
+                        )
+                        .bind(&reservation.package.name)
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(database_error)?
+                        .into_domain(),
+                    }
+                }
+            };
+            if package.owner_subject != reservation.package.owner_subject {
+                return Err(StoreError::PackageOwnershipConflict);
+            }
+            let checksum = reservation.checksum_sha256.to_ascii_lowercase();
+            let outcome = if let Some(existing) = find_version_in_transaction(
+                &mut transaction,
+                parse_identifier(&package.id)?,
+                &reservation.version,
+            )
+            .await?
+            {
+                if existing.checksum_sha256.eq_ignore_ascii_case(&checksum) {
+                    PublishOutcome::AlreadyExists(existing)
+                } else {
+                    return Err(StoreError::VersionImmutable);
+                }
+            } else {
+                let package_id = parse_identifier(&package.id)?;
+                let inserted = sqlx::query_as::<_, PackageVersionRow>(
+                    "INSERT INTO pckg_package_versions \
+                     (id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc) \
+                     VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, NULL) \
+                     ON CONFLICT (package_id, version) DO NOTHING \
+                     RETURNING id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc",
+                )
+                .bind(version_id)
+                .bind(package_id)
+                .bind(&reservation.version)
+                .bind(&checksum)
+                .bind(&reservation.storage_key)
+                .bind(i64::try_from(reservation.size_bytes).map_err(|_| StoreError::InvalidIdentifier)?)
+                .bind(published_at)
+                .fetch_optional(&mut *transaction)
+                .await
+                .map_err(database_error)?;
+                match inserted {
+                    Some(row) => PublishOutcome::Created(row.into_domain()),
+                    None => {
+                        let existing = find_version_in_transaction(
+                            &mut transaction,
+                            package_id,
+                            &reservation.version,
+                        )
+                        .await?
+                        .ok_or_else(|| {
+                            StoreError::Database("version conflict row disappeared".into())
+                        })?;
+                        if existing.checksum_sha256.eq_ignore_ascii_case(&checksum) {
+                            PublishOutcome::AlreadyExists(existing)
+                        } else {
+                            return Err(StoreError::VersionImmutable);
+                        }
+                    }
+                }
+            };
+            outcomes.push(WorkspacePublishOutcome {
+                package,
+                version: outcome,
+            });
+        }
+        transaction.commit().await.map_err(database_error)?;
+        Ok(outcomes)
     }
 
     /// Imports legacy package ownership only after every owner has an explicit,
@@ -622,6 +935,17 @@ impl SqlxPackageRepository {
         Ok(())
     }
 
+    /// Applies the independent operations tables.  This stays separate from
+    /// role management so focused fixtures can opt into the exact durable
+    /// boundary they exercise.
+    pub async fn migrate_registry_operations(&self) -> Result<(), RegistryOperationsStoreError> {
+        sqlx::raw_sql(migrations::CREATE_REGISTRY_OPERATIONS)
+            .execute(&self.pool)
+            .await
+            .map_err(registry_operations_database_error)?;
+        Ok(())
+    }
+
     /// Seeds exactly one initial SuperAdmin only when the complete role table
     /// is empty. The caller must supply an explicit `github:<numeric-id>` from
     /// deployment configuration; a later config change cannot elevate another
@@ -637,6 +961,150 @@ impl SqlxPackageRepository {
         let inserted = sqlx::query("INSERT INTO pckg_admin_roles (subject,role,granted_by_subject,granted_at_utc) SELECT $1,'superadmin',$1,$2 WHERE NOT EXISTS (SELECT 1 FROM pckg_admin_roles)")
             .bind(subject).bind(timestamp).execute(&self.pool).await.map_err(administration_database_error)?;
         Ok(inserted.rows_affected() == 1)
+    }
+}
+
+#[async_trait]
+impl AsyncRegistryOperationsRepository for SqlxPackageRepository {
+    async fn list_blocked_link_policies(
+        &self,
+    ) -> Result<Vec<BlockedLinkPolicy>, RegistryOperationsStoreError> {
+        let rows = sqlx::query_as::<_, BlockedLinkPolicyRow>(
+            "SELECT id,pattern,note,created_by_subject,created_at_utc \
+             FROM pckg_blocked_link_patterns ORDER BY created_at_utc DESC,id DESC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(registry_operations_database_error)?;
+        Ok(rows
+            .into_iter()
+            .map(BlockedLinkPolicyRow::into_domain)
+            .collect())
+    }
+
+    async fn add_blocked_link_policy(
+        &self,
+        policy: NewBlockedLinkPolicy,
+    ) -> Result<BlockedLinkPolicy, RegistryOperationsStoreError> {
+        validate_registry_operations_subject(&policy.created_by_subject)?;
+        let pattern = BlockedLinkPattern::new(&policy.pattern)
+            .map_err(|_| RegistryOperationsStoreError::InvalidBlockedLinkPattern)?;
+        let id = Uuid::parse_str(&policy.id)
+            .map_err(|_| RegistryOperationsStoreError::InvalidBlockedLinkId)?;
+        let at = registry_operations_timestamp(policy.created_at_unix_seconds)?;
+        let note = normalize_operations_note(policy.note)?;
+        let row = sqlx::query_as::<_, BlockedLinkPolicyRow>(
+            "INSERT INTO pckg_blocked_link_patterns \
+             (id,pattern,note,created_by_subject,created_at_utc) VALUES ($1,$2,$3,$4,$5) \
+             RETURNING id,pattern,note,created_by_subject,created_at_utc",
+        )
+        .bind(id)
+        .bind(pattern.as_str())
+        .bind(note)
+        .bind(policy.created_by_subject)
+        .bind(at)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(registry_operations_insert_error)?;
+        Ok(row.into_domain())
+    }
+
+    async fn delete_blocked_link_policy(
+        &self,
+        id: &str,
+    ) -> Result<(), RegistryOperationsStoreError> {
+        let id =
+            Uuid::parse_str(id).map_err(|_| RegistryOperationsStoreError::InvalidBlockedLinkId)?;
+        let deleted = sqlx::query("DELETE FROM pckg_blocked_link_patterns WHERE id=$1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(registry_operations_database_error)?;
+        if deleted.rows_affected() == 0 {
+            return Err(RegistryOperationsStoreError::NotFound);
+        }
+        Ok(())
+    }
+
+    async fn append_registry_activity(
+        &self,
+        activity: NewRegistryActivity,
+    ) -> Result<RegistryActivity, RegistryOperationsStoreError> {
+        validate_registry_activity(&activity)?;
+        let at = registry_operations_timestamp(activity.occurred_at_unix_seconds)?;
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(registry_operations_database_error)?;
+        let row = sqlx::query_as::<_, RegistryActivityRow>(
+            "INSERT INTO pckg_registry_activity \
+             (occurred_at_utc,severity,action,message,trace_id,actor_subject,package_name,version) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) \
+             RETURNING id,occurred_at_utc,severity,action,message,trace_id,actor_subject,package_name,version",
+        )
+        .bind(at)
+        .bind(activity.severity)
+        .bind(activity.action)
+        .bind(activity.message)
+        .bind(activity.trace_id)
+        .bind(activity.actor_subject)
+        .bind(activity.package_name)
+        .bind(activity.version)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(registry_operations_database_error)?;
+        // Retain the legacy 500-entry diagnostic window atomically with the append.
+        sqlx::query(
+            "DELETE FROM pckg_registry_activity WHERE id IN ( \
+             SELECT id FROM pckg_registry_activity ORDER BY occurred_at_utc DESC,id DESC OFFSET 500)",
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(registry_operations_database_error)?;
+        transaction
+            .commit()
+            .await
+            .map_err(registry_operations_database_error)?;
+        Ok(row.into_domain())
+    }
+
+    async fn recent_registry_activity(
+        &self,
+        take: u16,
+    ) -> Result<Vec<RegistryActivity>, RegistryOperationsStoreError> {
+        let take = i64::from(take.clamp(1, 500));
+        let rows = sqlx::query_as::<_, RegistryActivityRow>(
+            "SELECT id,occurred_at_utc,severity,action,message,trace_id,actor_subject,package_name,version \
+             FROM pckg_registry_activity ORDER BY occurred_at_utc DESC,id DESC LIMIT $1",
+        )
+        .bind(take)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(registry_operations_database_error)?;
+        Ok(rows
+            .into_iter()
+            .map(RegistryActivityRow::into_domain)
+            .collect())
+    }
+
+    async fn record_weekly_spotlight(
+        &self,
+        run: WeeklySpotlightRun,
+    ) -> Result<WeeklySpotlightRun, RegistryOperationsStoreError> {
+        validate_registry_operations_subject(&run.ran_by_subject)?;
+        if run.delivery != "in_app_only" {
+            return Err(RegistryOperationsStoreError::InvalidWeeklySpotlightRun);
+        }
+        let id = Uuid::parse_str(&run.id)
+            .map_err(|_| RegistryOperationsStoreError::InvalidWeeklySpotlightRun)?;
+        let at = registry_operations_timestamp(run.ran_at_unix_seconds)?;
+        let activity_count = i64::try_from(run.activity_count)
+            .map_err(|_| RegistryOperationsStoreError::InvalidWeeklySpotlightRun)?;
+        sqlx::query("INSERT INTO pckg_weekly_spotlight_runs (id,ran_by_subject,ran_at_utc,activity_count,delivery) VALUES ($1,$2,$3,$4,$5)")
+            .bind(id).bind(&run.ran_by_subject).bind(at).bind(activity_count).bind(&run.delivery)
+            .execute(&self.pool).await.map_err(registry_operations_database_error)?;
+        Ok(run)
     }
 }
 
@@ -808,6 +1276,224 @@ impl AsyncAdministrationRepository for SqlxPackageRepository {
     }
 }
 
+#[async_trait]
+impl AsyncPackageReviewRepository for SqlxPackageRepository {
+    async fn submit_package_review(
+        &self,
+        review: PackageReviewRequest,
+    ) -> Result<PackageReviewRequest, PackageReviewQueueError> {
+        validate_review_request(&review)?;
+        let id =
+            Uuid::parse_str(&review.id).map_err(|_| PackageReviewQueueError::InvalidReviewId)?;
+        let package_id = Uuid::parse_str(&review.package_id)
+            .map_err(|_| PackageReviewQueueError::InvalidPackageId)?;
+        let submitted_at = DateTime::from_timestamp(review.submitted_at_unix_seconds, 0)
+            .ok_or(PackageReviewQueueError::InvalidReason)?;
+        let row = sqlx::query_as::<_, PackageReviewRequestRow>(
+            "INSERT INTO pckg_package_review_requests \
+             (id,package_id,requested_by_subject,reason,status,submitted_at_utc,reviewer_subject,review_notes,reviewed_at_utc) \
+             VALUES ($1,$2,$3,$4,'pending',$5,NULL,NULL,NULL) \
+             RETURNING id,package_id,requested_by_subject,reason,status,submitted_at_utc,reviewer_subject,review_notes,reviewed_at_utc",
+        )
+        .bind(id)
+        .bind(package_id)
+        .bind(&review.requested_by_subject)
+        .bind(&review.reason)
+        .bind(submitted_at)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(review_queue_database_error)?;
+        row.into_domain()
+    }
+
+    async fn list_package_reviews(
+        &self,
+    ) -> Result<Vec<PackageReviewRequest>, PackageReviewQueueError> {
+        let rows = sqlx::query_as::<_, PackageReviewRequestRow>(
+            "SELECT id,package_id,requested_by_subject,reason,status,submitted_at_utc,reviewer_subject,review_notes,reviewed_at_utc \
+             FROM pckg_package_review_requests ORDER BY submitted_at_utc DESC, id DESC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(review_queue_database_error)?;
+        rows.into_iter()
+            .map(PackageReviewRequestRow::into_domain)
+            .collect()
+    }
+
+    async fn action_package_review(
+        &self,
+        review_id: &str,
+        action: &str,
+        reviewer_subject: &str,
+        notes: Option<String>,
+        reviewed_at_unix_seconds: i64,
+    ) -> Result<PackageReviewRequest, PackageReviewQueueError> {
+        let id =
+            Uuid::parse_str(review_id).map_err(|_| PackageReviewQueueError::InvalidReviewId)?;
+        validate_subject_for_review(reviewer_subject)?;
+        let action = normalize_review_action(action)?;
+        let notes = normalize_review_notes(notes)?;
+        let reviewed_at = DateTime::from_timestamp(reviewed_at_unix_seconds, 0)
+            .ok_or(PackageReviewQueueError::InvalidAction)?;
+        let row = sqlx::query_as::<_, PackageReviewRequestRow>(
+            "UPDATE pckg_package_review_requests \
+             SET status=$2, reviewer_subject=$3, review_notes=$4, reviewed_at_utc=$5 \
+             WHERE id=$1 \
+             RETURNING id,package_id,requested_by_subject,reason,status,submitted_at_utc,reviewer_subject,review_notes,reviewed_at_utc",
+        )
+        .bind(id)
+        .bind(action)
+        .bind(reviewer_subject)
+        .bind(notes)
+        .bind(reviewed_at)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(review_queue_database_error)?
+        .ok_or(PackageReviewQueueError::NotFound)?;
+        row.into_domain()
+    }
+}
+
+#[async_trait]
+impl AsyncPackageCommunityReviewRepository for SqlxPackageRepository {
+    async fn upsert_package_community_review(
+        &self,
+        review: PackageCommunityReview,
+    ) -> Result<PackageCommunityReview, PackageCommunityReviewError> {
+        let id = Uuid::parse_str(&review.id)
+            .map_err(|_| PackageCommunityReviewError::InvalidPackageId)?;
+        let package_id = Uuid::parse_str(&review.package_id)
+            .map_err(|_| PackageCommunityReviewError::InvalidPackageId)?;
+        validate_subject(&review.author_subject)
+            .map_err(|_| PackageCommunityReviewError::InvalidAuthHubSubject)?;
+        if !(1..=5).contains(&review.rating) {
+            return Err(PackageCommunityReviewError::InvalidRating);
+        }
+        if review.comment.trim().is_empty() {
+            return Err(PackageCommunityReviewError::InvalidComment);
+        }
+        let created = DateTime::from_timestamp(review.created_at_unix_seconds, 0)
+            .ok_or(PackageCommunityReviewError::InvalidComment)?;
+        let updated = DateTime::from_timestamp(review.updated_at_unix_seconds, 0)
+            .ok_or(PackageCommunityReviewError::InvalidComment)?;
+        let row = sqlx::query_as::<_, PackageCommunityReviewRow>(
+            "INSERT INTO pckg_package_community_reviews (id,package_id,author_subject,rating,comment,created_at_utc,updated_at_utc) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (package_id,author_subject) DO UPDATE SET rating=EXCLUDED.rating,comment=EXCLUDED.comment,updated_at_utc=EXCLUDED.updated_at_utc RETURNING id,package_id,author_subject,rating,comment,created_at_utc,updated_at_utc"
+        ).bind(id).bind(package_id).bind(&review.author_subject).bind(review.rating).bind(&review.comment).bind(created).bind(updated).fetch_one(&self.pool).await.map_err(|error| PackageCommunityReviewError::Database(error.to_string()))?;
+        row.into_domain()
+    }
+    async fn list_package_community_reviews(
+        &self,
+        package_id: &str,
+    ) -> Result<Vec<PackageCommunityReview>, PackageCommunityReviewError> {
+        let package_id = Uuid::parse_str(package_id)
+            .map_err(|_| PackageCommunityReviewError::InvalidPackageId)?;
+        let rows = sqlx::query_as::<_, PackageCommunityReviewRow>("SELECT id,package_id,author_subject,rating,comment,created_at_utc,updated_at_utc FROM pckg_package_community_reviews WHERE package_id=$1 ORDER BY created_at_utc DESC,id DESC").bind(package_id).fetch_all(&self.pool).await.map_err(|error| PackageCommunityReviewError::Database(error.to_string()))?;
+        rows.into_iter()
+            .map(PackageCommunityReviewRow::into_domain)
+            .collect()
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct PackageCommunityReviewRow {
+    id: Uuid,
+    package_id: Uuid,
+    author_subject: String,
+    rating: i16,
+    comment: String,
+    created_at_utc: chrono::DateTime<chrono::Utc>,
+    updated_at_utc: chrono::DateTime<chrono::Utc>,
+}
+impl PackageCommunityReviewRow {
+    fn into_domain(self) -> Result<PackageCommunityReview, PackageCommunityReviewError> {
+        Ok(PackageCommunityReview {
+            id: self.id.to_string(),
+            package_id: self.package_id.to_string(),
+            author_subject: self.author_subject,
+            rating: self.rating,
+            comment: self.comment,
+            created_at_unix_seconds: self.created_at_utc.timestamp(),
+            updated_at_unix_seconds: self.updated_at_utc.timestamp(),
+        })
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct PackageReviewRequestRow {
+    id: Uuid,
+    package_id: Uuid,
+    requested_by_subject: String,
+    reason: String,
+    status: String,
+    submitted_at_utc: DateTime<Utc>,
+    reviewer_subject: Option<String>,
+    review_notes: Option<String>,
+    reviewed_at_utc: Option<DateTime<Utc>>,
+}
+
+impl PackageReviewRequestRow {
+    fn into_domain(self) -> Result<PackageReviewRequest, PackageReviewQueueError> {
+        validate_subject_for_review(&self.requested_by_subject)?;
+        if let Some(subject) = &self.reviewer_subject {
+            validate_subject_for_review(subject)?;
+        }
+        normalize_review_action(&self.status)?;
+        Ok(PackageReviewRequest {
+            id: self.id.to_string(),
+            package_id: self.package_id.to_string(),
+            requested_by_subject: self.requested_by_subject,
+            reason: self.reason,
+            status: self.status,
+            submitted_at_unix_seconds: self.submitted_at_utc.timestamp(),
+            reviewer_subject: self.reviewer_subject,
+            review_notes: self.review_notes,
+            reviewed_at_unix_seconds: self.reviewed_at_utc.map(|time| time.timestamp()),
+        })
+    }
+}
+
+fn validate_review_request(review: &PackageReviewRequest) -> Result<(), PackageReviewQueueError> {
+    Uuid::parse_str(&review.id).map_err(|_| PackageReviewQueueError::InvalidReviewId)?;
+    Uuid::parse_str(&review.package_id).map_err(|_| PackageReviewQueueError::InvalidPackageId)?;
+    validate_subject_for_review(&review.requested_by_subject)?;
+    if review.reason.trim().is_empty()
+        || review.reason.trim() != review.reason
+        || review.reason.len() > 4000
+    {
+        return Err(PackageReviewQueueError::InvalidReason);
+    }
+    Ok(())
+}
+
+fn validate_subject_for_review(subject: &str) -> Result<(), PackageReviewQueueError> {
+    validate_subject(subject).map_err(|_| PackageReviewQueueError::InvalidAuthHubSubject)
+}
+
+fn normalize_review_action(action: &str) -> Result<&'static str, PackageReviewQueueError> {
+    let normalized = action.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "approved" => Ok("approved"),
+        "needs_changes" | "needschanges" => Ok("needs_changes"),
+        "rejected" => Ok("rejected"),
+        _ => Err(PackageReviewQueueError::InvalidAction),
+    }
+}
+
+fn normalize_review_notes(
+    notes: Option<String>,
+) -> Result<Option<String>, PackageReviewQueueError> {
+    let notes = notes.and_then(|value| (!value.trim().is_empty()).then(|| value.trim().to_owned()));
+    if notes.as_ref().is_some_and(|value| value.len() > 4000) {
+        return Err(PackageReviewQueueError::InvalidAction);
+    }
+    Ok(notes)
+}
+
+fn review_queue_database_error(error: sqlx::Error) -> PackageReviewQueueError {
+    PackageReviewQueueError::Database(error.to_string())
+}
+
 #[derive(sqlx::FromRow)]
 struct AdminRoleRow {
     subject: String,
@@ -884,6 +1570,123 @@ fn validate_resource(
 }
 fn administration_database_error(error: sqlx::Error) -> AdministrationStoreError {
     AdministrationStoreError::Database(error.to_string())
+}
+
+#[derive(sqlx::FromRow)]
+struct BlockedLinkPolicyRow {
+    id: Uuid,
+    pattern: String,
+    note: Option<String>,
+    created_by_subject: String,
+    created_at_utc: DateTime<Utc>,
+}
+
+impl BlockedLinkPolicyRow {
+    fn into_domain(self) -> BlockedLinkPolicy {
+        BlockedLinkPolicy {
+            id: self.id.to_string(),
+            pattern: self.pattern,
+            note: self.note,
+            created_by_subject: self.created_by_subject,
+            created_at_unix_seconds: self.created_at_utc.timestamp(),
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct RegistryActivityRow {
+    id: i64,
+    occurred_at_utc: DateTime<Utc>,
+    severity: String,
+    action: String,
+    message: String,
+    trace_id: Option<String>,
+    actor_subject: Option<String>,
+    package_name: Option<String>,
+    version: Option<String>,
+}
+
+impl RegistryActivityRow {
+    fn into_domain(self) -> RegistryActivity {
+        RegistryActivity {
+            sequence: self.id,
+            occurred_at_unix_seconds: self.occurred_at_utc.timestamp(),
+            severity: self.severity,
+            action: self.action,
+            message: self.message,
+            trace_id: self.trace_id,
+            actor_subject: self.actor_subject,
+            package_name: self.package_name,
+            version: self.version,
+        }
+    }
+}
+
+fn validate_registry_operations_subject(subject: &str) -> Result<(), RegistryOperationsStoreError> {
+    (subject.starts_with("github:") && subject["github:".len()..].parse::<u64>().is_ok())
+        .then_some(())
+        .ok_or(RegistryOperationsStoreError::InvalidAuthHubSubject)
+}
+
+fn registry_operations_timestamp(
+    value: i64,
+) -> Result<DateTime<Utc>, RegistryOperationsStoreError> {
+    DateTime::from_timestamp(value, 0).ok_or(RegistryOperationsStoreError::InvalidActivity)
+}
+
+fn normalize_operations_note(
+    note: Option<String>,
+) -> Result<Option<String>, RegistryOperationsStoreError> {
+    let note = note.and_then(|value| (!value.trim().is_empty()).then(|| value.trim().to_owned()));
+    if note.as_ref().is_some_and(|value| value.len() > 2000) {
+        return Err(RegistryOperationsStoreError::InvalidBlockedLinkPattern);
+    }
+    Ok(note)
+}
+
+fn validate_registry_activity(
+    activity: &NewRegistryActivity,
+) -> Result<(), RegistryOperationsStoreError> {
+    if activity.severity.trim().is_empty()
+        || activity.severity.len() > 64
+        || activity.action.trim().is_empty()
+        || activity.action.len() > 128
+        || activity.message.len() > 4000
+        || activity
+            .trace_id
+            .as_ref()
+            .is_some_and(|value| value.len() > 256)
+        || activity
+            .package_name
+            .as_ref()
+            .is_some_and(|value| value.len() > 256)
+        || activity
+            .version
+            .as_ref()
+            .is_some_and(|value| value.len() > 128)
+    {
+        return Err(RegistryOperationsStoreError::InvalidActivity);
+    }
+    if let Some(subject) = activity.actor_subject.as_deref() {
+        validate_registry_operations_subject(subject)?;
+    }
+    Ok(())
+}
+
+fn registry_operations_database_error(error: sqlx::Error) -> RegistryOperationsStoreError {
+    RegistryOperationsStoreError::Database(error.to_string())
+}
+
+fn registry_operations_insert_error(error: sqlx::Error) -> RegistryOperationsStoreError {
+    if error
+        .as_database_error()
+        .and_then(|database| database.code())
+        .is_some_and(|code| code == "23505")
+    {
+        RegistryOperationsStoreError::DuplicateBlockedLinkPattern
+    } else {
+        registry_operations_database_error(error)
+    }
 }
 
 #[async_trait]
@@ -1295,6 +2098,7 @@ impl CommunityVote {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommunityNotificationPreference {
+    pub system_enabled: bool,
     pub mention_enabled: bool,
     pub reply_enabled: bool,
     pub followed_publisher_post_enabled: bool,
@@ -1304,6 +2108,7 @@ pub struct CommunityNotificationPreference {
 impl Default for CommunityNotificationPreference {
     fn default() -> Self {
         Self {
+            system_enabled: true,
             mention_enabled: true,
             reply_enabled: true,
             followed_publisher_post_enabled: true,
@@ -1322,6 +2127,38 @@ pub struct CommunityNotification {
     pub comment_id: Option<i64>,
     pub created_at_unix_seconds: i64,
     pub read_at_unix_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageCommunityReview {
+    pub id: String,
+    pub package_id: String,
+    pub author_subject: String,
+    pub rating: i16,
+    pub comment: String,
+    pub created_at_unix_seconds: i64,
+    pub updated_at_unix_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PackageCommunityReviewError {
+    InvalidAuthHubSubject,
+    InvalidPackageId,
+    InvalidRating,
+    InvalidComment,
+    Database(String),
+}
+
+#[async_trait]
+pub trait AsyncPackageCommunityReviewRepository: Send + Sync {
+    async fn upsert_package_community_review(
+        &self,
+        review: PackageCommunityReview,
+    ) -> Result<PackageCommunityReview, PackageCommunityReviewError>;
+    async fn list_package_community_reviews(
+        &self,
+        package_id: &str,
+    ) -> Result<Vec<PackageCommunityReview>, PackageCommunityReviewError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1441,6 +2278,16 @@ pub trait AsyncCommunityRepository: Send + Sync {
         recipient_subject: &str,
         now_unix_seconds: i64,
     ) -> Result<(), CommunityStoreError>;
+    async fn mark_all_notifications_read(
+        &self,
+        recipient_subject: &str,
+        now_unix_seconds: i64,
+    ) -> Result<u64, CommunityStoreError>;
+    async fn create_test_notification(
+        &self,
+        recipient_subject: &str,
+        now_unix_seconds: i64,
+    ) -> Result<CommunityNotification, CommunityStoreError>;
 }
 
 /// PostgreSQL community repository. The mutation methods use transactions and
@@ -1459,6 +2306,10 @@ impl SqlxCommunityRepository {
     }
     pub async fn migrate(&self) -> Result<(), CommunityStoreError> {
         sqlx::raw_sql(migrations::CREATE_COMMUNITY)
+            .execute(&self.pool)
+            .await
+            .map_err(community_database_error)?;
+        sqlx::raw_sql(migrations::EXTEND_COMMUNITY_NOTIFICATIONS)
             .execute(&self.pool)
             .await
             .map_err(community_database_error)?;
@@ -1717,7 +2568,7 @@ impl AsyncCommunityRepository for SqlxCommunityRepository {
     ) -> Result<(), CommunityStoreError> {
         validate_community_subject(subject)?;
         let at = community_timestamp(now)?;
-        sqlx::query("INSERT INTO pckg_community_notification_preferences (subject,mention_enabled,reply_enabled,followed_publisher_post_enabled,moderation_enabled,updated_at_utc) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (subject) DO UPDATE SET mention_enabled=EXCLUDED.mention_enabled,reply_enabled=EXCLUDED.reply_enabled,followed_publisher_post_enabled=EXCLUDED.followed_publisher_post_enabled,moderation_enabled=EXCLUDED.moderation_enabled,updated_at_utc=EXCLUDED.updated_at_utc").bind(subject).bind(preference.mention_enabled).bind(preference.reply_enabled).bind(preference.followed_publisher_post_enabled).bind(preference.moderation_enabled).bind(at).execute(&self.pool).await.map_err(community_database_error)?;
+        sqlx::query("INSERT INTO pckg_community_notification_preferences (subject,system_enabled,mention_enabled,reply_enabled,followed_publisher_post_enabled,moderation_enabled,updated_at_utc) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (subject) DO UPDATE SET system_enabled=EXCLUDED.system_enabled,mention_enabled=EXCLUDED.mention_enabled,reply_enabled=EXCLUDED.reply_enabled,followed_publisher_post_enabled=EXCLUDED.followed_publisher_post_enabled,moderation_enabled=EXCLUDED.moderation_enabled,updated_at_utc=EXCLUDED.updated_at_utc").bind(subject).bind(preference.system_enabled).bind(preference.mention_enabled).bind(preference.reply_enabled).bind(preference.followed_publisher_post_enabled).bind(preference.moderation_enabled).bind(at).execute(&self.pool).await.map_err(community_database_error)?;
         Ok(())
     }
 
@@ -1726,7 +2577,7 @@ impl AsyncCommunityRepository for SqlxCommunityRepository {
         subject: &str,
     ) -> Result<CommunityNotificationPreference, CommunityStoreError> {
         validate_community_subject(subject)?;
-        let row:Option<CommunityPreferenceRow>=sqlx::query_as("SELECT mention_enabled,reply_enabled,followed_publisher_post_enabled,moderation_enabled FROM pckg_community_notification_preferences WHERE subject=$1").bind(subject).fetch_optional(&self.pool).await.map_err(community_database_error)?;
+        let row:Option<CommunityPreferenceRow>=sqlx::query_as("SELECT system_enabled,mention_enabled,reply_enabled,followed_publisher_post_enabled,moderation_enabled FROM pckg_community_notification_preferences WHERE subject=$1").bind(subject).fetch_optional(&self.pool).await.map_err(community_database_error)?;
         Ok(row
             .map(CommunityPreferenceRow::into_domain)
             .unwrap_or_default())
@@ -1783,6 +2634,48 @@ impl AsyncCommunityRepository for SqlxCommunityRepository {
         } else {
             Ok(())
         }
+    }
+
+    async fn mark_all_notifications_read(
+        &self,
+        recipient: &str,
+        now: i64,
+    ) -> Result<u64, CommunityStoreError> {
+        validate_community_subject(recipient)?;
+        let at = community_timestamp(now)?;
+        sqlx::query("UPDATE pckg_community_notifications SET read_at_utc=$2 WHERE recipient_subject=$1 AND read_at_utc IS NULL")
+            .bind(recipient)
+            .bind(at)
+            .execute(&self.pool)
+            .await
+            .map(|result| result.rows_affected())
+            .map_err(community_database_error)
+    }
+
+    async fn create_test_notification(
+        &self,
+        recipient: &str,
+        now: i64,
+    ) -> Result<CommunityNotification, CommunityStoreError> {
+        validate_community_subject(recipient)?;
+        let at = community_timestamp(now)?;
+        // A delivery check must work before an account edits its profile. The
+        // fallback stores only the stable subject, never a login or email.
+        sqlx::query(CREATE_TEST_NOTIFICATION_PROFILE_SQL)
+            .bind(recipient)
+            .bind(at)
+            .execute(&self.pool)
+            .await
+            .map_err(community_database_error)?;
+        self.create_notification(NewCommunityNotification {
+            recipient_subject: recipient.to_owned(),
+            scope: "system".to_owned(),
+            actor_subject: recipient.to_owned(),
+            post_id: None,
+            comment_id: None,
+            now_unix_seconds: now,
+        })
+        .await
     }
 }
 
@@ -1842,6 +2735,7 @@ impl CommunityBoardRow {
 
 #[derive(sqlx::FromRow)]
 struct CommunityPreferenceRow {
+    system_enabled: bool,
     mention_enabled: bool,
     reply_enabled: bool,
     followed_publisher_post_enabled: bool,
@@ -1850,6 +2744,7 @@ struct CommunityPreferenceRow {
 impl CommunityPreferenceRow {
     fn into_domain(self) -> CommunityNotificationPreference {
         CommunityNotificationPreference {
+            system_enabled: self.system_enabled,
             mention_enabled: self.mention_enabled,
             reply_enabled: self.reply_enabled,
             followed_publisher_post_enabled: self.followed_publisher_post_enabled,
@@ -2045,7 +2940,7 @@ fn validate_nonblank(value: &str) -> Result<(), CommunityStoreError> {
 fn validate_notification_scope(scope: &str) -> Result<(), CommunityStoreError> {
     matches!(
         scope,
-        "mention" | "reply" | "followed_publisher_post" | "moderation"
+        "system" | "mention" | "reply" | "followed_publisher_post" | "moderation"
     )
     .then_some(())
     .ok_or(CommunityStoreError::InvalidContent)
@@ -2237,7 +3132,7 @@ async fn write_cutover_report(
 
 /// Deterministic test double. The Postgres adapter must preserve the outcomes
 /// exposed by [`PackageRepository`], including checksum idempotency.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct InMemoryPackageRepository {
     packages_by_name: BTreeMap<String, Package>,
     versions_by_key: BTreeMap<(String, String), PackageVersion>,
@@ -2477,6 +3372,17 @@ mod tests {
     }
 
     #[test]
+    fn package_review_queue_migration_retains_auth_hub_subjects_and_valid_actions() {
+        assert!(migrations::CREATE_PACKAGE_REVIEW_QUEUE.contains("pckg_package_review_requests"));
+        assert!(migrations::CREATE_PACKAGE_REVIEW_QUEUE.contains("'^github:[0-9]+$'"));
+        assert!(
+            migrations::CREATE_PACKAGE_REVIEW_QUEUE
+                .contains("'pending', 'approved', 'needs_changes', 'rejected'")
+        );
+        assert!(migrations::CREATE_PACKAGE_REVIEW_QUEUE.contains("reviewer_subject"));
+    }
+
+    #[test]
     fn community_migration_keys_every_identity_to_an_auth_hub_subject() {
         assert!(migrations::CREATE_COMMUNITY.contains("pckg_community_profiles"));
         assert!(migrations::CREATE_COMMUNITY.contains("'^github:[0-9]+$'"));
@@ -2484,6 +3390,16 @@ mod tests {
         assert!(migrations::CREATE_COMMUNITY.contains("UNIQUE (post_id, voter_subject)"));
         assert!(migrations::CREATE_COMMUNITY.contains("pckg_community_notification_preferences"));
         assert!(migrations::CREATE_COMMUNITY.contains("recipient_subject"));
+    }
+
+    #[test]
+    fn test_notification_profile_insert_matches_community_profile_schema() {
+        assert!(migrations::CREATE_COMMUNITY.contains("social_links JSONB"));
+        assert!(migrations::CREATE_COMMUNITY.contains("updated_at_utc TIMESTAMPTZ"));
+        assert!(CREATE_TEST_NOTIFICATION_PROFILE_SQL.contains("social_links"));
+        assert!(CREATE_TEST_NOTIFICATION_PROFILE_SQL.contains("updated_at_utc"));
+        assert!(!CREATE_TEST_NOTIFICATION_PROFILE_SQL.contains("social_links_json"));
+        assert!(!CREATE_TEST_NOTIFICATION_PROFILE_SQL.contains("created_at_utc"));
     }
 
     #[test]
