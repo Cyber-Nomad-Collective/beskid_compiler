@@ -308,7 +308,7 @@ fn type_check_lowered_hir(
         if !type_errors.is_empty() {
             Err(LowerResolveTypeError::Type {
                 errors: type_errors,
-                typed,
+                typed: Box::new(typed),
             })
         } else {
             Ok((hir, resolution.clone(), typed))
@@ -343,7 +343,7 @@ pub enum LowerResolveTypeError {
     #[error("Type checking failed")]
     Type {
         errors: Vec<TypeError>,
-        typed: TypeResult,
+        typed: Box<TypeResult>,
     },
 }
 
