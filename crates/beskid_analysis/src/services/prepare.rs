@@ -428,9 +428,9 @@ fn lower_errors_to_diagnostics(
 ) -> Vec<SemanticDiagnostic> {
     let mut ctx = RuleContext::new(source_name, source, AnalysisOptions::default());
     match error {
-        LowerResolveTypeError::Type(errors) => {
+        LowerResolveTypeError::Type { errors, typed } => {
             for error in errors {
-                types::emit_type_error(&mut ctx, error, None);
+                types::emit_type_error(&mut ctx, error, Some(&typed));
             }
         }
         LowerResolveTypeError::Resolve(errors) => {

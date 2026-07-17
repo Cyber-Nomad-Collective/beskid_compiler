@@ -27,7 +27,7 @@ fn diagnostic_codes(diagnostics: &[SemanticDiagnostic]) -> HashSet<String> {
         .collect()
 }
 
-fn prepare_diagnostic_codes(source: &str) -> HashSet<String> {
+fn prepare_diagnostics(source: &str) -> Vec<SemanticDiagnostic> {
     let root = temp_case_dir("type_check_diag");
     let src_dir = root.join("Src");
     fs::create_dir_all(&src_dir).expect("source root");
@@ -49,7 +49,7 @@ target "app" {
     let entry = src_dir.join("Main.bd");
     fs::write(&entry, source).expect("write source");
 
-    let codes = with_cwd(&root, || {
+    let diagnostics = with_cwd(&root, || {
         let plan =
             beskid_analysis::services::compile_plan_for_input_path(&entry).expect("compile plan");
         let resolved =
@@ -66,11 +66,15 @@ target "app" {
             None,
         )
         .expect("prepare diagnostics");
-        diagnostic_codes(&diagnostics)
+        diagnostics
     });
 
     let _ = fs::remove_dir_all(root);
-    codes
+    diagnostics
+}
+
+fn prepare_diagnostic_codes(source: &str) -> HashSet<String> {
+    diagnostic_codes(&prepare_diagnostics(source))
 }
 
 fn assert_type_diagnostic_case(case: &TypeDiagnosticCase) {
@@ -127,6 +131,25 @@ fn prepare_spine_emits_lower_type_error_codes() {
     for case in LOWER_TYPE_ERROR_CASES {
         assert_type_diagnostic_case(case);
     }
+}
+
+#[test]
+fn prepare_spine_formats_lower_type_mismatches_with_source_type_names() {
+    let diagnostics = prepare_diagnostics("unit Main() { bool x = 1; }");
+    let messages = diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("expected bool, got i32")),
+        "expected named primitive type mismatch, got {messages:?}"
+    );
+    assert!(
+        messages.iter().all(|message| !message.contains("type#")),
+        "type diagnostics must not expose internal numeric type IDs: {messages:?}"
+    );
 }
 
 #[test]

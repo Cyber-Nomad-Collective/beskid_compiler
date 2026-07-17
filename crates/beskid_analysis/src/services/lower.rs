@@ -306,7 +306,10 @@ fn type_check_lowered_hir(
             progress,
         );
         if !type_errors.is_empty() {
-            Err(LowerResolveTypeError::Type(type_errors))
+            Err(LowerResolveTypeError::Type {
+                errors: type_errors,
+                typed,
+            })
         } else {
             Ok((hir, resolution.clone(), typed))
         }
@@ -331,14 +334,17 @@ fn resolve_entry_hir(
 }
 
 /// Which pipeline stage failed when running [`lower_normalize_resolve_type_spanned`].
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum LowerResolveTypeError {
     #[error("Normalization failed\n{}", format_errors(.0))]
     Normalize(Vec<HirNormalizeError>),
     #[error("Resolution failed\n{}", format_errors(.0))]
     Resolve(Vec<ResolveError>),
-    #[error("Type checking failed\n{}", format_errors(.0))]
-    Type(Vec<TypeError>),
+    #[error("Type checking failed")]
+    Type {
+        errors: Vec<TypeError>,
+        typed: TypeResult,
+    },
 }
 
 fn format_errors<E: std::fmt::Display>(errors: &[E]) -> String {
