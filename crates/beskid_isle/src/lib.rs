@@ -1957,7 +1957,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct LoweringError {
     key: AstNodeKey,
     kind: LoweringErrorKind,
@@ -1970,6 +1970,44 @@ impl LoweringError {
 
     pub fn kind(&self) -> LoweringErrorKind {
         self.kind.clone()
+    }
+
+    /// Prefer this when a Salsa db is available so the unit path is expanded.
+    pub fn display_with_key_label(&self, key_label: impl std::fmt::Display) -> String {
+        format!("{} at {key_label}", self.kind_label())
+    }
+
+    fn kind_label(&self) -> String {
+        match &self.kind {
+            LoweringErrorKind::MissingRuleOrFact => "MissingRuleOrFact".to_owned(),
+            LoweringErrorKind::UnknownCallee(callee) => format!("UnknownCallee({callee:?})"),
+            LoweringErrorKind::InvalidArrayLayout => "InvalidArrayLayout".to_owned(),
+            LoweringErrorKind::InvalidStructLayout => "InvalidStructLayout".to_owned(),
+            LoweringErrorKind::InvalidStructField(index) => {
+                format!("InvalidStructField({index})")
+            }
+            LoweringErrorKind::InvalidEnumLayout => "InvalidEnumLayout".to_owned(),
+            LoweringErrorKind::InvalidEnumVariant(index) => {
+                format!("InvalidEnumVariant({index})")
+            }
+            LoweringErrorKind::InvalidMatchArms => "InvalidMatchArms".to_owned(),
+            LoweringErrorKind::NonExhaustiveMatch => "NonExhaustiveMatch".to_owned(),
+            LoweringErrorKind::InvalidBlockExpression => "InvalidBlockExpression".to_owned(),
+            LoweringErrorKind::InvalidRangeFor => "InvalidRangeFor".to_owned(),
+        }
+    }
+}
+
+impl std::fmt::Display for LoweringError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Without a db the unit path is unavailable; still emit the shared #gN:nN cursor.
+        write!(f, "{} at #{}", self.kind_label(), self.key.cursor_label())
+    }
+}
+
+impl std::fmt::Debug for LoweringError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
     }
 }
 
@@ -2289,4 +2327,26 @@ fn block_is_terminated(builder: &FunctionBuilder<'_>, block: Block) -> bool {
 pub enum FunctionEmissionError {
     Lowering(LoweringError),
     Verification(String),
+}
+
+impl std::fmt::Display for FunctionEmissionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Lowering(error) => write!(f, "Lowering({error})"),
+            Self::Verification(message) => write!(f, "Verification({message})"),
+        }
+    }
+}
+
+impl FunctionEmissionError {
+    /// Expand nested AstNodeKey labels with a full `path#gN:nN` when a db is available.
+    pub fn display_with_db(&self, db: &dyn beskid_queries::Db) -> String {
+        match self {
+            Self::Lowering(error) => format!(
+                "Lowering({})",
+                error.display_with_key_label(beskid_queries::format_ast_node_key(db, error.key()))
+            ),
+            Self::Verification(message) => format!("Verification({message})"),
+        }
+    }
 }

@@ -39,6 +39,11 @@ impl SourceUnitId {
     }
 }
 
+/// Format a generation-safe syntax key as `path#gN:nN` for traces and diagnostics.
+pub fn format_ast_node_key(db: &dyn Db, key: AstNodeKey) -> String {
+    key.display_label(key.unit.path(db).display())
+}
+
 fn normalized_source_path(path: &Path) -> PathBuf {
     let absolute = if path.is_absolute() {
         path.to_path_buf()

@@ -100,6 +100,14 @@ fn compiler_trace_reports_syntax_facts_without_source_literal_payloads() {
         !trace.contains("abi_identity:"),
         "call.fact must not Debug-dump abi_identity numbers: {trace}"
     );
+    assert!(
+        !trace.contains("SourceUnitId(Id("),
+        "traces must not Debug-dump salsa SourceUnitId handles: {trace}"
+    );
+    assert!(
+        !trace.contains("AstNodeId(") && !trace.contains("SyntaxGenerationId("),
+        "traces must use #gN:nN cursors, not Debug id wrappers: {trace}"
+    );
     assert!(trace.contains("event=isle.selected"));
     assert!(trace.contains("elapsed_ms="));
     assert!(
