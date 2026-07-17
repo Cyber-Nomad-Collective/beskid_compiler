@@ -97,9 +97,9 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
     let private_path = root.join("Core/Text/Parser/Private.bd");
     let regex_path = root.join("Core/Text/Regex.bd");
     let generated_path = root.join("Core/Text/Regex/Generated.bd");
-    let main_source = "use Core.Text.Parser;\nuse Core.Text.Regex;\ni32 Main() { Parser.IsOk(); Parser.Hidden(); Regex.Generated.ParseDigit(); Parser.TextParseResult::Ok(); return 1; }";
-    let parser_source = "pub use Core.Text.Parser.Result;\nuse Core.Text.Parser.Private;";
-    let result_source = "pub i32 IsOk() { return 1; }\npub enum TextParseResult { Ok() }";
+    let main_source = "use Core.Text.Parser;\nuse Core.Text.Regex;\ni32 Main() { Parser.HiddenRecord record = Parser.HiddenRecord { value: 1 }; Parser.IsOk(); Parser.PrivateTerminal(); Parser.Private.Hidden(); Parser.Second.IsOk(); Regex.Generated.ParseDigit(); Core.Text.Regex.Generated.ParseDigit(); Parser.TextParseResult::Ok(); Parser.HiddenType::Nope(); return 1; }";
+    let parser_source = "pub use Core.Text.Parser.Result;\npub use Core.Text.Parser.Result as Second;\nmod Core.Text.Parser.Private;";
+    let result_source = "pub i32 IsOk() { return 1; }\ni32 PrivateTerminal() { return 1; }\npub enum TextParseResult { Ok() }\nenum HiddenType { Nope() }\ntype HiddenRecord { i32 value }";
     let private_source = "pub i32 Hidden() { return 1; }";
     let regex_source = "pub mod Core.Text.Regex.Generated;";
     let generated_source = "pub i32 ParseDigit() { return 1; }";
@@ -178,9 +178,47 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
         generation,
         &main_index,
         NodeKind::PathExpression,
-        main_source.find("Parser.Hidden").expect("private import"),
+        main_source
+            .find("Parser.Private.Hidden")
+            .expect("private module"),
     );
-    assert_eq!(resolved_item(&db, hidden).expect("private import"), None);
+    assert_eq!(resolved_item(&db, hidden).expect("private module"), None);
+
+    let private_terminal = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::PathExpression,
+        main_source
+            .find("Parser.PrivateTerminal")
+            .expect("private terminal function"),
+    );
+    assert_eq!(
+        resolved_item(&db, private_terminal).expect("private terminal function"),
+        None
+    );
+
+    let second_alias = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::PathExpression,
+        main_source
+            .find("Parser.Second.IsOk")
+            .expect("second public alias"),
+    );
+    assert_eq!(
+        resolved_item(&db, second_alias).expect("second public alias"),
+        Some(beskid_queries::ResolvedItem {
+            declaration: key(
+                result_unit,
+                generation,
+                &result_index,
+                NodeKind::FunctionDefinition,
+                0,
+            ),
+        })
+    );
 
     let parse_digit = key_at_start(
         main_unit,
@@ -190,6 +228,20 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
         main_source
             .find("Regex.Generated.ParseDigit")
             .expect("generated module member"),
+    );
+
+    let fully_qualified = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::PathExpression,
+        main_source
+            .find("Core.Text.Regex.Generated.ParseDigit")
+            .expect("unbound fully-qualified module"),
+    );
+    assert_eq!(
+        resolved_item(&db, fully_qualified).expect("unbound fully-qualified module"),
+        None
     );
     assert_eq!(
         resolved_item(&db, parse_digit).expect("declared module member"),
@@ -218,6 +270,26 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
             .expect("re-exported type")
             .is_some()
     );
+
+    let hidden_constructor = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::EnumConstructorExpression,
+        main_source
+            .find("Parser.HiddenType")
+            .expect("private terminal enum"),
+    );
+    assert_unavailable(enum_constructor(&db, hidden_constructor));
+
+    let hidden_type = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::LetStatement,
+        0,
+    );
+    assert_unavailable(beskid_queries::abi_type(&db, hidden_type));
 }
 
 #[test]
@@ -467,7 +539,7 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
     let tools_path = root.join("Lib/Tools.bd");
     let main_source =
         "use Lib.Tools as Utility;\ni32 Main() { Utility.Member(); return Utility.Helper(); }";
-    let tools_source = "i32 Helper() { return 1; }";
+    let tools_source = "pub i32 Helper() { return 1; }";
     let main_program = expand_program(
         parse_program(main_source).expect("main parse"),
         DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
@@ -708,13 +780,13 @@ fn qualified_import_resolution_follows_public_module_reexports() {
 }
 
 #[test]
-fn fully_qualified_assembly_module_call_resolves_without_a_use_binding() {
+fn imported_assembly_module_call_resolves_through_its_use_binding() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/fully-qualified-module/project/src");
     let terminal_path = root.join("Platform/Terminal.bd");
     let string_path = root.join("Core/String/String.bd");
-    let terminal_source = "bool EnvFlagSet(string value) { return Core.String.IsEmpty(value); }";
-    let string_source = "bool IsEmpty(string value) { return value == \"\"; }";
+    let terminal_source = "use Core.String;\nbool EnvFlagSet(string value) { return String.IsEmpty(value); }";
+    let string_source = "pub bool IsEmpty(string value) { return value == \"\"; }";
     let terminal_program = expand_program(
         parse_program(terminal_source).expect("terminal parse"),
         DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
@@ -779,7 +851,7 @@ fn fully_qualified_assembly_module_call_resolves_without_a_use_binding() {
     );
 
     assert_eq!(
-        call_lowering(&db, call).expect("fully qualified module call"),
+        call_lowering(&db, call).expect("imported module call"),
         Some(beskid_queries::CallLowering::Direct(declaration))
     );
 }
@@ -881,7 +953,7 @@ fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
     let left_path = root.join("Lib/Tools.bd");
     let right_path = root.join("Other/Tools.bd");
     let main_source = "use Lib.Tools as Utility;\nuse Other.Tools as Utility;\ni32 Main() { return Utility.Helper(); }";
-    let tools_source = "i32 Helper() { return 1; }";
+    let tools_source = "pub i32 Helper() { return 1; }";
     let main_program = expand_program(
         parse_program(main_source).expect("main parse"),
         DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
@@ -960,7 +1032,7 @@ fn unqualified_import_resolution_requires_one_registered_syntax_target() {
     let main_path = root.join("Main.bd");
     let tools_path = root.join("Lib/Tools.bd");
     let main_source = "use Lib.Tools;\ni32 Main() { return Helper(); }";
-    let tools_source = "i32 Helper() { return 1; }";
+    let tools_source = "pub i32 Helper() { return 1; }";
     let main_program = expand_program(
         parse_program(main_source).expect("main parse"),
         DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
@@ -1037,7 +1109,7 @@ fn generic_imported_static_call_resolves_to_its_exact_syntax_item() {
     let main_path = root.join("Main.bd");
     let channel_path = root.join("Concurrency/Channel.bd");
     let main_source = "use Concurrency.Channel;\nunit Main() { Channel<i64>.Create(); }";
-    let channel_source = "unit Create<T>() { return; }";
+    let channel_source = "pub unit Create<T>() { return; }";
     let main_program = expand_program(
         parse_program(main_source).expect("main parse"),
         DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
@@ -1114,7 +1186,7 @@ fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
     let main_path = root.join("Main.bd");
     let channel_path = root.join("Concurrency/Channel.bd");
     let main_source = "use Concurrency.Channel;\nunit Main() { Channel.CreateWithOptions<i64>(); Channel.CreateWithOptions<i64, i32>(); }";
-    let channel_source = "unit CreateWithOptions<T>() { return; }";
+    let channel_source = "pub unit CreateWithOptions<T>() { return; }";
     let main_program = expand_program(
         parse_program(main_source).expect("main parse"),
         DEFAULT_MAX_MACRO_EXPANSION_DEPTH,

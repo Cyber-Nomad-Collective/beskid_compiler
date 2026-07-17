@@ -566,12 +566,10 @@ fn resolve_qualified_module_unit(
             }
             let segment = &module_path[consumed];
             pending.extend(
-                public_reexport_units(db, current, key.generation)
+                public_module_routes(db, current, key.generation)
                     .into_iter()
-                    .filter_map(|child| {
-                        public_reexport_binding(db, current, key.generation, child)
-                            .is_some_and(|binding| binding == *segment)
-                            .then_some((child, consumed + 1))
+                    .filter_map(|(binding, child)| {
+                        (binding == *segment).then_some((child, consumed + 1))
                     }),
             );
         }
@@ -586,32 +584,30 @@ fn import_path_prefix_len(
     import: &crate::db::SyntaxImport,
     module_path: &[String],
 ) -> Option<usize> {
-    if module_path
+    // A source unit owns only the names bound by its own `use` declarations. Original import
+    // paths and registry suffixes would bypass aliases and make visibility order-dependent.
+    module_path
         .first()
-        .is_some_and(|segment| import.binding == *segment)
-    {
-        return Some(1);
-    }
-    if module_path.starts_with(&import.path) {
-        return Some(import.path.len());
-    }
-    import.path.ends_with(module_path).then_some(module_path.len())
+        .filter(|segment| import.binding == **segment)
+        .map(|_| 1)
 }
 
-fn public_reexport_binding(
+/// Return public routes with their bindings: a target may be re-exported under multiple aliases.
+fn public_module_routes(
     db: &dyn Db,
     unit: SourceUnitId,
     generation: SyntaxGenerationId,
-    target: SourceUnitId,
-) -> Option<String> {
+) -> Vec<(String, SourceUnitId)> {
     db.syntax_dependency_registry()
         .lock()
         .expect("syntax dependency registry")
         .imports
-        .get(&(unit, generation))?
-        .iter()
-        .find(|import| import.public && import.target == target)
-        .map(|import| import.binding.clone())
+        .get(&(unit, generation))
+        .into_iter()
+        .flatten()
+        .filter(|import| import.public)
+        .map(|import| (import.binding.clone(), import.target))
+        .collect()
 }
 
 /// Resolve `Imported.ModuleType.Function()` only when the import identifies one source unit,
@@ -662,7 +658,7 @@ fn unique_exported_function_in_unit(
         if !visited.insert(current) {
             continue;
         }
-        if let Some(candidate) = unique_function_in_unit(db, current, generation, name) {
+        if let Some(candidate) = unique_public_function_in_unit(db, current, generation, name) {
             candidates.push(candidate);
         }
         pending.extend(public_reexport_units(db, current, generation));
@@ -678,16 +674,49 @@ fn public_reexport_units(
     unit: SourceUnitId,
     generation: SyntaxGenerationId,
 ) -> Vec<SourceUnitId> {
-    db.syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry")
-        .imports
-        .get(&(unit, generation))
+    public_module_routes(db, unit, generation)
         .into_iter()
-        .flatten()
-        .filter(|import| import.public)
-        .map(|import| import.target)
-        .collect()
+        .map(|(_, target)| target)
+        .fold(Vec::new(), |mut targets, target| {
+            if !targets.contains(&target) {
+                targets.push(target);
+            }
+            targets
+        })
+}
+
+fn unique_public_function_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+) -> Option<AstNodeKey> {
+    let syntax = db.syntax_unit(unit)?;
+    if syntax.generation(db) != generation {
+        return None;
+    }
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let candidates = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+        .filter(|candidate| {
+            index
+                .node_at(program, *candidate)
+                .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+                .is_some_and(|function| {
+                    function.visibility.node == beskid_analysis::syntax::Visibility::Public
+                        && function.name.node.name == name
+                })
+        })
+        .collect::<Vec<_>>();
+    let [node] = candidates.as_slice() else {
+        return None;
+    };
+    Some(AstNodeKey {
+        unit,
+        generation,
+        node: *node,
+    })
 }
 
 /// Resolve an exact function name only when the syntax unit has one unambiguous definition.
@@ -743,7 +772,7 @@ fn unique_imported_function(db: &dyn Db, key: AstNodeKey, name: &str) -> Option<
         });
     let candidates = targets
         .into_iter()
-        .filter_map(|target| unique_function_in_unit(db, target, key.generation, name))
+        .filter_map(|target| unique_exported_function_in_unit(db, target, key.generation, name))
         .collect::<Vec<_>>();
     let [declaration] = candidates.as_slice() else {
         return None;
@@ -2873,47 +2902,43 @@ fn resolve_type_declaration(
     let (name, module_path) = path.segments.split_last()?;
     let generic_arity = name.node.type_args.len();
     let name = name.node.name.node.name.as_str();
-    let candidates = if module_path.is_empty() {
-        let mut units = vec![key.unit];
-        let imports = db
+    if module_path.is_empty() {
+        let mut candidates = Vec::new();
+        if let Some(local) = unique_type_in_unit(db, key.unit, key.generation, name, generic_arity)
+        {
+            candidates.push(local);
+        }
+        let import_targets = db
             .syntax_dependency_registry()
             .lock()
             .expect("syntax dependency registry");
-        if let Some(imports) = imports.imports.get(&(key.unit, key.generation)) {
-            units.extend(imports.iter().map(|import| import.target));
-        }
-        units
-    } else {
-        let module_path = module_path
-            .iter()
-            .map(|segment| segment.node.name.node.name.as_str())
-            .collect::<Vec<_>>();
-        db.syntax_dependency_registry()
-            .lock()
-            .expect("syntax dependency registry")
+        let import_targets = import_targets
             .imports
-            .get(&(key.unit, key.generation))?
-            .iter()
-            .filter(|import| {
-                import.path.len() >= module_path.len()
-                    && import.path[import.path.len() - module_path.len()..]
-                        .iter()
-                        .map(String::as_str)
-                        .eq(module_path.iter().copied())
-            })
+            .get(&(key.unit, key.generation))
+            .into_iter()
+            .flatten()
             .map(|import| import.target)
-            .collect()
-    };
-    let matches = candidates
-        .into_iter()
-        .filter_map(|unit| {
-            unique_exported_type_in_unit(db, unit, key.generation, name, generic_arity)
-        })
+            .collect::<Vec<_>>();
+        candidates.extend(import_targets.into_iter().filter_map(|target| {
+            unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)
+        }));
+        let [declaration] = candidates.as_slice() else {
+            return None;
+        };
+        return Some(*declaration);
+    }
+    let module_path = module_path
+        .iter()
+        .map(|segment| segment.node.name.node.name.as_str())
+        .map(str::to_owned)
         .collect::<Vec<_>>();
-    let [declaration] = matches.as_slice() else {
-        return None;
-    };
-    Some(*declaration)
+    unique_exported_type_in_unit(
+        db,
+        resolve_qualified_module_unit(db, key, &module_path)?,
+        key.generation,
+        name,
+        generic_arity,
+    )
 }
 
 /// Resolve a public type member through its defining syntax unit or explicit public re-exports.
@@ -2931,7 +2956,7 @@ fn unique_exported_type_in_unit(
         if !visited.insert(current) {
             continue;
         }
-        if let Some(candidate) = unique_type_in_unit(db, current, generation, name, generic_arity) {
+        if let Some(candidate) = unique_public_type_in_unit(db, current, generation, name, generic_arity) {
             candidates.push(candidate);
         }
         pending.extend(public_reexport_units(db, current, generation));
@@ -2970,6 +2995,52 @@ fn unique_type_in_unit(
                         .of::<beskid_analysis::syntax::EnumDefinition>()
                         .is_some_and(|definition| {
                             definition.name.node.name == name
+                                && definition.generics.len() == generic_arity
+                        })
+            })
+        })
+        .collect::<Vec<_>>();
+    let [node] = matches.as_slice() else {
+        return None;
+    };
+    Some(AstNodeKey {
+        unit,
+        generation,
+        node: *node,
+    })
+}
+
+fn unique_public_type_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+    generic_arity: usize,
+) -> Option<AstNodeKey> {
+    let syntax = db.syntax_unit(unit)?;
+    if syntax.generation(db) != generation {
+        return None;
+    }
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let matches = index
+        .metadata()
+        .iter()
+        .map(|metadata| metadata.id)
+        .filter(|candidate| {
+            index.node_at(program, *candidate).is_some_and(|node| {
+                node.of::<beskid_analysis::syntax::TypeDefinition>()
+                    .is_some_and(|definition| {
+                        definition.visibility.node == beskid_analysis::syntax::Visibility::Public
+                            && definition.name.node.name == name
+                            && definition.generics.len() == generic_arity
+                    })
+                    || node
+                        .of::<beskid_analysis::syntax::EnumDefinition>()
+                        .is_some_and(|definition| {
+                            definition.visibility.node
+                                == beskid_analysis::syntax::Visibility::Public
+                                && definition.name.node.name == name
                                 && definition.generics.len() == generic_arity
                         })
             })
