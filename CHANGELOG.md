@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Resolve syntax-only qualified members through explicit public `use` re-exports and public
+  out-of-line module declarations, including generated child modules.
 - Resolve explicit nominal parameter and let receiver method calls through one generation-safe
   syntax fact, including their receiver ABI argument and ISLE local-slot lowering.
 - Register compiler-authorized Corelib syscall services per exact embedded source unit within

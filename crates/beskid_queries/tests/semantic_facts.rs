@@ -88,6 +88,139 @@ fn warm_point_query_uses_registered_expanded_syntax_without_reparse() {
 }
 
 #[test]
+fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/public-module-export/project/src");
+    let main_path = root.join("Main.bd");
+    let parser_path = root.join("Core/Text/Parser.bd");
+    let result_path = root.join("Core/Text/Parser/Result.bd");
+    let private_path = root.join("Core/Text/Parser/Private.bd");
+    let regex_path = root.join("Core/Text/Regex.bd");
+    let generated_path = root.join("Core/Text/Regex/Generated.bd");
+    let main_source = "use Core.Text.Parser;\nuse Core.Text.Regex;\ni32 Main() { Parser.IsOk(); Parser.Hidden(); Regex.Generated.ParseDigit(); Parser.TextParseResult::Ok(); return 1; }";
+    let parser_source = "pub use Core.Text.Parser.Result;\nuse Core.Text.Parser.Private;";
+    let result_source = "pub i32 IsOk() { return 1; }\npub enum TextParseResult { Ok() }";
+    let private_source = "pub i32 Hidden() { return 1; }";
+    let regex_source = "pub mod Core.Text.Regex.Generated;";
+    let generated_source = "pub i32 ParseDigit() { return 1; }";
+    let sources = [
+        (&main_path, main_source),
+        (&parser_path, parser_source),
+        (&result_path, result_source),
+        (&private_path, private_source),
+        (&regex_path, regex_source),
+        (&generated_path, generated_source),
+    ];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: (*path).clone(),
+            source: (*source).to_string(),
+            program: expand_program(
+                parse_program(source).expect("parse"),
+                DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+            ),
+        })
+        .collect::<Vec<_>>();
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units.clone()),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let result_unit = SourceUnitId::new(&db, result_path);
+    let generated_unit = SourceUnitId::new(&db, generated_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(18);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&units[0].program, generation);
+    let result_index = SyntaxIndex::from_program(&units[2].program, generation);
+    let generated_index = SyntaxIndex::from_program(&units[5].program, generation);
+
+    let is_ok = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::PathExpression,
+        main_source.find("Parser.IsOk").expect("public re-export"),
+    );
+    assert_eq!(
+        resolved_item(&db, is_ok).expect("public re-export"),
+        Some(beskid_queries::ResolvedItem {
+            declaration: key(
+                result_unit,
+                generation,
+                &result_index,
+                NodeKind::FunctionDefinition,
+                0
+            ),
+        })
+    );
+
+    let hidden = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::PathExpression,
+        main_source.find("Parser.Hidden").expect("private import"),
+    );
+    assert_eq!(resolved_item(&db, hidden).expect("private import"), None);
+
+    let parse_digit = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::PathExpression,
+        main_source
+            .find("Regex.Generated.ParseDigit")
+            .expect("generated module member"),
+    );
+    assert_eq!(
+        resolved_item(&db, parse_digit).expect("declared module member"),
+        Some(beskid_queries::ResolvedItem {
+            declaration: key(
+                generated_unit,
+                generation,
+                &generated_index,
+                NodeKind::FunctionDefinition,
+                0,
+            ),
+        })
+    );
+
+    let constructor = key_at_start(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::EnumConstructorExpression,
+        main_source
+            .find("Parser.TextParseResult")
+            .expect("re-exported type"),
+    );
+    assert!(
+        enum_constructor(&db, constructor)
+            .expect("re-exported type")
+            .is_some()
+    );
+}
+
+#[test]
 fn aggregate_layout_keeps_channel_options_nominal_capacity() {
     let source = "enum ChannelCapacity { Unbounded(), Bounded(i64 capacity) } type ChannelOptions { ChannelCapacity capacity, bool singleReader, bool singleWriter }";
     let (db, _project, unit, generation, index) = setup(source);

@@ -133,6 +133,26 @@ pub fn build_typed_program(
                             == beskid_analysis::syntax::Visibility::Public,
                     ))
                 }
+                // An out-of-line `pub mod A.B;` is an assembled syntax dependency and a
+                // public namespace edge. Register it alongside `pub use` so qualified facts
+                // can continue from an imported hub into its declared child.
+                beskid_analysis::syntax::Node::ModuleDeclaration(declaration) => {
+                    let path = declaration
+                        .node
+                        .path
+                        .node
+                        .segments
+                        .iter()
+                        .map(|segment| segment.node.name.node.name.clone())
+                        .collect::<Vec<_>>();
+                    let binding = path.last().cloned()?;
+                    Some((
+                        path,
+                        binding,
+                        declaration.node.visibility.node
+                            == beskid_analysis::syntax::Visibility::Public,
+                    ))
+                }
                 _ => None,
             })
             .filter_map(|(path, binding, public)| {
