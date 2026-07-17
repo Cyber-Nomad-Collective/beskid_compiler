@@ -194,6 +194,41 @@ impl SemanticTypeId {
     pub const POINTER: Self = Self(9);
     /// Bottom type for operations which cannot return normally.
     pub const NEVER: Self = Self(10);
+
+    /// Source-facing type name used in diagnostics and compiler traces.
+    ///
+    /// Matches the Beskid surface spellings (`string`, `i32`, `unit`, …). Unknown identities
+    /// render as `type#N` so traces never invent a fake primitive name.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::UNIT => "unit",
+            Self::BOOL => "bool",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::U8 => "u8",
+            Self::F64 => "f64",
+            Self::CHAR => "char",
+            Self::STRING => "string",
+            Self::WORD => "word",
+            Self::POINTER => "pointer",
+            Self::NEVER => "never",
+            _ => "type#?",
+        }
+    }
+
+    /// Format one identity for traces, including a stable `type#N` fallback for unknowns.
+    pub fn display_name(self) -> String {
+        match self.as_str() {
+            "type#?" => format!("type#{}", self.0),
+            name => name.to_owned(),
+        }
+    }
+}
+
+impl std::fmt::Display for SemanticTypeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.display_name())
+    }
 }
 
 /// Backend-relevant call classification, detached from legacy HIR nodes.
