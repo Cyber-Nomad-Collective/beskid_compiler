@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resolve syntax-only qualified members only through the current import binding and explicit
   public `use`/out-of-line-module routes, including generated child modules; private terminal
   functions, types, and enums no longer escape their declaring module.
+- Derive generic call ABI substitutions from explicit terminal or nominal-receiver type
+  arguments, and reject bare generic qualified calls without source specialization.
 - Resolve explicit nominal parameter and let receiver method calls through one generation-safe
   syntax fact, including their receiver ABI argument and ISLE local-slot lowering.
 - Register compiler-authorized Corelib syscall services per exact embedded source unit within

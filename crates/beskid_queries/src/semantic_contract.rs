@@ -207,13 +207,16 @@ pub enum CallLowering {
 
 /// Exact explicit instantiation of a generic source function.
 ///
-/// The invocation keeps its own type-argument syntax; this fact proves only that the current
-/// generation resolves to one declaration whose declared generic arity matches that syntax.
-/// It deliberately performs no inferred substitution or monomorphization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// The invocation keeps its explicit source type-argument syntax. This fact proves that the
+/// current generation resolves to one declaration whose generic arity matches those arguments;
+/// it never infers a substitution or consults HIR.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GenericCallInstantiation {
     pub declaration: AstNodeKey,
     pub argument_count: u8,
+    /// Concrete ABI identities supplied by explicit terminal or nominal-receiver type arguments.
+    /// This remains source syntax; it never consults HIR-derived substitutions.
+    pub arguments: Arc<[SemanticTypeId]>,
 }
 
 /// One exact ABI specialization selected by a current generic call expression.
@@ -1317,8 +1320,8 @@ fn call_lowering_for_node(
                 Ok(CallLowering::Direct(declaration))
             } else if path
                 .segments
-                .last()
-                .is_some_and(|segment| !segment.node.type_args.is_empty())
+                .iter()
+                .any(|segment| !segment.node.type_args.is_empty())
             {
                 if let Some(instantiation) =
                     generic_call_instantiation_for_node(db, program, index, key, path)
@@ -1332,7 +1335,11 @@ fn call_lowering_for_node(
             } else if let Some(declaration) =
                 resolve_item_declaration(db, program, index, key, path)
             {
-                Ok(CallLowering::Direct(declaration))
+                if function_declares_generics(db, declaration) && call.args.is_empty() {
+                    Err(SemanticError::unavailable("generic_call_instantiation"))
+                } else {
+                    Ok(CallLowering::Direct(declaration))
+                }
             } else if imported_call_receiver_exists(db, key, path)
                 || (path
                     .segments
@@ -1559,7 +1566,18 @@ fn generic_call_instantiation_for_node(
     path: &beskid_analysis::syntax::Path,
 ) -> Option<GenericCallInstantiation> {
     let terminal = path.segments.last()?;
-    let argument_count = u8::try_from(terminal.node.type_args.len()).ok()?;
+    let receiver = path.segments.get(..path.segments.len().checked_sub(1)?)?;
+    let receiver_with_arguments = receiver
+        .iter()
+        .filter(|segment| !segment.node.type_args.is_empty())
+        .collect::<Vec<_>>();
+    let terminal_has_arguments = !terminal.node.type_args.is_empty();
+    let argument_syntax = match (terminal_has_arguments, receiver_with_arguments.as_slice()) {
+        (true, []) => terminal.node.type_args.as_slice(),
+        (false, [receiver]) => receiver.node.type_args.as_slice(),
+        _ => return None,
+    };
+    let argument_count = u8::try_from(argument_syntax.len()).ok()?;
     (argument_count > 0).then_some(())?;
     let declaration = resolve_item_declaration_candidate(db, program, index, key, path)?;
     let syntax = db.syntax_unit(declaration.unit)?;
@@ -1568,10 +1586,30 @@ fn generic_call_instantiation_for_node(
         .syntax_index(db)
         .node_at(syntax.expanded_program(db), declaration.node)?;
     let function = target.of::<beskid_analysis::syntax::FunctionDefinition>()?;
-    (function.generics.len() == usize::from(argument_count)).then_some(GenericCallInstantiation {
+    (function.generics.len() == usize::from(argument_count)).then_some(())?;
+    let arguments = argument_syntax
+        .iter()
+        .map(|argument| abi_type_from_syntax(db, key, &argument.node).ok())
+        .collect::<Option<Vec<_>>>()?;
+    Some(GenericCallInstantiation {
         declaration,
         argument_count,
+        arguments: arguments.into(),
     })
+}
+
+fn function_declares_generics(db: &dyn Db, declaration: AstNodeKey) -> bool {
+    let Some(syntax) = db.syntax_unit(declaration.unit) else {
+        return false;
+    };
+    if !syntax.accepts_key(db, declaration) {
+        return false;
+    }
+    syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        .is_some_and(|function| !function.generics.is_empty())
 }
 
 /// Whether a qualified call's receiver is an exact current import target.
@@ -2122,6 +2160,14 @@ fn call_abi_signature_for_call(
         .map(|generic| generic.node.name.as_str())
         .collect::<Vec<_>>();
     let mut substitutions = HashMap::new();
+    if let Some(instantiation) = generic_call_instantiation(db, key)? {
+        if instantiation.arguments.len() != generic_names.len() {
+            return Err(SemanticError::unavailable("call_abi_signature"));
+        }
+        for (generic, argument) in generic_names.iter().zip(instantiation.arguments.iter()) {
+            substitutions.insert((*generic).to_owned(), *argument);
+        }
+    }
     // A bare integer starts at the language default `i32`, but carries no explicit ABI suffix.
     // Keep that distinction while inferring a generic call: a later exact argument can select
     // the binding and the bare literal can inherit it if its magnitude fits.
@@ -2139,7 +2185,8 @@ fn call_abi_signature_for_call(
                     }
                 }
                 Some(existing) if existing == actual => {}
-                Some(existing) if bare_integer && integer_literal_fits_abi(db, argument, existing)? => {}
+                Some(existing)
+                    if bare_integer && integer_literal_fits_abi(db, argument, existing)? => {}
                 Some(_) if provisional_integer_substitutions.remove(generic) => {
                     substitutions.insert(generic.to_owned(), actual);
                 }
@@ -2194,10 +2241,7 @@ fn integer_literal_fits_abi(
     })
 }
 
-fn integer_literal_text(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> Result<Option<Arc<str>>, SemanticError> {
+fn integer_literal_text(db: &dyn Db, key: AstNodeKey) -> Result<Option<Arc<str>>, SemanticError> {
     let Some(literal) = literal_fact(db, key)? else {
         let Some(children) = child_nodes(db, key)? else {
             return Ok(None);
@@ -2233,7 +2277,10 @@ fn call_argument_abi_type_tracked(
                 .metadata_for(key.generation, current)
                 .and_then(|meta| meta.parent)
             {
-                let parent_key = AstNodeKey { node: parent, ..key };
+                let parent_key = AstNodeKey {
+                    node: parent,
+                    ..key
+                };
                 if index.kind(parent)
                     == Some(beskid_analysis::syntax_query::NodeKind::CallExpression)
                 {
@@ -4099,10 +4146,7 @@ pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTyp
 ///
 /// Only a singleton unsuffixed integer argument of a direct call receives this contextual fact;
 /// all other expressions remain unavailable rather than being implicitly coerced.
-pub fn call_argument_abi_type(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<SemanticTypeId> {
+pub fn call_argument_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, call_argument_abi_type_tracked)
 }
 

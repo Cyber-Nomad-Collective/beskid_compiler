@@ -1259,6 +1259,7 @@ fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
         Some(beskid_queries::GenericCallInstantiation {
             declaration,
             argument_count: 1,
+            arguments: Arc::from([SemanticTypeId::I64]),
         })
     );
     let mismatched = key(
@@ -1276,6 +1277,120 @@ fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
         generic_call_instantiation(&db, mismatched).expect("mismatched generic instantiation"),
         None
     );
+}
+
+#[test]
+fn generic_imported_receiver_call_uses_receiver_specialization_for_zero_argument_abi() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/generic-receiver-import/project/src");
+    let main_path = root.join("Main.bd");
+    let hub_path = root.join("System/Hub.bd");
+    let main_source = r#"
+use System.Hub;
+unit Main() {
+    Hub<i64>.Create();
+    Hub.Create();
+}
+"#;
+    let hub_source = r#"
+type Hub<T> { i64 value }
+pub Hub<T> Create<T>() { return Hub<T> { value: 0_i64 }; }
+"#;
+    let main_program = expand_program(
+        parse_program(main_source).expect("main parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let hub_program = expand_program(
+        parse_program(hub_source).expect("hub parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: hub_path.display().to_string(),
+                path: hub_path.clone(),
+                source: hub_source.to_string(),
+                program: hub_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let hub_unit = SourceUnitId::new(&db, hub_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(22);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let hub_index = SyntaxIndex::from_program(&hub_program, generation);
+    let declaration = key(
+        hub_unit,
+        generation,
+        &hub_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+    let receiver_specialized = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        0,
+    );
+    let bare = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        1,
+    );
+
+    assert_eq!(
+        call_lowering(&db, receiver_specialized).expect("receiver specialization"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        generic_call_instantiation(&db, receiver_specialized)
+            .expect("receiver specialization fact"),
+        Some(beskid_queries::GenericCallInstantiation {
+            declaration,
+            argument_count: 1,
+            arguments: Arc::from([SemanticTypeId::I64]),
+        })
+    );
+    assert_eq!(
+        call_abi_signature(&db, receiver_specialized).expect("receiver call ABI"),
+        Some(ItemSignature {
+            parameters: Arc::from([]),
+            result: SemanticTypeId::POINTER,
+        })
+    );
+    assert_eq!(
+        beskid_queries::abi_type(&db, receiver_specialized).expect("receiver call result ABI"),
+        Some(SemanticTypeId::POINTER)
+    );
+    assert_unavailable(call_lowering(&db, bare));
 }
 
 #[test]
