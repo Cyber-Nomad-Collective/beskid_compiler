@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
-    CallLowering, ItemSignature, call_lowering, child_nodes, generic_call_specialization,
-    item_abi_signature, node_kind,
+    call_lowering, child_nodes, generic_call_specialization, item_abi_signature, node_kind,
+    node_span, CallLowering, ItemSignature,
 };
 use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::{
@@ -19,8 +20,8 @@ use cranelift_module::{
 use crate::lowering::descriptor::TypeDescriptorData;
 use crate::lowering::{CodegenArtifact, ExternImport};
 use crate::{
-    CodegenContext, CodegenInput, emit_isle_item_with_services,
-    emit_isle_item_with_services_specialization,
+    emit_isle_item_with_services, emit_isle_item_with_services_specialization, CodegenContext,
+    CodegenInput,
 };
 
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
@@ -69,8 +70,37 @@ pub fn lower_syntax_program(
     isa: &dyn TargetIsa,
     items: &[SyntaxModuleItem],
 ) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
-    let items = resolve_module_items(input, items)?;
-    lower_resolved_syntax_program(input, isa, &items)
+    let started = Instant::now();
+    crate::isle_trace::event(|| {
+        format!(
+            "event=clif.begin items={} roots={}",
+            items.len(),
+            input.roots().len()
+        )
+    });
+    let items = match resolve_module_items(input, items) {
+        Ok(items) => items,
+        Err(error) => {
+            crate::isle_trace::event(|| {
+                format!("event=isle.missing rule=module_item_resolution detail={error:?}")
+            });
+            return Err(error);
+        }
+    };
+    let result = lower_resolved_syntax_program(input, isa, &items);
+    crate::isle_trace::event(|| match &result {
+        Ok(artifact) => format!(
+            "event=clif.end outcome=ok elapsed_ms={} functions={} imports={}",
+            started.elapsed().as_millis(),
+            artifact.functions.len(),
+            artifact.extern_imports.len()
+        ),
+        Err(error) => format!(
+            "event=clif.end outcome=error elapsed_ms={} detail={error:?}",
+            started.elapsed().as_millis()
+        ),
+    });
+    result
 }
 
 fn lower_resolved_syntax_program(
@@ -105,6 +135,15 @@ fn lower_resolved_syntax_program(
     let mut context = CodegenContext::new();
     let mut functions = Vec::with_capacity(items.len());
     for item in items {
+        trace_item_facts(input, item.key, &symbols);
+        let started = Instant::now();
+        crate::isle_trace::event(|| {
+            format!(
+                "event=isle.selected rule=emit_item_statement item={} symbol={}",
+                trace_key(input.database(), item.key),
+                item.symbol
+            )
+        });
         let function = {
             let mut importer = ArtifactCallImporter { symbols: &symbols };
             let mut strings = ArtifactStringInterner {
@@ -124,8 +163,22 @@ fn lower_resolved_syntax_program(
                     emit_isle_item_with_services(input, isa, item.key, &mut strings, &mut importer)
                 }
             }
-            .map_err(SyntaxModuleEmissionError::Emission)?
+            .map_err(|error| {
+                crate::isle_trace::event(|| format!(
+                    "event=isle.missing rule=emit_item_statement item={} elapsed_ms={} detail={error:?}",
+                    trace_key(input.database(), item.key),
+                    started.elapsed().as_millis(),
+                ));
+                SyntaxModuleEmissionError::Emission(error)
+            })?
         };
+        crate::isle_trace::event(|| {
+            format!(
+                "event=isle.emitted item={} elapsed_ms={}",
+                trace_key(input.database(), item.key),
+                started.elapsed().as_millis(),
+            )
+        });
         functions.push(crate::LoweredFunction {
             name: item.symbol.clone(),
             function,
@@ -145,6 +198,122 @@ fn lower_resolved_syntax_program(
             .collect(),
         ..CodegenArtifact::default()
     })
+}
+
+/// Trace only facts already read by the syntax-only lowering boundary.  This has no bearing on
+/// selection; it makes every unavailable fact explicit instead of making a HIR-era guess.
+fn trace_item_facts(
+    input: &CodegenInput<'_>,
+    item: AstNodeKey,
+    symbols: &HashMap<DirectCallee, String>,
+) {
+    if !crate::isle_trace::enabled() {
+        return;
+    }
+    let db = input.database();
+    let mut visited = HashSet::new();
+    trace_node_facts(db, item, symbols, &mut visited);
+}
+
+fn trace_node_facts(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    symbols: &HashMap<DirectCallee, String>,
+    visited: &mut HashSet<AstNodeKey>,
+) {
+    if !visited.insert(key) {
+        return;
+    }
+    let node = trace_key(db, key);
+    let kind = node_kind(db, key)
+        .ok()
+        .flatten()
+        .map(|kind| format!("{kind:?}"))
+        .unwrap_or_else(|| "<missing>".to_owned());
+    let span = node_span(db, key)
+        .ok()
+        .flatten()
+        .map(|span| {
+            format!(
+                "{}:{}-{}:{} bytes={}-{}",
+                span.line_col_start.0,
+                span.line_col_start.1,
+                span.line_col_end.0,
+                span.line_col_end.1,
+                span.start,
+                span.end
+            )
+        })
+        .unwrap_or_else(|| "<missing>".to_owned());
+    crate::isle_trace::event(|| format!("event=ast.node key={node} kind={kind} span={span}"));
+
+    if let Ok(Some(lowering)) = call_lowering(db, key) {
+        let (lowering_name, callee) = match lowering {
+            CallLowering::Direct(declaration) => {
+                let callee = generic_call_specialization(db, key)
+                    .ok()
+                    .flatten()
+                    .map(|specialization| {
+                        DirectCallee::specialized_item(
+                            specialization.declaration,
+                            specialization_identity(&specialization.signature),
+                        )
+                    })
+                    .unwrap_or_else(|| DirectCallee::item(declaration));
+                ("Direct", Some(callee))
+            }
+            CallLowering::Dynamic => ("Dynamic", None),
+            CallLowering::Runtime(intrinsic) => (
+                "Runtime",
+                Some(DirectCallee::runtime_intrinsic(intrinsic.0)),
+            ),
+            CallLowering::CorelibService(service) => (
+                "CorelibService",
+                Some(DirectCallee::corelib_service(service.symbol)),
+            ),
+        };
+        match callee {
+            Some(callee) => {
+                let import = symbols
+                    .get(&callee)
+                    .map(String::as_str)
+                    .unwrap_or("<missing>");
+                crate::isle_trace::event(|| {
+                    format!(
+                    "event=call.fact key={node} lowering={lowering_name} callee={callee:?} module_import={import}"
+                )
+                });
+            }
+            None => crate::isle_trace::event(|| {
+                format!(
+                "event=call.fact key={node} lowering={lowering_name} callee=<unavailable> module_import=<none>"
+            )
+            }),
+        }
+    }
+
+    match child_nodes(db, key) {
+        Ok(Some(children)) => {
+            for child in children.iter().copied() {
+                trace_node_facts(db, child, symbols, visited);
+            }
+        }
+        Ok(None) => crate::isle_trace::event(|| {
+            format!("event=isle.missing rule=child_nodes key={node} detail=unavailable")
+        }),
+        Err(error) => crate::isle_trace::event(|| {
+            format!("event=isle.missing rule=child_nodes key={node} detail={error}")
+        }),
+    }
+}
+
+fn trace_key(db: &dyn beskid_queries::Db, key: AstNodeKey) -> String {
+    format!(
+        "{}#g{}:n{}",
+        key.unit.path(db).display(),
+        key.generation.0,
+        key.node.0
+    )
 }
 
 fn resolve_module_items(

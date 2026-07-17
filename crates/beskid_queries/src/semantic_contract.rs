@@ -588,11 +588,19 @@ fn import_path_prefix_len(
     module_path: &[String],
 ) -> Option<usize> {
     // A source unit owns only the names bound by its own `use` declarations. Original import
-    // paths and registry suffixes would bypass aliases and make visibility order-dependent.
+    // paths may be used only for an unaliased import, where the terminal path segment is that
+    // binding, and only for the target module itself. Registry suffixes or child routes would
+    // bypass aliases and make visibility order-dependent.
     module_path
         .first()
         .filter(|segment| import.binding == **segment)
         .map(|_| 1)
+        .or_else(|| {
+            (!import.has_explicit_alias
+                && import.binding == *import.path.last()?
+                && module_path == import.path.as_slice())
+            .then_some(import.path.len())
+        })
 }
 
 /// Return public routes with their bindings: a target may be re-exported under multiple aliases.
@@ -2955,17 +2963,19 @@ fn resolve_type_declaration(
         {
             candidates.push(local);
         }
-        let import_targets = db
-            .syntax_dependency_registry()
-            .lock()
-            .expect("syntax dependency registry");
-        let import_targets = import_targets
-            .imports
-            .get(&(key.unit, key.generation))
-            .into_iter()
-            .flatten()
-            .map(|import| import.target)
-            .collect::<Vec<_>>();
+        let import_targets = {
+            let registry = db
+                .syntax_dependency_registry()
+                .lock()
+                .expect("syntax dependency registry");
+            registry
+                .imports
+                .get(&(key.unit, key.generation))
+                .into_iter()
+                .flatten()
+                .map(|import| import.target)
+                .collect::<Vec<_>>()
+        };
         candidates.extend(import_targets.into_iter().filter_map(|target| {
             unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)
         }));

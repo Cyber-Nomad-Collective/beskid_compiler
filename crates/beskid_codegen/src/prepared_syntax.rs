@@ -240,6 +240,14 @@ pub fn lower_syntax_assembly_entrypoint(
     };
     let entry = find_entrypoint(db, &input, entrypoint)
         .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
+    crate::isle_trace::event(|| {
+        format!(
+            "event=entry.selected entrypoint={entrypoint} key={}#g{}:n{}",
+            entry.unit.path(db).display(),
+            entry.generation.0,
+            entry.node.0,
+        )
+    });
     let signature = item_signature(db, entry)
         .map_err(|error| anyhow::anyhow!("entrypoint signature query failed: {error}"))?
         .ok_or_else(|| anyhow::anyhow!("Missing signature for `{entrypoint}`"))?;

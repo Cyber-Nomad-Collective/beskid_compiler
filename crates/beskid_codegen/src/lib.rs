@@ -14,6 +14,7 @@ pub mod cranelift_host;
 pub mod diagnostics;
 pub mod errors;
 pub mod isle_adapter;
+mod isle_trace;
 pub mod linking;
 pub mod lowering;
 pub mod module_emission;

@@ -129,6 +129,7 @@ pub fn build_typed_program(
                     Some((
                         path,
                         binding,
+                        declaration.node.alias.is_some(),
                         declaration.node.visibility.node
                             == beskid_analysis::syntax::Visibility::Public,
                     ))
@@ -149,13 +150,14 @@ pub fn build_typed_program(
                     Some((
                         path,
                         binding,
+                        false,
                         declaration.node.visibility.node
                             == beskid_analysis::syntax::Visibility::Public,
                     ))
                 }
                 _ => None,
             })
-            .filter_map(|(path, binding, public)| {
+            .filter_map(|(path, binding, has_explicit_alias, public)| {
                 module_units
                     .get(&path)
                     .and_then(|targets| match targets.as_slice() {
@@ -165,6 +167,7 @@ pub fn build_typed_program(
                     .map(|target| crate::db::SyntaxImport {
                         path,
                         binding,
+                        has_explicit_alias,
                         target,
                         public,
                     })

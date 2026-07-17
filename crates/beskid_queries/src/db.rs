@@ -38,6 +38,8 @@ pub struct SyntaxDependencyRegistry {
 pub struct SyntaxImport {
     pub(crate) path: Vec<String>,
     pub(crate) binding: String,
+    /// Whether the source declaration explicitly named this binding with `as`.
+    pub(crate) has_explicit_alias: bool,
     pub(crate) target: SourceUnitId,
     /// Whether the importing source unit exposes this target through its module API.
     /// Private imports remain available only to the importing unit's own syntax facts.

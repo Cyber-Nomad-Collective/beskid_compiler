@@ -946,6 +946,263 @@ fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
 }
 
 #[test]
+fn syntax_facts_resolve_core_output_writeline_without_hir() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/core-output-writeline/project/src");
+    let main_path = root.join("Main.bd");
+    let output_path = root.join("Core/Output/Output.bd");
+    let main_source = "use Core.Output;\nunit Main() { Core.Output.WriteLine(\"hello\"); return; }";
+    let output_source = "pub unit WriteLine(string text) { return; }";
+    let main_program = expand_program(
+        parse_program(main_source).expect("main parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let output_program = expand_program(
+        parse_program(output_source).expect("Core.Output parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: output_path.display().to_string(),
+                path: output_path.clone(),
+                source: output_source.to_string(),
+                program: output_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let output_unit = SourceUnitId::new(&db, output_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(55);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let output_index = SyntaxIndex::from_program(&output_program, generation);
+    let call = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        0,
+    );
+    let declaration = key(
+        output_unit,
+        generation,
+        &output_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+    let main = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+
+    assert_eq!(
+        call_lowering(&db, call).expect("Core.Output.WriteLine syntax lowering"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        direct_callees(&db, main).expect("Core.Output.WriteLine syntax call graph"),
+        Some(Arc::from([declaration]))
+    );
+}
+
+#[test]
+fn syntax_facts_resolve_core_output_writeline_via_import_alias() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/core-output-writeline-import-alias/project/src");
+    let main_path = root.join("Main.bd");
+    let output_path = root.join("Core/Output/Output.bd");
+    let main_source =
+        "use Core.Output as Output;\nunit Main() { Output.WriteLine(\"hello\"); return; }";
+    let output_source = "pub unit WriteLine(string text) { return; }";
+    let main_program = expand_program(
+        parse_program(main_source).expect("main parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let output_program = expand_program(
+        parse_program(output_source).expect("Core.Output parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: output_path.display().to_string(),
+                path: output_path.clone(),
+                source: output_source.to_string(),
+                program: output_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let output_unit = SourceUnitId::new(&db, output_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(57);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let output_index = SyntaxIndex::from_program(&output_program, generation);
+    let call = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        0,
+    );
+    let declaration = key(
+        output_unit,
+        generation,
+        &output_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+    let main = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+
+    assert_eq!(
+        call_lowering(&db, call).expect("Output.WriteLine syntax lowering"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        direct_callees(&db, main).expect("Output.WriteLine syntax call graph"),
+        Some(Arc::from([declaration]))
+    );
+}
+
+#[test]
+fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/core-output-writeline-alias/project/src");
+    let main_path = root.join("Main.bd");
+    let output_path = root.join("Core/Output/Output.bd");
+    let main_source =
+        "use Core.Output as Output;\nunit Main() { Core.Output.WriteLine(\"hello\"); return; }";
+    let output_source = "pub unit WriteLine(string text) { return; }";
+    let main_program = expand_program(
+        parse_program(main_source).expect("main parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let output_program = expand_program(
+        parse_program(output_source).expect("Core.Output parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: output_path.display().to_string(),
+                path: output_path,
+                source: output_source.to_string(),
+                program: output_program,
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(56);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let call = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        0,
+    );
+    let main = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+
+    assert_eq!(
+        call_lowering(&db, call).expect("aliased Core.Output.WriteLine syntax lowering"),
+        Some(beskid_queries::CallLowering::Dynamic)
+    );
+    assert_eq!(
+        direct_callees(&db, main).expect("aliased Core.Output.WriteLine syntax call graph"),
+        Some(Arc::from([]))
+    );
+}
+
+#[test]
 fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/qualified-import-ambiguity/project/src");
@@ -1176,6 +1433,74 @@ fn generic_imported_static_call_resolves_to_its_exact_syntax_item() {
     assert_eq!(
         call_lowering(&db, call).expect("generic imported static call"),
         Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+}
+
+#[test]
+fn imported_generic_type_annotation_resolves_without_registry_reentrance() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/imported-generic-type/project/src");
+    let main_path = root.join("Main.bd");
+    let envelope_path = root.join("Messaging/Envelope.bd");
+    let main_source = "use Messaging.Envelope;\nunit Main() { Envelope<i64> envelope = Envelope<i64> { value: 1 }; return; }";
+    let envelope_source = "pub type Envelope<T> { i64 value }";
+    let main_program = expand_program(
+        parse_program(main_source).expect("main parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let envelope_program = expand_program(
+        parse_program(envelope_source).expect("envelope parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: envelope_path.display().to_string(),
+                path: envelope_path.clone(),
+                source: envelope_source.to_string(),
+                program: envelope_program,
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(20);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let local = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::LetStatement,
+        0,
+    );
+
+    assert_eq!(
+        abi_type(&db, local).expect("imported generic type annotation ABI"),
+        Some(SemanticTypeId::POINTER)
     );
 }
 

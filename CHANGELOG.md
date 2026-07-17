@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add opt-in `BESKID_COMPILER_TRACE=1` syntax-ISLE records for source keys, AST spans,
+  call/import facts, selection failures, and CLIF emission timing in Corelib CI diagnostics.
 - Authorize only the compiler-owned Foundation `Testing/Assert.bd` identity to lower
   `__panic_str` as the `panic_str` Corelib service; copied source remains ordinary syntax and
   emission declares only services reached by authorized calls.
