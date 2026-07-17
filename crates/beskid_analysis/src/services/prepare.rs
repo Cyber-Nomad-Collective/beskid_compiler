@@ -4,7 +4,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
-use tracing::Span;
 use beskid_pipeline::{
     PipelineObserver, observe_phase, observe_phase_result,
     phases::{
@@ -12,12 +11,16 @@ use beskid_pipeline::{
         SEMANTIC_SNAPSHOT,
     },
 };
+use tracing::Span;
 
 use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
 use crate::analysis::rules::{RuleContext, resolve, types};
-use crate::mod_host::{ModHostInput, native_invoker_for_plan, run_analyze_rewrite_after_composition, run_through_generate};
 use crate::mod_host::diagnostics::analyzer_diagnostic_to_semantic;
+use crate::mod_host::{
+    ModHostInput, native_invoker_for_plan, run_analyze_rewrite_after_composition,
+    run_through_generate,
+};
 use crate::projects::{
     CompilePlan, PreparedProjectWorkspace, ProgramAssembly, assemble_program,
     assembly_options_for_prepare,
@@ -167,8 +170,7 @@ fn run_prepare_spine(
     pipeline: Option<&dyn PipelineObserver>,
     collect_diagnostics: bool,
 ) -> Result<PrepareSpineOutput> {
-    let assembly_options =
-        assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
+    let assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
 
     let session_fingerprint = SessionFingerprint::for_entry(plan, entry_path);
     let _prepare_guard = tracing::info_span!(
@@ -220,7 +222,9 @@ fn run_prepare_spine(
     observe_phase(pipeline, PARSE, || {});
 
     let native_invoker = native_invoker_for_plan(plan, pipeline).ok().flatten();
-    let invoker_ref = native_invoker.as_ref().map(|invoker| invoker as &dyn crate::mod_host::ContractInvoker);
+    let invoker_ref = native_invoker
+        .as_ref()
+        .map(|invoker| invoker as &dyn crate::mod_host::ContractInvoker);
 
     let mut generated = run_through_generate(
         program.clone(),
@@ -358,13 +362,16 @@ fn run_prepare_spine(
                 binding_plan: binding_plan.clone(),
                 composition_snapshot: composition_snapshot.clone(),
             };
-            let executable_snapshot = super::session::cached_semantic_snapshot(&session_fingerprint)
-                .map(|snap| snap.with_typed_resolution(resolution_fingerprint, types_fingerprint))
-                .unwrap_or_else(|| {
-                    SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
-                        .with_composition(&composition_snapshot)
-                        .with_typed_resolution(resolution_fingerprint, types_fingerprint)
-                });
+            let executable_snapshot =
+                super::session::cached_semantic_snapshot(&session_fingerprint)
+                    .map(|snap| {
+                        snap.with_typed_resolution(resolution_fingerprint, types_fingerprint)
+                    })
+                    .unwrap_or_else(|| {
+                        SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
+                            .with_composition(&composition_snapshot)
+                            .with_typed_resolution(resolution_fingerprint, types_fingerprint)
+                    });
             let stored = store_executable_and_snapshot(
                 &session_fingerprint,
                 Some(typed_result),
@@ -421,9 +428,9 @@ fn lower_errors_to_diagnostics(
 ) -> Vec<SemanticDiagnostic> {
     let mut ctx = RuleContext::new(source_name, source, AnalysisOptions::default());
     match error {
-        LowerResolveTypeError::Type(errors) => {
+        LowerResolveTypeError::Type { errors, typed } => {
             for error in errors {
-                types::emit_type_error(&mut ctx, error, None);
+                types::emit_type_error(&mut ctx, error, Some(&typed));
             }
         }
         LowerResolveTypeError::Resolve(errors) => {
