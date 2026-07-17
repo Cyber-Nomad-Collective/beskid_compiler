@@ -41,6 +41,7 @@ pub struct CommunityState {
 /// catalog routes.  It contains only persisted community profile fields; in
 /// particular it never invents a GitHub login from an Auth Hub subject.
 #[derive(Clone, Debug)]
+#[allow(dead_code)] // Used by packages.rs; integration test path-includes this module alone.
 pub(crate) struct CatalogProfile {
     pub subject: String,
     pub display_name: String,
@@ -52,12 +53,14 @@ pub(crate) struct CatalogProfile {
 #[derive(Clone)]
 enum CommunityBackend {
     InMemory(Arc<Mutex<CommunityService>>),
+    #[allow(dead_code)] // Constructed via with_sqlx_session_secret in lib.rs.
     Sqlx(Arc<SqlxCommunityRepository>),
 }
 
 #[derive(Clone)]
 enum ModerationBackend {
     InMemory(Arc<Mutex<BTreeSet<String>>>),
+    #[allow(dead_code)] // Constructed via with_sqlx_session_secret in lib.rs.
     Sqlx(Arc<SqlxPackageRepository>),
 }
 
@@ -89,6 +92,7 @@ impl CommunityState {
         }
     }
 
+    #[allow(dead_code)] // Used by AppState construction in lib.rs.
     pub fn with_sqlx_session_secret(
         session_secret: impl Into<String>,
         repository: Arc<SqlxCommunityRepository>,
@@ -157,6 +161,7 @@ impl CommunityState {
         }
     }
 
+    #[allow(dead_code)] // Used by packages.rs catalog projection.
     pub(crate) async fn profile_for_catalog(
         &self,
         subject: &str,
