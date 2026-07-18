@@ -9,9 +9,9 @@ Beskid is migrating instruction selection off the legacy HIR lowering path onto 
 **ISLE** ("Instruction Selection Lowering Expressions") path. This document inventories:
 
 1. Which lowering rules are **implemented** today in ISLE, and in which file each lives.
-2. Which rules remain **to implement** to fully complete Beskid lowering (i.e. reach parity
-   with the language surface that the legacy `beskid_codegen` path can lower), and where each
-   new rule should go.
+2. Which rules remain **to implement** to cover the required language surface, including both
+   parity gaps with the legacy `beskid_codegen` path and constructs not yet lowered by either path,
+   and where each new rule should go.
 
 Use the two tables in [Implemented rules](#implemented-isle-rule-files) and
 [Rules to implement](#rules-to-implement) as the working checklist.
@@ -82,8 +82,8 @@ dispatch-route emission in `src/dispatch.rs`.
 
 ## Rules to implement
 
-These are constructs the reference (legacy `beskid_codegen`) path lowers, or language features
-required for full parity, that ISLE cannot yet select. Each currently fails as
+These are constructs that ISLE cannot yet select, including legacy-parity gaps and language
+features that neither lowering path currently implements. Each currently fails as
 `MissingRuleOrFact` (or is silently unreachable because no `NodeKind` variant exists). "Target
 file" is where the new rule belongs; a new `NodeKind`/`OperatorFact` variant in `types.isle`
 plus a `SyntaxNodeFacts` fact in `isle_adapter.rs` and an emitter in `lib.rs` are implied for
