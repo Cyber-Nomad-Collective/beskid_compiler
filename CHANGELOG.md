@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Parse fenced `code` expressions as their dedicated syntax kind and retain an explicit,
+  span-bearing generated-ISLE rejection regression, replacing the CodeString CYB-81 inventory
+  placeholder with verified evidence.
 - Expand the parsed-project → CodegenInput → ISLE → verified-CLIF harness with nested direct
   calls, while/break/continue, if/else, lambda/spawn closed failures, range-for fail-closed
   coverage, and an explicit production-path assertion that HIR/`Lowerable` drivers stay retired

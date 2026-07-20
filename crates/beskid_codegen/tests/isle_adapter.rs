@@ -264,6 +264,27 @@ fn unsupported_lambda_reports_deterministic_span_bearing_missing_rule() {
 }
 
 #[test]
+fn unsupported_code_string_reports_deterministic_span_bearing_missing_rule() {
+    let (input, isa, root) =
+        item_fixture_with_root("i32 Main() { code ```beskid\nlet generated = 1;\n```; return 0; }");
+    let code_string = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::CodeStringLiteral,
+    )
+    .expect("code string literal");
+
+    let error = emit_isle_expression(&input, isa.as_ref(), code_string, types::I64)
+        .expect_err("code strings must not route around generated ISLE");
+    let first = error.display_with_db(input.database());
+    let repeated = error.display_with_db(input.database());
+
+    assert_eq!(first, repeated);
+    assert!(first.contains("MissingRuleOrFact"), "{first}");
+    assert!(first.contains("CodeStringLiteral@"), "{first}");
+}
+
+#[test]
 fn cast_facts_are_independent_of_the_shared_literal_syntax_classification() {
     let (input, _isa, root) = item_fixture_with_root("unit Main() { i64 widenedLiteral = 1; }");
     let literal = find_node(

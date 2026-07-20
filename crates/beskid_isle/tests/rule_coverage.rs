@@ -189,7 +189,7 @@ fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
         ),
         (
             Syntax::CodeStringLiteral,
-            CodexBlocker("CYB-81 code-string: CodeStringLiteral span-bearing rejection fixture"),
+            Present("isle_adapter.rs"),
         ),
         (
             Syntax::TryExpression,
