@@ -627,7 +627,6 @@ dependencies = [
  "beskid_isle",
  "beskid_pipeline",
  "beskid_queries",
- "beskid_runtime",
  "cranelift-codegen",
  "cranelift-frontend",
  "cranelift-jit",
