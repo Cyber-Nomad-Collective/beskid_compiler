@@ -6,8 +6,7 @@ use beskid_analysis::projects::{
     ProjectError, parse_bsol_document, parse_manifest, parse_workspace_manifest,
 };
 use beskid_analysis::services::{
-    self, DependencyTypingPolicy, DocumentAnalysisSnapshot, FrontEndOptions, PrepareOptions,
-    resolved_input_from_plan,
+    self, DependencyTypingPolicy, FrontEndOptions, PrepareOptions, resolved_input_from_plan,
 };
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity};
@@ -21,13 +20,12 @@ use crate::position::offset_range_to_lsp;
 /// Produce LSP diagnostics for a `.bd`, `.bproj`, `.bws`, or other manifest buffer.
 ///
 /// Project-backed `.bd` buffers use the Salsa prepare spine when a [`BeskidDatabase`] and
-/// [`CompilationContext`] are available; otherwise the server falls back to a warm
-/// [`DocumentAnalysisSnapshot`] or parse-only structural rules.
+/// [`CompilationContext`] are available; otherwise the server uses parse-only
+/// structural rules for the current source buffer.
 pub fn analyze_document(
     db: Option<&mut BeskidDatabase>,
     uri: &Uri,
     source: &str,
-    cached: Option<&DocumentAnalysisSnapshot>,
     compilation_context: Option<&CompilationContext>,
 ) -> Vec<Diagnostic> {
     if is_manifest_uri(uri) {
@@ -51,7 +49,7 @@ pub fn analyze_document(
                 .map(|fp| beskid_queries::fingerprint_key(&fp))
                 .unwrap_or_else(|| path.display().to_string());
             let stale = beskid_queries::is_typed_bundle_stale(db, &entry_key);
-            if let Ok((_, mut diags)) = beskid_queries::prepare_compilation_diagnostics_with_db(
+            if let Ok((_, diags)) = beskid_queries::prepare_compilation_diagnostics_with_db(
                 db,
                 &resolved,
                 PrepareOptions {
@@ -67,18 +65,11 @@ pub fn analyze_document(
                 },
                 None,
             ) {
-                if let Some(snap) = cached {
-                    diags.extend(snap.doc_diagnostics.iter().cloned());
-                }
                 return diags
                     .into_iter()
                     .map(|diag| semantic_to_lsp_diagnostic(source, diag))
                     .collect();
             }
-        }
-
-        if let Some(snap) = cached {
-            return diagnostics_from_cached_snapshot(uri, source, snap);
         }
     }
 
@@ -90,32 +81,6 @@ pub fn analyze_document(
             Range::new(Position::new(0, 0), Position::new(0, 0)),
         )],
     }
-}
-
-fn diagnostics_from_cached_snapshot(
-    uri: &Uri,
-    source: &str,
-    snap: &DocumentAnalysisSnapshot,
-) -> Vec<Diagnostic> {
-    let mut out: Vec<Diagnostic> =
-        semantic_diagnostics(&uri.to_string(), source, &snap.program.node);
-    out.extend(
-        snap.doc_diagnostics
-            .iter()
-            .cloned()
-            .map(|d| semantic_to_lsp_diagnostic(source, d)),
-    );
-    out.extend(
-        snap.composition_diagnostics
-            .iter()
-            .cloned()
-            .map(|d| semantic_to_lsp_diagnostic(source, d)),
-    );
-    out.sort_by(|a, b| {
-        (a.range.start.line, a.range.start.character)
-            .cmp(&(b.range.start.line, b.range.start.character))
-    });
-    out
 }
 
 fn semantic_diagnostics(source_name: &str, source: &str, program: &Program) -> Vec<Diagnostic> {
@@ -192,16 +157,15 @@ fn simple_error(code: &str, message: &str, range: Range) -> Diagnostic {
 mod tests {
     use std::str::FromStr;
 
-    use tower_lsp_server::ls_types::{NumberOrString, Uri};
-
     use beskid_analysis::services::{build_document_analysis, parse_program_with_source_name};
+    use tower_lsp_server::ls_types::{NumberOrString, Uri};
 
     use super::analyze_document;
 
     #[test]
-    fn lsp_cached_snapshot_surfaces_composition_diagnostic_codes() {
-        let uri = Uri::from_str("file:///composition.bd").expect("uri");
-        let source = r#"
+    fn lsp_diagnostics_do_not_reuse_stale_snapshot_composition_errors() {
+        let uri = Uri::from_str("file:///stale_snapshot.bd").expect("uri");
+        let stale_source = r#"
 host AppHost() : ConsoleHost {
     registry {
         single Logger;
@@ -213,25 +177,24 @@ i32 Main() {
     return 0;
 }
 "#;
-        let program =
-            parse_program_with_source_name("composition.bd", source).expect("parse source");
-        let snapshot = build_document_analysis(&program, "composition.bd", source, None);
-        let diagnostics = analyze_document(None, &uri, source, Some(&snapshot), None);
-        let codes = diagnostics
-            .iter()
-            .filter_map(|diagnostic| diagnostic.code.as_ref())
-            .filter_map(|code| match code {
-                NumberOrString::String(value) => Some(value.clone()),
-                NumberOrString::Number(_) => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            codes
+        let stale_program = parse_program_with_source_name("stale_snapshot.bd", stale_source)
+            .expect("parse stale source");
+        let stale_snapshot =
+            build_document_analysis(&stale_program, "stale_snapshot.bd", stale_source, None);
+        assert!(
+            stale_snapshot
+                .composition_diagnostics
                 .iter()
-                .filter(|code| code.starts_with("E17"))
-                .collect::<Vec<_>>(),
-            vec!["E1709"],
-            "warm snapshot path should surface only expected composition code"
+                .any(|diagnostic| diagnostic.code.as_deref() == Some("E1709"))
+        );
+
+        let diagnostics = analyze_document(None, &uri, "i32 Main() { return 0; }", None);
+
+        assert!(
+            diagnostics.iter().all(|diagnostic| {
+                diagnostic.code.as_ref() != Some(&NumberOrString::String("E1709".to_string()))
+            }),
+            "diagnostics must describe the current buffer rather than a stale analysis snapshot: {diagnostics:#?}",
         );
     }
 }

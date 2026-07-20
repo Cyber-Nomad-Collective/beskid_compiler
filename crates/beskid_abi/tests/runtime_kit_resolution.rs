@@ -100,6 +100,18 @@ fn install_linux_kit(prefix: &Path, profile: BuildProfile) -> PathBuf {
     root
 }
 
+fn read_metadata(root: &Path) -> RuntimeKitMetadata {
+    serde_json::from_str(&fs::read_to_string(root.join("abi.json")).unwrap()).unwrap()
+}
+
+fn write_metadata(root: &Path, metadata: &RuntimeKitMetadata) {
+    fs::write(
+        root.join("abi.json"),
+        serde_json::to_string_pretty(metadata).unwrap(),
+    )
+    .unwrap();
+}
+
 #[test]
 fn resolves_only_the_exact_installed_target_and_profile_and_verifies_artifacts() {
     let prefix = TempPrefix::new();
@@ -136,16 +148,93 @@ fn rejects_metadata_identity_and_artifact_hash_mismatches_without_fallback() {
     ));
 
     install_linux_kit(&prefix.0, BuildProfile::Debug);
-    let mut metadata: RuntimeKitMetadata =
-        serde_json::from_str(&fs::read_to_string(root.join("abi.json")).unwrap()).unwrap();
+    let mut metadata = read_metadata(&root);
     metadata.profile = BuildProfile::Release;
+    write_metadata(&root, &metadata);
+    assert!(matches!(
+        resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug),
+        Err(RuntimeKitResolutionError::ProfileMismatch { .. })
+    ));
+}
+
+#[test]
+fn fails_closed_when_the_exact_profile_is_missing_even_if_another_profile_is_complete() {
+    let prefix = TempPrefix::new();
+    let debug_root = install_linux_kit(&prefix.0, BuildProfile::Debug);
+    let release_root = install_linux_kit(&prefix.0, BuildProfile::Release);
+
+    fs::remove_file(release_root.join("abi.json")).unwrap();
+    assert!(debug_root.join("abi.json").is_file());
+    assert!(matches!(
+        resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Release),
+        Err(RuntimeKitResolutionError::MetadataRead { path, .. })
+            if path == release_root.join("abi.json")
+    ));
+}
+
+#[test]
+fn rejects_metadata_allowlist_layout_and_trap_contract_drift_before_resolving_artifacts() {
+    let prefix = TempPrefix::new();
+    let root = install_linux_kit(&prefix.0, BuildProfile::Debug);
+
+    let mut allowlist_drift = read_metadata(&root);
+    allowlist_drift
+        .import_allowlist
+        .push("unexpected_import".into());
+    write_metadata(&root, &allowlist_drift);
+    assert!(matches!(
+        resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug),
+        Err(RuntimeKitResolutionError::MetadataValidation(
+            beskid_abi::runtime_kit::RuntimeKitValidationError::ContractAuditMismatch { field }
+        )) if field == "import_allowlist"
+    ));
+
+    let mut layout_drift = read_metadata(&root);
+    layout_drift.layout_hash =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into();
+    write_metadata(&root, &layout_drift);
+    assert!(matches!(
+        resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug),
+        Err(RuntimeKitResolutionError::MetadataValidation(
+            beskid_abi::runtime_kit::RuntimeKitValidationError::ContractLayoutHashMismatch { .. }
+        ))
+    ));
+
+    let mut trap_drift = read_metadata(&root);
+    trap_drift.abi_contract.traps[0].code = 99;
+    write_metadata(&root, &trap_drift);
+    assert!(matches!(
+        resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug),
+        Err(RuntimeKitResolutionError::MetadataValidation(
+            beskid_abi::runtime_kit::RuntimeKitValidationError::InvalidAbiContract
+        ))
+    ));
+}
+
+#[test]
+fn rejects_mixed_or_hash_tampered_artifacts_instead_of_accepting_a_nearby_kit() {
+    let prefix = TempPrefix::new();
+    let root = install_linux_kit(&prefix.0, BuildProfile::Debug);
+
+    let mut mixed_artifacts = read_metadata(&root);
+    mixed_artifacts.artifacts.static_library.relative_path = "shared/libbeskid_runtime.so".into();
+    write_metadata(&root, &mixed_artifacts);
+    assert!(matches!(
+        resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug),
+        Err(RuntimeKitResolutionError::MetadataValidation(
+            beskid_abi::runtime_kit::RuntimeKitValidationError::InvalidArtifactSet { .. }
+        ))
+    ));
+
+    let root = install_linux_kit(&prefix.0, BuildProfile::Debug);
     fs::write(
-        root.join("abi.json"),
-        serde_json::to_string_pretty(&metadata).unwrap(),
+        root.join("static/libbeskid_runtime.a"),
+        b"tampered static runtime",
     )
     .unwrap();
     assert!(matches!(
         resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug),
-        Err(RuntimeKitResolutionError::ProfileMismatch { .. })
+        Err(RuntimeKitResolutionError::ArtifactHashMismatch { path, .. })
+            if path == root.join("static/libbeskid_runtime.a")
     ));
 }

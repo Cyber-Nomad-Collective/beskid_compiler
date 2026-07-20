@@ -3,19 +3,16 @@
 use tokio::sync::RwLock;
 use tower_lsp_server::ls_types::Uri;
 
-use beskid_analysis::CompilationContext;
-use beskid_analysis::services::DocumentAnalysisSnapshot;
-
 use crate::diagnostics::analyze_document;
 use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::startup::wait_for_initial_scan;
 use crate::session::store::State;
+use beskid_analysis::CompilationContext;
 
 pub async fn analyze_document_for_state(
     state: &RwLock<State>,
     uri: &Uri,
     source: &str,
-    cached: Option<&DocumentAnalysisSnapshot>,
     compilation_context: Option<&CompilationContext>,
 ) -> Vec<tower_lsp_server::ls_types::Diagnostic> {
     wait_for_initial_scan(state).await;
@@ -26,7 +23,7 @@ pub async fn analyze_document_for_state(
         {
             write.configure_db_for_project_with_db(db, &plan.project_root);
         }
-        analyze_document(Some(db), uri, source, cached, compilation_context)
+        analyze_document(Some(db), uri, source, compilation_context)
     })
     .await
 }

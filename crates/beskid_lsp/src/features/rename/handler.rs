@@ -86,7 +86,9 @@ fn resolved_syntax_target<'a>(
     let path = crate::workspace_scan::uri_to_path(uri);
     doc.syntax_definitions.iter().find(|definition| {
         (definition.reference_start <= offset && offset <= definition.reference_end)
-            || (path.as_deref().is_some_and(|path| path == definition.declaration_path)
+            || (path
+                .as_deref()
+                .is_some_and(|path| path == definition.declaration_path)
                 && definition.declaration_start <= offset
                 && offset <= definition.declaration_end)
     })

@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use beskid_analysis::doc::{DocCommentEdit, doc_comment_edit_for_offset};
+use beskid_analysis::{
+    doc::{DocCommentEdit, doc_comment_edit_for_offset},
+    services::{lower_normalize_resolve_type_spanned, parse_program_with_source_name},
+};
 use tower_lsp_server::ls_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
     Diagnostic, NumberOrString, TextEdit, Uri, WorkspaceEdit,
@@ -18,9 +21,12 @@ fn doc_comment_code_action(
     title: &'static str,
     diagnostics: Option<Vec<Diagnostic>>,
 ) -> Option<CodeAction> {
-    let snap = doc.analysis.as_ref()?;
-    let res = snap.resolution.as_ref()?;
-    let edit = doc_comment_edit_for_offset(&snap.program.node, res, &doc.text, offset)?;
+    // Code actions are requested against the editor's current buffer. Rebuild the
+    // transitional documentation analysis from that buffer rather than reusing the
+    // asynchronously cached legacy snapshot, which may describe a prior revision.
+    let program = parse_program_with_source_name(uri.as_str(), &doc.text).ok()?;
+    let (_, resolution, _) = lower_normalize_resolve_type_spanned(&program).ok()?;
+    let edit = doc_comment_edit_for_offset(&program.node, &resolution, &doc.text, offset)?;
     let (range, new_text) = match edit {
         DocCommentEdit::Insert { at, text } => (offset_range_to_lsp(&doc.text, at, at), text),
         DocCommentEdit::Replace { start, end, text } => {
@@ -155,4 +161,76 @@ fn line_span(source: &str, start_off: usize, end_off: usize) -> (usize, usize) {
         source.len()
     };
     (line_start, line_end)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use beskid_analysis::services::{
+        build_document_analysis_from_resolution, lower_normalize_resolve_type_spanned,
+        parse_program_with_source_name,
+    };
+    use tower_lsp_server::ls_types::{
+        CodeActionContext, CodeActionOrCommand, CodeActionParams, Position, Range,
+        TextDocumentIdentifier, Uri, WorkDoneProgressParams,
+    };
+
+    use super::handle_code_actions;
+    use crate::session::lifecycle::ANALYSIS_CACHE_VERSION;
+    use crate::session::store::Document;
+
+    #[test]
+    fn doc_comment_action_uses_the_current_buffer_not_a_stale_analysis_snapshot() {
+        let uri = Uri::from_str("file:///tmp/code-actions/Main.bd").expect("uri");
+        let stale_source = "i32 Old() { return 0; }";
+        let stale_program =
+            parse_program_with_source_name("/tmp/code-actions/Main.bd", stale_source)
+                .expect("parse stale source");
+        let (_, stale_resolution, _) =
+            lower_normalize_resolve_type_spanned(&stale_program).expect("resolve stale source");
+        let stale_analysis = build_document_analysis_from_resolution(
+            &stale_program,
+            "/tmp/code-actions/Main.bd",
+            stale_source,
+            std::path::Path::new("/tmp/code-actions/Main.bd"),
+            Some(stale_resolution),
+            Default::default(),
+            None,
+            None,
+        );
+        let current_source = "i32 Before() { return 0; }\n\ni32 Current() { return 0; }";
+        let doc = Document {
+            version: 2,
+            text: current_source.to_string(),
+            analysis_cache_version: ANALYSIS_CACHE_VERSION,
+            analysis: Some(stale_analysis),
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
+            syntax_completion: None,
+            syntax_inlay_hints: Vec::new(),
+        };
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: Range {
+                start: Position::new(2, 4),
+                end: Position::new(2, 4),
+            },
+            context: CodeActionContext {
+                diagnostics: Vec::new(),
+                only: None,
+                trigger_kind: None,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let actions = handle_code_actions(&uri, &doc, &params);
+
+        assert!(actions.iter().any(|action| {
+            matches!(action, CodeActionOrCommand::CodeAction(action)
+                if action.title == "Generate or update documentation comment")
+        }));
+    }
 }

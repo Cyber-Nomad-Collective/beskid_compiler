@@ -122,6 +122,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Remove the public runtime-kit-bypassing `emit_library_pair` AOT API. Native runtime publication
+  now enters only through the host context/platform emitters used by the canonical runtime-kit
+  builder.
+
 - Remove the obsolete Rust language-handler regeneration hook, which targeted the retired
   runtime.v1 manifest rather than the canonical ABI-v5 contract.
 - Remove the borrowed `FrontEndLowerInput` / HIR-only entrypoint codegen boundary.

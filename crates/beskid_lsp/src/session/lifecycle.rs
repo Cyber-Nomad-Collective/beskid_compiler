@@ -703,14 +703,8 @@ pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>,
     } else {
         None
     };
-    let diagnostics = analyze_document_for_state(
-        state,
-        uri,
-        &doc.text,
-        doc.analysis.as_ref(),
-        compilation_context.as_ref(),
-    )
-    .await;
+    let diagnostics =
+        analyze_document_for_state(state, uri, &doc.text, compilation_context.as_ref()).await;
     client
         .publish_diagnostics(uri.clone(), diagnostics, Some(doc.version))
         .await;

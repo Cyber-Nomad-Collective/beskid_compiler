@@ -101,6 +101,34 @@ fn tampered_or_wrong_profile_kits_fail_without_archive_fallback() {
 }
 
 #[test]
+fn tampered_exact_kit_does_not_fall_back_to_a_legacy_prebuilt_archive() {
+    let temp = tempfile::tempdir().unwrap();
+    install_kit(temp.path());
+    let strategy = installed_runtime_strategy(
+        temp.path(),
+        BuildProfile::Debug,
+        Some("x86_64-unknown-linux-gnu"),
+    )
+    .expect("exact kit strategy");
+
+    let exact_static = temp
+        .path()
+        .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu/debug/static/libbeskid_runtime.a");
+    fs::write(&exact_static, b"tampered exact runtime").unwrap();
+
+    // This is the former workspace/prebuilt fallback shape. Its presence must never authorize
+    // linking after the exact kit has failed validation.
+    let legacy_prebuilt = temp.path().join("target/debug/libbeskid_runtime_bridge.a");
+    fs::create_dir_all(legacy_prebuilt.parent().unwrap()).unwrap();
+    fs::write(&legacy_prebuilt, b"legacy prebuilt runtime").unwrap();
+
+    assert!(
+        prepare_runtime(&RuntimeBuildRequest { kit: strategy }).is_err(),
+        "AOT must reject a failed exact kit instead of falling back to a prebuilt archive"
+    );
+}
+
+#[test]
 fn noncanonical_targets_are_rejected() {
     let temp = tempfile::tempdir().unwrap();
     assert!(

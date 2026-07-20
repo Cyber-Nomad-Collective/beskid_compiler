@@ -163,26 +163,6 @@ pub struct NativeLibraryPair {
     pub provenance_symbols: Vec<String>,
 }
 
-/// Emit native library artifacts from an existing codegen artifact without requiring a runtime
-/// kit. This is intentionally a library-only primitive: executable entrypoint and runtime-kit
-/// validation remain enforced by [`build`].
-pub fn emit_library_pair(
-    artifact: CodegenArtifact,
-    output_dir: PathBuf,
-    name: &str,
-    target_triple: Option<String>,
-    exported_symbols: Vec<String>,
-) -> AotResult<NativeLibraryPair> {
-    emit_library_pair_with_objects(
-        artifact,
-        output_dir,
-        name,
-        target_triple,
-        exported_symbols,
-        Vec::new(),
-    )
-}
-
 /// Emit a native library pair that includes the current host target's canonical context
 /// assembly object. The assembly source and generated ABI include are the same ones verified by
 /// `beskid_abi`'s target assembly tests; no inline assembly or synthetic context shim is used.

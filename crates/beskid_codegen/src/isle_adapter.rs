@@ -14,7 +14,7 @@ use beskid_queries::{
     block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
     cast_intents, child_nodes, dispatch_builtin_symbol, enum_constructor, enum_layout, enum_match,
     generic_call_specialization, item_abi_signature, item_body, literal_fact, local_slot, node_kind,
-    node_type, nominal_member_receiver, operator_fact, resolved_local, runtime_intrinsic_name,
+    node_type, nominal_member_receiver, operator_fact, range_for_fact, resolved_local, runtime_intrinsic_name,
     test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
@@ -125,6 +125,15 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                     )
                 })
                 .collect()
+        } else if self.node_kind(key) == Some(NodeKind::ForStatement) {
+            self.children(key)
+                .iter()
+                .copied()
+                .filter(|child| {
+                    self.query(node_kind(self.db, *child))
+                        != Some(beskid_queries::IndexedNodeKind::Identifier)
+                })
+                .collect()
         } else {
             self.children(key).into()
         };
@@ -170,6 +179,15 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                     .map(|slot| slot.index)
             }
             beskid_queries::IndexedNodeKind::LetStatement => self
+                .raw_children(key)
+                .into_iter()
+                .find(|child| {
+                    self.query(node_kind(self.db, *child))
+                        == Some(beskid_queries::IndexedNodeKind::Identifier)
+                })
+                .and_then(|identifier| self.query(local_slot(self.db, identifier)))
+                .map(|slot| slot.index),
+            beskid_queries::IndexedNodeKind::ForStatement => self
                 .raw_children(key)
                 .into_iter()
                 .find(|child| {
@@ -405,6 +423,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 .collect()
         })
     }
+
+    fn range_fact(&self, key: AstNodeKey) -> Option<beskid_isle::RangeFact> {
+        let range = self.query(range_for_fact(self.db, key))?;
+        Some(beskid_isle::RangeFact::new(range.start, range.end, 1, false))
+    }
 }
 
 impl SyntaxNodeFacts<'_> {
@@ -562,6 +585,11 @@ impl SyntaxNodeFacts<'_> {
     }
 
     fn scalar_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::ForStatement) {
+            let iterable = self.child(key, 0)?;
+            let range = self.query(range_for_fact(self.db, iterable))?;
+            return self.query(node_type(self.db, range.start));
+        }
         self.query(cast_intents(self.db, key))
             .and_then(|intents| intents.first().map(|intent| intent.to))
             .or_else(|| self.query(abi_type(self.db, key)))

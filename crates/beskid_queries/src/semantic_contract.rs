@@ -217,11 +217,143 @@ pub struct ClosureEnvironment {
     pub captures: Arc<[ClosureCapture]>,
 }
 
+/// One deterministic capture field in a target-neutral closure environment ABI shape.
+///
+/// Field order follows the captured declaration's stable owner/node identity and local slot,
+/// never hash-map iteration or a later codegen traversal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ClosureEnvironmentField {
+    pub capture: ClosureCapture,
+    pub abi_type: SemanticTypeId,
+}
+
+/// Requirement that a closure environment descriptor carry a runtime pointer map.
+///
+/// This is intentionally a requirement, not a claim that a descriptor has been emitted. The
+/// query layer has no runtime allocation or descriptor-emission authority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ClosurePointerMapRequirement {
+    RuntimeDescriptorRequired,
+}
+
+/// Deterministic target-neutral ABI shape for a lambda's capture environment.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClosureEnvironmentAbiShape {
+    pub fields: Arc<[ClosureEnvironmentField]>,
+    pub pointer_map: ClosurePointerMapRequirement,
+}
+
+/// Current implementation status for consuming closure facts in generated lowering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ClosureLoweringStatus {
+    NotLowered,
+}
+
+/// Current implementation status for creating a closure environment at runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ClosureAllocationStatus {
+    NotAllocated,
+}
+
+/// Generation-bound callable and environment facts for one lambda expression.
+///
+/// Generic/inferred callable forms remain unavailable. This fact records no generated lowering
+/// or runtime allocation; those statuses remain explicit until codegen owns them.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClosureSignature {
+    pub lambda: AstNodeKey,
+    pub body: AstNodeKey,
+    pub callable: ItemSignature,
+    pub environment: ClosureEnvironmentAbiShape,
+    pub lowering: ClosureLoweringStatus,
+    pub allocation: ClosureAllocationStatus,
+}
+
+/// Direct lambda call selected by a current call expression.
+///
+/// Calls through a local closure binding remain unavailable: syntax facts do not infer an
+/// allocation, binding flow, or dynamic dispatch target.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClosureCallTarget {
+    pub call: AstNodeKey,
+    pub lambda: AstNodeKey,
+    pub body: AstNodeKey,
+    pub callable: ItemSignature,
+}
+
 /// Exact callable operand and captures selected by a `spawn` expression.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SpawnTarget {
     pub callee: AstNodeKey,
     pub captures: Arc<[ClosureCapture]>,
+}
+
+/// Storage provenance derived from the current syntax authority for one captured local use.
+///
+/// This fact does not establish closure rooting or allocation. It only classifies source values
+/// that are safe to transfer by value; native pointers and mutable bindings are conservatively
+/// stack references, because moving either across a fiber boundary can expose an invalid or
+/// aliased stack location.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CaptureStorageClass {
+    TransferableValue,
+    StackReference,
+}
+
+/// Exact declaration, storage provenance, and source use for one captured local reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CaptureStorage {
+    pub declaration: AstNodeKey,
+    pub class: CaptureStorageClass,
+    pub span: SourceSpan,
+}
+
+/// Deterministic syntax-owned legality failure for one spawn expression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SpawnDiagnosticKind {
+    TargetNotCallable,
+    TargetRequiresArguments,
+    StackReferenceEscapesSpawn,
+}
+
+/// One precise diagnostic selected from current syntax facts for a spawn expression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SpawnDiagnostic {
+    pub kind: SpawnDiagnosticKind,
+    pub span: SourceSpan,
+    pub capture: Option<CaptureStorage>,
+}
+
+/// Authoritative spawn lowering facts and any source-owned legality diagnostics.
+///
+/// A legal fact contains a zero-argument callable signature result and no diagnostics. Illegal
+/// facts retain the target and any proven result so diagnostics and lowering never need legacy
+/// HIR snapshots.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SpawnLegality {
+    pub target: SpawnTarget,
+    pub result: Option<SemanticTypeId>,
+    pub span: SourceSpan,
+    pub diagnostics: Arc<[SpawnDiagnostic]>,
+}
+
+/// Source-only validation of whether a spawn target is a legal zero-argument entry.
+///
+/// This mirrors current legality facts without claiming that a fiber trampoline, closure
+/// allocation, or runtime scheduling object has been generated.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SpawnEntryValidation {
+    pub spawn: AstNodeKey,
+    pub target: AstNodeKey,
+    pub callable: Option<ItemSignature>,
+    pub is_zero_argument_entry: bool,
+    pub diagnostics: Arc<[SpawnDiagnostic]>,
+}
+
+impl SpawnLegality {
+    pub fn is_legal(&self) -> bool {
+        self.diagnostics.is_empty() && self.result.is_some()
+    }
 }
 
 /// Opaque semantic type identity owned by the query layer.
@@ -325,6 +457,16 @@ pub struct CastIntent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ControlFlow {
     pub may_fall_through: bool,
+}
+
+/// Exact source bounds for the built-in `range(start, end)` form consumed by a `for` loop.
+///
+/// This is deliberately separate from ordinary call lowering: `range` is syntax sugar for the
+/// loop emitter, not a dynamically dispatched function call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RangeForFact {
+    pub start: AstNodeKey,
+    pub end: AstNodeKey,
 }
 
 /// Callable item signature expressed entirely in semantic type identities.
@@ -1235,6 +1377,38 @@ fn semantic_type_for_expression(
         beskid_analysis::syntax::Expression::Grouped(grouped) => {
             semantic_type_for_expression(program, index, reference, &grouped.node.expr.node)
         }
+        beskid_analysis::syntax::Expression::Binary(binary) => {
+            let left =
+                semantic_type_for_expression(program, index, reference, &binary.node.left.node)?;
+            let right =
+                semantic_type_for_expression(program, index, reference, &binary.node.right.node)?;
+            use beskid_analysis::syntax::BinaryOp;
+            match binary.node.op.node {
+                BinaryOp::Or | BinaryOp::And
+                    if left == SemanticTypeId::BOOL && right == SemanticTypeId::BOOL =>
+                {
+                    Ok(SemanticTypeId::BOOL)
+                }
+                BinaryOp::IdentityEq
+                | BinaryOp::IdentityNotEq
+                | BinaryOp::Eq
+                | BinaryOp::NotEq
+                | BinaryOp::Lt
+                | BinaryOp::Lte
+                | BinaryOp::Gt
+                | BinaryOp::Gte
+                    if left == right =>
+                {
+                    Ok(SemanticTypeId::BOOL)
+                }
+                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod
+                    if left == right && primitive_numeric(left) =>
+                {
+                    Ok(left)
+                }
+                _ => Err(SemanticError::unavailable("node_type")),
+            }
+        }
         _ => Err(SemanticError::unavailable("node_type")),
     }
 }
@@ -1391,6 +1565,44 @@ fn call_arguments_tracked(
         };
         arguments.extend(explicit);
         Some(Ok(arguments.into()))
+    })?
+    .transpose()
+}
+
+#[salsa::tracked]
+fn range_for_fact_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<RangeForFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return None;
+        };
+        let [segment] = path.node.path.node.segments.as_slice() else {
+            return None;
+        };
+        if segment.node.name.node.name != "range" || !segment.node.type_args.is_empty() {
+            return None;
+        }
+        let [start, end] = call.args.as_slice() else {
+            return Some(Err(SemanticError::unavailable("range_for_fact")));
+        };
+        let start = index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(start),
+        )?;
+        let end = index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(end),
+        )?;
+        Some(Ok(RangeForFact {
+            start: AstNodeKey { node: normalized_expression_node(index, start), ..key },
+            end: AstNodeKey { node: normalized_expression_node(index, end), ..key },
+        }))
     })?
     .transpose()
 }
@@ -1685,8 +1897,7 @@ fn type_syntax_is_generic_parameter_reference(
     let [segment] = path.node.segments.as_slice() else {
         return false;
     };
-    segment.node.type_args.is_empty()
-        && segment.node.name.node.name == parameter_name
+    segment.node.type_args.is_empty() && segment.node.name.node.name == parameter_name
 }
 
 fn generic_call_uses_parameter_type_arguments(
@@ -1748,10 +1959,11 @@ fn generic_call_instantiation_for_node(
     for (argument, generic) in argument_syntax.iter().zip(function.generics.iter()) {
         match abi_type_from_syntax(db, key, &argument.node) {
             Ok(concrete) => concrete_arguments.push(concrete),
-            Err(_) if type_syntax_is_generic_parameter_reference(
-                &argument.node,
-                generic.node.name.as_str(),
-            ) => {}
+            Err(_)
+                if type_syntax_is_generic_parameter_reference(
+                    &argument.node,
+                    generic.node.name.as_str(),
+                ) => {}
             Err(_) => return None,
         }
     }
@@ -3216,7 +3428,9 @@ fn unique_exported_type_in_unit(
         if !visited.insert(current) {
             continue;
         }
-        if let Some(candidate) = unique_public_type_in_unit(db, current, generation, name, generic_arity) {
+        if let Some(candidate) =
+            unique_public_type_in_unit(db, current, generation, name, generic_arity)
+        {
             candidates.push(candidate);
         }
         pending.extend(public_reexport_units(db, current, generation));
@@ -3399,6 +3613,114 @@ fn closure_environment_for_node(
     }))
 }
 
+#[salsa::tracked]
+fn closure_signature_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ClosureSignature> {
+    with_node(db, syntax, key, |program, index, node| {
+        closure_signature_for_node(db, program, index, key, node)
+    })?
+    .transpose()
+}
+
+fn closure_signature_for_node(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<Result<ClosureSignature, SemanticError>> {
+    let lambda = node.of::<beskid_analysis::syntax::LambdaExpression>()?;
+    let body = index
+        .direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(lambda.body.as_ref()),
+        )
+        .map(|node| AstNodeKey {
+            node: normalized_expression_node(index, node),
+            ..key
+        })?;
+    let callable = match callable_signature_for_node(db, program, index, key, node) {
+        Some(Ok(callable)) => callable,
+        Some(Err(error)) => return Some(Err(error)),
+        None => return None,
+    };
+    let environment = match closure_environment_for_node(program, index, key, node) {
+        Some(Ok(environment)) => environment,
+        Some(Err(error)) => return Some(Err(error)),
+        None => return None,
+    };
+    let fields = environment
+        .captures
+        .iter()
+        .map(|capture| {
+            local_declaration_type(program, index, capture.declaration.node)
+                .unwrap_or_else(|| Err(SemanticError::unavailable("closure_signature")))
+                .map(|abi_type| ClosureEnvironmentField {
+                    capture: *capture,
+                    abi_type,
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|mut fields| {
+            fields.sort_by_key(|field| {
+                (
+                    field.capture.slot.owner.node.0,
+                    field.capture.slot.index,
+                    field.capture.declaration.node.0,
+                )
+            });
+            fields
+        });
+    Some(fields.map(|fields| ClosureSignature {
+        lambda: key,
+        body,
+        callable,
+        environment: ClosureEnvironmentAbiShape {
+            fields: fields.into(),
+            pointer_map: ClosurePointerMapRequirement::RuntimeDescriptorRequired,
+        },
+        lowering: ClosureLoweringStatus::NotLowered,
+        allocation: ClosureAllocationStatus::NotAllocated,
+    }))
+}
+
+#[salsa::tracked]
+fn closure_call_target_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ClosureCallTarget> {
+    let lambda = with_node(db, syntax, key, |program, index, node| {
+        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+        index
+            .direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
+            )
+            .map(|node| AstNodeKey {
+                node: normalized_expression_node(index, node),
+                ..key
+            })
+    })?;
+    let Some(lambda) = lambda else {
+        return Ok(None);
+    };
+    let Some(signature) = closure_signature_tracked(db, syntax, lambda)? else {
+        return Ok(None);
+    };
+    Ok(Some(ClosureCallTarget {
+        call: key,
+        lambda: signature.lambda,
+        body: signature.body,
+        callable: signature.callable,
+    }))
+}
+
 fn closure_captures(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
@@ -3447,6 +3769,135 @@ fn closure_captures(
         }
     }
     Ok(captures)
+}
+
+#[salsa::tracked]
+fn capture_storage_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<CaptureStorage> {
+    with_node(db, syntax, key, |program, index, node| {
+        capture_storage_for_node(program, index, key, node)
+    })?
+    .transpose()
+}
+
+fn capture_storage_for_node(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<Result<CaptureStorage, SemanticError>> {
+    let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
+    let [segment] = path.path.node.segments.as_slice() else {
+        return None;
+    };
+    if !segment.node.type_args.is_empty() {
+        return None;
+    }
+    let declaration = resolve_lexical_declaration(
+        program,
+        index,
+        key.node,
+        segment.node.name.node.name.as_str(),
+    )?;
+    let declaration = AstNodeKey {
+        node: declaration,
+        ..key
+    };
+    let span = node.span()?;
+    Some(
+        capture_storage_class(program, index, declaration).map(|class| CaptureStorage {
+            declaration,
+            class,
+            span,
+        }),
+    )
+}
+
+fn capture_storage_class(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: AstNodeKey,
+) -> Result<CaptureStorageClass, SemanticError> {
+    let parent = parent_node(index, declaration.node)
+        .ok_or_else(|| SemanticError::unavailable("capture_storage"))?;
+    let mutable = index
+        .node_at(program, parent)
+        .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
+        .is_some_and(|binding| binding.mutable);
+    let semantic_type = local_declaration_type(program, index, declaration.node)
+        .unwrap_or_else(|| Err(SemanticError::unavailable("capture_storage")))?;
+    Ok(if mutable || semantic_type == SemanticTypeId::POINTER {
+        CaptureStorageClass::StackReference
+    } else {
+        CaptureStorageClass::TransferableValue
+    })
+}
+
+#[salsa::tracked]
+fn callable_signature_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ItemSignature> {
+    with_node(db, syntax, key, |program, index, node| {
+        callable_signature_for_node(db, program, index, key, node)
+    })?
+    .transpose()
+}
+
+fn callable_signature_for_node(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<Result<ItemSignature, SemanticError>> {
+    if let Some(signature) = item_signature_for_node(node) {
+        return Some(signature);
+    }
+    if let Some(lambda) = node.of::<beskid_analysis::syntax::LambdaExpression>() {
+        let parameters = lambda
+            .parameters
+            .iter()
+            .map(|parameter| {
+                parameter.node.ty.as_ref().map_or_else(
+                    || Err(SemanticError::unavailable("callable_signature")),
+                    |ty| semantic_type_from_syntax(&ty.node),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>();
+        let result = semantic_type_for_expression(program, index, key.node, &lambda.body.node);
+        return Some(parameters.and_then(|parameters| {
+            result.map(|result| ItemSignature {
+                parameters: parameters.into(),
+                result,
+            })
+        }));
+    }
+    if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
+        return callable_signature_for_path(db, program, index, key, &path.path.node);
+    }
+    if let Some(call) = node.of::<beskid_analysis::syntax::CallExpression>() {
+        if let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node {
+            return callable_signature_for_path(db, program, index, key, &path.node.path.node);
+        }
+    }
+    None
+}
+
+fn callable_signature_for_path(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<Result<ItemSignature, SemanticError>> {
+    let declaration = resolve_item_declaration(db, program, index, key, path)?;
+    let declaration = index.node_at(program, declaration.node)?;
+    item_signature_for_node(declaration)
 }
 
 #[salsa::tracked]
@@ -3502,6 +3953,119 @@ fn normalized_expression_node(
         node = child;
     }
     node
+}
+
+#[salsa::tracked]
+fn spawn_legality_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SpawnLegality> {
+    let target = spawn_target_tracked(db, syntax, key)?;
+    let Some(target) = target else {
+        return Ok(None);
+    };
+    let span = node_span_tracked(db, syntax, key)?
+        .ok_or_else(|| SemanticError::unavailable("spawn_legality"))?;
+    let signature = callable_signature_tracked(db, syntax, target.callee)?;
+    let Some(signature) = signature else {
+        return Ok(Some(SpawnLegality {
+            target,
+            result: None,
+            span,
+            diagnostics: Arc::from([SpawnDiagnostic {
+                kind: SpawnDiagnosticKind::TargetNotCallable,
+                span,
+                capture: None,
+            }]),
+        }));
+    };
+
+    if !signature.parameters.is_empty() {
+        return Ok(Some(SpawnLegality {
+            target,
+            result: Some(signature.result),
+            span,
+            diagnostics: Arc::from([SpawnDiagnostic {
+                kind: SpawnDiagnosticKind::TargetRequiresArguments,
+                span,
+                capture: None,
+            }]),
+        }));
+    }
+
+    let capture = spawn_stack_capture(db, syntax, target.callee, &target.captures)?;
+    let diagnostics = capture.map_or_else(
+        || Arc::from([]),
+        |capture| {
+            Arc::from([SpawnDiagnostic {
+                kind: SpawnDiagnosticKind::StackReferenceEscapesSpawn,
+                span: capture.span,
+                capture: Some(capture),
+            }])
+        },
+    );
+    Ok(Some(SpawnLegality {
+        target,
+        result: Some(signature.result),
+        span,
+        diagnostics,
+    }))
+}
+
+#[salsa::tracked]
+fn spawn_entry_validation_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SpawnEntryValidation> {
+    let Some(legality) = spawn_legality_tracked(db, syntax, key)? else {
+        return Ok(None);
+    };
+    let callable = callable_signature_tracked(db, syntax, legality.target.callee)?;
+    let is_zero_argument_entry = callable
+        .as_ref()
+        .is_some_and(|callable| callable.parameters.is_empty())
+        && legality.is_legal();
+    Ok(Some(SpawnEntryValidation {
+        spawn: key,
+        target: legality.target.callee,
+        callable,
+        is_zero_argument_entry,
+        diagnostics: legality.diagnostics,
+    }))
+}
+
+fn spawn_stack_capture(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    lambda: AstNodeKey,
+    captures: &[ClosureCapture],
+) -> Result<Option<CaptureStorage>, SemanticError> {
+    let index = syntax.syntax_index(db);
+    if index.kind(lambda.node) != Some(beskid_analysis::syntax_query::NodeKind::LambdaExpression) {
+        return Ok(None);
+    }
+    for path in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::PathExpression) {
+        if !is_ancestor(index, lambda.node, path) {
+            continue;
+        }
+        let reference = AstNodeKey {
+            node: path,
+            ..lambda
+        };
+        let Some(storage) = capture_storage_tracked(db, syntax, reference)? else {
+            continue;
+        };
+        if storage.class == CaptureStorageClass::StackReference
+            && captures
+                .iter()
+                .any(|capture| capture.declaration == storage.declaration)
+        {
+            return Ok(Some(storage));
+        }
+    }
+    Ok(None)
 }
 
 #[salsa::tracked]
@@ -3641,8 +4205,8 @@ fn dispatch_builtin_symbol_tracked(
 ) -> SemanticQueryResult<DispatchBuiltinSymbol> {
     with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-        let lowering = call_lowering_for_node(db, program, index, key, node)
-            .and_then(|result| result.ok())?;
+        let lowering =
+            call_lowering_for_node(db, program, index, key, node).and_then(|result| result.ok())?;
         if lowering != CallLowering::Dynamic {
             return None;
         }
@@ -3652,12 +4216,7 @@ fn dispatch_builtin_symbol_tracked(
         if path.node.path.node.segments.len() != 1 {
             return None;
         }
-        let name = path.node.path.node.segments[0]
-            .node
-            .name
-            .node
-            .name
-            .as_str();
+        let name = path.node.path.node.segments[0].node.name.node.name.as_str();
         let (_, spec) = beskid_analysis::builtins::builtin_for_path(&[name.to_owned()])?;
         dispatch_route_for_symbol(spec.runtime_symbol)?;
         Some(Ok(DispatchBuiltinSymbol(spec.runtime_symbol)))
@@ -4310,6 +4869,11 @@ pub fn call_arguments(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[
     with_registered_syntax(db, key, call_arguments_tracked)
 }
 
+/// Return exact current-generation bounds for the syntax-only `range(start, end)` loop form.
+pub fn range_for_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<RangeForFact> {
+    with_registered_syntax(db, key, range_for_fact_tracked)
+}
+
 /// Return the declaration identifier for the receiver of an exact `local.Method()` path.
 ///
 /// The fact exists only when the local has an explicit nominal parameter or let annotation and
@@ -4452,11 +5016,67 @@ pub fn closure_environment(
     with_registered_syntax(db, key, closure_environment_tracked)
 }
 
+/// Return a generation-bound lambda signature, body key, and deterministic capture ABI shape.
+///
+/// The shape requires a runtime pointer-map descriptor, but this fact deliberately reports that
+/// no generated lowering or closure allocation exists yet. Generic and inferred callable shapes
+/// remain unavailable rather than consulting HIR. Stale, unregistered, and non-lambda nodes
+/// contain no fact.
+pub fn closure_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ClosureSignature> {
+    with_registered_syntax(db, key, closure_signature_tracked)
+}
+
+/// Return the direct lambda call target selected by one call expression.
+///
+/// Calls through local bindings and all dynamic closure dispatch remain unavailable; this query
+/// does not infer a runtime closure object. Stale, unregistered, and non-call nodes contain no
+/// fact.
+pub fn closure_call_target(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ClosureCallTarget> {
+    with_registered_syntax(db, key, closure_call_target_tracked)
+}
+
 /// Return the exact spawn operand and any captures required when it is a lambda expression.
 ///
 /// Stale, unregistered, and non-spawn nodes contain no fact.
 pub fn spawn_target(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnTarget> {
     with_registered_syntax(db, key, spawn_target_tracked)
+}
+
+/// Return source-owned storage provenance for one exact local-path use.
+///
+/// Mutable bindings and native pointers are stack references and must not cross a spawn
+/// boundary. This is a source-provenance fact only; it does not claim rooted closure storage.
+/// Stale, unregistered, non-local, and non-path nodes contain no fact.
+pub fn capture_storage(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CaptureStorage> {
+    with_registered_syntax(db, key, capture_storage_tracked)
+}
+
+/// Return the callable signature proven by the current syntax generation.
+///
+/// Functions, methods, tests, typed lambdas, direct item paths, and direct item calls are
+/// supported. Inferred/complex callable shapes remain unavailable rather than consulting HIR.
+pub fn callable_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ItemSignature> {
+    with_registered_syntax(db, key, callable_signature_tracked)
+}
+
+/// Return authoritative spawn legality, result, and precise source diagnostics.
+///
+/// The fact never inspects HIR. A non-callable target gets `TargetNotCallable`; an entry with
+/// parameters gets `TargetRequiresArguments`; a mutable or native-pointer closure capture gets
+/// `StackReferenceEscapesSpawn`. Stale, unregistered, and non-spawn nodes contain no fact.
+pub fn spawn_legality(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnLegality> {
+    with_registered_syntax(db, key, spawn_legality_tracked)
+}
+
+/// Return source-only zero-argument spawn-entry validation for the current syntax generation.
+///
+/// This validation does not claim a generated trampoline, closure allocation, or runtime fiber
+/// object. Stale, unregistered, and non-spawn nodes contain no fact.
+pub fn spawn_entry_validation(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SpawnEntryValidation> {
+    with_registered_syntax(db, key, spawn_entry_validation_tracked)
 }
 
 /// Return the manifest-owned intrinsic index for an exact, unshadowed builtin call.
