@@ -70,6 +70,51 @@ fn x86_64_target_and_isa() -> (
     (target, isa)
 }
 
+fn lower_verified_entrypoint(
+    assembly: Arc<SyntaxProgramAssembly>,
+    target: TargetMetadata,
+    isa: &dyn cranelift_codegen::isa::TargetIsa,
+) -> beskid_codegen::PreparedSyntaxEntrypoint {
+    let lowered = with_db(|db| {
+        lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa)
+    })
+    .expect("parsed project lowers through CodegenInput and ISLE");
+    assert!(
+        lowered.symbol.starts_with("Main#syntax_"),
+        "production path must mint a syntax-mangled entry symbol, got {}",
+        lowered.symbol
+    );
+    for function in &lowered.artifact.functions {
+        verify_function(&function.function, isa.flags()).unwrap_or_else(|error| {
+            panic!("stock CLIF verifier rejected {}: {error}", function.name)
+        });
+    }
+    lowered
+}
+
+fn assert_unsupported_closed_failure(
+    assembly: Arc<SyntaxProgramAssembly>,
+    target: TargetMetadata,
+    isa: &dyn cranelift_codegen::isa::TargetIsa,
+    expected_site_fragments: &[&str],
+) {
+    let result = with_db(|db| {
+        lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa)
+    });
+    let error = match result {
+        Ok(_) => panic!("unsupported typed operation must not fall back to legacy codegen"),
+        Err(error) => error,
+    };
+    let rendered = error.to_string();
+    assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
+    for fragment in expected_site_fragments {
+        assert!(
+            rendered.contains(fragment),
+            "expected {fragment:?} in {rendered}"
+        );
+    }
+}
+
 #[test]
 fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
     let project = tempfile::tempdir().expect("project directory");
@@ -87,22 +132,12 @@ fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
 
     // The production syntax-only entrypoint accepts only parsed SyntaxProgramAssembly data: no
     // HIR or Lowerable value is constructed or supplied to the code-generation route.
-    let lowered = with_db(|db| {
-        lower_syntax_assembly_entrypoint(db, assembly, "Main", target.clone(), isa.as_ref())
-    })
-    .expect("parsed project lowers through syntax facts and generated ISLE");
-
+    let lowered = lower_verified_entrypoint(assembly, target.clone(), isa.as_ref());
     assert_eq!(
         lowered.artifact.functions.len(),
         2,
         "reachable direct-call closure"
     );
-    assert!(lowered.symbol.starts_with("Main#syntax_"));
-    for function in &lowered.artifact.functions {
-        verify_function(&function.function, isa.flags()).unwrap_or_else(|error| {
-            panic!("stock CLIF verifier rejected {}: {error}", function.name)
-        });
-    }
 
     let unsupported_source = "
         i32 Main() {
@@ -115,17 +150,12 @@ fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
         project.path(),
         &[("Unsupported.bd", "Main", unsupported_source)],
     );
-    let unsupported_result = with_db(|db| {
-        lower_syntax_assembly_entrypoint(db, unsupported, "Main", target, isa.as_ref())
-    });
-    let error = match unsupported_result {
-        Ok(_) => panic!("unsupported spawn must not fall back to legacy codegen"),
-        Err(error) => error,
-    };
-    let rendered = error.to_string();
-    assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
-    assert!(rendered.contains("Unsupported.bd"), "{rendered}");
-    assert!(rendered.contains("Block@"), "{rendered}");
+    assert_unsupported_closed_failure(
+        unsupported,
+        target,
+        isa.as_ref(),
+        &["Unsupported.bd", "Block@"],
+    );
 }
 
 #[test]
@@ -147,20 +177,212 @@ fn multi_unit_parsed_project_lowers_through_codegen_input_isle_only() {
     );
     let (target, isa) = x86_64_target_and_isa();
 
-    let lowered = with_db(|db| {
-        lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa.as_ref())
-    })
-    .expect("multi-unit parsed project lowers through CodegenInput and ISLE");
-
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
     assert!(
         lowered.artifact.functions.len() >= 2,
         "reachable closure must include Main and imported Util.Double"
     );
-    assert!(lowered.symbol.starts_with("Main#syntax_"));
-    for function in &lowered.artifact.functions {
-        verify_function(&function.function, isa.flags()).unwrap_or_else(|error| {
-            panic!("stock CLIF verifier rejected {}: {error}", function.name)
-        });
+}
+
+#[test]
+fn parsed_project_control_flow_while_break_continue_reaches_verified_clif() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        i32 Main() {
+            mut i32 i = 0;
+            mut i32 sum = 0;
+            while i < 5 {
+                i = i + 1;
+                if i == 2 { continue; }
+                if i == 4 { break; }
+                sum = sum + i;
+            }
+            return sum;
+        }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact function");
+    let clif = main.function.display().to_string();
+    assert!(clif.contains("brif"), "expected while/if branching: {clif}");
+    assert!(
+        clif.matches("jump").count() >= 2,
+        "expected loop transfer jumps: {clif}"
+    );
+}
+
+#[test]
+fn parsed_project_if_else_reaches_verified_clif() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        i32 Main() {
+            i32 value = 3;
+            if value < 2 {
+                return 1;
+            } else {
+                return 7;
+            }
+        }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact function");
+    let clif = main.function.display().to_string();
+    assert!(clif.contains("brif"), "expected if/else branching: {clif}");
+}
+
+#[test]
+fn parsed_project_range_for_fails_closed_without_hir_fallback() {
+    // Production syntax path must not resurrect HIR/Lowerable when range-for facts are incomplete.
+    // Codex owns the RangeExpression `range_for_fact` port under CYB-15.
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        i32 Main() {
+            mut i32 sum = 0;
+            for i in range(0, 4) {
+                sum = sum + i;
+            }
+            return sum;
+        }
+    ";
+    let assembly = parse_production_units(project.path(), &[("RangeFor.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+    assert_unsupported_closed_failure(
+        assembly,
+        target,
+        isa.as_ref(),
+        &["RangeFor.bd", "MissingRuleOrFact", "Block@"],
+    );
+}
+
+#[test]
+fn parsed_project_nested_direct_calls_reach_verified_clif() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        i32 Inner(i32 value) { return value + 1; }
+        i32 Mid(i32 value) { return Inner(value) + Inner(value); }
+        i32 Main() { return Mid(20); }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    assert_eq!(
+        lowered.artifact.functions.len(),
+        3,
+        "reachable closure must include Main, Mid, and Inner"
+    );
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact function");
+    let mid = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Mid#syntax_"))
+        .expect("Mid artifact function");
+    assert!(
+        main.function.display().to_string().contains("call"),
+        "Main must call Mid"
+    );
+    assert!(
+        mid.function.display().to_string().matches("call").count() >= 2,
+        "Mid must nest two Inner calls"
+    );
+}
+
+#[test]
+fn unsupported_lambda_fails_closed_without_legacy_fallback() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        i32 Main() {
+            i32 outer = 1;
+            let add = (i32 inner) => outer + inner;
+            return outer;
+        }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Lambda.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+    assert_unsupported_closed_failure(
+        assembly,
+        target,
+        isa.as_ref(),
+        &["Lambda.bd", "MissingRuleOrFact"],
+    );
+}
+
+#[test]
+fn production_path_never_constructs_hir_or_lowerable() {
+    let project = tempfile::tempdir().expect("project directory");
+    let path = project.path().join("Main.bd");
+    let source = "
+        i32 Helper(i32 value) { return value + 1; }
+        i32 Main() {
+            if Helper(1) > 0 { return Helper(2); }
+            return 0;
+        }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    // Production boundary is SyntaxProgramAssembly-only: no HirProgram / Lowerable parameter.
+    assert_eq!(
+        std::any::type_name_of_val(assembly.as_ref()),
+        "beskid_analysis::projects::assembly::SyntaxProgramAssembly"
+    );
+    let (target, isa) = x86_64_target_and_isa();
+    let lowered = lower_verified_entrypoint(Arc::clone(&assembly), target.clone(), isa.as_ref());
+    assert!(
+        lowered.artifact.functions.len() >= 2,
+        "direct-call closure through syntax ISLE"
+    );
+
+    // Same source through retired HIR/Lowerable drivers must fail closed with no artifact.
+    std::fs::write(&path, source).expect("rewrite source for retired-path probe");
+    match lower_source(&path, source, false) {
+        Ok(_) => panic!("lower_source must not construct a HIR/Lowerable artifact"),
+        Err(error) => {
+            let message = error.to_string();
+            assert!(message.contains(RETIRED_HIR_PATH_MARKER), "{message}");
+        }
+    }
+    let plan = synthetic_compile_plan_for_source(&path);
+    let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
+    let front = compile_front_end_from_resolved_input(
+        &resolved,
+        FrontEndOptions {
+            with_semantic_diagnostics: false,
+            ..Default::default()
+        },
+        None,
+    )
+    .expect("front-end for Lowerable rejection probe");
+    match lower_program(&front.hir, &front.resolution, &front.typed) {
+        Ok(_) => panic!("lower_program must not construct a Lowerable artifact"),
+        Err(errors) => {
+            let message = errors
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("; ");
+            assert!(message.contains(RETIRED_HIR_PATH_MARKER), "{message}");
+            assert!(message.contains("lower_syntax_"), "{message}");
+        }
     }
 }
 
