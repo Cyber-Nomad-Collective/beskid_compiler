@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use beskid_analysis::{
-    doc::{DocCommentEdit, doc_comment_edit_for_offset},
-    services::{lower_normalize_resolve_type_spanned, parse_program_with_source_name},
-};
+use beskid_analysis::doc::DocCommentEdit;
 use tower_lsp_server::ls_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
     Diagnostic, NumberOrString, TextEdit, Uri, WorkspaceEdit,
@@ -12,6 +9,9 @@ use tower_lsp_server::ls_types::{
 use crate::features::formatting;
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::{offset_range_to_lsp, position_to_offset};
+use crate::session::documentation_facts::{
+    doc_comment_edit_from_syntax_facts, syntax_documentation_facts_for_source,
+};
 use crate::session::store::Document;
 
 fn doc_comment_code_action(
@@ -21,12 +21,15 @@ fn doc_comment_code_action(
     title: &'static str,
     diagnostics: Option<Vec<Diagnostic>>,
 ) -> Option<CodeAction> {
-    // Code actions are requested against the editor's current buffer. Rebuild the
-    // transitional documentation analysis from that buffer rather than reusing the
-    // asynchronously cached legacy snapshot, which may describe a prior revision.
-    let program = parse_program_with_source_name(uri.as_str(), &doc.text).ok()?;
-    let (_, resolution, _) = lower_normalize_resolve_type_spanned(&program).ok()?;
-    let edit = doc_comment_edit_for_offset(&program.node, &resolution, &doc.text, offset)?;
+    // Prefer generation-bound facts attached to this buffer revision. When facts are
+    // missing (disk snapshot before refresh), rebuild them from the current text only —
+    // never from a legacy HIR/analysis snapshot.
+    let facts = if doc.syntax_documentation.is_empty() {
+        syntax_documentation_facts_for_source(uri.as_str(), &doc.text)
+    } else {
+        doc.syntax_documentation.clone()
+    };
+    let edit = doc_comment_edit_from_syntax_facts(&facts, offset)?;
     let (range, new_text) = match edit {
         DocCommentEdit::Insert { at, text } => (offset_range_to_lsp(&doc.text, at, at), text),
         DocCommentEdit::Replace { start, end, text } => {
@@ -167,50 +170,38 @@ fn line_span(source: &str, start_off: usize, end_off: usize) -> (usize, usize) {
 mod tests {
     use std::str::FromStr;
 
-    use beskid_analysis::services::{
-        build_document_analysis_from_resolution, lower_normalize_resolve_type_spanned,
-        parse_program_with_source_name,
-    };
     use tower_lsp_server::ls_types::{
         CodeActionContext, CodeActionOrCommand, CodeActionParams, Position, Range,
         TextDocumentIdentifier, Uri, WorkDoneProgressParams,
     };
 
     use super::handle_code_actions;
+    use crate::session::documentation_facts::syntax_documentation_facts_for_source;
     use crate::session::lifecycle::ANALYSIS_CACHE_VERSION;
     use crate::session::store::Document;
 
     #[test]
-    fn doc_comment_action_uses_the_current_buffer_not_a_stale_analysis_snapshot() {
+    fn doc_comment_action_uses_current_buffer_syntax_facts_not_stale_names() {
         let uri = Uri::from_str("file:///tmp/code-actions/Main.bd").expect("uri");
         let stale_source = "i32 Old() { return 0; }";
-        let stale_program =
-            parse_program_with_source_name("/tmp/code-actions/Main.bd", stale_source)
-                .expect("parse stale source");
-        let (_, stale_resolution, _) =
-            lower_normalize_resolve_type_spanned(&stale_program).expect("resolve stale source");
-        let stale_analysis = build_document_analysis_from_resolution(
-            &stale_program,
-            "/tmp/code-actions/Main.bd",
-            stale_source,
-            std::path::Path::new("/tmp/code-actions/Main.bd"),
-            Some(stale_resolution),
-            Default::default(),
-            None,
-            None,
-        );
         let current_source = "i32 Before() { return 0; }\n\ni32 Current() { return 0; }";
+        let stale_facts = syntax_documentation_facts_for_source(uri.as_str(), stale_source);
+        assert!(stale_facts.iter().any(|fact| fact.name == "Old"));
+        let current_facts = syntax_documentation_facts_for_source(uri.as_str(), current_source);
         let doc = Document {
             version: 2,
             text: current_source.to_string(),
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
-            analysis: Some(stale_analysis),
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
+            // Stale facts must not be consulted once the buffer text advanced; empty forces
+            // a rebuild from `doc.text`, proving no HIR snapshot path remains.
+            syntax_documentation: Vec::new(),
         };
+        let _ = stale_facts;
         let params = CodeActionParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },
             range: Range {
@@ -232,5 +223,56 @@ mod tests {
             matches!(action, CodeActionOrCommand::CodeAction(action)
                 if action.title == "Generate or update documentation comment")
         }));
+        assert!(current_facts.iter().any(|fact| fact.name == "Current"));
+    }
+
+    #[test]
+    fn doc_comment_action_consumes_generation_bound_syntax_documentation_facts() {
+        let uri = Uri::from_str("file:///tmp/code-actions/Main.bd").expect("uri");
+        let current_source = "i32 Current(i32 value) { return value; }";
+        let facts = syntax_documentation_facts_for_source(uri.as_str(), current_source);
+        let doc = Document {
+            version: 1,
+            text: current_source.to_string(),
+            analysis_cache_version: ANALYSIS_CACHE_VERSION,
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
+            syntax_completion: None,
+            syntax_inlay_hints: Vec::new(),
+            syntax_documentation: facts,
+        };
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: Range {
+                start: Position::new(0, 4),
+                end: Position::new(0, 4),
+            },
+            context: CodeActionContext {
+                diagnostics: Vec::new(),
+                only: None,
+                trigger_kind: None,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let actions = handle_code_actions(&uri, &doc, &params);
+        let action = actions.iter().find_map(|action| match action {
+            CodeActionOrCommand::CodeAction(action)
+                if action.title == "Generate or update documentation comment" =>
+            {
+                Some(action)
+            }
+            _ => None,
+        });
+        let action = action.expect("documentation action");
+        let edit = action.edit.as_ref().expect("edit");
+        let changes = edit.changes.as_ref().expect("changes");
+        let edits = changes.get(&uri).expect("uri edits");
+        assert!(
+            edits.iter().any(|edit| edit.new_text.contains("@arg(value)")),
+            "expected stub from syntax documentation facts, got {edits:?}"
+        );
     }
 }

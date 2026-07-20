@@ -58,7 +58,7 @@ mod tests {
     }
 
     fn corelib_mvp_document_with_entry_resolution()
-    -> (Uri, Document, CorelibMvpFixture, BeskidDatabase) {
+    -> (Uri, Document, CorelibMvpFixture, BeskidDatabase, beskid_analysis::services::DocumentAnalysisSnapshot) {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
@@ -112,25 +112,24 @@ mod tests {
                 version: 1,
                 text: fixture.source.clone(),
                 analysis_cache_version: ANALYSIS_CACHE_VERSION,
-                analysis: Some(analysis),
                 syntax_definitions: Vec::new(),
                 syntax_hovers: Vec::new(),
                 syntax_symbols: Vec::new(),
                 syntax_completion: None,
                 syntax_inlay_hints: Vec::new(),
+                syntax_documentation: Vec::new(),
             };
-            (fixture.uri.clone(), doc, fixture, db)
+            (fixture.uri.clone(), doc, fixture, db, analysis)
         })
     }
 
     #[test]
     fn completion_after_output_dot_lists_writeline() {
-        let (_uri, doc, fixture, _db) = corelib_mvp_document_with_entry_resolution();
-        let analysis = doc.analysis.as_ref().expect("analysis");
+        let (_uri, _doc, fixture, _db, analysis) = corelib_mvp_document_with_entry_resolution();
         let offset =
             fixture.source.find("    Output.").expect("main Output.") + "    Output.".len();
         let candidates =
-            beskid_analysis::services::completion_candidates(analysis, &fixture.source, offset);
+            beskid_analysis::services::completion_candidates(&analysis, &fixture.source, offset);
         assert!(
             candidates
                 .iter()
@@ -142,7 +141,7 @@ mod tests {
 
     #[test]
     fn definition_on_printline_targets_dependency_file() {
-        let (uri, doc, fixture, _db) = corelib_mvp_document_with_entry_resolution();
+        let (uri, doc, fixture, _db, analysis) = corelib_mvp_document_with_entry_resolution();
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let response = definition::handler::handle_definition(&uri, &doc, offset);
         if let Some(GotoDefinitionResponse::Scalar(location)) = response {
@@ -152,7 +151,6 @@ mod tests {
                 "expected Output/System path in definition uri {target}"
             );
         } else {
-            let analysis = doc.analysis.as_ref().expect("analysis");
             let resolution = analysis.resolution.as_ref().expect("resolution");
             assert!(
                 resolution.items.iter().any(|item| item.name == "WriteLine"),
@@ -169,7 +167,6 @@ mod tests {
             version: 1,
             text: "i32 Main() { return helper(); }\ni32 helper() { return 0; }".to_string(),
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
-            analysis: None,
             syntax_definitions: vec![SyntaxDefinition {
                 reference_start: 20,
                 reference_end: 26,
@@ -181,6 +178,7 @@ mod tests {
             syntax_symbols: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
         };
         let response =
             definition::handler::handle_definition(&uri, &doc, 22).expect("syntax fact definition");
@@ -199,7 +197,6 @@ mod tests {
             version: 1,
             text: "i32 helper() { return 0; }".to_string(),
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
-            analysis: None,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: vec![SyntaxSymbol {
@@ -210,6 +207,7 @@ mod tests {
             }],
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
         };
 
         let response = definition::handler::handle_definition(&uri, &doc, 6)
@@ -231,7 +229,6 @@ mod tests {
             version: 1,
             text: "i32 helper() { return helper(); }".to_string(),
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
-            analysis: None,
             syntax_definitions: vec![SyntaxDefinition {
                 reference_start: 22,
                 reference_end: 28,
@@ -243,6 +240,7 @@ mod tests {
             syntax_symbols: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
         };
         let locations = references::handler::handle_references(&uri, &doc, 24, true, None);
         assert_eq!(locations.len(), 2);
@@ -256,7 +254,6 @@ mod tests {
             version: 1,
             text: source.clone(),
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
-            analysis: None,
             syntax_definitions: Vec::new(),
             syntax_hovers: vec![SyntaxHover {
                 reference_start: 20,
@@ -269,6 +266,7 @@ mod tests {
             syntax_symbols: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
         };
         let documentation =
             crate::commands::symbol_documentation::documentation_uri_for_document(&doc, 22)
@@ -291,21 +289,12 @@ mod tests {
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
-        let analysis = doc
-            .analysis
-            .expect("analysis from lifecycle build_document");
-        let resolution = analysis
-            .resolution
-            .as_ref()
-            .expect("project-aware resolution");
         assert!(
-            resolution.items.iter().any(|item| item.name == "WriteLine"),
-            "expected WriteLine in resolution: {:?}",
-            resolution
-                .items
-                .iter()
-                .map(|item| &item.name)
-                .collect::<Vec<_>>()
+            doc.syntax_hovers.iter().any(|hover| hover.markdown.contains("WriteLine"))
+                || doc.syntax_definitions.iter().any(|definition| {
+                    definition.declaration_path.to_string_lossy().contains("Output")
+                }),
+            "lifecycle build_document should attach syntax facts for WriteLine"
         );
     }
 
@@ -319,12 +308,9 @@ mod tests {
         let state = tokio::sync::RwLock::new(State::default());
         state.read().await.mark_initial_scan_complete();
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
-        let analysis = doc
-            .analysis
-            .expect("analysis from lifecycle build_document");
         assert!(
-            !analysis.program.node.items.is_empty(),
-            "lifecycle build_document should attach a parsed program snapshot"
+            !doc.syntax_documentation.is_empty() || !doc.syntax_symbols.is_empty(),
+            "lifecycle build_document should attach syntax documentation/symbols for the buffer"
         );
     }
 
@@ -361,7 +347,7 @@ mod tests {
 
     #[test]
     fn references_on_printline_includes_dependency() {
-        let (uri, doc, fixture, _db) = corelib_mvp_document_with_entry_resolution();
+        let (uri, doc, fixture, _db, analysis) = corelib_mvp_document_with_entry_resolution();
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let locations = references::handler::handle_references(
             &uri,
@@ -371,7 +357,6 @@ mod tests {
             Some(fixture.main_path.as_path()),
         );
         if locations.is_empty() {
-            let analysis = doc.analysis.as_ref().expect("analysis");
             let resolution = analysis.resolution.as_ref().expect("resolution");
             assert!(
                 resolution.items.iter().any(|item| item.name == "WriteLine"),
@@ -400,7 +385,7 @@ mod tests {
         let uri = fixture.uri.clone();
         let state = tokio::sync::RwLock::new(State::default());
         state.read().await.mark_initial_scan_complete();
-        let mut doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
+        let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let syntax_hover = doc
@@ -410,7 +395,6 @@ mod tests {
             .expect("syntax hover fact")
             .clone();
         // The hover handler must rely only on generation-safe syntax facts.
-        doc.analysis = None;
         let hover = hover::handler::handle_hover(&uri, &doc, offset).expect("hover");
         let Hover { range, .. } = hover;
         let range = range.expect("hover range");

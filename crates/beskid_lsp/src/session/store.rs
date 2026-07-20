@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use beskid_analysis::CompilationContext;
-use beskid_analysis::services::DocumentAnalysisSnapshot;
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, configure_compilation_database_for_project,
     reset_compilation_database,
@@ -13,14 +12,14 @@ use tokio::sync::{Mutex as AsyncMutex, Notify};
 use tower_lsp_server::ls_types::Uri;
 
 use super::db_access;
+use super::documentation_facts::SyntaxDocumentationFact;
 
-/// One editor buffer or disk snapshot with optional precomputed analysis.
+/// One editor buffer or disk snapshot with generation-bound syntax facts.
 #[derive(Debug, Clone)]
 pub struct Document {
     pub version: i32,
     pub text: String,
     pub analysis_cache_version: u32,
-    pub analysis: Option<DocumentAnalysisSnapshot>,
     /// Generation-safe syntax/Salsa definition facts for this exact buffer revision.
     ///
     /// Definition handling consumes this index instead of reaching back into the legacy
@@ -33,6 +32,8 @@ pub struct Document {
     pub syntax_completion: Option<SyntaxCompletion>,
     /// Generation-safe type facts for source nodes in this exact buffer revision.
     pub syntax_inlay_hints: Vec<SyntaxInlayHint>,
+    /// Generation-bound declaration/documentation shape for this exact buffer revision.
+    pub syntax_documentation: Vec<SyntaxDocumentationFact>,
 }
 
 /// One resolved syntax reference and its declaration location.

@@ -25,7 +25,6 @@ mod tests {
             version: 1,
             text: "fn main() {}".into(),
             analysis_cache_version: 0,
-            analysis: None,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: vec![SyntaxSymbol {
@@ -36,6 +35,7 @@ mod tests {
             }],
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
         };
 
         let tokens = match handle_semantic_tokens(&doc) {

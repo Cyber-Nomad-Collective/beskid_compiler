@@ -78,6 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helpers.
 - Derive contextual primitive cast intents from direct and canonical ABI-v5 intrinsic call
   parameters so runtime `word` offsets are typed before ISLE emission.
+- Drop LSP `Document.analysis` / `DocumentAnalysisSnapshot` ownership from document lifecycle;
+  documentation actions and refresh now use only generation-bound syntax documentation facts.
 
 ### Added
 - Cover multi-function syntax assembly failures at the module boundary, including deterministic
@@ -116,6 +118,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI tests run, while leaving missing/tampered kits fail-closed for all other consumers.
 - Cover missing-manifest, wrong-target, hash-mismatch, and empty-prefix Engine fail-closed paths for
   the exact installed ABI-v5 kit route.
+- Bind LSP documentation actions to generation-safe syntax documentation facts (declaration
+  span/kind, parameter/generic/return shape, leading doc span/text) derived from the current
+  buffer's expanded AST, with stale-buffer and refresh regressions.
 
 ### Changed
 - Reject HIR/`Lowerable` codegen drivers (`lower_source*`, `lower_from_front_end`,
@@ -188,6 +193,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helpers.
 - Derive contextual primitive cast intents from direct and canonical ABI-v5 intrinsic call
   parameters so runtime `word` offsets are typed before ISLE emission.
+- Drop LSP `Document.analysis` / `DocumentAnalysisSnapshot` ownership from document lifecycle;
+  documentation actions and refresh now use only generation-bound syntax documentation facts.
 
 ### Fixed
 - Preserve each generated-ISLE verification failure's originating expanded-syntax key and render

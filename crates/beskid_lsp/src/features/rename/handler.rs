@@ -180,8 +180,7 @@ target "App" {
         let state = tokio::sync::RwLock::new(crate::session::store::State::default());
         state.read().await.mark_initial_scan_complete();
         let (_root, uri) = project_fixture();
-        let mut doc = build_document(&state, &uri, 1, source().to_string()).await;
-        doc.analysis = None;
+        let doc = build_document(&state, &uri, 1, source().to_string()).await;
         let offset = source().find("lhs +").expect("lhs");
         let response = handle_prepare_rename(&uri, &doc, offset).expect("prepare rename");
         let PrepareRenameResponse::Range(range) = response else {
@@ -195,8 +194,7 @@ target "App" {
         let state = tokio::sync::RwLock::new(crate::session::store::State::default());
         state.read().await.mark_initial_scan_complete();
         let (_root, uri) = project_fixture();
-        let mut doc = build_document(&state, &uri, 1, source().to_string()).await;
-        doc.analysis = None;
+        let doc = build_document(&state, &uri, 1, source().to_string()).await;
         let position = Position::new(1, 11);
         let edit = handle_rename(&uri, &doc, position, "left").expect("workspace edit");
         let changes = edit.changes.expect("changes map");
