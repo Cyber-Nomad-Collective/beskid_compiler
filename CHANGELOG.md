@@ -68,6 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Migrate the AOT mod-artifact object-compilation fixture from the retired HIR/`Lowerable`
+  driver to the authoritative prepared syntax → `CodegenInput` → ISLE boundary (CYB-107).
 - Migrate `beskid_engine` integration tests off retired HIR `lower_source` / `lower_program` drivers
   onto the sole CodegenInput → ISLE + exact ABI-v5 kit route; REPL snippet prepare uses the same
   shared front-end helper.

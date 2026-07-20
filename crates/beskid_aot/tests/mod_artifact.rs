@@ -3,9 +3,14 @@ use std::fs;
 use beskid_aot::object_module::BeskidObjectModule;
 use beskid_aot::{
     ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, build_mod_artifact,
-    compute_mod_artifact_key,
+    compute_mod_artifact_key, lower_prepared_syntax_entrypoint,
+};
+use beskid_abi::abi_v5::TargetMetadata;
+use beskid_analysis::services::{
+    FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
 use beskid_codegen::CodegenArtifact;
+use beskid_queries::compile_front_end_from_resolved_input;
 
 fn host_target_triple() -> &'static str {
     if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
@@ -105,7 +110,7 @@ project {
 }
 
 #[test]
-fn lowered_program_validates_and_compiles_to_object() {
+fn prepared_syntax_program_validates_and_compiles_to_object() {
     let temp = tempfile::tempdir().expect("tempdir");
     let source_path = temp.path().join("main.bd");
     let source = r#"
@@ -119,11 +124,28 @@ i32 Main() {
 "#;
     fs::write(&source_path, source).expect("write source");
 
-    let lowered = beskid_codegen::lower_source(&source_path, source, false).expect("lower fixture");
-    beskid_codegen::validate_artifact(&lowered.artifact).expect("validate link plan");
+    let plan = synthetic_compile_plan_for_source(&source_path);
+    let resolved: ResolvedInput =
+        resolved_input_from_plan(source_path, source.to_owned(), plan, None, None);
+    let front = compile_front_end_from_resolved_input(
+        &resolved,
+        FrontEndOptions {
+            with_semantic_diagnostics: true,
+            ..Default::default()
+        },
+        None,
+    )
+    .expect("prepare syntax frontend");
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == host_target_triple())
+        .expect("host ABI target");
+    let artifact = lower_prepared_syntax_entrypoint(&front, "Main", target)
+        .expect("lower prepared syntax fixture");
+    beskid_codegen::validate_artifact(&artifact).expect("validate link plan");
 
     let mut object = BeskidObjectModule::new(None).expect("object module");
     object
-        .compile_artifact(&lowered.artifact, None)
+        .compile_artifact(&artifact, None)
         .expect("compile artifact");
 }
