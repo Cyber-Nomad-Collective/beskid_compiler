@@ -267,3 +267,37 @@ fn engine_uses_only_the_configured_exact_runtime_kit() {
         .expect_err("Engine must not register the legacy Rust runtime");
     assert!(error.to_string().contains("not approved"));
 }
+
+#[test]
+fn engine_try_new_fails_closed_when_exact_debug_manifest_is_missing() {
+    let Some(target) = host_target() else {
+        return;
+    };
+    let empty = TestDir::new();
+    let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
+    // SAFETY: this integration target serializes around the process environment and restores it.
+    unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", empty.path()) };
+    let error = match Engine::try_new() {
+        Ok(_) => panic!("missing exact kit must fail closed"),
+        Err(error) => error,
+    };
+    unsafe {
+        if let Some(value) = previous {
+            std::env::set_var("BESKID_RUNTIME_PREFIX", value);
+        } else {
+            std::env::remove_var("BESKID_RUNTIME_PREFIX");
+        }
+    };
+    let message = error.to_string();
+    let expected = empty
+        .path()
+        .join("lib/beskid-runtime/abi-5")
+        .join(target.triple.as_str())
+        .join("debug")
+        .join("abi.json");
+    assert!(
+        message.contains(&expected.display().to_string()) || message.contains("MetadataRead"),
+        "expected missing-manifest fail-closed diagnostic mentioning {}, got {message}",
+        expected.display()
+    );
+}

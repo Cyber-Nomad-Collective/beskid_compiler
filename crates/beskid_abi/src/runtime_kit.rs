@@ -15,7 +15,146 @@ use crate::abi_v5::{
 
 pub const RUNTIME_KIT_SCHEMA_VERSION: u32 = 1;
 
+/// Process environment override for the exact installed toolchain prefix.
+///
+/// When unset, consumers derive the prefix from the current executable
+/// (`<prefix>/bin/<tool>` → `<prefix>`). There is no search-path or nearest-kit fallback.
+pub const ENV_RUNTIME_PREFIX: &str = "BESKID_RUNTIME_PREFIX";
+
 const INSTALLED_RUNTIME_ROOT: &str = "lib/beskid-runtime/abi-5";
+
+/// Relative installed root shared by every ABI-v5 consumer (`lib/beskid-runtime/abi-5`).
+pub fn installed_runtime_root() -> &'static str {
+    INSTALLED_RUNTIME_ROOT
+}
+
+/// Exact profile directory name under the target kit root.
+pub fn profile_directory_name(profile: BuildProfile) -> &'static str {
+    profile_directory(profile)
+}
+
+/// Path to `abi.json` for one exact prefix/target/profile coordinate.
+pub fn exact_kit_metadata_path(
+    prefix: &Path,
+    target: &TargetMetadata,
+    profile: BuildProfile,
+) -> PathBuf {
+    prefix
+        .join(INSTALLED_RUNTIME_ROOT)
+        .join(target.triple.as_str())
+        .join(profile_directory(profile))
+        .join("abi.json")
+}
+
+#[derive(Debug)]
+pub enum InstalledRuntimePrefixError {
+    CurrentExe(std::io::Error),
+    MissingParent { executable: PathBuf },
+    MissingInstallPrefix { executable: PathBuf },
+}
+
+impl std::fmt::Display for InstalledRuntimePrefixError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CurrentExe(error) => {
+                write!(
+                    formatter,
+                    "cannot locate current executable for ABI-v5 runtime prefix: {error}"
+                )
+            }
+            Self::MissingParent { executable } => {
+                write!(
+                    formatter,
+                    "current executable has no parent: `{}`",
+                    executable.display()
+                )
+            }
+            Self::MissingInstallPrefix { executable } => {
+                write!(
+                    formatter,
+                    "current executable has no install prefix: `{}`",
+                    executable.display()
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for InstalledRuntimePrefixError {}
+
+/// Resolve the exact installed prefix: `BESKID_RUNTIME_PREFIX`, else parent of the executable's directory.
+pub fn installed_runtime_prefix() -> Result<PathBuf, InstalledRuntimePrefixError> {
+    if let Some(prefix) = std::env::var_os(ENV_RUNTIME_PREFIX) {
+        return Ok(PathBuf::from(prefix));
+    }
+    let executable =
+        std::env::current_exe().map_err(InstalledRuntimePrefixError::CurrentExe)?;
+    installed_runtime_prefix_for_executable(&executable)
+}
+
+/// Derive the install prefix for a known executable path (`<prefix>/bin/<tool>`).
+pub fn installed_runtime_prefix_for_executable(
+    executable: &Path,
+) -> Result<PathBuf, InstalledRuntimePrefixError> {
+    let bin = executable.parent().ok_or_else(|| {
+        InstalledRuntimePrefixError::MissingParent {
+            executable: executable.to_path_buf(),
+        }
+    })?;
+    bin.parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| InstalledRuntimePrefixError::MissingInstallPrefix {
+            executable: executable.to_path_buf(),
+        })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostRuntimeTargetError {
+    UnsupportedHost { arch: String, os: String },
+    UnsupportedTarget { triple: String },
+}
+
+impl std::fmt::Display for HostRuntimeTargetError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedHost { arch, os } => {
+                write!(
+                    formatter,
+                    "unsupported ABI-v5 runtime host `{arch}-{os}`"
+                )
+            }
+            Self::UnsupportedTarget { triple } => {
+                write!(formatter, "unsupported ABI-v5 runtime target `{triple}`")
+            }
+        }
+    }
+}
+
+impl std::error::Error for HostRuntimeTargetError {}
+
+/// Triple string for the native ABI-v5 host, when the OS/arch pair is supported.
+pub fn host_runtime_triple() -> Result<&'static str, HostRuntimeTargetError> {
+    match (std::env::consts::ARCH, std::env::consts::OS) {
+        ("x86_64", "linux") => Ok("x86_64-unknown-linux-gnu"),
+        ("aarch64", "macos") => Ok("aarch64-apple-darwin"),
+        ("x86_64", "windows") => Ok("x86_64-pc-windows-msvc"),
+        (arch, os) => Err(HostRuntimeTargetError::UnsupportedHost {
+            arch: arch.into(),
+            os: os.into(),
+        }),
+    }
+}
+
+/// Canonical [`TargetMetadata`] for the native ABI-v5 host.
+pub fn host_runtime_target() -> Result<TargetMetadata, HostRuntimeTargetError> {
+    let triple = host_runtime_triple()?;
+    TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == triple)
+        .ok_or_else(|| HostRuntimeTargetError::UnsupportedTarget {
+            triple: triple.into(),
+        })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

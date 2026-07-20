@@ -6,7 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use beskid_abi::abi_v5::{ABI_V5, AbiManifestV5, RuntimeAuditMetadata, TargetMetadata};
 use beskid_abi::runtime_kit::{
     BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata, RuntimeKitResolutionError,
-    resolve_installed_runtime_kit,
+    exact_kit_metadata_path, host_runtime_triple, installed_runtime_prefix_for_executable,
+    installed_runtime_root, profile_directory_name, resolve_installed_runtime_kit,
 };
 use sha2::{Digest, Sha256};
 
@@ -237,4 +238,51 @@ fn rejects_mixed_or_hash_tampered_artifacts_instead_of_accepting_a_nearby_kit() 
         Err(RuntimeKitResolutionError::ArtifactHashMismatch { path, .. })
             if path == root.join("static/libbeskid_runtime.a")
     ));
+}
+
+#[test]
+fn missing_manifest_reports_the_exact_coordinate_path_and_does_not_search() {
+    let prefix = TempPrefix::new();
+    let target = linux_target();
+    let expected = exact_kit_metadata_path(&prefix.0, &target, BuildProfile::Debug);
+    assert_eq!(
+        expected,
+        prefix
+            .0
+            .join(installed_runtime_root())
+            .join(target.triple.as_str())
+            .join(profile_directory_name(BuildProfile::Debug))
+            .join("abi.json")
+    );
+    assert!(matches!(
+        resolve_installed_runtime_kit(&prefix.0, &target, BuildProfile::Debug),
+        Err(RuntimeKitResolutionError::MetadataRead { path, .. }) if path == expected
+    ));
+}
+
+#[test]
+fn wrong_target_metadata_fails_closed_without_selecting_another_installed_kit() {
+    let prefix = TempPrefix::new();
+    let _ = install_linux_kit(&prefix.0, BuildProfile::Debug);
+    let darwin = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "aarch64-apple-darwin")
+        .unwrap();
+    assert!(matches!(
+        resolve_installed_runtime_kit(&prefix.0, &darwin, BuildProfile::Debug),
+        Err(RuntimeKitResolutionError::MetadataRead { path, .. })
+            if path == exact_kit_metadata_path(&prefix.0, &darwin, BuildProfile::Debug)
+    ));
+}
+
+#[test]
+fn install_prefix_derives_from_bin_layout_only() {
+    let executable = PathBuf::from("/opt/beskid/bin/beskid_cli");
+    let prefix = installed_runtime_prefix_for_executable(&executable).unwrap();
+    assert_eq!(prefix, PathBuf::from("/opt/beskid"));
+    assert!(host_runtime_triple().is_ok() || cfg!(not(any(
+        all(target_os = "linux", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64"),
+    ))));
 }
