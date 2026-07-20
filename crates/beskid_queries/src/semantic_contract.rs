@@ -3977,10 +3977,10 @@ fn callable_signature_for_node(
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
         return callable_signature_for_path(db, program, index, key, &path.path.node);
     }
-    if let Some(call) = node.of::<beskid_analysis::syntax::CallExpression>() {
-        if let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node {
-            return callable_signature_for_path(db, program, index, key, &path.node.path.node);
-        }
+    if let Some(call) = node.of::<beskid_analysis::syntax::CallExpression>()
+        && let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node
+    {
+        return callable_signature_for_path(db, program, index, key, &path.node.path.node);
     }
     None
 }
