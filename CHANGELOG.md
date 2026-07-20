@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Extend generation-safe `ClosureCapture` facts with capture mode (`CaptureStorageClass`) and
+  first use-site span so `closure_environment` / spawn capture sets cover nested closures and
+  shadowing without legacy analysis snapshots (CYB-96 / CYB-16).
+
 ### Added
 
 - Cover multi-function syntax assembly failures at the module boundary, including deterministic

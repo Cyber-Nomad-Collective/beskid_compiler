@@ -2957,6 +2957,13 @@ fn closure_environment_reports_only_outer_lexical_captures() {
         NodeKind::Identifier,
         copied_offset,
     );
+    let copied_use = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.find("copied +").expect("copied capture use"),
+    );
     let inner_offset = source.find("inner) =>").expect("lambda parameter");
     let inner = key_at_start(unit, generation, &index, NodeKind::Identifier, inner_offset);
 
@@ -2971,6 +2978,10 @@ fn closure_environment_reports_only_outer_lexical_captures() {
             slot: local_slot(&db, copied)
                 .expect("outer local slot")
                 .expect("outer local slot fact"),
+            class: CaptureStorageClass::TransferableValue,
+            span: node_span(&db, copied_use)
+                .expect("copied use span")
+                .expect("copied use span fact"),
         }]
     );
 }
@@ -3007,6 +3018,20 @@ fn closure_contract_is_generation_bound_and_requires_a_pointer_map_without_claim
         source.find("message)").expect("message parameter"),
     );
     let sum_body = key(unit, generation, &index, NodeKind::BinaryExpression, 0);
+    let first_use = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.find("=> first +").expect("first capture use") + "=> ".len(),
+    );
+    let second_use = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.find("first + second").expect("second capture use") + "first + ".len(),
+    );
     let message_reference = key_at_start(
         unit,
         generation,
@@ -3037,6 +3062,10 @@ fn closure_contract_is_generation_bound_and_requires_a_pointer_map_without_claim
                     slot: local_slot(&db, first)
                         .expect("first slot")
                         .expect("first slot fact"),
+                    class: CaptureStorageClass::TransferableValue,
+                    span: node_span(&db, first_use)
+                        .expect("first use span")
+                        .expect("first use span fact"),
                 },
                 abi_type: SemanticTypeId::I32,
             },
@@ -3046,6 +3075,10 @@ fn closure_contract_is_generation_bound_and_requires_a_pointer_map_without_claim
                     slot: local_slot(&db, second)
                         .expect("second slot")
                         .expect("second slot fact"),
+                    class: CaptureStorageClass::TransferableValue,
+                    span: node_span(&db, second_use)
+                        .expect("second use span")
+                        .expect("second use span fact"),
                 },
                 abi_type: SemanticTypeId::I32,
             },
@@ -3073,6 +3106,10 @@ fn closure_contract_is_generation_bound_and_requires_a_pointer_map_without_claim
                 slot: local_slot(&db, message)
                     .expect("message slot")
                     .expect("message slot fact"),
+                class: CaptureStorageClass::TransferableValue,
+                span: node_span(&db, message_reference)
+                    .expect("message use span")
+                    .expect("message use span fact"),
             },
             abi_type: SemanticTypeId::STRING,
         }]
@@ -3139,6 +3176,13 @@ fn spawn_target_preserves_lambda_operand_and_capture_environment() {
     let lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
     let outer_offset = source.find("outer)").expect("parameter declaration");
     let outer = key_at_start(unit, generation, &index, NodeKind::Identifier, outer_offset);
+    let outer_use = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.find("=> outer +").expect("outer capture use") + "=> ".len(),
+    );
 
     let spawn = spawn_target(&db, spawn)
         .expect("spawn target")
@@ -3151,6 +3195,10 @@ fn spawn_target_preserves_lambda_operand_and_capture_environment() {
             slot: local_slot(&db, outer)
                 .expect("parameter slot")
                 .expect("parameter slot fact"),
+            class: CaptureStorageClass::TransferableValue,
+            span: node_span(&db, outer_use)
+                .expect("outer use span")
+                .expect("outer use span fact"),
         }]
     );
 }
@@ -3218,6 +3266,59 @@ fn capture_storage_tracks_nested_shadowed_reference_with_its_exact_span() {
         node_span(&db, captured_reference)
             .expect("reference span")
             .expect("reference span fact")
+    );
+}
+
+#[test]
+fn closure_environment_reports_nested_shadowed_captures_with_modes_and_spans() {
+    let source = r#"i32 Main(i32 outer) {
+    let make = (i32 outer) => (i32 inner) => outer;
+    return outer;
+}"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let outer_lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
+    let inner_lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 1);
+    let shadowing_parameter = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        source.find("outer) =>").expect("shadowing parameter"),
+    );
+    let captured_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source
+            .find("=> outer;")
+            .map(|offset| offset + "=> ".len())
+            .expect("nested capture reference"),
+    );
+
+    let outer_environment = closure_environment(&db, outer_lambda)
+        .expect("outer closure environment")
+        .expect("outer lambda fact");
+    assert!(
+        outer_environment.captures.is_empty(),
+        "outer lambda binds shadowing outer and must not capture Main's parameter"
+    );
+
+    let inner_environment = closure_environment(&db, inner_lambda)
+        .expect("inner closure environment")
+        .expect("inner lambda fact");
+    assert_eq!(
+        inner_environment.captures.as_ref(),
+        &[ClosureCapture {
+            declaration: shadowing_parameter,
+            slot: local_slot(&db, shadowing_parameter)
+                .expect("shadowing slot")
+                .expect("shadowing slot fact"),
+            class: CaptureStorageClass::TransferableValue,
+            span: node_span(&db, captured_reference)
+                .expect("reference span")
+                .expect("reference span fact"),
+        }]
     );
 }
 
