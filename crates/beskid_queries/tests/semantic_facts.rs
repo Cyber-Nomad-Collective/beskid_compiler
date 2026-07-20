@@ -17,7 +17,8 @@ use beskid_queries::{
     AggregateFieldShape, AstNodeKey, BeskidDatabase, CaptureStorageClass, ClosureAllocationStatus,
     ClosureCallTarget, ClosureCapture, ClosureEnvironmentField, ClosureLoweringStatus,
     ClosurePointerMapRequirement, CompletionContext, EnumLayoutFact, EnumMatchArmFact,
-    EnumMatchFact, EnumVariantLayoutFact, ItemSignature, LocalSlot, OperatorFact, ProjectSession,
+    EnumMatchFact, EnumVariantLayoutFact, ItemSignature, LocalSlot, MutableLocalAssignment,
+    OperatorFact, ProjectSession,
     SemanticError, SemanticTypeId, SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation,
     SyntaxGenerationId, abi_type, aggregate_layout, build_canonical_corelib_syscall_typed_program,
     build_typed_program, build_typed_program_with_corelib_syscall_services, call_abi_signature,
@@ -25,7 +26,7 @@ use beskid_queries::{
     closure_call_target, closure_environment, closure_signature, completion_candidates,
     control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
     generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
-    item_signature, literal_fact, local_slot, node_kind, node_span, node_type,
+    item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
     nominal_member_receiver, operator_fact, reachable_items, resolved_item, resolved_local,
     runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
@@ -4076,6 +4077,50 @@ fn stale_generation_cannot_reuse_a_local_slot_identity() {
     .expect("syntax update");
     assert_eq!(resolved_local(&db, reference).expect("stale local"), None);
     assert_eq!(local_slot(&db, declaration).expect("stale slot"), None);
+}
+
+#[test]
+fn mutable_local_assignment_requires_a_current_mutable_lexical_declaration() {
+    let source = "i32 Main() { mut i32 total = 0; total = total + 1; return total; }";
+    let (mut db, project, unit, generation, index) = setup(source);
+    let assignment = key(unit, generation, &index, NodeKind::AssignExpression, 0);
+    let declaration = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        source.find("total").expect("mutable declaration"),
+    );
+    assert_eq!(
+        mutable_local_assignment(&db, assignment).expect("mutable assignment fact"),
+        Some(MutableLocalAssignment {
+            declaration,
+            slot: local_slot(&db, declaration)
+                .expect("mutable declaration slot")
+                .expect("mutable declaration slot fact"),
+        })
+    );
+
+    db.update_syntax_source(
+        project,
+        unit,
+        SyntaxGenerationId(generation.0 + 1),
+        "i32 Main() { i32 total = 0; total = total + 1; return total; }".to_string(),
+    )
+    .expect("syntax update");
+    assert_eq!(
+        mutable_local_assignment(&db, assignment).expect("stale assignment fact"),
+        None,
+        "a stale assignment key cannot retain write authority"
+    );
+}
+
+#[test]
+fn immutable_local_assignment_is_an_explicit_unavailable_syntax_fact() {
+    let source = "i32 Main() { i32 total = 0; total = total + 1; return total; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let assignment = key(unit, generation, &index, NodeKind::AssignExpression, 0);
+    assert_unavailable(mutable_local_assignment(&db, assignment));
 }
 
 #[test]

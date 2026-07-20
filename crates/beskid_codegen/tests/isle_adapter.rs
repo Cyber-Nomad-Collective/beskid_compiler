@@ -27,7 +27,7 @@ use beskid_queries::{
     build_canonical_runtime_typed_program, build_typed_program,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
     closure_environment, enum_match, format_ast_node_site, item_body, item_name, literal_fact,
-    node_kind, node_type, spawn_target, test_statement_nodes,
+    mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes,
 };
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::isa;
@@ -751,6 +751,33 @@ fn parsed_parameter_read_materializes_the_generation_safe_local_slot() {
     let clif = function.display().to_string();
     assert!(clif.contains("function u0:0(i32) -> i32"), "{clif}");
     assert!(clif.contains("return v0"), "{clif}");
+}
+
+#[test]
+fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
+    let (input, _isa, root) = item_fixture_with_root(
+        "i32 Main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }",
+    );
+    let db = input.database();
+    let assignment = find_node(db, root, beskid_queries::IndexedNodeKind::AssignExpression)
+        .expect("parsed accumulator assignment");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+
+    let target = facts.child(assignment, 0).expect("assignment target fact");
+    let declaration = beskid_queries::resolved_local(db, target)
+        .expect("assignment target resolution")
+        .expect("assignment target local")
+        .declaration;
+    assert_eq!(
+        mutable_local_assignment(db, assignment).expect("mutable assignment query"),
+        Some(beskid_queries::MutableLocalAssignment {
+            declaration,
+            slot: beskid_queries::local_slot(db, declaration)
+                .expect("assignment target slot")
+                .expect("assignment target slot fact"),
+        })
+    );
+    assert_eq!(facts.mutable_local_assignment_slot(assignment), Some(0));
 }
 
 #[test]

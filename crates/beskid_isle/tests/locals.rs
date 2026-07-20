@@ -81,6 +81,10 @@ impl NodeFacts for LocalFacts {
     fn local_slot(&self, key: AstNodeKey) -> Option<u32> {
         (key == self.nodes[1] || key == self.nodes[5] || key == self.nodes[8]).then_some(0)
     }
+
+    fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<u32> {
+        (key == self.nodes[4]).then_some(0)
+    }
 }
 
 #[test]

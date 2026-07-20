@@ -68,6 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Lower parsed `range(...)` accumulator loops through generation-bound range and mutable-local
+  assignment facts, rejecting immutable or stale write authority without an HIR/`Lowerable`
+  fallback (CYB-80).
 - Fail close canonical closure-environment descriptor registration before allocation or rooting:
   reject null requests/descriptors, non-power-of-two alignment, unaligned/out-of-bounds pointer
   offsets, and arithmetic overflow; execute valid rooting plus invalid-descriptor regressions on
