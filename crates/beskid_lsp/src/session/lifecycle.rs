@@ -18,21 +18,23 @@ use beskid_queries::{
     resolved_local, typed_entry_state_with_db,
 };
 
+use crate::diagnostics::lsp_diagnostics_from_syntax;
 use crate::manifest_uri::is_manifest_uri;
+use crate::session::diagnostics_bridge::collect_syntax_diagnostics_for_state;
 use crate::session::documentation_facts::{
     SyntaxDocumentationFact, syntax_documentation_facts_for_source,
 };
 use crate::session::db_access::with_compilation_db_mut_state;
-use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::project_context::cached_compilation_context;
 use crate::session::startup::wait_for_initial_scan;
 use crate::session::store::{
-    Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxInlayHint, SyntaxSymbol,
+    Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxDiagnostic, SyntaxHover,
+    SyntaxInlayHint, SyntaxSymbol,
 };
 use crate::workspace_scan::uri_to_path;
 
 /// Syntax-fact cache shape; bump when document fact fields change.
-pub const ANALYSIS_CACHE_VERSION: u32 = 6;
+pub const ANALYSIS_CACHE_VERSION: u32 = 7;
 
 /// Debounce window for typed executable prepare (coalesced with diagnostic publish).
 const TYPED_PREPARE_DEBOUNCE_MS: u64 = 120;
@@ -49,6 +51,7 @@ struct SyntaxFacts {
     completion: Option<SyntaxCompletion>,
     inlay_hints: Vec<SyntaxInlayHint>,
     documentation: Vec<SyntaxDocumentationFact>,
+    diagnostics: Vec<SyntaxDiagnostic>,
 }
 
 fn salsa_revision(text: &str) -> u64 {
@@ -231,6 +234,7 @@ fn syntax_facts_for_entry(
         completion,
         inlay_hints,
         documentation: Vec::new(),
+        diagnostics: Vec::new(),
     }
 }
 
@@ -374,20 +378,29 @@ async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> Syn
         syntax_documentation_facts_for_source(uri.as_str(), text)
     };
     if is_manifest_uri(uri) {
+        let diagnostics =
+            collect_syntax_diagnostics_for_state(state, uri, text, None).await;
         return SyntaxFacts {
             documentation,
+            diagnostics,
             ..SyntaxFacts::default()
         };
     }
     let Some(path) = uri_to_path(uri) else {
+        let diagnostics =
+            collect_syntax_diagnostics_for_state(state, uri, text, None).await;
         return SyntaxFacts {
             documentation,
+            diagnostics,
             ..SyntaxFacts::default()
         };
     };
     let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
+        let diagnostics =
+            collect_syntax_diagnostics_for_state(state, uri, text, None).await;
         return SyntaxFacts {
             documentation,
+            diagnostics,
             ..SyntaxFacts::default()
         };
     };
@@ -397,12 +410,14 @@ async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> Syn
         }
         db.ensure_file_text(path, text.to_string());
         let options = PrepareOptions::default();
-        let Ok(entry_state) = typed_entry_state_with_db(db, &resolved, &options, None) else {
-            return SyntaxFacts::default();
-        };
-        syntax_facts_for_entry(db, &resolved, &entry_state)
+        match typed_entry_state_with_db(db, &resolved, &options, None) {
+            Ok(entry_state) => syntax_facts_for_entry(db, &resolved, &entry_state),
+            Err(_) => SyntaxFacts::default(),
+        }
     })
     .await;
+    facts.diagnostics =
+        collect_syntax_diagnostics_for_state(state, uri, text, Some(&session)).await;
     facts.documentation = documentation;
     facts
 }
@@ -418,6 +433,7 @@ fn document_from_syntax_facts(version: i32, text: String, syntax_facts: SyntaxFa
         syntax_completion: syntax_facts.completion,
         syntax_inlay_hints: syntax_facts.inlay_hints,
         syntax_documentation: syntax_facts.documentation,
+        syntax_diagnostics: syntax_facts.diagnostics,
     }
 }
 
@@ -428,6 +444,7 @@ fn apply_syntax_facts(doc: &mut Document, syntax_facts: SyntaxFacts) {
     doc.syntax_completion = syntax_facts.completion;
     doc.syntax_inlay_hints = syntax_facts.inlay_hints;
     doc.syntax_documentation = syntax_facts.documentation;
+    doc.syntax_diagnostics = syntax_facts.diagnostics;
     doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
 }
 
@@ -585,8 +602,9 @@ pub async fn remove_document(state: &RwLock<State>, uri: &Uri) {
     write.typed_prepare_schedule_revision.remove(uri);
 }
 
-/// Rebuild generation-bound syntax facts for open `.bd` buffers after compilation context invalidation.
-pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
+/// Rebuild generation-bound syntax facts (including diagnostics) for open `.bd` buffers after
+/// compilation context invalidation.
+pub async fn rebuild_open_document_syntax_facts(state: &RwLock<State>) {
     let entries: Vec<(Uri, String)> = {
         let read = state.read().await;
         read.docs
@@ -607,7 +625,8 @@ pub async fn rebuild_open_document_analysis(state: &RwLock<State>) {
     }
 }
 
-/// Recompute diagnostics for the union of open buffer or workspace snapshot and push to the client.
+/// Refresh generation-bound diagnostic facts for the open buffer or workspace snapshot and push
+/// to the client. Never reads `Document.analysis` / HIR snapshots.
 pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>, uri: &Uri) {
     let snapshot = {
         let state = state.read().await;
@@ -618,15 +637,24 @@ pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>,
         return;
     };
 
-    let compilation_context = if let Some(path) = uri_to_path(uri) {
-        cached_compilation_context(state, &path).await
-    } else {
-        None
-    };
-    let diagnostics =
-        analyze_document_for_state(state, uri, &doc.text, compilation_context.as_ref()).await;
+    let text = doc.text.clone();
+    let version = doc.version;
+    let syntax_facts = build_syntax_facts(state, uri, &text).await;
+    let diagnostics = lsp_diagnostics_from_syntax(&text, &syntax_facts.diagnostics);
+    {
+        let mut write = state.write().await;
+        if let Some(open) = write.docs.get_mut(uri)
+            && open.text == text
+        {
+            apply_syntax_facts(open, syntax_facts);
+        } else if let Some(indexed) = write.workspace_index.get_mut(uri)
+            && indexed.text == text
+        {
+            apply_syntax_facts(indexed, syntax_facts);
+        }
+    }
     client
-        .publish_diagnostics(uri.clone(), diagnostics, Some(doc.version))
+        .publish_diagnostics(uri.clone(), diagnostics, Some(version))
         .await;
 }
 
@@ -683,7 +711,8 @@ mod tests {
                 syntax_symbols: Vec::new(),
                 syntax_completion: None,
                 syntax_inlay_hints: Vec::new(),
-            syntax_documentation: Vec::new(),
+                syntax_documentation: Vec::new(),
+                syntax_diagnostics: Vec::new(),
             },
         );
 
@@ -731,5 +760,23 @@ mod tests {
             "refresh must replace stale documentation facts"
         );
         assert!(!doc.syntax_documentation.iter().any(|fact| fact.name == "Old"));
+    }
+
+    #[tokio::test]
+    async fn set_document_binds_syntax_diagnostics_without_analysis_snapshot() {
+        let file_uri = uri();
+        let state = tokio::sync::RwLock::new(State::default());
+        state.read().await.mark_initial_scan_complete();
+        set_document(&state, file_uri.clone(), 1, source()).await;
+        let read = state.read().await;
+        let doc = read.docs.get(&file_uri).expect("document exists");
+        assert_eq!(doc.analysis_cache_version, ANALYSIS_CACHE_VERSION);
+        // Valid buffer: structural/prepare facts may be empty, but the field must be owned
+        // by the Document revision (no Document.analysis snapshot).
+        let _ = &doc.syntax_diagnostics;
+        assert!(
+            doc.syntax_diagnostics.iter().all(|diag| diag.code.as_deref() != Some("E1709")),
+            "refresh must not attach orphaned composition diagnostics"
+        );
     }
 }
