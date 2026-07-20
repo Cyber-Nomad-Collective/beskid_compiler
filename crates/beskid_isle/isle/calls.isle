@@ -1,7 +1,14 @@
 (decl partial emit_direct_call (AstNodeKey) Value)
 (extern constructor emit_direct_call emit_direct_call)
+(decl partial emit_inline_lambda_call (AstNodeKey) Value)
+(extern constructor emit_inline_lambda_call emit_inline_lambda_call)
 
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.CallExpression))
         (call_kind (CallKind.Direct))))
       (emit_direct_call key))
+
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.CallExpression))
+        (call_kind (CallKind.InlineLambda))))
+      (emit_inline_lambda_call key))

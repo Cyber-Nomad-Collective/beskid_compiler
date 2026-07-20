@@ -298,6 +298,7 @@ pub enum IndexTarget {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallKind {
     Direct,
+    InlineLambda,
     RuntimeIntrinsic,
     Dynamic,
 }
@@ -365,6 +366,18 @@ impl DirectCallee {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpawnEntry {
     pub trampoline: DirectCallee,
+}
+
+/// A capture-free immediate lambda call selected from current syntax facts.
+///
+/// The body is emitted in the caller's function only after every argument and parameter slot is
+/// proven. Capturing lambdas and calls through local bindings remain unavailable: they require
+/// the ABI-v5 closure environment and dynamic-call path rather than this allocation-free leaf.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InlineLambdaCall {
+    pub body: AstNodeKey,
+    pub parameters: Vec<ParameterSlot>,
+    pub result_type: Type,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -652,6 +665,9 @@ pub trait NodeFacts {
         None
     }
     fn call_arguments(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        None
+    }
+    fn inline_lambda_call(&self, _key: AstNodeKey) -> Option<InlineLambdaCall> {
         None
     }
     fn array_elements(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -972,6 +988,29 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         }
         let (call, _) = self.import_direct_call(key)?;
         self.builder.inst_results(call).first().copied()
+    }
+
+    fn inline_lambda_call(&mut self, key: AstNodeKey) -> Option<Value> {
+        let lambda = self.facts.inline_lambda_call(key)?;
+        let arguments = self.facts.call_arguments(key)?;
+        if arguments.len() != lambda.parameters.len() {
+            return None;
+        }
+        let mut values = Vec::with_capacity(arguments.len());
+        for (argument, parameter) in arguments.into_iter().zip(&lambda.parameters) {
+            let value = generated::constructor_lower_expression(self, argument)?;
+            (self.builder.func.dfg.value_type(value) == parameter.value_type).then_some(())?;
+            values.push((value, parameter));
+        }
+        for (value, parameter) in values {
+            (!self.locals.contains_key(&parameter.slot)).then_some(())?;
+            let variable = self.builder.declare_var(parameter.value_type);
+            self.builder.def_var(variable, value);
+            self.locals
+                .insert(parameter.slot, (variable, parameter.value_type));
+        }
+        let value = generated::constructor_lower_expression(self, lambda.body)?;
+        (self.builder.func.dfg.value_type(value) == lambda.result_type).then_some(value)
     }
 
     fn direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
@@ -1512,6 +1551,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             | RuntimeIntrinsicKind::RawWordStore
             | RuntimeIntrinsicKind::RawByteStore => None,
         }
+    }
+
+    fn emit_inline_lambda_call(&mut self, key: AstNodeKey) -> Option<Value> {
+        self.inline_lambda_call(key)
     }
 
     fn discard_value(&mut self, _value: Value) {}

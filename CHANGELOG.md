@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Lower capture-free immediate lambda calls directly through generation-safe closure facts and
+  generated ISLE, binding proven argument slots in the caller without allocating a runtime
+  closure; captured or bound closure calls remain fail-closed pending the ABI-v5 environment path
+  (CYB-77).
 - Add the native Windows COFF platform-object path for ABI-v5 runtime publication: MASM-backed
   virtual allocation/release, Windows TLS helpers, `.obj` staging, and a regression that requires
   the normal platform publisher to produce the static archive, DLL, and CYB-112 import library
