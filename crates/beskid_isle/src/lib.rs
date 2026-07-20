@@ -46,6 +46,7 @@ node_kinds!(
     Program,
     FunctionDefinition,
     TestDefinition,
+    MethodDefinition,
     ExpressionStatement,
     ReturnStatement,
     LetStatement,
@@ -90,6 +91,9 @@ pub const fn classify_syntax_node_kind(
         Syntax::Program => IsleLowered(NodeKind::Program),
         Syntax::FunctionDefinition => IsleLowered(NodeKind::FunctionDefinition),
         Syntax::TestDefinition => IsleLowered(NodeKind::TestDefinition),
+        // Methods lower as executable items through the same FunctionEmitter path as functions;
+        // they are not FunctionDefinition aliases because the body is not child index 0.
+        Syntax::MethodDefinition => IsleLowered(NodeKind::MethodDefinition),
         Syntax::ExpressionStatement => IsleLowered(NodeKind::ExpressionStatement),
         Syntax::ReturnStatement => IsleLowered(NodeKind::ReturnStatement),
         Syntax::LetStatement => IsleLowered(NodeKind::LetStatement),
@@ -121,7 +125,6 @@ pub const fn classify_syntax_node_kind(
         | Syntax::ScopeHook
         | Syntax::WithStatement
         | Syntax::LaunchStatement
-        | Syntax::MethodDefinition
         | Syntax::CodeStringLiteral
         | Syntax::TryExpression
         | Syntax::SpawnExpression
@@ -185,6 +188,36 @@ pub fn syntax_node_kind_catalogue()
         .iter()
         .copied()
         .map(|kind| (kind, classify_syntax_node_kind(kind)))
+}
+
+/// Authoritative roster of executable syntax forms rejected at the generated ISLE boundary.
+///
+/// This list must stay equal to every [`SyntaxNodeClassification::UnsupportedTypedOperation`]
+/// entry in [`syntax_node_kind_catalogue`] — no silent catch-all arm may hide new kinds.
+pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] = &[
+    beskid_queries::IndexedNodeKind::HostDefinition,
+    beskid_queries::IndexedNodeKind::RegistryBlock,
+    beskid_queries::IndexedNodeKind::RegistryEntry,
+    beskid_queries::IndexedNodeKind::ScopeDefinition,
+    beskid_queries::IndexedNodeKind::ScopeHook,
+    beskid_queries::IndexedNodeKind::WithStatement,
+    beskid_queries::IndexedNodeKind::LaunchStatement,
+    beskid_queries::IndexedNodeKind::CodeStringLiteral,
+    beskid_queries::IndexedNodeKind::TryExpression,
+    beskid_queries::IndexedNodeKind::SpawnExpression,
+    beskid_queries::IndexedNodeKind::LambdaExpression,
+];
+
+/// Syntax kinds currently classified as unsupported typed operations, in catalogue order.
+pub fn unsupported_typed_operation_kinds()
+-> impl Iterator<Item = beskid_queries::IndexedNodeKind> {
+    syntax_node_kind_catalogue().filter_map(|(kind, classification)| {
+        matches!(
+            classification,
+            SyntaxNodeClassification::UnsupportedTypedOperation
+        )
+        .then_some(kind)
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
