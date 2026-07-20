@@ -204,10 +204,15 @@ pub struct LocalSlot {
 }
 
 /// One exact outer lexical declaration captured by a lambda or spawned lambda.
+///
+/// `class` and `span` come from the first captured use site under the lambda in syntax-index
+/// order. They preserve capture mode and source identity without reconstructing HIR snapshots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ClosureCapture {
     pub declaration: AstNodeKey,
     pub slot: LocalSlot,
+    pub class: CaptureStorageClass,
+    pub span: SourceSpan,
 }
 
 /// Backend-relevant closure environment facts derived from one lambda expression.
@@ -3803,15 +3808,15 @@ fn closure_captures(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     lambda: AstNodeKey,
 ) -> Result<Vec<ClosureCapture>, SemanticError> {
-    let mut captures = Vec::new();
+    let mut captures: Vec<ClosureCapture> = Vec::new();
     for path_id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::PathExpression) {
         if !is_ancestor(index, lambda.node, path_id) {
             continue;
         }
-        let Some(path) = index
-            .node_at(program, path_id)
-            .and_then(|node| node.of::<beskid_analysis::syntax::PathExpression>())
-        else {
+        let Some(node) = index.node_at(program, path_id) else {
+            return Err(SemanticError::unavailable("closure_environment"));
+        };
+        let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() else {
             return Err(SemanticError::unavailable("closure_environment"));
         };
         let Some(declaration) = resolve_lexical_declaration(
@@ -3834,16 +3839,25 @@ fn closure_captures(
             node: declaration,
             ..lambda
         };
+        if captures
+            .iter()
+            .any(|capture| capture.declaration == declaration)
+        {
+            continue;
+        }
         let Some(slot) = local_slot_for_declaration(index, declaration) else {
             return Err(SemanticError::unavailable("closure_environment"));
         };
-        let capture = ClosureCapture {
+        let Some(span) = node.span() else {
+            return Err(SemanticError::unavailable("closure_environment"));
+        };
+        let class = capture_storage_class(program, index, declaration)?;
+        captures.push(ClosureCapture {
             declaration,
             slot: slot?,
-        };
-        if !captures.contains(&capture) {
-            captures.push(capture);
-        }
+            class,
+            span,
+        });
     }
     Ok(captures)
 }
