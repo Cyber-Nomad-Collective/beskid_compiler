@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   calls, while/break/continue, if/else, lambda/spawn closed failures, range-for fail-closed
   coverage, and an explicit production-path assertion that HIR/`Lowerable` drivers stay retired
   (CYB-99).
+- Make the syntax/ISLE inventory bijective for classification evidence: every IsleLowered kind
+  names a verified CLIF regression, the unsupported roster is an explicit constant equal to
+  classify, concurrency forms (lambda/spawn) keep span-bearing rejection fixtures, and remaining
+  host-composition/try/code-string gaps are recorded as CYB-81 Codex blockers.
+- Promote `MethodDefinition` to a production-supported `NodeKind::MethodDefinition` item at the
+  generated ISLE boundary (no FunctionDefinition child-index alias).
 - Cover multi-function syntax assembly failures at the module boundary, including deterministic
   attribution to the failing function rather than a sibling item.
 - Catalogue every expanded-syntax node kind at the generated ISLE boundary with an exhaustive,
@@ -170,4 +176,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   consumers do not register `Generated` modules under a truncated name.
 - Terminate reachable syntax-ISLE control-flow merge blocks after one-arm `if` statements and
   preserve valid unreachable merges when both arms return.
-

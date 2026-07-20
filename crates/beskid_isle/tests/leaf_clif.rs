@@ -302,6 +302,82 @@ fn binary_rule_recurses_through_ast_keys_and_emits_iadd() {
 }
 
 #[test]
+fn grouped_expression_unwraps_child_and_emits_verified_stock_clif() {
+    struct GroupedFacts {
+        group: AstNodeKey,
+        inner: AstNodeKey,
+    }
+    impl NodeFacts for GroupedFacts {
+        fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+            if key == self.group {
+                Some(NodeKind::GroupedExpression)
+            } else if key == self.inner {
+                Some(NodeKind::LiteralExpression)
+            } else {
+                None
+            }
+        }
+
+        fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+            (key == self.inner).then_some(LiteralKind::Integer)
+        }
+
+        fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+            (key == self.group && index == 0).then_some(self.inner)
+        }
+
+        fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
+            (key == self.inner).then_some(42)
+        }
+
+        fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+            (key == self.group || key == self.inner).then_some(types::I32)
+        }
+    }
+
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Main.bd"));
+    let generation = SyntaxGenerationId(5);
+    let node = |id| AstNodeKey {
+        unit,
+        generation,
+        node: AstNodeId(id),
+    };
+    let facts = GroupedFacts {
+        group: node(1),
+        inner: node(2),
+    };
+    let flags = settings::Flags::new(settings::builder());
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(flags)
+        .expect("host flags");
+    let mut function = Function::with_name_signature(
+        cranelift_codegen::ir::UserFuncName::user(0, 0),
+        Signature {
+            params: vec![],
+            returns: vec![AbiParam::new(types::I32)],
+            call_conv: isa.default_call_conv(),
+        },
+    );
+    let mut builder_context = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+        let block = builder.create_block();
+        builder.switch_to_block(block);
+        builder.seal_block(block);
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.group)
+            .expect("grouped expression rule");
+        builder.ins().return_(&[value]);
+        builder.finalize();
+    }
+
+    verify_function(&function, isa.flags()).expect("valid stock CLIF");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i32 42"), "{clif}");
+}
+
+#[test]
 fn boolean_not_executes_with_canonical_zero_or_one_result() {
     struct NotFacts {
         root: AstNodeKey,
