@@ -5,19 +5,20 @@ use std::collections::HashMap;
 use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, EmissionServices, EnumLayout,
-    EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, ItemStatementEmission,
-    LiteralKind, MatchArmFact, NodeFacts, NodeKind, OperatorFact, ParameterSlot,
-    RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
+    EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, InlineLambdaCall,
+    ItemStatementEmission, LiteralKind, MatchArmFact, NodeFacts, NodeKind, OperatorFact,
+    ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{
     abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration,
     block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments,
-    call_lowering, cast_intents, child_nodes, dispatch_builtin_symbol, enum_constructor,
-    enum_layout, enum_match, generic_call_specialization, item_abi_signature, item_body,
-    literal_fact, local_slot, mutable_local_assignment, node_kind, node_type,
-    nominal_member_receiver, operator_fact, range_for_fact, resolved_item, resolved_local,
-    runtime_intrinsic_name, spawn_entry_validation, test_statement_nodes, AggregateFieldShape,
-    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId,
+    call_lowering, cast_intents, child_nodes, closure_call_target, closure_environment,
+    dispatch_builtin_symbol, enum_constructor, enum_layout, enum_match,
+    generic_call_specialization, item_abi_signature, item_body, literal_fact, local_slot,
+    mutable_local_assignment, node_kind, node_type, nominal_member_receiver, operator_fact,
+    range_for_fact, resolved_item, resolved_local, runtime_intrinsic_name, spawn_entry_validation,
+    test_statement_nodes, AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact,
+    SemanticTypeId,
 };
 use cranelift_codegen::ir::{types, FuncRef, Type, UserFuncName};
 use cranelift_codegen::isa::TargetIsa;
@@ -217,6 +218,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.query(dispatch_builtin_symbol(self.db, key)).is_some() {
             return Some(CallKind::Dynamic);
         }
+        if self.inline_lambda_call(key).is_some() {
+            return Some(CallKind::InlineLambda);
+        }
         matches!(
             self.query(call_lowering(self.db, key)),
             Some(CallLowering::Direct(_) | CallLowering::CorelibService(_))
@@ -281,6 +285,33 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                     .map(|argument| self.unwrap_transparent(argument))
                     .collect()
             })
+    }
+
+    fn inline_lambda_call(&self, key: AstNodeKey) -> Option<InlineLambdaCall> {
+        let target = self.query(closure_call_target(self.db, key))?;
+        let environment = self.query(closure_environment(self.db, target.lambda))?;
+        if !environment.captures.is_empty()
+            || environment.parameters.len() != target.callable.parameters.len()
+        {
+            return None;
+        }
+        let parameters = environment
+            .parameters
+            .iter()
+            .copied()
+            .zip(target.callable.parameters.iter().copied())
+            .map(|(parameter, semantic)| {
+                Some(ParameterSlot {
+                    slot: self.query(local_slot(self.db, parameter))?.index,
+                    value_type: map_signature_type(self.isa?, semantic)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(InlineLambdaCall {
+            body: target.body,
+            parameters,
+            result_type: map_signature_type(self.isa?, target.callable.result)?,
+        })
     }
 
     fn array_elements(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {

@@ -768,6 +768,46 @@ fn parsed_parameter_read_materializes_the_generation_safe_local_slot() {
 }
 
 #[test]
+fn parsed_zero_capture_immediate_lambda_call_lowers_without_a_runtime_closure() {
+    let (input, isa, root) =
+        item_fixture_with_root("i32 Main() { return ((i32 value) => value + 1)(41); }");
+    let db = input.database();
+    let item = find_function_definition(db, root).expect("Main item");
+    let call = find_node(db, root, beskid_queries::IndexedNodeKind::CallExpression)
+        .expect("immediate lambda call");
+    let target = beskid_queries::closure_call_target(db, call)
+        .expect("closure call target")
+        .expect("immediate lambda target");
+    let environment = beskid_queries::closure_environment(db, target.lambda)
+        .expect("closure environment")
+        .expect("lambda environment");
+    assert!(environment.captures.is_empty());
+    assert_eq!(environment.parameters.len(), 1);
+    assert!(
+        beskid_queries::local_slot(db, environment.parameters[0])
+            .expect("lambda parameter slot query")
+            .is_some(),
+        "lambda parameter must have a generation-safe local slot"
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("zero-capture immediate lambda call lowers through syntax facts");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i32 41"), "{clif}");
+    assert!(clif.contains("iadd"), "{clif}");
+}
+
+#[test]
+fn parsed_capturing_immediate_lambda_call_remains_fail_closed() {
+    let (input, isa, item) =
+        item_fixture("i32 Main(i32 outer) { return ((i32 value) => outer + value)(41); }");
+
+    let error = emit_isle_item(&input, isa.as_ref(), item)
+        .expect_err("capturing immediate lambda needs the ABI-v5 closure environment path");
+    assert!(error.to_string().contains("MissingRuleOrFact"), "{error}");
+}
+
+#[test]
 fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
     let (input, _isa, root) = item_fixture_with_root(
         "i32 Main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }",
