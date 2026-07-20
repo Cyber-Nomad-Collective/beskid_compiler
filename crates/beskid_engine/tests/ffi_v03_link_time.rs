@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 use beskid_abi::BESKID_USER_FFI_LAYOUT_BAND;
 use beskid_aot::{AotBuildRequest, BuildOutputKind, build};
-use beskid_codegen::services::lower_source;
+use beskid_engine::services::{prepare_jit_entrypoint, prepare_jit_module};
 use beskid_runtime::{CallbackTableEntry, beskid_register_callbacks};
 
 fn temp_case_dir(name: &str) -> PathBuf {
@@ -34,12 +34,12 @@ pub contract Libc {
 
 pub i64 Main() { return Libc.getpid(); }
 "#;
-    let lowered = lower_source(Path::new("<memory>"), src, false)?;
+    let prepared = prepare_jit_entrypoint(Path::new("<memory>"), src, "Main")?;
     let dir = temp_case_dir("getpid");
     let output = dir.join("getpid_test");
     let result = build(AotBuildRequest {
         external_libraries: vec!["c".into()],
-        ..AotBuildRequest::with_defaults(lowered.artifact, BuildOutputKind::Exe, output, "Main")
+        ..AotBuildRequest::with_defaults(prepared.artifact, BuildOutputKind::Exe, output, "Main")
     })?;
     let binary = result.final_path.expect("linked executable path");
     let mut child = Command::new(&binary).spawn()?;
@@ -56,10 +56,9 @@ fn export_plugin_init_visible_to_linker() -> Result<()> {
 [Export(Abi:"C", Symbol:"beskid_plugin_init")]
 pub unit plugin_init() { return; }
 "#;
-    let lowered = lower_source(Path::new("<memory>"), src, false)?;
+    let artifact = prepare_jit_module(Path::new("<memory>"), src)?;
     assert!(
-        lowered
-            .artifact
+        artifact
             .exports
             .iter()
             .any(|e| e.exported_symbol == "beskid_plugin_init")
@@ -67,7 +66,7 @@ pub unit plugin_init() { return; }
     let dir = temp_case_dir("export_so");
     let output = dir.join("libplugin.so");
     let result = build(AotBuildRequest::with_defaults(
-        lowered.artifact,
+        artifact,
         BuildOutputKind::SharedLib,
         output.clone(),
         "plugin_init",

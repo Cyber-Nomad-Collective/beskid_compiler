@@ -10,13 +10,16 @@ pub i64 Main() {
     return C.write(1, __test_bytes_ptr(), __test_bytes_len());
 }
 "#;
-    let lowered =
-        beskid_codegen::services::lower_source(std::path::Path::new("<memory>"), src, false)?;
+    let prepared = beskid_engine::services::prepare_jit_entrypoint(
+        std::path::Path::new("<memory>"),
+        src,
+        "Main",
+    )?;
     let mut engine = beskid_engine::Engine::new();
     engine
-        .compile_artifact(&lowered.artifact)
+        .compile_artifact(&prepared.artifact)
         .expect("compile extern write");
-    let main_ptr = unsafe { engine.entrypoint_ptr("main").unwrap() };
+    let main_ptr = unsafe { engine.entrypoint_ptr(&prepared.symbol).unwrap() };
     let fun: extern "C" fn() -> i64 = unsafe { std::mem::transmute(main_ptr) };
     let written = fun();
     assert_eq!(written, "Hello from libc.write\n".len() as i64);

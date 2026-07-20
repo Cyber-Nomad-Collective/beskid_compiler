@@ -21,15 +21,16 @@ use beskid_analysis::mod_host::{
 };
 use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
 use beskid_analysis::services::{
-    lower_normalize_resolve_type_spanned, parse_program_with_source_name,
-    semantic_rule_diagnostics_for_program,
+    parse_program_with_source_name, semantic_rule_diagnostics_for_program,
 };
-use beskid_codegen::lower_program;
-use beskid_engine::Engine;
+use beskid_abi::runtime_kit::BuildProfile;
+use beskid_engine::services::prepare_jit_entrypoint;
+use beskid_engine::{Engine, host_runtime_target};
 use beskid_pipeline::phases::{
     LOWER_READY, MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE,
 };
 use beskid_pipeline::{PipelineEvent, PipelineObserver, observe_phase};
+use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
 const SAMPLE_MOD_PROJECT: &str =
     include_str!("../../beskid_tests/fixtures/mods/sample_mod/SampleMod.bproj");
@@ -126,14 +127,23 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
     assert_eq!(analyze.rewriter_outcomes.len(), 1);
 
     observe_phase(Some(pipeline.as_ref()), LOWER_READY, || {});
-    let (hir, resolution, typed) =
-        lower_normalize_resolve_type_spanned(&analyze.program).expect("lower mod-host program");
-    let artifact = lower_program(&hir, &resolution, &typed)
-        .map_err(|errors| anyhow::anyhow!("codegen failed: {errors:?}"))?;
+    // Mod-host rewrite authority stays on the analysis spine; JIT compile uses the sole
+    // CodegenInput → ISLE route against the host entry source (no HIR/`Lowerable` driver).
+    let _ = &analyze.program;
+    let prepared = prepare_jit_entrypoint(
+        workspace.host_dir.join("Src").join("Main.bd").as_path(),
+        HOST_SOURCE,
+        "Main",
+    )?;
 
-    let mut engine = Engine::new();
+    let kit_prefix = tempfile::tempdir().expect("exact kit prefix");
+    build_native_host(kit_prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
+        .expect("publish exact native kit");
+    let target = host_runtime_target().expect("host target");
+    let mut engine = Engine::with_runtime_kit(kit_prefix.path(), target, BuildProfile::Debug)
+        .expect("load exact kit");
     engine
-        .compile_artifact_with_pipeline(&artifact, Some(pipeline.as_ref()))
+        .compile_artifact_with_pipeline(&prepared.artifact, Some(pipeline.as_ref()))
         .map_err(|err| anyhow::anyhow!("engine compile failed: {err}"))?;
 
     let invocations = invoker.invocations();

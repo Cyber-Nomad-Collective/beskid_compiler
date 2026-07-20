@@ -301,3 +301,98 @@ fn engine_try_new_fails_closed_when_exact_debug_manifest_is_missing() {
         expected.display()
     );
 }
+
+#[test]
+fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
+    let Some(target) = host_target() else {
+        return;
+    };
+    let empty = TestDir::new();
+    let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
+    // SAFETY: this integration target serializes around the process environment and restores it.
+    unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", empty.path()) };
+    let error = beskid_engine::services::run_entrypoint(
+        Path::new("missing-kit.bd"),
+        "i64 Main() { return 1; }",
+        "Main",
+    )
+    .expect_err("CodegenInput JIT route must fail closed without an exact kit");
+    unsafe {
+        if let Some(value) = previous {
+            std::env::set_var("BESKID_RUNTIME_PREFIX", value);
+        } else {
+            std::env::remove_var("BESKID_RUNTIME_PREFIX");
+        }
+    };
+    let message = error.to_string();
+    let expected = empty
+        .path()
+        .join("lib/beskid-runtime/abi-5")
+        .join(target.triple.as_str())
+        .join("debug")
+        .join("abi.json");
+    assert!(
+        message.contains(&expected.display().to_string())
+            || message.contains("MetadataRead")
+            || message.contains("runtime kit"),
+        "expected missing-kit fail-closed diagnostic mentioning {}, got {message}",
+        expected.display()
+    );
+}
+
+#[test]
+fn codegen_input_route_fails_closed_when_exact_kit_is_tampered() {
+    let Some(target) = host_target() else {
+        return;
+    };
+    let tampered = TestDir::new();
+    let shared = install_kit(tampered.path(), &target, true, false, canonical_hash());
+    fs::write(shared, b"tampered shared runtime").unwrap();
+
+    let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
+    // SAFETY: this integration target serializes around the process environment and restores it.
+    unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", tampered.path()) };
+    let error = beskid_engine::services::run_entrypoint(
+        Path::new("tampered-kit.bd"),
+        "i64 Main() { return 1; }",
+        "Main",
+    )
+    .expect_err("CodegenInput JIT route must reject a tampered exact kit");
+    unsafe {
+        if let Some(value) = previous {
+            std::env::set_var("BESKID_RUNTIME_PREFIX", value);
+        } else {
+            std::env::remove_var("BESKID_RUNTIME_PREFIX");
+        }
+    };
+    let message = error.to_string();
+    assert!(
+        message.contains("runtime kit")
+            || message.contains("hash")
+            || message.contains("validation")
+            || message.contains("ArtifactHash"),
+        "expected tampered-kit fail-closed diagnostic, got {message}"
+    );
+}
+
+#[test]
+fn prepare_jit_entrypoint_uses_codegen_input_symbols_only() {
+    let Some(_target) = host_target() else {
+        return;
+    };
+    let prepared = beskid_engine::services::prepare_jit_entrypoint(
+        Path::new("codegen-input-route.bd"),
+        "i64 Echo(i64 value) { return value; } i64 Main() { return Echo(41); }",
+        "Main",
+    )
+    .expect("CodegenInput preparation");
+    assert!(prepared.symbol.starts_with("Main#syntax_"));
+    assert_eq!(prepared.artifact.functions.len(), 2);
+    assert!(
+        prepared
+            .artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Echo#syntax_"))
+    );
+}

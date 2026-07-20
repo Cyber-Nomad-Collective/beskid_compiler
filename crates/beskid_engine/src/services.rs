@@ -1,8 +1,14 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
-use beskid_analysis::services::{FrontEndOptions, ResolvedInput};
+use beskid_abi::abi_v5::TargetMetadata;
+use beskid_analysis::services::{
+    FrontEndOptions, FrontEndTypedResult, ResolvedInput, resolved_input_from_plan,
+    synthetic_compile_plan_for_source,
+};
 use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
+use beskid_codegen::CodegenArtifact;
 #[cfg(test)]
 use beskid_codegen::module_emission::{SyntaxModuleItem, lower_syntax_program};
 use beskid_pipeline::PipelineObserver;
@@ -17,6 +23,15 @@ use cranelift_codegen::settings;
 
 use crate::Engine;
 use crate::jit_callable::{EntryReturnKind, JitCallable};
+
+/// CodegenInput → ISLE artifact prepared for exact-kit JIT compilation.
+#[derive(Debug)]
+pub struct PreparedJitEntrypoint {
+    pub artifact: CodegenArtifact,
+    pub symbol: String,
+    pub return_type: SemanticTypeId,
+    pub target: TargetMetadata,
+}
 
 /// Syntax-backed test metadata consumed by `beskid test`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,9 +138,60 @@ pub fn run_entrypoint_from_front_end_with_engine(
 /// `symbol` and `return_type` are derived from the same generation-safe item key used to emit
 /// CLIF. No HIR node, resolution item id, or legacy codegen entrypoint participates.
 struct SyntaxEntrypointArtifact {
-    artifact: beskid_codegen::CodegenArtifact,
+    artifact: CodegenArtifact,
     symbol: String,
     return_type: SemanticTypeId,
+}
+
+/// Prepare a no-arg entrypoint through the sole CodegenInput → ISLE route (no HIR/`Lowerable`).
+pub fn prepare_jit_entrypoint(
+    source_path: &Path,
+    source: &str,
+    entrypoint: &str,
+) -> Result<PreparedJitEntrypoint> {
+    let front = prepare_syntax_front_end(source_path, source)?;
+    let target = crate::host_runtime_target()
+        .map_err(|error| anyhow::anyhow!("host ABI-v5 target unavailable: {error}"))?;
+    let lowered = with_db(|db| {
+        lower_syntax_entrypoint_from_front_end(db, &front, entrypoint, target.clone(), None)
+    })?;
+    Ok(PreparedJitEntrypoint {
+        artifact: lowered.artifact,
+        symbol: lowered.symbol,
+        return_type: lowered.return_type,
+        target,
+    })
+}
+
+/// Prepare every executable item in a snippet through CodegenInput → ISLE module emission.
+pub fn prepare_jit_module(source_path: &Path, source: &str) -> Result<CodegenArtifact> {
+    let front = prepare_syntax_front_end(source_path, source)?;
+    let target = crate::host_runtime_target()
+        .map_err(|error| anyhow::anyhow!("host ABI-v5 target unavailable: {error}"))?;
+    let isa = native_isa()?;
+    with_db(|db| {
+        beskid_codegen::lower_prepared_syntax_module(db, &front, target, isa.as_ref())
+    })
+}
+
+/// Front-end prepare for JIT/REPL snippets; semantic diagnostics stay enabled so invalid
+/// extern contracts fail closed before CodegenInput construction.
+pub fn prepare_syntax_front_end(
+    source_path: &Path,
+    source: &str,
+) -> Result<FrontEndTypedResult> {
+    let source_path = beskid_codegen::materialize_source_path_for_lowering(source_path, source)?;
+    let plan = synthetic_compile_plan_for_source(&source_path);
+    let resolved: ResolvedInput =
+        resolved_input_from_plan(source_path, source.to_owned(), plan, None, None);
+    beskid_queries::compile_front_end_from_resolved_input(
+        &resolved,
+        FrontEndOptions {
+            with_semantic_diagnostics: true,
+            ..Default::default()
+        },
+        None,
+    )
 }
 
 fn run_syntax_jitted_entrypoint(
