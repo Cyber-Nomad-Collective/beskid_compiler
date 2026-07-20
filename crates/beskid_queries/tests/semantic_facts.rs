@@ -1509,14 +1509,13 @@ fn imported_generic_type_annotation_resolves_without_registry_reentrance() {
 }
 
 #[test]
-#[ignore = "CYB-91: imported generic nominal receiver still lowers dynamically"]
 fn imported_generic_nominal_calls_require_receiver_instantiation() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/generic-nominal-receiver/project/src");
     let main_path = root.join("Main.bd");
     let hub_path = root.join("Collections/Hub.bd");
     let main_source = "use Collections.Hub;\nunit Main() { Hub.Create(); Hub<i64>.Create(1_i64); Hub.Create<i64>(1_i64); }";
-    let hub_source = "type Hub<T> { i64 value }\nunit Create<T>(T value) { return; }";
+    let hub_source = "type Hub<T> { i64 value }\npub unit Create<T>(T value) { return; }";
     let main_program = expand_program(
         parse_program(main_source).expect("main parse"),
         DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
@@ -1600,6 +1599,15 @@ fn imported_generic_nominal_calls_require_receiver_instantiation() {
     assert_eq!(
         call_lowering(&db, explicit_receiver).expect("explicit receiver lowering"),
         Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        generic_call_instantiation(&db, explicit_receiver)
+            .expect("explicit receiver instantiation"),
+        Some(beskid_queries::GenericCallInstantiation {
+            declaration,
+            argument_count: 1,
+            arguments: Arc::from([SemanticTypeId::I64]),
+        })
     );
     assert_eq!(
         call_lowering(&db, method_generic).expect("method generic lowering"),
