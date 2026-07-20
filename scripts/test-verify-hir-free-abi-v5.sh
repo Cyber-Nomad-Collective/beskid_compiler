@@ -48,8 +48,9 @@ printf '%s\n' \
   'fn canonical_route() { let _ = (dispatch_route_for_symbol("fiber_spawn_with_cancel_slot"), DISPATCH_ENTRY_COUNT); }' \
   > "$canonical_root/crates/example/src/canonical_dispatch.rs"
 
-if BESKID_HIR_FREE_SCAN_ROOT="$canonical_root" "$workspace/scripts/verify-hir-free-abi-v5.sh" >"$canonical_output" 2>&1; then
-  echo "expected scan-root fixture to exercise ABI-v5 provenance verification" >&2
+if ! BESKID_HIR_FREE_SCAN_ROOT="$canonical_root" "$workspace/scripts/verify-hir-free-abi-v5.sh" >"$canonical_output" 2>&1; then
+  cat "$canonical_output" >&2
+  echo "expected canonical ABI-v5 dispatch evidence to pass the retirement gate" >&2
   exit 1
 fi
 
