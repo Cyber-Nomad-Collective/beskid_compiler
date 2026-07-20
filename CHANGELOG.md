@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Cover multi-function syntax assembly failures at the module boundary, including deterministic
+  attribution to the failing function rather than a sibling item.
 - Catalogue every expanded-syntax node kind at the generated ISLE boundary with an exhaustive,
   deterministic lowered, structural, or unsupported-operation classification.
 - Lower Corelib soft string builtins (`__str_len`, `__str_slice`, …), string concat/eq from

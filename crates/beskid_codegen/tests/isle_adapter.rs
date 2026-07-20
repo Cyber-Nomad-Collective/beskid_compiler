@@ -105,35 +105,42 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
 }
 
 #[test]
-fn parsed_multi_function_verification_error_identifies_the_originating_expression_site() {
+fn parsed_multi_function_assembly_verification_error_identifies_the_originating_item_site() {
     let (input, isa, root) =
-        item_fixture_with_root("i32 Sibling() { return 1; } i32 Failing() { return 2; }");
+        item_fixture_with_root("i32 Sibling() { return 1; } i32 Failing() { 2; }");
     let db = input.database();
     let items = find_function_definitions(db, root);
     let sibling = items[0];
     let failing = items[1];
-    let failing_literal = find_node(db, failing, beskid_queries::IndexedNodeKind::Literal)
-        .expect("failing function literal");
-    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
-    let emitter = FunctionEmitter::new(isa.as_ref());
 
-    let error = emitter
-        .emit_expression(
-            UserFuncName::user(0, 99),
-            emitter.signature([], [types::I64]),
-            &facts,
-            failing_literal,
-        )
-        .expect_err("i32 return under an i64 signature must fail CLIF verification");
-    let first = error.display_with_db(db);
-    let repeated = error.display_with_db(db);
-    let failing_site = format_ast_node_site(db, failing_literal);
+    let error = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: sibling,
+                symbol: "Sibling".into(),
+            },
+            SyntaxModuleItem {
+                key: failing,
+                symbol: "Failing".into(),
+            },
+        ],
+    )
+    .expect_err("the failing item must be rejected through module emission");
+    let first = error.to_string();
+    let repeated = error.to_string();
+    let failing_site = format_ast_node_site(db, failing);
     let sibling_site = format_ast_node_site(db, sibling);
 
     assert_eq!(first, repeated);
     assert!(first.contains(&failing_site), "{first}");
     assert!(!first.contains(&sibling_site), "{first}");
-    assert!(first.contains("Literal@"), "{first}");
+    assert!(
+        first.contains("syntax ISLE emission failed: Verification("),
+        "{first}"
+    );
+    assert!(first.contains("FunctionDefinition@"), "{first}");
 }
 
 #[test]
