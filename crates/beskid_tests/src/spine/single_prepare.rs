@@ -1,15 +1,14 @@
 //! Conformance for single prepare on the `beskid run` path (Wave 1).
 //!
 //! Compile commands call [`beskid_queries::prepare_compilation_diagnostics`] once, then
-//! [`lower_from_front_end`] on the returned front-end bundle.
-//! One prepare spine must emit exactly one parent `semantic` and one parent `lower` phase.
+//! generation-safe syntax lowering on the returned front-end bundle.
+//! One prepare spine must emit exactly one parent `semantic` phase.
 
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Mutex;
 
 use beskid_analysis::services::{FrontEndOptions, PrepareOptions, ResolvedInput, resolve_input};
-use beskid_codegen::services::lower_from_front_end;
 use beskid_pipeline::{PipelineEvent, PipelineObserver, phases};
 use beskid_queries::{configure_db_for_project, prepare_compilation_diagnostics};
 
@@ -62,14 +61,6 @@ const SEMANTIC_SUB_PHASE_IDS: &[&str] = &[
     phases::SEMANTIC_NAMING_STYLE,
 ];
 
-const LOWER_SUB_PHASE_IDS: &[&str] = &[
-    phases::LOWER_AST,
-    phases::LOWER_RESOLVE_PASS1,
-    phases::LOWER_NORMALIZE,
-    phases::LOWER_RESOLVE,
-    phases::LOWER_TYPE_CHECK,
-];
-
 fn minimal_run_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
     let root = temp_case_dir("spine_single_prepare");
     let src_dir = root.join("Src");
@@ -101,7 +92,7 @@ i32 Main() {
     (root, entry)
 }
 
-/// Mirrors Wave 1 `beskid run`: one executable prepare, then codegen lowering from cached front-end.
+/// Mirrors Wave 1 `beskid run`: one executable prepare, then syntax lowering from cached front-end.
 fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecorder) {
     let (prepared, _gate_diagnostics) = prepare_compilation_diagnostics(
         resolved,
@@ -117,15 +108,12 @@ fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecord
     .expect("executable gate prepare");
 
     let front = prepared.into_executable().expect("typed front-end");
-    let source_name = resolved.source_path.display().to_string();
-    lower_from_front_end(
-        &source_name,
-        &resolved.source,
-        front,
-        Some("Main"),
-        Some(observer),
+    beskid_engine::services::lower_prepared_syntax_entrypoint(
+        &front,
+        "Main",
+        beskid_engine::host_runtime_target().expect("host ABI-v5 target"),
     )
-    .expect("lower from prepared front-end");
+    .expect("lower from prepared syntax front-end");
 }
 
 /// Wave 1: one prepare spine per compile command on the run path.
@@ -152,22 +140,10 @@ fn run_path_single_prepare_after_wave1() {
             1,
             "Wave 1 run path must run semantic parent phase exactly once per command"
         );
-        assert_eq!(
-            recorder.count(phases::LOWER),
-            1,
-            "Wave 1 run path must run lower parent phase exactly once per command"
-        );
-
         for id in SEMANTIC_SUB_PHASE_IDS {
             assert!(
                 recorder.saw(id),
                 "semantic sub-phase {id} should appear when observer is wired"
-            );
-        }
-        for id in LOWER_SUB_PHASE_IDS {
-            assert!(
-                recorder.saw(id),
-                "lower sub-phase {id} should appear when observer is wired"
             );
         }
     });

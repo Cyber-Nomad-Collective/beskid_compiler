@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Remove the retired public Codegen HIR/`Lowerable` facade (`LoweredProgram`, seven
+  `lower_*` service entry points, and the root `Lowerable` re-export); public callers must
+  cross the generation-safe `CodegenInput` → syntax ISLE boundary (CYB-111).
+
 ### Added
 
 - Add a native ABI-v5 runtime-kit matrix staging command: it builds canonical

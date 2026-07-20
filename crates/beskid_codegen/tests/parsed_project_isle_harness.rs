@@ -11,13 +11,38 @@ use beskid_analysis::{
     },
     services::parse_program_with_source_name,
 };
-use beskid_codegen::lower_source;
 use beskid_codegen::lower_syntax_assembly_entrypoint;
 use beskid_codegen::lowering::lower_program;
 use beskid_queries::{compile_front_end_from_resolved_input, with_db};
 use cranelift_codegen::{isa, settings, verify_function};
 
 const RETIRED_HIR_PATH_MARKER: &str = beskid_codegen::RETIRED_HIR_LOWERING_PATH;
+
+#[test]
+fn retired_public_codegen_facade_is_absent() {
+    let public_services = include_str!("../src/services.rs");
+    for retired_api in [
+        "pub struct LoweredProgram",
+        "pub fn lower_source",
+        "pub fn lower_source_for_entrypoint",
+        "pub fn lower_source_with_pipeline",
+        "pub fn lower_resolved_input_with_pipeline",
+        "pub fn lower_from_prepared_or_cache",
+        "pub fn lower_resolved_entrypoint_with_pipeline",
+        "pub fn lower_from_front_end",
+    ] {
+        assert!(
+            !public_services.contains(retired_api),
+            "retired public codegen facade must not expose `{retired_api}`"
+        );
+    }
+
+    let public_exports = include_str!("../src/lib.rs");
+    assert!(
+        !public_exports.contains("    Lowerable,"),
+        "the internal Lowerable trait must not be re-exported publicly"
+    );
+}
 
 fn parse_production_units(
     root: &std::path::Path,
@@ -395,15 +420,6 @@ fn production_path_never_constructs_hir_or_lowerable() {
         "direct-call closure through syntax ISLE"
     );
 
-    // Same source through retired HIR/Lowerable drivers must fail closed with no artifact.
-    std::fs::write(&path, source).expect("rewrite source for retired-path probe");
-    match lower_source(&path, source, false) {
-        Ok(_) => panic!("lower_source must not construct a HIR/Lowerable artifact"),
-        Err(error) => {
-            let message = error.to_string();
-            assert!(message.contains(RETIRED_HIR_PATH_MARKER), "{message}");
-        }
-    }
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
@@ -430,20 +446,11 @@ fn production_path_never_constructs_hir_or_lowerable() {
 }
 
 #[test]
-fn hir_and_lowerable_entrypoints_are_rejected_without_fallback() {
+fn remaining_hir_driver_is_rejected_without_fallback() {
     let project = tempfile::tempdir().expect("project directory");
     let path = project.path().join("Main.bd");
     let source = "i32 Main() { return 1; }";
     std::fs::write(&path, source).expect("write source");
-
-    match lower_source(&path, source, false) {
-        Ok(_) => panic!("lower_source must reject the retired HIR path"),
-        Err(error) => {
-            let message = error.to_string();
-            assert!(message.contains(RETIRED_HIR_PATH_MARKER), "{message}");
-            assert!(message.contains("CodegenInput"), "{message}");
-        }
-    }
 
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
