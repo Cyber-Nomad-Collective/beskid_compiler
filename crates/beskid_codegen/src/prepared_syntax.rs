@@ -113,20 +113,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
     let mut artifact = lower_syntax_program(&input, isa, &items).map_err(|error| {
         anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}")
     })?;
-    artifact.exports = items
-        .iter()
-        .filter_map(|item| {
-            let export = item_export_symbol(input.database(), item.key)
-                .ok()
-                .flatten()?;
-            let beskid_name = item_name(input.database(), item.key).ok().flatten()?;
-            Some(ExportEntry {
-                beskid_name: beskid_name.to_string(),
-                exported_symbol: export.0.to_string(),
-                abi: "C".to_owned(),
-            })
-        })
-        .collect();
+    artifact.exports = syntax_export_entries(input.database(), &items);
     Ok(artifact)
 }
 
@@ -305,8 +292,34 @@ pub fn lower_prepared_syntax_module(
     if items.is_empty() {
         anyhow::bail!("prepared syntax module contains no executable functions or methods");
     }
-    lower_syntax_program(&input, isa, &items)
-        .map_err(|error| anyhow::anyhow!("syntax ISLE module lowering failed: {error}"))
+    let mut artifact = lower_syntax_program(&input, isa, &items)
+        .map_err(|error| anyhow::anyhow!("syntax ISLE module lowering failed: {error}"))?;
+    artifact.exports = syntax_export_entries(input.database(), &items);
+    Ok(artifact)
+}
+
+/// Preserve `[Export]` facts selected by syntax lowering for AOT/JIT publication.
+///
+/// The function names in `items` are lowering-internal syntax symbols, while export metadata is
+/// keyed by the semantic item itself. Keeping this mapping at the prepared-syntax boundary lets
+/// every production syntax module artifact carry the same interop surface as canonical runtime
+/// lowering without reconstructing retired HIR state.
+fn syntax_export_entries(
+    db: &dyn beskid_queries::Db,
+    items: &[SyntaxModuleItem],
+) -> Vec<ExportEntry> {
+    items
+        .iter()
+        .filter_map(|item| {
+            let export = item_export_symbol(db, item.key).ok().flatten()?;
+            let beskid_name = item_name(db, item.key).ok().flatten()?;
+            Some(ExportEntry {
+                beskid_name: beskid_name.to_string(),
+                exported_symbol: export.0.to_string(),
+                abi: "C".to_owned(),
+            })
+        })
+        .collect()
 }
 
 fn find_entrypoint(
