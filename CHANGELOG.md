@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add the native Windows COFF platform-object path for ABI-v5 runtime publication: MASM-backed
+  virtual allocation/release, Windows TLS helpers, `.obj` staging, and a regression that requires
+  the normal platform publisher to produce the static archive, DLL, and CYB-112 import library
+  (CYB-116).
 - Add a native ABI-v5 runtime-kit matrix staging command: it builds canonical
   debug and release artifacts into disposable inputs, derives provenance from
   native symbols, atomically publishes one exact `build-matrix` prefix, and

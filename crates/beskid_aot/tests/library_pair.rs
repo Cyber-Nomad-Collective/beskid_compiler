@@ -175,12 +175,12 @@ fn linux_host_platform_pair_exports_the_native_runtime_boundary() {
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair = emit_host_context_library_pair(
+    let pair = emit_host_platform_library_pair(
         CodegenArtifact::default(),
         temp.path().join("out"),
         "beskid_runtime",
     )
-    .expect("emit Windows context pair");
+    .expect("emit Windows platform pair");
 
     let import_library = pair
         .shared_import_library
@@ -195,6 +195,18 @@ fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime
         Some("beskid_runtime_import.lib")
     );
     assert!(pair.shared_library.is_file());
+    assert!(pair.static_library.is_file());
+    for symbol in [
+        "beskid_rt_v5_intrinsic_system_allocate",
+        "beskid_rt_v5_intrinsic_system_free",
+        "beskid_rt_v5_intrinsic_tls_get",
+        "beskid_rt_v5_intrinsic_tls_set",
+    ] {
+        assert!(
+            pair.provenance_symbols.contains(&symbol.to_owned()),
+            "Windows platform pair omitted {symbol}"
+        );
+    }
 }
 
 #[test]
