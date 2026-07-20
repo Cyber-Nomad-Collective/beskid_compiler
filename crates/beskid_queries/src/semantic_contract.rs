@@ -287,6 +287,9 @@ pub struct ClosureCallTarget {
 }
 
 /// Exact callable operand and captures selected by a `spawn` expression.
+///
+/// Empty-arg `spawn Entry()` sugar stores the entry path (or lambda), not the CallExpression.
+/// Non-empty `spawn Entry(args)` keeps the CallExpression so [`spawn_legality`] can reject it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SpawnTarget {
     pub callee: AstNodeKey,
@@ -318,6 +321,9 @@ pub struct CaptureStorage {
 pub enum SpawnDiagnosticKind {
     TargetNotCallable,
     TargetRequiresArguments,
+    /// `spawn Entry(args)` is not a zero-argument fiber entry; only bare callables or
+    /// empty-arg `spawn Entry()` sugar (normalized to `Entry`) are legal.
+    CalleeArgumentsUnsupported,
     StackReferenceEscapesSpawn,
 }
 
@@ -4008,6 +4014,10 @@ fn spawn_target_tracked(
             node: normalized_expression_node(index, callee),
             ..key
         };
+        let callee = match spawn_entry_operand(program, index, callee) {
+            Ok(callee) => callee,
+            Err(error) => return Some(Err(error)),
+        };
         let captures = if index.kind(callee.node)
             == Some(beskid_analysis::syntax_query::NodeKind::LambdaExpression)
         {
@@ -4021,6 +4031,38 @@ fn spawn_target_tracked(
         Some(Ok(SpawnTarget { callee, captures }))
     })?
     .transpose()
+}
+
+/// Resolve the fiber entry operand for one spawn callee expression.
+///
+/// Empty-arg `spawn Entry()` sugar unwraps to `Entry`, matching production lowering. Call
+/// expressions that still carry arguments remain the CallExpression node so legality can reject
+/// them without inventing a trampoline.
+fn spawn_entry_operand(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    callee: AstNodeKey,
+) -> Result<AstNodeKey, SemanticError> {
+    let Some(node) = index.node_at(program, callee.node) else {
+        return Ok(callee);
+    };
+    let Some(call) = node.of::<beskid_analysis::syntax::CallExpression>() else {
+        return Ok(callee);
+    };
+    if !call.args.is_empty() {
+        return Ok(callee);
+    }
+    let entry = index
+        .direct_child_id(
+            program,
+            callee.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
+        )
+        .ok_or_else(|| SemanticError::unavailable("spawn_target"))?;
+    Ok(AstNodeKey {
+        node: normalized_expression_node(index, entry),
+        ..callee
+    })
 }
 
 fn normalized_expression_node(
@@ -4058,6 +4100,23 @@ fn spawn_legality_tracked(
     };
     let span = node_span_tracked(db, syntax, key)?
         .ok_or_else(|| SemanticError::unavailable("spawn_legality"))?;
+    let index = syntax.syntax_index(db);
+    if index.kind(target.callee.node)
+        == Some(beskid_analysis::syntax_query::NodeKind::CallExpression)
+    {
+        // Non-empty `spawn Entry(args)` left the CallExpression in place; fail closed before
+        // signature lookup so parameterized callees are not misdiagnosed as TargetRequiresArguments.
+        return Ok(Some(SpawnLegality {
+            target,
+            result: None,
+            span,
+            diagnostics: Arc::from([SpawnDiagnostic {
+                kind: SpawnDiagnosticKind::CalleeArgumentsUnsupported,
+                span,
+                capture: None,
+            }]),
+        }));
+    }
     let signature = callable_signature_tracked(db, syntax, target.callee)?;
     let Some(signature) = signature else {
         return Ok(Some(SpawnLegality {

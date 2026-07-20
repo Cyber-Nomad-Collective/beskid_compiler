@@ -119,6 +119,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extend generation-safe `ClosureCapture` facts with capture mode (`CaptureStorageClass`) and
   first use-site span so `closure_environment` / spawn capture sets cover nested closures and
   shadowing without legacy analysis snapshots (CYB-96 / CYB-16).
+- Normalize empty-arg `spawn Entry()` sugar to the entry path in `spawn_target` /
+  `spawn_legality`, reject `spawn Entry(args)` with `CalleeArgumentsUnsupported`, and cover
+  transferable vs mutable stack-escape capture legality with stale-generation rejection
+  (CYB-104 / CYB-17).
 - Route engine and AOT install-prefix / host-target lookup through the shared `beskid_abi::runtime_kit`
   authority instead of duplicated private helpers.
 - Drop LSP `Document.analysis` / `DocumentAnalysisSnapshot` ownership from document lifecycle;

@@ -3435,6 +3435,178 @@ fn stale_generation_never_reuses_spawn_legality_or_capture_storage() {
 }
 
 #[test]
+fn spawn_legality_normalizes_empty_call_entries_and_rejects_call_arguments() {
+    let empty_call_source = r#"i64 Worker() { return 7_i64; }
+i32 Main() { let task = spawn Worker(); return 0; }"#;
+    let (db, _project, unit, generation, index) = setup(empty_call_source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let worker_path = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        empty_call_source
+            .find("spawn Worker()")
+            .map(|offset| offset + "spawn ".len())
+            .expect("empty-call Worker path"),
+    );
+
+    let target = spawn_target(&db, spawn)
+        .expect("empty-call spawn target")
+        .expect("empty-call spawn fact");
+    assert_ne!(
+        target.callee, call,
+        "empty-arg spawn call must not keep the CallExpression as the fiber entry"
+    );
+    assert_eq!(
+        target.callee, worker_path,
+        "empty-arg spawn call must unwrap to the entry path operand"
+    );
+    assert_eq!(
+        node_kind(&db, target.callee).expect("entry kind"),
+        Some(NodeKind::PathExpression)
+    );
+    assert!(target.captures.is_empty());
+
+    let legality = spawn_legality(&db, spawn)
+        .expect("empty-call spawn legality")
+        .expect("empty-call legality fact");
+    assert!(legality.is_legal());
+    assert_eq!(legality.result, Some(SemanticTypeId::I64));
+    assert_eq!(
+        legality.span,
+        node_span(&db, spawn)
+            .expect("empty-call spawn span")
+            .expect("empty-call spawn span fact")
+    );
+
+    let entry = spawn_entry_validation(&db, spawn)
+        .expect("empty-call spawn entry")
+        .expect("empty-call entry fact");
+    assert_eq!(entry.target, worker_path);
+    assert_eq!(
+        entry.callable,
+        Some(ItemSignature {
+            parameters: Arc::from([]),
+            result: SemanticTypeId::I64,
+        })
+    );
+    assert!(entry.is_zero_argument_entry);
+
+    let args_source = r#"i64 Worker(i64 value) { return value; }
+i32 Main() { let task = spawn Worker(7_i64); return 0; }"#;
+    let (db, _project, unit, generation, index) = setup(args_source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    let target = spawn_target(&db, spawn)
+        .expect("argful spawn target")
+        .expect("argful spawn fact");
+    assert_eq!(
+        target.callee, call,
+        "spawn call arguments stay on the CallExpression so legality can fail closed"
+    );
+
+    let legality = spawn_legality(&db, spawn)
+        .expect("argful spawn legality")
+        .expect("argful legality fact");
+    assert!(!legality.is_legal());
+    assert_eq!(legality.result, None);
+    assert_eq!(legality.diagnostics.len(), 1);
+    assert_eq!(
+        legality.diagnostics[0].kind,
+        SpawnDiagnosticKind::CalleeArgumentsUnsupported
+    );
+    assert_eq!(
+        legality.diagnostics[0].span,
+        node_span(&db, spawn)
+            .expect("argful spawn span")
+            .expect("argful spawn span fact")
+    );
+}
+
+#[test]
+fn spawn_legality_accepts_transferable_captures_and_rejects_mutable_stack_escapes() {
+    let legal_source = r#"i32 Main(i32 value) {
+    let task = spawn (() => value);
+    return 0;
+}"#;
+    let (db, _project, unit, generation, index) = setup(legal_source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    let value = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        legal_source.find("value)").expect("parameter declaration"),
+    );
+    let value_use = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        legal_source
+            .find("=> value)")
+            .map(|offset| offset + "=> ".len())
+            .expect("transferable capture use"),
+    );
+
+    let legality = spawn_legality(&db, spawn)
+        .expect("transferable spawn legality")
+        .expect("transferable legality fact");
+    assert!(legality.is_legal());
+    assert_eq!(legality.result, Some(SemanticTypeId::I32));
+    assert_eq!(
+        legality.target.captures.as_ref(),
+        &[ClosureCapture {
+            declaration: value,
+            slot: local_slot(&db, value)
+                .expect("value slot")
+                .expect("value slot fact"),
+            class: CaptureStorageClass::TransferableValue,
+            span: node_span(&db, value_use)
+                .expect("value use span")
+                .expect("value use span fact"),
+        }]
+    );
+
+    let mutable_source = r#"i32 Main() {
+    mut i32 frame = 1;
+    let task = spawn (() => frame);
+    return 0;
+}"#;
+    let (db, _project, unit, generation, index) = setup(mutable_source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    let frame_use = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        mutable_source
+            .rfind("frame)")
+            .expect("mutable capture reference"),
+    );
+    let capture = capture_storage(&db, frame_use)
+        .expect("mutable capture storage")
+        .expect("mutable capture fact");
+    assert_eq!(capture.class, CaptureStorageClass::StackReference);
+
+    let legality = spawn_legality(&db, spawn)
+        .expect("mutable spawn legality")
+        .expect("mutable legality fact");
+    assert!(!legality.is_legal());
+    assert_eq!(legality.result, Some(SemanticTypeId::I32));
+    assert_eq!(legality.diagnostics.len(), 1);
+    assert_eq!(
+        legality.diagnostics[0].kind,
+        SpawnDiagnosticKind::StackReferenceEscapesSpawn
+    );
+    assert_eq!(legality.diagnostics[0].span, capture.span);
+    assert_eq!(legality.diagnostics[0].capture, Some(capture));
+}
+
+#[test]
 fn stale_generation_never_reuses_closure_contract_or_spawn_entry_validation() {
     let source = r#"i32 Main(i32 value) {
     let closure = () => value;
