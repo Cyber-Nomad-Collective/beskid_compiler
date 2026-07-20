@@ -94,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Produce Windows COFF static archives and DLL import libraries through the native `lib` and
+  `link` tools, publishing the exact `beskid_runtime_import.lib` coordinate required by ABI-v5
+  runtime kits (CYB-112).
 - Remove the unused direct `beskid_runtime` dependency from `beskid_codegen` (CYB-113).
 - Migrate the AOT mod-artifact object-compilation fixture from the retired HIR/`Lowerable`
   driver to the authoritative prepared syntax → `CodegenInput` → ISLE boundary (CYB-107).
