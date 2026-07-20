@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add a native ABI-v5 runtime-kit matrix staging command: it builds canonical
+  debug and release artifacts into disposable inputs, derives provenance from
+  native symbols, atomically publishes one exact `build-matrix` prefix, and
+  exercises installed-prefix JIT and AOT smoke targets (CYB-83).
 - Parse fenced `code` expressions as their dedicated syntax kind and retain an explicit,
   span-bearing generated-ISLE rejection regression, replacing the CodeString CYB-81 inventory
   placeholder with verified evidence.
