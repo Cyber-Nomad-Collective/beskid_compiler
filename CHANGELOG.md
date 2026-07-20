@@ -80,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameters so runtime `word` offsets are typed before ISLE emission.
 - Drop LSP `Document.analysis` / `DocumentAnalysisSnapshot` ownership from document lifecycle;
   documentation actions and refresh now use only generation-bound syntax documentation facts.
+- Canonical bootstrap `ThreadAttach`/`ThreadDetach` own a dedicated `BeskidTlsState`
+  allocation (manifest size 32) so TLS root-frame offset 8 no longer collides with
+  `BeskidRuntimeState.current_thread`; `ProcessInit` stamps `abi_version = 5` without
+  installing RuntimeState into TLS (CYB-97 / W5.1 lifecycle prerequisite).
 
 ### Added
 - Cover multi-function syntax assembly failures at the module boundary, including deterministic
@@ -195,6 +199,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameters so runtime `word` offsets are typed before ISLE emission.
 - Drop LSP `Document.analysis` / `DocumentAnalysisSnapshot` ownership from document lifecycle;
   documentation actions and refresh now use only generation-bound syntax documentation facts.
+- Canonical bootstrap `ThreadAttach`/`ThreadDetach` own a dedicated `BeskidTlsState`
+  allocation (manifest size 32) so TLS root-frame offset 8 no longer collides with
+  `BeskidRuntimeState.current_thread`; `ProcessInit` stamps `abi_version = 5` without
+  installing RuntimeState into TLS (CYB-97 / W5.1 lifecycle prerequisite).
 
 ### Fixed
 - Preserve each generated-ISLE verification failure's originating expanded-syntax key and render
