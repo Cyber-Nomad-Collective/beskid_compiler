@@ -714,13 +714,14 @@ pub fn emit_isle_item<'db>(
     let body = item_body(db, item)
         .ok()
         .flatten()
-        .ok_or_else(|| FunctionEmissionError::Verification("item has no syntax body".to_owned()))?;
+        .ok_or_else(|| FunctionEmissionError::verification(item, "item has no syntax body"))?;
     let signature = item_abi_signature(db, item)
         .ok()
         .flatten()
         .and_then(|signature| signature_for_item(isa, signature))
         .ok_or_else(|| {
-            FunctionEmissionError::Verification(
+            FunctionEmissionError::verification(
+                item,
                 "item signature is unavailable to syntax-only ISLE emission".to_owned(),
             )
         })?;
@@ -739,7 +740,7 @@ pub fn syntax_item_signature(
         .ok()
         .flatten()
         .and_then(|signature| signature_for_item(isa, signature))
-        .ok_or_else(|| FunctionEmissionError::Verification("item signature unavailable".to_owned()))
+        .ok_or_else(|| FunctionEmissionError::verification(item, "item signature unavailable"))
 }
 
 /// Emit a syntax-only item with an explicit semantic-call importer.
@@ -753,14 +754,12 @@ pub fn emit_isle_item_with_call_importer<'db>(
     let body = item_body(db, item)
         .ok()
         .flatten()
-        .ok_or_else(|| FunctionEmissionError::Verification("item has no syntax body".to_owned()))?;
+        .ok_or_else(|| FunctionEmissionError::verification(item, "item has no syntax body"))?;
     let signature = item_abi_signature(db, item)
         .ok()
         .flatten()
         .and_then(|signature| signature_for_item(isa, signature))
-        .ok_or_else(|| {
-            FunctionEmissionError::Verification("item signature unavailable".to_owned())
-        })?;
+        .ok_or_else(|| FunctionEmissionError::verification(item, "item signature unavailable"))?;
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_isa(input, isa);
     emitter.emit_item_statement_with_call_importer(
@@ -785,14 +784,12 @@ pub fn emit_isle_item_with_services<'db>(
     let body = item_body(db, item)
         .ok()
         .flatten()
-        .ok_or_else(|| FunctionEmissionError::Verification("item has no syntax body".to_owned()))?;
+        .ok_or_else(|| FunctionEmissionError::verification(item, "item has no syntax body"))?;
     let signature = item_abi_signature(db, item)
         .ok()
         .flatten()
         .and_then(|signature| signature_for_item(isa, signature))
-        .ok_or_else(|| {
-            FunctionEmissionError::Verification("item signature unavailable".to_owned())
-        })?;
+        .ok_or_else(|| FunctionEmissionError::verification(item, "item signature unavailable"))?;
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_isa(input, isa);
     emitter.emit_item_statement_with_services(
@@ -827,9 +824,9 @@ pub fn emit_isle_item_with_services_specialization<'db>(
     let body = item_body(db, item)
         .ok()
         .flatten()
-        .ok_or_else(|| FunctionEmissionError::Verification("item has no syntax body".to_owned()))?;
+        .ok_or_else(|| FunctionEmissionError::verification(item, "item has no syntax body"))?;
     let signature = signature_for_item(isa, specialization.clone()).ok_or_else(|| {
-        FunctionEmissionError::Verification("generic item specialization is unavailable".to_owned())
+        FunctionEmissionError::verification(item, "generic item specialization is unavailable")
     })?;
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_item_specialization(input, isa, item, specialization);

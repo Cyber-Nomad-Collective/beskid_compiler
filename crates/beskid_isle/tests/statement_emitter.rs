@@ -141,5 +141,5 @@ fn unterminated_statement_is_rejected_by_mandatory_verification() {
         )
         .expect_err("unterminated non-unit CLIF must not escape the emitter");
 
-    assert!(matches!(error, FunctionEmissionError::Verification(_)));
+    assert!(matches!(error, FunctionEmissionError::Verification { .. }));
 }

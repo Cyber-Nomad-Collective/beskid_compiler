@@ -26,8 +26,8 @@ use beskid_queries::{
     SyntaxGenerationId, aggregate_field_access, build_canonical_corelib_syscall_typed_program,
     build_canonical_runtime_typed_program, build_typed_program,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
-    closure_environment, enum_match, item_name, literal_fact, node_kind, node_type, spawn_target,
-    test_statement_nodes,
+    closure_environment, enum_match, format_ast_node_site, item_body, item_name, literal_fact,
+    node_kind, node_type, spawn_target, test_statement_nodes,
 };
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::isa;
@@ -102,6 +102,97 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
         .expect("parsed expression lowers through generated ISLE");
 
     assert!(function.display().to_string().contains("iconst.i32 42"));
+}
+
+#[test]
+fn parsed_multi_function_verification_error_identifies_the_originating_expression_site() {
+    let (input, isa, root) =
+        item_fixture_with_root("i32 Sibling() { return 1; } i32 Failing() { return 2; }");
+    let db = input.database();
+    let items = find_function_definitions(db, root);
+    let sibling = items[0];
+    let failing = items[1];
+    let failing_literal = find_node(db, failing, beskid_queries::IndexedNodeKind::Literal)
+        .expect("failing function literal");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+
+    let error = emitter
+        .emit_expression(
+            UserFuncName::user(0, 99),
+            emitter.signature([], [types::I64]),
+            &facts,
+            failing_literal,
+        )
+        .expect_err("i32 return under an i64 signature must fail CLIF verification");
+    let first = error.display_with_db(db);
+    let repeated = error.display_with_db(db);
+    let failing_site = format_ast_node_site(db, failing_literal);
+    let sibling_site = format_ast_node_site(db, sibling);
+
+    assert_eq!(first, repeated);
+    assert!(first.contains(&failing_site), "{first}");
+    assert!(!first.contains(&sibling_site), "{first}");
+    assert!(first.contains("Literal@"), "{first}");
+}
+
+#[test]
+fn parsed_statement_final_block_error_identifies_the_originating_body_site() {
+    let (input, isa, root) = item_fixture_with_root("unit Main() { 2; }");
+    let db = input.database();
+    let body = find_node(
+        db,
+        root,
+        beskid_queries::IndexedNodeKind::ExpressionStatement,
+    )
+    .expect("expression statement");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+
+    let error = emitter
+        .emit_statement(
+            UserFuncName::user(0, 100),
+            emitter.signature([], [types::I32]),
+            &facts,
+            body,
+        )
+        .expect_err("non-unit fallthrough must fail final-block verification");
+    let rendered = error.display_with_db(db);
+
+    assert!(
+        rendered.contains(&format_ast_node_site(db, body)),
+        "{rendered}"
+    );
+    assert!(rendered.contains("ExpressionStatement@"), "{rendered}");
+}
+
+#[test]
+fn parsed_parameter_materialization_error_identifies_the_originating_item_site() {
+    let (input, isa, root) = item_fixture_with_root("i32 Main(i32 value) { return value; }");
+    let db = input.database();
+    let item = find_function_definition(db, root).expect("function item");
+    let body = item_body(db, item)
+        .expect("body query")
+        .expect("function body");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+
+    let error = emitter
+        .emit_item_statement(
+            UserFuncName::user(0, 101),
+            emitter.signature([], [types::I32]),
+            &facts,
+            item,
+            body,
+        )
+        .expect_err("missing incoming parameter must fail materialization");
+    let rendered = error.display_with_db(db);
+
+    assert!(
+        rendered.contains(&format_ast_node_site(db, item)),
+        "{rendered}"
+    );
+    assert!(rendered.contains("FunctionDefinition@"), "{rendered}");
 }
 
 #[test]

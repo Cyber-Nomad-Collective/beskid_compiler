@@ -98,6 +98,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve each generated-ISLE verification failure's originating expanded-syntax key and render
+  its deterministic source path, generation/node identity, construct, and range through module
+  diagnostics.
 - Refuse a fixed `item_abi_signature` for generic function declarations so module emission
   registers call-derived `SpecializedItem` identities (including zero-argument factories whose
   nominal return type collapses to POINTER).

@@ -2285,6 +2285,7 @@ impl<'isa> FunctionEmitter<'isa> {
         request: StatementEmission<'_>,
         services: EmissionServices<'services>,
     ) -> Result<Function, FunctionEmissionError> {
+        let verification_site = request.item.unwrap_or(request.body);
         let mut function = Function::with_name_signature(request.name, request.signature);
         let mut builder_context = FunctionBuilderContext::new();
         {
@@ -2304,22 +2305,27 @@ impl<'isa> FunctionEmitter<'isa> {
             }
             lower_statement(&mut context, request.body).map_err(FunctionEmissionError::Lowering)?;
             let final_block = builder.current_block().ok_or_else(|| {
-                FunctionEmissionError::Verification("function has no final block".to_owned())
+                FunctionEmissionError::verification(
+                    verification_site,
+                    "function has no final block",
+                )
             })?;
             let terminated = block_is_terminated(&builder, final_block);
             if !terminated {
                 if builder.func.signature.returns.is_empty() {
                     builder.ins().return_(&[]);
                 } else {
-                    return Err(FunctionEmissionError::Verification(
+                    return Err(FunctionEmissionError::verification(
+                        verification_site,
                         "generated statement body did not terminate its final block".to_owned(),
                     ));
                 }
             }
             builder.finalize();
         }
-        verify_function(&function, self.isa.flags())
-            .map_err(|error| FunctionEmissionError::Verification(error.to_string()))?;
+        verify_function(&function, self.isa.flags()).map_err(|error| {
+            FunctionEmissionError::verification(verification_site, error.to_string())
+        })?;
         Ok(function)
     }
 
@@ -2419,7 +2425,7 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.finalize();
         }
         verify_function(&function, self.isa.flags())
-            .map_err(|error| FunctionEmissionError::Verification(error.to_string()))?;
+            .map_err(|error| FunctionEmissionError::verification(body, error.to_string()))?;
         Ok(function)
     }
 }
@@ -2429,16 +2435,17 @@ fn materialize_parameters(
     item: AstNodeKey,
 ) -> Result<(), FunctionEmissionError> {
     let parameters = context.facts.function_parameters(item).ok_or_else(|| {
-        FunctionEmissionError::Verification("item parameter facts are unavailable".to_owned())
+        FunctionEmissionError::verification(item, "item parameter facts are unavailable")
     })?;
     let incoming = context
         .builder
         .block_params(context.builder.current_block().ok_or_else(|| {
-            FunctionEmissionError::Verification("function has no entry block".to_owned())
+            FunctionEmissionError::verification(item, "function has no entry block")
         })?)
         .to_vec();
     if parameters.len() != incoming.len() {
-        return Err(FunctionEmissionError::Verification(
+        return Err(FunctionEmissionError::verification(
+            item,
             "item parameter facts do not match function signature".to_owned(),
         ));
     }
@@ -2446,7 +2453,8 @@ fn materialize_parameters(
         if context.locals.contains_key(&parameter.slot)
             || context.builder.func.dfg.value_type(value) != parameter.value_type
         {
-            return Err(FunctionEmissionError::Verification(
+            return Err(FunctionEmissionError::verification(
+                item,
                 "item parameter slot or type is invalid".to_owned(),
             ));
         }
@@ -2470,24 +2478,36 @@ fn block_is_terminated(builder: &FunctionBuilder<'_>, block: Block) -> bool {
 #[derive(Debug)]
 pub enum FunctionEmissionError {
     Lowering(LoweringError),
-    Verification(String),
+    Verification { site: AstNodeKey, message: String },
 }
 
 impl std::fmt::Display for FunctionEmissionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Lowering(error) => write!(f, "Lowering({error})"),
-            Self::Verification(message) => write!(f, "Verification({message})"),
+            Self::Verification { site, message } => {
+                write!(f, "Verification({message} at #{})", site.cursor_label())
+            }
         }
     }
 }
 
 impl FunctionEmissionError {
+    pub fn verification(site: AstNodeKey, message: impl Into<String>) -> Self {
+        Self::Verification {
+            site,
+            message: message.into(),
+        }
+    }
+
     /// Expand nested AstNodeKey labels with path, construct, and source range when a db is available.
     pub fn display_with_db(&self, db: &dyn beskid_queries::Db) -> String {
         match self {
             Self::Lowering(error) => format!("Lowering({})", error.display_with_db(db)),
-            Self::Verification(message) => format!("Verification({message})"),
+            Self::Verification { site, message } => format!(
+                "Verification({message} at {})",
+                beskid_queries::format_ast_node_site(db, *site)
+            ),
         }
     }
 }
