@@ -68,6 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Collapse the callable-signature syntax-query guard so the compiler Rust clippy gate passes
+  with `-D warnings`, without suppressing the lint (CYB-110).
 - Fail close canonical closure-environment descriptor registration before allocation or rooting:
   reject null requests/descriptors, non-power-of-two alignment, unaligned/out-of-bounds pointer
   offsets, and arithmetic overflow; execute valid rooting plus invalid-descriptor regressions on
