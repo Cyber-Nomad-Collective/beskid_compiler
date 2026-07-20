@@ -675,10 +675,13 @@ impl SyntaxNodeFacts<'_> {
     fn unwrap_transparent(&self, mut key: AstNodeKey) -> Option<AstNodeKey> {
         loop {
             let kind = self.query(node_kind(self.db, key))?;
+            // ElseBranch is a structural wrapper around Block or nested If; peel it so
+            // emit_if_else can lower the concrete else arm without a HIR/Lowerable fallback.
             if !matches!(
                 kind,
                 beskid_queries::IndexedNodeKind::Statement
                     | beskid_queries::IndexedNodeKind::Expression
+                    | beskid_queries::IndexedNodeKind::ElseBranch
             ) {
                 return Some(key);
             }

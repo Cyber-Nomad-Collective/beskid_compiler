@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Expand the parsed-project → CodegenInput → ISLE → verified-CLIF harness with nested direct
+  calls, while/break/continue, if/else, lambda/spawn closed failures, range-for fail-closed
+  coverage, and an explicit production-path assertion that HIR/`Lowerable` drivers stay retired
+  (CYB-99).
 - Cover multi-function syntax assembly failures at the module boundary, including deterministic
   attribution to the failing function rather than a sibling item.
 - Catalogue every expanded-syntax node kind at the generated ISLE boundary with an exhaustive,
@@ -141,6 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Peel structural `ElseBranch` wrappers in syntax-fact child resolution so production if/else
+  arms lower through ISLE without a HIR/`Lowerable` fallback.
 - Preserve each generated-ISLE verification failure's originating expanded-syntax key and render
   its deterministic source path, generation/node identity, construct, and range through module
   diagnostics.
