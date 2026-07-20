@@ -111,8 +111,8 @@ impl CommandSession {
     /// Single prepare through typed executable HIR with semantic diagnostics gate.
     ///
     /// Primary API for `beskid run`, `beskid build`, `beskid test`, and `beskid clif`. Pass the
-    /// returned [`PreparedCompilation`] to [`PreparedCompilation::into_executable`] and
-    /// `lower_from_front_end` — do not run a second prepare.
+    /// returned [`PreparedCompilation`] to [`PreparedCompilation::into_executable`] and the
+    /// syntax-owned lowering boundary — do not run a second prepare.
     pub fn executable_gate_prepared(
         &self,
         resolved: &ResolvedInput,

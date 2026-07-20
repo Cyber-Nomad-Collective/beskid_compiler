@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use abfall::Heap;
 use beskid_aot::{AotRunRequest, BuildProfile, build_and_run, default_runtime_strategy};
-use beskid_codegen::lower_source;
 use beskid_runtime::{
     RuntimeRoot, clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope,
     scheduler_init, set_current_heap, set_current_root,
@@ -16,9 +15,8 @@ use crate::test_harness::temp_case_dir;
 const TEST_SOURCE_PATH: &str = "<beskid_tests>";
 
 pub fn compile_artifact(source: &str) -> beskid_codegen::CodegenArtifact {
-    let lowered = lower_source(Path::new(TEST_SOURCE_PATH), source, false)
-        .expect("expected codegen lowering to succeed");
-    lowered.artifact
+    beskid_engine::services::prepare_jit_module(Path::new(TEST_SOURCE_PATH), source)
+        .expect("expected syntax-owned codegen lowering to succeed")
 }
 
 pub fn validate_lowered(source: &str) {
