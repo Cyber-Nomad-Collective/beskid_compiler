@@ -2746,7 +2746,6 @@ fn builtin_type_to_semantic(ty: beskid_analysis::builtins::BuiltinType) -> Optio
         BuiltinType::Never => SemanticTypeId::NEVER,
     })
 }
-
 /// ABI facts for the compiler-embedded Corelib syscall facade. These are deliberately available
 /// only after [`CallLowering::CorelibService`] has proved the current source corpus; user source
 /// that merely spells one of these names remains dynamic and receives no import signature.
