@@ -86,10 +86,12 @@ fn v5_manifest_is_the_only_input_to_every_generated_artifact() {
     .unwrap();
     let manifest = load_v5_manifest_source(&source).expect("valid v5 source");
     assert_eq!(manifest.meta.abi_version, 5);
-    assert!(manifest
-        .intrinsics
-        .iter()
-        .all(|intrinsic| intrinsic.symbol.starts_with("beskid_rt_v5_")));
+    assert!(
+        manifest
+            .intrinsics
+            .iter()
+            .all(|intrinsic| intrinsic.symbol.starts_with("beskid_rt_v5_"))
+    );
     let trap = manifest
         .exports
         .iter()
@@ -169,9 +171,11 @@ fn intrinsic_linker_symbols_are_explicit_and_unique() {
         1,
     );
 
-    assert!(load_v5_manifest_source(&duplicate)
-        .expect_err("duplicate linker symbols must be rejected")
-        .contains("intrinsic linker symbol"));
+    assert!(
+        load_v5_manifest_source(&duplicate)
+            .expect_err("duplicate linker symbols must be rejected")
+            .contains("intrinsic linker symbol")
+    );
 }
 
 #[test]

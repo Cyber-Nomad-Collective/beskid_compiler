@@ -419,7 +419,10 @@ fn compile_platform_objects(
     let object = output_dir.join(format!("{name}.platform.o"));
     let tls_object = output_dir.join(format!("{name}.platform_tls.o"));
     let (assembly_args, tls_args): (&[&str], &[&str]) = match target.triple.as_str() {
-        "aarch64-apple-darwin" => (&["-c", "-arch", "arm64"], &["-std=c11", "-c", "-arch", "arm64"]),
+        "aarch64-apple-darwin" => (
+            &["-c", "-arch", "arm64"],
+            &["-std=c11", "-c", "-arch", "arm64"],
+        ),
         "x86_64-unknown-linux-gnu" => (
             &["-target", "x86_64-unknown-linux-gnu", "-fPIC", "-c"],
             &[
@@ -447,7 +450,12 @@ fn compile_platform_objects(
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
-            command: format!("clang {:?} {} -o {}", assembly_args, source.display(), object.display()),
+            command: format!(
+                "clang {:?} {} -o {}",
+                assembly_args,
+                source.display(),
+                object.display()
+            ),
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
@@ -461,7 +469,12 @@ fn compile_platform_objects(
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
-            command: format!("clang {:?} {} -o {}", tls_args, tls_source.display(), tls_object.display()),
+            command: format!(
+                "clang {:?} {} -o {}",
+                tls_args,
+                tls_source.display(),
+                tls_object.display()
+            ),
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }

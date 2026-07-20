@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
-use crate::hir::{HirItem, HirProgram, HirStatementNode};
 use crate::syntax::{
-    HostBodyItem, HostDefinition, InjectQualifier, RegistrationLifetime, RegistryBlock,
-    RegistryEntry, ScopeDefinition, ScopeHookKind, Spanned,
+    FieldKind, HostBodyItem, HostDefinition, InjectQualifier, Node, Program, RegistrationLifetime,
+    RegistryBlock, RegistryEntry, ScopeDefinition, ScopeHookKind, Spanned, Type,
 };
 
 use super::model::{
@@ -41,14 +40,18 @@ pub struct WithSite {
     pub span: crate::syntax::SpanInfo,
 }
 
-pub fn collect(program: &Spanned<HirProgram>) -> CollectedComposition {
+/// Collect composition declarations directly from the expanded syntax authority.
+///
+/// Composition only consumes declarations and statement shape, so lowering it to HIR would add
+/// no semantic information and would make this diagnostic path depend on the retired pipeline.
+pub fn collect(program: &Spanned<Program>) -> CollectedComposition {
     let mut collected = CollectedComposition::default();
     let mut next_registration_id = 1_u32;
     let mut next_scope_id = 1_u32;
 
     for item in &program.node.items {
         match &item.node {
-            HirItem::HostDefinition(host) => {
+            Node::HostDefinition(host) => {
                 collect_host(
                     host,
                     &mut collected,
@@ -56,13 +59,13 @@ pub fn collect(program: &Spanned<HirProgram>) -> CollectedComposition {
                     &mut next_scope_id,
                 );
             }
-            HirItem::TypeDefinition(def) => {
+            Node::TypeDefinition(def) => {
                 let key = def.node.name.node.name.clone();
                 let injects = def
                     .node
                     .fields
                     .iter()
-                    .filter(|field| field.node.kind == crate::hir::HirFieldKind::Injected)
+                    .filter(|field| field.node.kind == FieldKind::Injected)
                     .map(|field| TypeInjectField {
                         requested_type: type_name(&field.node.ty),
                         qualifier: field.node.inject_qualifier,
@@ -74,16 +77,16 @@ pub fn collect(program: &Spanned<HirProgram>) -> CollectedComposition {
                     collected.type_inject_fields.insert(key, injects);
                 }
             }
-            HirItem::FunctionDefinition(def) => {
+            Node::Function(def) => {
                 collect_launch_and_with_statements(&def.node.body.node.statements, &mut collected);
             }
-            HirItem::MethodDefinition(def) => {
+            Node::Method(def) => {
                 collect_launch_and_with_statements(&def.node.body.node.statements, &mut collected);
             }
-            HirItem::TestDefinition(def) => {
-                collect_launch_and_with_statements(&def.node.body.node.statements, &mut collected);
+            Node::TestDefinition(def) => {
+                collect_launch_and_with_statements(&def.node.statements, &mut collected);
             }
-            HirItem::InlineModule(module) => {
+            Node::InlineModule(module) => {
                 collect_launch_and_with_statements_in_items(&module.node.items, &mut collected);
             }
             _ => {}
@@ -94,7 +97,7 @@ pub fn collect(program: &Spanned<HirProgram>) -> CollectedComposition {
 }
 
 fn collect_launch_and_with_statements_in_items(
-    items: &[Spanned<HirItem>],
+    items: &[Spanned<Node>],
     collected: &mut CollectedComposition,
 ) {
     for item in items {
@@ -102,35 +105,18 @@ fn collect_launch_and_with_statements_in_items(
             collect_launch_and_with_statements(statements, collected);
             continue;
         }
-        if let HirItem::InlineModule(module) = &item.node {
+        if let Node::InlineModule(module) = &item.node {
             collect_launch_and_with_statements_in_items(&module.node.items, collected);
         }
     }
 }
 
-fn item_statement_list(item: &Spanned<HirItem>) -> Option<&[Spanned<HirStatementNode>]> {
+fn item_statement_list(item: &Spanned<Node>) -> Option<&[Spanned<crate::syntax::Statement>]> {
     match &item.node {
-        HirItem::FunctionDefinition(def) => Some(&def.node.body.node.statements),
-        HirItem::MethodDefinition(def) => Some(&def.node.body.node.statements),
-        HirItem::TestDefinition(def) => Some(&def.node.body.node.statements),
+        Node::Function(def) => Some(&def.node.body.node.statements),
+        Node::Method(def) => Some(&def.node.body.node.statements),
+        Node::TestDefinition(def) => Some(&def.node.statements),
         _ => None,
-    }
-}
-
-fn collect_hir_else_branch(
-    else_branch: &Spanned<crate::hir::HirElseBranch>,
-    collected: &mut CollectedComposition,
-) {
-    match &else_branch.node {
-        crate::hir::HirElseBranch::Block(block) => {
-            collect_launch_and_with_statements(&block.node.statements, collected);
-        }
-        crate::hir::HirElseBranch::If(nested) => {
-            collect_launch_and_with_statements(&nested.node.then_block.node.statements, collected);
-            if let Some(nested_else) = &nested.node.else_branch {
-                collect_hir_else_branch(nested_else, collected);
-            }
-        }
     }
 }
 
@@ -140,13 +126,10 @@ fn collect_syntax_else_branch(
 ) {
     match &else_branch.node {
         crate::syntax::ElseBranch::Block(block) => {
-            collect_launch_and_with_statements_from_syntax(&block.node.statements, collected);
+            collect_launch_and_with_statements(&block.node.statements, collected);
         }
         crate::syntax::ElseBranch::If(nested) => {
-            collect_launch_and_with_statements_from_syntax(
-                &nested.node.then_block.node.statements,
-                collected,
-            );
+            collect_launch_and_with_statements(&nested.node.then_block.node.statements, collected);
             if let Some(nested_else) = &nested.node.else_branch {
                 collect_syntax_else_branch(nested_else, collected);
             }
@@ -155,49 +138,6 @@ fn collect_syntax_else_branch(
 }
 
 fn collect_launch_and_with_statements(
-    statements: &[Spanned<HirStatementNode>],
-    collected: &mut CollectedComposition,
-) {
-    for statement in statements {
-        match &statement.node {
-            HirStatementNode::WithStatement(with_stmt) => {
-                record_with_site(
-                    collected,
-                    &with_stmt.node.scope_name.node.name,
-                    with_stmt.span,
-                );
-                collect_launch_and_with_statements_from_syntax(
-                    &with_stmt.node.body.node.statements,
-                    collected,
-                );
-            }
-            HirStatementNode::LaunchStatement(launch_stmt) => {
-                record_launch_site(collected, &launch_stmt.node.host_path, launch_stmt.span);
-            }
-            HirStatementNode::IfStatement(if_stmt) => {
-                collect_launch_and_with_statements(
-                    &if_stmt.node.then_block.node.statements,
-                    collected,
-                );
-                if let Some(else_branch) = &if_stmt.node.else_branch {
-                    collect_hir_else_branch(else_branch, collected);
-                }
-            }
-            HirStatementNode::WhileStatement(while_stmt) => {
-                collect_launch_and_with_statements(
-                    &while_stmt.node.body.node.statements,
-                    collected,
-                );
-            }
-            HirStatementNode::ForStatement(for_stmt) => {
-                collect_launch_and_with_statements(&for_stmt.node.body.node.statements, collected);
-            }
-            _ => {}
-        }
-    }
-}
-
-fn collect_launch_and_with_statements_from_syntax(
     statements: &[Spanned<crate::syntax::Statement>],
     collected: &mut CollectedComposition,
 ) {
@@ -209,16 +149,13 @@ fn collect_launch_and_with_statements_from_syntax(
                     &with_stmt.node.scope_name.node.name,
                     with_stmt.span,
                 );
-                collect_launch_and_with_statements_from_syntax(
-                    &with_stmt.node.body.node.statements,
-                    collected,
-                );
+                collect_launch_and_with_statements(&with_stmt.node.body.node.statements, collected);
             }
             crate::syntax::Statement::Launch(launch_stmt) => {
                 record_launch_site(collected, &launch_stmt.node.host_path, launch_stmt.span);
             }
             crate::syntax::Statement::If(if_stmt) => {
-                collect_launch_and_with_statements_from_syntax(
+                collect_launch_and_with_statements(
                     &if_stmt.node.then_block.node.statements,
                     collected,
                 );
@@ -227,16 +164,13 @@ fn collect_launch_and_with_statements_from_syntax(
                 }
             }
             crate::syntax::Statement::While(while_stmt) => {
-                collect_launch_and_with_statements_from_syntax(
+                collect_launch_and_with_statements(
                     &while_stmt.node.body.node.statements,
                     collected,
                 );
             }
             crate::syntax::Statement::For(for_stmt) => {
-                collect_launch_and_with_statements_from_syntax(
-                    &for_stmt.node.body.node.statements,
-                    collected,
-                );
+                collect_launch_and_with_statements(&for_stmt.node.body.node.statements, collected);
             }
             _ => {}
         }
@@ -447,21 +381,21 @@ fn path_name(path: &Spanned<crate::syntax::Path>) -> String {
         .join(".")
 }
 
-fn type_name(ty: &Spanned<crate::hir::HirType>) -> String {
+fn type_name(ty: &Spanned<Type>) -> String {
     match &ty.node {
-        crate::hir::HirType::Primitive(primitive) => format!("{:?}", primitive.node),
-        crate::hir::HirType::Complex(path) => path
+        Type::Primitive(primitive) => format!("{:?}", primitive.node),
+        Type::Complex(path) => path
             .node
             .segments
             .iter()
             .map(|segment| segment.node.name.node.name.clone())
             .collect::<Vec<_>>()
             .join("."),
-        crate::hir::HirType::Array(inner) => type_name(inner),
-        crate::hir::HirType::Function { .. } => "Function".to_string(),
+        Type::Array(inner) => type_name(inner),
+        Type::Function { .. } => "Function".to_string(),
     }
 }
 
-fn type_is_plural(ty: &Spanned<crate::hir::HirType>) -> bool {
-    matches!(ty.node, crate::hir::HirType::Array(_))
+fn type_is_plural(ty: &Spanned<Type>) -> bool {
+    matches!(ty.node, Type::Array(_))
 }

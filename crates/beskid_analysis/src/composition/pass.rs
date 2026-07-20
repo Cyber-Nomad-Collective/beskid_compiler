@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::hir::HirProgram;
-use crate::syntax::SpanInfo;
-use crate::syntax::Spanned;
+use crate::syntax::{Program, SpanInfo, Spanned};
 
 use super::collect::{collect, dependency_requests};
 use super::container::ServiceContainer;
@@ -16,7 +14,8 @@ use super::snapshot::CompositionSnapshot;
 
 #[derive(Clone)]
 pub struct CompositionInput<'a> {
-    pub program: &'a Spanned<HirProgram>,
+    /// Expanded syntax is the composition authority; this pass does not require HIR.
+    pub program: &'a Spanned<Program>,
     pub is_mod_project: bool,
 }
 
@@ -163,5 +162,38 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
         snapshot,
         issues,
         dependency_edges: edges,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CompositionInput, resolve_composition};
+    use crate::services::parse_program;
+
+    #[test]
+    fn resolves_composition_from_expanded_syntax() {
+        let program = parse_program(
+            r#"
+host AppHost() {
+    registry {
+        single Logger;
+    }
+}
+
+i32 Main() {
+    launch AppHost();
+    return 0;
+}
+"#,
+        )
+        .expect("composition source parses");
+
+        let result = resolve_composition(CompositionInput {
+            program: &program,
+            is_mod_project: false,
+        });
+
+        assert_eq!(result.snapshot.launched_host, "AppHost");
+        assert!(result.issues.is_empty(), "issues: {:?}", result.issues);
     }
 }

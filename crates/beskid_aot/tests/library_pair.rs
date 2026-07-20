@@ -36,7 +36,11 @@ fn host_context_pair_contains_the_manifest_context_exports_in_both_native_artifa
             .arg(artifact)
             .output()
             .expect("run nm");
-        assert!(output.status.success(), "nm failed for {}", artifact.display());
+        assert!(
+            output.status.success(),
+            "nm failed for {}",
+            artifact.display()
+        );
         let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
         for symbol in &expected {
             assert!(

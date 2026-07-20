@@ -35,10 +35,8 @@ pub fn resolve_program_composition(
     program: &Spanned<Program>,
     compile_plan: Option<&CompilePlan>,
 ) -> CompositionResult {
-    let ast_program: Spanned<crate::hir::AstProgram> = program.clone().into();
-    let hir_program = crate::hir::lower_program(&ast_program);
     crate::composition::resolve_composition(CompositionInput {
-        program: &hir_program,
+        program,
         is_mod_project: is_mod_compile_plan(compile_plan),
     })
 }

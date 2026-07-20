@@ -36,7 +36,10 @@ fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata)
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root: directory },
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory,
+            },
             dependencies: Vec::new(),
         },
         Arc::new(vec![SourceUnit {

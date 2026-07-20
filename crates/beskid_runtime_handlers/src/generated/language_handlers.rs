@@ -8,49 +8,72 @@ use beskid_runtime::HandlerTableEntry;
 ///
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn language_dispatch_bytes_compare(enum_ptr: *const u8) -> i64 {
-                let p0 = crate::envelope::load_ptr(enum_ptr, 0);
-            let p1 = crate::envelope::load_ptr(enum_ptr, 1);
-            crate::bytes_compare(p0 as *const beskid_abi::BeskidArray, p1 as *const beskid_abi::BeskidArray)
+    let p0 = crate::envelope::load_ptr(enum_ptr, 0);
+    let p1 = crate::envelope::load_ptr(enum_ptr, 1);
+    crate::bytes_compare(
+        p0 as *const beskid_abi::BeskidArray,
+        p1 as *const beskid_abi::BeskidArray,
+    )
 }
 
 /// # Safety
 ///
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn language_dispatch_bytes_get(enum_ptr: *const u8) -> i64 {
-                let p0 = crate::envelope::load_ptr(enum_ptr, 0);
-            let p1 = crate::envelope::load_u64(enum_ptr, 1);
-            crate::bytes_get(p0 as *const beskid_abi::BeskidArray, p1 as i64)
+    let p0 = crate::envelope::load_ptr(enum_ptr, 0);
+    let p1 = crate::envelope::load_u64(enum_ptr, 1);
+    crate::bytes_get(p0 as *const beskid_abi::BeskidArray, p1 as i64)
 }
 
 /// # Safety
 ///
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn language_dispatch_str_eq(enum_ptr: *const u8) -> i64 {
-                let p0 = crate::envelope::load_ptr(enum_ptr, 0);
-            let p1 = crate::envelope::load_ptr(enum_ptr, 1);
-            crate::str_eq(p0 as *const BeskidStr, p1 as *const BeskidStr)
+    let p0 = crate::envelope::load_ptr(enum_ptr, 0);
+    let p1 = crate::envelope::load_ptr(enum_ptr, 1);
+    crate::str_eq(p0 as *const BeskidStr, p1 as *const BeskidStr)
 }
 
 /// # Safety
 ///
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn language_dispatch_test_bytes_len(_enum_ptr: *const u8) -> i64 {
-                crate::test_bytes_len()
+    crate::test_bytes_len()
 }
 
 /// # Safety
 ///
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn language_dispatch_test_bytes_ptr(_enum_ptr: *const u8) -> i64 {
-                crate::test_bytes_ptr()
+    crate::test_bytes_ptr()
 }
 
 const LANGUAGE_HANDLERS: [HandlerTableEntry; 5] = [
-    HandlerTableEntry { group: 3, tag: 0, fn_ptr: language_dispatch_bytes_compare as *const u8 },
-    HandlerTableEntry { group: 3, tag: 1, fn_ptr: language_dispatch_bytes_get as *const u8 },
-    HandlerTableEntry { group: 3, tag: 42, fn_ptr: language_dispatch_str_eq as *const u8 },
-    HandlerTableEntry { group: 3, tag: 43, fn_ptr: language_dispatch_test_bytes_len as *const u8 },
-    HandlerTableEntry { group: 3, tag: 44, fn_ptr: language_dispatch_test_bytes_ptr as *const u8 },
+    HandlerTableEntry {
+        group: 3,
+        tag: 0,
+        fn_ptr: language_dispatch_bytes_compare as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 1,
+        fn_ptr: language_dispatch_bytes_get as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 42,
+        fn_ptr: language_dispatch_str_eq as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 43,
+        fn_ptr: language_dispatch_test_bytes_len as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 44,
+        fn_ptr: language_dispatch_test_bytes_ptr as *const u8,
+    },
 ];
 
 /// Register all language-owned dispatch handlers with the runtime.
