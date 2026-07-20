@@ -29,8 +29,20 @@ mod dispatch;
 
 pub use dispatch::{emit_dispatch_call, emit_str_from_i64_dispatch, pointer_type as isle_pointer_type};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NodeKind {
+macro_rules! node_kinds {
+    ($($name:ident),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum NodeKind {
+            $($name),+
+        }
+
+        impl NodeKind {
+            pub const ALL: &'static [Self] = &[$(Self::$name),+];
+        }
+    };
+}
+
+node_kinds!(
     Program,
     FunctionDefinition,
     TestDefinition,
@@ -57,6 +69,122 @@ pub enum NodeKind {
     RangeExpression,
     BlockExpression,
     ForStatement,
+);
+
+/// Exhaustive disposition of an expanded-syntax kind at the generated ISLE boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyntaxNodeClassification {
+    IsleLowered(NodeKind),
+    Structural,
+    UnsupportedTypedOperation,
+}
+
+/// Classify every authoritative expanded-syntax kind without a fallback arm.
+pub const fn classify_syntax_node_kind(
+    kind: beskid_queries::IndexedNodeKind,
+) -> SyntaxNodeClassification {
+    use SyntaxNodeClassification::{IsleLowered, Structural, UnsupportedTypedOperation};
+    use beskid_queries::IndexedNodeKind as Syntax;
+
+    match kind {
+        Syntax::Program => IsleLowered(NodeKind::Program),
+        Syntax::FunctionDefinition => IsleLowered(NodeKind::FunctionDefinition),
+        Syntax::TestDefinition => IsleLowered(NodeKind::TestDefinition),
+        Syntax::ExpressionStatement => IsleLowered(NodeKind::ExpressionStatement),
+        Syntax::ReturnStatement => IsleLowered(NodeKind::ReturnStatement),
+        Syntax::LetStatement => IsleLowered(NodeKind::LetStatement),
+        Syntax::IfStatement => IsleLowered(NodeKind::IfStatement),
+        Syntax::WhileStatement => IsleLowered(NodeKind::WhileStatement),
+        Syntax::BreakStatement => IsleLowered(NodeKind::BreakStatement),
+        Syntax::ContinueStatement => IsleLowered(NodeKind::ContinueStatement),
+        Syntax::LiteralExpression | Syntax::Literal => IsleLowered(NodeKind::LiteralExpression),
+        Syntax::GroupedExpression => IsleLowered(NodeKind::GroupedExpression),
+        Syntax::UnaryExpression => IsleLowered(NodeKind::UnaryExpression),
+        Syntax::BinaryExpression => IsleLowered(NodeKind::BinaryExpression),
+        Syntax::AssignExpression => IsleLowered(NodeKind::AssignExpression),
+        Syntax::CallExpression => IsleLowered(NodeKind::CallExpression),
+        Syntax::PathExpression => IsleLowered(NodeKind::PathExpression),
+        Syntax::IndexExpression => IsleLowered(NodeKind::IndexExpression),
+        Syntax::ArrayLiteralExpression => IsleLowered(NodeKind::ArrayLiteralExpression),
+        Syntax::MemberExpression => IsleLowered(NodeKind::FieldExpression),
+        Syntax::StructLiteralExpression => IsleLowered(NodeKind::StructLiteralExpression),
+        Syntax::EnumConstructorExpression => IsleLowered(NodeKind::EnumLiteralExpression),
+        Syntax::MatchExpression => IsleLowered(NodeKind::MatchExpression),
+        Syntax::RangeExpression => IsleLowered(NodeKind::RangeExpression),
+        Syntax::Block | Syntax::BlockExpression => IsleLowered(NodeKind::BlockExpression),
+        Syntax::ForStatement => IsleLowered(NodeKind::ForStatement),
+
+        Syntax::HostDefinition
+        | Syntax::RegistryBlock
+        | Syntax::RegistryEntry
+        | Syntax::ScopeDefinition
+        | Syntax::ScopeHook
+        | Syntax::WithStatement
+        | Syntax::LaunchStatement
+        | Syntax::MethodDefinition
+        | Syntax::CodeStringLiteral
+        | Syntax::TryExpression
+        | Syntax::SpawnExpression
+        | Syntax::LambdaExpression => UnsupportedTypedOperation,
+
+        Syntax::Node
+        | Syntax::HostBodyItem
+        | Syntax::ExtendTypeDefinition
+        | Syntax::TypeDefinition
+        | Syntax::EnumDefinition
+        | Syntax::EnumVariant
+        | Syntax::ContractDefinition
+        | Syntax::TestMetaSection
+        | Syntax::TestMetadataEntry
+        | Syntax::TestSkipSection
+        | Syntax::TestSkipEntry
+        | Syntax::ContractNode
+        | Syntax::ContractMethodSignature
+        | Syntax::ContractEmbedding
+        | Syntax::Attribute
+        | Syntax::AttributeDeclaration
+        | Syntax::AttributeTarget
+        | Syntax::AttributeParameter
+        | Syntax::AttributeArgument
+        | Syntax::ModuleDeclaration
+        | Syntax::InlineModule
+        | Syntax::UseDeclaration
+        | Syntax::Statement
+        | Syntax::ElseBranch
+        | Syntax::Expression
+        | Syntax::BinaryOp
+        | Syntax::UnaryOp
+        | Syntax::CodeStringSegment
+        | Syntax::LambdaParameter
+        | Syntax::MatchArm
+        | Syntax::Pattern
+        | Syntax::EnumPattern
+        | Syntax::Identifier
+        | Syntax::Type
+        | Syntax::Path
+        | Syntax::PathSegment
+        | Syntax::EnumPath
+        | Syntax::Field
+        | Syntax::Parameter
+        | Syntax::PrimitiveType
+        | Syntax::StructLiteralField
+        | Syntax::StringLiteralPart
+        | Syntax::Visibility
+        | Syntax::MacroFragmentKind
+        | Syntax::MacroParameter
+        | Syntax::MacroDefinition
+        | Syntax::MacroInvocation
+        | Syntax::MacroMetavariable => Structural,
+    }
+}
+
+/// Deterministic catalogue in the authoritative syntax declaration order.
+pub fn syntax_node_kind_catalogue()
+-> impl ExactSizeIterator<Item = (beskid_queries::IndexedNodeKind, SyntaxNodeClassification)> {
+    beskid_queries::IndexedNodeKind::ALL
+        .iter()
+        .copied()
+        .map(|kind| (kind, classify_syntax_node_kind(kind)))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -9,6 +9,14 @@ macro_rules! node_kinds {
         pub enum $enum_name {
             $($name),+
         }
+
+        impl $enum_name {
+            /// Every variant in declaration order.
+            ///
+            /// This inventory is emitted by the same macro invocation as the enum, so consumers
+            /// cannot maintain a drifting handwritten list of syntax kinds.
+            pub const ALL: &'static [Self] = &[$(Self::$name),+];
+        }
     };
     ($($name:ident),+ $(,)?) => {
         node_kinds!(NodeKind; $($name),+);

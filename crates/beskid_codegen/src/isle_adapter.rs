@@ -935,38 +935,11 @@ fn signature_for_runtime_intrinsic(
 }
 
 fn map_node_kind(kind: beskid_queries::IndexedNodeKind) -> Option<NodeKind> {
-    use beskid_queries::IndexedNodeKind as Syntax;
-
-    Some(match kind {
-        Syntax::Program => NodeKind::Program,
-        Syntax::Block => NodeKind::BlockExpression,
-        Syntax::FunctionDefinition => NodeKind::FunctionDefinition,
-        Syntax::TestDefinition => NodeKind::TestDefinition,
-        Syntax::ExpressionStatement => NodeKind::ExpressionStatement,
-        Syntax::ReturnStatement => NodeKind::ReturnStatement,
-        Syntax::LetStatement => NodeKind::LetStatement,
-        Syntax::IfStatement => NodeKind::IfStatement,
-        Syntax::WhileStatement => NodeKind::WhileStatement,
-        Syntax::BreakStatement => NodeKind::BreakStatement,
-        Syntax::ContinueStatement => NodeKind::ContinueStatement,
-        Syntax::LiteralExpression | Syntax::Literal => NodeKind::LiteralExpression,
-        Syntax::GroupedExpression => NodeKind::GroupedExpression,
-        Syntax::UnaryExpression => NodeKind::UnaryExpression,
-        Syntax::BinaryExpression => NodeKind::BinaryExpression,
-        Syntax::AssignExpression => NodeKind::AssignExpression,
-        Syntax::CallExpression => NodeKind::CallExpression,
-        Syntax::PathExpression => NodeKind::PathExpression,
-        Syntax::IndexExpression => NodeKind::IndexExpression,
-        Syntax::ArrayLiteralExpression => NodeKind::ArrayLiteralExpression,
-        Syntax::MemberExpression => NodeKind::FieldExpression,
-        Syntax::StructLiteralExpression => NodeKind::StructLiteralExpression,
-        Syntax::EnumConstructorExpression => NodeKind::EnumLiteralExpression,
-        Syntax::MatchExpression => NodeKind::MatchExpression,
-        Syntax::RangeExpression => NodeKind::RangeExpression,
-        Syntax::BlockExpression => NodeKind::BlockExpression,
-        Syntax::ForStatement => NodeKind::ForStatement,
-        _ => return None,
-    })
+    match beskid_isle::classify_syntax_node_kind(kind) {
+        beskid_isle::SyntaxNodeClassification::IsleLowered(kind) => Some(kind),
+        beskid_isle::SyntaxNodeClassification::Structural
+        | beskid_isle::SyntaxNodeClassification::UnsupportedTypedOperation => None,
+    }
 }
 
 fn map_operator_fact(operator: beskid_queries::OperatorFact) -> OperatorFact {

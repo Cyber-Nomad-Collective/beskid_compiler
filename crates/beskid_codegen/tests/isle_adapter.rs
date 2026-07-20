@@ -104,6 +104,28 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
 }
 
 #[test]
+fn unsupported_typed_operation_reports_deterministic_span_bearing_missing_rule() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i32 Main(i32 outer) { let task = spawn ((i32 inner) => outer + inner); return outer; }",
+    );
+    let spawn = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::SpawnExpression,
+    )
+    .expect("spawn expression");
+
+    let error = emit_isle_expression(&input, isa.as_ref(), spawn, types::I64)
+        .expect_err("unsupported spawn must not route around generated ISLE");
+    let first = error.display_with_db(input.database());
+    let repeated = error.display_with_db(input.database());
+
+    assert_eq!(first, repeated);
+    assert!(first.contains("MissingRuleOrFact"), "{first}");
+    assert!(first.contains("SpawnExpression@"), "{first}");
+}
+
+#[test]
 fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();
