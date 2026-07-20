@@ -78,6 +78,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Classify HIR-free gate dispatch evidence by ABI boundary: canonical ABI-v5
+  manifest/ISLE routes are reported separately, while retired Rust-runtime
+  dispatch and archive/profile fallback symbols remain release blockers
+  (CYB-114).
 - Collapse the callable-signature syntax-query guard so the compiler Rust clippy gate passes
   with `-D warnings`, without suppressing the lint (CYB-110).
 - Lower parsed `range(...)` accumulator loops through generation-bound range and mutable-local
