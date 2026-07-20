@@ -262,6 +262,10 @@ impl NodeFacts for RangeForFacts {
         }
     }
 
+    fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<u32> {
+        (key == self.nodes[9]).then_some(0)
+    }
+
     fn range_fact(&self, key: AstNodeKey) -> Option<RangeFact> {
         (key == self.nodes[4]).then_some(RangeFact::new(
             self.nodes[5],

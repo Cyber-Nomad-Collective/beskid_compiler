@@ -246,9 +246,9 @@ fn parsed_project_if_else_reaches_verified_clif() {
 }
 
 #[test]
-fn parsed_project_range_for_fails_closed_without_hir_fallback() {
-    // Production syntax path must not resurrect HIR/Lowerable when range-for facts are incomplete.
-    // Codex owns the RangeExpression `range_for_fact` port under CYB-15.
+fn parsed_project_range_for_accumulator_reaches_verified_clif_without_hir_fallback() {
+    // Mutable assignment inside a parsed range body is governed solely by generation-bound
+    // syntax facts. The production path must not use HIR/Lowerable as a fallback.
     let project = tempfile::tempdir().expect("project directory");
     let source = "
         i32 Main() {
@@ -261,12 +261,16 @@ fn parsed_project_range_for_fails_closed_without_hir_fallback() {
     ";
     let assembly = parse_production_units(project.path(), &[("RangeFor.bd", "Main", source)]);
     let (target, isa) = x86_64_target_and_isa();
-    assert_unsupported_closed_failure(
-        assembly,
-        target,
-        isa.as_ref(),
-        &["RangeFor.bd", "MissingRuleOrFact", "Block@"],
-    );
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact function");
+    let clif = main.function.display().to_string();
+    assert!(clif.contains("brif"), "expected range-for branch: {clif}");
+    assert!(clif.contains("iadd"), "expected accumulator addition: {clif}");
 }
 
 #[test]

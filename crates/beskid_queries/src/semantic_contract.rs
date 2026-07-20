@@ -203,6 +203,17 @@ pub struct LocalSlot {
     pub index: u32,
 }
 
+/// A current-generation mutable local write target proven from syntax alone.
+///
+/// The fact exists only for a single-segment path that resolves to a mutable `let` binding or
+/// mutable function/method parameter. Immutable, non-local, compound, stale, and invalid targets
+/// remain unavailable, so ISLE cannot manufacture a write from a bare local slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MutableLocalAssignment {
+    pub declaration: AstNodeKey,
+    pub slot: LocalSlot,
+}
+
 /// One exact outer lexical declaration captured by a lambda or spawned lambda.
 ///
 /// `class` and `span` come from the first captured use site under the lambda in syntax-index
@@ -1129,6 +1140,48 @@ fn local_slot_tracked(
     .transpose()
 }
 
+#[salsa::tracked]
+fn mutable_local_assignment_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<MutableLocalAssignment> {
+    with_node(db, syntax, key, |program, index, node| {
+        let assignment = node.of::<beskid_analysis::syntax::AssignExpression>()?;
+        if !matches!(
+            assignment.op.node,
+            beskid_analysis::syntax::AssignOp::Assign
+        ) {
+            return None;
+        }
+        let beskid_analysis::syntax::Expression::Path(path) = &assignment.target.node else {
+            return None;
+        };
+        let [segment] = path.node.path.node.segments.as_slice() else {
+            return None;
+        };
+        if !segment.node.type_args.is_empty() {
+            return None;
+        }
+        let declaration = resolve_lexical_declaration(
+            program,
+            index,
+            key.node,
+            segment.node.name.node.name.as_str(),
+        )?;
+        if !local_declaration_is_mutable(program, index, declaration) {
+            return Some(Err(SemanticError::unavailable("mutable_local_assignment")));
+        }
+        let declaration = AstNodeKey {
+            node: declaration,
+            ..key
+        };
+        let slot = local_slot_for_declaration(index, declaration)?;
+        Some(slot.map(|slot| MutableLocalAssignment { declaration, slot }))
+    })?
+    .transpose()
+}
+
 fn local_slot_for_declaration(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
@@ -1172,6 +1225,24 @@ fn local_declaration_owner(
                 | beskid_analysis::syntax_query::NodeKind::LambdaExpression
         )
     })
+}
+
+fn local_declaration_is_mutable(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> bool {
+    let Some(parent) = parent_node(index, declaration) else {
+        return false;
+    };
+    let Some(node) = index.node_at(program, parent) else {
+        return false;
+    };
+    node.of::<beskid_analysis::syntax::LetStatement>()
+        .is_some_and(|binding| binding.mutable)
+        || node
+            .of::<beskid_analysis::syntax::Parameter>()
+            .is_some_and(|parameter| parameter.mutable)
 }
 
 fn resolve_lexical_declaration(
@@ -5000,6 +5071,17 @@ pub fn resolved_local(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Resol
 /// contain no fact.
 pub fn local_slot(db: &dyn Db, declaration: AstNodeKey) -> SemanticQueryResult<LocalSlot> {
     with_registered_syntax(db, declaration, local_slot_tracked)
+}
+
+/// Return the exact mutable local destination for a simple assignment expression.
+///
+/// The fact rejects immutable declarations, non-path targets, qualified paths, compound targets,
+/// and stale or unregistered syntax. Codegen uses it as the only authority for local writes.
+pub fn mutable_local_assignment(
+    db: &dyn Db,
+    assignment: AstNodeKey,
+) -> SemanticQueryResult<MutableLocalAssignment> {
+    with_registered_syntax(db, assignment, mutable_local_assignment_tracked)
 }
 
 /// Return primitive types proven by literals, explicit syntax, or exact lexical declarations.

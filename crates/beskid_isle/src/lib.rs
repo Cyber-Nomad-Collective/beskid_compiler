@@ -673,6 +673,10 @@ pub trait NodeFacts {
     fn local_slot(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
+    /// Proven mutable destination slot for one simple local assignment expression.
+    fn mutable_local_assignment_slot(&self, _key: AstNodeKey) -> Option<u32> {
+        None
+    }
     fn dispatch_builtin_symbol(&self, _key: AstNodeKey) -> Option<&'static str> {
         None
     }
@@ -1740,7 +1744,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_local_assign(&mut self, key: AstNodeKey) -> Option<Value> {
         let target = self.facts.child(key, 0)?;
         let value_key = self.facts.child(key, 1)?;
-        let slot = self.facts.local_slot(target)?;
+        let slot = self.facts.mutable_local_assignment_slot(key)?;
+        if self.facts.local_slot(target)? != slot {
+            return None;
+        }
         let (variable, expected_type) = self.locals.get(&slot).copied()?;
         let value = generated::constructor_lower_expression(self, value_key)?;
         if self.builder.func.dfg.value_type(value) != expected_type {
