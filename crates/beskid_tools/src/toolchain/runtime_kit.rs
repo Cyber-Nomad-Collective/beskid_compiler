@@ -52,17 +52,8 @@ pub fn build_native_host(
     prefix: PathBuf,
     profile: RuntimeKitProfile,
 ) -> Result<ResolvedRuntimeKit> {
-    let target = TargetMetadata::supported()
-        .into_iter()
-        .find(
-            |target| match (std::env::consts::OS, std::env::consts::ARCH) {
-                ("macos", "aarch64") => target.triple.as_str() == "aarch64-apple-darwin",
-                ("linux", "x86_64") => target.triple.as_str() == "x86_64-unknown-linux-gnu",
-                ("windows", "x86_64") => target.triple.as_str() == "x86_64-pc-windows-msvc",
-                _ => false,
-            },
-        )
-        .ok_or_else(|| anyhow!("unsupported ABI-v5 native host"))?;
+    let target = beskid_abi::runtime_kit::host_runtime_target()
+        .map_err(|error| anyhow!("unsupported ABI-v5 native host: {error}"))?;
     let staging = std::env::temp_dir().join(format!(
         "beskid-native-runtime-{}-{}",
         std::process::id(),

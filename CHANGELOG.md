@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Share one ABI-v5 installed-prefix and host-target discovery helper across JIT, AOT, and native-host
+  publishers (`BESKID_RUNTIME_PREFIX` or `<prefix>/bin/<tool>`), with exact `abi.json` coordinate paths.
+- Stage the exact host debug runtime kit into the CLI install prefix from the E2E harness before JIT
+  CLI tests run, while leaving missing/tampered kits fail-closed for all other consumers.
+- Cover missing-manifest, wrong-target, hash-mismatch, and empty-prefix Engine fail-closed paths for
+  the exact installed ABI-v5 kit route.
 - Cover multi-function syntax assembly failures at the module boundary, including deterministic
   attribution to the failing function rather than a sibling item.
 - Catalogue every expanded-syntax node kind at the generated ISLE boundary with an exhaustive,
@@ -42,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Route engine and AOT install-prefix / host-target lookup through the shared `beskid_abi::runtime_kit`
+  authority instead of duplicated private helpers.
 - Consolidate the ABI-v5 native compiler worktree into `main`; conflicting prototype code keeps
   the newer canonical implementation while the complete worktree history remains reachable.
 - Preserve the unfinished syntax-composition, runtime-authority, and generated ABI prototype in

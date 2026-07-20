@@ -7,8 +7,6 @@ use beskid_pipeline::PipelineObserver;
 
 use crate::jit_module::{BeskidJitModule, JitError};
 
-const ENV_RUNTIME_PREFIX: &str = "BESKID_RUNTIME_PREFIX";
-
 #[derive(Clone)]
 struct RuntimeKitSelection {
     prefix: PathBuf,
@@ -152,46 +150,14 @@ impl Default for Engine {
 }
 
 fn runtime_prefix() -> Result<PathBuf, JitError> {
-    if let Some(prefix) = std::env::var_os(ENV_RUNTIME_PREFIX) {
-        return Ok(PathBuf::from(prefix));
-    }
-    let executable = std::env::current_exe().map_err(|error| {
-        JitError::RuntimeKit(format!(
-            "cannot locate current executable for ABI-v5 runtime prefix: {error}"
-        ))
-    })?;
-    let bin = executable.parent().ok_or_else(|| {
-        JitError::RuntimeKit(format!(
-            "current executable has no parent: `{}`",
-            executable.display()
-        ))
-    })?;
-    bin.parent().map(Path::to_path_buf).ok_or_else(|| {
-        JitError::RuntimeKit(format!(
-            "current executable has no install prefix: `{}`",
-            executable.display()
-        ))
-    })
+    beskid_abi::runtime_kit::installed_runtime_prefix()
+        .map_err(|error| JitError::RuntimeKit(error.to_string()))
 }
 
 /// ABI-v5 target metadata for the native JIT host.
 pub fn host_runtime_target() -> Result<TargetMetadata, JitError> {
-    let triple = match (std::env::consts::ARCH, std::env::consts::OS) {
-        ("x86_64", "linux") => "x86_64-unknown-linux-gnu",
-        ("aarch64", "macos") => "aarch64-apple-darwin",
-        ("x86_64", "windows") => "x86_64-pc-windows-msvc",
-        (arch, os) => {
-            return Err(JitError::RuntimeKit(format!(
-                "unsupported ABI-v5 JIT runtime host `{arch}-{os}`"
-            )));
-        }
-    };
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == triple)
-        .ok_or_else(|| {
-            JitError::RuntimeKit(format!("unsupported ABI-v5 runtime target `{triple}`"))
-        })
+    beskid_abi::runtime_kit::host_runtime_target()
+        .map_err(|error| JitError::RuntimeKit(error.to_string()))
 }
 
 /// Resolve extern symbols from libraries already mapped into this process (libc, pthread, …).

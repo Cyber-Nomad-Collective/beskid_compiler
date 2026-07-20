@@ -9,8 +9,6 @@ use beskid_abi::runtime_source::resolve_canonical_runtime_kit;
 use crate::api::{BuildProfile, RuntimeKitRequest};
 use crate::error::{AotError, AotResult};
 
-const ENV_RUNTIME_PREFIX: &str = "BESKID_RUNTIME_PREFIX";
-
 /// Default AOT runtime request: one exact installed ABI-v5 kit.
 pub fn default_runtime_strategy(
     profile: BuildProfile,
@@ -58,46 +56,25 @@ pub(crate) fn resolve_aot_runtime_kit(
 }
 
 fn runtime_prefix() -> AotResult<PathBuf> {
-    if let Some(prefix) = std::env::var_os(ENV_RUNTIME_PREFIX) {
-        return Ok(PathBuf::from(prefix));
-    }
-    let executable = std::env::current_exe().map_err(|error| AotError::RuntimeBuild {
-        message: format!("cannot locate current executable for ABI-v5 runtime prefix: {error}"),
-    })?;
-    let bin = executable.parent().ok_or_else(|| AotError::RuntimeBuild {
-        message: format!(
-            "current executable has no parent: `{}`",
-            executable.display()
-        ),
-    })?;
-    bin.parent()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| AotError::RuntimeBuild {
-            message: format!(
-                "current executable has no install prefix: `{}`",
-                executable.display()
-            ),
-        })
+    beskid_abi::runtime_kit::installed_runtime_prefix().map_err(|error| AotError::RuntimeBuild {
+        message: error.to_string(),
+    })
 }
 
 fn runtime_target(target_triple: Option<&str>) -> AotResult<TargetMetadata> {
-    let triple = target_triple.map_or_else(host_runtime_triple, str::to_owned);
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == triple)
-        .ok_or_else(|| AotError::RuntimeBuild {
-            message: format!("unsupported ABI-v5 runtime target `{triple}`"),
-        })
-}
-
-fn host_runtime_triple() -> String {
-    match (std::env::consts::ARCH, std::env::consts::OS) {
-        ("x86_64", "linux") => "x86_64-unknown-linux-gnu",
-        ("aarch64", "macos") => "aarch64-apple-darwin",
-        ("x86_64", "windows") => "x86_64-pc-windows-msvc",
-        (arch, os) => return format!("{arch}-unsupported-{os}"),
+    match target_triple {
+        Some(triple) => TargetMetadata::supported()
+            .into_iter()
+            .find(|target| target.triple.as_str() == triple)
+            .ok_or_else(|| AotError::RuntimeBuild {
+                message: format!("unsupported ABI-v5 runtime target `{triple}`"),
+            }),
+        None => beskid_abi::runtime_kit::host_runtime_target().map_err(|error| {
+            AotError::RuntimeBuild {
+                message: error.to_string(),
+            }
+        }),
     }
-    .into()
 }
 
 fn kit_profile(profile: BuildProfile) -> RuntimeKitProfile {

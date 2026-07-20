@@ -177,6 +177,7 @@ pub fn emit_host_context_library_pair(
         message: err.to_string(),
     })?;
     let context_object = compile_context_assembly(&target, &output_dir, name)?;
+    let target_triple = target.triple.as_str().to_owned();
     let context_symbols = AbiManifestV5::canonical_runtime(target)
         .assembly_exports
         .into_iter()
@@ -186,7 +187,7 @@ pub fn emit_host_context_library_pair(
         artifact,
         output_dir,
         name,
-        Some(host_target_triple().to_owned()),
+        Some(target_triple),
         context_symbols,
         vec![context_object],
     )
@@ -208,6 +209,7 @@ pub fn emit_host_platform_library_pair(
     })?;
     let context_object = compile_context_assembly(&target, &output_dir, name)?;
     let platform_objects = compile_platform_objects(&target, &output_dir, name)?;
+    let target_triple = target.triple.as_str().to_owned();
     let mut provenance_symbols = AbiManifestV5::canonical_runtime(target)
         .assembly_exports
         .into_iter()
@@ -223,7 +225,7 @@ pub fn emit_host_platform_library_pair(
         artifact,
         output_dir,
         name,
-        Some(host_target_triple().to_owned()),
+        Some(target_triple),
         provenance_symbols,
         std::iter::once(context_object)
             .chain(platform_objects)
@@ -308,26 +310,15 @@ fn emit_library_pair_with_objects(
     })
 }
 
-fn host_target_triple() -> &'static str {
-    match (std::env::consts::ARCH, std::env::consts::OS) {
-        ("x86_64", "linux") => "x86_64-unknown-linux-gnu",
-        ("aarch64", "macos") => "aarch64-apple-darwin",
-        ("x86_64", "windows") => "x86_64-pc-windows-msvc",
-        _ => "",
-    }
-}
-
 fn host_runtime_target() -> AotResult<TargetMetadata> {
-    let triple = host_target_triple();
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == triple)
-        .ok_or_else(|| AotError::UnsupportedLinkerStrategy {
+    beskid_abi::runtime_kit::host_runtime_target().map_err(|error| {
+        AotError::UnsupportedLinkerStrategy {
             target: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
-            message:
-                "canonical context assembly is only available for supported native ABI-v5 hosts"
-                    .to_owned(),
-        })
+            message: format!(
+                "canonical context assembly is only available for supported native ABI-v5 hosts ({error})"
+            ),
+        }
+    })
 }
 
 fn compile_context_assembly(
