@@ -148,28 +148,45 @@ impl SemanticPipelineRule {
         &self,
         hir: &Spanned<HirProgram>,
         type_name: &str,
-        contract_name: &str,
+        method_name: &str,
     ) -> Option<String> {
         for item in &hir.node.items {
-            let HirItem::MethodDefinition(method) = &item.node else {
-                continue;
-            };
-            let HirType::Complex(receiver_path) = &method.node.receiver_type.node else {
-                continue;
-            };
-            let Some(receiver_name) = receiver_path
-                .node
-                .segments
-                .last()
-                .map(|segment| segment.node.name.node.name.as_str())
-            else {
-                continue;
-            };
-            if receiver_name == type_name && method.node.name.node.name == contract_name {
-                return Some(self.method_signature_string(
-                    method.node.parameters.len(),
-                    method.node.return_type.is_some(),
-                ));
+            match &item.node {
+                HirItem::MethodDefinition(method) => {
+                    let HirType::Complex(receiver_path) = &method.node.receiver_type.node else {
+                        continue;
+                    };
+                    let Some(receiver_name) = receiver_path
+                        .node
+                        .segments
+                        .last()
+                        .map(|segment| segment.node.name.node.name.as_str())
+                    else {
+                        continue;
+                    };
+                    if receiver_name == type_name && method.node.name.node.name == method_name {
+                        return Some(self.method_signature_string(
+                            method.node.parameters.len(),
+                            method.node.return_type.is_some(),
+                        ));
+                    }
+                }
+                HirItem::TypeDefinition(definition)
+                    if definition.node.name.node.name == type_name =>
+                {
+                    if let Some(method) = definition
+                        .node
+                        .methods
+                        .iter()
+                        .find(|method| method.node.name.node.name == method_name)
+                    {
+                        return Some(self.method_signature_string(
+                            method.node.parameters.len(),
+                            method.node.return_type.is_some(),
+                        ));
+                    }
+                }
+                _ => {}
             }
         }
         None
@@ -178,5 +195,58 @@ impl SemanticPipelineRule {
     fn method_signature_string(&self, parameter_count: usize, has_return_type: bool) -> String {
         let return_marker = if has_return_type { "ret" } else { "unit" };
         format!("{return_marker}({parameter_count})")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::analysis::{builtin_rules, run_rules, AnalysisOptions};
+    use crate::parser::{BeskidParser, Rule};
+    use crate::parsing::parsable::Parsable;
+    use crate::syntax::Program;
+    use pest::Parser;
+
+    fn analyze(source: &str) -> crate::analysis::AnalysisResult {
+        let pair = BeskidParser::parse(Rule::Program, source)
+            .expect("source should parse")
+            .next()
+            .expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+        run_rules(
+            &program.node,
+            "test.bd",
+            source,
+            &builtin_rules(),
+            AnalysisOptions::default(),
+        )
+    }
+
+    #[test]
+    fn contract_conformance_recognizes_method_owned_by_type_definition() {
+        let source = r#"
+            type Request {}
+            type Response {}
+
+            contract Analyzer {
+                Response Analyze(Request request);
+            }
+
+            type ConcreteAnalyzer : Analyzer {
+                Response Analyze(Request request) {
+                    return Response {};
+                }
+            }
+        "#;
+
+        let result = analyze(source);
+
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_deref() == Some("E1601")),
+            "nested type method must satisfy Analyzer.Analyze; got: {:?}",
+            result.diagnostics
+        );
     }
 }
