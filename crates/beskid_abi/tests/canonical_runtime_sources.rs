@@ -89,6 +89,35 @@ fn canonical_bootstrap_source_uses_only_manifest_owned_allocation_and_tls_primit
 }
 
 #[test]
+fn canonical_bootstrap_owns_beskid_tls_state_on_thread_attach_detach() {
+    let source = &canonical_runtime_sources()[0].source;
+
+    // ProcessInit stamps BeskidRuntimeState.abi_version at offset 0 and must not install the
+    // RuntimeState pointer as if it were BeskidTlsState (root_frame lives at TLS offset 8).
+    assert!(source.contains("raw_word_store(config, 5)"));
+    assert!(
+        !source.contains("tls_set(config);"),
+        "ProcessInit must not put BeskidRuntimeState into TLS"
+    );
+
+    // ThreadAttach allocates a dedicated BeskidTlsState (size 32, alignment 8).
+    assert!(source.contains("SystemAllocate(32, 8)"));
+    assert!(source.contains("memory_set(tlsState, 0, 32)"));
+    assert!(source.contains("raw_word_store(tlsState, NativeWord(runtime))"));
+    assert!(source.contains("raw_word_store(pointer_add(tlsState, 8), 0)"));
+    assert!(source.contains("raw_word_store(pointer_add(tlsState, 16), 0)"));
+    assert!(source.contains("raw_word_store(pointer_add(tlsState, 24), 1)"));
+    assert!(source.contains("raw_word_store(pointer_add(runtime, 8), NativeWord(tlsState))"));
+    assert!(source.contains("SetCurrentThreadState(tlsState)"));
+    assert!(source.contains("return tlsState;"));
+
+    // Matching detach clears TLS + RuntimeState.current_thread and frees the 32-byte record.
+    assert!(source.contains("SetCurrentThreadState(NativePointer(0))"));
+    assert!(source.contains("raw_word_store(pointer_add(runtime, 8), 0)"));
+    assert!(source.contains("SystemFree(thread, 32)"));
+}
+
+#[test]
 fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
     let source = &canonical_runtime_sources()[0].source;
 

@@ -218,6 +218,60 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
         assert_eq!(object.fields[0].offset, 0);
         assert_eq!(object.fields[1].name, "gc_word");
         assert_eq!(object.fields[1].offset, 8);
+
+        let tls = manifest
+            .layouts
+            .iter()
+            .find(|layout| layout.name == "BeskidTlsState")
+            .unwrap();
+        assert_eq!((tls.size, tls.alignment), (32, 8));
+        assert_eq!(
+            tls.fields
+                .iter()
+                .map(|field| (field.name.as_str(), field.offset))
+                .collect::<Vec<_>>(),
+            vec![
+                ("runtime", 0),
+                ("root_frame", 8),
+                ("current_fiber", 16),
+                ("attach_depth", 24),
+            ]
+        );
+
+        let runtime = manifest
+            .layouts
+            .iter()
+            .find(|layout| layout.name == "BeskidRuntimeState")
+            .unwrap();
+        assert_eq!((runtime.size, runtime.alignment), (64, 8));
+        assert_eq!(
+            runtime
+                .fields
+                .iter()
+                .find(|field| field.name == "abi_version")
+                .unwrap()
+                .offset,
+            0
+        );
+        assert_eq!(
+            runtime
+                .fields
+                .iter()
+                .find(|field| field.name == "current_thread")
+                .unwrap()
+                .offset,
+            8
+        );
+        assert_eq!(
+            runtime
+                .fields
+                .iter()
+                .find(|field| field.name == "root_frame")
+                .unwrap()
+                .offset,
+            40,
+            "RuntimeState.root_frame must stay distinct from TlsState.root_frame@8"
+        );
     }
 }
 

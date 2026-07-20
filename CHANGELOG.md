@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Canonical bootstrap `ThreadAttach`/`ThreadDetach` own a dedicated `BeskidTlsState`
+  allocation (manifest size 32) so TLS root-frame offset 8 no longer collides with
+  `BeskidRuntimeState.current_thread`; `ProcessInit` stamps `abi_version = 5` without
+  installing RuntimeState into TLS (CYB-97 / W5.1 lifecycle prerequisite).
+
 ### Added
 
 - Cover multi-function syntax assembly failures at the module boundary, including deterministic
