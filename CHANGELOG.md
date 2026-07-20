@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Consolidate the ABI-v5 native compiler worktree into `main`; conflicting prototype code keeps
+  the newer canonical implementation while the complete worktree history remains reachable.
 - Preserve the unfinished syntax-composition, runtime-authority, and generated ABI prototype in
   the consolidated 0.4 history while keeping newer canonical implementations at conflict sites.
 - Render lower-spine type mismatches with the source-level type names retained by the partial type result.
