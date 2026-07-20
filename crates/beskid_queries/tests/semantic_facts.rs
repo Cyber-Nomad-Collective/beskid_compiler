@@ -1509,6 +1509,113 @@ fn imported_generic_type_annotation_resolves_without_registry_reentrance() {
 }
 
 #[test]
+#[ignore = "CYB-91: imported generic nominal receiver still lowers dynamically"]
+fn imported_generic_nominal_calls_require_receiver_instantiation() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/generic-nominal-receiver/project/src");
+    let main_path = root.join("Main.bd");
+    let hub_path = root.join("Collections/Hub.bd");
+    let main_source = "use Collections.Hub;\nunit Main() { Hub.Create(); Hub<i64>.Create(1_i64); Hub.Create<i64>(1_i64); }";
+    let hub_source = "type Hub<T> { i64 value }\nunit Create<T>(T value) { return; }";
+    let main_program = expand_program(
+        parse_program(main_source).expect("main parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let hub_program = expand_program(
+        parse_program(hub_source).expect("hub parse"),
+        DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: hub_path.display().to_string(),
+                path: hub_path.clone(),
+                source: hub_source.to_string(),
+                program: hub_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let hub_unit = SourceUnitId::new(&db, hub_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(55);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let hub_index = SyntaxIndex::from_program(&hub_program, generation);
+    let declaration = key(
+        hub_unit,
+        generation,
+        &hub_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+    let missing_receiver = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        0,
+    );
+    let explicit_receiver = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        1,
+    );
+    let method_generic = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::CallExpression,
+        2,
+    );
+
+    assert_unavailable(call_lowering(&db, missing_receiver));
+    assert_unavailable(call_abi_signature(&db, missing_receiver));
+    assert_unavailable(generic_call_specialization(&db, missing_receiver));
+    assert_eq!(
+        call_lowering(&db, explicit_receiver).expect("explicit receiver lowering"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        call_lowering(&db, method_generic).expect("method generic lowering"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        generic_call_instantiation(&db, method_generic).expect("method generic instantiation"),
+        Some(beskid_queries::GenericCallInstantiation {
+            declaration,
+            argument_count: 1,
+            arguments: Arc::from([SemanticTypeId::I64]),
+        })
+    );
+}
+
+#[test]
 fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/generic-terminal-import/project/src");

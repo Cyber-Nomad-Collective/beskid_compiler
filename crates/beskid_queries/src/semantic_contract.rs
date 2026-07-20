@@ -1619,7 +1619,9 @@ fn call_lowering_for_node(
         expression if expression_is_lambda(expression) => Ok(CallLowering::Dynamic),
         beskid_analysis::syntax::Expression::Path(path) => {
             let path = &path.node.path.node;
-            if let Some(service) = corelib_service_for(db, key, path) {
+            if imported_generic_nominal_receiver_requires_instantiation(db, key, path) {
+                Err(SemanticError::unavailable("generic_receiver_instantiation"))
+            } else if let Some(service) = corelib_service_for(db, key, path) {
                 Ok(CallLowering::CorelibService(service))
             } else if let Some((declaration, _)) =
                 nominal_local_member_receiver(db, program, index, key, path)
@@ -1847,7 +1849,12 @@ fn generic_call_specialization_tracked(
 ) -> SemanticQueryResult<GenericCallSpecialization> {
     with_node(db, syntax, key, |_program, _index, node| {
         node.of::<beskid_analysis::syntax::CallExpression>()?;
-        let declaration = match call_lowering(db, key).ok().flatten()? {
+        let lowering = match call_lowering(db, key) {
+            Ok(Some(lowering)) => lowering,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let declaration = match lowering {
             CallLowering::Direct(declaration) => declaration,
             CallLowering::Dynamic | CallLowering::Runtime(_) | CallLowering::CorelibService(_) => {
                 return None;
@@ -1935,6 +1942,77 @@ fn generic_call_uses_parameter_type_arguments(
                     generic.node.name.as_str(),
                 )
         })
+}
+
+/// A two-segment imported nominal call can spell either a module member or a static member on a
+/// generic nominal type.  The latter has no concrete receiver ABI until the source supplies the
+/// receiver arguments (`Hub<i64>.Create()`), so it must not be treated as the imported module's
+/// direct function.  Terminal method arguments remain independently valid (`Hub.Create<i64>()`).
+fn imported_generic_nominal_receiver_requires_instantiation(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> bool {
+    let [receiver, method] = path.segments.as_slice() else {
+        return false;
+    };
+    if !receiver.node.type_args.is_empty() || !method.node.type_args.is_empty() {
+        return false;
+    }
+    let receiver_name = receiver.node.name.node.name.as_str();
+    let targets = db
+        .syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .imports
+        .get(&(key.unit, key.generation))
+        .into_iter()
+        .flatten()
+        .filter(|import| import.binding == receiver_name)
+        .map(|import| import.target)
+        .collect::<Vec<_>>();
+    let [target] = targets.as_slice() else {
+        return false;
+    };
+    exported_generic_type_named(db, *target, key.generation, receiver_name)
+}
+
+fn exported_generic_type_named(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+) -> bool {
+    let mut pending = vec![unit];
+    let mut visited = std::collections::HashSet::new();
+    while let Some(current) = pending.pop() {
+        if !visited.insert(current) {
+            continue;
+        }
+        let Some(syntax) = db.syntax_unit(current) else {
+            continue;
+        };
+        if syntax.generation(db) != generation {
+            continue;
+        }
+        if syntax
+            .syntax_index(db)
+            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
+            .any(|candidate| {
+                syntax
+                    .syntax_index(db)
+                    .node_at(syntax.expanded_program(db), candidate)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+                    .is_some_and(|definition| {
+                        definition.name.node.name == name && !definition.generics.is_empty()
+                    })
+            })
+        {
+            return true;
+        }
+        pending.extend(public_reexport_units(db, current, generation));
+    }
+    false
 }
 
 fn generic_call_instantiation_for_node(
