@@ -79,4 +79,12 @@ fi
 grep -F 'deprecated ABI dispatch/fallback reachability remains' "$deprecated_output" >/dev/null
 grep -F '[deprecated fallback]' "$deprecated_output" >/dev/null
 
+# The retirement gate must keep rejecting this symbol in synthetic input, but
+# the canonical workspace must not export or reach the obsolete bootstrap at
+# all. The exact-kit ABI manifest is the only dispatch authority.
+if rg -n --glob '*.rs' -- '\bbootstrap_dispatch_handlers\b' "$workspace/crates"; then
+  echo "retired dispatch bootstrap remains reachable in the canonical workspace" >&2
+  exit 1
+fi
+
 echo "HIR-free ABI-v5 retirement gate category test passed"

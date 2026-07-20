@@ -6,7 +6,7 @@ use beskid_runtime::builtins::bytes_compare as rust_bytes_compare;
 use beskid_runtime::builtins::bytes_get as rust_bytes_get;
 use beskid_runtime::builtins::test_bytes_len as rust_test_bytes_len;
 use beskid_runtime::interop::dispatch_table::dispatch_i64;
-use beskid_runtime::{HandlerTableEntry, beskid_register_handlers, str_eq as rust_str_eq};
+use beskid_runtime::{beskid_register_handlers, str_eq as rust_str_eq, HandlerTableEntry};
 use beskid_runtime_handlers::beskid_language_register_all;
 
 #[repr(C)]
@@ -50,7 +50,6 @@ fn reset_handler_overrides() {
 }
 
 fn setup_language_handlers() {
-    beskid_runtime::bootstrap_dispatch_handlers();
     reset_handler_overrides();
     assert_eq!(beskid_language_register_all(), 0);
 }

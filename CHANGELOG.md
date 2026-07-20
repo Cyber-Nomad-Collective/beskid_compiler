@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Remove the no-op legacy Rust dispatch bootstrap and its bridge/test callers; host overrides
+  now begin only through the manifest-owned `beskid_register_handlers` ABI entry point (CYB-86).
 - Remove the retired public Codegen HIR/`Lowerable` facade (`LoweredProgram`, seven
   `lower_*` service entry points, and the root `Lowerable` re-export); public callers must
   cross the generation-safe `CodegenInput` → syntax ISLE boundary (CYB-111).

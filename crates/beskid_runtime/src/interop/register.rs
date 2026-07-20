@@ -158,18 +158,6 @@ pub unsafe fn try_dispatch_i64(tag: i32, enum_ptr: *const u8) -> Option<i64> {
     Some(unsafe { handler(enum_ptr) })
 }
 
-use std::sync::Once;
-
-static HANDLER_BOOTSTRAP: Once = Once::new();
-
-/// Idempotent process bootstrap: accept kernel-only dispatch until host registers overrides.
-pub fn bootstrap_dispatch_handlers() {
-    HANDLER_BOOTSTRAP.call_once(|| {
-        let _ =
-            beskid_register_handlers(u64::from(BESKID_RUNTIME_ABI_VERSION), std::ptr::null(), 0);
-    });
-}
-
 /// Trap when a host-owned dispatch tag is invoked without [`beskid_register_handlers`].
 #[cold]
 pub fn trap_missing_host_handler(tag: i32) -> ! {
