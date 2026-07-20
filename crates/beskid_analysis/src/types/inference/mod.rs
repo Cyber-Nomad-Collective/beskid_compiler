@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use crate::resolve::ItemId;
 use crate::types::{TypeId, TypeTable};
 
-pub use constraint::{Constraint, ConstraintSet, TypeVar};
 pub use crate::types::result::FunctionSignature;
+pub use constraint::{Constraint, ConstraintSet, TypeVar};
 pub use generic::infer_generic_args_from_call_types;
 pub use solve::solve_constraints;
 pub use unify::{is_numeric, unify_numeric_types, unify_types};
@@ -89,7 +89,9 @@ impl<'a> TypeEnv<'a> {
         self.function_signatures
     }
 
-    pub(crate) fn enum_variants(&self) -> Option<&'a HashMap<ItemId, HashMap<String, Vec<TypeId>>>> {
+    pub(crate) fn enum_variants(
+        &self,
+    ) -> Option<&'a HashMap<ItemId, HashMap<String, Vec<TypeId>>>> {
         self.enum_variants
     }
 }

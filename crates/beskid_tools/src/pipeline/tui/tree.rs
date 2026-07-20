@@ -71,10 +71,7 @@ pub fn format_phase_end(depth: usize, plain: bool, label: &str, duration: &str) 
 }
 
 pub fn format_work_unit(depth: usize, plain: bool, done: u64, total: u64, label: &str) -> String {
-    format!(
-        "{}[{done}/{total}] {label}",
-        tree_line_prefix(depth, plain)
-    )
+    format!("{}[{done}/{total}] {label}", tree_line_prefix(depth, plain))
 }
 
 #[cfg(test)]

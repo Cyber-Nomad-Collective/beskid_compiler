@@ -14,8 +14,8 @@ use crate::types::path_value::{
 };
 use crate::types::{TypeId, TypeInfo};
 
-use crate::types::result::{CallLoweringKind, MethodReceiverSource, TypeError};
 use super::TypeChecker;
+use crate::types::result::{CallLoweringKind, MethodReceiverSource, TypeError};
 
 impl<'a> TypeChecker<'a> {
     pub(crate) fn type_expression(
@@ -175,11 +175,12 @@ impl<'a> TypeChecker<'a> {
         for elem in &lit.node.elements[1..] {
             let elem_type = self.type_expression(elem);
             if let Some(elem_type) = elem_type
-                && elem_type != first_type {
-                    self.errors
-                        .push(TypeError::UnsupportedExpression { span: lit.span });
-                    return None;
-                }
+                && elem_type != first_type
+            {
+                self.errors
+                    .push(TypeError::UnsupportedExpression { span: lit.span });
+                return None;
+            }
         }
 
         Some(self.type_table.intern(TypeInfo::Array(first_type)))
@@ -375,7 +376,8 @@ impl<'a> TypeChecker<'a> {
                     .push(TypeError::InvalidEventInvocationScope { span: call.span });
             }
 
-            self.record_call_kind(call.id,
+            self.record_call_kind(
+                call.id,
                 CallLoweringKind::EventInvoke {
                     receiver_source,
                     receiver_type,
@@ -437,7 +439,8 @@ impl<'a> TypeChecker<'a> {
                             self.require_same_type(arg.span, *expected, actual);
                         }
                     }
-                    self.record_call_kind(call.id,
+                    self.record_call_kind(
+                        call.id,
                         CallLoweringKind::MethodDispatch {
                             method_item_id,
                             receiver_source: MethodReceiverSource::Local(local_id),
@@ -466,7 +469,8 @@ impl<'a> TypeChecker<'a> {
                             self.require_same_type(arg.span, *expected, actual);
                         }
                     }
-                    self.record_call_kind(call.id,
+                    self.record_call_kind(
+                        call.id,
                         CallLoweringKind::ContractDispatch {
                             contract_item_id,
                             receiver_source: MethodReceiverSource::Local(local_id),
@@ -486,38 +490,35 @@ impl<'a> TypeChecker<'a> {
                     .contract_signatures
                     .get(&(contract_item_id, method_name.to_string()))
                     .cloned()
-                {
-                    if call.node.args.len() != signature.params.len() {
-                        self.errors.push(TypeError::CallArityMismatch {
-                            span: call.span,
-                            expected: signature.params.len(),
-                            actual: call.node.args.len(),
-                        });
-                        return Some(signature.return_type);
-                    }
-                    for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
-                        if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
-                            self.require_same_type(arg.span, *expected, actual);
-                        }
-                    }
-                    let receiver_type = self
-                        .named_types
-                        .get(&contract_item_id)
-                        .copied()
-                        .unwrap_or_else(|| {
-                            self.type_table.intern(TypeInfo::Named(contract_item_id))
-                        });
-                    self.record_call_kind(call.id,
-                        CallLoweringKind::ContractDispatch {
-                            contract_item_id,
-                            receiver_source: MethodReceiverSource::Expression(
-                                path_expr.node.path.span,
-                            ),
-                            receiver_type,
-                        },
-                    );
+            {
+                if call.node.args.len() != signature.params.len() {
+                    self.errors.push(TypeError::CallArityMismatch {
+                        span: call.span,
+                        expected: signature.params.len(),
+                        actual: call.node.args.len(),
+                    });
                     return Some(signature.return_type);
                 }
+                for (arg, expected) in call.node.args.iter().zip(signature.params.iter()) {
+                    if let Some(actual) = self.type_argument_with_expected(arg, *expected) {
+                        self.require_same_type(arg.span, *expected, actual);
+                    }
+                }
+                let receiver_type = self
+                    .named_types
+                    .get(&contract_item_id)
+                    .copied()
+                    .unwrap_or_else(|| self.type_table.intern(TypeInfo::Named(contract_item_id)));
+                self.record_call_kind(
+                    call.id,
+                    CallLoweringKind::ContractDispatch {
+                        contract_item_id,
+                        receiver_source: MethodReceiverSource::Expression(path_expr.node.path.span),
+                        receiver_type,
+                    },
+                );
+                return Some(signature.return_type);
+            }
         }
 
         if let HirExpressionNode::MemberExpression(member) = &call.node.callee.node {
@@ -550,7 +551,8 @@ impl<'a> TypeChecker<'a> {
                         .get(&item_id)
                         .copied()
                         .unwrap_or_else(|| self.type_table.intern(TypeInfo::Named(item_id)));
-                    self.record_call_kind(call.id,
+                    self.record_call_kind(
+                        call.id,
                         CallLoweringKind::ContractDispatch {
                             contract_item_id: item_id,
                             receiver_source: MethodReceiverSource::Expression(
@@ -588,7 +590,8 @@ impl<'a> TypeChecker<'a> {
                         self.require_same_type(arg.span, *expected, actual);
                     }
                 }
-                self.record_call_kind(call.id,
+                self.record_call_kind(
+                    call.id,
                     CallLoweringKind::MethodDispatch {
                         method_item_id,
                         receiver_source: MethodReceiverSource::Expression(member.node.target.span),
@@ -617,7 +620,8 @@ impl<'a> TypeChecker<'a> {
                         self.require_same_type(arg.span, *expected, actual);
                     }
                 }
-                self.record_call_kind(call.id,
+                self.record_call_kind(
+                    call.id,
                     CallLoweringKind::ContractDispatch {
                         contract_item_id,
                         receiver_source: MethodReceiverSource::Expression(member.node.target.span),
@@ -731,10 +735,7 @@ impl<'a> TypeChecker<'a> {
                             .collect::<Vec<_>>();
                         if let Some(item_id) = callee_item_id {
                             self.record_generic_call_constraints(
-                                item_id,
-                                &arg_types,
-                                expected,
-                                call.span,
+                                item_id, &arg_types, expected, call.span,
                             );
                         }
                         if let Some(inferred) =

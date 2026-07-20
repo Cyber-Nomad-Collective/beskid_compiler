@@ -152,10 +152,7 @@ mod tests {
             dependency_display_label("corelib_foundation", "corelib_foundation"),
             "corelib_foundation"
         );
-        assert_eq!(
-            dependency_display_label("app", "corelib"),
-            "app (corelib)"
-        );
+        assert_eq!(dependency_display_label("app", "corelib"), "app (corelib)");
     }
 
     #[test]

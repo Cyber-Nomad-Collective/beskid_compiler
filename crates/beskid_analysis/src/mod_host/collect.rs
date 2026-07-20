@@ -3,9 +3,7 @@ use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::MOD_COLLEC
 
 use super::context::ModInvocationContext;
 use super::invoker::{CollectorOutcome, ContractInvoker};
-use super::types::{
-    CollectedContracts, ContractRegistration, LoadedModArtifact, ModHostInput,
-};
+use super::types::{CollectedContracts, ContractRegistration, LoadedModArtifact, ModHostInput};
 
 /// Stable fingerprint of collector-observed targets across all registrations.
 ///

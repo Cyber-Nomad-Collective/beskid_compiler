@@ -3,17 +3,17 @@
 use std::path::Path;
 
 use crate::hir::HirProgram;
+use crate::projects::CompilePlan;
 use crate::projects::assembly::{
     ModuleIndex, ProgramAssembly, SourceUnit, UnitHir, build_hir_units,
 };
-use crate::projects::CompilePlan;
 use crate::resolve::Resolution;
 use crate::services::lower::{
     DependencyTypingPolicy, LowerResolveTypeError, TypedHirResolution, typed_hir_from_lowered,
 };
 use crate::syntax::Spanned;
-use crate::types::{CheckerResult, TypeChecker, TypeResult};
 use crate::types::surface::{UnitTypeSurface, build_unit_type_surface};
+use crate::types::{CheckerResult, TypeChecker, TypeResult};
 
 /// Query: exported signatures and layouts for one unit (EntryOnly surface pass).
 pub fn type_unit_signatures(
@@ -90,13 +90,12 @@ pub fn type_dep_signatures(
 ) -> Result<TypeResult, LowerResolveTypeError> {
     let entry_unit = assembly.entry_unit().clone();
     let entry_hir = assemble_unit(&entry_unit).hir;
-    let (_, _, typed) =
-        typed_hir_from_lowered(
-            entry_hir,
-            TypedHirResolution::Assembly(Some(assembly)),
-            None,
-            DependencyTypingPolicy::EntryOnly,
-        )?;
+    let (_, _, typed) = typed_hir_from_lowered(
+        entry_hir,
+        TypedHirResolution::Assembly(Some(assembly)),
+        None,
+        DependencyTypingPolicy::EntryOnly,
+    )?;
     Ok(typed)
 }
 

@@ -1,7 +1,7 @@
 use std::any::Any;
 
-use crate::syntax_query::{HirNodeKind, HirNodeRef};
 use crate::syntax::Spanned;
+use crate::syntax_query::{HirNodeKind, HirNodeRef};
 
 pub trait HirNode: Any {
     fn as_any(&self) -> &dyn Any;

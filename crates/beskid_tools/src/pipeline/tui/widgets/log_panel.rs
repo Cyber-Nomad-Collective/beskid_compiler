@@ -26,7 +26,8 @@ pub fn draw_tabbed_log_panel(
     active: LogTab,
     log_states: &mut LogTabStates,
 ) {
-    let [tabs_area, log_area] = Layout::vertical([Constraint::Length(1), Constraint::Min(2)]).areas(area);
+    let [tabs_area, log_area] =
+        Layout::vertical([Constraint::Length(1), Constraint::Min(2)]).areas(area);
 
     let titles: Vec<&str> = LogTab::ALL.iter().map(|tab| tab.title()).collect();
     let tabs = Tabs::new(titles)

@@ -114,10 +114,7 @@ corelib_typecheck_test!(
     core_results_tests_front_end_typechecks,
     "core/ResultsTests.bd"
 );
-corelib_typecheck_test!(
-    core_bytes_tests_front_end_typechecks,
-    "core/BytesTests.bd"
-);
+corelib_typecheck_test!(core_bytes_tests_front_end_typechecks, "core/BytesTests.bd");
 corelib_typecheck_test!(
     core_encoding_utf8_tests_front_end_typechecks,
     "core/EncodingUtf8Tests.bd"
@@ -166,10 +163,7 @@ corelib_typecheck_test!(
     collections_stack_tests_front_end_typechecks,
     "collections/StackTests.bd"
 );
-corelib_typecheck_test!(
-    system_fs_tests_front_end_typechecks,
-    "system/FsTests.bd"
-);
+corelib_typecheck_test!(system_fs_tests_front_end_typechecks, "system/FsTests.bd");
 corelib_typecheck_test!(
     system_path_tests_front_end_typechecks,
     "system/PathTests.bd"
@@ -282,7 +276,4 @@ corelib_typecheck_test!(
     collections_tests_front_end_typechecks,
     "collections/CollectionsTests.bd"
 );
-corelib_typecheck_test!(
-    query_tests_front_end_typechecks,
-    "query/QueryTests.bd"
-);
+corelib_typecheck_test!(query_tests_front_end_typechecks, "query/QueryTests.bd");

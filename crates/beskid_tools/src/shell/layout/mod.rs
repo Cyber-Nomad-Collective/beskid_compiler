@@ -12,19 +12,15 @@ mod parse;
 pub mod resolve;
 mod templates;
 
-pub use editor::{
-    HiLayoutState, LayoutEditCommand, LayoutEditorState, LayoutOverlayTab,
-};
+pub use editor::{HiLayoutState, LayoutEditCommand, LayoutEditorState, LayoutOverlayTab};
 pub use editor_overlay::{LayoutEditorOverlay, LayoutOverlayAction};
 pub use model::{BoardNode, BoardV2Doc, NodeKind};
-pub use pages::{PagesDoc, switch_page, EMBEDDED_HI_PAGES};
-pub use parse::{parse_v2, EMBEDDED_HI_V2};
+pub use pages::{EMBEDDED_HI_PAGES, PagesDoc, switch_page};
+pub use parse::{EMBEDDED_HI_V2, parse_v2};
 pub use resolve::ResolvedPanels;
-pub use templates::{LayoutTemplate, LAYOUT_TEMPLATES, template_by_id};
+pub use templates::{LAYOUT_TEMPLATES, LayoutTemplate, template_by_id};
 
-pub fn load_for_scope(
-    scope: &crate::shell::scope::ShellScope,
-) -> Result<HiLayoutState, String> {
+pub fn load_for_scope(scope: &crate::shell::scope::ShellScope) -> Result<HiLayoutState, String> {
     let (doc, runtime) = load::load_for_scope(scope)?;
     let pages = pages::load_for_scope(scope)?;
     Ok(HiLayoutState::new(doc, runtime, pages))

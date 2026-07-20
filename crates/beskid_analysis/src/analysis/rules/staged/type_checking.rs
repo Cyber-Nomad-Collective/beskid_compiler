@@ -3,8 +3,8 @@ use crate::analysis::rules::RuleContext;
 use crate::hir::{
     HirBlock, HirExpressionNode, HirForStatement, HirLetStatement, HirParameter, HirProgram,
 };
-use crate::syntax_query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
 use crate::syntax::Spanned;
+use crate::syntax_query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
 use std::collections::HashMap;
 
 impl SemanticPipelineRule {

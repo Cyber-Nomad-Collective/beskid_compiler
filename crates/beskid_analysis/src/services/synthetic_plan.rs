@@ -13,9 +13,7 @@ const SYNTHETIC_MANIFEST: &str = "__synthetic__.bproj";
 /// with `entry` set to the file basename. Used by codegen and CLI paths that must prepare
 /// through the shared spine when no `.bproj` was discovered.
 pub fn synthetic_compile_plan_for_source(path: &Path) -> CompilePlan {
-    let absolute = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let absolute = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let source_root = absolute
         .parent()
         .map(Path::to_path_buf)

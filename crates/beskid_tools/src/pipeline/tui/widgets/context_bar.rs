@@ -60,7 +60,12 @@ pub fn draw_context_bar(frame: &mut Frame, area: Rect, state: &ShellState, focus
     };
 
     let mut spans = vec![
-        Span::styled("Beskid", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Beskid",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" · "),
         Span::styled(focus.title(), Style::default().fg(Color::Yellow)),
         Span::raw(" · "),

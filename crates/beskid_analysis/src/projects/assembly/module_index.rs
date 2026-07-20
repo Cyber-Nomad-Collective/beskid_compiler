@@ -14,7 +14,8 @@ use super::SourceUnit;
 use super::discovery::resolve_module_file;
 use super::hir_units::UnitHir;
 use super::loader::{
-    import_paths_from_source_full, module_paths_from_qualified_references, parent_module_import_path,
+    import_paths_from_source_full, module_paths_from_qualified_references,
+    parent_module_import_path,
 };
 use super::roots::EffectiveCompilationRoots;
 use crate::projects::CompilePlan;
@@ -356,8 +357,12 @@ impl ModuleIndex {
                 continue;
             };
             let key = crate::paths::unit_path_key(path);
-            let declaring_package =
-                declaring_package_for_prefetched_path(path, assembly, &self.entry_project_name, &self.dependency_packages);
+            let declaring_package = declaring_package_for_prefetched_path(
+                path,
+                assembly,
+                &self.entry_project_name,
+                &self.dependency_packages,
+            );
             let module_path = prefetched_module_path_for_file(path, assembly);
 
             let mut unit_resolver = Resolver::with_module_prefetch(
@@ -394,10 +399,10 @@ fn declaring_package_for_prefetched_path(
     for dep in &assembly.roots.dependencies {
         if path.starts_with(&dep.source_root)
             && let Some(dep_name) = &dep.dependency_name
-                && let Some(project_name) = dependency_packages.get(dep_name)
-            {
-                return project_name.clone();
-            }
+            && let Some(project_name) = dependency_packages.get(dep_name)
+        {
+            return project_name.clone();
+        }
     }
     entry_project_name.to_string()
 }
@@ -454,12 +459,13 @@ pub fn package_for_unit(
     }
     for dep in &roots.dependencies {
         if path.starts_with(&dep.source_root)
-            && let Some(dep_name) = &dep.dependency_name {
-                if let Some(project_name) = dependency_packages.get(dep_name) {
-                    return project_name.clone();
-                }
-                return dep_name.clone();
+            && let Some(dep_name) = &dep.dependency_name
+        {
+            if let Some(project_name) = dependency_packages.get(dep_name) {
+                return project_name.clone();
             }
+            return dep_name.clone();
+        }
     }
     host_project_name.to_string()
 }
@@ -524,11 +530,12 @@ fn collect_prefetched_import_closure(
     let mut seen_imports = HashSet::new();
     let mut seen_paths = HashSet::new();
 
-    let enqueue_import = |queue: &mut VecDeque<String>, seen: &mut HashSet<String>, import: String| {
-        if seen.insert(import.clone()) {
-            queue.push_back(import);
-        }
-    };
+    let enqueue_import =
+        |queue: &mut VecDeque<String>, seen: &mut HashSet<String>, import: String| {
+            if seen.insert(import.clone()) {
+                queue.push_back(import);
+            }
+        };
 
     let enqueue_module_paths =
         |queue: &mut VecDeque<String>, seen: &mut HashSet<String>, source: &str| {
@@ -624,9 +631,10 @@ fn collect_prefetched_modules(
     let mut bd_files = Vec::new();
     collect_source_files(source_root, &mut bd_files);
     if let Some(generated_root) = source_root.parent().map(|parent| parent.join(".generated"))
-        && generated_root.is_dir() {
-            collect_source_files(&generated_root, &mut bd_files);
-        }
+        && generated_root.is_dir()
+    {
+        collect_source_files(&generated_root, &mut bd_files);
+    }
     bd_files.sort();
     for path in bd_files {
         if unit_paths.contains(&normalize_assembly_path(&path)) {

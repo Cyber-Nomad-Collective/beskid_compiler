@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::catalog::{command_catalog, CommandItem};
+use super::catalog::{CommandItem, command_catalog};
 use super::descriptor::{BUILTIN_DESCRIPTORS, WidgetDescriptor};
 use super::layout::pages::PagesDoc;
 use super::nav::NavRegistry;

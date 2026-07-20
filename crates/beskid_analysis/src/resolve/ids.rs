@@ -13,7 +13,9 @@ pub struct ItemId(pub usize);
 pub struct LocalId(pub usize);
 
 /// Dense stable id for typable HIR nodes (expressions, statements, patterns).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 pub struct HirNodeId(pub u32);
 
 impl HirNodeId {

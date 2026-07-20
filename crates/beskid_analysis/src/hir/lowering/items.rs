@@ -7,8 +7,8 @@ use crate::hir::{
     HirTestMetadataEntry, HirTestSkipEntry, HirTestSkipSection, HirTypeDefinition,
     HirUseDeclaration,
 };
-use crate::syntax::{self, Spanned};
 use crate::syntax::expressions::try_decode_string_literal;
+use crate::syntax::{self, Spanned};
 
 use super::Lowerable;
 

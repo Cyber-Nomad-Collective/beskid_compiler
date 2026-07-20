@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::fs;
 
-use bsol::{load_profile, parse_bsol_document, validate, ValidatedDocument};
+use bsol::{ValidatedDocument, load_profile, parse_bsol_document, validate};
 
 use super::editor::HiLayoutState;
 use crate::shell::nav::NavAction;
@@ -60,7 +60,10 @@ pub fn emit_pages(doc: &PagesDoc) -> String {
     let mut out = String::new();
     out.push_str(&format!("pages \"{}\" {{\n", escape(&doc.name)));
     out.push_str(&format!("  version = {}\n", doc.version));
-    out.push_str(&format!("  default_page = \"{}\"\n", escape(&doc.default_page)));
+    out.push_str(&format!(
+        "  default_page = \"{}\"\n",
+        escape(&doc.default_page)
+    ));
     if let Some(title) = &doc.title {
         out.push_str(&format!("  title = \"{}\"\n", escape(title)));
     }
@@ -110,10 +113,11 @@ pub fn switch_page(state: &mut HiLayoutState, page_id: &str) -> Result<(), Strin
         .clone();
     state.active_page_id = page_id.to_string();
     if let Some(root) = page.board_root
-        && state.doc.nodes.contains_key(&root) {
-            state.doc.root = root;
-            state.rebuild_runtime()?;
-        }
+        && state.doc.nodes.contains_key(&root)
+    {
+        state.doc.root = root;
+        state.rebuild_runtime()?;
+    }
     Ok(())
 }
 
@@ -236,7 +240,10 @@ fn emit_page(out: &mut String, page: &PageEntry) {
 fn emit_nav_item(out: &mut String, item: &NavItemEntry) {
     out.push_str(&format!("nav_item \"{}\" {{\n", escape(&item.id)));
     out.push_str(&format!("  label = \"{}\"\n", escape(&item.label)));
-    out.push_str(&format!("  action = {}\n", nav_action_keyword(&item.action)));
+    out.push_str(&format!(
+        "  action = {}\n",
+        nav_action_keyword(&item.action)
+    ));
     if let Some(target) = &item.target {
         out.push_str(&format!("  target = \"{}\"\n", escape(target)));
     }

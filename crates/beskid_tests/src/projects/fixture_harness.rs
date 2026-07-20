@@ -241,33 +241,39 @@ mod tests {
     fn corelib_entry_assemblies_remain_isolated_by_explicit_source_path() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let channel = resolve_corelib_tests_entry_with_assembly(
-                "concurrency/ChannelApiTests.bd",
-            );
-            let messages = resolve_corelib_tests_entry_with_assembly(
-                "console/ConsoleMessageChannelTests.bd",
-            );
+            let channel =
+                resolve_corelib_tests_entry_with_assembly("concurrency/ChannelApiTests.bd");
+            let messages =
+                resolve_corelib_tests_entry_with_assembly("console/ConsoleMessageChannelTests.bd");
 
-            assert!(channel
-                .source_path
-                .ends_with("concurrency/ChannelApiTests.bd"));
-            assert!(messages
-                .source_path
-                .ends_with("console/ConsoleMessageChannelTests.bd"));
-            assert!(channel
-                .assembly
-                .as_ref()
-                .expect("channel assembly")
-                .entry_unit()
-                .path
-                .ends_with("concurrency/ChannelApiTests.bd"));
-            assert!(messages
-                .assembly
-                .as_ref()
-                .expect("messages assembly")
-                .entry_unit()
-                .path
-                .ends_with("console/ConsoleMessageChannelTests.bd"));
+            assert!(
+                channel
+                    .source_path
+                    .ends_with("concurrency/ChannelApiTests.bd")
+            );
+            assert!(
+                messages
+                    .source_path
+                    .ends_with("console/ConsoleMessageChannelTests.bd")
+            );
+            assert!(
+                channel
+                    .assembly
+                    .as_ref()
+                    .expect("channel assembly")
+                    .entry_unit()
+                    .path
+                    .ends_with("concurrency/ChannelApiTests.bd")
+            );
+            assert!(
+                messages
+                    .assembly
+                    .as_ref()
+                    .expect("messages assembly")
+                    .entry_unit()
+                    .path
+                    .ends_with("console/ConsoleMessageChannelTests.bd")
+            );
         });
     }
 }

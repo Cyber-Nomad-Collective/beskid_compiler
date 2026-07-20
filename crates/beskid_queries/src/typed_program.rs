@@ -76,7 +76,11 @@ pub fn build_typed_program(
                 module_units
                     .get(&path)
                     .copied()
-                    .map(|target| crate::db::SyntaxImport { path, binding, target })
+                    .map(|target| crate::db::SyntaxImport {
+                        path,
+                        binding,
+                        target,
+                    })
             })
             .collect();
         registry.imports.insert((unit_id, generation), imports);

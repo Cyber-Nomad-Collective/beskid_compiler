@@ -3,10 +3,10 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
-use ratatui::layout::{Constraint, Layout};
 
 use super::catalog::{CommandItem, CommandKind};
 use super::widget::ShellAction;

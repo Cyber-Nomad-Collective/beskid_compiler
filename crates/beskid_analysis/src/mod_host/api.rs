@@ -7,13 +7,13 @@ use crate::syntax::{Program, Spanned};
 
 use super::capabilities::enforce_capabilities;
 use super::collect::{capture_target_fingerprint, collect_contracts, targets_changed};
-use super::generate_output::{
-    load_generate_output_layout, write_code_generate_output, write_typed_generate_output,
-    CodeGenerateOutput,
-};
 use super::diagnostics::{ModHostDiagnostics, ModHostIssue};
 use super::discovery::discover_mod_dependencies;
 use super::generate::{is_generate_registration, resolved_max_generator_rounds, run_generators};
+use super::generate_output::{
+    CodeGenerateOutput, load_generate_output_layout, write_code_generate_output,
+    write_typed_generate_output,
+};
 use super::invoker::GeneratorOutcome;
 use super::invoker::{ContractInvoker, StubContractInvoker};
 use super::load::load_artifacts;
@@ -41,7 +41,12 @@ pub fn native_invoker_for_plan(
     let loaded = load_artifacts(Some(plan.project_root.as_path()), discovered, pipeline)?;
     let object_paths: Vec<PathBuf> = loaded
         .iter()
-        .filter_map(|artifact| artifact.descriptor.as_ref().map(|descriptor| descriptor.object_path()))
+        .filter_map(|artifact| {
+            artifact
+                .descriptor
+                .as_ref()
+                .map(|descriptor| descriptor.object_path())
+        })
         .collect();
     if object_paths.is_empty() {
         Ok(None)
@@ -160,9 +165,7 @@ pub fn run_through_generate(
             .any(|outcome| !outcome.narrowed_targets.is_empty())
     {
         return Err(anyhow::Error::new(ModHostDiagnostics::new(vec![
-            ModHostIssue::MaxGeneratorRoundsExceeded {
-                limit: max_rounds,
-            },
+            ModHostIssue::MaxGeneratorRoundsExceeded { limit: max_rounds },
         ])));
     }
     let macro_outcome = run_macro_expand_with_diagnostics(
@@ -325,8 +328,7 @@ pub fn run_analyze_rewrite_with_invoker(
         None => &default_invoker,
     };
 
-    let analyzed =
-        super::analyze::run_analyzers(session, host_input, invoker, snapshot, pipeline)?;
+    let analyzed = super::analyze::run_analyzers(session, host_input, invoker, snapshot, pipeline)?;
     let analyzer_outcomes = analyzed.outcomes.clone();
     let rewrite = run_rewriters(program, session, &analyzed, host_input, invoker, pipeline)?;
 

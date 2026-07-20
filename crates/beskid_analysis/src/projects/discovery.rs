@@ -167,10 +167,7 @@ const SKIP_DESCENDANT_DIRS: &[&str] = &[
 ];
 
 /// Search downward from `start` when ancestor lookup finds nothing (e.g. repo root above `corelib/`).
-pub fn discover_workspace_file_descendant(
-    start: &Path,
-    max_depth: usize,
-) -> Option<PathBuf> {
+pub fn discover_workspace_file_descendant(start: &Path, max_depth: usize) -> Option<PathBuf> {
     let start_dir = start_directory(start)?;
     let (workspaces, _) = collect_manifests_bfs(&start_dir, max_depth);
     pick_shallowest_manifest(workspaces, &start_dir)
@@ -191,10 +188,7 @@ fn start_directory(start: &Path) -> Option<PathBuf> {
     }
 }
 
-fn collect_manifests_bfs(
-    root: &Path,
-    max_depth: usize,
-) -> (Vec<PathBuf>, Vec<PathBuf>) {
+fn collect_manifests_bfs(root: &Path, max_depth: usize) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut workspaces = Vec::new();
     let mut projects = Vec::new();
     let mut queue = VecDeque::new();
@@ -260,9 +254,8 @@ fn manifest_depth_from(path: &Path, anchor: &Path) -> usize {
 
 /// Resolve the `.bproj` path for a workspace member directory.
 pub fn project_manifest_for_member_dir(member_dir: &Path) -> Result<PathBuf, ProjectError> {
-    discover_project_manifest_in_dir(member_dir)?.ok_or_else(|| {
-        ProjectError::ProjectFileNotFound(member_dir.join("<missing>.bproj"))
-    })
+    discover_project_manifest_in_dir(member_dir)?
+        .ok_or_else(|| ProjectError::ProjectFileNotFound(member_dir.join("<missing>.bproj")))
 }
 
 #[cfg(test)]
@@ -290,7 +283,10 @@ mod tests {
 
         let found = discover_workspace_file_descendant(&repo, DEFAULT_DESCENDANT_SEARCH_DEPTH)
             .expect("workspace");
-        assert_eq!(found.file_name().and_then(|n| n.to_str()), Some("CoreLib.bws"));
+        assert_eq!(
+            found.file_name().and_then(|n| n.to_str()),
+            Some("CoreLib.bws")
+        );
         let _ = fs::remove_dir_all(&repo);
     }
 
@@ -303,7 +299,10 @@ mod tests {
         fs::write(child.join("Child.bws"), "workspace \"Child\" {}").expect("write");
 
         let found = discover_workspace_file(&child.join("src")).expect("workspace");
-        assert_eq!(found.file_name().and_then(|n| n.to_str()), Some("Child.bws"));
+        assert_eq!(
+            found.file_name().and_then(|n| n.to_str()),
+            Some("Child.bws")
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

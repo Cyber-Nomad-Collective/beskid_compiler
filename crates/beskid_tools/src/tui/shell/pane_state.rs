@@ -77,17 +77,16 @@ impl TemplatesPaneState {
                 .installed
                 .get(index)
                 .and_then(|row| row.package_id.clone()),
-            TemplateListTab::Registry => self
-                .registry
-                .get(index)
-                .map(|row| row.package_id.clone()),
+            TemplateListTab::Registry => self.registry.get(index).map(|row| row.package_id.clone()),
         }
     }
 
     pub fn selected_short_name(&self) -> Option<&str> {
         let index = self.list_state.selected()?;
         match self.tab {
-            TemplateListTab::Installed => self.installed.get(index).map(|row| row.short_name.as_str()),
+            TemplateListTab::Installed => {
+                self.installed.get(index).map(|row| row.short_name.as_str())
+            }
             TemplateListTab::Registry => None,
         }
     }

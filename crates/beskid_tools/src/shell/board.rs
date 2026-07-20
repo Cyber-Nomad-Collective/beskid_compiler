@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use bsol::{load_profile, parse_bsol_document, validate, ValidatedBlock, ValidatedDocument};
+use bsol::{ValidatedBlock, ValidatedDocument, load_profile, parse_bsol_document, validate};
 use ratatui::layout::{Constraint, Layout, Rect};
 
 use super::scope::{ShellScope, user_board_path};
@@ -194,16 +194,22 @@ fn lower_board(doc: ValidatedDocument) -> Result<BoardLayout, String> {
 }
 
 fn lower_tile(block: &ValidatedBlock) -> Result<BoardTile, String> {
-    let widget = block
-        .fields
-        .get("widget")
-        .cloned()
-        .ok_or_else(|| format!("tile `{}` missing widget", block.label.as_deref().unwrap_or("?")))?;
+    let widget = block.fields.get("widget").cloned().ok_or_else(|| {
+        format!(
+            "tile `{}` missing widget",
+            block.label.as_deref().unwrap_or("?")
+        )
+    })?;
     let region = block
         .fields
         .get("region")
         .and_then(|r| BoardRegion::from_str(r))
-        .ok_or_else(|| format!("tile `{}` has invalid region", block.label.as_deref().unwrap_or("?")))?;
+        .ok_or_else(|| {
+            format!(
+                "tile `{}` has invalid region",
+                block.label.as_deref().unwrap_or("?")
+            )
+        })?;
     Ok(BoardTile {
         id: block.label.clone().unwrap_or_else(|| widget.clone()),
         widget,
@@ -219,7 +225,12 @@ fn lower_split(block: &ValidatedBlock) -> Result<BoardSplit, String> {
     let axis = match block.fields.get("axis").map(String::as_str) {
         Some("horizontal") => SplitAxis::Horizontal,
         Some("vertical") => SplitAxis::Vertical,
-        _ => return Err(format!("split `{}` missing axis", block.label.as_deref().unwrap_or("?"))),
+        _ => {
+            return Err(format!(
+                "split `{}` missing axis",
+                block.label.as_deref().unwrap_or("?")
+            ));
+        }
     };
     Ok(BoardSplit {
         id: block.label.clone().unwrap_or_else(|| "split".into()),

@@ -8,15 +8,15 @@
 //! should add a `commands/<name>.rs` wrapper plus library logic in the appropriate domain crate.
 
 pub mod corelib;
-pub mod shell;
-pub mod tui;
 pub mod diagnostics;
 pub mod logging;
 pub mod pipeline;
 pub mod prompt;
 pub mod registry;
 pub mod session;
+pub mod shell;
 pub mod toolchain;
+pub mod tui;
 
 pub use corelib::{CorelibProvisioning, ensure_bundled_corelib};
 pub use diagnostics::{

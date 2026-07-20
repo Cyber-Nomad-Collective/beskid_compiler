@@ -5,8 +5,8 @@ use crate::resolve::{ItemKind, ResolvedType};
 use crate::syntax::Spanned;
 use crate::types::{TypeId, TypeInfo};
 
-use crate::types::result::TypeError;
 use super::TypeChecker;
+use crate::types::result::TypeError;
 
 fn type_display_name(ty: &Spanned<HirType>) -> String {
     match &ty.node {
@@ -177,14 +177,17 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
-    pub(super) fn intern_foreign_applied_type(&mut self, path: &Spanned<HirPath>) -> Option<TypeId> {
+    pub(super) fn intern_foreign_applied_type(
+        &mut self,
+        path: &Spanned<HirPath>,
+    ) -> Option<TypeId> {
         let last_segment = path.node.segments.last()?;
         if last_segment.node.type_args.is_empty() {
             return None;
         }
-        let base = self.base_item_id_for_applied_path(path).or_else(|| {
-            self.foreign_applied_base_item_id(path)
-        });
+        let base = self
+            .base_item_id_for_applied_path(path)
+            .or_else(|| self.foreign_applied_base_item_id(path));
         let base = base?;
         let mut args = Vec::with_capacity(last_segment.node.type_args.len());
         for arg in &last_segment.node.type_args {
@@ -198,10 +201,16 @@ impl<'a> TypeChecker<'a> {
             }
             args.push(type_id?);
         }
-        Some(self.type_table.intern(crate::types::TypeInfo::Applied { base, args }))
+        Some(
+            self.type_table
+                .intern(crate::types::TypeInfo::Applied { base, args }),
+        )
     }
 
-    fn foreign_applied_base_item_id(&self, path: &Spanned<HirPath>) -> Option<crate::resolve::ItemId> {
+    fn foreign_applied_base_item_id(
+        &self,
+        path: &Spanned<HirPath>,
+    ) -> Option<crate::resolve::ItemId> {
         let segments: Vec<String> = path
             .node
             .segments

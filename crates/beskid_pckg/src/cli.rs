@@ -6,11 +6,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use std::{fs, io};
 
+use crate::progress::UploadProgress;
 use clap::{Args, Subcommand};
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
-use crate::progress::UploadProgress;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -46,7 +46,11 @@ struct RepositoryAuthConfig {
 #[derive(Args, Debug, Clone)]
 pub struct PckgArgs {
     /// pckg server base URL.
-    #[arg(long, env = "BESKID_PCKG_URL", default_value = "https://pckg.beskid-lang.org")]
+    #[arg(
+        long,
+        env = "BESKID_PCKG_URL",
+        default_value = "https://pckg.beskid-lang.org"
+    )]
     pub base_url: String,
 
     /// Bearer token for authenticated endpoints.
@@ -650,8 +654,7 @@ fn load_repositories_config(config_path: &Path) -> Result<PckgRepositoriesConfig
 
             if let Some(legacy_key) = legacy_key {
                 let mut repositories = BTreeMap::new();
-                let default_repository =
-                    canonical_repository_url("https://pckg.beskid-lang.org")?;
+                let default_repository = canonical_repository_url("https://pckg.beskid-lang.org")?;
                 repositories.insert(
                     default_repository,
                     RepositoryAuthConfig {

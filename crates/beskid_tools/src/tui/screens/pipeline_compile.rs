@@ -4,19 +4,17 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::logging::clear_tui_log_buffer;
-use crate::pipeline::tui::log_tabs::{log_tab_for_phase_label, BUILD_LOG_TARGET};
+use crate::pipeline::tui::log_tabs::{BUILD_LOG_TARGET, log_tab_for_phase_label};
 use crate::pipeline::tui::stage_focus::StageFocus;
-use crate::pipeline::tui::{TestRow, TestRowState};
 use crate::pipeline::tui::widgets::{
     draw_context_bar, draw_pipeline_tree, draw_progress_footer, draw_stage_panel,
     draw_tabbed_log_panel, init_session_logger,
 };
+use crate::pipeline::tui::{TestRow, TestRowState};
 use crate::tui::effects::ShellEffect;
 use crate::tui::input::{InputEvent, InputResult};
+use crate::tui::layout::{PANEL_DETAIL, PANEL_FOOTER, PANEL_HEADER, PANEL_LOG, PANEL_STAGE};
 use crate::tui::message::ShellMessage;
-use crate::tui::layout::{
-    PANEL_DETAIL, PANEL_FOOTER, PANEL_HEADER, PANEL_LOG, PANEL_STAGE,
-};
 use crate::tui::shell::input;
 use crate::tui::shell::state::ShellState;
 
@@ -29,26 +27,21 @@ pub fn on_input(event: &InputEvent, state: &mut ShellState) -> InputResult {
     input::handle_base_input(event, state)
 }
 
-pub fn render_panel(
-    kind: &str,
-    area: Rect,
-    frame: &mut Frame,
-    state: &mut ShellState,
-) {
-        let focus = StageFocus::from_shell_state(state);
-        match kind {
-            PANEL_HEADER => draw_context_bar(frame, area, state, focus),
-            PANEL_STAGE => draw_stage_panel(frame, area, state, focus),
-            PANEL_DETAIL => {
-                let title = focus.title();
-                draw_pipeline_tree(frame, area, &state.tree_nodes, &mut state.tree_state, title);
-            }
-            PANEL_LOG => {
-                draw_tabbed_log_panel(frame, area, state.log_tab, &mut state.log_states);
-            }
-            PANEL_FOOTER => draw_progress_footer(frame, area, &state.pipeline),
-            _ => {}
+pub fn render_panel(kind: &str, area: Rect, frame: &mut Frame, state: &mut ShellState) {
+    let focus = StageFocus::from_shell_state(state);
+    match kind {
+        PANEL_HEADER => draw_context_bar(frame, area, state, focus),
+        PANEL_STAGE => draw_stage_panel(frame, area, state, focus),
+        PANEL_DETAIL => {
+            let title = focus.title();
+            draw_pipeline_tree(frame, area, &state.tree_nodes, &mut state.tree_state, title);
         }
+        PANEL_LOG => {
+            draw_tabbed_log_panel(frame, area, state.log_tab, &mut state.log_states);
+        }
+        PANEL_FOOTER => draw_progress_footer(frame, area, &state.pipeline),
+        _ => {}
+    }
 }
 
 pub fn apply_pipeline_message(msg: &ShellMessage, state: &mut ShellState) {

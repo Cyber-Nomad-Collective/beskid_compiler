@@ -2,13 +2,13 @@
 
 use std::time::{Duration, Instant};
 
-use panes::runtime::LayoutRuntime;
-use super::model::{BoardNode, BoardV2Doc, NodeKind};
 use super::load::save_for_scope;
+use super::model::{BoardNode, BoardV2Doc, NodeKind};
 use super::pages::PagesDoc;
 use crate::shell::descriptor::is_layout_locked_widget;
 use crate::shell::registry::WidgetRegistry;
 use crate::shell::scope::ShellScope;
+use panes::runtime::LayoutRuntime;
 
 fn focused_kind_locked(runtime: &LayoutRuntime) -> bool {
     runtime
@@ -148,8 +148,7 @@ impl HiLayoutState {
                 } else {
                     self.editor.drawer_visible = false;
                 }
-                self.runtime
-                    .set_collect_boundaries(self.editor.active);
+                self.runtime.set_collect_boundaries(self.editor.active);
             }
             LayoutEditCommand::FocusNext => {
                 self.runtime.focus_next();
@@ -326,7 +325,10 @@ impl HiLayoutState {
         Ok(())
     }
 
-    pub fn layout_palette_commands(&self, _registry: &WidgetRegistry) -> Vec<super::super::catalog::CommandItem> {
+    pub fn layout_palette_commands(
+        &self,
+        _registry: &WidgetRegistry,
+    ) -> Vec<super::super::catalog::CommandItem> {
         super::super::catalog::layout_editor_commands(self.editor.active)
     }
 }

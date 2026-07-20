@@ -41,22 +41,11 @@ impl WorkflowStage {
 /// Commands submitted to the workflow engine.
 #[derive(Debug, Clone)]
 pub enum WorkflowCommand {
-    Build {
-        params: String,
-    },
-    Test {
-        params: String,
-    },
-    Run {
-        target: String,
-        args: Vec<String>,
-    },
-    Analyze {
-        params: String,
-    },
-    Graph {
-        params: String,
-    },
+    Build { params: String },
+    Test { params: String },
+    Run { target: String, args: Vec<String> },
+    Analyze { params: String },
+    Graph { params: String },
     Cancel,
 }
 
@@ -104,23 +93,21 @@ impl StageRunner {
     where
         F: Fn(StageInput, StopReceiver<()>) -> StageOutput + Clone + Send + Sync + 'static,
     {
-        let task = Task::new(
-            move |input: StageInput, stop: StopReceiver<()>| {
-                let worker = worker.clone();
-                Box::pin(async move {
-                    if stop.try_recv().is_ok() {
-                        let _ = input.tx.send(WorkflowEvent::Cancelled);
-                        return StageOutput {
-                            stage,
-                            success: false,
-                            message: "Cancelled".into(),
-                        };
-                    }
-                    let _ = input.tx.send(WorkflowEvent::StageStarted(stage));
-                    worker(input, stop)
-                })
-            },
-        );
+        let task = Task::new(move |input: StageInput, stop: StopReceiver<()>| {
+            let worker = worker.clone();
+            Box::pin(async move {
+                if stop.try_recv().is_ok() {
+                    let _ = input.tx.send(WorkflowEvent::Cancelled);
+                    return StageOutput {
+                        stage,
+                        success: false,
+                        message: "Cancelled".into(),
+                    };
+                }
+                let _ = input.tx.send(WorkflowEvent::StageStarted(stage));
+                worker(input, stop)
+            })
+        });
         Self { task }
     }
 
@@ -293,7 +280,10 @@ impl WorkflowEngine {
                     WorkflowCommand::Graph { .. } => WorkflowStage::Graph,
                     _ => return,
                 };
-                let _ = tx.send(WorkflowEvent::Log(stage, "Stage not yet implemented in-process".into()));
+                let _ = tx.send(WorkflowEvent::Log(
+                    stage,
+                    "Stage not yet implemented in-process".into(),
+                ));
             }
         }
     }
@@ -302,8 +292,12 @@ impl WorkflowEngine {
     pub fn cancel(&mut self) {
         if let Some(stage) = self.current_stage {
             match stage {
-                WorkflowStage::Build => { let _ = self.build_runner.stop(); }
-                WorkflowStage::Test => { let _ = self.test_runner.stop(); }
+                WorkflowStage::Build => {
+                    let _ = self.build_runner.stop();
+                }
+                WorkflowStage::Test => {
+                    let _ = self.test_runner.stop();
+                }
                 _ => {}
             }
             self.current_stage = None;
@@ -321,8 +315,7 @@ impl WorkflowEngine {
         let mut events = Vec::new();
         while let Ok(event) = self.event_rx.try_recv() {
             match &event {
-                WorkflowEvent::StageCompleted(stage)
-                | WorkflowEvent::StageFailed(stage, _) => {
+                WorkflowEvent::StageCompleted(stage) | WorkflowEvent::StageFailed(stage, _) => {
                     if self.current_stage == Some(*stage) {
                         self.current_stage = None;
                     }

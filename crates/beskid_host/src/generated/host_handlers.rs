@@ -9,10 +9,10 @@ use beskid_runtime::HandlerTableEntry;
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_fs_write_text(enum_ptr: *const u8) -> usize {
     (unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-            let p1 = *(enum_ptr.add(24) as *const *const BeskidStr);
-            crate::fs_write_text(p0, p1)
-            }) as usize
+        let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
+        let p1 = *(enum_ptr.add(24) as *const *const BeskidStr);
+        crate::fs_write_text(p0, p1)
+    }) as usize
 }
 
 /// # Safety
@@ -20,16 +20,16 @@ unsafe extern "C" fn host_dispatch_fs_write_text(enum_ptr: *const u8) -> usize {
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_env_get(enum_ptr: *const u8) -> *mut u8 {
     (unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-            crate::env_get(p0)
-            }) as *mut u8
+        let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
+        crate::env_get(p0)
+    }) as *mut u8
 }
 
 /// # Safety
 ///
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_env_getcwd(_enum_ptr: *const u8) -> *mut u8 {
-                crate::env_getcwd() as *mut u8
+    crate::env_getcwd() as *mut u8
 }
 
 /// # Safety
@@ -37,9 +37,9 @@ unsafe extern "C" fn host_dispatch_env_getcwd(_enum_ptr: *const u8) -> *mut u8 {
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_fs_read_text(enum_ptr: *const u8) -> *mut u8 {
     (unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-            crate::fs_read_text(p0)
-            }) as *mut u8
+        let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
+        crate::fs_read_text(p0)
+    }) as *mut u8
 }
 
 /// # Safety
@@ -47,10 +47,10 @@ unsafe extern "C" fn host_dispatch_fs_read_text(enum_ptr: *const u8) -> *mut u8 
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_env_set(enum_ptr: *const u8) -> i64 {
     unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-            let p1 = *(enum_ptr.add(24) as *const *const BeskidStr);
-            crate::env_set(p0, p1)
-            }
+        let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
+        let p1 = *(enum_ptr.add(24) as *const *const BeskidStr);
+        crate::env_set(p0, p1)
+    }
 }
 
 /// # Safety
@@ -58,9 +58,9 @@ unsafe extern "C" fn host_dispatch_env_set(enum_ptr: *const u8) -> i64 {
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_fs_delete(enum_ptr: *const u8) -> i64 {
     unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-            crate::fs_delete(p0)
-            }
+        let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
+        crate::fs_delete(p0)
+    }
 }
 
 /// # Safety
@@ -68,9 +68,9 @@ unsafe extern "C" fn host_dispatch_fs_delete(enum_ptr: *const u8) -> i64 {
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_fs_exists(enum_ptr: *const u8) -> i64 {
     unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-            crate::fs_exists(p0)
-            }
+        let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
+        crate::fs_exists(p0)
+    }
 }
 
 /// # Safety
@@ -78,9 +78,9 @@ unsafe extern "C" fn host_dispatch_fs_exists(enum_ptr: *const u8) -> i64 {
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_fs_mkdir(enum_ptr: *const u8) -> i64 {
     unsafe {
-            let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-            crate::fs_mkdir(p0)
-            }
+        let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
+        crate::fs_mkdir(p0)
+    }
 }
 
 /// # Safety
@@ -88,16 +88,16 @@ unsafe extern "C" fn host_dispatch_fs_mkdir(enum_ptr: *const u8) -> i64 {
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_process_exit(enum_ptr: *const u8) -> i64 {
     unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-crate::process_exit(p0 as i64);
-            }
+        let p0 = *(enum_ptr.add(16) as *const u64);
+        crate::process_exit(p0 as i64);
+    }
 }
 
 /// # Safety
 ///
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_process_getpid(_enum_ptr: *const u8) -> i64 {
-                crate::process_getpid()
+    crate::process_getpid()
 }
 
 /// # Safety
@@ -105,23 +105,67 @@ unsafe extern "C" fn host_dispatch_process_getpid(_enum_ptr: *const u8) -> i64 {
 /// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
 unsafe extern "C" fn host_dispatch_tty_winsize(enum_ptr: *const u8) -> i64 {
     unsafe {
-            let p0 = *(enum_ptr.add(16) as *const u64);
-            crate::tty_winsize(p0 as i64)
-            }
+        let p0 = *(enum_ptr.add(16) as *const u64);
+        crate::tty_winsize(p0 as i64)
+    }
 }
 
 const HOST_HANDLERS: [HandlerTableEntry; 11] = [
-    HandlerTableEntry { group: 0, tag: 1, fn_ptr: host_dispatch_fs_write_text as *const u8 },
-    HandlerTableEntry { group: 1, tag: 3, fn_ptr: host_dispatch_env_get as *const u8 },
-    HandlerTableEntry { group: 1, tag: 4, fn_ptr: host_dispatch_env_getcwd as *const u8 },
-    HandlerTableEntry { group: 1, tag: 5, fn_ptr: host_dispatch_fs_read_text as *const u8 },
-    HandlerTableEntry { group: 3, tag: 14, fn_ptr: host_dispatch_env_set as *const u8 },
-    HandlerTableEntry { group: 3, tag: 22, fn_ptr: host_dispatch_fs_delete as *const u8 },
-    HandlerTableEntry { group: 3, tag: 23, fn_ptr: host_dispatch_fs_exists as *const u8 },
-    HandlerTableEntry { group: 3, tag: 24, fn_ptr: host_dispatch_fs_mkdir as *const u8 },
-    HandlerTableEntry { group: 3, tag: 40, fn_ptr: host_dispatch_process_exit as *const u8 },
-    HandlerTableEntry { group: 3, tag: 41, fn_ptr: host_dispatch_process_getpid as *const u8 },
-    HandlerTableEntry { group: 3, tag: 45, fn_ptr: host_dispatch_tty_winsize as *const u8 },
+    HandlerTableEntry {
+        group: 0,
+        tag: 1,
+        fn_ptr: host_dispatch_fs_write_text as *const u8,
+    },
+    HandlerTableEntry {
+        group: 1,
+        tag: 3,
+        fn_ptr: host_dispatch_env_get as *const u8,
+    },
+    HandlerTableEntry {
+        group: 1,
+        tag: 4,
+        fn_ptr: host_dispatch_env_getcwd as *const u8,
+    },
+    HandlerTableEntry {
+        group: 1,
+        tag: 5,
+        fn_ptr: host_dispatch_fs_read_text as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 14,
+        fn_ptr: host_dispatch_env_set as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 22,
+        fn_ptr: host_dispatch_fs_delete as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 23,
+        fn_ptr: host_dispatch_fs_exists as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 24,
+        fn_ptr: host_dispatch_fs_mkdir as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 40,
+        fn_ptr: host_dispatch_process_exit as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 41,
+        fn_ptr: host_dispatch_process_getpid as *const u8,
+    },
+    HandlerTableEntry {
+        group: 3,
+        tag: 45,
+        fn_ptr: host_dispatch_tty_winsize as *const u8,
+    },
 ];
 
 /// Register all host dispatch handlers with the language runtime.

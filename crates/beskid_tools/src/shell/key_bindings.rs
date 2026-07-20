@@ -80,12 +80,7 @@ impl ShortcutBindings {
     pub fn save(&self, config: &mut ToolsConfig) {
         for action in BINDABLE_ACTIONS {
             let chord = self.chord_for(action.id);
-            set_value(
-                config,
-                TOOL_ID,
-                action.config_key,
-                encode_chord(chord),
-            );
+            set_value(config, TOOL_ID, action.config_key, encode_chord(chord));
         }
     }
 
@@ -133,7 +128,6 @@ impl ShortcutBindings {
     pub fn palette_hint(&self) -> String {
         format!("{} / :", display_chord(self.palette))
     }
-
 }
 
 fn load_chord(
@@ -146,7 +140,11 @@ fn load_chord(
     if raw.is_empty() {
         return default;
     }
-    if platform_shortcuts::is_macos() && let ("bind_palette", "super+p" | "cmd+p" | "command+p") = (key, raw.as_str()) { return default }
+    if platform_shortcuts::is_macos()
+        && let ("bind_palette", "super+p" | "cmd+p" | "command+p") = (key, raw.as_str())
+    {
+        return default;
+    }
     parse_chord(&raw).unwrap_or(default)
 }
 
@@ -163,10 +161,7 @@ pub fn chord_from_key(key: &KeyEvent) -> KeyChord {
 
 pub fn chord_matches(chord: &KeyChord, key: &KeyEvent) -> bool {
     let mods = key.modifiers
-        & (KeyModifiers::CONTROL
-            | KeyModifiers::ALT
-            | KeyModifiers::SHIFT
-            | KeyModifiers::SUPER);
+        & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER);
     chord.code == key.code && chord.modifiers == mods
 }
 

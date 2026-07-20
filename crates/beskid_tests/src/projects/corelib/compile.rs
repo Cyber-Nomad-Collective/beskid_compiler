@@ -1,16 +1,15 @@
 use std::fs;
 
+use crate::projects::fixture_harness::{
+    corelib_mvp_fixture, shared_corelib_mvp_assembly, with_large_test_stack, with_project_test_env,
+};
+use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 use beskid_analysis::Severity;
 use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::lower_normalize_resolve_type_spanned_with_assembly;
 use beskid_analysis::services::{
     analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input,
 };
-use crate::projects::fixture_harness::{
-    corelib_mvp_fixture, shared_corelib_mvp_assembly,
-    with_large_test_stack, with_project_test_env,
-};
-use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 
 use super::{
     compiler_sdk_src, corelib_root, corelib_workspace_root, foundation_src,
@@ -52,10 +51,8 @@ fn checked_in_corelib_sources_parse_as_beskid_programs() {
 #[test]
 fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_positives() {
     with_project_test_env(&corelib_mvp_fixture(), || {
-        let diagnostics = analyze_file_in_project(
-            &corelib_mvp_fixture().join("Src/Main.bd"),
-        )
-        .expect("analyze corelib_mvp entry");
+        let diagnostics = analyze_file_in_project(&corelib_mvp_fixture().join("Src/Main.bd"))
+            .expect("analyze corelib_mvp entry");
 
         assert!(
             diagnostics
@@ -76,10 +73,10 @@ fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context()
             .unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
         let diagnostics = analyze_source_in_project(&path, &source)
             .unwrap_or_else(|_| panic!("analyze {}", path.display()));
-            let errors: Vec<_> = diagnostics
-                .into_iter()
-                .filter(|diag| matches!(diag.severity, Severity::Error))
-                .collect();
+        let errors: Vec<_> = diagnostics
+            .into_iter()
+            .filter(|diag| matches!(diag.severity, Severity::Error))
+            .collect();
         assert!(
             errors.is_empty(),
             "expected no error diagnostics for {} but got: {errors:#?}",
@@ -203,10 +200,9 @@ fn checked_in_compiler_sdk_emitter_hub_exports_split_modules() {
 
 #[test]
 fn checked_in_compiler_sdk_emitter_contribution_helpers_exist() {
-    let contribution = fs::read_to_string(
-        compiler_sdk_src().join("Beskid/Compiler/Emitter/Contribution.bd"),
-    )
-    .expect("read Emitter.Contribution");
+    let contribution =
+        fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Emitter/Contribution.bd"))
+            .expect("read Emitter.Contribution");
     for needle in [
         "pub GeneratedSyntaxContribution Empty()",
         "pub GeneratedSyntaxContribution AppendCode(",
@@ -253,12 +249,12 @@ fn checked_in_compiler_sdk_collect_declares_mod_contracts() {
 
 #[test]
 fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
-    let results_mod =
-        fs::read_to_string(foundation_src().join("Core/Results/Results.bd")).expect("read Core.Results");
-    let string_mod =
-        fs::read_to_string(foundation_src().join("Core/String/String.bd")).expect("read Core.String");
-    let output_mod =
-        fs::read_to_string(foundation_src().join("Core/Output/Output.bd")).expect("read Core.Output");
+    let results_mod = fs::read_to_string(foundation_src().join("Core/Results/Results.bd"))
+        .expect("read Core.Results");
+    let string_mod = fs::read_to_string(foundation_src().join("Core/String/String.bd"))
+        .expect("read Core.String");
+    let output_mod = fs::read_to_string(foundation_src().join("Core/Output/Output.bd"))
+        .expect("read Core.Output");
 
     assert!(
         results_mod.contains("pub enum Result"),
@@ -290,8 +286,8 @@ fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
         output_mod.contains("Core.Syscall.WriteWith") && output_mod.contains("WriteLine"),
         "Core.Output should route through Core.Syscall.WriteWith and expose WriteLine"
     );
-    let syscall_mod =
-        fs::read_to_string(foundation_src().join("Core/Syscall/Syscall.bd")).expect("read Core.Syscall");
+    let syscall_mod = fs::read_to_string(foundation_src().join("Core/Syscall/Syscall.bd"))
+        .expect("read Core.Syscall");
     assert!(
         syscall_mod.contains("__syscall_write"),
         "Core.Syscall should call __syscall_write builtin"

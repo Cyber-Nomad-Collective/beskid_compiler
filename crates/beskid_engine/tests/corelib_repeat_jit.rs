@@ -8,7 +8,8 @@ use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, with_db};
 
 fn corelib_tests_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/beskid_corelib/tests/corelib_tests")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corelib/beskid_corelib/tests/corelib_tests")
 }
 
 // Quarantined: the multi-hour `prepare_compilation` hang this test used to cause

@@ -82,7 +82,9 @@ fn primitive_layout(primitive: beskid_analysis::hir::HirPrimitiveType) -> TypeLa
         beskid_analysis::hir::HirPrimitiveType::I32 => (4, 4),
         beskid_analysis::hir::HirPrimitiveType::I64 => (8, 8),
         beskid_analysis::hir::HirPrimitiveType::U8 => (1, 1),
-        beskid_analysis::hir::HirPrimitiveType::Word => (std::mem::size_of::<usize>(), std::mem::align_of::<usize>()),
+        beskid_analysis::hir::HirPrimitiveType::Word => {
+            (std::mem::size_of::<usize>(), std::mem::align_of::<usize>())
+        }
         beskid_analysis::hir::HirPrimitiveType::F64 => (8, 8),
         beskid_analysis::hir::HirPrimitiveType::Unit => (0, 1),
         beskid_analysis::hir::HirPrimitiveType::Never => (0, 1),

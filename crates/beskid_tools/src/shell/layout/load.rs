@@ -6,7 +6,7 @@ use panes::runtime::LayoutRuntime;
 
 use super::lower::lower_runtime;
 use super::model::BoardV2Doc;
-use super::parse::{import_v1, parse_v2, EMBEDDED_HI_V2};
+use super::parse::{EMBEDDED_HI_V2, import_v1, parse_v2};
 use crate::shell::board::BoardLayout;
 use crate::shell::scope::{ShellScope, user_board_path};
 

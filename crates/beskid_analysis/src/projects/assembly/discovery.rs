@@ -34,9 +34,7 @@ fn module_file_candidates(relative: &std::path::Path, source_root: &Path) -> Vec
     let mod_file = relative.join("mod.bd");
     let mut out = vec![flat, homonymous, mod_file];
     if let Some(generated_root) = source_root.parent().map(|parent| parent.join(".generated")) {
-        let generated = generated_root
-            .join(relative)
-            .with_extension("g.bd");
+        let generated = generated_root.join(relative).with_extension("g.bd");
         out.push(generated);
     }
     out

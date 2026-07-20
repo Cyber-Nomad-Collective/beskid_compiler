@@ -50,7 +50,11 @@ fn emit_node(out: &mut String, id: &str, node: &BoardNode) {
         out.push_str(&format!("  ratio = {v}\n"));
     }
     if !node.children.is_empty() {
-        let joined: Vec<_> = node.children.iter().map(|c| format!("\"{}\"", escape(c))).collect();
+        let joined: Vec<_> = node
+            .children
+            .iter()
+            .map(|c| format!("\"{}\"", escape(c)))
+            .collect();
         out.push_str(&format!("  children = [{}]\n", joined.join(", ")));
     }
     if let Some(active) = &node.active {

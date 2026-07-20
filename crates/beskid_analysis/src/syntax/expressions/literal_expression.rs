@@ -6,7 +6,7 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::expressions::span::remap_span;
-use crate::syntax::expressions::string_decode::{split_string_literal_parts, StringLiteralPart};
+use crate::syntax::expressions::string_decode::{StringLiteralPart, split_string_literal_parts};
 use crate::syntax::{Expression, Literal, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
@@ -245,7 +245,9 @@ fn remap_expression_spans(expression: &mut Spanned<Expression>, offset: usize, s
                 remap_expression_spans(element, offset, source);
             }
         }
-        Expression::MacroInvocation(_) | Expression::MacroMetavariable(_) | Expression::CodeString(_) => {}
+        Expression::MacroInvocation(_)
+        | Expression::MacroMetavariable(_)
+        | Expression::CodeString(_) => {}
     }
 }
 

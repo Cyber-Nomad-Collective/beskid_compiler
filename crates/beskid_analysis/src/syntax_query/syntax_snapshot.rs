@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use crate::syntax_query::{DynNodeRef, NodeKind};
 use crate::syntax::{Program, SpanInfo, Spanned};
+use crate::syntax_query::{DynNodeRef, NodeKind};
 
 /// Stable handle matching Mod SDK `NodeRef` (`syntaxGenerationId` + `nodeId`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -1,8 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::hir::{
-    HirContractNode, HirItem, HirPrimitiveType, HirProgram,
-};
+use crate::hir::{HirContractNode, HirItem, HirPrimitiveType, HirProgram};
 use crate::resolve::{ItemKind, ResolvedType};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::result::{FunctionSignature, TypeError};

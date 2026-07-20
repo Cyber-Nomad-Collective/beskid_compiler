@@ -73,9 +73,7 @@ fn resolve_workspace_manifest(
     if kind == GraphKind::Workspace {
         return Ok(Some(manifest_path.to_path_buf()));
     }
-    workspace_uri
-        .map(super::manifest_path_from_uri)
-        .transpose()
+    workspace_uri.map(super::manifest_path_from_uri).transpose()
 }
 
 pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {
@@ -106,7 +104,11 @@ pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {
         .map(serialize_lock_entry)
         .collect::<Vec<_>>();
 
-    let declared_names: HashSet<&str> = manifest.dependencies.iter().map(|dep| dep.name.as_str()).collect();
+    let declared_names: HashSet<&str> = manifest
+        .dependencies
+        .iter()
+        .map(|dep| dep.name.as_str())
+        .collect();
     let locked_names: HashSet<&str> = lock_entries.iter().map(|entry| entry.name()).collect();
     let mut unresolved: Vec<Value> = declared_names
         .difference(&locked_names)

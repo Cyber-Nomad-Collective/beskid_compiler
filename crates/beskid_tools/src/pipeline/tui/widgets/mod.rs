@@ -25,6 +25,4 @@ pub use log_panel::{
 pub use pipeline_tree_view::{draw_pipeline_tree, tree_click_at};
 pub use progress_footer::draw_progress_footer;
 pub use stage_panel::draw_stage_panel;
-pub use summary_panel::{
-    draw_summary_chart_panel, draw_summary_headline_footer,
-};
+pub use summary_panel::{draw_summary_chart_panel, draw_summary_headline_footer};

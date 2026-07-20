@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
 use crate::projects::fixture_harness::{
-    corelib_mvp_fixture, shared_corelib_mvp_assembly,
-    with_project_test_env,
+    corelib_mvp_fixture, shared_corelib_mvp_assembly, with_project_test_env,
 };
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 use beskid_analysis::projects::{
@@ -152,7 +151,6 @@ fn module_index_resolve_entry_succeeds_for_corelib_mvp_main() {
 #[test]
 fn corelib_syscall_tests_prefetch_includes_testing_assert_true() {
     use crate::projects::corelib::corelib_root;
-    
 
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let project = corelib_root().join("tests/corelib_tests");
@@ -278,15 +276,6 @@ fn assemble_with_thread_cap(
     unsafe {
         std::env::set_var("BESKID_ASSEMBLY_THREADS", threads.to_string());
     }
-    with_db(|db| {
-        program_assembly(
-            db,
-            plan,
-            workspace,
-            entry_path,
-            Some(entry_source),
-            options,
-        )
-    })
-    .expect("assemble with thread cap")
+    with_db(|db| program_assembly(db, plan, workspace, entry_path, Some(entry_source), options))
+        .expect("assemble with thread cap")
 }

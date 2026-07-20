@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 
-use crate::projects::parse_bsol_document;
 use crate::projects::model::ProjectLinkSection;
+use crate::projects::parse_bsol_document;
 
 use super::resolution::LibraryResolution;
 

@@ -3,8 +3,8 @@ use crate::hir::{
 };
 use crate::syntax::Spanned;
 
-use crate::types::result::TypeError;
 use super::TypeChecker;
+use crate::types::result::TypeError;
 
 impl<'a> TypeChecker<'a> {
     pub(super) fn type_block_inner(&mut self, block: &Spanned<HirBlock>) {
@@ -29,7 +29,10 @@ impl<'a> TypeChecker<'a> {
                         (Some(expected), HirExpressionNode::MatchExpression(match_expr)) => {
                             self.type_match_expression_with_expected(match_expr, Some(expected))
                         }
-                        (Some(_), _) | (None, _) => self.infer_local_type_from_expression(let_stmt.node.name.span, &let_stmt.node.value),
+                        (Some(_), _) | (None, _) => self.infer_local_type_from_expression(
+                            let_stmt.node.name.span,
+                            &let_stmt.node.value,
+                        ),
                     };
                     self.contextual_expected_type = previous_contextual;
                     if let Some(expected) = expected {
@@ -44,7 +47,10 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
                 None => {
-                    if let Some(actual) = self.infer_local_type_from_expression(let_stmt.node.name.span, &let_stmt.node.value) {
+                    if let Some(actual) = self.infer_local_type_from_expression(
+                        let_stmt.node.name.span,
+                        &let_stmt.node.value,
+                    ) {
                         if matches!(
                             self.type_table.get(actual),
                             Some(crate::types::TypeInfo::Fiber(_))

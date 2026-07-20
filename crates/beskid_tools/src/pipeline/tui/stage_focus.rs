@@ -52,18 +52,12 @@ impl StageFocus {
     /// Gray helper copy for the primary pane when a stage has little live detail.
     pub fn description(self) -> &'static str {
         match self {
-            Self::Workspace => {
-                "Dependency resolution and materialization steps update here."
-            }
-            Self::FrontEnd => {
-                "Per-unit parse and macro expansion progress streams in the log."
-            }
+            Self::Workspace => "Dependency resolution and materialization steps update here.",
+            Self::FrontEnd => "Per-unit parse and macro expansion progress streams in the log.",
             Self::Semantic => {
                 "Nested semantic rules and type-check passes appear in the pipeline tree."
             }
-            Self::LowerCodegen => {
-                "Lowering, CLIF, and JIT/AOT emit phases drive this stage."
-            }
+            Self::LowerCodegen => "Lowering, CLIF, and JIT/AOT emit phases drive this stage.",
             Self::Tests => {
                 "Each test row updates as cases start, pass, or fail. Full output streams in the log panel."
             }
@@ -168,9 +162,11 @@ mod tests {
 
     #[test]
     fn workspace_description_mentions_materialization() {
-        assert!(StageFocus::Workspace
-            .description()
-            .contains("materialization"));
+        assert!(
+            StageFocus::Workspace
+                .description()
+                .contains("materialization")
+        );
     }
 
     #[test]

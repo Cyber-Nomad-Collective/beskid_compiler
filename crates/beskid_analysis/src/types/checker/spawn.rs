@@ -4,8 +4,8 @@ use crate::resolve::ResolvedValue;
 use crate::syntax::Spanned;
 use crate::types::{TypeId, TypeInfo};
 
-use crate::types::result::TypeError;
 use super::TypeChecker;
+use crate::types::result::TypeError;
 
 impl<'a> TypeChecker<'a> {
     pub(super) fn type_spawn_expression(

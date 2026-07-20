@@ -288,17 +288,94 @@ pub fn layout_editor_commands(edit_active: bool) -> Vec<CommandItem> {
         ))];
     }
     vec![
-        CommandItem::Contextual(contextual("layout.focus_next", "Focus next panel", "Select next layout panel", "↓", None, None)),
-        CommandItem::Contextual(contextual("layout.focus_prev", "Focus prev panel", "Select previous layout panel", "↑", None, None)),
-        CommandItem::Contextual(contextual("layout.add", "Add panel", "Add widget panel (param: widget id)", "+", Some("<widget>"), None)),
-        CommandItem::Contextual(contextual("layout.remove", "Remove panel", "Remove focused panel", "−", None, None)),
-        CommandItem::Contextual(contextual("layout.wrap_col", "Wrap column", "Wrap focused panel in column", "⫯", None, None)),
-        CommandItem::Contextual(contextual("layout.wrap_row", "Wrap row", "Wrap focused panel in row", "⫰", None, None)),
-        CommandItem::Contextual(contextual("layout.tabs", "Convert tabs", "Convert layout to tabs", "⊞", None, None)),
-        CommandItem::Contextual(contextual("layout.stack", "Convert stack", "Convert layout to stack", "▤", None, None)),
-        CommandItem::Contextual(contextual("layout.set_widget", "Set widget", "Set focused panel widget id", "◎", Some("<widget>"), None)),
-        CommandItem::Contextual(contextual("layout.save", "Save layout", "Save board to scope path", "💾", None, None)),
-        CommandItem::Contextual(contextual("layout.reset", "Reset layout", "Reset to embedded default", "↺", None, None)),
+        CommandItem::Contextual(contextual(
+            "layout.focus_next",
+            "Focus next panel",
+            "Select next layout panel",
+            "↓",
+            None,
+            None,
+        )),
+        CommandItem::Contextual(contextual(
+            "layout.focus_prev",
+            "Focus prev panel",
+            "Select previous layout panel",
+            "↑",
+            None,
+            None,
+        )),
+        CommandItem::Contextual(contextual(
+            "layout.add",
+            "Add panel",
+            "Add widget panel (param: widget id)",
+            "+",
+            Some("<widget>"),
+            None,
+        )),
+        CommandItem::Contextual(contextual(
+            "layout.remove",
+            "Remove panel",
+            "Remove focused panel",
+            "−",
+            None,
+            None,
+        )),
+        CommandItem::Contextual(contextual(
+            "layout.wrap_col",
+            "Wrap column",
+            "Wrap focused panel in column",
+            "⫯",
+            None,
+            None,
+        )),
+        CommandItem::Contextual(contextual(
+            "layout.wrap_row",
+            "Wrap row",
+            "Wrap focused panel in row",
+            "⫰",
+            None,
+            None,
+        )),
+        CommandItem::Contextual(contextual(
+            "layout.tabs",
+            "Convert tabs",
+            "Convert layout to tabs",
+            "⊞",
+            None,
+            None,
+        )),
+        CommandItem::Contextual(contextual(
+            "layout.stack",
+            "Convert stack",
+            "Convert layout to stack",
+            "▤",
+            None,
+            None,
+        )),
+        CommandItem::Contextual(contextual(
+            "layout.set_widget",
+            "Set widget",
+            "Set focused panel widget id",
+            "◎",
+            Some("<widget>"),
+            None,
+        )),
+        CommandItem::Contextual(contextual(
+            "layout.save",
+            "Save layout",
+            "Save board to scope path",
+            "💾",
+            None,
+            None,
+        )),
+        CommandItem::Contextual(contextual(
+            "layout.reset",
+            "Reset layout",
+            "Reset to embedded default",
+            "↺",
+            None,
+            None,
+        )),
     ]
 }
 
@@ -337,7 +414,7 @@ fn contextual(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shell::layout::pages::{parse_pages, EMBEDDED_HI_PAGES};
+    use crate::shell::layout::pages::{EMBEDDED_HI_PAGES, parse_pages};
     use crate::shell::nav::NavRegistry;
     use crate::shell::scope::ShellScope;
 

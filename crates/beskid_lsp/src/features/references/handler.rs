@@ -43,7 +43,11 @@ pub fn handle_references(
         })
         .map(|reference| Location {
             uri: uri.clone(),
-            range: offset_range_to_lsp(&doc.text, reference.reference_start, reference.reference_end),
+            range: offset_range_to_lsp(
+                &doc.text,
+                reference.reference_start,
+                reference.reference_end,
+            ),
         })
         .collect();
     if include_declaration {

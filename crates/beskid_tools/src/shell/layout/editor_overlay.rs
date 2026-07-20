@@ -3,18 +3,18 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Tabs};
 use super::editor::{LayoutEditorState, LayoutOverlayTab};
 use super::model::{BoardNode, BoardV2Doc, NodeKind};
 use super::templates::LAYOUT_TEMPLATES;
 use crate::shell::descriptor::WidgetDescriptor;
 use crate::shell::scope::{ShellScope, user_data_dir};
 use crate::tui::overlay_chrome::{draw_backdrop, hotkey, render_overlay_panel};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::Frame;
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Tabs};
 
 #[derive(Default)]
 pub struct LayoutEditorOverlay {
@@ -132,8 +132,7 @@ impl LayoutEditorOverlay {
                     return;
                 }
                 if delta == 1 {
-                    self.structure_selected =
-                        (self.structure_selected + 1).min(structure_len - 1);
+                    self.structure_selected = (self.structure_selected + 1).min(structure_len - 1);
                 } else {
                     self.structure_selected = self.structure_selected.saturating_sub(1);
                 }
@@ -208,7 +207,11 @@ impl LayoutEditorOverlay {
                     .unwrap_or(0),
             )
             .style(Style::default().fg(Color::DarkGray))
-            .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+            .highlight_style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            );
 
         let hotkeys = &[
             hotkey("w", "hide drawer"),
@@ -225,7 +228,10 @@ impl LayoutEditorOverlay {
                 Constraint::Length(4),
             ])
             .areas(body);
-            f.render_widget(tabs.block(Block::default().borders(Borders::BOTTOM)), tab_area);
+            f.render_widget(
+                tabs.block(Block::default().borders(Borders::BOTTOM)),
+                tab_area,
+            );
             match editor.overlay_tab {
                 LayoutOverlayTab::Templates => self.render_templates(list_area, detail_area, f),
                 LayoutOverlayTab::Widgets => {
@@ -325,7 +331,11 @@ impl LayoutEditorOverlay {
                 .collect()
         };
         frame.render_widget(
-            List::new(items).block(Block::default().borders(Borders::ALL).title(" Saved layouts ")),
+            List::new(items).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Saved layouts "),
+            ),
             list,
         );
         let hint = if let Some(path) = self.saved_boards.get(self.layout_selected) {
@@ -334,11 +344,7 @@ impl LayoutEditorOverlay {
             "Save a layout to ~/.beskid/data/boards/ or scope .beskid/board.bsol".into()
         };
         frame.render_widget(
-            Paragraph::new(hint).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Hint "),
-            ),
+            Paragraph::new(hint).block(Block::default().borders(Borders::ALL).title(" Hint ")),
             detail,
         );
     }
@@ -368,11 +374,8 @@ impl LayoutEditorOverlay {
             .map(node_detail)
             .unwrap_or_else(|| "Select a node".into());
         frame.render_widget(
-            Paragraph::new(detail_text).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Node "),
-            ),
+            Paragraph::new(detail_text)
+                .block(Block::default().borders(Borders::ALL).title(" Node ")),
             detail,
         );
     }
@@ -406,19 +409,20 @@ fn list_saved_boards(scope: &ShellScope) -> Vec<PathBuf> {
     }
     let boards_dir = user_data_dir().join("boards");
     if boards_dir.is_dir()
-        && let Ok(entries) = fs::read_dir(&boards_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file()
-                    && path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .is_some_and(|e| e == "bsol")
-                {
-                    paths.push(path);
-                }
+        && let Ok(entries) = fs::read_dir(&boards_dir)
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file()
+                && path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e == "bsol")
+            {
+                paths.push(path);
             }
         }
+    }
     paths.sort();
     paths.dedup();
     paths
@@ -443,11 +447,7 @@ fn walk_node(doc: &BoardV2Doc, id: &str, depth: usize, out: &mut Vec<(usize, Str
 
 fn structure_label(node: &BoardNode) -> String {
     match node.kind {
-        NodeKind::Panel => node
-            .widget
-            .as_deref()
-            .unwrap_or("panel")
-            .to_string(),
+        NodeKind::Panel => node.widget.as_deref().unwrap_or("panel").to_string(),
         other => other.as_str().to_string(),
     }
 }

@@ -417,9 +417,7 @@ fn emit_node_on_cursor(
         Expr::Group(inner) => emit_node_on_cursor(cursor, inner, rule, rules),
         _ => {
             let body = emit_node(node, rule, rules);
-            format!(
-                "Parser.TextParseResult<string> opt_inner = {{\n    {body}\n}};"
-            )
+            format!("Parser.TextParseResult<string> opt_inner = {{\n    {body}\n}};")
         }
     }
 }
@@ -529,9 +527,9 @@ fn emit_step_on_cursor(
                 rule_name_to_callable(name)
             )
         }
-        Expr::Any => format!(
-            "Parser.TextParseResult<string> {var} = Parser.Satisfy({cursor}, \"{rule}\");"
-        ),
+        Expr::Any => {
+            format!("Parser.TextParseResult<string> {var} = Parser.Satisfy({cursor}, \"{rule}\");")
+        }
         Expr::Group(inner) => {
             let body = emit_node(inner, rule, rules).replace("return ", "");
             format!("Parser.TextParseResult<string> {var} = {{ {body} }};")
@@ -560,9 +558,9 @@ fn emit_literal_expr(value: &str, cursor: &str, rule: &str, target: &str) -> Str
 }
 
 fn is_beskid_string_representable(value: &str) -> bool {
-    value.chars().all(|ch| {
-        ch == ' ' || (ch.is_ascii_graphic() && ch != '"' && ch != '\\' && ch != '$')
-    })
+    value
+        .chars()
+        .all(|ch| ch == ' ' || (ch.is_ascii_graphic() && ch != '"' && ch != '\\' && ch != '$'))
 }
 
 fn escape_beskid_string(value: &str) -> String {

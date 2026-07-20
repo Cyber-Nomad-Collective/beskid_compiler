@@ -5,8 +5,8 @@ use ratatui::layout::Rect;
 
 use crate::shell::context::WidgetContext;
 use crate::shell::layout::overlays::{
-    overlay_rect_for, OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, OVERLAY_PCKG,
-    OVERLAY_SETTINGS, OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS,
+    OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, OVERLAY_PCKG, OVERLAY_SETTINGS,
+    OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS, overlay_rect_for,
 };
 use crate::shell::primitives::HotkeyItem;
 use crate::shell::registry::WidgetRegistry;
@@ -32,15 +32,13 @@ pub enum OverlayRenderContext<'a> {
 }
 
 pub fn any_panel_overlay_visible(state: &ShellState) -> bool {
-    OverlayKind::ALL.iter().any(|kind| state.overlay_visible(*kind))
+    OverlayKind::ALL
+        .iter()
+        .any(|kind| state.overlay_visible(*kind))
 }
 
 /// Draw backdrop and all visible panel overlays with ratkit Pane chrome.
-pub fn render_panel_overlays(
-    frame: &mut Frame,
-    area: Rect,
-    context: OverlayRenderContext<'_>,
-) {
+pub fn render_panel_overlays(frame: &mut Frame, area: Rect, context: OverlayRenderContext<'_>) {
     match context {
         OverlayRenderContext::Pipeline(state) => {
             render_pipeline_overlays(frame, area, state);
@@ -81,7 +79,11 @@ fn render_widget_overlays(frame: &mut Frame, area: Rect, widgets: HiOverlayWidge
             |body, frame| graph_overlay::render(body, frame, ctx),
         );
     }
-    if widgets.ctx.shell_state.overlay_visible(OverlayKind::Settings) {
+    if widgets
+        .ctx
+        .shell_state
+        .overlay_visible(OverlayKind::Settings)
+    {
         let overlay = overlay_rect_for(OVERLAY_SETTINGS, area);
         widgets.ctx.shell_state.layout_rects.settings_overlay = Some(overlay);
         let ctx = &mut *widgets.ctx;
@@ -94,7 +96,11 @@ fn render_widget_overlays(frame: &mut Frame, area: Rect, widgets: HiOverlayWidge
             |body, frame| settings_overlay::render(body, frame, ctx, registry),
         );
     }
-    if widgets.ctx.shell_state.overlay_visible(OverlayKind::Analysis) {
+    if widgets
+        .ctx
+        .shell_state
+        .overlay_visible(OverlayKind::Analysis)
+    {
         let overlay = overlay_rect_for(OVERLAY_ANALYSIS, area);
         widgets.ctx.shell_state.layout_rects.analysis_overlay = Some(overlay);
         let ctx = &mut *widgets.ctx;
@@ -233,8 +239,8 @@ fn templates_hotkeys(state: &ShellState) -> Vec<HotkeyItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     use crate::tui::shell::focus::OverlayKind;
 
@@ -256,18 +262,14 @@ mod tests {
             .expect("draw");
 
         let buffer = terminal.backend().buffer();
-        let text: String = buffer
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let text: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
         assert!(text.contains("Compile debugger"));
     }
 
     #[test]
     fn graph_overlay_size_matches_compile_debug() {
         use crate::shell::layout::overlays::{
-            graph_overlay_size, overlay_rect_for, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH,
+            OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, graph_overlay_size, overlay_rect_for,
         };
         let area = ratatui::layout::Rect::new(0, 0, 100, 30);
         let graph = overlay_rect_for(OVERLAY_GRAPH, area);
@@ -281,11 +283,9 @@ mod tests {
 
     #[test]
     fn graph_overlay_renders_pane_title() {
-
-
         use crate::shell::context::WidgetContext;
         use crate::shell::key_bindings::ShortcutBindings;
-        use crate::shell::layout::{parse_v2, EMBEDDED_HI_V2};
+        use crate::shell::layout::{EMBEDDED_HI_V2, parse_v2};
         use crate::shell::palette::CommandPaletteState;
         use crate::shell::registry::WidgetRegistry;
         use crate::shell::scope::ShellScope;
@@ -327,11 +327,7 @@ mod tests {
             .expect("draw");
 
         let buffer = terminal.backend().buffer();
-        let text: String = buffer
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let text: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
         assert!(text.contains("Dependency graph"));
     }
 }

@@ -4,15 +4,22 @@ use crate::syntax::{SpanInfo, Spanned};
 use crate::types::path_value::PathTypeEnv;
 use crate::types::{TypeId, TypeInfo};
 
-use crate::types::result::TypeError;
 use super::TypeChecker;
+use crate::types::result::TypeError;
 use std::collections::HashMap;
 
 impl<'a> TypeChecker<'a> {
     pub(super) fn seed_types(&mut self) {
         for primitive in [
-            HirPrimitiveType::Bool, HirPrimitiveType::I32, HirPrimitiveType::I64, HirPrimitiveType::U8,
-            HirPrimitiveType::F64, HirPrimitiveType::Char, HirPrimitiveType::String, HirPrimitiveType::Unit, HirPrimitiveType::Never,
+            HirPrimitiveType::Bool,
+            HirPrimitiveType::I32,
+            HirPrimitiveType::I64,
+            HirPrimitiveType::U8,
+            HirPrimitiveType::F64,
+            HirPrimitiveType::Char,
+            HirPrimitiveType::String,
+            HirPrimitiveType::Unit,
+            HirPrimitiveType::Never,
         ] {
             let id = self
                 .type_table
@@ -22,7 +29,9 @@ impl<'a> TypeChecker<'a> {
         }
         for item in &self.resolution.items {
             match item.kind {
-                crate::resolve::ItemKind::Type | crate::resolve::ItemKind::Enum | crate::resolve::ItemKind::Contract => {
+                crate::resolve::ItemKind::Type
+                | crate::resolve::ItemKind::Enum
+                | crate::resolve::ItemKind::Contract => {
                     let id = self.type_table.intern(TypeInfo::Named(item.id));
                     self.named_types.insert(item.id, id);
                 }
@@ -33,7 +42,11 @@ impl<'a> TypeChecker<'a> {
 
     pub(super) fn u8_array_type_id(&mut self) -> Option<TypeId> {
         let u8_id = self.primitive_type_id(HirPrimitiveType::U8)?;
-        Some(self.type_table.find_array_of(u8_id).unwrap_or_else(|| self.type_table.intern(TypeInfo::Array(u8_id))))
+        Some(
+            self.type_table
+                .find_array_of(u8_id)
+                .unwrap_or_else(|| self.type_table.intern(TypeInfo::Array(u8_id))),
+        )
     }
 
     pub(super) fn path_env(&self) -> PathTypeEnv<'_> {
@@ -146,24 +159,36 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn fiber_handle_type_for_payload(&self, payload: TypeId) -> Option<TypeId> {
         if let Some(expected) = self.contextual_expected_type
             && let Some(TypeInfo::Applied { base, args }) = self.type_table.get(expected)
-                && args.len() == 1
-                    && args[0] == payload
-                    && self
-                        .resolution
-                        .items
-                        .get(base.0)
-                        .is_some_and(|info| info.name == "Fiber" || info.name.ends_with("::Fiber"))
-                {
-                    return Some(expected);
-                }
+            && args.len() == 1
+            && args[0] == payload
+            && self
+                .resolution
+                .items
+                .get(base.0)
+                .is_some_and(|info| info.name == "Fiber" || info.name.ends_with("::Fiber"))
+        {
+            return Some(expected);
+        }
         None
     }
 
-    pub(super) fn record_call_kind(&mut self, node_id: crate::resolve::HirNodeId, kind: crate::types::result::CallLoweringKind) {
-        if node_id.is_valid() { self.call_kinds.insert(node_id, kind); }
+    pub(super) fn record_call_kind(
+        &mut self,
+        node_id: crate::resolve::HirNodeId,
+        kind: crate::types::result::CallLoweringKind,
+    ) {
+        if node_id.is_valid() {
+            self.call_kinds.insert(node_id, kind);
+        }
     }
-    pub(super) fn record_node_type(&mut self, node_id: crate::resolve::HirNodeId, type_id: crate::types::TypeId) {
-        if node_id.is_valid() { self.node_types.insert(node_id, type_id); }
+    pub(super) fn record_node_type(
+        &mut self,
+        node_id: crate::resolve::HirNodeId,
+        type_id: crate::types::TypeId,
+    ) {
+        if node_id.is_valid() {
+            self.node_types.insert(node_id, type_id);
+        }
     }
     pub(super) fn flush_scoped_type_maps_for_current_path(&mut self) {}
     pub(super) fn insert_local_type(&mut self, span: SpanInfo, type_id: TypeId) {
@@ -188,9 +213,10 @@ impl<'a> TypeChecker<'a> {
                         .source_path
                         .as_ref()
                         .is_some_and(|source| crate::paths::same_file(source, path))
-            }) {
-                return Some(info.id);
-            }
+            })
+        {
+            return Some(info.id);
+        }
 
         let matches: Vec<_> = self
             .resolution
@@ -221,9 +247,10 @@ impl<'a> TypeChecker<'a> {
                         info.source_path
                             .as_ref()
                             .is_some_and(|source| crate::paths::same_file(source, path))
-                    }) {
-                        return Some(info.id);
-                    }
+                    })
+                {
+                    return Some(info.id);
+                }
                 // Entry-unit symbols are collected after dependency prefetch; prefer the last match.
                 many.last().map(|info| info.id)
             }
@@ -363,16 +390,16 @@ impl<'a> TypeChecker<'a> {
         }
         if let Some(TypeInfo::Fiber(payload)) = self.type_table.get(actual)
             && let Some(TypeInfo::Applied { base, args }) = self.type_table.get(expected)
-                && args.len() == 1
-                    && args[0] == *payload
-                    && self
-                        .resolution
-                        .items
-                        .get(base.0)
-                        .is_some_and(|info| info.name == "Fiber" || info.name.ends_with("::Fiber"))
-                {
-                    return;
-                }
+            && args.len() == 1
+            && args[0] == *payload
+            && self
+                .resolution
+                .items
+                .get(base.0)
+                .is_some_and(|info| info.name == "Fiber" || info.name.ends_with("::Fiber"))
+        {
+            return;
+        }
         if self.named_item_id(expected).is_some()
             && self.named_item_id(expected) == self.named_item_id(actual)
         {
