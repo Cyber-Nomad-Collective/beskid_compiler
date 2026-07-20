@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
+    canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
+    canonical_runtime_intrinsic_capability, canonical_runtime_sources,
     CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, canonical_corelib_service_capability,
-    canonical_corelib_service_source_path, canonical_corelib_syscall_service_capability,
-    canonical_corelib_syscall_sources, canonical_runtime_intrinsic_capability,
-    canonical_runtime_sources,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
 };
 use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry,
@@ -16,24 +16,24 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_codegen::{
-    CodegenInput, ItemModuleImporter, emit_isle_expression, emit_isle_item,
-    emit_isle_item_with_call_importer,
-    module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
+    emit_isle_expression, emit_isle_item, emit_isle_item_with_call_importer,
+    module_emission::{emit_syntax_program, lower_syntax_program, SyntaxModuleItem},
+    CodegenInput, ItemModuleImporter,
 };
 use beskid_isle::{DirectCallee, FunctionEmitter, NodeFacts};
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, Db, ProjectSession, SourceUnitId,
-    SyntaxGenerationId, aggregate_field_access, build_canonical_corelib_syscall_typed_program,
+    aggregate_field_access, build_canonical_corelib_syscall_typed_program,
     build_canonical_runtime_typed_program, build_typed_program,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
     closure_environment, enum_match, format_ast_node_site, item_body, item_name, literal_fact,
-    mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes,
+    mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes, AstNodeId,
+    AstNodeKey, BeskidDatabase, CastIntent, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
 };
-use cranelift_codegen::ir::{UserFuncName, types};
+use cranelift_codegen::ir::{types, UserFuncName};
 use cranelift_codegen::isa;
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{Linkage, Module, default_libcall_names};
+use cranelift_module::{default_libcall_names, Linkage, Module};
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 unsafe extern "C" fn test_system_allocate(size: usize, alignment: usize) -> *mut u8 {
@@ -247,9 +247,7 @@ fn unsupported_lambda_reports_deterministic_span_bearing_missing_rule() {
     .expect("lambda expression");
 
     assert_eq!(
-        beskid_isle::classify_syntax_node_kind(
-            beskid_queries::IndexedNodeKind::LambdaExpression
-        ),
+        beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::LambdaExpression),
         beskid_isle::SyntaxNodeClassification::UnsupportedTypedOperation,
     );
 
@@ -335,22 +333,17 @@ fn closure_captures_and_spawn_target_are_independent_semantic_facts() {
     let function = find_function_definition(input.database(), root).expect("function definition");
 
     assert_eq!(
-        beskid_isle::classify_syntax_node_kind(
-            beskid_queries::IndexedNodeKind::LambdaExpression,
-        ),
+        beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::LambdaExpression,),
         beskid_isle::SyntaxNodeClassification::UnsupportedTypedOperation,
     );
     assert_eq!(
-        beskid_isle::classify_syntax_node_kind(
-            beskid_queries::IndexedNodeKind::SpawnExpression,
-        ),
-        beskid_isle::SyntaxNodeClassification::UnsupportedTypedOperation,
+        beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::SpawnExpression,),
+        beskid_isle::SyntaxNodeClassification::IsleLowered(beskid_isle::NodeKind::SpawnExpression,),
     );
     assert_eq!(closure.parameters.len(), 1, "lambda parameter fact");
     assert_eq!(closure.captures.len(), 1, "outer capture fact");
     assert_eq!(
-        node_kind(input.database(), closure.captures[0].declaration)
-            .expect("capture kind query"),
+        node_kind(input.database(), closure.captures[0].declaration).expect("capture kind query"),
         Some(beskid_queries::IndexedNodeKind::Identifier),
     );
     assert_eq!(closure.captures[0].slot.owner, function);
@@ -1025,7 +1018,10 @@ fn canonical_foundation_assert_public_helpers_lower_through_syntax_isle() {
         .expect("canonical Assert helpers lower through syntax ISLE");
     for name in items {
         assert!(
-            artifact.functions.iter().any(|function| function.name == name),
+            artifact
+                .functions
+                .iter()
+                .any(|function| function.name == name),
             "expected CLIF for {name}, got {:?}",
             artifact
                 .functions
@@ -1056,8 +1052,7 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
         .source;
     let directory = tempfile::tempdir().expect("project").keep();
     let main_path = directory.join("Main.bd");
-    let main_source =
-        "use Testing.Assert; unit Main() { Assert.Equal(1_i64, 1_i64, \"\"); }";
+    let main_source = "use Testing.Assert; unit Main() { Assert.Equal(1_i64, 1_i64, \"\"); }";
     std::fs::write(&main_path, main_source).expect("main source");
     // Prefer the compiler-owned Assert identity so panic_str authority remains available.
     let assert_program =
@@ -1180,13 +1175,14 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
 #[test]
 fn canonical_foundation_string_len_lowers_through_syntax_isle() {
     let mut db = Box::new(BeskidDatabase::default());
-    let foundation_src = canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
-        .expect("compiler-owned Assert path")
-        .parent()
-        .expect("Testing/")
-        .parent()
-        .expect("foundation src")
-        .to_path_buf();
+    let foundation_src =
+        canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
+            .expect("compiler-owned Assert path")
+            .parent()
+            .expect("Testing/")
+            .parent()
+            .expect("foundation src")
+            .to_path_buf();
     let source_path = foundation_src.join("Core/String/String.bd");
     let source = std::fs::read_to_string(&source_path).expect("read Core.String");
     let source_root = foundation_src;
@@ -1582,12 +1578,8 @@ fn parsed_struct_literal_method_call_uses_receiver_abi_without_hir() {
     let method = find_node(db, root, beskid_queries::IndexedNodeKind::MethodDefinition)
         .expect("inline method source item");
     assert_eq!(
-        beskid_isle::classify_syntax_node_kind(
-            beskid_queries::IndexedNodeKind::MethodDefinition
-        ),
-        beskid_isle::SyntaxNodeClassification::IsleLowered(
-            beskid_isle::NodeKind::MethodDefinition
-        ),
+        beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::MethodDefinition),
+        beskid_isle::SyntaxNodeClassification::IsleLowered(beskid_isle::NodeKind::MethodDefinition),
         "MethodDefinition must be production-supported at the ISLE inventory boundary"
     );
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
@@ -1968,12 +1960,10 @@ fn parsed_syntax_program_uses_the_existing_artifact_string_pool() {
     .expect("syntax item with a string literal lowers through the artifact pool");
 
     assert_eq!(artifact.string_literals.len(), 1);
-    assert!(
-        artifact
-            .string_literals
-            .values()
-            .any(|bytes| bytes.as_slice() == b"Beskid")
-    );
+    assert!(artifact
+        .string_literals
+        .values()
+        .any(|bytes| bytes.as_slice() == b"Beskid"));
 }
 
 #[test]
@@ -2097,11 +2087,9 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
     beskid_codegen::validate_artifact(&artifact)
         .expect("canonical helper imports are declared by the manifest authority");
     let imports = beskid_codegen::referenced_extern_imports(&artifact);
-    assert!(
-        imports
-            .iter()
-            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_system_allocate")
-    );
+    assert!(imports
+        .iter()
+        .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_system_allocate"));
     let root_frame = artifact
         .functions
         .iter()
@@ -2274,7 +2262,9 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         Linkage::Export,
     )
     .expect("closure descriptor helpers lower through the production module emitter");
-    module.finalize_definitions().expect("finalize closure helpers");
+    module
+        .finalize_definitions()
+        .expect("finalize closure helpers");
 
     let validate = module.get_finalized_function(
         *declared
@@ -2323,30 +2313,60 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
 
     let mut pointer_map = [16usize];
     let mut descriptor = [32usize, 8, pointer_map.as_mut_ptr() as usize, 1, 0];
-    assert_eq!(validate(descriptor.as_ptr()), 1, "valid descriptor is accepted");
+    assert_eq!(
+        validate(descriptor.as_ptr()),
+        1,
+        "valid descriptor is accepted"
+    );
 
     pointer_map[0] = 17;
-    assert_eq!(validate(descriptor.as_ptr()), 0, "unaligned pointer offset is rejected");
+    assert_eq!(
+        validate(descriptor.as_ptr()),
+        0,
+        "unaligned pointer offset is rejected"
+    );
     pointer_map[0] = usize::MAX;
-    assert_eq!(validate(descriptor.as_ptr()), 0, "overflowing pointer end is rejected");
+    assert_eq!(
+        validate(descriptor.as_ptr()),
+        0,
+        "overflowing pointer end is rejected"
+    );
     pointer_map[0] = 16;
     descriptor[1] = 24;
-    assert_eq!(validate(descriptor.as_ptr()), 0, "non-power-of-two alignment is rejected");
-    assert_eq!(validate(std::ptr::null()), 0, "null descriptor is rejected before dereference");
+    assert_eq!(
+        validate(descriptor.as_ptr()),
+        0,
+        "non-power-of-two alignment is rejected"
+    );
+    assert_eq!(
+        validate(std::ptr::null()),
+        0,
+        "null descriptor is rejected before dereference"
+    );
 
     descriptor[1] = 8;
     let request = [32usize, 8, descriptor.as_mut_ptr() as usize];
     let environment = allocate_environment(request.as_ptr());
-    assert!(!environment.is_null(), "valid request allocates a closure environment");
+    assert!(
+        !environment.is_null(),
+        "valid request allocates a closure environment"
+    );
     let header = environment as *const usize;
     assert_eq!(unsafe { *header }, descriptor.as_mut_ptr() as usize);
-    assert_eq!(unsafe { *header.add(1) }, 0, "allocation clears the GC word");
+    assert_eq!(
+        unsafe { *header.add(1) },
+        0,
+        "allocation clears the GC word"
+    );
 
     let mut slots = [0usize];
     let mut frame = [0usize, slots.as_mut_ptr() as usize, 1];
     let mut tls = [0usize, frame.as_mut_ptr() as usize, 0, 1];
     assert_eq!(root_environment(tls.as_mut_ptr(), 0, environment), 1);
-    assert_eq!(slots[0], environment as usize, "valid environment is rooted in its slot");
+    assert_eq!(
+        slots[0], environment as usize,
+        "valid environment is rooted in its slot"
+    );
 }
 
 fn item_fixture(
