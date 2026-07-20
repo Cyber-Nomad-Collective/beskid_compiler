@@ -1,6 +1,12 @@
 use beskid_analysis::syntax::SpanInfo;
 use beskid_analysis::types::TypeId;
 
+/// Shared retired-path message for HIR/`Lowerable` codegen drivers.
+///
+/// Production callers must use `CodegenInput` with `lower_syntax_assembly_entrypoint`,
+/// `lower_prepared_syntax_*`, or `lower_syntax_program`.
+pub const RETIRED_HIR_LOWERING_PATH: &str = "HIR/Lowerable codegen entry points are retired; use CodegenInput with lower_syntax_assembly_entrypoint, lower_prepared_syntax_*, or lower_syntax_program";
+
 /// Recoverable lowering or CLIF verification failure; map with
 /// [`crate::codegen_error_to_diagnostic`] (pass [`beskid_analysis::types::TypeResult`] and
 /// [`beskid_analysis::resolve::Resolution`] for readable type names).
@@ -44,4 +50,15 @@ pub enum CodegenError {
         src_name: String,
         dst_name: String,
     },
+    #[error("{message}")]
+    RetiredHirLoweringPath { message: String },
+}
+
+impl CodegenError {
+    /// Construct the sole retired-path error for HIR/`Lowerable` drivers.
+    pub fn retired_hir_lowering_path() -> Self {
+        Self::RetiredHirLoweringPath {
+            message: RETIRED_HIR_LOWERING_PATH.to_owned(),
+        }
+    }
 }

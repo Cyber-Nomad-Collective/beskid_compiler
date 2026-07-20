@@ -1,8 +1,9 @@
-//! Lower System I/O smoke tests without JIT to isolate cross-module call codegen.
+//! Prove System I/O smoke entries cannot use the retired HIR/`Lowerable` codegen drivers.
 
 use std::path::PathBuf;
 
 use beskid_analysis::services::{FrontEndOptions, ResolvedInput, resolve_input};
+use beskid_codegen::RETIRED_HIR_LOWERING_PATH;
 use beskid_codegen::lowering::lower_program_with_assembly_for_entrypoint;
 use beskid_queries::compile_front_end_from_resolved_input;
 
@@ -14,7 +15,7 @@ fn compiler_workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn lower_entry(entry_rel: &str, entrypoint: &str) {
+fn assert_hir_driver_rejected(entry_rel: &str, entrypoint: &str) {
     let root = compiler_workspace_root();
     let entry = root
         .join("corelib/beskid_corelib/tests/corelib_tests/src")
@@ -56,22 +57,31 @@ fn lower_entry(entry_rel: &str, entrypoint: &str) {
     )
     .expect("front-end");
 
-    lower_program_with_assembly_for_entrypoint(
+    let errors = lower_program_with_assembly_for_entrypoint(
         &front.hir,
         &front.resolution,
         &front.typed,
         Some(&front.assembly),
         Some(entrypoint),
     )
-    .unwrap_or_else(|errors| panic!("lower {entrypoint} in {entry_rel}: {errors:?}"));
+    .expect_err("retired HIR driver must reject without fallback");
+    let message = errors
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("; ");
+    assert!(
+        message.contains(RETIRED_HIR_LOWERING_PATH),
+        "entrypoint {entrypoint} in {entry_rel}: {message}"
+    );
 }
 
 #[test]
-fn lower_system_error_writeline_smoke_without_jit() {
-    lower_entry("system/ErrorWriteTests.bd", "error_writeline_smoke");
+fn lower_system_error_writeline_smoke_rejects_hir_driver() {
+    assert_hir_driver_rejected("system/ErrorWriteTests.bd", "error_writeline_smoke");
 }
 
 #[test]
-fn lower_system_input_read_smoke_without_jit() {
-    lower_entry("system/InputReadTests.bd", "input_read_smoke");
+fn lower_system_input_read_smoke_rejects_hir_driver() {
+    assert_hir_driver_rejected("system/InputReadTests.bd", "input_read_smoke");
 }

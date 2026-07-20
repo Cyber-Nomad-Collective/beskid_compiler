@@ -23,7 +23,7 @@ pub mod services;
 
 pub use codegen_input::{CodegenInput, CodegenInputError};
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
-pub use errors::CodegenError;
+pub use errors::{CodegenError, RETIRED_HIR_LOWERING_PATH};
 pub use isle_adapter::{
     ItemModuleImporter, SyntaxNodeFacts, emit_isle_expression, emit_isle_item,
     emit_isle_item_with_call_importer, emit_isle_item_with_services,

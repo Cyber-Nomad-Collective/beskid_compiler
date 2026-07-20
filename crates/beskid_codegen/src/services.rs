@@ -1,27 +1,20 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Result;
 use beskid_analysis::hir::HirProgram;
 use beskid_analysis::resolve::Resolution;
-use beskid_analysis::services::{
-    FrontEndOptions, FrontEndTypedResult, ResolvedInput, SemanticDiagnosticsError,
-    SessionFingerprint, cached_executable, cached_semantic_snapshot, compile_plan_for_input_path,
-    current_syntax_generation_id, resolved_input_from_plan, synthetic_compile_plan_for_source,
-};
+use beskid_analysis::services::{FrontEndTypedResult, ResolvedInput};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::TypeResult;
-use beskid_pipeline::{PipelineObserver, observe_phase_result, phases::CODEGEN_CLIF};
-use beskid_queries::compile_front_end_from_resolved_input;
+use beskid_pipeline::PipelineObserver;
 
-use crate::{
-    CodegenArtifact, codegen_errors_to_diagnostics,
-    lowering::lower_program_with_assembly_for_entrypoint,
-};
+use crate::{CodegenArtifact, RETIRED_HIR_LOWERING_PATH};
 
 /// Fully lowered program: typed HIR plus the Cranelift artifact from [`lower_source`] /
 /// [`lower_source_with_pipeline`].
+///
+/// The HIR-bearing constructors are retired; prefer [`crate::PreparedSyntaxEntrypoint`].
 pub struct LoweredProgram {
     pub hir: Spanned<HirProgram>,
     pub resolution: Resolution,
@@ -58,11 +51,17 @@ pub fn jit_symbol_for_item(
 }
 
 /// Parse, optionally run semantic diagnostics, lower to HIR, and codegen to CLIF without pipeline hooks.
+///
+/// Retired: rejects without entering HIR/`Lowerable` emission. Use
+/// [`crate::lower_syntax_assembly_entrypoint`] or [`crate::lower_prepared_syntax_entrypoint`].
 pub fn lower_source(path: &Path, source: &str, with_diagnostics: bool) -> Result<LoweredProgram> {
-    lower_source_with_pipeline(path, source, with_diagnostics, None)
+    let _ = (path, source, with_diagnostics);
+    anyhow::bail!("{RETIRED_HIR_LOWERING_PATH}")
 }
 
 /// Like [`lower_source`], limiting the link plan to a single entry function or test name.
+///
+/// Retired: rejects without entering HIR/`Lowerable` emission.
 pub fn lower_source_for_entrypoint(
     path: &Path,
     source: &str,
@@ -70,37 +69,38 @@ pub fn lower_source_for_entrypoint(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    let path = materialize_source_path_for_lowering(path, source)?;
-    let plan = compile_plan_for_input_path(&path)
-        .unwrap_or_else(|| synthetic_compile_plan_for_source(&path));
-    let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
-    lower_resolved_entrypoint_with_pipeline(&resolved, Some(entrypoint), with_diagnostics, pipeline)
+    let _ = (path, source, entrypoint, with_diagnostics, pipeline);
+    anyhow::bail!("{RETIRED_HIR_LOWERING_PATH}")
 }
 
 /// End-to-end lowering from source via the shared analysis front-end spine.
+///
+/// Retired: rejects without entering HIR/`Lowerable` emission.
 pub fn lower_source_with_pipeline(
     path: &Path,
     source: &str,
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    let path = materialize_source_path_for_lowering(path, source)?;
-    let plan = compile_plan_for_input_path(&path)
-        .unwrap_or_else(|| synthetic_compile_plan_for_source(&path));
-    let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
-    lower_resolved_input_with_pipeline(&resolved, with_diagnostics, pipeline)
+    let _ = (path, source, with_diagnostics, pipeline);
+    anyhow::bail!("{RETIRED_HIR_LOWERING_PATH}")
 }
 
 /// Lower using a fully resolved CLI input (includes materialized assembly when available).
+///
+/// Retired: rejects without entering HIR/`Lowerable` emission.
 pub fn lower_resolved_input_with_pipeline(
     resolved: &ResolvedInput,
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    lower_resolved_entrypoint_with_pipeline(resolved, None, with_diagnostics, pipeline)
+    let _ = (resolved, with_diagnostics, pipeline);
+    anyhow::bail!("{RETIRED_HIR_LOWERING_PATH}")
 }
 
 /// Lower from an optional prepared front-end, else session cache or full compile.
+///
+/// Retired: rejects without entering HIR/`Lowerable` emission.
 pub fn lower_from_prepared_or_cache(
     resolved: &ResolvedInput,
     front: Option<FrontEndTypedResult>,
@@ -108,108 +108,36 @@ pub fn lower_from_prepared_or_cache(
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    let front = resolve_front_end_for_lowering(resolved, front, with_diagnostics, pipeline)?;
-    lower_from_front_end(
-        &resolved.source_path.display().to_string(),
-        &resolved.source,
-        front,
-        link_entrypoint,
-        pipeline,
-    )
+    let _ = (resolved, front, link_entrypoint, with_diagnostics, pipeline);
+    anyhow::bail!("{RETIRED_HIR_LOWERING_PATH}")
 }
 
 /// Lower a single entry function or test from a resolved project input.
+///
+/// Retired: rejects without entering HIR/`Lowerable` emission.
 pub fn lower_resolved_entrypoint_with_pipeline(
     resolved: &ResolvedInput,
     link_entrypoint: Option<&str>,
     with_diagnostics: bool,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    if resolved.compile_plan.is_none() {
-        let entry = link_entrypoint.unwrap_or("Main");
-        return lower_source_for_entrypoint(
-            &resolved.source_path,
-            &resolved.source,
-            entry,
-            with_diagnostics,
-            pipeline,
-        );
-    }
-
-    lower_from_prepared_or_cache(resolved, None, link_entrypoint, with_diagnostics, pipeline)
-}
-
-fn resolve_front_end_for_lowering(
-    resolved: &ResolvedInput,
-    front: Option<FrontEndTypedResult>,
-    with_diagnostics: bool,
-    pipeline: Option<&dyn PipelineObserver>,
-) -> Result<FrontEndTypedResult> {
-    if let Some(front) = front {
-        return Ok(front);
-    }
-
-    let plan = resolved
-        .compile_plan
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("resolve_front_end_for_lowering requires a compile plan"))?;
-    let fingerprint = SessionFingerprint::for_entry(plan, &resolved.source_path);
-    if cached_front_end_is_valid(&fingerprint)
-        && let Some(cached) = cached_executable(&fingerprint)
-        && let Ok(owned) = Arc::try_unwrap(cached)
-    {
-        return Ok(owned);
-    }
-
-    let options = FrontEndOptions {
-        with_semantic_diagnostics: with_diagnostics,
-        ..Default::default()
-    };
-    compile_front_end_from_resolved_input(resolved, options, pipeline)
-}
-
-fn cached_front_end_is_valid(fingerprint: &SessionFingerprint) -> bool {
-    let Some(snapshot) = cached_semantic_snapshot(fingerprint) else {
-        return false;
-    };
-    snapshot.satisfies_minimum("executable")
-        && snapshot.syntax_generation_id == current_syntax_generation_id(fingerprint)
+    let _ = (resolved, link_entrypoint, with_diagnostics, pipeline);
+    anyhow::bail!("{RETIRED_HIR_LOWERING_PATH}")
 }
 
 /// Lower a pre-built front-end result to CLIF, optionally linking a single entrypoint.
+///
+/// Retired: rejects without entering HIR/`Lowerable` emission. Prefer
+/// [`crate::lower_prepared_syntax_entrypoint`] with the front-end syntax assembly.
 pub fn lower_from_front_end(
     source_name: &str,
     source: &str,
-    front: beskid_analysis::services::FrontEndTypedResult,
+    front: FrontEndTypedResult,
     link_entrypoint: Option<&str>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<LoweredProgram> {
-    let artifact = observe_phase_result(pipeline, CODEGEN_CLIF, || {
-        lower_program_with_assembly_for_entrypoint(
-            &front.hir,
-            &front.resolution,
-            &front.typed,
-            Some(&front.assembly),
-            link_entrypoint,
-        )
-        .map_err(|errors| {
-            let diagnostics = codegen_errors_to_diagnostics(
-                source_name,
-                source,
-                &errors,
-                &front.typed,
-                &front.resolution,
-            );
-            anyhow::Error::new(SemanticDiagnosticsError::from_diagnostics(diagnostics))
-        })
-    })?;
-
-    Ok(LoweredProgram {
-        hir: front.hir,
-        resolution: front.resolution,
-        typed: front.typed,
-        artifact,
-    })
+    let _ = (source_name, source, front, link_entrypoint, pipeline);
+    anyhow::bail!("{RETIRED_HIR_LOWERING_PATH}")
 }
 
 /// Serialize every lowered function in `artifact` to textual CLIF, separated by `;; Function:` headers.

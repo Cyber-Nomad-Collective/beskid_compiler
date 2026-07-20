@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use beskid_analysis::services::{FrontEndOptions, ResolvedInput, resolve_input};
 use beskid_codegen::linking::{FunctionDefIndex, LinkPlan};
 use beskid_codegen::lowering::lower_program_with_assembly;
-use beskid_codegen::validate_artifact;
 use beskid_queries::compile_front_end_from_resolved_input;
 
 fn compiler_workspace_root() -> PathBuf {
@@ -209,21 +208,16 @@ fn lower_collections_array_tests_artifact_validates() {
         &front.typed,
         Some(&front.assembly),
     ) {
-        Ok(artifact) => {
-            let names: Vec<_> = artifact.functions.iter().map(|f| f.name.as_str()).collect();
-            assert!(
-                names.iter().any(|n: &&str| n.contains("Equal")),
-                "expected Equal in artifact, have {} symbols",
-                names.len()
-            );
-            validate_artifact(&artifact).expect("artifact should satisfy TestCase contract");
-        }
+        Ok(_) => panic!("retired HIR driver must reject without fallback"),
         Err(errors) => {
-            let messages: Vec<String> = errors.iter().map(|e| format!("{e:?}")).collect();
-            panic!(
-                "lowering failed ({} errors); first: {}",
-                messages.len(),
-                messages.first().unwrap_or(&String::new())
+            let message = errors
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("; ");
+            assert!(
+                message.contains(beskid_codegen::RETIRED_HIR_LOWERING_PATH),
+                "{message}"
             );
         }
     }

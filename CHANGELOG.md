@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Reject HIR/`Lowerable` codegen drivers (`lower_source*`, `lower_from_front_end`,
+  `lower_program*`) with an explicit retired-path error so production assemblies must use
+  `CodegenInput` plus `lower_syntax_*` / `lower_prepared_syntax_*`; multi-unit parsed-project
+  harnesses prove stock-verifier-clean ISLE emission without a legacy fallback.
+
 ### Added
 
 - Cover multi-function syntax assembly failures at the module boundary, including deterministic

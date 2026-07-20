@@ -1,5 +1,6 @@
 //! [`Lowerable`] implementations and [`lower_program`] driver.
 
+#![allow(dead_code, unused_imports)] // HIR helper surface retained until CYB-36 deletes Lowerable.
 use crate::linking::{FunctionDefIndex, LinkPlan, LinkSymbol};
 use crate::lowering::cast_intent::validate_cast_intents;
 use crate::lowering::context::{CodegenArtifact, CodegenContext, CodegenResult, ExternImport};
@@ -55,99 +56,17 @@ pub fn lower_program_with_assembly(
 }
 
 /// Like [`lower_program_with_assembly`], limiting entry symbols to one function or test name.
+///
+/// This HIR/`Lowerable` driver is retired. Production codegen must cross
+/// [`crate::CodegenInput`] and call `lower_syntax_*` / `lower_prepared_syntax_*`.
 pub fn lower_program_with_assembly_for_entrypoint(
-    program: &Spanned<HirProgram>,
-    resolution: &Resolution,
-    type_result: &TypeResult,
-    assembly: Option<&ProgramAssembly>,
-    link_entrypoint: Option<&str>,
+    _program: &Spanned<HirProgram>,
+    _resolution: &Resolution,
+    _type_result: &TypeResult,
+    _assembly: Option<&ProgramAssembly>,
+    _link_entrypoint: Option<&str>,
 ) -> Result<CodegenArtifact, Vec<crate::errors::CodegenError>> {
-    let mut errors = validate_cast_intents(type_result);
-    let mut ctx = CodegenContext::new();
-
-    let mut index = 0usize;
-    loop {
-        let type_id = TypeId(index);
-        let Some(info) = type_result.types.get(type_id) else {
-            break;
-        };
-        if matches!(info, TypeInfo::Named(_) | TypeInfo::Applied { .. }) {
-            let _ = ctx.type_descriptor(type_result, type_id);
-        }
-        index += 1;
-    }
-
-    if let Some(assembly) = assembly {
-        let def_index = FunctionDefIndex::build(resolution, &assembly.hir_units);
-        let entry_source_path = assembly.entry_unit().path.clone();
-        let effective_entry = match link_entrypoint {
-            Some(name) => Some(name),
-            None => {
-                let has_tests = program
-                    .node
-                    .items
-                    .iter()
-                    .any(|item| matches!(item.node, HirItem::TestDefinition(_)));
-                if has_tests { None } else { Some("Main") }
-            }
-        };
-        let plan = if let Some(entrypoint) = effective_entry {
-            LinkPlan::build_for_entrypoint(
-                program,
-                entrypoint,
-                Some(&entry_source_path),
-                resolution,
-                type_result,
-                &def_index,
-            )
-        } else {
-            LinkPlan::build(program, resolution, type_result, &def_index)
-        };
-        emit_link_plan(
-            program,
-            &plan,
-            resolution,
-            type_result,
-            &def_index,
-            &mut ctx,
-            &mut errors,
-        );
-    } else {
-        let mut function_defs: HashMap<ItemId, &Spanned<HirFunctionDefinition>> = HashMap::new();
-        collect_function_defs_by_span(&program.node.items, resolution, &mut function_defs);
-        lower_function_items(
-            &program.node.items,
-            resolution,
-            type_result,
-            &function_defs,
-            &mut ctx,
-            &mut errors,
-        );
-    }
-
-    if errors.is_empty() {
-        Ok(CodegenArtifact {
-            functions: ctx.lowered_functions,
-            type_descriptors: ctx.type_descriptors,
-            string_literals: ctx.string_literals,
-            extern_imports: {
-                let mut v = Vec::new();
-                if let Some(assembly) = assembly {
-                    for unit in assembly.hir_units.iter() {
-                        collect_extern_imports(&unit.hir.node.items, None, &mut v);
-                    }
-                } else {
-                    collect_extern_imports(&program.node.items, None, &mut v);
-                }
-                v.sort_by(|left, right| left.symbol.cmp(&right.symbol));
-                v.dedup_by(|left, right| left.symbol == right.symbol);
-                v
-            },
-            exports: collect_exports(&program.node.items),
-        })
-    } else {
-        Err(errors)
-    }
+    Err(vec![crate::errors::CodegenError::retired_hir_lowering_path()])
 }
 
 fn effective_source_path(

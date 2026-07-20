@@ -184,6 +184,16 @@ pub fn codegen_error_to_diagnostic(
             Some(format!("{CODEGEN_ERROR_PREFIX}13")),
             Severity::Error,
         ),
+        CodegenError::RetiredHirLoweringPath { message } => make_diagnostic(
+            source_name,
+            source,
+            default_span(),
+            message.clone(),
+            "retired HIR lowering path",
+            None,
+            Some(format!("{CODEGEN_ERROR_PREFIX}14")),
+            Severity::Error,
+        ),
     }
 }
 
