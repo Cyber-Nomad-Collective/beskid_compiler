@@ -90,6 +90,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Migrate stale `beskid_tests` export and Mod-rebuild coverage from deleted Codegen facade APIs
+  to the syntax-owned `prepare_jit_module` and syntax registration routes, preserving exported
+  artifact metadata and native Mod descriptor dispatch without an HIR compatibility fallback
+  (CYB-118).
 - Preserve `[Export]` metadata on all production prepared-syntax module artifacts so JIT and AOT
   publication retain the declared C ABI and linker symbol without reviving the retired HIR facade
   (CYB-115).

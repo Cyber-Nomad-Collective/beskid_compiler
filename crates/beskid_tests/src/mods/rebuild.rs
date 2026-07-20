@@ -3,16 +3,16 @@
 use std::fs;
 
 use beskid_analysis::mod_host::{
-    ModHostInput, NativeContractInvoker, StubContractInvoker, extract_mod_contract_registrations,
-    run_through_generate,
+    extract_mod_contract_registrations_from_syntax, run_through_generate, ModHostInput,
+    NativeContractInvoker, StubContractInvoker,
 };
 use beskid_analysis::projects::{
-    ProjectKind, WorkspacePrepareOptions, build_compile_plan, load_manifest_from_path,
-    prepare_project_workspace_with_options,
+    build_compile_plan, load_manifest_from_path, prepare_project_workspace_with_options,
+    ProjectKind, WorkspacePrepareOptions,
 };
-use beskid_analysis::services::{parse_program_with_source_name, resolved_input_from_plan};
-use beskid_aot::{ModArtifactBuildRequest, build_mod_artifact};
-use beskid_codegen::lower_resolved_input_with_pipeline;
+use beskid_analysis::services::parse_program_with_source_name;
+use beskid_aot::{build_mod_artifact, ModArtifactBuildRequest};
+use beskid_engine::services::prepare_jit_module;
 
 use super::fixture::ModFixtureWorkspace;
 
@@ -36,16 +36,8 @@ fn sample_mod_rebuild_writes_descriptor_registrations_and_host_dispatches() {
 
     let source_path = workspace.mod_dir.join("Src").join("Mod.bd");
     let source = fs::read_to_string(&source_path).expect("read mod source");
-    let resolved_input = resolved_input_from_plan(
-        source_path.clone(),
-        source.clone(),
-        plan.clone(),
-        Some(prepared.clone()),
-        None,
-    );
-    let lowered = lower_resolved_input_with_pipeline(&resolved_input, false, None)
-        .expect("lower mod project");
-    let registrations = extract_mod_contract_registrations("SampleMod", &lowered.resolution);
+    let program = parse_program_with_source_name("Mod.bd", &source).expect("parse mod source");
+    let registrations = extract_mod_contract_registrations_from_syntax("SampleMod", &program);
     assert!(
         registrations.len() >= 5,
         "expected non-empty descriptor registrations, got: {registrations:?}"
@@ -54,7 +46,8 @@ fn sample_mod_rebuild_writes_descriptor_registrations_and_host_dispatches() {
     let target =
         beskid_aot::target::detect_target(Some(host_target_triple())).expect("host target");
     let descriptor = build_mod_artifact(ModArtifactBuildRequest {
-        artifact: lowered.artifact,
+        artifact: prepare_jit_module(&source_path, &source)
+            .expect("lower mod project through syntax codegen"),
         workspace_root: workspace.host_dir.clone(),
         project_root: workspace.mod_dir.clone(),
         manifest_path,
