@@ -1,6 +1,6 @@
 use beskid_abi::abi_v5::{TargetMetadata, TargetTriple};
 use beskid_abi::runtime_provenance::{
-    parse_symbol_list, RuntimeProvenanceAudit, SymbolList, SymbolListError,
+    RuntimeProvenanceAudit, SymbolList, SymbolListError, parse_symbol_list,
 };
 
 fn target(triple: &str) -> TargetMetadata {

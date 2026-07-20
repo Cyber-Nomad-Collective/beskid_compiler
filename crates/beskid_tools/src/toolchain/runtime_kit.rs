@@ -3,10 +3,10 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::{BuildProfile, ResolvedRuntimeKit, RuntimeKitBuildRequest};
-use beskid_abi::runtime_provenance::{parse_symbol_list, RuntimeProvenanceAudit};
+use beskid_abi::runtime_provenance::{RuntimeProvenanceAudit, parse_symbol_list};
 use beskid_abi::runtime_source::{
     build_canonical_runtime_kit, canonical_runtime_source_hash, resolve_canonical_runtime_kit,
 };
@@ -48,15 +48,20 @@ pub struct RuntimeKitBuildOptions {
 /// Build and atomically publish the compiler-owned canonical runtime for this native host.
 /// The caller supplies only its empty destination and profile; runtime source and native library
 /// paths are constructed here, so a bridge or arbitrary archive cannot enter the ABI-v5 layout.
-pub fn build_native_host(prefix: PathBuf, profile: RuntimeKitProfile) -> Result<ResolvedRuntimeKit> {
+pub fn build_native_host(
+    prefix: PathBuf,
+    profile: RuntimeKitProfile,
+) -> Result<ResolvedRuntimeKit> {
     let target = TargetMetadata::supported()
         .into_iter()
-        .find(|target| match (std::env::consts::OS, std::env::consts::ARCH) {
-            ("macos", "aarch64") => target.triple.as_str() == "aarch64-apple-darwin",
-            ("linux", "x86_64") => target.triple.as_str() == "x86_64-unknown-linux-gnu",
-            ("windows", "x86_64") => target.triple.as_str() == "x86_64-pc-windows-msvc",
-            _ => false,
-        })
+        .find(
+            |target| match (std::env::consts::OS, std::env::consts::ARCH) {
+                ("macos", "aarch64") => target.triple.as_str() == "aarch64-apple-darwin",
+                ("linux", "x86_64") => target.triple.as_str() == "x86_64-unknown-linux-gnu",
+                ("windows", "x86_64") => target.triple.as_str() == "x86_64-pc-windows-msvc",
+                _ => false,
+            },
+        )
         .ok_or_else(|| anyhow!("unsupported ABI-v5 native host"))?;
     let staging = std::env::temp_dir().join(format!(
         "beskid-native-runtime-{}-{}",
@@ -64,13 +69,18 @@ pub fn build_native_host(prefix: PathBuf, profile: RuntimeKitProfile) -> Result<
         profile.as_str()
     ));
     if staging.exists() {
-        std::fs::remove_dir_all(&staging)
-            .map_err(|error| anyhow!("remove stale runtime staging {}: {error}", staging.display()))?;
+        std::fs::remove_dir_all(&staging).map_err(|error| {
+            anyhow!(
+                "remove stale runtime staging {}: {error}",
+                staging.display()
+            )
+        })?;
     }
     let artifact = beskid_aot::lower_canonical_runtime_prepared_syntax(target.clone())
         .map_err(|error| anyhow!("lower canonical native runtime: {error}"))?;
-    let pair = beskid_aot::emit_host_platform_library_pair(artifact, staging.clone(), "beskid_runtime")
-        .map_err(|error| anyhow!("link canonical native runtime: {error}"))?;
+    let pair =
+        beskid_aot::emit_host_platform_library_pair(artifact, staging.clone(), "beskid_runtime")
+            .map_err(|error| anyhow!("link canonical native runtime: {error}"))?;
     let result = build(RuntimeKitBuildOptions {
         prefix,
         target: target.triple.as_str().to_owned(),
@@ -459,12 +469,15 @@ mod tests {
             ],
         })
         .expect("publish deterministic Darwin layout");
-        assert!(built.iter().all(|kit| kit
-            .shared_library
-            .ends_with("shared/libbeskid_runtime.dylib")));
-        assert!(built
-            .iter()
-            .all(|kit| kit.static_library.ends_with("static/libbeskid_runtime.a")));
+        assert!(built.iter().all(|kit| {
+            kit.shared_library
+                .ends_with("shared/libbeskid_runtime.dylib")
+        }));
+        assert!(
+            built
+                .iter()
+                .all(|kit| kit.static_library.ends_with("static/libbeskid_runtime.a"))
+        );
     }
 
     #[test]
@@ -561,10 +574,12 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(error.contains("runtime provenance rejected"));
-        assert!(!prefix
-            .0
-            .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu/debug")
-            .exists());
+        assert!(
+            !prefix
+                .0
+                .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu/debug")
+                .exists()
+        );
     }
 
     #[test]
@@ -583,15 +598,19 @@ mod tests {
         );
         release.shared_library = inputs.0.join("missing-release.so");
 
-        assert!(build_matrix(RuntimeKitMatrixBuildOptions {
-            prefix: prefix.0.clone(),
-            target: "x86_64-unknown-linux-gnu".into(),
-            profiles: vec![debug, release],
-        })
-        .is_err());
-        assert!(!prefix
-            .0
-            .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu")
-            .exists());
+        assert!(
+            build_matrix(RuntimeKitMatrixBuildOptions {
+                prefix: prefix.0.clone(),
+                target: "x86_64-unknown-linux-gnu".into(),
+                profiles: vec![debug, release],
+            })
+            .is_err()
+        );
+        assert!(
+            !prefix
+                .0
+                .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu")
+                .exists()
+        );
     }
 }

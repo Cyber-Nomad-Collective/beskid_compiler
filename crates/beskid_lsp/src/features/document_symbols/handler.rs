@@ -34,10 +34,11 @@ pub fn handle_document_symbols(uri: &Uri, doc: &Document) -> DocumentSymbolRespo
         return DocumentSymbolResponse::Nested(project_manifest::document_symbols(uri, &doc.text));
     }
 
-    let mapped = doc.syntax_symbols.iter()
+    let mapped = doc
+        .syntax_symbols
+        .iter()
         .map(|symbol| {
-            let range =
-                offset_range_to_lsp(&doc.text, symbol.start, symbol.end);
+            let range = offset_range_to_lsp(&doc.text, symbol.start, symbol.end);
             build_document_symbol(
                 symbol.name.clone(),
                 Some(beskid_analysis::services::symbol_kind_name(symbol.kind).to_string()),

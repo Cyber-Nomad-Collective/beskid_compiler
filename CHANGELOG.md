@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Checkpoint the unfinished syntax-composition, runtime-authority, and generated ABI prototype
+  for 0.4 consolidation; its remaining validation and retirement work stays release-blocking.
 - Use platform-correct local dynamic-loader flags so freshly staged Linux ABI-v5 runtime kits
   can be opened by Engine and external native resolution.
 - Separate binary-provenance runtime exports from the ABI-and-assembly symbols required by the JIT loader.

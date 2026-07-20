@@ -10,14 +10,14 @@ use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSnapshot};
 use beskid_queries::{
     AggregateFieldShape, AstNodeKey, BeskidDatabase, ClosureCapture, CompletionContext,
-    EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact,
-    ItemSignature, LocalSlot, OperatorFact, ProjectSession, SemanticError, SemanticTypeId,
-    SourceUnitId, SyntaxGenerationId, aggregate_layout, build_typed_program, call_arguments,
-    call_lowering, cast_intents, child_nodes, closure_environment, completion_candidates,
-    control_flow, direct_callees, enum_constructor, enum_layout, enum_match, generic_call_instantiation, item_abi_signature,
-    item_body, item_signature,
-    literal_fact, local_slot, node_kind, node_span, node_type, operator_fact, reachable_items,
-    resolved_item, resolved_local, runtime_intrinsic, spawn_target, test_item,
+    EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, ItemSignature,
+    LocalSlot, OperatorFact, ProjectSession, SemanticError, SemanticTypeId, SourceUnitId,
+    SyntaxGenerationId, aggregate_layout, build_typed_program, call_arguments, call_lowering,
+    cast_intents, child_nodes, closure_environment, completion_candidates, control_flow,
+    direct_callees, enum_constructor, enum_layout, enum_match, generic_call_instantiation,
+    item_abi_signature, item_body, item_signature, literal_fact, local_slot, node_kind, node_span,
+    node_type, operator_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
+    spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -204,8 +204,14 @@ fn enum_match_keeps_source_ordered_nullary_variant_arms() {
         Some(EnumMatchFact {
             declaration,
             arms: Arc::from([
-                EnumMatchArmFact { variant_index: Some(0), body: first_body },
-                EnumMatchArmFact { variant_index: Some(1), body: second_body },
+                EnumMatchArmFact {
+                    variant_index: Some(0),
+                    body: first_body
+                },
+                EnumMatchArmFact {
+                    variant_index: Some(1),
+                    body: second_body
+                },
             ]),
         })
     );
@@ -319,7 +325,8 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
     let root = PathBuf::from("/tmp/qualified-import/project/src");
     let main_path = root.join("Main.bd");
     let tools_path = root.join("Lib/Tools.bd");
-    let main_source = "use Lib.Tools as Utility;\ni32 Main() { Utility.Member(); return Utility.Helper(); }";
+    let main_source =
+        "use Lib.Tools as Utility;\ni32 Main() { Utility.Member(); return Utility.Helper(); }";
     let tools_source = "i32 Helper() { return 1; }";
     let main_program = expand_program(
         parse_program(main_source).expect("main parse"),
@@ -425,7 +432,8 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
             .as_ref(),
         &[main, declaration]
     );
-    let member_cursor = main_source.find("Utility.Helper").expect("qualified call") + "Utility.".len();
+    let member_cursor =
+        main_source.find("Utility.Helper").expect("qualified call") + "Utility.".len();
     let completion_key = key(main_unit, generation, &main_index, NodeKind::Program, 0);
     let members = completion_candidates(
         &db,

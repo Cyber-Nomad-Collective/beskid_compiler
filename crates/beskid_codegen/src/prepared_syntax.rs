@@ -290,10 +290,8 @@ pub fn lower_prepared_syntax_module(
         .flat_map(|root| function_definitions(input.database(), root))
         .filter(|key| item_body(input.database(), *key).ok().flatten().is_some())
         .map(|key| {
-            syntax_item_symbol(input.database(), &input, key).map(|symbol| SyntaxModuleItem {
-                key,
-                symbol,
-            })
+            syntax_item_symbol(input.database(), &input, key)
+                .map(|symbol| SyntaxModuleItem { key, symbol })
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("prepared syntax module contains an unnamed item"))?;

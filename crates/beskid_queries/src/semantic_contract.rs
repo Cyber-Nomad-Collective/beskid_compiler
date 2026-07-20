@@ -886,15 +886,12 @@ fn semantic_type_for_node(
     if let Some(match_expression) = node.of::<beskid_analysis::syntax::MatchExpression>() {
         let mut result = None;
         for arm in &match_expression.arms {
-            let arm_type = match semantic_type_for_expression(
-                program,
-                index,
-                reference,
-                &arm.node.value.node,
-            ) {
-                Ok(arm_type) => arm_type,
-                Err(error) => return Some(Err(error)),
-            };
+            let arm_type =
+                match semantic_type_for_expression(program, index, reference, &arm.node.value.node)
+                {
+                    Ok(arm_type) => arm_type,
+                    Err(error) => return Some(Err(error)),
+                };
             if result
                 .replace(arm_type)
                 .is_some_and(|previous| previous != arm_type)
@@ -1172,12 +1169,12 @@ fn imported_call_receiver_exists(
             imports
                 .iter()
                 .filter(|import| {
-                (receiver.len() == 1 && import.binding == receiver[0])
-                    || (import.path.len() >= receiver.len()
-                        && import.path[import.path.len() - receiver.len()..]
-                            .iter()
-                            .map(String::as_str)
-                            .eq(receiver.iter().copied()))
+                    (receiver.len() == 1 && import.binding == receiver[0])
+                        || (import.path.len() >= receiver.len()
+                            && import.path[import.path.len() - receiver.len()..]
+                                .iter()
+                                .map(String::as_str)
+                                .eq(receiver.iter().copied()))
                 })
                 .take(2)
                 .count()
@@ -1890,12 +1887,9 @@ fn enum_match_tracked(
                 beskid_analysis::syntax::Pattern::Enum(pattern)
                     if pattern.node.items.is_empty() =>
                 {
-                    let candidate = resolve_type_declaration(
-                        db,
-                        key,
-                        &pattern.node.path.node.type_path.node,
-                    )
-                    .ok_or_else(|| SemanticError::unavailable("enum_match"));
+                    let candidate =
+                        resolve_type_declaration(db, key, &pattern.node.path.node.type_path.node)
+                            .ok_or_else(|| SemanticError::unavailable("enum_match"));
                     let candidate = match candidate {
                         Ok(candidate) => candidate,
                         Err(error) => return Some(Err(error)),
@@ -2128,21 +2122,19 @@ fn unique_type_in_unit(
         .iter()
         .map(|metadata| metadata.id)
         .filter(|candidate| {
-            index
-                .node_at(program, *candidate)
-                .is_some_and(|node| {
-                    node.of::<beskid_analysis::syntax::TypeDefinition>()
+            index.node_at(program, *candidate).is_some_and(|node| {
+                node.of::<beskid_analysis::syntax::TypeDefinition>()
+                    .is_some_and(|definition| {
+                        definition.name.node.name == name
+                            && definition.generics.len() == generic_arity
+                    })
+                    || node
+                        .of::<beskid_analysis::syntax::EnumDefinition>()
                         .is_some_and(|definition| {
                             definition.name.node.name == name
                                 && definition.generics.len() == generic_arity
                         })
-                        || node
-                            .of::<beskid_analysis::syntax::EnumDefinition>()
-                            .is_some_and(|definition| {
-                                definition.name.node.name == name
-                                    && definition.generics.len() == generic_arity
-                            })
-                })
+            })
         })
         .collect::<Vec<_>>();
     let [node] = matches.as_slice() else {
@@ -2979,11 +2971,7 @@ pub fn completion_candidates(
         let Some(target) = registry
             .imports
             .get(&(key.unit, key.generation))
-            .and_then(|imports| {
-                imports
-                    .iter()
-                    .find(|import| import.binding == alias)
-            })
+            .and_then(|imports| imports.iter().find(|import| import.binding == alias))
             .map(|import| import.target)
         else {
             return Ok(None);
@@ -3144,10 +3132,7 @@ pub fn enum_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumLayo
 ///
 /// Constructors with multiple payload fields remain unavailable until the generated ISLE enum
 /// emitter has an equally explicit multi-field payload representation.
-pub fn enum_constructor(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<EnumConstructorFact> {
+pub fn enum_constructor(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumConstructorFact> {
     with_registered_syntax(db, key, enum_constructor_tracked)
 }
 

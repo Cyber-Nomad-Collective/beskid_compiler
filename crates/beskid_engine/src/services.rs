@@ -6,12 +6,12 @@ use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 #[cfg(test)]
 use beskid_codegen::module_emission::{SyntaxModuleItem, lower_syntax_program};
 use beskid_pipeline::PipelineObserver;
+#[cfg(test)]
+use beskid_queries::reachable_items;
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, build_typed_program, child_nodes,
     item_name, item_signature, test_item, with_db,
 };
-#[cfg(test)]
-use beskid_queries::reachable_items;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 
@@ -162,7 +162,15 @@ fn lower_syntax_entrypoint_from_front_end(
     let lowered = beskid_pipeline::observe_phase_result(
         pipeline,
         beskid_pipeline::phases::CODEGEN_CLIF,
-        || beskid_codegen::lower_prepared_syntax_entrypoint(db, front, entrypoint, target, isa.as_ref()),
+        || {
+            beskid_codegen::lower_prepared_syntax_entrypoint(
+                db,
+                front,
+                entrypoint,
+                target,
+                isa.as_ref(),
+            )
+        },
     )?;
     Ok(SyntaxEntrypointArtifact {
         artifact: lowered.artifact,
@@ -437,10 +445,7 @@ fn syntax_item_symbol(
     Some(format!("{name}#syntax_{logical}_{}", key.node.0))
 }
 
-fn syntax_item_name(
-    db: &dyn beskid_queries::Db,
-    key: AstNodeKey,
-) -> Option<String> {
+fn syntax_item_name(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<String> {
     item_name(db, key)
         .ok()
         .flatten()

@@ -355,7 +355,10 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "intrinsic",
     )?;
     unique(
-        manifest.intrinsics.iter().map(|entry| entry.symbol.as_str()),
+        manifest
+            .intrinsics
+            .iter()
+            .map(|entry| entry.symbol.as_str()),
         "intrinsic linker symbol",
     )?;
     unique(

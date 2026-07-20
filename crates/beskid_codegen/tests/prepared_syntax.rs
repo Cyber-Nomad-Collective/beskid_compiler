@@ -77,14 +77,18 @@ fn prepared_syntax_module_lowers_functions_and_methods_without_hir() {
         .expect("prepared syntax module lowering");
 
     assert_eq!(artifact.functions.len(), 2);
-    assert!(artifact
-        .functions
-        .iter()
-        .any(|function| function.name.starts_with("Echo#syntax_")));
-    assert!(artifact
-        .functions
-        .iter()
-        .any(|function| function.name.starts_with("Run#syntax_")));
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Echo#syntax_"))
+    );
+    assert!(
+        artifact
+            .functions
+            .iter()
+            .any(|function| function.name.starts_with("Run#syntax_"))
+    );
     std::fs::remove_dir_all(directory).expect("remove project");
 }
 
@@ -99,8 +103,7 @@ fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
     let source = include_str!("../../beskid_tests/fixtures/mods/sample_mod/Src/Mod.bd");
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
-    let resolved: ResolvedInput =
-        resolved_input_from_plan(path, source.into(), plan, None, None);
+    let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
         &resolved,
         FrontEndOptions {

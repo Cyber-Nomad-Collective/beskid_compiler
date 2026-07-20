@@ -129,18 +129,26 @@ fn runtime_provenance_allows_intrinsics_without_making_them_loader_requirements(
     )
     .expect("canonical audit metadata");
 
-    assert!(audit
-        .allowed_exports
-        .contains(&"beskid_rt_v5_process_init".into()));
-    assert!(audit
-        .allowed_exports
-        .contains(&"beskid_rt_v5_intrinsic_memory_compare".into()));
-    assert!(audit
-        .loader_required_exports
-        .contains(&"beskid_rt_v5_process_init".into()));
-    assert!(!audit
-        .loader_required_exports
-        .contains(&"beskid_rt_v5_intrinsic_memory_compare".into()));
+    assert!(
+        audit
+            .allowed_exports
+            .contains(&"beskid_rt_v5_process_init".into())
+    );
+    assert!(
+        audit
+            .allowed_exports
+            .contains(&"beskid_rt_v5_intrinsic_memory_compare".into())
+    );
+    assert!(
+        audit
+            .loader_required_exports
+            .contains(&"beskid_rt_v5_process_init".into())
+    );
+    assert!(
+        !audit
+            .loader_required_exports
+            .contains(&"beskid_rt_v5_intrinsic_memory_compare".into())
+    );
 }
 
 #[test]

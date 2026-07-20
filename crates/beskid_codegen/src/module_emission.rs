@@ -223,7 +223,6 @@ pub fn emit_string_literals<M: Module>(
     Ok(handles)
 }
 
-
 /// Emit descriptor and offset-table data for every type in `artifact.type_descriptors`.
 pub fn emit_type_descriptors<M: Module>(
     module: &mut M,

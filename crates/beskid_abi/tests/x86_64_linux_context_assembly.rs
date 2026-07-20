@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use beskid_abi::abi_v5::{render_runtime_asm_include, AbiManifestV5, TargetMetadata};
+use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, render_runtime_asm_include};
 
 struct TempDir(PathBuf);
 

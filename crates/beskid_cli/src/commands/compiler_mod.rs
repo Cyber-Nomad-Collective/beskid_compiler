@@ -209,22 +209,21 @@ fn build_mod_artifact_for_resolved(
         },
         pipeline,
     )?;
-    let artifact = super::syntax_codegen::lower_prepared_module(
-        &front,
-        target_triple.as_deref(),
-        pipeline,
-    )?;
-    let registrations =
-        extract_mod_contract_registrations_from_syntax(&resolved.manifest.project.name, &front.program)
-            .into_iter()
-            .map(
-                |registration| beskid_aot::mod_artifact::ContractRegistration {
-                    contract_id: registration.contract_id,
-                    type_id: registration.type_id,
-                    entry_symbol: registration.entry_symbol,
-                },
-            )
-            .collect();
+    let artifact =
+        super::syntax_codegen::lower_prepared_module(&front, target_triple.as_deref(), pipeline)?;
+    let registrations = extract_mod_contract_registrations_from_syntax(
+        &resolved.manifest.project.name,
+        &front.program,
+    )
+    .into_iter()
+    .map(
+        |registration| beskid_aot::mod_artifact::ContractRegistration {
+            contract_id: registration.contract_id,
+            type_id: registration.type_id,
+            entry_symbol: registration.entry_symbol,
+        },
+    )
+    .collect();
     let target = beskid_aot::target::detect_target(target_triple.as_deref())?;
     observe_phase_result(pipeline, AOT_LINK, || {
         build_mod_artifact(ModArtifactBuildRequest {
@@ -441,12 +440,9 @@ DemoMod {
 
         let manifest = load_manifest_from_path(&manifest_path).expect("load manifest");
         let plan = build_compile_plan(&manifest_path, None).expect("compile plan");
-        let prepared = prepare_project_workspace_with_options(
-            &plan,
-            WorkspacePrepareOptions::default(),
-            None,
-        )
-        .expect("prepare workspace");
+        let prepared =
+            prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions::default(), None)
+                .expect("prepare workspace");
         let descriptor = build_mod_artifact_for_resolved(
             &ResolvedModProject { manifest, plan },
             &prepared,

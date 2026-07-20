@@ -2,7 +2,6 @@
 
 //! Dispatch tag constants for soft runtime operations (ABI v4).
 
-
 /// Number of `usize` dispatch handlers declared in the manifest.
 pub const DISPATCH_USIZE_COUNT: usize = 5;
 /// `ArrayLen` → dispatch key `array_len`

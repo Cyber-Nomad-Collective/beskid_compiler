@@ -4,16 +4,17 @@ use std::collections::HashMap;
 
 use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
-    AstNodeKey, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
-    EmissionServices, EnumLayout, EnumVariantLayout, FieldLayout, ItemStatementEmission, LiteralKind, MatchArmFact, NodeFacts, NodeKind,
-    OperatorFact, ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
+    AstNodeKey, CallImporter, CallKind, DirectCallee, EmissionServices, EnumLayout,
+    EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, ItemStatementEmission,
+    LiteralKind, MatchArmFact, NodeFacts, NodeKind, OperatorFact, ParameterSlot,
+    RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{
     AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
     aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_arguments,
-    call_lowering, cast_intents, child_nodes, item_abi_signature, item_body,
-    enum_constructor, enum_layout, enum_match, literal_fact, local_slot, node_kind, node_type, operator_fact, resolved_local,
-    runtime_intrinsic_name, test_statement_nodes,
+    call_lowering, cast_intents, child_nodes, enum_constructor, enum_layout, enum_match,
+    item_abi_signature, item_body, literal_fact, local_slot, node_kind, node_type, operator_fact,
+    resolved_local, runtime_intrinsic_name, test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
@@ -260,7 +261,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
         if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
-            && self.query(aggregate_literal_declaration(self.db, key)).is_some()
+            && self
+                .query(aggregate_literal_declaration(self.db, key))
+                .is_some()
         {
             return self.isa.map(|isa| isa.pointer_type());
         }
@@ -387,9 +390,12 @@ impl SyntaxNodeFacts<'_> {
             }
             payloads.push(payload);
         }
-        let size = payloads.iter().flatten().fold(tag_type.bytes(), |size, payload| {
-            size.max(payload_offset.saturating_add(payload.bytes()))
-        });
+        let size = payloads
+            .iter()
+            .flatten()
+            .fold(tag_type.bytes(), |size, payload| {
+                size.max(payload_offset.saturating_add(payload.bytes()))
+            });
         let size = align_to(size, alignment)?.max(1);
         for (index, payload) in payloads.into_iter().enumerate() {
             variants.push(EnumVariantLayout::new(
@@ -397,7 +403,12 @@ impl SyntaxNodeFacts<'_> {
                 payload.map(|value_type| FieldLayout::new(value_type, payload_offset)),
             ));
         }
-        Some(EnumLayout::new(size, alignment.ilog2() as u8, tag, variants))
+        Some(EnumLayout::new(
+            size,
+            alignment.ilog2() as u8,
+            tag,
+            variants,
+        ))
     }
 
     fn array_elements_for_literal(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -555,7 +566,8 @@ impl SyntaxNodeFacts<'_> {
 }
 
 fn align_to(value: u32, alignment: u32) -> Option<u32> {
-    value.checked_add(alignment.checked_sub(1)?)
+    value
+        .checked_add(alignment.checked_sub(1)?)
         .map(|value| value / alignment * alignment)
 }
 
@@ -689,8 +701,17 @@ pub fn emit_isle_item_with_services<'db>(
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_isa(input, isa);
     emitter.emit_item_statement_with_services(
-        ItemStatementEmission { name: UserFuncName::user(0, 0), signature, facts: &facts, item, body },
-        EmissionServices { string_interner: Some(string_interner), call_importer: Some(importer) },
+        ItemStatementEmission {
+            name: UserFuncName::user(0, 0),
+            signature,
+            facts: &facts,
+            item,
+            body,
+        },
+        EmissionServices {
+            string_interner: Some(string_interner),
+            call_importer: Some(importer),
+        },
     )
 }
 
