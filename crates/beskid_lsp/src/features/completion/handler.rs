@@ -179,12 +179,12 @@ mod tests {
             version: 1,
             text: source.to_string(),
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
-            analysis: None,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             syntax_completion: Some(SyntaxCompletion { anchor }),
             syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
         };
         let offset = source.find("Zeb;").expect("completion prefix") + 3;
         let response = handle_completion(
@@ -266,12 +266,12 @@ mod tests {
             version: 1,
             text: main_source.to_string(),
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
-            analysis: None,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             syntax_completion: Some(SyntaxCompletion { anchor }),
             syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
         };
         let offset = main_source.find("Hel;").expect("completion prefix") + 3;
         let response = handle_completion(

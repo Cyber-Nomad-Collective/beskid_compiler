@@ -48,7 +48,6 @@ mod tests {
             version: 1,
             text: "i32 Main() { let value = 1; }".to_string(),
             analysis_cache_version: ANALYSIS_CACHE_VERSION,
-            analysis: None,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
@@ -58,6 +57,7 @@ mod tests {
                 end: 30,
                 type_label: "i32".to_string(),
             }],
+            syntax_documentation: Vec::new(),
         };
         let uri = Uri::from_str("file:///tmp/inlay.bd").expect("URI");
         let params: InlayHintParams = serde_json::from_value(serde_json::json!({

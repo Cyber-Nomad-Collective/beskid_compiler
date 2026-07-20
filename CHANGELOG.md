@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bind LSP documentation actions to generation-safe syntax documentation facts (declaration
+  span/kind, parameter/generic/return shape, leading doc span/text) derived from the current
+  buffer's expanded AST, with stale-buffer and refresh regressions.
 - Cover multi-function syntax assembly failures at the module boundary, including deterministic
   attribution to the failing function rather than a sibling item.
 - Catalogue every expanded-syntax node kind at the generated ISLE boundary with an exhaustive,
@@ -87,6 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Name the internal generation-safe LSP syntax-fact result so lifecycle refresh paths preserve
   definitions, hovers, symbols, completion, and inlay hints without positional tuple coupling.
+- Drop LSP `Document.analysis` / `DocumentAnalysisSnapshot` ownership from document lifecycle;
+  documentation actions and refresh now use only generation-bound syntax documentation facts.
 - Audit Linux shared ABI-v5 runtime artifacts with an exact ELF loader-import allowlist while
   preserving the static archive and Rust-runtime linkage boundary.
 - Centralize post-mod-rewrite syntax assembly projection at the shared frontend boundary for
