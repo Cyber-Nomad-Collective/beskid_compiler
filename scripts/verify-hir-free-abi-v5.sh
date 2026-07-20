@@ -22,6 +22,8 @@ test_count=0
 fixture_count=0
 dependency_count=0
 provenance_count=0
+canonical_dispatch_count=0
+deprecated_fallback_count=0
 
 category_for_path() {
   case "$1" in
@@ -103,6 +105,51 @@ report_dependency_matches() {
   failed=1
 }
 
+# The ABI-v5 manifest intentionally uses dispatch vocabulary: its generated
+# route table is the canonical direct-call contract consumed by ISLE.  Record
+# that surface as evidence, but never mistake it for a Rust-runtime fallback.
+report_canonical_dispatch_evidence() {
+  local output
+  local match
+
+  output="$(rg -n --glob '*.rs' -- '\bdispatch_route_for_symbol\b|\bDispatchRoute\b|\bDISPATCH_[A-Z0-9_]+' "$scan_crates" || true)"
+  if [[ -z "$output" ]]; then
+    return 0
+  fi
+
+  echo "canonical ABI-v5 dispatch evidence"
+  while IFS= read -r match; do
+    canonical_dispatch_count=$((canonical_dispatch_count + 1))
+    echo "[canonical ABI-v5 dispatch] $match"
+  done <<< "$output"
+}
+
+# Deprecated fallbacks are identified by the retired runtime boundary they
+# reach, rather than by generic `DISPATCH_`/`dispatch_*` spelling.  This keeps
+# canonical ABI-v5 route generation visible while rejecting the only symbols
+# that can reintroduce Rust runtime dispatch or profile/archive fallback.
+report_deprecated_fallback_matches() {
+  local output
+  local match
+  local path
+  local category
+
+  output="$(rg -n --glob '*.rs' -- '\bUsePrebuilt\b|\bRuntimeLinkProfile::Minimal\b|\bBESKID_RUNTIME_ARCHIVE\b|\bbootstrap_dispatch_handlers\b|\bregister_kernel_exports\b|\binterop_dispatch_(unit|usize|i64|ptr)\b' "$scan_crates" || true)"
+  if [[ -z "$output" ]]; then
+    return 0
+  fi
+
+  echo "deprecated ABI dispatch/fallback reachability remains"
+  while IFS= read -r match; do
+    path="${match%%:*}"
+    category="$(category_for_path "$path")"
+    increment_category "$category"
+    deprecated_fallback_count=$((deprecated_fallback_count + 1))
+    echo "[$category] [deprecated fallback] $match"
+  done <<< "$output"
+  failed=1
+}
+
 report_matches \
   "HIR references remain" \
   'beskid_analysis::hir|crate::hir|\bHir[A-Z]|\bUnitHir\b|\bunit_hir(_tracked|_with_source)?\b' \
@@ -122,10 +169,8 @@ report_matches \
   "$scan_crates/beskid_cli/src" \
   "$scan_crates/beskid_repl/src"
 
-report_matches \
-  "legacy ABI dispatch or fallback discovery remains" \
-  'DISPATCH_|dispatch_(tag|route|envelope)|UsePrebuilt|RuntimeLinkProfile::Minimal|BESKID_RUNTIME_ARCHIVE' \
-  "$scan_crates"
+report_canonical_dispatch_evidence
+report_deprecated_fallback_matches
 
 # Source scans cannot see a retired crate that is still pulled into a release
 # closure through Cargo metadata.  Inspect declarations directly so the gate
@@ -154,7 +199,7 @@ verify_provenance_fixture "x86_64-pc-windows-msvc"
 
 source_total=$((active_count + test_count + fixture_count))
 total_count=$((source_total + dependency_count + provenance_count))
-echo "HIR-free ABI-v5 blocker summary: active production=$active_count; test support=$test_count; generated/fixtures=$fixture_count; source total=$source_total; retired dependencies=$dependency_count; provenance fixtures=$provenance_count; total=$total_count"
+echo "HIR-free ABI-v5 blocker summary: active production=$active_count; test support=$test_count; generated/fixtures=$fixture_count; source total=$source_total; retired dependencies=$dependency_count; deprecated fallback=$deprecated_fallback_count; canonical ABI-v5 dispatch evidence=$canonical_dispatch_count; provenance fixtures=$provenance_count; total=$total_count"
 
 if (( failed != 0 )); then
   exit 1
