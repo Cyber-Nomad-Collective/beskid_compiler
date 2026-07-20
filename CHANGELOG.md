@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Lower direct non-capturing zero-argument `spawn Entry` expressions through syntax facts into
+  a generated ABI-v5 entry trampoline and canonical `fiber_spawn_with_cancel_slot` dispatch;
+  lambda, capture, and argument-bearing spawn forms remain fail-closed (CYB-77).
 - Parse fenced `code` expressions as their dedicated syntax kind and retain an explicit,
   span-bearing generated-ISLE rejection regression, replacing the CodeString CYB-81 inventory
   placeholder with verified evidence.

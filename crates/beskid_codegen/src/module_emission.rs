@@ -5,15 +5,17 @@ use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
     call_lowering, child_nodes, format_ast_node_key, generic_call_specialization,
-    item_abi_signature, item_name, node_kind, node_span, CallLowering, ItemSignature,
-    SemanticTypeId,
+    item_abi_signature, item_name, node_kind, node_span, resolved_item, spawn_entry_validation,
+    CallLowering, ItemSignature, SemanticTypeId, SourceUnitId,
 };
-use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::{
-    Endianness, ExtFuncData, ExternalName, FuncRef, GlobalValueData, Signature, Type, Value,
+    types, Endianness, ExtFuncData, ExternalName, FuncRef, Function, GlobalValueData, Signature,
+    Type, Value,
 };
+use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::isa::TargetIsa;
-use cranelift_frontend::FunctionBuilder;
+use cranelift_codegen::verify_function;
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{
     DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult,
 };
@@ -50,6 +52,14 @@ struct ResolvedSyntaxModuleItem {
     specialization: Option<ItemSignature>,
 }
 
+#[derive(Debug, Clone)]
+struct SpawnTrampoline {
+    spawn: AstNodeKey,
+    target_symbol: String,
+    target_signature: Signature,
+    symbol: String,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SyntaxModuleEmissionError {
     #[error("module declaration failed: {0}")]
@@ -62,7 +72,10 @@ pub enum SyntaxModuleEmissionError {
     DuplicateSymbol(String),
 }
 
-fn emission_error(input: &CodegenInput<'_>, error: FunctionEmissionError) -> SyntaxModuleEmissionError {
+fn emission_error(
+    input: &CodegenInput<'_>,
+    error: FunctionEmissionError,
+) -> SyntaxModuleEmissionError {
     SyntaxModuleEmissionError::Emission(error.display_with_db(input.database()))
 }
 
@@ -89,7 +102,9 @@ pub fn lower_syntax_program(
             input.roots().len()
         )
     });
-    let items = match resolve_module_items(input, items) {
+    let items = match resolve_module_items(input, items)
+        .and_then(|items| expand_direct_spawn_items(input, items))
+    {
         Ok(items) => items,
         Err(error) => {
             crate::isle_trace::event(|| {
@@ -112,6 +127,82 @@ pub fn lower_syntax_program(
         ),
     });
     result
+}
+
+/// Spawn has no ordinary CallExpression edge, so the generic direct-call reachability query does
+/// not include its target. Add only entries proven by the same strict direct-item validation used
+/// for trampoline generation; this does not make lambda or argument-bearing spawns reachable.
+fn expand_direct_spawn_items(
+    input: &CodegenInput<'_>,
+    mut items: Vec<ResolvedSyntaxModuleItem>,
+) -> Result<Vec<ResolvedSyntaxModuleItem>, SyntaxModuleEmissionError> {
+    let db = input.database();
+    let mut cursor = 0;
+    while cursor < items.len() {
+        let mut spawns = Vec::new();
+        collect_spawn_nodes(db, items[cursor].key, &mut HashSet::new(), &mut spawns);
+        for spawn in spawns {
+            let Some(validation) = spawn_entry_validation(db, spawn)
+                .map_err(|error| emission_verification(error.to_string()))?
+            else {
+                continue;
+            };
+            if !validation.is_zero_argument_entry
+                || node_kind(db, validation.target)
+                    .map_err(|error| emission_verification(error.to_string()))?
+                    != Some(beskid_queries::IndexedNodeKind::PathExpression)
+            {
+                continue;
+            }
+            let Some(target) = resolved_item(db, validation.target)
+                .map_err(|error| emission_verification(error.to_string()))?
+            else {
+                continue;
+            };
+            if items.iter().any(|item| item.key == target.declaration) {
+                continue;
+            }
+            let Some(symbol) = syntax_item_symbol(input, target.declaration) else {
+                continue;
+            };
+            if item_abi_signature(db, target.declaration)
+                .map_err(|error| emission_verification(error.to_string()))?
+                .is_none()
+            {
+                continue;
+            }
+            items.push(ResolvedSyntaxModuleItem {
+                key: target.declaration,
+                symbol,
+                callee: DirectCallee::item(target.declaration),
+                specialization: None,
+            });
+        }
+        cursor += 1;
+    }
+    Ok(items)
+}
+
+fn syntax_item_symbol(input: &CodegenInput<'_>, key: AstNodeKey) -> Option<String> {
+    let name = item_name(input.database(), key).ok().flatten()?;
+    let unit = input
+        .typed_program()
+        .assembly
+        .units()
+        .iter()
+        .find(|unit| SourceUnitId::new(input.database(), unit.path.clone()) == key.unit)?;
+    let logical = unit
+        .logical_name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    Some(format!("{name}#syntax_{logical}_{}", key.node.0))
 }
 
 fn lower_resolved_syntax_program(
@@ -143,8 +234,22 @@ fn lower_resolved_syntax_program(
             .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
     );
 
+    let trampolines = resolve_spawn_trampolines(input, isa, items, &symbols)?;
+    symbols.extend(trampolines.iter().map(|trampoline| {
+        (
+            DirectCallee::spawn_trampoline(trampoline.spawn),
+            trampoline.symbol.clone(),
+        )
+    }));
+
     let mut context = CodegenContext::new();
-    let mut functions = Vec::with_capacity(items.len());
+    let mut functions = Vec::with_capacity(items.len() + trampolines.len());
+    for trampoline in &trampolines {
+        functions.push(crate::LoweredFunction {
+            name: trampoline.symbol.clone(),
+            function: emit_spawn_trampoline(trampoline, isa)?,
+        });
+    }
     for item in items {
         trace_item_facts(input, item.key, &symbols);
         let started = Instant::now();
@@ -212,6 +317,178 @@ fn lower_resolved_syntax_program(
             .collect(),
         ..CodegenArtifact::default()
     })
+}
+
+/// Resolve only the first production spawn shape: a direct, non-generic, zero-argument item.
+/// Every other source shape is left without a trampoline so generated ISLE reports the normal
+/// span-bearing missing-fact failure instead of silently re-entering HIR lowering.
+fn resolve_spawn_trampolines(
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    items: &[ResolvedSyntaxModuleItem],
+    symbols: &HashMap<DirectCallee, String>,
+) -> Result<Vec<SpawnTrampoline>, SyntaxModuleEmissionError> {
+    let db = input.database();
+    let mut spawns = Vec::new();
+    let mut visited = HashSet::new();
+    for item in items {
+        collect_spawn_nodes(db, item.key, &mut visited, &mut spawns);
+    }
+    let mut trampolines = Vec::new();
+    for spawn in spawns {
+        let Some(validation) = spawn_entry_validation(db, spawn)
+            .map_err(|error| emission_verification(error.to_string()))?
+        else {
+            continue;
+        };
+        if !validation.is_zero_argument_entry
+            || node_kind(db, validation.target)
+                .map_err(|error| emission_verification(error.to_string()))?
+                != Some(beskid_queries::IndexedNodeKind::PathExpression)
+        {
+            continue;
+        }
+        let Some(target) = resolved_item(db, validation.target)
+            .map_err(|error| emission_verification(error.to_string()))?
+        else {
+            continue;
+        };
+        let Some(signature) = item_abi_signature(db, target.declaration)
+            .map_err(|error| emission_verification(error.to_string()))?
+            .and_then(|signature| spawn_target_signature(isa, signature))
+        else {
+            continue;
+        };
+        if !signature.params.is_empty() {
+            continue;
+        }
+        let callee = DirectCallee::item(target.declaration);
+        let Some(target_symbol) = symbols.get(&callee).cloned() else {
+            continue;
+        };
+        let symbol = format!(
+            "__beskid_spawn_entry_syntax_{}_g{}_n{}",
+            target_symbol
+                .chars()
+                .map(|character| if character.is_ascii_alphanumeric() {
+                    character
+                } else {
+                    '_'
+                })
+                .collect::<String>(),
+            spawn.generation.0,
+            spawn.node.0,
+        );
+        trampolines.push(SpawnTrampoline {
+            spawn,
+            target_symbol,
+            target_signature: signature,
+            symbol,
+        });
+    }
+    Ok(trampolines)
+}
+
+fn collect_spawn_nodes(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    visited: &mut HashSet<AstNodeKey>,
+    spawns: &mut Vec<AstNodeKey>,
+) {
+    if !visited.insert(key) {
+        return;
+    }
+    if node_kind(db, key).ok().flatten() == Some(beskid_queries::IndexedNodeKind::SpawnExpression) {
+        spawns.push(key);
+    }
+    if let Ok(Some(children)) = child_nodes(db, key) {
+        for child in children.iter().copied() {
+            collect_spawn_nodes(db, child, visited, spawns);
+        }
+    }
+}
+
+fn emit_spawn_trampoline(
+    trampoline: &SpawnTrampoline,
+    isa: &dyn TargetIsa,
+) -> Result<Function, SyntaxModuleEmissionError> {
+    let pointer = isa.pointer_type();
+    let mut signature = Signature::new(isa.default_call_conv());
+    signature.params.push(AbiParam::new(pointer));
+    signature.returns.push(AbiParam::new(types::I64));
+    let mut function =
+        Function::with_name_signature(cranelift_codegen::ir::UserFuncName::user(0, 0), signature);
+    let mut builder_context = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+        let entry = builder.create_block();
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+        builder.seal_block(entry);
+        let target_signature = builder.import_signature(trampoline.target_signature.clone());
+        let target = builder.func.import_function(ExtFuncData {
+            name: ExternalName::testcase(trampoline.target_symbol.as_bytes()),
+            signature: target_signature,
+            colocated: false,
+            patchable: false,
+        });
+        let call = builder.ins().call(target, &[]);
+        let results = builder.inst_results(call).to_vec();
+        let result = match results.as_slice() {
+            [] => builder.ins().iconst(types::I64, 0),
+            [value] if builder.func.dfg.value_type(*value) == types::I64 => *value,
+            [value] if builder.func.dfg.value_type(*value).is_int() => {
+                builder.ins().sextend(types::I64, *value)
+            }
+            _ => {
+                return Err(emission_verification(format!(
+                    "spawn trampoline target `{}` must return unit or an integer ABI value",
+                    trampoline.target_symbol
+                )));
+            }
+        };
+        builder.ins().return_(&[result]);
+        builder.finalize();
+    }
+    verify_function(&function, isa.flags()).map_err(|error| {
+        emission_verification(format!(
+            "spawn trampoline `{}` verification failed: {error}",
+            trampoline.symbol
+        ))
+    })?;
+    Ok(function)
+}
+
+fn spawn_target_signature(isa: &dyn TargetIsa, item: ItemSignature) -> Option<Signature> {
+    fn map(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
+        Some(match semantic {
+            SemanticTypeId::BOOL | SemanticTypeId::U8 => types::I8,
+            SemanticTypeId::I32 => types::I32,
+            SemanticTypeId::I64 => types::I64,
+            SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING => {
+                isa.pointer_type()
+            }
+            SemanticTypeId::F64 => types::F64,
+            SemanticTypeId::CHAR => types::I32,
+            SemanticTypeId::UNIT | SemanticTypeId::NEVER => return None,
+            _ => return None,
+        })
+    }
+
+    let mut signature = Signature::new(isa.default_call_conv());
+    signature.params.extend(
+        item.parameters
+            .iter()
+            .copied()
+            .map(|semantic| map(isa, semantic).map(AbiParam::new))
+            .collect::<Option<Vec<_>>>()?,
+    );
+    if !matches!(item.result, SemanticTypeId::UNIT | SemanticTypeId::NEVER) {
+        signature
+            .returns
+            .push(AbiParam::new(map(isa, item.result)?));
+    }
+    Some(signature)
 }
 
 /// Trace only facts already read by the syntax-only lowering boundary.  This has no bearing on
@@ -367,6 +644,9 @@ fn format_callee_for_trace(db: &dyn beskid_queries::Db, callee: &DirectCallee) -
         ),
         DirectCallee::RuntimeIntrinsic(index) => format!("RuntimeIntrinsic({index})"),
         DirectCallee::CorelibService(symbol) => format!("CorelibService({symbol})"),
+        DirectCallee::SpawnTrampoline(spawn) => {
+            format!("SpawnTrampoline({})", trace_key(db, *spawn))
+        }
     }
 }
 
@@ -391,7 +671,8 @@ fn resolve_module_items(
             });
             continue;
         }
-        let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
+        let kind =
+            node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
         if kind != Some(beskid_queries::IndexedNodeKind::FunctionDefinition) {
             // Type and enum declarations carry source layout facts but have no executable
             // syntax body. They deliberately do not require a call-derived function ABI.
@@ -588,19 +869,28 @@ pub fn emit_syntax_program<M: Module>(
     items: &[SyntaxModuleItem],
     linkage: Linkage,
 ) -> Result<HashMap<DirectCallee, FuncId>, SyntaxModuleEmissionError> {
-    let items = resolve_module_items(input, items)?;
+    let items = expand_direct_spawn_items(input, resolve_module_items(input, items)?)?;
     let artifact = lower_resolved_syntax_program(input, isa, &items)?;
     let mut by_callee = HashMap::with_capacity(items.len());
-    let mut by_symbol = HashMap::with_capacity(items.len());
-    for (item, lowered) in items.iter().zip(&artifact.functions) {
-        let id = module.declare_function(&item.symbol, linkage, &lowered.function.signature)?;
+    let mut by_symbol = HashMap::with_capacity(artifact.functions.len());
+    for lowered in &artifact.functions {
+        let item_linkage = if lowered.name.starts_with("__beskid_spawn_entry_syntax_") {
+            Linkage::Local
+        } else {
+            linkage
+        };
+        let id =
+            module.declare_function(&lowered.name, item_linkage, &lowered.function.signature)?;
+        by_symbol.insert(lowered.name.clone(), id);
+    }
+    for item in &items {
+        let id = by_symbol[&item.symbol];
         by_callee.insert(item.callee.clone(), id);
-        by_symbol.insert(item.symbol.clone(), id);
     }
     crate::cranelift_host::declare_validated_extern_imports(module, &artifact, &mut by_symbol)
         .map_err(|error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())))?;
-    for (item, lowered) in items.iter().zip(artifact.functions) {
-        let id = by_callee[&item.callee];
+    for lowered in artifact.functions {
+        let id = by_symbol[&lowered.name];
         let mut context = module.make_context();
         context.func = lowered.function;
         crate::cranelift_host::remap_testcase_externals(module, &mut context, &by_symbol).map_err(

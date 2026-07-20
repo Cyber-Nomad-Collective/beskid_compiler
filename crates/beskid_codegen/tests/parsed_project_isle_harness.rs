@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use beskid_abi::abi_v5::TargetMetadata;
+use beskid_analysis::services::{
+    resolved_input_from_plan, synthetic_compile_plan_for_source, FrontEndOptions,
+};
 use beskid_analysis::{
     projects::{
         AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
@@ -8,12 +11,9 @@ use beskid_analysis::{
     },
     services::parse_program_with_source_name,
 };
-use beskid_analysis::services::{
-    FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source,
-};
+use beskid_codegen::lower_source;
 use beskid_codegen::lower_syntax_assembly_entrypoint;
 use beskid_codegen::lowering::lower_program;
-use beskid_codegen::lower_source;
 use beskid_queries::{compile_front_end_from_resolved_input, with_db};
 use cranelift_codegen::{isa, settings, verify_function};
 
@@ -30,8 +30,9 @@ fn parse_production_units(
             std::fs::create_dir_all(parent).expect("unit parent directory");
         }
         std::fs::write(&path, source).expect("write project source");
-        let program = parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
-            .expect("production source parse");
+        let program =
+            parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
+                .expect("production source parse");
         source_units.push(SourceUnit {
             logical_name: (*logical_name).into(),
             path,
@@ -75,10 +76,8 @@ fn lower_verified_entrypoint(
     target: TargetMetadata,
     isa: &dyn cranelift_codegen::isa::TargetIsa,
 ) -> beskid_codegen::PreparedSyntaxEntrypoint {
-    let lowered = with_db(|db| {
-        lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa)
-    })
-    .expect("parsed project lowers through CodegenInput and ISLE");
+    let lowered = with_db(|db| lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa))
+        .expect("parsed project lowers through CodegenInput and ISLE");
     assert!(
         lowered.symbol.starts_with("Main#syntax_"),
         "production path must mint a syntax-mangled entry symbol, got {}",
@@ -98,9 +97,7 @@ fn assert_unsupported_closed_failure(
     isa: &dyn cranelift_codegen::isa::TargetIsa,
     expected_site_fragments: &[&str],
 ) {
-    let result = with_db(|db| {
-        lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa)
-    });
+    let result = with_db(|db| lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa));
     let error = match result {
         Ok(_) => panic!("unsupported typed operation must not fall back to legacy codegen"),
         Err(error) => error,
@@ -156,6 +153,45 @@ fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
         isa.as_ref(),
         &["Unsupported.bd", "Block@"],
     );
+}
+
+#[test]
+fn parsed_direct_zero_argument_spawn_emits_syntax_owned_trampoline_and_fiber_dispatch() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        i64 Entry() { return 7_i64; }
+        i64 Main() { return spawn Entry; }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    assert_eq!(
+        lowered.artifact.functions.len(),
+        3,
+        "Entry, Main, and the syntax-owned spawn trampoline"
+    );
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact");
+    let trampoline = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_spawn_entry_syntax_"))
+        .expect("syntax-owned spawn trampoline");
+    let main_clif = main.function.display().to_string();
+    let trampoline_clif = trampoline.function.display().to_string();
+    assert!(main_clif.contains("interop_dispatch_i64"), "{main_clif}");
+    assert!(main_clif.contains("func_addr"), "{main_clif}");
+    assert!(
+        trampoline_clif.contains("Entry#syntax_"),
+        "{trampoline_clif}"
+    );
+    assert!(trampoline_clif.contains("return"), "{trampoline_clif}");
 }
 
 #[test]
@@ -270,7 +306,10 @@ fn parsed_project_range_for_accumulator_reaches_verified_clif_without_hir_fallba
         .expect("Main artifact function");
     let clif = main.function.display().to_string();
     assert!(clif.contains("brif"), "expected range-for branch: {clif}");
-    assert!(clif.contains("iadd"), "expected accumulator addition: {clif}");
+    assert!(
+        clif.contains("iadd"),
+        "expected accumulator addition: {clif}"
+    );
 }
 
 #[test]
@@ -401,10 +440,7 @@ fn hir_and_lowerable_entrypoints_are_rejected_without_fallback() {
         Ok(_) => panic!("lower_source must reject the retired HIR path"),
         Err(error) => {
             let message = error.to_string();
-            assert!(
-                message.contains(RETIRED_HIR_PATH_MARKER),
-                "{message}"
-            );
+            assert!(message.contains(RETIRED_HIR_PATH_MARKER), "{message}");
             assert!(message.contains("CodegenInput"), "{message}");
         }
     }
@@ -428,10 +464,7 @@ fn hir_and_lowerable_entrypoints_are_rejected_without_fallback() {
                 .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
                 .join("; ");
-            assert!(
-                message.contains(RETIRED_HIR_PATH_MARKER),
-                "{message}"
-            );
+            assert!(message.contains(RETIRED_HIR_PATH_MARKER), "{message}");
             assert!(message.contains("lower_syntax_"), "{message}");
         }
     }

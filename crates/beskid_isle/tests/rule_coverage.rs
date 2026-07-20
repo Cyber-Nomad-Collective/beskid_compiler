@@ -2,8 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use beskid_isle::{
-    NodeKind, SyntaxNodeClassification, UNSUPPORTED_TYPED_OPERATION_KINDS,
     classify_syntax_node_kind, syntax_node_kind_catalogue, unsupported_typed_operation_kinds,
+    NodeKind, SyntaxNodeClassification, UNSUPPORTED_TYPED_OPERATION_KINDS,
 };
 use beskid_queries::IndexedNodeKind;
 
@@ -95,16 +95,40 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         .join("tests");
     let evidence: &[(NodeKind, PathBuf)] = &[
         (NodeKind::Program, isle_tests.join("rule_coverage.rs")),
-        (NodeKind::FunctionDefinition, isle_tests.join("function_emitter.rs")),
-        (NodeKind::TestDefinition, codegen_tests.join("isle_adapter.rs")),
-        (NodeKind::MethodDefinition, codegen_tests.join("isle_adapter.rs")),
-        (NodeKind::ExpressionStatement, isle_tests.join("statement_emitter.rs")),
-        (NodeKind::ReturnStatement, isle_tests.join("statement_emitter.rs")),
+        (
+            NodeKind::FunctionDefinition,
+            isle_tests.join("function_emitter.rs"),
+        ),
+        (
+            NodeKind::TestDefinition,
+            codegen_tests.join("isle_adapter.rs"),
+        ),
+        (
+            NodeKind::MethodDefinition,
+            codegen_tests.join("isle_adapter.rs"),
+        ),
+        (
+            NodeKind::ExpressionStatement,
+            isle_tests.join("statement_emitter.rs"),
+        ),
+        (
+            NodeKind::ReturnStatement,
+            isle_tests.join("statement_emitter.rs"),
+        ),
         (NodeKind::LetStatement, isle_tests.join("locals.rs")),
         (NodeKind::IfStatement, isle_tests.join("if_else.rs")),
-        (NodeKind::WhileStatement, isle_tests.join("while_transfer.rs")),
-        (NodeKind::BreakStatement, isle_tests.join("while_transfer.rs")),
-        (NodeKind::ContinueStatement, isle_tests.join("while_transfer.rs")),
+        (
+            NodeKind::WhileStatement,
+            isle_tests.join("while_transfer.rs"),
+        ),
+        (
+            NodeKind::BreakStatement,
+            isle_tests.join("while_transfer.rs"),
+        ),
+        (
+            NodeKind::ContinueStatement,
+            isle_tests.join("while_transfer.rs"),
+        ),
         (NodeKind::LiteralExpression, isle_tests.join("leaf_clif.rs")),
         (NodeKind::GroupedExpression, isle_tests.join("leaf_clif.rs")),
         (NodeKind::UnaryExpression, isle_tests.join("leaf_clif.rs")),
@@ -112,15 +136,43 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         (NodeKind::AssignExpression, isle_tests.join("locals.rs")),
         (NodeKind::CallExpression, isle_tests.join("direct_calls.rs")),
         (NodeKind::PathExpression, isle_tests.join("locals.rs")),
-        (NodeKind::IndexExpression, isle_tests.join("array_memory.rs")),
-        (NodeKind::ArrayLiteralExpression, isle_tests.join("array_memory.rs")),
-        (NodeKind::FieldExpression, isle_tests.join("struct_memory.rs")),
-        (NodeKind::StructLiteralExpression, isle_tests.join("struct_memory.rs")),
-        (NodeKind::EnumLiteralExpression, isle_tests.join("enum_match.rs")),
+        (
+            NodeKind::IndexExpression,
+            isle_tests.join("array_memory.rs"),
+        ),
+        (
+            NodeKind::ArrayLiteralExpression,
+            isle_tests.join("array_memory.rs"),
+        ),
+        (
+            NodeKind::FieldExpression,
+            isle_tests.join("struct_memory.rs"),
+        ),
+        (
+            NodeKind::StructLiteralExpression,
+            isle_tests.join("struct_memory.rs"),
+        ),
+        (
+            NodeKind::EnumLiteralExpression,
+            isle_tests.join("enum_match.rs"),
+        ),
         (NodeKind::MatchExpression, isle_tests.join("enum_match.rs")),
-        (NodeKind::RangeExpression, isle_tests.join("block_range_for.rs")),
-        (NodeKind::BlockExpression, isle_tests.join("block_sequence.rs")),
-        (NodeKind::ForStatement, isle_tests.join("block_range_for.rs")),
+        (
+            NodeKind::RangeExpression,
+            isle_tests.join("block_range_for.rs"),
+        ),
+        (
+            NodeKind::BlockExpression,
+            isle_tests.join("block_sequence.rs"),
+        ),
+        (
+            NodeKind::ForStatement,
+            isle_tests.join("block_range_for.rs"),
+        ),
+        (
+            NodeKind::SpawnExpression,
+            codegen_tests.join("parsed_project_isle_harness.rs"),
+        ),
     ];
 
     assert_eq!(
@@ -187,22 +239,12 @@ fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
             Syntax::LaunchStatement,
             CodexBlocker("CYB-81 host-composition: LaunchStatement span-bearing rejection fixture"),
         ),
-        (
-            Syntax::CodeStringLiteral,
-            Present("isle_adapter.rs"),
-        ),
+        (Syntax::CodeStringLiteral, Present("isle_adapter.rs")),
         (
             Syntax::TryExpression,
             CodexBlocker("CYB-81 try: TryExpression span-bearing rejection fixture"),
         ),
-        (
-            Syntax::SpawnExpression,
-            Present("isle_adapter.rs"),
-        ),
-        (
-            Syntax::LambdaExpression,
-            Present("isle_adapter.rs"),
-        ),
+        (Syntax::LambdaExpression, Present("isle_adapter.rs")),
     ];
 
     assert_eq!(
@@ -293,7 +335,7 @@ fn typed_operation_families_have_explicit_classifications() {
     );
     assert_eq!(
         classify_syntax_node_kind(Syntax::SpawnExpression),
-        UnsupportedTypedOperation
+        IsleLowered(NodeKind::SpawnExpression)
     );
     assert_eq!(classify_syntax_node_kind(Syntax::Identifier), Structural);
 }
@@ -307,9 +349,9 @@ fn binary_and_unary_operator_facts_have_isle_rules() {
         "control_flow.isle",
         "dispatch.isle",
     ]
-        .into_iter()
-        .map(|name| fs::read_to_string(isle.join(name)).expect("read ISLE rules"))
-        .collect::<String>();
+    .into_iter()
+    .map(|name| fs::read_to_string(isle.join(name)).expect("read ISLE rules"))
+    .collect::<String>();
 
     for operator in [
         "Or",

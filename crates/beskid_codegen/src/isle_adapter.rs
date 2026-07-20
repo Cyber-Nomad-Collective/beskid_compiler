@@ -10,15 +10,16 @@ use beskid_isle::{
     RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{
-    AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration,
-    block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering,
-    cast_intents, child_nodes, dispatch_builtin_symbol, enum_constructor, enum_layout, enum_match,
-    generic_call_specialization, item_abi_signature, item_body, literal_fact, local_slot,
-    mutable_local_assignment, node_kind,
-    node_type, nominal_member_receiver, operator_fact, range_for_fact, resolved_local, runtime_intrinsic_name,
-    test_statement_nodes,
+    abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration,
+    block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments,
+    call_lowering, cast_intents, child_nodes, dispatch_builtin_symbol, enum_constructor,
+    enum_layout, enum_match, generic_call_specialization, item_abi_signature, item_body,
+    literal_fact, local_slot, mutable_local_assignment, node_kind, node_type,
+    nominal_member_receiver, operator_fact, range_for_fact, resolved_item, resolved_local,
+    runtime_intrinsic_name, spawn_entry_validation, test_statement_nodes, AggregateFieldShape,
+    CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId,
 };
-use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
+use cranelift_codegen::ir::{types, FuncRef, Type, UserFuncName};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{FuncId, Module};
@@ -213,10 +214,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.runtime_intrinsic(key).is_some() {
             return Some(CallKind::RuntimeIntrinsic);
         }
-        if self
-            .query(dispatch_builtin_symbol(self.db, key))
-            .is_some()
-        {
+        if self.query(dispatch_builtin_symbol(self.db, key)).is_some() {
             return Some(CallKind::Dynamic);
         }
         matches!(
@@ -435,7 +433,28 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn range_fact(&self, key: AstNodeKey) -> Option<beskid_isle::RangeFact> {
         let range = self.query(range_for_fact(self.db, key))?;
-        Some(beskid_isle::RangeFact::new(range.start, range.end, 1, false))
+        Some(beskid_isle::RangeFact::new(
+            range.start,
+            range.end,
+            1,
+            false,
+        ))
+    }
+
+    fn spawn_entry(&self, key: AstNodeKey) -> Option<beskid_isle::SpawnEntry> {
+        let validation = self.query(spawn_entry_validation(self.db, key))?;
+        if !validation.is_zero_argument_entry
+            || self.query(node_kind(self.db, validation.target))
+                != Some(beskid_queries::IndexedNodeKind::PathExpression)
+        {
+            return None;
+        }
+        // The first leaf deliberately permits only a directly resolved, non-generic source
+        // item. A lambda (even one with no captures) requires an owned closure/trampoline path.
+        let _target = self.query(resolved_item(self.db, validation.target))?;
+        Some(beskid_isle::SpawnEntry {
+            trampoline: DirectCallee::spawn_trampoline(key),
+        })
     }
 }
 
@@ -594,7 +613,9 @@ impl SyntaxNodeFacts<'_> {
     }
 
     fn scalar_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::ForStatement) {
+        if self.query(node_kind(self.db, key))
+            == Some(beskid_queries::IndexedNodeKind::ForStatement)
+        {
             let iterable = self.child(key, 0)?;
             let range = self.query(range_for_fact(self.db, iterable))?;
             return self.query(node_type(self.db, range.start));

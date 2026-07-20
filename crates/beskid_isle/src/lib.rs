@@ -10,10 +10,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub use beskid_queries::AstNodeKey;
-use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
+use cranelift_codegen::ir::InstBuilder;
 pub use cranelift_codegen::ir::{
     AbiParam, Block, FuncRef, Function, MemFlags, Signature, StackSlotData, StackSlotKind,
     TrapCode, Type, UserFuncName, Value,
@@ -27,7 +27,9 @@ use cranelift_frontend::Variable;
 
 mod dispatch;
 
-pub use dispatch::{emit_dispatch_call, emit_str_from_i64_dispatch, pointer_type as isle_pointer_type};
+pub use dispatch::{
+    emit_dispatch_call, emit_str_from_i64_dispatch, pointer_type as isle_pointer_type,
+};
 
 macro_rules! node_kinds {
     ($($name:ident),+ $(,)?) => {
@@ -70,6 +72,7 @@ node_kinds!(
     RangeExpression,
     BlockExpression,
     ForStatement,
+    SpawnExpression,
 );
 
 /// Exhaustive disposition of an expanded-syntax kind at the generated ISLE boundary.
@@ -84,8 +87,8 @@ pub enum SyntaxNodeClassification {
 pub const fn classify_syntax_node_kind(
     kind: beskid_queries::IndexedNodeKind,
 ) -> SyntaxNodeClassification {
-    use SyntaxNodeClassification::{IsleLowered, Structural, UnsupportedTypedOperation};
     use beskid_queries::IndexedNodeKind as Syntax;
+    use SyntaxNodeClassification::{IsleLowered, Structural, UnsupportedTypedOperation};
 
     match kind {
         Syntax::Program => IsleLowered(NodeKind::Program),
@@ -117,6 +120,7 @@ pub const fn classify_syntax_node_kind(
         Syntax::RangeExpression => IsleLowered(NodeKind::RangeExpression),
         Syntax::Block | Syntax::BlockExpression => IsleLowered(NodeKind::BlockExpression),
         Syntax::ForStatement => IsleLowered(NodeKind::ForStatement),
+        Syntax::SpawnExpression => IsleLowered(NodeKind::SpawnExpression),
 
         Syntax::HostDefinition
         | Syntax::RegistryBlock
@@ -127,7 +131,6 @@ pub const fn classify_syntax_node_kind(
         | Syntax::LaunchStatement
         | Syntax::CodeStringLiteral
         | Syntax::TryExpression
-        | Syntax::SpawnExpression
         | Syntax::LambdaExpression => UnsupportedTypedOperation,
 
         Syntax::Node
@@ -182,8 +185,8 @@ pub const fn classify_syntax_node_kind(
 }
 
 /// Deterministic catalogue in the authoritative syntax declaration order.
-pub fn syntax_node_kind_catalogue()
--> impl ExactSizeIterator<Item = (beskid_queries::IndexedNodeKind, SyntaxNodeClassification)> {
+pub fn syntax_node_kind_catalogue(
+) -> impl ExactSizeIterator<Item = (beskid_queries::IndexedNodeKind, SyntaxNodeClassification)> {
     beskid_queries::IndexedNodeKind::ALL
         .iter()
         .copied()
@@ -204,13 +207,12 @@ pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] 
     beskid_queries::IndexedNodeKind::LaunchStatement,
     beskid_queries::IndexedNodeKind::CodeStringLiteral,
     beskid_queries::IndexedNodeKind::TryExpression,
-    beskid_queries::IndexedNodeKind::SpawnExpression,
     beskid_queries::IndexedNodeKind::LambdaExpression,
 ];
 
 /// Syntax kinds currently classified as unsupported typed operations, in catalogue order.
-pub fn unsupported_typed_operation_kinds()
--> impl Iterator<Item = beskid_queries::IndexedNodeKind> {
+pub fn unsupported_typed_operation_kinds() -> impl Iterator<Item = beskid_queries::IndexedNodeKind>
+{
     syntax_node_kind_catalogue().filter_map(|(kind, classification)| {
         matches!(
             classification,
@@ -324,6 +326,8 @@ pub enum DirectCallee {
     /// This is intentionally distinct from [`Self::RuntimeIntrinsic`]: Corelib source authority
     /// is not canonical-runtime intrinsic authority and cannot reuse its capability token.
     CorelibService(&'static str),
+    /// One generated ABI-v5 fiber entry trampoline, keyed by its source `spawn` expression.
+    SpawnTrampoline(AstNodeKey),
 }
 
 impl DirectCallee {
@@ -348,6 +352,19 @@ impl DirectCallee {
     pub const fn corelib_service(symbol: &'static str) -> Self {
         Self::CorelibService(symbol)
     }
+
+    pub const fn spawn_trampoline(spawn: AstNodeKey) -> Self {
+        Self::SpawnTrampoline(spawn)
+    }
+}
+
+/// Exact source entry selected for the first executable spawn lowering leaf.
+///
+/// Lambdas, captures, arguments, and all other callable shapes remain unavailable at this
+/// boundary rather than acquiring a compatibility path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpawnEntry {
+    pub trampoline: DirectCallee,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -670,6 +687,9 @@ pub trait NodeFacts {
     fn range_fact(&self, _key: AstNodeKey) -> Option<RangeFact> {
         None
     }
+    fn spawn_entry(&self, _key: AstNodeKey) -> Option<SpawnEntry> {
+        None
+    }
     fn local_slot(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
@@ -934,8 +954,8 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         let left = self.coerce_expression_to_string(left_key)?;
         let right = self.coerce_expression_to_string(right_key)?;
         let route = beskid_abi::dispatch_route_for_symbol("str_eq")?;
-        let eq_flag = dispatch::emit_dispatch_call(self.builder, route, &[left, right], true)
-            .ok()??;
+        let eq_flag =
+            dispatch::emit_dispatch_call(self.builder, route, &[left, right], true).ok()??;
         let zero = self.builder.ins().iconst(types::I64, 0);
         Some(if invert {
             self.builder.ins().icmp(IntCC::Equal, eq_flag, zero)
@@ -1315,14 +1335,52 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         }
     }
 
+    fn emit_spawn(&mut self, key: AstNodeKey) -> Option<Value> {
+        let entry = self.facts.spawn_entry(key)?;
+        let pointer = dispatch::pointer_type();
+        let mut signature = Signature::new(cranelift_codegen::isa::CallConv::SystemV);
+        signature.params.push(AbiParam::new(pointer));
+        signature.returns.push(AbiParam::new(types::I64));
+        let trampoline = match self.call_importer.as_deref_mut()?.import(
+            self.builder,
+            entry.trampoline.clone(),
+            &signature,
+        ) {
+            Ok(function) => function,
+            Err(CallImportError::UnknownCallee) => {
+                self.pending_error = Some(LoweringError {
+                    key,
+                    kind: LoweringErrorKind::UnknownCallee(entry.trampoline),
+                });
+                return None;
+            }
+        };
+        let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
+        let environment = self.builder.ins().iconst(pointer, 0);
+        let cancel_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            pointer.bytes(),
+            pointer.bytes().ilog2() as u8,
+        ));
+        self.builder.ins().stack_store(environment, cancel_slot, 0);
+        let cancel_slot_address = self.builder.ins().stack_addr(pointer, cancel_slot, 0);
+        let route = beskid_abi::dispatch_route_for_symbol("fiber_spawn_with_cancel_slot")?;
+        dispatch::emit_dispatch_call(
+            self.builder,
+            route,
+            &[entry_ptr, environment, cancel_slot_address],
+            true,
+        )
+        .ok()?
+    }
+
     fn emit_string_concat(&mut self, key: AstNodeKey) -> Option<Value> {
         let left_key = self.facts.child(key, 0)?;
         let right_key = self.facts.child(key, 1)?;
         let left = self.coerce_expression_to_string(left_key)?;
         let right = self.coerce_expression_to_string(right_key)?;
         let route = beskid_abi::dispatch_route_for_symbol("str_concat")?;
-        dispatch::emit_dispatch_call(self.builder, route, &[left, right], true)
-            .ok()?
+        dispatch::emit_dispatch_call(self.builder, route, &[left, right], true).ok()?
     }
 
     fn emit_string_eq(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -1358,11 +1416,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             .ins()
             .trapnz(out_of_bounds, TrapCode::unwrap_user(2));
         let addr = self.builder.ins().iadd(ptr, index);
-        Some(
-            self.builder
-                .ins()
-                .load(types::I8, MemFlags::new(), addr, 0),
-        )
+        Some(self.builder.ins().load(types::I8, MemFlags::new(), addr, 0))
     }
 
     fn index_target(&mut self, key: AstNodeKey) -> Option<IndexTarget> {
@@ -1391,13 +1445,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                     .map(|argument| generated::constructor_lower_expression(self, argument))
                     .collect::<Option<Vec<_>>>()?;
                 let returns_value = self.facts.scalar_type(expression).is_some();
-                dispatch::emit_dispatch_call(
-                    self.builder,
-                    route,
-                    &arguments,
-                    returns_value,
-                )
-                .ok()?;
+                dispatch::emit_dispatch_call(self.builder, route, &arguments, returns_value)
+                    .ok()?;
                 return Some(());
             }
             if self.facts.call_kind(expression) == Some(CallKind::Direct)
