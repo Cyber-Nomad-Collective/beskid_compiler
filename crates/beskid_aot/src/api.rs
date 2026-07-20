@@ -408,56 +408,37 @@ fn compile_platform_objects(
     output_dir: &std::path::Path,
     name: &str,
 ) -> AotResult<Vec<PathBuf>> {
+    let plan = platform_object_plan(target.triple.as_str())?;
     let assembly_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../beskid_abi/assembly")
         .join(target.triple.as_str());
-    let source = assembly_root.join("platform.S");
-    let tls_source = assembly_root.join("platform_tls.c");
-    let object = output_dir.join(format!("{name}.platform.o"));
-    let tls_object = output_dir.join(format!("{name}.platform_tls.o"));
-    let (assembly_args, tls_args): (&[&str], &[&str]) = match target.triple.as_str() {
-        "aarch64-apple-darwin" => (
-            &["-c", "-arch", "arm64"],
-            &["-std=c11", "-c", "-arch", "arm64"],
-        ),
-        "x86_64-unknown-linux-gnu" => (
-            &["-target", "x86_64-unknown-linux-gnu", "-fPIC", "-c"],
-            &[
-                "-target",
-                "x86_64-unknown-linux-gnu",
-                "-std=c11",
-                "-fPIC",
-                "-c",
-            ],
-        ),
-        _ => {
-            return Err(AotError::UnsupportedLinkerStrategy {
-                target: target.triple.as_str().to_owned(),
-                message: "native platform shim is not implemented for this host target".to_owned(),
-            });
-        }
-    };
-    let output = Command::new("clang")
-        .args(assembly_args)
-        .arg(&source)
-        .arg("-o")
-        .arg(&object)
-        .output()
-        .map_err(|_| AotError::LinkerUnavailable)?;
+    let source = assembly_root.join(plan.assembly_source);
+    let tls_source = assembly_root.join(plan.tls_source);
+    let object = output_dir.join(format!("{name}.platform.{}", plan.object_extension));
+    let tls_object = output_dir.join(format!("{name}.platform_tls.{}", plan.object_extension));
+    let mut assembly = Command::new(plan.assembly_program);
+    assembly.args(plan.assembly_args);
+    if plan.assembly_output_before_source {
+        assembly.arg(&object).arg(&source);
+    } else {
+        assembly.arg(&source).arg("-o").arg(&object);
+    }
+    let output = assembly.output().map_err(|_| AotError::LinkerUnavailable)?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
             command: format!(
-                "clang {:?} {} -o {}",
-                assembly_args,
+                "{} {:?} {} -o {}",
+                plan.assembly_program,
+                plan.assembly_args,
                 source.display(),
                 object.display()
             ),
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
-    let output = Command::new("clang")
-        .args(tls_args)
+    let output = Command::new(plan.tls_program)
+        .args(plan.tls_args)
         .arg(&tls_source)
         .arg("-o")
         .arg(&tls_object)
@@ -467,8 +448,9 @@ fn compile_platform_objects(
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
             command: format!(
-                "clang {:?} {} -o {}",
-                tls_args,
+                "{} {:?} {} -o {}",
+                plan.tls_program,
+                plan.tls_args,
                 tls_source.display(),
                 tls_object.display()
             ),
@@ -476,6 +458,84 @@ fn compile_platform_objects(
         });
     }
     Ok(vec![object, tls_object])
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PlatformObjectPlan {
+    assembly_source: &'static str,
+    tls_source: &'static str,
+    assembly_program: &'static str,
+    assembly_args: &'static [&'static str],
+    assembly_output_before_source: bool,
+    tls_program: &'static str,
+    tls_args: &'static [&'static str],
+    object_extension: &'static str,
+}
+
+fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
+    match target {
+        "aarch64-apple-darwin" => Ok(PlatformObjectPlan {
+            assembly_source: "platform.S",
+            tls_source: "platform_tls.c",
+            assembly_program: "clang",
+            assembly_args: &["-c", "-arch", "arm64"],
+            assembly_output_before_source: false,
+            tls_program: "clang",
+            tls_args: &["-std=c11", "-c", "-arch", "arm64"],
+            object_extension: "o",
+        }),
+        "x86_64-unknown-linux-gnu" => Ok(PlatformObjectPlan {
+            assembly_source: "platform.S",
+            tls_source: "platform_tls.c",
+            assembly_program: "clang",
+            assembly_args: &["-target", "x86_64-unknown-linux-gnu", "-fPIC", "-c"],
+            assembly_output_before_source: false,
+            tls_program: "clang",
+            tls_args: &[
+                "-target",
+                "x86_64-unknown-linux-gnu",
+                "-std=c11",
+                "-fPIC",
+                "-c",
+            ],
+            object_extension: "o",
+        }),
+        "x86_64-pc-windows-msvc" => Ok(PlatformObjectPlan {
+            assembly_source: "platform.asm",
+            tls_source: "platform_tls.c",
+            assembly_program: "llvm-ml",
+            assembly_args: &["--m64", "/c", "/X", "/Fo"],
+            assembly_output_before_source: true,
+            tls_program: "clang",
+            tls_args: &["--target=x86_64-pc-windows-msvc", "-std=c11", "-c"],
+            object_extension: "obj",
+        }),
+        _ => Err(AotError::UnsupportedLinkerStrategy {
+            target: target.to_owned(),
+            message: "native platform shim is not implemented for this host target".to_owned(),
+        }),
+    }
+}
+
+#[cfg(test)]
+mod platform_object_tests {
+    use super::platform_object_plan;
+
+    #[test]
+    fn windows_platform_plan_uses_coff_sources_and_windows_toolchain_arguments() {
+        let plan = platform_object_plan("x86_64-pc-windows-msvc").expect("Windows plan");
+
+        assert_eq!(plan.assembly_source, "platform.asm");
+        assert_eq!(plan.tls_source, "platform_tls.c");
+        assert_eq!(plan.assembly_program, "llvm-ml");
+        assert_eq!(plan.assembly_args, &["--m64", "/c", "/X", "/Fo"]);
+        assert_eq!(plan.tls_program, "clang");
+        assert_eq!(
+            plan.tls_args,
+            &["--target=x86_64-pc-windows-msvc", "-std=c11", "-c"]
+        );
+        assert_eq!(plan.object_extension, "obj");
+    }
 }
 
 #[derive(Debug, Clone)]
