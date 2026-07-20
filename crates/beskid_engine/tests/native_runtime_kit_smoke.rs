@@ -96,12 +96,11 @@ fn public_run_entrypoint_uses_the_syntax_isle_path() {
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-#[ignore = "requires the staged Linux native runtime-kit prefix"]
-fn staged_linux_runtime_kit_executes_a_canonical_entrypoint() {
+#[ignore = "requires the staged native runtime-kit matrix prefix"]
+fn staged_runtime_kit_executes_a_canonical_entrypoint() {
     let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
         .map(std::path::PathBuf::from)
-        .expect("Linux evidence must set BESKID_RUNTIME_PREFIX");
+        .expect("native runtime-kit evidence must set BESKID_RUNTIME_PREFIX");
     let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
         Ok("debug") => BuildProfile::Debug,
         Ok("release") => BuildProfile::Release,
@@ -112,14 +111,14 @@ fn staged_linux_runtime_kit_executes_a_canonical_entrypoint() {
         .expect("load the staged Linux runtime kit");
     let source = "i64 Main() { return 41 + 1; }";
     let source_path = beskid_codegen::materialize_source_path_for_lowering(
-        Path::new("staged-linux-runtime-kit-smoke.bd"),
+        Path::new("staged-runtime-kit-smoke.bd"),
         source,
     )
     .expect("materialize canonical source");
     let resolved = resolved_input_from_plan(
         source_path,
         source.to_owned(),
-        synthetic_compile_plan_for_source(Path::new("staged-linux-runtime-kit-smoke.bd")),
+        synthetic_compile_plan_for_source(Path::new("staged-runtime-kit-smoke.bd")),
         None,
         None,
     );
@@ -132,7 +131,7 @@ fn staged_linux_runtime_kit_executes_a_canonical_entrypoint() {
     let output = run_entrypoint_from_front_end_with_engine(
         &mut engine,
         &front,
-        "staged-linux-runtime-kit-smoke.bd",
+        "staged-runtime-kit-smoke.bd",
         source,
         "Main",
         None,

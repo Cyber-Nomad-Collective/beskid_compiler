@@ -74,6 +74,24 @@ fn aot_preparation_resolves_only_the_validated_static_artifact_and_allowlist() {
 }
 
 #[test]
+#[ignore = "requires the staged native runtime-kit matrix prefix"]
+fn staged_runtime_kit_resolves_the_canonical_static_archive() {
+    let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
+        .map(std::path::PathBuf::from)
+        .expect("native runtime-kit evidence must set BESKID_RUNTIME_PREFIX");
+    let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
+        Ok("debug") => BuildProfile::Debug,
+        Ok("release") => BuildProfile::Release,
+        value => panic!("unsupported staged runtime profile: {value:?}"),
+    };
+    let strategy = installed_runtime_strategy(&prefix, profile, None)
+        .expect("resolve the exact staged ABI-v5 runtime kit");
+    let prepared = prepare_runtime(&RuntimeBuildRequest { kit: strategy })
+        .expect("validate the exact staged static runtime artifact");
+    assert!(prepared.staticlib_path.is_file());
+}
+
+#[test]
 fn tampered_or_wrong_profile_kits_fail_without_archive_fallback() {
     let temp = tempfile::tempdir().unwrap();
     install_kit(temp.path());
