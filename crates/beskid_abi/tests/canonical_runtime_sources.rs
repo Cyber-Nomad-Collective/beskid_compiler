@@ -147,6 +147,45 @@ fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
 }
 
 #[test]
+fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_and_rooting() {
+    let source = &canonical_runtime_sources()[0].source;
+
+    // A descriptor is a 40-byte ABI record. Pointer-map entries are byte offsets into the
+    // complete object, so validation must reject a non-word offset and all arithmetic must be
+    // checked before forming an address.
+    assert!(source.contains("pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSize)"));
+    assert!(source.contains("if index > (NativeWordMax() - 8) / 8"));
+    assert!(source.contains("if offset % 8 != 0"));
+    assert!(source.contains("if offset > NativeWordMax() - 8"));
+    assert!(source.contains("if offset + 8 > objectSize"));
+
+    // ABI allocations require a power-of-two word alignment, not merely a value >= 8.
+    assert!(source.contains("pub bool IsValidObjectAlignment(word alignment)"));
+    assert!(source.contains("if alignment < 8"));
+    assert!(source.contains("if remaining % 2 != 0"));
+
+    // The public closure path must return null before it reads a null request. A valid
+    // descriptor-driven allocation owns the header and can then be placed in a root slot.
+    let allocate = source
+        .split("pub pointer AllocateClosureEnvironment(pointer request)")
+        .nth(1)
+        .expect("closure allocation function");
+    let null_guard = allocate
+        .find("if request == NativePointer(0)")
+        .expect("null request guard");
+    let descriptor_read = allocate
+        .find("AllocationDescriptor(request)")
+        .expect("descriptor read");
+    assert!(null_guard < descriptor_read);
+    assert!(allocate.contains("if !ValidateTypeDescriptor(descriptor)"));
+    assert!(allocate.contains("InitializeObjectHeader(object, descriptor);"));
+
+    assert!(source.contains("pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value)"));
+    assert!(source.contains("pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment)"));
+    assert!(source.contains("return SetRootSlotValue(rootFrame, slotIndex, environment);"));
+}
+
+#[test]
 fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
     let manifest = linux_manifest();
     let sources = canonical_runtime_sources();
