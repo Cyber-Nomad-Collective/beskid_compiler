@@ -1,8 +1,8 @@
 #![cfg(target_os = "linux")]
 
 use anyhow::Result;
-use beskid_codegen::services::lower_source;
 use beskid_engine::Engine;
+use beskid_engine::services::prepare_jit_entrypoint;
 
 #[cfg(feature = "extern_dlopen")]
 const LIBC: &str = "libc.so.6";
@@ -18,10 +18,9 @@ pub contract C {
 
 pub i64 Main() { return 0; }
 "#;
-    let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
-    // Assert extern_imports recorded
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     assert!(
-        lowered
+        prepared
             .artifact
             .extern_imports
             .iter()
@@ -30,7 +29,7 @@ pub i64 Main() { return 0; }
 
     let mut engine = Engine::new();
     engine
-        .compile_artifact(&lowered.artifact)
+        .compile_artifact(&prepared.artifact)
         .expect("compile with extern_dlopen");
     Ok(())
 }
@@ -46,10 +45,10 @@ pub contract C {
 
 pub i64 Main() { return C.getpid(); }
 "#;
-    let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
     engine
-        .compile_artifact(&lowered.artifact)
+        .compile_artifact(&prepared.artifact)
         .expect("compile via process-linked libc symbols");
     Ok(())
 }
@@ -65,10 +64,10 @@ pub contract C {
 
 pub i64 Main() { return C.no_such_symbol(); }
 "#;
-    let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
     let err = engine
-        .compile_artifact(&lowered.artifact)
+        .compile_artifact(&prepared.artifact)
         .expect_err("missing symbol should error");
     let msg = format!("{:?}", err);
     assert!(msg.contains("dlsym("));
@@ -86,12 +85,12 @@ pub contract C {
 
 pub i64 Main() { return C.getpid(); }
 "#;
-    let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
     engine
-        .compile_artifact(&lowered.artifact)
+        .compile_artifact(&prepared.artifact)
         .expect("compile extern call");
-    let main_ptr = unsafe { engine.entrypoint_ptr("Main").unwrap() };
+    let main_ptr = unsafe { engine.entrypoint_ptr(&prepared.symbol).unwrap() };
     let fun: extern "C" fn() -> i64 = unsafe { std::mem::transmute(main_ptr) };
     let pid = fun();
     assert!(pid > 1);
@@ -109,10 +108,10 @@ pub contract C {
 
 pub i64 Main() { return C.no_such_symbol(); }
 "#;
-    let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
     let err = engine
-        .compile_artifact(&lowered.artifact)
+        .compile_artifact(&prepared.artifact)
         .expect_err("missing symbol should error");
     let msg = format!("{:?}", err);
     assert!(msg.contains("dlsym("));
@@ -130,10 +129,10 @@ pub contract C {
 
 pub i64 Main() { return C.getpid(); }
 "#;
-    let lowered = lower_source(std::path::Path::new("<memory>"), src, false)?;
+    let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
     let err = engine
-        .compile_artifact(&lowered.artifact)
+        .compile_artifact(&prepared.artifact)
         .expect_err("missing library should error");
     let msg = format!("{:?}", err);
     assert!(msg.contains("dlopen("));

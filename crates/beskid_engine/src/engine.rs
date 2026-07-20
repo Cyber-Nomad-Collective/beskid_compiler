@@ -60,6 +60,17 @@ impl Engine {
         &self.runtime_kit.target
     }
 
+    /// Drop the current JIT module and reload the same validated exact runtime kit.
+    pub fn reload_runtime_kit(&mut self) -> Result<(), JitError> {
+        self.jit = BeskidJitModule::new_with_runtime_kit(
+            &self.runtime_kit.prefix,
+            &self.runtime_kit.target,
+            self.runtime_kit.profile,
+            &[],
+        )?;
+        Ok(())
+    }
+
     /// Load `artifact` into a fresh or reused JIT module, declare builtins/externs, define functions, finalize.
     pub fn compile_artifact(&mut self, artifact: &CodegenArtifact) -> Result<(), JitError> {
         self.compile_artifact_with_pipeline(artifact, None)

@@ -55,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI tests run, while leaving missing/tampered kits fail-closed for all other consumers.
 - Cover missing-manifest, wrong-target, hash-mismatch, and empty-prefix Engine fail-closed paths for
   the exact installed ABI-v5 kit route.
+- Add `prepare_jit_entrypoint` / `prepare_jit_module` / `prepare_syntax_front_end` helpers so JIT and
+  REPL consumers share one CodegenInput → ISLE prepare route with semantic diagnostics enabled.
+- Cover CodegenInput JIT `run_entrypoint` missing-manifest and tampered-shared-library fail-closed
+  regressions, plus REPL `ReplSession::try_new` missing-kit and tampered-kit fail-closed evidence.
 - Bind LSP documentation actions to generation-safe syntax documentation facts (declaration
   span/kind, parameter/generic/return shape, leading doc span/text) derived from the current
   buffer's expanded AST, with stale-buffer and refresh regressions.
@@ -63,6 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (CYB-103 / CYB-65).
 
 ### Changed
+
+- Migrate `beskid_engine` integration tests off retired HIR `lower_source` / `lower_program` drivers
+  onto the sole CodegenInput → ISLE + exact ABI-v5 kit route; REPL snippet prepare uses the same
+  shared front-end helper.
+- Reload REPL/`Engine` sessions through the same validated exact kit selection
+  (`Engine::reload_runtime_kit`) instead of reconstructing from the process install prefix.
 
 - Consolidate the ABI-v5 native compiler worktree into `main`; conflicting prototype code keeps
   the newer canonical implementation while the complete worktree history remains reachable.

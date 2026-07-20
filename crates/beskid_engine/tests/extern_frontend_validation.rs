@@ -1,5 +1,5 @@
 use anyhow::Result;
-use beskid_codegen::services::lower_source;
+use beskid_engine::services::prepare_syntax_front_end;
 
 #[test]
 fn extern_invalid_abi_rejected() -> Result<()> {
@@ -9,7 +9,7 @@ pub contract C { i64 getpid(); }
 
 pub i64 Main() { return 0; }
 "#;
-    let err = lower_source(std::path::Path::new("<memory>"), src, false)
+    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .err()
         .expect("type checking should fail for invalid ABI");
     let msg = format!("{err:#}");
@@ -28,7 +28,7 @@ pub contract C { i64 getpid(); }
 
 pub i64 Main() { return 0; }
 "#;
-    let err = lower_source(std::path::Path::new("<memory>"), src, false)
+    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .err()
         .expect("type checking should fail for missing library");
     let msg = format!("{err:#}");
@@ -47,7 +47,7 @@ pub contract C { i64 nope(string s); }
 
 pub i64 Main() { return 0; }
 "#;
-    let err = lower_source(std::path::Path::new("<memory>"), src, false)
+    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .err()
         .expect("type checking should fail for disallowed param type");
     let msg = format!("{err:#}");
@@ -66,7 +66,7 @@ pub contract C { i64 nope(ref i64 p); }
 
 pub i64 Main() { return 0; }
 "#;
-    let err = lower_source(std::path::Path::new("<memory>"), src, false)
+    let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .err()
         .expect("parse should fail for removed ref parameter modifier");
     let msg = format!("{err:#}");

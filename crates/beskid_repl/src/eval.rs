@@ -1,10 +1,8 @@
 use anyhow::Result;
-use beskid_analysis::services::{
-    FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
-};
 use beskid_engine::Engine;
 use beskid_engine::services::{
-    run_entrypoint_from_front_end_with_engine, syntax_entrypoint_return_type_from_front_end,
+    prepare_syntax_front_end, run_entrypoint_from_front_end_with_engine,
+    syntax_entrypoint_return_type_from_front_end,
 };
 use beskid_pipeline::PipelineObserver;
 
@@ -99,20 +97,8 @@ fn is_likely_statement(snippet: &str) -> bool {
 }
 
 fn prepare_wrapped(source: &str) -> Result<beskid_analysis::services::FrontEndTypedResult, String> {
-    let source_path = beskid_codegen::materialize_source_path_for_lowering(
-        std::path::Path::new(REPL_SOURCE_PATH),
-        source,
-    )
-    .map_err(format_lower_error)?;
-    let plan = synthetic_compile_plan_for_source(&source_path);
-    let resolved: ResolvedInput =
-        resolved_input_from_plan(source_path, source.to_owned(), plan, None, None);
-    beskid_queries::compile_front_end_from_resolved_input(
-        &resolved,
-        FrontEndOptions::default(),
-        None,
-    )
-    .map_err(format_lower_error)
+    prepare_syntax_front_end(std::path::Path::new(REPL_SOURCE_PATH), source)
+        .map_err(format_lower_error)
 }
 
 fn run_wrapped(
@@ -162,22 +148,33 @@ mod tests {
         assert_eq!(wrapped.return_type, "unit");
     }
 
+    fn shared_exact_kit_prefix() -> &'static std::path::Path {
+        use std::sync::OnceLock;
+        static PREFIX: OnceLock<std::path::PathBuf> = OnceLock::new();
+        PREFIX.get_or_init(|| {
+            let prefix = tempfile::tempdir().expect("exact kit prefix").keep();
+            build_native_host(prefix.clone(), RuntimeKitProfile::Debug)
+                .expect("publish exact native kit");
+            prefix
+        })
+    }
+
+    fn exact_kit_engine() -> Engine {
+        let target = host_runtime_target().expect("supported native host target");
+        Engine::with_runtime_kit(shared_exact_kit_prefix(), target, BuildProfile::Debug)
+            .expect("load exact kit")
+    }
+
     #[test]
     fn eval_i64_expression() {
-        let mut engine = Engine::new();
+        let mut engine = exact_kit_engine();
         let outcome = eval_snippet(&mut engine, "41 + 1");
         assert_eq!(outcome, EvalOutcome::Value("42".to_string()));
     }
 
     #[test]
     fn eval_uses_a_fresh_native_runtime_kit() {
-        let prefix = tempfile::tempdir().expect("fresh runtime-kit prefix");
-        build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
-            .expect("publish canonical native runtime kit");
-        let target = host_runtime_target().expect("supported native host target");
-        let mut engine = Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug)
-            .expect("load the exact fresh runtime kit");
-
+        let mut engine = exact_kit_engine();
         assert_eq!(
             eval_snippet(&mut engine, "true"),
             EvalOutcome::Value("true".to_string())
@@ -208,7 +205,7 @@ mod tests {
 
     #[test]
     fn eval_unit_statement() {
-        let mut engine = Engine::new();
+        let mut engine = exact_kit_engine();
         let outcome = eval_snippet(&mut engine, "let x = 1;");
         assert_eq!(outcome, EvalOutcome::Unit);
     }
@@ -221,7 +218,7 @@ mod tests {
 
     #[test]
     fn eval_reuses_engine() {
-        let mut engine = Engine::new();
+        let mut engine = exact_kit_engine();
         assert_eq!(
             eval_snippet(&mut engine, "10 + 5"),
             EvalOutcome::Value("15".to_string())
@@ -234,7 +231,7 @@ mod tests {
 
     #[test]
     fn eval_reports_type_error() {
-        let mut engine = Engine::new();
+        let mut engine = exact_kit_engine();
         let outcome = eval_snippet(&mut engine, "let x = true + 1;");
         assert!(matches!(outcome, EvalOutcome::Error(_)));
     }
@@ -244,6 +241,57 @@ mod tests {
         assert_eq!(
             format_semantic_type(beskid_queries::SemanticTypeId::WORD),
             "word"
+        );
+    }
+
+    #[test]
+    fn repl_session_fails_closed_when_exact_kit_manifest_is_missing() {
+        let empty = tempfile::tempdir().expect("empty prefix");
+        let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
+        // SAFETY: this integration target serializes around the process environment and restores it.
+        unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", empty.path()) };
+        let error = match crate::session::ReplSession::try_new() {
+            Ok(_) => panic!("missing exact kit must fail closed for REPL"),
+            Err(error) => error,
+        };
+        unsafe {
+            if let Some(value) = previous {
+                std::env::set_var("BESKID_RUNTIME_PREFIX", value);
+            } else {
+                std::env::remove_var("BESKID_RUNTIME_PREFIX");
+            }
+        }
+        let message = error.to_string();
+        assert!(
+            message.contains("abi.json")
+                || message.contains("MetadataRead")
+                || message.contains("runtime kit"),
+            "expected missing-kit fail-closed diagnostic, got {message}"
+        );
+    }
+
+    #[test]
+    fn eval_fails_closed_when_exact_kit_is_tampered() {
+        let Ok(target) = host_runtime_target() else {
+            return;
+        };
+        let prefix = tempfile::tempdir().expect("tampered kit prefix");
+        let built = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
+            .expect("publish canonical native runtime kit");
+        std::fs::write(&built.shared_library, b"tampered shared runtime")
+            .expect("tamper shared library");
+
+        let error = match Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug) {
+            Ok(_) => panic!("tampered exact kit must fail closed for REPL Engine"),
+            Err(error) => error,
+        };
+        let message = error.to_string();
+        assert!(
+            message.contains("runtime kit")
+                || message.contains("hash")
+                || message.contains("validation")
+                || message.contains("ArtifactHash"),
+            "expected tampered-kit fail-closed diagnostic, got {message}"
         );
     }
 }
