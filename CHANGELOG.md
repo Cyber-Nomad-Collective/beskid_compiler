@@ -84,6 +84,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve `[Export]` metadata on all production prepared-syntax module artifacts so JIT and AOT
+  publication retain the declared C ABI and linker symbol without reviving the retired HIR facade
+  (CYB-115).
 - Classify HIR-free gate dispatch evidence by ABI boundary: canonical ABI-v5
   manifest/ISLE routes are reported separately, while retired Rust-runtime
   dispatch and archive/profile fallback symbols remain release blockers
