@@ -7,7 +7,7 @@ use beskid_isle::{
 use beskid_queries::IndexedNodeKind;
 
 #[test]
-fn expanded_syntax_catalogue_is_exhaustive_unique_deterministic_and_bijective() {
+fn expanded_syntax_catalogue_is_total_unique_deterministic_and_surjective() {
     let catalogue = syntax_node_kind_catalogue().collect::<Vec<_>>();
     let repeated = syntax_node_kind_catalogue().collect::<Vec<_>>();
 
@@ -36,6 +36,17 @@ fn expanded_syntax_catalogue_is_exhaustive_unique_deterministic_and_bijective() 
             "orphaned ISLE node kind: {isle_kind:?}"
         );
     }
+
+    assert_eq!(
+        classify_syntax_node_kind(IndexedNodeKind::LiteralExpression),
+        classify_syntax_node_kind(IndexedNodeKind::Literal),
+        "literal wrapper and leaf are an intentional ISLE alias"
+    );
+    assert_eq!(
+        classify_syntax_node_kind(IndexedNodeKind::Block),
+        classify_syntax_node_kind(IndexedNodeKind::BlockExpression),
+        "statement and expression blocks are an intentional ISLE alias"
+    );
 }
 
 #[test]
@@ -44,12 +55,13 @@ fn typed_operation_families_have_explicit_classifications() {
     use SyntaxNodeClassification::{IsleLowered, Structural, UnsupportedTypedOperation};
 
     for (syntax, isle) in [
-        // Calls also carry trusted-runtime-intrinsic and memory-operation facts.
+        // Semantic call subfamilies are covered independently in the codegen adapter tests.
         (Syntax::CallExpression, NodeKind::CallExpression),
         // Locals.
         (Syntax::LetStatement, NodeKind::LetStatement),
         (Syntax::PathExpression, NodeKind::PathExpression),
-        // Cast intent is a semantic fact on unary syntax.
+        // Unary operations; contextual cast facts on their source expressions have independent
+        // adapter coverage.
         (Syntax::UnaryExpression, NodeKind::UnaryExpression),
         // Control flow.
         (Syntax::IfStatement, NodeKind::IfStatement),

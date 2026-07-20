@@ -216,18 +216,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         let (_, intrinsic) = self.runtime_intrinsic(key)?;
-        Some(match intrinsic.name.as_str() {
-            "memory_copy" => RuntimeIntrinsicKind::MemoryCopy,
-            "memory_set" => RuntimeIntrinsicKind::MemorySet,
-            "native_word_from_pointer" => RuntimeIntrinsicKind::NativeWordFromPointer,
-            "pointer_from_native_word" => RuntimeIntrinsicKind::PointerFromNativeWord,
-            "pointer_add" => RuntimeIntrinsicKind::PointerAdd,
-            "raw_word_load" => RuntimeIntrinsicKind::RawWordLoad,
-            "raw_word_store" => RuntimeIntrinsicKind::RawWordStore,
-            "raw_byte_load" => RuntimeIntrinsicKind::RawByteLoad,
-            "raw_byte_store" => RuntimeIntrinsicKind::RawByteStore,
-            _ => return None,
-        })
+        runtime_intrinsic_kind_for_name(intrinsic.name.as_str())
     }
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
@@ -942,6 +931,21 @@ fn map_node_kind(kind: beskid_queries::IndexedNodeKind) -> Option<NodeKind> {
     }
 }
 
+fn runtime_intrinsic_kind_for_name(name: &str) -> Option<RuntimeIntrinsicKind> {
+    Some(match name {
+        "memory_copy" => RuntimeIntrinsicKind::MemoryCopy,
+        "memory_set" => RuntimeIntrinsicKind::MemorySet,
+        "native_word_from_pointer" => RuntimeIntrinsicKind::NativeWordFromPointer,
+        "pointer_from_native_word" => RuntimeIntrinsicKind::PointerFromNativeWord,
+        "pointer_add" => RuntimeIntrinsicKind::PointerAdd,
+        "raw_word_load" => RuntimeIntrinsicKind::RawWordLoad,
+        "raw_word_store" => RuntimeIntrinsicKind::RawWordStore,
+        "raw_byte_load" => RuntimeIntrinsicKind::RawByteLoad,
+        "raw_byte_store" => RuntimeIntrinsicKind::RawByteStore,
+        _ => return None,
+    })
+}
+
 fn map_operator_fact(operator: beskid_queries::OperatorFact) -> OperatorFact {
     use beskid_queries::OperatorFact as Syntax;
 
@@ -1006,4 +1010,39 @@ fn map_abi_type(isa: &dyn TargetIsa, ty: beskid_abi::abi_v5::AbiType) -> Option<
         AbiType::F64 => types::F64,
         AbiType::Void => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trusted_runtime_intrinsic_names_map_to_exact_isle_kinds() {
+        for (name, expected) in [
+            ("memory_copy", RuntimeIntrinsicKind::MemoryCopy),
+            ("memory_set", RuntimeIntrinsicKind::MemorySet),
+            (
+                "native_word_from_pointer",
+                RuntimeIntrinsicKind::NativeWordFromPointer,
+            ),
+            (
+                "pointer_from_native_word",
+                RuntimeIntrinsicKind::PointerFromNativeWord,
+            ),
+            ("pointer_add", RuntimeIntrinsicKind::PointerAdd),
+            ("raw_word_load", RuntimeIntrinsicKind::RawWordLoad),
+            ("raw_word_store", RuntimeIntrinsicKind::RawWordStore),
+            ("raw_byte_load", RuntimeIntrinsicKind::RawByteLoad),
+            ("raw_byte_store", RuntimeIntrinsicKind::RawByteStore),
+        ] {
+            assert_eq!(
+                beskid_isle::classify_syntax_node_kind(
+                    beskid_queries::IndexedNodeKind::CallExpression,
+                ),
+                beskid_isle::SyntaxNodeClassification::IsleLowered(NodeKind::CallExpression),
+            );
+            assert_eq!(runtime_intrinsic_kind_for_name(name), Some(expected));
+        }
+        assert_eq!(runtime_intrinsic_kind_for_name("untrusted"), None);
+    }
 }

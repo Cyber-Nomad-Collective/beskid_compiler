@@ -22,11 +22,12 @@ use beskid_codegen::{
 };
 use beskid_isle::{DirectCallee, FunctionEmitter, NodeFacts};
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    aggregate_field_access, build_canonical_corelib_syscall_typed_program,
+    AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, Db, ProjectSession, SourceUnitId,
+    SyntaxGenerationId, aggregate_field_access, build_canonical_corelib_syscall_typed_program,
     build_canonical_runtime_typed_program, build_typed_program,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
-    enum_match, item_name, literal_fact, node_kind, node_type, test_statement_nodes,
+    closure_environment, enum_match, item_name, literal_fact, node_kind, node_type, spawn_target,
+    test_statement_nodes,
 };
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::isa;
@@ -123,6 +124,81 @@ fn unsupported_typed_operation_reports_deterministic_span_bearing_missing_rule()
     assert_eq!(first, repeated);
     assert!(first.contains("MissingRuleOrFact"), "{first}");
     assert!(first.contains("SpawnExpression@"), "{first}");
+}
+
+#[test]
+fn cast_facts_are_independent_of_the_shared_literal_syntax_classification() {
+    let (input, _isa, root) = item_fixture_with_root("unit Main() { i64 widenedLiteral = 1; }");
+    let literal = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::Literal,
+    )
+    .expect("typed literal");
+
+    assert_eq!(
+        beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::Literal),
+        beskid_isle::SyntaxNodeClassification::IsleLowered(
+            beskid_isle::NodeKind::LiteralExpression,
+        )
+    );
+    assert_eq!(
+        beskid_queries::cast_intents(input.database(), literal).expect("cast-intent query"),
+        Some(Arc::from([CastIntent {
+            from: beskid_queries::SemanticTypeId::I32,
+            to: beskid_queries::SemanticTypeId::I64,
+        }]))
+    );
+}
+
+#[test]
+fn closure_captures_and_spawn_target_are_independent_semantic_facts() {
+    let (input, _isa, root) = item_fixture_with_root(
+        "i32 Main(i32 outer) { let task = spawn ((i32 inner) => outer + inner); return outer; }",
+    );
+    let lambda = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::LambdaExpression,
+    )
+    .expect("lambda expression");
+    let spawn = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::SpawnExpression,
+    )
+    .expect("spawn expression");
+    let closure = closure_environment(input.database(), lambda)
+        .expect("closure query")
+        .expect("closure facts");
+    let target = spawn_target(input.database(), spawn)
+        .expect("spawn query")
+        .expect("spawn facts");
+    let function = find_function_definition(input.database(), root).expect("function definition");
+
+    assert_eq!(
+        beskid_isle::classify_syntax_node_kind(
+            beskid_queries::IndexedNodeKind::LambdaExpression,
+        ),
+        beskid_isle::SyntaxNodeClassification::UnsupportedTypedOperation,
+    );
+    assert_eq!(
+        beskid_isle::classify_syntax_node_kind(
+            beskid_queries::IndexedNodeKind::SpawnExpression,
+        ),
+        beskid_isle::SyntaxNodeClassification::UnsupportedTypedOperation,
+    );
+    assert_eq!(closure.parameters.len(), 1, "lambda parameter fact");
+    assert_eq!(closure.captures.len(), 1, "outer capture fact");
+    assert_eq!(
+        node_kind(input.database(), closure.captures[0].declaration)
+            .expect("capture kind query"),
+        Some(beskid_queries::IndexedNodeKind::Identifier),
+    );
+    assert_eq!(closure.captures[0].slot.owner, function);
+    assert_eq!(closure.captures[0].slot.index, 0);
+    assert_eq!(target.callee, lambda);
+    assert_eq!(target.captures, closure.captures);
 }
 
 #[test]
