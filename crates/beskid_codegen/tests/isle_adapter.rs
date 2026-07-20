@@ -35,6 +35,16 @@ use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+unsafe extern "C" fn test_system_allocate(size: usize, alignment: usize) -> *mut u8 {
+    let Ok(layout) = std::alloc::Layout::from_size_align(size, alignment) else {
+        return std::ptr::null_mut();
+    };
+    // The JIT regression reads the returned header and roots it immediately; intentionally keep
+    // this test allocation alive until process exit because the canonical source owns no sweep.
+    unsafe { std::alloc::alloc_zeroed(layout) }
+}
+
 #[test]
 fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
     let mut db = BeskidDatabase::default();
@@ -2096,6 +2106,199 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
     )
     .expect("canonical runtime helpers define through the production module emitter");
     assert_eq!(declared.len(), module_items.len());
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_closed() {
+    let mut db = Box::new(BeskidDatabase::default());
+    let directory = tempfile::tempdir().expect("runtime project").keep();
+    let source = canonical_runtime_sources()
+        .pop()
+        .expect("embedded canonical runtime source");
+    let source_path = directory.join("Bootstrap.bd");
+    std::fs::write(&source_path, &source.source).expect("write canonical runtime source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
+        .expect("parse canonical runtime source");
+    let project = ProjectSession::new(
+        &*db,
+        directory.clone(),
+        source_path.clone(),
+        "beskid-runtime-native".into(),
+        "lock".into(),
+    );
+    let generation = SyntaxGenerationId(32);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
+            path: source_path.clone(),
+            source: source.source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = build_canonical_runtime_typed_program(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_runtime_intrinsic_capability(&manifest).expect("compiler authority"),
+    )
+    .expect("canonical runtime syntax facts");
+    let root = AstNodeKey {
+        unit: SourceUnitId::new(&*db, source_path),
+        generation,
+        node: AstNodeId(0),
+    };
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
+        .expect("canonical runtime codegen input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let items = find_function_definitions(input.database(), root);
+    let selected = [
+        "NativePointer",
+        "NativeWord",
+        "NativeWordMax",
+        "SystemAllocate",
+        "AllocationSize",
+        "AllocationAlignment",
+        "AllocationDescriptor",
+        "InitializeObjectHeader",
+        "TypeDescriptorSize",
+        "TypeDescriptorAlignment",
+        "TypeDescriptorPointerMap",
+        "TypeDescriptorPointerCount",
+        "IsValidObjectAlignment",
+        "ValidatePointerMap",
+        "ValidateTypeDescriptor",
+        "AllocateClosureEnvironment",
+        "RootFrame",
+        "RootFrameSlots",
+        "RootFrameSlotCount",
+        "SetRootSlotValue",
+        "RootClosureEnvironment",
+    ];
+    let module_items = selected
+        .into_iter()
+        .map(|name| {
+            let key = items
+                .iter()
+                .copied()
+                .find(|key| {
+                    item_name(input.database(), *key).ok().flatten().as_deref() == Some(name)
+                })
+                .unwrap_or_else(|| panic!("canonical helper {name}"));
+            SyntaxModuleItem {
+                key,
+                symbol: name.into(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut builder = JITBuilder::with_isa(isa.clone(), default_libcall_names());
+    builder.symbol(
+        "beskid_rt_v5_intrinsic_system_allocate",
+        test_system_allocate as *const u8,
+    );
+    let mut module = JITModule::new(builder);
+    let declared = emit_syntax_program(
+        &mut module,
+        &input,
+        isa.as_ref(),
+        &module_items,
+        Linkage::Export,
+    )
+    .expect("closure descriptor helpers lower through the production module emitter");
+    module.finalize_definitions().expect("finalize closure helpers");
+
+    let validate = module.get_finalized_function(
+        *declared
+            .get(&DirectCallee::item(
+                *items
+                    .iter()
+                    .find(|key| {
+                        item_name(input.database(), **key).ok().flatten().as_deref()
+                            == Some("ValidateTypeDescriptor")
+                    })
+                    .expect("ValidateTypeDescriptor item"),
+            ))
+            .expect("ValidateTypeDescriptor declaration"),
+    );
+    let root_environment = module.get_finalized_function(
+        *declared
+            .get(&DirectCallee::item(
+                *items
+                    .iter()
+                    .find(|key| {
+                        item_name(input.database(), **key).ok().flatten().as_deref()
+                            == Some("RootClosureEnvironment")
+                    })
+                    .expect("RootClosureEnvironment item"),
+            ))
+            .expect("RootClosureEnvironment declaration"),
+    );
+    let allocate_environment = module.get_finalized_function(
+        *declared
+            .get(&DirectCallee::item(
+                *items
+                    .iter()
+                    .find(|key| {
+                        item_name(input.database(), **key).ok().flatten().as_deref()
+                            == Some("AllocateClosureEnvironment")
+                    })
+                    .expect("AllocateClosureEnvironment item"),
+            ))
+            .expect("AllocateClosureEnvironment declaration"),
+    );
+    let validate: extern "C" fn(*const usize) -> u8 = unsafe { std::mem::transmute(validate) };
+    let root_environment: extern "C" fn(*mut usize, usize, *mut u8) -> u8 =
+        unsafe { std::mem::transmute(root_environment) };
+    let allocate_environment: extern "C" fn(*const usize) -> *mut u8 =
+        unsafe { std::mem::transmute(allocate_environment) };
+
+    let mut pointer_map = [16usize];
+    let mut descriptor = [32usize, 8, pointer_map.as_mut_ptr() as usize, 1, 0];
+    assert_eq!(validate(descriptor.as_ptr()), 1, "valid descriptor is accepted");
+
+    pointer_map[0] = 17;
+    assert_eq!(validate(descriptor.as_ptr()), 0, "unaligned pointer offset is rejected");
+    pointer_map[0] = usize::MAX;
+    assert_eq!(validate(descriptor.as_ptr()), 0, "overflowing pointer end is rejected");
+    pointer_map[0] = 16;
+    descriptor[1] = 24;
+    assert_eq!(validate(descriptor.as_ptr()), 0, "non-power-of-two alignment is rejected");
+    assert_eq!(validate(std::ptr::null()), 0, "null descriptor is rejected before dereference");
+
+    descriptor[1] = 8;
+    let request = [32usize, 8, descriptor.as_mut_ptr() as usize];
+    let environment = allocate_environment(request.as_ptr());
+    assert!(!environment.is_null(), "valid request allocates a closure environment");
+    let header = environment as *const usize;
+    assert_eq!(unsafe { *header }, descriptor.as_mut_ptr() as usize);
+    assert_eq!(unsafe { *header.add(1) }, 0, "allocation clears the GC word");
+
+    let mut slots = [0usize];
+    let mut frame = [0usize, slots.as_mut_ptr() as usize, 1];
+    let mut tls = [0usize, frame.as_mut_ptr() as usize, 0, 1];
+    assert_eq!(root_environment(tls.as_mut_ptr(), 0, environment), 1);
+    assert_eq!(slots[0], environment as usize, "valid environment is rooted in its slot");
 }
 
 fn item_fixture(

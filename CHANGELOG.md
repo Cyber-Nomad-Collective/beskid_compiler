@@ -66,6 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   current buffer revision, with stale-typed-generation fail-closed and no-analysis regressions
   (CYB-103 / CYB-65).
 
+### Fixed
+
+- Fail close canonical closure-environment descriptor registration before allocation or rooting:
+  reject null requests/descriptors, non-power-of-two alignment, unaligned/out-of-bounds pointer
+  offsets, and arithmetic overflow; execute valid rooting plus invalid-descriptor regressions on
+  the Linux x86_64 runtime gate (CYB-109).
+
 ### Changed
 
 - Migrate the AOT mod-artifact object-compilation fixture from the retired HIR/`Lowerable`

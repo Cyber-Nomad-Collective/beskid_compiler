@@ -208,12 +208,111 @@ pub pointer AllocationDescriptor(pointer request) {
 
 /// Installs the fixed `BeskidObjectHeader` fields at the start of a freshly zeroed object.
 ///
-/// `gc_word` stays zero until the future marker owns mark-state transitions.  This source slice
-/// does not interpret descriptor pointer maps, trace children, or finalize an object.
+/// `gc_word` stays zero until the future marker owns mark-state transitions. Descriptor pointer
+/// maps are validated before closure-environment allocation; this helper only stamps headers.
 pub unit InitializeObjectHeader(pointer object, pointer descriptor) {
     raw_word_store(object, NativeWord(descriptor));
     raw_word_store(pointer_add(object, 8), 0);
     return;
+}
+
+/// The largest value representable by one native word.
+///
+/// Runtime `word` values use the native pointer width, and arithmetic in this canonical source
+/// is defined as wrapping machine arithmetic. Keeping this boundary in one helper makes every
+/// raw-address calculation prove its addition before the calculation happens.
+pub word NativeWordMax() {
+    return 0 - 1;
+}
+
+/// Reads `BeskidTypeDescriptor.size` at its manifest-frozen offset.
+pub word TypeDescriptorSize(pointer descriptor) {
+    return raw_word_load(descriptor);
+}
+
+/// Reads `BeskidTypeDescriptor.alignment` at its manifest-frozen offset.
+pub word TypeDescriptorAlignment(pointer descriptor) {
+    return raw_word_load(pointer_add(descriptor, 8));
+}
+
+/// Reads `BeskidTypeDescriptor.pointer_map` at its manifest-frozen offset.
+pub pointer TypeDescriptorPointerMap(pointer descriptor) {
+    return NativePointer(raw_word_load(pointer_add(descriptor, 16)));
+}
+
+/// Reads `BeskidTypeDescriptor.pointer_count` at its manifest-frozen offset.
+pub word TypeDescriptorPointerCount(pointer descriptor) {
+    return raw_word_load(pointer_add(descriptor, 24));
+}
+
+/// Returns whether one ABI allocation alignment is a power-of-two word alignment.
+///
+/// The ABI's minimum object alignment is eight bytes. Division avoids adding an unimplemented
+/// bitwise surface to the canonical runtime while still rejecting every non-power-of-two value.
+pub bool IsValidObjectAlignment(word alignment) {
+    if alignment < 8 {
+        return false;
+    }
+    mut word remaining = alignment;
+    while remaining > 1 {
+        if remaining % 2 != 0 {
+            return false;
+        }
+        remaining = remaining / 2;
+    }
+    return true;
+}
+
+/// Validates pointer-map offsets before using them as native addresses.
+///
+/// Pointer-map entries are byte offsets into an object which includes its 16-byte header. Each
+/// offset must name an aligned payload word and leave a complete pointer-sized slot in bounds.
+/// The multiplication for locating a map entry and the end-of-slot addition are guarded before
+/// they execute so malformed descriptors fail closed rather than wrapping into arbitrary memory.
+pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSize) {
+    if pointerCount == 0 {
+        return true;
+    }
+    if pointerMap == NativePointer(0) {
+        return false;
+    }
+    mut word index = 0;
+    while index < pointerCount {
+        if index > (NativeWordMax() - 8) / 8 {
+            return false;
+        }
+        word offset = raw_word_load(pointer_add(pointerMap, index * 8));
+        if offset < 16 {
+            return false;
+        }
+        if offset % 8 != 0 {
+            return false;
+        }
+        if offset > NativeWordMax() - 8 {
+            return false;
+        }
+        if offset + 8 > objectSize {
+            return false;
+        }
+        index = index + 1;
+    }
+    return true;
+}
+
+/// Fail-closed structural validation of a `BeskidTypeDescriptor` for closure environments.
+pub bool ValidateTypeDescriptor(pointer descriptor) {
+    if descriptor == NativePointer(0) {
+        return false;
+    }
+    word size = TypeDescriptorSize(descriptor);
+    if size < 16 {
+        return false;
+    }
+    word alignment = TypeDescriptorAlignment(descriptor);
+    if !IsValidObjectAlignment(alignment) {
+        return false;
+    }
+    return ValidatePointerMap(TypeDescriptorPointerMap(descriptor), TypeDescriptorPointerCount(descriptor), size);
 }
 
 /// Reserves one zeroed object whose header begins at the returned address.
@@ -235,6 +334,99 @@ pub pointer AllocateObject(pointer request) {
     pointer descriptor = AllocationDescriptor(request);
     InitializeObjectHeader(object, descriptor);
     return object;
+}
+
+/// Allocates a closure capture environment after validating its ABI-v5 descriptor.
+///
+/// The request is checked before dereferencing it. Both allocation fields must exactly match the
+/// registered descriptor; otherwise no allocation, header write, or rootable environment exists.
+pub pointer AllocateClosureEnvironment(pointer request) {
+    if request == NativePointer(0) {
+        return NativePointer(0);
+    }
+    pointer descriptor = AllocationDescriptor(request);
+    if !ValidateTypeDescriptor(descriptor) {
+        return NativePointer(0);
+    }
+    word size = AllocationSize(request);
+    word alignment = AllocationAlignment(request);
+    if size != TypeDescriptorSize(descriptor) {
+        return NativePointer(0);
+    }
+    if alignment != TypeDescriptorAlignment(descriptor) {
+        return NativePointer(0);
+    }
+    pointer object = SystemAllocate(size, alignment);
+    if object == NativePointer(0) {
+        return object;
+    }
+    memory_set(object, 0, size);
+    InitializeObjectHeader(object, descriptor);
+    return object;
+}
+
+/// Stores a capture in a validated closure environment's registered pointer-map slot.
+pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value) {
+    if environment == NativePointer(0) {
+        return false;
+    }
+    if !ValidateTypeDescriptor(descriptor) {
+        return false;
+    }
+    word pointerCount = TypeDescriptorPointerCount(descriptor);
+    if mapIndex >= pointerCount {
+        return false;
+    }
+    pointer pointerMap = TypeDescriptorPointerMap(descriptor);
+    word offset = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
+    raw_word_store(pointer_add(environment, offset), NativeWord(value));
+    return true;
+}
+
+/// Reads `BeskidRootSlot.value` for a caller-owned root-frame slot.
+pub pointer RootSlotValue(pointer rootFrame, word index) {
+    if rootFrame == NativePointer(0) {
+        return NativePointer(0);
+    }
+    if index >= RootFrameSlotCount(rootFrame) {
+        return NativePointer(0);
+    }
+    pointer slots = RootFrameSlots(rootFrame);
+    if slots == NativePointer(0) {
+        return NativePointer(0);
+    }
+    return NativePointer(raw_word_load(pointer_add(slots, index * 8)));
+}
+
+/// Writes `BeskidRootSlot.value` for a caller-owned root-frame slot.
+pub bool SetRootSlotValue(pointer rootFrame, word index, pointer value) {
+    if rootFrame == NativePointer(0) {
+        return false;
+    }
+    if index >= RootFrameSlotCount(rootFrame) {
+        return false;
+    }
+    pointer slots = RootFrameSlots(rootFrame);
+    if slots == NativePointer(0) {
+        return false;
+    }
+    raw_word_store(pointer_add(slots, index * 8), NativeWord(value));
+    return true;
+}
+
+/// Registers a closure environment in the current TLS root frame.
+pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment) {
+    if tlsState == NativePointer(0) {
+        return false;
+    }
+    if environment == NativePointer(0) {
+        return false;
+    }
+    pointer rootFrame = RootFrame(tlsState);
+    if rootFrame == NativePointer(0) {
+        return false;
+    }
+    return SetRootSlotValue(rootFrame, slotIndex, environment);
 }
 
 /// Releases an object allocation during a future sweep phase.
