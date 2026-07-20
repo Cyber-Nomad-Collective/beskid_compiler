@@ -80,7 +80,6 @@ pub use gc::{
     set_current_heap, set_current_root, set_preemption_enabled, set_runtime_phase,
     set_syscall_pool_worker, with_current_heap, with_current_root,
 };
-pub use interop::register::bootstrap_dispatch_handlers;
 pub use interop::{
     interop_dispatch_i64, interop_dispatch_ptr, interop_dispatch_unit, interop_dispatch_usize,
 };

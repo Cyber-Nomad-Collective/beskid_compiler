@@ -3,8 +3,8 @@ use beskid_abi::{
     SYM_BESKID_REGISTER_HANDLERS,
 };
 use beskid_runtime::{
-    CallbackTableEntry, beskid_register_callbacks, bootstrap_dispatch_handlers,
-    install_callback_trampoline, registered_callbacks,
+    beskid_register_callbacks, install_callback_trampoline, registered_callbacks,
+    CallbackTableEntry,
 };
 
 #[test]
@@ -20,12 +20,6 @@ fn register_callbacks_symbol_is_runtime_export() {
 #[test]
 fn register_handlers_symbol_is_runtime_export() {
     assert!(RUNTIME_EXPORT_SYMBOLS.contains(&SYM_BESKID_REGISTER_HANDLERS));
-}
-
-#[test]
-fn bootstrap_dispatch_handlers_accepts_empty_table() {
-    bootstrap_dispatch_handlers();
-    bootstrap_dispatch_handlers();
 }
 
 extern "C" fn sample_export() -> i64 {

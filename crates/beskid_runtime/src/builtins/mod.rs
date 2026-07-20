@@ -24,7 +24,7 @@ mod version;
 mod wait_group;
 
 pub use crate::interop::register::{
-    HandlerTableEntry, beskid_register_handlers, bootstrap_dispatch_handlers,
+    HandlerTableEntry, beskid_register_handlers,
 };
 pub use alloc::alloc;
 pub use arrays::{array_len, array_new};

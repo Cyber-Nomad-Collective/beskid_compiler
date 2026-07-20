@@ -12,7 +12,6 @@ use generated::link_anchor::anchor_kernel_exports;
 #[unsafe(no_mangle)]
 pub extern "C" fn beskid_runtime_link_anchor() {
     beskid_runtime::gc::enable_aot_main_bootstrap();
-    beskid_runtime::bootstrap_dispatch_handlers();
     anchor_kernel_exports();
     #[cfg(feature = "host")]
     {
