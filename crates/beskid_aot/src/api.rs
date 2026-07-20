@@ -160,6 +160,8 @@ pub struct AotBuildResult {
 pub struct NativeLibraryPair {
     pub static_library: PathBuf,
     pub shared_library: PathBuf,
+    /// COFF import library emitted beside a Windows shared runtime DLL.
+    pub shared_import_library: Option<PathBuf>,
     pub provenance_symbols: Vec<String>,
 }
 
@@ -305,6 +307,10 @@ fn emit_library_pair_with_objects(
     provenance_symbols.dedup();
     Ok(NativeLibraryPair {
         static_library,
+        shared_import_library: target
+            .triple
+            .contains("windows")
+            .then(|| output_dir.join(format!("{name}_import.lib"))),
         shared_library,
         provenance_symbols,
     })

@@ -172,6 +172,32 @@ fn linux_host_platform_pair_exports_the_native_runtime_boundary() {
 }
 
 #[test]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let pair = emit_host_context_library_pair(
+        CodegenArtifact::default(),
+        temp.path().join("out"),
+        "beskid_runtime",
+    )
+    .expect("emit Windows context pair");
+
+    let import_library = pair
+        .shared_import_library
+        .expect("Windows shared runtime must emit its COFF import library");
+    assert!(
+        import_library.is_file(),
+        "missing import library: {}",
+        import_library.display()
+    );
+    assert_eq!(
+        import_library.file_name().and_then(|name| name.to_str()),
+        Some("beskid_runtime_import.lib")
+    );
+    assert!(pair.shared_library.is_file());
+}
+
+#[test]
 #[cfg(any(
     all(target_os = "linux", target_arch = "x86_64"),
     all(target_os = "macos", target_arch = "aarch64"),
