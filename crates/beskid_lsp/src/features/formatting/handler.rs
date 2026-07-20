@@ -45,6 +45,7 @@ mod tests {
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
+            syntax_diagnostics: Vec::new(),
         }
     }
 

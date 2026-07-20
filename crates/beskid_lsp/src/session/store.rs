@@ -34,6 +34,25 @@ pub struct Document {
     pub syntax_inlay_hints: Vec<SyntaxInlayHint>,
     /// Generation-bound declaration/documentation shape for this exact buffer revision.
     pub syntax_documentation: Vec<SyntaxDocumentationFact>,
+    /// Generation-bound diagnostics for this exact buffer revision (publish/refresh authority).
+    pub syntax_diagnostics: Vec<SyntaxDiagnostic>,
+}
+
+/// One diagnostic proven for the current buffer revision (never an analysis/HIR snapshot).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxDiagnostic {
+    pub start: usize,
+    pub end: usize,
+    pub severity: SyntaxDiagnosticSeverity,
+    pub code: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyntaxDiagnosticSeverity {
+    Error,
+    Warning,
+    Note,
 }
 
 /// One resolved syntax reference and its declaration location.

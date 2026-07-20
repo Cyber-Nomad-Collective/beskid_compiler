@@ -48,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bind LSP documentation actions to generation-safe syntax documentation facts (declaration
   span/kind, parameter/generic/return shape, leading doc span/text) derived from the current
   buffer's expanded AST, with stale-buffer and refresh regressions.
+- Bind LSP diagnostics publish/refresh to generation-bound `syntax_diagnostics` facts on the
+  current buffer revision, with stale-typed-generation fail-closed and no-analysis regressions
+  (CYB-103 / CYB-65).
 
 ### Changed
 
@@ -123,6 +126,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authority instead of duplicated private helpers.
 - Drop LSP `Document.analysis` / `DocumentAnalysisSnapshot` ownership from document lifecycle;
   documentation actions and refresh now use only generation-bound syntax documentation facts.
+- Route LSP diagnostics publish/refresh through syntax diagnostic facts and generation-safe
+  prepare queries; stale typed generations fail closed to parse/structural diagnostics for the
+  current buffer instead of EntryOnly prepare-spine reuse.
 - Canonical bootstrap `ThreadAttach`/`ThreadDetach` own a dedicated `BeskidTlsState`
   allocation (manifest size 32) so TLS root-frame offset 8 no longer collides with
   `BeskidRuntimeState.current_thread`; `ProcessInit` stamps `abi_version = 5` without

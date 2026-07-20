@@ -13,13 +13,12 @@ use tower_lsp_server::ls_types::Uri;
 use url::Url;
 use walkdir::WalkDir;
 
-use crate::diagnostics::analyze_document;
+use crate::diagnostics::{collect_syntax_diagnostics, lsp_diagnostics_from_syntax};
 use crate::protocol::status::{idle_status, send_beskid_status, workspace_scan_status};
-use crate::session::diagnostics_bridge::analyze_document_for_state;
 use crate::session::lifecycle::{
-    build_document, rebuild_open_document_analysis, set_disk_snapshot,
+    build_document, rebuild_open_document_syntax_facts, set_disk_snapshot,
 };
-use crate::session::project_context::{cached_compilation_context, invalidate_compilation_cache};
+use crate::session::project_context::invalidate_compilation_cache;
 use crate::session::startup::signal_initial_scan_complete;
 use crate::session::store::{Document, State};
 
@@ -164,6 +163,8 @@ pub async fn scan_workspace(
         let Ok(text) = tokio::fs::read_to_string(&path).await else {
             continue;
         };
+        let facts = collect_syntax_diagnostics(None, &uri, &text, None);
+        let diagnostics = lsp_diagnostics_from_syntax(&text, &facts);
         let doc = Document {
             version: 0,
             text: text.clone(),
@@ -174,15 +175,15 @@ pub async fn scan_workspace(
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
+            syntax_diagnostics: facts,
         };
-        let diagnostics = analyze_document(None, &uri, &text, None);
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;
     }
 
     signal_initial_scan_complete(state).await;
 
-    rebuild_open_document_analysis(state).await;
+    rebuild_open_document_syntax_facts(state).await;
 
     let mut stale: Vec<Uri> = Vec::new();
     {
@@ -308,7 +309,7 @@ pub async fn refresh_after_disk_change(
             .is_some_and(is_manifest_extension)
     }) {
         invalidate_compilation_cache(state).await;
-        rebuild_open_document_analysis(state).await;
+        rebuild_open_document_syntax_facts(state).await;
     }
     for path in changed_paths {
         let Some(uri) = uri_from_path(path) else {
@@ -326,13 +327,7 @@ pub async fn refresh_after_disk_change(
             continue;
         };
         let doc = build_document(state, &uri, 0, text).await;
-        let compilation_context = if path.extension().and_then(|e| e.to_str()) == Some("bd") {
-            cached_compilation_context(state, path).await
-        } else {
-            None
-        };
-        let diagnostics =
-            analyze_document_for_state(state, &uri, &doc.text, compilation_context.as_ref()).await;
+        let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;
     }
@@ -355,13 +350,7 @@ pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, ur
         return;
     };
     let doc = build_document(state, uri, 0, text).await;
-    let compilation_context = if path.extension().and_then(|e| e.to_str()) == Some("bd") {
-        cached_compilation_context(state, &path).await
-    } else {
-        None
-    };
-    let diagnostics =
-        analyze_document_for_state(state, uri, &doc.text, compilation_context.as_ref()).await;
+    let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
     set_disk_snapshot(state, uri.clone(), doc).await;
     client
         .publish_diagnostics(uri.clone(), diagnostics, Some(0))

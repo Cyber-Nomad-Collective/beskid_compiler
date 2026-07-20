@@ -200,6 +200,7 @@ mod tests {
             // Stale facts must not be consulted once the buffer text advanced; empty forces
             // a rebuild from `doc.text`, proving no HIR snapshot path remains.
             syntax_documentation: Vec::new(),
+            syntax_diagnostics: Vec::new(),
         };
         let _ = stale_facts;
         let params = CodeActionParams {
@@ -241,6 +242,7 @@ mod tests {
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: facts,
+            syntax_diagnostics: Vec::new(),
         };
         let params = CodeActionParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },
