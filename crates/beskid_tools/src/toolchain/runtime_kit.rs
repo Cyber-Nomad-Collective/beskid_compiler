@@ -72,13 +72,36 @@ pub fn build_native_host(
     let pair =
         beskid_aot::emit_host_platform_library_pair(&authority, staging.clone(), "beskid_runtime")
             .map_err(|error| anyhow!("link canonical native runtime: {error}"))?;
+    // Windows COFF kits require the companion import library beside the shared DLL.
+    // Dropping `pair.shared_import_library` made `build_native_host` publish invalid
+    // Windows ABI-v5 kits (`shared_import_library: None`) even when the linker emitted it.
+    let shared_import_library = pair.shared_import_library;
+    if target.object_format.as_str() == "coff" {
+        let import = shared_import_library.as_ref().ok_or_else(|| {
+            anyhow!(
+                "Windows ABI-v5 native runtime kit for `{}` requires a COFF import library",
+                target.triple.as_str()
+            )
+        })?;
+        if !import.is_file() {
+            bail!(
+                "Windows ABI-v5 native runtime kit missing COFF import library at {}",
+                import.display()
+            );
+        }
+    } else if shared_import_library.is_some() {
+        bail!(
+            "non-COFF ABI-v5 target `{}` must not publish a shared import library",
+            target.triple.as_str()
+        );
+    }
     let result = build(RuntimeKitBuildOptions {
         prefix,
         target: target.triple.as_str().to_owned(),
         profile,
         static_library: pair.static_library,
         shared_library: pair.shared_library,
-        shared_import_library: None,
+        shared_import_library,
     });
     let _ = std::fs::remove_dir_all(staging);
     result
@@ -284,6 +307,10 @@ mod tests {
             .expect("publish native host runtime kit");
         assert!(built.static_library.is_file());
         assert!(built.shared_library.is_file());
+        assert!(
+            built.shared_import_library.is_none(),
+            "Mach-O native kits must not publish a COFF import library"
+        );
         let output = std::process::Command::new("nm")
             .args(["-g", "--defined-only", "-j"])
             .arg(&built.static_library)
@@ -301,6 +328,29 @@ mod tests {
                 .any(|symbol| symbol == "panic"),
             "staged static runtime archive leaked forbidden non-ABI panic symbol: {symbols}"
         );
+    }
+
+    #[test]
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    fn native_host_builder_publishes_coff_import_library_for_windows_kits() {
+        let prefix = TempDir::new("native-host-windows-import-lib");
+        let built = build_native_host(prefix.0.clone(), RuntimeKitProfile::Debug)
+            .expect("publish Windows native host runtime kit");
+        let import = built
+            .shared_import_library
+            .as_ref()
+            .expect("Windows ABI-v5 kits must publish a COFF import library");
+        assert!(
+            import.is_file(),
+            "missing COFF import library: {}",
+            import.display()
+        );
+        assert_eq!(
+            import.file_name().and_then(|name| name.to_str()),
+            Some("beskid_runtime_import.lib")
+        );
+        assert!(built.static_library.is_file());
+        assert!(built.shared_library.is_file());
     }
 
     #[test]
