@@ -2490,7 +2490,6 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         0,
         "overflowing pointer end is rejected"
     );
-    pointer_map[0] = 16;
     descriptor[1] = 24;
     assert_eq!(
         validate(descriptor.as_ptr()),
@@ -2503,6 +2502,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         "null descriptor is rejected before dereference"
     );
 
+    pointer_map[0] = 16;
     descriptor[1] = 8;
     let request = [32usize, 8, descriptor.as_mut_ptr() as usize];
     let environment = allocate_environment(request.as_ptr());
