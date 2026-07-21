@@ -4834,10 +4834,13 @@ fn direct_callees_for_item(
         if !is_ancestor(index, item.node, call_id) {
             continue;
         }
-        let call_node = index
-            .node_at(program, call_id)
-            .ok_or_else(|| SemanticError::unavailable("direct_callees"))?;
-        let lowering = call_lowering_for_node(
+        let Some(call_node) = index.node_at(program, call_id) else {
+            continue;
+        };
+        // Reachability enumerates Direct callees only. Unavailable/dynamic call
+        // classifications (e.g. extern contract members) are not Direct edges and
+        // must not fail closed the whole entrypoint walk.
+        let Some(Ok(lowering)) = call_lowering_for_node(
             db,
             program,
             index,
@@ -4846,8 +4849,9 @@ fn direct_callees_for_item(
                 ..item
             },
             call_node,
-        )
-        .ok_or_else(|| SemanticError::unavailable("direct_callees"))??;
+        ) else {
+            continue;
+        };
         if let CallLowering::Direct(declaration) = lowering
             && !callees.contains(&declaration)
         {
