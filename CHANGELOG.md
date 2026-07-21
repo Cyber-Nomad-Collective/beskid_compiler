@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Exact native kit provenance now requires `beskid_rt_v5_closure_environment_root_current`
+  beside allocate/capture-store/root, and the JIT fail-closed closure descriptor/rooting
+  regression runs on Darwin arm64 as well as Linux x86_64 with an explicit null-request
+  allocate guard (CYB-131 under CYB-79/CYB-109).
 - Purge LSP intellisense tests off `DocumentAnalysisSnapshot` fallbacks; definition/references
   corelib fixtures now require syntax facts via `build_document` (CYB-26/CYB-27 residual).
 - Audit native-host static runtime kits with `verify_static_archive` so Linux GD TLS `__tls_get_addr` is expected, not a provenance failure.
