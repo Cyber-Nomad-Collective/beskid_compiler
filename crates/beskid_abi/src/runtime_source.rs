@@ -65,17 +65,38 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
 ///
 /// Authority is tied to this checked-in file identity as well as embedded bytes and logical
 /// module path. A user project that copies `Testing/Assert.bd` cannot acquire it.
+///
+/// The returned path is lexically normalized so `Path::starts_with` / equality against
+/// resolved Foundation `source_root` values succeed. Leaving `../..` from
+/// `CARGO_MANIFEST_DIR` intact made materialized Corelib deps drop panic/syscall provenance
+/// and fall through to Dynamic `__panic_str` (Corelib gate).
 pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::path::PathBuf> {
     let relative = match logical_path {
         CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => "Core/Syscall/Syscall.bd",
         CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => "Testing/Assert.bd",
         _ => return None,
     };
-    Some(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    Some(normalize_lexically(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../corelib/packages/foundation/src")
             .join(relative),
-    )
+    ))
+}
+
+/// Collapse `.` / `..` components without requiring the path to exist on disk.
+fn normalize_lexically(path: &std::path::Path) -> std::path::PathBuf {
+    use std::path::{Component, PathBuf};
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// One ABI-facing service used by a compiler-owned Corelib source unit.

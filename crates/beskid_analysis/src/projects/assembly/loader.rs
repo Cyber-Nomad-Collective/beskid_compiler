@@ -16,6 +16,7 @@ use super::roots::effective_roots_for_plan;
 use super::unit_builder::UnitBuilder;
 use super::unit_cache::{disk_cache_stats, ensure_manifest};
 use super::{ProgramAssembly, SourceUnit, UnitHir};
+use crate::projects::graph::pathing::normalize_existing_path;
 use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 use crate::syntax::{Node, Program, Spanned};
@@ -447,15 +448,19 @@ fn trusted_corelib_service_paths(
         else {
             continue;
         };
-        let Some((index, dependency)) = plan
-            .dependency_projects
-            .iter()
-            .enumerate()
-            .find(|(_, dependency)| canonical_path.starts_with(&dependency.source_root))
-        else {
+        // Resolve both sides so a clean Foundation `source_root` matches the compiler-owned
+        // path even when either side still carries symlink or relative components.
+        let canonical_path = normalize_existing_path(&canonical_path);
+        let Some((index, dependency)) = plan.dependency_projects.iter().enumerate().find(
+            |(_, dependency)| {
+                let source_root = normalize_existing_path(&dependency.source_root);
+                canonical_path.starts_with(&source_root)
+            },
+        ) else {
             continue;
         };
-        let Ok(relative) = canonical_path.strip_prefix(&dependency.source_root) else {
+        let source_root = normalize_existing_path(&dependency.source_root);
+        let Ok(relative) = canonical_path.strip_prefix(&source_root) else {
             continue;
         };
         let effective_path = workspace
@@ -753,6 +758,92 @@ mod tests {
             )
             .is_empty(),
             "a copied source root cannot inherit Corelib service provenance"
+        );
+        let _ = fs::remove_dir_all(workspace_root);
+    }
+
+    #[test]
+    fn resolved_foundation_source_root_still_trusts_materialized_assert() {
+        // Production CompilePlan records a filesystem-resolved Foundation `source_root`
+        // (`.../packages/foundation/src`). The compiler-owned path historically retained
+        // `../..` from CARGO_MANIFEST_DIR; Path::starts_with then failed and Assert lost
+        // panic_str authority under Corelib tests.
+        let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
+            .into_iter()
+            .find(|source| {
+                source.logical_path
+                    == beskid_abi::runtime_source::CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH
+            })
+            .expect("embedded Foundation Assert source");
+        let canonical_path =
+            beskid_abi::runtime_source::canonical_corelib_service_source_path(&source.logical_path)
+                .expect("compiler-owned Assert path");
+        assert!(
+            !canonical_path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir)),
+            "canonical service paths must be lexically normalized: {canonical_path:?}"
+        );
+        let canonical_source_root = fs::canonicalize(
+            canonical_path
+                .parent()
+                .and_then(|testing| testing.parent())
+                .expect("Assert under foundation/src"),
+        )
+        .expect("resolve foundation source root");
+        let canonical_project_root = canonical_source_root
+            .parent()
+            .expect("Foundation project root")
+            .to_path_buf();
+        let workspace_root = temp_project_root("trusted_assert_resolved_root");
+        let materialized_source_root = workspace_root.join("deps/foundation/src");
+        let relative = canonical_path
+            .strip_prefix(&canonical_source_root)
+            .expect("Assert below source root");
+        let materialized_path = materialized_source_root.join(relative);
+        let unit = SourceUnit {
+            logical_name: materialized_path.display().to_string(),
+            path: materialized_path.clone(),
+            source: source.source.clone(),
+            program: parse_program_with_source_name("materialized assert", &source.source)
+                .expect("parse Assert source"),
+        };
+        let plan = CompilePlan {
+            project_root: workspace_root.clone(),
+            manifest_path: workspace_root.join("App.bproj"),
+            project_name: "App".into(),
+            source_root: workspace_root.join("src"),
+            target: Target {
+                name: "App".into(),
+                kind: TargetKind::App,
+                entry: Some("Main.bd".into()),
+            },
+            dependency_projects: vec![ResolvedDependencyProject {
+                dependency_name: "corelib_foundation".into(),
+                manifest_path: canonical_project_root.join("corelib_foundation.bproj"),
+                project_root: canonical_project_root,
+                project_name: "corelib_foundation".into(),
+                source_root: canonical_source_root,
+            }],
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let workspace = PreparedProjectWorkspace {
+            lockfile_path: workspace_root.join("Project.lock"),
+            materialized_project_root: workspace_root.join("root"),
+            materialized_source_root: workspace_root.join("root/src"),
+            materialized_dependencies: vec![MaterializedDependencyProject {
+                dependency_name: "corelib_foundation".into(),
+                manifest_path: plan.dependency_projects[0].manifest_path.clone(),
+                project_name: "corelib_foundation".into(),
+                materialized_project_root: workspace_root.join("deps/foundation"),
+                materialized_source_root: materialized_source_root.clone(),
+            }],
+        };
+        assert_eq!(
+            trusted_corelib_service_paths(&plan, Some(&workspace), std::slice::from_ref(&unit)),
+            Arc::from([materialized_path]),
+            "resolved Foundation source_root must retain Assert panic provenance"
         );
         let _ = fs::remove_dir_all(workspace_root);
     }
