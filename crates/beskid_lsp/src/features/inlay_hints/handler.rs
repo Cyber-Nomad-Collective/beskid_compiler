@@ -39,7 +39,6 @@ mod tests {
     use tower_lsp_server::ls_types::{InlayHintLabel, InlayHintParams, Uri};
 
     use super::handle_inlay_hints;
-    use crate::session::lifecycle::ANALYSIS_CACHE_VERSION;
     use crate::session::store::{Document, SyntaxInlayHint};
 
     #[test]
@@ -47,7 +46,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: "i32 Main() { let value = 1; }".to_string(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),

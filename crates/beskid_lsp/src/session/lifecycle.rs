@@ -33,9 +33,6 @@ use crate::session::store::{
 };
 use crate::workspace_scan::uri_to_path;
 
-/// Syntax-fact cache shape; bump when document fact fields change.
-pub const ANALYSIS_CACHE_VERSION: u32 = 7;
-
 /// Debounce window for typed executable prepare (coalesced with diagnostic publish).
 const TYPED_PREPARE_DEBOUNCE_MS: u64 = 120;
 
@@ -52,12 +49,6 @@ struct SyntaxFacts {
     inlay_hints: Vec<SyntaxInlayHint>,
     documentation: Vec<SyntaxDocumentationFact>,
     diagnostics: Vec<SyntaxDiagnostic>,
-}
-
-fn salsa_revision(text: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    text.hash(&mut hasher);
-    hasher.finish()
 }
 
 fn entry_key_for_resolved(resolved: &ResolvedInput) -> Option<String> {
@@ -426,7 +417,6 @@ fn document_from_syntax_facts(version: i32, text: String, syntax_facts: SyntaxFa
     Document {
         version,
         text,
-        analysis_cache_version: ANALYSIS_CACHE_VERSION,
         syntax_definitions: syntax_facts.definitions,
         syntax_hovers: syntax_facts.hovers,
         syntax_symbols: syntax_facts.symbols,
@@ -445,7 +435,6 @@ fn apply_syntax_facts(doc: &mut Document, syntax_facts: SyntaxFacts) {
     doc.syntax_inlay_hints = syntax_facts.inlay_hints;
     doc.syntax_documentation = syntax_facts.documentation;
     doc.syntax_diagnostics = syntax_facts.diagnostics;
-    doc.analysis_cache_version = ANALYSIS_CACHE_VERSION;
 }
 
 /// Build a [`Document`] for `uri` with generation-bound syntax facts for the buffer text.
@@ -562,33 +551,32 @@ pub async fn schedule_typed_prepare_rebuild(state: Arc<RwLock<State>>, uri: Uri)
     });
 }
 
-/// Upsert an open document, respecting monotonic versions and Salsa revision fast paths.
+/// Upsert an open document, respecting monotonic versions.
+///
+/// Same-text updates still rebuild generation-bound syntax facts so hard invalidation cannot
+/// leave a stale empty or orphaned fact set behind a text-hash fast path.
 ///
 /// Returns `false` when `version` is stale relative to the buffered document (no mutation).
 pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: String) -> bool {
-    let revision = salsa_revision(&text);
-    let mut write_state = state.write().await;
-    write_state.workspace_index.remove(&uri);
-
-    if let Some(existing) = write_state.docs.get_mut(&uri) {
-        if version < existing.version {
-            return false;
-        }
-
-        if existing.analysis_cache_version == ANALYSIS_CACHE_VERSION
-            && salsa_revision(&existing.text) == revision
+    {
+        let mut write_state = state.write().await;
+        write_state.workspace_index.remove(&uri);
+        if let Some(existing) = write_state.docs.get(&uri)
+            && version < existing.version
         {
-            existing.version = version;
-            existing.text = text;
-            return true;
+            return false;
         }
     }
 
-    drop(write_state);
     touch_entry_file_revision_for_uri(state, &uri, &text).await;
     let syntax_facts = build_syntax_facts(state, &uri, &text).await;
 
     let mut write_state = state.write().await;
+    if let Some(existing) = write_state.docs.get(&uri)
+        && version < existing.version
+    {
+        return false;
+    }
     write_state
         .docs
         .insert(uri, document_from_syntax_facts(version, text, syntax_facts));
@@ -664,7 +652,8 @@ mod tests {
 
     use tower_lsp_server::ls_types::Uri;
 
-    use super::{ANALYSIS_CACHE_VERSION, set_document};
+    use super::{rebuild_open_document_syntax_facts, set_document};
+    use crate::session::project_context::invalidate_compilation_cache;
     use crate::session::store::{Document, State};
 
     fn source() -> String {
@@ -696,39 +685,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_document_rebuilds_when_cache_version_changes() {
+    async fn hard_invalidation_clears_syntax_facts_until_rebuild() {
         let file_uri = uri();
-        let text = source();
-        let mut state = State::default();
-        state.docs.insert(
-            file_uri.clone(),
-            Document {
-                version: 1,
-                text: text.clone(),
-                analysis_cache_version: ANALYSIS_CACHE_VERSION.saturating_sub(1),
-                syntax_definitions: Vec::new(),
-                syntax_hovers: Vec::new(),
-                syntax_symbols: Vec::new(),
-                syntax_completion: None,
-                syntax_inlay_hints: Vec::new(),
-                syntax_documentation: Vec::new(),
-                syntax_diagnostics: Vec::new(),
-            },
-        );
+        let state = tokio::sync::RwLock::new(State::default());
+        state.read().await.mark_initial_scan_complete();
+        set_document(&state, file_uri.clone(), 1, source()).await;
+        {
+            let read = state.read().await;
+            let doc = read.docs.get(&file_uri).expect("document exists");
+            assert!(
+                doc.syntax_documentation
+                    .iter()
+                    .any(|fact| fact.name == "Main"),
+                "precondition: documentation facts bound"
+            );
+        }
 
-        state.mark_initial_scan_complete();
-        let state = tokio::sync::RwLock::new(state);
-        set_document(&state, file_uri.clone(), 2, text).await;
+        // Non-cold configured root so invalidate clears bound facts.
+        {
+            let mut write = state.write().await;
+            write.configured_project_root = Some(std::path::PathBuf::from("/tmp/cyb78"));
+        }
 
+        invalidate_compilation_cache(&state).await;
+        {
+            let read = state.read().await;
+            let doc = read.docs.get(&file_uri).expect("document exists");
+            assert!(
+                doc.syntax_documentation.is_empty()
+                    && doc.syntax_diagnostics.is_empty()
+                    && doc.syntax_completion.is_none(),
+                "hard invalidation must fail closed without a shape-version cache"
+            );
+        }
+
+        rebuild_open_document_syntax_facts(&state).await;
         let read = state.read().await;
         let doc = read.docs.get(&file_uri).expect("document exists");
-        assert_eq!(doc.version, 2);
-        assert_eq!(doc.analysis_cache_version, ANALYSIS_CACHE_VERSION);
         assert!(
             doc.syntax_documentation
                 .iter()
                 .any(|fact| fact.name == "Main"),
-            "refresh must bind documentation facts to the current buffer"
+            "rebuild must rebind documentation facts to the current buffer"
         );
     }
 
@@ -770,13 +768,47 @@ mod tests {
         set_document(&state, file_uri.clone(), 1, source()).await;
         let read = state.read().await;
         let doc = read.docs.get(&file_uri).expect("document exists");
-        assert_eq!(doc.analysis_cache_version, ANALYSIS_CACHE_VERSION);
         // Valid buffer: structural/prepare facts may be empty, but the field must be owned
         // by the Document revision (no Document.analysis snapshot).
         let _ = &doc.syntax_diagnostics;
         assert!(
-            doc.syntax_diagnostics.iter().all(|diag| diag.code.as_deref() != Some("E1709")),
+            doc.syntax_diagnostics
+                .iter()
+                .all(|diag| diag.code.as_deref() != Some("E1709")),
             "refresh must not attach orphaned composition diagnostics"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_document_rebuilds_same_text_after_cleared_facts() {
+        let file_uri = uri();
+        let text = source();
+        let mut state = State::default();
+        state.docs.insert(
+            file_uri.clone(),
+            Document {
+                version: 1,
+                text: text.clone(),
+                syntax_definitions: Vec::new(),
+                syntax_hovers: Vec::new(),
+                syntax_symbols: Vec::new(),
+                syntax_completion: None,
+                syntax_inlay_hints: Vec::new(),
+                syntax_documentation: Vec::new(),
+                syntax_diagnostics: Vec::new(),
+            },
+        );
+        state.mark_initial_scan_complete();
+        let state = tokio::sync::RwLock::new(state);
+        set_document(&state, file_uri.clone(), 2, text).await;
+        let read = state.read().await;
+        let doc = read.docs.get(&file_uri).expect("document exists");
+        assert_eq!(doc.version, 2);
+        assert!(
+            doc.syntax_documentation
+                .iter()
+                .any(|fact| fact.name == "Main"),
+            "same-text upsert must rebuild facts after a cleared snapshot-free document"
         );
     }
 }

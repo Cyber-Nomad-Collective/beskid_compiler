@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_lsp_server::ls_types::Uri;
 
-use crate::session::lifecycle::{ANALYSIS_CACHE_VERSION, set_document};
+use crate::session::lifecycle::set_document;
 use crate::session::project_context::invalidate_compilation_cache;
 use crate::session::startup::signal_initial_scan_complete;
 use crate::session::store::State;
@@ -38,5 +38,13 @@ async fn invalidate_and_set_document_do_not_panic_concurrently() {
     let doc = read.docs.get(&file_uri).expect("document exists");
     assert_eq!(doc.version, 1);
     assert_eq!(doc.text, expected_text);
-    assert_eq!(doc.analysis_cache_version, ANALYSIS_CACHE_VERSION);
+    assert!(
+        doc.syntax_documentation
+            .iter()
+            .any(|fact| fact.name == "Main")
+            || !doc.syntax_diagnostics.is_empty()
+            || doc.syntax_completion.is_some()
+            || !doc.syntax_symbols.is_empty(),
+        "concurrent set_document must still bind syntax facts without ANALYSIS_CACHE_VERSION"
+    );
 }

@@ -38,7 +38,6 @@ mod tests {
         Document {
             version: 1,
             text: text.to_string(),
-            analysis_cache_version: 0,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),

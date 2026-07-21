@@ -168,7 +168,6 @@ pub async fn scan_workspace(
         let doc = Document {
             version: 0,
             text: text.clone(),
-            analysis_cache_version: 0,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),

@@ -436,6 +436,7 @@ impl LanguageServer for Backend {
             };
             if changed {
                 crate::session::project_context::invalidate_compilation_cache(&self.state).await;
+                crate::session::lifecycle::rebuild_open_document_syntax_facts(&self.state).await;
             }
         }
     }
