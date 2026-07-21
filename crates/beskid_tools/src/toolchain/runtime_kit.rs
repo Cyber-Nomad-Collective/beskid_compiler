@@ -67,10 +67,10 @@ pub fn build_native_host(
             )
         })?;
     }
-    let artifact = beskid_aot::lower_canonical_runtime_prepared_syntax(target.clone())
-        .map_err(|error| anyhow!("lower canonical native runtime: {error}"))?;
+    let authority = beskid_aot::require_canonical_host_emit_authority()
+        .map_err(|error| anyhow!("canonical host emit authority: {error}"))?;
     let pair =
-        beskid_aot::emit_host_platform_library_pair(artifact, staging.clone(), "beskid_runtime")
+        beskid_aot::emit_host_platform_library_pair(&authority, staging.clone(), "beskid_runtime")
             .map_err(|error| anyhow!("link canonical native runtime: {error}"))?;
     let result = build(RuntimeKitBuildOptions {
         prefix,

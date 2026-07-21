@@ -5,6 +5,7 @@ use std::process::Command;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, render_runtime_asm_include};
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
+use beskid_abi::runtime_source::{canonical_runtime_sources, prove_canonical_runtime_corpus};
 use beskid_codegen::CodegenArtifact;
 use beskid_pipeline::{
     SharedPipelineObserver, observe_phase_result,
@@ -165,11 +166,40 @@ pub struct NativeLibraryPair {
     pub provenance_symbols: Vec<String>,
 }
 
+/// Opaque authority to publish native host runtime library pairs.
+///
+/// Deliberately has no public constructor and does not accept a caller-supplied
+/// [`CodegenArtifact`]. Minting requires the compiler-embedded canonical runtime corpus.
+#[derive(Debug)]
+pub struct CanonicalHostEmitAuthority {
+    _private: (),
+}
+
+/// Mint host-emit authority from the exact compiler-embedded ABI-v5 runtime corpus.
+///
+/// Fail closed when the embedded corpus cannot prove canonical runtime identity for the
+/// current host target. There is no prebuilt, standalone, or ambient fallback mint path.
+pub fn require_canonical_host_emit_authority() -> AotResult<CanonicalHostEmitAuthority> {
+    let target = host_runtime_target()?;
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    prove_canonical_runtime_corpus(&canonical_runtime_sources(), &manifest).map_err(|error| {
+        AotError::InvalidRequest {
+            message: format!(
+                "canonical host emit authority requires the embedded ABI-v5 runtime corpus: {error:?}"
+            ),
+        }
+    })?;
+    Ok(CanonicalHostEmitAuthority { _private: () })
+}
+
 /// Emit a native library pair that includes the current host target's canonical context
 /// assembly object. The assembly source and generated ABI include are the same ones verified by
 /// `beskid_abi`'s target assembly tests; no inline assembly or synthetic context shim is used.
+///
+/// Callers must present [`CanonicalHostEmitAuthority`]; arbitrary codegen artifacts cannot enter
+/// this publication path.
 pub fn emit_host_context_library_pair(
-    artifact: CodegenArtifact,
+    _authority: &CanonicalHostEmitAuthority,
     output_dir: PathBuf,
     name: &str,
 ) -> AotResult<NativeLibraryPair> {
@@ -186,7 +216,7 @@ pub fn emit_host_context_library_pair(
         .map(|entry| entry.symbol.as_str().to_owned())
         .collect();
     emit_library_pair_with_objects(
-        artifact,
+        CodegenArtifact::default(),
         output_dir,
         name,
         Some(target_triple),
@@ -195,16 +225,19 @@ pub fn emit_host_context_library_pair(
     )
 }
 
-/// Emit native library artifacts that include the current host target's context-switch assembly
-/// and its minimal platform boundary. The platform object deliberately owns only raw native
-/// allocation/free and the ABI-v5 trap path; portable memory operations remain compiler
-/// intrinsics.
+/// Emit native library artifacts that include the current host target's context-switch assembly,
+/// its minimal platform boundary, and the compiler-embedded canonical runtime object code.
+///
+/// The platform object deliberately owns only raw native allocation/free and the ABI-v5 trap
+/// path; portable memory operations remain compiler intrinsics. Callers cannot supply an
+/// alternate [`CodegenArtifact`] — Bootstrap is always lowered through the exact CodegenInput path.
 pub fn emit_host_platform_library_pair(
-    artifact: CodegenArtifact,
+    _authority: &CanonicalHostEmitAuthority,
     output_dir: PathBuf,
     name: &str,
 ) -> AotResult<NativeLibraryPair> {
     let target = host_runtime_target()?;
+    let artifact = crate::prepared_syntax::lower_canonical_runtime_prepared_syntax(target.clone())?;
     std::fs::create_dir_all(&output_dir).map_err(|err| AotError::Io {
         path: output_dir.clone(),
         message: err.to_string(),

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Restrict public AOT host context/platform emitters to an opaque
+  `CanonicalHostEmitAuthority` minted only from the compiler-embedded ABI-v5
+  corpus; `emit_host_platform_library_pair` always lowers Bootstrap through
+  CodegenInput and no longer accepts an arbitrary `CodegenArtifact` (CYB-76,
+  W3 exact-kit route).
+
 ### Added
 
 - Add the manifest-derived ABI-v5 `beskid_rt_v5_fiber_spawn_with_cancel_slot` scheduler
