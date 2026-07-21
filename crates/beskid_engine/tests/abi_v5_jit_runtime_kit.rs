@@ -270,7 +270,15 @@ fn engine_uses_only_the_configured_exact_runtime_kit() {
     let error = engine
         .compile_artifact(&artifact)
         .expect_err("Engine must not satisfy an unapproved reference from process symbols");
-    assert!(error.to_string().contains("not approved"));
+    // The Engine fails closed on the unapproved reference regardless of build profile: release
+    // builds reach the exact-kit validator ("not approved"), while debug builds trip the
+    // `#[cfg(debug_assertions)]` artifact validator first, which rejects the same reference as an
+    // undefined callee. Either way it is rejected rather than satisfied from process symbols.
+    let message = error.to_string();
+    assert!(
+        message.contains("not approved") || message.contains("undefined callees"),
+        "Engine must fail closed on an unapproved reference rather than satisfy it from process symbols; got: {message}"
+    );
 }
 
 #[test]
