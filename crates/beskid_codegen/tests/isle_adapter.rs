@@ -2503,6 +2503,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     );
 
     pointer_map[0] = 16;
+    assert_eq!(pointer_map[0], 16, "restore valid pointer offset before allocate");
     descriptor[1] = 8;
     let request = [32usize, 8, descriptor.as_mut_ptr() as usize];
     let environment = allocate_environment(request.as_ptr());
