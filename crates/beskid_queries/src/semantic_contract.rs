@@ -1736,12 +1736,15 @@ fn call_lowering_for_node(
                 } else {
                     Ok(CallLowering::Direct(declaration))
                 }
+            } else if let Some(declaration) =
+                resolve_local_extern_contract_method(program, index, key, path)
+            {
+                Ok(CallLowering::Direct(declaration))
             } else {
-                // Imports, builtins, multi-segment unresolved paths (extern contract
-                // members such as `C.getpid`), and other receivers without item
-                // declaration authority remain Dynamic — same as Member — so
-                // reachability and ISLE emission do not fail closed on missing
-                // MethodDefinition authority (CYB-129 Rust/Corelib gate).
+                // Imports, builtins, multi-segment unresolved paths, and other
+                // receivers without item declaration authority remain Dynamic —
+                // same as Member — so reachability and ISLE emission do not fail
+                // closed on missing MethodDefinition authority (CYB-129).
                 Ok(CallLowering::Dynamic)
             }
         }
@@ -1758,6 +1761,132 @@ fn call_lowering_for_node(
         }
         _ => Err(SemanticError::unavailable("call_lowering")),
     })
+}
+
+/// Resolve `Contract.method` when `Contract` is an `[Extern]` contract in the current unit.
+///
+/// Qualified paths parse as Path (not Member), so extern FFI calls like `C.getpid()` need this
+/// authority before call_lowering fails closed as unavailable.
+fn resolve_local_extern_contract_method(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
+    let [contract_segment, method_segment] = path.segments.as_slice() else {
+        return None;
+    };
+    if !contract_segment.node.type_args.is_empty() || !method_segment.node.type_args.is_empty() {
+        return None;
+    }
+    let contract_name = contract_segment.node.name.node.name.as_str();
+    let method_name = method_segment.node.name.node.name.as_str();
+    let contracts = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::ContractDefinition)
+        .filter(|candidate| {
+            index
+                .node_at(program, *candidate)
+                .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
+                .is_some_and(|contract| {
+                    contract.name.node.name == contract_name
+                        && contract.attributes.iter().any(|attribute| {
+                            attribute.node.name.node.name == "Extern"
+                        })
+                })
+        })
+        .collect::<Vec<_>>();
+    let [contract_id] = contracts.as_slice() else {
+        return None;
+    };
+    let methods = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::ContractMethodSignature)
+        .filter(|candidate| {
+            let Some(metadata) = index.metadata_for(key.generation, *candidate) else {
+                return false;
+            };
+            let mut parent = metadata.parent;
+            let mut under_contract = false;
+            while let Some(parent_id) = parent {
+                if parent_id == *contract_id {
+                    under_contract = true;
+                    break;
+                }
+                parent = index
+                    .metadata_for(key.generation, parent_id)
+                    .and_then(|node| node.parent);
+            }
+            under_contract
+                && index
+                    .node_at(program, *candidate)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::ContractMethodSignature>())
+                    .is_some_and(|method| method.name.node.name == method_name)
+        })
+        .collect::<Vec<_>>();
+    let [method_id] = methods.as_slice() else {
+        return None;
+    };
+    Some(AstNodeKey {
+        unit: key.unit,
+        generation: key.generation,
+        node: *method_id,
+    })
+}
+
+
+/// Return Extern import metadata for a [`ContractMethodSignature`] declaration key.
+pub fn extern_contract_import_for_declaration(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+) -> Option<(String, Option<String>, Option<String>)> {
+    let syntax = db.syntax_unit(declaration.unit)?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let method = index
+        .node_at(program, declaration.node)?
+        .of::<beskid_analysis::syntax::ContractMethodSignature>()?;
+    let mut parent = index
+        .metadata_for(declaration.generation, declaration.node)?
+        .parent;
+    let mut contract = None;
+    while let Some(parent_id) = parent {
+        if let Some(definition) = index
+            .node_at(program, parent_id)
+            .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
+        {
+            contract = Some(definition);
+            break;
+        }
+        parent = index
+            .metadata_for(declaration.generation, parent_id)
+            .and_then(|node| node.parent);
+    }
+    let contract = contract?;
+    let extern_attr = contract
+        .attributes
+        .iter()
+        .find(|attribute| attribute.node.name.node.name == "Extern")?;
+    let mut abi = None;
+    let mut library = None;
+    for argument in &extern_attr.node.arguments {
+        let value = match &argument.node.value.node {
+            beskid_analysis::syntax::Expression::Literal(literal) => {
+                match &literal.node.literal.node {
+                    beskid_analysis::syntax::Literal::String(raw) => raw
+                        .strip_prefix('"')
+                        .and_then(|value| value.strip_suffix('"'))
+                        .map(str::to_owned),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        match argument.node.name.node.name.as_str() {
+            "Abi" => abi = value,
+            "Library" => library = value,
+            _ => {}
+        }
+    }
+    Some((method.name.node.name.clone(), abi, library))
 }
 
 /// Resolve one syntax-authorized nominal receiver and its uniquely declared method. Struct
@@ -2626,6 +2755,14 @@ fn item_abi_signature_tracked(
             parameters.extend(signature.parameters.iter().copied());
             signature.parameters = parameters.into();
             return Some(Ok(signature));
+        }
+        if let Some(contract) = node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
+            return Some(abi_signature_from_syntax(
+                db,
+                key,
+                &contract.parameters,
+                contract.return_type.as_ref(),
+            ));
         }
         node.of::<beskid_analysis::syntax::TestDefinition>()
             .map(|_| {
@@ -4663,6 +4800,10 @@ fn item_name_tracked(
             })
             .or_else(|| {
                 node.of::<beskid_analysis::syntax::TestDefinition>()
+                    .map(|definition| Arc::from(definition.name.node.name.as_str()))
+            })
+            .or_else(|| {
+                node.of::<beskid_analysis::syntax::ContractMethodSignature>()
                     .map(|definition| Arc::from(definition.name.node.name.as_str()))
             })
     })

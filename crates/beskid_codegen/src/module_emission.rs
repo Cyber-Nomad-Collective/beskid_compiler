@@ -5,8 +5,9 @@ use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
     CallLowering, ItemSignature, SemanticTypeId, SourceUnitId, call_lowering, child_nodes,
-    closure_environment, closure_signature, format_ast_node_key, generic_call_specialization,
-    item_abi_signature, item_name, node_kind, node_span, resolved_item, spawn_entry_validation,
+    closure_environment, closure_signature, extern_contract_import_for_declaration,
+    format_ast_node_key, generic_call_specialization, item_abi_signature, item_name, node_kind,
+    node_span, resolved_item, spawn_entry_validation,
 };
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::{
@@ -236,6 +237,12 @@ fn lower_resolved_syntax_program(
             .iter()
             .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
     );
+    let extern_contracts = extern_contract_symbols(input, items);
+    symbols.extend(
+        extern_contracts
+            .iter()
+            .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
+    );
 
     let trampolines = resolve_spawn_trampolines(input, isa, items, &symbols)?;
     symbols.extend(trampolines.iter().map(|trampoline| {
@@ -329,21 +336,28 @@ fn lower_resolved_syntax_program(
             function,
         });
     }
+    let mut extern_imports = runtime_intrinsics
+        .into_values()
+        .chain(corelib_services.into_values())
+        .chain(
+            (!trampolines.is_empty()).then_some(ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT.to_owned()),
+        )
+        .map(|symbol| ExternImport {
+            symbol,
+            abi: Some("C".into()),
+            library: None,
+        })
+        .collect::<Vec<_>>();
+    for import in extern_contract_imports(input, items) {
+        if !extern_imports.iter().any(|existing| existing.symbol == import.symbol) {
+            extern_imports.push(import);
+        }
+    }
+
     Ok(CodegenArtifact {
         functions,
         string_literals: context.string_literals,
-        extern_imports: runtime_intrinsics
-            .into_values()
-            .chain(corelib_services.into_values())
-            .chain(
-                (!trampolines.is_empty()).then_some(ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT.to_owned()),
-            )
-            .map(|symbol| ExternImport {
-                symbol,
-                abi: Some("C".into()),
-                library: None,
-            })
-            .collect(),
+        extern_imports,
         ..CodegenArtifact::default()
     })
 }
@@ -862,6 +876,54 @@ fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<DirectCallee, 
                 .collect()
         })
         .unwrap_or_default()
+}
+
+
+fn collect_extern_contract_callees(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    callees: &mut HashMap<DirectCallee, ExternImport>,
+) {
+    if let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, key)
+        && let Some((symbol, abi, library)) =
+            extern_contract_import_for_declaration(db, declaration)
+    {
+        callees.entry(DirectCallee::item(declaration)).or_insert(ExternImport {
+            symbol,
+            abi,
+            library,
+        });
+    }
+    if let Ok(Some(children)) = child_nodes(db, key) {
+        for child in children.iter().copied() {
+            collect_extern_contract_callees(db, child, callees);
+        }
+    }
+}
+
+fn extern_contract_symbols(
+    input: &CodegenInput<'_>,
+    items: &[ResolvedSyntaxModuleItem],
+) -> HashMap<DirectCallee, String> {
+    let mut callees = HashMap::new();
+    for item in items {
+        collect_extern_contract_callees(input.database(), item.key, &mut callees);
+    }
+    callees
+        .into_iter()
+        .map(|(callee, import)| (callee, import.symbol))
+        .collect()
+}
+
+fn extern_contract_imports(
+    input: &CodegenInput<'_>,
+    items: &[ResolvedSyntaxModuleItem],
+) -> Vec<ExternImport> {
+    let mut callees = HashMap::new();
+    for item in items {
+        collect_extern_contract_callees(input.database(), item.key, &mut callees);
+    }
+    callees.into_values().collect()
 }
 
 /// ABI symbols admitted by the distinct Corelib syscall capability.  Unlike runtime intrinsics,
