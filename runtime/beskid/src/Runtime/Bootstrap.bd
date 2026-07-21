@@ -278,22 +278,27 @@ pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSi
         if pointerMap == NativePointer(0) {
             return false;
         } else {
+            // Overflow guards use wrapping arithmetic. `word` lowers as a signed Cranelift
+            // integer with signed compares, so `NativeWordMax() - 8` is negative and would
+            // reject every valid offset under SignedGreaterThan (CYB-129 / isle_adapter).
             mut word index = 0;
             while index < pointerCount {
-                if index > (NativeWordMax() - 8) / 8 {
+                word mapOffset = index * 8;
+                if mapOffset / 8 != index {
                     return false;
                 } else {
-                    word offset = raw_word_load(pointer_add(pointerMap, index * 8));
+                    word offset = raw_word_load(pointer_add(pointerMap, mapOffset));
                     if offset < 16 {
                         return false;
                     } else {
                         if offset % 8 != 0 {
                             return false;
                         } else {
-                            if offset > NativeWordMax() - 8 {
+                            word end = offset + 8;
+                            if end < offset {
                                 return false;
                             } else {
-                                if offset + 8 > objectSize {
+                                if end > objectSize {
                                     return false;
                                 } else {
                                     index = index + 1;
@@ -363,9 +368,8 @@ pub pointer AllocateClosureEnvironment(pointer request) {
         return NativePointer(0);
     } else {
         pointer descriptor = AllocationDescriptor(request);
-        if !ValidateTypeDescriptor(descriptor) {
-            return NativePointer(0);
-        } else {
+        bool descriptorOk = ValidateTypeDescriptor(descriptor);
+        if descriptorOk {
             word size = AllocationSize(request);
             word alignment = AllocationAlignment(request);
             if size != TypeDescriptorSize(descriptor) {
@@ -384,6 +388,8 @@ pub pointer AllocateClosureEnvironment(pointer request) {
                     }
                 }
             }
+        } else {
+            return NativePointer(0);
         }
     }
 }
@@ -394,9 +400,8 @@ pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIn
     if environment == NativePointer(0) {
         return false;
     } else {
-        if !ValidateTypeDescriptor(descriptor) {
-            return false;
-        } else {
+        bool descriptorOk = ValidateTypeDescriptor(descriptor);
+        if descriptorOk {
             word pointerCount = TypeDescriptorPointerCount(descriptor);
             if mapIndex >= pointerCount {
                 return false;
@@ -406,6 +411,8 @@ pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIn
                 raw_word_store(pointer_add(environment, offset), NativeWord(value));
                 return true;
             }
+        } else {
+            return false;
         }
     }
 }

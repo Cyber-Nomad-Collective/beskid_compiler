@@ -1736,23 +1736,13 @@ fn call_lowering_for_node(
                 } else {
                     Ok(CallLowering::Direct(declaration))
                 }
-            } else if imported_call_receiver_exists(db, key, path)
-                || (path
-                    .segments
-                    .iter()
-                    .all(|segment| segment.node.type_args.is_empty())
-                    && beskid_analysis::builtins::builtin_for_path(
-                        &path
-                            .segments
-                            .iter()
-                            .map(|segment| segment.node.name.node.name.clone())
-                            .collect::<Vec<_>>(),
-                    )
-                    .is_some())
-            {
-                Ok(CallLowering::Dynamic)
             } else {
-                Err(SemanticError::unavailable("call_lowering"))
+                // Imports, builtins, multi-segment unresolved paths (extern contract
+                // members such as `C.getpid`), and other receivers without item
+                // declaration authority remain Dynamic — same as Member — so
+                // reachability and ISLE emission do not fail closed on missing
+                // MethodDefinition authority (CYB-129 Rust/Corelib gate).
+                Ok(CallLowering::Dynamic)
             }
         }
         beskid_analysis::syntax::Expression::Member(member) => {

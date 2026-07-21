@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Replace `ValidatePointerMap` `NativeWordMax() - 8` overflow guards with wrapping
+  multiply/add checks. `word` lowers as a signed Cranelift integer, so the old bound was
+  negative under SignedGreaterThan and rejected every valid closure descriptor in the
+  Linux JIT `isle_adapter` fixture (CYB-129).
+- Lower unresolved Path call receivers as `CallLowering::Dynamic` (matching Member), so
+  extern contract members and imported helpers no longer abort ISLE emission with
+  unavailable `call_lowering` (CYB-129 Rust/Corelib gate).
 - Rewrite canonical `ValidateTypeDescriptor` / `ValidatePointerMap` / `IsValidObjectAlignment`
   with explicit if/else so post-if statements remain reachable after CYB-129 merge lowering.
 - Reuse the existing canonical runtime syntax session during sequential native runtime-kit
