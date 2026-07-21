@@ -213,6 +213,13 @@ fn run_syntax_jitted_entrypoint(
     }
 
     let return_kind = EntryReturnKind::from_semantic_type(entrypoint_artifact.return_type);
+    // JIT'd entrypoints execute on this thread and may allocate through the runtime (string
+    // interpolation, gc roots, collections). AOT-linked executables install a main-thread heap
+    // and runtime root via `beskid_runtime_link_anchor`; the in-process JIT path has no linker
+    // anchor, so enable the same lazy main-thread bootstrap here. The runtime installs a default
+    // heap/root on the first `with_current_root` call instead of aborting with "no active runtime
+    // root".
+    beskid_runtime::gc::enable_aot_main_bootstrap();
     let output = JitCallable::execute_as_i64(ptr, return_kind);
     Ok(JitCallable::format_i64_result(output, return_kind))
 }

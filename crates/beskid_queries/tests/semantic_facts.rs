@@ -1682,7 +1682,14 @@ fn imported_generic_nominal_calls_require_receiver_instantiation() {
 
     assert_unavailable(call_lowering(&db, missing_receiver));
     assert_unavailable(call_abi_signature(&db, missing_receiver));
-    assert_unavailable(generic_call_specialization(&db, missing_receiver));
+    // An unavailable call site yields no call-derived ABI specialization. The query returns
+    // `Ok(None)` (no specialization) rather than propagating the unavailable error, so reachable
+    // Syscall/Output bodies with unresolved calls do not abort whole-module emission.
+    assert_eq!(
+        generic_call_specialization(&db, missing_receiver)
+            .expect("missing receiver yields no specialization rather than an error"),
+        None
+    );
     assert_eq!(
         call_lowering(&db, explicit_receiver).expect("explicit receiver lowering"),
         Some(beskid_queries::CallLowering::Direct(declaration))
