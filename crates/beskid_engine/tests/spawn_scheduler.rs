@@ -6,7 +6,6 @@ use beskid_engine::{Engine, host_runtime_target};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
 #[test]
-#[ignore = "blocked by CYB-129: macOS arm64 JIT-to-canonical-runtime dylib call raises SIGILL"]
 fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
     let prefix = tempfile::tempdir().expect("exact runtime-kit prefix");
     build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)

@@ -1655,11 +1655,22 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             .ins()
             .brif(condition, then_block, &[], else_block, &[]);
 
+        // Track whether any arm jumps into the merge. Both arms often terminate with a
+        // jump to merge (ordinary fallthrough); that must not be treated as unreachable.
+        // Only when every arm returns/traps without reaching merge is the merge dead,
+        // and only then may we plant a trap. Planting a trap on a reachable merge used
+        // to swallow later statements (e.g. `return 0` after a bare `if`) as UDF/SIGILL
+        // on macOS arm64 exact-kit smokes (CYB-129).
+        //
+        // Arm bodies may themselves contain nested control flow and leave the builder on
+        // a descendant block. Always terminate the *current* block before switching arms.
+        let mut merge_reachable = false;
+
         self.builder.switch_to_block(then_block);
         self.builder.seal_block(then_block);
         generated::constructor_lower_statement(self, then_key)?;
-        if !block_is_terminated(self.builder, then_block) {
-            self.builder.ins().jump(merge_block, &[]);
+        if jump_from_current_if_unterminated(self.builder, merge_block) {
+            merge_reachable = true;
         }
 
         self.builder.switch_to_block(else_block);
@@ -1667,14 +1678,12 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if let Some(else_key) = else_key {
             generated::constructor_lower_statement(self, else_key)?;
         }
-        if !block_is_terminated(self.builder, else_block) {
-            self.builder.ins().jump(merge_block, &[]);
+        if jump_from_current_if_unterminated(self.builder, merge_block) {
+            merge_reachable = true;
         }
         self.builder.switch_to_block(merge_block);
         self.builder.seal_block(merge_block);
-        if block_is_terminated(self.builder, then_block)
-            && block_is_terminated(self.builder, else_block)
-        {
+        if !merge_reachable {
             self.builder.ins().trap(TrapCode::unwrap_user(1));
         }
         Some(())
@@ -1701,9 +1710,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let lowered = generated::constructor_lower_statement(self, body_key);
         self.loop_stack.pop();
         lowered?;
-        if !block_is_terminated(self.builder, body) {
-            self.builder.ins().jump(header, &[]);
-        }
+        // Body may nest `if`/`for` and leave the builder on a descendant block.
+        let _ = jump_from_current_if_unterminated(self.builder, header);
 
         self.builder.seal_block(header);
         self.builder.switch_to_block(exit);
@@ -1776,9 +1784,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             self.locals.remove(&slot);
             return None;
         }
-        if !block_is_terminated(self.builder, body) {
-            self.builder.ins().jump(latch, &[]);
-        }
+        // Body may nest control flow and leave the builder on a descendant block.
+        let _ = jump_from_current_if_unterminated(self.builder, latch);
 
         self.builder.switch_to_block(latch);
         self.builder.seal_block(latch);
@@ -2620,6 +2627,22 @@ fn block_is_terminated(builder: &FunctionBuilder<'_>, block: Block) -> bool {
         .layout
         .last_inst(block)
         .is_some_and(|inst| builder.func.dfg.insts[inst].opcode().is_terminator())
+}
+
+/// If the builder's current block is unterminated, jump to `target` and return true.
+///
+/// Nested control-flow lowering can leave the cursor on a descendant block that is
+/// different from the arm/body block originally switched into. Callers must terminate
+/// the *current* block before `switch_to_block`, or Cranelift panics.
+fn jump_from_current_if_unterminated(builder: &mut FunctionBuilder<'_>, target: Block) -> bool {
+    let Some(current) = builder.current_block() else {
+        return false;
+    };
+    if block_is_terminated(builder, current) {
+        return false;
+    }
+    builder.ins().jump(target, &[]);
+    true
 }
 
 #[derive(Debug)]
