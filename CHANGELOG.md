@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Expand the parsed-project production harness with inline method reachability, generation-safe
+  capture-fact proof plus fail-closed capturing lambda lowering, and canonical-runtime trusted
+  intrinsic lowering through `lower_canonical_runtime_prepared_syntax` (CYB-12/CYB-15).
+- Include `MethodDefinition` callees in generation-safe `direct_callees` / `reachable_items` so
+  production `lower_syntax_assembly_entrypoint` retains inline methods already proven by
+  `call_lowering` (CYB-15/CYB-64).
+- Migrate the LSP intellisense member-completion fixture off legacy
+  `beskid_analysis::services::completion_candidates` onto syntax-only `handle_completion` with no
+  document analysis snapshot (CYB-19).
 - Span-bearing `MissingRuleOrFact` rejection fixtures for remaining unsupported inventory
   families (host composition, try) and inventory audit rows flipped from `CodexBlocker` to
   `Present` (CYB-106 under CYB-81).
