@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
-    canonical_corelib_service_capability, canonical_corelib_service_source_path,
-    canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
-    canonical_runtime_intrinsic_capability, canonical_runtime_sources,
     CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, canonical_corelib_service_capability,
+    canonical_corelib_service_source_path, canonical_corelib_syscall_service_capability,
+    canonical_corelib_syscall_sources, canonical_runtime_intrinsic_capability,
+    canonical_runtime_sources,
 };
 use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry,
@@ -16,24 +16,24 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_codegen::{
-    emit_isle_expression, emit_isle_item, emit_isle_item_with_call_importer,
-    module_emission::{emit_syntax_program, lower_syntax_program, SyntaxModuleItem},
-    CodegenInput, ItemModuleImporter,
+    CodegenInput, ItemModuleImporter, emit_closure_static_data, emit_isle_expression,
+    emit_isle_item, emit_isle_item_with_call_importer,
+    module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
 };
 use beskid_isle::{DirectCallee, FunctionEmitter, NodeFacts};
 use beskid_queries::{
-    aggregate_field_access, build_canonical_corelib_syscall_typed_program,
+    AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, Db, ProjectSession, SourceUnitId,
+    SyntaxGenerationId, aggregate_field_access, build_canonical_corelib_syscall_typed_program,
     build_canonical_runtime_typed_program, build_typed_program,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
     closure_environment, enum_match, format_ast_node_site, item_body, item_name, literal_fact,
-    mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes, AstNodeId,
-    AstNodeKey, BeskidDatabase, CastIntent, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
+    mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes,
 };
-use cranelift_codegen::ir::{types, UserFuncName};
+use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::isa;
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{default_libcall_names, Linkage, Module};
+use cranelift_module::{Linkage, Module, default_libcall_names};
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 unsafe extern "C" fn test_system_allocate(size: usize, alignment: usize) -> *mut u8 {
@@ -795,6 +795,92 @@ fn parsed_zero_capture_immediate_lambda_call_lowers_without_a_runtime_closure() 
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i32 41"), "{clif}");
     assert!(clif.contains("iadd"), "{clif}");
+}
+
+#[test]
+fn closure_static_plan_is_generation_bound_and_never_claims_tls_or_root_frame_authority() {
+    let (input, _isa, root) = item_fixture_with_root(
+        "i32 Main(i32 count, string label) { let scalar = () => count; let pointer = () => label; return scalar(); }",
+    );
+    let lambdas = find_nodes_of_kind(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::LambdaExpression,
+    );
+    assert_eq!(lambdas.len(), 2, "fixture must retain both capture shapes");
+
+    let scalar = input
+        .closure_static_plan(lambdas[0])
+        .expect("current scalar capture receives a static descriptor plan");
+    assert_eq!(
+        scalar.descriptor_symbol,
+        "__beskid_closure_descriptor_u0_g21_n20"
+    );
+    assert_eq!(
+        scalar.pointer_map_symbol,
+        "__beskid_closure_pointer_map_u0_g21_n20"
+    );
+    assert_eq!(
+        scalar.allocation_request_symbol,
+        "__beskid_closure_allocation_request_u0_g21_n20"
+    );
+    assert_eq!(
+        scalar.object_size, 24,
+        "16-byte header plus aligned i32 field"
+    );
+    assert_eq!(scalar.object_alignment, 8);
+    assert!(scalar.pointer_map_offsets.is_empty());
+    assert_eq!(scalar.captures.len(), 1);
+    assert_eq!(scalar.captures[0].pointer_map_index, None);
+    assert!(scalar.runtime_root_context().is_none());
+
+    let pointer = input
+        .closure_static_plan(lambdas[1])
+        .expect("current pointer capture receives a static descriptor plan");
+    assert_eq!(pointer.object_size, 24, "16-byte header plus pointer field");
+    assert_eq!(pointer.object_alignment, 8);
+    assert_eq!(pointer.pointer_map_offsets.as_ref(), &[16]);
+    assert_eq!(pointer.captures.len(), 1);
+    assert_eq!(pointer.captures[0].field_offset, 16);
+    assert_eq!(pointer.captures[0].pointer_map_index, Some(0));
+    assert!(pointer.runtime_root_context().is_none());
+
+    let mut static_module =
+        JITModule::new(JITBuilder::new(default_libcall_names()).expect("JIT builder"));
+    let data = emit_closure_static_data(&mut static_module, &pointer)
+        .expect("static descriptor/request data materializes without runtime imports");
+    assert_ne!(data.descriptor, data.pointer_map);
+    assert_ne!(data.descriptor, data.allocation_request);
+    static_module
+        .finalize_definitions()
+        .expect("static closure data needs no root-helper or TLS relocation");
+
+    let stale = AstNodeKey {
+        generation: SyntaxGenerationId(lambdas[1].generation.0 + 1),
+        ..lambdas[1]
+    };
+    assert!(
+        input.closure_static_plan(stale).is_none(),
+        "a stale syntax identity cannot receive static allocation authority"
+    );
+}
+
+#[test]
+fn closure_static_plan_rejects_stack_reference_captures() {
+    let (input, _isa, root) = item_fixture_with_root(
+        "i32 Main(i32 count) { let mut mutable = count; return (() => mutable)(); }",
+    );
+    let lambda = find_definition_of_kind(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::LambdaExpression,
+    )
+    .expect("capturing lambda");
+
+    assert!(
+        input.closure_static_plan(lambda).is_none(),
+        "a stack-reference capture cannot receive static allocation authority"
+    );
 }
 
 #[test]
@@ -2000,10 +2086,12 @@ fn parsed_syntax_program_uses_the_existing_artifact_string_pool() {
     .expect("syntax item with a string literal lowers through the artifact pool");
 
     assert_eq!(artifact.string_literals.len(), 1);
-    assert!(artifact
-        .string_literals
-        .values()
-        .any(|bytes| bytes.as_slice() == b"Beskid"));
+    assert!(
+        artifact
+            .string_literals
+            .values()
+            .any(|bytes| bytes.as_slice() == b"Beskid")
+    );
 }
 
 #[test]
@@ -2127,9 +2215,11 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
     beskid_codegen::validate_artifact(&artifact)
         .expect("canonical helper imports are declared by the manifest authority");
     let imports = beskid_codegen::referenced_extern_imports(&artifact);
-    assert!(imports
-        .iter()
-        .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_system_allocate"));
+    assert!(
+        imports
+            .iter()
+            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_system_allocate")
+    );
     let root_frame = artifact
         .functions
         .iter()
@@ -2761,6 +2851,23 @@ fn find_definition_of_kind(
         .iter()
         .copied()
         .find_map(|child| find_definition_of_kind(db, child, expected))
+}
+
+fn find_nodes_of_kind(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    expected: beskid_queries::IndexedNodeKind,
+) -> Vec<AstNodeKey> {
+    let mut nodes = Vec::new();
+    if node_kind(db, key).ok().flatten() == Some(expected) {
+        nodes.push(key);
+    }
+    if let Some(children) = child_nodes(db, key).ok().flatten() {
+        for child in children.iter().copied() {
+            nodes.extend(find_nodes_of_kind(db, child, expected));
+        }
+    }
+    nodes
 }
 
 fn find_call_expression(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<AstNodeKey> {
