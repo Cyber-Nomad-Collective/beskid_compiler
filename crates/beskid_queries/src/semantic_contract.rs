@@ -4812,6 +4812,9 @@ fn direct_callees_tracked(
             && node
                 .of::<beskid_analysis::syntax::TestDefinition>()
                 .is_none()
+            && node
+                .of::<beskid_analysis::syntax::MethodDefinition>()
+                .is_none()
         {
             return None;
         }

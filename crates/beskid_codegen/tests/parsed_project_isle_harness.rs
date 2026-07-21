@@ -11,9 +11,13 @@ use beskid_analysis::{
     },
     services::parse_program_with_source_name,
 };
+use beskid_codegen::lower_canonical_runtime_prepared_syntax;
 use beskid_codegen::lower_syntax_assembly_entrypoint;
 use beskid_codegen::lowering::lower_program;
-use beskid_queries::{compile_front_end_from_resolved_input, with_db};
+use beskid_queries::{
+    AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId, child_nodes, closure_environment,
+    compile_front_end_from_resolved_input, node_kind, with_db,
+};
 use cranelift_codegen::{isa, settings, verify_function};
 
 const RETIRED_HIR_PATH_MARKER: &str = beskid_codegen::RETIRED_HIR_LOWERING_PATH;
@@ -446,6 +450,125 @@ fn unsupported_lambda_fails_closed_without_legacy_fallback() {
         target,
         isa.as_ref(),
         &["Lambda.bd", "MissingRuleOrFact"],
+    );
+}
+
+#[test]
+fn parsed_project_inline_method_reaches_verified_clif_through_production_entrypoint() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        type Point { i32 x, i32 Ping() { return 7; } }
+        i32 Main() { return Point { x: 1 }.Ping(); }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Method.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    assert!(
+        lowered.artifact.functions.len() >= 2,
+        "reachable closure must include Main and the inline Point.Ping method"
+    );
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact function");
+    assert!(
+        main.function.display().to_string().contains("call"),
+        "Main must call the inline method through syntax ISLE"
+    );
+}
+
+#[test]
+fn parsed_project_capturing_lambda_keeps_generation_safe_capture_facts_and_fails_closed() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source_path = project.path().join("Capture.bd");
+    let source = "
+        i32 Main() {
+            i32 outer = 1;
+            let apply = (i32 inner) => outer + inner;
+            return outer;
+        }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Capture.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    with_db(|db| {
+        let generation = SyntaxGenerationId(1);
+        let unit = SourceUnitId::new(db, source_path.clone());
+        let typed = beskid_queries::build_typed_program(
+            db,
+            beskid_queries::ProjectSession::new(
+                db,
+                project.path().to_path_buf(),
+                source_path.clone(),
+                "App".into(),
+                "lock".into(),
+            ),
+            generation,
+            Arc::clone(&assembly),
+        )
+        .expect("typed capture program");
+        assert!(
+            typed.runtime_intrinsic_capability.is_none(),
+            "ordinary parsed projects must not mint trusted runtime intrinsic authority"
+        );
+        let root = AstNodeKey {
+            unit,
+            generation,
+            node: AstNodeId(0),
+        };
+        let mut pending = vec![root];
+        let mut lambda = None;
+        while let Some(key) = pending.pop() {
+            if matches!(
+                node_kind(db, key),
+                Ok(Some(beskid_queries::IndexedNodeKind::LambdaExpression))
+            ) {
+                lambda = Some(key);
+                break;
+            }
+            if let Ok(Some(children)) = child_nodes(db, key) {
+                pending.extend(children.iter().copied());
+            }
+        }
+        let lambda = lambda.expect("capturing lambda source node");
+        let environment = closure_environment(db, lambda)
+            .expect("capture fact query")
+            .expect("generation-safe capture environment");
+        assert_eq!(environment.captures.len(), 1, "outer parameter is captured");
+        assert_eq!(environment.parameters.len(), 1, "inner lambda parameter");
+    });
+
+    assert_unsupported_closed_failure(
+        assembly,
+        target,
+        isa.as_ref(),
+        &["Capture.bd", "MissingRuleOrFact"],
+    );
+}
+
+#[test]
+fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif() {
+    let (target, isa) = x86_64_target_and_isa();
+    let artifact = with_db(|db| lower_canonical_runtime_prepared_syntax(db, target, isa.as_ref()))
+        .expect("canonical runtime lowers through TypedProgram → CodegenInput → ISLE");
+    assert!(
+        !artifact.functions.is_empty(),
+        "canonical Bootstrap must emit at least one verified function"
+    );
+    for function in &artifact.functions {
+        verify_function(&function.function, isa.flags()).unwrap_or_else(|error| {
+            panic!("stock CLIF verifier rejected {}: {error}", function.name)
+        });
+    }
+    assert!(
+        artifact.functions.iter().any(|function| {
+            let clif = function.function.display().to_string();
+            clif.contains("iconst") || clif.contains("load") || clif.contains("store")
+        }),
+        "canonical runtime helpers must emit real CLIF bodies"
     );
 }
 
