@@ -4376,6 +4376,38 @@ fn operator_facts_cover_expression_selection() {
 }
 
 #[test]
+fn string_interpolation_desugar_uses_string_add_facts() {
+    let source = r#"
+string Prefix() { return "x"; }
+string Main(string body) { return "${Prefix()}${body}!"; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let outer = key(unit, generation, &index, NodeKind::BinaryExpression, 0);
+    let inner = key(unit, generation, &index, NodeKind::BinaryExpression, 1);
+
+    assert_eq!(
+        operator_fact(&db, inner).expect("inner string add"),
+        Some(OperatorFact::StringAdd)
+    );
+    assert_eq!(
+        operator_fact(&db, outer).expect("outer string add"),
+        Some(OperatorFact::StringAdd)
+    );
+    assert_eq!(
+        abi_type(&db, inner).expect("inner abi"),
+        Some(SemanticTypeId::STRING)
+    );
+    assert_eq!(
+        abi_type(&db, outer).expect("outer abi"),
+        Some(SemanticTypeId::STRING)
+    );
+    assert_eq!(
+        node_type(&db, outer).expect("outer node type"),
+        Some(SemanticTypeId::STRING)
+    );
+}
+
+#[test]
 fn item_body_is_the_exact_function_and_method_body_child() {
     let function_source = "i32 Main() { return 0; }";
     let (function_db, _project, unit, generation, index) = setup(function_source);

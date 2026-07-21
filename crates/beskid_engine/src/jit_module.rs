@@ -101,7 +101,16 @@ impl BeskidJitModule {
         }
         let mut symbols = runtime.symbols().to_vec();
         symbols.extend_from_slice(extras);
-        let exact_symbols = symbols.iter().map(|(name, _)| name.clone()).collect();
+        // Soft builtins are process-linked (`beskid_runtime`), not ABI-v5 kit exports.
+        // Validation already allowlists them; Cranelift still needs concrete addresses.
+        let exact_symbols: HashSet<String> =
+            symbols.iter().map(|(name, _)| name.clone()).collect();
+        for (name, addr) in process_linked_soft_builtins() {
+            if exact_symbols.contains(&name) {
+                continue;
+            }
+            symbols.push((name, addr));
+        }
         let builder = new_builder(&symbols)?;
         Ok(Self {
             module: JITModule::new(builder),
@@ -262,6 +271,141 @@ fn validate_exact_symbol_references(
 
 fn is_runtime_builtin(symbol: &str) -> bool {
     BUILTIN_SPECS.iter().any(|spec| spec.symbol == symbol) || is_dispatch_symbol(symbol)
+}
+
+/// Addresses for soft builtins declared by [`declare_builtin_imports`].
+///
+/// Exact ABI-v5 kit dylibs export only `beskid_rt_v5_*` symbols. Soft builtins such as
+/// `interop_dispatch_*` / `panic_str` live in process-linked `beskid_runtime` and must be
+/// registered on the JIT builder or Cranelift fails with `can't resolve symbol`.
+fn process_linked_soft_builtins() -> Vec<(String, *const u8)> {
+    // Keep in sync with `beskid_runtime_bridge` link_anchor / `BUILTIN_SPECS`.
+    vec![
+        ("alloc".into(), beskid_runtime::alloc as *const u8),
+        (
+            "beskid_register_callbacks".into(),
+            beskid_runtime::beskid_register_callbacks as *const u8,
+        ),
+        (
+            "beskid_register_handlers".into(),
+            beskid_runtime::beskid_register_handlers as *const u8,
+        ),
+        (
+            "beskid_runtime_abi_version".into(),
+            beskid_runtime::beskid_runtime_abi_version as *const u8,
+        ),
+        (
+            "composition_bind_plural".into(),
+            beskid_runtime::composition_bind_plural as *const u8,
+        ),
+        (
+            "composition_container_create".into(),
+            beskid_runtime::composition_container_create as *const u8,
+        ),
+        (
+            "composition_container_drop".into(),
+            beskid_runtime::composition_container_drop as *const u8,
+        ),
+        (
+            "composition_launch".into(),
+            beskid_runtime::composition_launch as *const u8,
+        ),
+        (
+            "composition_register".into(),
+            beskid_runtime::composition_register as *const u8,
+        ),
+        (
+            "composition_resolve".into(),
+            beskid_runtime::composition_resolve as *const u8,
+        ),
+        (
+            "composition_resolve_plural".into(),
+            beskid_runtime::composition_resolve_plural as *const u8,
+        ),
+        (
+            "composition_scope_depth".into(),
+            beskid_runtime::composition_scope_depth as *const u8,
+        ),
+        (
+            "composition_scope_enter".into(),
+            beskid_runtime::composition_scope_enter as *const u8,
+        ),
+        (
+            "composition_scope_leave".into(),
+            beskid_runtime::composition_scope_leave as *const u8,
+        ),
+        (
+            "composition_shutdown".into(),
+            beskid_runtime::composition_shutdown as *const u8,
+        ),
+        (
+            "dynamic_cast_checked".into(),
+            beskid_runtime::dynamic_cast_checked as *const u8,
+        ),
+        (
+            "dynamic_cell_create".into(),
+            beskid_runtime::dynamic_cell_create as *const u8,
+        ),
+        (
+            "dynamic_cell_wrap".into(),
+            beskid_runtime::dynamic_cell_wrap as *const u8,
+        ),
+        (
+            "dynamic_map_aot".into(),
+            beskid_runtime::dynamic_map_aot as *const u8,
+        ),
+        (
+            "dynamic_map_fallback".into(),
+            beskid_runtime::dynamic_map_fallback as *const u8,
+        ),
+        (
+            "dynamic_object_alloc".into(),
+            beskid_runtime::dynamic_object_alloc as *const u8,
+        ),
+        ("fiber_yield".into(), beskid_runtime::fiber_yield as *const u8),
+        (
+            "gc_register_root".into(),
+            beskid_runtime::gc_register_root as *const u8,
+        ),
+        (
+            "gc_root_handle".into(),
+            beskid_runtime::gc_root_handle as *const u8,
+        ),
+        (
+            "gc_unregister_root".into(),
+            beskid_runtime::gc_unregister_root as *const u8,
+        ),
+        (
+            "gc_unroot_handle".into(),
+            beskid_runtime::gc_unroot_handle as *const u8,
+        ),
+        (
+            "gc_write_barrier".into(),
+            beskid_runtime::gc_write_barrier as *const u8,
+        ),
+        (
+            "interop_dispatch_ptr".into(),
+            beskid_runtime::interop_dispatch_ptr as *const u8,
+        ),
+        (
+            "interop_dispatch_unit".into(),
+            beskid_runtime::interop_dispatch_unit as *const u8,
+        ),
+        (
+            "interop_dispatch_usize".into(),
+            beskid_runtime::interop_dispatch_usize as *const u8,
+        ),
+        (
+            "interop_dispatch_i64".into(),
+            beskid_runtime::interop_dispatch_i64 as *const u8,
+        ),
+        ("panic".into(), beskid_runtime::panic as *const u8),
+        ("panic_str".into(), beskid_runtime::panic_str as *const u8),
+        (
+            "runtime_preempt_check".into(),
+            beskid_runtime::runtime_preempt_check as *const u8,
+        ),
+    ]
 }
 
 fn new_builder(extras: &[(String, *const u8)]) -> Result<JITBuilder, JitError> {
