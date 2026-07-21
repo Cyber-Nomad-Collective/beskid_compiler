@@ -116,6 +116,20 @@
       "result": "u8"
     },
     {
+      "symbol": "beskid_rt_v5_closure_environment_root_current",
+      "params": [
+        {
+          "name": "slot_index",
+          "type": "usize"
+        },
+        {
+          "name": "environment",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
       "symbol": "beskid_rt_v5_fiber_spawn_with_cancel_slot",
       "params": [
         {
@@ -132,20 +146,6 @@
         }
       ],
       "result": "i64"
-    },
-    {
-      "symbol": "beskid_rt_v5_closure_environment_root_current",
-      "params": [
-        {
-          "name": "slot_index",
-          "type": "usize"
-        },
-        {
-          "name": "environment",
-          "type": "pointer"
-        }
-      ],
-      "result": "u8"
     },
     {
       "symbol": "beskid_rt_v5_process_init",
