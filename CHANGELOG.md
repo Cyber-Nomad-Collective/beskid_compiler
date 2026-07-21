@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add the manifest-derived ABI-v5 `beskid_rt_v5_fiber_spawn_with_cancel_slot` scheduler
+  boundary and direct syntax-ISLE import metadata, replacing syntax-spawn emission of the
+  retired `interop_dispatch_*` envelope path (CYB-126). The end-to-end macOS arm64 JIT smoke
+  remains tracked separately as CYB-129 after a direct JIT-to-runtime dylib call raised SIGILL.
+
 ### Fixed
 
 - Reuse the existing canonical runtime syntax session during sequential native runtime-kit

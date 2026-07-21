@@ -210,7 +210,11 @@ fn parsed_direct_zero_argument_spawn_emits_syntax_owned_trampoline_and_fiber_dis
         .expect("syntax-owned spawn trampoline");
     let main_clif = main.function.display().to_string();
     let trampoline_clif = trampoline.function.display().to_string();
-    assert!(main_clif.contains("interop_dispatch_i64"), "{main_clif}");
+    assert!(
+        main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
+        "{main_clif}"
+    );
+    assert!(!main_clif.contains("interop_dispatch_"), "{main_clif}");
     assert!(main_clif.contains("func_addr"), "{main_clif}");
     assert!(
         trampoline_clif.contains("Entry#syntax_"),
@@ -255,7 +259,11 @@ fn parsed_zero_capture_lambda_spawn_emits_syntax_owned_entry_and_fiber_dispatch(
     let main_clif = main.function.display().to_string();
     let lambda_clif = lambda.function.display().to_string();
     let trampoline_clif = trampoline.function.display().to_string();
-    assert!(main_clif.contains("interop_dispatch_i64"), "{main_clif}");
+    assert!(
+        main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
+        "{main_clif}"
+    );
+    assert!(!main_clif.contains("interop_dispatch_"), "{main_clif}");
     assert!(main_clif.contains("func_addr"), "{main_clif}");
     assert!(lambda_clif.contains("iconst.i64 7"), "{lambda_clif}");
     assert!(

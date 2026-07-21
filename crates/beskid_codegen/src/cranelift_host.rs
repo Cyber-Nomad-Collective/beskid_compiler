@@ -240,6 +240,9 @@ pub fn declare_validated_extern_imports<M: Module>(
     let extern_sigs = collect_validated_extern_signatures(module, artifact)
         .map_err(ExternDeclarationError::InvalidSignature)?;
     for (symbol, sig) in &extern_sigs {
+        if func_ids.contains_key(symbol) {
+            continue;
+        }
         let id = module
             .declare_function(symbol, Linkage::Import, sig)
             .map_err(ExternDeclarationError::Module)?;

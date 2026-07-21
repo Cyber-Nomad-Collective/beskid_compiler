@@ -12,7 +12,7 @@ use beskid_pipeline::{
     PipelineObserver, emit_work_unit, observe_phase_result,
     phases::{JIT_EMIT, JIT_FINALIZE},
 };
-use cranelift_codegen::settings;
+use cranelift_codegen::{ir::ExternalName, settings};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleError, default_libcall_names};
 use std::fmt;
@@ -134,6 +134,12 @@ impl BeskidJitModule {
             Linkage::Local,
             &mut self.func_ids,
         )?;
+        declare_exact_runtime_imports(
+            &mut self.module,
+            artifact,
+            &self.exact_symbols,
+            &mut self.func_ids,
+        )?;
         declare_validated_extern_imports(&mut self.module, artifact, &mut self.func_ids)?;
 
         emit_string_literals(&mut self.module, artifact)?;
@@ -171,6 +177,11 @@ impl BeskidJitModule {
         self.func_ids.get(name).copied()
     }
 
+    /// True only for an address loaded from this exact validated runtime kit.
+    pub fn is_exact_runtime_symbol(&self, symbol: &str) -> bool {
+        self.exact_symbols.contains(symbol)
+    }
+
     /// Executable address after [`JITModule::finalize_definitions`]; undefined if not finalized.
     ///
     /// # Safety
@@ -185,6 +196,34 @@ impl BeskidJitModule {
     pub fn module(&mut self) -> &mut JITModule {
         &mut self.module
     }
+}
+
+fn declare_exact_runtime_imports(
+    module: &mut JITModule,
+    artifact: &CodegenArtifact,
+    exact_symbols: &HashSet<String>,
+    func_ids: &mut HashMap<String, FuncId>,
+) -> Result<(), JitError> {
+    for function in &artifact.functions {
+        for (_, external) in function.function.dfg.ext_funcs.iter() {
+            let ExternalName::TestCase(name) = &external.name else {
+                continue;
+            };
+            let symbol = String::from_utf8_lossy(name.raw());
+            if !exact_symbols.contains(symbol.as_ref()) || func_ids.contains_key(symbol.as_ref()) {
+                continue;
+            }
+            let signature = function.function.dfg.signatures[external.signature].clone();
+            beskid_codegen::cranelift_host::validate_ffi_signature(
+                &signature,
+                module.isa().pointer_type(),
+            )
+            .map_err(JitError::Isa)?;
+            let id = module.declare_function(symbol.as_ref(), Linkage::Import, &signature)?;
+            func_ids.insert(symbol.into_owned(), id);
+        }
+    }
+    Ok(())
 }
 
 fn validate_exact_symbol_references(

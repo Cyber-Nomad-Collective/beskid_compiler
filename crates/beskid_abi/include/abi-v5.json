@@ -116,6 +116,24 @@
       "result": "u8"
     },
     {
+      "symbol": "beskid_rt_v5_fiber_spawn_with_cancel_slot",
+      "params": [
+        {
+          "name": "entry",
+          "type": "pointer"
+        },
+        {
+          "name": "environment",
+          "type": "pointer"
+        },
+        {
+          "name": "cancelled_slot",
+          "type": "pointer"
+        }
+      ],
+      "result": "i64"
+    },
+    {
       "symbol": "beskid_rt_v5_process_init",
       "params": [
         {
