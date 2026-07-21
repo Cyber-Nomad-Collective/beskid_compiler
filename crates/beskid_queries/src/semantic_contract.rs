@@ -5181,18 +5181,18 @@ pub fn completion_candidates(
             }
             let program = target_syntax.expanded_program(db);
             let index = target_syntax.syntax_index(db);
-            push_unit_member_candidates(&mut candidates, program, &index, prefix, &context);
+            push_unit_member_candidates(&mut candidates, program, index, prefix, &context);
         } else {
             let program = syntax.expanded_program(db);
             let index = syntax.syntax_index(db);
-            let reference = deepest_node_containing_offset(&index, context.cursor)
+            let reference = deepest_node_containing_offset(index, context.cursor)
                 .unwrap_or(key.node);
             let lookup = AstNodeKey {
                 node: reference,
                 ..key
             };
             let Some((declaration, _)) =
-                nominal_local_receiver_declaration(db, program, &index, lookup, alias)
+                nominal_local_receiver_declaration(db, program, index, lookup, alias)
             else {
                 return Ok(None);
             };
@@ -5208,16 +5208,16 @@ pub fn completion_candidates(
         let program = syntax.expanded_program(db);
         let index = syntax.syntax_index(db);
         let reference =
-            deepest_node_containing_offset(&index, context.cursor).unwrap_or(key.node);
+            deepest_node_containing_offset(index, context.cursor).unwrap_or(key.node);
         push_lexical_local_candidates(
             &mut candidates,
             program,
-            &index,
+            index,
             reference,
             prefix,
             &context,
         );
-        push_unit_type_candidates(&mut candidates, program, &index, prefix, &context);
+        push_unit_type_candidates(&mut candidates, program, index, prefix, &context);
         for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
             if let Some(function) = index
                 .node_at(program, id)
