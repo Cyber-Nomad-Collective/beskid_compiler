@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Prepare-spine frontend assembly projects `SyntaxProgramAssembly` as the IDE/query
+  authority (`PreparedCompilation::syntax_assembly`); LSP lifecycle binds facts from
+  `FrontEndTypedResult::syntax_assembly` (post-mod-rewrite entry), and
+  `beskid_queries::syntax_program_assembly` strips HIR at the Salsa assembly boundary.
+  `DocumentAnalysisSnapshot` remains CLI-doc-only (CYB-65).
+
 ### Fixed
 
 - Lexically normalize compiler-owned Corelib service source paths and resolve both sides when

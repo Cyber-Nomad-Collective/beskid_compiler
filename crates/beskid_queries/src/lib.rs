@@ -55,7 +55,7 @@ pub use entry::{
 };
 pub use graph::{
     discovered_units, module_index_fingerprint, program_assembly, program_assembly_tracked,
-    reverse_dependents,
+    reverse_dependents, syntax_program_assembly,
 };
 pub use graph_viz::{
     GraphFetchRequest, GraphQueryError, get_graph_document, get_graph_document_simple,

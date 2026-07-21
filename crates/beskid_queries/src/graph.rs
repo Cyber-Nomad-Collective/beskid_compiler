@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use beskid_analysis::projects::assembly::ProgramAssembly;
+use beskid_analysis::projects::assembly::{ProgramAssembly, SyntaxProgramAssembly};
 use beskid_analysis::projects::model::AssemblyOptions;
 use beskid_analysis::projects::{AssemblyError, assemble_program_with_materializer};
 use beskid_analysis::projects::{CompilePlan, PreparedProjectWorkspace};
@@ -152,6 +152,24 @@ pub fn program_assembly(
     }
 
     Ok(assembly)
+}
+
+/// Syntax-only project assembly for generation-safe frontend consumers.
+///
+/// Builds through the same Salsa-backed materializer as [`program_assembly`], then strips
+/// HIR units at the API boundary. IDE/document callers must use this (or
+/// [`beskid_analysis::services::PreparedCompilation::syntax_assembly`]) instead of
+/// `DocumentAnalysisSnapshot`.
+pub fn syntax_program_assembly(
+    db: &mut BeskidDatabase,
+    plan: &CompilePlan,
+    workspace: Option<&PreparedProjectWorkspace>,
+    entry_path: &Path,
+    entry_source: Option<&str>,
+    options: &AssemblyOptions,
+) -> Result<SyntaxProgramAssembly, AssemblyError> {
+    let assembly = program_assembly(db, plan, workspace, entry_path, entry_source, options)?;
+    Ok(SyntaxProgramAssembly::from(&assembly))
 }
 
 fn assembly_options_fingerprint(options: &AssemblyOptions) -> String {

@@ -83,9 +83,9 @@ fn syntax_facts_for_entry(
     };
     let project =
         db.ensure_project_session(plan, &resolved.source_path, lockfile_digest_for_plan(plan));
-    let assembly = Arc::new(beskid_analysis::projects::SyntaxProgramAssembly::from(
-        &front_end.assembly,
-    ));
+    // Fail closed to prepare-spine syntax authority: post-mod-rewrite entry program, never the
+    // pre-rewrite ProgramAssembly units that still carry HIR compatibility state.
+    let assembly = Arc::new(front_end.syntax_assembly());
     let generation = SyntaxGenerationId(entry_state.generation);
     let Ok(typed) = build_typed_program(db, project, generation, assembly) else {
         return SyntaxFacts::default();
