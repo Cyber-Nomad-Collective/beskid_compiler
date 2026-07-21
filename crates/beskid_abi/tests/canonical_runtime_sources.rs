@@ -152,12 +152,15 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
 
     // A descriptor is a 40-byte ABI record. Pointer-map entries are byte offsets into the
     // complete object, so validation must reject a non-word offset and all arithmetic must be
-    // checked before forming an address.
+    // checked before forming an address. Overflow uses wrapping multiply/add (not
+    // `NativeWordMax() - 8`) because `word` compares are signed in Cranelift.
     assert!(source.contains("pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSize)"));
-    assert!(source.contains("if index > (NativeWordMax() - 8) / 8"));
+    assert!(source.contains("word mapOffset = index * 8"));
+    assert!(source.contains("if mapOffset / 8 != index"));
     assert!(source.contains("if offset % 8 != 0"));
-    assert!(source.contains("if offset > NativeWordMax() - 8"));
-    assert!(source.contains("if offset + 8 > objectSize"));
+    assert!(source.contains("word end = offset + 8"));
+    assert!(source.contains("if end < offset"));
+    assert!(source.contains("if end > objectSize"));
 
     // ABI allocations require a power-of-two word alignment, not merely a value >= 8.
     assert!(source.contains("pub bool IsValidObjectAlignment(word alignment)"));
