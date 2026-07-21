@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Read interop enum tags with `read_unaligned` and align the colliding-tag
+  dispatch fixture so Linux Rust gate no longer SIGABRTs on misaligned
+  envelope bytes after earlier CYB-129 gate layers cleared.
+
 ### Changed
 
 - Restrict public AOT host context/platform emitters to an opaque

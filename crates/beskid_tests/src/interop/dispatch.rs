@@ -54,11 +54,15 @@ fn return_group_routing_uses_usize_dispatch_for_string_len_tag() {
 fn colliding_tag_two_routes_by_return_group() {
     assert_eq!(TAG_STR_LEN, TAG_CHANNEL_CREATE);
     beskid_runtime::run_closure_as_main(|| {
-        let mut envelope = [0u8; 32];
-        envelope[8..12].copy_from_slice(&TAG_CHANNEL_CREATE.to_le_bytes());
-        envelope[16..24].copy_from_slice(&0i64.to_le_bytes());
-        envelope[24..32].copy_from_slice(&0i64.to_le_bytes());
-        let enum_ptr = envelope.as_ptr();
+        // Keep the packed byte layout but guarantee pointer alignment for the
+        // tag word at offset 8 (matches RuntimeInteropEnvelope alignment).
+        #[repr(C, align(8))]
+        struct AlignedEnvelope([u8; 32]);
+        let mut envelope = AlignedEnvelope([0u8; 32]);
+        envelope.0[8..12].copy_from_slice(&TAG_CHANNEL_CREATE.to_le_bytes());
+        envelope.0[16..24].copy_from_slice(&0i64.to_le_bytes());
+        envelope.0[24..32].copy_from_slice(&0i64.to_le_bytes());
+        let enum_ptr = envelope.0.as_ptr();
         let channel_id = interop_dispatch_i64(enum_ptr);
         assert!(
             channel_id > 0,
