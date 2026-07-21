@@ -50,6 +50,14 @@ fn llvm_tool(name: &str) -> PathBuf {
     }
 }
 
+fn llvm_tool_or_skip(name: &str) -> Option<PathBuf> {
+    let path = llvm_tool(name);
+    match Command::new(&path).arg("--help").output() {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        _ => Some(path),
+    }
+}
+
 fn prepare_include(temp: &Path) {
     let manifest = AbiManifestV5::canonical_runtime(target());
     fs::write(
@@ -71,11 +79,23 @@ fn output(command: &mut Command) -> std::process::Output {
 
 #[test]
 fn coff_object_exports_exactly_two_symbols_and_contains_no_unwind_sections() {
+    let Some(llvm_ml) = llvm_tool_or_skip("llvm-ml") else {
+        eprintln!("skipping: llvm-ml not available on this host");
+        return;
+    };
+    let Some(llvm_nm) = llvm_tool_or_skip("llvm-nm") else {
+        eprintln!("skipping: llvm-nm not available on this host");
+        return;
+    };
+    let Some(llvm_objdump) = llvm_tool_or_skip("llvm-objdump") else {
+        eprintln!("skipping: llvm-objdump not available on this host");
+        return;
+    };
     let temp = TempDir::new();
     prepare_include(&temp.0);
     let object = temp.0.join("context.obj");
     output(
-        Command::new(llvm_tool("llvm-ml"))
+        Command::new(llvm_ml)
             .args(["--m64", "/c", "/X", "/Fo"])
             .arg(&object)
             .arg("/I")
@@ -85,7 +105,7 @@ fn coff_object_exports_exactly_two_symbols_and_contains_no_unwind_sections() {
 
     let mut symbols = String::from_utf8(
         output(
-            Command::new(llvm_tool("llvm-nm"))
+            Command::new(llvm_nm)
                 .args(["-g", "--defined-only", "-P"])
                 .arg(&object),
         )
@@ -111,7 +131,7 @@ fn coff_object_exports_exactly_two_symbols_and_contains_no_unwind_sections() {
 
     let sections = String::from_utf8(
         output(
-            Command::new(llvm_tool("llvm-objdump"))
+            Command::new(llvm_objdump)
                 .arg("-h")
                 .arg(&object),
         )
