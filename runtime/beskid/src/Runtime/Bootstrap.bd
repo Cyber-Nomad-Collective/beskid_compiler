@@ -432,6 +432,20 @@ pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer enviro
     return SetRootSlotValue(rootFrame, slotIndex, environment);
 }
 
+/// Initializes one capture-free syntax fiber dispatch through the canonical ABI-v5 runtime boundary.
+///
+/// The cancellation slot is initialized to null. The syntax JIT owns the immediate trampoline
+/// invocation because a native library cannot safely callback into a host JIT allocation on every
+/// supported target. A future queued scheduler must preserve this symbol and parameter layout
+/// rather than restoring an interop dispatch envelope.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_fiber_spawn_with_cancel_slot")]
+pub i64 FiberSpawnWithCancelSlot(pointer entry, pointer environment, pointer cancelledSlot) {
+    if cancelledSlot != NativePointer(0) {
+        raw_word_store(cancelledSlot, 0);
+    }
+    return 0;
+}
+
 /// Releases an object allocation during a future sweep phase.
 ///
 /// No currently exposed function invokes this directly.  Keeping deallocation paired with the

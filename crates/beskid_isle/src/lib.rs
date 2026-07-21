@@ -10,10 +10,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub use beskid_queries::AstNodeKey;
+use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::InstBuilder;
 pub use cranelift_codegen::ir::{
     AbiParam, Block, FuncRef, Function, MemFlags, Signature, StackSlotData, StackSlotKind,
     TrapCode, Type, UserFuncName, Value,
@@ -87,8 +87,8 @@ pub enum SyntaxNodeClassification {
 pub const fn classify_syntax_node_kind(
     kind: beskid_queries::IndexedNodeKind,
 ) -> SyntaxNodeClassification {
-    use beskid_queries::IndexedNodeKind as Syntax;
     use SyntaxNodeClassification::{IsleLowered, Structural, UnsupportedTypedOperation};
+    use beskid_queries::IndexedNodeKind as Syntax;
 
     match kind {
         Syntax::Program => IsleLowered(NodeKind::Program),
@@ -185,8 +185,8 @@ pub const fn classify_syntax_node_kind(
 }
 
 /// Deterministic catalogue in the authoritative syntax declaration order.
-pub fn syntax_node_kind_catalogue(
-) -> impl ExactSizeIterator<Item = (beskid_queries::IndexedNodeKind, SyntaxNodeClassification)> {
+pub fn syntax_node_kind_catalogue()
+-> impl ExactSizeIterator<Item = (beskid_queries::IndexedNodeKind, SyntaxNodeClassification)> {
     beskid_queries::IndexedNodeKind::ALL
         .iter()
         .copied()
@@ -1377,7 +1377,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_spawn(&mut self, key: AstNodeKey) -> Option<Value> {
         let entry = self.facts.spawn_entry(key)?;
         let pointer = dispatch::pointer_type();
-        let mut signature = Signature::new(cranelift_codegen::isa::CallConv::SystemV);
+        let mut signature = Signature::new(self.builder.func.signature.call_conv);
         signature.params.push(AbiParam::new(pointer));
         signature.returns.push(AbiParam::new(types::I64));
         let trampoline = match self.call_importer.as_deref_mut()?.import(
@@ -1403,14 +1403,29 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         ));
         self.builder.ins().stack_store(environment, cancel_slot, 0);
         let cancel_slot_address = self.builder.ins().stack_addr(pointer, cancel_slot, 0);
-        let route = beskid_abi::dispatch_route_for_symbol("fiber_spawn_with_cancel_slot")?;
-        dispatch::emit_dispatch_call(
-            self.builder,
-            route,
+        let mut signature = Signature::new(self.builder.func.signature.call_conv);
+        signature.params.push(AbiParam::new(pointer));
+        signature.params.push(AbiParam::new(pointer));
+        signature.params.push(AbiParam::new(pointer));
+        signature.returns.push(AbiParam::new(types::I64));
+        let signature = self.builder.func.import_signature(signature);
+        let runtime_entry = self
+            .builder
+            .func
+            .import_function(cranelift_codegen::ir::ExtFuncData {
+                name: cranelift_codegen::ir::ExternalName::testcase(
+                    "beskid_rt_v5_fiber_spawn_with_cancel_slot",
+                ),
+                signature,
+                colocated: false,
+                patchable: false,
+            });
+        self.builder.ins().call(
+            runtime_entry,
             &[entry_ptr, environment, cancel_slot_address],
-            true,
-        )
-        .ok()?
+        );
+        let entry_call = self.builder.ins().call(trampoline, &[environment]);
+        self.builder.inst_results(entry_call).first().copied()
     }
 
     fn emit_string_concat(&mut self, key: AstNodeKey) -> Option<Value> {

@@ -82,7 +82,10 @@ impl Engine {
         artifact: &CodegenArtifact,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> Result<(), JitError> {
-        let runtime_externs = beskid_codegen::referenced_extern_imports(artifact);
+        let runtime_externs = beskid_codegen::referenced_extern_imports(artifact)
+            .into_iter()
+            .filter(|entry| !self.jit.is_exact_runtime_symbol(&entry.symbol))
+            .collect::<Vec<_>>();
 
         #[cfg(feature = "extern_dlopen")]
         let extras = resolve_extern_symbols(&runtime_externs)

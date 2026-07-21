@@ -27,6 +27,8 @@ use crate::{
     emit_isle_item_with_services, emit_isle_item_with_services_specialization,
 };
 
+const ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT: &str = "beskid_rt_v5_fiber_spawn_with_cancel_slot";
+
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
 #[derive(Debug, Clone)]
 pub struct DescriptorHandles {
@@ -333,6 +335,9 @@ fn lower_resolved_syntax_program(
         extern_imports: runtime_intrinsics
             .into_values()
             .chain(corelib_services.into_values())
+            .chain(
+                (!trampolines.is_empty()).then_some(ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT.to_owned()),
+            )
             .map(|symbol| ExternImport {
                 symbol,
                 abi: Some("C".into()),
