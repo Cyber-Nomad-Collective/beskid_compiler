@@ -340,6 +340,7 @@ pub pointer AllocateObject(pointer request) {
 ///
 /// The request is checked before dereferencing it. Both allocation fields must exactly match the
 /// registered descriptor; otherwise no allocation, header write, or rootable environment exists.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_closure_environment_allocate")]
 pub pointer AllocateClosureEnvironment(pointer request) {
     if request == NativePointer(0) {
         return NativePointer(0);
@@ -366,6 +367,7 @@ pub pointer AllocateClosureEnvironment(pointer request) {
 }
 
 /// Stores a capture in a validated closure environment's registered pointer-map slot.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_closure_capture_store")]
 pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value) {
     if environment == NativePointer(0) {
         return false;
@@ -415,6 +417,7 @@ pub bool SetRootSlotValue(pointer rootFrame, word index, pointer value) {
 }
 
 /// Registers a closure environment in the current TLS root frame.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_closure_environment_root")]
 pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment) {
     if tlsState == NativePointer(0) {
         return false;

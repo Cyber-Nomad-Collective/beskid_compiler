@@ -66,6 +66,56 @@
       "result": "u32"
     },
     {
+      "symbol": "beskid_rt_v5_closure_capture_store",
+      "params": [
+        {
+          "name": "environment",
+          "type": "pointer"
+        },
+        {
+          "name": "descriptor",
+          "type": "pointer"
+        },
+        {
+          "name": "map_index",
+          "type": "usize"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_closure_environment_allocate",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_closure_environment_root",
+      "params": [
+        {
+          "name": "tls_state",
+          "type": "pointer"
+        },
+        {
+          "name": "slot_index",
+          "type": "usize"
+        },
+        {
+          "name": "environment",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
       "symbol": "beskid_rt_v5_process_init",
       "params": [
         {

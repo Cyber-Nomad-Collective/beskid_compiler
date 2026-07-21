@@ -27,7 +27,7 @@ fn supported_targets() -> Vec<TargetMetadata> {
 }
 
 #[test]
-fn canonical_contract_has_the_exact_lifecycle_and_trap_exports() {
+fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
     let manifest = AbiManifestV5::canonical_runtime(supported_targets()[0].clone());
     manifest.validate().expect("canonical runtime contract");
 
@@ -50,6 +50,26 @@ fn canonical_contract_has_the_exact_lifecycle_and_trap_exports() {
                 AbiType::Void,
             ),
             ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
+            (
+                "beskid_rt_v5_closure_capture_store",
+                &[
+                    AbiType::Pointer,
+                    AbiType::Pointer,
+                    AbiType::USize,
+                    AbiType::Pointer,
+                ][..],
+                AbiType::U8,
+            ),
+            (
+                "beskid_rt_v5_closure_environment_allocate",
+                &[AbiType::Pointer][..],
+                AbiType::Pointer,
+            ),
+            (
+                "beskid_rt_v5_closure_environment_root",
+                &[AbiType::Pointer, AbiType::USize, AbiType::Pointer][..],
+                AbiType::U8,
+            ),
             (
                 "beskid_rt_v5_process_init",
                 &[AbiType::Pointer][..],

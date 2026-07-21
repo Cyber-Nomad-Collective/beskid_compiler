@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closure facts into a syntax-owned helper entry and the canonical ABI-v5 fiber trampoline.
   Capturing entries remain fail-closed pending the allocated/rooted closure-environment leaf
   (CYB-121).
+- Publish the canonical closure-environment allocation, capture-store, and TLS root operations
+  as manifest-derived ABI-v5 exports with checked-in bindings and provenance coverage; captured
+  closure lowering can import only these exact runtime symbols (CYB-122).
 - Lower capture-free immediate lambda calls directly through generation-safe closure facts and
   generated ISLE, binding proven argument slots in the caller without allocating a runtime
   closure; captured or bound closure calls remain fail-closed pending the ABI-v5 environment path
