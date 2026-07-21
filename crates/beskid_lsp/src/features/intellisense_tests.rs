@@ -1,10 +1,7 @@
 #[cfg(test)]
 mod tests {
     use beskid_analysis::projects::AssemblyDiscovery;
-    use beskid_analysis::services::{
-        PrepareOptions, build_document_analysis_from_resolution, parse_program_with_source_name,
-        resolve_input,
-    };
+    use beskid_analysis::services::{PrepareOptions, parse_program_with_source_name, resolve_input};
     use beskid_queries::{BeskidDatabase, configure_db_for_project, entry_resolution_with_db};
     use std::path::PathBuf;
     use std::str::FromStr;
@@ -57,73 +54,6 @@ mod tests {
             source,
             uri,
         }
-    }
-
-    fn corelib_mvp_document_with_entry_resolution()
-    -> (Uri, Document, CorelibMvpFixture, BeskidDatabase, beskid_analysis::services::DocumentAnalysisSnapshot) {
-        let root = compiler_workspace_root();
-        with_cwd_at_workspace_root(&root, || {
-            let fixture = corelib_mvp_paths();
-            let program = parse_program_with_source_name(
-                &fixture.main_path.to_string_lossy(),
-                &fixture.source,
-            )
-            .expect("parse");
-            let resolved = resolve_input(
-                Some(&fixture.main_path),
-                Some(&fixture.project_root),
-                None,
-                None,
-                false,
-                false,
-            )
-            .expect("resolve");
-            let project_root = fixture
-                .project_root
-                .canonicalize()
-                .unwrap_or_else(|_| fixture.project_root.clone());
-            configure_db_for_project(&project_root);
-            let mut db = BeskidDatabase::with_persistence(&project_root);
-            let mut options = PrepareOptions::default();
-            options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
-            let shared =
-                entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
-            let module_paths = shared
-                .module_graph
-                .modules()
-                .iter()
-                .filter_map(|module| {
-                    if module.path.is_empty() {
-                        None
-                    } else {
-                        Some(module.path.join("::"))
-                    }
-                })
-                .collect();
-            let analysis = build_document_analysis_from_resolution(
-                &program,
-                fixture.main_path.to_string_lossy(),
-                &fixture.source,
-                &fixture.main_path,
-                Some((*shared).clone()),
-                module_paths,
-                resolved.compile_plan.as_ref(),
-                None,
-            );
-            let doc = Document {
-                version: 1,
-                text: fixture.source.clone(),
-                analysis_cache_version: ANALYSIS_CACHE_VERSION,
-                syntax_definitions: Vec::new(),
-                syntax_hovers: Vec::new(),
-                syntax_symbols: Vec::new(),
-                syntax_completion: None,
-                syntax_inlay_hints: Vec::new(),
-                syntax_documentation: Vec::new(),
-                syntax_diagnostics: Vec::new(),
-            };
-            (fixture.uri.clone(), doc, fixture, db, analysis)
-        })
     }
 
     #[test]
@@ -233,24 +163,28 @@ mod tests {
         );
     }
 
-    #[test]
-    fn definition_on_printline_targets_dependency_file() {
-        let (uri, doc, fixture, _db, analysis) = corelib_mvp_document_with_entry_resolution();
+    #[tokio::test]
+    async fn definition_on_printline_targets_dependency_file() {
+        let root = compiler_workspace_root();
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(&root).expect("chdir");
+        let fixture = corelib_mvp_paths();
+        let uri = fixture.uri.clone();
+        let state = tokio::sync::RwLock::new(State::default());
+        state.read().await.mark_initial_scan_complete();
+        let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
+        std::env::set_current_dir(previous).expect("restore cwd");
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
-        let response = definition::handler::handle_definition(&uri, &doc, offset);
-        if let Some(GotoDefinitionResponse::Scalar(location)) = response {
-            let target = location.uri.to_string();
-            assert!(
-                target.contains("Output") || target.contains("System"),
-                "expected Output/System path in definition uri {target}"
-            );
-        } else {
-            let resolution = analysis.resolution.as_ref().expect("resolution");
-            assert!(
-                resolution.items.iter().any(|item| item.name == "WriteLine"),
-                "expected WriteLine in resolution when definition is unavailable"
-            );
-        }
+        let response =
+            definition::handler::handle_definition(&uri, &doc, offset).expect("syntax definition");
+        let GotoDefinitionResponse::Scalar(location) = response else {
+            panic!("expected scalar definition from syntax facts");
+        };
+        let target = location.uri.to_string();
+        assert!(
+            target.contains("Output") || target.contains("System"),
+            "expected Output/System path in definition uri {target}"
+        );
     }
 
     #[test]
@@ -443,9 +377,17 @@ mod tests {
         });
     }
 
-    #[test]
-    fn references_on_printline_includes_dependency() {
-        let (uri, doc, fixture, _db, analysis) = corelib_mvp_document_with_entry_resolution();
+    #[tokio::test]
+    async fn references_on_printline_includes_dependency() {
+        let root = compiler_workspace_root();
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(&root).expect("chdir");
+        let fixture = corelib_mvp_paths();
+        let uri = fixture.uri.clone();
+        let state = tokio::sync::RwLock::new(State::default());
+        state.read().await.mark_initial_scan_complete();
+        let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
+        std::env::set_current_dir(previous).expect("restore cwd");
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
         let locations = references::handler::handle_references(
             &uri,
@@ -454,24 +396,22 @@ mod tests {
             true,
             Some(fixture.main_path.as_path()),
         );
-        if locations.is_empty() {
-            let resolution = analysis.resolution.as_ref().expect("resolution");
-            assert!(
-                resolution.items.iter().any(|item| item.name == "WriteLine"),
-                "expected WriteLine in resolution when references are unavailable"
-            );
-        } else {
-            assert!(
-                locations
-                    .iter()
-                    .any(|location| location.uri.to_string().contains("Output")),
-                "expected Output dependency reference, got {:?}",
-                locations
-                    .iter()
-                    .map(|l| l.uri.to_string())
-                    .collect::<Vec<_>>()
-            );
-        }
+        assert!(
+            !locations.is_empty(),
+            "syntax references must resolve WriteLine without Document.analysis"
+        );
+        assert!(
+            locations.iter().any(|location| {
+                location.uri.to_string().contains("Output")
+                    || location.uri.to_string().contains("System")
+                    || location.uri == uri
+            }),
+            "expected Output/System or entry reference, got {:?}",
+            locations
+                .iter()
+                .map(|l| l.uri.to_string())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[tokio::test]

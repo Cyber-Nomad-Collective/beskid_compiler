@@ -79,7 +79,8 @@ pub use semantic_contract::{
     ClosureEnvironment, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
     CompletionCandidate, CompletionContext,
     CompletionKind, ControlFlow, CorelibService, EnumConstructorFact, EnumLayoutFact,
-    EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, ExportSymbol, GenericCallInstantiation,
+    EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, ExportSymbol, ForIteratorFact,
+    GenericCallInstantiation,
     GenericCallSpecialization, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot,
     MutableLocalAssignment, OperatorFact, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnTarget,
@@ -96,7 +97,8 @@ pub use semantic_contract::{
     local_slot, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver, operator_fact,
     dispatch_builtin_symbol, DispatchBuiltinSymbol,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name,
-    range_for_fact, spawn_entry_validation, spawn_legality, spawn_target, test_item, test_statement_nodes,
+    for_iterator_fact, range_for_fact, spawn_entry_validation, spawn_legality, spawn_target,
+    test_item, test_statement_nodes,
 };
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,

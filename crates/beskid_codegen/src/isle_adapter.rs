@@ -17,7 +17,7 @@ use beskid_queries::{
     enum_constructor, enum_layout, enum_match, generic_call_specialization, item_abi_signature,
     item_body, literal_fact, local_slot, mutable_local_assignment, node_kind, node_type,
     nominal_member_receiver, operator_fact, range_for_fact, resolved_item, resolved_local,
-    runtime_intrinsic_name, spawn_entry_validation, test_statement_nodes,
+    for_iterator_fact, runtime_intrinsic_name, spawn_entry_validation, test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
@@ -193,13 +193,8 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 .and_then(|identifier| self.query(local_slot(self.db, identifier)))
                 .map(|slot| slot.index),
             beskid_queries::IndexedNodeKind::ForStatement => self
-                .raw_children(key)
-                .into_iter()
-                .find(|child| {
-                    self.query(node_kind(self.db, *child))
-                        == Some(beskid_queries::IndexedNodeKind::Identifier)
-                })
-                .and_then(|identifier| self.query(local_slot(self.db, identifier)))
+                .query(for_iterator_fact(self.db, key))
+                .and_then(|fact| self.query(local_slot(self.db, fact.declaration)))
                 .map(|slot| slot.index),
             _ => None,
         }
@@ -652,9 +647,9 @@ impl SyntaxNodeFacts<'_> {
         if self.query(node_kind(self.db, key))
             == Some(beskid_queries::IndexedNodeKind::ForStatement)
         {
-            let iterable = self.child(key, 0)?;
-            let range = self.query(range_for_fact(self.db, iterable))?;
-            return self.query(node_type(self.db, range.start));
+            return self
+                .query(for_iterator_fact(self.db, key))
+                .map(|fact| fact.element_type);
         }
         self.query(cast_intents(self.db, key))
             .and_then(|intents| intents.first().map(|intent| intent.to))
