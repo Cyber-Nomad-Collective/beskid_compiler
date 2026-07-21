@@ -1,7 +1,8 @@
 use beskid_abi::abi_v5::{AbiManifestV5, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
-    RuntimeCapabilityError, canonical_corelib_service_capability,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, RuntimeCapabilityError,
+    canonical_corelib_service_capability, canonical_corelib_service_source_path,
     canonical_runtime_intrinsic_capability, canonical_runtime_sources,
     prove_canonical_runtime_corpus,
 };
@@ -293,4 +294,25 @@ fn canonical_foundation_assert_owns_only_the_panic_service() {
             .is_none(),
         "the Assert unit must not receive every Corelib service"
     );
+}
+
+#[test]
+fn canonical_corelib_service_source_paths_are_lexically_normalized() {
+    for logical in [
+        CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
+        CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    ] {
+        let path = canonical_corelib_service_source_path(logical)
+            .unwrap_or_else(|| panic!("missing path for {logical}"));
+        assert!(
+            !path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir)),
+            "service path for {logical} retained ParentDir: {path:?}"
+        );
+        assert!(
+            path.ends_with(std::path::Path::new(logical)),
+            "normalized path for {logical} lost its relative suffix: {path:?}"
+        );
+    }
 }
