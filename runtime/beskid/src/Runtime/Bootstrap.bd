@@ -252,15 +252,17 @@ pub word TypeDescriptorPointerCount(pointer descriptor) {
 pub bool IsValidObjectAlignment(word alignment) {
     if alignment < 8 {
         return false;
-    }
-    mut word remaining = alignment;
-    while remaining > 1 {
-        if remaining % 2 != 0 {
-            return false;
+    } else {
+        mut word remaining = alignment;
+        while remaining > 1 {
+            if remaining % 2 != 0 {
+                return false;
+            } else {
+                remaining = remaining / 2;
+            }
         }
-        remaining = remaining / 2;
+        return true;
     }
-    return true;
 }
 
 /// Validates pointer-map offsets before using them as native addresses.
@@ -272,47 +274,53 @@ pub bool IsValidObjectAlignment(word alignment) {
 pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSize) {
     if pointerCount == 0 {
         return true;
-    }
-    if pointerMap == NativePointer(0) {
+    } else if pointerMap == NativePointer(0) {
         return false;
+    } else {
+        mut word index = 0;
+        while index < pointerCount {
+            if index > (NativeWordMax() - 8) / 8 {
+                return false;
+            } else {
+                word offset = raw_word_load(pointer_add(pointerMap, index * 8));
+                if offset < 16 {
+                    return false;
+                } else if offset % 8 != 0 {
+                    return false;
+                } else if offset > NativeWordMax() - 8 {
+                    return false;
+                } else if offset + 8 > objectSize {
+                    return false;
+                } else {
+                    index = index + 1;
+                }
+            }
+        }
+        return true;
     }
-    mut word index = 0;
-    while index < pointerCount {
-        if index > (NativeWordMax() - 8) / 8 {
-            return false;
-        }
-        word offset = raw_word_load(pointer_add(pointerMap, index * 8));
-        if offset < 16 {
-            return false;
-        }
-        if offset % 8 != 0 {
-            return false;
-        }
-        if offset > NativeWordMax() - 8 {
-            return false;
-        }
-        if offset + 8 > objectSize {
-            return false;
-        }
-        index = index + 1;
-    }
-    return true;
 }
 
 /// Fail-closed structural validation of a `BeskidTypeDescriptor` for closure environments.
 pub bool ValidateTypeDescriptor(pointer descriptor) {
     if descriptor == NativePointer(0) {
         return false;
+    } else {
+        word size = TypeDescriptorSize(descriptor);
+        if size < 16 {
+            return false;
+        } else {
+            word alignment = TypeDescriptorAlignment(descriptor);
+            if !IsValidObjectAlignment(alignment) {
+                return false;
+            } else {
+                return ValidatePointerMap(
+                    TypeDescriptorPointerMap(descriptor),
+                    TypeDescriptorPointerCount(descriptor),
+                    size
+                );
+            }
+        }
     }
-    word size = TypeDescriptorSize(descriptor);
-    if size < 16 {
-        return false;
-    }
-    word alignment = TypeDescriptorAlignment(descriptor);
-    if !IsValidObjectAlignment(alignment) {
-        return false;
-    }
-    return ValidatePointerMap(TypeDescriptorPointerMap(descriptor), TypeDescriptorPointerCount(descriptor), size);
 }
 
 /// Reserves one zeroed object whose header begins at the returned address.

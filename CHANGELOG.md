@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Rewrite canonical `ValidateTypeDescriptor` / `ValidatePointerMap` / `IsValidObjectAlignment`
+  with explicit if/else so post-if statements remain reachable after CYB-129 merge lowering.
 - Reuse the existing canonical runtime syntax session during sequential native runtime-kit
   publication, allowing debug and release kits to be built by one process without source-unit
   reassignment while retaining compiler-owned source authority (CYB-124).
