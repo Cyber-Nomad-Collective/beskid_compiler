@@ -24,9 +24,10 @@ pub use codegen_input::{CodegenInput, CodegenInputError};
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
 pub use errors::{CodegenError, RETIRED_HIR_LOWERING_PATH};
 pub use isle_adapter::{
-    ItemModuleImporter, SyntaxNodeFacts, emit_isle_expression, emit_isle_item,
-    emit_isle_item_with_call_importer, emit_isle_item_with_services,
-    emit_isle_item_with_services_specialization, syntax_item_signature,
+    ItemModuleImporter, SyntaxNodeFacts, emit_isle_expression,
+    emit_isle_expression_with_call_importer, emit_isle_item, emit_isle_item_with_call_importer,
+    emit_isle_item_with_services, emit_isle_item_with_services_specialization,
+    syntax_item_signature,
 };
 pub use linking::{
     FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, referenced_extern_imports,
@@ -47,6 +48,4 @@ pub use prepared_syntax::{
     lower_prepared_syntax_entrypoint, lower_prepared_syntax_module,
     lower_syntax_assembly_entrypoint,
 };
-pub use services::{
-    jit_symbol_for_item, materialize_source_path_for_lowering, render_clif,
-};
+pub use services::{jit_symbol_for_item, materialize_source_path_for_lowering, render_clif};

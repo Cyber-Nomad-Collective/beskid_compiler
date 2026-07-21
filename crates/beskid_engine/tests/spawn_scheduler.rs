@@ -1,13 +1,33 @@
 use std::path::Path;
 
-use beskid_engine::services::run_entrypoint;
+use beskid_abi::runtime_kit::BuildProfile;
+use beskid_engine::services::{prepare_jit_entrypoint, run_entrypoint};
+use beskid_engine::{Engine, host_runtime_target};
+use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
 #[test]
-#[ignore = "spawn expression lowering is not yet on the syntax-ISLE path; HIR spawn lowering still exists but run_entrypoint is syntax-ISLE-only"]
-fn jit_runs_spawn_under_fiber_scheduler() {
-    let source = "i64 child_value() { return 42; } unit Main() { spawn child_value; }";
-    run_entrypoint(Path::new("spawn_scheduler.bd"), source, "Main")
-        .expect("spawn should execute under the fiber scheduler without crashing");
+#[ignore = "CYB-86: syntax spawn reaches the retired interop_dispatch_i64 import, rejected by the exact ABI-v5 kit"]
+fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
+    let prefix = tempfile::tempdir().expect("exact runtime-kit prefix");
+    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
+        .expect("publish exact native runtime kit");
+    let target = host_runtime_target().expect("supported native host target");
+    let mut engine = Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug)
+        .expect("load exact native runtime kit");
+
+    let source = "i64 Main() { spawn (() => 42_i64); return 5; }";
+    let prepared = prepare_jit_entrypoint(Path::new("spawn_lambda.bd"), source, "Main")
+        .expect("syntax-owned lambda spawn must prepare for JIT");
+    engine
+        .compile_artifact(&prepared.artifact)
+        .expect("syntax-owned lambda spawn must compile in the JIT");
+    let pointer = unsafe { engine.entrypoint_ptr(&prepared.symbol) }.expect("Main pointer");
+    let main: extern "C" fn() -> i64 = unsafe { std::mem::transmute(pointer) };
+    assert_eq!(
+        main(),
+        5,
+        "spawned lambda must not corrupt the caller result"
+    );
 }
 
 #[test]
