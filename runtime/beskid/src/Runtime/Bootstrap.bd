@@ -352,26 +352,29 @@ pub pointer AllocateObject(pointer request) {
 pub pointer AllocateClosureEnvironment(pointer request) {
     if request == NativePointer(0) {
         return NativePointer(0);
+    } else {
+        pointer descriptor = AllocationDescriptor(request);
+        if !ValidateTypeDescriptor(descriptor) {
+            return NativePointer(0);
+        } else {
+            word size = AllocationSize(request);
+            word alignment = AllocationAlignment(request);
+            if size != TypeDescriptorSize(descriptor) {
+                return NativePointer(0);
+            } else if alignment != TypeDescriptorAlignment(descriptor) {
+                return NativePointer(0);
+            } else {
+                pointer object = SystemAllocate(size, alignment);
+                if object == NativePointer(0) {
+                    return object;
+                } else {
+                    memory_set(object, 0, size);
+                    InitializeObjectHeader(object, descriptor);
+                    return object;
+                }
+            }
+        }
     }
-    pointer descriptor = AllocationDescriptor(request);
-    if !ValidateTypeDescriptor(descriptor) {
-        return NativePointer(0);
-    }
-    word size = AllocationSize(request);
-    word alignment = AllocationAlignment(request);
-    if size != TypeDescriptorSize(descriptor) {
-        return NativePointer(0);
-    }
-    if alignment != TypeDescriptorAlignment(descriptor) {
-        return NativePointer(0);
-    }
-    pointer object = SystemAllocate(size, alignment);
-    if object == NativePointer(0) {
-        return object;
-    }
-    memory_set(object, 0, size);
-    InitializeObjectHeader(object, descriptor);
-    return object;
 }
 
 /// Stores a capture in a validated closure environment's registered pointer-map slot.
@@ -379,18 +382,19 @@ pub pointer AllocateClosureEnvironment(pointer request) {
 pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value) {
     if environment == NativePointer(0) {
         return false;
-    }
-    if !ValidateTypeDescriptor(descriptor) {
+    } else if !ValidateTypeDescriptor(descriptor) {
         return false;
+    } else {
+        word pointerCount = TypeDescriptorPointerCount(descriptor);
+        if mapIndex >= pointerCount {
+            return false;
+        } else {
+            pointer pointerMap = TypeDescriptorPointerMap(descriptor);
+            word offset = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
+            raw_word_store(pointer_add(environment, offset), NativeWord(value));
+            return true;
+        }
     }
-    word pointerCount = TypeDescriptorPointerCount(descriptor);
-    if mapIndex >= pointerCount {
-        return false;
-    }
-    pointer pointerMap = TypeDescriptorPointerMap(descriptor);
-    word offset = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
-    raw_word_store(pointer_add(environment, offset), NativeWord(value));
-    return true;
 }
 
 /// Reads `BeskidRootSlot.value` for a caller-owned root-frame slot.
