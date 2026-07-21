@@ -197,53 +197,27 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
 
 /// Rejection evidence status for each unsupported kind.
 ///
-/// `Present` names an existing span-bearing diagnostic regression. `CodexBlocker` records the
-/// remaining classification gap for CYB-81 (host composition, try, code strings).
+/// `Present` names an existing span-bearing diagnostic regression in `beskid_codegen` tests.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum UnsupportedEvidence {
     Present(&'static str),
-    CodexBlocker(&'static str),
 }
 
 #[test]
 fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
     use IndexedNodeKind as Syntax;
-    use UnsupportedEvidence::{CodexBlocker, Present};
+    use UnsupportedEvidence::Present;
 
     let evidence: &[(IndexedNodeKind, UnsupportedEvidence)] = &[
-        (
-            Syntax::HostDefinition,
-            CodexBlocker("CYB-81 host-composition: HostDefinition span-bearing rejection fixture"),
-        ),
-        (
-            Syntax::RegistryBlock,
-            CodexBlocker("CYB-81 host-composition: RegistryBlock span-bearing rejection fixture"),
-        ),
-        (
-            Syntax::RegistryEntry,
-            CodexBlocker("CYB-81 host-composition: RegistryEntry span-bearing rejection fixture"),
-        ),
-        (
-            Syntax::ScopeDefinition,
-            CodexBlocker("CYB-81 host-composition: ScopeDefinition span-bearing rejection fixture"),
-        ),
-        (
-            Syntax::ScopeHook,
-            CodexBlocker("CYB-81 host-composition: ScopeHook span-bearing rejection fixture"),
-        ),
-        (
-            Syntax::WithStatement,
-            CodexBlocker("CYB-81 host-composition: WithStatement span-bearing rejection fixture"),
-        ),
-        (
-            Syntax::LaunchStatement,
-            CodexBlocker("CYB-81 host-composition: LaunchStatement span-bearing rejection fixture"),
-        ),
+        (Syntax::HostDefinition, Present("isle_adapter.rs")),
+        (Syntax::RegistryBlock, Present("isle_adapter.rs")),
+        (Syntax::RegistryEntry, Present("isle_adapter.rs")),
+        (Syntax::ScopeDefinition, Present("isle_adapter.rs")),
+        (Syntax::ScopeHook, Present("isle_adapter.rs")),
+        (Syntax::WithStatement, Present("isle_adapter.rs")),
+        (Syntax::LaunchStatement, Present("isle_adapter.rs")),
         (Syntax::CodeStringLiteral, Present("isle_adapter.rs")),
-        (
-            Syntax::TryExpression,
-            CodexBlocker("CYB-81 try: TryExpression span-bearing rejection fixture"),
-        ),
+        (Syntax::TryExpression, Present("isle_adapter.rs")),
         (Syntax::LambdaExpression, Present("isle_adapter.rs")),
     ];
 
@@ -270,22 +244,13 @@ fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
             SyntaxNodeClassification::UnsupportedTypedOperation,
             "{kind:?}"
         );
-        match status {
-            Present(relative) => {
-                let path = codegen_tests.join(relative);
-                assert!(
-                    path.is_file(),
-                    "missing span-bearing rejection fixture for {kind:?}: {}",
-                    path.display()
-                );
-            }
-            CodexBlocker(reason) => {
-                assert!(
-                    reason.contains("CYB-81"),
-                    "Codex blocker for {kind:?} must cite CYB-81: {reason}"
-                );
-            }
-        }
+        let UnsupportedEvidence::Present(relative) = status;
+        let path = codegen_tests.join(relative);
+        assert!(
+            path.is_file(),
+            "missing span-bearing rejection fixture for {kind:?}: {}",
+            path.display()
+        );
     }
 }
 

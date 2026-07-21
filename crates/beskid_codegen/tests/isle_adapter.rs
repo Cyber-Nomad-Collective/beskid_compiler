@@ -293,6 +293,115 @@ fn unsupported_code_string_reports_deterministic_span_bearing_missing_rule() {
     assert!(first.contains("CodeStringLiteral@"), "{first}");
 }
 
+/// CYB-106: every remaining UnsupportedTypedOperation host/try kind has a span-bearing
+/// `MissingRuleOrFact` regression (construct `@` span, no HIR fallback).
+#[test]
+fn unsupported_host_composition_and_try_report_deterministic_span_bearing_missing_rule() {
+    const HOST_COMPOSITION_SOURCE: &str = r#"
+host AppHost() {
+    registry {
+        single Logger;
+    }
+    scope Request() {
+        single Logger;
+    }
+    startup() {
+        return;
+    }
+}
+
+type Logger {
+    i32 value
+}
+
+i32 Main() {
+    with Request() {
+        return;
+    }
+    launch AppHost();
+    return 0;
+}
+"#;
+    const TRY_SOURCE: &str = r#"
+enum Result { Ok(i32 value), Error(i32 code) }
+
+i32 Main() {
+    Result r = Result::Ok(1);
+    i32 value = r?;
+    return value;
+}
+"#;
+
+    for (source, kind, construct) in [
+        (
+            HOST_COMPOSITION_SOURCE,
+            beskid_queries::IndexedNodeKind::HostDefinition,
+            "HostDefinition@",
+        ),
+        (
+            HOST_COMPOSITION_SOURCE,
+            beskid_queries::IndexedNodeKind::RegistryBlock,
+            "RegistryBlock@",
+        ),
+        (
+            HOST_COMPOSITION_SOURCE,
+            beskid_queries::IndexedNodeKind::RegistryEntry,
+            "RegistryEntry@",
+        ),
+        (
+            HOST_COMPOSITION_SOURCE,
+            beskid_queries::IndexedNodeKind::ScopeDefinition,
+            "ScopeDefinition@",
+        ),
+        (
+            HOST_COMPOSITION_SOURCE,
+            beskid_queries::IndexedNodeKind::ScopeHook,
+            "ScopeHook@",
+        ),
+        (
+            HOST_COMPOSITION_SOURCE,
+            beskid_queries::IndexedNodeKind::WithStatement,
+            "WithStatement@",
+        ),
+        (
+            HOST_COMPOSITION_SOURCE,
+            beskid_queries::IndexedNodeKind::LaunchStatement,
+            "LaunchStatement@",
+        ),
+        (
+            TRY_SOURCE,
+            beskid_queries::IndexedNodeKind::TryExpression,
+            "TryExpression@",
+        ),
+    ] {
+        assert_eq!(
+            beskid_isle::classify_syntax_node_kind(kind),
+            beskid_isle::SyntaxNodeClassification::UnsupportedTypedOperation,
+            "{kind:?}"
+        );
+
+        let (input, isa, root) = item_fixture_with_root(source);
+        let node = find_node(input.database(), root, kind)
+            .unwrap_or_else(|| panic!("expected syntax node {kind:?}"));
+
+        let error = emit_isle_expression(&input, isa.as_ref(), node, types::I64).expect_err(
+            "unsupported typed operations must not route around generated ISLE",
+        );
+        let first = error.display_with_db(input.database());
+        let repeated = error.display_with_db(input.database());
+
+        assert_eq!(first, repeated, "{kind:?}");
+        assert!(
+            first.contains("MissingRuleOrFact"),
+            "{kind:?}: {first}"
+        );
+        assert!(
+            first.contains(construct),
+            "{kind:?}: expected construct {construct} in {first}"
+        );
+    }
+}
+
 #[test]
 fn cast_facts_are_independent_of_the_shared_literal_syntax_classification() {
     let (input, _isa, root) = item_fixture_with_root("unit Main() { i64 widenedLiteral = 1; }");
@@ -2505,6 +2614,11 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     pointer_map[0] = 16;
     assert_eq!(pointer_map[0], 16, "restore valid pointer offset before allocate");
     descriptor[1] = 8;
+    assert_eq!(
+        validate(descriptor.as_ptr()),
+        1,
+        "restored descriptor is accepted before allocate"
+    );
     let request = [32usize, 8, descriptor.as_mut_ptr() as usize];
     let environment = allocate_environment(request.as_ptr());
     assert!(
