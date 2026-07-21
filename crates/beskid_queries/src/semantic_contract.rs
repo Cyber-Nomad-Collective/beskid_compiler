@@ -1756,9 +1756,15 @@ fn call_lowering_for_node(
             }
         }
         beskid_analysis::syntax::Expression::Member(member) => {
-            method_declaration_for_member_receiver(db, program, index, key, call, member)
-                .map(CallLowering::Direct)
-                .ok_or_else(|| SemanticError::unavailable("call_lowering"))
+            // Nominal methods lower Direct when declaration authority exists.
+            // Extern/contract members and other receivers without a syntax method
+            // declaration remain Dynamic rather than unavailable, matching Path
+            // import/builtin fallback so production JIT/AOT can emit the call.
+            Ok(
+                method_declaration_for_member_receiver(db, program, index, key, call, member)
+                    .map(CallLowering::Direct)
+                    .unwrap_or(CallLowering::Dynamic),
+            )
         }
         _ => Err(SemanticError::unavailable("call_lowering")),
     })
