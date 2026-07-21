@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Register process-linked soft-builtin addresses (`interop_dispatch_*`, `panic_str`, …) on
+  exact ABI-v5 JIT modules so Cranelift can resolve imports after validation allowlists them.
 - Forward the Windows COFF import library from `emit_host_platform_library_pair` through
   `build_native_host` and fail closed when a COFF host kit omits it (CYB-112).
 - Lexically normalize compiler-owned Corelib service source paths and match Foundation

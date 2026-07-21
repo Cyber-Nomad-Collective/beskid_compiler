@@ -15,6 +15,7 @@ beskid_aot = { path = "../beskid_aot" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_queries = { path = "../beskid_queries" }
 beskid_pipeline = { path = "../beskid_pipeline" }
+beskid_runtime = { path = "../beskid_runtime" }
 anyhow = "1"
 
 [features]
