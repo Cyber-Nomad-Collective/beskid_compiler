@@ -16,7 +16,6 @@ use super::roots::effective_roots_for_plan;
 use super::unit_builder::UnitBuilder;
 use super::unit_cache::{disk_cache_stats, ensure_manifest};
 use super::{ProgramAssembly, SourceUnit, UnitHir};
-use crate::projects::graph::pathing::normalize_existing_path;
 use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 use crate::syntax::{Node, Program, Spanned};
@@ -448,18 +447,18 @@ fn trusted_corelib_service_paths(
         else {
             continue;
         };
-        // Resolve both sides so a clean Foundation `source_root` matches the compiler-owned
-        // path even when either side still carries symlink or relative components.
-        let canonical_path = normalize_existing_path(&canonical_path);
+        // Lexically clean both sides so `../..` from CARGO_MANIFEST_DIR matches a resolved
+        // Foundation `source_root`. Do not canonicalize: symlink resolution would let a
+        // user-project link to the compiler-owned file inherit panic/syscall provenance.
         let Some((index, dependency)) = plan.dependency_projects.iter().enumerate().find(
             |(_, dependency)| {
-                let source_root = normalize_existing_path(&dependency.source_root);
+                let source_root = normalize_lexically(&dependency.source_root);
                 canonical_path.starts_with(&source_root)
             },
         ) else {
             continue;
         };
-        let source_root = normalize_existing_path(&dependency.source_root);
+        let source_root = normalize_lexically(&dependency.source_root);
         let Ok(relative) = canonical_path.strip_prefix(&source_root) else {
             continue;
         };
@@ -477,6 +476,21 @@ fn trusted_corelib_service_paths(
     trusted.sort();
     trusted.dedup();
     Arc::from(trusted)
+}
+
+fn normalize_lexically(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 fn paths_match(left: &Path, right: &Path) -> bool {
