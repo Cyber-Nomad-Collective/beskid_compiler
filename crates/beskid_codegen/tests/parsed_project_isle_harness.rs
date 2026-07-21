@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::services::{
-    resolved_input_from_plan, synthetic_compile_plan_for_source, FrontEndOptions,
+    FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
 use beskid_analysis::{
     projects::{
@@ -217,6 +217,51 @@ fn parsed_direct_zero_argument_spawn_emits_syntax_owned_trampoline_and_fiber_dis
         "{trampoline_clif}"
     );
     assert!(trampoline_clif.contains("return"), "{trampoline_clif}");
+}
+
+#[test]
+fn parsed_zero_capture_lambda_spawn_emits_syntax_owned_entry_and_fiber_dispatch() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        i64 Main() { return spawn (() => 7_i64); }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    assert_eq!(
+        lowered.artifact.functions.len(),
+        3,
+        "Main, the syntax-owned lambda entry, and its spawn trampoline"
+    );
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact");
+    let lambda = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_spawn_lambda_syntax_"))
+        .expect("syntax-owned lambda entry");
+    let trampoline = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_spawn_entry_syntax_"))
+        .expect("syntax-owned spawn trampoline");
+    let main_clif = main.function.display().to_string();
+    let lambda_clif = lambda.function.display().to_string();
+    let trampoline_clif = trampoline.function.display().to_string();
+    assert!(main_clif.contains("interop_dispatch_i64"), "{main_clif}");
+    assert!(main_clif.contains("func_addr"), "{main_clif}");
+    assert!(lambda_clif.contains("iconst.i64 7"), "{lambda_clif}");
+    assert!(
+        trampoline_clif.contains("__beskid_spawn_lambda_syntax_"),
+        "{trampoline_clif}"
+    );
 }
 
 #[test]

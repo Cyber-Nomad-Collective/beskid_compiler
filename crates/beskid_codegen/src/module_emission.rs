@@ -4,15 +4,15 @@ use std::time::Instant;
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
-    call_lowering, child_nodes, format_ast_node_key, generic_call_specialization,
+    CallLowering, ItemSignature, SemanticTypeId, SourceUnitId, call_lowering, child_nodes,
+    closure_environment, closure_signature, format_ast_node_key, generic_call_specialization,
     item_abi_signature, item_name, node_kind, node_span, resolved_item, spawn_entry_validation,
-    CallLowering, ItemSignature, SemanticTypeId, SourceUnitId,
-};
-use cranelift_codegen::ir::{
-    types, Endianness, ExtFuncData, ExternalName, FuncRef, Function, GlobalValueData, Signature,
-    Type, Value,
 };
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
+use cranelift_codegen::ir::{
+    Endianness, ExtFuncData, ExternalName, FuncRef, Function, GlobalValueData, Signature, Type,
+    Value, types,
+};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -23,8 +23,8 @@ use cranelift_module::{
 use crate::lowering::descriptor::TypeDescriptorData;
 use crate::lowering::{CodegenArtifact, ExternImport};
 use crate::{
-    emit_isle_item_with_services, emit_isle_item_with_services_specialization, CodegenContext,
-    CodegenInput,
+    CodegenContext, CodegenInput, emit_isle_expression_with_call_importer,
+    emit_isle_item_with_services, emit_isle_item_with_services_specialization,
 };
 
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
@@ -57,6 +57,7 @@ struct SpawnTrampoline {
     spawn: AstNodeKey,
     target_symbol: String,
     target_signature: Signature,
+    lambda_body: Option<AstNodeKey>,
     symbol: String,
 }
 
@@ -243,8 +244,31 @@ fn lower_resolved_syntax_program(
     }));
 
     let mut context = CodegenContext::new();
-    let mut functions = Vec::with_capacity(items.len() + trampolines.len());
+    let lambda_count = trampolines
+        .iter()
+        .filter(|trampoline| trampoline.lambda_body.is_some())
+        .count();
+    let mut functions = Vec::with_capacity(items.len() + trampolines.len() + lambda_count);
     for trampoline in &trampolines {
+        if let Some(body) = trampoline.lambda_body {
+            let result = trampoline
+                .target_signature
+                .returns
+                .first()
+                .map(|parameter| parameter.value_type)
+                .ok_or_else(|| {
+                    emission_verification("spawned lambda entry must return an ABI value")
+                })?;
+            let function = {
+                let mut importer = ArtifactCallImporter { symbols: &symbols };
+                emit_isle_expression_with_call_importer(input, isa, body, result, &mut importer)
+                    .map_err(|error| emission_error(input, error))?
+            };
+            functions.push(crate::LoweredFunction {
+                name: trampoline.target_symbol.clone(),
+                function,
+            });
+        }
         functions.push(crate::LoweredFunction {
             name: trampoline.symbol.clone(),
             function: emit_spawn_trampoline(trampoline, isa)?,
@@ -319,9 +343,11 @@ fn lower_resolved_syntax_program(
     })
 }
 
-/// Resolve only the first production spawn shape: a direct, non-generic, zero-argument item.
-/// Every other source shape is left without a trampoline so generated ISLE reports the normal
-/// span-bearing missing-fact failure instead of silently re-entering HIR lowering.
+/// Resolve source-proven zero-argument entries without ever re-entering HIR lowering.
+///
+/// Direct items and capture-free lambdas each receive syntax-owned trampoline targets. Capturing
+/// lambdas deliberately remain unavailable until the canonical allocated/rooted ABI-v5 closure
+/// environment can be emitted.
 fn resolve_spawn_trampolines(
     input: &CodegenInput<'_>,
     isa: &dyn TargetIsa,
@@ -341,52 +367,93 @@ fn resolve_spawn_trampolines(
         else {
             continue;
         };
-        if !validation.is_zero_argument_entry
-            || node_kind(db, validation.target)
-                .map_err(|error| emission_verification(error.to_string()))?
-                != Some(beskid_queries::IndexedNodeKind::PathExpression)
+        if !validation.is_zero_argument_entry {
+            continue;
+        }
+        match node_kind(db, validation.target)
+            .map_err(|error| emission_verification(error.to_string()))?
         {
-            continue;
+            Some(beskid_queries::IndexedNodeKind::PathExpression) => {
+                let Some(target) = resolved_item(db, validation.target)
+                    .map_err(|error| emission_verification(error.to_string()))?
+                else {
+                    continue;
+                };
+                let Some(signature) = item_abi_signature(db, target.declaration)
+                    .map_err(|error| emission_verification(error.to_string()))?
+                    .and_then(|signature| spawn_target_signature(isa, signature))
+                else {
+                    continue;
+                };
+                if !signature.params.is_empty() {
+                    continue;
+                }
+                let callee = DirectCallee::item(target.declaration);
+                let Some(target_symbol) = symbols.get(&callee).cloned() else {
+                    continue;
+                };
+                let symbol = spawn_trampoline_symbol(&target_symbol, spawn);
+                trampolines.push(SpawnTrampoline {
+                    spawn,
+                    target_symbol,
+                    target_signature: signature,
+                    lambda_body: None,
+                    symbol,
+                });
+            }
+            Some(beskid_queries::IndexedNodeKind::LambdaExpression) => {
+                let Some(environment) = closure_environment(db, validation.target)
+                    .map_err(|error| emission_verification(error.to_string()))?
+                else {
+                    continue;
+                };
+                if !environment.captures.is_empty() {
+                    continue;
+                }
+                let Some(lambda) = closure_signature(db, validation.target)
+                    .map_err(|error| emission_verification(error.to_string()))?
+                else {
+                    continue;
+                };
+                let Some(signature) = spawn_target_signature(isa, lambda.callable) else {
+                    continue;
+                };
+                if !signature.params.is_empty() {
+                    continue;
+                }
+                let target_symbol = format!(
+                    "__beskid_spawn_lambda_syntax_g{}_n{}",
+                    spawn.generation.0, spawn.node.0
+                );
+                let symbol = spawn_trampoline_symbol(&target_symbol, spawn);
+                trampolines.push(SpawnTrampoline {
+                    spawn,
+                    target_symbol,
+                    target_signature: signature,
+                    lambda_body: Some(lambda.body),
+                    symbol,
+                });
+            }
+            _ => continue,
         }
-        let Some(target) = resolved_item(db, validation.target)
-            .map_err(|error| emission_verification(error.to_string()))?
-        else {
-            continue;
-        };
-        let Some(signature) = item_abi_signature(db, target.declaration)
-            .map_err(|error| emission_verification(error.to_string()))?
-            .and_then(|signature| spawn_target_signature(isa, signature))
-        else {
-            continue;
-        };
-        if !signature.params.is_empty() {
-            continue;
-        }
-        let callee = DirectCallee::item(target.declaration);
-        let Some(target_symbol) = symbols.get(&callee).cloned() else {
-            continue;
-        };
-        let symbol = format!(
-            "__beskid_spawn_entry_syntax_{}_g{}_n{}",
-            target_symbol
-                .chars()
-                .map(|character| if character.is_ascii_alphanumeric() {
-                    character
-                } else {
-                    '_'
-                })
-                .collect::<String>(),
-            spawn.generation.0,
-            spawn.node.0,
-        );
-        trampolines.push(SpawnTrampoline {
-            spawn,
-            target_symbol,
-            target_signature: signature,
-            symbol,
-        });
     }
     Ok(trampolines)
+}
+
+fn spawn_trampoline_symbol(target_symbol: &str, spawn: AstNodeKey) -> String {
+    format!(
+        "__beskid_spawn_entry_syntax_{}_g{}_n{}",
+        target_symbol
+            .chars()
+            .map(|character| if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '_'
+            })
+            .collect::<String>(),
+        spawn.generation.0,
+        spawn.node.0,
+    )
 }
 
 fn collect_spawn_nodes(
@@ -578,8 +645,8 @@ fn trace_node_facts(
             }
             None => crate::isle_trace::event(|| {
                 format!(
-                "event=call.fact key={node} lowering={lowering_name} callee=<unavailable> module_import=<none>"
-            )
+                    "event=call.fact key={node} lowering={lowering_name} callee=<unavailable> module_import=<none>"
+                )
             }),
         }
     }

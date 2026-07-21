@@ -8,6 +8,12 @@ fn aot_compiles_simple_function() {
     aot_compile_only(source);
 }
 
+#[test]
+fn aot_compiles_zero_capture_lambda_spawn_through_syntax_artifact() {
+    let source = "i64 Main() { spawn (() => 42_i64); return 5; }";
+    aot_compile_only(source);
+}
+
 #[ignore = "AOT/HIR runtime probes incomplete on local ABI-v5 kit (missing _alloc / expression types / try desugar)"]
 #[test]
 fn aot_executes_array_new_builtin_call() {

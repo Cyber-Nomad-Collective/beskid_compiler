@@ -10,17 +10,16 @@ use beskid_isle::{
     ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{
-    abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration,
-    block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments,
-    call_lowering, cast_intents, child_nodes, closure_call_target, closure_environment,
-    dispatch_builtin_symbol, enum_constructor, enum_layout, enum_match,
-    generic_call_specialization, item_abi_signature, item_body, literal_fact, local_slot,
-    mutable_local_assignment, node_kind, node_type, nominal_member_receiver, operator_fact,
-    range_for_fact, resolved_item, resolved_local, runtime_intrinsic_name, spawn_entry_validation,
-    test_statement_nodes, AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact,
-    SemanticTypeId,
+    AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
+    aggregate_field_access, aggregate_layout, aggregate_literal_declaration, block_statement_nodes,
+    call_abi_signature, call_argument_abi_type, call_arguments, call_lowering, cast_intents,
+    child_nodes, closure_call_target, closure_environment, dispatch_builtin_symbol,
+    enum_constructor, enum_layout, enum_match, generic_call_specialization, item_abi_signature,
+    item_body, literal_fact, local_slot, mutable_local_assignment, node_kind, node_type,
+    nominal_member_receiver, operator_fact, range_for_fact, resolved_item, resolved_local,
+    runtime_intrinsic_name, spawn_entry_validation, test_statement_nodes,
 };
-use cranelift_codegen::ir::{types, FuncRef, Type, UserFuncName};
+use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{FuncId, Module};
@@ -474,15 +473,21 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn spawn_entry(&self, key: AstNodeKey) -> Option<beskid_isle::SpawnEntry> {
         let validation = self.query(spawn_entry_validation(self.db, key))?;
-        if !validation.is_zero_argument_entry
-            || self.query(node_kind(self.db, validation.target))
-                != Some(beskid_queries::IndexedNodeKind::PathExpression)
-        {
+        if !validation.is_zero_argument_entry {
             return None;
         }
-        // The first leaf deliberately permits only a directly resolved, non-generic source
-        // item. A lambda (even one with no captures) requires an owned closure/trampoline path.
-        let _target = self.query(resolved_item(self.db, validation.target))?;
+        match self.query(node_kind(self.db, validation.target))? {
+            beskid_queries::IndexedNodeKind::PathExpression => {
+                let _target = self.query(resolved_item(self.db, validation.target))?;
+            }
+            beskid_queries::IndexedNodeKind::LambdaExpression => {
+                let environment = self.query(closure_environment(self.db, validation.target))?;
+                if !environment.captures.is_empty() {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
         Some(beskid_isle::SpawnEntry {
             trampoline: DirectCallee::spawn_trampoline(key),
         })
@@ -790,6 +795,29 @@ pub fn emit_isle_expression<'db>(
         emitter.signature([], [result]),
         &facts,
         body,
+    )
+}
+
+/// Emit one parsed expression through generated ISLE selection with exact artifact call imports.
+///
+/// This is used for syntax-owned helper entries such as capture-free spawned lambdas. The caller
+/// supplies the helper ABI; every nested direct call still resolves through the module's exact
+/// syntax-owned symbol table rather than a legacy lowering path.
+pub fn emit_isle_expression_with_call_importer<'db>(
+    input: &'db CodegenInput<'db>,
+    isa: &dyn TargetIsa,
+    body: AstNodeKey,
+    result: Type,
+    importer: &mut dyn CallImporter,
+) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
+    let emitter = FunctionEmitter::new(isa);
+    let facts = SyntaxNodeFacts::new_with_isa(input, isa);
+    emitter.emit_expression_with_call_importer(
+        UserFuncName::user(0, 0),
+        emitter.signature([], [result]),
+        &facts,
+        body,
+        importer,
     )
 }
 
