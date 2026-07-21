@@ -2169,6 +2169,10 @@ fn generic_call_specialization_tracked(
         let lowering = match call_lowering(db, key) {
             Ok(Some(lowering)) => lowering,
             Ok(None) => return None,
+            // Unavailable call sites cannot contribute call-derived ABI specializations.
+            // Propagating the error aborted whole-module emission for Core.Output (enum
+            // constructors / unresolved paths in the reachable Syscall body).
+            Err(error) if error.is_unavailable() => return None,
             Err(error) => return Some(Err(error)),
         };
         let declaration = match lowering {
