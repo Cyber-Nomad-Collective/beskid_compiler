@@ -4684,6 +4684,11 @@ fn item_export_symbol_tracked(
             .attributes
             .iter()
             .find(|attribute| attribute.node.name.node.name == "Export")?;
+        if definition.visibility.node != beskid_analysis::syntax::Visibility::Public {
+            return Some(Err(SemanticError::new(
+                "`[Export]` applies to `pub` functions only",
+            )));
+        }
         let raw = export.node.arguments.iter().find_map(|argument| {
             if argument.node.name.node.name != "Symbol" {
                 return None;
@@ -4697,8 +4702,9 @@ fn item_export_symbol_tracked(
             };
             value.strip_prefix('"')?.strip_suffix('"')
         })?;
-        Some(ExportSymbol(Arc::from(raw)))
+        Some(Ok(ExportSymbol(Arc::from(raw))))
     })
+    .and_then(|export| export.transpose())
 }
 
 #[salsa::tracked]

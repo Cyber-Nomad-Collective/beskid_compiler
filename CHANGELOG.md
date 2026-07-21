@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fail syntax-module lowering closed when `[Export]` is attached to a non-public function, rather
+  than silently omitting the invalid export from the AOT/JIT metadata surface (CYB-119).
+
 ### Removed
 
 - Remove the no-op legacy Rust dispatch bootstrap and its bridge/test callers; host overrides
