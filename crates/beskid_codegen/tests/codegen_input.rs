@@ -209,6 +209,154 @@ fn canonical_runtime_source_can_import_manifest_owned_intrinsics() {
     assert_eq!(intrinsic.name, "native_word_from_pointer");
 }
 
+#[test]
+fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
+    use beskid_abi::abi_v5::AbiType;
+    use beskid_queries::{item_signature, runtime_intrinsic_name};
+
+    let mut db = BeskidDatabase::default();
+    let directory = tempfile::tempdir().expect("runtime project").keep();
+    let source = canonical_runtime_sources().pop().expect("embedded source");
+    let source_path = directory.join("Bootstrap.bd");
+    std::fs::write(&source_path, &source.source).expect("write canonical source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
+        .expect("parse canonical source");
+    let project = ProjectSession::new(
+        &db,
+        directory.clone(),
+        source_path.clone(),
+        "beskid-runtime-native".into(),
+        "lock".into(),
+    );
+    let generation = SyntaxGenerationId(2);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
+            path: source_path.clone(),
+            source: source.source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let target = linux_target();
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = build_canonical_runtime_typed_program(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_runtime_intrinsic_capability(&manifest).expect("compiler authority"),
+    )
+    .expect("exact canonical assembly");
+    let root = AstNodeKey {
+        unit: SourceUnitId::new(&db, source_path.clone()),
+        generation,
+        node: AstNodeId(0),
+    };
+    let input = CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), manifest.clone())
+        .expect("canonical codegen input");
+
+    let trap_meta = manifest
+        .trusted_runtime_intrinsics
+        .iter()
+        .find(|intrinsic| intrinsic.name == "trap")
+        .expect("manifest owns trap");
+    assert_eq!(trap_meta.symbol, "beskid_rt_v5_trap");
+    assert_eq!(
+        trap_meta.params.as_slice(),
+        &[AbiType::U8, AbiType::Pointer, AbiType::USize]
+    );
+    assert_eq!(trap_meta.result, AbiType::Void);
+    assert!(
+        trap_meta.noreturn,
+        "ABI never result must be recorded as noreturn Void"
+    );
+
+    let trap = find_node_matching(&db, root, IndexedNodeKind::CallExpression, |call| {
+        matches!(
+            runtime_intrinsic_name(&db, call).ok().flatten(),
+            Some(name) if name.0.as_ref() == "trap"
+        )
+    })
+    .expect("canonical Trap wrapper invokes trap");
+    let (_, authorized) = input
+        .runtime_intrinsic_for(trap, "trap")
+        .expect("trusted package may import trap");
+    assert_eq!(authorized.symbol, "beskid_rt_v5_trap");
+    assert_eq!(
+        authorized.params.as_slice(),
+        &[AbiType::U8, AbiType::Pointer, AbiType::USize],
+        "manifest keeps pointer-width unsigned as ABI usize"
+    );
+    let span = beskid_queries::node_span(&db, trap)
+        .expect("trap span")
+        .expect("current trap span");
+    assert!(span.end > span.start, "trap retains a source span");
+
+    let trap_wrapper = find_node_matching(&db, root, IndexedNodeKind::FunctionDefinition, |item| {
+        matches!(
+            beskid_queries::item_name(&db, item).ok().flatten().as_deref(),
+            Some("Trap")
+        )
+    })
+    .expect("Trap export");
+    assert_eq!(
+        item_signature(&db, trap_wrapper)
+            .expect("Trap signature")
+            .expect("current Trap"),
+        beskid_queries::ItemSignature {
+            parameters: std::sync::Arc::from([
+                beskid_queries::SemanticTypeId::U8,
+                beskid_queries::SemanticTypeId::POINTER,
+                beskid_queries::SemanticTypeId::WORD,
+            ]),
+            result: beskid_queries::SemanticTypeId::NEVER,
+        },
+        "source Trap surface maps ABI usize to word and retains never"
+    );
+
+    let (user_db, user_typed, user_root, user_target) = input_fixture();
+    let user_input = CodegenInput::new(
+        &user_db,
+        user_typed,
+        Arc::from([user_root]),
+        user_target.clone(),
+        AbiManifestV5::canonical_runtime(user_target),
+    )
+    .expect("ordinary input");
+    assert!(
+        user_input.runtime_intrinsic_for(user_root, "trap").is_none(),
+        "user packages cannot invoke the trusted trap intrinsic"
+    );
+}
+
+fn find_node_matching(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    target: IndexedNodeKind,
+    predicate: impl Fn(AstNodeKey) -> bool + Copy,
+) -> Option<AstNodeKey> {
+    if node_kind(db, key).ok().flatten() == Some(target) && predicate(key) {
+        return Some(key);
+    }
+    child_nodes(db, key)
+        .ok()
+        .flatten()?
+        .iter()
+        .copied()
+        .find_map(|child| find_node_matching(db, child, target, predicate))
+}
+
 fn linux_target() -> TargetMetadata {
     TargetMetadata::supported()
         .into_iter()

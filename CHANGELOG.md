@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Expand generation-safe `completion_candidates` with lexical locals, type/enum names, and
+  explicitly annotated nominal receiver fields/methods (CYB-19). Inferred receivers stay
+  unavailable.
+- Add the OpenSpec 6.8.1a trap scenario regression: canonical `Trap` maps ABI `usize` to
+  source `word`/`never`, retains a source span, and ordinary packages cannot import
+  `beskid_rt_v5_trap` (CYB-18).
 - Expand the parsed-project production harness with inline method reachability, generation-safe
   capture-fact proof plus fail-closed capturing lambda lowering, and canonical-runtime trusted
   intrinsic lowering through `lower_canonical_runtime_prepared_syntax` (CYB-12/CYB-15).
