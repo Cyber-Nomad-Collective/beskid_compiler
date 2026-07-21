@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Expand the parsed-project production harness with inline method reachability, generation-safe
+  capture-fact proof plus fail-closed capturing lambda lowering, and canonical-runtime trusted
+  intrinsic lowering through `lower_canonical_runtime_prepared_syntax` (CYB-12/CYB-15).
+- Include `MethodDefinition` callees in generation-safe `direct_callees` / `reachable_items` so
+  production `lower_syntax_assembly_entrypoint` retains inline methods already proven by
+  `call_lowering` (CYB-15/CYB-64).
+- Migrate the LSP intellisense member-completion fixture off legacy
+  `beskid_analysis::services::completion_candidates` onto syntax-only `handle_completion` with no
+  document analysis snapshot (CYB-19).
 - Span-bearing `MissingRuleOrFact` rejection fixtures for remaining unsupported inventory
   families (host composition, try) and inventory audit rows flipped from `CodexBlocker` to
   `Present` (CYB-106 under CYB-81).
@@ -27,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Replace `ValidatePointerMap` `NativeWordMax() - 8` overflow guards with wrapping
+  multiply/add checks. `word` lowers as a signed Cranelift integer, so the old bound was
+  negative under SignedGreaterThan and rejected every valid closure descriptor in the
+  Linux JIT `isle_adapter` fixture (CYB-129).
+- Lower unresolved Path call receivers as `CallLowering::Dynamic` (matching Member), so
+  extern contract members and imported helpers no longer abort ISLE emission with
+  unavailable `call_lowering` (CYB-129 Rust/Corelib gate).
+- Rewrite canonical `ValidateTypeDescriptor` / `ValidatePointerMap` / `IsValidObjectAlignment`
+  with explicit if/else so post-if statements remain reachable after CYB-129 merge lowering.
 - Reuse the existing canonical runtime syntax session during sequential native runtime-kit
   publication, allowing debug and release kits to be built by one process without source-unit
   reassignment while retaining compiler-owned source authority (CYB-124).

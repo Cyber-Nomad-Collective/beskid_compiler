@@ -1736,29 +1736,25 @@ fn call_lowering_for_node(
                 } else {
                     Ok(CallLowering::Direct(declaration))
                 }
-            } else if imported_call_receiver_exists(db, key, path)
-                || (path
-                    .segments
-                    .iter()
-                    .all(|segment| segment.node.type_args.is_empty())
-                    && beskid_analysis::builtins::builtin_for_path(
-                        &path
-                            .segments
-                            .iter()
-                            .map(|segment| segment.node.name.node.name.clone())
-                            .collect::<Vec<_>>(),
-                    )
-                    .is_some())
-            {
-                Ok(CallLowering::Dynamic)
             } else {
-                Err(SemanticError::unavailable("call_lowering"))
+                // Imports, builtins, multi-segment unresolved paths (extern contract
+                // members such as `C.getpid`), and other receivers without item
+                // declaration authority remain Dynamic — same as Member — so
+                // reachability and ISLE emission do not fail closed on missing
+                // MethodDefinition authority (CYB-129 Rust/Corelib gate).
+                Ok(CallLowering::Dynamic)
             }
         }
         beskid_analysis::syntax::Expression::Member(member) => {
-            method_declaration_for_member_receiver(db, program, index, key, call, member)
-                .map(CallLowering::Direct)
-                .ok_or_else(|| SemanticError::unavailable("call_lowering"))
+            // Nominal methods lower Direct when declaration authority exists.
+            // Extern/contract members and other receivers without a syntax method
+            // declaration remain Dynamic rather than unavailable, matching Path
+            // import/builtin fallback so production JIT/AOT can emit the call.
+            Ok(
+                method_declaration_for_member_receiver(db, program, index, key, call, member)
+                    .map(CallLowering::Direct)
+                    .unwrap_or(CallLowering::Dynamic),
+            )
         }
         _ => Err(SemanticError::unavailable("call_lowering")),
     })
@@ -4812,6 +4808,9 @@ fn direct_callees_tracked(
             && node
                 .of::<beskid_analysis::syntax::TestDefinition>()
                 .is_none()
+            && node
+                .of::<beskid_analysis::syntax::MethodDefinition>()
+                .is_none()
         {
             return None;
         }
@@ -4831,10 +4830,13 @@ fn direct_callees_for_item(
         if !is_ancestor(index, item.node, call_id) {
             continue;
         }
-        let call_node = index
-            .node_at(program, call_id)
-            .ok_or_else(|| SemanticError::unavailable("direct_callees"))?;
-        let lowering = call_lowering_for_node(
+        let Some(call_node) = index.node_at(program, call_id) else {
+            continue;
+        };
+        // Reachability enumerates Direct callees only. Unavailable/dynamic call
+        // classifications (e.g. extern contract members) are not Direct edges and
+        // must not fail closed the whole entrypoint walk.
+        let Some(Ok(lowering)) = call_lowering_for_node(
             db,
             program,
             index,
@@ -4843,8 +4845,9 @@ fn direct_callees_for_item(
                 ..item
             },
             call_node,
-        )
-        .ok_or_else(|| SemanticError::unavailable("direct_callees"))??;
+        ) else {
+            continue;
+        };
         if let CallLowering::Direct(declaration) = lowering
             && !callees.contains(&declaration)
         {

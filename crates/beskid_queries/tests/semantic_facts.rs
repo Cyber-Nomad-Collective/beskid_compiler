@@ -2553,6 +2553,37 @@ i32 Main() {
 }
 
 #[test]
+fn reachable_items_includes_inline_method_callees_without_hir() {
+    let source =
+        "type Point { i32 x, i32 Ping() { return 7; } } i32 Main() { return Point { x: 1 }.Ping(); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let program = key(unit, generation, &index, NodeKind::Program, 0);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(
+        call_lowering(&db, call).expect("inline method call"),
+        Some(beskid_queries::CallLowering::Direct(method))
+    );
+    assert_eq!(
+        direct_callees(&db, main).expect("main callees"),
+        Some(Arc::from([method]))
+    );
+    assert_eq!(
+        direct_callees(&db, method).expect("method callees"),
+        Some(Arc::from([]))
+    );
+    assert_eq!(
+        reachable_items(&db, program, main)
+            .expect("reachable query")
+            .expect("reachable facts")
+            .as_ref(),
+        &[main, method]
+    );
+}
+
+#[test]
 fn item_resolution_does_not_cross_local_shadowing_or_unresolved_names() {
     let shadowed_source = r#"i32 Helper() { return 1; }
 i32 Main() {

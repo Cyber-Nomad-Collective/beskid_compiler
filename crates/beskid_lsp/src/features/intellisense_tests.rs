@@ -10,10 +10,12 @@ mod tests {
     use std::str::FromStr;
     use tower_lsp_server::ls_types::{GotoDefinitionResponse, Hover, Uri};
 
-    use crate::features::{definition, hover, references, signature_help};
+    use crate::features::{completion, definition, hover, references, signature_help};
     use crate::position::position_to_offset;
     use crate::session::lifecycle::{ANALYSIS_CACHE_VERSION, build_document};
-    use crate::session::store::{Document, State, SyntaxDefinition, SyntaxHover, SyntaxSymbol};
+    use crate::session::store::{
+        Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxSymbol,
+    };
     use crate::workspace_scan::path_to_uri;
 
     struct CorelibMvpFixture {
@@ -125,18 +127,109 @@ mod tests {
     }
 
     #[test]
-    fn completion_after_output_dot_lists_writeline() {
-        let (_uri, _doc, fixture, _db, analysis) = corelib_mvp_document_with_entry_resolution();
-        let offset =
-            fixture.source.find("    Output.").expect("main Output.") + "    Output.".len();
-        let candidates =
-            beskid_analysis::services::completion_candidates(&analysis, &fixture.source, offset);
+    fn completion_after_import_dot_lists_member_without_legacy_analysis() {
+        use std::sync::Arc;
+
+        use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
+        use beskid_analysis::projects::{
+            AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
+            SyntaxProgramAssembly,
+        };
+        use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
+        use beskid_queries::{
+            AstNodeKey, ProjectSession, SourceUnitId, SyntaxGenerationId, build_typed_program,
+        };
+
+        let root = PathBuf::from("/tmp/intellisense-completion/src");
+        let main_path = root.join("Main.bd");
+        let output_path = root.join("Std/Core/Output.bd");
+        let main_source = "use Std.Core.Output;\ni32 Main() { return Output.Write; }";
+        let output_source = "pub i32 WriteLine() { return 1; }";
+        let main_program = expand_program(
+            parse_program_with_source_name(main_path.to_str().unwrap(), main_source)
+                .expect("main parses"),
+            DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+        );
+        let output_program = expand_program(
+            parse_program_with_source_name(output_path.to_str().unwrap(), output_source)
+                .expect("output parses"),
+            DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+        );
+        let assembly = Arc::new(SyntaxProgramAssembly::new(
+            EffectiveCompilationRoots {
+                host: RootEntry {
+                    dependency_name: None,
+                    source_root: root.clone(),
+                },
+                dependencies: Vec::new(),
+            },
+            Arc::new(vec![
+                SourceUnit {
+                    logical_name: main_path.display().to_string(),
+                    path: main_path.clone(),
+                    source: main_source.to_string(),
+                    program: main_program.clone(),
+                },
+                SourceUnit {
+                    logical_name: output_path.display().to_string(),
+                    path: output_path.clone(),
+                    source: output_source.to_string(),
+                    program: output_program,
+                },
+            ]),
+            0,
+            AssemblyDiscovery::ImportClosure,
+            Arc::new(ModuleIndex::empty()),
+            false,
+        ));
+        let mut db = BeskidDatabase::default();
+        let main_unit = SourceUnitId::new(&db, main_path.clone());
+        let project = ProjectSession::new(
+            &db,
+            root.parent().expect("project root").to_path_buf(),
+            main_path.clone(),
+            "App".to_string(),
+            "lock".to_string(),
+        );
+        let generation = SyntaxGenerationId(2);
+        db.ensure_file_text(main_unit.path(&db).clone(), main_source.to_string());
+        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+        let index = SyntaxIndex::from_program(&main_program, generation);
+        let anchor = AstNodeKey {
+            unit: main_unit,
+            generation,
+            node: index
+                .ids_of_kind(NodeKind::Program)
+                .next()
+                .expect("program node"),
+        };
+        // Document carries no legacy analysis snapshot; completion uses syntax_completion only.
+        let doc = Document {
+            version: 1,
+            text: main_source.to_string(),
+            analysis_cache_version: ANALYSIS_CACHE_VERSION,
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
+            syntax_completion: Some(SyntaxCompletion { anchor }),
+            syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
+            syntax_diagnostics: Vec::new(),
+        };
+        let offset = main_source.find("Output.Write").expect("member prefix") + "Output.Write".len();
+        let response = completion::handler::handle_completion(
+            &db,
+            &Uri::from_str("file:///tmp/intellisense-completion/src/Main.bd").expect("uri"),
+            &doc,
+            offset,
+        );
+        let tower_lsp_server::ls_types::CompletionResponse::Array(items) = response else {
+            panic!("expected completion array");
+        };
         assert!(
-            candidates
-                .iter()
-                .any(|candidate| candidate.label == "WriteLine"),
-            "expected WriteLine member completion after Output., got {:?}",
-            candidates.iter().map(|c| &c.label).collect::<Vec<_>>()
+            items.iter().any(|item| item.label == "WriteLine"),
+            "expected WriteLine member completion after Output. without Document.analysis, got {:?}",
+            items.iter().map(|item| &item.label).collect::<Vec<_>>()
         );
     }
 
