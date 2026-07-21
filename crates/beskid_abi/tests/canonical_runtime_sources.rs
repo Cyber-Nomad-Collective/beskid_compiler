@@ -180,7 +180,8 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
         .find("AllocationDescriptor(request)")
         .expect("descriptor read");
     assert!(null_guard < descriptor_read);
-    assert!(allocate.contains("if !ValidateTypeDescriptor(descriptor)"));
+    assert!(allocate.contains("bool descriptorOk = ValidateTypeDescriptor(descriptor);"));
+    assert!(allocate.contains("if descriptorOk"));
     assert!(allocate.contains("InitializeObjectHeader(object, descriptor);"));
 
     assert!(source.contains("pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value)"));
