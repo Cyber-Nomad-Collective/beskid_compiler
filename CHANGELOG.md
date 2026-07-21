@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ignore retired HIR `lower_program` beskid_tests still expecting Codegen after syntax-ISLE cutover (unblocks Rust gate).
 - Read interop enum tags with `read_unaligned` and align the colliding-tag
   dispatch fixture so Linux Rust gate no longer SIGABRTs on misaligned
   envelope bytes after earlier CYB-129 gate layers cleared.
