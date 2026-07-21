@@ -39,41 +39,39 @@ pub fn collect_syntax_diagnostics(
 
     if let Some(path) = uri.to_file_path()
         && path.extension().and_then(|ext| ext.to_str()) == Some("bd")
+        && let (Some(db), Some(ctx)) = (db, compilation_context)
+        && ctx.compile_plan.is_some()
     {
-        if let (Some(db), Some(ctx)) = (db, compilation_context)
-            && ctx.compile_plan.is_some()
-        {
-            let resolved = resolved_input_from_plan(
-                path.to_path_buf(),
-                source.to_string(),
-                ctx.compile_plan.clone().expect("compile plan"),
-                None,
-                None,
-            );
-            let entry_key = beskid_queries::session_fingerprint(&resolved)
-                .map(|fp| beskid_queries::fingerprint_key(&fp))
-                .unwrap_or_else(|| path.display().to_string());
-            // Fail closed: stale typed generation must not publish prepare-spine diagnostics.
-            if beskid_queries::is_typed_bundle_stale(db, &entry_key) {
-                return structural_syntax_diagnostics(&uri.to_string(), source);
-            }
-            if let Ok((_, diags)) = beskid_queries::prepare_compilation_diagnostics_with_db(
-                db,
-                &resolved,
-                PrepareOptions {
-                    front_end: FrontEndOptions {
-                        with_semantic_diagnostics: true,
-                        ..Default::default()
-                    },
-                    dependency_typing: beskid_analysis::services::DependencyTypingPolicy::FullClosure,
+        let resolved = resolved_input_from_plan(
+            path.to_path_buf(),
+            source.to_string(),
+            ctx.compile_plan.clone().expect("compile plan"),
+            None,
+            None,
+        );
+        let entry_key = beskid_queries::session_fingerprint(&resolved)
+            .map(|fp| beskid_queries::fingerprint_key(&fp))
+            .unwrap_or_else(|| path.display().to_string());
+        // Fail closed: stale typed generation must not publish prepare-spine diagnostics.
+        if beskid_queries::is_typed_bundle_stale(db, &entry_key) {
+            return structural_syntax_diagnostics(&uri.to_string(), source);
+        }
+        if let Ok((_, diags)) = beskid_queries::prepare_compilation_diagnostics_with_db(
+            db,
+            &resolved,
+            PrepareOptions {
+                front_end: FrontEndOptions {
+                    with_semantic_diagnostics: true,
+                    ..Default::default()
                 },
-                None,
-            ) {
-                return diags
-                    .into_iter()
-                    .map(syntax_diagnostic_from_semantic)
-                    .collect();
-            }
+                dependency_typing: beskid_analysis::services::DependencyTypingPolicy::FullClosure,
+            },
+            None,
+        ) {
+            return diags
+                .into_iter()
+                .map(syntax_diagnostic_from_semantic)
+                .collect();
         }
     }
 
