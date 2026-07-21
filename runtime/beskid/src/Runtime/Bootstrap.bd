@@ -274,29 +274,37 @@ pub bool IsValidObjectAlignment(word alignment) {
 pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSize) {
     if pointerCount == 0 {
         return true;
-    } else if pointerMap == NativePointer(0) {
-        return false;
     } else {
-        mut word index = 0;
-        while index < pointerCount {
-            if index > (NativeWordMax() - 8) / 8 {
-                return false;
-            } else {
-                word offset = raw_word_load(pointer_add(pointerMap, index * 8));
-                if offset < 16 {
-                    return false;
-                } else if offset % 8 != 0 {
-                    return false;
-                } else if offset > NativeWordMax() - 8 {
-                    return false;
-                } else if offset + 8 > objectSize {
+        if pointerMap == NativePointer(0) {
+            return false;
+        } else {
+            mut word index = 0;
+            while index < pointerCount {
+                if index > (NativeWordMax() - 8) / 8 {
                     return false;
                 } else {
-                    index = index + 1;
+                    word offset = raw_word_load(pointer_add(pointerMap, index * 8));
+                    if offset < 16 {
+                        return false;
+                    } else {
+                        if offset % 8 != 0 {
+                            return false;
+                        } else {
+                            if offset > NativeWordMax() - 8 {
+                                return false;
+                            } else {
+                                if offset + 8 > objectSize {
+                                    return false;
+                                } else {
+                                    index = index + 1;
+                                }
+                            }
+                        }
+                    }
                 }
             }
+            return true;
         }
-        return true;
     }
 }
 
@@ -361,16 +369,18 @@ pub pointer AllocateClosureEnvironment(pointer request) {
             word alignment = AllocationAlignment(request);
             if size != TypeDescriptorSize(descriptor) {
                 return NativePointer(0);
-            } else if alignment != TypeDescriptorAlignment(descriptor) {
-                return NativePointer(0);
             } else {
-                pointer object = SystemAllocate(size, alignment);
-                if object == NativePointer(0) {
-                    return object;
+                if alignment != TypeDescriptorAlignment(descriptor) {
+                    return NativePointer(0);
                 } else {
-                    memory_set(object, 0, size);
-                    InitializeObjectHeader(object, descriptor);
-                    return object;
+                    pointer object = SystemAllocate(size, alignment);
+                    if object == NativePointer(0) {
+                        return object;
+                    } else {
+                        memory_set(object, 0, size);
+                        InitializeObjectHeader(object, descriptor);
+                        return object;
+                    }
                 }
             }
         }
@@ -382,17 +392,19 @@ pub pointer AllocateClosureEnvironment(pointer request) {
 pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value) {
     if environment == NativePointer(0) {
         return false;
-    } else if !ValidateTypeDescriptor(descriptor) {
-        return false;
     } else {
-        word pointerCount = TypeDescriptorPointerCount(descriptor);
-        if mapIndex >= pointerCount {
+        if !ValidateTypeDescriptor(descriptor) {
             return false;
         } else {
-            pointer pointerMap = TypeDescriptorPointerMap(descriptor);
-            word offset = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
-            raw_word_store(pointer_add(environment, offset), NativeWord(value));
-            return true;
+            word pointerCount = TypeDescriptorPointerCount(descriptor);
+            if mapIndex >= pointerCount {
+                return false;
+            } else {
+                pointer pointerMap = TypeDescriptorPointerMap(descriptor);
+                word offset = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
+                raw_word_store(pointer_add(environment, offset), NativeWord(value));
+                return true;
+            }
         }
     }
 }
