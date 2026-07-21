@@ -85,6 +85,72 @@ fn method_definitions_are_production_supported_isle_items() {
     );
 }
 
+/// CYB-81: every remaining UnsupportedTypedOperation kind is intentionally rejected for
+/// 0.4 W4.1 (not a pending inventory port). Later waves own composition / closures.
+#[test]
+fn unsupported_kinds_are_intentionally_release_rejected_for_0_4() {
+    use IndexedNodeKind as Syntax;
+
+    let dispositions: &[(IndexedNodeKind, &str)] = &[
+        (Syntax::HostDefinition, "composition declaration; not an executable ISLE item"),
+        (Syntax::RegistryBlock, "composition declaration; not an executable ISLE item"),
+        (Syntax::RegistryEntry, "composition declaration; not an executable ISLE item"),
+        (Syntax::ScopeDefinition, "composition declaration; not an executable ISLE item"),
+        (Syntax::ScopeHook, "composition declaration; not an executable ISLE item"),
+        (
+            Syntax::WithStatement,
+            "composition scope bracket waits on container facts (W5/composition)",
+        ),
+        (
+            Syntax::LaunchStatement,
+            "composition launch bracket waits on container facts (W5/composition)",
+        ),
+        (
+            Syntax::CodeStringLiteral,
+            "fenced code strings unsupported in both HIR and ISLE paths",
+        ),
+        (
+            Syntax::TryExpression,
+            "raw try desugars to match before codegen; out of ISLE scope",
+        ),
+        (
+            Syntax::LambdaExpression,
+            "freestanding lambda values owned by W4.2 CYB-25",
+        ),
+    ];
+
+    assert_eq!(
+        dispositions.len(),
+        UNSUPPORTED_TYPED_OPERATION_KINDS.len(),
+        "every unsupported kind must carry an explicit 0.4 rejection rationale"
+    );
+    for (kind, rationale) in dispositions {
+        assert_eq!(
+            classify_syntax_node_kind(*kind),
+            SyntaxNodeClassification::UnsupportedTypedOperation,
+            "{kind:?}: {rationale}"
+        );
+        assert!(
+            UNSUPPORTED_TYPED_OPERATION_KINDS.contains(kind),
+            "{kind:?} must remain on the unsupported roster: {rationale}"
+        );
+        assert!(
+            !rationale.is_empty(),
+            "{kind:?} must document why it stays rejected"
+        );
+    }
+    assert_eq!(
+        classify_syntax_node_kind(IndexedNodeKind::SpawnExpression),
+        SyntaxNodeClassification::IsleLowered(NodeKind::SpawnExpression),
+        "spawn is production-supported at the inventory boundary (zero-arg entry facts)"
+    );
+    assert_eq!(
+        classify_syntax_node_kind(IndexedNodeKind::MethodDefinition),
+        SyntaxNodeClassification::IsleLowered(NodeKind::MethodDefinition),
+        "methods are production-supported at the inventory boundary"
+    );
+}
+
 /// Every IsleLowered node kind must name an on-disk verified CLIF (or item-emission) regression.
 #[test]
 fn every_isle_lowered_kind_has_verified_clif_evidence() {

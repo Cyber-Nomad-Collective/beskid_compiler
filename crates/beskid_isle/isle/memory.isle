@@ -12,6 +12,8 @@
 (extern constructor emit_field_read emit_field_read)
 (decl partial emit_field_assign (AstNodeKey) Value)
 (extern constructor emit_field_assign emit_field_assign)
+(decl partial emit_index_assign (AstNodeKey) Value)
+(extern constructor emit_index_assign emit_index_assign)
 (decl partial emit_enum_literal (AstNodeKey) Value)
 (extern constructor emit_enum_literal emit_enum_literal)
 (decl partial emit_match (AstNodeKey) Value)
@@ -27,6 +29,10 @@
         (node_kind (NodeKind.AssignExpression))
         (assignment_target_kind (NodeKind.FieldExpression))))
       (emit_field_assign key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.AssignExpression))
+        (assignment_target_kind (NodeKind.IndexExpression))))
+      (emit_index_assign key))
 (rule (lower_expression key @ (node_kind (NodeKind.ArrayLiteralExpression)))
       (emit_array_literal key))
 (rule (lower_expression key @ (and

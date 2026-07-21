@@ -197,6 +197,13 @@ pub fn syntax_node_kind_catalogue()
 ///
 /// This list must stay equal to every [`SyntaxNodeClassification::UnsupportedTypedOperation`]
 /// entry in [`syntax_node_kind_catalogue`] — no silent catch-all arm may hide new kinds.
+///
+/// For Beskid 0.4 / W4.1 these kinds are intentionally release-rejected (not pending ports):
+/// host composition declarations and `with`/`launch` wait on composition-container facts;
+/// fenced `code` strings stay unsupported in both paths; raw `try` desugars to `match` before
+/// codegen; freestanding lambda values are owned by W4.2 (`CYB-25`). `MethodDefinition` and
+/// `SpawnExpression` are production-supported [`IsleLowered`][SyntaxNodeClassification::IsleLowered]
+/// forms outside this roster.
 pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] = &[
     beskid_queries::IndexedNodeKind::HostDefinition,
     beskid_queries::IndexedNodeKind::RegistryBlock,
@@ -1951,6 +1958,63 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 .ins()
                 .load(layout.element_type, MemFlags::new(), address, 0),
         )
+    }
+
+    fn emit_index_assign(&mut self, key: AstNodeKey) -> Option<Value> {
+        let target = self.facts.child(key, 0)?;
+        let value_key = self.facts.child(key, 1)?;
+        let layout = self.facts.array_layout(target)?;
+        if !layout.is_valid() || self.facts.scalar_type(key)? != layout.element_type {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidArrayLayout,
+            });
+            return None;
+        }
+        let base_key = self.facts.child(target, 0)?;
+        let index_key = self.facts.child(target, 1)?;
+        let base = generated::constructor_lower_expression(self, base_key)?;
+        let index = generated::constructor_lower_expression(self, index_key)?;
+        let value = generated::constructor_lower_expression(self, value_key)?;
+        if self.builder.func.dfg.value_type(value) != layout.element_type {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidArrayLayout,
+            });
+            return None;
+        }
+        let index_type = self.builder.func.dfg.value_type(index);
+        let pointer_type = self.builder.func.dfg.value_type(base);
+        if !index_type.is_int() || !pointer_type.is_int() {
+            return None;
+        }
+        let out_of_bounds = self.builder.ins().icmp_imm(
+            IntCC::UnsignedGreaterThanOrEqual,
+            index,
+            i64::from(layout.length),
+        );
+        self.builder
+            .ins()
+            .trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
+        let pointer_index = if index_type.bits() < pointer_type.bits() {
+            self.builder.ins().uextend(pointer_type, index)
+        } else if index_type.bits() > pointer_type.bits() {
+            self.builder.ins().ireduce(pointer_type, index)
+        } else {
+            index
+        };
+        let offset = if layout.stride == 1 {
+            pointer_index
+        } else {
+            self.builder
+                .ins()
+                .imul_imm(pointer_index, i64::from(layout.stride))
+        };
+        let address = self.builder.ins().iadd(base, offset);
+        self.builder
+            .ins()
+            .store(MemFlags::new(), value, address, 0);
+        Some(value)
     }
 
     fn emit_struct_literal(&mut self, key: AstNodeKey) -> Option<Value> {

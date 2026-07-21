@@ -56,7 +56,7 @@ dispatch-route emission in `src/dispatch.rs`.
 | `types.isle` | Foundation | Type + enum declarations shared by all rules: `AstNodeKey`, `Value`, `Unit`, `StatementCursor`, and the fact enums `NodeKind`, `CursorKind`, `LiteralKind`, `OperatorFact`, `CallKind`, `IndexTarget`. No rules. |
 | `ast.isle` | Foundation | Fact extractors (`node_kind`, `literal_kind`, `operator_fact`, `call_kind`, `assignment_target_kind`, `for_iterable_kind`) and the `child_at` child-access constructor. No rules. |
 | `primitives.isle` | Foundation | Trusted CLIF primitive constructors: `iconst_i64`, `load_i64`/`store_i64`, `load_i8_zext`, `ptr_add`, `icmp_eq`/`icmp_ne`/`icmp_slt`, `icmp_byte_ne`, `bounded_memcmp`. No rules. |
-| `expressions.isle` | Expressions | `lower_expression` entry decl; `GroupedExpression` (unwrap child 0); `BlockExpression` value (`emit_block_expression`). |
+| `expressions.isle` | Expressions | `lower_expression` entry decl; `GroupedExpression` (unwrap child 0); `BlockExpression` value (`emit_block_expression`); `SpawnExpression` (`emit_spawn`). |
 | `literals.isle` | Expressions | Literal lowering for `Integer`, `Boolean`, `Float`, `Char`, `String`. |
 | `binary.isle` | Expressions | Binary arithmetic/comparison: `IdentityEq`, `IdentityNotEq`, `Eq`, `NotEq`, `Lt`, `Lte`, `Gt`, `Gte`, `Add`, `Sub`, `Mul`, `Div`, `Mod` (integer CLIF `iadd`/`isub`/`imul`/`sdiv`/`srem`/`icmp`). |
 | `unary_casts.isle` | Expressions | Unary `Neg` (`ineg`) and `Not` (`bnot`). |
@@ -64,7 +64,7 @@ dispatch-route emission in `src/dispatch.rs`.
 | `calls.isle` | Expressions | Direct call expressions (`CallKind.Direct` -> `emit_direct_call`), including method/receiver calls resolved to a direct callee. |
 | `runtime_intrinsics.isle` | Expressions | Canonical runtime-intrinsic calls (`CallKind.RuntimeIntrinsic` -> `emit_runtime_intrinsic`). |
 | `dispatch.isle` | Expressions | Dynamic dispatch calls (`CallKind.Dynamic`); string `concat`/`eq`/`ne` from interpolation desugar (`StringAdd`/`StringEq`/`StringNotEq`); `string[index]` byte read (`IndexTarget.String`). |
-| `memory.isle` | Expressions | `PathExpression` local read; `AssignExpression` to a `PathExpression` target (local assign) and to a `FieldExpression` target (field assign); `ArrayLiteralExpression`; `IndexExpression` array read (`IndexTarget.Array`); `StructLiteralExpression`; `FieldExpression` read; `EnumLiteralExpression` (nullary + single-payload); `MatchExpression` (enum-tag switch). |
+| `memory.isle` | Expressions | `PathExpression` local read; `AssignExpression` to a `PathExpression` target (local assign), to a `FieldExpression` target (field assign), and to an `IndexExpression` target (`emit_index_assign`); `ArrayLiteralExpression`; `IndexExpression` array read (`IndexTarget.Array`); `StructLiteralExpression`; `FieldExpression` read; `EnumLiteralExpression` (nullary + single-payload); `MatchExpression` (enum-tag switch). |
 | `statements.isle` | Statements | `ExpressionStatement`; `ReturnStatement`; `LetStatement`; `BlockExpression`/`TestDefinition` statement-cursor traversal; statement sequencing (`sequence_statements` / `finish_statements`). |
 | `items.isle` | Items | `item_body` selection for `FunctionDefinition` (child 0) and `TestDefinition` (self). |
 
@@ -95,7 +95,7 @@ each unless noted.
 | 2 | `LambdaExpression` / closure values | new `lambda.isle` | `expressions/call_expression.rs::lower_lambda_function_value` | Lambda function value + capture environment struct. No `NodeKind` variant; also unblocks (1). |
 | 3 | `LaunchStatement` lowering | new `composition.isle` | `lowering/composition/launch_statement.rs` | Emit `composition_container_create` -> `composition_launch` -> body -> `composition_shutdown` -> `composition_container_drop`. No `NodeKind` variant. |
 | 4 | `WithStatement` lowering | new `composition.isle` | `lowering/composition/with_statement.rs` | Emit `composition_scope_enter` / `composition_scope_leave` brackets around body. No `NodeKind` variant. |
-| 5 | Index-target assignment `arr[i] = v` | `memory.isle` (+ `dispatch.isle` for string bytes) | `expressions/assign_expression.rs` (`AssignTargetKind::IndexElement`) | Bounds-checked array element store + GC write barrier for pointer-like elements; string byte write. ISLE currently handles only `PathExpression` and `FieldExpression` assign targets. |
+| 5 | Index-target assignment `arr[i] = v` (heap `T[]`) | `memory.isle` (+ `dispatch.isle` for string bytes) | `expressions/assign_expression.rs` (`AssignTargetKind::IndexElement`) | Stack/`ArrayLayout` index assign is ported (`emit_index_assign`). Heap-handle `T[]` stores still need production array-layout facts + GC write barrier. |
 | 6 | Compound assignment `+=` / `-=` | `memory.isle` | `expressions/assign_expression.rs` (`AddAssign`/`SubAssign`) | For local, field, and index targets; includes float `fadd`/`fsub`, integer `iadd`/`isub`, and string `+=` concat. Needs compound-assign `OperatorFact`s (currently absent). |
 | 7 | Event-member `+=` / `-=` (subscribe/unsubscribe) | `dispatch.isle` | `expressions/assign_expression.rs` (`AssignTargetKind::EventMember`) | Lower to `TAG_EVENT_SUBSCRIBE` / `TAG_EVENT_UNSUBSCRIBE_FIRST` dispatch routes with capacity. Depends on event-field facts. |
 | 8 | Full `match` patterns | `memory.isle` (extend `emit_match`) | HIR match lowering | Current `emit_match` only switches on an enum tag to arm bodies. Missing: payload binding into arm locals, literal/struct/nested patterns, and guards. |
@@ -105,11 +105,12 @@ each unless noted.
 
 ### Suggested ordering
 
-1. **#5, #6, #8** close everyday imperative gaps (index writes, compound assignment, real match
-   patterns) that block ordinary application code on the syntax-only path.
-2. **#2 then #1** (lambda before spawn, since spawn targets are lambdas).
+1. **Heap `T[]` index writes and compound assignment** close everyday imperative gaps that
+   block ordinary application code on the syntax-only path (stack index assign is already done).
+2. **#2 then #1** (lambda before spawn-of-lambda value forms; zero-arg named spawn already works).
 3. **#3, #4, #7** cover the composition/eventing surface; gated today by
-   `composition_policy::RUNTIME_CONTAINER_LOWERING_ENABLED`.
+   `composition_policy::RUNTIME_CONTAINER_LOWERING_ENABLED` and intentionally
+   `UnsupportedTypedOperation` for 0.4 W4.1 (CYB-81).
 4. **#9, #10, #11** are smaller parity items.
 
 ## Out of scope

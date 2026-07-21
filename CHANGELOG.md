@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Span-bearing `MissingRuleOrFact` rejection fixtures for remaining unsupported inventory
   families (host composition, try) and inventory audit rows flipped from `CodexBlocker` to
   `Present` (CYB-106 under CYB-81).
+- Complete CYB-81 inventory acceptance: pin explicit 0.4 release-rejection rationales for every
+  `UnsupportedTypedOperation` kind, and port bounds-checked array index assignment through
+  generated ISLE (`emit_index_assign`) with a verified CLIF regression (CYB-81).
 - Add the manifest-derived ABI-v5 `beskid_rt_v5_fiber_spawn_with_cancel_slot` scheduler
   boundary and direct syntax-ISLE import metadata, replacing syntax-spawn emission of the
   retired `interop_dispatch_*` envelope path (CYB-126). The end-to-end macOS arm64 JIT smoke
