@@ -393,6 +393,6 @@ fn canonical_runtime_static_archive_hides_non_abi_implementation_symbols() {
     );
     RuntimeProvenanceAudit::canonical(target)
         .expect("canonical provenance policy")
-        .verify(&parse_symbol_list(&symbol_list).expect("parse symbol list"))
+        .verify_static_archive(&parse_symbol_list(&symbol_list).expect("parse symbol list"))
         .expect("canonical static runtime archive satisfies provenance policy");
 }
