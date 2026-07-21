@@ -273,6 +273,7 @@ fn verify_provenance_symbol_list(target: &str, path: &std::path::Path) -> Result
 mod tests {
     use super::*;
     use std::fs;
+    use std::process::Command;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
@@ -300,6 +301,87 @@ mod tests {
                 .any(|symbol| symbol == "panic"),
             "staged static runtime archive leaked forbidden non-ABI panic symbol: {symbols}"
         );
+    }
+
+    #[test]
+    #[ignore = "CYB-124: canonical syntax preparation must be re-entrant across profile builds"]
+    #[cfg(any(
+        all(target_os = "linux", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+    ))]
+    fn native_host_builder_publishes_closure_exports_with_manifest_provenance_for_each_profile() {
+        let triple = if cfg!(target_os = "macos") {
+            "aarch64-apple-darwin"
+        } else {
+            "x86_64-unknown-linux-gnu"
+        };
+        let target = TargetMetadata::supported()
+            .into_iter()
+            .find(|target| target.triple.as_str() == triple)
+            .expect("supported native ABI-v5 target");
+        let expected = [
+            "beskid_rt_v5_closure_environment_allocate",
+            "beskid_rt_v5_closure_capture_store",
+            "beskid_rt_v5_closure_environment_root",
+        ];
+
+        for profile in [RuntimeKitProfile::Debug, RuntimeKitProfile::Release] {
+            let prefix = TempDir::new(profile.as_str());
+            let built = build_native_host(prefix.0.clone(), profile)
+                .expect("publish native host runtime kit");
+            let defined = Command::new("nm")
+                .args(if cfg!(target_os = "macos") {
+                    vec!["-gU", "-j"]
+                } else {
+                    vec!["-g", "--defined-only", "-j"]
+                })
+                .arg(&built.static_library)
+                .output()
+                .expect("inspect staged static runtime archive");
+            assert!(
+                defined.status.success(),
+                "nm failed for static runtime archive"
+            );
+            let defined = String::from_utf8(defined.stdout).expect("UTF-8 symbol list");
+            for symbol in expected {
+                assert!(
+                    defined
+                        .lines()
+                        .any(|actual| actual.trim_start_matches('_') == symbol),
+                    "{} kit omitted {symbol}: {defined}",
+                    profile.as_str(),
+                );
+            }
+
+            let undefined = Command::new("nm")
+                .args(["-u", "-j"])
+                .arg(&built.static_library)
+                .output()
+                .expect("inspect staged static runtime archive imports");
+            assert!(
+                undefined.status.success(),
+                "nm failed for static runtime archive imports"
+            );
+            let symbol_list = format!(
+                "target={}\n{}{}",
+                target.triple.as_str(),
+                defined
+                    .lines()
+                    .filter(|symbol| !symbol.is_empty() && !symbol.ends_with(':'))
+                    .map(|symbol| format!("defined={symbol}\n"))
+                    .collect::<String>(),
+                String::from_utf8(undefined.stdout)
+                    .expect("UTF-8 import list")
+                    .lines()
+                    .filter(|symbol| !symbol.is_empty() && !symbol.ends_with(':'))
+                    .map(|symbol| format!("undefined={symbol}\n"))
+                    .collect::<String>(),
+            );
+            RuntimeProvenanceAudit::canonical(target.clone())
+                .expect("canonical provenance audit")
+                .verify(&parse_symbol_list(&symbol_list).expect("parse symbol list"))
+                .expect("native runtime kit must satisfy manifest provenance");
+        }
     }
 
     static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);

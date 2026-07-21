@@ -112,6 +112,9 @@
 int32_t beskid_library_attach_v5(void * runtime);
 void beskid_library_detach_v5(void * runtime);
 uint32_t beskid_rt_v5_abi_version(void);
+uint8_t beskid_rt_v5_closure_capture_store(void * environment, void * descriptor, size_t map_index, void * value);
+void * beskid_rt_v5_closure_environment_allocate(void * request);
+uint8_t beskid_rt_v5_closure_environment_root(void * tls_state, size_t slot_index, void * environment);
 void * beskid_rt_v5_process_init(void * config);
 void beskid_rt_v5_process_shutdown(void * runtime);
 void * beskid_rt_v5_thread_attach(void * runtime);
