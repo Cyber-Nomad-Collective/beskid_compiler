@@ -277,6 +277,69 @@ fn parsed_zero_capture_lambda_spawn_emits_syntax_owned_entry_and_fiber_dispatch(
 }
 
 #[test]
+fn parsed_capturing_lambda_spawn_allocates_roots_and_dispatches_fiber_entry() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        i64 Main() { i64 outer = 41_i64; return spawn (() => outer); }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    assert!(
+        !lowered.artifact.closure_static_plans.is_empty(),
+        "capturing spawn must materialize a generation-safe closure static plan"
+    );
+    assert_eq!(
+        lowered.artifact.closure_static_plans[0].captures.len(),
+        1,
+        "outer capture must appear in the static plan"
+    );
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact");
+    let lambda = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_spawn_lambda_syntax_"))
+        .expect("syntax-owned capturing lambda entry");
+    let trampoline = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_spawn_entry_syntax_"))
+        .expect("syntax-owned spawn trampoline");
+    let main_clif = main.function.display().to_string();
+    let lambda_clif = lambda.function.display().to_string();
+    let trampoline_clif = trampoline.function.display().to_string();
+    assert!(
+        main_clif.contains("beskid_rt_v5_closure_environment_allocate"),
+        "{main_clif}"
+    );
+    assert!(
+        main_clif.contains("beskid_rt_v5_closure_environment_root_current"),
+        "{main_clif}"
+    );
+    assert!(
+        main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
+        "{main_clif}"
+    );
+    assert!(!main_clif.contains("interop_dispatch_"), "{main_clif}");
+    assert!(
+        lambda_clif.contains("load") || lambda_clif.contains("ireduce") || lambda_clif.contains("iadd"),
+        "lambda entry must read the rooted capture environment: {lambda_clif}"
+    );
+    assert!(
+        trampoline_clif.contains("__beskid_spawn_lambda_syntax_"),
+        "{trampoline_clif}"
+    );
+}
+
+#[test]
 fn multi_unit_parsed_project_lowers_through_codegen_input_isle_only() {
     let project = tempfile::tempdir().expect("project directory");
     let util_source = "pub i32 Double(i32 value) { return value + value; }";

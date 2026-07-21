@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, EmissionServices, EnumLayout,
-    EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, InlineLambdaCall,
-    ItemStatementEmission, LiteralKind, MatchArmFact, NodeFacts, NodeKind, OperatorFact,
-    ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
+    EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, InlineCaptureField,
+    InlineClosureEnvironment, InlineLambdaCall, ItemStatementEmission, LiteralKind, LocalSlotId,
+    MatchArmFact, NodeFacts, NodeKind, OperatorFact, ParameterSlot, RuntimeIntrinsicKind,
+    Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{
     AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
@@ -73,6 +74,37 @@ impl<'db> SyntaxNodeFacts<'db> {
 
     fn query<T>(&self, result: beskid_queries::SemanticQueryResult<T>) -> Option<T> {
         result.ok().flatten()
+    }
+
+    fn inline_closure_environment(
+        &self,
+        site: AstNodeKey,
+        lambda: AstNodeKey,
+    ) -> Option<InlineClosureEnvironment> {
+        let isa = self.isa?;
+        let authority = self.input.closure_lowering_authority(site, lambda)?;
+        let captures = authority
+            .plan
+            .captures
+            .iter()
+            .map(|field| {
+                Some(InlineCaptureField {
+                    local_slot: LocalSlotId {
+                        owner_node: field.capture.slot.owner.node.0,
+                        index: field.capture.slot.index,
+                    },
+                    field_offset: u32::try_from(field.field_offset).ok()?,
+                    pointer_map_index: field.pointer_map_index,
+                    value_type: map_signature_type(isa, field.abi_type)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(InlineClosureEnvironment {
+            allocation_request_symbol: authority.plan.allocation_request_symbol.into(),
+            descriptor_symbol: authority.plan.descriptor_symbol.into(),
+            root_slot_index: authority.root.slot_index,
+            captures,
+        })
     }
 }
 
@@ -173,7 +205,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             .and_then(|initializer| self.unwrap_transparent(initializer))
     }
 
-    fn local_slot(&self, key: AstNodeKey) -> Option<u32> {
+    fn local_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         match self.query(node_kind(self.db, key))? {
             beskid_queries::IndexedNodeKind::PathExpression => {
                 let declaration = self
@@ -181,7 +213,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                     .map(|resolved| resolved.declaration)
                     .or_else(|| self.query(nominal_member_receiver(self.db, key)))?;
                 self.query(local_slot(self.db, declaration))
-                    .map(|slot| slot.index)
+                    .map(|slot| LocalSlotId {
+                        owner_node: slot.owner.node.0,
+                        index: slot.index,
+                    })
             }
             beskid_queries::IndexedNodeKind::LetStatement => self
                 .raw_children(key)
@@ -191,18 +226,27 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                         == Some(beskid_queries::IndexedNodeKind::Identifier)
                 })
                 .and_then(|identifier| self.query(local_slot(self.db, identifier)))
-                .map(|slot| slot.index),
+                .map(|slot| LocalSlotId {
+                    owner_node: slot.owner.node.0,
+                    index: slot.index,
+                }),
             beskid_queries::IndexedNodeKind::ForStatement => self
                 .query(for_iterator_fact(self.db, key))
                 .and_then(|fact| self.query(local_slot(self.db, fact.declaration)))
-                .map(|slot| slot.index),
+                .map(|slot| LocalSlotId {
+                    owner_node: slot.owner.node.0,
+                    index: slot.index,
+                }),
             _ => None,
         }
     }
 
-    fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<u32> {
+    fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         self.query(mutable_local_assignment(self.db, key))
-            .map(|assignment| assignment.slot.index)
+            .map(|assignment| LocalSlotId {
+                owner_node: assignment.slot.owner.node.0,
+                index: assignment.slot.index,
+            })
     }
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
@@ -284,19 +328,26 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn inline_lambda_call(&self, key: AstNodeKey) -> Option<InlineLambdaCall> {
         let target = self.query(closure_call_target(self.db, key))?;
         let environment = self.query(closure_environment(self.db, target.lambda))?;
-        if !environment.captures.is_empty()
-            || environment.parameters.len() != target.callable.parameters.len()
-        {
+        if environment.parameters.len() != target.callable.parameters.len() {
             return None;
         }
+        let closure_environment = if environment.captures.is_empty() {
+            None
+        } else {
+            Some(self.inline_closure_environment(key, target.lambda)?)
+        };
         let parameters = environment
             .parameters
             .iter()
             .copied()
             .zip(target.callable.parameters.iter().copied())
             .map(|(parameter, semantic)| {
+                let slot = self.query(local_slot(self.db, parameter))?;
                 Some(ParameterSlot {
-                    slot: self.query(local_slot(self.db, parameter))?.index,
+                    slot: LocalSlotId {
+                        owner_node: slot.owner.node.0,
+                        index: slot.index,
+                    },
                     value_type: map_signature_type(self.isa?, semantic)?,
                 })
             })
@@ -305,6 +356,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             body: target.body,
             parameters,
             result_type: map_signature_type(self.isa?, target.callable.result)?,
+            closure_environment,
         })
     }
 
@@ -324,7 +376,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             parameters.push(ParameterSlot {
                 // Methods cannot spell `self` in Beskid source. The ABI receiver still needs a
                 // materialized local so its declared pointer position is consumed by ISLE.
-                slot: u32::MAX,
+                slot: LocalSlotId {
+                    owner_node: u32::MAX,
+                    index: u32::MAX,
+                },
                 value_type: self.isa?.pointer_type(),
             });
         }
@@ -425,10 +480,13 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             .map(|access| access.index)
     }
 
-    fn field_receiver_slot(&self, key: AstNodeKey) -> Option<u32> {
+    fn field_receiver_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         let access = self.query(aggregate_field_access(self.db, key))?;
         self.query(local_slot(self.db, access.receiver))
-            .map(|slot| slot.index)
+            .map(|slot| LocalSlotId {
+                owner_node: slot.owner.node.0,
+                index: slot.index,
+            })
     }
 
     fn enum_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
@@ -471,20 +529,24 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if !validation.is_zero_argument_entry {
             return None;
         }
-        match self.query(node_kind(self.db, validation.target))? {
+        let closure_environment = match self.query(node_kind(self.db, validation.target))? {
             beskid_queries::IndexedNodeKind::PathExpression => {
                 let _target = self.query(resolved_item(self.db, validation.target))?;
+                None
             }
             beskid_queries::IndexedNodeKind::LambdaExpression => {
                 let environment = self.query(closure_environment(self.db, validation.target))?;
-                if !environment.captures.is_empty() {
-                    return None;
+                if environment.captures.is_empty() {
+                    None
+                } else {
+                    Some(self.inline_closure_environment(key, validation.target)?)
                 }
             }
             _ => return None,
-        }
+        };
         Some(beskid_isle::SpawnEntry {
             trampoline: DirectCallee::spawn_trampoline(key),
+            closure_environment,
         })
     }
 }
@@ -633,7 +695,10 @@ impl SyntaxNodeFacts<'_> {
                             }
                         })?;
                     parameters.push(ParameterSlot {
-                        slot: slot.index,
+                        slot: LocalSlotId {
+                            owner_node: slot.owner.node.0,
+                            index: slot.index,
+                        },
                         value_type,
                     });
                 }
@@ -774,6 +839,27 @@ fn semantic_type_for_runtime_intrinsic(
         AbiType::F64 => SemanticTypeId::F64,
         _ => return None,
     })
+}
+
+/// Emit a capturing spawned-lambda entry that loads transfers from its environment pointer.
+pub fn emit_isle_closure_lambda_entry<'db>(
+    input: &'db CodegenInput<'db>,
+    isa: &dyn TargetIsa,
+    body: AstNodeKey,
+    result: Type,
+    captures: &[InlineCaptureField],
+    importer: &mut dyn CallImporter,
+) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
+    let emitter = FunctionEmitter::new(isa);
+    let facts = SyntaxNodeFacts::new_with_isa(input, isa);
+    emitter.emit_closure_lambda_entry_with_call_importer(
+        UserFuncName::user(0, 0),
+        result,
+        &facts,
+        body,
+        captures,
+        importer,
+    )
 }
 
 /// Emit one parsed expanded-syntax expression through generated ISLE selection.

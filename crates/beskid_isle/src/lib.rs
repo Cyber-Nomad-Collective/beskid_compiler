@@ -14,6 +14,7 @@ use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
+use cranelift_codegen::ir::{ExternalName, GlobalValueData};
 pub use cranelift_codegen::ir::{
     AbiParam, Block, FuncRef, Function, MemFlags, Signature, StackSlotData, StackSlotKind,
     TrapCode, Type, UserFuncName, Value,
@@ -368,23 +369,45 @@ impl DirectCallee {
 
 /// Exact source entry selected for the first executable spawn lowering leaf.
 ///
-/// Lambdas, captures, arguments, and all other callable shapes remain unavailable at this
-/// boundary rather than acquiring a compatibility path.
+/// Capture-free entries keep a null environment. Capture-proven entries carry artifact-owned
+/// allocate/store/root authority; unsupported capture shapes remain unavailable.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpawnEntry {
     pub trampoline: DirectCallee,
+    pub closure_environment: Option<InlineClosureEnvironment>,
 }
 
-/// A capture-free immediate lambda call selected from current syntax facts.
+/// One transferable capture field stored into an ABI-v5 closure environment before a call/spawn.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InlineCaptureField {
+    pub local_slot: LocalSlotId,
+    pub field_offset: u32,
+    pub pointer_map_index: Option<u64>,
+    pub value_type: Type,
+}
+
+/// Artifact-owned allocate/store/root facts for a capturing immediate call or spawn.
 ///
-/// The body is emitted in the caller's function only after every argument and parameter slot is
-/// proven. Capturing lambdas and calls through local bindings remain unavailable: they require
-/// the ABI-v5 closure environment and dynamic-call path rather than this allocation-free leaf.
+/// The symbols name module-local static data. Rooting always uses the current-thread helper; no
+/// TLS pointer is ever supplied through this fact.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InlineClosureEnvironment {
+    pub allocation_request_symbol: std::sync::Arc<str>,
+    pub descriptor_symbol: std::sync::Arc<str>,
+    pub root_slot_index: u64,
+    pub captures: Vec<InlineCaptureField>,
+}
+
+/// An immediate lambda call selected from current syntax facts.
+///
+/// Capture-free calls remain allocation-free. Capturing calls carry ABI-v5 environment authority
+/// and otherwise remain unavailable: no HIR/Lowerable or dynamic closure fallback.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InlineLambdaCall {
     pub body: AstNodeKey,
     pub parameters: Vec<ParameterSlot>,
     pub result_type: Type,
+    pub closure_environment: Option<InlineClosureEnvironment>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -692,7 +715,7 @@ pub trait NodeFacts {
     fn field_index(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
-    fn field_receiver_slot(&self, _key: AstNodeKey) -> Option<u32> {
+    fn field_receiver_slot(&self, _key: AstNodeKey) -> Option<LocalSlotId> {
         None
     }
     fn enum_layout(&self, _key: AstNodeKey) -> Option<EnumLayout> {
@@ -713,11 +736,11 @@ pub trait NodeFacts {
     fn spawn_entry(&self, _key: AstNodeKey) -> Option<SpawnEntry> {
         None
     }
-    fn local_slot(&self, _key: AstNodeKey) -> Option<u32> {
+    fn local_slot(&self, _key: AstNodeKey) -> Option<LocalSlotId> {
         None
     }
     /// Proven mutable destination slot for one simple local assignment expression.
-    fn mutable_local_assignment_slot(&self, _key: AstNodeKey) -> Option<u32> {
+    fn mutable_local_assignment_slot(&self, _key: AstNodeKey) -> Option<LocalSlotId> {
         None
     }
     fn dispatch_builtin_symbol(&self, _key: AstNodeKey) -> Option<&'static str> {
@@ -736,9 +759,16 @@ pub trait NodeFacts {
 }
 
 /// Generation-safe local slot and scalar type for one emitted function parameter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LocalSlotId {
+    pub owner_node: u32,
+    pub index: u32,
+}
+
+/// Generation-safe local slot and scalar type for one emitted function parameter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParameterSlot {
-    pub slot: u32,
+    pub slot: LocalSlotId,
     pub value_type: Type,
 }
 
@@ -816,7 +846,7 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     string_interner: Option<&'interner mut dyn StringInterner>,
     call_importer: Option<&'interner mut dyn CallImporter>,
     loop_stack: Vec<LoopTargets>,
-    locals: HashMap<u32, (Variable, Type)>,
+    locals: HashMap<LocalSlotId, (Variable, Type)>,
     pending_error: Option<LoweringError>,
 }
 
@@ -1016,8 +1046,111 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             self.locals
                 .insert(parameter.slot, (variable, parameter.value_type));
         }
+        if let Some(environment) = &lambda.closure_environment {
+            let _env = self.emit_inline_closure_environment(environment)?;
+        }
         let value = generated::constructor_lower_expression(self, lambda.body)?;
         (self.builder.func.dfg.value_type(value) == lambda.result_type).then_some(value)
+    }
+
+    fn emit_inline_closure_environment(
+        &mut self,
+        environment: &InlineClosureEnvironment,
+    ) -> Option<Value> {
+        let pointer = dispatch::pointer_type();
+        let request = self.symbol_global(
+            environment.allocation_request_symbol.as_ref(),
+            pointer,
+        )?;
+        let allocate = self.import_runtime_helper(
+            "beskid_rt_v5_closure_environment_allocate",
+            &[pointer],
+            Some(pointer),
+        )?;
+        let allocate_call = self.builder.ins().call(allocate, &[request]);
+        let env_ptr = self.builder.inst_results(allocate_call).first().copied()?;
+        self.builder
+            .ins()
+            .trapz(env_ptr, TrapCode::unwrap_user(5));
+        let descriptor = self.symbol_global(environment.descriptor_symbol.as_ref(), pointer)?;
+        for capture in &environment.captures {
+            let (variable, value_type) = self.locals.get(&capture.local_slot).copied()?;
+            (value_type == capture.value_type).then_some(())?;
+            let value = self.builder.use_var(variable);
+            if let Some(map_index) = capture.pointer_map_index {
+                let index = self.builder.ins().iconst(pointer, map_index as i64);
+                let store = self.import_runtime_helper(
+                    "beskid_rt_v5_closure_capture_store",
+                    &[pointer, pointer, pointer, pointer],
+                    Some(types::I8),
+                )?;
+                let store_call = self
+                    .builder
+                    .ins()
+                    .call(store, &[env_ptr, descriptor, index, value]);
+                let ok = self.builder.inst_results(store_call).first().copied()?;
+                self.builder.ins().trapz(ok, TrapCode::unwrap_user(8));
+            } else {
+                let address = self
+                    .builder
+                    .ins()
+                    .iadd_imm(env_ptr, i64::from(capture.field_offset));
+                self.builder
+                    .ins()
+                    .store(MemFlags::new(), value, address, 0);
+            }
+        }
+        let slot = self
+            .builder
+            .ins()
+            .iconst(pointer, environment.root_slot_index as i64);
+        let root = self.import_runtime_helper(
+            "beskid_rt_v5_closure_environment_root_current",
+            &[pointer, pointer],
+            Some(types::I8),
+        )?;
+        let root_call = self.builder.ins().call(root, &[slot, env_ptr]);
+        let rooted = self.builder.inst_results(root_call).first().copied()?;
+        self.builder
+            .ins()
+            .trapz(rooted, TrapCode::unwrap_user(8));
+        Some(env_ptr)
+    }
+
+    fn symbol_global(&mut self, symbol: &str, pointer: Type) -> Option<Value> {
+        let global = self.builder.func.create_global_value(GlobalValueData::Symbol {
+            name: ExternalName::testcase(symbol),
+            offset: 0.into(),
+            colocated: true,
+            tls: false,
+        });
+        Some(self.builder.ins().global_value(pointer, global))
+    }
+
+    fn import_runtime_helper(
+        &mut self,
+        symbol: &str,
+        params: &[Type],
+        result: Option<Type>,
+    ) -> Option<FuncRef> {
+        let mut signature = Signature::new(self.builder.func.signature.call_conv);
+        signature
+            .params
+            .extend(params.iter().copied().map(AbiParam::new));
+        if let Some(result) = result {
+            signature.returns.push(AbiParam::new(result));
+        }
+        let signature = self.builder.func.import_signature(signature);
+        Some(
+            self.builder
+                .func
+                .import_function(cranelift_codegen::ir::ExtFuncData {
+                    name: ExternalName::testcase(symbol),
+                    signature,
+                    colocated: false,
+                    patchable: false,
+                }),
+        )
     }
 
     fn direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
@@ -1402,7 +1535,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             }
         };
         let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
-        let environment = self.builder.ins().iconst(pointer, 0);
+        let environment = if let Some(closure) = &entry.closure_environment {
+            self.emit_inline_closure_environment(closure)?
+        } else {
+            self.builder.ins().iconst(pointer, 0)
+        };
         let cancel_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
             StackSlotKind::ExplicitSlot,
             pointer.bytes(),
@@ -1420,9 +1557,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             .builder
             .func
             .import_function(cranelift_codegen::ir::ExtFuncData {
-                name: cranelift_codegen::ir::ExternalName::testcase(
-                    "beskid_rt_v5_fiber_spawn_with_cancel_slot",
-                ),
+                name: ExternalName::testcase("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
                 signature,
                 colocated: false,
                 patchable: false,
@@ -2456,6 +2591,65 @@ impl<'isa> FunctionEmitter<'isa> {
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
         self.emit_expression_inner(name, signature, facts, body, None, Some(call_importer))
+    }
+
+    /// Emit a capturing lambda entry `(environment) -> result` that materializes capture locals
+    /// from the ABI-v5 environment before lowering the body through generated ISLE.
+    pub fn emit_closure_lambda_entry_with_call_importer(
+        &self,
+        name: UserFuncName,
+        result: Type,
+        facts: &dyn NodeFacts,
+        body: AstNodeKey,
+        captures: &[InlineCaptureField],
+        call_importer: &mut dyn CallImporter,
+    ) -> Result<Function, FunctionEmissionError> {
+        let pointer = self.isa.pointer_type();
+        let signature = self.signature([pointer], [result]);
+        let mut function = Function::with_name_signature(name, signature);
+        let mut builder_context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+            let entry = builder.create_block();
+            builder.append_block_params_for_function_params(entry);
+            builder.switch_to_block(entry);
+            builder.seal_block(entry);
+            let environment = builder.block_params(entry)[0];
+            let value = {
+                let mut context =
+                    IsleContext::new_with_call_importer(&mut builder, facts, call_importer);
+                for capture in captures {
+                    let address = context
+                        .builder
+                        .ins()
+                        .iadd_imm(environment, i64::from(capture.field_offset));
+                    let value = context.builder.ins().load(
+                        capture.value_type,
+                        MemFlags::new(),
+                        address,
+                        0,
+                    );
+                    let variable = context.builder.declare_var(capture.value_type);
+                    context.builder.def_var(variable, value);
+                    context
+                        .locals
+                        .insert(capture.local_slot, (variable, capture.value_type));
+                }
+                lower_expression(&mut context, body).map_err(FunctionEmissionError::Lowering)?
+            };
+            if builder.func.dfg.value_type(value) != result {
+                return Err(FunctionEmissionError::verification(
+                    body,
+                    "closure lambda entry result type mismatch",
+                ));
+            }
+            builder.ins().return_(&[value]);
+            builder.finalize();
+        }
+        verify_function(&function, self.isa.flags()).map_err(|error| {
+            FunctionEmissionError::verification(body, format!("closure lambda entry: {error}"))
+        })?;
+        Ok(function)
     }
 
     pub fn emit_statement(

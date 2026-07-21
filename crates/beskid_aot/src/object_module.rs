@@ -148,6 +148,7 @@ impl BeskidObjectModule {
         })?;
 
         self.data_ids = emit_string_literals(module, artifact)?;
+        beskid_codegen::emit_closure_static_plans(module, artifact).map_err(AotError::from)?;
         let descriptor_ids = emit_type_descriptors(module, artifact)?;
         for handles in descriptor_ids.values() {
             let descriptor_name = format!("__data_{}", handles.descriptor.as_u32());

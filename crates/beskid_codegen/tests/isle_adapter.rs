@@ -1015,13 +1015,89 @@ fn closure_static_plan_rejects_stack_reference_captures() {
 }
 
 #[test]
-fn parsed_capturing_immediate_lambda_call_remains_fail_closed() {
+fn parsed_capturing_immediate_lambda_call_lowers_through_abi_v5_closure_environment() {
     let (input, isa, item) =
         item_fixture("i32 Main(i32 outer) { return ((i32 value) => outer + value)(41); }");
+    let db = input.database();
+    let call = find_node(db, item, beskid_queries::IndexedNodeKind::CallExpression)
+        .expect("immediate lambda call");
+    let target = beskid_queries::closure_call_target(db, call)
+        .expect("closure call target query")
+        .expect("immediate lambda target");
+    let environment = beskid_queries::closure_environment(db, target.lambda)
+        .expect("environment query")
+        .expect("lambda environment");
+    assert_eq!(environment.captures.len(), 1);
+    let authority = input
+        .closure_lowering_authority(call, target.lambda)
+        .expect("capturing call must receive closure authority");
+    assert_eq!(authority.plan.captures.len(), 1);
+    assert_eq!(
+        authority.plan.captures[0].capture.slot.index,
+        environment.captures[0].slot.index
+    );
+    let outer_decl = environment.captures[0].declaration;
+    let outer_slot = beskid_queries::local_slot(db, outer_decl)
+        .expect("outer slot query")
+        .expect("outer parameter slot");
+    assert_eq!(
+        outer_slot.index, environment.captures[0].slot.index,
+        "capture slot must match the outer parameter local slot"
+    );
+    let params = beskid_queries::item_abi_signature(db, item)
+        .expect("item abi")
+        .expect("main signature");
+    assert_eq!(params.parameters.len(), 1);
 
-    let error = emit_isle_item(&input, isa.as_ref(), item)
-        .expect_err("capturing immediate lambda needs the ABI-v5 closure environment path");
-    assert!(error.to_string().contains("MissingRuleOrFact"), "{error}");
+    let function = match emit_isle_item(&input, isa.as_ref(), item) {
+        Ok(function) => function,
+        Err(error) => panic!(
+            "capturing immediate lambda lowers through ABI-v5 allocate/store/root: {}",
+            error.display_with_db(db)
+        ),
+    };
+    let clif = function.display().to_string();
+    assert!(
+        clif.contains("beskid_rt_v5_closure_environment_allocate"),
+        "{clif}"
+    );
+    assert!(
+        clif.contains("beskid_rt_v5_closure_environment_root_current"),
+        "{clif}"
+    );
+    assert!(
+        clif.contains("__beskid_closure_allocation_request_"),
+        "{clif}"
+    );
+    assert!(!clif.contains("interop_dispatch_"), "{clif}");
+    assert!(clif.contains("iadd"), "{clif}");
+}
+
+#[test]
+fn closure_lowering_authority_reserves_root_slot_without_tls_pointer() {
+    let (input, _isa, root) =
+        item_fixture_with_root("i32 Main(i32 outer) { return (() => outer)(); }");
+    let call = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::CallExpression,
+    )
+    .expect("immediate call");
+    let lambda = find_definition_of_kind(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::LambdaExpression,
+    )
+    .expect("capturing lambda");
+    let authority = input
+        .closure_lowering_authority(call, lambda)
+        .expect("current transferable capture receives root authority");
+    assert_eq!(
+        authority.root.root_helper,
+        "beskid_rt_v5_closure_environment_root_current"
+    );
+    assert!(authority.plan.runtime_root_context().is_none());
+    assert!(authority.root.slot_index < 64);
 }
 
 #[test]
@@ -1039,16 +1115,23 @@ fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
         .expect("assignment target resolution")
         .expect("assignment target local")
         .declaration;
+    let slot = beskid_queries::local_slot(db, declaration)
+        .expect("assignment target slot")
+        .expect("assignment target slot fact");
     assert_eq!(
         mutable_local_assignment(db, assignment).expect("mutable assignment query"),
         Some(beskid_queries::MutableLocalAssignment {
             declaration,
-            slot: beskid_queries::local_slot(db, declaration)
-                .expect("assignment target slot")
-                .expect("assignment target slot fact"),
+            slot,
         })
     );
-    assert_eq!(facts.mutable_local_assignment_slot(assignment), Some(0));
+    assert_eq!(
+        facts.mutable_local_assignment_slot(assignment),
+        Some(beskid_isle::LocalSlotId {
+            owner_node: slot.owner.node.0,
+            index: slot.index,
+        })
+    );
 }
 
 #[test]

@@ -144,6 +144,7 @@ impl BeskidJitModule {
 
         emit_string_literals(&mut self.module, artifact)?;
         emit_type_descriptors(&mut self.module, artifact)?;
+        beskid_codegen::emit_closure_static_plans(&mut self.module, artifact)?;
 
         let mut ctx = self.module.make_context();
         let total = artifact.functions.len() as u64;

@@ -38,6 +38,7 @@ pub struct CodegenArtifact {
     pub functions: Vec<LoweredFunction>,
     pub type_descriptors: HashMap<TypeId, TypeDescriptorData>,
     pub string_literals: HashMap<String, Vec<u8>>,
+    pub closure_static_plans: Vec<crate::closure_static::ClosureStaticPlan>,
     pub extern_imports: Vec<ExternImport>,
     pub exports: Vec<crate::lowering::expressions::export::ExportEntry>,
 }
