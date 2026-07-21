@@ -304,7 +304,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "CYB-124: canonical syntax preparation must be re-entrant across profile builds"]
     #[cfg(any(
         all(target_os = "linux", target_arch = "x86_64"),
         all(target_os = "macos", target_arch = "aarch64"),

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reuse the existing canonical runtime syntax session during sequential native runtime-kit
+  publication, allowing debug and release kits to be built by one process without source-unit
+  reassignment while retaining compiler-owned source authority (CYB-124).
 - Fail syntax-module lowering closed when `[Export]` is attached to a non-public function, rather
   than silently omitting the invalid export from the AOT/JIT metadata surface (CYB-119).
 

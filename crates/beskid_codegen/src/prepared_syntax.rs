@@ -19,7 +19,7 @@ use beskid_analysis::{
 };
 use beskid_isle::AstNodeKey;
 use beskid_queries::{
-    BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
+    BeskidDatabase, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
     build_canonical_runtime_typed_program, build_typed_program_with_corelib_syscall_services,
     child_nodes, item_body, item_export_symbol, item_name, item_signature, node_kind,
     project_session_for_syntax_assembly, reachable_items,
@@ -53,13 +53,6 @@ pub fn lower_canonical_runtime_prepared_syntax(
     let program =
         parse_program_with_source_name(source_path.to_str().unwrap_or_default(), &source.source)
             .map_err(|error| anyhow::anyhow!("canonical runtime parse failed: {error}"))?;
-    let project = ProjectSession::new(
-        db,
-        root_dir.clone(),
-        source_path.clone(),
-        "beskid-runtime-native".into(),
-        "canonical-runtime".into(),
-    );
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
@@ -80,6 +73,13 @@ pub fn lower_canonical_runtime_prepared_syntax(
         Arc::new(ModuleIndex::empty()),
         false,
     ));
+    let project = project_session_for_syntax_assembly(
+        db,
+        &assembly,
+        "beskid-runtime-native",
+        "canonical-runtime",
+    )
+    .map_err(|error| anyhow::anyhow!("canonical runtime session preparation failed: {error}"))?;
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let capability = canonical_runtime_intrinsic_capability(&manifest).map_err(|error| {
         anyhow::anyhow!("canonical runtime intrinsic capability unavailable: {error:?}")
