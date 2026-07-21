@@ -17,6 +17,11 @@ use crate::resolve::{
 };
 use crate::syntax::{Expression, Literal, Node, Program, Spanned, TestDefinition};
 
+/// Legacy HIR-backed document snapshot retained for CLI `beskid doc` only.
+///
+/// LSP publish/refresh and prepare-spine consumers MUST use generation-bound syntax facts /
+/// [`crate::projects::SyntaxProgramAssembly`] instead. Building this snapshot is not part of
+/// the IDE authority path (CYB-65).
 #[derive(Debug, Clone)]
 pub struct DocumentAnalysisSnapshot {
     pub program: Spanned<Program>,

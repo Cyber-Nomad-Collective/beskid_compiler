@@ -95,6 +95,32 @@ impl PreparedCompilation {
                 )
             })
     }
+
+    /// Syntax-only project assembly for generation-safe consumers (LSP, queries, ISLE).
+    ///
+    /// Prefer this over reading [`ProgramAssembly::hir_units`]. When typed HIR exists, the
+    /// post-mod-rewrite entry program is projected; otherwise the prepare-spine rewritten
+    /// `program` replaces the entry unit. Callers must not fall back to
+    /// `DocumentAnalysisSnapshot` for IDE authority.
+    pub fn syntax_assembly(&self) -> crate::projects::SyntaxProgramAssembly {
+        if let Some(typed) = self.typed.as_ref() {
+            return typed.syntax_assembly();
+        }
+        let mut units = self.assembly.units.as_ref().clone();
+        units[self.assembly.entry_index].program = self.program.clone();
+        let mut syntax = crate::projects::SyntaxProgramAssembly::new(
+            self.assembly.roots.clone(),
+            Arc::new(units),
+            self.assembly.entry_index,
+            self.assembly.discovery,
+            Arc::clone(&self.assembly.module_index),
+            self.assembly.has_std_dependency,
+        );
+        syntax.set_trusted_corelib_service_paths_for_project_assembly(Arc::clone(
+            &self.assembly.trusted_corelib_service_paths,
+        ));
+        syntax
+    }
 }
 
 /// Single front-end spine: assemble → mod host → rewrite → semantic → composition → (optional) typed HIR.
@@ -459,4 +485,118 @@ fn typed_fingerprint_types(typed: &crate::types::TypeResult) -> u64 {
     typed.node_types.len().hash(&mut hasher);
     typed.lowering.cast_intents.len().hash(&mut hasher);
     hasher.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::{PrepareOptions, prepare_compilation, prepare_compilation_diagnostics};
+    use crate::services::{
+        FrontEndOptions, parse_program_with_source_name, resolved_input_from_plan,
+        synthetic_compile_plan_for_source,
+    };
+
+    static TEST_ID: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn prepare_spine_syntax_assembly_uses_rewritten_entry_without_document_snapshot() {
+        let test_id = TEST_ID.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("beskid_prepare_syntax_assembly_{test_id}"));
+        std::fs::create_dir_all(&root).expect("test source root");
+        let entry_path = root.join("Main.bd");
+        let source = "i32 Main() { return 0; }";
+        std::fs::write(&entry_path, source).expect("entry source");
+
+        let plan = synthetic_compile_plan_for_source(&entry_path);
+        let resolved =
+            resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
+        let prepared = prepare_compilation(
+            &resolved,
+            PrepareOptions {
+                front_end: FrontEndOptions {
+                    with_semantic_diagnostics: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            None,
+        )
+        .expect("prepare");
+
+        // Typed prepare projects through FrontEndTypedResult::syntax_assembly (post-rewrite entry).
+        let syntax = prepared.syntax_assembly();
+        assert_eq!(
+            syntax.entry_unit().program,
+            prepared.program,
+            "prepare-spine syntax assembly must match the prepare entry program"
+        );
+        let typed = prepared.typed.as_ref().expect("typed front-end");
+        assert_eq!(
+            syntax.entry_unit().program,
+            typed.syntax_assembly().entry_unit().program
+        );
+
+        // Untyped path: rewritten prepare.program is the sole authority (no DocumentAnalysisSnapshot).
+        let rewritten = parse_program_with_source_name("Main.bd", "i32 Rewritten() { return 1; }")
+            .expect("rewritten");
+        let mut untyped = prepared;
+        untyped.typed = None;
+        untyped.program = rewritten.clone();
+        assert_eq!(
+            untyped.syntax_assembly().entry_unit().program,
+            rewritten,
+            "untyped prepare-spine syntax assembly must project prepare.program"
+        );
+        assert!(
+            !untyped.syntax_assembly().units().is_empty(),
+            "syntax assembly must retain immutable source units"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn prepare_diagnostics_collect_without_legacy_document_snapshot() {
+        let test_id = TEST_ID.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("beskid_prepare_diags_no_snapshot_{test_id}"));
+        std::fs::create_dir_all(&root).expect("test source root");
+        let entry_path = root.join("Main.bd");
+        // Intentional unresolved name so prepare-spine emits a diagnostic.
+        let source = "i32 Main() { return Missing; }";
+        std::fs::write(&entry_path, source).expect("entry source");
+
+        let plan = synthetic_compile_plan_for_source(&entry_path);
+        let resolved =
+            resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
+        let (prepared, diags) = prepare_compilation_diagnostics(
+            &resolved,
+            PrepareOptions {
+                front_end: FrontEndOptions {
+                    with_semantic_diagnostics: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            None,
+        )
+        .expect("prepare diagnostics");
+
+        let syntax = prepared.syntax_assembly();
+        let expected = entry_path
+            .canonicalize()
+            .unwrap_or(entry_path.clone());
+        let actual = syntax
+            .entry_unit()
+            .path
+            .canonicalize()
+            .unwrap_or_else(|_| syntax.entry_unit().path.clone());
+        assert_eq!(actual, expected);
+        assert!(
+            !diags.is_empty(),
+            "prepare-spine diagnostics must surface without DocumentAnalysisSnapshot"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

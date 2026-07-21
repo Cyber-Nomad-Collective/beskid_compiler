@@ -340,3 +340,37 @@ fn manifest_digest_changes_when_manifest_or_lock_changes() {
     let digest_with_lock = manifest_digest(&manifest);
     assert_ne!(digest_v2, digest_with_lock);
 }
+
+#[test]
+fn syntax_program_assembly_strips_hir_without_document_snapshot() {
+    use beskid_analysis::projects::assembly_options_for_prepare;
+    use beskid_analysis::services::{FrontEndOptions, synthetic_compile_plan_for_source};
+    use beskid_queries::syntax_program_assembly;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let entry_path = dir.path().join("Main.bd");
+    let source = "i32 Main() { return 0; }";
+    std::fs::write(&entry_path, source).expect("entry");
+
+    let plan = synthetic_compile_plan_for_source(&entry_path);
+    let options =
+        assembly_options_for_prepare(&plan, FrontEndOptions::default().assembly_discovery);
+    let mut db = BeskidDatabase::default();
+    let syntax = syntax_program_assembly(&mut db, &plan, None, &entry_path, Some(source), &options)
+        .expect("syntax assembly");
+
+    assert_eq!(
+        syntax
+            .entry_unit()
+            .path
+            .canonicalize()
+            .unwrap_or_else(|_| syntax.entry_unit().path.clone()),
+        entry_path
+            .canonicalize()
+            .unwrap_or(entry_path.clone())
+    );
+    assert!(
+        !syntax.units().is_empty(),
+        "syntax_program_assembly must retain source units without DocumentAnalysisSnapshot"
+    );
+}
