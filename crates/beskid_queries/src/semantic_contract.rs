@@ -1736,16 +1736,27 @@ fn call_lowering_for_node(
                 } else {
                     Ok(CallLowering::Direct(declaration))
                 }
+            } else if imported_call_receiver_exists(db, key, path)
+                || (path
+                    .segments
+                    .iter()
+                    .all(|segment| segment.node.type_args.is_empty())
+                    && beskid_analysis::builtins::builtin_for_path(
+                        &path
+                            .segments
+                            .iter()
+                            .map(|segment| segment.node.name.node.name.clone())
+                            .collect::<Vec<_>>(),
+                    )
+                    .is_some())
+            {
+                Ok(CallLowering::Dynamic)
             } else if let Some(declaration) =
                 resolve_local_extern_contract_method(program, index, key, path)
             {
                 Ok(CallLowering::Direct(declaration))
             } else {
-                // Imports, builtins, multi-segment unresolved paths, and other
-                // receivers without item declaration authority remain Dynamic —
-                // same as Member — so reachability and ISLE emission do not fail
-                // closed on missing MethodDefinition authority (CYB-129).
-                Ok(CallLowering::Dynamic)
+                Err(SemanticError::unavailable("call_lowering"))
             }
         }
         beskid_analysis::syntax::Expression::Member(member) => {
