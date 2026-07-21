@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+))]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
@@ -37,7 +40,10 @@ use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+))]
 unsafe extern "C" fn test_system_allocate(size: usize, alignment: usize) -> *mut u8 {
     let Ok(layout) = std::alloc::Layout::from_size_align(size, alignment) else {
         return std::ptr::null_mut();
@@ -47,10 +53,16 @@ unsafe extern "C" fn test_system_allocate(size: usize, alignment: usize) -> *mut
     unsafe { std::alloc::alloc_zeroed(layout) }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+))]
 static TEST_CURRENT_TLS: AtomicUsize = AtomicUsize::new(0);
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+))]
 unsafe extern "C" fn test_tls_get() -> *mut u8 {
     TEST_CURRENT_TLS.load(Ordering::SeqCst) as *mut u8
 }
@@ -2394,7 +2406,10 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
 }
 
 #[test]
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(any(
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64"),
+))]
 fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_closed() {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("runtime project").keep();
@@ -2432,10 +2447,20 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         Arc::new(ModuleIndex::empty()),
         false,
     ));
+    let host_triple = if cfg!(target_os = "macos") {
+        "aarch64-apple-darwin"
+    } else {
+        "x86_64-unknown-linux-gnu"
+    };
+    let host_isa_name = if cfg!(target_os = "macos") {
+        "aarch64"
+    } else {
+        "x86_64"
+    };
     let target = TargetMetadata::supported()
         .into_iter()
-        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
-        .expect("linux target");
+        .find(|target| target.triple.as_str() == host_triple)
+        .expect("host ABI-v5 target");
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let typed = build_canonical_runtime_typed_program(
         &mut db,
@@ -2453,7 +2478,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("canonical runtime codegen input");
-    let isa = isa::lookup_by_name("x86_64")
+    let isa = isa::lookup_by_name(host_isa_name)
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
@@ -2619,6 +2644,10 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         validate(descriptor.as_ptr()),
         1,
         "restored descriptor is accepted before allocate"
+    );
+    assert!(
+        allocate_environment(std::ptr::null()).is_null(),
+        "null allocation request fails closed before dereference"
     );
     let request = [32usize, 8, descriptor.as_mut_ptr() as usize];
     let environment = allocate_environment(request.as_ptr());

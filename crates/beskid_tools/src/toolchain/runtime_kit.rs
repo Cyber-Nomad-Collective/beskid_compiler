@@ -322,6 +322,7 @@ mod tests {
             "beskid_rt_v5_closure_environment_allocate",
             "beskid_rt_v5_closure_capture_store",
             "beskid_rt_v5_closure_environment_root",
+            "beskid_rt_v5_closure_environment_root_current",
         ];
 
         for profile in [RuntimeKitProfile::Debug, RuntimeKitProfile::Release] {
