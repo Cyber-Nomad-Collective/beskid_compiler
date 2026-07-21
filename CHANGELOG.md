@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add generation-safe, artifact-owned closure static plans for descriptor, pointer-map, and
+  allocation-request storage. Plans derive the complete object layout and capture map indexes
+  from current syntax facts plus the canonical ABI manifest, reject stale/stack-reference facts,
+  and deliberately carry no TLS or root-frame value (CYB-128).
 - Lower capture-free, zero-argument `spawn (() => ...)` expressions through current-generation
   closure facts into a syntax-owned helper entry and the canonical ABI-v5 fiber trampoline.
   Capturing entries remain fail-closed pending the allocated/rooted closure-environment leaf

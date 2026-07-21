@@ -9,6 +9,7 @@
 //! work so observers match [`beskid_pipeline::phases::JIT_RUN_PHASE_ORDER`] when mods are active.
 
 pub mod codegen_input;
+pub mod closure_static;
 pub mod cranelift_host;
 pub mod diagnostics;
 pub mod errors;
@@ -21,6 +22,10 @@ pub mod prepared_syntax;
 pub mod services;
 
 pub use codegen_input::{CodegenInput, CodegenInputError};
+pub use closure_static::{
+    ClosureCaptureStaticField, ClosureStaticDataHandles, ClosureStaticPlan, RuntimeRootContext,
+    emit_closure_static_data,
+};
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
 pub use errors::{CodegenError, RETIRED_HIR_LOWERING_PATH};
 pub use isle_adapter::{
