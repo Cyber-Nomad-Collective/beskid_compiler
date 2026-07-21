@@ -2617,8 +2617,17 @@ i32 Main() {
         None
     );
     assert_unavailable(call_lowering(&db, unresolved_call));
-    assert_unavailable(direct_callees(&db, unresolved_main));
-    assert_unavailable(reachable_items(&db, unresolved_program, unresolved_main));
+    // Unresolved calls are not Direct edges; reachability skips them instead of
+    // failing the whole entrypoint walk (see direct_callees_for_item).
+    assert_eq!(
+        direct_callees(&db, unresolved_main).expect("no direct callees"),
+        Some(std::sync::Arc::<[beskid_queries::AstNodeKey]>::from([]))
+    );
+    assert_eq!(
+        reachable_items(&db, unresolved_program, unresolved_main)
+            .expect("entrypoint remains reachable"),
+        Some(std::sync::Arc::from([unresolved_main]))
+    );
 }
 
 #[test]
