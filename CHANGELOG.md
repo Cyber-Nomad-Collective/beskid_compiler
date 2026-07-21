@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Audit native-host static runtime kits with `verify_static_archive` so Linux GD TLS `__tls_get_addr` is expected, not a provenance failure.
 - Ignore retired HIR `lower_program` beskid_tests still expecting Codegen after syntax-ISLE cutover (unblocks Rust gate).
 - Read interop enum tags with `read_unaligned` and align the colliding-tag
   dispatch fixture so Linux Rust gate no longer SIGABRTs on misaligned

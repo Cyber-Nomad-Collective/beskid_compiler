@@ -376,9 +376,12 @@ mod tests {
                     .map(|symbol| format!("undefined={symbol}\n"))
                     .collect::<String>(),
             );
+            // Static archives still carry GD TLS `__tls_get_addr` until the shared
+            // loader boundary is linked; use the archive-scoped audit, not the
+            // final-image verify().
             RuntimeProvenanceAudit::canonical(target.clone())
                 .expect("canonical provenance audit")
-                .verify(&parse_symbol_list(&symbol_list).expect("parse symbol list"))
+                .verify_static_archive(&parse_symbol_list(&symbol_list).expect("parse symbol list"))
                 .expect("native runtime kit must satisfy manifest provenance");
         }
     }
