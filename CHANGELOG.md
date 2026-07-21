@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Update the canonical-runtime source contract to require wrapping overflow guards in
+  `ValidatePointerMap` instead of signed `NativeWordMax() - 8` compares (CYB-129).
 - Replace `ValidatePointerMap` `NativeWordMax() - 8` overflow guards with wrapping
   multiply/add checks. `word` lowers as a signed Cranelift integer, so the old bound was
   negative under SignedGreaterThan and rejected every valid closure descriptor in the
