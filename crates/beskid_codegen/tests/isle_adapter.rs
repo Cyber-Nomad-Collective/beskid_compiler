@@ -1,5 +1,8 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
@@ -43,6 +46,14 @@ unsafe extern "C" fn test_system_allocate(size: usize, alignment: usize) -> *mut
     // The JIT regression reads the returned header and roots it immediately; intentionally keep
     // this test allocation alive until process exit because the canonical source owns no sweep.
     unsafe { std::alloc::alloc_zeroed(layout) }
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+static TEST_CURRENT_TLS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+unsafe extern "C" fn test_tls_get() -> *mut u8 {
+    TEST_CURRENT_TLS.load(Ordering::SeqCst) as *mut u8
 }
 
 #[test]
@@ -2356,11 +2367,13 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         "ValidatePointerMap",
         "ValidateTypeDescriptor",
         "AllocateClosureEnvironment",
+        "CurrentThreadState",
         "RootFrame",
         "RootFrameSlots",
         "RootFrameSlotCount",
         "SetRootSlotValue",
         "RootClosureEnvironment",
+        "RootClosureEnvironmentCurrent",
     ];
     let module_items = selected
         .into_iter()
@@ -2383,6 +2396,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         "beskid_rt_v5_intrinsic_system_allocate",
         test_system_allocate as *const u8,
     );
+    builder.symbol("beskid_rt_v5_intrinsic_tls_get", test_tls_get as *const u8);
     let mut module = JITModule::new(builder);
     let declared = emit_syntax_program(
         &mut module,
@@ -2422,6 +2436,19 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
             ))
             .expect("RootClosureEnvironment declaration"),
     );
+    let root_environment_current = module.get_finalized_function(
+        *declared
+            .get(&DirectCallee::item(
+                *items
+                    .iter()
+                    .find(|key| {
+                        item_name(input.database(), **key).ok().flatten().as_deref()
+                            == Some("RootClosureEnvironmentCurrent")
+                    })
+                    .expect("RootClosureEnvironmentCurrent item"),
+            ))
+            .expect("RootClosureEnvironmentCurrent declaration"),
+    );
     let allocate_environment = module.get_finalized_function(
         *declared
             .get(&DirectCallee::item(
@@ -2438,6 +2465,8 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     let validate: extern "C" fn(*const usize) -> u8 = unsafe { std::mem::transmute(validate) };
     let root_environment: extern "C" fn(*mut usize, usize, *mut u8) -> u8 =
         unsafe { std::mem::transmute(root_environment) };
+    let root_environment_current: extern "C" fn(usize, *mut u8) -> u8 =
+        unsafe { std::mem::transmute(root_environment_current) };
     let allocate_environment: extern "C" fn(*const usize) -> *mut u8 =
         unsafe { std::mem::transmute(allocate_environment) };
 
@@ -2497,6 +2526,22 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         slots[0], environment as usize,
         "valid environment is rooted in its slot"
     );
+    slots[0] = 0;
+    TEST_CURRENT_TLS.store(0, Ordering::SeqCst);
+    assert_eq!(
+        root_environment_current(0, environment),
+        0,
+        "missing current TLS fails closed without a root write"
+    );
+    assert_eq!(slots[0], 0);
+    TEST_CURRENT_TLS.store(tls.as_mut_ptr() as usize, Ordering::SeqCst);
+    assert_eq!(
+        root_environment_current(0, environment),
+        1,
+        "the generated-only entry reads the actual current TLS internally"
+    );
+    assert_eq!(slots[0], environment as usize);
+    TEST_CURRENT_TLS.store(0, Ordering::SeqCst);
 }
 
 fn item_fixture(

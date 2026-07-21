@@ -183,6 +183,8 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
     assert!(source.contains("pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value)"));
     assert!(source.contains("pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment)"));
     assert!(source.contains("return SetRootSlotValue(rootFrame, slotIndex, environment);"));
+    assert!(source.contains("pub bool RootClosureEnvironmentCurrent(word slotIndex, pointer environment)"));
+    assert!(source.contains("return RootClosureEnvironment(CurrentThreadState(), slotIndex, environment);"));
 }
 
 #[test]

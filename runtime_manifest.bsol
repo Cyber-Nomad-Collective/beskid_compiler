@@ -48,6 +48,7 @@ export "beskid_rt_v5_closure_environment_allocate" { params = [{ name = request,
 export "beskid_rt_v5_closure_capture_store" { params = [{ name = environment, type = pointer }, { name = descriptor, type = pointer }, { name = map_index, type = usize }, { name = value, type = pointer }] returns = u8 }
 export "beskid_rt_v5_closure_environment_root" { params = [{ name = tls_state, type = pointer }, { name = slot_index, type = usize }, { name = environment, type = pointer }] returns = u8 }
 export "beskid_rt_v5_fiber_spawn_with_cancel_slot" { params = [{ name = entry, type = pointer }, { name = environment, type = pointer }, { name = cancelled_slot, type = pointer }] returns = i64 }
+export "beskid_rt_v5_closure_environment_root_current" { params = [{ name = slot_index, type = usize }, { name = environment, type = pointer }] returns = u8 }
 export "beskid_rt_v5_trap" {
   params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }]
   returns = never
