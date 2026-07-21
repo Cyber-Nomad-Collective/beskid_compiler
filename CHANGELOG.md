@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Lexically normalize compiler-owned Corelib service source paths and resolve both sides when
-  matching Foundation `source_root`, so materialized `Testing/Assert.bd` retains `__panic_str`
-  CorelibService provenance instead of Dynamic/MissingRuleOrFact under the Corelib gate.
+- Lexically normalize compiler-owned Corelib service source paths and match Foundation
+  `source_root` without symlink canonicalize, so materialized `Testing/Assert.bd` retains
+  `__panic_str` CorelibService provenance while user symlinks stay Dynamic.
 
 ### Removed
 

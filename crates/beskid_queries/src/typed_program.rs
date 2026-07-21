@@ -294,17 +294,17 @@ fn canonical_corelib_service_units(
                 .filter(|unit| {
                     unit.source == expected.source
                         && (
-                            // Direct compiler sources retain their canonical identity after
-                            // lexical/symlink normalization (CARGO_MANIFEST_DIR join may differ
-                            // from the resolved unit path the loader recorded).
-                            paths_refer_to_same_file(&unit.path, &canonical_path)
+                            // Direct compiler sources retain their canonical lexical identity.
+                            // Compare lexically (after normalize_lexically in the path helper) so
+                            // a user-project symlink to the same inode cannot acquire authority.
+                            unit.path == canonical_path
                             // Materialized dependency copies lose that physical identity. The
                             // assembly loader supplies this separate, origin-checked path list
                             // only after resolving the original dependency from compiler Corelib.
                             || assembly
                                 .trusted_corelib_service_paths()
                                 .iter()
-                                .any(|trusted| paths_refer_to_same_file(trusted, &unit.path))
+                                .any(|trusted| trusted == &unit.path)
                         )
                 })
                 .collect::<Vec<_>>();
@@ -319,11 +319,6 @@ fn canonical_corelib_service_units(
             })
         })
         .collect()
-}
-
-fn paths_refer_to_same_file(left: &std::path::Path, right: &std::path::Path) -> bool {
-    left.canonicalize().unwrap_or_else(|_| left.to_path_buf())
-        == right.canonicalize().unwrap_or_else(|_| right.to_path_buf())
 }
 
 /// Attach compiler-minted runtime intrinsic authority after validating that the assembled syntax
