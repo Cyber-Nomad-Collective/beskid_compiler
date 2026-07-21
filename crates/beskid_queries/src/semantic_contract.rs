@@ -4992,6 +4992,11 @@ fn direct_callees_for_item(
         if let CallLowering::Direct(declaration) = lowering
             && !callees.contains(&declaration)
         {
+            // Extern contract methods are import leaves (no syntax body). Including them
+            // as Direct reachability edges makes reachable_items fail closed.
+            if extern_contract_import_for_declaration(db, declaration).is_some() {
+                continue;
+            }
             callees.push(declaration);
         }
     }
