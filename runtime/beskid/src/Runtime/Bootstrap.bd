@@ -318,14 +318,15 @@ pub bool ValidateTypeDescriptor(pointer descriptor) {
             return false;
         } else {
             word alignment = TypeDescriptorAlignment(descriptor);
-            if !IsValidObjectAlignment(alignment) {
-                return false;
-            } else {
+            bool alignmentOk = IsValidObjectAlignment(alignment);
+            if alignmentOk {
                 return ValidatePointerMap(
                     TypeDescriptorPointerMap(descriptor),
                     TypeDescriptorPointerCount(descriptor),
                     size
                 );
+            } else {
+                return false;
             }
         }
     }
