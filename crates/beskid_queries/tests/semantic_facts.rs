@@ -26,9 +26,10 @@ use beskid_queries::{
     closure_call_target, closure_environment, closure_signature, completion_candidates,
     control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
     generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
-    item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
+    item_signature, literal_fact,     local_slot, mutable_local_assignment, node_kind, node_span, node_type,
     nominal_member_receiver, operator_fact, reachable_items, resolved_item, resolved_local,
-    runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
+    for_iterator_fact, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target,
+    test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -4169,6 +4170,110 @@ impl Value { i32 Sum(i32 first) { let local = first; return local; } }"#;
         }
     }
 }
+
+#[test]
+fn for_iterator_fact_proves_range_element_type_and_shadowing() {
+    use beskid_queries::ForIteratorFact;
+
+    let source = "i32 Main() { let value = 1_i64; for value in range(1, 4) { let copy = value; } return 0; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    let declaration = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::Identifier,
+        source.find("for value").expect("for header") + "for ".len(),
+    );
+    assert_eq!(
+        for_iterator_fact(&db, for_stmt).expect("for iterator fact"),
+        Some(ForIteratorFact {
+            declaration,
+            element_type: SemanticTypeId::I32,
+        })
+    );
+    assert_eq!(
+        node_type(&db, declaration).expect("iterator declaration type"),
+        Some(SemanticTypeId::I32)
+    );
+    let body_reference = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.find("= value").expect("body use") + "= ".len(),
+    );
+    assert_eq!(
+        resolved_local(&db, body_reference)
+            .expect("iterator reference")
+            .map(|resolved| resolved.declaration),
+        Some(declaration)
+    );
+    assert_eq!(
+        node_type(&db, body_reference).expect("shadowed iterator type"),
+        Some(SemanticTypeId::I32)
+    );
+
+    let nested = "i32 Main() { for outer in range(1, 3) { for outer in range(10_i64, 12_i64) { let inner = outer; } } return 0; }";
+    let (db, _project, unit, generation, index) = setup(nested);
+    let outer_for = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    let inner_for = key(unit, generation, &index, NodeKind::ForStatement, 1);
+    assert_eq!(
+        for_iterator_fact(&db, outer_for)
+            .expect("outer for")
+            .map(|fact| fact.element_type),
+        Some(SemanticTypeId::I32)
+    );
+    assert_eq!(
+        for_iterator_fact(&db, inner_for)
+            .expect("inner for")
+            .map(|fact| fact.element_type),
+        Some(SemanticTypeId::I64)
+    );
+    let inner_use = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        nested.find("= outer").expect("inner use") + "= ".len(),
+    );
+    assert_eq!(
+        node_type(&db, inner_use).expect("nested shadow type"),
+        Some(SemanticTypeId::I64)
+    );
+}
+
+#[test]
+fn stale_generation_cannot_reuse_for_iterator_fact() {
+    let source = "i32 Main() { for value in range(1, 4) { let copy = value; } return 0; }";
+    let (mut db, project, unit, generation, index) = setup(source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    assert!(
+        for_iterator_fact(&db, for_stmt)
+            .expect("current for iterator")
+            .is_some()
+    );
+    db.update_syntax_source(
+        project,
+        unit,
+        SyntaxGenerationId(generation.0 + 1),
+        "i32 Main() { for other in range(1, 4) { let copy = other; } return 0; }".to_string(),
+    )
+    .expect("syntax update");
+    assert_eq!(
+        for_iterator_fact(&db, for_stmt).expect("stale for iterator"),
+        None
+    );
+}
+
+#[test]
+fn for_iterator_fact_rejects_non_range_iterables() {
+    let source = "unit Main() { for item in [1] { let copy = item; } }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
+    assert_unavailable(for_iterator_fact(&db, for_stmt));
+}
+
 
 #[test]
 fn stale_generation_cannot_reuse_a_local_slot_identity() {

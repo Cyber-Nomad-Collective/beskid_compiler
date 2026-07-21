@@ -491,6 +491,16 @@ pub struct RangeForFact {
     pub end: AstNodeKey,
 }
 
+/// Generation-bound iterator declaration and element type for one `ForStatement`.
+///
+/// The declaration is the loop-variable identifier. Element type is proven only for the
+/// syntax-only `range(start, end)` iterable; other iterables remain unavailable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ForIteratorFact {
+    pub declaration: AstNodeKey,
+    pub element_type: SemanticTypeId,
+}
+
 /// Callable item signature expressed entirely in semantic type identities.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ItemSignature {
@@ -1551,8 +1561,38 @@ fn local_declaration_type(
                     |syntax_type| semantic_type_from_syntax(&syntax_type.node),
                 )
             }),
+        beskid_analysis::syntax_query::NodeKind::ForStatement => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::ForStatement>()
+            .map(|statement| {
+                element_type_for_for_iterable(program, index, parent, &statement.iterable.node)
+            }),
         _ => None,
     }
+}
+
+fn element_type_for_for_iterable(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    for_statement: beskid_analysis::syntax::AstNodeId,
+    iterable: &beskid_analysis::syntax::Expression,
+) -> Result<SemanticTypeId, SemanticError> {
+    let beskid_analysis::syntax::Expression::Call(call) = iterable else {
+        return Err(SemanticError::unavailable("for_iterator_element_type"));
+    };
+    let beskid_analysis::syntax::Expression::Path(path) = &call.node.callee.node else {
+        return Err(SemanticError::unavailable("for_iterator_element_type"));
+    };
+    let [segment] = path.node.path.node.segments.as_slice() else {
+        return Err(SemanticError::unavailable("for_iterator_element_type"));
+    };
+    if segment.node.name.node.name != "range" || !segment.node.type_args.is_empty() {
+        return Err(SemanticError::unavailable("for_iterator_element_type"));
+    }
+    let [start, _end] = call.node.args.as_slice() else {
+        return Err(SemanticError::unavailable("for_iterator_element_type"));
+    };
+    semantic_type_for_expression(program, index, for_statement, &start.node)
 }
 
 fn semantic_type_for_literal(literal: &beskid_analysis::syntax::Literal) -> SemanticTypeId {
@@ -1689,6 +1729,33 @@ fn range_for_fact_tracked(
             start: AstNodeKey { node: normalized_expression_node(index, start), ..key },
             end: AstNodeKey { node: normalized_expression_node(index, end), ..key },
         }))
+    })?
+    .transpose()
+}
+
+#[salsa::tracked]
+fn for_iterator_fact_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ForIteratorFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        let statement = node.of::<beskid_analysis::syntax::ForStatement>()?;
+        let declaration = index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterator),
+        )?;
+        match element_type_for_for_iterable(program, index, key.node, &statement.iterable.node) {
+            Ok(element_type) => Some(Ok(ForIteratorFact {
+                declaration: AstNodeKey {
+                    node: declaration,
+                    ..key
+                },
+                element_type,
+            })),
+            Err(error) => Some(Err(error)),
+        }
     })?
     .transpose()
 }
@@ -5483,6 +5550,14 @@ pub fn call_arguments(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[
 /// Return exact current-generation bounds for the syntax-only `range(start, end)` loop form.
 pub fn range_for_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<RangeForFact> {
     with_registered_syntax(db, key, range_for_fact_tracked)
+}
+
+/// Return the iterator declaration identity and element type for one current `ForStatement`.
+///
+/// Only the syntax-only `range(start, end)` iterable proves an element type. Stale generations,
+/// unregistered nodes, and non-for statements contain no fact.
+pub fn for_iterator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ForIteratorFact> {
+    with_registered_syntax(db, key, for_iterator_fact_tracked)
 }
 
 /// Return the declaration identifier for the receiver of an exact `local.Method()` path.

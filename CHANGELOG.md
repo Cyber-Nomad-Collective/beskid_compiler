@@ -7,24 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Audit native-host static runtime kits with `verify_static_archive` so Linux GD TLS `__tls_get_addr` is expected, not a provenance failure.
-- Ignore retired HIR `lower_program` beskid_tests still expecting Codegen after syntax-ISLE cutover (unblocks Rust gate).
-- Read interop enum tags with `read_unaligned` and align the colliding-tag
-  dispatch fixture so Linux Rust gate no longer SIGABRTs on misaligned
-  envelope bytes after earlier CYB-129 gate layers cleared.
-
-### Changed
-
-- Restrict public AOT host context/platform emitters to an opaque
-  `CanonicalHostEmitAuthority` minted only from the compiler-embedded ABI-v5
-  corpus; `emit_host_platform_library_pair` always lowers Bootstrap through
-  CodegenInput and no longer accepts an arbitrary `CodegenArtifact` (CYB-76,
-  W3 exact-kit route).
-
 ### Added
 
+- Add generation-bound `for_iterator_fact` for `ForStatement` range loops (iterator declaration
+  identity + element type), wire ISLE `scalar_type`/`local_slot` through that fact, and prove
+  shadowing plus stale-generation fail-closed (CYB-92).
 - Expand generation-safe `completion_candidates` with lexical locals, type/enum names, and
   explicitly annotated nominal receiver fields/methods (CYB-19). Inferred receivers stay
   unavailable.
@@ -50,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Purge LSP intellisense tests off `DocumentAnalysisSnapshot` fallbacks; definition/references
+  corelib fixtures now require syntax facts via `build_document` (CYB-26/CYB-27 residual).
+- Audit native-host static runtime kits with `verify_static_archive` so Linux GD TLS `__tls_get_addr` is expected, not a provenance failure.
 - Update the canonical-runtime source contract to require wrapping overflow guards in
   `ValidatePointerMap` instead of signed `NativeWordMax() - 8` compares (CYB-129).
 - Replace `ValidatePointerMap` `NativeWordMax() - 8` overflow guards with wrapping
