@@ -85,11 +85,23 @@ impl RuntimeProvenanceAudit {
 
     /// Verify an ELF shared-runtime symbol list against its manifest-derived policy.
     ///
-    /// The four accepted Linux imports are emitted by the dynamic-loader/toolchain boundary.
-    /// They are deliberately unavailable to static archive verification.
+    /// The accepted Linux imports are emitted by the dynamic-loader/toolchain boundary.
     pub fn verify_shared(&self, symbols: &SymbolList) -> Result<(), SymbolListError> {
         let additional_imports = match self.target.as_str() {
             "x86_64-unknown-linux-gnu" => LINUX_ELF_SHARED_LOADER_IMPORTS,
+            _ => &[],
+        };
+        self.verify_with_additional_imports(symbols, additional_imports)
+    }
+
+    /// Verify a host platform static archive that still contains `platform_tls.o`.
+    ///
+    /// The archive is not a final linked image; GD TLS leaves `__tls_get_addr` undefined
+    /// until the consumer links the shared loader boundary. Allow only that import so
+    /// other undeclared static-archive imports continue to fail closed.
+    pub fn verify_static_archive(&self, symbols: &SymbolList) -> Result<(), SymbolListError> {
+        let additional_imports = match self.target.as_str() {
+            "x86_64-unknown-linux-gnu" => &["__tls_get_addr"][..],
             _ => &[],
         };
         self.verify_with_additional_imports(symbols, additional_imports)
