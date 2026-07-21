@@ -178,6 +178,133 @@ fn if_else_rule_emits_verified_multi_block_clif() {
 }
 
 #[test]
+fn return_after_if_without_else_reaches_merge() {
+    // CYB-129: a reachable merge must not be sealed with `trap`; otherwise the
+    // statement cursor treats the block as ended and drops the following `return`.
+    // Shape mirrors runtime `if cond { side_effect }; return 0;`.
+    struct IfThenReturnFacts {
+        nodes: [AstNodeKey; 7],
+    }
+    impl NodeFacts for IfThenReturnFacts {
+        fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+            let [block, if_node, condition, then_stmt, then_value, ret, ret_value] = self.nodes;
+            if key == block {
+                Some(NodeKind::BlockExpression)
+            } else if key == if_node {
+                Some(NodeKind::IfStatement)
+            } else if key == then_stmt {
+                Some(NodeKind::ExpressionStatement)
+            } else if key == ret {
+                Some(NodeKind::ReturnStatement)
+            } else if key == condition || key == then_value || key == ret_value {
+                Some(NodeKind::LiteralExpression)
+            } else {
+                None
+            }
+        }
+
+        fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+            let [_, _, condition, _, then_value, _, ret_value] = self.nodes;
+            if key == condition {
+                Some(LiteralKind::Boolean)
+            } else if key == then_value || key == ret_value {
+                Some(LiteralKind::Integer)
+            } else {
+                None
+            }
+        }
+
+        fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
+            (key == self.nodes[0]).then_some(2)
+        }
+
+        fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+            let [block, if_node, condition, then_stmt, then_value, ret, ret_value] = self.nodes;
+            match (key, index) {
+                (key, 0) if key == block => Some(if_node),
+                (key, 1) if key == block => Some(ret),
+                (key, 0) if key == if_node => Some(condition),
+                (key, 1) if key == if_node => Some(then_stmt),
+                (key, 0) if key == then_stmt => Some(then_value),
+                (key, 0) if key == ret => Some(ret_value),
+                _ => None,
+            }
+        }
+
+        fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
+            let [_, _, _, _, then_value, _, ret_value] = self.nodes;
+            if key == then_value {
+                Some(7)
+            } else if key == ret_value {
+                Some(0)
+            } else {
+                None
+            }
+        }
+
+        fn boolean_literal(&self, key: AstNodeKey) -> Option<bool> {
+            (key == self.nodes[2]).then_some(false)
+        }
+
+        fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+            if key == self.nodes[2] {
+                Some(types::I8)
+            } else if key == self.nodes[4] || key == self.nodes[6] {
+                Some(types::I64)
+            } else {
+                None
+            }
+        }
+    }
+
+    let flags = settings::Flags::new(settings::builder());
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(flags)
+        .expect("host flags");
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/IfThenReturn.bd"));
+    let facts = IfThenReturnFacts {
+        nodes: std::array::from_fn(|index| AstNodeKey {
+            unit,
+            generation: SyntaxGenerationId(13),
+            node: AstNodeId(index as u32 + 1),
+        }),
+    };
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let signature = emitter.signature([], [types::I64]);
+    let function = emitter
+        .emit_statement(
+            UserFuncName::user(0, 16),
+            signature.clone(),
+            &facts,
+            facts.nodes[0],
+        )
+        .expect("return after if-without-else must lower");
+
+    let clif = function.display().to_string();
+    assert!(
+        !clif.contains("trap"),
+        "reachable merge must not trap:\n{clif}"
+    );
+    assert!(clif.contains("return"), "{clif}");
+
+    let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
+    let function_id = module
+        .declare_function("if_then_return", Linkage::Local, &signature)
+        .expect("declare");
+    let mut context = module.make_context();
+    context.func = function;
+    module
+        .define_function(function_id, &mut context)
+        .expect("define");
+    module.finalize_definitions().expect("finalize");
+    let code = module.get_finalized_function(function_id);
+    let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(code) };
+    assert_eq!(run(), 0, "fallthrough return must execute");
+}
+
+#[test]
 fn if_without_else_terminates_reachable_fallthrough() {
     let flags = settings::Flags::new(settings::builder());
     let isa = cranelift_codegen::isa::lookup(Triple::host())
