@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use tokio::sync::RwLock;
 
 use super::db_access::with_compilation_db_mut_state;
-use super::lifecycle::ANALYSIS_CACHE_VERSION;
 use super::store::State;
 
 fn project_graph_options_from_env() -> beskid_analysis::ProjectGraphBuildOptions {
@@ -97,8 +96,12 @@ pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
         write.typed_prepare_schedule_revision.clear();
         if !cold_start {
             write.reset_compilation_db_with_db(db);
+            // Fail closed: drop bound facts until rebuild_open_document_syntax_facts runs.
             for doc in write.docs.values_mut() {
-                doc.analysis_cache_version = ANALYSIS_CACHE_VERSION.saturating_sub(1);
+                doc.clear_syntax_facts();
+            }
+            for doc in write.workspace_index.values_mut() {
+                doc.clear_syntax_facts();
             }
         }
     })

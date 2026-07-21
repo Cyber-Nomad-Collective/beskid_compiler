@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Remove LSP `ANALYSIS_CACHE_VERSION` / `Document.analysis_cache_version`. Hard invalidation
+  clears generation-bound syntax facts (fail closed) and rebuild paths rebind documentation /
+  diagnostics without a shape-version cache (CYB-78).
+
 ### Added
 
 - Add generation-bound `for_iterator_fact` for `ForStatement` range loops (iterator declaration

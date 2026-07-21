@@ -177,7 +177,6 @@ mod tests {
 
     use super::handle_code_actions;
     use crate::session::documentation_facts::syntax_documentation_facts_for_source;
-    use crate::session::lifecycle::ANALYSIS_CACHE_VERSION;
     use crate::session::store::Document;
 
     #[test]
@@ -191,7 +190,6 @@ mod tests {
         let doc = Document {
             version: 2,
             text: current_source.to_string(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
@@ -235,7 +233,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: current_source.to_string(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),

@@ -24,7 +24,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: "fn main() {}".into(),
-            analysis_cache_version: 0,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: vec![SyntaxSymbol {

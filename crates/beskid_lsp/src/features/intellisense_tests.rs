@@ -9,7 +9,7 @@ mod tests {
 
     use crate::features::{completion, definition, hover, references, signature_help};
     use crate::position::position_to_offset;
-    use crate::session::lifecycle::{ANALYSIS_CACHE_VERSION, build_document};
+    use crate::session::lifecycle::build_document;
     use crate::session::store::{
         Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxSymbol,
     };
@@ -137,7 +137,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: main_source.to_string(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
@@ -194,7 +193,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: "i32 Main() { return helper(); }\ni32 helper() { return 0; }".to_string(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: vec![SyntaxDefinition {
                 reference_start: 20,
                 reference_end: 26,
@@ -225,7 +223,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: "i32 helper() { return 0; }".to_string(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: vec![SyntaxSymbol {
@@ -258,7 +255,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: "i32 helper() { return helper(); }".to_string(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: vec![SyntaxDefinition {
                 reference_start: 22,
                 reference_end: 28,
@@ -284,7 +280,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: source.clone(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: Vec::new(),
             syntax_hovers: vec![SyntaxHover {
                 reference_start: 20,

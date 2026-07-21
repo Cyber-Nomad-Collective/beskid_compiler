@@ -19,7 +19,6 @@ use super::documentation_facts::SyntaxDocumentationFact;
 pub struct Document {
     pub version: i32,
     pub text: String,
-    pub analysis_cache_version: u32,
     /// Generation-safe syntax/Salsa definition facts for this exact buffer revision.
     ///
     /// Definition handling consumes this index instead of reaching back into the legacy
@@ -36,6 +35,19 @@ pub struct Document {
     pub syntax_documentation: Vec<SyntaxDocumentationFact>,
     /// Generation-bound diagnostics for this exact buffer revision (publish/refresh authority).
     pub syntax_diagnostics: Vec<SyntaxDiagnostic>,
+}
+
+impl Document {
+    /// Drop generation-bound syntax facts after hard invalidation (fail closed until rebuild).
+    pub fn clear_syntax_facts(&mut self) {
+        self.syntax_definitions.clear();
+        self.syntax_hovers.clear();
+        self.syntax_symbols.clear();
+        self.syntax_completion = None;
+        self.syntax_inlay_hints.clear();
+        self.syntax_documentation.clear();
+        self.syntax_diagnostics.clear();
+    }
 }
 
 /// One diagnostic proven for the current buffer revision (never an analysis/HIR snapshot).

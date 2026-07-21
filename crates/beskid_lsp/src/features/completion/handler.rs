@@ -153,7 +153,6 @@ mod tests {
     use tower_lsp_server::ls_types::Uri;
 
     use super::handle_completion;
-    use crate::session::lifecycle::ANALYSIS_CACHE_VERSION;
     use crate::session::store::{Document, SyntaxCompletion};
 
     #[test]
@@ -190,7 +189,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: source.to_string(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
@@ -278,7 +276,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: main_source.to_string(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),

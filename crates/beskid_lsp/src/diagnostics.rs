@@ -204,7 +204,6 @@ mod tests {
         analyze_document, collect_syntax_diagnostics, lsp_diagnostics_from_syntax,
         structural_syntax_diagnostics,
     };
-    use crate::session::lifecycle::ANALYSIS_CACHE_VERSION;
     use crate::session::store::{Document, SyntaxDiagnostic, SyntaxDiagnosticSeverity};
     use crate::workspace_scan::path_to_uri;
 
@@ -216,7 +215,6 @@ mod tests {
         let doc = Document {
             version: 1,
             text: source.to_string(),
-            analysis_cache_version: ANALYSIS_CACHE_VERSION,
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
