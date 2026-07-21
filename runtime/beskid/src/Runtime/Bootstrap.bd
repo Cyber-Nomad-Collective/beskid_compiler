@@ -432,6 +432,17 @@ pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer enviro
     return SetRootSlotValue(rootFrame, slotIndex, environment);
 }
 
+/// Roots a closure environment through the actual TLS state installed for this runtime thread.
+///
+/// This is the sole generated-code entry for current root ownership. `tls_get` remains a
+/// compiler-authorized canonical-runtime intrinsic: user syntax receives neither the TLS address
+/// nor an alternate way to fabricate one. Missing TLS, root-frame, or environment values remain
+/// fail-closed in `RootClosureEnvironment`.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_closure_environment_root_current")]
+pub bool RootClosureEnvironmentCurrent(word slotIndex, pointer environment) {
+    return RootClosureEnvironment(CurrentThreadState(), slotIndex, environment);
+}
+
 /// Releases an object allocation during a future sweep phase.
 ///
 /// No currently exposed function invokes this directly.  Keeping deallocation paired with the
