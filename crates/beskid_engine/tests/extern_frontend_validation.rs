@@ -10,8 +10,7 @@ pub contract C { i64 getpid(); }
 pub i64 Main() { return 0; }
 "#;
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
-        .err()
-        .expect("type checking should fail for invalid ABI");
+        .expect_err("type checking should fail for invalid ABI");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("invalid extern ABI"),
@@ -29,8 +28,7 @@ pub contract C { i64 getpid(); }
 pub i64 Main() { return 0; }
 "#;
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
-        .err()
-        .expect("type checking should fail for missing library");
+        .expect_err("type checking should fail for missing library");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("extern declaration missing library"),
@@ -48,8 +46,7 @@ pub contract C { i64 nope(string s); }
 pub i64 Main() { return 0; }
 "#;
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
-        .err()
-        .expect("type checking should fail for disallowed param type");
+        .expect_err("type checking should fail for disallowed param type");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("disallowed parameter type") && msg.contains("nope"),
@@ -67,8 +64,7 @@ pub contract C { i64 nope(ref i64 p); }
 pub i64 Main() { return 0; }
 "#;
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
-        .err()
-        .expect("parse should fail for removed ref parameter modifier");
+        .expect_err("parse should fail for removed ref parameter modifier");
     let msg = format!("{err:#}");
     assert!(msg.contains("parse error"), "unexpected message: {msg}");
     Ok(())
