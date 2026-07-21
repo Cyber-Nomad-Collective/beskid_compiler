@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use beskid_isle::{
-    AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind, NodeFacts,
-    NodeKind, OperatorFact, RangeFact,
+    AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LocalSlotId, LoweringErrorKind,
+    NodeFacts, NodeKind, OperatorFact, RangeFact,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};
@@ -65,8 +65,11 @@ impl NodeFacts for BlockFacts {
         }
     }
 
-    fn local_slot(&self, key: AstNodeKey) -> Option<u32> {
-        (key == self.nodes[1] || key == self.nodes[3]).then_some(0)
+    fn local_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
+        (key == self.nodes[1] || key == self.nodes[3]).then_some(LocalSlotId {
+            owner_node: 0,
+            index: 0,
+        })
     }
 }
 
@@ -245,7 +248,7 @@ impl NodeFacts for RangeForFacts {
         self.nodes.contains(&key).then_some(types::I32)
     }
 
-    fn local_slot(&self, key: AstNodeKey) -> Option<u32> {
+    fn local_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         if [
             self.nodes[1],
             self.nodes[10],
@@ -254,16 +257,25 @@ impl NodeFacts for RangeForFacts {
         ]
         .contains(&key)
         {
-            Some(0)
+            Some(LocalSlotId {
+                owner_node: 0,
+                index: 0,
+            })
         } else if key == self.nodes[3] || key == self.nodes[13] {
-            Some(1)
+            Some(LocalSlotId {
+                owner_node: 0,
+                index: 1,
+            })
         } else {
             None
         }
     }
 
-    fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<u32> {
-        (key == self.nodes[9]).then_some(0)
+    fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
+        (key == self.nodes[9]).then_some(LocalSlotId {
+            owner_node: 0,
+            index: 0,
+        })
     }
 
     fn range_fact(&self, key: AstNodeKey) -> Option<RangeFact> {

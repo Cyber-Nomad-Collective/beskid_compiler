@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use beskid_isle::{AstNodeKey, FunctionEmitter, LiteralKind, NodeFacts, NodeKind};
+use beskid_isle::{AstNodeKey, FunctionEmitter, LiteralKind, LocalSlotId, NodeFacts, NodeKind};
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::settings;
@@ -78,12 +78,20 @@ impl NodeFacts for LocalFacts {
         (key == self.nodes[1] || key == self.nodes[2] || key == self.nodes[6]).then_some(types::I32)
     }
 
-    fn local_slot(&self, key: AstNodeKey) -> Option<u32> {
-        (key == self.nodes[1] || key == self.nodes[5] || key == self.nodes[8]).then_some(0)
+    fn local_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
+        (key == self.nodes[1] || key == self.nodes[5] || key == self.nodes[8]).then_some(
+            LocalSlotId {
+                owner_node: 0,
+                index: 0,
+            },
+        )
     }
 
-    fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<u32> {
-        (key == self.nodes[4]).then_some(0)
+    fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
+        (key == self.nodes[4]).then_some(LocalSlotId {
+            owner_node: 0,
+            index: 0,
+        })
     }
 }
 

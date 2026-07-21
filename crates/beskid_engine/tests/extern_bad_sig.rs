@@ -37,6 +37,7 @@ fn extern_signature_validation_rejects_disallowed_types() -> Result<()> {
         }],
         type_descriptors: Default::default(),
         string_literals: Default::default(),
+        closure_static_plans: Default::default(),
         extern_imports: vec![ExternImport {
             symbol: "getpid".into(),
             abi: Some("C".into()),

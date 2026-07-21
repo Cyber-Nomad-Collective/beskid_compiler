@@ -5,9 +5,9 @@ use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
     CallLowering, ItemSignature, SemanticTypeId, SourceUnitId, call_lowering, child_nodes,
-    closure_environment, closure_signature, extern_contract_import_for_declaration,
-    format_ast_node_key, generic_call_specialization, item_abi_signature, item_name, node_kind,
-    node_span, resolved_item, spawn_entry_validation,
+    closure_call_target, closure_environment, closure_signature,
+    extern_contract_import_for_declaration, format_ast_node_key, generic_call_specialization,
+    item_abi_signature, item_name, node_kind, node_span, resolved_item, spawn_entry_validation,
 };
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::{
@@ -21,11 +21,16 @@ use cranelift_module::{
     DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult,
 };
 
+use crate::closure_static::{
+    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
+    ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT, ClosureStaticPlan, emit_closure_static_data,
+};
 use crate::lowering::descriptor::TypeDescriptorData;
 use crate::lowering::{CodegenArtifact, ExternImport};
 use crate::{
-    CodegenContext, CodegenInput, emit_isle_expression_with_call_importer,
-    emit_isle_item_with_services, emit_isle_item_with_services_specialization,
+    CodegenContext, CodegenInput, emit_isle_closure_lambda_entry,
+    emit_isle_expression_with_call_importer, emit_isle_item_with_services,
+    emit_isle_item_with_services_specialization,
 };
 
 const ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT: &str = "beskid_rt_v5_fiber_spawn_with_cancel_slot";
@@ -61,6 +66,8 @@ struct SpawnTrampoline {
     target_symbol: String,
     target_signature: Signature,
     lambda_body: Option<AstNodeKey>,
+    /// Present when the trampoline target is a capturing lambda that reads from the environment.
+    closure_captures: Option<Vec<beskid_isle::InlineCaptureField>>,
     symbol: String,
 }
 
@@ -270,8 +277,20 @@ fn lower_resolved_syntax_program(
                 })?;
             let function = {
                 let mut importer = ArtifactCallImporter { symbols: &symbols };
-                emit_isle_expression_with_call_importer(input, isa, body, result, &mut importer)
+                if let Some(captures) = &trampoline.closure_captures {
+                    emit_isle_closure_lambda_entry(
+                        input,
+                        isa,
+                        body,
+                        result,
+                        captures,
+                        &mut importer,
+                    )
                     .map_err(|error| emission_error(input, error))?
+                } else {
+                    emit_isle_expression_with_call_importer(input, isa, body, result, &mut importer)
+                        .map_err(|error| emission_error(input, error))?
+                }
             };
             functions.push(crate::LoweredFunction {
                 name: trampoline.target_symbol.clone(),
@@ -354,10 +373,28 @@ fn lower_resolved_syntax_program(
         }
     }
 
+    let closure_static_plans = collect_closure_static_plans(input, items, &trampolines);
+    if !closure_static_plans.is_empty() {
+        for symbol in [
+            ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
+            ABI_V5_CLOSURE_CAPTURE_STORE,
+            ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
+        ] {
+            if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
+                extern_imports.push(ExternImport {
+                    symbol: symbol.to_owned(),
+                    abi: Some("C".into()),
+                    library: None,
+                });
+            }
+        }
+    }
+
     Ok(CodegenArtifact {
         functions,
         string_literals: context.string_literals,
         extern_imports,
+        closure_static_plans,
         ..CodegenArtifact::default()
     })
 }
@@ -365,8 +402,65 @@ fn lower_resolved_syntax_program(
 /// Resolve source-proven zero-argument entries without ever re-entering HIR lowering.
 ///
 /// Direct items and capture-free lambdas each receive syntax-owned trampoline targets. Capturing
-/// lambdas deliberately remain unavailable until the canonical allocated/rooted ABI-v5 closure
-/// environment can be emitted.
+/// lambdas require generation-safe allocate/store/root authority before a trampoline is emitted.
+fn collect_closure_static_plans(
+    input: &CodegenInput<'_>,
+    items: &[ResolvedSyntaxModuleItem],
+    trampolines: &[SpawnTrampoline],
+) -> Vec<ClosureStaticPlan> {
+    let db = input.database();
+    let mut plans = Vec::new();
+    let mut seen = HashSet::new();
+    let mut push_plan = |plan: ClosureStaticPlan| {
+        if seen.insert(plan.lambda) {
+            plans.push(plan);
+        }
+    };
+    for trampoline in trampolines {
+        if trampoline.closure_captures.is_some()
+            && let Ok(Some(validation)) = spawn_entry_validation(db, trampoline.spawn)
+            && let Some(authority) =
+                input.closure_lowering_authority(trampoline.spawn, validation.target)
+        {
+            push_plan(authority.plan);
+        }
+    }
+    let mut visited = HashSet::new();
+    let mut nodes = Vec::new();
+    for item in items {
+        collect_ast_nodes(db, item.key, &mut visited, &mut nodes);
+    }
+    for key in nodes {
+        if let Ok(Some(target)) = closure_call_target(db, key)
+            && let Some(authority) = input.closure_lowering_authority(key, target.lambda)
+        {
+            push_plan(authority.plan);
+        }
+    }
+    plans
+}
+
+fn collect_ast_nodes(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    visited: &mut HashSet<AstNodeKey>,
+    nodes: &mut Vec<AstNodeKey>,
+) {
+    if !visited.insert(key) {
+        return;
+    }
+    nodes.push(key);
+    if let Ok(Some(children)) = child_nodes(db, key) {
+        for child in children.iter().copied() {
+            collect_ast_nodes(db, child, visited, nodes);
+        }
+    }
+}
+
+/// Resolve source-proven zero-argument entries without ever re-entering HIR lowering.
+///
+/// Direct items and capture-free lambdas each receive syntax-owned trampoline targets. Capturing
+/// lambdas require generation-safe allocate/store/root authority before a trampoline is emitted.
 fn resolve_spawn_trampolines(
     input: &CodegenInput<'_>,
     isa: &dyn TargetIsa,
@@ -417,6 +511,7 @@ fn resolve_spawn_trampolines(
                     target_symbol,
                     target_signature: signature,
                     lambda_body: None,
+                    closure_captures: None,
                     symbol,
                 });
             }
@@ -426,19 +521,48 @@ fn resolve_spawn_trampolines(
                 else {
                     continue;
                 };
-                if !environment.captures.is_empty() {
-                    continue;
-                }
+                let closure_captures = if environment.captures.is_empty() {
+                    None
+                } else {
+                    let Some(authority) =
+                        input.closure_lowering_authority(spawn, validation.target)
+                    else {
+                        continue;
+                    };
+                    let Some(captures) = authority
+                        .plan
+                        .captures
+                        .iter()
+                        .map(|field| {
+                            Some(beskid_isle::InlineCaptureField {
+                                local_slot: beskid_isle::LocalSlotId {
+                                    owner_node: field.capture.slot.owner.node.0,
+                                    index: field.capture.slot.index,
+                                },
+                                field_offset: u32::try_from(field.field_offset).ok()?,
+                                pointer_map_index: field.pointer_map_index,
+                                value_type: map_spawn_capture_type(isa, field.abi_type)?,
+                            })
+                        })
+                        .collect::<Option<Vec<_>>>()
+                    else {
+                        continue;
+                    };
+                    Some(captures)
+                };
                 let Some(lambda) = closure_signature(db, validation.target)
                     .map_err(|error| emission_verification(error.to_string()))?
                 else {
                     continue;
                 };
-                let Some(signature) = spawn_target_signature(isa, lambda.callable) else {
+                let Some(mut signature) = spawn_target_signature(isa, lambda.callable) else {
                     continue;
                 };
                 if !signature.params.is_empty() {
                     continue;
+                }
+                if closure_captures.is_some() {
+                    signature.params.insert(0, AbiParam::new(isa.pointer_type()));
                 }
                 let target_symbol = format!(
                     "__beskid_spawn_lambda_syntax_g{}_n{}",
@@ -450,6 +574,7 @@ fn resolve_spawn_trampolines(
                     target_symbol,
                     target_signature: signature,
                     lambda_body: Some(lambda.body),
+                    closure_captures,
                     symbol,
                 });
             }
@@ -511,6 +636,7 @@ fn emit_spawn_trampoline(
         builder.append_block_params_for_function_params(entry);
         builder.switch_to_block(entry);
         builder.seal_block(entry);
+        let environment = builder.block_params(entry)[0];
         let target_signature = builder.import_signature(trampoline.target_signature.clone());
         let target = builder.func.import_function(ExtFuncData {
             name: ExternalName::testcase(trampoline.target_symbol.as_bytes()),
@@ -518,7 +644,11 @@ fn emit_spawn_trampoline(
             colocated: false,
             patchable: false,
         });
-        let call = builder.ins().call(target, &[]);
+        let call = if trampoline.closure_captures.is_some() {
+            builder.ins().call(target, &[environment])
+        } else {
+            builder.ins().call(target, &[])
+        };
         let results = builder.inst_results(call).to_vec();
         let result = match results.as_slice() {
             [] => builder.ins().iconst(types::I64, 0),
@@ -543,6 +673,19 @@ fn emit_spawn_trampoline(
         ))
     })?;
     Ok(function)
+}
+
+fn map_spawn_capture_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
+    match semantic {
+        SemanticTypeId::BOOL | SemanticTypeId::U8 => Some(types::I8),
+        SemanticTypeId::I32 | SemanticTypeId::CHAR => Some(types::I32),
+        SemanticTypeId::I64 => Some(types::I64),
+        SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING => {
+            Some(isa.pointer_type())
+        }
+        SemanticTypeId::F64 => Some(types::F64),
+        _ => None,
+    }
 }
 
 fn spawn_target_signature(isa: &dyn TargetIsa, item: ItemSignature) -> Option<Signature> {
@@ -1005,6 +1148,9 @@ pub fn emit_syntax_program<M: Module>(
 ) -> Result<HashMap<DirectCallee, FuncId>, SyntaxModuleEmissionError> {
     let items = expand_direct_spawn_items(input, resolve_module_items(input, items)?)?;
     let artifact = lower_resolved_syntax_program(input, isa, &items)?;
+    for plan in &artifact.closure_static_plans {
+        emit_closure_static_data(module, plan)?;
+    }
     let mut by_callee = HashMap::with_capacity(items.len());
     let mut by_symbol = HashMap::with_capacity(artifact.functions.len());
     for lowered in &artifact.functions {
@@ -1034,6 +1180,17 @@ pub fn emit_syntax_program<M: Module>(
         module.clear_context(&mut context);
     }
     Ok(by_callee)
+}
+
+/// Emit artifact-owned closure descriptor/pointer-map/allocation-request data.
+pub fn emit_closure_static_plans<M: Module>(
+    module: &mut M,
+    artifact: &CodegenArtifact,
+) -> ModuleResult<()> {
+    for plan in &artifact.closure_static_plans {
+        emit_closure_static_data(module, plan)?;
+    }
+    Ok(())
 }
 
 /// Define one module-local data object per entry in `artifact.string_literals`.

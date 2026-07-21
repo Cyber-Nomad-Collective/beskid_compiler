@@ -23,13 +23,15 @@ pub mod services;
 
 pub use codegen_input::{CodegenInput, CodegenInputError};
 pub use closure_static::{
-    ClosureCaptureStaticField, ClosureStaticDataHandles, ClosureStaticPlan, RuntimeRootContext,
+    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
+    ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT, ClosureCaptureStaticField, ClosureLoweringAuthority,
+    ClosureRootAuthority, ClosureStaticDataHandles, ClosureStaticPlan, RuntimeRootContext,
     emit_closure_static_data,
 };
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
 pub use errors::{CodegenError, RETIRED_HIR_LOWERING_PATH};
 pub use isle_adapter::{
-    ItemModuleImporter, SyntaxNodeFacts, emit_isle_expression,
+    ItemModuleImporter, SyntaxNodeFacts, emit_isle_closure_lambda_entry, emit_isle_expression,
     emit_isle_expression_with_call_importer, emit_isle_item, emit_isle_item_with_call_importer,
     emit_isle_item_with_services, emit_isle_item_with_services_specialization,
     syntax_item_signature,
@@ -45,8 +47,8 @@ pub use lowering::{
     require_mapping_eligible, shape_id_for_item,
 };
 pub use module_emission::{
-    DescriptorHandles, SyntaxModuleItem, emit_string_literals, emit_type_descriptors,
-    lower_syntax_program,
+    DescriptorHandles, SyntaxModuleItem, emit_closure_static_plans, emit_string_literals,
+    emit_type_descriptors, lower_syntax_program,
 };
 pub use prepared_syntax::{
     PreparedSyntaxEntrypoint, lower_canonical_runtime_prepared_syntax,
