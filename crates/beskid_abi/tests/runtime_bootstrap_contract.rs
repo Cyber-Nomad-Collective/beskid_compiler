@@ -71,14 +71,14 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
                 AbiType::U8,
             ),
             (
-                "beskid_rt_v5_fiber_spawn_with_cancel_slot",
-                &[AbiType::Pointer, AbiType::Pointer, AbiType::Pointer][..],
-                AbiType::I64,
-            ),
-            (
                 "beskid_rt_v5_closure_environment_root_current",
                 &[AbiType::USize, AbiType::Pointer][..],
                 AbiType::U8,
+            ),
+            (
+                "beskid_rt_v5_fiber_spawn_with_cancel_slot",
+                &[AbiType::Pointer, AbiType::Pointer, AbiType::Pointer][..],
+                AbiType::I64,
             ),
             (
                 "beskid_rt_v5_process_init",
