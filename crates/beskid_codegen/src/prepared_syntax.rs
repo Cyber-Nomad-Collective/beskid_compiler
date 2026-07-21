@@ -96,24 +96,25 @@ pub fn lower_canonical_runtime_prepared_syntax(
     };
     let input = CodegenInput::new(db, typed, Arc::from([root]), target, manifest)
         .map_err(|error| anyhow::anyhow!("canonical runtime CodegenInput failed: {error}"))?;
-    let items = function_definitions(input.database(), root)
-        .into_iter()
-        .filter_map(|key| {
-            item_export_symbol(input.database(), key)
-                .ok()
-                .flatten()
-                .map(|symbol| symbol.0.to_string())
-                .or_else(|| syntax_item_symbol(input.database(), &input, key))
-                .map(|symbol| SyntaxModuleItem { key, symbol })
-        })
-        .collect::<Vec<_>>();
+    let mut items = Vec::new();
+    for key in function_definitions(input.database(), root) {
+        let export = item_export_symbol(input.database(), key).map_err(|error| {
+            anyhow::anyhow!("canonical runtime export validation failed: {error}")
+        })?;
+        let symbol = export
+            .map(|symbol| symbol.0.to_string())
+            .or_else(|| syntax_item_symbol(input.database(), &input, key));
+        if let Some(symbol) = symbol {
+            items.push(SyntaxModuleItem { key, symbol });
+        }
+    }
     if items.is_empty() {
         anyhow::bail!("canonical Bootstrap source has no declared exports");
     }
     let mut artifact = lower_syntax_program(&input, isa, &items).map_err(|error| {
         anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}")
     })?;
-    artifact.exports = syntax_export_entries(input.database(), &items);
+    artifact.exports = syntax_export_entries(input.database(), &items)?;
     Ok(artifact)
 }
 
@@ -294,7 +295,7 @@ pub fn lower_prepared_syntax_module(
     }
     let mut artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| anyhow::anyhow!("syntax ISLE module lowering failed: {error}"))?;
-    artifact.exports = syntax_export_entries(input.database(), &items);
+    artifact.exports = syntax_export_entries(input.database(), &items)?;
     Ok(artifact)
 }
 
@@ -307,19 +308,24 @@ pub fn lower_prepared_syntax_module(
 fn syntax_export_entries(
     db: &dyn beskid_queries::Db,
     items: &[SyntaxModuleItem],
-) -> Vec<ExportEntry> {
-    items
-        .iter()
-        .filter_map(|item| {
-            let export = item_export_symbol(db, item.key).ok().flatten()?;
-            let beskid_name = item_name(db, item.key).ok().flatten()?;
-            Some(ExportEntry {
-                beskid_name: beskid_name.to_string(),
-                exported_symbol: export.0.to_string(),
-                abi: "C".to_owned(),
-            })
-        })
-        .collect()
+) -> Result<Vec<ExportEntry>> {
+    let mut exports = Vec::new();
+    for item in items {
+        let export = item_export_symbol(db, item.key)
+            .map_err(|error| anyhow::anyhow!("syntax export validation failed: {error}"))?;
+        let Some(export) = export else {
+            continue;
+        };
+        let beskid_name = item_name(db, item.key)
+            .map_err(|error| anyhow::anyhow!("syntax export name lookup failed: {error}"))?
+            .ok_or_else(|| anyhow::anyhow!("syntax export has no declared function name"))?;
+        exports.push(ExportEntry {
+            beskid_name: beskid_name.to_string(),
+            exported_symbol: export.0.to_string(),
+            abi: "C".to_owned(),
+        });
+    }
+    Ok(exports)
 }
 
 fn find_entrypoint(
