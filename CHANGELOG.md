@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lexically normalize compiler-owned Corelib service source paths and match Foundation
   `source_root` without symlink canonicalize, so materialized `Testing/Assert.bd` retains
   `__panic_str` CorelibService provenance while user symlinks stay Dynamic.
+- Allow process-linked soft builtins (`interop_dispatch_*`, `panic_str`, …) in exact ABI-v5
+  JIT symbol validation, matching AOT `linking::validate` so Corelib tests that clear ISLE
+  are not rejected solely for kit export-allowlist absence.
 
 ### Removed
 

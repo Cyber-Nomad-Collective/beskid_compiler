@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::runtime_kit::JitRuntimeKit;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
+use beskid_abi::{BUILTIN_SPECS, is_dispatch_symbol};
 use beskid_codegen::cranelift_host::{
     ExternDeclarationError, HostError, declare_builtin_imports, declare_user_functions,
     declare_validated_extern_imports, remap_testcase_externals,
@@ -242,14 +243,25 @@ fn validate_exact_symbol_references(
                 continue;
             };
             let symbol = String::from_utf8_lossy(name.raw());
-            if !defined.contains(symbol.as_ref()) && !approved.contains(symbol.as_ref()) {
-                return Err(JitError::RuntimeKit(format!(
-                    "JIT symbol `{symbol}` is not approved by the exact ABI-v5 runtime kit"
-                )));
+            // Soft builtins (`interop_dispatch_*`, `panic_str`, syscalls, …) are declared via
+            // `declare_builtin_imports` from process-linked `beskid_runtime`, not the ABI-v5 kit
+            // export allowlist. Match AOT `linking::validate::is_runtime_builtin`.
+            if defined.contains(symbol.as_ref())
+                || approved.contains(symbol.as_ref())
+                || is_runtime_builtin(symbol.as_ref())
+            {
+                continue;
             }
+            return Err(JitError::RuntimeKit(format!(
+                "JIT symbol `{symbol}` is not approved by the exact ABI-v5 runtime kit"
+            )));
         }
     }
     Ok(())
+}
+
+fn is_runtime_builtin(symbol: &str) -> bool {
+    BUILTIN_SPECS.iter().any(|spec| spec.symbol == symbol) || is_dispatch_symbol(symbol)
 }
 
 fn new_builder(extras: &[(String, *const u8)]) -> Result<JITBuilder, JitError> {
