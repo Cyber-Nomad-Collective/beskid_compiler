@@ -213,8 +213,11 @@ fn unapproved_runtime_reference_is_rejected_before_process_symbol_fallback() {
     let mut function = Function::new();
     let signature =
         function.import_signature(Signature::new(cranelift_codegen::isa::CallConv::SystemV));
+    // `getpid` is a real process symbol (resolvable via dlsym) that is neither a kit export nor a
+    // soft builtin (`BUILTIN_SPECS` / dispatch). Exact-kit JIT validation must reject it before any
+    // process-symbol fallback can satisfy it.
     function.import_function(cranelift_codegen::ir::ExtFuncData {
-        name: ExternalName::testcase(beskid_abi::SYM_ALLOC.as_bytes()),
+        name: ExternalName::testcase("getpid".as_bytes()),
         signature,
         colocated: false,
         patchable: false,
@@ -231,7 +234,7 @@ fn unapproved_runtime_reference_is_rejected_before_process_symbol_fallback() {
             .unwrap();
     let error = jit
         .compile(&artifact)
-        .expect_err("legacy Rust runtime symbol");
+        .expect_err("unapproved process symbol must be rejected before dlsym fallback");
     assert!(error.to_string().contains("not approved"));
 }
 
@@ -248,8 +251,10 @@ fn engine_uses_only_the_configured_exact_runtime_kit() {
     let mut function = Function::new();
     let signature =
         function.import_signature(Signature::new(cranelift_codegen::isa::CallConv::SystemV));
+    // `getpid` resolves in-process but is not part of the exact ABI-v5 kit nor a soft builtin, so the
+    // Engine must reject it rather than satisfy it from the surrounding process symbols.
     function.import_function(cranelift_codegen::ir::ExtFuncData {
-        name: ExternalName::testcase(beskid_abi::SYM_ALLOC.as_bytes()),
+        name: ExternalName::testcase("getpid".as_bytes()),
         signature,
         colocated: false,
         patchable: false,
@@ -264,7 +269,7 @@ fn engine_uses_only_the_configured_exact_runtime_kit() {
 
     let error = engine
         .compile_artifact(&artifact)
-        .expect_err("Engine must not register the legacy Rust runtime");
+        .expect_err("Engine must not satisfy an unapproved reference from process symbols");
     assert!(error.to_string().contains("not approved"));
 }
 
