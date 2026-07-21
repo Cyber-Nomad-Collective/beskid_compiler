@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::Arc;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
@@ -2599,6 +2598,8 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         0,
         "overflowing pointer end is rejected"
     );
+    // Restored through the descriptor pointer map; keep the write observable to rustc.
+    pointer_map[0] = std::hint::black_box(16);
     descriptor[1] = 24;
     assert_eq!(
         validate(descriptor.as_ptr()),
