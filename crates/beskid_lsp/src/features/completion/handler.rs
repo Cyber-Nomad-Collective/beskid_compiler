@@ -118,6 +118,18 @@ fn syntax_completion_kind_to_lsp(
         beskid_queries::CompletionKind::Module => {
             tower_lsp_server::ls_types::CompletionItemKind::MODULE
         }
+        beskid_queries::CompletionKind::Variable => {
+            tower_lsp_server::ls_types::CompletionItemKind::VARIABLE
+        }
+        beskid_queries::CompletionKind::Type => {
+            tower_lsp_server::ls_types::CompletionItemKind::STRUCT
+        }
+        beskid_queries::CompletionKind::Method => {
+            tower_lsp_server::ls_types::CompletionItemKind::METHOD
+        }
+        beskid_queries::CompletionKind::Field => {
+            tower_lsp_server::ls_types::CompletionItemKind::FIELD
+        }
     }
 }
 
