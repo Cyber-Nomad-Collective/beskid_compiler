@@ -3,15 +3,15 @@
 use std::fs;
 
 use beskid_analysis::mod_host::{
-    extract_mod_contract_registrations_from_syntax, run_through_generate, ModHostInput,
-    NativeContractInvoker, StubContractInvoker,
+    ModHostInput, NativeContractInvoker, StubContractInvoker,
+    extract_mod_contract_registrations_from_syntax, run_through_generate,
 };
 use beskid_analysis::projects::{
-    build_compile_plan, load_manifest_from_path, prepare_project_workspace_with_options,
-    ProjectKind, WorkspacePrepareOptions,
+    ProjectKind, WorkspacePrepareOptions, build_compile_plan, load_manifest_from_path,
+    prepare_project_workspace_with_options,
 };
 use beskid_analysis::services::parse_program_with_source_name;
-use beskid_aot::{build_mod_artifact, ModArtifactBuildRequest};
+use beskid_aot::{ModArtifactBuildRequest, build_mod_artifact};
 use beskid_engine::services::prepare_jit_module;
 
 use super::fixture::ModFixtureWorkspace;

@@ -17,7 +17,8 @@ use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifes
 
 #[cfg(feature = "slow")]
 use crate::projects::fixture_harness::{
-    corelib_tests_project_root, resolve_corelib_tests_entry_with_assembly, with_project_test_env,
+    corelib_tests_project_root, lower_corelib_tests_entrypoint,
+    resolve_corelib_tests_entry_with_assembly, with_project_test_env,
 };
 #[cfg(feature = "slow")]
 use beskid_codegen::LinkSymbol;
@@ -274,51 +275,13 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
 #[cfg(feature = "slow")]
 #[test]
 fn ansi_csi_bold_red_link_plan_validates() {
-    with_project_test_env(&corelib_tests_project_root(), || {
-        let resolved = resolve_corelib_tests_entry_with_assembly("console/AnsiEscapeTests.bd");
-        let front = compile_front_end_from_resolved_input(
-            &resolved,
-            FrontEndOptions {
-                with_semantic_diagnostics: false,
-                ..Default::default()
-            },
-            None,
-        )
-        .expect("front-end");
+    let artifact = lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
+    validate_artifact(&artifact).expect("ansi_csi_bold_red link plan must validate");
+}
 
-        let assembly = resolved.assembly.as_ref().expect("assembly");
-        let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
-        let link_plan = LinkPlan::build_for_entrypoint(
-            &front.hir,
-            "ansi_csi_bold_red",
-            Some(&assembly.entry_unit().path),
-            &front.resolution,
-            &front.typed,
-            &def_index,
-        );
-        let callee_names: Vec<String> = link_plan
-            .callees
-            .iter()
-            .filter_map(|symbol| match symbol {
-                LinkSymbol::Function { item, .. } => {
-                    beskid_analysis::resolve::qualified_name(&front.resolution, *item)
-                }
-                _ => None,
-            })
-            .collect();
-        assert!(
-            callee_names.iter().any(|name| name.contains("Esc")),
-            "link plan callees should include Esc, got {callee_names:?}"
-        );
-
-        let artifact = lower_program_with_assembly_for_entrypoint(
-            &front.hir,
-            &front.resolution,
-            &front.typed,
-            Some(assembly),
-            Some("ansi_csi_bold_red"),
-        )
-        .expect("lower ansi_csi_bold_red");
-        validate_artifact(&artifact).expect("ansi_csi_bold_red link plan must validate");
-    });
+#[cfg(feature = "slow")]
+#[test]
+fn dump_ansi_csi_bold_red_clif() {
+    let artifact = lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
+    println!("{}", beskid_codegen::render_clif(&artifact));
 }

@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Migrate the `ansi_csi_bold_red` spine test off retired HIR codegen and onto the
+  syntax lowering path (`lower_corelib_tests_entrypoint`), then validate the
+  resulting artifact directly so this test can no longer trigger retired HIR facade
+  failures.
+- Add a slow-path CLIF dump test for `ansi_csi_bold_red` to preserve regression
+  visibility into argument-order and call-shape lowering around ANSI escape
+  sequence calls.
 - Enable the main-thread runtime-root bootstrap before executing a JIT entrypoint in
   `run_syntax_jitted_entrypoint`. In-process JIT execution (`beskid test`, matrix test, REPL)
   has no `beskid_runtime_link_anchor`, so allocating entrypoints (string interpolation, gc

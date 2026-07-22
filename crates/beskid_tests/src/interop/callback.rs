@@ -3,8 +3,8 @@ use beskid_abi::{
     SYM_BESKID_REGISTER_HANDLERS,
 };
 use beskid_runtime::{
-    beskid_register_callbacks, install_callback_trampoline, registered_callbacks,
-    CallbackTableEntry,
+    CallbackTableEntry, beskid_register_callbacks, install_callback_trampoline,
+    registered_callbacks,
 };
 
 #[test]

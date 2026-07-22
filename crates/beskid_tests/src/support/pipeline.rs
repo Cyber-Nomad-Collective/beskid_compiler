@@ -4,9 +4,7 @@ use beskid_analysis::Rule;
 use beskid_analysis::hir::{AstProgram, HirProgram, lower_program, normalize_program};
 use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::resolve::{Resolution, ResolveError, Resolver};
-use beskid_analysis::services::{
-    LowerResolveTypeError, lower_normalize_resolve_type_spanned,
-};
+use beskid_analysis::services::{LowerResolveTypeError, lower_normalize_resolve_type_spanned};
 use beskid_analysis::syntax::{Program, Spanned};
 use beskid_analysis::types::{TypeError, TypeResult};
 
