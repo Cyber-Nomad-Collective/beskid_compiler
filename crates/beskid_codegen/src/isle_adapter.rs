@@ -611,14 +611,11 @@ impl SyntaxNodeFacts<'_> {
 
     fn enum_layout_for(&self, key: AstNodeKey) -> Option<EnumLayout> {
         let isa = self.isa?;
-        let layout_key = if self.query(enum_constructor(self.db, key)).is_some() {
-            key
+        let source = if self.query(enum_constructor(self.db, key)).is_some() {
+            self.query(enum_layout(self.db, key))?
         } else {
-            // Generic match instantiation deliberately remains unavailable here: current match
-            // facts carry only a declaration key. CYB-137 owns the applied scrutinee layout.
-            self.query(enum_match(self.db, key))?.declaration
+            self.query(enum_match(self.db, key))?.layout
         };
-        let source = self.query(enum_layout(self.db, layout_key))?;
         let tag_type = types::I32;
         let tag = FieldLayout::new(tag_type, 0);
         let mut alignment = tag_type.bytes();

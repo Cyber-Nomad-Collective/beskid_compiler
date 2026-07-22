@@ -230,6 +230,84 @@ fn duplicate_match_arm_is_an_exact_keyed_error() {
     assert_eq!(error.kind(), LoweringErrorKind::InvalidMatchArms);
 }
 
+struct UnitMatchFacts {
+    nodes: [AstNodeKey; 4],
+    pointer_type: Type,
+}
+
+impl NodeFacts for UnitMatchFacts {
+    fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+        match key {
+            key if key == self.nodes[0] => Some(NodeKind::MatchExpression),
+            key if key == self.nodes[1] => Some(NodeKind::EnumLiteralExpression),
+            key if key == self.nodes[2] || key == self.nodes[3] => Some(NodeKind::BlockExpression),
+            _ => None,
+        }
+    }
+
+    fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+        (key == self.nodes[0] && index == 0).then_some(self.nodes[1])
+    }
+
+    fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
+        (key == self.nodes[2] || key == self.nodes[3]).then_some(0)
+    }
+
+    fn integer_literal(&self, _key: AstNodeKey) -> Option<i64> {
+        None
+    }
+
+    fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
+        (key == self.nodes[1]).then_some(self.pointer_type)
+    }
+
+    fn enum_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
+        (key == self.nodes[0] || key == self.nodes[1]).then(valid_layout)
+    }
+
+    fn enum_variant_index(&self, key: AstNodeKey) -> Option<u32> {
+        (key == self.nodes[1]).then_some(0)
+    }
+
+    fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
+        (key == self.nodes[0]).then(|| {
+            vec![
+                MatchArmFact::variant(0, self.nodes[2]),
+                MatchArmFact::variant(7, self.nodes[3]),
+            ]
+        })
+    }
+}
+
+#[test]
+fn statement_context_enum_match_lowers_unit_arm_blocks() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/UnitEnum.bd"));
+    let facts = UnitMatchFacts {
+        nodes: std::array::from_fn(|index| AstNodeKey {
+            unit,
+            generation: SyntaxGenerationId(19),
+            node: AstNodeId(index as u32 + 1),
+        }),
+        pointer_type: isa.pointer_type(),
+    };
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_statement(
+            UserFuncName::user(0, 32),
+            emitter.signature([], []),
+            &facts,
+            facts.nodes[0],
+        )
+        .expect("unit match statement lowers through dedicated dispatch");
+    let clif = function.display().to_string();
+    assert!(clif.contains("brif"), "{clif}");
+}
+
 #[test]
 fn duplicate_enum_discriminant_is_an_exact_layout_error() {
     let isa = cranelift_codegen::isa::lookup(Triple::host())

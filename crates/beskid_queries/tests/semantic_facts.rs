@@ -316,6 +316,78 @@ fn aggregate_layout_keeps_channel_options_nominal_capacity() {
 }
 
 #[test]
+fn generic_aggregate_direct_field_projection_uses_the_explicit_receiver_application_for_cyb_140() {
+    let source = r#"
+type ProgressBar<T> { T percent }
+unit Equal<T>(T actual, T expected) { return; }
+unit Main() {
+    ProgressBar<i64> bar = ProgressBar<i64> { percent: 100_i64 };
+    ProgressBar<i64> low = ProgressBar<i64> { percent: 0_i64 };
+    Equal<i64>(bar.percent, low.percent);
+    return;
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let arguments = call_arguments(&db, call)
+        .expect("generic direct-field arguments")
+        .expect("generic direct-field arguments");
+
+    assert_eq!(abi_type(&db, arguments[0]), Ok(Some(SemanticTypeId::I64)));
+    assert_eq!(abi_type(&db, arguments[1]), Ok(Some(SemanticTypeId::I64)));
+    assert_eq!(
+        generic_call_specialization(&db, call).expect("generic direct-field specialization"),
+        Some(beskid_queries::GenericCallSpecialization {
+            declaration: key(unit, generation, &index, NodeKind::FunctionDefinition, 0),
+            signature: ItemSignature {
+                parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64]),
+                result: SemanticTypeId::UNIT,
+            },
+        })
+    );
+}
+
+#[test]
+fn aggregate_field_projection_abi_remains_closed_for_inferred_and_chained_receivers_for_cyb_140() {
+    let inferred = r#"
+type ProgressBar<T> { T percent }
+unit Main() {
+    let bar = ProgressBar<i64> { percent: 100_i64 };
+    bar.percent;
+    return;
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(inferred);
+    let projection = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        inferred.find("bar.percent").expect("inferred projection"),
+    );
+    assert_unavailable(abi_type(&db, projection));
+
+    let chained = r#"
+type Inner { i64 percent }
+type Outer { Inner bar }
+unit Main() {
+    Outer outer = Outer { bar: Inner { percent: 100_i64 } };
+    outer.bar.percent;
+    return;
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(chained);
+    let projection = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        chained.find("outer.bar.percent").expect("chained projection"),
+    );
+    assert_unavailable(abi_type(&db, projection));
+}
+
+#[test]
 fn sample_mod_method_abi_signatures_include_pointer_receiver_and_nominal_parameter() {
     let source = include_str!("../../beskid_tests/fixtures/mods/sample_mod/Src/Mod.bd");
     let (db, _project, unit, generation, index) = setup(source);
@@ -440,12 +512,27 @@ fn enum_layout_rejects_inexact_generic_applications() {
 }
 
 #[test]
-fn generic_enum_match_remains_unavailable_for_cyb_137() {
-    let source = "enum Result<TValue, TError> { Ok(), Error() } i64 Main() { Result<i64, string> value = Result<i64, string>::Ok(); return match value { Result::Ok() => 1, Result::Error() => 0, }; }";
+fn generic_enum_match_uses_the_explicit_scrutinee_application_for_cyb_137() {
+    let source = "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<i64, string> value = Result<i64, string>::Ok(1); return match value { Result::Ok(_) => 1, Result::Error(_) => 0, }; }";
     let (db, _project, unit, generation, index) = setup(source);
     let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
 
-    assert_unavailable(enum_match(&db, expression));
+    let fact = enum_match(&db, expression)
+        .expect("generic enum match query")
+        .expect("explicit generic enum scrutinee match");
+    assert_eq!(fact.declaration, key(unit, generation, &index, NodeKind::EnumDefinition, 0));
+    assert_eq!(fact.arms.len(), 2);
+    assert_eq!(fact.arms[0].variant_index, Some(0));
+    assert_eq!(fact.arms[1].variant_index, Some(1));
+    assert_eq!(fact.layout.variants.len(), 2);
+    assert_eq!(
+        fact.layout.variants[0].fields.as_ref(),
+        &[(Arc::from("value"), beskid_queries::AggregateFieldShape::Scalar(SemanticTypeId::I64))]
+    );
+    assert_eq!(
+        fact.layout.variants[1].fields.as_ref(),
+        &[(Arc::from("error"), beskid_queries::AggregateFieldShape::Scalar(SemanticTypeId::STRING))]
+    );
 }
 
 #[test]
@@ -509,6 +596,18 @@ fn enum_match_keeps_source_ordered_nullary_variant_arms() {
         enum_match(&db, expression).expect("enum match query"),
         Some(EnumMatchFact {
             declaration,
+            layout: EnumLayoutFact {
+                variants: Arc::from([
+                    EnumVariantLayoutFact {
+                        name: Arc::from("None"),
+                        fields: Arc::from([]),
+                    },
+                    EnumVariantLayoutFact {
+                        name: Arc::from("Some"),
+                        fields: Arc::from([]),
+                    },
+                ]),
+            },
             arms: Arc::from([
                 EnumMatchArmFact {
                     variant_index: Some(0),

@@ -18,6 +18,8 @@
 (extern constructor emit_enum_literal emit_enum_literal)
 (decl partial emit_match (AstNodeKey) Value)
 (extern constructor emit_match emit_match)
+(decl partial emit_match_statement (AstNodeKey) Unit)
+(extern constructor emit_match_statement emit_match_statement)
 
 (rule (lower_expression key @ (node_kind (NodeKind.PathExpression)))
       (emit_local_read key))
@@ -47,3 +49,5 @@
       (emit_enum_literal key))
 (rule (lower_expression key @ (node_kind (NodeKind.MatchExpression)))
       (emit_match key))
+(rule (lower_statement key @ (node_kind (NodeKind.MatchExpression)))
+      (emit_match_statement key))

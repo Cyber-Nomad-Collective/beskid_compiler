@@ -1658,6 +1658,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn emit_expression_statement(&mut self, key: AstNodeKey) -> Option<()> {
         let expression = self.facts.child(key, 0)?;
+        if self.facts.node_kind(expression) == Some(NodeKind::MatchExpression) {
+            return generated::constructor_lower_statement(self, expression);
+        }
         if self.facts.node_kind(expression) == Some(NodeKind::CallExpression) {
             if self.facts.call_kind(expression) == Some(CallKind::RuntimeIntrinsic) {
                 return self.emit_runtime_intrinsic_statement(expression);
@@ -2474,6 +2477,108 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.builder.switch_to_block(merge);
         self.builder.seal_block(merge);
         self.builder.block_params(merge).first().copied()
+    }
+
+    fn emit_match_statement(&mut self, key: AstNodeKey) -> Option<()> {
+        let layout = self.facts.enum_layout(key)?;
+        if !layout.is_valid() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidEnumLayout,
+            });
+            return None;
+        }
+        let arms = self.facts.match_arms(key)?;
+        if arms.is_empty() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidMatchArms,
+            });
+            return None;
+        }
+        let layout_discriminants = layout
+            .variants
+            .iter()
+            .map(|variant| variant.discriminant)
+            .collect::<HashSet<_>>();
+        let mut covered = HashSet::with_capacity(arms.len());
+        let wildcard_index = arms.iter().position(|arm| arm.discriminant.is_none());
+        if wildcard_index.is_some_and(|index| index + 1 != arms.len())
+            || arms.iter().filter(|arm| arm.discriminant.is_none()).count() > 1
+            || arms
+                .iter()
+                .filter_map(|arm| arm.discriminant)
+                .any(|tag| !layout_discriminants.contains(&tag) || !covered.insert(tag))
+        {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidMatchArms,
+            });
+            return None;
+        }
+        if wildcard_index.is_none() && covered != layout_discriminants {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::NonExhaustiveMatch,
+            });
+            return None;
+        }
+
+        let scrutinee_key = self.facts.child(key, 0)?;
+        let scrutinee = generated::constructor_lower_expression(self, scrutinee_key)?;
+        if !self.builder.func.dfg.value_type(scrutinee).is_int() {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidEnumLayout,
+            });
+            return None;
+        }
+        let tag = self.builder.ins().load(
+            layout.tag.value_type,
+            MemFlags::new(),
+            scrutinee,
+            i32::try_from(layout.tag.offset).ok()?,
+        );
+        let merge = self.builder.create_block();
+        let arm_blocks = arms
+            .iter()
+            .map(|_| self.builder.create_block())
+            .collect::<Vec<_>>();
+        let trap = wildcard_index
+            .is_none()
+            .then(|| self.builder.create_block());
+        let default = wildcard_index.map_or_else(
+            || trap.expect("trap block exists without wildcard"),
+            |index| arm_blocks[index],
+        );
+        let mut switch = Switch::new();
+        for (arm, block) in arms.iter().zip(&arm_blocks) {
+            if let Some(discriminant) = arm.discriminant {
+                switch.set_entry(u128::from(discriminant), *block);
+            }
+        }
+        switch.emit(self.builder, tag, default);
+
+        let mut merge_reachable = false;
+        for (arm, block) in arms.into_iter().zip(arm_blocks) {
+            self.builder.switch_to_block(block);
+            self.builder.seal_block(block);
+            generated::constructor_lower_statement(self, arm.body)?;
+            if jump_from_current_if_unterminated(self.builder, merge) {
+                merge_reachable = true;
+            }
+        }
+        if let Some(trap) = trap {
+            self.builder.switch_to_block(trap);
+            self.builder.seal_block(trap);
+            self.builder.ins().trap(TrapCode::unwrap_user(1));
+        }
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        if !merge_reachable {
+            self.builder.ins().trap(TrapCode::unwrap_user(1));
+        }
+        Some(())
     }
 }
 

@@ -701,6 +701,56 @@ fn parsed_enum_match_uses_source_arms_without_hir() {
 }
 
 #[test]
+fn parsed_generic_enum_match_uses_explicit_scrutinee_layout_without_hir() {
+    let (input, isa, item) = item_fixture(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<i64, string> value = Result<i64, string>::Ok(7_i64); return match value { Result::Ok(_) => 1_i64, Result::Error(_) => 0_i64, }; }",
+    );
+    let expression = find_node(
+        input.database(),
+        item,
+        beskid_queries::IndexedNodeKind::MatchExpression,
+    )
+    .expect("generic enum match");
+    assert!(
+        enum_match(input.database(), expression)
+            .expect("generic enum match query")
+            .is_some(),
+        "generic match semantic facts"
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("generic enum match lowers through its explicit source layout");
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("load.i32"), "{clif}");
+    assert!(clif.contains("iconst.i64 1"), "{clif}");
+}
+
+#[test]
+fn parsed_generic_enum_match_statement_lowers_empty_unit_blocks_without_hir() {
+    let (input, isa, item) = item_fixture(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } unit Main() { Result<i64, string> result = Result<i64, string>::Ok(7_i64); match result { Result::Ok(_) => {}, Result::Error(_) => {}, }; return; }",
+    );
+    let body = item_body(input.database(), item)
+        .expect("item body query")
+        .expect("item body");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+    assert_eq!(facts.statement_count(body), Some(3), "function body statements");
+
+    let function = match emit_isle_item(&input, isa.as_ref(), item) {
+        Ok(function) => function,
+        Err(error) => panic!(
+            "generic result statement match lowers empty unit arm blocks: {}",
+            error.display_with_db(input.database())
+        ),
+    };
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("load.i32"), "{clif}");
+    assert!(clif.contains("return"), "{clif}");
+}
+
+#[test]
 fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();

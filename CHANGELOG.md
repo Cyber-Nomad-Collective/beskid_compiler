@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values retain identity comparison. Resolve the ABI of unique, public, fully-qualified
   generic nominal return envelopes from their assembled module without weakening the
   general resolver (CYB-138/CYB-139).
+- Derive scalar and nominal ABI facts for direct fields on explicitly annotated nominal
+  locals and parameters, so generic assertions can specialize `ProgressBar<T>.percent`
+  without reopening inferred or chained member typing (CYB-140).
+- Preserve the concrete applied enum layout for explicitly typed local and parameter
+  matches, and lower discard-only unit match arms in statement context without
+  introducing a scalar merge value (CYB-137).
+- Normalize the Syscall ergonomics fixture to the nullary `StandardStream::Stdout`
+  constructor form and remove its unused module import (CYB-132).
 - Migrate the `ansi_csi_bold_red` spine test off retired HIR codegen and onto the
   syntax lowering path (`lower_corelib_tests_entrypoint`), then validate the
   resulting artifact directly so this test can no longer trigger retired HIR facade
