@@ -1644,6 +1644,35 @@ fn canonical_foundation_output_panic_call_has_the_authorized_direct_never_abi() 
 }
 
 #[test]
+fn canonical_foundation_error_panic_call_has_the_authorized_direct_never_abi() {
+    let (input, _isa, root) = canonical_foundation_error_fixture();
+    let write = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Write"))
+        .expect("canonical Core.Error Write source item");
+    let call = find_corelib_service_call(input.database(), write, "__panic_str")
+        .expect("canonical Core.Error panic call");
+
+    assert!(matches!(
+        call_lowering(input.database(), call).expect("Core.Error panic lowering"),
+        Some(beskid_queries::CallLowering::CorelibService(service))
+            if service.name == "__panic_str" && service.symbol == "panic_str"
+    ));
+    assert_eq!(
+        beskid_codegen::SyntaxNodeFacts::new(&input).direct_callee(call),
+        Some(DirectCallee::corelib_service("panic_str")),
+        "the embedded Core.Error call must lower through the exact panic import"
+    );
+    assert_eq!(
+        call_abi_signature(input.database(), call).expect("Core.Error panic ABI"),
+        Some(beskid_queries::ItemSignature {
+            parameters: Arc::from([beskid_queries::SemanticTypeId::STRING]),
+            result: beskid_queries::SemanticTypeId::NEVER,
+        })
+    );
+}
+
+#[test]
 fn canonical_foundation_output_write_body_exposes_executable_block_statements() {
     let (input, _isa, root) = canonical_foundation_output_fixture();
     let write = find_function_definitions(input.database(), root)
@@ -3905,11 +3934,30 @@ fn canonical_foundation_output_fixture() -> (
     Arc<dyn cranelift_codegen::isa::TargetIsa>,
     AstNodeKey,
 ) {
+    canonical_foundation_service_fixture("Core/Output/Output.bd")
+}
+
+fn canonical_foundation_error_fixture() -> (
+    CodegenInput<'static>,
+    Arc<dyn cranelift_codegen::isa::TargetIsa>,
+    AstNodeKey,
+) {
+    canonical_foundation_service_fixture("Core/Error/Error.bd")
+}
+
+fn canonical_foundation_service_fixture(
+    source_relative_path: &str,
+) -> (
+    CodegenInput<'static>,
+    Arc<dyn cranelift_codegen::isa::TargetIsa>,
+    AstNodeKey,
+) {
     let mut db = Box::new(BeskidDatabase::default());
     let source_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corelib/packages/foundation/src/Core/Output/Output.bd");
-    let source_path = std::fs::canonicalize(&source_path).expect("canonical Core.Output path");
-    let source = std::fs::read_to_string(&source_path).expect("embedded Foundation Output source");
+        .join("../../corelib/packages/foundation/src")
+        .join(source_relative_path);
+    let source_path = std::fs::canonicalize(&source_path).expect("canonical Foundation service path");
+    let source = std::fs::read_to_string(&source_path).expect("embedded Foundation service source");
     let source_root = source_path
         .ancestors()
         .nth(3)
@@ -3935,7 +3983,7 @@ fn canonical_foundation_output_fixture() -> (
             dependencies: Vec::new(),
         },
         Arc::new(vec![SourceUnit {
-            logical_name: "Core/Output/Output.bd".into(),
+            logical_name: source_relative_path.into(),
             path: source_path,
             source,
             program,
@@ -3957,7 +4005,7 @@ fn canonical_foundation_output_fixture() -> (
         assembly,
         canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
     )
-    .expect("compiler-owned Output source parses without broadening authority");
+    .expect("compiler-owned Foundation service source parses without broadening authority");
     let root = AstNodeKey {
         unit: entry,
         generation,
@@ -3965,7 +4013,7 @@ fn canonical_foundation_output_fixture() -> (
     };
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
-        .expect("generation-safe Foundation Output input");
+        .expect("generation-safe Foundation service input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))

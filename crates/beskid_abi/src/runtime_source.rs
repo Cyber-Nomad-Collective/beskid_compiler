@@ -20,6 +20,8 @@ pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd
 pub const CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH: &str = "Testing/Assert.bd";
 /// Canonical Foundation output helper eligible to import the panic runtime service.
 pub const CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH: &str = "Core/Output/Output.bd";
+/// Canonical Foundation error helper eligible to import the panic runtime service.
+pub const CANONICAL_FOUNDATION_ERROR_SOURCE_PATH: &str = "Core/Error/Error.bd";
 
 const CANONICAL_BOOTSTRAP_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -39,6 +41,11 @@ const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str = include_str!(concat!(
 const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corelib/packages/foundation/src/Core/Output/Output.bd"
+));
+
+const CANONICAL_FOUNDATION_ERROR_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Error/Error.bd"
 ));
 
 /// The runtime source corpus built into this compiler version.
@@ -69,6 +76,10 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
         logical_path: CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH.into(),
         source: CANONICAL_FOUNDATION_OUTPUT_SOURCE.into(),
     });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_ERROR_SOURCE.into(),
+    });
     sources
 }
 
@@ -86,6 +97,7 @@ pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::
         CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => "Core/Syscall/Syscall.bd",
         CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => "Testing/Assert.bd",
         CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH => "Core/Output/Output.bd",
+        CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => "Core/Error/Error.bd",
         _ => return None,
     };
     Some(normalize_lexically(
@@ -149,6 +161,11 @@ const CORELIB_SERVICES: &[CorelibService] = &[
         name: "__panic_str",
         symbol: "panic_str",
         source_path: CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "panic_str",
+        source_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH,
     },
 ];
 

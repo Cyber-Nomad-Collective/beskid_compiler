@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Authorize only the compiler-embedded Foundation `Core.Error` source to import
+  `__panic_str`, preserving the existing fail-closed Dynamic path for untrusted or unresolved
+  calls while allowing its canonical enum-match error arm to derive the exact panic ABI
+  (CYB-160).
 - Make the native ABI-v5 runtime-kit matrix script enter the compiler workspace before
   running Cargo, so the Windows superproject workflow no longer fails before kit staging
   with a missing root-level `Cargo.toml` (CYB-112 follow-up).
