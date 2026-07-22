@@ -369,6 +369,7 @@ mod tests {
             .find(|target| target.triple.as_str() == triple)
             .expect("supported native ABI-v5 target");
         let expected = [
+            "beskid_rt_v5_managed_object_allocate",
             "beskid_rt_v5_closure_environment_allocate",
             "beskid_rt_v5_closure_capture_store",
             "beskid_rt_v5_closure_environment_root",

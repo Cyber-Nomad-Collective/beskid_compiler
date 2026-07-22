@@ -168,12 +168,18 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
     assert!(source.contains("if alignment < 8"));
     assert!(source.contains("if remaining % 2 != 0"));
 
-    // The public closure path must return null before it reads a null request. A valid
-    // descriptor-driven allocation owns the header and can then be placed in a root slot.
+    // The manifest-owned managed-object path is the only descriptor-backed allocator. It must
+    // validate the complete request before reserving storage and initialize the ABI header.
+    assert!(source.contains(
+        "[Export(Abi:\"C\", Symbol:\"beskid_rt_v5_managed_object_allocate\")]\npub pointer AllocateObject(pointer request)"
+    ));
     let allocate = source
-        .split("pub pointer AllocateClosureEnvironment(pointer request)")
+        .split("pub pointer AllocateObject(pointer request)")
         .nth(1)
-        .expect("closure allocation function");
+        .expect("managed allocation function")
+        .split("/// Allocates a closure capture environment")
+        .next()
+        .expect("managed allocation body");
     let null_guard = allocate
         .find("if request == NativePointer(0)")
         .expect("null request guard");
@@ -183,7 +189,31 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
     assert!(null_guard < descriptor_read);
     assert!(allocate.contains("bool descriptorOk = ValidateTypeDescriptor(descriptor);"));
     assert!(allocate.contains("if descriptorOk"));
+    assert!(allocate.contains("if size != TypeDescriptorSize(descriptor)"));
+    assert!(allocate.contains("if alignment != TypeDescriptorAlignment(descriptor)"));
     assert!(allocate.contains("InitializeObjectHeader(object, descriptor);"));
+
+    // The compatibility closure export delegates to the same implementation. It must not retain
+    // a second validation, allocation, zeroing, or header-initialization path.
+    let closure_allocate = source
+        .split("pub pointer AllocateClosureEnvironment(pointer request)")
+        .nth(1)
+        .expect("closure allocation function")
+        .split("/// Stores a capture")
+        .next()
+        .expect("closure allocation body");
+    assert!(closure_allocate.contains("return AllocateObject(request);"));
+    for duplicate in [
+        "ValidateTypeDescriptor",
+        "SystemAllocate",
+        "memory_set",
+        "InitializeObjectHeader",
+    ] {
+        assert!(
+            !closure_allocate.contains(duplicate),
+            "closure allocation must not duplicate {duplicate}"
+        );
+    }
 
     assert!(source.contains("pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value)"));
     assert!(source.contains("pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment)"));

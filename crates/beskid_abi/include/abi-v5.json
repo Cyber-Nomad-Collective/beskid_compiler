@@ -148,6 +148,16 @@
       "result": "i64"
     },
     {
+      "symbol": "beskid_rt_v5_managed_object_allocate",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "beskid_rt_v5_process_init",
       "params": [
         {

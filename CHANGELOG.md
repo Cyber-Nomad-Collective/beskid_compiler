@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Add the manifest-derived `beskid_rt_v5_managed_object_allocate` export and route
+  closure environments through its single fail-closed descriptor, size, alignment,
+  zeroing, and object-header initialization path (CYB-157).
 - Resolve nested qualified generic type arguments before their enclosing type paths,
   materialize concrete generic enum layouts from constructor use sites, and route
   syntax-lowered string literals through the canonical ABI-v5 `str_new` dispatch.
