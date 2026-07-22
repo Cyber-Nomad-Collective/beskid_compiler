@@ -1398,6 +1398,9 @@ fn node_type_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
+        if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
+            return Some(abi_type_for_binary_expression(db, program, index, key, binary));
+        }
         semantic_type_for_node(program, index, key.node, node)
     })?
     .transpose()
@@ -1421,6 +1424,16 @@ fn semantic_type_for_node(
             index,
             reference,
             &path.path.node,
+        ));
+    }
+    if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
+        return Some(semantic_type_for_binary_operands(
+            program,
+            index,
+            reference,
+            &binary.left.node,
+            binary.op.node,
+            &binary.right.node,
         ));
     }
     if let Some(match_expression) = node.of::<beskid_analysis::syntax::MatchExpression>() {
@@ -1473,37 +1486,52 @@ fn semantic_type_for_expression(
         beskid_analysis::syntax::Expression::Grouped(grouped) => {
             semantic_type_for_expression(program, index, reference, &grouped.node.expr.node)
         }
-        beskid_analysis::syntax::Expression::Binary(binary) => {
-            let left =
-                semantic_type_for_expression(program, index, reference, &binary.node.left.node)?;
-            let right =
-                semantic_type_for_expression(program, index, reference, &binary.node.right.node)?;
-            use beskid_analysis::syntax::BinaryOp;
-            match binary.node.op.node {
-                BinaryOp::Or | BinaryOp::And
-                    if left == SemanticTypeId::BOOL && right == SemanticTypeId::BOOL =>
-                {
-                    Ok(SemanticTypeId::BOOL)
-                }
-                BinaryOp::IdentityEq
-                | BinaryOp::IdentityNotEq
-                | BinaryOp::Eq
-                | BinaryOp::NotEq
-                | BinaryOp::Lt
-                | BinaryOp::Lte
-                | BinaryOp::Gt
-                | BinaryOp::Gte
-                    if left == right =>
-                {
-                    Ok(SemanticTypeId::BOOL)
-                }
-                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod
-                    if left == right && primitive_numeric(left) =>
-                {
-                    Ok(left)
-                }
-                _ => Err(SemanticError::unavailable("node_type")),
-            }
+        beskid_analysis::syntax::Expression::Binary(binary) => semantic_type_for_binary_operands(
+            program,
+            index,
+            reference,
+            &binary.node.left.node,
+            binary.node.op.node,
+            &binary.node.right.node,
+        ),
+        _ => Err(SemanticError::unavailable("node_type")),
+    }
+}
+
+fn semantic_type_for_binary_operands(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    reference: beskid_analysis::syntax::AstNodeId,
+    left: &beskid_analysis::syntax::Expression,
+    op: beskid_analysis::syntax::BinaryOp,
+    right: &beskid_analysis::syntax::Expression,
+) -> Result<SemanticTypeId, SemanticError> {
+    let left = semantic_type_for_expression(program, index, reference, left)?;
+    let right = semantic_type_for_expression(program, index, reference, right)?;
+    use beskid_analysis::syntax::BinaryOp;
+    match op {
+        BinaryOp::Or | BinaryOp::And if left == SemanticTypeId::BOOL && right == SemanticTypeId::BOOL => {
+            Ok(SemanticTypeId::BOOL)
+        }
+        BinaryOp::IdentityEq
+        | BinaryOp::IdentityNotEq
+        | BinaryOp::Eq
+        | BinaryOp::NotEq
+        | BinaryOp::Lt
+        | BinaryOp::Lte
+        | BinaryOp::Gt
+        | BinaryOp::Gte
+            if left == right =>
+        {
+            Ok(SemanticTypeId::BOOL)
+        }
+        BinaryOp::Add if left == SemanticTypeId::STRING && right == SemanticTypeId::STRING => {
+            Ok(SemanticTypeId::STRING)
+        }
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod
+            if left == right && primitive_numeric(left) =>
+        {
+            Ok(left)
         }
         _ => Err(SemanticError::unavailable("node_type")),
     }
@@ -2141,6 +2169,10 @@ fn generic_call_specialization_tracked(
         let lowering = match call_lowering(db, key) {
             Ok(Some(lowering)) => lowering,
             Ok(None) => return None,
+            // Unavailable call sites cannot contribute call-derived ABI specializations.
+            // Propagating the error aborted whole-module emission for Core.Output (enum
+            // constructors / unresolved paths in the reachable Syscall body).
+            Err(error) if error.is_unavailable() => return None,
             Err(error) => return Some(Err(error)),
         };
         let declaration = match lowering {
@@ -3248,6 +3280,9 @@ fn abi_type_tracked(
                 &path.path.node,
             ));
         }
+        if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
+            return Some(abi_type_for_binary_expression(db, program, index, key, binary));
+        }
         if node.of::<beskid_analysis::syntax::Identifier>().is_some() {
             return abi_local_declaration_type(db, program, index, key, key.node);
         }
@@ -3310,6 +3345,80 @@ fn abi_type_for_expression(
             call_abi_signature(db, call)?
                 .map(|signature| signature.result)
                 .ok_or_else(|| SemanticError::unavailable("abi_type"))
+        }
+        Expression::Binary(binary) => {
+            let binary_key = index
+                .direct_child_id(
+                    program,
+                    key.node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(binary),
+                )
+                .map(|node| AstNodeKey { node, ..key })
+                .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+            abi_type(db, binary_key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))
+        }
+        _ => Err(SemanticError::unavailable("abi_type")),
+    }
+}
+
+fn abi_type_for_binary_expression(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    binary: &beskid_analysis::syntax::BinaryExpression,
+) -> Result<SemanticTypeId, SemanticError> {
+    let left = index
+        .direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(binary.left.as_ref()),
+        )
+        .map(|node| AstNodeKey { node, ..key })
+        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    let right = index
+        .direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(binary.right.as_ref()),
+        )
+        .map(|node| AstNodeKey { node, ..key })
+        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    let left_type = abi_type(db, left)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    let right_type = abi_type(db, right)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    use beskid_analysis::syntax::BinaryOp;
+    match binary.op.node {
+        BinaryOp::Add
+            if left_type == SemanticTypeId::STRING && right_type == SemanticTypeId::STRING =>
+        {
+            Ok(SemanticTypeId::STRING)
+        }
+        BinaryOp::Eq | BinaryOp::NotEq
+            if left_type == SemanticTypeId::STRING && right_type == SemanticTypeId::STRING =>
+        {
+            Ok(SemanticTypeId::BOOL)
+        }
+        BinaryOp::Or | BinaryOp::And
+            if left_type == SemanticTypeId::BOOL && right_type == SemanticTypeId::BOOL =>
+        {
+            Ok(SemanticTypeId::BOOL)
+        }
+        BinaryOp::IdentityEq
+        | BinaryOp::IdentityNotEq
+        | BinaryOp::Eq
+        | BinaryOp::NotEq
+        | BinaryOp::Lt
+        | BinaryOp::Lte
+        | BinaryOp::Gt
+        | BinaryOp::Gte
+            if left_type == right_type =>
+        {
+            Ok(SemanticTypeId::BOOL)
+        }
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod
+            if left_type == right_type && primitive_numeric(left_type) =>
+        {
+            Ok(left_type)
         }
         _ => Err(SemanticError::unavailable("abi_type")),
     }

@@ -17,8 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Enable the main-thread runtime-root bootstrap before executing a JIT entrypoint in
+  `run_syntax_jitted_entrypoint`. In-process JIT execution (`beskid test`, matrix test, REPL)
+  has no `beskid_runtime_link_anchor`, so allocating entrypoints (string interpolation, gc
+  roots) aborted with `no active runtime root`; the runtime now lazily installs a default
+  heap/root exactly as AOT-linked executables do.
+- Accept the `Ok(None)` (no specialization) outcome for unavailable call sites in the
+  `imported_generic_nominal_calls_require_receiver_instantiation` semantic-facts test, matching
+  the `generic_call_specialization` contract that no longer propagates unavailable errors.
 - Register process-linked soft-builtin addresses (`interop_dispatch_*`, `panic_str`, …) on
   exact ABI-v5 JIT modules so Cranelift can resolve imports after validation allowlists them.
+- Give string `+` / `==` / `!=` BinaryExpression nodes STRING/BOOL `abi_type` and `node_type`
+  facts so interpolated-string desugars lower through ISLE `StringAdd` instead of failing coerce.
+- Skip unavailable `call_lowering` inside `generic_call_specialization` (no specialization) so
+  reachable Syscall/Output bodies with unresolved enum-constructor calls do not abort module emission.
 - Forward the Windows COFF import library from `emit_host_platform_library_pair` through
   `build_native_host` and fail closed when a COFF host kit omits it (CYB-112).
 - Lexically normalize compiler-owned Corelib service source paths and match Foundation

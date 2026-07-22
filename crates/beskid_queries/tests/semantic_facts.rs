@@ -1682,7 +1682,14 @@ fn imported_generic_nominal_calls_require_receiver_instantiation() {
 
     assert_unavailable(call_lowering(&db, missing_receiver));
     assert_unavailable(call_abi_signature(&db, missing_receiver));
-    assert_unavailable(generic_call_specialization(&db, missing_receiver));
+    // An unavailable call site yields no call-derived ABI specialization. The query returns
+    // `Ok(None)` (no specialization) rather than propagating the unavailable error, so reachable
+    // Syscall/Output bodies with unresolved calls do not abort whole-module emission.
+    assert_eq!(
+        generic_call_specialization(&db, missing_receiver)
+            .expect("missing receiver yields no specialization rather than an error"),
+        None
+    );
     assert_eq!(
         call_lowering(&db, explicit_receiver).expect("explicit receiver lowering"),
         Some(beskid_queries::CallLowering::Direct(declaration))
@@ -4372,6 +4379,38 @@ fn operator_facts_cover_expression_selection() {
     assert_eq!(
         operator_fact(&db, not).expect("operator"),
         Some(OperatorFact::Not)
+    );
+}
+
+#[test]
+fn string_interpolation_desugar_uses_string_add_facts() {
+    let source = r#"
+string Prefix() { return "x"; }
+string Main(string body) { return "${Prefix()}${body}!"; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let outer = key(unit, generation, &index, NodeKind::BinaryExpression, 0);
+    let inner = key(unit, generation, &index, NodeKind::BinaryExpression, 1);
+
+    assert_eq!(
+        operator_fact(&db, inner).expect("inner string add"),
+        Some(OperatorFact::StringAdd)
+    );
+    assert_eq!(
+        operator_fact(&db, outer).expect("outer string add"),
+        Some(OperatorFact::StringAdd)
+    );
+    assert_eq!(
+        abi_type(&db, inner).expect("inner abi"),
+        Some(SemanticTypeId::STRING)
+    );
+    assert_eq!(
+        abi_type(&db, outer).expect("outer abi"),
+        Some(SemanticTypeId::STRING)
+    );
+    assert_eq!(
+        node_type(&db, outer).expect("outer node type"),
+        Some(SemanticTypeId::STRING)
     );
 }
 
