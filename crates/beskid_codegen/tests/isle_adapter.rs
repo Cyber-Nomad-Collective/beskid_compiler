@@ -1480,6 +1480,30 @@ fn canonical_foundation_output_panic_call_has_the_authorized_direct_never_abi() 
 }
 
 #[test]
+fn canonical_foundation_output_write_body_exposes_executable_block_statements() {
+    let (input, _isa, root) = canonical_foundation_output_fixture();
+    let write = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Write"))
+        .expect("canonical Core.Output Write source item");
+    let body = item_body(input.database(), write)
+        .expect("canonical Core.Output body query")
+        .expect("canonical Core.Output Write body");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+
+    assert_eq!(
+        facts.node_kind(body),
+        Some(beskid_isle::NodeKind::BlockExpression),
+        "an ordinary function body must use the shared executable-block lowering kind"
+    );
+    assert_eq!(
+        facts.statement_count(body),
+        Some(5),
+        "the body cursor must enumerate unwrapped executable statements"
+    );
+}
+
+#[test]
 fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
     let mut db = BeskidDatabase::default();
     let root = tempfile::tempdir().expect("project").keep();
@@ -1540,6 +1564,194 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
             .is_some(),
         "an imported single-payload enum constructor must carry its declaration layout"
     );
+
+}
+
+#[test]
+fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
+    let mut db = Box::new(BeskidDatabase::default());
+    let project_root = tempfile::tempdir().expect("project").keep();
+    let main_path = project_root.join("Main.bd");
+    let stream_path = project_root.join("Core/Syscall/StandardStream.bd");
+    let main_source = "use Core.Syscall.StandardStream; unit Main() { StandardStream stream = StandardStream::Stdout(); return; }";
+    let stream_source = "pub enum StandardStream { Stdin, Stdout, Stderr, }";
+    std::fs::create_dir_all(stream_path.parent().expect("stream parent"))
+        .expect("create stream source directory");
+    std::fs::write(&main_path, main_source).expect("write main source");
+    std::fs::write(&stream_path, stream_source).expect("write stream source");
+    let units = [
+        (main_path.clone(), main_source),
+        (stream_path, stream_source),
+    ]
+    .into_iter()
+    .map(|(path, source)| SourceUnit {
+        logical_name: path.display().to_string(),
+        program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
+            .expect("parse source"),
+        path,
+        source: source.into(),
+    })
+    .collect::<Vec<_>>();
+    let entry = SourceUnitId::new(&*db, main_path.clone());
+    let generation = SyntaxGenerationId(145);
+    let project = ProjectSession::new(
+        &*db,
+        project_root.clone(),
+        main_path,
+        "App".into(),
+        "lock".into(),
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: project_root,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::from(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let typed = build_typed_program(&mut *db, project, generation, assembly)
+        .expect("typed syntax program");
+    let root = AstNodeKey {
+        unit: entry,
+        generation,
+        node: AstNodeId(0),
+    };
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input = CodegenInput::new(
+        leaked,
+        typed,
+        Arc::from([root]),
+        target.clone(),
+        AbiManifestV5::canonical_runtime(target),
+    )
+    .expect("generation-safe imported enum input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let main = find_function_definition(input.database(), root).expect("Main item");
+
+    emit_isle_item(&input, isa.as_ref(), main)
+        .expect("ordinary function blocks lower imported nullary enum constructors");
+}
+
+#[test]
+fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() {
+    let mut db = Box::new(BeskidDatabase::default());
+    let project_root = tempfile::tempdir().expect("project").keep();
+    let main_path = project_root.join("Main.bd");
+    let descriptor_path = project_root.join("Core/Syscall/Descriptor.bd");
+    let stream_path = project_root.join("Core/Syscall/StandardStream.bd");
+    let main_source = "use Core.Syscall.Descriptor; use Core.Syscall.StandardStream; use Core.Syscall.WriteRequest; use Core.Syscall.WriteWith; use Core.Syscall.Result; unit Main(string text) { StandardStream stream = StandardStream::Stdout(); Descriptor descriptor = Descriptor::Standard(stream); Result result = WriteWith(WriteRequest { descriptor: descriptor, data: text }); match result { Result::Ok(_) => {}, Result::Error(_) => {}, }; return; }";
+    let descriptor_source = "pub enum Descriptor { Standard(Core.Syscall.StandardStream stream), Raw(i64 fd), } pub type WriteRequest { Descriptor descriptor, string data } pub enum Result { Ok(i64 value), Error(i64 error), } pub Result WriteWith(WriteRequest request) { return Result::Ok(0_i64); }";
+    let stream_source = "pub enum StandardStream { Stdin, Stdout, Stderr, }";
+    std::fs::create_dir_all(descriptor_path.parent().expect("descriptor parent"))
+        .expect("create descriptor source directory");
+    std::fs::write(&main_path, main_source).expect("write main source");
+    std::fs::write(&descriptor_path, descriptor_source).expect("write descriptor source");
+    std::fs::write(&stream_path, stream_source).expect("write stream source");
+    let units = [
+        (main_path.clone(), main_source),
+        (descriptor_path, descriptor_source),
+        (stream_path, stream_source),
+    ]
+    .into_iter()
+    .map(|(path, source)| SourceUnit {
+        logical_name: path.display().to_string(),
+        program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
+            .expect("parse source"),
+        path,
+        source: source.into(),
+    })
+    .collect::<Vec<_>>();
+    let entry = SourceUnitId::new(&*db, main_path.clone());
+    let generation = SyntaxGenerationId(146);
+    let project = ProjectSession::new(
+        &*db,
+        project_root.clone(),
+        main_path,
+        "App".into(),
+        "lock".into(),
+    );
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: project_root,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::from(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let typed = build_typed_program(&mut *db, project, generation, assembly)
+        .expect("typed syntax program");
+    let root = AstNodeKey {
+        unit: entry,
+        generation,
+        node: AstNodeId(0),
+    };
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input = CodegenInput::new(
+        leaked,
+        typed,
+        Arc::from([root]),
+        target.clone(),
+        AbiManifestV5::canonical_runtime(target),
+    )
+    .expect("generation-safe imported enum input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let main = find_function_definition(input.database(), root).expect("Main item");
+    let call = find_call_expression(input.database(), main).expect("WriteWith call");
+    let beskid_queries::CallLowering::Direct(declaration) = call_lowering(input.database(), call)
+        .expect("WriteWith call lowering")
+        .expect("direct WriteWith call")
+    else {
+        panic!("WriteWith must be a direct imported call");
+    };
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: main,
+                symbol: "Main".into(),
+            },
+            SyntaxModuleItem {
+                key: declaration,
+                symbol: "WriteWith".into(),
+            },
+        ],
+    )
+    .expect("module artifact services lower imported Result WriteWith and string data");
+    let main_function = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "Main")
+        .expect("Main function in artifact");
+    let clif = main_function.function.display().to_string();
+    assert!(clif.contains("call"), "{clif}");
+    assert!(clif.contains("br_table"), "{clif}");
 }
 
 #[test]
