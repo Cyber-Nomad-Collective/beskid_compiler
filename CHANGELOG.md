@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exclude event declarations from ABI-v5 aggregate value layouts, preserving exact value-field
   projection facts for event-bearing nominal controls while event projections remain unavailable
   (CYB-162).
+- Preserve the mutable-local syntax fact for canonical `Ansi.Escape.PrivateMode`
+  string reassignment, while immutable local assignments remain unavailable (CYB-163).
 - Declare the `Core.Syscall` and `Core.Results` module imports used by canonical
   `Core.Error`, preserving direct semantic facts for its qualified `WriteWith`
   call without broadening module lookup (CYB-161).
