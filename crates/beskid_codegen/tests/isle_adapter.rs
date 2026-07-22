@@ -31,7 +31,7 @@ use beskid_queries::{
     SyntaxGenerationId, aggregate_field_access, build_canonical_corelib_syscall_typed_program,
     build_canonical_runtime_typed_program, build_typed_program,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
-    closure_environment, enum_match, format_ast_node_site, item_body, item_name, literal_fact,
+    closure_environment, enum_layout, enum_match, format_ast_node_site, item_body, item_name, literal_fact,
     mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes,
 };
 use cranelift_codegen::ir::{UserFuncName, types};
@@ -1476,6 +1476,87 @@ fn canonical_foundation_output_panic_call_has_the_authorized_direct_never_abi() 
             parameters: Arc::from([beskid_queries::SemanticTypeId::STRING]),
             result: beskid_queries::SemanticTypeId::NEVER,
         })
+    );
+}
+
+#[test]
+fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
+    let mut db = BeskidDatabase::default();
+    let root = tempfile::tempdir().expect("project").keep();
+    let main_path = root.join("Main.bd");
+    let descriptor_path = root.join("Core/Syscall/Descriptor.bd");
+    let stream_path = root.join("Core/Syscall/StandardStream.bd");
+    let main_source = "use Core.Syscall.Descriptor;\nuse Core.Syscall.StandardStream;\nunit Main() { StandardStream stream = StandardStream::Stdout(); Descriptor descriptor = Descriptor::Standard(stream); return; }";
+    let descriptor_source = "pub enum Descriptor { Standard(Core.Syscall.StandardStream stream), Raw(i64 fd), }";
+    let stream_source = "pub enum StandardStream { Stdin, Stdout, Stderr, }";
+    let units = [
+        (main_path.clone(), main_source),
+        (descriptor_path.clone(), descriptor_source),
+        (stream_path.clone(), stream_source),
+    ]
+    .into_iter()
+    .map(|(path, source)| SourceUnit {
+        logical_name: path.display().to_string(),
+        program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
+            .expect("parse source"),
+        path,
+        source: source.into(),
+    })
+    .collect::<Vec<_>>();
+    let entry = SourceUnitId::new(&db, main_path.clone());
+    let generation = SyntaxGenerationId(143);
+    let project = ProjectSession::new(&db, root.clone(), main_path, "App".into(), "lock".into());
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::from(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey {
+        unit: entry,
+        generation,
+        node: AstNodeId(0),
+    };
+    let constructors = find_nodes_of_kind(
+        &db,
+        root,
+        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
+    );
+    assert_eq!(constructors.len(), 2, "one StandardStream and one Descriptor constructor");
+    let descriptor = constructors[1];
+
+    assert!(
+        enum_layout(&db, descriptor)
+            .expect("enum layout query")
+            .is_some(),
+        "an imported single-payload enum constructor must carry its declaration layout"
+    );
+}
+
+#[test]
+fn unknown_qualified_payload_type_remains_unavailable_to_isle() {
+    let (input, _isa, root) = item_fixture_with_root(
+        "enum Envelope { Item(Core.Missing value), } unit Main() { return; }",
+    );
+    let definition = find_definition_of_kind(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::EnumDefinition,
+    )
+    .expect("Envelope definition");
+
+    assert!(
+        enum_layout(input.database(), definition).is_err(),
+        "a qualified payload without one exact assembled source module must remain unavailable"
     );
 }
 

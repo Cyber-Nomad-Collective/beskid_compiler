@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Declare the `Core.Results` dependency in Foundation `Core.Output`, preserving the
   import provenance required to derive its qualified generic `Result` match layout
   without broadening module discovery (CYB-140).
+- Derive a qualified imported payload-enum layout only from one assembled source
+  module and one public exported nominal type, allowing `Descriptor::Standard` to
+  retain syntax-ISLE facts while unresolved or ambiguous paths remain unavailable
+  (CYB-144).
 - Authorize the exact canonical Foundation `Core.Output` corpus to import the
   `__panic_str` Corelib service, while keeping byte-identical user copies outside the
   trusted capability boundary (CYB-141).

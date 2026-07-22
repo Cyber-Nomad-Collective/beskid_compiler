@@ -4038,12 +4038,47 @@ fn aggregate_field_layout(
 }
 
 fn resolve_nominal_layout_declaration(
-    _db: &dyn Db,
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Option<AstNodeKey> {
+    if let Some(declaration) = resolve_type_declaration(db, key, path) {
+        return Some(declaration);
+    }
+    let (name, module_path) = path.segments.split_last()?;
+    if module_path.is_empty() || module_path.iter().any(|segment| !segment.node.type_args.is_empty()) {
+        return None;
+    }
+    let mut module_path = module_path
+        .iter()
+        .map(|segment| segment.node.name.node.name.clone())
+        .collect::<Vec<_>>();
+    module_path.push(name.node.name.node.name.clone());
+    let target = {
+        let registry = db
+            .syntax_dependency_registry()
+            .lock()
+            .expect("syntax dependency registry");
+        let [target] = registry
+            .modules
+            .get(&(key.generation, module_path))?
+            .as_slice()
+        else {
+            return None;
+        };
+        *target
+    };
+    if let Some(declaration) = unique_exported_type_in_unit(
+        db,
+        target,
+        key.generation,
+        &name.node.name.node.name,
+        name.node.type_args.len(),
+    ) {
+        return Some(declaration);
+    }
     let [segment] = path.segments.as_slice() else {
         return None;
     };
