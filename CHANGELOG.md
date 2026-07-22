@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compose a supported enum-match result only from its source-proven arm-body node
   facts, so direct pattern bindings participate in nested result typing while mixed
   arm types remain unavailable (CYB-154).
+- Derive a direct call expression type only from its exact resolved call ABI result,
+  allowing enum-match arms that call typed Syscall helpers while dynamic and unresolved
+  calls remain unavailable (CYB-155).
 - Authorize the exact canonical Foundation `Core.Output` corpus to import the
   `__panic_str` Corelib service, while keeping byte-identical user copies outside the
   trusted capability boundary (CYB-141).

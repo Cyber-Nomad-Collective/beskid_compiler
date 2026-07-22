@@ -2725,6 +2725,15 @@ fn node_type_rejects_enum_match_results_with_mixed_arm_types() {
 }
 
 #[test]
+fn node_type_uses_an_exact_direct_call_abi_result() {
+    let source = "i64 Fd() { return 0_i64; } i64 Main() { return Fd(); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(node_type(&db, call).expect("direct call type"), Some(SemanticTypeId::I64));
+}
+
+#[test]
 fn literal_enum_payload_pattern_remains_unavailable_to_type_queries() {
     let source = "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(7_i64) => 1_i64, Result::Error(_) => 0_i64, }; }";
     let (db, _project, unit, generation, index) = setup(source);

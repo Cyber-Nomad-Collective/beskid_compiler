@@ -1416,6 +1416,21 @@ fn node_type_tracked(
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
             return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
+        if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
+            let lowering = match call_lowering(db, key) {
+                Ok(Some(CallLowering::Direct(_))) => (),
+                Ok(Some(_) | None) => return Some(Err(SemanticError::unavailable("node_type"))),
+                Err(error) => return Some(Err(error)),
+            };
+            let _ = lowering;
+            return Some(
+                call_abi_signature(db, key)
+                    .and_then(|signature| {
+                        signature.ok_or_else(|| SemanticError::unavailable("node_type"))
+                    })
+                    .map(|signature| signature.result),
+            );
+        }
         if let Some(binding_type) = pattern_binding_semantic_type(db, program, index, key, node)
         {
             return Some(binding_type);
