@@ -22,8 +22,14 @@
 
 (decl partial emit_expression_statement (AstNodeKey) Unit)
 (extern constructor emit_expression_statement emit_expression_statement)
+(decl partial emit_direct_call_statement (AstNodeKey) Unit)
+(extern constructor emit_direct_call_statement emit_direct_call_statement)
 (rule (lower_statement key @ (node_kind (NodeKind.ExpressionStatement)))
       (emit_expression_statement key))
+(rule (lower_statement key @ (and
+        (node_kind (NodeKind.CallExpression))
+        (call_kind (CallKind.Direct))))
+      (emit_direct_call_statement key))
 (rule (lower_statement key @ (node_kind (NodeKind.ReturnStatement)))
       (emit_return key))
 (rule (lower_statement key @ (node_kind (NodeKind.LetStatement)))

@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve the concrete applied enum layout for explicitly typed local and parameter
   matches, and lower discard-only unit match arms in statement context without
   introducing a scalar merge value (CYB-137).
+- Lower direct zero-return calls used as generic enum match-arm statements through the
+  existing direct-call ABI path, rather than rejecting them as missing statement facts
+  (CYB-137).
 - Normalize the Syscall ergonomics fixture to the nullary `StandardStream::Stdout`
   constructor form and remove its unused module import (CYB-132).
 - Migrate the `ansi_csi_bold_red` spine test off retired HIR codegen and onto the

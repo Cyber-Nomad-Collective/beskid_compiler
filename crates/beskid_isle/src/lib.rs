@@ -1528,6 +1528,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.direct_call(key)
     }
 
+    fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
+        self.direct_call_statement(key)
+    }
+
     fn emit_dispatch_call(&mut self, key: AstNodeKey) -> Option<Value> {
         let symbol = self.facts.dispatch_builtin_symbol(key)?;
         let route = beskid_abi::dispatch_route_for_symbol(symbol)?;

@@ -751,6 +751,54 @@ fn parsed_generic_enum_match_statement_lowers_empty_unit_blocks_without_hir() {
 }
 
 #[test]
+fn parsed_generic_enum_match_statement_lowers_direct_unit_call_arms_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } unit Fail() { return; } unit Main() { Result<i64, i64> result = Result<i64, i64>::Error(0_i64); match result { Result::Ok(_) => {}, Result::Error(_) => Fail(), }; return; }",
+    );
+    let db = input.database();
+    let items = find_function_definitions(db, root);
+    let fail = items
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Fail"))
+        .expect("Fail item");
+    let main = items
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main item");
+    let fail_call = find_nodes_of_kind(db, main, beskid_queries::IndexedNodeKind::CallExpression)
+        .into_iter()
+        .find(|key| {
+            matches!(
+                call_lowering(db, *key).ok().flatten(),
+                Some(beskid_queries::CallLowering::Direct(declaration)) if declaration == fail
+            )
+        })
+        .expect("direct Fail arm call");
+    assert_eq!(
+        beskid_codegen::SyntaxNodeFacts::new(&input).direct_callee(fail_call),
+        Some(DirectCallee::item(fail)),
+        "the match arm must retain its direct unit callee"
+    );
+
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = cranelift_codegen::ir::Signature::new(isa.default_call_conv());
+    let imported = module
+        .declare_function("Fail", Linkage::Import, &signature)
+        .expect("declare imported unit callee");
+    let mut importer = ItemModuleImporter::new(
+        &mut module,
+        HashMap::from([(DirectCallee::item(fail), imported)]),
+    );
+
+    let function = emit_isle_item_with_call_importer(&input, isa.as_ref(), main, &mut importer)
+        .expect("direct unit call arm lowers through the match statement path");
+    let clif = function.display().to_string();
+    assert!(clif.contains("call"), "{clif}");
+}
+
+#[test]
 fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();
