@@ -369,6 +369,86 @@ fn enum_layout_keeps_channel_capacity_variants_in_source_order() {
 }
 
 #[test]
+fn enum_layout_instantiates_concrete_generic_result_payloads() {
+    let source = "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<i64, SyscallError> result = Result<i64, SyscallError>::Ok(1); return 0; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let syscall_error = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+    let result = key(unit, generation, &index, NodeKind::EnumDefinition, 1);
+    let constructor = key(
+        unit,
+        generation,
+        &index,
+        NodeKind::EnumConstructorExpression,
+        0,
+    );
+    let payload = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+
+    assert_unavailable(enum_layout(&db, result));
+    assert_eq!(
+        enum_layout(&db, constructor)
+            .expect("concrete generic layout query")
+            .expect("concrete generic layout"),
+        EnumLayoutFact {
+            variants: Arc::from([
+                EnumVariantLayoutFact {
+                    name: Arc::from("Ok"),
+                    fields: Arc::from([(
+                        Arc::from("value"),
+                        AggregateFieldShape::Scalar(SemanticTypeId::I64),
+                    )]),
+                },
+                EnumVariantLayoutFact {
+                    name: Arc::from("Error"),
+                    fields: Arc::from([(
+                        Arc::from("error"),
+                        AggregateFieldShape::Nominal(syscall_error),
+                    )]),
+                },
+            ]),
+        }
+    );
+    assert_eq!(
+        enum_constructor(&db, constructor).expect("concrete generic constructor query"),
+        Some(beskid_queries::EnumConstructorFact {
+            declaration: result,
+            variant_index: 0,
+            payload: Some(payload),
+        }),
+    );
+}
+
+#[test]
+fn enum_layout_rejects_inexact_generic_applications() {
+    let cases = [
+        "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<i64>::Ok(1); return 0; }",
+        "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<Missing, SyscallError>::Ok(1); return 0; }",
+        "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<i64(i64), SyscallError>::Ok(1); return 0; }",
+        "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Outer<i64>.Result<i64, SyscallError>::Ok(1); return 0; }",
+    ];
+    for source in cases {
+        let (db, _project, unit, generation, index) = setup(source);
+        let constructor = key(
+            unit,
+            generation,
+            &index,
+            NodeKind::EnumConstructorExpression,
+            0,
+        );
+        assert_unavailable(enum_layout(&db, constructor));
+        assert_unavailable(enum_constructor(&db, constructor));
+    }
+}
+
+#[test]
+fn generic_enum_match_remains_unavailable_for_cyb_137() {
+    let source = "enum Result<TValue, TError> { Ok(), Error() } i64 Main() { Result<i64, string> value = Result<i64, string>::Ok(); return match value { Result::Ok() => 1, Result::Error() => 0, }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+
+    assert_unavailable(enum_match(&db, expression));
+}
+
+#[test]
 fn enum_constructor_selects_the_source_variant_and_single_payload() {
     let source = "enum Choice { None(), Some(i32 value) } i32 Main() { Choice choice = Choice::Some(7); return 0; }";
     let (db, _project, unit, generation, index) = setup(source);
@@ -381,6 +461,15 @@ fn enum_constructor_selects_the_source_variant_and_single_payload() {
     );
     let declaration = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
     let payload = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+
+    assert_eq!(
+        enum_layout(&db, constructor)
+            .expect("constructor layout query")
+            .expect("constructor layout")
+            .variants
+            .len(),
+        2,
+    );
 
     assert_eq!(
         enum_constructor(&db, constructor).expect("enum constructor query"),

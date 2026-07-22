@@ -1,7 +1,8 @@
 use std::fs;
 
 use crate::projects::fixture_harness::{
-    corelib_mvp_fixture, shared_corelib_mvp_assembly, with_large_test_stack, with_project_test_env,
+    corelib_mvp_fixture, corelib_tests_project_root, resolve_corelib_tests_entry,
+    shared_corelib_mvp_assembly, with_large_test_stack, with_project_test_env,
 };
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 use beskid_analysis::Severity;
@@ -10,6 +11,7 @@ use beskid_analysis::services::lower_normalize_resolve_type_spanned_with_assembl
 use beskid_analysis::services::{
     analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input,
 };
+use beskid_queries::{program_assembly, with_db};
 
 use super::{
     compiler_sdk_src, corelib_root, corelib_workspace_root, foundation_src,
@@ -118,6 +120,56 @@ fn corelib_mvp_fixture_lowers_via_program_assembly() {
                 beskid_analysis::services::DependencyTypingPolicy::FullClosure,
             )
             .expect("corelib_mvp should resolve and type-check with use aliases");
+        });
+    });
+}
+
+#[test]
+fn corelib_assembly_typechecks_nested_qualified_result_arguments_and_predicates() {
+    with_large_test_stack(|| {
+        let project = corelib_tests_project_root();
+        with_project_test_env(&project, || {
+            let source = r#"
+use Core.Syscall;
+use Core.Results;
+
+i32 Main() {
+    Core.Results.Result<i64, Core.Syscall.SyscallError> result =
+        Core.Syscall.Write(-1_i64, "x");
+    if Results.IsOk(result) {
+        return 1;
+    }
+    if Results.IsError(result) {
+        return 0;
+    }
+    return 2;
+}
+"#;
+            let resolved = resolve_corelib_tests_entry("system/SyscallErgonomicsTests.bd");
+            let plan = resolved.compile_plan.expect("corelib tests compile plan");
+            let options = beskid_analysis::projects::assembly_options_for_plan(&plan);
+            let assembly = with_db(|db| {
+                program_assembly(
+                    db,
+                    &plan,
+                    resolved.prepared_workspace.as_ref(),
+                    &resolved.source_path,
+                    Some(source),
+                    &options,
+                )
+            })
+            .expect("nested generic regression assembly");
+
+            lower_normalize_resolve_type_spanned_with_assembly(
+                &assembly.entry_unit().program,
+                Some(&assembly),
+                None,
+                beskid_analysis::services::DependencyTypingPolicy::FullClosure,
+            )
+            .expect(
+                "assembly should typecheck Core.Results.Result<i64, Core.Syscall.SyscallError> \
+                 through Results.IsOk and Results.IsError",
+            );
         });
     });
 }

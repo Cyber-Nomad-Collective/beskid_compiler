@@ -631,6 +631,27 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
 }
 
 #[test]
+fn parsed_generic_enum_constructor_uses_concrete_source_layout_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<i64, SyscallError> result = Result<i64, SyscallError>::Ok(7_i64); return 0; }",
+    );
+    let constructor = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
+    )
+    .expect("generic enum constructor");
+
+    let function = emit_isle_expression(&input, isa.as_ref(), constructor, isa.pointer_type())
+        .expect("generic enum constructor lowers from its concrete use-site layout");
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("stack_store"), "{clif}");
+    assert!(clif.contains("iconst.i32 0"), "{clif}");
+    assert!(clif.contains("iconst.i64 7"), "{clif}");
+}
+
+#[test]
 fn parsed_nullary_enum_constructor_uses_source_layout_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
         "enum Choice { None(), Some(i32 value) } i32 Main() { Choice choice = Choice::None(); return 0; }",
@@ -2305,6 +2326,68 @@ fn parsed_syntax_program_uses_the_existing_artifact_string_pool() {
             .string_literals
             .values()
             .any(|bytes| bytes.as_slice() == b"Beskid")
+    );
+}
+
+#[test]
+fn parsed_syntax_string_literal_materializes_runtime_string_abi() {
+    let (input, isa, root) = item_fixture_with_root("string Main() { return \"ééé\"; }");
+    let main = find_function_definitions(input.database(), root)[0];
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem {
+            key: main,
+            symbol: "Main".into(),
+        }],
+    )
+    .expect("syntax string literal lowers through runtime ABI materialization");
+
+    let clif = artifact.functions[0].function.display().to_string();
+    let str_new = beskid_abi::dispatch_route_for_symbol(beskid_abi::SYM_STR_NEW)
+        .expect("generated str_new dispatch route");
+    assert_eq!(str_new.tag, beskid_abi::TAG_STR_NEW);
+    assert!(
+        clif.contains("interop_dispatch_ptr"),
+        "syntax string literals must call TAG_STR_NEW before their pointer escapes: {clif}",
+    );
+    assert!(
+        clif.contains(&format!("iconst.i32 {}", str_new.tag)),
+        "string materialization must use TAG_STR_NEW: {clif}",
+    );
+    let byte_len = clif
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            line.contains(" = iconst.i64 6")
+                .then(|| line.split_once(" = ").map(|(value, _)| value))?
+        })
+        .expect("three UTF-8 e-acute scalars must materialize as six bytes");
+    assert!(
+        clif.lines()
+            .any(|line| line.trim().starts_with(&format!("store {byte_len}, "))
+                && line.contains("+24")),
+        "UTF-8 byte length must occupy str_new's second payload slot: {clif}",
+    );
+    let dispatch_ref = clif
+        .lines()
+        .find_map(|line| {
+            line.contains("%interop_dispatch_ptr")
+                .then(|| line.trim().split_whitespace().next())?
+        })
+        .expect("pointer dispatch function reference");
+    let dispatch_result = clif
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            line.contains(&format!(" = call {dispatch_ref}("))
+                .then(|| line.split_once(" = ").map(|(value, _)| value))?
+        })
+        .expect("str_new pointer dispatch result");
+    assert!(
+        clif.lines()
+            .any(|line| line.trim() == format!("return {dispatch_result}")),
+        "the raw literal pointer must not escape instead of the str_new result: {clif}",
     );
 }
 

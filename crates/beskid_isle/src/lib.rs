@@ -805,13 +805,32 @@ struct StatementEmission<'a> {
 }
 
 /// Artifact-owned string materialization invoked only after generated ISLE selection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StringMaterializationError {
+    MissingDispatchRoute(&'static str),
+    DispatchEmission(&'static str),
+    Artifact(&'static str),
+}
+
+impl std::fmt::Display for StringMaterializationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingDispatchRoute(symbol) => {
+                write!(f, "MissingDispatchRoute({symbol})")
+            }
+            Self::DispatchEmission(detail) => write!(f, "DispatchEmission({detail})"),
+            Self::Artifact(detail) => write!(f, "Artifact({detail})"),
+        }
+    }
+}
+
 pub trait StringInterner {
     fn intern(
         &mut self,
         builder: &mut FunctionBuilder<'_>,
         key: AstNodeKey,
         text: &str,
-    ) -> Option<Value>;
+    ) -> Result<Value, StringMaterializationError>;
 }
 
 /// Caller-local import of a semantic callee after generated ISLE selection.
@@ -827,6 +846,7 @@ pub trait CallImporter {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LoweringErrorKind {
     MissingRuleOrFact,
+    StringMaterialization(StringMaterializationError),
     UnknownCallee(DirectCallee),
     InvalidArrayLayout,
     InvalidStructLayout,
@@ -1411,9 +1431,20 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn emit_string(&mut self, key: AstNodeKey) -> Option<Value> {
         let text = self.facts.string_literal(key)?;
-        self.string_interner
+        match self
+            .string_interner
             .as_deref_mut()?
             .intern(self.builder, key, &text)
+        {
+            Ok(value) => Some(value),
+            Err(error) => {
+                self.pending_error = Some(LoweringError {
+                    key,
+                    kind: LoweringErrorKind::StringMaterialization(error),
+                });
+                None
+            }
+        }
     }
 
     fn clif_iadd(&mut self, left: Value, right: Value) -> Value {
@@ -2476,6 +2507,9 @@ impl LoweringError {
     fn kind_label(&self) -> String {
         match &self.kind {
             LoweringErrorKind::MissingRuleOrFact => "MissingRuleOrFact".to_owned(),
+            LoweringErrorKind::StringMaterialization(error) => {
+                format!("StringMaterialization({error})")
+            }
             LoweringErrorKind::UnknownCallee(callee) => format!("UnknownCallee({callee:?})"),
             LoweringErrorKind::InvalidArrayLayout => "InvalidArrayLayout".to_owned(),
             LoweringErrorKind::InvalidStructLayout => "InvalidStructLayout".to_owned(),

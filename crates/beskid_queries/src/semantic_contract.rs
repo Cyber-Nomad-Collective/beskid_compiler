@@ -3548,30 +3548,169 @@ fn enum_layout_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<EnumLayoutFact> {
     with_node(db, syntax, key, |program, index, node| {
-        let definition = node.of::<beskid_analysis::syntax::EnumDefinition>()?;
-        Some(
-            definition
-                .variants
-                .iter()
-                .map(|variant| {
-                    variant
-                        .node
-                        .fields
-                        .iter()
-                        .map(|field| aggregate_field_layout(db, program, index, key, field))
-                        .collect::<Result<Vec<_>, SemanticError>>()
-                        .map(|fields| EnumVariantLayoutFact {
-                            name: Arc::from(variant.node.name.node.name.as_str()),
-                            fields: fields.into(),
-                        })
-                })
-                .collect::<Result<Vec<_>, SemanticError>>()
-                .map(|variants| EnumLayoutFact {
-                    variants: variants.into(),
-                }),
-        )
+        if let Some(definition) = node.of::<beskid_analysis::syntax::EnumDefinition>() {
+            return Some(enum_layout_from_definition(
+                db, program, index, key, definition, None,
+            ));
+        }
+        node.of::<beskid_analysis::syntax::EnumConstructorExpression>()
+            .map(|constructor| {
+                instantiated_enum_layout_for_path(db, key, &constructor.path.node.type_path.node)
+            })
     })?
     .transpose()
+}
+
+fn instantiated_enum_layout_for_path(
+    db: &dyn Db,
+    use_key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Result<EnumLayoutFact, SemanticError> {
+    let declaration = resolve_type_declaration(db, use_key, path)
+        .ok_or_else(|| SemanticError::unavailable("enum_layout"))?;
+    let syntax = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.generation(db) == declaration.generation)
+        .ok_or_else(|| SemanticError::unavailable("enum_layout"))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let definition = index
+        .node_at(program, declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("enum_layout"))?;
+    if definition.generics.is_empty() {
+        return enum_layout_from_definition(db, program, index, declaration, definition, None);
+    }
+    let substitutions = enum_layout_substitutions(db, use_key, definition, path)?;
+    enum_layout_from_definition(
+        db,
+        program,
+        index,
+        declaration,
+        definition,
+        Some(&substitutions),
+    )
+}
+
+fn enum_layout_substitutions(
+    db: &dyn Db,
+    use_key: AstNodeKey,
+    definition: &beskid_analysis::syntax::EnumDefinition,
+    path: &beskid_analysis::syntax::Path,
+) -> Result<HashMap<String, AggregateFieldShape>, SemanticError> {
+    let (terminal, module_path) = path
+        .segments
+        .split_last()
+        .ok_or_else(|| SemanticError::unavailable("enum_layout"))?;
+    if module_path
+        .iter()
+        .any(|segment| !segment.node.type_args.is_empty())
+        || terminal.node.type_args.len() != definition.generics.len()
+        || definition.generics.is_empty()
+    {
+        return Err(SemanticError::unavailable("enum_layout"));
+    }
+    definition
+        .generics
+        .iter()
+        .zip(terminal.node.type_args.iter())
+        .map(|(generic, argument)| {
+            aggregate_shape_from_applied_type(db, use_key, &argument.node)
+                .map(|shape| (generic.node.name.clone(), shape))
+        })
+        .collect()
+}
+
+fn aggregate_shape_from_applied_type(
+    db: &dyn Db,
+    use_key: AstNodeKey,
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> Result<AggregateFieldShape, SemanticError> {
+    match syntax_type {
+        beskid_analysis::syntax::Type::Primitive(_) => Ok(AggregateFieldShape::Scalar(
+            semantic_type_from_syntax(syntax_type)?,
+        )),
+        beskid_analysis::syntax::Type::Complex(path) => {
+            resolve_type_declaration(db, use_key, &path.node)
+                .map(AggregateFieldShape::Nominal)
+                .ok_or_else(|| SemanticError::unavailable("enum_layout"))
+        }
+        beskid_analysis::syntax::Type::Array(_) => {
+            Ok(AggregateFieldShape::Scalar(SemanticTypeId::POINTER))
+        }
+        beskid_analysis::syntax::Type::Function { .. } => {
+            Err(SemanticError::unavailable("enum_layout"))
+        }
+    }
+}
+
+fn enum_layout_from_definition(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: AstNodeKey,
+    definition: &beskid_analysis::syntax::EnumDefinition,
+    substitutions: Option<&HashMap<String, AggregateFieldShape>>,
+) -> Result<EnumLayoutFact, SemanticError> {
+    if definition.generics.is_empty() != substitutions.is_none() {
+        return Err(SemanticError::unavailable("enum_layout"));
+    }
+    definition
+        .variants
+        .iter()
+        .map(|variant| {
+            variant
+                .node
+                .fields
+                .iter()
+                .map(|field| {
+                    enum_field_layout(db, program, index, declaration, field, substitutions)
+                })
+                .collect::<Result<Vec<_>, SemanticError>>()
+                .map(|fields| EnumVariantLayoutFact {
+                    name: Arc::from(variant.node.name.node.name.as_str()),
+                    fields: fields.into(),
+                })
+        })
+        .collect::<Result<Vec<_>, SemanticError>>()
+        .map(|variants| EnumLayoutFact {
+            variants: variants.into(),
+        })
+}
+
+fn enum_field_layout(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: AstNodeKey,
+    field: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Field>,
+    substitutions: Option<&HashMap<String, AggregateFieldShape>>,
+) -> Result<(Arc<str>, AggregateFieldShape), SemanticError> {
+    if field.node.kind != beskid_analysis::syntax::FieldKind::Value {
+        return Err(SemanticError::unavailable("enum_layout"));
+    }
+    let substituted = match (&field.node.ty.node, substitutions) {
+        (beskid_analysis::syntax::Type::Complex(path), Some(substitutions)) => {
+            let [segment] = path.node.segments.as_slice() else {
+                return Err(SemanticError::unavailable("enum_layout"));
+            };
+            segment
+                .node
+                .type_args
+                .is_empty()
+                .then(|| {
+                    substitutions
+                        .get(segment.node.name.node.name.as_str())
+                        .copied()
+                })
+                .flatten()
+        }
+        _ => None,
+    };
+    substituted
+        .map(|shape| (Arc::from(field.node.name.node.name.as_str()), shape))
+        .map(Ok)
+        .unwrap_or_else(|| aggregate_field_layout(db, program, index, declaration, field))
 }
 
 #[salsa::tracked]
@@ -3588,7 +3727,7 @@ fn enum_constructor_tracked(
             Ok(declaration) => declaration,
             Err(error) => return Some(Err(error)),
         };
-        let layout = match enum_layout(db, declaration) {
+        let layout = match enum_layout(db, key) {
             Ok(Some(layout)) => layout,
             Ok(None) | Err(_) => return Some(Err(SemanticError::unavailable("enum_constructor"))),
         };
@@ -5766,7 +5905,8 @@ pub fn aggregate_field_access(
     with_registered_syntax(db, key, aggregate_field_access_tracked)
 }
 
-/// Return target-neutral source variants and field shapes for a nominal `enum` definition.
+/// Return target-neutral source variants and field shapes for a non-generic `enum` definition or
+/// an enum constructor whose applied type arguments fully instantiate its generic declaration.
 pub fn enum_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumLayoutFact> {
     with_registered_syntax(db, key, enum_layout_tracked)
 }

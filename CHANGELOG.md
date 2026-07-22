@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve nested qualified generic type arguments before their enclosing type paths,
+  materialize concrete generic enum layouts from constructor use sites, and route
+  syntax-lowered string literals through the canonical ABI-v5 `str_new` dispatch.
+  This restores fail-closed type/layout facts and prevents JIT string operations from
+  interpreting literal payload bytes as `BeskidStr` headers (CYB-135/CYB-136/CYB-134).
 - Migrate the `ansi_csi_bold_red` spine test off retired HIR codegen and onto the
   syntax lowering path (`lower_corelib_tests_entrypoint`), then validate the
   resulting artifact directly so this test can no longer trigger retired HIR facade

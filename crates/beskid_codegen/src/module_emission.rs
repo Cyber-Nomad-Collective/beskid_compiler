@@ -984,7 +984,7 @@ impl StringInterner for ArtifactStringInterner<'_> {
         builder: &mut FunctionBuilder<'_>,
         _key: AstNodeKey,
         text: &str,
-    ) -> Option<Value> {
+    ) -> Result<Value, beskid_isle::StringMaterializationError> {
         let symbol = self.context.intern_string_literal(text.as_bytes());
         let global = builder.func.create_global_value(GlobalValueData::Symbol {
             name: ExternalName::testcase(symbol),
@@ -992,7 +992,16 @@ impl StringInterner for ArtifactStringInterner<'_> {
             colocated: true,
             tls: false,
         });
-        Some(builder.ins().global_value(self.pointer_type, global))
+        let bytes = builder.ins().global_value(self.pointer_type, global);
+        let byte_len = builder.ins().iconst(self.pointer_type, text.len() as i64);
+        let route = beskid_abi::dispatch_route_for_symbol(beskid_abi::SYM_STR_NEW).ok_or(
+            beskid_isle::StringMaterializationError::MissingDispatchRoute(beskid_abi::SYM_STR_NEW),
+        )?;
+        beskid_isle::emit_dispatch_call(builder, route, &[bytes, byte_len], true)
+            .map_err(beskid_isle::StringMaterializationError::DispatchEmission)?
+            .ok_or(beskid_isle::StringMaterializationError::DispatchEmission(
+                "str_new dispatch returned no value",
+            ))
     }
 }
 

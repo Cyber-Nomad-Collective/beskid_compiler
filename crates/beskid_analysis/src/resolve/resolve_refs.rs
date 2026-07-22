@@ -465,7 +465,14 @@ impl Resolver {
     fn resolve_type(&mut self, ty: &Spanned<HirType>) {
         match &ty.node {
             HirType::Primitive(_) => {}
-            HirType::Complex(path) => self.resolve_type_path(path),
+            HirType::Complex(path) => {
+                for segment in &path.node.segments {
+                    for type_arg in &segment.node.type_args {
+                        self.resolve_type(type_arg);
+                    }
+                }
+                self.resolve_type_path(path);
+            }
             HirType::Array(inner) => self.resolve_type(inner),
             HirType::Function {
                 return_type,
