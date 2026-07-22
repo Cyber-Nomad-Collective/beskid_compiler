@@ -3396,6 +3396,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         "IsValidObjectAlignment",
         "ValidatePointerMap",
         "ValidateTypeDescriptor",
+        "AllocateObject",
         "AllocateClosureEnvironment",
         "CurrentThreadState",
         "RootFrame",
@@ -3492,6 +3493,19 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
             ))
             .expect("AllocateClosureEnvironment declaration"),
     );
+    let allocate_object = module.get_finalized_function(
+        *declared
+            .get(&DirectCallee::item(
+                *items
+                    .iter()
+                    .find(|key| {
+                        item_name(input.database(), **key).ok().flatten().as_deref()
+                            == Some("AllocateObject")
+                    })
+                    .expect("AllocateObject item"),
+            ))
+            .expect("AllocateObject declaration"),
+    );
     let validate: extern "C" fn(*const usize) -> u8 = unsafe { std::mem::transmute(validate) };
     let root_environment: extern "C" fn(*mut usize, usize, *mut u8) -> u8 =
         unsafe { std::mem::transmute(root_environment) };
@@ -3499,6 +3513,8 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         unsafe { std::mem::transmute(root_environment_current) };
     let allocate_environment: extern "C" fn(*const usize) -> *mut u8 =
         unsafe { std::mem::transmute(allocate_environment) };
+    let allocate_object: extern "C" fn(*const usize) -> *mut u8 =
+        unsafe { std::mem::transmute(allocate_object) };
 
     let mut pointer_map = [16usize];
     let mut descriptor = [32usize, 8, pointer_map.as_mut_ptr() as usize, 1, 0];
@@ -3542,11 +3558,38 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         1,
         "restored descriptor is accepted before allocate"
     );
+    let request = [32usize, 8, descriptor.as_mut_ptr() as usize];
+    let object = allocate_object(request.as_ptr());
+    assert!(
+        !object.is_null(),
+        "valid managed request allocates an object"
+    );
+    let object_header = object as *const usize;
+    assert_eq!(unsafe { *object_header }, descriptor.as_mut_ptr() as usize);
+    assert_eq!(
+        unsafe { *object_header.add(1) },
+        0,
+        "managed allocation clears the GC word"
+    );
+    let mismatched_size = [40usize, 8, descriptor.as_mut_ptr() as usize];
+    assert!(
+        allocate_object(mismatched_size.as_ptr()).is_null(),
+        "managed allocation rejects a size that differs from its descriptor"
+    );
+    let mismatched_alignment = [32usize, 16, descriptor.as_mut_ptr() as usize];
+    assert!(
+        allocate_object(mismatched_alignment.as_ptr()).is_null(),
+        "managed allocation rejects an alignment that differs from its descriptor"
+    );
+    let missing_descriptor = [32usize, 8, 0];
+    assert!(
+        allocate_object(missing_descriptor.as_ptr()).is_null(),
+        "managed allocation rejects a null descriptor"
+    );
     assert!(
         allocate_environment(std::ptr::null()).is_null(),
         "null allocation request fails closed before dereference"
     );
-    let request = [32usize, 8, descriptor.as_mut_ptr() as usize];
     let environment = allocate_environment(request.as_ptr());
     assert!(
         !environment.is_null(),

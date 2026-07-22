@@ -313,7 +313,7 @@ pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSi
     }
 }
 
-/// Fail-closed structural validation of a `BeskidTypeDescriptor` for closure environments.
+/// Fail-closed structural validation of a managed object's `BeskidTypeDescriptor`.
 pub bool ValidateTypeDescriptor(pointer descriptor) {
     if descriptor == NativePointer(0) {
         return false;
@@ -337,33 +337,14 @@ pub bool ValidateTypeDescriptor(pointer descriptor) {
     }
 }
 
-/// Reserves one zeroed object whose header begins at the returned address.
+/// Reserves one validated, zeroed managed object whose header begins at the returned address.
 ///
 /// This mirrors the existing runtime's `allocate_beskid` ownership shape: the descriptor is at
-/// offset zero and the allocation size already includes the 16-byte object header.  Returning a
-/// null pointer on an invalid/saturated request leaves trap and collection policy to higher
-/// runtime layers.
+/// offset zero and the allocation size already includes the 16-byte object header. The request
+/// size and alignment must exactly match its structurally valid descriptor. Returning a null
+/// pointer on an invalid or saturated request leaves trap and rooting policy to generated code.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_managed_object_allocate")]
 pub pointer AllocateObject(pointer request) {
-    word size = AllocationSize(request);
-    if size < 16 {
-        return NativePointer(0);
-    }
-    pointer object = SystemAllocate(size, AllocationAlignment(request));
-    if object == NativePointer(0) {
-        return object;
-    }
-    memory_set(object, 0, size);
-    pointer descriptor = AllocationDescriptor(request);
-    InitializeObjectHeader(object, descriptor);
-    return object;
-}
-
-/// Allocates a closure capture environment after validating its ABI-v5 descriptor.
-///
-/// The request is checked before dereferencing it. Both allocation fields must exactly match the
-/// registered descriptor; otherwise no allocation, header write, or rootable environment exists.
-[Export(Abi:"C", Symbol:"beskid_rt_v5_closure_environment_allocate")]
-pub pointer AllocateClosureEnvironment(pointer request) {
     if request == NativePointer(0) {
         return NativePointer(0);
     } else {
@@ -392,6 +373,12 @@ pub pointer AllocateClosureEnvironment(pointer request) {
             return NativePointer(0);
         }
     }
+}
+
+/// Allocates a closure capture environment through the canonical managed-object allocator.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_closure_environment_allocate")]
+pub pointer AllocateClosureEnvironment(pointer request) {
+    return AllocateObject(request);
 }
 
 /// Stores a capture in a validated closure environment's registered pointer-map slot.
