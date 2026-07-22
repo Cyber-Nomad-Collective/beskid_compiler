@@ -1403,6 +1403,114 @@ fn canonical_foundation_assert_trigger_failure_lowers_only_the_panic_service() {
 }
 
 #[test]
+fn canonical_foundation_output_panic_call_has_the_authorized_direct_never_abi() {
+    let (input, _isa, root) = canonical_foundation_output_fixture();
+    let write = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Write"))
+        .expect("canonical Core.Output Write source item");
+    let call = find_corelib_service_call(input.database(), write, "__panic_str")
+        .expect("canonical Core.Output panic call");
+
+    assert!(matches!(
+        call_lowering(input.database(), call).expect("Core.Output panic lowering"),
+        Some(beskid_queries::CallLowering::CorelibService(service))
+            if service.name == "__panic_str" && service.symbol == "panic_str"
+    ));
+    assert_eq!(
+        beskid_codegen::SyntaxNodeFacts::new(&input).direct_callee(call),
+        Some(DirectCallee::corelib_service("panic_str")),
+        "the embedded Core.Output call must lower through the exact panic import"
+    );
+    assert_eq!(
+        call_abi_signature(input.database(), call).expect("Core.Output panic ABI"),
+        Some(beskid_queries::ItemSignature {
+            parameters: Arc::from([beskid_queries::SemanticTypeId::STRING]),
+            result: beskid_queries::SemanticTypeId::NEVER,
+        })
+    );
+}
+
+#[test]
+fn user_copy_of_foundation_output_cannot_import_the_panic_service() {
+    let mut db = BeskidDatabase::default();
+    let workspace = tempfile::tempdir().expect("user lookalike workspace").keep();
+    let source_path = workspace.join("Core/Output/Output.bd");
+    std::fs::create_dir_all(
+        source_path
+            .parent()
+            .expect("user lookalike output parent"),
+    )
+    .expect("create user lookalike output parent");
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corelib/packages/foundation/src/Core/Output/Output.bd"),
+    )
+    .expect("read canonical bytes to copy");
+    std::fs::write(&source_path, &source).expect("write user lookalike source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source)
+        .expect("parse user lookalike Output source");
+    let entry = SourceUnitId::new(&db, source_path.clone());
+    let project = ProjectSession::new(
+        &db,
+        workspace.clone(),
+        source_path.clone(),
+        "user-output-copy".into(),
+        "untrusted".into(),
+    );
+    let generation = SyntaxGenerationId(97);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: workspace,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: "Core/Output/Output.bd".into(),
+            path: source_path,
+            source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let typed = build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+    )
+    .expect("user copy remains an ordinary syntax program");
+    assert!(
+        typed.corelib_service_capability.is_none(),
+        "an untrusted physical path must not attach compiler Corelib authority"
+    );
+    let root = AstNodeKey {
+        unit: entry,
+        generation,
+        node: AstNodeId(0),
+    };
+    let write = find_function_definitions(&db, root)
+        .into_iter()
+        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("Write"))
+        .expect("user copy Write source item");
+    assert!(
+        find_corelib_service_call(&db, write, "__panic_str").is_none(),
+        "identical user bytes at an untrusted physical path must not acquire the panic import"
+    );
+}
+
+#[test]
 fn canonical_foundation_assert_public_helpers_lower_through_syntax_isle() {
     let (input, isa, root) = canonical_foundation_assert_fixture();
     // Non-generic helpers and their direct callees. Contains stays out: it pulls Core.String.
@@ -3237,6 +3345,79 @@ fn canonical_foundation_assert_fixture() -> (
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe Foundation Assert input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    (input, isa, root)
+}
+
+fn canonical_foundation_output_fixture() -> (
+    CodegenInput<'static>,
+    Arc<dyn cranelift_codegen::isa::TargetIsa>,
+    AstNodeKey,
+) {
+    let mut db = Box::new(BeskidDatabase::default());
+    let source_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corelib/packages/foundation/src/Core/Output/Output.bd");
+    let source_path = std::fs::canonicalize(&source_path).expect("canonical Core.Output path");
+    let source = std::fs::read_to_string(&source_path).expect("embedded Foundation Output source");
+    let source_root = source_path
+        .ancestors()
+        .nth(3)
+        .expect("foundation source root")
+        .to_path_buf();
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source)
+        .expect("parse embedded Foundation Output source");
+    let entry = SourceUnitId::new(&*db, source_path.clone());
+    let project = ProjectSession::new(
+        &*db,
+        source_root.clone(),
+        source_path.clone(),
+        "beskid-foundation".into(),
+        "compiler-owned-foundation".into(),
+    );
+    let generation = SyntaxGenerationId(96);
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root,
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: "Core/Output/Output.bd".into(),
+            path: source_path,
+            source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+    )
+    .expect("compiler-owned Output source parses without broadening authority");
+    let root = AstNodeKey {
+        unit: entry,
+        generation,
+        node: AstNodeId(0),
+    };
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
+        .expect("generation-safe Foundation Output input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
