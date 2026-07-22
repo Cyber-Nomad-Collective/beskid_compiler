@@ -106,6 +106,19 @@ impl<'db> SyntaxNodeFacts<'db> {
             captures,
         })
     }
+
+    fn specialized_direct_parameter_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        (self.query(node_kind(self.db, key))
+            == Some(beskid_queries::IndexedNodeKind::PathExpression))
+        .then_some(())?;
+        let declaration = self.query(resolved_local(self.db, key))?.declaration;
+        let slot = self.query(local_slot(self.db, declaration))?;
+        self.item_specializations
+            .get(&slot.owner)?
+            .parameters
+            .get(usize::try_from(slot.index).ok()?)
+            .copied()
+    }
 }
 
 impl NodeFacts for SyntaxNodeFacts<'_> {
@@ -130,8 +143,23 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
-        self.query(operator_fact(self.db, key))
-            .map(map_operator_fact)
+        let operator = self.query(operator_fact(self.db, key))?;
+        let specialized_string_operands = matches!(
+            operator,
+            beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq
+        ) && self
+            .child(key, 0)
+            .and_then(|operand| self.specialized_direct_parameter_type(operand))
+            == Some(SemanticTypeId::STRING)
+            && self
+                .child(key, 1)
+                .and_then(|operand| self.specialized_direct_parameter_type(operand))
+                == Some(SemanticTypeId::STRING);
+        Some(match (operator, specialized_string_operands) {
+            (beskid_queries::OperatorFact::Eq, true) => OperatorFact::StringEq,
+            (beskid_queries::OperatorFact::NotEq, true) => OperatorFact::StringNotEq,
+            (operator, _) => map_operator_fact(operator),
+        })
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
@@ -272,7 +300,8 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn expression_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        self.scalar_semantic_type(key)
+        self.specialized_direct_parameter_type(key)
+            .or_else(|| self.scalar_semantic_type(key))
     }
 
     fn index_target_is_string(&self, key: AstNodeKey) -> bool {

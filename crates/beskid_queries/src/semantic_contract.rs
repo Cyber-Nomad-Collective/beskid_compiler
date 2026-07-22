@@ -3235,15 +3235,77 @@ fn abi_signature_from_syntax(
 ) -> Result<ItemSignature, SemanticError> {
     let parameters = parameters
         .iter()
-        .map(|parameter| abi_type_from_syntax(db, key, &parameter.node.ty.node))
+        .map(|parameter| item_abi_type_from_syntax(db, key, &parameter.node.ty.node))
         .collect::<Result<Vec<_>, _>>()?;
     let result = return_type.map_or(Ok(SemanticTypeId::UNIT), |return_type| {
-        abi_type_from_syntax(db, key, &return_type.node)
+        item_abi_type_from_syntax(db, key, &return_type.node)
     })?;
     Ok(ItemSignature {
         parameters: parameters.into(),
         result,
     })
+}
+
+/// Resolve one declaration ABI type without broadening ordinary source lookup.
+///
+/// A fully qualified generic nominal envelope can appear in a public signature without a
+/// matching `use` declaration (`Core.Results.Result<i64, Core.Syscall.SyscallError>`). Its outer
+/// declaration is nevertheless exact assembly authority, and ABI v5 passes every nominal
+/// aggregate by pointer regardless of its payload arguments. Keep this fallback item-local:
+/// general type resolution, completion, enum facts, and ABI-varying bare generics remain closed.
+fn item_abi_type_from_syntax(
+    db: &dyn Db,
+    key: AstNodeKey,
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> Result<SemanticTypeId, SemanticError> {
+    abi_type_from_syntax(db, key, syntax_type).or_else(|error| {
+        exact_assembled_generic_nominal_envelope(db, key, syntax_type).ok_or(error)
+    })
+}
+
+fn exact_assembled_generic_nominal_envelope(
+    db: &dyn Db,
+    key: AstNodeKey,
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> Option<SemanticTypeId> {
+    let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
+        return None;
+    };
+    let (nominal, module_path) = path.node.segments.split_last()?;
+    if nominal.node.type_args.is_empty()
+        || module_path.is_empty()
+        || module_path
+            .iter()
+            .any(|segment| !segment.node.type_args.is_empty())
+    {
+        return None;
+    }
+    let module_path = module_path
+        .iter()
+        .map(|segment| segment.node.name.node.name.clone())
+        .collect::<Vec<_>>();
+    let target = {
+        let registry = db
+            .syntax_dependency_registry()
+            .lock()
+            .expect("syntax dependency registry");
+        let [target] = registry
+            .modules
+            .get(&(key.generation, module_path))?
+            .as_slice()
+        else {
+            return None;
+        };
+        *target
+    };
+    unique_exported_type_in_unit(
+        db,
+        target,
+        key.generation,
+        &nominal.node.name.node.name,
+        nominal.node.type_args.len(),
+    )?;
+    Some(SemanticTypeId::POINTER)
 }
 
 #[salsa::tracked]

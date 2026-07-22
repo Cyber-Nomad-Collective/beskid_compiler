@@ -2063,6 +2063,93 @@ fn parsed_program_specializes_an_inferred_generic_call_without_hir() {
 }
 
 #[test]
+fn parsed_program_specializes_generic_string_not_equal_as_content_comparison() {
+    let (input, isa, root) = item_fixture_with_root(
+        "unit NotEqual<T>(T actual, T expected) { if actual != expected { return; } return; } unit Main() { NotEqual(\"left\", \"right\"); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: items[0],
+                symbol: "NotEqual".into(),
+            },
+            SyntaxModuleItem {
+                key: items[1],
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("generic string != lowers through its exact specialization");
+
+    let not_equal = artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("NotEqual#generic_"))
+        .expect("specialized NotEqual<string> function");
+    let clif = not_equal.function.display().to_string();
+    assert!(
+        clif.contains("iconst.i32 42"),
+        "NotEqual<string> must dispatch through str_eq tag 42: {clif}"
+    );
+    assert!(
+        !clif.contains("icmp eq v0, v1") && !clif.contains("icmp ne v0, v1"),
+        "NotEqual<string> must not compare raw string pointers: {clif}"
+    );
+}
+
+#[test]
+fn parsed_program_keeps_generic_nominal_pointer_equal_as_identity_comparison() {
+    let (input, isa, root) = item_fixture_with_root(
+        "type Box<T> { i64 value } unit Equal<T>(T actual, T expected) { if actual == expected { return; } return; } unit Main() { Box<i64> value = Box<i64> { value: 0_i64 }; Equal(value, value); }",
+    );
+    let db = input.database();
+    let items = find_function_definitions(db, root);
+    let equal = items
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Equal"))
+        .expect("generic Equal function");
+    let main = items
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main function");
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem {
+                key: equal,
+                symbol: "Equal".into(),
+            },
+            SyntaxModuleItem {
+                key: main,
+                symbol: "Main".into(),
+            },
+        ],
+    )
+    .expect("generic nominal pointer equality lowers through its exact specialization");
+
+    let equal = artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Equal#generic_"))
+        .expect("specialized Equal<Box<i64>> function");
+    let clif = equal.function.display().to_string();
+    assert!(
+        !clif.contains("iconst.i32 42"),
+        "nominal POINTER specialization must not dispatch through str_eq: {clif}"
+    );
+    assert!(
+        clif.contains("icmp eq v0, v1"),
+        "nominal POINTER specialization must retain identity equality: {clif}"
+    );
+}
+
+#[test]
 fn parsed_program_specializes_zero_argument_generic_factory_without_hir() {
     // Channel<T> Create<T>() collapses to POINTER at the ABI layer. Item ABI must still refuse a
     // fixed signature so module emission registers SpecializedItem, matching call-site imports.
@@ -2303,6 +2390,20 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
             .iter()
             .any(|function| function.name.starts_with("Equal#generic_")),
         "qualified generic calls must emit their exact specialization",
+    );
+    let equal = artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Equal#generic_"))
+        .expect("specialized imported Assert.Equal function");
+    let clif = equal.function.display().to_string();
+    assert!(
+        clif.contains("iconst.i32 42"),
+        "Assert.Equal<string> must dispatch through str_eq tag 42: {clif}"
+    );
+    assert!(
+        !clif.contains("icmp eq"),
+        "Assert.Equal<string> must not compare raw string pointers: {clif}"
     );
 }
 

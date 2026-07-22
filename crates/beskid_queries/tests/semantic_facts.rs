@@ -2021,6 +2021,142 @@ pub Hub<T> Create<T>() { return Hub<T> { value: 0_i64 }; }
 }
 
 #[test]
+fn imported_homonymous_module_generic_envelope_retains_pointer_abi_specialization() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/generic-envelope/project/src");
+    let main_path = root.join("Main.bd");
+    let results_path = root.join("Core/Results/Results.bd");
+    let error_path = root.join("Core/Syscall/SyscallError.bd");
+    let syscall_path = root.join("Core/Syscall/Syscall.bd");
+    let main_source = r#"
+use Core.Results;
+use Core.Syscall;
+unit Main() {
+    Core.Results.Result<i64, Core.Syscall.SyscallError> result = Core.Syscall.Write();
+    Results.IsOk(result);
+}
+"#;
+    let results_source = r#"
+pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+pub bool IsOk<TValue, TError>(Result<TValue, TError> value) { return true; }
+"#;
+    let error_source = "pub enum SyscallError { InvalidFd(i64 fd) }";
+    let syscall_source = r#"
+use Core.Syscall.SyscallError;
+pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
+    return Result::Error(SyscallError::InvalidFd(1_i64));
+}
+"#;
+    let sources = [
+        (&main_path, main_source),
+        (&results_path, results_source),
+        (&error_path, error_source),
+        (&syscall_path, syscall_source),
+    ];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: (*path).clone(),
+            source: (*source).to_string(),
+            program: expand_program(
+                parse_program(source).expect("parse"),
+                DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+            ),
+        })
+        .collect::<Vec<_>>();
+    let main_program = units[0].program.clone();
+    let results_program = units[1].program.clone();
+    let syscall_program = units[3].program.clone();
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let results_unit = SourceUnitId::new(&db, results_path);
+    let syscall_unit = SourceUnitId::new(&db, syscall_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(23);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let results_index = SyntaxIndex::from_program(&results_program, generation);
+    let syscall_index = SyntaxIndex::from_program(&syscall_program, generation);
+    let declaration = key(
+        results_unit,
+        generation,
+        &results_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+    let write = key(
+        syscall_unit,
+        generation,
+        &syscall_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+    let call = main_index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey {
+            unit: main_unit,
+            generation,
+            node,
+        })
+        .find(|call| {
+            generic_call_specialization(&db, *call)
+                .ok()
+                .flatten()
+                .is_some_and(|specialization| specialization.declaration == declaration)
+        })
+        .expect("Results.IsOk call");
+
+    assert_eq!(
+        item_abi_signature(&db, write).expect("Syscall.Write item ABI"),
+        Some(ItemSignature {
+            parameters: Arc::from([]),
+            result: SemanticTypeId::POINTER,
+        })
+    );
+    assert_eq!(
+        call_lowering(&db, call).expect("qualified Results.IsOk lowering"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        call_abi_signature(&db, call).expect("generic Results.IsOk call ABI"),
+        Some(ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER]),
+            result: SemanticTypeId::BOOL,
+        })
+    );
+    assert_eq!(
+        generic_call_specialization(&db, call).expect("generic Results.IsOk specialization"),
+        Some(beskid_queries::GenericCallSpecialization {
+            declaration,
+            signature: ItemSignature {
+                parameters: Arc::from([SemanticTypeId::POINTER]),
+                result: SemanticTypeId::BOOL,
+            },
+        })
+    );
+}
+
+#[test]
 fn generic_parameter_type_argument_call_remains_direct_inside_generic_body() {
     let source = r#"
 type Channel<T> { i64 handle }
