@@ -9,9 +9,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, canonical_source_hash};
 use beskid_abi::runtime_kit::{BuildProfile, RuntimeKitBuildRequest, build_runtime_kit};
 use beskid_abi::runtime_source::canonical_runtime_sources;
-use beskid_codegen::{CodegenArtifact, LoweredFunction};
+use beskid_codegen::{CodegenArtifact, ExternImport, LoweredFunction};
 use beskid_engine::{BeskidJitModule, Engine, JitRuntimeKit};
-use cranelift_codegen::ir::{ExternalName, Function, Signature};
+use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, Signature, types};
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -236,6 +237,56 @@ fn unapproved_runtime_reference_is_rejected_before_process_symbol_fallback() {
         .compile(&artifact)
         .expect_err("unapproved process symbol must be rejected before dlsym fallback");
     assert!(error.to_string().contains("not approved"));
+}
+
+#[test]
+fn corelib_syscall_write_links_from_the_process_builtin_registry() {
+    let Some(target) = host_target() else {
+        return;
+    };
+    let temp = TestDir::new();
+    install_kit(temp.path(), &target, true, false, canonical_hash());
+
+    let mut function = Function::new();
+    let mut syscall_signature = Signature::new(cranelift_codegen::isa::CallConv::SystemV);
+    syscall_signature.params.push(AbiParam::new(types::I64));
+    syscall_signature.params.push(AbiParam::new(types::I64));
+    syscall_signature.returns.push(AbiParam::new(types::I64));
+    let signature = function.import_signature(syscall_signature);
+    let syscall = function.import_function(cranelift_codegen::ir::ExtFuncData {
+        name: ExternalName::testcase("syscall_write".as_bytes()),
+        signature,
+        colocated: false,
+        patchable: false,
+    });
+    let mut builder_context = FunctionBuilderContext::new();
+    let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+    let block = builder.create_block();
+    builder.switch_to_block(block);
+    let fd = builder.ins().iconst(types::I64, 1);
+    let value = builder.ins().iconst(types::I64, 0);
+    builder.ins().call(syscall, &[fd, value]);
+    builder.ins().return_(&[]);
+    builder.seal_all_blocks();
+    builder.finalize();
+
+    let artifact = CodegenArtifact {
+        functions: vec![LoweredFunction {
+            name: "Main".into(),
+            function,
+        }],
+        extern_imports: vec![ExternImport {
+            symbol: "syscall_write".into(),
+            abi: Some("C".into()),
+            library: None,
+        }],
+        ..Default::default()
+    };
+    let mut jit =
+        BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[])
+            .expect("exact ABI-v5 runtime kit loads before process builtin registration");
+    jit.compile(&artifact)
+        .expect("Corelib syscall_write must link through the process builtin registry");
 }
 
 #[test]
