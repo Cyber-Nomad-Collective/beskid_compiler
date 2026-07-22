@@ -1417,12 +1417,11 @@ fn node_type_tracked(
             return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
-            let lowering = match call_lowering(db, key) {
+            match call_lowering(db, key) {
                 Ok(Some(CallLowering::Direct(_))) => (),
                 Ok(Some(_) | None) => return Some(Err(SemanticError::unavailable("node_type"))),
                 Err(error) => return Some(Err(error)),
             };
-            let _ = lowering;
             return Some(
                 call_abi_signature(db, key)
                     .and_then(|signature| {
