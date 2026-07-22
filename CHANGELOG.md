@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Make the native ABI-v5 runtime-kit matrix script enter the compiler workspace before
+  running Cargo, so the Windows superproject workflow no longer fails before kit staging
+  with a missing root-level `Cargo.toml` (CYB-112 follow-up).
 - Register the Corelib syscall read/write process symbols with the exact-kit JIT builder, so
   `Core.Output.WriteLine` links without treating process symbols as ABI-v5 runtime-kit exports.
 - Exclude event declarations from ABI-v5 aggregate value layouts, preserving exact value-field

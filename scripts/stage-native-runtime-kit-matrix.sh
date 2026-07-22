@@ -7,6 +7,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${root}"
 target_root="${CARGO_TARGET_DIR:-${root}/target}"
 prefix="${BESKID_RUNTIME_PREFIX:-${target_root}/native-runtime-kit-matrix}"
 runtime_root="${prefix}/lib/beskid-runtime/abi-5"
