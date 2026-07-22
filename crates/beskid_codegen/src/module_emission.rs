@@ -25,6 +25,7 @@ use crate::closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
     ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT, ClosureStaticPlan, emit_closure_static_data,
 };
+use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticPlan, emit_aggregate_static_data};
 use crate::lowering::descriptor::TypeDescriptorData;
 use crate::lowering::{CodegenArtifact, ExternImport};
 use crate::{
@@ -389,14 +390,26 @@ fn lower_resolved_syntax_program(
             }
         }
     }
+    let aggregate_static_plans = collect_aggregate_static_plans(input, items);
+    if !aggregate_static_plans.is_empty() && !extern_imports.iter().any(|existing| existing.symbol == ABI_V5_MANAGED_OBJECT_ALLOCATE) {
+        extern_imports.push(ExternImport { symbol: ABI_V5_MANAGED_OBJECT_ALLOCATE.to_owned(), abi: Some("C".into()), library: None });
+    }
 
     Ok(CodegenArtifact {
         functions,
         string_literals: context.string_literals,
         extern_imports,
         closure_static_plans,
+        aggregate_static_plans,
         ..CodegenArtifact::default()
     })
+}
+
+fn collect_aggregate_static_plans(input: &CodegenInput<'_>, items: &[ResolvedSyntaxModuleItem]) -> Vec<AggregateStaticPlan> {
+    let mut visited = HashSet::new();
+    let mut nodes = Vec::new();
+    for item in items { collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes); }
+    nodes.into_iter().filter_map(|key| input.aggregate_static_plan(key)).collect()
 }
 
 /// Resolve source-proven zero-argument entries without ever re-entering HIR lowering.
@@ -1160,6 +1173,9 @@ pub fn emit_syntax_program<M: Module>(
     for plan in &artifact.closure_static_plans {
         emit_closure_static_data(module, plan)?;
     }
+    for plan in &artifact.aggregate_static_plans {
+        emit_aggregate_static_data(module, plan)?;
+    }
     let mut by_callee = HashMap::with_capacity(items.len());
     let mut by_symbol = HashMap::with_capacity(artifact.functions.len());
     for lowered in &artifact.functions {
@@ -1198,6 +1214,9 @@ pub fn emit_closure_static_plans<M: Module>(
 ) -> ModuleResult<()> {
     for plan in &artifact.closure_static_plans {
         emit_closure_static_data(module, plan)?;
+    }
+    for plan in &artifact.aggregate_static_plans {
+        emit_aggregate_static_data(module, plan)?;
     }
     Ok(())
 }

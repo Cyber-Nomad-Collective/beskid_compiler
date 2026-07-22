@@ -482,6 +482,12 @@ pub struct StructLayout {
     fields: Vec<FieldLayout>,
 }
 
+/// Source-authorized static request used to allocate one aggregate literal through ABI-v5.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ManagedStructAllocation {
+    pub allocation_request_symbol: Arc<str>,
+}
+
 impl StructLayout {
     pub fn new(size: u32, align_shift: u8, fields: Vec<FieldLayout>) -> Self {
         Self {
@@ -731,6 +737,9 @@ pub trait NodeFacts {
         None
     }
     fn struct_layout(&self, _key: AstNodeKey) -> Option<StructLayout> {
+        None
+    }
+    fn managed_struct_allocation(&self, _key: AstNodeKey) -> Option<ManagedStructAllocation> {
         None
     }
     fn field_index(&self, _key: AstNodeKey) -> Option<u32> {
@@ -2256,12 +2265,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             });
             return None;
         }
-        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            layout.size,
-            layout.align_shift,
-        ));
-        for (field_key, field_layout) in fields.into_iter().zip(layout.fields) {
+        let allocation = self.facts.managed_struct_allocation(key)?;
+        let mut values = Vec::with_capacity(fields.len());
+        for (field_key, field_layout) in fields.into_iter().zip(&layout.fields) {
             let value = generated::constructor_lower_expression(self, field_key)?;
             if self.builder.func.dfg.value_type(value) != field_layout.value_type {
                 self.pending_error = Some(LoweringError {
@@ -2270,19 +2276,25 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 });
                 return None;
             }
-            self.builder
-                .ins()
-                .stack_store(value, slot, i32::try_from(field_layout.offset).ok()?);
+            values.push((value, *field_layout));
         }
         let pointer_type = self.facts.scalar_type(key)?;
         if !pointer_type.is_int() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidStructLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
             return None;
         }
-        Some(self.builder.ins().stack_addr(pointer_type, slot, 0))
+        let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer_type)?;
+        let allocate = self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer_type], Some(pointer_type))?;
+        let allocation_call = self.builder.ins().call(allocate, &[request]);
+        let object = self.builder.inst_results(allocation_call).first().copied()?;
+        self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
+        for (value, field_layout) in values {
+            let address = self.builder.ins().iadd_imm(object, i64::from(field_layout.offset));
+            self.builder
+                .ins()
+                .store(MemFlags::new(), value, address, 0);
+        }
+        Some(object)
     }
 
     fn emit_field_read(&mut self, key: AstNodeKey) -> Option<Value> {

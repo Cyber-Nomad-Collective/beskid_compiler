@@ -8,7 +8,7 @@ use beskid_isle::{
     EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, InlineCaptureField,
     InlineClosureEnvironment, InlineLambdaCall, ItemStatementEmission, LiteralKind, LocalSlotId,
     MatchArmBindingFact, MatchArmFact, NodeFacts, NodeKind, OperatorFact, ParameterSlot, RuntimeIntrinsicKind,
-    Signature, StringInterner, StructLayout,
+    Signature, StringInterner, StructLayout, ManagedStructAllocation,
 };
 use beskid_queries::{
     AggregateFieldShape, CallLowering, Db, ItemSignature, LiteralFact, SemanticTypeId, abi_type,
@@ -504,6 +504,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         })
     }
 
+    fn managed_struct_allocation(&self, key: AstNodeKey) -> Option<ManagedStructAllocation> {
+        Some(ManagedStructAllocation {
+            allocation_request_symbol: self.input.aggregate_static_plan(key)?.allocation_request_symbol.into(),
+        })
+    }
+
     fn field_index(&self, key: AstNodeKey) -> Option<u32> {
         self.query(aggregate_field_access(self.db, key))
             .map(|access| access.index)
@@ -607,8 +613,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
 impl SyntaxNodeFacts<'_> {
     fn struct_layout_for_literal(&self, key: AstNodeKey) -> Option<StructLayout> {
-        let declaration = self.query(aggregate_literal_declaration(self.db, key))?;
-        self.struct_layout_for_declaration(declaration)
+        let plan = self.input.aggregate_static_plan(key)?;
+        let fields = plan.fields.iter().map(|field| {
+            Some(FieldLayout::new(
+                map_signature_type(self.isa?, field.abi_type)?,
+                u32::try_from(field.field_offset).ok()?,
+            ))
+        }).collect::<Option<Vec<_>>>()?;
+        Some(StructLayout::new(
+            u32::try_from(plan.object_size).ok()?,
+            plan.object_alignment.ilog2() as u8,
+            fields,
+        ))
     }
 
     fn struct_layout_for_declaration(&self, declaration: AstNodeKey) -> Option<StructLayout> {

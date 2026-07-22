@@ -550,9 +550,18 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
+    assert!(input.aggregate_static_plan(literal).is_some(), "aggregate static plan");
     let function = emit_isle_expression(&input, isa.as_ref(), literal, isa.pointer_type())
         .expect("aggregate literal lowers through syntax facts");
-    assert!(function.display().to_string().contains("stack_store"));
+    let clif = function.display().to_string();
+    assert!(
+        clif.contains("beskid_rt_v5_managed_object_allocate"),
+        "aggregate literals must allocate through the canonical managed-object ABI: {clif}"
+    );
+    assert!(
+        !clif.contains("stack_store"),
+        "aggregate literals must not return escaped stack storage: {clif}"
+    );
 }
 
 #[test]

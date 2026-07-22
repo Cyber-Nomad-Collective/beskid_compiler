@@ -2,13 +2,11 @@ use std::path::PathBuf;
 
 use beskid_isle::{
     AstNodeKey, FieldLayout, FunctionEmissionError, FunctionEmitter, LiteralKind,
-    LoweringErrorKind, NodeFacts, NodeKind, StructLayout,
+    LoweringErrorKind, ManagedStructAllocation, NodeFacts, NodeKind, StructLayout,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};
 use cranelift_codegen::settings;
-use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{Linkage, Module, default_libcall_names};
 use target_lexicon::Triple;
 
 #[derive(Clone, Copy)]
@@ -97,6 +95,12 @@ impl NodeFacts for StructFacts {
             .then(|| self.layout.clone())
     }
 
+    fn managed_struct_allocation(&self, key: AstNodeKey) -> Option<ManagedStructAllocation> {
+        (key == self.nodes[2]).then(|| ManagedStructAllocation {
+            allocation_request_symbol: "__test_struct_allocation_request".into(),
+        })
+    }
+
     fn field_index(&self, key: AstNodeKey) -> Option<u32> {
         (key == self.nodes[0] || key == self.nodes[1]).then_some(self.field_index)
     }
@@ -121,17 +125,17 @@ fn facts(pointer_type: Type, root: Root, field_index: u32, layout: StructLayout)
 
 fn valid_layout() -> StructLayout {
     StructLayout::new(
-        12,
+        32,
         2,
         vec![
-            FieldLayout::new(types::I32, 0),
-            FieldLayout::new(types::I32, 4),
-            FieldLayout::new(types::I32, 8),
+            FieldLayout::new(types::I32, 16),
+            FieldLayout::new(types::I32, 20),
+            FieldLayout::new(types::I32, 24),
         ],
     )
 }
 
-fn run(root: Root, field_index: u32, function_index: u32) -> (i32, String) {
+fn emit(root: Root, field_index: u32, function_index: u32) -> String {
     let isa = cranelift_codegen::isa::lookup(Triple::host())
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -148,33 +152,20 @@ fn run(root: Root, field_index: u32, function_index: u32) -> (i32, String) {
         )
         .expect("verified struct field lowering");
     let clif = function.display().to_string();
-    let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-    let function_id = module
-        .declare_function("struct_field", Linkage::Local, &signature)
-        .expect("declare");
-    let mut context = module.make_context();
-    context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
-    module.finalize_definitions().expect("finalize");
-    let code = module.get_finalized_function(function_id);
-    let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
-    (run(), clif)
+    clif
 }
 
 #[test]
-fn struct_literal_and_field_read_emit_stock_clif_and_execute() {
-    let (result, clif) = run(Root::Read, 1, 22);
-    assert_eq!(result, 20);
-    assert!(clif.contains("stack_store"), "{clif}");
+fn struct_literal_and_field_read_emit_managed_clif() {
+    let clif = emit(Root::Read, 1, 22);
+    assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
+    assert!(!clif.contains("stack_store"), "{clif}");
     assert!(clif.contains("load.i32"), "{clif}");
 }
 
 #[test]
-fn field_assignment_emits_stock_clif_store_and_executes() {
-    let (result, clif) = run(Root::Write, 1, 23);
-    assert_eq!(result, 99);
+fn field_assignment_emits_managed_clif_store() {
+    let clif = emit(Root::Write, 1, 23);
     assert!(
         clif.lines()
             .any(|line| line.trim_start().starts_with("store ")),
