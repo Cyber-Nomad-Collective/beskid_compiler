@@ -3620,12 +3620,72 @@ fn enum_layout_tracked(
                 db, program, index, key, definition, None,
             ));
         }
-        node.of::<beskid_analysis::syntax::EnumConstructorExpression>()
-            .map(|constructor| {
-                instantiated_enum_layout_for_path(db, key, &constructor.path.node.type_path.node)
-            })
+        node.of::<beskid_analysis::syntax::EnumConstructorExpression>().map(|constructor| {
+            let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
+                .unwrap_or(&constructor.path.node.type_path.node);
+            instantiated_enum_layout_for_path(db, key, type_path)
+        })
     })?
     .transpose()
+}
+
+/// Return an explicitly applied enum type from the immediate typed context of a genericless
+/// constructor. This intentionally declines all inferred, nested, and control-flow contexts.
+fn contextual_enum_constructor_type_path<'a>(
+    program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    constructor: &beskid_analysis::syntax::EnumConstructorExpression,
+) -> Option<&'a beskid_analysis::syntax::Path> {
+    let constructor_path = &constructor.path.node.type_path.node;
+    let terminal = constructor_path.segments.last()?;
+    if !terminal.node.type_args.is_empty() {
+        return None;
+    }
+    let constructor_name = terminal.node.name.node.name.as_str();
+    let mut current = parent_node(index, key.node)?;
+    while matches!(
+        index.kind(current)?,
+        beskid_analysis::syntax_query::NodeKind::Expression
+            | beskid_analysis::syntax_query::NodeKind::Statement
+    ) {
+        current = parent_node(index, current)?;
+    }
+
+    let expected = match index.kind(current)? {
+        beskid_analysis::syntax_query::NodeKind::LetStatement => index
+            .node_at(program, current)?
+            .of::<beskid_analysis::syntax::LetStatement>()?
+            .type_annotation
+            .as_ref()
+            .map(|annotation| &annotation.node),
+        beskid_analysis::syntax_query::NodeKind::ReturnStatement => {
+            let mut item = parent_node(index, current)?;
+            while !matches!(
+                index.kind(item)?,
+                beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                    | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+            ) {
+                item = parent_node(index, item)?;
+            }
+            let item = index.node_at(program, item)?;
+            item.of::<beskid_analysis::syntax::FunctionDefinition>()
+                .and_then(|function| function.return_type.as_ref().map(|annotation| &annotation.node))
+                .or_else(|| {
+                    item.of::<beskid_analysis::syntax::MethodDefinition>()
+                        .and_then(|method| method.return_type.as_ref().map(|annotation| &annotation.node))
+                })
+        }
+        _ => None,
+    }?;
+    let beskid_analysis::syntax::Type::Complex(path) = expected else {
+        return None;
+    };
+    let expected_path = &path.node;
+    let expected_terminal = expected_path.segments.last()?;
+    (expected_terminal.node.name.node.name == constructor_name
+        && !expected_terminal.node.type_args.is_empty())
+        .then_some(expected_path)
 }
 
 fn instantiated_enum_layout_for_path(
@@ -3788,7 +3848,9 @@ fn enum_constructor_tracked(
 ) -> SemanticQueryResult<EnumConstructorFact> {
     with_node(db, syntax, key, |program, index, node| {
         let constructor = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
-        let declaration = resolve_type_declaration(db, key, &constructor.path.node.type_path.node)
+        let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
+            .unwrap_or(&constructor.path.node.type_path.node);
+        let declaration = resolve_type_declaration(db, key, type_path)
             .ok_or_else(|| SemanticError::unavailable("enum_constructor"));
         let declaration = match declaration {
             Ok(declaration) => declaration,

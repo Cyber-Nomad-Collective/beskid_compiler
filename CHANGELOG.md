@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module and one public exported nominal type, allowing `Descriptor::Standard` to
   retain syntax-ISLE facts while unresolved or ambiguous paths remain unavailable
   (CYB-144).
+- Infer a genericless enum constructor application only from an immediate explicit
+  typed `let` or function/method return context; nested or uncontextualized
+  constructors remain unavailable, allowing canonical `Result::Error` facades to
+  retain their concrete layout facts without weakening type resolution (CYB-148).
 - Authorize the exact canonical Foundation `Core.Output` corpus to import the
   `__panic_str` Corelib service, while keeping byte-identical user copies outside the
   trusted capability boundary (CYB-141).

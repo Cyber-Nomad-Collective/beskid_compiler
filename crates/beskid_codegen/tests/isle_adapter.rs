@@ -31,7 +31,7 @@ use beskid_queries::{
     SyntaxGenerationId, aggregate_field_access, build_canonical_corelib_syscall_typed_program,
     build_canonical_runtime_typed_program, build_typed_program,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
-    closure_environment, enum_layout, enum_match, format_ast_node_site, item_body, item_name, literal_fact,
+    closure_environment, enum_constructor, enum_layout, enum_match, format_ast_node_site, item_body, item_name, literal_fact,
     mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes,
 };
 use cranelift_codegen::ir::{UserFuncName, types};
@@ -724,6 +724,66 @@ fn parsed_generic_enum_match_uses_explicit_scrutinee_layout_without_hir() {
     let clif = function.display().to_string();
     assert!(clif.contains("load.i32"), "{clif}");
     assert!(clif.contains("iconst.i64 1"), "{clif}");
+}
+
+#[test]
+fn generic_enum_constructor_without_context_remains_unavailable() {
+    let (input, _isa, root) = item_fixture_with_root(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } enum SyscallError { InvalidFd(i64 fd) } unit Main() { Result::Error(SyscallError::InvalidFd(1_i64)); return; }",
+    );
+    let constructor = find_nodes_of_kind(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
+    )
+    .into_iter()
+    .find(|key| enum_constructor(input.database(), *key).is_err())
+    .expect("genericless Result::Error constructor");
+    let error = enum_constructor(input.database(), constructor)
+        .expect_err("uncontextualized generic enum constructor must remain unavailable");
+    assert!(error.is_unavailable(), "{error:?}");
+}
+
+#[test]
+fn generic_enum_constructor_uses_its_explicit_typed_let_context() {
+    let (input, _isa, root) = item_fixture_with_root(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } unit Main() { Result<i64, i64> result = Result::Error(7_i64); return; }",
+    );
+    let constructor = find_nodes_of_kind(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
+    )
+    .into_iter()
+    .next()
+    .expect("Result::Error constructor");
+    assert!(
+        enum_constructor(input.database(), constructor)
+            .expect("typed-let constructor query")
+            .is_some(),
+        "explicit typed-let context must supply the generic Result arguments"
+    );
+}
+
+#[test]
+fn generic_enum_constructor_uses_its_declared_return_context() {
+    let (input, _isa, root) = item_fixture_with_root(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<i64, i64> Main() { return Result::Error(7_i64); }",
+    );
+    let constructor = find_nodes_of_kind(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
+    )
+    .into_iter()
+    .next()
+    .expect("Result::Error constructor");
+    assert!(
+        enum_constructor(input.database(), constructor)
+            .expect("declared-return constructor query")
+            .is_some(),
+        "declared return context must supply the generic Result arguments"
+    );
 }
 
 #[test]

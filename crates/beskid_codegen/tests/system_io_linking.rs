@@ -13,7 +13,7 @@ use beskid_codegen::lowering::lower_program_with_assembly_for_entrypoint;
 use beskid_queries::{
     AstNodeId, AstNodeKey, CallLowering, SourceUnitId, SyntaxGenerationId,
     build_typed_program_with_corelib_syscall_services, call_lowering, child_nodes,
-    compile_front_end_from_resolved_input, node_kind, node_span,
+    compile_front_end_from_resolved_input, enum_constructor, item_name, node_kind, node_span,
     project_session_for_syntax_assembly, resolved_item, with_db,
 };
 
@@ -212,6 +212,59 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
             matches!(lowering, Ok(Some(CallLowering::Direct(_)))),
             "Core.Syscall.WriteWith must resolve to its assembled public function declaration; \\
              call_lowering={lowering:?}; resolved_item(callee_path)={path_resolution:?}"
+        );
+
+        let syscall_root = AstNodeKey {
+            unit: SourceUnitId::new(
+                db,
+                assembly
+                    .units()
+                    .iter()
+                    .find(|unit| unit.path.ends_with("Core/Syscall/Syscall.bd"))
+                    .expect("canonical Foundation Syscall unit")
+                    .path
+                    .clone(),
+            ),
+            generation,
+            node: AstNodeId(0),
+        };
+        let mut pending = vec![syscall_root];
+        let mut syscall_write = None;
+        while let Some(key) = pending.pop() {
+            if node_kind(db, key).expect("Syscall node kind")
+                == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
+                && item_name(db, key).expect("Syscall function name").as_deref() == Some("Write")
+            {
+                syscall_write = Some(key);
+                break;
+            }
+            if let Some(children) = child_nodes(db, key).expect("Syscall child nodes") {
+                pending.extend(children.iter().copied());
+            }
+        }
+        let syscall_write = syscall_write.expect("Core.Syscall.Write function");
+        let mut pending = vec![syscall_write];
+        let mut invalid_fd = None;
+        while let Some(key) = pending.pop() {
+            let span = node_span(db, key).expect("Syscall node span");
+            if node_kind(db, key).expect("Syscall node kind")
+                == Some(beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+                && span.is_some_and(|span| span.line_col_start == (71, 16))
+            {
+                invalid_fd = Some(key);
+                break;
+            }
+            if let Some(children) = child_nodes(db, key).expect("Syscall child nodes") {
+                pending.extend(children.iter().copied());
+            }
+        }
+        let invalid_fd = invalid_fd.expect("Result::Error(SyscallError::InvalidFd(fd))");
+        let constructor = enum_constructor(db, invalid_fd);
+        let layout = beskid_queries::enum_layout(db, invalid_fd);
+        assert!(
+            constructor.as_ref().ok().and_then(|fact| fact.as_ref()).is_some(),
+            "Core.Syscall.Write must expose the Result::Error constructor fact for its fd guard; \
+             constructor={constructor:?}; layout={layout:?}"
         );
 
     });
