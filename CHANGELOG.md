@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Declare the `Core.Syscall` and `Core.Results` module imports used by canonical
+  `Core.Error`, preserving direct semantic facts for its qualified `WriteWith`
+  call without broadening module lookup (CYB-161).
 - Resolve nested qualified generic type arguments before their enclosing type paths,
   materialize concrete generic enum layouts from constructor use sites, and route
   syntax-lowered string literals through the canonical ABI-v5 `str_new` dispatch.

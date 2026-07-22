@@ -2365,6 +2365,110 @@ pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
 }
 
 #[test]
+fn canonical_core_error_qualified_write_has_a_direct_semantic_fact() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/core-error-qualified-call/project/src");
+    let error_path = root.join("Core/Error/Error.bd");
+    let results_path = root.join("Core/Results/Results.bd");
+    let syscall_path = root.join("Core/Syscall/Syscall.bd");
+    let syscall_error_path = root.join("Core/Syscall/SyscallError.bd");
+    let descriptor_path = root.join("Core/Syscall/Descriptor.bd");
+    let standard_stream_path = root.join("Core/Syscall/StandardStream.bd");
+    let write_request_path = root.join("Core/Syscall/WriteRequest.bd");
+    let error_source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corelib/packages/foundation/src/Core/Error/Error.bd");
+    let error_source = std::fs::read_to_string(&error_source_path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", error_source_path.display()));
+    let sources = [
+        (error_path.clone(), error_source),
+        (
+            results_path.clone(),
+            "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }".into(),
+        ),
+        (
+            syscall_path.clone(),
+            "pub Core.Results.Result<i64, Core.Syscall.SyscallError> WriteWith(Core.Syscall.WriteRequest request) { return Result::Ok(0_i64); }".into(),
+        ),
+        (
+            syscall_error_path,
+            "pub enum SyscallError { IoFailure(i64 code) }".into(),
+        ),
+        (
+            descriptor_path,
+            "pub enum Descriptor { Standard(Core.Syscall.StandardStream stream), Raw(i64 fd) }".into(),
+        ),
+        (
+            standard_stream_path,
+            "pub enum StandardStream { Stdin, Stdout, Stderr }".into(),
+        ),
+        (
+            write_request_path,
+            "pub type WriteRequest { Core.Syscall.Descriptor descriptor, string data }".into(),
+        ),
+    ];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: path.clone(),
+            source: source.clone(),
+            program: expand_program(
+                parse_program(source).expect("parse Core.Error regression source"),
+                DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+            ),
+        })
+        .collect::<Vec<_>>();
+    let error_program = units[0].program.clone();
+    let syscall_program = units[2].program.clone();
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let error_unit = SourceUnitId::new(&db, error_path);
+    let syscall_unit = SourceUnitId::new(&db, syscall_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        error_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(28);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let error_index = SyntaxIndex::from_program(&error_program, generation);
+    let syscall_index = SyntaxIndex::from_program(&syscall_program, generation);
+    let call = key(
+        error_unit,
+        generation,
+        &error_index,
+        NodeKind::CallExpression,
+        0,
+    );
+    let declaration = key(
+        syscall_unit,
+        generation,
+        &syscall_index,
+        NodeKind::FunctionDefinition,
+        0,
+    );
+
+    assert_eq!(
+        call_lowering(&db, call).expect("Core.Error WriteWith call lowering"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+}
+
+#[test]
 fn generic_parameter_type_argument_call_remains_direct_inside_generic_body() {
     let source = r#"
 type Channel<T> { i64 handle }
