@@ -1385,6 +1385,39 @@ fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
 }
 
 #[test]
+fn parsed_mutable_string_local_exposes_local_write_syntax_facts() {
+    let source = "string Main(bool enable) { mut string tail = \"h\"; if !enable { tail = \"l\"; } return tail; }";
+    let (input, _isa, root) = item_fixture_with_root(source);
+    let db = input.database();
+    let assignment = find_node(db, root, beskid_queries::IndexedNodeKind::AssignExpression)
+        .expect("parsed mutable string assignment");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+
+    let target = facts.child(assignment, 0).expect("assignment target fact");
+    let declaration = beskid_queries::resolved_local(db, target)
+        .expect("assignment target resolution")
+        .expect("assignment target local")
+        .declaration;
+    let slot = beskid_queries::local_slot(db, declaration)
+        .expect("assignment target slot")
+        .expect("assignment target slot fact");
+    assert_eq!(
+        mutable_local_assignment(db, assignment).expect("mutable assignment query"),
+        Some(beskid_queries::MutableLocalAssignment {
+            declaration,
+            slot,
+        })
+    );
+    assert_eq!(
+        facts.mutable_local_assignment_slot(assignment),
+        Some(beskid_isle::LocalSlotId {
+            owner_node: slot.owner.node.0,
+            index: slot.index,
+        })
+    );
+}
+
+#[test]
 fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
     let (input, isa, item) = item_fixture("pointer Echo(pointer value) { return value; }");
 
