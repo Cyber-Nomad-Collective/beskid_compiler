@@ -1779,7 +1779,7 @@ fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed = build_typed_program(&mut *db, project, generation, assembly)
+    let typed = build_typed_program(&mut db, project, generation, assembly)
         .expect("typed syntax program");
     let root = AstNodeKey {
         unit: entry,
@@ -1861,7 +1861,7 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed = build_typed_program(&mut *db, project, generation, assembly)
+    let typed = build_typed_program(&mut db, project, generation, assembly)
         .expect("typed syntax program");
     let root = AstNodeKey {
         unit: entry,
@@ -3137,7 +3137,7 @@ fn parsed_syntax_string_literal_materializes_runtime_string_abi() {
         .lines()
         .find_map(|line| {
             line.contains("%interop_dispatch_ptr")
-                .then(|| line.trim().split_whitespace().next())?
+                .then(|| line.split_whitespace().next())?
         })
         .expect("pointer dispatch function reference");
     let dispatch_result = clif
