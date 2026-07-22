@@ -707,6 +707,12 @@ impl SyntaxNodeFacts<'_> {
                         .and_then(|signature| signature.parameters.get(parameters.len()))
                         .copied();
                     let value_type = specialization
+                        .or_else(|| {
+                            self.query(item_abi_signature(self.db, key))
+                                .and_then(|signature| {
+                                    signature.parameters.get(parameters.len()).copied()
+                                })
+                        })
                         .or_else(|| self.scalar_semantic_type(identifier))
                         .and_then(|semantic| {
                             if matches!(

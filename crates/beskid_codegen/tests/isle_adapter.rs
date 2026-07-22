@@ -786,6 +786,67 @@ fn generic_enum_constructor_uses_its_declared_return_context() {
     );
 }
 
+fn assert_enum_match_shape_remains_unavailable(source: &str) {
+    let (input, _isa, root) = item_fixture_with_root(source);
+    let expression = find_node(
+        input.database(),
+        root,
+        beskid_queries::IndexedNodeKind::MatchExpression,
+    )
+    .expect("match expression");
+    let error = enum_match(input.database(), expression)
+        .expect_err("unsupported enum-match shape must remain unavailable");
+    assert!(error.is_unavailable(), "{error:?}");
+}
+
+#[test]
+fn nominal_enum_parameter_materializes_as_a_pointer_local_slot() {
+    let (input, isa, item) = item_fixture(
+        "enum StandardStream { Stdin, Stdout, Stderr } unit Main(StandardStream stream) { return; }",
+    );
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a nominal parameter must materialize as an emitter local");
+
+    assert_eq!(
+        function.signature.params[0].value_type,
+        isa.pointer_type(),
+        "a nominal enum value is represented by the target pointer type while the emitter materializes its local slot"
+    );
+}
+
+#[test]
+fn unspecialized_generic_parameter_remains_unavailable_for_local_materialization() {
+    let (input, _isa, item) = item_fixture("unit Identity<T>(T value) { return; }");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+
+    assert_eq!(
+        facts.function_parameters(item),
+        None,
+        "a generic parameter without an item specialization must not invent a local ABI type"
+    );
+}
+
+#[test]
+fn enum_match_literal_payload_pattern_remains_unavailable() {
+    assert_enum_match_shape_remains_unavailable(
+        "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(7_i64) => 1_i64, Result::Error(_) => 0_i64, }; }",
+    );
+}
+
+#[test]
+fn enum_match_nested_payload_pattern_remains_unavailable() {
+    assert_enum_match_shape_remains_unavailable(
+        "enum Inner { Value(i64 value) } enum Result { Ok(Inner value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(Inner::Value(_)) => 1_i64, Result::Error(_) => 0_i64, }; }",
+    );
+}
+
+#[test]
+fn enum_match_guarded_binding_pattern_remains_unavailable() {
+    assert_enum_match_shape_remains_unavailable(
+        "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(value) when value > 0_i64 => 1_i64, Result::Error(_) => 0_i64, }; }",
+    );
+}
+
 #[test]
 fn parsed_generic_enum_match_statement_lowers_empty_unit_blocks_without_hir() {
     let (input, isa, item) = item_fixture(

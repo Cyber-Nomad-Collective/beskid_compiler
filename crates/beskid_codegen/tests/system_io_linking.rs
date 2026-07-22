@@ -13,7 +13,7 @@ use beskid_codegen::lowering::lower_program_with_assembly_for_entrypoint;
 use beskid_queries::{
     AstNodeId, AstNodeKey, CallLowering, SourceUnitId, SyntaxGenerationId,
     build_typed_program_with_corelib_syscall_services, call_lowering, child_nodes,
-    compile_front_end_from_resolved_input, enum_constructor, item_name, node_kind, node_span,
+    compile_front_end_from_resolved_input, enum_constructor, enum_layout, enum_match, item_name, node_kind, node_span,
     project_session_for_syntax_assembly, resolved_item, with_db,
 };
 
@@ -265,6 +265,83 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
             constructor.as_ref().ok().and_then(|fact| fact.as_ref()).is_some(),
             "Core.Syscall.Write must expose the Result::Error constructor fact for its fd guard; \
              constructor={constructor:?}; layout={layout:?}"
+        );
+
+        let mut pending = vec![syscall_root];
+        let mut resolve_descriptor = None;
+        while let Some(key) = pending.pop() {
+            if node_kind(db, key).expect("Syscall node kind")
+                == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
+                && item_name(db, key).expect("Syscall function name").as_deref()
+                    == Some("ResolveDescriptorFd")
+            {
+                resolve_descriptor = Some(key);
+                break;
+            }
+            if let Some(children) = child_nodes(db, key).expect("Syscall child nodes") {
+                pending.extend(children.iter().copied());
+            }
+        }
+        let resolve_descriptor = resolve_descriptor.expect("Core.Syscall.ResolveDescriptorFd");
+        let descriptor_root = AstNodeKey {
+            unit: SourceUnitId::new(
+                db,
+                assembly
+                    .units()
+                    .iter()
+                    .find(|unit| unit.path.ends_with("Core/Syscall/Descriptor.bd"))
+                    .expect("canonical Foundation Descriptor unit")
+                    .path
+                    .clone(),
+            ),
+            generation,
+            node: AstNodeId(0),
+        };
+        let mut pending = vec![descriptor_root];
+        let mut descriptor = None;
+        while let Some(key) = pending.pop() {
+            if node_kind(db, key).expect("Descriptor item kind")
+                == Some(beskid_queries::IndexedNodeKind::EnumDefinition)
+            {
+                descriptor = Some(key);
+                break;
+            }
+            if let Some(children) = child_nodes(db, key).expect("Descriptor child nodes") {
+                pending.extend(children.iter().copied());
+            }
+        }
+        let descriptor = descriptor.expect("Descriptor enum definition");
+        let descriptor_layout = enum_layout(db, descriptor)
+            .expect("Descriptor layout query")
+            .expect("Descriptor layout");
+        assert!(
+            matches!(
+                descriptor_layout.variants[0].fields.as_ref(),
+                [(_, beskid_queries::AggregateFieldShape::Nominal(_))]
+            ),
+            "Descriptor::Standard must retain its nominal StandardStream payload shape before match lowering; layout={descriptor_layout:?}"
+        );
+        let mut pending = vec![resolve_descriptor];
+        let mut outer_match = None;
+        while let Some(key) = pending.pop() {
+            let span = node_span(db, key).expect("ResolveDescriptorFd node span");
+            if node_kind(db, key).expect("ResolveDescriptorFd node kind")
+                == Some(beskid_queries::IndexedNodeKind::MatchExpression)
+                && span.is_some_and(|span| span.line_col_start == (45, 12))
+            {
+                outer_match = Some(key);
+                break;
+            }
+            if let Some(children) = child_nodes(db, key).expect("ResolveDescriptorFd child nodes") {
+                pending.extend(children.iter().copied());
+            }
+        }
+        let outer_match = outer_match.expect("Descriptor match expression");
+        let descriptor_match = enum_match(db, outer_match);
+        assert!(
+            matches!(descriptor_match, Err(ref error) if error.is_unavailable()),
+            "binding payload match must remain unavailable until CYB-150; \
+             descriptor_match={descriptor_match:?}"
         );
 
     });
