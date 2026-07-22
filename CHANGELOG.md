@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Derive scalar and nominal ABI facts for direct fields on explicitly annotated nominal
   locals and parameters, so generic assertions can specialize `ProgressBar<T>.percent`
   without reopening inferred or chained member typing (CYB-140).
+- Declare the `Core.Results` dependency in Foundation `Core.Output`, preserving the
+  import provenance required to derive its qualified generic `Result` match layout
+  without broadening module discovery (CYB-140).
 - Authorize the exact canonical Foundation `Core.Output` corpus to import the
   `__panic_str` Corelib service, while keeping byte-identical user copies outside the
   trusted capability boundary (CYB-141).
