@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lower exactly one direct identifier payload in a supported enum-match arm as a
   scoped local, preserving ABI shape for nominal pointer payloads; literal, nested,
   and guarded patterns remain unavailable (CYB-150).
+- Derive the exact scalar or nominal ABI type of a direct enum-pattern binding from
+  its enclosing enum-match fact, enabling nested nominal pattern scrutinees without
+  reopening general local-type inference (CYB-153).
 - Authorize the exact canonical Foundation `Core.Output` corpus to import the
   `__panic_str` Corelib service, while keeping byte-identical user copies outside the
   trusted capability boundary (CYB-141).

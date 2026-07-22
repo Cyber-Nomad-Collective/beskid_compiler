@@ -1416,9 +1416,79 @@ fn node_type_tracked(
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
             return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
+        if let Some(binding_type) = pattern_binding_semantic_type(db, program, index, key, node)
+        {
+            return Some(binding_type);
+        }
         semantic_type_for_node(program, index, key.node, node)
     })?
     .transpose()
+}
+
+fn pattern_binding_semantic_type(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<Result<SemanticTypeId, SemanticError>> {
+    let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
+    let [segment] = path.path.node.segments.as_slice() else {
+        return None;
+    };
+    if !segment.node.type_args.is_empty() {
+        return None;
+    }
+    let declaration = resolve_lexical_declaration(
+        program,
+        index,
+        key.node,
+        segment.node.name.node.name.as_str(),
+    )?;
+    let binding = match pattern_binding_fact(db, index, key, declaration)? {
+        Ok(binding) => binding,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(match binding.payload {
+        AggregateFieldShape::Scalar(semantic) => semantic,
+        AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+    }))
+}
+
+fn pattern_binding_fact(
+    db: &dyn Db,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> Option<Result<EnumMatchBindingFact, SemanticError>> {
+    if index.kind(parent_node(index, declaration)?)?
+        != beskid_analysis::syntax_query::NodeKind::Pattern
+    {
+        return None;
+    }
+    let arm = nearest_ancestor(index, declaration, |kind| {
+        kind == beskid_analysis::syntax_query::NodeKind::MatchArm
+    })?;
+    let outer_match = nearest_ancestor(index, arm, |kind| {
+        kind == beskid_analysis::syntax_query::NodeKind::MatchExpression
+    })?;
+    if outer_match == key.node {
+        return None;
+    }
+    let outer_match = AstNodeKey {
+        node: outer_match,
+        ..key
+    };
+    let fact = match enum_match(db, outer_match) {
+        Ok(Some(fact)) => fact,
+        Ok(None) | Err(_) => return Some(Err(SemanticError::unavailable("pattern_binding"))),
+    };
+    fact.arms
+        .iter()
+        .filter_map(|arm| arm.binding)
+        .find(|binding| binding.declaration.node == declaration)
+        .map(Ok)
+        .or_else(|| Some(Err(SemanticError::unavailable("pattern_binding"))))
 }
 
 fn semantic_type_for_node(
@@ -4107,6 +4177,20 @@ fn enum_match_scrutinee_layout(
     }
     let local = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
     let parent = parent_node(index, local)?;
+    if index.kind(parent)? == beskid_analysis::syntax_query::NodeKind::Pattern {
+        let binding = match pattern_binding_fact(db, index, key, local)? {
+            Ok(binding) => binding,
+            Err(error) => return Some(Err(error)),
+        };
+        let AggregateFieldShape::Nominal(declaration) = binding.payload else {
+            return Some(Err(SemanticError::unavailable("enum_match")));
+        };
+        return Some(
+            enum_layout(db, declaration)
+                .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
+                .map(|layout| (declaration, layout)),
+        );
+    }
     let annotation = match index.kind(parent)? {
         beskid_analysis::syntax_query::NodeKind::Parameter => index
             .node_at(program, parent)?

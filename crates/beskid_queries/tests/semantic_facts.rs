@@ -718,11 +718,13 @@ fn enum_match_keeps_source_ordered_nullary_variant_arms() {
             arms: Arc::from([
                 EnumMatchArmFact {
                     variant_index: Some(0),
-                    body: first_body
+                    body: first_body,
+                    binding: None,
                 },
                 EnumMatchArmFact {
                     variant_index: Some(1),
-                    body: second_body
+                    body: second_body,
+                    binding: None,
                 },
             ]),
         })
@@ -2665,6 +2667,52 @@ fn node_type_does_not_guess_complex_local_types() {
     let (db, _project, unit, generation, index) = setup(source);
     let input = key(unit, generation, &index, NodeKind::PathExpression, 0);
     assert_unavailable(node_type(&db, input));
+}
+
+#[test]
+fn node_type_uses_the_exact_scalar_enum_payload_binding_shape() {
+    let source = "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(value) => value, Result::Error(error) => error, }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let value = key(unit, generation, &index, NodeKind::PathExpression, 1);
+    let error = key(unit, generation, &index, NodeKind::PathExpression, 2);
+
+    assert_eq!(node_type(&db, value).expect("Ok binding type"), Some(SemanticTypeId::I64));
+    assert_eq!(node_type(&db, error).expect("Error binding type"), Some(SemanticTypeId::I64));
+}
+
+#[test]
+fn node_type_uses_the_exact_nominal_enum_payload_binding_shape() {
+    let source = "enum StandardStream { Stdin, Stdout, Stderr } enum Descriptor { Standard(StandardStream stream), Raw(i64 fd) } unit Main(Descriptor descriptor) { match descriptor { Descriptor::Standard(stream) => { stream; }, Descriptor::Raw(_) => {}, }; return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let stream = key(unit, generation, &index, NodeKind::PathExpression, 1);
+
+    assert_eq!(
+        node_type(&db, stream).expect("StandardStream binding type"),
+        Some(SemanticTypeId::POINTER)
+    );
+}
+
+#[test]
+fn enum_match_uses_the_exact_nominal_pattern_binding_layout() {
+    let source = "enum StandardStream { Stdin, Stdout, Stderr } enum Descriptor { Standard(StandardStream stream), Raw(i64 fd) } i64 Main(Descriptor descriptor) { return match descriptor { Descriptor::Standard(stream) => match stream { StandardStream::Stdin => 0_i64, StandardStream::Stdout => 1_i64, StandardStream::Stderr => 2_i64, }, Descriptor::Raw(fd) => fd, }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let inner_match = key(unit, generation, &index, NodeKind::MatchExpression, 1);
+
+    assert!(
+        enum_match(&db, inner_match)
+            .expect("inner match query")
+            .is_some(),
+        "a direct nominal payload binding must supply the inner enum layout"
+    );
+}
+
+#[test]
+fn literal_enum_payload_pattern_remains_unavailable_to_type_queries() {
+    let source = "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(7_i64) => 1_i64, Result::Error(_) => 0_i64, }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+
+    assert_unavailable(enum_match(&db, expression));
 }
 
 #[test]
