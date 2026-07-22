@@ -316,6 +316,35 @@ fn aggregate_layout_keeps_channel_options_nominal_capacity() {
 }
 
 #[test]
+fn event_bearing_aggregate_keeps_value_field_layout_and_projection_for_cyb_162() {
+    let source = r#"
+type ProgressBar {
+    i64 percent,
+    i32 anchorRow,
+    event{4} onTick(),
+}
+bool Main(ProgressBar bar) { return bar.anchorRow == 1; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let declaration = key(unit, generation, &index, NodeKind::TypeDefinition, 0);
+    let projection = key(unit, generation, &index, NodeKind::PathExpression, 0);
+
+    let layout = aggregate_layout(&db, declaration)
+        .expect("event-bearing aggregate layout query")
+        .expect("event-bearing aggregate layout");
+    assert_eq!(layout.fields.len(), 2);
+    assert_eq!(layout.fields[0].0.as_ref(), "percent");
+    assert_eq!(layout.fields[1].0.as_ref(), "anchorRow");
+    assert_eq!(
+        aggregate_field_access(&db, projection)
+            .expect("event-bearing aggregate projection query")
+            .expect("event-bearing aggregate projection")
+            .index,
+        1
+    );
+}
+
+#[test]
 fn generic_aggregate_direct_field_projection_uses_the_explicit_receiver_application_for_cyb_140() {
     let source = r#"
 type ProgressBar<T> { T percent }

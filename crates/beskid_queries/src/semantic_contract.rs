@@ -3637,6 +3637,11 @@ fn aggregate_layout_tracked(
             definition
                 .fields
                 .iter()
+                // Events are dispatch metadata, not ABI-v5 aggregate storage. Keeping them
+                // out of this value-field layout preserves the exact physical indices used by
+                // struct literals and direct value projections; a projection of an event itself
+                // still has no aggregate-field fact and therefore fails closed.
+                .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
                 .map(|field| aggregate_field_layout(db, program, index, key, field))
                 .collect::<Result<Vec<_>, SemanticError>>()
                 .map(|fields| AggregateLayoutFact {
