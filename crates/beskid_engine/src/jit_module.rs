@@ -402,6 +402,22 @@ fn process_linked_soft_builtins() -> Vec<(String, *const u8)> {
         ("panic".into(), beskid_runtime::panic as *const u8),
         ("panic_str".into(), beskid_runtime::panic_str as *const u8),
         (
+            "syscall_read".into(),
+            beskid_runtime::builtins::syscall_read as *const u8,
+        ),
+        (
+            "syscall_read_bytes".into(),
+            beskid_runtime::builtins::syscall_read_bytes as *const u8,
+        ),
+        (
+            "syscall_write".into(),
+            beskid_runtime::syscall_write as *const u8,
+        ),
+        (
+            "syscall_write_bytes".into(),
+            beskid_runtime::builtins::syscall_write_bytes as *const u8,
+        ),
+        (
             "runtime_preempt_check".into(),
             beskid_runtime::runtime_preempt_check as *const u8,
         ),
