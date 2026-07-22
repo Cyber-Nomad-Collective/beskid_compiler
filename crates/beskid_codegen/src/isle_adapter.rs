@@ -7,7 +7,7 @@ use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, EmissionServices, EnumLayout,
     EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, InlineCaptureField,
     InlineClosureEnvironment, InlineLambdaCall, ItemStatementEmission, LiteralKind, LocalSlotId,
-    MatchArmFact, NodeFacts, NodeKind, OperatorFact, ParameterSlot, RuntimeIntrinsicKind,
+    MatchArmBindingFact, MatchArmFact, NodeFacts, NodeKind, OperatorFact, ParameterSlot, RuntimeIntrinsicKind,
     Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{
@@ -532,15 +532,40 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
-        self.query(enum_match(self.db, key)).map(|fact| {
-            fact.arms
-                .iter()
-                .map(|arm| match arm.variant_index {
-                    Some(variant) => MatchArmFact::variant(u64::from(variant), arm.body),
-                    None => MatchArmFact::wildcard(arm.body),
+        let fact = self.query(enum_match(self.db, key))?;
+        fact.arms
+            .iter()
+            .map(|arm| {
+                let binding = match arm.binding {
+                    Some(binding) => {
+                        let slot = self.query(local_slot(self.db, binding.declaration))?;
+                        let value_type = match binding.payload {
+                            AggregateFieldShape::Scalar(semantic) => {
+                                map_signature_type(self.isa?, semantic)?
+                            }
+                            AggregateFieldShape::Nominal(_) => self.isa?.pointer_type(),
+                        };
+                        Some(MatchArmBindingFact {
+                            slot: LocalSlotId {
+                                owner_node: slot.owner.node.0,
+                                index: slot.index,
+                            },
+                            value_type,
+                        })
+                    }
+                    None => None,
+                };
+                Some(match arm.variant_index {
+                    Some(variant) => MatchArmFact::variant_with_binding(
+                        u64::from(variant),
+                        arm.body,
+                        binding,
+                    ),
+                    None if binding.is_none() => MatchArmFact::wildcard(arm.body),
+                    None => return None,
                 })
-                .collect()
-        })
+            })
+            .collect()
     }
 
     fn range_fact(&self, key: AstNodeKey) -> Option<beskid_isle::RangeFact> {

@@ -581,9 +581,16 @@ impl EnumLayout {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MatchArmBindingFact {
+    pub slot: LocalSlotId,
+    pub value_type: Type,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MatchArmFact {
     discriminant: Option<u64>,
     body: AstNodeKey,
+    binding: Option<MatchArmBindingFact>,
 }
 
 impl MatchArmFact {
@@ -591,6 +598,19 @@ impl MatchArmFact {
         Self {
             discriminant: Some(discriminant),
             body,
+            binding: None,
+        }
+    }
+
+    pub const fn variant_with_binding(
+        discriminant: u64,
+        body: AstNodeKey,
+        binding: Option<MatchArmBindingFact>,
+    ) -> Self {
+        Self {
+            discriminant: Some(discriminant),
+            body,
+            binding,
         }
     }
 
@@ -598,6 +618,7 @@ impl MatchArmFact {
         Self {
             discriminant: None,
             body,
+            binding: None,
         }
     }
 }
@@ -1340,6 +1361,41 @@ impl IsleContext<'_, '_, '_, '_> {
             widen(self.builder, left, left_type),
             widen(self.builder, right, right_type),
         )
+    }
+
+    fn bind_match_arm_payload(
+        &mut self,
+        key: AstNodeKey,
+        layout: &EnumLayout,
+        scrutinee: Value,
+        arm: &MatchArmFact,
+    ) -> Option<Option<LocalSlotId>> {
+        let Some(binding) = arm.binding else {
+            return Some(None);
+        };
+        let discriminant = arm.discriminant?;
+        let payload_layout = layout
+            .variants
+            .iter()
+            .find(|variant| variant.discriminant == discriminant)?
+            .payload?;
+        if payload_layout.value_type != binding.value_type || self.locals.contains_key(&binding.slot) {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidMatchArms,
+            });
+            return None;
+        }
+        let payload = self.builder.ins().load(
+            payload_layout.value_type,
+            MemFlags::new(),
+            scrutinee,
+            i32::try_from(payload_layout.offset).ok()?,
+        );
+        let variable = self.builder.declare_var(binding.value_type);
+        self.builder.def_var(variable, payload);
+        self.locals.insert(binding.slot, (variable, binding.value_type));
+        Some(Some(binding.slot))
     }
 
     /// Prefer a proven local receiver slot (nominal `local.field` paths). Fall back to
@@ -2463,6 +2519,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         for (arm, block) in arms.into_iter().zip(arm_blocks) {
             self.builder.switch_to_block(block);
             self.builder.seal_block(block);
+            let binding = self.bind_match_arm_payload(key, &layout, scrutinee, &arm)?;
             let value = generated::constructor_lower_expression(self, arm.body)?;
             if self.builder.func.dfg.value_type(value) != result_type {
                 self.pending_error = Some(LoweringError {
@@ -2470,6 +2527,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                     kind: LoweringErrorKind::InvalidMatchArms,
                 });
                 return None;
+            }
+            if let Some(binding) = binding {
+                self.locals.remove(&binding);
             }
             self.builder.ins().jump(merge, &[value.into()]);
         }
@@ -2567,7 +2627,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         for (arm, block) in arms.into_iter().zip(arm_blocks) {
             self.builder.switch_to_block(block);
             self.builder.seal_block(block);
+            let binding = self.bind_match_arm_payload(key, &layout, scrutinee, &arm)?;
             generated::constructor_lower_statement(self, arm.body)?;
+            if let Some(binding) = binding {
+                self.locals.remove(&binding);
+            }
             if jump_from_current_if_unterminated(self.builder, merge) {
                 merge_reachable = true;
             }

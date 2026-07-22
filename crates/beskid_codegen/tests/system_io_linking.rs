@@ -339,8 +339,8 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
         let outer_match = outer_match.expect("Descriptor match expression");
         let descriptor_match = enum_match(db, outer_match);
         assert!(
-            matches!(descriptor_match, Err(ref error) if error.is_unavailable()),
-            "binding payload match must remain unavailable until CYB-150; \
+            matches!(descriptor_match, Ok(Some(_))),
+            "ResolveDescriptorFd must expose the nominal Descriptor payload binding fact; \
              descriptor_match={descriptor_match:?}"
         );
 

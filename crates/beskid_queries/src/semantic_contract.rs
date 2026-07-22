@@ -558,14 +558,24 @@ pub struct EnumConstructorFact {
     pub payload: Option<AstNodeKey>,
 }
 
+/// One direct identifier payload binding consumed by the generated enum-match emitter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EnumMatchBindingFact {
+    /// Exact identifier declaration introduced by the match pattern.
+    pub declaration: AstNodeKey,
+    /// Source-proven ABI shape of the single matched variant payload.
+    pub payload: AggregateFieldShape,
+}
+
 /// One source arm consumed by the generated enum-match emitter.
 ///
-/// Payload destructuring and guards intentionally remain unavailable until the generated ISLE
-/// emitter has an equally explicit binding and guard representation.
+/// Guards and nested, literal, or multi-payload destructuring remain unavailable until the
+/// generated ISLE emitter has explicit representations for them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EnumMatchArmFact {
     pub variant_index: Option<u32>,
     pub body: AstNodeKey,
+    pub binding: Option<EnumMatchBindingFact>,
 }
 
 /// Exact enum declaration and source-ordered arms selected by a `match` expression.
@@ -3946,8 +3956,8 @@ fn enum_match_tracked(
                 Ok(body) => body,
                 Err(error) => return Some(Err(error)),
             };
-            let variant_index = match &arm.node.pattern.node {
-                beskid_analysis::syntax::Pattern::Wildcard => Ok(None),
+            let arm_fact = match &arm.node.pattern.node {
+                beskid_analysis::syntax::Pattern::Wildcard => Ok((None, None)),
                 beskid_analysis::syntax::Pattern::Enum(pattern) => {
                     if !enum_pattern_targets_declaration(
                         db,
@@ -3957,31 +3967,75 @@ fn enum_match_tracked(
                         return Some(Err(SemanticError::unavailable("enum_match")));
                     }
                     let name = pattern.node.path.node.variant.node.name.as_str();
-                    layout
+                    let Some((variant_index, variant)) = layout
                         .variants
                         .iter()
                         .enumerate()
                         .find(|(_, variant)| variant.name.as_ref() == name)
-                        .and_then(|(index, variant)| {
-                            (variant.fields.len() == pattern.node.items.len()
-                                && pattern.node.items.iter().all(|item| {
-                                    matches!(item.node, beskid_analysis::syntax::Pattern::Wildcard)
-                                }))
-                            .then(|| u32::try_from(index).ok())
-                            .flatten()
-                        })
-                        .ok_or_else(|| SemanticError::unavailable("enum_match"))
-                        .map(Some)
+                    else {
+                        return Some(Err(SemanticError::unavailable("enum_match")));
+                    };
+                    if variant.fields.len() != pattern.node.items.len() || variant.fields.len() > 1 {
+                        return Some(Err(SemanticError::unavailable("enum_match")));
+                    }
+                    let binding = match pattern.node.items.as_slice() {
+                        [] => None,
+                        [item] if matches!(item.node, beskid_analysis::syntax::Pattern::Wildcard) => None,
+                        [item]
+                            if matches!(
+                                item.node,
+                                beskid_analysis::syntax::Pattern::Identifier(_)
+                            ) =>
+                        {
+                            let Some(pattern_node) = index
+                                .direct_child_id(
+                                    program,
+                                    arm_node,
+                                    beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.pattern),
+                                )
+                                .and_then(|node| {
+                                    index.direct_child_id(
+                                        program,
+                                        node,
+                                        beskid_analysis::syntax_query::DynNodeRef::from(pattern),
+                                    )
+                                })
+                                .and_then(|node| {
+                                    index.direct_child_id(
+                                        program,
+                                        node,
+                                        beskid_analysis::syntax_query::DynNodeRef::from(item),
+                                    )
+                                })
+                                .and_then(|node| index.children(node)?.first().copied())
+                            else {
+                                return Some(Err(SemanticError::unavailable("enum_match")));
+                            };
+                            Some(EnumMatchBindingFact {
+                                declaration: AstNodeKey {
+                                    node: pattern_node,
+                                    ..key
+                                },
+                                payload: variant.fields[0].1,
+                            })
+                        }
+                        _ => return Some(Err(SemanticError::unavailable("enum_match"))),
+                    };
+                    let Ok(variant_index) = u32::try_from(variant_index) else {
+                        return Some(Err(SemanticError::unavailable("enum_match")));
+                    };
+                    Ok((Some(variant_index), binding))
                 }
                 _ => Err(SemanticError::unavailable("enum_match")),
             };
-            let variant_index = match variant_index {
-                Ok(variant_index) => variant_index,
+            let (variant_index, binding) = match arm_fact {
+                Ok(fact) => fact,
                 Err(error) => return Some(Err(error)),
             };
             arms.push(EnumMatchArmFact {
                 variant_index,
                 body,
+                binding,
             });
         }
         Some(Ok(EnumMatchFact {
