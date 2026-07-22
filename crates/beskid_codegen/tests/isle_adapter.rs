@@ -815,6 +815,16 @@ fn nominal_enum_parameter_materializes_as_a_pointer_local_slot() {
 }
 
 #[test]
+fn nested_nominal_enum_payload_binding_lowers_without_hir() {
+    let (input, isa, item) = item_fixture(
+        "enum StandardStream { Stdin, Stdout, Stderr } enum Descriptor { Standard(StandardStream stream), Raw(i64 fd) } i64 Main(Descriptor descriptor) { return match descriptor { Descriptor::Standard(stream) => match stream { StandardStream::Stdin => 0_i64, StandardStream::Stdout => 1_i64, StandardStream::Stderr => 2_i64, }, Descriptor::Raw(fd) => fd, }; }",
+    );
+
+    emit_isle_item(&input, isa.as_ref(), item)
+        .expect("nested nominal enum payload bindings must lower through syntax facts");
+}
+
+#[test]
 fn unspecialized_generic_parameter_remains_unavailable_for_local_materialization() {
     let (input, _isa, item) = item_fixture("unit Identity<T>(T value) { return; }");
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);

@@ -1420,9 +1420,34 @@ fn node_type_tracked(
         {
             return Some(binding_type);
         }
+        if node.of::<beskid_analysis::syntax::MatchExpression>().is_some()
+            && matches!(enum_match(db, key), Ok(Some(_)))
+        {
+            return Some(enum_match_result_semantic_type(db, key));
+        }
         semantic_type_for_node(program, index, key.node, node)
     })?
     .transpose()
+}
+
+fn enum_match_result_semantic_type(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Result<SemanticTypeId, SemanticError> {
+    let fact = enum_match(db, key)?
+        .ok_or_else(|| SemanticError::unavailable("node_type"))?;
+    let mut result = None;
+    for arm in fact.arms.iter() {
+        let arm_type = node_type(db, arm.body)?
+            .ok_or_else(|| SemanticError::unavailable("node_type"))?;
+        if result
+            .replace(arm_type)
+            .is_some_and(|previous| previous != arm_type)
+        {
+            return Err(SemanticError::unavailable("node_type"));
+        }
+    }
+    result.ok_or_else(|| SemanticError::unavailable("node_type"))
 }
 
 fn pattern_binding_semantic_type(

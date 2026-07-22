@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Derive the exact scalar or nominal ABI type of a direct enum-pattern binding from
   its enclosing enum-match fact, enabling nested nominal pattern scrutinees without
   reopening general local-type inference (CYB-153).
+- Compose a supported enum-match result only from its source-proven arm-body node
+  facts, so direct pattern bindings participate in nested result typing while mixed
+  arm types remain unavailable (CYB-154).
 - Authorize the exact canonical Foundation `Core.Output` corpus to import the
   `__panic_str` Corelib service, while keeping byte-identical user copies outside the
   trusted capability boundary (CYB-141).

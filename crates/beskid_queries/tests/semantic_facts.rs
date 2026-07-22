@@ -2707,6 +2707,24 @@ fn enum_match_uses_the_exact_nominal_pattern_binding_layout() {
 }
 
 #[test]
+fn node_type_composes_enum_match_results_from_binding_aware_arm_nodes() {
+    let source = "enum StandardStream { Stdin, Stdout, Stderr } enum Descriptor { Standard(StandardStream stream), Raw(i64 fd) } i64 Main(Descriptor descriptor) { return match descriptor { Descriptor::Standard(stream) => match stream { StandardStream::Stdin => 0_i64, StandardStream::Stdout => 1_i64, StandardStream::Stderr => 2_i64, }, Descriptor::Raw(fd) => fd, }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let outer_match = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+
+    assert_eq!(node_type(&db, outer_match).expect("outer match type"), Some(SemanticTypeId::I64));
+}
+
+#[test]
+fn node_type_rejects_enum_match_results_with_mixed_arm_types() {
+    let source = "enum Result { Ok(i64 value), Error(i64 error) } unit Main(Result result) { match result { Result::Ok(value) => value, Result::Error(error) => true, }; return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let outer_match = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+
+    assert_unavailable(node_type(&db, outer_match));
+}
+
+#[test]
 fn literal_enum_payload_pattern_remains_unavailable_to_type_queries() {
     let source = "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(7_i64) => 1_i64, Result::Error(_) => 0_i64, }; }";
     let (db, _project, unit, generation, index) = setup(source);
