@@ -672,6 +672,114 @@ unit Write() {
     assert_eq!(fact.arms[1].variant_index, Some(1));
 }
 
+
+#[test]
+fn imported_generic_enum_match_accepts_fully_qualified_one_type_per_file_terror_for_cyb_137() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/imported-generic-enum-match-qualified-terror/project/src");
+    let main_path = root.join("Main.bd");
+    let results_path = root.join("Core/Results/Results.bd");
+    let error_path = root.join("Core/Syscall/SyscallError.bd");
+    let main_source = r#"
+use Core.Results;
+unit Main() {
+    Core.Results.Result<i64, Core.Syscall.SyscallError> result =
+        Core.Results.Result<i64, Core.Syscall.SyscallError>::Ok(1_i64);
+    match result {
+        Result::Ok(_) => {},
+        Result::Error(_) => {},
+    };
+    return;
+}
+"#;
+    let results_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
+    let error_source = "pub enum SyscallError { InvalidFd(i64 fd) }";
+    let sources = [
+        (&main_path, main_source),
+        (&results_path, results_source),
+        (&error_path, error_source),
+    ];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: (*path).clone(),
+            source: (*source).to_string(),
+            program: expand_program(
+                parse_program(source).expect("parse"),
+                DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
+            ),
+        })
+        .collect::<Vec<_>>();
+    let main_program = units[0].program.clone();
+    let results_program = units[1].program.clone();
+    let error_program = units[2].program.clone();
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry {
+                dependency_name: None,
+                source_root: root.clone(),
+            },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let results_unit = SourceUnitId::new(&db, results_path);
+    let error_unit = SourceUnitId::new(&db, error_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(137);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let results_index = SyntaxIndex::from_program(&results_program, generation);
+    let error_index = SyntaxIndex::from_program(&error_program, generation);
+    let expression = key(
+        main_unit,
+        generation,
+        &main_index,
+        NodeKind::MatchExpression,
+        0,
+    );
+
+    let fact = enum_match(&db, expression)
+        .expect("qualified TError enum match query")
+        .expect("Core.Syscall.SyscallError type-arg must yield enum_match facts (CYB-137)");
+    assert_eq!(
+        fact.declaration,
+        key(
+            results_unit,
+            generation,
+            &results_index,
+            NodeKind::EnumDefinition,
+            0,
+        )
+    );
+    assert_eq!(fact.arms.len(), 2);
+    assert_eq!(
+        fact.layout.variants[1].fields.as_ref(),
+        &[(
+            Arc::from("error"),
+            beskid_queries::AggregateFieldShape::Nominal(key(
+                error_unit,
+                generation,
+                &error_index,
+                NodeKind::EnumDefinition,
+                0,
+            )),
+        )]
+    );
+}
+
 #[test]
 fn enum_constructor_selects_the_source_variant_and_single_payload() {
     let source = "enum Choice { None(), Some(i32 value) } i32 Main() { Choice choice = Choice::Some(7); return 0; }";

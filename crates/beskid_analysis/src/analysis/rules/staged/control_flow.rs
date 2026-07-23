@@ -352,13 +352,13 @@ impl<'a> ControlFlowVisitor<'a> {
         &mut self,
         constructor_expression: &Spanned<crate::hir::HirEnumConstructorExpression>,
     ) {
-        if constructor_expression.node.has_empty_parens && constructor_expression.node.args.is_empty() {
-            if let Some(span) =
+        if constructor_expression.node.has_empty_parens
+            && constructor_expression.node.args.is_empty()
+            && let Some(span) =
                 Self::explicit_empty_constructor_parens_span(constructor_expression, self.ctx.source())
-            {
-                self.ctx
-                    .emit_issue(span, SemanticIssueKind::RedundantEnumConstructorParens);
-            }
+        {
+            self.ctx
+                .emit_issue(span, SemanticIssueKind::RedundantEnumConstructorParens);
         }
         let enum_name = constructor_expression
             .node

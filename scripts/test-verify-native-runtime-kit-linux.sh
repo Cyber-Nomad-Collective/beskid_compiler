@@ -75,7 +75,7 @@ test "$(grep -F -- '--undefined-only' "${fixture_root}/nm.log" | wc -l | tr -d '
 test "$(grep -E -- '(^| )-u( |$)' "${fixture_root}/nm.log" | wc -l | tr -d '[:space:]')" = 0
 test "$(grep -F -- 'undefined=__tls_get_addr' "${fixture_root}/symbol-lists/shared.symbols" | wc -l | tr -d '[:space:]')" = 1
 test "$(grep -c '^undefined=' "${fixture_root}/symbol-lists/static.symbols" || true)" = 0
-grep -F -- '-p beskid_engine --test native_runtime_kit_smoke staged_linux_runtime_kit_executes_a_canonical_entrypoint -- --ignored --exact' "${fixture_root}/calls.log" >/dev/null
+grep -F -- '-p beskid_engine --test native_runtime_kit_smoke staged_runtime_kit_executes_a_canonical_entrypoint -- --ignored --exact' "${fixture_root}/calls.log" >/dev/null
 grep -F -- '-p beskid_repl staged_linux_runtime_kit_evaluates_a_snippet -- --ignored --exact' "${fixture_root}/calls.log" >/dev/null
 
 if PATH="${fixture_root}/bin:${PATH}" \
