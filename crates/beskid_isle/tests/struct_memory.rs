@@ -151,8 +151,7 @@ fn emit(root: Root, field_index: u32, function_index: u32) -> String {
             facts.nodes[0],
         )
         .expect("verified struct field lowering");
-    let clif = function.display().to_string();
-    clif
+    function.display().to_string()
 }
 
 #[test]

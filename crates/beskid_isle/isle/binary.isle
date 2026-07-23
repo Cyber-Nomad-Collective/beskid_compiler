@@ -6,7 +6,7 @@
 (extern constructor clif_imul clif_imul)
 (decl clif_sdiv (Value Value) Value)
 (extern constructor clif_sdiv clif_sdiv)
-(decl clif_srem (Value Value) Value)
+(decl partial clif_srem (Value Value) Value)
 (extern constructor clif_srem clif_srem)
 (decl clif_eq (Value Value) Value)
 (extern constructor clif_eq clif_eq)

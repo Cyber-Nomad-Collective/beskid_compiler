@@ -209,22 +209,26 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
-        matches!(
-            self.node_kind(key),
-            Some(NodeKind::BlockExpression | NodeKind::TestDefinition)
-        )
-        .then(|| {
-            let length = if self.node_kind(key) == Some(NodeKind::TestDefinition) {
-                let nodes = self.query(test_statement_nodes(self.db, key))?;
-                nodes.len()
-            } else if self.node_kind(key) == Some(NodeKind::BlockExpression) {
+        let kind = self.node_kind(key)?;
+        match kind {
+            NodeKind::BlockExpression => {
                 let nodes = self.query(block_statement_nodes(self.db, key))?;
-                nodes.len()
-            } else {
-                self.children(key).len()
-            };
-            u8::try_from(length).ok()
-        })?
+                let len = nodes.len();
+                if len > u8::MAX as usize {
+                    return None;
+                }
+                u8::try_from(len).ok()
+            }
+            NodeKind::TestDefinition => {
+                let nodes = self.query(test_statement_nodes(self.db, key))?;
+                let len = nodes.len();
+                if len > u8::MAX as usize {
+                    return None;
+                }
+                u8::try_from(len).ok()
+            }
+            _ => None,
+        }
     }
 
     fn let_initializer(&self, key: AstNodeKey) -> Option<AstNodeKey> {

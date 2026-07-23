@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 pub use beskid_queries::AstNodeKey;
 use cranelift_codegen::ir::InstBuilder;
-use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{ExternalName, GlobalValueData};
@@ -26,8 +26,10 @@ use cranelift_frontend::FunctionBuilderContext;
 use cranelift_frontend::Switch;
 use cranelift_frontend::Variable;
 
+mod clif_primitives;
 mod dispatch;
 
+pub use clif_primitives::ClifPrimitives;
 pub use dispatch::{
     emit_dispatch_call, emit_str_from_i64_dispatch, pointer_type as isle_pointer_type,
 };
@@ -1372,6 +1374,21 @@ impl IsleContext<'_, '_, '_, '_> {
         )
     }
 
+    /// Beskid maps `u8`/`bool` to CLIF `i8`; ordered compares and quotients must be unsigned.
+    fn integer_ordered_cc(ty: Type, signed: IntCC, unsigned: IntCC) -> IntCC {
+        if ty == types::I8 {
+            unsigned
+        } else {
+            signed
+        }
+    }
+
+    fn common_float_operands(&mut self, left: Value, right: Value) -> Option<(Value, Value)> {
+        let left_type = self.builder.func.dfg.value_type(left);
+        let right_type = self.builder.func.dfg.value_type(right);
+        (left_type.is_float() && left_type == right_type).then_some((left, right))
+    }
+
     fn bind_match_arm_payload(
         &mut self,
         key: AstNodeKey,
@@ -1513,64 +1530,129 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn clif_iadd(&mut self, left: Value, right: Value) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self.builder.ins().fadd(left, right);
+        }
         let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().iadd(left, right)
     }
 
     fn clif_isub(&mut self, left: Value, right: Value) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self.builder.ins().fsub(left, right);
+        }
         let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().isub(left, right)
     }
 
     fn clif_imul(&mut self, left: Value, right: Value) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self.builder.ins().fmul(left, right);
+        }
         let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().imul(left, right)
     }
 
     fn clif_sdiv(&mut self, left: Value, right: Value) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self.builder.ins().fdiv(left, right);
+        }
         let (left, right) = self.common_integer_operands(left, right);
-        self.builder.ins().sdiv(left, right)
+        let ty = self.builder.func.dfg.value_type(left);
+        if ty == types::I8 {
+            self.builder.ins().udiv(left, right)
+        } else {
+            self.builder.ins().sdiv(left, right)
+        }
     }
 
-    fn clif_srem(&mut self, left: Value, right: Value) -> Value {
+    fn clif_srem(&mut self, left: Value, right: Value) -> Option<Value> {
+        // Float remainder is intentionally unsupported (no Beskid `frem`); fail the rule.
+        if self.common_float_operands(left, right).is_some() {
+            return None;
+        }
         let (left, right) = self.common_integer_operands(left, right);
-        self.builder.ins().srem(left, right)
+        let ty = self.builder.func.dfg.value_type(left);
+        if ty == types::I8 {
+            Some(self.builder.ins().urem(left, right))
+        } else {
+            Some(self.builder.ins().srem(left, right))
+        }
     }
 
     fn clif_eq(&mut self, left: Value, right: Value) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self.builder.ins().fcmp(FloatCC::Equal, left, right);
+        }
         let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().icmp(IntCC::Equal, left, right)
     }
 
     fn clif_ne(&mut self, left: Value, right: Value) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self.builder.ins().fcmp(FloatCC::NotEqual, left, right);
+        }
         let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().icmp(IntCC::NotEqual, left, right)
     }
 
     fn clif_slt(&mut self, left: Value, right: Value) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self.builder.ins().fcmp(FloatCC::LessThan, left, right);
+        }
         let (left, right) = self.common_integer_operands(left, right);
-        self.builder.ins().icmp(IntCC::SignedLessThan, left, right)
+        let ty = self.builder.func.dfg.value_type(left);
+        let cc = Self::integer_ordered_cc(
+            ty,
+            IntCC::SignedLessThan,
+            IntCC::UnsignedLessThan,
+        );
+        self.builder.ins().icmp(cc, left, right)
     }
 
     fn clif_sle(&mut self, left: Value, right: Value) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self.builder.ins().fcmp(FloatCC::LessThanOrEqual, left, right);
+        }
         let (left, right) = self.common_integer_operands(left, right);
-        self.builder
-            .ins()
-            .icmp(IntCC::SignedLessThanOrEqual, left, right)
+        let ty = self.builder.func.dfg.value_type(left);
+        let cc = Self::integer_ordered_cc(
+            ty,
+            IntCC::SignedLessThanOrEqual,
+            IntCC::UnsignedLessThanOrEqual,
+        );
+        self.builder.ins().icmp(cc, left, right)
     }
 
     fn clif_sgt(&mut self, left: Value, right: Value) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self.builder.ins().fcmp(FloatCC::GreaterThan, left, right);
+        }
         let (left, right) = self.common_integer_operands(left, right);
-        self.builder
-            .ins()
-            .icmp(IntCC::SignedGreaterThan, left, right)
+        let ty = self.builder.func.dfg.value_type(left);
+        let cc = Self::integer_ordered_cc(
+            ty,
+            IntCC::SignedGreaterThan,
+            IntCC::UnsignedGreaterThan,
+        );
+        self.builder.ins().icmp(cc, left, right)
     }
 
     fn clif_sge(&mut self, left: Value, right: Value) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self
+                .builder
+                .ins()
+                .fcmp(FloatCC::GreaterThanOrEqual, left, right);
+        }
         let (left, right) = self.common_integer_operands(left, right);
-        self.builder
-            .ins()
-            .icmp(IntCC::SignedGreaterThanOrEqual, left, right)
+        let ty = self.builder.func.dfg.value_type(left);
+        let cc = Self::integer_ordered_cc(
+            ty,
+            IntCC::SignedGreaterThanOrEqual,
+            IntCC::UnsignedGreaterThanOrEqual,
+        );
+        self.builder.ins().icmp(cc, left, right)
     }
 
     fn clif_short_circuit_or(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -1582,7 +1664,12 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn clif_ineg(&mut self, value: Value) -> Value {
-        self.builder.ins().ineg(value)
+        let ty = self.builder.func.dfg.value_type(value);
+        if ty.is_float() {
+            self.builder.ins().fneg(value)
+        } else {
+            self.builder.ins().ineg(value)
+        }
     }
 
     fn clif_bnot(&mut self, value: Value) -> Value {
@@ -1798,13 +1885,21 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 let [address] = arguments.as_slice() else {
                     return None;
                 };
-                (self.builder.func.dfg.value_type(*address).is_int() && result == types::I8).then(
-                    || {
-                        self.builder
-                            .ins()
-                            .load(result, MemFlags::new(), *address, 0)
-                    },
-                )
+                let address_ty = self.builder.func.dfg.value_type(*address);
+                if !address_ty.is_int() {
+                    return None;
+                }
+                let loaded = self
+                    .builder
+                    .ins()
+                    .load(types::I8, MemFlags::trusted(), *address, 0);
+                if result == types::I8 {
+                    Some(loaded)
+                } else if result.is_int() && result.bits() > 8 {
+                    Some(self.builder.ins().uextend(result, loaded))
+                } else {
+                    None
+                }
             }
             RuntimeIntrinsicKind::MemoryCopy
             | RuntimeIntrinsicKind::MemorySet

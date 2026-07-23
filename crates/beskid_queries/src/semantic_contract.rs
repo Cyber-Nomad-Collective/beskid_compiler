@@ -3866,8 +3866,16 @@ fn enum_layout_substitutions(
         .iter()
         .zip(terminal.node.type_args.iter())
         .map(|(generic, argument)| {
-            aggregate_shape_from_applied_type(db, use_key, &argument.node)
-                .map(|shape| (generic.node.name.clone(), shape))
+            aggregate_shape_from_applied_type(db, use_key, &argument.node).or_else(|error| {
+                if type_syntax_is_generic_parameter_reference(
+                    &argument.node,
+                    generic.node.name.as_str(),
+                ) {
+                    return Ok(AggregateFieldShape::Scalar(SemanticTypeId::POINTER));
+                }
+                Err(error)
+            })
+            .map(|shape| (generic.node.name.clone(), shape))
         })
         .collect()
 }

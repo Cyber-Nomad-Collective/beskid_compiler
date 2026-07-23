@@ -48,18 +48,18 @@ paths and are out of scope for ISLE (see [Out of scope](#out-of-scope)).
 ## Implemented ISLE rule files
 
 Rule files live in `crates/beskid_isle/isle/`. Every rule delegates to an emitter implemented
-in `crates/beskid_isle/src/lib.rs` (`IsleContext`), with primitives in `src/context.rs` and
-dispatch-route emission in `src/dispatch.rs`.
+in `crates/beskid_isle/src/lib.rs` (`IsleContext`), with trusted primitives in
+`src/clif_primitives.rs` and dispatch-route emission in `src/dispatch.rs`.
 
 | File | Kind | Implemented lowering rules / constructs |
 | --- | --- | --- |
 | `types.isle` | Foundation | Type + enum declarations shared by all rules: `AstNodeKey`, `Value`, `Unit`, `StatementCursor`, and the fact enums `NodeKind`, `CursorKind`, `LiteralKind`, `OperatorFact`, `CallKind`, `IndexTarget`. No rules. |
 | `ast.isle` | Foundation | Fact extractors (`node_kind`, `literal_kind`, `operator_fact`, `call_kind`, `assignment_target_kind`, `for_iterable_kind`) and the `child_at` child-access constructor. No rules. |
-| `primitives.isle` | Foundation | Trusted CLIF primitive constructors: `iconst_i64`, `load_i64`/`store_i64`, `load_i8_zext`, `ptr_add`, `icmp_eq`/`icmp_ne`/`icmp_slt`, `icmp_byte_ne`, `bounded_memcmp`. No rules. |
+| `primitives.isle` | Foundation | Trusted CLIF primitive constructors (contract; Rust bridge in `clif_primitives.rs`): extending loads (`load_i8/i16/i32` zext/sext), stores, `icmp_*` including `ult`, f64 arith/`fcvt_*`, `icmp_byte_ne`, `bounded_memcmp`. Explicit `stack_load`/`stack_store` live on `ClifPrimitives` for scratch slots (AST locals use SSA vars). No AST rules. |
 | `expressions.isle` | Expressions | `lower_expression` entry decl; `GroupedExpression` (unwrap child 0); `BlockExpression` value (`emit_block_expression`); `SpawnExpression` (`emit_spawn`). |
 | `literals.isle` | Expressions | Literal lowering for `Integer`, `Boolean`, `Float`, `Char`, `String`. |
-| `binary.isle` | Expressions | Binary arithmetic/comparison: `IdentityEq`, `IdentityNotEq`, `Eq`, `NotEq`, `Lt`, `Lte`, `Gt`, `Gte`, `Add`, `Sub`, `Mul`, `Div`, `Mod` (integer CLIF `iadd`/`isub`/`imul`/`sdiv`/`srem`/`icmp`). |
-| `unary_casts.isle` | Expressions | Unary `Neg` (`ineg`) and `Not` (`bnot`). |
+| `binary.isle` | Expressions | Binary arithmetic/comparison: `IdentityEq`, `IdentityNotEq`, `Eq`, `NotEq`, `Lt`, `Lte`, `Gt`, `Gte`, `Add`, `Sub`, `Mul`, `Div`, `Mod`. Emitters are type-polymorphic: float uses `fadd`/`fsub`/`fmul`/`fdiv`/`fcmp`; CLIF `i8` (Beskid `u8`/`bool`) uses unsigned compares and `udiv`/`urem`; wider integers stay signed. Float `%` fails closed (partial `clif_srem`). |
+| `unary_casts.isle` | Expressions | Unary `Neg` (`ineg`/`fneg`) and `Not` (`bnot`). |
 | `control_flow.isle` | Expr + Stmt | Short-circuit `Or`/`And`; `IfStatement` (`emit_if_else`); `WhileStatement`; `BreakStatement`; `ContinueStatement`; `ForStatement` over a `RangeExpression` iterable (`emit_range_for`). |
 | `calls.isle` | Expressions | Direct call expressions (`CallKind.Direct` -> `emit_direct_call`), including method/receiver calls resolved to a direct callee. |
 | `runtime_intrinsics.isle` | Expressions | Canonical runtime-intrinsic calls (`CallKind.RuntimeIntrinsic` -> `emit_runtime_intrinsic`). |
@@ -73,7 +73,7 @@ dispatch-route emission in `src/dispatch.rs`.
 | File | Role |
 | --- | --- |
 | `crates/beskid_isle/src/lib.rs` | `IsleContext` emitter implementations for every extern constructor/extractor; `FunctionEmitter` entrypoints (`emit_expression`, `emit_statement`, `emit_item_statement*`); `NodeFacts` trait; `LoweringError` / `LoweringErrorKind` (`MissingRuleOrFact`, layout/match errors). |
-| `crates/beskid_isle/src/context.rs` | Bridges the trusted CLIF primitives in `primitives.isle` to `FunctionBuilder`. |
+| `crates/beskid_isle/src/clif_primitives.rs` | Bridges the trusted CLIF primitives in `primitives.isle` to `FunctionBuilder` (plus `stack_load`/`stack_store` scratch helpers). |
 | `crates/beskid_isle/src/dispatch.rs` | Emits dispatch-route calls (`emit_dispatch_call`, `emit_str_from_i64_dispatch`) used by dynamic + string rules. |
 | `crates/beskid_isle/build.rs` | Compiles `isle/*.isle` into the generated selector consumed by `IsleContext`. |
 | `crates/beskid_codegen/src/isle_adapter.rs` | `SyntaxNodeFacts` (query-backed `NodeFacts`) plus `emit_isle_expression` / `emit_isle_item*` production entrypoints and ABI/layout derivation. |
@@ -121,6 +121,10 @@ lowering targets:
 - `MacroInvocation`, `MacroMetavariable` (expanded before codegen).
 - `CodeStringExpression` (unsupported in both paths).
 - Raw `TryExpression` (normalized to `match` before codegen).
+- SIMD vector ops (Beskid has no vector types in TypedProgram today).
+- Bitwise / shift / rotate / bitcount operators (no Beskid language operators).
+- Cranelift `vmctx` parameters (managed ABI uses `GlobalValueData::Symbol` + runtime helpers).
+- Direct `br_table` ISLE rules (`emit_match` already emits via `cranelift_frontend::Switch`).
 
 ## How to verify a newly added rule
 

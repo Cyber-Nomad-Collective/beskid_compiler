@@ -455,3 +455,177 @@ fn boolean_not_executes_with_canonical_zero_or_one_result() {
 
     assert_eq!(run(), 0);
 }
+
+#[test]
+fn binary_float_add_emits_fadd() {
+    struct BinaryFacts {
+        root: AstNodeKey,
+        left: AstNodeKey,
+        right: AstNodeKey,
+    }
+    impl NodeFacts for BinaryFacts {
+        fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+            if key == self.root {
+                Some(NodeKind::BinaryExpression)
+            } else if key == self.left || key == self.right {
+                Some(NodeKind::LiteralExpression)
+            } else {
+                None
+            }
+        }
+
+        fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+            (key == self.left || key == self.right).then_some(LiteralKind::Float)
+        }
+
+        fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
+            (key == self.root).then_some(OperatorFact::Add)
+        }
+
+        fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+            match (key == self.root, index) {
+                (true, 0) => Some(self.left),
+                (true, 1) => Some(self.right),
+                _ => None,
+            }
+        }
+
+        fn float_literal(&self, key: AstNodeKey) -> Option<f64> {
+            if key == self.left {
+                Some(1.5)
+            } else if key == self.right {
+                Some(2.25)
+            } else {
+                None
+            }
+        }
+
+        fn integer_literal(&self, _key: AstNodeKey) -> Option<i64> {
+            None
+        }
+
+        fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+            (key == self.root || key == self.left || key == self.right).then_some(types::F64)
+        }
+    }
+
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/FloatAdd.bd"));
+    let generation = SyntaxGenerationId(3);
+    let node = |id| AstNodeKey {
+        unit,
+        generation,
+        node: AstNodeId(id),
+    };
+    let facts = BinaryFacts {
+        root: node(1),
+        left: node(2),
+        right: node(3),
+    };
+    let mut function = Function::new();
+    let mut builder_context = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+        let block = builder.create_block();
+        builder.switch_to_block(block);
+        builder.seal_block(block);
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root)
+            .expect("float add rule");
+        builder.ins().return_(&[value]);
+        builder.finalize();
+    }
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("fadd"), "{clif}");
+    assert!(!clif.contains("iadd"), "{clif}");
+}
+
+#[test]
+fn binary_u8_less_than_emits_unsigned_compare() {
+    struct BinaryFacts {
+        root: AstNodeKey,
+        left: AstNodeKey,
+        right: AstNodeKey,
+    }
+    impl NodeFacts for BinaryFacts {
+        fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+            if key == self.root {
+                Some(NodeKind::BinaryExpression)
+            } else if key == self.left || key == self.right {
+                Some(NodeKind::LiteralExpression)
+            } else {
+                None
+            }
+        }
+
+        fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+            (key == self.left || key == self.right).then_some(LiteralKind::Integer)
+        }
+
+        fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
+            (key == self.root).then_some(OperatorFact::Lt)
+        }
+
+        fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+            match (key == self.root, index) {
+                (true, 0) => Some(self.left),
+                (true, 1) => Some(self.right),
+                _ => None,
+            }
+        }
+
+        fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
+            if key == self.left {
+                Some(200)
+            } else if key == self.right {
+                Some(10)
+            } else {
+                None
+            }
+        }
+
+        fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+            if key == self.root {
+                Some(types::I8)
+            } else {
+                Some(types::I8)
+            }
+        }
+    }
+
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/U8Lt.bd"));
+    let generation = SyntaxGenerationId(3);
+    let node = |id| AstNodeKey {
+        unit,
+        generation,
+        node: AstNodeId(id),
+    };
+    let facts = BinaryFacts {
+        root: node(1),
+        left: node(2),
+        right: node(3),
+    };
+    let mut function = Function::new();
+    let mut builder_context = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+        let block = builder.create_block();
+        builder.switch_to_block(block);
+        builder.seal_block(block);
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root)
+            .expect("u8 lt rule");
+        builder.ins().return_(&[value]);
+        builder.finalize();
+    }
+
+    let clif = function.display().to_string();
+    assert!(
+        clif.contains("icmp ult") || clif.contains("ult"),
+        "expected unsigned less-than for u8:\n{clif}"
+    );
+    assert!(
+        !clif.contains("icmp slt") && !clif.contains(" slt "),
+        "must not use signed less-than for u8:\n{clif}"
+    );
+}

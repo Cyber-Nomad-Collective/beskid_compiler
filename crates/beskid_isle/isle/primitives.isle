@@ -1,5 +1,15 @@
 ;; Trusted runtime primitives lowering to stock Cranelift CLIF.
-;; Context extern constructors bridge to FunctionBuilder in src/context.rs.
+;; Plain Rust bridges live in `src/clif_primitives.rs` (no generated rule selector).
+;;
+;; Language AST lowering uses the rule files compiled by `build.rs`. Those emitters may
+;; call the same CLIF opcodes directly. This file is the contract for the managed-ABI /
+;; runtime helper vocabulary — keep it complete for integer/float/memory ops Beskid needs.
+;;
+;; Deferred (out of language / codegen-owned elsewhere):
+;; - SIMD vector ops (Beskid has no vector types in TypedProgram today)
+;; - bitwise/shift/rotate/bitcount (no Beskid operators)
+;; - `br_table` (enum `match` emits via cranelift_frontend::Switch)
+;; - `vmctx` (managed ABI uses `GlobalValueData::Symbol` + runtime helpers, not ISLE)
 
 (type Value (primitive Value))
 
@@ -15,6 +25,27 @@
 (decl partial load_i8_zext (Value i64) Value)
 (extern constructor load_i8_zext load_i8_zext)
 
+(decl partial load_i16_zext (Value i64) Value)
+(extern constructor load_i16_zext load_i16_zext)
+
+(decl partial load_i32_zext (Value i64) Value)
+(extern constructor load_i32_zext load_i32_zext)
+
+(decl partial load_i16_sext (Value i64) Value)
+(extern constructor load_i16_sext load_i16_sext)
+
+(decl partial load_i32_sext (Value i64) Value)
+(extern constructor load_i32_sext load_i32_sext)
+
+(decl partial store_i8 (Value i64 Value) Value)
+(extern constructor store_i8 store_i8)
+
+(decl partial store_i16 (Value i64 Value) Value)
+(extern constructor store_i16 store_i16)
+
+(decl partial store_i32 (Value i64 Value) Value)
+(extern constructor store_i32 store_i32)
+
 (decl partial ptr_add (Value i64) Value)
 (extern constructor ptr_add ptr_add)
 
@@ -26,6 +57,39 @@
 
 (decl partial icmp_slt (Value Value) Value)
 (extern constructor icmp_slt icmp_slt)
+
+(decl partial icmp_ult (Value Value) Value)
+(extern constructor icmp_ult icmp_ult)
+
+(decl partial icmp_ule (Value Value) Value)
+(extern constructor icmp_ule icmp_ule)
+
+(decl partial icmp_ugt (Value Value) Value)
+(extern constructor icmp_ugt icmp_ugt)
+
+(decl partial icmp_uge (Value Value) Value)
+(extern constructor icmp_uge icmp_uge)
+
+(decl partial fadd_f64 (Value Value) Value)
+(extern constructor fadd_f64 fadd_f64)
+
+(decl partial fsub_f64 (Value Value) Value)
+(extern constructor fsub_f64 fsub_f64)
+
+(decl partial fmul_f64 (Value Value) Value)
+(extern constructor fmul_f64 fmul_f64)
+
+(decl partial fdiv_f64 (Value Value) Value)
+(extern constructor fdiv_f64 fdiv_f64)
+
+(decl partial fneg_f64 (Value) Value)
+(extern constructor fneg_f64 fneg_f64)
+
+(decl partial fcvt_from_sint_f64 (Value) Value)
+(extern constructor fcvt_from_sint_f64 fcvt_from_sint_f64)
+
+(decl partial fcvt_to_sint_i64 (Value) Value)
+(extern constructor fcvt_to_sint_i64 fcvt_to_sint_i64)
 
 ;; Envelope payload slots use the same stock `load_i64` primitive at byte offsets.
 
