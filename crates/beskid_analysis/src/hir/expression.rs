@@ -231,6 +231,7 @@ pub struct HirStructLiteralExpression {
 pub struct HirEnumConstructorExpression {
     #[ast(child)]
     pub path: Spanned<HirEnumPath>,
+    pub has_empty_parens: bool,
     #[ast(children)]
     pub args: Vec<Spanned<ExpressionNode<HirPhase>>>,
 }

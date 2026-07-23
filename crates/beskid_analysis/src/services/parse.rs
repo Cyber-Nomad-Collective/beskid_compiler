@@ -1,25 +1,91 @@
-//! Parse Beskid source to a spanned [`Program`](crate::syntax::Program), surfacing [`MietteReportError`] on failure.
+//! Parse Beskid source to a spanned [`Program`](crate::syntax::Program), surfacing
+//! [`MietteReportError`] on failure and optional parse-recovery diagnostics.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use pest::Parser;
 
-use crate::analysis::diagnostics::MietteReportError;
+use crate::analysis::diagnostics::{make_diagnostic, MietteReportError, Severity};
+use crate::analysis::diagnostics::SemanticDiagnostic;
 use crate::parser::{BeskidParser, Rule};
 use crate::parsing::parsable::Parsable;
 use crate::syntax::{Program, Spanned};
 
-use super::diagnostics_emit::{parse_error_diagnostic, pest_error_diagnostic};
+use super::diagnostics_emit::{
+    bsol_error, parse_error_diagnostic, pest_error_diagnostic,
+};
+use super::parse_recovery::collect_repair_candidates;
+
+/// Result of parser recovery: always includes diagnostics captured while building the program.
+#[derive(Debug, Clone)]
+pub struct ParsedProgram {
+    pub program: Spanned<Program>,
+    pub diagnostics: Vec<SemanticDiagnostic>,
+    pub recovered: bool,
+}
 
 /// Parse in-memory source named `"<memory>"` for stack traces and diagnostics.
 pub fn parse_program(source: &str) -> Result<Spanned<Program>> {
-    parse_program_with_source_name("<memory>", source)
+    parse_program_with_source_name_and_diagnostics("<memory>", source).map(|parsed| parsed.program)
 }
 
 /// Parse with a stable `source_name` (file path or synthetic label) for diagnostics.
-pub fn parse_program_with_source_name(source_name: &str, source: &str) -> Result<Spanned<Program>> {
+pub fn parse_program_with_source_name(
+    source_name: &str,
+    source: &str,
+) -> Result<Spanned<Program>> {
+    parse_program_with_source_name_and_diagnostics(source_name, source).map(|parsed| parsed.program)
+}
+
+/// Parse with diagnostics collected from strict and recovered parsing attempts.
+pub fn parse_program_with_source_name_and_diagnostics(
+    source_name: &str,
+    source: &str,
+) -> Result<ParsedProgram> {
+    let strict_result = parse_program_strict(source_name, source);
+    let strict_error = match strict_result {
+        Ok(program) => {
+            return Ok(ParsedProgram {
+                program,
+                diagnostics: Vec::new(),
+                recovered: false,
+            });
+        }
+        Err(err) => {
+            if BeskidParser::parse(Rule::Program, source).is_ok() {
+                return Err(err);
+            }
+            err
+        }
+    };
+
+    let parse_error = match BeskidParser::parse(Rule::Program, source) {
+        Ok(_) => return Err(strict_error),
+        Err(err) => err,
+    };
+    let fallback = pest_error_diagnostic(source_name, source, &parse_error);
+
+    for (candidate_source, mut parse_diagnostics) in
+        collect_repair_candidates(source_name, source, &parse_error)
+    {
+        if let Ok(program) = parse_program_strict(source_name, &candidate_source) {
+            if candidate_source == source {
+                parse_diagnostics.clear();
+            }
+            return Ok(ParsedProgram {
+                program,
+                diagnostics: parse_diagnostics,
+                recovered: candidate_source != source,
+            });
+        }
+    }
+
+    Err(anyhow!(MietteReportError::new(fallback)))
+}
+
+fn parse_program_strict(source_name: &str, source: &str) -> Result<Spanned<Program>> {
     let mut pairs = BeskidParser::parse(Rule::Program, source).map_err(|err| {
         let diagnostic = pest_error_diagnostic(source_name, source, &err);
-        anyhow::Error::new(MietteReportError::new(diagnostic))
+        anyhow!(MietteReportError::new(diagnostic))
     })?;
     let pair = pairs.next().ok_or_else(|| {
         let end = if source.is_empty() {
@@ -27,7 +93,7 @@ pub fn parse_program_with_source_name(source_name: &str, source: &str) -> Result
         } else {
             1.min(source.len())
         };
-        let diagnostic = crate::analysis::diagnostics::make_diagnostic(
+        let diagnostic = make_diagnostic(
             source_name,
             source,
             crate::syntax::SpanInfo {
@@ -36,17 +102,17 @@ pub fn parse_program_with_source_name(source_name: &str, source: &str) -> Result
                 line_col_start: (1, 1),
                 line_col_end: (1, 1),
             },
-            "no program found in source",
+            bsol_error("parse", "no program found in source"),
             "parse",
             None,
             Some("parse".to_string()),
-            crate::analysis::Severity::Error,
+            Severity::Error,
         );
         anyhow::Error::new(MietteReportError::new(diagnostic))
     })?;
     Program::parse(pair).map_err(|err| {
         let diagnostic = parse_error_diagnostic(source_name, source, &err);
-        anyhow::Error::new(MietteReportError::new(diagnostic))
+        anyhow!(MietteReportError::new(diagnostic))
     })
 }
 
@@ -57,13 +123,16 @@ pub fn parse_expression_source(
 ) -> Result<Spanned<crate::syntax::Expression>> {
     let mut pairs = BeskidParser::parse(Rule::Expression, source.trim()).map_err(|err| {
         let diagnostic = pest_error_diagnostic(source_name, source, &err);
-        anyhow::Error::new(MietteReportError::new(diagnostic))
+        anyhow!(MietteReportError::new(diagnostic))
     })?;
-    let pair = pairs
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("no expression found in `{source_name}`"))?;
+    let pair = pairs.next().ok_or_else(|| {
+        anyhow!(bsol_error(
+            "parse",
+            &format!("no expression found in `{source_name}`")
+        ))
+    })?;
     crate::syntax::expressions::expression::parse_expression(pair).map_err(|err| {
         let diagnostic = parse_error_diagnostic(source_name, source, &err);
-        anyhow::Error::new(MietteReportError::new(diagnostic))
+        anyhow!(MietteReportError::new(diagnostic))
     })
 }

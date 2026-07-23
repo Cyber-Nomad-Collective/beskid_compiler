@@ -84,6 +84,11 @@ pub fn handle_code_actions(
                 {
                     actions.push(CodeActionOrCommand::CodeAction(action));
                 }
+                if code == "W1639"
+                    && let Some(action) = remove_range_action(uri, diag, "Remove empty enum constructor parens")
+                {
+                    actions.push(CodeActionOrCommand::CodeAction(action));
+                }
                 if matches!(
                     code.as_str(),
                     "W1610"
@@ -144,6 +149,31 @@ fn remove_lines_action(uri: &Uri, doc: &Document, diag: &Diagnostic) -> Option<C
     );
     Some(CodeAction {
         title: "Remove unused import".to_string(),
+        kind: Some(CodeActionKind::QUICKFIX),
+        diagnostics: Some(vec![diag.clone()]),
+        edit: Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..WorkspaceEdit::default()
+        }),
+        ..CodeAction::default()
+    })
+}
+
+fn remove_range_action(uri: &Uri, diag: &Diagnostic, title: &'static str) -> Option<CodeAction> {
+    if diag.range.start == diag.range.end {
+        return None;
+    }
+
+    let mut changes = HashMap::new();
+    changes.insert(
+        uri.clone(),
+        vec![TextEdit {
+            range: diag.range,
+            new_text: String::new(),
+        }],
+    );
+    Some(CodeAction {
+        title: title.to_string(),
         kind: Some(CodeActionKind::QUICKFIX),
         diagnostics: Some(vec![diag.clone()]),
         edit: Some(WorkspaceEdit {

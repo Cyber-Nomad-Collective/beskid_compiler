@@ -421,6 +421,9 @@ impl Emit for Spanned<StructLiteralExpression> {
 impl Emit for EnumConstructorExpression {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         self.path.emit(w, cx)?;
+        if self.args.is_empty() {
+            return Ok(());
+        }
         w.write_char('(')?;
         for (i, a) in self.args.iter().enumerate() {
             if i > 0 {

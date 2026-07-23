@@ -165,6 +165,21 @@ let v = match 0 { _ => 1, };
 }
 
 #[test]
+fn format_nullary_enum_constructor_without_parentheses() {
+    let src = "enum E { None } pub unit demo() { let x = E::None(); return; }";
+    let p = parse_program(src).expect("parse");
+    let out = format_program(&p).expect("format");
+    assert!(
+        out.contains("let x = E::None;"),
+        "expected nullary enum constructor to format without parens, got:\n{out}"
+    );
+    assert!(
+        !out.contains("E::None()"),
+        "expected formatter to drop redundant empty-call syntax, got:\n{out}"
+    );
+}
+
+#[test]
 fn fixture_corpus_is_stable_and_parse_preserving() {
     let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/format");
     let paths = collect_input_fixtures(&fixture_root);

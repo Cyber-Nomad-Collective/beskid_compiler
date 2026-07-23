@@ -105,8 +105,16 @@ pub fn analyze_document(
 }
 
 fn structural_syntax_diagnostics(source_name: &str, source: &str) -> Vec<SyntaxDiagnostic> {
-    match services::parse_program_with_source_name(source_name, source) {
-        Ok(program) => semantic_diagnostics(source_name, source, &program.node),
+    match services::parse_program_with_source_name_and_diagnostics(source_name, source) {
+        Ok(parsed) => {
+            let mut diagnostics = parsed
+                .diagnostics
+                .into_iter()
+                .map(syntax_diagnostic_from_semantic)
+                .collect::<Vec<_>>();
+            diagnostics.extend(semantic_diagnostics(source_name, source, &parsed.program.node));
+            diagnostics
+        }
         Err(err) => vec![SyntaxDiagnostic {
             start: 0,
             end: 0,

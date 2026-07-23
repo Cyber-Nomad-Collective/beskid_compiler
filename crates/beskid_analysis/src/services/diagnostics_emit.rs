@@ -5,6 +5,19 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::projects::ProjectError;
 
+fn escape_bsol_text(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('\"', "\\\"")
+        .replace('\n', "\\n")
+}
+
+pub fn bsol_error(code: &str, message: &str) -> String {
+    format!(
+        "Error {code} {{\n  Message = \"{}\";\n}}",
+        escape_bsol_text(message)
+    )
+}
+
 pub fn pest_error_diagnostic(
     source_name: &str,
     source: &str,
@@ -23,7 +36,7 @@ pub fn pest_error_diagnostic(
             line_col_start: (1, 1),
             line_col_end: (1, 1),
         },
-        format!("parse error: {err}"),
+        bsol_error("parse", &format!("parse error: {err}")),
         "parse",
         None,
         Some("parse".to_string()),
@@ -50,7 +63,7 @@ pub fn parse_error_diagnostic(
                 source_name,
                 source,
                 *span,
-                message,
+                bsol_error("parse", &message),
                 "parse",
                 None,
                 Some("parse".to_string()),
@@ -66,7 +79,7 @@ pub fn parse_error_diagnostic(
                 line_col_start: (1, 1),
                 line_col_end: (1, 1),
             },
-            format!("parse error: missing {expected:?}"),
+            bsol_error("parse", &format!("parse error: missing {expected:?}")),
             "parse",
             None,
             Some("parse".to_string()),
@@ -77,7 +90,10 @@ pub fn parse_error_diagnostic(
                 source_name,
                 source,
                 *span,
-                "parse error: explicit `self` parameter is not allowed in impl methods",
+                bsol_error(
+                    "parse",
+                    "parse error: explicit `self` parameter is not allowed in impl methods",
+                ),
                 "parse",
                 None,
                 Some("parse".to_string()),
@@ -85,6 +101,24 @@ pub fn parse_error_diagnostic(
             )
         }
     }
+}
+
+pub fn parse_recovery_diagnostic(
+    source_name: &str,
+    source: &str,
+    span: crate::syntax::SpanInfo,
+    message: &str,
+) -> SemanticDiagnostic {
+    crate::analysis::diagnostics::make_diagnostic(
+        source_name,
+        source,
+        span,
+        bsol_error("parse.recovery", message),
+        "parse.recovery",
+        None,
+        Some("parse.recovery".to_string()),
+        crate::analysis::Severity::Warning,
+    )
 }
 
 pub fn project_error_diagnostic(
@@ -128,14 +162,15 @@ pub fn project_error_diagnostic(
         }
     };
 
+    let code = error.code().to_string();
     crate::analysis::diagnostics::make_diagnostic(
         source_name,
         source,
         span,
-        message,
+        bsol_error(&code, &message),
         "project",
         None,
-        Some(error.code().to_string()),
+        Some(code),
         crate::analysis::Severity::Error,
     )
 }

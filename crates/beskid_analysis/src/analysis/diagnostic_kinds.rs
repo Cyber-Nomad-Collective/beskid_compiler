@@ -335,6 +335,7 @@ pub enum SemanticIssueKind {
     DocDuplicateGenericName {
         name: String,
     },
+    RedundantEnumConstructorParens,
 
     // ── Naming-style warnings (W1630–W1638) ──
     NamingNotPascalCaseType {
@@ -542,6 +543,7 @@ impl SemanticIssueKind {
             Self::DocParWithoutGenerics => "W1623",
             Self::DocUnknownGenericName { .. } => "W1624",
             Self::DocDuplicateGenericName { .. } => "W1625",
+            Self::RedundantEnumConstructorParens => "W1639",
 
             Self::NamingNotPascalCaseType { .. } => "W1630",
             Self::NamingNotPascalCaseVariant { .. } => "W1631",
@@ -582,7 +584,8 @@ impl SemanticIssueKind {
             | Self::NamingNotPascalCaseGeneric { .. }
             | Self::NamingNotCamelCaseBinding { .. }
             | Self::NamingNotSnakeCaseTest { .. }
-            | Self::NamingNotCamelCaseMacro { .. } => Severity::Warning,
+            | Self::NamingNotCamelCaseMacro { .. }
+            | Self::RedundantEnumConstructorParens => Severity::Warning,
             _ => Severity::Error,
         }
     }
@@ -758,6 +761,7 @@ impl SemanticIssueKind {
             Self::DocParWithoutGenerics => "invalid @par placement".to_string(),
             Self::DocUnknownGenericName { .. } => "unknown @par type parameter".to_string(),
             Self::DocDuplicateGenericName { .. } => "duplicate @par".to_string(),
+            Self::RedundantEnumConstructorParens => "redundant enum constructor parens".to_string(),
 
             Self::NamingNotPascalCaseType { .. } => "type name not PascalCase".to_string(),
             Self::NamingNotPascalCaseVariant { .. } => "enum variant not PascalCase".to_string(),
@@ -1130,6 +1134,9 @@ impl SemanticIssueKind {
             Self::DocDuplicateGenericName { name } => {
                 format!("duplicate `@par({name})` in the same documentation block")
             }
+            Self::RedundantEnumConstructorParens => {
+                "redundant empty parentheses on nullary enum constructor".to_string()
+            }
             Self::NamingNotPascalCaseType { name } => {
                 format!("type name `{name}` should use PascalCase")
             }
@@ -1237,6 +1244,9 @@ impl SemanticIssueKind {
             ),
             Self::DocUnresolvedRef { .. } => {
                 Some("use a name that exists in this compilation unit".to_string())
+            }
+            Self::RedundantEnumConstructorParens => {
+                Some("remove the redundant empty parentheses".to_string())
             }
             Self::NamingNotPascalCaseType { name }
             | Self::NamingNotPascalCaseVariant { name }

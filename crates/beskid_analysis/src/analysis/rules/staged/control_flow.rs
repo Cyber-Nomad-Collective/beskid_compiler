@@ -2,7 +2,7 @@ use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
 use crate::hir::{HirBlock, HirExpressionNode, HirItem, HirPattern, HirProgram, HirStatementNode};
-use crate::syntax::Spanned;
+use crate::syntax::{SpanInfo, Spanned};
 use crate::syntax_query::{HirNodeRef, HirQuery, HirVisit, HirWalker};
 use std::collections::{HashMap, HashSet};
 
@@ -352,6 +352,14 @@ impl<'a> ControlFlowVisitor<'a> {
         &mut self,
         constructor_expression: &Spanned<crate::hir::HirEnumConstructorExpression>,
     ) {
+        if constructor_expression.node.has_empty_parens && constructor_expression.node.args.is_empty() {
+            if let Some(span) =
+                Self::explicit_empty_constructor_parens_span(constructor_expression, self.ctx.source())
+            {
+                self.ctx
+                    .emit_issue(span, SemanticIssueKind::RedundantEnumConstructorParens);
+            }
+        }
         let enum_name = constructor_expression
             .node
             .path
@@ -400,6 +408,39 @@ impl<'a> ControlFlowVisitor<'a> {
                     actual: constructor_expression.node.args.len(),
                 },
             );
+        }
+    }
+
+    fn explicit_empty_constructor_parens_span(
+        constructor_expression: &Spanned<crate::hir::HirEnumConstructorExpression>,
+        source: &str,
+    ) -> Option<SpanInfo> {
+        let source_bytes = source.as_bytes();
+        if source_bytes.is_empty() {
+            return None;
+        }
+
+        let expr_end = constructor_expression.span.end.min(source_bytes.len());
+        let path_end = constructor_expression.node.path.span.end.min(expr_end);
+        if path_end > expr_end {
+            return None;
+        }
+
+        let source_slice = &source_bytes[path_end..expr_end];
+        let open = source_slice
+            .iter()
+            .position(|b| *b == b'(')
+            .map(|offset| path_end + offset);
+        let close = source_slice
+            .iter()
+            .rposition(|b| *b == b')')
+            .map(|offset| path_end + offset + 1);
+
+        match (open, close) {
+            (Some(open), Some(close)) if open < close => {
+                Some(SpanInfo::from_byte_range_in_source(source, open, close))
+            }
+            _ => None,
         }
     }
 

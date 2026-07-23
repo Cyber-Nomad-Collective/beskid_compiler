@@ -12,6 +12,7 @@ use beskid_ast_derive::AstNode;
 pub struct EnumConstructorExpression {
     #[ast(child)]
     pub path: Spanned<EnumPath>,
+    pub has_empty_parens: bool,
     #[ast(children)]
     pub args: Vec<Spanned<Expression>>,
 }
@@ -24,7 +25,8 @@ pub(crate) fn parse_enum_constructor_expression(
         .into_inner()
         .next()
         .ok_or(ParseError::missing(Rule::EnumConstructorExpression))?;
-    let mut inner = variant.into_inner();
+    let mut inner = variant.clone().into_inner();
+    let has_empty_parens = variant.as_rule() == Rule::enum_constructor_with_args;
     let path = EnumPath::parse(inner.next().ok_or(ParseError::missing(Rule::EnumPath))?)?;
     let args = if let Some(arg_list) = inner.next() {
         arg_list
@@ -35,7 +37,14 @@ pub(crate) fn parse_enum_constructor_expression(
         Vec::new()
     };
 
-    let constructor = Spanned::new(EnumConstructorExpression { path, args }, span);
+    let constructor = Spanned::new(
+        EnumConstructorExpression {
+            path,
+            has_empty_parens,
+            args,
+        },
+        span,
+    );
 
     Ok(Spanned::new(Expression::EnumConstructor(constructor), span))
 }

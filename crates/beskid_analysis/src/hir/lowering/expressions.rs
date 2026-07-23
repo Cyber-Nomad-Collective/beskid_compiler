@@ -375,6 +375,7 @@ impl Lowerable for Spanned<syntax::EnumConstructorExpression> {
         Spanned::new(
             HirEnumConstructorExpression {
                 path: self.node.path.lower(),
+                has_empty_parens: self.node.has_empty_parens,
                 args: self.node.args.iter().map(Lowerable::lower).collect(),
             },
             self.span,

@@ -12,6 +12,7 @@ mod front_end;
 mod input;
 mod lower;
 mod parse;
+mod parse_recovery;
 mod prepare;
 mod project;
 mod unit_ops;
@@ -73,7 +74,10 @@ pub use lower::{
     lower_normalize_resolve_type_spanned, lower_normalize_resolve_type_spanned_with_assembly,
     typed_hir_from_lowered,
 };
-pub use parse::{parse_expression_source, parse_program, parse_program_with_source_name};
+pub use parse::{
+    parse_expression_source, parse_program, parse_program_with_source_name,
+    parse_program_with_source_name_and_diagnostics, ParsedProgram,
+};
 pub use prepare::{
     PrepareOptions, PreparedCompilation, prepare_compilation, prepare_compilation_diagnostics,
     resolved_input_from_plan,

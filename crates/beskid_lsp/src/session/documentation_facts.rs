@@ -198,8 +198,7 @@ pub fn syntax_documentation_facts_for_source(
     source_name: &str,
     source: &str,
 ) -> Vec<SyntaxDocumentationFact> {
-    let Ok(program) = beskid_analysis::services::parse_program_with_source_name(source_name, source)
-    else {
+    let Ok(program) = beskid_analysis::services::parse_program_with_source_name(source_name, source) else {
         return Vec::new();
     };
     let mut facts = syntax_documentation_facts_for_program(&program.node);
