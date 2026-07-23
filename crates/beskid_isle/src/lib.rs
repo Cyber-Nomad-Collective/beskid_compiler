@@ -2601,7 +2601,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             scrutinee,
             i32::try_from(layout.tag.offset).ok()?,
         );
-        let result_type = self.facts.scalar_type(key)?;
+        let result_type = self.facts.scalar_type(key).or_else(|| {
+            arms.iter().find_map(|arm| self.facts.scalar_type(arm.body))
+        })?;
         let merge = self.builder.create_block();
         self.builder.append_block_param(merge, result_type);
         let arm_blocks = arms
