@@ -4554,13 +4554,33 @@ fn resolve_type_declaration(
         .map(|segment| segment.node.name.node.name.as_str())
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    unique_exported_type_in_unit(
-        db,
-        resolve_qualified_module_unit(db, key, &module_path)?,
-        key.generation,
-        name,
-        generic_arity,
-    )
+    if let Some(unit) = resolve_qualified_module_unit(db, key, &module_path)
+        && let Some(declaration) =
+            unique_exported_type_in_unit(db, unit, key.generation, name, generic_arity)
+    {
+        return Some(declaration);
+    }
+    // One-type-per-file modules export `Core.Syscall.SyscallError` as both the module path and
+    // the type name. Ordinary lookup looks for `SyscallError` inside `Core.Syscall` and misses;
+    // retry against the assembly module registry with the terminal segment appended so applied
+    // generic type arguments still resolve without requiring a short-name `use`.
+    let mut type_module = module_path;
+    type_module.push(name.to_owned());
+    let target = {
+        let registry = db
+            .syntax_dependency_registry()
+            .lock()
+            .expect("syntax dependency registry");
+        let [target] = registry
+            .modules
+            .get(&(key.generation, type_module))?
+            .as_slice()
+        else {
+            return None;
+        };
+        *target
+    };
+    unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)
 }
 
 /// Resolve a public type member through its defining syntax unit or explicit public re-exports.

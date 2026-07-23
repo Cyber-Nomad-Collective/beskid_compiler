@@ -94,15 +94,16 @@ fn use_mod_semicolon_repairs(source: &str, error_pos: usize) -> Vec<RepairCandid
     }
 
     let after_decl = skip_ws(source, decl_start + 3);
-    if let Some(next_item) = next_item_keyword_start(source, after_decl) {
-        if next_item > decl_start && next_item <= source.len() {
-            out.push(RepairCandidate::insert(
-                next_item,
-                ";",
-                "inserted semicolon before next top-level item keyword",
-                PRIORITY_USE_MOD_SEMI_BEFORE_NEXT,
-            ));
-        }
+    if let Some(next_item) = next_item_keyword_start(source, after_decl)
+        && next_item > decl_start
+        && next_item <= source.len()
+    {
+        out.push(RepairCandidate::insert(
+            next_item,
+            ";",
+            "inserted semicolon before next top-level item keyword",
+            PRIORITY_USE_MOD_SEMI_BEFORE_NEXT,
+        ));
     }
     out
 }
@@ -300,18 +301,17 @@ fn mod_declaration_kind(source: &str, mod_pos: usize) -> ModDeclKind {
 }
 
 fn declaration_end_without_semicolon(source: &str, decl_start: usize, error_pos: usize) -> usize {
-    if let Some(next_item) = next_item_keyword_start(source, decl_start + 1) {
-        if next_item > decl_start && next_item <= error_pos.max(decl_start) {
-            return next_item;
-        }
+    if let Some(next_item) = next_item_keyword_start(source, decl_start + 1)
+        && next_item > decl_start
+        && next_item <= error_pos.max(decl_start)
+    {
+        return next_item;
     }
     error_pos.max(decl_start).min(source.len())
 }
 
 fn has_semicolon_in_range(source: &str, start: usize, end: usize) -> bool {
-    source.as_bytes()[start..end.min(source.len())]
-        .iter()
-        .any(|&b| b == b';')
+    source.as_bytes()[start..end.min(source.len())].contains(&b';')
 }
 
 fn inside_contract_block(source: &str, error_pos: usize) -> bool {
@@ -499,9 +499,7 @@ fn error_near_eof(source: &str, error_pos: usize) -> bool {
 fn next_item_keyword_start(source: &str, from: usize) -> Option<usize> {
     let mut pos = from;
     while pos < source.len() {
-        let Some(token) = next_token_start(source, pos) else {
-            return None;
-        };
+        let token = next_token_start(source, pos)?;
         if keyword_at(source, token, "pub") {
             pos = token + 3;
             continue;

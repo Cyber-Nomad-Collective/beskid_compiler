@@ -1,0 +1,1 @@
+i64 Main() { return 41 + 1; }
