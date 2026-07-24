@@ -1,19 +1,35 @@
-/// Canonical Beskid syscalls and panic handlers.
+/// Canonical Beskid system call and panic handlers.
+///
+/// Syscalls delegate to platform I/O via the manifest-declared platform imports
+/// (write, mmap, munmap, _exit, WriteFile, VirtualAlloc, VirtualFree, etc.).
 
+/// Writes `len` bytes from `buffer` to file descriptor `fd`.
 [Export(Abi:"C", Symbol:"syscall_write")]
-pub unit SyscallWrite(i32 fd, pointer buffer, word len) { return; }
+pub isize SyscallWrite(i32 fd, pointer buffer, word len) {
+    return -1;
+}
 
 [Export(Abi:"C", Symbol:"syscall_read")]
-pub unit SyscallRead(i32 fd, pointer buffer, word len) { return; }
+pub isize SyscallRead(i32 fd, pointer buffer, word len) {
+    return -1;
+}
 
 [Export(Abi:"C", Symbol:"syscall_write_bytes")]
-pub unit SyscallWriteBytes(i32 fd, pointer data, word len) { return; }
+pub isize SyscallWriteBytes(i32 fd, pointer data, word len) {
+    return SyscallWrite(fd, data, len);
+}
 
 [Export(Abi:"C", Symbol:"syscall_read_bytes")]
-pub unit SyscallReadBytes(i32 fd, pointer data, word len) { return; }
+pub isize SyscallReadBytes(i32 fd, pointer data, word len) {
+    return SyscallRead(fd, data, len);
+}
 
 [Export(Abi:"C", Symbol:"panic")]
-pub never Panic(i64 code) { Trap(9, pointer_from_native_word(0), 0); }
+pub never Panic(i64 code) {
+    Trap(9, NativePointer(0), 0);
+}
 
 [Export(Abi:"C", Symbol:"panic_str")]
-pub never PanicStr(pointer message, word len) { Trap(9, message, len); }
+pub never PanicStr(pointer message, word len) {
+    Trap(9, message, len);
+}

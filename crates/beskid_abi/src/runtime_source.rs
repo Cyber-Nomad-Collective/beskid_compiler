@@ -25,6 +25,8 @@ pub const CANONICAL_SCHEDULER_SOURCE_PATH: &str = "src/Runtime/Scheduler.bd";
 pub const CANONICAL_SYSCALLS_SOURCE_PATH: &str = "src/Runtime/Syscalls.bd";
 pub const CANONICAL_PROCESS_SOURCE_PATH: &str = "src/Runtime/Process.bd";
 pub const CANONICAL_MISC_SOURCE_PATH: &str = "src/Runtime/Misc.bd";
+pub const CANONICAL_MUTEX_SOURCE_PATH: &str = "src/Runtime/Mutex.bd";
+pub const CANONICAL_WAITGROUP_SOURCE_PATH: &str = "src/Runtime/WaitGroup.bd";
 /// Canonical Foundation syscall facade eligible for Corelib service authority.
 pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd";
 /// Canonical Foundation assertion helper eligible to import the panic runtime service.

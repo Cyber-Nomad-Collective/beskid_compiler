@@ -1,0 +1,91 @@
+/// Canonical Beskid WaitGroup counter with Add/Done/Wait.
+
+const WG_TABLE_MAX = 16;
+const WG_SLOT_SIZE = 16; // word counter + 8*word waiters stub
+
+/// Returns the wait group table pointer (offset 2560 in runtime state).
+pub pointer WgTable() {
+    pointer state = RuntimeState();
+    if state == NativePointer(0) {
+        return NativePointer(0);
+    }
+    return pointer_add(state, 2560);
+}
+
+/// Creates a wait group and returns its opaque ID.
+[Export(Abi:"C", Symbol:"wait_group_create")]
+pub pointer WaitGroupCreate() {
+    pointer table = WgTable();
+    if table == NativePointer(0) {
+        return NativePointer(0);
+    }
+    word count = raw_word_load(table);
+    if count >= WG_TABLE_MAX {
+        return NativePointer(0);
+    }
+    pointer slot = pointer_add(table, 8 + count * WG_SLOT_SIZE);
+    raw_word_store(slot, 0);
+    raw_word_store(table, count + 1);
+    return NativePointer(count);
+}
+
+/// Adds `delta` to the wait group counter.
+[Export(Abi:"C", Symbol:"wait_group_add")]
+pub unit WaitGroupAdd(pointer id, i64 delta) {
+    word slotIndex = NativeWord(id);
+    if slotIndex >= WG_TABLE_MAX {
+        return;
+    }
+    pointer table = WgTable();
+    if table == NativePointer(0) {
+        return;
+    }
+    pointer slot = pointer_add(table, 8 + slotIndex * WG_SLOT_SIZE);
+    i64 current = i64(raw_word_load(slot));
+    raw_word_store(slot, word(i64(word(current)) + delta));
+    return;
+}
+
+/// Decrements the counter. Wakes waiters when it reaches zero.
+[Export(Abi:"C", Symbol:"wait_group_done")]
+pub unit WaitGroupDone(pointer id) {
+    word slotIndex = NativeWord(id);
+    if slotIndex >= WG_TABLE_MAX {
+        return;
+    }
+    pointer table = WgTable();
+    if table == NativePointer(0) {
+        return;
+    }
+    pointer slot = pointer_add(table, 8 + slotIndex * WG_SLOT_SIZE);
+    i64 current = i64(raw_word_load(slot));
+    current = current - 1;
+    if current < 0 {
+        current = 0;
+    }
+    raw_word_store(slot, word(i64(word(current))));
+    return;
+}
+
+/// Blocks until the counter reaches zero.
+[Export(Abi:"C", Symbol:"wait_group_wait")]
+pub i32 WaitGroupWait(pointer id) {
+    word slotIndex = NativeWord(id);
+    if slotIndex >= WG_TABLE_MAX {
+        return 0;
+    }
+    pointer table = WgTable();
+    if table == NativePointer(0) {
+        return 0;
+    }
+    pointer slot = pointer_add(table, 8 + slotIndex * WG_SLOT_SIZE);
+    mut word attempts = 0;
+    while attempts < 10000 {
+        i64 current = i64(raw_word_load(slot));
+        if current <= 0 {
+            return 0;
+        }
+        attempts = attempts + 1;
+    }
+    return 1;
+}

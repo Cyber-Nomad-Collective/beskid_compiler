@@ -128,17 +128,35 @@ pub pointer Alloc(word size, pointer type_desc_ptr) {
     return obj;
 }
 
-// ── GC Root Registration ──────────────────────────────────────────
+// ── External root registration (embedded fixed-capacity array) ──
 
-/// Registers a stack-slot address as an external GC root.
+const ROOT_REGISTRY_MAX = 64;
+const ROOT_REGISTRY_OFFSET = 128;
+
+/// Registers a stack-slot address (`*mut *mut u8`) so the GC traces the pointer it points to.
 [Export(Abi:"C", Symbol:"gc_register_root")]
 pub unit GcRegisterRoot(pointer ptrAddr) {
     if ptrAddr == NativePointer(0) {
         return;
     }
-    pointer state = RuntimeState();
-    pointer handles = NativePointer(raw_word_load(pointer_add(state, 24)));
-    // TODO: append ptrAddr to the external-roots list in the handles table.
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return;
+    }
+    word i = 0; word count = raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8));
+    while i < count {
+        pointer slot = pointer_add(heap, ROOT_REGISTRY_OFFSET + i * 8);
+        if raw_word_load(slot) == NativeWord(ptrAddr) {
+            return;
+        }
+        i = i + 1;
+    }
+    if count >= ROOT_REGISTRY_MAX {
+        return;
+    }
+    pointer slot = pointer_add(heap, ROOT_REGISTRY_OFFSET + count * 8);
+    raw_word_store(slot, NativeWord(ptrAddr));
+    raw_word_store(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8), count + 1);
     return;
 }
 
@@ -148,25 +166,137 @@ pub unit GcUnregisterRoot(pointer ptrAddr) {
     if ptrAddr == NativePointer(0) {
         return;
     }
-    // TODO: remove ptrAddr from external-roots list.
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return;
+    }
+    word count = raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8));
+    mut word i = 0;
+    while i < count {
+        pointer slot = pointer_add(heap, ROOT_REGISTRY_OFFSET + i * 8);
+        if raw_word_load(slot) == NativeWord(ptrAddr) {
+            // Remove by swapping with the last slot.
+            raw_word_store(slot, raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET + (count - 1) * 8)));
+            raw_word_store(pointer_add(heap, ROOT_REGISTRY_OFFSET + (count - 1) * 8), 0);
+            raw_word_store(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8), count - 1);
+            return;
+        }
+        i = i + 1;
+    }
     return;
 }
 
-/// Creates a temporary GC root handle and returns its opaque ID.
+/// Returns the number of registered external roots.
+[Export(Abi:"C", Symbol:"gc_external_root_count")]
+pub word GcExternalRootCount() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return 0;
+    }
+    return raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8));
+}
+
+// ── Temporary handle table (generation-tagged slots) ───────────────
+
+const HANDLE_TABLE_MAX = 64;
+const HANDLE_TABLE_OFFSET = 640;           // 128 + 64*8
+const HANDLE_SLOT_SIZE = 16;
+const HANDLE_COUNT_OFFSET = 636;           // HANDLE_TABLE_OFFSET - 4
+const HANDLE_NEXT_ID_OFFSET = 628;          // compacted: HANDLE_COUNT_OFFSET - 4
+const HANDLE_FREE_HEAD_OFFSET = 620;        // next free list head
+
+/// Allocates a generation-tagged handle for `valuePtr` and returns the opaque u64 cookie.
 [Export(Abi:"C", Symbol:"gc_root_handle")]
 pub u64 GcRootHandle(pointer valuePtr) {
     if valuePtr == NativePointer(0) {
         return 0;
     }
-    // TODO: store in handles table, return slot index.
-    return 0;
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return 0;
+    }
+    word freeHead = raw_word_load(pointer_add(heap, HANDLE_FREE_HEAD_OFFSET));
+    word slotIndex;
+    word generation;
+    if freeHead != 0xFFFFFFFFFFFFFFFF {
+        // Reuse a freed slot.
+        slotIndex = freeHead;
+        pointer slotPtr = pointer_add(heap, HANDLE_TABLE_OFFSET + slotIndex * HANDLE_SLOT_SIZE);
+        generation = raw_word_load(pointer_add(slotPtr, 8));
+        // Pop free list.
+        word nextFree = raw_word_load(pointer_add(slotPtr, 12));
+        raw_word_store(pointer_add(heap, HANDLE_FREE_HEAD_OFFSET), nextFree);
+    } else {
+        // Allocate new slot.
+        word count = raw_word_load(pointer_add(heap, HANDLE_COUNT_OFFSET));
+        if count >= HANDLE_TABLE_MAX {
+            return 0;
+        }
+        slotIndex = count;
+        generation = 1;
+        raw_word_store(pointer_add(heap, HANDLE_COUNT_OFFSET), count + 1);
+    }
+    // Write { value, generation, 0 } into the slot.
+    pointer slotPtr = pointer_add(heap, HANDLE_TABLE_OFFSET + slotIndex * HANDLE_SLOT_SIZE);
+    raw_word_store(slotPtr, NativeWord(valuePtr));
+    raw_word_store(pointer_add(slotPtr, 8), generation);
+    raw_word_store(pointer_add(slotPtr, 12), 0);
+    // Encode: upper 32 = generation, lower 32 = slotIndex.
+    return (generation << 32) | slotIndex;
 }
 
-/// Releases a temporary root handle.
+/// Releases a handle. Stale/double-free handles are silently ignored.
 [Export(Abi:"C", Symbol:"gc_unroot_handle")]
 pub unit GcUnrootHandle(u64 handle) {
-    // TODO: clear slot.
+    if handle == 0 {
+        return;
+    }
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return;
+    }
+    word slotIndex = handle & 0xFFFFFFFF;
+    word generation = handle >> 32;
+    word count = raw_word_load(pointer_add(heap, HANDLE_COUNT_OFFSET));
+    if slotIndex >= count {
+        return;
+    }
+    pointer slotPtr = pointer_add(heap, HANDLE_TABLE_OFFSET + slotIndex * HANDLE_SLOT_SIZE);
+    word storedGen = raw_word_load(pointer_add(slotPtr, 8));
+    if storedGen != generation {
+        return; // Stale handle.
+    }
+    // Increment generation so future lookups with this handle fail.
+    raw_word_store(pointer_add(slotPtr, 8), storedGen + 1);
+    raw_word_store(slotPtr, 0);
+    // Push onto free list.
+    word freeHead = raw_word_load(pointer_add(heap, HANDLE_FREE_HEAD_OFFSET));
+    raw_word_store(pointer_add(slotPtr, 12), freeHead);
+    raw_word_store(pointer_add(heap, HANDLE_FREE_HEAD_OFFSET), slotIndex);
     return;
+}
+
+/// Resolves a handle to its stored pointer value, or null for stale handles.
+pub pointer GcResolveHandle(u64 handle) {
+    if handle == 0 {
+        return NativePointer(0);
+    }
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return NativePointer(0);
+    }
+    word slotIndex = handle & 0xFFFFFFFF;
+    word generation = handle >> 32;
+    word count = raw_word_load(pointer_add(heap, HANDLE_COUNT_OFFSET));
+    if slotIndex >= count {
+        return NativePointer(0);
+    }
+    pointer slotPtr = pointer_add(heap, HANDLE_TABLE_OFFSET + slotIndex * HANDLE_SLOT_SIZE);
+    word storedGen = raw_word_load(pointer_add(slotPtr, 8));
+    if storedGen != generation {
+        return NativePointer(0);
+    }
+    return NativePointer(raw_word_load(slotPtr));
 }
 
 // ── Write Barrier ─────────────────────────────────────────────────
@@ -350,6 +480,7 @@ pub pointer PopGray() {
 
 /// Traces all registered roots and marks reachable objects gray.
 pub unit MarkRoots() {
+    pointer heap = Heap();
     // Trace TLS root frames.
     pointer tls = CurrentThreadState();
     if tls != NativePointer(0) {
@@ -368,6 +499,38 @@ pub unit MarkRoots() {
                 }
             }
             rootFrame = NativePointer(raw_word_load(rootFrame));
+        }
+    }
+    // Trace external root registry (gc_register_root slots).
+    if heap != NativePointer(0) {
+        word extCount = raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8));
+        mut word j = 0;
+        while j < extCount {
+            pointer slotAddr = NativePointer(raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET + j * 8)));
+            if slotAddr != NativePointer(0) {
+                pointer value = NativePointer(raw_word_load(slotAddr));
+                if value != NativePointer(0) {
+                    GcMarkGray(value);
+                }
+            }
+            j = j + 1;
+        }
+        // Trace handle table (gc_root_handle temporary roots).
+        word handleCount = raw_word_load(pointer_add(heap, HANDLE_COUNT_OFFSET));
+        if handleCount > HANDLE_TABLE_MAX {
+            handleCount = HANDLE_TABLE_MAX;
+        }
+        mut word k = 0;
+        while k < handleCount {
+            pointer slotPtr = pointer_add(heap, HANDLE_TABLE_OFFSET + k * HANDLE_SLOT_SIZE);
+            word generation = raw_word_load(pointer_add(slotPtr, 8));
+            if generation > 0 {
+                pointer value = NativePointer(raw_word_load(slotPtr));
+                if value != NativePointer(0) {
+                    GcMarkGray(value);
+                }
+            }
+            k = k + 1;
         }
     }
     // Process all gray objects.
@@ -417,11 +580,14 @@ pub unit Sweep(pointer heap) {
 /// The caller provides a pre-allocated memory region.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_heap_init")]
 pub unit HeapInit(pointer heapStruct, pointer region, word regionSize) {
-    memory_set(heapStruct, 0, 128);
+    // Zero the entire heap struct (768 bytes: 128 core + 512 root registry + 128 handle table).
+    memory_set(heapStruct, 0, 768);
     raw_word_store(heapStruct, NativeWord(region));
     raw_word_store(pointer_add(heapStruct, 8), regionSize);
     raw_word_store(pointer_add(heapStruct, 16), NativeWord(region));
     raw_word_store(pointer_add(heapStruct, 24), NativeWord(region) + regionSize);
     raw_word_store(pointer_add(heapStruct, 56), regionSize / 2);
+    // Initialize free-head sentinel.
+    raw_word_store(pointer_add(heapStruct, HANDLE_FREE_HEAD_OFFSET), 0xFFFFFFFFFFFFFFFF);
     return;
 }

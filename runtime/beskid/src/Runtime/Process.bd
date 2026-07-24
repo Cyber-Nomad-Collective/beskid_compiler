@@ -1,7 +1,7 @@
-/// Canonical Beskid process environment and filesystem primitives.
+/// Canonical Beskid process, environment, and filesystem operations.
 
 [Export(Abi:"C", Symbol:"process_exit")]
-pub never ProcessExit(i32 code) { Trap(9, pointer_from_native_word(0), 0); }
+pub never ProcessExit(i32 code) { Trap(9, NativePointer(0), 0); }
 
 [Export(Abi:"C", Symbol:"process_getpid")]
 pub i32 ProcessGetpid() { return 0; }
