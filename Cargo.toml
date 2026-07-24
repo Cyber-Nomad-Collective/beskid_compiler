@@ -48,8 +48,8 @@ tui-piechart = "0.3"
 tui-logger = { version = "0.18", features = ["tracing-support"] }
 tui-spinner = "0.2"
 tui-term = "0.3.4"
-workflow-core = { version = "0.18", default-features = false }
-workflow-task = { version = "0.18", default-features = false }
+workflow-core = { version = "0.19", default-features = false }
+workflow-task = { version = "0.19", default-features = false }
 panes = "0.19"
 panes-ratatui = "0.5"
 ratatui-code-editor = "0.0.4"

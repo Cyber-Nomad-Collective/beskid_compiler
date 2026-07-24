@@ -452,7 +452,7 @@ fn compile_platform_objects(
     let object = output_dir.join(format!("{name}.platform.{}", plan.object_extension));
     let tls_object = output_dir.join(format!("{name}.platform_tls.{}", plan.object_extension));
     let mut assembly = Command::new(plan.assembly_program);
-    assembly.args(plan.assembly_args);
+    assembly.args(&plan.assembly_args);
     if plan.assembly_output_before_source {
         assembly.arg(&object).arg(&source);
     } else {
@@ -473,7 +473,7 @@ fn compile_platform_objects(
         });
     }
     let output = Command::new(plan.tls_program)
-        .args(plan.tls_args)
+        .args(&plan.tls_args)
         .arg(&tls_source)
         .arg("-o")
         .arg(&tls_object)
@@ -500,10 +500,10 @@ struct PlatformObjectPlan {
     assembly_source: &'static str,
     tls_source: &'static str,
     assembly_program: &'static str,
-    assembly_args: &'static [&'static str],
+    assembly_args: Vec<String>,
     assembly_output_before_source: bool,
     tls_program: &'static str,
-    tls_args: &'static [&'static str],
+    tls_args: Vec<String>,
     object_extension: &'static str,
 }
 
@@ -513,35 +513,35 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
     if let Some(config) = get_target_config(target) {
         return match (&config.arch, &config.os) {
             (Arch::Aarch64, Os::Darwin) => Ok(PlatformObjectPlan {
-            assembly_source: "platform.S",
-            tls_source: "platform_tls.c",
-            assembly_program: "clang",
-            assembly_args: &["-c", "-arch", "arm64"],
-            assembly_output_before_source: false,
-            tls_program: "clang",
-            tls_args: &["-std=c11", "-c", "-arch", "arm64"],
-            object_extension: "o",
-        }),
-        (Arch::X86_64, Os::Linux) => Ok(PlatformObjectPlan {
-            assembly_source: "platform.S",
-            tls_source: "platform_tls.c",
-            assembly_program: "clang",
-            assembly_args: &["-target", target, "-fPIC", "-c"],
-            assembly_output_before_source: false,
-            tls_program: "clang",
-            tls_args: &["-target", target, "-std=c11", "-fPIC", "-c"],
-            object_extension: "o",
-        }),
-        (Arch::X86_64, Os::Windows) => Ok(PlatformObjectPlan {
-            assembly_source: "platform.asm",
-            tls_source: "platform_tls.c",
-            assembly_program: "llvm-ml",
-            assembly_args: &["--m64", "/c", "/X", "/Fo"],
-            assembly_output_before_source: true,
-            tls_program: "clang",
-            tls_args: &[&format!("--target={target}"), "-std=c11", "-c"],
-            object_extension: "obj",
-        }),
+                assembly_source: "platform.S",
+                tls_source: "platform_tls.c",
+                assembly_program: "clang",
+                assembly_args: vec!["-c".into(), "-arch".into(), "arm64".into()],
+                assembly_output_before_source: false,
+                tls_program: "clang",
+                tls_args: vec!["-std=c11".into(), "-c".into(), "-arch".into(), "arm64".into()],
+                object_extension: "o",
+            }),
+            (Arch::X86_64, Os::Linux) => Ok(PlatformObjectPlan {
+                assembly_source: "platform.S",
+                tls_source: "platform_tls.c",
+                assembly_program: "clang",
+                assembly_args: vec!["-target".into(), target.to_owned(), "-fPIC".into(), "-c".into()],
+                assembly_output_before_source: false,
+                tls_program: "clang",
+                tls_args: vec!["-target".into(), target.to_owned(), "-std=c11".into(), "-fPIC".into(), "-c".into()],
+                object_extension: "o",
+            }),
+            (Arch::X86_64, Os::Windows) => Ok(PlatformObjectPlan {
+                assembly_source: "platform.asm",
+                tls_source: "platform_tls.c",
+                assembly_program: "llvm-ml",
+                assembly_args: vec!["--m64".into(), "/c".into(), "/X".into(), "/Fo".into()],
+                assembly_output_before_source: true,
+                tls_program: "clang",
+                tls_args: vec![format!("--target={target}"), "-std=c11".into(), "-c".into()],
+                object_extension: "obj",
+            }),
             _ => Err(AotError::UnsupportedLinkerStrategy {
                 target: target.to_owned(),
                 message: format!(
@@ -558,10 +558,10 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
             assembly_source: "platform.asm",
             tls_source: "platform_tls.c",
             assembly_program: "llvm-ml",
-            assembly_args: &["--m64", "/c", "/X", "/Fo"],
+            assembly_args: vec!["--m64".into(), "/c".into(), "/X".into(), "/Fo".into()],
             assembly_output_before_source: true,
             tls_program: "clang",
-            tls_args: &["--target=x86_64-pc-windows-msvc", "-std=c11", "-c"],
+            tls_args: vec!["--target=x86_64-pc-windows-msvc".into(), "-std=c11".into(), "-c".into()],
             object_extension: "obj",
         }),
         _ => Err(AotError::UnsupportedLinkerStrategy {
