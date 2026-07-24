@@ -17,6 +17,7 @@ mod delimiters;
 mod expressions;
 mod items;
 mod separators;
+pub(crate) mod utils;
 
 /// Maximum unique repaired sources tried per recovery attempt.
 pub const MAX_RECOVERY_CANDIDATES: usize = 16;
@@ -69,7 +70,8 @@ pub fn apply_repair(source: &str, candidate: &RepairCandidate) -> Option<String>
             let mut repaired = String::with_capacity(source.len() + text.len());
             repaired.push_str(&source[..pos]);
             repaired.push_str(text);
-            repaired.push_str(&source[pos..]);
+            let safe_pos = if source.is_char_boundary(pos) { pos } else { source.len() };
+            repaired.push_str(&source[safe_pos..]);
             Some(repaired)
         }
         RepairKind::Delete { len } => {
@@ -79,7 +81,8 @@ pub fn apply_repair(source: &str, candidate: &RepairCandidate) -> Option<String>
             }
             let mut repaired = String::with_capacity(source.len().saturating_sub(len));
             repaired.push_str(&source[..pos]);
-            repaired.push_str(&source[end..]);
+            let safe_end = if source.is_char_boundary(end) { end } else { source.len() };
+            repaired.push_str(&source[safe_end..]);
             Some(repaired)
         }
     }

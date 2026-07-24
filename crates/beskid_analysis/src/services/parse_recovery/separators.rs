@@ -130,7 +130,7 @@ fn double_colon_enum_path(source: &str, error_pos: usize, out: &mut Vec<RepairCa
         return;
     };
     let gap = skip_ws(source, prev_end);
-    if gap < source.len() {
+    if gap < source.len() && source.is_char_boundary(gap) {
         let slice = &source[gap..];
         if slice.starts_with("::") || slice.starts_with(':') {
             return;
@@ -206,7 +206,8 @@ fn looks_like_type_keyword(source: &str, pos: usize) -> bool {
         "bool", "i32", "i64", "u8", "pointer", "word", "f64", "char", "string", "unit", "never",
     ];
     KEYWORDS.iter().any(|kw| {
-        source[pos..].starts_with(kw) && !has_ident_continue_at(source.as_bytes(), pos + kw.len())
+        source.as_bytes().get(pos..pos + kw.len()) == Some(kw.as_bytes())
+            && !has_ident_continue_at(source.as_bytes(), pos + kw.len())
     })
 }
 

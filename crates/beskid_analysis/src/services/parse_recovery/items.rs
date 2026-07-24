@@ -238,7 +238,10 @@ fn item_body_opener_before(source: &str, brace_pos: usize) -> bool {
 }
 
 fn matches_item_keyword_before_brace(snippet: &str, keyword: &str) -> bool {
-    let tail_start = snippet.len().saturating_sub(256);
+    let mut tail_start = snippet.len().saturating_sub(256);
+    while tail_start > 0 && !snippet.is_char_boundary(tail_start) {
+        tail_start -= 1;
+    }
     let tail = &snippet[tail_start..];
     let mut pos = 0usize;
     while pos < tail.len() {
@@ -520,18 +523,19 @@ fn keyword_at(source: &str, pos: usize, keyword: &str) -> bool {
     if pos + keyword.len() > source.len() {
         return false;
     }
-    if !source[pos..].starts_with(keyword) {
+    let bytes = source.as_bytes();
+    if bytes.len() < pos + keyword.len() || &bytes[pos..pos + keyword.len()] != keyword.as_bytes() {
         return false;
     }
     if pos > 0 {
-        let before = source.as_bytes()[pos - 1];
+        let before = bytes[pos - 1];
         if before.is_ascii_alphanumeric() || before == b'_' {
             return false;
         }
     }
     let after = pos + keyword.len();
-    if after < source.len() {
-        let next = source.as_bytes()[after];
+    if after < bytes.len() {
+        let next = bytes[after];
         if next.is_ascii_alphanumeric() || next == b'_' {
             return false;
         }
