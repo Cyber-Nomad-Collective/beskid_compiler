@@ -1,0 +1,109 @@
+/// UTF-8 rune decoding and code-unit-to-string materialization.
+use Core.Bytes.Slice;
+
+/// Latin-1 supplement U+0080-U+00FF, built imperatively.
+pub string Latin1Block() {
+    mut string out = "";
+    mut i64 c = 128;
+    while c <= 255 {
+        u8 lead = 194 + c / 64;
+        u8 trail = 128 + c % 64;
+        u8[] pair = __array_new(1, 2);
+        pair[0] = lead;
+        pair[1] = trail;
+        out = out + __str_from_bytes_utf8(pair);
+        c = c + 1;
+    }
+    return out;
+}
+
+pub i64 Utf8RuneByteLen(u8 lead) {
+    if lead < 128 {
+        return 1;
+    }
+    if lead < 192 {
+        return 0;
+    }
+    if lead < 224 {
+        return 2;
+    }
+    if lead < 240 {
+        return 3;
+    }
+    if lead < 248 {
+        return 4;
+    }
+    return 0;
+}
+
+pub string Latin1Rune(u8 lead, u8 trail) {
+    i64 cp = (lead - 192) * 64 + (trail - 128);
+    i64 offset = (cp - 128) * 2;
+    return __str_slice(Latin1Block(), offset, 2);
+}
+
+pub string AppendUtf8Rune(string out, u8[] data, i64 start, i64 runeLen) {
+    if runeLen == 1 {
+        u8 b = Slice.Get(data, start);
+        if b >= 48 && b <= 57 {
+            i64 digit = b - 48;
+            string ch = match digit {
+                0 => "0", 1 => "1", 2 => "2", 3 => "3", 4 => "4",
+                5 => "5", 6 => "6", 7 => "7", 8 => "8", _ => "9",
+            };
+            return out + ch;
+        }
+        if b >= 65 && b <= 90 {
+            i64 off = b - 65;
+            string ch = match off {
+                0 => "A", 1 => "B", 2 => "C", 3 => "D", 4 => "E",
+                5 => "F", 6 => "G", 7 => "H", 8 => "I", 9 => "J",
+                10 => "K", 11 => "L", 12 => "M", 13 => "N", 14 => "O",
+                15 => "P", 16 => "Q", 17 => "R", 18 => "S", 19 => "T",
+                20 => "U", 21 => "V", 22 => "W", 23 => "X", 24 => "Y",
+                _ => "Z",
+            };
+            return out + ch;
+        }
+        if b >= 97 && b <= 122 {
+            i64 off = b - 97;
+            string ch = match off {
+                0 => "a", 1 => "b", 2 => "c", 3 => "d", 4 => "e",
+                5 => "f", 6 => "g", 7 => "h", 8 => "i", 9 => "j",
+                10 => "k", 11 => "l", 12 => "m", 13 => "n", 14 => "o",
+                15 => "p", 16 => "q", 17 => "r", 18 => "s", 19 => "t",
+                20 => "u", 21 => "v", 22 => "w", 23 => "x", 24 => "y",
+                _ => "z",
+            };
+            return out + ch;
+        }
+        return out;
+    }
+    if runeLen == 2 {
+        u8 lead = Slice.Get(data, start);
+        u8 trail = Slice.Get(data, start + 1);
+        return out + Latin1Rune(lead, trail);
+    }
+    u8[] rune = Slice.SubSlice(data, start, runeLen);
+    return out + __str_from_bytes_utf8(rune);
+}
+
+/// Materializes validated UTF-8 code units into a `string` without `__bytes_from_str`.
+pub string FromUtf8CodeUnits(u8[] data) {
+    i64 len = Slice.Len(data);
+    if len == 0 {
+        return "";
+    }
+    mut string out = "";
+    mut i64 i = 0;
+    while i < len {
+        u8 lead = Slice.Get(data, i);
+        i64 runeLen = Utf8RuneByteLen(lead);
+        if runeLen < 1 {
+            return out;
+        }
+        out = AppendUtf8Rune(out, data, i, runeLen);
+        i = i + runeLen;
+    }
+    return out;
+}

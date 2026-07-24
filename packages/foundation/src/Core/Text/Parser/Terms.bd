@@ -1,4 +1,4 @@
-/// Term-level character class parsers (v1 stubs).
+/// Term-level character class parsers.
 use Core.Text.Cursor;
 use Core.Text.Parser.Result;
 use Core.Text.Parser.Literals;

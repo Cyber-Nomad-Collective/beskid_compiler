@@ -1,30 +1,59 @@
-/// Tier 2 (Supported) coverage for `Collections.Stack` parity helpers.
-/// Storage is not yet wired in v1; this suite asserts the count-based contract per
-/// `/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/`.
-
+/// Tier 2 (Supported) coverage for `Collections.Stack` backed by T[] storage.
+use Collections.Stack;
 use Testing.Assert;
 
+test stack_new_is_empty {
+    i64 count = Stack.Count<i64>(Stack.New<i64>());
+    Assert.Equal(count, 0, "new stack count should be 0");
+}
 
-test stack_push_increments_logical_count {
-    i64 start = 0;
-    i64 afterPush = start + 1;
-    Assert.Equal(afterPush, 1, "Stack.Push should bump count by one");
+test stack_push_increments_count {
+    Stack<i64> s = Stack.New<i64>();
+    Stack<i64> s2 = Stack.Push<i64>(s, 42);
+    Assert.Equal(Stack.Count<i64>(s2), 1, "one push -> count 1");
+}
+
+test stack_peek_returns_last_pushed {
+    Stack<i64> s = Stack.New<i64>();
+    Stack<i64> s2 = Stack.Push<i64>(s, 10);
+    i64 top = match Stack.Peek<i64>(s2) {
+        Result::Ok(v) => v,
+        Result::Error(_) => -1,
+    };
+    Assert.Equal(top, 10, "peek should return last pushed value");
+}
+
+test stack_peek_empty_returns_error {
+    Stack<i64> s = Stack.New<i64>();
+    bool isError = match Stack.Peek<i64>(s) {
+        Result::Ok(_) => false,
+        Result::Error(_) => true,
+    };
+    Assert.True(isError, "peek on empty stack should error");
+}
+
+test stack_pop_reduces_count {
+    Stack<i64> s = Stack.New<i64>();
+    Stack<i64> s2 = Stack.Push<i64>(s, 1);
+    Stack<i64> s3 = Stack.Push<i64>(s2, 2);
+    Stack<i64> s4 = Stack.Pop<i64>(s3);
+    Assert.Equal(Stack.Count<i64>(s4), 1, "pop should reduce count by 1");
 }
 
 test stack_pop_saturates_at_zero {
-    i64 count = 0;
-    mut i64 afterPop = 0;
-    if count > 0 {
-        afterPop = count - 1;
-    }
-    Assert.Equal(afterPop, 0, "Stack.Pop must saturate at zero");
+    Stack<i64> empty = Stack.New<i64>();
+    Stack<i64> popped = Stack.Pop<i64>(empty);
+    Assert.Equal(Stack.Count<i64>(popped), 0, "pop on empty stack should saturate at 0");
 }
 
-test stack_pop_drops_when_populated {
-    i64 count = 2;
-    mut i64 afterPop = 0;
-    if count > 0 {
-        afterPop = count - 1;
-    }
-    Assert.Equal(afterPop, 1, "Stack.Pop should drop count by one when populated");
+test stack_push_then_peek_then_pop {
+    Stack<i64> s = Stack.New<i64>();
+    Stack<i64> s1 = Stack.Push<i64>(s, 100);
+    i64 top = match Stack.Peek<i64>(s1) {
+        Result::Ok(v) => v,
+        Result::Error(_) => -1,
+    };
+    Assert.Equal(top, 100, "peek after push");
+    Stack<i64> s2 = Stack.Pop<i64>(s1);
+    Assert.Equal(Stack.Count<i64>(s2), 0, "pop after single push returns empty");
 }

@@ -1,26 +1,53 @@
-/// Tier 2 (Supported) coverage for `Collections.Set` parity helpers.
-/// Storage is not yet wired in v1; this suite asserts the count-based contract per
-/// `/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/`.
-
+/// Tier 2 (Supported) coverage for `Collections.Set` backed by T[] scan.
+use Collections.Set;
 use Testing.Assert;
 
+test set_new_is_empty {
+    i64 count = Set.Count<i64>(Set.New<i64>());
+    Assert.Equal(count, 0, "new set count should be 0");
+}
 
-test set_add_increments_logical_count {
-    i64 start = 0;
-    i64 after_add = start + 1;
-    Assert.Equal(after_add, 1, "Set.Add should bump count by one");
+test set_add_increments_count {
+    Set<i64> s = Set.New<i64>();
+    Set<i64> s2 = Set.Add<i64>(s, 1);
+    Assert.Equal(Set.Count<i64>(s2), 1, "one add -> count 1");
+}
+
+test set_add_duplicate_no_change {
+    Set<i64> s = Set.New<i64>();
+    Set<i64> s2 = Set.Add<i64>(s, 5);
+    Set<i64> s3 = Set.Add<i64>(s2, 5);
+    Assert.Equal(Set.Count<i64>(s3), 1, "duplicate add should not increment count");
+}
+
+test set_contains_finds_added {
+    Set<i64> s = Set.New<i64>();
+    Set<i64> s2 = Set.Add<i64>(s, 42);
+    Assert.True(Set.Contains<i64>(s2, 42), "contains should find added value");
+}
+
+test set_contains_returns_false_for_missing {
+    Set<i64> s = Set.New<i64>();
+    Assert.False(Set.Contains<i64>(s, 99), "contains should return false for missing value");
+}
+
+test set_remove_decrements_count {
+    Set<i64> s = Set.New<i64>();
+    Set<i64> s2 = Set.Add<i64>(s, 1);
+    Set<i64> s3 = Set.Remove<i64>(s2, 1);
+    Assert.Equal(Set.Count<i64>(s3), 0, "remove should return count to 0");
 }
 
 test set_remove_saturates_at_zero {
-    i64 count = 0;
-    mut i64 after_remove = 0;
-    if count > 0 {
-        after_remove = count - 1;
-    }
-    Assert.Equal(after_remove, 0, "Set.Remove must saturate at zero");
+    Set<i64> s = Set.New<i64>();
+    Set<i64> s2 = Set.Remove<i64>(s, 1);
+    Assert.Equal(Set.Count<i64>(s2), 0, "remove on empty set should saturate at 0");
 }
 
-test set_contains_returns_false_until_storage_lands {
-    bool result = false;
-    Assert.False(result, "Set.Contains must return false while storage is Tier 3");
+test set_add_remove_contains_roundtrip {
+    Set<i64> s = Set.New<i64>();
+    Set<i64> s2 = Set.Add<i64>(s, 77);
+    Assert.True(Set.Contains<i64>(s2, 77), "contains after add");
+    Set<i64> s3 = Set.Remove<i64>(s2, 77);
+    Assert.False(Set.Contains<i64>(s3, 77), "not contains after remove");
 }

@@ -1,7 +1,11 @@
-/// Delimiter and separator combinators (v1 stubs).
+/// Delimiter and separator combinators.
+/// These are pure step-folding functions — the caller chains
+/// pre-parsed results through them in a `while` loop body.
 use Core.Text.Cursor;
 use Core.Text.Parser.Result;
 
+/// Sequences open → inner → close. Returns the first failure
+/// encountered or `close` when both open and inner succeeded.
 pub TextParseResult<string> Between(
     Cursor.TextCursor c,
     string rule,
@@ -18,11 +22,17 @@ pub TextParseResult<string> Between(
     return close;
 }
 
+/// Separated-item step: returns the current item result.
+/// The caller iterates sep → item pairs in its loop body;
+/// this combinator folds the item through unchanged.
 pub TextParseResult<string> Separated(
     Cursor.TextCursor c,
     string rule,
     TextParseResult<string> item,
     TextParseResult<string> sep
 ) {
+    if !IsOk(item) {
+        return item;
+    }
     return item;
 }

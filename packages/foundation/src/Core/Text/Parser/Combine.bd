@@ -45,8 +45,18 @@ pub TextParseResult<string> AndSkip(
     if !IsOk(first) {
         return first;
     }
-    return second;
+    if !IsOk(second) {
+        return second;
+    }
+    return match second {
+        TextParseResult::Ok(_, rest) => match first {
+            TextParseResult::Ok(value, _) => TextParseResult<string>::Ok(value, rest),
+            TextParseResult::Err(err) => TextParseResult<string>::Err(err),
+        },
+        TextParseResult::Err(err) => TextParseResult<string>::Err(err),
+    };
 }
+
 
 pub TextParseResult<string> SkipAnd(
     Cursor.TextCursor c,
