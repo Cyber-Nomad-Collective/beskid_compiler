@@ -646,18 +646,21 @@ fn find_keyword_backward(source: &str, through: usize, keyword: &str) -> Option<
     if through < kw.len() {
         return None;
     }
-    let mut i = through.min(source.len());
-    while i >= kw.len() {
-        i -= 1;
-        if &bytes[i - kw.len() + 1..=i] != kw {
-            continue;
+    let max_start = through.min(source.len()) - kw.len();
+    let mut start = max_start;
+    loop {
+        if &bytes[start..start + kw.len()] == kw {
+            let before_ok = start == 0 || !is_identifier_part(bytes, start - 1);
+            let end = start + kw.len();
+            let after_ok = end >= source.len() || !is_identifier_part(bytes, end);
+            if before_ok && after_ok {
+                return Some(start);
+            }
         }
-        let start = i - kw.len() + 1;
-        let before_ok = start == 0 || !is_identifier_part(bytes, start - 1);
-        let after_ok = i + 1 >= source.len() || !is_identifier_part(bytes, i + 1);
-        if before_ok && after_ok {
-            return Some(start);
+        if start == 0 {
+            break;
         }
+        start -= 1;
     }
     None
 }
