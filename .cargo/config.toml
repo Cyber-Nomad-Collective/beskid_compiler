@@ -1,0 +1,5 @@
+[build]
+rustc-wrapper = "/opt/homebrew/bin/sccache"
+
+[profile.dev.package."*"]
+opt-level = 1
