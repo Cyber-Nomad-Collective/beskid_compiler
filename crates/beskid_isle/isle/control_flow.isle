@@ -30,5 +30,13 @@
       (emit_continue key))
 (rule (lower_statement key @ (and
         (node_kind (NodeKind.ForStatement))
-        (for_iterable_kind (NodeKind.RangeExpression))))
+        (for_iterable_class (ForIterableKind.Range))))
       (emit_range_for key))
+
+(decl partial emit_iterator_for (AstNodeKey) Unit)
+(extern constructor emit_iterator_for emit_iterator_for)
+
+(rule (lower_statement key @ (and
+        (node_kind (NodeKind.ForStatement))
+        (for_iterable_class (ForIterableKind.Other))))
+      (emit_iterator_for key))

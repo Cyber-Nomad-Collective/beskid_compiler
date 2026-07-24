@@ -39,6 +39,12 @@
 (rule (lower_statement key @ (node_kind (NodeKind.TestDefinition)))
       (lower_statement_cursor (statement_cursor key)))
 
+(decl partial emit_method_body (AstNodeKey) Unit)
+(extern constructor emit_method_body emit_method_body)
+
+(rule (lower_statement key @ (node_kind (NodeKind.MethodDefinition)))
+      (emit_method_body key))
+
 (rule (lower_statement_cursor cursor @ (cursor_kind (CursorKind.End)))
       (finish_statements))
 (rule (lower_statement_cursor cursor @ (cursor_kind (CursorKind.More)))

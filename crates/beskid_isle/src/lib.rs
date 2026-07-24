@@ -306,6 +306,12 @@ pub enum IndexTarget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ForIterableKind {
+    Range,
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallKind {
     Direct,
     InlineLambda,
@@ -1470,6 +1476,16 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             .and_then(|iterable| self.facts.node_kind(iterable))
     }
 
+    fn for_iterable_class(&mut self, key: AstNodeKey) -> Option<ForIterableKind> {
+        let iterable = self.facts.child(key, 0)?;
+        let kind = self.facts.node_kind(iterable)?;
+        if kind == NodeKind::RangeExpression {
+            Some(ForIterableKind::Range)
+        } else {
+            Some(ForIterableKind::Other)
+        }
+    }
+
     fn child_at(&mut self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
         self.facts.child(key, index)
     }
@@ -1903,6 +1919,14 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn discard_value(&mut self, _value: Value) {}
 
+    fn emit_method_body(&mut self, key: AstNodeKey) -> Option<()> {
+        materialize_parameters(self, key).ok()?;
+        let body_key = self.facts.child(key, 0)?;
+        let cursor = self.statement_cursor(body_key)?;
+        generated::constructor_lower_statement_cursor(self, cursor)?;
+        Some(())
+    }
+
     fn emit_block_expression(&mut self, key: AstNodeKey) -> Option<Value> {
         let saved_locals = self.locals.clone();
         let lowered = (|| {
@@ -2128,6 +2152,14 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.builder.seal_block(exit);
         self.locals.remove(&slot);
         Some(())
+    }
+
+    fn emit_iterator_for(&mut self, key: AstNodeKey) -> Option<()> {
+        self.pending_error = Some(LoweringError {
+            key,
+            kind: LoweringErrorKind::MissingRuleOrFact,
+        });
+        None
     }
 
     fn emit_break(&mut self, _key: AstNodeKey) -> Option<()> {

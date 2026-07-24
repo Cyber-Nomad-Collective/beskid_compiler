@@ -3,3 +3,5 @@
       (child_at key 0))
 (rule (item_body key @ (node_kind (NodeKind.TestDefinition)))
       key)
+(rule (item_body key @ (node_kind (NodeKind.MethodDefinition)))
+      (child_at key 0))
