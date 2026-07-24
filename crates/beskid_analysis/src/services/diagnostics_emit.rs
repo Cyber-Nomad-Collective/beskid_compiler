@@ -5,19 +5,6 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::projects::ProjectError;
 
-fn escape_bsol_text(text: &str) -> String {
-    text.replace('\\', "\\\\")
-        .replace('\"', "\\\"")
-        .replace('\n', "\\n")
-}
-
-pub fn bsol_error(code: &str, message: &str) -> String {
-    format!(
-        "Error {code} {{\n  Message = \"{}\";\n}}",
-        escape_bsol_text(message)
-    )
-}
-
 pub fn pest_error_diagnostic(
     source_name: &str,
     source: &str,
@@ -36,7 +23,7 @@ pub fn pest_error_diagnostic(
             line_col_start: (1, 1),
             line_col_end: (1, 1),
         },
-        bsol_error("parse", &format!("parse error: {err}")),
+        format!("parse error: {err}"),
         "parse",
         None,
         Some("parse".to_string()),
@@ -63,8 +50,8 @@ pub fn parse_error_diagnostic(
                 source_name,
                 source,
                 *span,
-                bsol_error("parse", &message),
-                "parse",
+                message,
+                "parse errmsg",
                 None,
                 Some("parse".to_string()),
                 crate::analysis::Severity::Error,
@@ -79,8 +66,8 @@ pub fn parse_error_diagnostic(
                 line_col_start: (1, 1),
                 line_col_end: (1, 1),
             },
-            bsol_error("parse", &format!("parse error: missing {expected:?}")),
-            "parse",
+            format!("parse error: missing {expected:?}"),
+            "missing blk",
             None,
             Some("parse".to_string()),
             crate::analysis::Severity::Error,
@@ -90,11 +77,8 @@ pub fn parse_error_diagnostic(
                 source_name,
                 source,
                 *span,
-                bsol_error(
-                    "parse",
-                    "parse error: explicit `self` parameter is not allowed in impl methods",
-                ),
-                "parse",
+                "explicit `self` parameter is not allowed in impl methods",
+                "forbidden self",
                 None,
                 Some("parse".to_string()),
                 crate::analysis::Severity::Error,
@@ -113,8 +97,8 @@ pub fn parse_recovery_diagnostic(
         source_name,
         source,
         span,
-        bsol_error("parse.recovery", message),
-        "parse.recovery",
+        format!("recovery: {message}"),
+        "recovery",
         None,
         Some("parse.recovery".to_string()),
         crate::analysis::Severity::Warning,
@@ -167,8 +151,8 @@ pub fn project_error_diagnostic(
         source_name,
         source,
         span,
-        bsol_error(&code, &message),
-        "project",
+        message.clone(),
+        "manifest errmsg",
         None,
         Some(code),
         crate::analysis::Severity::Error,

@@ -20,8 +20,8 @@ impl BeskidWidget for AnalysisWidget {
     fn meta(&self) -> WidgetMeta {
         WidgetMeta {
             id: "analysis.diagnostics",
-            title: "Analysis",
-            icon: "◇",
+            title: "Build Report",
+            icon: "\u{25c7}",
         }
     }
 
@@ -36,7 +36,7 @@ impl BeskidWidget for AnalysisWidget {
                 id: "ctx.analyze",
                 name: "Analyze",
                 description: "Run semantic analysis in scope",
-                icon: "◇",
+                icon: "\u{25c7}",
                 args_hint: None,
                 widget_id: Some("analysis.diagnostics"),
             }],
@@ -48,14 +48,14 @@ impl BeskidWidget for AnalysisWidget {
     }
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-        draw_analysis_panel(area, frame, ctx);
+        draw_build_report(area, frame, ctx);
     }
 }
 
-pub fn draw_analysis_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
+pub fn draw_build_report(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
     let [title_area, body] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
-    frame.render_widget(Paragraph::new(title_line("Analysis")), title_area);
+    frame.render_widget(Paragraph::new(title_line("Build Report")), title_area);
 
     if ctx.scope.is_user() {
         frame.render_widget(
@@ -68,64 +68,85 @@ pub fn draw_analysis_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContex
     }
 
     let mut lines = Vec::new();
+    let state = &ctx.shell_state;
 
-    if ctx.shell_state.compile_complete {
+    if state.compile_complete {
         lines.push(Line::from(Span::styled(
-            "Analysis complete",
+            "\u{2714} Build complete",
             Style::default().fg(Color::Green),
         )));
         lines.push(Line::from(""));
 
-        if let Some(counts) = severity_counts_from_summary(&ctx.shell_state.command_summary) {
+        // Severity summary
+        if let Some(counts) = severity_counts_from_summary(&state.command_summary) {
             lines.push(Line::from(vec![
                 Span::styled("Errors: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     counts.errors.to_string(),
-                    Style::default().fg(if counts.errors > 0 {
-                        Color::Red
-                    } else {
-                        Color::Green
-                    }),
+                    Style::default().fg(if counts.errors > 0 { Color::Red } else { Color::Green }),
                 ),
                 Span::raw("   "),
                 Span::styled("Warnings: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     counts.warnings.to_string(),
-                    Style::default().fg(if counts.warnings > 0 {
-                        Color::Yellow
-                    } else {
-                        Color::Green
-                    }),
+                    Style::default().fg(if counts.warnings > 0 { Color::Yellow } else { Color::Green }),
                 ),
                 Span::raw("   "),
                 Span::styled("Notes: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(counts.notes.to_string(), Style::default().fg(Color::Blue)),
             ]));
-            if !ctx.shell_state.command_summary.headline.is_empty() {
-                lines.push(Line::from(""));
-                lines.push(Line::from(
-                    ctx.shell_state.command_summary.headline.as_str(),
-                ));
-            }
-        } else if !ctx.shell_state.command_summary.headline.is_empty() {
-            lines.push(Line::from(
-                ctx.shell_state.command_summary.headline.as_str(),
-            ));
-        } else {
-            lines.push(Line::from(
-                "No diagnostic summary yet — re-run `analyze` from the palette.",
-            ));
         }
 
+        // Diagnostic message body
+        if !state.command_summary.headline.is_empty() {
+            lines.push(Line::from(""));
+            for line_text in state.command_summary.headline.lines() {
+                let trimmed = line_text.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let style = if trimmed.starts_with("error") || trimmed.starts_with("Error") {
+                    Style::default().fg(Color::Red)
+                } else if trimmed.starts_with("warning") || trimmed.starts_with("Warning") {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                lines.push(Line::from(Span::styled(trimmed, style)));
+            }
+        }
+
+        // Test results
+        if !state.test_rows.is_empty() {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled("Tests:", Style::default().fg(Color::DarkGray)));
+                for row in state.test_rows.iter().take(20) {
+                    let (icon, color) = match row.state {
+                        crate::pipeline::tui::TestRowState::Passed => ("✔", Color::Green),
+                        crate::pipeline::tui::TestRowState::Failed => ("✘", Color::Red),
+                        crate::pipeline::tui::TestRowState::Skipped => ("◦", Color::Blue),
+                        crate::pipeline::tui::TestRowState::Pending => ("○", Color::DarkGray),
+                        crate::pipeline::tui::TestRowState::Running => ("▶", Color::Yellow),
+                        crate::pipeline::tui::TestRowState::FilteredOut => continue,
+                    };
+                    let suffix = match &row.failure_detail {
+                        Some(reason) if !reason.is_empty() => format!(" — {}", reason.lines().next().unwrap_or("")),
+                        _ => String::new(),
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("  {icon} "), Style::default().fg(color)),
+                        Span::styled(&row.qualified_name, Style::default().fg(color)),
+                        Span::styled(suffix, Style::default().fg(Color::DarkGray)),
+                    ]));
+                }
+            }
+    } else {
+        lines.push(Line::from("○ Idle — run a build or test to see results"));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "Use the command palette to re-run `analyze`.",
+            "Open the command palette to start.",
             Style::default().fg(Color::DarkGray),
         )));
-    } else {
-        lines.push(Line::from(
-            "Run `analyze` from the command palette to check diagnostics.",
-        ));
     }
 
     frame.render_widget(Paragraph::new(lines), body);

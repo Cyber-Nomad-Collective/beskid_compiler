@@ -64,4 +64,4 @@ cranelift-jit = "0.128.3"
 cranelift-module = "0.128.3"
 cranelift-native = "0.128.3"
 cranelift-object = "0.128.3"
-cargo-cross = "1.5.1"
+cargo-cross = { path = "vendor/cargo-cross-patched" }

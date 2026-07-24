@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 use semver::Version;
 use std::env;
 
-use cargo_cross::config::HostPlatform;
+
 
 use crate::{DirectInstall, UpError};
 
@@ -61,7 +61,7 @@ pub fn execute(args: UpArgs) -> Result<(), UpError> {
             println!("removed version: {version}");
         }
         UpCommand::HostTarget => {
-            let host = HostPlatform::detect();
+            let host = cargo_cross::config::HostPlatform::detect();
             println!("{}", host.triple);
         }
     }

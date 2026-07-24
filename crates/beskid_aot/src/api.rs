@@ -582,11 +582,11 @@ mod platform_object_tests {
         assert_eq!(plan.assembly_source, "platform.asm");
         assert_eq!(plan.tls_source, "platform_tls.c");
         assert_eq!(plan.assembly_program, "llvm-ml");
-        assert_eq!(plan.assembly_args, &["--m64", "/c", "/X", "/Fo"]);
+        assert_eq!(plan.assembly_args, vec!["--m64", "/c", "/X", "/Fo"]);
         assert_eq!(plan.tls_program, "clang");
         assert_eq!(
             plan.tls_args,
-            &["--target=x86_64-pc-windows-msvc", "-std=c11", "-c"]
+            vec!["--target=x86_64-pc-windows-msvc", "-std=c11", "-c"]
         );
         assert_eq!(plan.object_extension, "obj");
     }

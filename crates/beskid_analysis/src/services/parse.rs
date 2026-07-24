@@ -11,7 +11,7 @@ use crate::parsing::parsable::Parsable;
 use crate::syntax::{Program, Spanned};
 
 use super::diagnostics_emit::{
-    bsol_error, parse_error_diagnostic, pest_error_diagnostic,
+    parse_error_diagnostic, pest_error_diagnostic,
 };
 use super::parse_recovery::collect_repair_candidates;
 
@@ -102,8 +102,8 @@ fn parse_program_strict(source_name: &str, source: &str) -> Result<Spanned<Progr
                 line_col_start: (1, 1),
                 line_col_end: (1, 1),
             },
-            bsol_error("parse", "no program found in source"),
-            "parse",
+            "no program found in source",
+            "empty program",
             None,
             Some("parse".to_string()),
             Severity::Error,
@@ -126,10 +126,16 @@ pub fn parse_expression_source(
         anyhow!(MietteReportError::new(diagnostic))
     })?;
     let pair = pairs.next().ok_or_else(|| {
-        anyhow!(bsol_error(
-            "parse",
-            &format!("no expression found in `{source_name}`")
-        ))
+        anyhow!(MietteReportError::new(make_diagnostic(
+            source_name,
+            source,
+            crate::syntax::SpanInfo { start: 0, end: 1.min(source.len()), line_col_start: (1,1), line_col_end: (1,1) },
+            format!("no expression found in `{source_name}`"),
+            "empty expression",
+            None,
+            Some("parse".to_string()),
+            Severity::Error,
+        )))
     })?;
     crate::syntax::expressions::expression::parse_expression(pair).map_err(|err| {
         let diagnostic = parse_error_diagnostic(source_name, source, &err);

@@ -1,5 +1,7 @@
 [build]
-rustc-wrapper = "sccache"
+# Use sccache when RUSTC_WRAPPER is set (CI gate via setup-compiler-gate);
+# do not hard-code the wrapper so release/delivery jobs that don't install
+# sccache can still build. Local devs: `export RUSTC_WRAPPER=sccache`.
 
 [profile.dev.package."*"]
 opt-level = 1
