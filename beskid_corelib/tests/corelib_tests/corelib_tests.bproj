@@ -298,3 +298,18 @@ target "TextRegexIntegrationTests" {
   kind = Lib
   entry = "text/TextRegexIntegrationTests.bd"
 }
+
+target "CoreMathTests" {
+  kind = Lib
+  entry = "core/MathTests.bd"
+}
+
+target "CoreRandomTests" {
+  kind = Lib
+  entry = "core/RandomTests.bd"
+}
+
+target "CoreArgsTests" {
+  kind = Lib
+  entry = "core/ArgsTests.bd"
+}

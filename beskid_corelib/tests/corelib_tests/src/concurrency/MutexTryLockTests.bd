@@ -1,15 +1,21 @@
-/// Mutex wrapper surface smoke.
-
+/// Mutex wrapper surface tests.
 use Concurrency.Mutex;
+use Core.Optional.Option;
 use Testing.Assert;
 
-
-test mutex_module_import_smoke {
+test mutex_create_returns_handle {
     Mutex mutex = Mutex.Create();
-    Assert.True(true, "Mutex.Create smoke");
+    Assert.True(true, "Mutex.Create returns a handle");
 }
 
-test mutex_try_lock_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Mutex.TryLock deferred until Core.Optional import parity lands");
+test mutex_try_lock_returns_option {
+    Mutex mutex = Mutex.Create();
+    Core.Optional.Option<Concurrency.MutexGuard> result = mutex.TryLock();
+    Assert.True(true, "TryLock returns Option");
+}
+
+test mutex_lock_returns_result {
+    Mutex mutex = Mutex.Create();
+    Core.Results.Result<Concurrency.MutexGuard, Concurrency.MutexError> result = mutex.Lock();
+    Assert.True(true, "Lock returns Result");
 }

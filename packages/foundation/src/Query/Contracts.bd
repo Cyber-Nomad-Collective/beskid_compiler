@@ -1,0 +1,28 @@
+/// Query contracts — interface contracts for predicates, mappings, actions, and accumulators.
+/// Beskid v0.4 uses the contract pattern in place of closures/lambdas.
+/// Callers create concrete types implementing the contract and pass instances.
+/// @tier(supported)
+
+/// Evaluates a boolean condition on a single value.
+/// @tier(supported)
+pub contract Predicate<T> {
+    bool Check(T value);
+}
+
+/// Projects a value from one type to another.
+/// @tier(supported)
+pub contract Mapping<TIn, TOut> {
+    TOut Map(TIn value);
+}
+
+/// Executes a side-effecting action on a value.
+/// @tier(supported)
+pub contract Action<T> {
+    unit Execute(T value);
+}
+
+/// Folds an accumulated value with the next element (reduce pattern).
+/// @tier(supported)
+pub contract Accumulator<TAcc, T> {
+    TAcc Fold(TAcc acc, T value);
+}

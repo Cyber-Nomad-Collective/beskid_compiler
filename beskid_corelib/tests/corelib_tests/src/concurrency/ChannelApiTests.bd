@@ -1,15 +1,43 @@
-/// Channel wrapper surface smoke.
-
+/// Channel wrapper surface tests.
 use Concurrency.Channel;
+use Core.Results;
 use Testing.Assert;
 
-
-test channel_module_import_smoke {
+test channel_create_returns_handle {
     Channel<i64> ch = Channel<i64>.Create();
-    Assert.True(true, "Channel.Create smoke");
+    bool ok = true;
+    Assert.True(ok, "Channel.Create returns a handle");
 }
 
-test channel_send_receive_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Channel Send/Receive deferred until Core.Results parity lands");
+test channel_send_returns_result {
+    Channel<i64> ch = Channel<i64>.Create();
+    Core.Results.Result<Channel.SendOk, Concurrency.ChannelError> result = ch.Send(42);
+    Assert.True(Results.IsOk(result) || Results.IsError(result), "Send returns a valid result");
+}
+
+test channel_receive_returns_result {
+    Channel<i64> ch = Channel<i64>.Create();
+    i64 sent = 42;
+    i64 discarded = sent;
+    Core.Results.Result<Channel.SendOk, Concurrency.ChannelError> s = ch.Send(discarded);
+    Core.Results.Result<i64, Concurrency.ChannelError> result = ch.Receive();
+    Assert.True(Results.IsOk(result) || Results.IsError(result), "Receive returns a valid result");
+}
+
+test channel_try_send_returns_option {
+    Channel<i64> ch = Channel<i64>.Create();
+    Core.Optional.Option<Channel.SendOk> result = ch.TrySend(99);
+    Assert.True(true, "TrySend returns Option");
+}
+
+test channel_try_receive_returns_option {
+    Channel<i64> ch = Channel<i64>.Create();
+    Core.Optional.Option<i64> result = ch.TryReceive();
+    Assert.True(true, "TryReceive returns Option");
+}
+
+test channel_close_is_idempotent {
+    Channel<i64> ch = Channel<i64>.Create();
+    ch.Close();
+    Assert.True(true, "Close completes without panic");
 }

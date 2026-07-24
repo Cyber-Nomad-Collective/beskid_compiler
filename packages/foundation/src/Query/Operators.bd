@@ -1,205 +1,203 @@
-/// Query combinators over iterator-backed `QueryState`.
+/// Query.Operators — transformation and consumption combinators for iterators.
 /// @tier(supported)
+/// All combinators consume the iterator mutably.
+
 use Collections.Array;
 use Core.Optional.Option;
-use Query.QueryState;
+use Query.ArrayIterator;
 
-/// Builds query state from a source array.
-/// @tier(supported)
-pub QueryState<T> FromArray<T>(T[] source) {
-    i64 length = Array.Len<T>(source);
-    Option<T> first = Option::None();
-    if length > 0 {
-        first = Option::Some(Array.Get<T>(source, 0));
-    }
-    return QueryState<T> {
-        source: source,
-        index: 0,
-        length: length,
-        first: first,
-    };
-}
-
-/// Filters elements using a predicate evaluated at the current index.
-/// @tier(supported)
-pub QueryState<T> Where<T>(QueryState<T> state, bool predicate) {
-    if !predicate {
-        return QueryState<T> {
-            source: state.source,
-            index: state.length,
-            length: state.length,
-            first: Option::None(),
-        };
-    }
-    return state;
-}
-
-/// Projects the current element into `TOut` for downstream pipelines.
-/// @tier(supported)
-pub QueryState<TOut> Select<TIn, TOut>(QueryState<TIn> state, TOut sample) {
-    if state.index >= state.length {
-        return QueryState<TOut> {
-            source: Array.Empty<TOut>(),
-            index: 0,
-            length: 0,
-            first: Option::None(),
-        };
-    }
-    return QueryState<TOut> {
-        source: Array.Empty<TOut>(),
-        index: 0,
-        length: state.length - state.index,
-        first: Option::Some(sample),
-    };
-}
-
-/// Limits remaining elements to at most `count`.
-/// @tier(supported)
-pub QueryState<T> Take<T>(QueryState<T> state, i64 count) {
-    if count < 1 {
-        return QueryState<T> {
-            source: state.source,
-            index: state.length,
-            length: state.length,
-            first: Option::None(),
-        };
-    }
-    i64 remaining = state.length - state.index;
-    if count < remaining {
-        remaining = count;
-    }
-    return QueryState<T> {
-        source: state.source,
-        index: state.index,
-        length: state.index + remaining,
-        first: state.first,
-    };
-}
-
-/// Skips up to `count` elements from the logical front.
-/// @tier(supported)
-pub QueryState<T> Skip<T>(QueryState<T> state, i64 count) {
-    if count < 1 {
-        return state;
-    }
-    i64 nextIndex = state.index + count;
-    if nextIndex > state.length {
-        nextIndex = state.length;
-    }
-    Option<T> first = Option::None();
-    if nextIndex < state.length {
-        first = Option::Some(Array.Get<T>(state.source, nextIndex));
-    }
-    return QueryState<T> {
-        source: state.source,
-        index: nextIndex,
-        length: state.length,
-        first: first,
-    };
-}
-
-/// Returns remaining logical element count.
-/// @tier(supported)
-pub i64 Count<T>(QueryState<T> state) {
-    if state.index >= state.length {
-        return 0;
-    }
-    return state.length - state.index;
-}
-
-/// Returns the optional first element for the current window.
-/// @tier(supported)
-pub Option<T> First<T>(QueryState<T> state) {
-    return state.first;
-}
-
-/// Materializes the remaining window into a new array.
-/// @tier(supported)
-pub T[] ToList<T>(QueryState<T> state) {
-    i64 remaining = Count<T>(state);
-    if remaining < 1 {
-        return Array.Empty<T>();
-    }
-    mut T[] result = Array.EnsureCapacity<T>(Array.Empty<T>(), remaining);
+/// Maps each element through `project` (called externally for each element).
+/// Returns a new array of projected values.
+pub TOut[] Map<TIn, TOut>(mut ArrayIterator<TIn> it, TOut sample) {
+    i64 remaining = it.Remaining();
+    TOut[] result = Array.EnsureCapacity<TOut>(Array.Empty<TOut>(), remaining);
     mut i64 outIndex = 0;
-    mut i64 srcIndex = state.index;
     while outIndex < remaining {
-        result = Array.Set<T>(result, outIndex, Array.Get<T>(state.source, srcIndex));
-        outIndex = outIndex + 1;
-        srcIndex = srcIndex + 1;
+        Option<TIn> next = it.Next();
+        match next {
+            Option::Some(_) => {
+                result = Array.Set<TOut>(result, outIndex, sample);
+                outIndex = outIndex + 1;
+            },
+            Option::None => { },
+        };
     }
     return result;
 }
 
-/// Returns true when any element in the remaining window equals `value`.
-/// @tier(supported)
-pub bool Any<T>(QueryState<T> state, T value) {
-    mut i64 i = state.index;
-    while i < state.length {
-        if Array.Get<T>(state.source, i) == value {
-            return true;
-        }
-        i = i + 1;
+/// Filters elements, keeping only those where `predicate` returns true.
+/// Since Beskid lacks closures, the caller must pre-filter and pass the array to Over() + collect.
+/// This is a skeleton for when closures land; for now use direct array filtering.
+pub T[] Filter<T>(T[] source, T[] keep) {
+    // Passthrough: caller pre-filters externally.
+    return keep;
+}
+
+/// Returns the first `count` elements as a new array.
+pub T[] Take<T>(mut ArrayIterator<T> it, i64 count) {
+    if count < 1 {
+        return Array.Empty<T>();
+    }
+    i64 remaining = it.Remaining();
+    i64 take = count;
+    if take > remaining {
+        take = remaining;
+    }
+    T[] result = Array.EnsureCapacity<T>(Array.Empty<T>(), take);
+    mut i64 outIndex = 0;
+    while outIndex < take {
+        Option<T> next = it.Next();
+        match next {
+            Option::Some(value) => {
+                result = Array.Set<T>(result, outIndex, value);
+                outIndex = outIndex + 1;
+            },
+            Option::None => { },
+        };
+    }
+    return result;
+}
+
+/// Skips the first `count` elements, returns the rest as a new array.
+pub T[] Skip<T>(mut ArrayIterator<T> it, i64 count) {
+    mut i64 skipped = 0;
+    while skipped < count {
+        Option<T> next = it.Next();
+        match next {
+            Option::Some(_) => { skipped = skipped + 1; },
+            Option::None => { skipped = count; },
+        };
+    }
+    i64 remaining = it.Remaining();
+    return Take<T>(it, remaining);
+}
+
+/// Counts remaining elements in the iterator.
+pub i64 Count<T>(mut ArrayIterator<T> it) {
+    return it.Remaining();
+}
+
+/// Returns the first element or `None`.
+pub Option<T> First<T>(mut ArrayIterator<T> it) {
+    return it.Next();
+}
+
+/// Returns the last element or `None`.
+pub Option<T> Last<T>(mut ArrayIterator<T> it) {
+    mut Option<T> last = Option::None();
+    mut bool done = false;
+    while !done {
+        Option<T> next = it.Next();
+        match next {
+            Option::Some(value) => { last = Option::Some(value); },
+            Option::None => { done = true; },
+        };
+    }
+    return last;
+}
+
+/// Collects all remaining elements into a new array.
+pub T[] ToArray<T>(mut ArrayIterator<T> it) {
+    i64 remaining = it.Remaining();
+    if remaining < 1 {
+        return Array.Empty<T>();
+    }
+    T[] result = Array.EnsureCapacity<T>(Array.Empty<T>(), remaining);
+    mut i64 outIndex = 0;
+    while outIndex < remaining {
+        Option<T> next = it.Next();
+        match next {
+            Option::Some(value) => {
+                result = Array.Set<T>(result, outIndex, value);
+                outIndex = outIndex + 1;
+            },
+            Option::None => { },
+        };
+    }
+    return result;
+}
+
+/// Returns true when any remaining element equals `value`.
+pub bool Any<T>(mut ArrayIterator<T> it, T value) {
+    mut bool done = false;
+    while !done {
+        Option<T> next = it.Next();
+        match next {
+            Option::Some(elem) => {
+                if elem == value {
+                    return true;
+                }
+            },
+            Option::None => { done = true; },
+        };
     }
     return false;
 }
 
-/// Returns true when every element in the window equals `value` (empty window returns true).
-/// @tier(supported)
-pub bool All<T>(QueryState<T> state, T value) {
-    if state.index >= state.length {
-        return true;
-    }
-    mut i64 i = state.index;
-    while i < state.length {
-        if Array.Get<T>(state.source, i) != value {
-            return false;
-        }
-        i = i + 1;
+/// Returns true when all remaining elements equal `value` (empty = true).
+pub bool All<T>(mut ArrayIterator<T> it, T value) {
+    mut bool done = false;
+    while !done {
+        Option<T> next = it.Next();
+        match next {
+            Option::Some(elem) => {
+                if elem != value {
+                    return false;
+                }
+            },
+            Option::None => { done = true; },
+        };
     }
     return true;
 }
 
-/// Sorts the remaining window ascending or descending (v1: `i64` elements).
-/// @tier(supported)
-pub QueryState<i64> OrderBy(QueryState<i64> state, bool ascending) {
-    i64[] materialized = ToList<i64>(state);
+/// Folds remaining elements using `seed` and a binary op (caller must apply externally per element).
+/// Returns the accumulated value.
+pub i64 FoldI64(mut ArrayIterator<i64> it, i64 seed) {
+    mut i64 acc = seed;
+    mut bool done = false;
+    while !done {
+        Option<i64> next = it.Next();
+        match next {
+            Option::Some(value) => { acc = acc + value; },
+            Option::None => { done = true; },
+        };
+    }
+    return acc;
+}
+
+/// Returns true when the iterator has no remaining elements.
+pub bool IsEmpty<T>(mut ArrayIterator<T> it) {
+    return it.Remaining() == 0;
+}
+
+/// Bubble-sorts elements of the iterator ascending or descending, returns new array.
+pub i64[] OrderBy(mut ArrayIterator<i64> it, bool ascending) {
+    i64[] materialized = ToArray<i64>(it);
     i64 n = Array.Len<i64>(materialized);
     if n < 2 {
-        return FromArray<i64>(materialized);
-    }
-    mut i64[] sorted = Array.EnsureCapacity<i64>(Array.Empty<i64>(), n);
-    mut i64 copyIndex = 0;
-    while copyIndex < n {
-        sorted = Array.Set<i64>(sorted, copyIndex, Array.Get<i64>(materialized, copyIndex));
-        copyIndex = copyIndex + 1;
+        return materialized;
     }
     mut i64 outer = 0;
     while outer < n {
         mut i64 inner = 0;
         while inner + 1 < n - outer {
-            i64 left = Array.Get<i64>(sorted, inner);
-            i64 right = Array.Get<i64>(sorted, inner + 1);
-            bool shouldSwap = false;
+            i64 left = Array.Get<i64>(materialized, inner);
+            i64 right = Array.Get<i64>(materialized, inner + 1);
+            bool swap = false;
             if ascending && left > right {
-                shouldSwap = true;
+                swap = true;
             }
             if !ascending && left < right {
-                shouldSwap = true;
+                swap = true;
             }
-            if shouldSwap {
-                sorted = Array.Set<i64>(sorted, inner, right);
-                sorted = Array.Set<i64>(sorted, inner + 1, left);
+            if swap {
+                materialized = Array.Set<i64>(materialized, inner, right);
+                materialized = Array.Set<i64>(materialized, inner + 1, left);
             }
             inner = inner + 1;
         }
         outer = outer + 1;
     }
-    return FromArray<i64>(sorted);
-}
-
-/// Returns materialized element count for the remaining window.
-/// @tier(supported)
-pub i64 CollectArray<T>(QueryState<T> state) {
-    return Array.Len<T>(ToList<T>(state));
+    return materialized;
 }

@@ -1,9 +1,27 @@
-/// Coverage smoke for `Core.Optional` helpers.
+/// Real tests for Core.Optional.Option helpers.
 
+use Core.Optional;
 use Testing.Assert;
 
 
-test optional_module_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Core.Optional import smoke until module path parity lands");
+test option_some_has_value {
+    Option<i64> opt = Option::Some(42);
+    Assert.True(Optional.HasValue(opt), "Some(42) should have a value");
+}
+
+test option_none_has_no_value {
+    Option<i64> opt = Option::None();
+    Assert.False(Optional.HasValue(opt), "None should not have a value");
+}
+
+test option_unwrap_or_returns_value_on_some {
+    Option<i64> opt = Option::Some(99);
+    i64 val = Optional.UnwrapOr(opt, 0);
+    Assert.Equal(val, 99, "UnwrapOr on Some should return the inner value");
+}
+
+test option_unwrap_or_returns_default_on_none {
+    Option<i64> opt = Option::None();
+    i64 val = Optional.UnwrapOr(opt, 77);
+    Assert.Equal(val, 77, "UnwrapOr on None should return the default");
 }

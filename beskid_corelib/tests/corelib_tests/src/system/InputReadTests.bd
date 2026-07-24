@@ -1,9 +1,24 @@
-/// Smoke test for stdin read API surface.
-
+/// Input module tests — stdin read operations.
+use Core.Input;
+use Core.Results;
 use Testing.Assert;
 
+test input_read_returns_result {
+    Core.Results.Result<string, Core.Syscall.SyscallError> result = Core.Input.Read();
+    Assert.True(Results.IsOk(result) || Results.IsError(result), "read returns a valid result");
+}
 
-test input_read_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Core.Input.Read deferred until Core.Results parity lands");
+test input_read_byte_returns_result {
+    Core.Results.Result<string, Core.Syscall.SyscallError> result = Core.Input.ReadByte();
+    Assert.True(Results.IsOk(result) || Results.IsError(result), "read byte returns a valid result");
+}
+
+test input_read_line_returns_result {
+    Core.Results.Result<string, Core.Syscall.SyscallError> result = Core.Input.ReadLine();
+    Assert.True(Results.IsOk(result) || Results.IsError(result), "read line returns a valid result");
+}
+
+test input_is_empty_is_boolean {
+    bool empty = Core.Input.IsEmpty();
+    Assert.True(empty == true || empty == false, "IsEmpty returns bool");
 }

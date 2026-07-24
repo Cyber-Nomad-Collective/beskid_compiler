@@ -1,14 +1,21 @@
-/// Integration smoke for Core.Text.Regex over generated combinator parsers.
-
+/// Integration tests for Core.Text.Regex over generated combinator parsers.
 use Core.Text.Regex;
 use Testing.Assert;
-
 
 test generated_parse_digit_compiles_via_regex_facade {
     bool valid = Regex.IsValidPattern("a");
     Assert.True(valid, "simple alpha pattern should validate");
 }
 
-test regex_match_smoke {
-    Assert.True(true, "Regex.Match deferred until Core.Optional import parity lands");
+test regex_match_literal {
+    Assert.True(Regex.Matches("abc", "abc"), "literal match");
+    Assert.False(Regex.Matches("abc", "xyz"), "literal mismatch");
+}
+
+test regex_find_digit_run {
+    Assert.True(Regex.Finds("[0-9]+", "x42y"), "find digit run");
+}
+
+test regex_match_alternation {
+    Assert.True(Regex.Matches("(foo|bar)", "bar"), "alternation match");
 }

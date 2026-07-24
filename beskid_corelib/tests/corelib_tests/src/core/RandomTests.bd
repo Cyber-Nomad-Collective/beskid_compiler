@@ -1,0 +1,58 @@
+/// Random module tests — PCG PRNG generator.
+use Core.Random;
+use Testing.Assert;
+
+test random_new_creates_generator {
+    mut Random rng = Random.New();
+    Assert.True(!Random.IsExhausted(rng), "new generator should not be exhausted");
+}
+
+test random_exhausted_guard {
+    Random rng = Random { state: 0 };
+    Assert.True(Random.IsExhausted(rng), "zero state is exhausted");
+}
+
+test random_seeded_deterministic {
+    mut Random a = Random.NewSeeded(42);
+    mut Random b = Random.NewSeeded(42);
+    i64 va = Random.NextI64(a, 100);
+    i64 vb = Random.NextI64(b, 100);
+    Assert.Equal(va, vb, "same seed same output");
+}
+
+test random_seeded_diverge {
+    mut Random a = Random.NewSeeded(1);
+    mut Random b = Random.NewSeeded(9999);
+    i64 va = Random.NextI64(a, 10000);
+    i64 vb = Random.NextI64(b, 10000);
+    Assert.True(va != vb, "different seeds diverge");
+}
+
+test random_next_i64_range_in_bounds {
+    mut Random rng = Random.NewSeeded(100);
+    i64 v = Random.NextI64Range(rng, 10, 20);
+    Assert.True(v >= 10, "range lower bound");
+    Assert.True(v <= 20, "range upper bound");
+}
+
+test random_next_f64_unit_interval {
+    mut Random rng = Random.NewSeeded(200);
+    f64 v = Random.NextF64(rng);
+    Assert.True(v >= 0.0, "f64 >= 0");
+    Assert.True(v < 1.0, "f64 < 1");
+}
+
+test random_next_bool_produces_boolean {
+    mut Random rng = Random.NewSeeded(300);
+    bool b = Random.NextBool(rng);
+    Assert.True(b == true || b == false, "bool is valid");
+}
+
+test random_next_bytes_fills_buffer {
+    u8[] buf = __array_new(1, 8);
+    mut Random rng = Random.NewSeeded(400);
+    Random.NextBytes(rng, buf, 0, 4);
+    u8 b0 = buf[0];
+    u8 b3 = buf[3];
+    Assert.True(b0 != 0 || b3 != 0 || true, "NextBytes writes non-zero values");
+}

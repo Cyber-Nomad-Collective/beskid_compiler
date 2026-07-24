@@ -1,20 +1,46 @@
-/// ABI status codes returned by `__fiber_join`.
-pub i64 Ok() {
-    return 0;
+/// Fiber join ABI status codes.
+/// Discriminated union — fiber join results are typed, not raw i64.
+/// @tier(standard)
+pub enum FiberJoinStatus {
+    /// Child completed normally.
+    Ok,
+    /// Child was cancelled.
+    Cancelled,
+    /// Child terminated by panic.
+    Panicked,
+    /// Child exceeded stack growth policy.
+    StackOverflow,
+    /// Join returned before child reached a terminal state.
+    NotDone,
 }
 
-pub i64 Cancelled() {
-    return 1;
+/// Returns the ABI i64 for this status (used by __fiber_join).
+pub i64 ToI64(FiberJoinStatus status) {
+    return match status {
+        FiberJoinStatus::Ok => 0,
+        FiberJoinStatus::Cancelled => 1,
+        FiberJoinStatus::Panicked => 2,
+        FiberJoinStatus::StackOverflow => 3,
+        FiberJoinStatus::NotDone => 4,
+    };
 }
 
-pub i64 Panicked() {
-    return 2;
-}
-
-pub i64 StackOverflow() {
-    return 3;
-}
-
-pub i64 NotDone() {
-    return 4;
+/// Parses an ABI i64 back into a FiberJoinStatus.
+pub FiberJoinStatus FromI64(i64 code) {
+    if code == 0 {
+        return FiberJoinStatus::Ok;
+    }
+    if code == 1 {
+        return FiberJoinStatus::Cancelled;
+    }
+    if code == 2 {
+        return FiberJoinStatus::Panicked;
+    }
+    if code == 3 {
+        return FiberJoinStatus::StackOverflow;
+    }
+    if code == 4 {
+        return FiberJoinStatus::NotDone;
+    }
+    return FiberJoinStatus::Ok;
 }

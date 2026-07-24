@@ -33,14 +33,16 @@ pub Channel<T> CreateWithOptions<T>(ChannelOptions options) {
 
 /// Sends a value; parks the current fiber when the queue is full (bounded + wait mode).
 pub Core.Results.Result<SendOk, ChannelError> Send<T>(Channel<T> self, T value) {
-    i64 status = __channel_send(self.handle, value);
+    i64 raw = __channel_send(self.handle, value);
+    Status status = Status.FromI64(raw);
     return MapSendStatus(status);
 }
 
 /// Receives a value; parks when empty and open.
 pub Core.Results.Result<T, ChannelError> Receive<T>(Channel<T> self) {
-    i64 status = __channel_receive(self.handle);
-    if status == Status.Ok() {
+    i64 raw = __channel_receive(self.handle);
+    Status status = Status.FromI64(raw);
+    if status == Status::Ok {
         return Result::Ok(__channel_receive_value(self.handle));
     }
     return Result::Error(MapReceiveError(status));
@@ -48,11 +50,12 @@ pub Core.Results.Result<T, ChannelError> Receive<T>(Channel<T> self) {
 
 /// Non-blocking send; `None` when the operation would block.
 pub Option<SendOk> TrySend<T>(Channel<T> self, T value) {
-    i64 status = __channel_try_send(self.handle, value);
-    if status == Status.Ok() {
+    i64 raw = __channel_try_send(self.handle, value);
+    Status status = Status.FromI64(raw);
+    if status == Status::Ok {
         return Option::Some(SendOk { });
     }
-    if status == Status.WouldBlock() {
+    if status == Status::WouldBlock {
         return Option::None();
     }
     return Option::None();
@@ -61,11 +64,12 @@ pub Option<SendOk> TrySend<T>(Channel<T> self, T value) {
 /// Non-blocking receive; `None` when the operation would block.
 pub Option<T> TryReceive<T>(Channel<T> self) {
     mut i64 value = 0;
-    i64 status = __channel_try_receive(self.handle, value);
-    if status == Status.Ok() {
+    i64 raw = __channel_try_receive(self.handle, value);
+    Status status = Status.FromI64(raw);
+    if status == Status::Ok {
         return Option::Some(value);
     }
-    if status == Status.WouldBlock() {
+    if status == Status::WouldBlock {
         return Option::None();
     }
     return Option::None();
@@ -77,21 +81,21 @@ pub unit Close<T>(Channel<T> self) {
     return;
 }
 
-pub Core.Results.Result<SendOk, ChannelError> MapSendStatus(i64 status) {
-    if status == Status.Ok() {
+pub Core.Results.Result<SendOk, ChannelError> MapSendStatus(Status status) {
+    if status == Status::Ok {
         return Result::Ok(SendOk { });
     }
-    if status == Status.Closed() {
+    if status == Status::Closed {
         return Result::Error(ChannelError::Closed());
     }
-    if status == Status.Cancelled() {
+    if status == Status::Cancelled {
         return Result::Error(ChannelError::Cancelled());
     }
     return Result::Error(ChannelError::Closed());
 }
 
-pub ChannelError MapReceiveError(i64 status) {
-    if status == Status.Cancelled() {
+pub ChannelError MapReceiveError(Status status) {
+    if status == Status::Cancelled {
         return ChannelError::Cancelled();
     }
     return ChannelError::Closed();

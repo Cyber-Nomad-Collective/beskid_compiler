@@ -1,0 +1,87 @@
+/// Core.Args — command-line argument access.
+/// @tier(supported)
+pub mod Core.Args.ArgsError;
+
+use Core.Args.ArgsError;
+use Core.Optional.Option;
+use Core.Results;
+use Core.String;
+
+/// Returns all command-line arguments including argv[0] (the program name).
+pub string[] All() {
+    i64 count = Count();
+    string[] args = __array_new(8, count);
+    mut i64 i = 0;
+    while i < count {
+        args[i] = __args_get(i);
+        i = i + 1;
+    }
+    return args;
+}
+
+/// Returns the number of command-line arguments (including argv[0]).
+pub i64 Count() {
+    return __args_count();
+}
+
+/// Returns argv[0] — the program name.
+pub string ProgramName() {
+    i64 count = __args_count();
+    if count < 1 {
+        return "";
+    }
+    return __args_get(0);
+}
+
+/// Returns the argument at `index` or `ArgsError::IndexOutOfRange`.
+pub Core.Results.Result<string, ArgsError> Get(i64 index) {
+    i64 count = __args_count();
+    if index < 0 {
+        return Result::Error(ArgsError::IndexOutOfRange());
+    }
+    if index >= count {
+        return Result::Error(ArgsError::IndexOutOfRange());
+    }
+    return Result::Ok(__args_get(index));
+}
+
+/// Returns true when `flag` (e.g. "--verbose" or "-v") appears as an argument.
+pub bool HasFlag(string flag) {
+    i64 count = __args_count();
+    mut i64 i = 0;
+    while i < count {
+        if __args_get(i) == flag {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+/// Returns the value following `flag` (e.g. "--output=path" extracts "path" or "--output path").
+/// Supports both "--flag=value" and "--flag value" forms.
+pub Core.Results.Result<string, ArgsError> ValueOf(string flag) {
+    i64 count = __args_count();
+    string prefix = flag + "=";
+    i64 prefixLen = String.Len(prefix);
+    mut i64 i = 0;
+    while i < count {
+        string arg = __args_get(i);
+        // Check for "--flag=value" form.
+        if String.Len(arg) > prefixLen {
+            i64 found = String.IndexOfFrom(arg, 0, prefix);
+            if found == 0 {
+                return Result::Ok(String.SubSlice(arg, prefixLen, String.Len(arg) - prefixLen));
+            }
+        }
+        // Check for "--flag" form followed by value.
+        if arg == flag {
+            if i + 1 < count {
+                return Result::Ok(__args_get(i + 1));
+            }
+            return Result::Error(ArgsError::FlagNotFound());
+        }
+        i = i + 1;
+    }
+    return Result::Error(ArgsError::FlagNotFound());
+}

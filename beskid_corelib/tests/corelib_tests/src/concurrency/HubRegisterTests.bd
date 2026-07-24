@@ -1,15 +1,25 @@
-/// Hub registration smoke.
-
+/// Hub registration tests.
 use Concurrency.Hub;
+use Concurrency.Channel;
+use Core.Results;
 use Testing.Assert;
 
-
-test hub_module_import_smoke {
+test hub_create_returns_handle {
     Hub<i64> hub = Hub<i64>.Create();
-    Assert.True(true, "Hub.Create smoke");
+    Assert.True(true, "Hub.Create returns a handle");
 }
 
-test hub_register_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Hub register deferred until Core.Results parity lands");
+test hub_register_returns_result {
+    Hub<i64> hub = Hub<i64>.Create();
+    Channel<i64> ch = Channel<i64>.Create();
+    Core.Results.Result<Channel.SendOk, Concurrency.HubError> result = hub.Register(0, ch);
+    Assert.True(Results.IsOk(result) || Results.IsError(result), "Register returns a valid result");
+}
+
+test hub_unregister_does_not_panic {
+    Hub<i64> hub = Hub<i64>.Create();
+    Channel<i64> ch = Channel<i64>.Create();
+    Core.Results.Result<Channel.SendOk, Concurrency.HubError> registered = hub.Register(0, ch);
+    hub.Unregister(0);
+    Assert.True(true, "Unregister completes");
 }

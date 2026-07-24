@@ -1,0 +1,10 @@
+/// Math error variants.
+/// @tier(supported)
+pub enum MathError {
+    /// Input outside the function's domain (e.g. sqrt of negative).
+    DomainError(),
+    /// Result exceeds representable range.
+    Overflow(),
+    /// Result is too small for representable range.
+    Underflow(),
+}

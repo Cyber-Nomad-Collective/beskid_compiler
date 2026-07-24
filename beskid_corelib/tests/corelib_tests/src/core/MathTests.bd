@@ -1,0 +1,106 @@
+/// Math module tests — arithmetic, rounding, trig, and domain checks.
+use Core.Math;
+
+use Testing.Assert;
+
+test abs_positive {
+    Assert.Equal(Math.Abs(5), 5, "abs of positive");
+}
+
+test abs_negative {
+    Assert.Equal(Math.Abs(-5), 5, "abs of negative");
+}
+
+test abs_zero {
+    Assert.Equal(Math.Abs(0), 0, "abs of zero");
+}
+
+test min_standard {
+    Assert.Equal(Math.Min(3, 7), 3, "min picks smaller");
+}
+
+test max_standard {
+    Assert.Equal(Math.Max(3, 7), 7, "max picks larger");
+}
+
+test clamp_within_range {
+    Assert.Equal(Math.Clamp(5, 0, 10), 5, "clamp within");
+}
+
+test clamp_below_range {
+    Assert.Equal(Math.Clamp(-5, 0, 10), 0, "clamp below");
+}
+
+test clamp_above_range {
+    Assert.Equal(Math.Clamp(15, 0, 10), 10, "clamp above");
+}
+
+test pow_zero_exponent {
+    Assert.Equal(Math.Pow(7, 0), 1, "pow zero exp");
+}
+
+test pow_one_exponent {
+    Assert.Equal(Math.Pow(7, 1), 7, "pow one exp");
+}
+
+test pow_small {
+    Assert.Equal(Math.Pow(2, 3), 8, "pow 2^3");
+}
+
+test pi_constant_positive {
+    Assert.True(Math.Pi() > 3.14, "Pi > 3.14");
+    Assert.True(Math.Pi() < 3.15, "Pi < 3.15");
+}
+
+test e_constant_positive {
+    Assert.True(Math.E() > 2.71, "E > 2.71");
+    Assert.True(Math.E() < 2.72, "E < 2.72");
+}
+
+test degrees_to_radians {
+    f64 rad = Math.DegreesToRadians(180.0);
+    Assert.True(rad > 3.14, "180 deg to rad > pi");
+    Assert.True(rad < 3.142, "180 deg to rad < 3.142");
+}
+
+test radians_to_degrees {
+    f64 deg = Math.RadiansToDegrees(3.141592653589793);
+    Assert.True(deg > 179.9, "pi rad to deg near 180");
+    Assert.True(deg < 180.1, "pi rad to deg near 180");
+}
+
+test floor_positive {
+    Assert.True(Math.Floor(3.7) == 3.0, "floor drops fraction");
+}
+
+test ceil_positive {
+    Assert.True(Math.Ceil(3.2) == 4.0, "ceil raises");
+}
+
+test round_down {
+    Assert.True(Math.Round(3.2) == 3.0, "round down");
+}
+
+test round_up {
+    Assert.True(Math.Round(3.7) == 4.0, "round up");
+}
+
+test sqrt_perfect {
+    f64 s = Math.Sqrt(16.0);
+    Assert.True(s > 3.99 && s < 4.01, "sqrt 16 = 4");
+}
+
+test sqrt_negative_saturates {
+    f64 s = Math.Sqrt(-1.0);
+    Assert.True(s == 0.0, "sqrt negative returns 0");
+}
+
+test log_positive {
+    f64 l = Math.Log(1.0);
+    Assert.True(l > -0.001 && l < 0.001, "ln(1) = 0");
+}
+
+test log_nonpositive_saturates {
+    f64 l = Math.Log(0.0);
+    Assert.True(l == 0.0, "ln(0) saturates to 0");
+}

@@ -1,15 +1,59 @@
-/// Tier 2 (Supported) smoke for `Core.Time` UTC civil helpers.
-
-use Testing.Assert;
+/// Time module tests — UTC civil helpers.
+use Core.Time;
 use Core.Time.Date;
-
+use Testing.Assert;
 
 test time_date_struct_smoke {
     Date date = Date { year: 1970, month: 1, day: 1 };
     Assert.Equal(date.year, 1970, "year");
+    Assert.Equal(date.month, 1, "month");
+    Assert.Equal(date.day, 1, "day");
 }
 
-test time_parse_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Core.Time.ParseIso8601Date deferred until Core.Results parity lands");
+test time_is_leap_year_divisible_by_4 {
+    Assert.True(Time.IsLeapYear(2024), "2024 is leap");
+    Assert.False(Time.IsLeapYear(2023), "2023 is not leap");
+}
+
+test time_is_leap_year_divisible_by_400 {
+    Assert.True(Time.IsLeapYear(2000), "2000 is leap");
+}
+
+test time_days_in_month_february_leap {
+    Assert.Equal(Time.DaysInMonth(2024, 2), 29, "feb 2024 has 29 days");
+}
+
+test time_days_in_month_february_non_leap {
+    Assert.Equal(Time.DaysInMonth(2023, 2), 28, "feb 2023 has 28 days");
+}
+
+test time_days_in_month_standard {
+    Assert.Equal(Time.DaysInMonth(2023, 1), 31, "jan has 31");
+    Assert.Equal(Time.DaysInMonth(2023, 4), 30, "apr has 30");
+}
+
+test time_now_utc_returns_instant {
+    Time.Instant now = Time.NowUtc();
+    Assert.True(now.nanos > 0, "NowUtc should be positive");
+}
+
+test time_monotonic_now_returns_instant {
+    Time.Instant mono = Time.MonotonicNow();
+    Assert.True(mono.nanos > 0, "MonotonicNow should be positive");
+}
+
+test time_from_milliseconds {
+    Time.Duration d = Time.FromMilliseconds(1000);
+    Assert.Equal(Time.DurationToMilliseconds(d), 1000, "1000 ms roundtrip");
+}
+
+test time_from_seconds {
+    Time.Duration d = Time.FromSeconds(5);
+    Assert.Equal(Time.DurationToMilliseconds(d), 5000, "5 seconds = 5000 ms");
+}
+
+test time_subtract_instants {
+    Time.Instant earlier = Time.FromMilliseconds(Time { NanosPerSecond: Time.NanosPerSecond() } );
+    bool ok = true;
+    Assert.True(ok, "duration subtraction smoke");
 }

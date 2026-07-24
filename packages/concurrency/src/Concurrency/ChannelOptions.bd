@@ -1,73 +1,92 @@
-/// Construction options for `Channel<T>.Create`.
-/// Capacity selector: default is unbounded.
+/// Construction options for Channel<T>.Create.
+/// Uses discriminated unions throughout — no bool flags or raw i64 bitfields.
+/// @tier(standard)
+
+/// Selects bounded vs unbounded channel capacity.
 pub enum ChannelCapacity {
-    Unbounded(),
+    Unbounded,
     Bounded(i64 capacity),
 }
 
-/// Channel factory options (capacity plus v1 optimization hints).
-pub type ChannelOptions {
-    ChannelCapacity capacity,
-    bool singleReader,
-    bool singleWriter,
+/// Reader concurrency hint — selects internal queue optimization.
+pub enum ReaderHint {
+    /// Multiple readers may concurrently receive.
+    Multiple,
+    /// Only one reader will ever receive from this channel.
+    Single,
 }
 
-/// Default options: unbounded queue, no single-reader/writer hints.
+/// Writer concurrency hint — selects internal queue optimization.
+pub enum WriterHint {
+    /// Multiple writers may concurrently send.
+    Multiple,
+    /// Only one writer will ever send to this channel.
+    Single,
+}
+
+/// Channel factory options.
+pub type ChannelOptions {
+    ChannelCapacity capacity,
+    ReaderHint reader,
+    WriterHint writer,
+}
+
+/// Default: unbounded, multiple-reader, multiple-writer.
 pub ChannelOptions Default() {
     return ChannelOptions {
-        capacity: ChannelCapacity::Unbounded(),
-        singleReader: false,
-        singleWriter: false,
+        capacity: ChannelCapacity::Unbounded,
+        reader: ReaderHint::Multiple,
+        writer: WriterHint::Multiple,
     };
 }
 
-/// Explicit unbounded queue (equivalent to default).
+/// Explicit unbounded queue.
 pub ChannelOptions Unbounded() {
     return Default();
 }
 
-/// Bounded queue with `capacity > 0`; senders park when full.
+/// Bounded queue; senders park when full.
 pub ChannelOptions Bounded(i64 capacity) {
     return ChannelOptions {
         capacity: ChannelCapacity::Bounded(capacity),
-        singleReader: false,
-        singleWriter: false,
+        reader: ReaderHint::Multiple,
+        writer: WriterHint::Multiple,
     };
 }
 
-/// Unbounded queue optimized for a single reader.
+/// Unbounded, single-reader optimized.
 pub ChannelOptions SingleReader() {
     return ChannelOptions {
-        capacity: ChannelCapacity::Unbounded(),
-        singleReader: true,
-        singleWriter: false,
+        capacity: ChannelCapacity::Unbounded,
+        reader: ReaderHint::Single,
+        writer: WriterHint::Multiple,
     };
 }
 
-/// Unbounded queue optimized for a single writer.
+/// Unbounded, single-writer optimized.
 pub ChannelOptions SingleWriter() {
     return ChannelOptions {
-        capacity: ChannelCapacity::Unbounded(),
-        singleReader: false,
-        singleWriter: true,
+        capacity: ChannelCapacity::Unbounded,
+        reader: ReaderHint::Multiple,
+        writer: WriterHint::Single,
     };
 }
 
-/// Encodes capacity for `__channel_create` (`0` = unbounded).
+/// Encodes capacity for __channel_create (0 = unbounded).
 pub i64 EncodeCapacity(ChannelOptions options) {
     return match options.capacity {
-        ChannelCapacity::Unbounded() => 0,
+        ChannelCapacity::Unbounded => 0,
         ChannelCapacity::Bounded(capacity) => capacity,
     };
 }
 
-/// Encodes reader/writer hint flags for `__channel_create`.
+/// Encodes reader/writer hint flags for __channel_create.
 pub i64 EncodeFlags(ChannelOptions options) {
     i64 flags = 0;
-    if options.singleReader {
+    if options.reader == ReaderHint::Single {
         flags = flags + 1;
     }
-    if options.singleWriter {
+    if options.writer == WriterHint::Single {
         flags = flags + 2;
     }
     return flags;

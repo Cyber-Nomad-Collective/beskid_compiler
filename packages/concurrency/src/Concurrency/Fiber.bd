@@ -1,6 +1,7 @@
 /// Cooperative fiber handle returned by `spawn`.
 use Concurrency.FiberError;
 use Concurrency.FiberJoinStatus;
+use Concurrency.Status;
 
 /// Runtime fiber handle; declares cancellation event on the handle only.
 pub type Fiber<T> {
@@ -10,11 +11,15 @@ pub type Fiber<T> {
 
 /// Waits for completion and returns the entry value or a `FiberError`.
 pub Core.Results.Result<T, FiberError> Join<T>(Fiber<T> self) {
-    i64 status = __fiber_join(self.handle);
-    if status == FiberJoinStatus.Ok() {
-        return Result::Ok(__fiber_join_value(self.handle));
+    i64 raw_status = __fiber_join(self.handle);
+    FiberJoinStatus status = FiberJoinStatus.FromI64(raw_status);
+    match status {
+        FiberJoinStatus::Ok => Result::Ok(__fiber_join_value(self.handle)),
+        FiberJoinStatus::Cancelled => Result::Error(FiberError::Cancelled()),
+        FiberJoinStatus::StackOverflow => Result::Error(FiberError::StackOverflow()),
+        FiberJoinStatus::Panicked => Result::Error(FiberError::Panicked(raw_status)),
+        FiberJoinStatus::NotDone => Result::Error(FiberError::Panicked(raw_status)),
     }
-    return Result::Error(MapJoinError(status));
 }
 
 /// Waives parent shutdown join; child panic still aborts the process in v1.
@@ -29,15 +34,11 @@ pub unit Cancel<T>(Fiber<T> self) {
     return;
 }
 
-pub FiberError MapJoinError(i64 status) {
-    if status == FiberJoinStatus.Cancelled() {
-        return FiberError::Cancelled();
+pub FiberError MapJoinError(FiberJoinStatus status) {
+    match status {
+        FiberJoinStatus::Cancelled => FiberError::Cancelled(),
+        FiberJoinStatus::StackOverflow => FiberError::StackOverflow(),
+        FiberJoinStatus::Panicked => FiberError::Panicked(FiberJoinStatus.ToI64(status)),
+        _ => FiberError::Panicked(FiberJoinStatus.ToI64(status)),
     }
-    if status == FiberJoinStatus.StackOverflow() {
-        return FiberError::StackOverflow();
-    }
-    if status == FiberJoinStatus.Panicked() {
-        return FiberError::Panicked(status);
-    }
-    return FiberError::Panicked(status);
 }

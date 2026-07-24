@@ -1,0 +1,50 @@
+/// Tests for Core.Args CLI argument access.
+use Core.Args;
+use Core.Results;
+use Core.Optional;
+use Testing.Assert;
+
+test args_count_at_least_one {
+    i64 n = Args.Count();
+    Assert.True(n >= 1, "Count() should return at least 1 (program name)");
+}
+
+test args_program_name_not_empty {
+    string name = Args.ProgramName();
+    Assert.True(Core.String.Core.Len(name) > 0, "ProgramName() should not be empty");
+}
+
+test args_get_zero_is_program_name {
+    Result<string, Args.ArgsError> r = Args.Get(0);
+    bool ok = Results.IsOk(r);
+    Assert.True(ok, "Get(0) should return Ok");
+    // Verify the Ok variant contains a non-empty string
+    match r {
+        Result::Ok(inner) => {
+            Assert.True(Core.String.Core.Len(inner) > 0, "Get(0) inner value should not be empty");
+        }
+        Result::Error(_) => {
+            Assert.True(false, "Get(0) should not be Error");
+        }
+    }
+}
+
+test args_try_get_zero_returns_some {
+    Option<string> opt = Args.TryGet(0);
+    Assert.True(Optional.HasValue(opt), "TryGet(0) should return Some");
+}
+
+test args_try_get_out_of_range_returns_none {
+    Option<string> opt = Args.TryGet(999);
+    Assert.False(Optional.HasValue(opt), "TryGet(999) should return None");
+}
+
+test args_get_out_of_range_returns_error {
+    Result<string, Args.ArgsError> r = Args.Get(999);
+    Assert.True(Results.IsError(r), "Get(999) should return Error");
+}
+
+test args_has_flag_returns_false_for_absent {
+    bool has = Args.HasFlag("--nonexistent");
+    Assert.False(has, "HasFlag should return false for a flag that is not present");
+}

@@ -26,14 +26,15 @@ pub Core.Results.Result<SendOk, HubError> Register<T>(
     i64 index,
     Channel<T> channel
 ) {
-    i64 status = __hub_register(self.handle, index, Channel.Handle(channel));
-    if status == Status.Ok() {
+    i64 raw = __hub_register(self.handle, index, Channel.Handle(channel));
+    Status status = Status.FromI64(raw);
+    if status == Status::Ok {
         return Result::Ok(SendOk { });
     }
-    if status == Status.HubLimit() {
+    if status == Status::HubLimit {
         return Result::Error(HubError::Limit());
     }
-    if status == Status.HubNotFound() {
+    if status == Status::HubNotFound {
         return Result::Error(HubError::Closed());
     }
     return Result::Error(HubError::Closed());
@@ -46,19 +47,20 @@ pub unit Unregister<T>(Hub<T> self, i64 index) {
 
 /// Blocks until a member can satisfy `Receive` (round-robin among ready channels).
 pub Core.Results.Result<HubReceiveResult<T>, HubError> WaitReceive<T>(Hub<T> self) {
-    i64 status = __hub_wait_receive(self.handle);
-    if status == Status.Ok() {
+    i64 raw = __hub_wait_receive(self.handle);
+    Status status = Status.FromI64(raw);
+    if status == Status::Ok {
         i64 index = __hub_wait_receive_index(self.handle);
         T value = __hub_wait_receive_value(self.handle);
         return Result::Ok(HubReceiveResult<T> { index: index, value: value });
     }
-    if status == Status.Cancelled() {
+    if status == Status::Cancelled {
         return Result::Error(HubError::Cancelled());
     }
-    if status == Status.HubEmpty() {
+    if status == Status::HubEmpty {
         return Result::Error(HubError::Closed());
     }
-    if status == Status.HubNotFound() {
+    if status == Status::HubNotFound {
         return Result::Error(HubError::Closed());
     }
     return Result::Error(HubError::Closed());

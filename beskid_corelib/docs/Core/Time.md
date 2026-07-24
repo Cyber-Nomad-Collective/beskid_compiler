@@ -32,3 +32,43 @@
 | `ParseIso8601Date(string) -> Result<Date, TimeError>` | Parses strict `YYYY-MM-DD`. |
 
 Compare instants only within the same clock domain. Monotonic instants must not be converted with UTC civil helpers.
+
+## Usage examples
+
+### Current UTC time
+
+```beskid
+now := Core.Time.NowUtc()
+dt := Core.Time.ToUtcDateTime(now)!
+fmt := Core.Time.FormatIso8601Utc(dt)
+// => "2025-07-11T14:22:05Z"
+```
+
+### Duration arithmetic
+
+```beskid
+d := Core.Time.FromSeconds(90)
+// d encodes 90_000_000_000 nanoseconds internally
+m := Core.Time.FromMilliseconds(3500)
+// m encodes 3_500_000_000 nanoseconds
+```
+
+### Format/parse roundtrip
+
+```beskid
+dateResult := Core.Time.ParseIso8601Date("2025-03-15")
+match dateResult {
+  Core.Result.Ok(d) => {
+    formatted := Core.Time.FormatDateIso(d)  // => "2025-03-15"
+  },
+  Core.Result.Err(e) => {
+    // handle parse error
+  },
+}
+```
+
+## Gotchas
+
+- **Two clock domains, don't mix.** `NowUtc` produces realtime instants; `MonotonicNow` produces monotonic instants. Never pass a monotonic `Instant` to `ToUtcDateTime` — the result is meaningless. Only compare instants from the same source.
+- **No timezone support.** All civil helpers operate in UTC only. There is no local-time conversion, no IANA timezone database, and no offset-aware types. If you need wall-clock time for a specific locale you must implement the offset yourself.
+- **Second precision in formatted output.** `FormatIso8601Utc` truncates to whole seconds (`HH:MM:SS`), discarding sub-second nanoseconds. Use the raw `Instant` for higher precision.

@@ -1,0 +1,8 @@
+/// Argument parsing error variants.
+/// @tier(supported)
+pub enum ArgsError {
+    /// Requested index is outside the argument range.
+    IndexOutOfRange(),
+    /// Requested flag was not found in the argument list.
+    FlagNotFound(),
+}

@@ -1,0 +1,161 @@
+/// Core.Math — numeric operations and transcendental functions.
+/// @tier(supported)
+/// Integer and float operations; Pow, Sqrt, Log, and trig delegate to __math_* builtins.
+pub mod Core.Math.MathError;
+
+use Core.Math.MathError;
+
+/// Absolute value of an i64.
+pub i64 Abs(i64 value) {
+    if value < 0 {
+        return -value;
+    }
+    return value;
+}
+
+/// Minimum of two i64 values.
+pub i64 Min(i64 a, i64 b) {
+    if a < b {
+        return a;
+    }
+    return b;
+}
+
+/// Maximum of two i64 values.
+pub i64 Max(i64 a, i64 b) {
+    if a > b {
+        return a;
+    }
+    return b;
+}
+
+/// Clamp an i64 between min and max (inclusive).
+pub i64 Clamp(i64 value, i64 min, i64 max) {
+    if value < min {
+        return min;
+    }
+    if value > max {
+        return max;
+    }
+    return value;
+}
+
+/// Integer exponentiation (value^exp). Returns 1 when exp == 0.
+pub i64 Pow(i64 value, i64 exp) {
+    if exp < 0 {
+        return 0;
+    }
+    if exp == 0 {
+        return 1;
+    }
+    mut i64 result = 1;
+    mut i64 remaining = exp;
+    while remaining > 0 {
+        result = result * value;
+        remaining = remaining - 1;
+    }
+    return result;
+}
+
+/// Floor of f64 (builtin-backed).
+pub f64 Floor(f64 value) {
+    return __math_floor(value);
+}
+
+/// Ceiling of f64 (builtin-backed).
+pub f64 Ceil(f64 value) {
+    return __math_ceil(value);
+}
+
+/// Round f64 to nearest integer, ties away from zero.
+pub f64 Round(f64 value) {
+    f64 floored = Floor(value);
+    f64 frac = value - floored;
+    if frac < 0.5 {
+        return floored;
+    }
+    return Ceil(value);
+}
+
+/// Round f64 to `decimals` decimal places.
+pub f64 RoundTo(f64 value, i64 decimals) {
+    f64 factor = 1.0;
+    mut i64 i = 0;
+    while i < decimals {
+        factor = factor * 10.0;
+        i = i + 1;
+    }
+    return Round(value * factor) / factor;
+}
+
+/// Square root (builtin-backed). Returns 0.0 for negative input.
+pub f64 Sqrt(f64 value) {
+    if value < 0.0 {
+        return 0.0;
+    }
+    return __math_sqrt(value);
+}
+
+/// Natural logarithm (builtin-backed). Returns 0.0 for non-positive input.
+pub f64 Log(f64 value) {
+    if value <= 0.0 {
+        return 0.0;
+    }
+    return __math_log(value);
+}
+
+/// Base-2 logarithm (builtin-backed).
+pub f64 Log2(f64 value) {
+    if value <= 0.0 {
+        return 0.0;
+    }
+    return __math_log2(value);
+}
+
+/// Base-10 logarithm (builtin-backed).
+pub f64 Log10(f64 value) {
+    if value <= 0.0 {
+        return 0.0;
+    }
+    return __math_log10(value);
+}
+
+/// Sine in radians (builtin-backed).
+pub f64 Sin(f64 radians) {
+    return __math_sin(radians);
+}
+
+/// Cosine in radians (builtin-backed).
+pub f64 Cos(f64 radians) {
+    return __math_cos(radians);
+}
+
+/// Tangent in radians (builtin-backed).
+pub f64 Tan(f64 radians) {
+    return __math_tan(radians);
+}
+
+/// Two-argument arctangent (builtin-backed).
+pub f64 Atan2(f64 y, f64 x) {
+    return __math_atan2(y, x);
+}
+
+/// π constant.
+pub f64 Pi() {
+    return 3.141592653589793;
+}
+
+/// Euler's number.
+pub f64 E() {
+    return 2.718281828459045;
+}
+
+/// Converts degrees to radians.
+pub f64 DegreesToRadians(f64 degrees) {
+    return degrees * Pi() / 180.0;
+}
+
+/// Converts radians to degrees.
+pub f64 RadiansToDegrees(f64 radians) {
+    return radians * 180.0 / Pi();
+}

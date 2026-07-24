@@ -1,0 +1,42 @@
+/// Query.ArrayIterator — concrete iterator over T[] slices.
+/// @tier(supported)
+
+use Collections.Array;
+use Core.Optional.Option;
+use Query.Iterator;
+
+/// Iterator state for T[] traversal — implements `Iterator<T>`.
+pub type ArrayIterator<T> {
+    T[] source,
+    i64 index,
+    i64 length,
+
+    /// Advances and returns the next element.
+    pub Option<T> Next() {
+        if index >= length {
+            return Option::None();
+        }
+        T value = Array.Get<T>(source, index);
+        index = index + 1;
+        return Option::Some(value);
+    }
+
+    /// Returns the number of remaining elements.
+    pub i64 Remaining() {
+        if index >= length {
+            return 0;
+        }
+        return length - index;
+    }
+
+    /// Resets the iterator to the beginning.
+    pub ArrayIterator<T> Reset() {
+        return ArrayIterator<T> { source: source, index: 0, length: length };
+    }
+}
+
+/// Creates an iterator over `source`.
+pub ArrayIterator<T> Over<T>(T[] source) {
+    i64 length = Array.Len<T>(source);
+    return ArrayIterator<T> { source: source, index: 0, length: length };
+}

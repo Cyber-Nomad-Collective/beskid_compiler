@@ -1,9 +1,25 @@
-/// Predicate helpers smoke for `Core.Results.Result`.
+/// Real tests for Core.Results.Result predicates.
 
+use Core.Results;
 use Testing.Assert;
 
 
-test results_module_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Core.Results import smoke until module path parity lands");
+test result_ok_is_ok {
+    Result<i64, string> r = Result::Ok(42);
+    Assert.True(Results.IsOk(r), "Result::Ok(42) should return true from IsOk");
+}
+
+test result_error_is_error {
+    Result<i64, string> r = Result::Error("fail");
+    Assert.True(Results.IsError(r), "Result::Error(\"fail\") should return true from IsError");
+}
+
+test result_error_is_not_ok {
+    Result<i64, string> r = Result::Error("fail");
+    Assert.False(Results.IsOk(r), "Result::Error should return false from IsOk");
+}
+
+test result_ok_is_not_error {
+    Result<i64, string> r = Result::Ok(42);
+    Assert.False(Results.IsError(r), "Result::Ok(42) should return false from IsError");
 }

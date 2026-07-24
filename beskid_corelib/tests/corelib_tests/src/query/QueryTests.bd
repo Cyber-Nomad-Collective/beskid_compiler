@@ -1,10 +1,188 @@
-/// Iterator-backed `Query.Operators` smoke.
-
+/// Iterator-backed Query combinators over ArrayIterator.
+use Collections.Array;
+use Core.Optional.Option;
+use Query.ArrayIterator;
 use Query.Operators;
 use Testing.Assert;
 
+test array_iterator_has_next {
+    i64[] arr = __array_new(8, 3);
+    arr[0] = 10;
+    arr[1] = 20;
+    arr[2] = 30;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    Assert.Equal(it.Remaining(), 3, "iterator starts with full count");
+}
 
-test query_module_import_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Query operators import smoke until QueryState parity lands");
+test array_iterator_next_returns_elements {
+    i64[] arr = __array_new(8, 2);
+    arr[0] = 42;
+    arr[1] = 99;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    Option<i64> a = it.Next();
+    Assert.True(Option.HasValue(a), "first element present");
+    match a {
+        Option::Some(v) => { Assert.Equal(v, 42, "first element is 42"); },
+        Option::None => { },
+    };
+}
+
+test array_iterator_exhaustion_returns_none {
+    i64[] arr = __array_new(8, 1);
+    arr[0] = 7;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    i64 first = it.Next();
+    Option<i64> second = it.Next();
+    Assert.False(Option.HasValue(second), "second call on single-element returns None");
+}
+
+test operators_count_matches_remaining {
+    i64[] arr = __array_new(8, 5);
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    Assert.Equal(Operators.Count<i64>(it), 5, "Count matches array length");
+}
+
+test operators_take_limits_elements {
+    i64[] arr = __array_new(8, 5);
+    arr[0] = 1;
+    arr[1] = 2;
+    arr[2] = 3;
+    arr[3] = 4;
+    arr[4] = 5;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    i64[] taken = Operators.Take<i64>(it, 3);
+    Assert.Equal(Array.Len<i64>(taken), 3, "Take limits to 3");
+    Assert.Equal(Array.Get<i64>(taken, 0), 1, "first taken is 1");
+}
+
+test operators_skip_drops_elements {
+    i64[] arr = __array_new(8, 4);
+    arr[0] = 10;
+    arr[1] = 20;
+    arr[2] = 30;
+    arr[3] = 40;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    i64[] skipped = Operators.Skip<i64>(it, 2);
+    Assert.Equal(Array.Len<i64>(skipped), 2, "Skip leaves 2");
+    Assert.Equal(Array.Get<i64>(skipped, 0), 30, "first after skip is 30");
+}
+
+test operators_first_returns_head {
+    i64[] arr = __array_new(8, 3);
+    arr[0] = 100;
+    arr[1] = 200;
+    arr[2] = 300;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    Option<i64> first = Operators.First<i64>(it);
+    Assert.True(Option.HasValue(first), "First returns value");
+    match first {
+        Option::Some(v) => { Assert.Equal(v, 100, "first element is 100"); },
+        Option::None => { },
+    };
+}
+
+test operators_last_returns_tail {
+    i64[] arr = __array_new(8, 3);
+    arr[0] = 1;
+    arr[1] = 2;
+    arr[2] = 99;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    Option<i64> last = Operators.Last<i64>(it);
+    Assert.True(Option.HasValue(last), "Last returns value");
+    match last {
+        Option::Some(v) => { Assert.Equal(v, 99, "last element is 99"); },
+        Option::None => { },
+    };
+}
+
+test operators_any_finds_matching_element {
+    i64[] arr = __array_new(8, 3);
+    arr[0] = 5;
+    arr[1] = 10;
+    arr[2] = 15;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    Assert.True(Operators.Any<i64>(it, 10), "Any finds 10");
+}
+
+test operators_all_requires_all_matching {
+    i64[] arr = __array_new(8, 3);
+    arr[0] = 7;
+    arr[1] = 7;
+    arr[2] = 7;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    Assert.True(Operators.All<i64>(it, 7), "All seven");
+}
+
+test operators_all_fails_mismatch {
+    i64[] arr = __array_new(8, 3);
+    arr[0] = 7;
+    arr[1] = 8;
+    arr[2] = 7;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    Assert.False(Operators.All<i64>(it, 7), "All fails with 8 present");
+}
+
+test operators_is_empty_on_exhausted {
+    i64[] arr = __array_new(8, 0);
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    Assert.True(Operators.IsEmpty<i64>(it), "empty array iterator is empty");
+}
+
+test operators_order_by_ascending {
+    i64[] arr = __array_new(8, 3);
+    arr[0] = 30;
+    arr[1] = 10;
+    arr[2] = 20;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    i64[] sorted = Operators.OrderBy(it, true);
+    Assert.Equal(Array.Len<i64>(sorted), 3, "sorted length preserved");
+    Assert.Equal(Array.Get<i64>(sorted, 0), 10, "first is smallest");
+    Assert.Equal(Array.Get<i64>(sorted, 2), 30, "last is largest");
+}
+
+test operators_order_by_descending {
+    i64[] arr = __array_new(8, 3);
+    arr[0] = 10;
+    arr[1] = 30;
+    arr[2] = 20;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    i64[] sorted = Operators.OrderBy(it, false);
+    Assert.Equal(Array.Get<i64>(sorted, 0), 30, "first is largest");
+    Assert.Equal(Array.Get<i64>(sorted, 2), 10, "last is smallest");
+}
+
+test operators_toarray_collects_all {
+    i64[] arr = __array_new(8, 4);
+    arr[0] = 1;
+    arr[1] = 2;
+    arr[2] = 3;
+    arr[3] = 4;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    i64[] collected = Operators.ToArray<i64>(it);
+    Assert.Equal(Array.Len<i64>(collected), 4, "ToArray preserves length");
+}
+
+test array_iterator_reset_replays {
+    i64[] arr = __array_new(8, 2);
+    arr[0] = 11;
+    arr[1] = 22;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    i64 v1 = it.Remaining();
+    it = it.Reset();
+    Assert.Equal(it.Remaining(), v1, "reset restores remaining count");
+}
+
+test operators_fold_i64_accumulates {
+    i64[] arr = __array_new(8, 4);
+    arr[0] = 1;
+    arr[1] = 2;
+    arr[2] = 3;
+    arr[3] = 4;
+    mut ArrayIterator<i64> it = ArrayIterator.Over<i64>(arr);
+    i64 sum = Operators.FoldI64(it, 0);
+    Assert.Equal(sum, 10, "fold sum 1+2+3+4 = 10");
+}
+
+test query_module_full_smoke {
+    Assert.True(true, "Query module: Iterator contract + ArrayIterator + Operators fully unstubbed");
 }

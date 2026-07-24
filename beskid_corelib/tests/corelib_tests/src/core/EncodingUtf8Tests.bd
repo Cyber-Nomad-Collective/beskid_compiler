@@ -1,23 +1,94 @@
+/// Encoding module tests — UTF-8, Hex, Base64 codecs.
 use Core.Bytes.Convert;
+use Core.Bytes.Slice;
+use Core.Encoding;
+use Core.Encoding.EncodingError;
+use Core.Results;
 use Testing.Assert;
 
-
-test utf8_module_import_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Core.Encoding.Utf8 import smoke");
+test utf8_is_valid_ascii {
+    u8[] bytes = Convert.StringToBytes("hello");
+    Assert.True(Encoding.Utf8.IsValid(bytes), "ascii is valid utf8");
 }
 
-test utf8_convert_smoke {
-    u8[] bytes = Convert.StringToBytes("hi");
-    Assert.True(true, "Convert.StringToBytes smoke");
+test utf8_is_valid_two_byte {
+    u8[] bytes = Slice.New(2);
+    Slice.Set(bytes, 0, 195);
+    Slice.Set(bytes, 1, 169);
+    Assert.True(Encoding.Utf8.IsValid(bytes), "two byte e-acute is valid");
 }
 
-test hex_encoding_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Hex encode/decode deferred until CLIF i8/i32 parity lands");
+test utf8_is_invalid_solo_continuation {
+    u8[] bytes = Slice.New(1);
+    Slice.Set(bytes, 0, 169);
+    Assert.False(Encoding.Utf8.IsValid(bytes), "solo continuation is invalid");
 }
 
-test base64_encoding_smoke {
-    bool smoke = true;
-    Assert.True(smoke, "Base64 encode/decode deferred until CLIF i8/i32 parity lands");
+test utf8_decode_from_bytes_roundtrip {
+    u8[] bytes = Convert.StringToBytes("abc");
+    Core.Results.Result<string, EncodingError> result = Encoding.Utf8.DecodeFromBytes(bytes);
+    Assert.True(Results.IsOk(result), "decode valid bytes succeeds");
+    match result {
+        Result::Ok(text) => { Assert.Equal(text, "abc", "roundtrip text matches"); },
+        Result::Error(_) => { },
+    };
+}
+
+test utf8_encode_to_bytes_roundtrip {
+    Core.Results.Result<u8[], EncodingError> result = Encoding.Utf8.EncodeToBytes("test");
+    Assert.True(Results.IsOk(result), "encode succeeds");
+    match result {
+        Result::Ok(bytes) => { Assert.Equal(Slice.Len(bytes), 4, "four bytes"); },
+        Result::Error(_) => { },
+    };
+}
+
+test hex_encode_bytes_roundtrip {
+    u8[] input = Convert.StringToBytes("AB");
+    Core.Results.Result<u8[], EncodingError> encoded = Encoding.Hex.EncodeBytes(input);
+    Assert.True(Results.IsOk(encoded), "hex encode succeeds");
+    match encoded {
+        Result::Ok(hex) => {
+            Assert.Equal(Slice.Len(hex), 4, "two bytes encode to four hex chars");
+            Core.Results.Result<u8[], EncodingError> decoded = Encoding.Hex.DecodeBytes(hex);
+            Assert.True(Results.IsOk(decoded), "hex decode succeeds");
+            match decoded {
+                Result::Ok(raw) => { Assert.Equal(Slice.Compare(raw, input), 0, "hex roundtrip preserves data"); },
+                Result::Error(_) => { },
+            };
+        },
+        Result::Error(_) => { },
+    };
+}
+
+test hex_decode_odd_length_rejected {
+    u8[] odd = Slice.New(3);
+    Slice.Set(odd, 0, 97);
+    Slice.Set(odd, 1, 97);
+    Slice.Set(odd, 2, 97);
+    Core.Results.Result<u8[], EncodingError> result = Encoding.Hex.DecodeBytes(odd);
+    Assert.True(Results.IsError(result), "odd-length hex rejected");
+}
+
+test base64_encode_bytes_roundtrip {
+    u8[] input = Convert.StringToBytes("Man");
+    Core.Results.Result<u8[], EncodingError> encoded = Encoding.Base64.EncodeBytes(input);
+    Assert.True(Results.IsOk(encoded), "base64 encode succeeds");
+    match encoded {
+        Result::Ok(b64) => {
+            Core.Results.Result<u8[], EncodingError> decoded = Encoding.Base64.DecodeBytes(b64);
+            Assert.True(Results.IsOk(decoded), "base64 decode succeeds");
+            match decoded {
+                Result::Ok(raw) => { Assert.Equal(Slice.Compare(raw, input), 0, "base64 roundtrip preserves data"); },
+                Result::Error(_) => { },
+            };
+        },
+        Result::Error(_) => { },
+    };
+}
+
+test base64_decode_invalid_length_rejected {
+    u8[] bad = Convert.StringToBytes("abc");
+    Core.Results.Result<u8[], EncodingError> result = Encoding.Base64.DecodeBytes(bad);
+    Assert.True(Results.IsError(result), "non-multiple-of-4 base64 rejected");
 }

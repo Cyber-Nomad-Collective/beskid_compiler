@@ -1,37 +1,36 @@
-/// ABI contract for `Concurrency.Status` i64 constants used by channel/hub/mutex builtins.
-
+/// ABI contract for Concurrency.Status discriminated union mapping.
 use Concurrency.Status;
 use Testing.Assert;
 
-
 test status_ok_is_zero {
-    Assert.Equal(Status.Ok(), 0, "Status.Ok ABI");
+    Assert.Equal(Status.ToI64(Status::Ok), 0, "Ok maps to 0");
 }
 
 test status_closed_is_one {
-    Assert.Equal(Status.Closed(), 1, "Status.Closed ABI");
+    Assert.Equal(Status.ToI64(Status::Closed), 1, "Closed maps to 1");
 }
 
 test status_cancelled_is_two {
-    Assert.Equal(Status.Cancelled(), 2, "Status.Cancelled ABI");
+    Assert.Equal(Status.ToI64(Status::Cancelled), 2, "Cancelled maps to 2");
 }
 
 test status_would_block_is_three {
-    Assert.Equal(Status.WouldBlock(), 3, "Status.WouldBlock ABI");
+    Assert.Equal(Status.ToI64(Status::WouldBlock), 3, "WouldBlock maps to 3");
 }
 
 test status_hub_empty_is_four {
-    Assert.Equal(Status.HubEmpty(), 4, "Status.HubEmpty ABI");
+    Assert.Equal(Status.ToI64(Status::HubEmpty), 4, "HubEmpty maps to 4");
 }
 
 test status_hub_limit_is_five {
-    Assert.Equal(Status.HubLimit(), 5, "Status.HubLimit ABI");
+    Assert.Equal(Status.ToI64(Status::HubLimit), 5, "HubLimit maps to 5");
 }
 
 test status_hub_not_found_is_six {
-    Assert.Equal(Status.HubNotFound(), 6, "Status.HubNotFound ABI");
+    Assert.Equal(Status.ToI64(Status::HubNotFound), 6, "HubNotFound maps to 6");
 }
 
-test status_mutex_busy_aliases_closed {
-    Assert.Equal(Status.MutexBusy(), Status.Closed(), "Status.MutexBusy aliases Closed");
+test status_roundtrip {
+    Assert.Equal(Status.FromI64(0), Status::Ok, "roundtrip Ok");
+    Assert.Equal(Status.FromI64(2), Status::Cancelled, "roundtrip Cancelled");
 }

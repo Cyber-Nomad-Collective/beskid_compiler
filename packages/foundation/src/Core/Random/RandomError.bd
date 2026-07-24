@@ -1,0 +1,8 @@
+/// Random error variants.
+/// @tier(supported)
+pub enum RandomError {
+    /// The requested range is invalid (min > max or max <= 0).
+    InvalidRange(),
+    /// The PRNG state has been exhausted.
+    Exhausted(),
+}

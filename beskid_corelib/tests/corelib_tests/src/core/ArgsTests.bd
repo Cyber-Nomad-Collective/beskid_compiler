@@ -1,0 +1,40 @@
+/// Args module tests — CLI argument access.
+use Core.Args;
+use Core.Results;
+use Testing.Assert;
+
+test args_count_at_least_one {
+    i64 count = Args.Count();
+    Assert.True(count >= 1, "at least argv[0] present");
+}
+
+test args_program_name_non_empty {
+    string name = Args.ProgramName();
+    Assert.True(name != "", "program name should not be empty");
+}
+
+test args_get_zero_is_program_name {
+    Core.Results.Result<string, Core.Args.ArgsError> result = Args.Get(0);
+    Assert.True(Results.IsOk(result), "args[0] should be valid");
+}
+
+test args_get_out_of_range {
+    Core.Results.Result<string, Core.Args.ArgsError> result = Args.Get(99999);
+    Assert.True(Results.IsError(result), "out-of-range index should error");
+}
+
+test args_get_negative_index {
+    Core.Results.Result<string, Core.Args.ArgsError> result = Args.Get(-1);
+    Assert.True(Results.IsError(result), "negative index should error");
+}
+
+test args_has_flag_absent {
+    bool found = Args.HasFlag("--nonexistent-flag-xyz");
+    Assert.False(found, "absent flag should return false");
+}
+
+test args_all_returns_array {
+    string[] all = Args.All();
+    i64 len = __array_len(all);
+    Assert.Equal(len, Args.Count(), "All() length matches Count()");
+}
