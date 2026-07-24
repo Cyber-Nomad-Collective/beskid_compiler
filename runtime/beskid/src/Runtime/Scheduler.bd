@@ -1,0 +1,6 @@
+/// Canonical Beskid scheduler run loop and preemption.
+
+[Export(Abi:"C", Symbol:"runtime_preempt_check")]
+pub unit RuntimePreemptCheck() {
+    return; // Stub: cooperative preemption not yet implemented
+}

@@ -361,7 +361,7 @@ pub pointer AllocateObject(pointer request) {
                 } else {
                     pointer object = SystemAllocate(size, alignment);
                     if object == NativePointer(0) {
-                        return object;
+                          return object;
                     } else {
                         memory_set(object, 0, size);
                         InitializeObjectHeader(object, descriptor);

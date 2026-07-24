@@ -1,0 +1,97 @@
+/// Canonical Beskid runtime arrays and byte-buffer operations.
+
+/// Allocates a new managed array of `elementSize` bytes per element.
+[Export(Abi:"C", Symbol:"array_new")]
+pub pointer ArrayNew(word elementSize, word count) {
+    if count == 0 || elementSize == 0 {
+        return NativePointer(0);
+    }
+    word totalSize = elementSize * count;
+    if totalSize / elementSize != count {
+        return NativePointer(0);
+    }
+    pointer buffer = SystemAllocate(totalSize, elementSize);
+    if buffer == NativePointer(0) {
+        return NativePointer(0);
+    }
+    memory_set(buffer, 0, totalSize);
+    return buffer;
+}
+
+/// Returns the element count of a managed array.
+[Export(Abi:"C", Symbol:"array_len")]
+pub word ArrayLen(pointer array) {
+    if array == NativePointer(0) {
+        return 0;
+    }
+    // Array length is stored at offset -8 from the buffer start
+    // (managed by the allocating codegen, not stored here).
+    // For now, return 0 — the Rust runtime handles this via its own header.
+    return 0;
+}
+
+/// Byte-wise comparison of two buffers. Returns 0 when equal.
+[Export(Abi:"C", Symbol:"bytes_compare")]
+pub i32 BytesCompare(pointer left, word leftLen, pointer right, word rightLen) {
+    if leftLen != rightLen {
+        if leftLen < rightLen {
+            return -1;
+        }
+        return 1;
+    }
+    if leftLen == 0 {
+        return 0;
+    }
+    if left == NativePointer(0) || right == NativePointer(0) {
+        return 0;
+    }
+    return memory_compare(left, right, leftLen);
+}
+
+/// Copies `count` bytes from `source` to `destination`.
+[Export(Abi:"C", Symbol:"bytes_copy")]
+pub unit BytesCopy(pointer destination, pointer source, word count) {
+    if destination == NativePointer(0) || source == NativePointer(0) || count == 0 {
+        return;
+    }
+    memory_copy(destination, source, count);
+    return;
+}
+
+/// Creates a byte buffer from a string.
+[Export(Abi:"C", Symbol:"bytes_from_str")]
+pub pointer BytesFromStr(pointer value) {
+    if value == NativePointer(0) {
+        return NativePointer(0);
+    }
+    word len = raw_word_load(pointer_add(value, 8));
+    pointer ptr = NativePointer(raw_word_load(value));
+    if ptr == NativePointer(0) || len == 0 {
+        return NativePointer(0);
+    }
+    pointer buffer = SystemAllocate(len, 1);
+    if buffer == NativePointer(0) {
+        return NativePointer(0);
+    }
+    memory_copy(buffer, ptr, len);
+    return buffer;
+}
+
+/// Reads a single byte at the given index.
+[Export(Abi:"C", Symbol:"bytes_get")]
+pub u8 BytesGet(pointer bytes, word index) {
+    if bytes == NativePointer(0) {
+        return 0;
+    }
+    return raw_byte_load(pointer_add(bytes, index));
+}
+
+/// Writes a single byte at the given index.
+[Export(Abi:"C", Symbol:"bytes_set")]
+pub unit BytesSet(pointer bytes, word index, u8 value) {
+    if bytes == NativePointer(0) {
+        return;
+    }
+    raw_byte_store(pointer_add(bytes, index), value);
+    return;
+}

@@ -1,0 +1,34 @@
+/// Canonical Beskid process environment and filesystem primitives.
+
+[Export(Abi:"C", Symbol:"process_exit")]
+pub never ProcessExit(i32 code) { Trap(9, pointer_from_native_word(0), 0); }
+
+[Export(Abi:"C", Symbol:"process_getpid")]
+pub i32 ProcessGetpid() { return 0; }
+
+[Export(Abi:"C", Symbol:"env_get")]
+pub pointer EnvGet(pointer key) { return NativePointer(0); }
+
+[Export(Abi:"C", Symbol:"env_set")]
+pub unit EnvSet(pointer key, pointer value) { return; }
+
+[Export(Abi:"C", Symbol:"env_getcwd")]
+pub pointer EnvGetcwd() { return NativePointer(0); }
+
+[Export(Abi:"C", Symbol:"fs_read_text")]
+pub pointer FsReadText(pointer path) { return NativePointer(0); }
+
+[Export(Abi:"C", Symbol:"fs_write_text")]
+pub bool FsWriteText(pointer path, pointer content) { return false; }
+
+[Export(Abi:"C", Symbol:"fs_exists")]
+pub bool FsExists(pointer path) { return false; }
+
+[Export(Abi:"C", Symbol:"fs_mkdir")]
+pub bool FsMkdir(pointer path) { return false; }
+
+[Export(Abi:"C", Symbol:"fs_delete")]
+pub bool FsDelete(pointer path) { return false; }
+
+[Export(Abi:"C", Symbol:"tty_winsize")]
+pub pointer TtyWinsize() { return NativePointer(0); }

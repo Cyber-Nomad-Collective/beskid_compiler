@@ -14,6 +14,17 @@ use crate::runtime_kit::{
 };
 
 pub const CANONICAL_BOOTSTRAP_SOURCE_PATH: &str = "src/Runtime/Bootstrap.bd";
+pub const CANONICAL_GC_SOURCE_PATH: &str = "src/Runtime/Gc.bd";
+pub const CANONICAL_STRINGS_SOURCE_PATH: &str = "src/Runtime/Strings.bd";
+pub const CANONICAL_COLLECTIONS_SOURCE_PATH: &str = "src/Runtime/Collections.bd";
+pub const CANONICAL_FIBER_SOURCE_PATH: &str = "src/Runtime/Fiber.bd";
+pub const CANONICAL_CHANNEL_SOURCE_PATH: &str = "src/Runtime/Channel.bd";
+pub const CANONICAL_COMPOSITION_SOURCE_PATH: &str = "src/Runtime/Composition.bd";
+pub const CANONICAL_CLOCKS_SOURCE_PATH: &str = "src/Runtime/Clocks.bd";
+pub const CANONICAL_SCHEDULER_SOURCE_PATH: &str = "src/Runtime/Scheduler.bd";
+pub const CANONICAL_SYSCALLS_SOURCE_PATH: &str = "src/Runtime/Syscalls.bd";
+pub const CANONICAL_PROCESS_SOURCE_PATH: &str = "src/Runtime/Process.bd";
+pub const CANONICAL_MISC_SOURCE_PATH: &str = "src/Runtime/Misc.bd";
 /// Canonical Foundation syscall facade eligible for Corelib service authority.
 pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd";
 /// Canonical Foundation assertion helper eligible to import the panic runtime service.

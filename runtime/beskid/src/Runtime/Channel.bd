@@ -1,0 +1,41 @@
+/// Canonical Beskid channel primitives for inter-fiber communication.
+
+[Export(Abi:"C", Symbol:"channel_create")]
+pub pointer ChannelCreate() {
+    pointer ch = SystemAllocate(64, 8);
+    if ch == NativePointer(0) {
+        return NativePointer(0);
+    }
+    memory_set(ch, 0, 64);
+    return ch;
+}
+
+[Export(Abi:"C", Symbol:"channel_send")]
+pub bool ChannelSend(pointer channel, i64 value) { return false; }
+
+[Export(Abi:"C", Symbol:"channel_try_send")]
+pub bool ChannelTrySend(pointer channel, i64 value) { return false; }
+
+[Export(Abi:"C", Symbol:"channel_receive_status")]
+pub i32 ChannelReceiveStatus(pointer channel) { return 0; }
+
+[Export(Abi:"C", Symbol:"channel_receive_value")]
+pub i64 ChannelReceiveValue(pointer channel) { return 0; }
+
+[Export(Abi:"C", Symbol:"channel_send_ptr")]
+pub bool ChannelSendPtr(pointer channel, pointer value) { return false; }
+
+[Export(Abi:"C", Symbol:"channel_try_send_ptr")]
+pub bool ChannelTrySendPtr(pointer channel, pointer value) { return false; }
+
+[Export(Abi:"C", Symbol:"channel_receive_ptr")]
+pub pointer ChannelReceivePtr(pointer channel) { return NativePointer(0); }
+
+[Export(Abi:"C", Symbol:"channel_try_receive_ptr")]
+pub pointer ChannelTryReceivePtr(pointer channel) { return NativePointer(0); }
+
+[Export(Abi:"C", Symbol:"channel_try_receive")]
+pub bool ChannelTryReceive(pointer channel) { return false; }
+
+[Export(Abi:"C", Symbol:"channel_close")]
+pub unit ChannelClose(pointer channel) { return; }

@@ -1,0 +1,19 @@
+/// Canonical Beskid syscalls and panic handlers.
+
+[Export(Abi:"C", Symbol:"syscall_write")]
+pub unit SyscallWrite(i32 fd, pointer buffer, word len) { return; }
+
+[Export(Abi:"C", Symbol:"syscall_read")]
+pub unit SyscallRead(i32 fd, pointer buffer, word len) { return; }
+
+[Export(Abi:"C", Symbol:"syscall_write_bytes")]
+pub unit SyscallWriteBytes(i32 fd, pointer data, word len) { return; }
+
+[Export(Abi:"C", Symbol:"syscall_read_bytes")]
+pub unit SyscallReadBytes(i32 fd, pointer data, word len) { return; }
+
+[Export(Abi:"C", Symbol:"panic")]
+pub never Panic(i64 code) { Trap(9, pointer_from_native_word(0), 0); }
+
+[Export(Abi:"C", Symbol:"panic_str")]
+pub never PanicStr(pointer message, word len) { Trap(9, message, len); }

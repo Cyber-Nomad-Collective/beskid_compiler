@@ -45,6 +45,7 @@ pub fn emit_aggregate_static_data<M: Module>(
     write_word(&mut descriptor_bytes, 0, plan.object_size)?;
     write_word(&mut descriptor_bytes, 8, plan.object_alignment)?;
     write_word(&mut descriptor_bytes, 24, u64::try_from(plan.pointer_map_offsets.len()).map_err(|_| ModuleError::Backend(anyhow::anyhow!("aggregate pointer-map length exceeds ABI word")))?)?;
+      write_word(&mut descriptor_bytes, 32, 1)?; // flags bit 0 = IS_AGGREGATE
     let mut descriptor_data = DataDescription::new();
     descriptor_data.define(descriptor_bytes.into_boxed_slice());
     let pointer_map_address = module.declare_data_in_data(pointer_map, &mut descriptor_data);

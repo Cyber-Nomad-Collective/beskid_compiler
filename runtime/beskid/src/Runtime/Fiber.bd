@@ -1,0 +1,69 @@
+/// Canonical Beskid fiber primitives.
+
+/// Spawns a new fiber from a capture-free entry point.
+[Export(Abi:"C", Symbol:"fiber_spawn")]
+pub i64 FiberSpawn(pointer entry, pointer argument) {
+    pointer cancelSlot = SystemAllocate(8, 8);
+    if cancelSlot == NativePointer(0) {
+        return -1;
+    }
+    raw_word_store(cancelSlot, 0);
+    return FiberSpawnWithCancelSlot(entry, NativePointer(0), cancelSlot);
+}
+
+/// Spawns a fiber with an explicit cancellation slot.
+[Export(Abi:"C", Symbol:"fiber_spawn_with_cancel_slot")]
+pub i64 FiberSpawnWithCancelSlot(pointer entry, pointer environment, pointer cancelledSlot) {
+    if cancelledSlot != NativePointer(0) {
+        raw_word_store(cancelledSlot, 0);
+    }
+    return 0; // Stub: real scheduler integration TBD
+}
+
+/// Cancels a running fiber by ID.
+[Export(Abi:"C", Symbol:"fiber_cancel")]
+pub bool FiberCancel(i64 fiberId) {
+    return false; // Stub
+}
+
+/// Yields the current fiber.
+[Export(Abi:"C", Symbol:"fiber_yield")]
+pub unit FiberYield() {
+    return; // Stub
+}
+
+/// Returns the current fiber ID (0 for main).
+[Export(Abi:"C", Symbol:"fiber_current_id")]
+pub i64 FiberCurrentId() {
+    return 0;
+}
+
+/// Detaches a fiber (fire-and-forget).
+[Export(Abi:"C", Symbol:"fiber_detach")]
+pub unit FiberDetach(i64 fiberId) {
+    return;
+}
+
+/// Returns the join status of a fiber.
+[Export(Abi:"C", Symbol:"fiber_join_status")]
+pub i32 FiberJoinStatus(i64 fiberId) {
+    return 0; // 0 = still running
+}
+
+/// Returns the join value of a completed fiber.
+[Export(Abi:"C", Symbol:"fiber_join_value")]
+pub i64 FiberJoinValue(i64 fiberId) {
+    return 0;
+}
+
+/// Monotonic time in milliseconds since an arbitrary epoch.
+[Export(Abi:"C", Symbol:"fiber_now_millis")]
+pub i64 FiberNowMillis() {
+    return 0; // Stub: clock integration TBD
+}
+
+/// Number of logical processors available.
+[Export(Abi:"C", Symbol:"fiber_processor_count")]
+pub word FiberProcessorCount() {
+    return 1;
+}

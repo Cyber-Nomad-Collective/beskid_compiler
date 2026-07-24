@@ -1,0 +1,11 @@
+/// Canonical Beskid clock primitives.
+
+[Export(Abi:"C", Symbol:"clock_monotonic_nanos")]
+pub i64 ClockMonotonicNanos() {
+    return 0; // Stub: platform-specific time TBD
+}
+
+[Export(Abi:"C", Symbol:"clock_realtime_nanos")]
+pub i64 ClockRealtimeNanos() {
+    return 0; // Stub
+}
